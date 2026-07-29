@@ -1,0 +1,8 @@
+﻿事件代码,名称,默认等级,触发条件,最低证据,自动处置,人工确认
+POSTURE_BEND_LONG,长时间弯腰,L1,pitch超阈值持续60秒,姿态前后30秒,提示休息/姿态调整,是
+LOAD_CONTINUOUS,连续高负荷,L2,load_score>0.8持续150秒,负荷+动作+任务,提示轮换/暂停,是
+MOTION_ABNORMAL,剧烈异常动作,L2,IMU冲击与角速度异常,IMU前后30秒,高亮并通知,是
+FALL_SUSPECTED,疑似跌倒,L3,冲击+姿态变化+静止,IMU+现场确认,紧急通知,必须
+DEVICE_OFFLINE,设备离线,L1,心跳超时,心跳日志,自动重连,否
+SENSOR_DEGRADED,传感器降级,L1,质量门槛不满足,质量指标,切unknown/降级,否
+INFERENCE_UNAVAILABLE,推理不可用,L1,服务异常/数据不足,服务日志,规则兜底/unknown,否

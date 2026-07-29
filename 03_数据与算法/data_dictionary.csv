@@ -1,0 +1,16 @@
+﻿实体,字段,类型,必填,单位/枚举,说明,敏感级别,来源
+person,person_id,string,是,,匿名人员ID,敏感,业务
+person,skills,array,是,,技能列表,内部业务,业务
+person,consent_status,enum,是,unknown/authorized/revoked,授权状态,高度敏感,合规
+device,device_id,string,是,,设备ID,内部业务,设备
+device,firmware_version,string,是,,固件版本,内部业务,设备
+telemetry,timestamp,datetime,是,,采集时间,敏感,设备
+telemetry,pitch_deg,number,否,degree,躯干俯仰角,敏感,设备
+telemetry,assist_level,number,否,0-1,助力状态,内部业务,设备
+telemetry,heart_rate,number,否,bpm,心率（默认关闭）,高度敏感,穿戴
+telemetry,zone_id,string,否,,所在区域,敏感,定位
+inference,label,enum,是,stand/walk/bend/lift/unknown,动作标签,敏感,算法
+inference,confidence,number,否,0-1,模型置信度,内部业务,算法
+risk_event,event_code,string,是,,事件代码,敏感,规则/算法
+risk_event,severity,enum,是,L0-L3,风险等级,敏感,规则/算法
+risk_event,evidence,object,是,,证据窗口与记录引用,敏感,平台

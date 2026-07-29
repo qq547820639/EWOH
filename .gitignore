@@ -1,0 +1,19 @@
+# CodeBuddy 本地项目状态(记忆/自动化等,不提交)
+.codebuddy/
+
+# macOS
+.DS_Store
+.AppleDouble/
+.Spotlight-V100/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 临时文件
+*.tmp
+*.log
+.tmp/
