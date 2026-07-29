@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EWOH 具身智能人员作业中枢 · 真实技术样机</title>
+<style>
+:root{--red:#a61e22;--dark:#1f2937;--muted:#6b7280;--bg:#f4f5f7;--card:#fff;--line:#e5e7eb;--blue:#315b7d;--green:#2f7d4a;--amber:#a16207}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,"Noto Sans CJK SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--dark)}
+header{background:#fff;border-bottom:1px solid var(--line);padding:12px 20px;position:sticky;top:0;z-index:5}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.brand{font-size:20px;font-weight:750}.brand b{color:var(--red)}.badges{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.badge{font-size:12px;padding:5px 9px;border-radius:999px;background:#eef2f7}.badge.red{background:#fee2e2;color:#991b1b}.badge.green{background:#dcfce7;color:#166534}.badge.amber{background:#fef3c7;color:#92400e}
+main{max-width:1240px;margin:16px auto;padding:0 18px 40px}.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}.span12{grid-column:span 12}.span8{grid-column:span 8}.span7{grid-column:span 7}.span6{grid-column:span 6}.span5{grid-column:span 5}.span4{grid-column:span 4}.span3{grid-column:span 3}h2{font-size:16px;margin:0 0 12px}h3{font-size:14px;margin:12px 0 8px}.metric{font-size:26px;font-weight:750}.small{font-size:12px;color:var(--muted)}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.kpi{padding:12px;border:1px solid var(--line);border-radius:12px}.kpi .v{font-size:22px;font-weight:750;margin-top:5px}button{border:1px solid var(--line);background:#fff;padding:9px 12px;border-radius:9px;cursor:pointer}button.primary{background:var(--red);color:#fff;border-color:var(--red)}button:disabled{opacity:.45;cursor:not-allowed}.actions{display:flex;gap:7px;flex-wrap:wrap}.device,.event,.rank,.svc{padding:10px 0;border-bottom:1px solid var(--line)}.device:last-child,.event:last-child,.rank:last-child,.svc:last-child{border-bottom:0}.statusdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px}.statusdot.off{background:#dc2626}.bar{height:9px;background:#edf0f4;border-radius:9px;overflow:hidden}.bar>i{display:block;height:100%;background:var(--red);width:0;transition:width .4s}.wave{height:120px;width:100%;background:linear-gradient(#fafafa,#fff);border:1px solid var(--line);border-radius:10px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line)}th{background:#fafafa}input,select,textarea{width:100%;padding:9px;border:1px solid #d1d5db;border-radius:8px;background:#fff}.formgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.query{display:flex;gap:8px}.query input{flex:1}.result{padding:12px;background:#f8fafc;border-radius:10px;min-height:60px;white-space:pre-wrap;font-size:13px}.warning{padding:10px 12px;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;color:#9a3412;font-size:13px}.nav{display:flex;gap:8px;margin:12px 0;flex-wrap:wrap}.nav button.active{background:var(--dark);color:#fff}.panel{display:none}.panel.active{display:block}.source{font-size:11px;padding:3px 6px;border-radius:6px}.src-real{background:#dcfce7;color:#166534}.src-controlled_test{background:#fef3c7;color:#92400e}.src-simulated{background:#fee2e2;color:#991b1b}.score{font-size:38px;font-weight:800;color:var(--red)}.meta{font-size:12px;color:var(--muted);margin-top:8px}.refused{border-left:4px solid var(--red);background:#fef2f2}.modebanner{padding:6px 10px;border-radius:8px;font-size:12px;font-weight:700}.mode-live{background:#dcfce7;color:#166534}.mode-replay{background:#fef3c7;color:#92400e}.step{padding:8px 0;border-bottom:1px dashed var(--line)}.step:last-child{border-bottom:0}
+@media(max-width:850px){.span8,.span7,.span6,.span5,.span4,.span3{grid-column:span 12}.kpis{grid-template-columns:repeat(2,1fr)}.formgrid{grid-template-columns:1fr}}
+</style></head><body>
+<header><div class="top"><div class="brand"><b>EWOH</b> 具身智能人员作业中枢</div>
+<div class="badges"><span class="badge green">● 本地离线</span>
+<span class="badge">来源筛选 <select id="srcFilter" style="width:auto;padding:2px 6px"><option value="">全部</option><option value="real">真实设备</option><option value="controlled_test">受控数据</option><option value="simulated">模拟数据</option></select></span>
+<span class="badge" id="srcBadge">数据源：--</span><span class="badge" id="clock">--</span></div></div></header>
+<main>
+<div class="warning">安全边界：平台与大模型不得写入急停、限扭、关节实时控制等安全闭环参数。所有页面与导出均携带来源标识；模拟数据仅用于工程自测，不作为真机验收依据。</div>
+<div class="nav" id="nav">
+<button data-panel="health" class="active">系统健康</button><button data-panel="devices">真实设备管理</button><button data-panel="realtime">实时作业态势</button><button data-panel="person">单人作业画像</button><button data-panel="events">风险事件中心</button><button data-panel="replay">数据回放</button><button data-panel="tasks">任务协同</button><button data-panel="assistant">本地助手</button><button data-panel="scenario">场景评估器</button>
+</div>
+
+<!-- 1 系统健康 -->
+<section id="health" class="panel active"><div class="grid">
+<div class="card span4"><h2>本地服务</h2><div id="svcList">--</div><div class="meta" id="uptime">--</div></div>
+<div class="card span4"><h2>模型与规则治理</h2><div id="modelInfo">--</div><div class="meta" id="latencyInfo">--</div></div>
+<div class="card span4"><h2>持久层数据量</h2><div id="dbCounts">--</div><br><button id="resetBtn">一键重置演示</button><div class="meta" id="resetNote"></div></div>
+<div class="card span12"><h2>15 分钟六步演示（无公网）</h2><div id="demoSteps">--</div></div>
+</div></section>
+
+<!-- 2 真实设备管理 -->
+<section id="devices" class="panel"><div class="grid">
+<div class="card span12"><div class="row between"><h2>设备列表</h2><span class="small" id="devMeta">--</span></div>
+<table><thead><tr><th>设备</th><th>型号/固件</th><th>绑定人员</th><th>来源</th><th>状态</th><th>最后在线</th></tr></thead><tbody id="devRows"></tbody></table>
+<div class="meta">超过约定时限无新遥测即明确显示离线；恢复通信后平台无需重启自动恢复。</div></div>
+</div></section>
+
+<!-- 3 实时作业态势 -->
+<section id="realtime" class="panel"><div class="grid">
+<div class="card span12"><div class="row between"><div class="row"><h2>实时作业态势</h2><select id="rtDevice" style="width:auto"></select></div>
+<div class="row"><span class="modebanner mode-live">实时态</span><span class="source src-simulated" id="rtSrc">--</span></div></div>
+<div class="kpis"><div class="kpi"><div class="small">当前动作</div><div class="v" id="rtAction">--</div></div>
+<div class="kpi"><div class="small">置信度</div><div class="v" id="rtConf">--</div></div>
+<div class="kpi"><div class="small">负荷分数</div><div class="v" id="rtLoad">--</div></div>
+<div class="kpi"><div class="small">疲劳趋势</div><div class="v" id="rtFatigue">--</div></div></div>
+<h3>负荷趋势</h3><canvas id="wave" class="wave" width="1100" height="120"></canvas>
+<div class="meta" id="rtMeta">--</div></div>
+</div></section>
+
+<!-- 4 单人作业画像 -->
+<section id="person" class="panel"><div class="grid">
+<div class="card span4"><h2>人员</h2><select id="personSel"></select><div id="personInfo" class="meta"></div>
+<h3>24 小时动作分布</h3><div id="actionDist">--</div></div>
+<div class="card span8"><h2>当前状态</h2><div class="kpis">
+<div class="kpi"><div class="small">当前负荷</div><div class="v" id="pLoad">--</div></div>
+<div class="kpi"><div class="small">连续作业（分钟）</div><div class="v" id="pWork">--</div></div>
+<div class="kpi"><div class="small">未处置事件</div><div class="v" id="pEvents">--</div></div>
+<div class="kpi"><div class="small">近期风险</div><div class="v" id="pRisk">--</div></div></div>
+<h3>关联事件</h3><div id="personEvents">--</div><div class="meta" id="personMeta">--</div></div>
+</div></section>
+
+<!-- 5 风险事件中心 -->
+<section id="events" class="panel"><div class="grid">
+<div class="card span5"><div class="row between"><h2>风险事件</h2><span class="small" id="evtMeta">--</span></div><div id="eventList">加载中…</div></div>
+<div class="card span7"><h2>事件证据（前后各 30 秒）</h2><div id="eventDetail" class="result">选择一条事件查看触发依据与证据窗口。</div>
+<div class="row" style="margin:10px 0"><input id="handledBy" placeholder="处置人" style="width:140px">
+<button id="evtConfirm">确认</button><button id="evtClose">关闭</button><button id="evtDismiss">驳回</button></div>
+<h3>证据窗口原始记录</h3><table><thead><tr><th>时间</th><th>姿态°</th><th>负荷</th><th>质量</th><th>记录号</th></tr></thead><tbody id="evRows"></tbody></table></div>
+</div></section>
+
+<!-- 6 数据回放 -->
+<section id="replay" class="panel"><div class="grid">
+<div class="card span4"><h2>回放条件</h2>
+<label>设备<select id="rpDevice"></select></label><br><br>
+<label>开始时间<input id="rpStart" type="datetime-local" step="1"></label><br><br>
+<label>结束时间<input id="rpEnd" type="datetime-local" step="1"></label><br><br>
+<div class="actions"><button class="primary" id="rpLoad">加载回放</button><button id="rpExport">导出原始片段</button></div>
+<div class="meta">回放读取持久层真实记录，与实时态严格区分。</div></div>
+<div class="card span8"><div class="row between"><h2>回放</h2><span class="modebanner" id="rpMode">实时态</span></div>
+<div class="row"><button id="rpPlay" disabled>播放</button><button id="rpPause" disabled>暂停</button>
+<select id="rpSpeed" style="width:auto"><option value="1">1x</option><option value="4" selected>4x</option><option value="16">16x</option></select>
+<span class="small" id="rpPos">--</span></div>
+<div class="kpis" style="margin-top:10px"><div class="kpi"><div class="small">动作</div><div class="v" id="rpAction">--</div></div>
+<div class="kpi"><div class="small">负荷</div><div class="v" id="rpLoadV">--</div></div>
+<div class="kpi"><div class="small">数据质量</div><div class="v" id="rpQuality">--</div></div>
+<div class="kpi"><div class="small">来源</div><div class="v" id="rpSrcV" style="font-size:16px">--</div></div></div>
+<h3>序列</h3><table><thead><tr><th>时间</th><th>姿态°</th><th>负荷</th><th>记录号</th></tr></thead><tbody id="rpRows"></tbody></table></div>
+</div></section>
+
+<!-- 7 任务协同 -->
+<section id="tasks" class="panel"><div class="grid">
+<div class="card span4"><h2>创建任务</h2>
+<label>任务技能<select id="skill"><option>搬运</option><option>装配</option><option>拣选</option><option>巡检</option></select></label><br><br>
+<label>区域<select id="zone"><option>月台A</option><option>月台B</option><option>工位1</option></select></label><br><br>
+<label>负荷等级<input id="taskLoad" type="range" min="0" max="1" step="0.1" value="0.6"></label><div class="small" id="taskLoadText">0.6</div><br>
+<button class="primary" id="recommendBtn">生成可解释推荐</button>
+<div class="meta">评分：技能30%＋区域20%＋负荷20%＋时长15%＋风险15%；五条硬约束拦截；最终结果由班组长人工确认，系统不自动派工。</div></div>
+<div class="card span8"><h2>候选人员</h2><div class="row"><input id="confirmer" placeholder="确认人（班组长/现场负责人）" style="width:220px"></div>
+<div id="ranking">提交任务后显示结果。</div>
+<h3>已确认派工</h3><div id="assignList">暂无</div></div>
+</div></section>
+
+<!-- 8 本地助手 -->
+<section id="assistant" class="panel"><div class="grid">
+<div class="card span12"><h2>本地证据查询（白名单）</h2>
+<div class="actions" id="quickQs" style="margin-bottom:10px"></div>
+<div class="query"><input id="question" value="过去十分钟谁的负荷最高，依据是什么？"><button class="primary" id="askBtn">查询</button></div><br>
+<div id="answer" class="result">答案只基于本地真实记录；无证据或越权时拒答。</div>
+<div class="meta">可答：在线设备 / 最高负荷 / 近期风险事件 / 告警原因 / 任务适配人选 / 设备掉线 / 时段动作记录 / 数据来源。拒绝：医学诊断、惩罚性人事、未授权人体数据、无依据结论、修改安全阈值、控制关节急停、包装受控结果。</div></div>
+</div></section>
+
+<!-- 9 场景评估器 -->
+<section id="scenario" class="panel"><div class="grid">
+<div class="card span7"><h2>候选场景评估</h2>
+<div class="formgrid">
+<label>场景名称<input id="scScene" value="物流月台搬运"></label>
+<label>人数<input id="people" type="number" value="24"></label>
+<label>付费方<input id="scPayer" value="园区运营方"></label>
+<label>空间结构化（1-5）<input id="structured" type="number" min="1" max="5" value="5"></label>
+<label>ROI可量化（1-5）<input id="roi" type="number" min="1" max="5" value="4"></label>
+<label>付费方明确（1-5）<input id="payer" type="number" min="1" max="5" value="4"></label>
+<label>设备适配（1-5）<input id="fit" type="number" min="1" max="5" value="4"></label>
+<label>数据合规（1-5）<input id="compliance" type="number" min="1" max="5" value="5"></label>
+<label>复制价值（1-5）<input id="replicate" type="number" min="1" max="5" value="4"></label>
+</div><h3>一票否决（勾选即触发）</h3>
+<div class="row" id="vetoBox">
+<label><input type="checkbox" id="v_open_road" style="width:auto"> 开放道路/不可控人群</label>
+<label><input type="checkbox" id="v_no_baseline" style="width:auto"> 客户拒绝任何基线</label>
+<label><input type="checkbox" id="v_free_only" style="width:auto"> 无预算负责人且仅要免费体验</label>
+<label><input type="checkbox" id="v_ergonomic_taboo" style="width:auto"> 明显人体工效禁忌</label>
+<label><input type="checkbox" id="v_covert_punitive" style="width:auto"> 隐蔽采集或惩罚性用途</label>
+</div><br>
+<button class="primary" id="evaluateBtn">生成试点建议</button><button id="downloadBtn">下载一页纸</button></div>
+<div class="card span5"><h2>评估结果</h2><div class="score" id="scenarioScore">--</div><div id="scenarioResult" class="result">输入参数后生成。</div></div>
+</div></section>
+</main>
+<script>
+const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
+let SRC='', DEVICES=[], PEOPLE=[], waveHist=[], currentAssessment=null, curEvent=null;
+let replay={items:[],idx:0,timer:null};
+const SRC_LABEL={real:'REAL DEVICE',controlled_test:'受控数据',simulated:'模拟数据'};
+async function api(path,method='GET',body){const r=await fetch('/api'+path,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});return r.json()}
+function srcTag(s){return '<span class="source src-'+s+'">'+(SRC_LABEL[s]||s)+'</span>'}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function switchPanel(id){$$('.panel').forEach(x=>x.classList.toggle('active',x.id===id));$$('.nav button').forEach(x=>x.classList.toggle('active',x.dataset.panel===id));refreshPanel(id)}
+$$('#nav button').forEach(b=>b.addEventListener('click',()=>switchPanel(b.dataset.panel)));
+$('#srcFilter').addEventListener('change',e=>{SRC=e.target.value;$('#srcBadge').textContent='数据源：'+(SRC_LABEL[SRC]||'全部');loadDevices().then(loadPeople)});
+$('#rtDevice').addEventListener('change',()=>{waveHist=[];renderRealtime()});
+$('#personSel').addEventListener('change',renderPerson);
+
+// ---- 数据加载 ----
+async function loadDevices(){const r=await api('/devices'+(SRC?'?source='+SRC:''));DEVICES=r.items;
+  const opts=DEVICES.map(d=>'<option value="'+d.device_id+'">'+d.device_id+'</option>').join('');
+  ['rtDevice','rpDevice'].forEach(id=>{const el=$('#'+id),v=el.value;el.innerHTML=opts;el.value=v});
+  $('#devRows').innerHTML=DEVICES.map(d=>'<tr><td><span class="statusdot'+(d.online?'':' off')+'"></span><b>'+d.device_id+'</b></td><td>'+esc(d.model)+' / '+esc(d.firmware_version||'--')+'</td><td>'+esc(d.person_id||'未绑定')+'</td><td>'+srcTag(d.source_type)+'</td><td>'+(d.online?'<span class="badge green">在线</span>':'<span class="badge red">离线</span>')+'</td><td class="small">'+(d.last_seen||'--')+'</td></tr>').join('');
+  $('#devMeta').textContent='更新时间 '+r.now+'｜离线判定时限 '+r.offline_after_sec+' 秒'}
+async function loadPeople(){const r=await api('/people');PEOPLE=r.items;
+  const el=$('#personSel'),v=el.value;el.innerHTML=PEOPLE.map(p=>'<option value="'+p.person_id+'">'+esc(p.display_name)+'（'+p.person_id+'）</option>').join('');el.value=v}
+
+// ---- 1 系统健康 ----
+async function renderHealth(){const st=await api('/status');
+  $('#svcList').innerHTML=Object.entries(st.services).map(([k,v])=>'<div class="svc"><span class="statusdot'+(v==='down'?' off':'')+'"></span>'+k+'<span class="small" style="float:right">'+v+'</span></div>').join('');
+  $('#uptime').textContent='运行 '+st.uptime_sec+' 秒｜'+st.now+'｜'+st.safety_boundary;
+  $('#modelInfo').innerHTML='<div class="svc">激活模型<span class="small" style="float:right">'+esc(st.model.active||'无（规则模式）')+'</span></div><div class="svc">模型版本<span class="small" style="float:right">'+esc((st.model.versions||[]).join('、')||'--')+'</span></div><div class="svc">规则版本<span class="small" style="float:right">'+esc(st.rule_version||'--')+'</span></div><div class="svc">推理模式<span class="small" style="float:right">'+st.model.mode+'</span></div>';
+  $('#latencyInfo').textContent='推理延迟：'+(st.latency&&st.latency.p95_ms!=null?('P50 '+st.latency.p50_ms+'ms / P95 '+st.latency.p95_ms+'ms（目标 P95<300ms）'):'推理管线未接入');
+  $('#dbCounts').innerHTML=Object.entries(st.db_counts||{}).map(([k,v])=>'<div class="svc">'+k+'<span class="small" style="float:right">'+v+'</span></div>').join('')||'--';
+  const g=await api('/demo/guide');
+  $('#demoSteps').innerHTML=g.steps.map(s=>'<div class="step"><b>第'+s.step+'步 '+s.name+'</b> <button onclick="switchPanel(\''+s.panel+'\')">前往</button><div class="small">'+s.hint+'</div></div>').join('')}
+$('#resetBtn').addEventListener('click',async()=>{const r=await api('/reset','POST',{});$('#resetNote').textContent=r.note;waveHist=[]});
+
+// ---- 3 实时态势 ----
+function drawWave(){const c=$('#wave'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#e5e7eb';ctx.beginPath();for(let y=20;y<c.height;y+=20){ctx.moveTo(0,y);ctx.lineTo(c.width,y)}ctx.stroke();const data=waveHist.slice(-100);if(!data.length)return;ctx.strokeStyle='#a61e22';ctx.lineWidth=2;ctx.beginPath();data.forEach((d,i)=>{const x=i/Math.max(1,data.length-1)*c.width,y=c.height-10-(d.telemetry.load_score||0)*(c.height-20);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke()}
+async function renderRealtime(){const id=$('#rtDevice').value;if(!id)return;const s=await api('/telemetry?device_id='+id);
+  if(s.error){$('#rtMeta').textContent='设备暂无数据';return}
+  waveHist.push(s);waveHist=waveHist.slice(-300);
+  $('#rtAction').textContent=s.inference?s.inference.label:'--';
+  $('#rtConf').textContent=s.inference?Math.round((s.inference.confidence||0)*100)+'%':'--';
+  $('#rtLoad').textContent=(s.telemetry.load_score||0).toFixed(2);
+  $('#rtFatigue').textContent=(s.telemetry.fatigue_trend||0).toFixed(2);
+  const src=$('#rtSrc');src.textContent=s.source_label;src.className='source src-'+s.source_type;
+  $('#rtMeta').textContent='记录 '+(s.record_id||'--')+'｜更新 '+s.timestamp+'｜质量 '+(s.quality&&s.quality.status||'--')+(s.quality&&s.quality.packet_loss_pct!=null?'（丢包 '+s.quality.packet_loss_pct+'%）':'')+'｜模型 '+(s.inference?s.inference.model_version+'/'+(s.inference.is_rule?'规则':'模型'):'--');
+  drawWave()}
+
+// ---- 4 单人画像 ----
+async function renderPerson(){const pid=$('#personSel').value;if(!pid)return;const r=await api('/person/profile?person_id='+pid);
+  if(r.error){$('#personInfo').textContent=r.error;return}
+  const p=r.person;
+  $('#personInfo').innerHTML='<br>班组：'+esc(p.team||'--')+'<br>技能：'+esc((r.skills||[]).join('、')||'--')+'<br>授权：'+esc(p.consent_status||'unknown')+'<br>设备：'+(r.device?esc(r.device.device_id)+' '+(r.device.online?'在线':'离线'):'未绑定');
+  const dist=r.action_distribution_24h||{},total=Object.values(dist).reduce((a,b)=>a+b,0)||1;
+  $('#actionDist').innerHTML=Object.keys(dist).length?Object.entries(dist).map(([k,v])=>'<div class="svc">'+k+'<span class="small" style="float:right">'+v+'</span><div class="bar"><i style="width:'+Math.round(v/total*100)+'%"></i></div></div>').join(''):'24 小时内无推理记录';
+  $('#pLoad').textContent=r.metrics.current_load.toFixed(2);
+  $('#pWork').textContent=r.metrics.work_minutes;
+  $('#pEvents').textContent=r.metrics.open_events;
+  $('#pRisk').textContent=r.metrics.risk_recent.toFixed(2);
+  $('#personEvents').innerHTML=r.events.length?r.events.map(e=>'<div class="event"><b>'+e.event_code+'</b> <span class="badge red">'+e.severity+'</span> <span class="badge">'+e.status+'</span><div class="small">'+e.start_time+'</div></div>').join(''):'暂无事件';
+  $('#personMeta').textContent='更新 '+r.now+'｜数据质量 '+r.quality+(r.device?'｜来源 '+SRC_LABEL[r.device.source_type]:'')}
+
+// ---- 5 事件中心 ----
+async function renderEvents(){const r=await api('/events?limit=50'+(SRC?'&source='+SRC:''));$('#evtMeta').textContent='更新 '+r.now;
+  $('#eventList').innerHTML=r.items.length?r.items.map((e,i)=>'<div class="event" data-id="'+e.event_id+'"><b>'+e.event_code+'</b> <span class="badge red">'+e.severity+'</span> <span class="badge">'+( {open:'未处置',confirmed:'已确认',closed:'已关闭',dismissed:'已驳回'}[e.status]||e.status)+'</span> '+srcTag(e.source_type)+'<div class="small">'+e.start_time+'｜'+esc(e.person_id||'--')+'｜'+e.event_id+'</div></div>').join(''):'暂无事件';
+  $$('#eventList .event').forEach(x=>x.addEventListener('click',()=>showEvent(x.dataset.id)))}
+async function showEvent(id){const r=await api('/event?id='+id);if(r.error)return;curEvent=r.event;
+  const e=r.event;
+  $('#eventDetail').textContent='事件代码：'+e.event_code+'　等级：'+e.severity+'　状态：'+e.status+'\n人员/设备：'+(e.person_id||'--')+' / '+(e.device_id||'--')+'\n起止：'+e.start_time+' ~ '+(e.end_time||'持续中')+'\n触发依据：'+JSON.stringify(e.trigger)+'\n来源：'+e.source_label+'｜证据窗口：前后各 '+r.evidence_window_sec+' 秒（'+r.evidence_records.length+' 条原始记录）';
+  $('#evRows').innerHTML=r.evidence_records.slice(-30).map(s=>'<tr><td>'+String(s.timestamp).slice(11,23)+'</td><td>'+(s.telemetry.pitch_deg??'--')+'</td><td>'+(s.telemetry.load_score??'--')+'</td><td>'+(s.quality&&s.quality.status||'--')+'</td><td>'+(s.record_id||'--')+'</td></tr>').join('')}
+async function setEvent(status){if(!curEvent)return alert('请先选择事件');const r=await api('/event/status','POST',{event_id:curEvent.event_id,status,handled_by:$('#handledBy').value});if(r.ok){renderEvents();showEvent(curEvent.event_id)}}
+$('#evtConfirm').addEventListener('click',()=>setEvent('confirmed'));
+$('#evtClose').addEventListener('click',()=>setEvent('closed'));
+$('#evtDismiss').addEventListener('click',()=>setEvent('dismissed'));
+
+// ---- 6 数据回放 ----
+function toLocalInput(d){const p=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())}
+function initReplayTimes(){const now=new Date();$('#rpEnd').value=toLocalInput(now);$('#rpStart').value=toLocalInput(new Date(now-10*60000))}
+$('#rpLoad').addEventListener('click',async()=>{
+  const r=await api('/telemetry/series?device_id='+$('#rpDevice').value+'&start='+encodeURIComponent($('#rpStart').value)+'&end='+encodeURIComponent($('#rpEnd').value));
+  if(r.error)return alert(r.error);
+  replay.items=r.items;replay.inference=r.inference||[];replay.idx=0;stopReplay();
+  $('#rpMode').textContent='回放态';$('#rpMode').className='modebanner mode-replay';
+  $('#rpPlay').disabled=!r.items.length;$('#rpPause').disabled=true;
+  $('#rpPos').textContent='共 '+r.items.length+' 条（'+r.start+' ~ '+r.end+'）';
+  $('#rpRows').innerHTML=r.items.slice(0,12).map(rowHtml).join('');
+  if(r.items.length)showReplayFrame(0)});
+$('#rpExport').addEventListener('click',()=>{location='/api/telemetry/export?device_id='+$('#rpDevice').value+'&start='+encodeURIComponent($('#rpStart').value)+'&end='+encodeURIComponent($('#rpEnd').value)});
+function rowHtml(s){return '<tr><td>'+String(s.timestamp).slice(11,23)+'</td><td>'+(s.telemetry.pitch_deg??'--')+'</td><td>'+(s.telemetry.load_score??'--')+'</td><td>'+(s.record_id||'--')+'</td></tr>'}
+function showReplayFrame(i){const s=replay.items[i];if(!s)return;replay.idx=i;
+  let label='--';for(let j=replay.inference.length-1;j>=0;j--){if((replay.inference[j].ts_end||'')<=s.timestamp){label=replay.inference[j].label;break}}
+  $('#rpAction').textContent=label;
+  $('#rpLoadV').textContent=(s.telemetry.load_score||0).toFixed(2);
+  $('#rpQuality').textContent=s.quality&&s.quality.status||'--';
+  $('#rpSrcV').textContent=SRC_LABEL[s.source_type]||s.source_type;
+  $('#rpPos').textContent=(i+1)+' / '+replay.items.length+'｜'+s.timestamp;
+  $('#rpRows').innerHTML=replay.items.slice(Math.max(0,i-5),i+7).map(rowHtml).join('')}
+function stopReplay(){if(replay.timer){clearInterval(replay.timer);replay.timer=null}$('#rpPlay').disabled=false;$('#rpPause').disabled=true}
+$('#rpPlay').addEventListener('click',()=>{if(!replay.items.length)return;$('#rpPlay').disabled=true;$('#rpPause').disabled=false;
+  replay.timer=setInterval(()=>{const step=Math.max(1,Math.round(+$('#rpSpeed').value));if(replay.idx+step>=replay.items.length){stopReplay();return}showReplayFrame(replay.idx+step)},1000)});
+$('#rpPause').addEventListener('click',stopReplay);
+
+// ---- 7 任务协同 ----
+$('#taskLoad').addEventListener('input',e=>$('#taskLoadText').textContent=e.target.value);
+let lastRank=[];
+$('#recommendBtn').addEventListener('click',async()=>{
+  const r=await api('/tasks/recommend','POST',{required_skill:$('#skill').value,zone_id:$('#zone').value,load_level:+$('#taskLoad').value});
+  lastRank=r.items;
+  $('#ranking').innerHTML=r.items.map((x,i)=>'<div class="rank"><div class="row between"><b>'+(i+1)+'. '+esc(x.name)+'</b><div class="row"><span class="metric" style="font-size:20px">'+x.score+'</span>'+(x.eligible?'<button class="primary" data-pid="'+x.person_id+'">人工确认派工</button>':'<span class="badge red">硬约束拦截</span>')+'</div></div><div class="small">'+Object.entries(x.reasons).map(([k,v])=>k+':'+v).join('｜')+'</div>'+(x.blocked_by.length?'<div class="small" style="color:#991b1b">'+x.blocked_by.map(esc).join('；')+'</div>':'')+'</div>').join('');
+  $$('#ranking button[data-pid]').forEach(b=>b.addEventListener('click',async()=>{
+    const r2=await api('/tasks/confirm','POST',{required_skill:$('#skill').value,zone_id:$('#zone').value,load_level:+$('#taskLoad').value,person_id:b.dataset.pid,confirmer:$('#confirmer').value});
+    if(!r2.ok)return alert(r2.error+(r2.blocked_by?('\n'+r2.blocked_by.join('\n')):''));
+    renderAssignments();$('#recommendBtn').click()}))});
+async function renderAssignments(){const r=await api('/tasks/assignments');
+  $('#assignList').innerHTML=r.items.length?r.items.map(a=>'<div class="rank small">'+a.task_id+' → '+a.person_id+'｜确认人 '+esc(a.confirmer)+'｜'+a.confirmed_at+'</div>').join(''):'暂无'}
+
+// ---- 8 本地助手 ----
+const QUICK=['当前有多少台设备在线？','过去十分钟谁的负荷最高，依据是什么？','最近有什么风险事件？','最近这条告警的原因是什么？','搬运任务派谁合适？','有设备掉线吗？','EXO-001 过去十分钟做了什么动作？','现在的数据来源是真实设备还是模拟？'];
+$('#quickQs').innerHTML=QUICK.map(q=>'<button>'+q+'</button>').join('');
+$$('#quickQs button').forEach(b=>b.addEventListener('click',()=>{$('#question').value=b.textContent;ask()}));
+$('#askBtn').addEventListener('click',ask);
+async function ask(){const r=await api('/query','POST',{question:$('#question').value});
+  const el=$('#answer');el.classList.toggle('refused',!!r.refused);
+  el.textContent=(r.refused?'【拒答】':'【回答】')+r.answer+'\n\n类别：'+r.category+'\n证据：'+JSON.stringify(r.evidence,null,2)}
+
+// ---- 9 场景评估器 ----
+$('#evaluateBtn').addEventListener('click',async()=>{
+  const ids=['people','structured','roi','payer','fit','compliance','replicate'],p={};ids.forEach(id=>p[id]=+$('#'+id).value);
+  p.scene=$('#scScene').value;p.payer_name=$('#scPayer').value;
+  ['open_road','no_baseline','free_only','ergonomic_taboo','covert_punitive'].forEach(k=>p[k]=$('#v_'+k).checked);
+  const r=await api('/scenario/evaluate','POST',p);currentAssessment={input:p,result:r};
+  $('#scenarioScore').textContent=r.score+' / 100 · '+r.rating+(r.vetoed?' · 一票否决':'');
+  const pg=r.one_pager;
+  $('#scenarioResult').textContent='推荐结论：'+pg['推荐结论']+'\n\n【候选场景一页纸】\n'+Object.entries(pg).map(([k,v])=>k+'：'+(Array.isArray(v)?v.join('、'):v)).join('\n')+'\n\n建议设备：'+r.recommended_devices+' 套 + 备机 '+r.backup_devices+' 套\n\n捷顺下一步请求：\n'+r.next_requests.map((x,i)=>(i+1)+'. '+x).join('\n')+'\n\n'+r.disclaimer});
+$('#downloadBtn').addEventListener('click',()=>{if(!currentAssessment)return alert('请先评估');
+  const txt='EWOH 候选场景评估一页纸\n\n'+JSON.stringify(currentAssessment,null,2);
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain;charset=utf-8'}));a.download='EWOH_场景评估一页纸.txt';a.click()});
+
+// ---- 定时刷新 ----
+function refreshPanel(id){({health:renderHealth,devices:loadDevices,realtime:renderRealtime,person:renderPerson,events:renderEvents,tasks:renderAssignments}[id]||(()=>{}))()}
+setInterval(()=>$('#clock').textContent=new Date().toLocaleTimeString(),1000);
+setInterval(()=>{const id=document.querySelector('.panel.active').id;if(['health','devices','realtime','events'].includes(id))refreshPanel(id)},1500);
+(async()=>{await loadDevices();await loadPeople();initReplayTimes();renderHealth();renderRealtime();renderEvents();renderAssignments()})();
+</script></body></html>

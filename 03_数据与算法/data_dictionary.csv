@@ -14,3 +14,14 @@ inference,confidence,number,否,0-1,模型置信度,内部业务,算法
 risk_event,event_code,string,是,,事件代码,敏感,规则/算法
 risk_event,severity,enum,是,L0-L3,风险等级,敏感,规则/算法
 risk_event,evidence,object,是,,证据窗口与记录引用,敏感,平台
+telemetry,sequence,integer,是,,帧序列号（单调递增，用于丢包检测与补传去重）,内部业务,设备
+telemetry,roll_deg,number,否,degree,躯干侧倾角,敏感,设备
+telemetry,acceleration,array,否,m/s²,三轴加速度（由mg换算）,敏感,设备
+telemetry,angular_velocity,array,否,dps,三轴角速度,敏感,设备
+telemetry,torque_nm,number,否,Nm,腰部助力力矩,内部业务,设备
+telemetry,battery_percent,number,否,0-100,电池电量百分比,内部业务,设备
+quality,status,enum,是,good/degraded/invalid,数据质量状态,内部业务,平台
+quality,packet_loss,number,否,0-1,丢包率（按SEQ统计）,内部业务,平台
+quality,clock_offset_ms,integer,否,ms,设备与平台时钟偏移,内部业务,平台
+message,source_type,enum,是,real/controlled_test/simulated,数据来源类型,内部业务,平台
+# V0.1 冻结动作集合：stand/walk/bend/lift/unknown（4 主标签+unknown），冻结日期 2026-07-29
