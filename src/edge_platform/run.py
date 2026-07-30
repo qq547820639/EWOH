@@ -2,13 +2,13 @@
 """EWOH 平台入口：按依赖契约装配真实模块；真实模块未就绪时回退到 stub（仅联调前自测/演示）。
 
 用法：
-  python -m edge_platform.run [--host 127.0.0.1] [--port 8765] [--db edge_platform/demo.db] [--stub]
+  python -m edge_platform.run [--host 127.0.0.1] [--port 8765] [--db src/edge_platform/demo.db] [--stub]
 """
 import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 支持 python edge_platform/run.py 直接运行
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 支持 python src/edge_platform/run.py 直接运行
 
 from edge_platform import server, stubs
 

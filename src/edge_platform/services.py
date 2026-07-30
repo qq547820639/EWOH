@@ -1,7 +1,7 @@
 """平台业务逻辑（纯标准库）：
 - Task 17 任务推荐：30/20/20/15/15 可解释评分 + 五条硬约束 + 人工确认（禁止自动派工）
 - Task 18 本地助手白名单：8 类可答问题引用真实证据，7 类拒绝策略
-- 场景评估器：首选条件评分 + 一票否决（07_场景评估/scenario_evaluator_rules.md）
+- 场景评估器：首选条件评分 + 一票否决（delivery/07_场景评估/scenario_evaluator_rules.md）
 所有函数只读 Storage 契约接口，不依赖任何第三方库。
 """
 import json
@@ -331,7 +331,7 @@ def answer(storage, question, device_online, assignments):
             "evidence": [], "refused": True, "category": "白名单外"}
 
 
-# ---- 场景评估器（07_场景评估/scenario_evaluator_rules.md） ------------------
+# ---- 场景评估器（delivery/07_场景评估/scenario_evaluator_rules.md） ------------------
 
 VETO_ITEMS = [("open_road", "开放道路或不可控人群"), ("no_baseline", "客户拒绝任何基线"),
               ("free_only", "无预算负责人且仅要免费体验"), ("ergonomic_taboo", "明显人体工效禁忌"),

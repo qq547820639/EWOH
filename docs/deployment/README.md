@@ -9,9 +9,9 @@
 ┌──────────────────────────────────────────────────────────────────────┐
 │                          用户接入区 (ewoh-edge)                       │
 │   现场操作员 / 安全员 / 管理员  ──TLS──►  edge-gateway (nginx:443)      │
-└──────────────────────────────────────────┬───────────────────────────┘
+└──────────────────────────────────────────────────────────┬───────────┘
                                            │ 反向代理
-┌──────────────────────────────────────────▼───────────────────────────┐
+┌──────────────────────────────────────────────────────────▼───────────┐
 │                          平台服务区 (ewoh-internal)                   │
 │   ewoh-api:8765  ◄──►  postgres:5432                                   │
 │        │  │            redis:6379 (缓存/消息占位)                       │
@@ -43,7 +43,7 @@
 python -m pip install -r requirements-dev.txt
 
 # 启动（优先装配真实模块，缺失时回退 stub）
-make run            # 等价于 python -m edge_platform.run
+make run            # 等价于 PYTHONPATH=src python -m edge_platform.run
 
 # 强制 stub 模式（仅工程自测）
 make run-stub
@@ -54,13 +54,14 @@ make run-stub
 ## 试点环境（docker-compose）
 
 ```bash
+cd deploy
 cp .env.example .env   # 按现场填写
 docker compose up -d
 ```
 
-- `edge-gateway` 对外暴露 8443（TLS），需提供 `./nginx.conf` 与 `./certs/`。
-- `postgres` 使用 `02_技术规范/database.sql` 作为初始化脚本。
-- 开发环境仍可用 `python -m edge_platform.run` 进程方式运行，docker-compose 用于试点部署。
+- `edge-gateway` 对外暴露 8443（TLS），需在仓库根提供 `nginx.conf` 与 `certs/`（由 `deploy/docker-compose.yml` 以 `../` 引用）。
+- `postgres` 使用 `delivery/02_技术规范/database.sql` 作为初始化脚本。
+- 开发环境仍可用 `PYTHONPATH=src python -m edge_platform.run` 进程方式运行，docker-compose 用于试点部署。
 
 ## 生产环境清单
 
@@ -75,7 +76,7 @@ docker compose up -d
 
 ## 配置外置说明
 
-- 所有运行参数通过环境变量注入，参考 `.env.example`。
+- 所有运行参数通过环境变量注入，参考 `deploy/.env.example`。
 - 镜像与代码不内嵌环境特定配置；`.env` 不入库。
 - 适配器端口映射、保留窗口、角色权限等均为运行时配置。
 

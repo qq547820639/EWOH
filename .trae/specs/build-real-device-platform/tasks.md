@@ -4,9 +4,9 @@
 
 ## 阶段 0：范围冻结
 - [ ] Task 1: 冻结首轮接入基线文件
-  - [ ] 1.1 依据 [device_protocol_spec.md](file:///workspace/02_技术规范/device_protocol_spec.md) 模板完成《真实设备协议确认书》（首发型号全部字段，含帧格式、故障码、心跳/重连/缓存机制、允许命令白名单与禁止写入清单）
-  - [ ] 1.2 冻结 V0.1 动作集合（3–5 类）并写入 [data_dictionary.csv](file:///workspace/03_数据与算法/data_dictionary.csv)
-  - [ ] 1.3 冻结第一版风险事件（2–3 类）并写入 [event_dictionary.csv](file:///workspace/03_数据与算法/event_dictionary.csv)
+  - [ ] 1.1 依据 [device_protocol_spec.md](file:///workspace/delivery/02_技术规范/device_protocol_spec.md) 模板完成《真实设备协议确认书》（首发型号全部字段，含帧格式、故障码、心跳/重连/缓存机制、允许命令白名单与禁止写入清单）
+  - [ ] 1.2 冻结 V0.1 动作集合（3–5 类）并写入 [data_dictionary.csv](file:///workspace/delivery/03_数据与算法/data_dictionary.csv)
+  - [ ] 1.3 冻结第一版风险事件（2–3 类）并写入 [event_dictionary.csv](file:///workspace/delivery/03_数据与算法/event_dictionary.csv)
 
 ## 阶段 1：真机链路打通（G2）
 - [ ] Task 2: 设备适配层 V0.1
@@ -14,10 +14,10 @@
   - [ ] 2.2 首发型号协议实现（严格按 Task 1.1 协议确认书；禁止写入清单中的命令一律不实现）
   - [ ] 2.3 线协议注入器：按同一协议向适配层注入字节流，用于无真机时自测断线/补传/乱序/故障码路径
 - [ ] Task 3: 标准消息持久化
-  - [ ] 3.1 按 [database.sql](file:///workspace/02_技术规范/database.sql) 落地 SQLite，遥测/设备/人员/事件入库
+  - [ ] 3.1 按 [database.sql](file:///workspace/delivery/02_技术规范/database.sql) 落地 SQLite，遥测/设备/人员/事件入库
   - [ ] 3.2 原始帧与标准消息关联存储，可双向追溯
 - [ ] Task 4: 平台数据源切换
-  - [ ] 4.1 [server.py](file:///workspace/06_Demo_Prototype/server.py) 遥测/设备/事件接口改读持久层，支持 real / controlled_test / simulated 来源切换
+  - [ ] 4.1 [server.py](file:///workspace/delivery/06_Demo_Prototype/server.py) 遥测/设备/事件接口改读持久层，支持 real / controlled_test / simulated 来源切换
   - [ ] 4.2 页面与导出显示来源标识（真机显示 `REAL DEVICE`）
 - [ ] Task 5: 历史回放与原始数据导出（按设备+时间段回放，区分回放态/实时态；导出原始数据片段）
 - [ ] Task 6: 掉线识别与自动恢复（中断后平台明确显示离线；恢复后无需人工重启平台）

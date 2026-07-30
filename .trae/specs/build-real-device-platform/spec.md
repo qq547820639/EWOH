@@ -1,22 +1,22 @@
 # V0.5 模拟原型 → 真实技术样机转化 Spec
 
 ## Why
-当前 V0.5 原型（[server.py](file:///workspace/06_Demo_Prototype/server.py)）全部基于内存模拟数据运行，G2（真机链路）与 G3（算法可用）两道门禁均未通过，不能称为真实技术产品，也无法向捷顺负责地演示。本变更用真实设备替换模拟器、用真实受控数据替换规则假设，把 V0.5 原型转化为可离线演示、可回放、可追溯的真实技术样机。
+当前 V0.5 原型（[server.py](file:///workspace/delivery/06_Demo_Prototype/server.py)）全部基于内存模拟数据运行，G2（真机链路）与 G3（算法可用）两道门禁均未通过，不能称为真实技术产品，也无法向捷顺负责地演示。本变更用真实设备替换模拟器、用真实受控数据替换规则假设，把 V0.5 原型转化为可离线演示、可回放、可追溯的真实技术样机。
 
 ## What Changes
 - 新增独立设备适配层：真实外骨骼私有协议 → 统一设备数据模型 → 边缘消息 → 本地存储/推理/平台，业务系统不直接解析私有协议
-- 平台数据源由内存模拟切换为 SQLite 持久化（按 [database.sql](file:///workspace/02_技术规范/database.sql)），支持 real / controlled_test / simulated 三来源切换
+- 平台数据源由内存模拟切换为 SQLite 持久化（按 [database.sql](file:///workspace/delivery/02_技术规范/database.sql)），支持 real / controlled_test / simulated 三来源切换
 - 新增历史回放（按时间段）、掉线识别与自动恢复、原始数据片段导出
 - 新增受控数据采集与标注工具链：采集会话元数据、人工标签、数据集版本清单、按人员划分训练/验证/测试集
 - 新增推理与事件引擎：确定性规则＋轻量时序模型混合，支持 `unknown`、模型版本治理、一键回滚、模型不可用时退回规则模式、事件前后各 30 秒证据窗口
 - 九个页面按既定顺序逐页真实化改造，每页显示来源、更新时间、数据质量、设备/模型版本、异常状态与原始证据入口
 - 任务推荐接入真实记录（可解释评分＋五条硬约束＋人工确认），本地助手仅回答白名单问题并引用真实证据
 - 形成无公网 15 分钟六步演示闭环、Demo Kit、候选场景一页纸与标杆试点方案包
-- **安全边界（不可变）**：平台与大模型不得写入急停、限扭、关节实时控制等安全闭环参数，该边界按 [architecture.md](file:///workspace/02_技术规范/architecture.md) 与 [device_protocol_spec.md](file:///workspace/02_技术规范/device_protocol_spec.md) 保持不可变
+- **安全边界（不可变）**：平台与大模型不得写入急停、限扭、关节实时控制等安全闭环参数，该边界按 [architecture.md](file:///workspace/delivery/02_技术规范/architecture.md) 与 [device_protocol_spec.md](file:///workspace/delivery/02_技术规范/device_protocol_spec.md) 保持不可变
 
 ## Impact
-- 受影响规范：[telemetry.schema.json](file:///workspace/02_技术规范/schemas/telemetry.schema.json)、event/task schemas、[device_protocol_spec.md](file:///workspace/02_技术规范/device_protocol_spec.md)、模型卡、[acceptance_criteria.md](file:///workspace/05_测试验收/acceptance_criteria.md)、数据/事件字典
-- 受影响代码：[server.py](file:///workspace/06_Demo_Prototype/server.py) 与 [index.html](file:///workspace/06_Demo_Prototype/static/index.html)（数据源替换与逐页改造）；新增边缘适配、持久化、推理引擎、采集标注、回放模块
+- 受影响规范：[telemetry.schema.json](file:///workspace/delivery/02_技术规范/schemas/telemetry.schema.json)、event/task schemas、[device_protocol_spec.md](file:///workspace/delivery/02_技术规范/device_protocol_spec.md)、模型卡、[acceptance_criteria.md](file:///workspace/delivery/05_测试验收/acceptance_criteria.md)、数据/事件字典
+- 受影响代码：[server.py](file:///workspace/delivery/06_Demo_Prototype/server.py) 与 [index.html](file:///workspace/delivery/06_Demo_Prototype/static/index.html)（数据源替换与逐页改造）；新增边缘适配、持久化、推理引擎、采集标注、回放模块
 - 外部前置依赖（非代码交付，由项目执行总控台跟踪）：首发外骨骼型号与协议资料包、至少 1 套可连续测试真机、内部受控采集审批、Demo Kit 硬件、项目组织任命
 - 门禁纪律：**G2 未通过，不进入模型训练（Task 11），不继续增加前端功能（Task 15）**
 
@@ -107,7 +107,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: 数据来源与验收口径
-原模拟数据源从唯一数据源变为可切换来源之一；所有页面、接口与导出必须携带来源标识；模拟数据仅用于工程自测，不得作为真机验收依据。验收线以真机指标为准：单台真机连续运行不少于 2 小时、断线 60 秒内恢复、可回放、动作可识别、事件可追溯（替代 [acceptance_criteria.md](file:///workspace/05_测试验收/acceptance_criteria.md) 中模拟口径的验收地位）。
+原模拟数据源从唯一数据源变为可切换来源之一；所有页面、接口与导出必须携带来源标识；模拟数据仅用于工程自测，不得作为真机验收依据。验收线以真机指标为准：单台真机连续运行不少于 2 小时、断线 60 秒内恢复、可回放、动作可识别、事件可追溯（替代 [acceptance_criteria.md](file:///workspace/delivery/05_测试验收/acceptance_criteria.md) 中模拟口径的验收地位）。
 
 ## REMOVED Requirements
 

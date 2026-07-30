@@ -27,7 +27,7 @@ jobs:
           python -m pip install ruff bandit
 
       - name: 运行 unittest 测试套件
-        run: python -m unittest discover -s edge_platform/tests -v
+        run: python -m unittest discover -s src/edge_platform/tests -v
 
       - name: 运行 ruff 静态检查
-        run: ruff check edge_platform
+        run: ruff check src/edge_platform

@@ -25,11 +25,11 @@
 - **现场试点分阶段**：观察模式（只采集）→规则提示模式（少量规则+现场负责人审核+误报漏报记录）→协同模式（任务推荐+人工确认+采纳记录）→扩大样本；任一阶段未通过评审不扩大
 - **现场停止条件**：设备本地安全控制异常/急停无效/非预期助力/传感器明显异常/平台尝试未批准控制命令/source_type 无法确认/人员授权失效/连续严重掉线/时间同步严重异常/数据泄露或未授权访问/现场负责人认为存在风险；暂停后执行停止采集→保留日志证据→通知→原因分析→整改→重新评审→批准恢复
 - **Go/No-Go 门禁**：15 条同时满足方可进入真实现场连续试点；任意一项不满足为 No-Go，保持受控测试或影子运行
-- **安全边界（不可变）**：关节实时目标控制、助力实时闭环、限扭限速放宽、急停启停、异常退出保护、设备失联安全状态、绕过本地安全检查的调试指令必须保留在设备控制器；平台只允许读取状态遥测、查询身份版本故障码、提交经批准非实时配置、发送白名单任务提示、发起带签名审批回滚的固件升级、记录操作结果审计。该边界按 [architecture.md](file:///workspace/02_技术规范/architecture.md) 与 [device_protocol_spec.md](file:///workspace/02_技术规范/device_protocol_spec.md) 保持不可变，沿用 `build-real-device-platform` 已冻结边界
+- **安全边界（不可变）**：关节实时目标控制、助力实时闭环、限扭限速放宽、急停启停、异常退出保护、设备失联安全状态、绕过本地安全检查的调试指令必须保留在设备控制器；平台只允许读取状态遥测、查询身份版本故障码、提交经批准非实时配置、发送白名单任务提示、发起带签名审批回滚的固件升级、记录操作结果审计。该边界按 [architecture.md](file:///workspace/delivery/02_技术规范/architecture.md) 与 [device_protocol_spec.md](file:///workspace/delivery/02_技术规范/device_protocol_spec.md) 保持不可变，沿用 `build-real-device-platform` 已冻结边界
 
 ## Impact
-- 受影响规范：[architecture.md](file:///workspace/02_技术规范/architecture.md)、[device_protocol_spec.md](file:///workspace/02_技术规范/device_protocol_spec.md)、[database.sql](file:///workspace/02_技术规范/database.sql)、[acceptance_criteria.md](file:///workspace/05_测试验收/acceptance_criteria.md)、[data_dictionary.csv](file:///workspace/03_数据与算法/data_dictionary.csv)、[event_dictionary.csv](file:///workspace/03_数据与算法/event_dictionary.csv)、模型卡、DPA 框架
-- 受影响代码：[edge_platform/](file:///workspace/edge_platform) 全量（适配器抽象重构、server/services 增加鉴权审计、storage 增加迁移与保留任务、新增 auth/audit/config/monitoring 模块、新增 OpenAPI 文档）；[06_Demo_Prototype/](file:///workspace/06_Demo_Prototype) 由单文件脚本收敛为受控服务部署
+- 受影响规范：[architecture.md](file:///workspace/delivery/02_技术规范/architecture.md)、[device_protocol_spec.md](file:///workspace/delivery/02_技术规范/device_protocol_spec.md)、[database.sql](file:///workspace/delivery/02_技术规范/database.sql)、[acceptance_criteria.md](file:///workspace/delivery/05_测试验收/acceptance_criteria.md)、[data_dictionary.csv](file:///workspace/delivery/03_数据与算法/data_dictionary.csv)、[event_dictionary.csv](file:///workspace/delivery/03_数据与算法/event_dictionary.csv)、模型卡、DPA 框架
+- 受影响代码：[edge_platform/](file:///workspace/src/edge_platform) 全量（适配器抽象重构、server/services 增加鉴权审计、storage 增加迁移与保留任务、新增 auth/audit/config/monitoring 模块、新增 OpenAPI 文档）；[06_Demo_Prototype/](file:///workspace/delivery/06_Demo_Prototype) 由单文件脚本收敛为受控服务部署
 - 受影响 spec：与已完成的 `build-real-device-platform`（真实样机转化）衔接，本 spec 在其基础上做生产化与受控试点扩展，不重复其范围
 - 外部前置依赖（非代码交付，由项目执行总控台跟踪）：试点场地与作业区域确认、设备厂商型号硬件固件版本确认、设备数量、试点人数、目标动作与风险事件冻结、是否采集位置/视频/生理数据决策、数据保存期限、是否对接客户人员/工单/门禁、验收指标与停止条件确认、客户身份系统对接凭据、试点审批与人员授权完成
 - 门禁纪律：**任一阶段未达出口条件，不得进入真实人员连续试点；Go/No-Go 15 条未同时满足，保持受控测试或影子运行模式**
