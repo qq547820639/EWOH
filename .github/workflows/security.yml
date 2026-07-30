@@ -1,0 +1,44 @@
+# EWOH 受控试点系统 - 安全扫描 CI
+# 触发：push 与 pull_request
+name: security
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装 bandit
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install bandit
+
+      - name: 运行 bandit 静态安全扫描（低噪音级别）
+        run: bandit -r edge_platform -ll
+
+      - name: 安全边界守护（grep 关键控制符号）
+        # 最低守护：禁止平台代码中出现急停/限扭/关节实时控制/助力实时闭环的写入实现。
+        # 注：这是机械式最低守护，可能产生漏报/误报；正式安全审查仍需人工逐项核对。
+        # 详见 SECURITY.md「安全边界声明」。
+        run: |
+          set -e
+          if grep -rni 'estop\|emergency_stop\|joint_torque_limit_set\|assist_closed_loop' edge_platform; then
+            echo "::error::检测到平台代码中出现设备实时安全控制相关符号，违反安全边界声明，请人工审查。"
+            exit 1
+          else
+            echo "未检测到禁止符号，守护通过。"
+            exit 0
+          fi

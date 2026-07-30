@@ -1,0 +1,21 @@
+# EWOH 受控试点系统 - CODEOWNERS
+# 规则：后出现的匹配规则优先；@handle 为占位审查人，落地时替换为真实团队/账号。
+# 详见 https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# 安全边界与设备协议相关：必须由架构师 + 安全负责人共同审查
+edge_platform/edge/protocol.py                 @architect @security-lead
+edge_platform/edge/adapter.py                  @architect @security-lead
+edge_platform/edge/storage.py                  @architect @security-lead
+02_技术规范/database.sql                        @architect @security-lead
+02_技术规范/architecture.md                     @architect @security-lead
+02_技术规范/device_protocol_spec.md             @architect @security-lead
+
+# API 规范：由后端负责人审查
+docs/api/openapi.yaml                          @backend-lead
+
+# CI/CD 与工程基线：由 DevOps 负责人审查
+.github/                                       @devops-lead
+pyproject.toml                                 @devops-lead
+requirements-dev.txt                           @devops-lead
+Makefile                                       @devops-lead
+docker-compose.yml                             @devops-lead
