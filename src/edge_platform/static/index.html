@@ -149,11 +149,11 @@ $('#personSel').addEventListener('change',renderPerson);
 // ---- 数据加载 ----
 async function loadDevices(){const r=await api('/devices'+(SRC?'?source='+SRC:''));DEVICES=r.items;
   const opts=DEVICES.map(d=>'<option value="'+d.device_id+'">'+d.device_id+'</option>').join('');
-  ['rtDevice','rpDevice'].forEach(id=>{const el=$('#'+id),v=el.value;el.innerHTML=opts;el.value=v});
+  ['rtDevice','rpDevice'].forEach(id=>{const el=$('#'+id),v=el.value;el.innerHTML=opts;el.value=DEVICES.some(d=>d.device_id===v)?v:(DEVICES[0]&&DEVICES[0].device_id)});
   $('#devRows').innerHTML=DEVICES.map(d=>'<tr><td><span class="statusdot'+(d.online?'':' off')+'"></span><b>'+d.device_id+'</b></td><td>'+esc(d.model)+' / '+esc(d.firmware_version||'--')+'</td><td>'+esc(d.person_id||'未绑定')+'</td><td>'+srcTag(d.source_type)+'</td><td>'+(d.online?'<span class="badge green">在线</span>':'<span class="badge red">离线</span>')+'</td><td class="small">'+(d.last_seen||'--')+'</td></tr>').join('');
   $('#devMeta').textContent='更新时间 '+r.now+'｜离线判定时限 '+r.offline_after_sec+' 秒'}
 async function loadPeople(){const r=await api('/people');PEOPLE=r.items;
-  const el=$('#personSel'),v=el.value;el.innerHTML=PEOPLE.map(p=>'<option value="'+p.person_id+'">'+esc(p.display_name)+'（'+p.person_id+'）</option>').join('');el.value=v}
+  const el=$('#personSel'),v=el.value;el.innerHTML=PEOPLE.map(p=>'<option value="'+p.person_id+'">'+esc(p.display_name)+'（'+p.person_id+'）</option>').join('');el.value=PEOPLE.some(p=>p.person_id===v)?v:(PEOPLE[0]&&PEOPLE[0].person_id)}
 
 // ---- 1 系统健康 ----
 async function renderHealth(){const st=await api('/status');
@@ -273,5 +273,5 @@ $('#downloadBtn').addEventListener('click',()=>{if(!currentAssessment)return ale
 function refreshPanel(id){({health:renderHealth,devices:loadDevices,realtime:renderRealtime,person:renderPerson,events:renderEvents,tasks:renderAssignments}[id]||(()=>{}))()}
 setInterval(()=>$('#clock').textContent=new Date().toLocaleTimeString(),1000);
 setInterval(()=>{const id=document.querySelector('.panel.active').id;if(['health','devices','realtime','events'].includes(id))refreshPanel(id)},1500);
-(async()=>{await loadDevices();await loadPeople();initReplayTimes();renderHealth();renderRealtime();renderEvents();renderAssignments()})();
+(async()=>{await loadDevices();await loadPeople();initReplayTimes();renderHealth();renderRealtime();renderEvents();renderAssignments();renderPerson()})();
 </script></body></html>

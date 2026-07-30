@@ -27,12 +27,15 @@
 
 ```bash
 python -m pip install -r requirements-dev.txt   # 可选：ruff/bandit/pytest
-make run          # 启动平台（真实模块缺失时回退 stub），访问 http://127.0.0.1:8765
+python run.py     # 最简启动：无需 make/PYTHONPATH，访问 http://127.0.0.1:8765
+make run          # 等价方式（真实模块缺失时回退 stub）
 make test         # unittest 测试套件
 make lint         # ruff 静态检查
 ```
 
-代码采用 `src/` 布局，`make run` 等价于 `PYTHONPATH=src python -m edge_platform.run`。
+代码采用 `src/` 布局。`python run.py` 与 `make run`（等价于 `PYTHONPATH=src python -m edge_platform.run`）
+都会在真实模块未就绪时自动回退 stub 模式。注意：直接 `python -m edge_platform.run` 需先设置
+`PYTHONPATH=src`，否则找不到包；用根目录 `run.py` 可免去这一步。
 
 ## 试点部署
 
