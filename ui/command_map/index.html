@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>工厂具身智能操作系统 · 指挥地图 V0.1</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="map/map.css">
+<link rel="stylesheet" href="layers/layers.css">
+<link rel="stylesheet" href="timeline/timeline.css">
+<link rel="stylesheet" href="entity-panel/entity-panel.css">
+<link rel="stylesheet" href="scenario-panel/scenario-panel.css">
+<link rel="stylesheet" href="event-center/event-center.css">
+<link rel="stylesheet" href="admin/admin.css">
+</head>
+<body>
+<header class="cm-topbar">
+  <div class="cm-brand">
+    <span class="cm-brand-mark">EFO</span>
+    <span class="cm-brand-title">工厂具身智能操作系统 · 指挥地图</span>
+    <span class="cm-brand-ver">V0.1 看得见</span>
+  </div>
+  <div class="cm-kpis">
+    <div class="cm-kpi"><span class="cm-kpi-label">班次</span><span class="cm-kpi-value" id="kpi-shift">早班</span></div>
+    <div class="cm-kpi"><span class="cm-kpi-label">在线设备</span><span class="cm-kpi-value" id="kpi-devices">--</span></div>
+    <div class="cm-kpi"><span class="cm-kpi-label">在岗人员</span><span class="cm-kpi-value" id="kpi-persons">--</span></div>
+    <div class="cm-kpi"><span class="cm-kpi-label">未结事件</span><span class="cm-kpi-value" id="kpi-events">--</span></div>
+    <div class="cm-kpi"><span class="cm-kpi-label">当前产量</span><span class="cm-kpi-value success" id="kpi-output">--</span></div>
+  </div>
+  <div class="cm-clock" id="topbar-clock">--:--:--</div>
+</header>
+
+<div class="cm-main">
+  <aside class="cm-left">
+    <div class="cm-side-section">
+      <div class="cm-side-title">组织 / 车间 / 产线</div>
+      <div class="cm-tree" id="org-tree"></div>
+    </div>
+    <div class="cm-side-section cm-side-section-grow">
+      <div class="cm-side-title">地图模式（单选）</div>
+      <div class="cm-modes" id="mode-list"></div>
+    </div>
+    <div class="cm-safety-note">
+      <div class="cm-safety-line">安全控制不进入平台</div>
+      <div class="cm-safety-line">调度需班组长人工确认</div>
+      <div class="cm-safety-line">未经授权自动调度为 0</div>
+    </div>
+  </aside>
+
+  <main class="cm-center">
+    <div class="cm-map-header">
+      <div class="cm-mode-banner" id="mode-banner">生产模式</div>
+      <div class="cm-map-meta" id="map-meta">来源 REAL DEVICE · 坐标系 工厂局部（米）· L0 二维地图</div>
+    </div>
+    <div class="cm-map-wrap">
+      <svg id="map-svg" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+    <div class="cm-legend" id="map-legend"></div>
+  </main>
+
+  <aside class="cm-right">
+    <div class="cm-side-title cm-right-title">实体详情 · 空间可追溯</div>
+    <div id="entity-detail" class="cm-entity-detail">
+      <div class="cm-empty">点击地图实体查看唯一 ID、父级空间、坐标、朝向、边界框、状态、来源、置信度、更新时间与版本。</div>
+    </div>
+  </aside>
+</div>
+
+<footer class="cm-bottom">
+  <nav class="cm-tabs">
+    <button class="cm-tab active" data-tab="timeline">时间轴 · 回放</button>
+    <button class="cm-tab" data-tab="events">事件中心</button>
+    <button class="cm-tab" data-tab="scenario">调度方案比较</button>
+    <button class="cm-tab" data-tab="admin">模型与规则</button>
+  </nav>
+  <div class="cm-tab-body">
+    <section id="tab-timeline" class="cm-tab-panel active"></section>
+    <section id="tab-events" class="cm-tab-panel"></section>
+    <section id="tab-scenario" class="cm-tab-panel"></section>
+    <section id="tab-admin" class="cm-tab-panel"></section>
+  </div>
+</footer>
+
+<button class="cm-assistant-fab" id="assistant-fab" title="本地自然语言助手">
+  <span class="cm-fab-icon">AI</span>
+  <span class="cm-fab-label">本地助手</span>
+</button>
+
+<div class="cm-assistant-popover" id="assistant-popover" hidden>
+  <div class="cm-pop-header">
+    <span>本地自然语言助手</span>
+    <button class="cm-pop-close" id="assistant-close" aria-label="关闭">×</button>
+  </div>
+  <div class="cm-pop-body">
+    <div class="cm-pop-note">V0.1 占位：仅承担查询/总结/解释，不直接控制，不虚构数据。</div>
+    <div class="cm-pop-suggestions">
+      <button>当前车间未结事件有哪些？</button>
+      <button>谁的负荷最高，依据是什么？</button>
+      <button>调度方案如何比较？</button>
+    </div>
+    <div class="cm-pop-input-row">
+      <input type="text" id="assistant-input" placeholder="输入问题（V0.1 占位）" disabled>
+      <button id="assistant-send" disabled>发送</button>
+    </div>
+    <div class="cm-pop-answer" id="assistant-answer">助手能力将在后续版本接入本地大模型，本版本为界面占位。</div>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script src="map/map.js"></script>
+<script src="layers/layers.js"></script>
+<script src="timeline/timeline.js"></script>
+<script src="entity-panel/entity-panel.js"></script>
+<script src="scenario-panel/scenario-panel.js"></script>
+<script src="event-center/event-center.js"></script>
+<script src="admin/admin.js"></script>
+</body>
+</html>

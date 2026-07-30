@@ -1,0 +1,31 @@
+/* scenario-panel/scenario-panel.css — plan comparison cards + metrics table */
+.cm-sc-wrap { display: flex; flex-direction: column; gap: 10px; }
+.cm-sc-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cm-sc-header h3 { margin: 0; font-size: 14px; }
+.cm-sc-note { font-size: 11px; color: var(--muted); flex: 1; min-width: 200px; }
+
+.cm-sc-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+.cm-sc-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.cm-sc-card-head { display: flex; align-items: center; gap: 8px; }
+.cm-sc-card-name { font-size: 14px; font-weight: 700; }
+.cm-sc-card-conf { margin-left: auto; font-size: 11px; color: var(--muted); font-family: var(--mono); }
+.cm-sc-card-goal { font-size: 11px; color: var(--accent-2); margin: 4px 0; }
+.cm-sc-card-assumption { font-size: 11px; color: var(--muted); margin-bottom: 6px; line-height: 1.5; }
+.cm-sc-card-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.cm-sc-metric { display: flex; justify-content: space-between; padding: 3px 6px; background: var(--bg); border-radius: 3px; font-size: 11px; }
+.cm-sc-metric b { font-family: var(--mono); }
+.cm-sc-good { background: rgba(16,185,129,0.10); }
+.cm-sc-good b { color: var(--success); }
+.cm-sc-warn { background: rgba(239,68,68,0.10); }
+.cm-sc-warn b { color: var(--danger); }
+.cm-sc-card-reason { margin-top: 6px; font-size: 11px; color: var(--text); padding: 6px; background: var(--bg); border-radius: 3px; line-height: 1.5; border-left: 2px solid var(--accent); }
+
+.cm-sc-compare h4 { margin: 6px 0; font-size: 12px; color: var(--muted); }
+.cm-sc-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.cm-sc-table th, .cm-sc-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+.cm-sc-table th { background: var(--bg-2); color: var(--muted); font-weight: 600; }
+.cm-sc-table td { font-family: var(--mono); }
+.cm-sc-rowlabel { color: var(--text); font-family: var(--font) !important; font-weight: 600; }
+
+.cm-sc-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding-top: 4px; border-top: 1px solid var(--border); }
+.cm-sc-meta { font-size: 11px; color: var(--muted); }

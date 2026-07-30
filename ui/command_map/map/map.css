@@ -1,0 +1,12 @@
+/* map/map.css — SVG text styling for map entities */
+.cm-map-zonelabel { fill: #94a3b8; font-size: 11px; font-weight: 600; text-anchor: start; pointer-events: none; }
+.cm-map-stationlabel { fill: #f1f5f9; font-size: 11px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+.cm-map-personlabel { fill: #e6edf3; font-size: 10px; font-weight: 600; text-anchor: middle; pointer-events: none; }
+.cm-map-idlabel { fill: #8b95a5; font-size: 9px; font-family: var(--mono); text-anchor: middle; pointer-events: none; }
+.cm-map-modelabel { fill: #cbd5e1; font-size: 9px; text-anchor: middle; pointer-events: none; font-weight: 600; }
+
+#map-svg text { user-select: none; }
+#map-svg g[data-entity-id]:hover rect,
+#map-svg g[data-entity-id]:hover circle {
+  filter: brightness(1.25);
+}
