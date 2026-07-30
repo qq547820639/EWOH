@@ -295,7 +295,8 @@ class DemoSimulator:
         t0 = time.time()
         while not self._stop.is_set():
             t = time.time() - t0
-            label = "站立" if t % 40 < 15 else "行走" if t % 40 < 25 else "弯腰" if t % 40 < 32 else "搬举"
+            # 相位从「搬举」起跳：演示一启动即产生首条风险事件，事件中心不再空窗 30+ 秒
+            label = "搬举" if t % 40 < 8 else "站立" if t % 40 < 23 else "行走" if t % 40 < 33 else "弯腰"
             prof = ACTION_PROFILES[label]
             for dev in self.device_ids:
                 self._seq[dev] += 1

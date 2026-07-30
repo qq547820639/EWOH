@@ -8,6 +8,12 @@ import argparse
 import sys
 from pathlib import Path
 
+# 启动日志即时可见：非交互终端下 stdout 默认块缓冲，会让 make run 看似没有任何输出
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+except (AttributeError, ValueError):
+    pass
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 支持 python src/edge_platform/run.py 直接运行
 
 from edge_platform import server, stubs
