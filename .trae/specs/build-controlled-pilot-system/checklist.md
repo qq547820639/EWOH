@@ -15,17 +15,17 @@
 - [x] 阶段 0 出口评审通过
 
 ## 阶段 1：真实设备接入
-- [x] 设备协议资料齐备（协议文档/硬件固件版本/SDK/帧格式/字节序/消息类型/时间戳/采样频率/单位缩放/故障码/心跳/重连/固件升级/安全状态/命令白名单），形成正式版本号与变更记录
-- [x] `DeviceAdapter` 接口抽象完成（start/stop/health/device_info/read_message/reconnect）
-- [x] 适配器按型号分目录组织（`edge/adapters/<model>/{adapter,decoder,protocol,fixtures,tests}`）
-- [x] NY-EXO-A1 适配器迁移到新结构
-- [x] 只读接入实现（发现/身份版本/心跳/遥测/电量/传感器健康/故障码/断线/重连/缓存补传）
-- [x] 平台不存在任何平台→设备业务命令
-- [x] 标准消息含 `record_id`/`ingested_at`/`device_model`/`firmware_version`/`protocol_version`/`raw_ref`
-- [x] 质量状态统一为 `good/degraded/invalid/unknown`
-- [x] 数据质量处理覆盖序号重复跳变/时间戳倒退漂移/字段缺失/超量程/非数值/采样率异常/包损坏/重连重复补传/固件升级字段变化
-- [x] invalid 数据保留原始但不进入推理
-- [x] 原始帧录制工具、协议测试样例、设备模拟回放器齐备
+- [ ] 设备协议资料齐备（协议文档/硬件固件版本/SDK/帧格式/字节序/消息类型/时间戳/采样频率/单位缩放/故障码/心跳/重连/固件升级/安全状态/命令白名单），形成正式版本号与变更记录
+- [ ] `DeviceAdapter` 接口抽象完成（start/stop/health/device_info/read_message/reconnect）
+- [ ] 适配器按型号分目录组织（`edge/adapters/<model>/{adapter,decoder,protocol,fixtures,tests}`）
+- [ ] NY-EXO-A1 适配器迁移到新结构
+- [ ] 只读接入实现（发现/身份版本/心跳/遥测/电量/传感器健康/故障码/断线/重连/缓存补传）
+- [ ] 平台不存在任何平台→设备业务命令
+- [ ] 标准消息含 `record_id`/`ingested_at`/`device_model`/`firmware_version`/`protocol_version`/`raw_ref`
+- [ ] 质量状态统一为 `good/degraded/invalid/unknown`
+- [ ] 数据质量处理覆盖序号重复跳变/时间戳倒退漂移/字段缺失/超量程/非数值/采样率异常/包损坏/重连重复补传/固件升级字段变化
+- [ ] invalid 数据保留原始但不进入推理
+- [ ] 原始帧录制工具、协议测试样例、设备模拟回放器齐备
 - [ ] 每型号连续采集 2 小时、断网断连测试、自动重连、缓存补传通过
 - [ ] 序号连续性/时间同步/低电量/故障码/固件版本/原始与标准数据对照通过
 - [ ] 阶段 1 出口评审通过（10s 内可见/连续 2h/断线状态可见/60s 内恢复/全部 `real`/无安全控制接口）

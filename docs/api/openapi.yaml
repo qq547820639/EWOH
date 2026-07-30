@@ -258,7 +258,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/InternalError' }
 
-  /api/tasks/assignments:
+  /api/assignments:
     get:
       tags: [tasks]
       summary: 任务分配列表
@@ -330,53 +330,6 @@ paths:
         '200': { $ref: '#/components/responses/ScenarioResult' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '500': { $ref: '#/components/responses/InternalError' }
-
-  /api/people/{id}/withdraw-consent:
-    post:
-      tags: [me]
-      summary: 授权撤回（安全管理员，幂等）
-      description: |
-        撤回人员授权：更新 person.consent_status='withdrawn'，
-        写入 consent_record，并清理该人员历史 telemetry/inference
-        （保留 risk_event 与 audit_log，作为合规底线留痕）。
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-          description: 人员 ID
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WithdrawConsentRequest'
-      responses:
-        '200': { $ref: '#/components/responses/WithdrawConsentResult' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '500': { $ref: '#/components/responses/InternalError' }
-
-  /api/admin/retention-purge:
-    post:
-      tags: [system]
-      summary: 数据保留清理（管理员，幂等）
-      description: |
-        删除早于 retention_days 的 telemetry/inference（高频数据），
-        保留 risk_event 与 audit_log（合规留痕）。支持 person_id 参数
-        专门清理指定人员的数据（授权撤回场景）。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RetentionPurgeRequest'
-      responses:
-        '200': { $ref: '#/components/responses/RetentionPurgeResult' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
         '500': { $ref: '#/components/responses/InternalError' }
 
   /api/reset:
@@ -484,404 +437,36 @@ components:
     RuleList:             { description: 规则列表,        content: { application/json: { schema: { $ref: '#/components/schemas/RuleList' } } } }
     ScenarioResult:       { description: 场景评估结果,    content: { application/json: { schema: { $ref: '#/components/schemas/ScenarioResult' } } } }
     ResetResult:          { description: 重置结果,        content: { application/json: { schema: { $ref: '#/components/schemas/ResetResult' } } } }
-    WithdrawConsentResult: { description: 授权撤回结果,  content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawConsentResult' } } } }
-    RetentionPurgeResult: { description: 保留清理结果,    content: { application/json: { schema: { $ref: '#/components/schemas/RetentionPurgeResult' } } } }
 
   schemas:
-    Error:
-      type: object
-      properties:
-        code: { type: string, example: "auth_not_implemented" }
-        message: { type: string, example: "鉴权在阶段 4 实现" }
-        detail: { type: string }
-        request_id: { type: string, description: 请求 ID（X-Request-ID 回显） }
-      required: [code, message]
-    # ---- 鉴权（阶段 4 实现，当前 501）----
-    LoginRequest:
-      type: object
-      properties:
-        username: { type: string }
-        password: { type: string, format: password }
-      required: [username, password]
-    RefreshRequest:
-      type: object
-      properties:
-        refresh_token: { type: string }
-      required: [refresh_token]
-    Token:
-      type: object
-      properties:
-        access_token: { type: string }
-        refresh_token: { type: string }
-        token_type: { type: string, example: "Bearer" }
-        expires_in: { type: integer, example: 3600 }
-    User:
-      type: object
-      properties:
-        id: { type: string }
-        name: { type: string }
-        roles: { type: array, items: { type: string } }
-    # ---- 设备 ----
-    Device:
-      type: object
-      properties:
-        device_id: { type: string }
-        device_type: { type: string, example: "exoskeleton" }
-        model: { type: string }
-        firmware_version: { type: string }
-        person_id: { type: string }
-        online: { type: boolean }
-        source_type: { type: string, enum: [real, controlled_test, simulated] }
-        source_label: { type: string }
-        last_seen: { type: string, format: date-time }
-        device_model: { type: string }
-        protocol_version: { type: string }
-        health: { $ref: '#/components/schemas/DeviceHealth' }
-        latest: { type: object, description: 最新遥测与推理快照 }
-      required: [device_id, source_type]
-    DeviceList:
-      type: object
-      properties:
-        items:
-          type: array
-          items: { $ref: '#/components/schemas/Device' }
-        now: { type: string, format: date-time }
-        offline_after_sec: { type: integer }
-      required: [items]
-    DeviceHealth:
-      type: object
-      properties:
-        device_id: { type: string }
-        online: { type: boolean }
-        last_seen: { type: string, format: date-time }
-        last_packet_ts: { type: string, format: date-time }
-        packet_loss_pct: { type: number, nullable: true }
-        clock_offset_ms: { type: number, nullable: true }
-        battery: { type: number, nullable: true, description: 电量百分比 }
-        fault: { type: string, nullable: true, description: 故障描述 }
-        reconnect_count: { type: integer, nullable: true }
-        source_type: { type: string }
-      required: [device_id, online]
-    # ---- 遥测 ----
-    Telemetry:
-      type: object
-      properties:
-        record_id: { type: string }
-        device_id: { type: string }
-        timestamp: { type: string, format: date-time }
-        sequence: { type: integer }
-        telemetry: { type: object, description: 设备原始遥测 payload }
-        quality: { type: object, properties: { status: { type: string } } }
-        source_type: { type: string }
-        source_label: { type: string }
-        mode: { type: string, enum: [realtime, replay] }
-        inference: { type: object, nullable: true }
-        device_model: { type: string }
-        firmware_version: { type: string }
-        protocol_version: { type: string }
-        raw_ref: { type: string, nullable: true, description: 原始帧 record_id 引用 }
-    TelemetrySeries:
-      type: object
-      properties:
-        device_id: { type: string }
-        mode: { type: string, enum: [replay] }
-        items: { type: array, items: { $ref: '#/components/schemas/Telemetry' } }
-        inference: { type: array, items: { type: object } }
-        start: { type: string, format: date-time }
-        end: { type: string, format: date-time }
-        now: { type: string, format: date-time }
-    ExportRequest:
-      type: object
-      properties:
-        device_id: { type: string }
-        start: { type: string, format: date-time }
-        end: { type: string, format: date-time }
-      required: [device_id, start, end]
-    ExportResult:
-      type: object
-      properties:
-        export_type: { type: string, example: "raw_slice" }
-        device_id: { type: string }
-        start: { type: string, format: date-time }
-        end: { type: string, format: date-time }
-        exported_at: { type: string, format: date-time }
-        slice:
-          type: object
-          properties:
-            record_count: { type: integer }
-            records: { type: array, items: { $ref: '#/components/schemas/Telemetry' } }
-            source_type: { type: string }
-    # ---- 事件 ----
-    Event:
-      type: object
-      properties:
-        event_id: { type: string }
-        event_code: { type: string }
-        severity: { type: string, enum: [L1, L2, L3] }
-        status: { type: string, enum: [open, confirmed, closed, dismissed] }
-        person_id: { type: string, nullable: true }
-        device_id: { type: string, nullable: true }
-        task_id: { type: string, nullable: true }
-        zone_id: { type: string, nullable: true }
-        start_time: { type: string, format: date-time }
-        end_time: { type: string, format: date-time, nullable: true }
-        trigger:
-          type: object
-          properties:
-            type: { type: string, nullable: true }
-            rule_version: { type: string, nullable: true }
-            condition: { type: string, nullable: true }
-        evidence:
-          type: object
-          properties:
-            window_before_sec: { type: integer, nullable: true }
-            window_after_sec: { type: integer, nullable: true }
-            record_ids: { type: array, items: { type: string } }
-            data_quality: { type: string, nullable: true }
-            source_type: { type: string, nullable: true }
-        handling: { type: object, nullable: true }
-        source_type: { type: string }
-        source_label: { type: string }
-      required: [event_id, event_code, severity, status, start_time, source_type]
-    EventList:
-      type: object
-      properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Event' } }
-        now: { type: string, format: date-time }
-      required: [items]
-    EventStatusUpdate:
-      type: object
-      properties:
-        event_id: { type: string }
-        status: { type: string, enum: [open, confirmed, closed, dismissed] }
-        handling: { type: object }
-        handled_by: { type: string, description: 操作人 }
-      required: [event_id, status]
-    EventComment:
-      type: object
-      properties:
-        comment: { type: string }
-        operator: { type: string }
-      required: [comment]
-    # ---- 任务 ----
-    TaskRecommendRequest:
-      type: object
-      properties:
-        required_skill: { type: string }
-        zone_id: { type: string }
-        load_level: { type: number }
-    TaskRecommendation:
-      type: object
-      properties:
-        weights: { type: object }
-        requires_human_confirm: { type: boolean }
-        note: { type: string }
-        items:
-          type: array
-          items:
-            type: object
-            properties:
-              person_id: { type: string }
-              name: { type: string }
-              eligible: { type: boolean }
-              blocked_by: { type: array, items: { type: string } }
-              score: { type: number }
-              reasons: { type: object }
-              metrics: { type: object }
-    TaskConfirmRequest:
-      type: object
-      properties:
-        task_id: { type: string, nullable: true }
-        person_id: { type: string }
-        confirmer: { type: string, description: 班组长或现场负责人 }
-        required_skill: { type: string }
-        zone_id: { type: string }
-        load_level: { type: number }
-      required: [person_id, confirmer]
-    Assignment:
-      type: object
-      properties:
-        ok: { type: boolean }
-        assignment:
-          type: object
-          properties:
-            task_id: { type: string }
-            person_id: { type: string }
-            confirmer: { type: string }
-            status: { type: string }
-            confirmed_at: { type: string, format: date-time }
-        error: { type: string, nullable: true }
-        blocked_by: { type: array, items: { type: string }, nullable: true }
-    AssignmentList:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            type: object
-            properties:
-              task_id: { type: string }
-              person_id: { type: string }
-              confirmer: { type: string }
-              status: { type: string }
-              confirmed_at: { type: string, format: date-time }
-    # ---- 查询 / 审计 / 模型 / 规则 ----
-    QueryRequest:
-      type: object
-      properties:
-        question: { type: string }
-        source: { type: string, nullable: true, description: 按来源过滤（real/controlled_test/simulated） }
-      required: [question]
-    QueryResult:
-      type: object
-      properties:
-        answer: { type: string }
-        evidence: { type: array, items: { type: object } }
-        refused: { type: boolean }
-        category: { type: string }
-    AuditList:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            type: object
-            properties:
-              audit_id: { type: string }
-              actor: { type: string, nullable: true }
-              action: { type: string }
-              object_type: { type: string, nullable: true }
-              object_id: { type: string, nullable: true }
-              before: { type: object, nullable: true }
-              after: { type: object, nullable: true }
-              ts: { type: string, format: date-time }
-              request_id: { type: string, nullable: true }
-              source_ip: { type: string, nullable: true }
-              result: { type: string }
-        now: { type: string, format: date-time }
-        filter: { type: object }
-    ModelList:
-      type: object
-      properties:
-        runtime:
-          type: object
-          properties:
-            active: { type: string, nullable: true }
-            versions: { type: array, items: { type: string } }
-            mode: { type: string, enum: [model, rules_only] }
-        registry:
-          type: array
-          items:
-            type: object
-            properties:
-              model_id: { type: string }
-              version: { type: string }
-              path: { type: string, nullable: true }
-              activated_at: { type: string, format: date-time, nullable: true }
-              is_active: { type: boolean }
-              metrics: { type: object, nullable: true }
-              card_path: { type: string, nullable: true }
-        rule_version: { type: string, nullable: true }
-        now: { type: string, format: date-time }
-    RuleList:
-      type: object
-      properties:
-        runtime:
-          type: object
-          properties:
-            rule_version: { type: string, nullable: true }
-            config: { type: object, nullable: true }
-        registry:
-          type: array
-          items:
-            type: object
-            properties:
-              rule_id: { type: string }
-              version: { type: string }
-              config: { type: object, nullable: true }
-              activated_by: { type: string, nullable: true }
-              activated_at: { type: string, format: date-time, nullable: true }
-              is_active: { type: boolean }
-        now: { type: string, format: date-time }
-    # ---- 场景评估 / 重置 / 撤回 / 保留 ----
-    ScenarioEvaluateRequest:
-      type: object
-      properties:
-        scene: { type: string }
-        people: { type: integer }
-        structured: { type: number }
-        roi: { type: number }
-        payer: { type: number }
-        fit: { type: number }
-        compliance: { type: number }
-        replicate: { type: number }
-        open_road: { type: boolean }
-        no_baseline: { type: boolean }
-        free_only: { type: boolean }
-        ergonomic_taboo: { type: boolean }
-        covert_punitive: { type: boolean }
-    ScenarioResult:
-      type: object
-      properties:
-        score: { type: number }
-        rating: { type: string, enum: [高, 中, 低] }
-        vetoed: { type: boolean }
-        veto_reasons: { type: array, items: { type: string } }
-        recommended: { type: boolean }
-        score_parts: { type: object }
-        recommended_devices: { type: integer }
-        backup_devices: { type: integer }
-        one_pager: { type: object }
-        next_requests: { type: array, items: { type: string } }
-        source_type: { type: string }
-        disclaimer: { type: string }
-    ResetRequest:
-      type: object
-      description: 重置请求（无必填字段，可空 body）
-    ResetResult:
-      type: object
-      properties:
-        ok: { type: boolean }
-        note: { type: string }
-        now: { type: string, format: date-time }
-    WithdrawConsentRequest:
-      type: object
-      properties:
-        withdrawn_at: { type: string, format: date-time, nullable: true, description: 不传则用当前时间 }
-        reason: { type: string, nullable: true }
-        scope: { type: string, nullable: true }
-        operator: { type: string, nullable: true, description: 操作人（安全管理员） }
-    WithdrawConsentResult:
-      type: object
-      properties:
-        ok: { type: boolean }
-        consent_id: { type: string }
-        person_id: { type: string }
-        withdrawn_at: { type: string, format: date-time }
-        deleted:
-          type: object
-          properties:
-            telemetry: { type: integer }
-            inference: { type: integer }
-        note: { type: string }
-        now: { type: string, format: date-time }
-    RetentionPurgeRequest:
-      type: object
-      properties:
-        retention_days: { type: integer, default: 30 }
-        person_id: { type: string, nullable: true, description: 指定人员时仅清理该人员数据 }
-        operator: { type: string, nullable: true }
-    RetentionPurgeResult:
-      type: object
-      properties:
-        ok: { type: boolean }
-        deleted:
-          type: object
-          properties:
-            telemetry: { type: integer }
-            inference: { type: integer }
-        retention_days: { type: integer }
-        person_id: { type: string, nullable: true }
-        before_counts: { type: object }
-        after_counts: { type: object }
-        now: { type: string, format: date-time }
+    Error:                { type: object, properties: { code: { type: string }, message: { type: string } }, required: [code, message] }
+    # 以下为请求/响应体占位，待按 02_技术规范/schemas 与 database.sql 补全字段
+    LoginRequest:         { type: object, description: '登录请求（占位）' }
+    RefreshRequest:       { type: object, description: '刷新令牌请求（占位）' }
+    Token:                { type: object, description: '访问令牌（占位）' }
+    User:                 { type: object, description: '用户信息（占位）' }
+    Device:               { type: object, description: '设备（占位）' }
+    DeviceList:           { type: object, description: '设备列表（占位）' }
+    DeviceHealth:         { type: object, description: '设备健康（占位）' }
+    Telemetry:            { type: object, description: '遥测（占位）' }
+    TelemetrySeries:      { type: object, description: '遥测时序（占位）' }
+    ExportRequest:        { type: object, description: '导出请求（占位）' }
+    ExportResult:         { type: object, description: '导出结果（占位）' }
+    Event:                { type: object, description: '事件（占位）' }
+    EventList:            { type: object, description: '事件列表（占位）' }
+    EventStatusUpdate:    { type: object, description: '事件状态更新（占位）' }
+    EventComment:         { type: object, description: '事件评论（占位）' }
+    TaskRecommendRequest: { type: object, description: '任务推荐请求（占位）' }
+    TaskRecommendation:   { type: object, description: '任务推荐结果（占位）' }
+    TaskConfirmRequest:   { type: object, description: '任务确认请求（占位）' }
+    Assignment:           { type: object, description: '任务分配（占位）' }
+    AssignmentList:       { type: object, description: '任务分配列表（占位）' }
+    QueryRequest:         { type: object, description: '查询请求（占位）' }
+    QueryResult:          { type: object, description: '查询结果（占位）' }
+    AuditList:            { type: object, description: '审计日志列表（占位）' }
+    ModelList:            { type: object, description: '模型列表（占位）' }
+    RuleList:             { type: object, description: '规则列表（占位）' }
+    ScenarioEvaluateRequest: { type: object, description: '场景评估请求（占位）' }
+    ScenarioResult:       { type: object, description: '场景评估结果（占位）' }
+    ResetRequest:         { type: object, description: '重置请求（占位）' }
+    ResetResult:          { type: object, description: '重置结果（占位）' }

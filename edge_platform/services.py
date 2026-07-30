@@ -73,35 +73,6 @@ def norm_event(row):
     r["trigger"] = _loads(r.pop("trigger_json", None), r.get("trigger", {}))
     r["evidence"] = _loads(r.pop("evidence_json", None), r.get("evidence", {}))
     r["handling"] = _loads(r.pop("handling_json", None), r.get("handling"))
-    # 阶段 2（Task 17.1）：补齐事件标准字段（缺省为 None / 默认值），
-    # 保证事件输出 schema 稳定：event_id/event_code/severity/status/person_id/
-    # device_id/task_id/zone_id/start_time/end_time/trigger{type,rule_version,condition}/
-    # evidence{window_before_sec,window_after_sec,record_ids,data_quality,source_type}/
-    # handling/source_type
-    for k in ("event_id", "event_code", "severity", "status", "person_id", "device_id",
-              "task_id", "zone_id", "start_time", "end_time", "source_type"):
-        r.setdefault(k, None)
-    r.setdefault("handling", None)
-    # trigger 子结构补齐
-    trig = r.get("trigger") or {}
-    if not isinstance(trig, dict):
-        trig = {}
-    trig.setdefault("type", None)
-    trig.setdefault("rule_version", trig.get("rule_version") or trig.get("model_version"))
-    trig.setdefault("condition", None)
-    r["trigger"] = trig
-    # evidence 子结构补齐（保留 record_ids/data_quality/source_type 等字段，
-    # 即便旧事件只写了 record_id）
-    ev = r.get("evidence") or {}
-    if not isinstance(ev, dict):
-        ev = {}
-    ev.setdefault("window_before_sec", None)
-    ev.setdefault("window_after_sec", None)
-    if "record_ids" not in ev:
-        ev["record_ids"] = ([ev["record_id"]] if ev.get("record_id") else [])
-    ev.setdefault("data_quality", None)
-    ev.setdefault("source_type", r.get("source_type"))
-    r["evidence"] = ev
     return r
 
 
@@ -235,18 +206,11 @@ def _window(question):
     return 10  # 默认过去十分钟
 
 
-def _recent_records(storage, minutes, per_device=2000, source=None):
-    """采集最近 N 分钟内的遥测记录。
-
-    阶段 2（Task 15.2）：尊重 source 参数。当 source 提供时仅遍历该来源的设备
-    （real/controlled_test/simulated），避免跨源混查；不提供时保持原行为。
-    """
+def _recent_records(storage, minutes, per_device=2000):
     now = datetime.now().astimezone()
     start = iso(now - timedelta(minutes=minutes))
     out = []
     for d in storage.list_devices():
-        if source and d.get("source_type") != source:
-            continue
         for row in storage.query_telemetry(d["device_id"], start, iso(now), per_device):
             r = norm_telemetry(row)
             if r:
@@ -259,13 +223,8 @@ def _no_data():
             "evidence": [], "refused": True, "category": "无数据依据"}
 
 
-def answer(storage, question, device_online, assignments, source=None):
-    """白名单问答：8 类可答（必须引用真实证据），7 类拒绝。
-
-    阶段 2（Task 15.2）：可选 source 参数用于按来源过滤（不传则保留原行为，
-    遍历所有设备）。任务要求所有查询接口默认不跨源混查，故上层调用方可显式传 source
-    限制范围为 real；本函数保持向后兼容。
-    """
+def answer(storage, question, device_online, assignments):
+    """白名单问答：8 类可答（必须引用真实证据），7 类拒绝。"""
     q = (question or "").strip()
     if not q:
         return {"answer": "请输入问题。", "evidence": [], "refused": True, "category": "空问题"}
@@ -274,8 +233,6 @@ def answer(storage, question, device_online, assignments, source=None):
             return {"answer": "拒绝回答（%s）。%s" % (name, msg), "evidence": [], "refused": True, "category": name}
 
     devices = storage.list_devices()
-    if source:
-        devices = [d for d in devices if d.get("source_type") == source]
     # 1. 在线设备
     if "在线" in q or ("多少" in q and "设备" in q):
         views = [{"device_id": d["device_id"], "online": device_online(d),
@@ -294,7 +251,7 @@ def answer(storage, question, device_online, assignments, source=None):
                 "evidence": off, "refused": False, "category": "设备掉线情况"}
     # 2. 最高负荷
     if "负荷" in q:
-        recs = _recent_records(storage, _window(q), source=source)
+        recs = _recent_records(storage, _window(q))
         if not recs:
             return _no_data()
         top = max(recs, key=lambda r: r["telemetry"].get("load_score", 0) or 0)

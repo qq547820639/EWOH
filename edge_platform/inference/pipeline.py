@@ -111,9 +111,6 @@ class InferencePipeline:
         dev = msg.get("device_id")
         if not dev:
             return None
-        # invalid 数据保留入库（供审计/回放），但不进入推理窗口与规则判断
-        if (msg.get("quality") or {}).get("status") == "invalid":
-            return None
         buf = self._buf.setdefault(dev, deque(maxlen=WINDOW_SIZE))
         buf.append(msg)
         self._cnt[dev] = self._cnt.get(dev, 0) + 1
