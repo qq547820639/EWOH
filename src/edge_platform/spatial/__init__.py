@@ -36,6 +36,10 @@ from .topology import (  # noqa: E402
 from .asset_registry import (  # noqa: E402
     AssetType, LOD, SpatialAsset, AssetRegistry, compute_checksum, new_asset_id,
 )
+from .multi_factory import (  # noqa: E402
+    FactoryNode, CrossFactoryLink, FederationPolicy,
+    MultiFactoryRegistry, CrossFactorySchedulerStub,
+)
 
 __all__ = [
     "new_id", "now_iso",
@@ -44,4 +48,6 @@ __all__ = [
     "TopologyNode", "TopologyEdge", "Topology", "route_length",
     "AssetType", "LOD", "SpatialAsset", "AssetRegistry", "compute_checksum",
     "new_asset_id",
+    "FactoryNode", "CrossFactoryLink", "FederationPolicy",
+    "MultiFactoryRegistry", "CrossFactorySchedulerStub",
 ]

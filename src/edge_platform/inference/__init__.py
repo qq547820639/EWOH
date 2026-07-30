@@ -30,3 +30,16 @@ def new_id(prefix):
     """生成短随机业务 ID，如 INF-a1b2c3d4。"""
     import uuid
     return "%s-%s" % (prefix, uuid.uuid4().hex[:8])
+
+
+# 空间与上下文感知规则（算法第一阶段）与版本化注册表。
+# 放在工具函数之后导入，避免与 spatial_rules 的 `from edge_platform.inference
+# import ts_to_ms` 形成循环导入（此时 ts_to_ms / ms_to_ts / new_id 已定义）。
+from .spatial_rules import (  # noqa: E402,F401
+    RuleBase, RuleFinding,
+    PostureThresholdRule, HighLoadDurationRule, ActionCountRule,
+    BatteryPredictionRule, OfflineDetectionRule, StationDwellRule,
+    TaskTimeoutRule, ZoneViolationRule, SensorConflictRule,
+    CumulativeLoadIntegralRule,
+)
+from .rule_registry import RuleRegistry  # noqa: E402,F401
