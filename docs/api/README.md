@@ -6,8 +6,8 @@
 ## 规范位置
 
 - OpenAPI 3.0：`docs/api/openapi.yaml`
-- JSON Schema（事件/任务/遥测）：`02_技术规范/schemas/`
-- 既有规范参考：`02_技术规范/openapi.yaml`
+- JSON Schema（事件/任务/遥测）：`delivery/02_技术规范/schemas/`
+- 既有规范参考：`delivery/02_技术规范/openapi.yaml`
 
 ## 端点清单
 
@@ -39,7 +39,7 @@
 ## 横切要求
 
 - **鉴权**：除 `/api/auth/login` 外，所有端点均需 `BearerAuth`；导出/审计/重置等
-  敏感端点需额外角色（见 `04_安全合规/RBAC_matrix.csv` 与 `EWOH_EXPORT_ALLOWED_ROLES`）。
+  敏感端点需额外角色（见 `delivery/04_安全合规/RBAC_matrix.csv` 与 `EWOH_EXPORT_ALLOWED_ROLES`）。
 - **审计**：所有写操作、导出、登录/鉴权事件入审计日志，可在 `GET /api/audit` 查询。
 - **幂等**：标注"是"的端点对相同请求参数重复调用不产生副作用；状态/确认类端点
   通过请求标识或状态机保证幂等。

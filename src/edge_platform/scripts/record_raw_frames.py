@@ -24,8 +24,8 @@ seq/device_id，不解析业务字段）。若 protocol.py 尚未落地，使用
 
 运行示例
 --------
-  python edge_platform/scripts/record_raw_frames.py --port 9001
-  python edge_platform/scripts/record_raw_frames.py --port 9001 --max-frames 1000 --duration-sec 600 --session-id pilot-20260730
+  python src/edge_platform/scripts/record_raw_frames.py --port 9001
+  python src/edge_platform/scripts/record_raw_frames.py --port 9001 --max-frames 1000 --duration-sec 600 --session-id pilot-20260730
 """
 import argparse
 import json

@@ -26,7 +26,7 @@
 运行
 ----
   python -m edge_platform.edge.adapters.ny_exo_a1.fixtures.fixtures_generator
-  python edge_platform/edge/adapters/ny_exo_a1/fixtures/fixtures_generator.py
+  python src/edge_platform/edge/adapters/ny_exo_a1/fixtures/fixtures_generator.py
 """
 import json
 import os

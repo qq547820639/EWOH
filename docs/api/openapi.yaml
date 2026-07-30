@@ -440,7 +440,7 @@ components:
 
   schemas:
     Error:                { type: object, properties: { code: { type: string }, message: { type: string } }, required: [code, message] }
-    # 以下为请求/响应体占位，待按 02_技术规范/schemas 与 database.sql 补全字段
+    # 以下为请求/响应体占位，待按 delivery/02_技术规范/schemas 与 database.sql 补全字段
     LoginRequest:         { type: object, description: '登录请求（占位）' }
     RefreshRequest:       { type: object, description: '刷新令牌请求（占位）' }
     Token:                { type: object, description: '访问令牌（占位）' }

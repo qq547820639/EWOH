@@ -13,6 +13,12 @@ __pycache__/
 .venv/
 venv/
 
+# 运行时数据库（SQLite）
+*.db
+
+# 凭据与环境（仅样例 .env.example 入库，真实 .env 禁止提交）
+.env
+
 # 临时文件
 *.tmp
 *.log

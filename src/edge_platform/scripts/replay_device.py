@@ -28,10 +28,10 @@ ts 计算间隔，用 time.sleep 控制发送节奏。也支持无 index.jsonl �
 
 运行示例
 --------
-  python edge_platform/scripts/replay_device.py --session-dir recordings/sess-20260730-100000 --target-port 9001
-  python edge_platform/scripts/replay_device.py --session-dir recordings/sess-x --speed 4.0 --loop
-  python edge_platform/scripts/replay_device.py --session-dir recordings/sess-x --disconnect-at 105 --disconnect-duration 5
-  python edge_platform/scripts/replay_device.py --session-dir recordings/sess-x --shuffle
+  python src/edge_platform/scripts/replay_device.py --session-dir recordings/sess-20260730-100000 --target-port 9001
+  python src/edge_platform/scripts/replay_device.py --session-dir recordings/sess-x --speed 4.0 --loop
+  python src/edge_platform/scripts/replay_device.py --session-dir recordings/sess-x --disconnect-at 105 --disconnect-duration 5
+  python src/edge_platform/scripts/replay_device.py --session-dir recordings/sess-x --shuffle
 """
 import argparse
 import json
