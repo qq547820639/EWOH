@@ -177,6 +177,76 @@
 - **WHEN** 外骨骼厂商私有字段进入平台
 - **THEN** 字段被转换为统一语义模型（entity_id/worker_id/event_time/source_type/pose/load/device/quality），厂商私有字段不直接出现在上层业务代码。
 
+### 6.1 外骨骼统一帧代码契约（UnifiedExoFrame）
+
+上面的示例 JSON 是**感知融合层的超集**（融合 UWB / 视觉 / MES 之后的形态）。**边缘适配层**当前输出的是 [`edge/exo_semantic.py`](../../src/edge_platform/edge/exo_semantic.py) 中的 `UnifiedExoFrame`，字段集更窄，**代码以本小节为准**：
+
+| 分组 | 字段 | 类型 | 单位 | 说明 |
+| --- | --- | --- | --- | --- |
+| （顶层） | entity_id | string | | 设备/实体 ID，缺省 `"unknown"` |
+| （顶层） | worker_id | string \| null | | 绑定人员 ID |
+| （顶层） | event_time | string | ISO 8601 | 空值时自动取 `now_iso()` |
+| （顶层） | source_type | string | 枚举 | real / controlled_test / simulated，默认 `real` |
+| pose | trunk_pitch_deg | number \| null | 度 | 躯干俯仰角 |
+| pose | angular_velocity_dps | number \| null | dps | 合成角速度模长 |
+| pose | joint_angles_deg | object \| null | 度 | 各关节角 |
+| load | assist_level | number \| null | 0—1 | 助力水平（归一化） |
+| load | torque_nm | number \| null | Nm | 助力力矩 |
+| load | cumulative_load_score | number \| null | 0—1 | 累计负荷指标 |
+| device | battery_pct | number \| null | % | 电量 |
+| device | temperature_c | number \| null | ℃ | 设备温度 |
+| device | fault_code | int \| null | | 故障码，`null` 表示无故障 |
+| device | health | string | 枚举 | good / degraded / fault / unknown（默认 `unknown`） |
+| quality | packet_loss_pct | number \| null | 0—100 | 按 SEQ 推算的丢包率 |
+| quality | confidence | number \| null | 0—1 | 置信度 |
+| quality | status | string | 枚举 | good / degraded / invalid |
+
+> **命名差异（待收敛）**：§6 示例使用 `device.device_id` / `battery_percent` / `online_status` / `quality.packet_loss`，而代码使用 `device.battery_pct` / `health` / `quality.packet_loss_pct`，且 `entity_id` 承载设备 ID。融合层字段与适配层字段的收敛须经架构评审裁定，当前**不得假设两者可互换**。
+>
+> `quality.packet_loss_pct` 单位为**百分比 0—100**，§9 描述的 `packet_loss` 为 0—1，两者相差 100 倍，跨层传递时必须显式换算。
+
+### 6.2 原始字段 → 统一语义转换规则（NY-EXO-A1 / NXP1 v1.0）
+
+厂商原始字段经 [`adapters/ny_exo_a1/protocol.py`](../../src/edge_platform/edge/adapters/ny_exo_a1/protocol.py) 解码为物理量后，由 [`adapters/ny_exo_a1/adapter.py`](../../src/edge_platform/edge/adapters/ny_exo_a1/adapter.py) 的 `VENDOR_TO_UNIFIED` 映射表转换。**未列入映射表的厂商字段一律不进入统一帧**——这是「厂商字段不泄漏」的强制实施点，由 `tests/test_ny_exo_a1_contract.py` 断言。
+
+线协议口径见 [真实设备协议确认书_NY-EXO-A1.md](../../delivery/02_技术规范/真实设备协议确认书_NY-EXO-A1.md)。
+
+| 原始字段（NXP1 载荷） | 线上类型/缩放 | 解码后 | 统一语义路径 | 转换规则 |
+| --- | --- | --- | --- | --- |
+| TELEMETRY.pitch | i16 × 0.1 | `pitch_deg`（度） | `pose.trunk_pitch_deg` | 直传 |
+| TELEMETRY.gx/gy/gz | i16 × 0.1 | `gyro_dps[3]`（dps） | `pose.angular_velocity_dps` | **取三轴模长** `sqrt(gx²+gy²+gz²)`；任一轴缺失则为 `null` |
+| TELEMETRY.torque | i16 × 0.1 | `torque_nm`（Nm） | `load.torque_nm` | 直传 |
+| TELEMETRY.assist | u8（%） | `assist_pct` | `load.assist_level` | **归一化** `assist_pct / 100` → 0—1 |
+| TELEMETRY.battery | u8（%） | `battery_pct` | `device.battery_pct` | 直传 |
+| IDENT.device_id | 8B ASCII | `device_id` | `entity_id` | 8 字节右侧 `0x00` 填充，**超长 ID 线上截断为前 8 字节** |
+| FAULT.code | u8 | `fault_code` | `device.fault_code` | `0x00` → `null`（无故障）；非零直传 |
+| （SEQ 连续性统计） | u32 | — | `quality.packet_loss_pct` | 按 SEQ 跳变推算，跳变 >1000 视为重连不计丢包 |
+| （量程/缺失判定） | — | — | `quality.status` / `confidence` | 见下方质量规则 |
+| TELEMETRY.roll / ax / ay / az | i16 | `roll_deg` / `accel_mg` | **不映射** | 量程校验用，暂不进入统一帧 |
+
+**缺失值**：i16 字段为哨兵 `0x7FFF` 表示传感器缺失，解码后为 `null`。**严禁**把哨兵当成 3276.7 的真实读数。
+
+**质量判定**（`adapter.to_unified`）：
+
+| 条件 | quality.status | confidence |
+| --- | --- | --- |
+| pitch/roll 越 ±180°、torque 越 ±100Nm、battery 越 0—100 | `invalid` | 0.0 |
+| pitch 或 torque 缺失（哨兵） | `degraded` | 0.5 |
+| 其余 | `good` | 0.95 |
+
+CRC-16/CCITT-FALSE 校验失败的帧**直接丢弃**，不进入上层，仅计入 `bad_crc_frames` 统计。
+
+**时间戳**：NXP1 `TS_MS` 为设备本地 epoch 毫秒，转换为带时区偏移的 ISO 8601（默认 `+08:00` 工厂本地时区，可配置），保证标准库 `datetime.fromisoformat` 可解析。
+
+**NXP1 v1.0 未提供、当前恒为 `null` 的字段**（不得臆造数值）：
+
+| 字段 | 缺失原因 | 补齐路径 |
+| --- | --- | --- |
+| `pose.joint_angles_deg` | 协议只有 IMU 俯仰/横滚，无关节角 | 需厂商扩展协议或加装关节编码器 |
+| `device.temperature_c` | TELEMETRY 载荷无温度字段 | 需厂商扩展协议 |
+| `load.cumulative_load_score` | 属算法层积分量，非设备直出 | 由负荷算法层回填 |
+| `worker_id` | 设备侧不知人员绑定关系 | 由业务层「人—设备绑定」回填 |
+
 ## 7. source_type 来源隔离
 
 | source_type | 含义 | 隔离要求 |

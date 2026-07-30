@@ -40,8 +40,9 @@ exclude = ["edge_platform.tests*"]
 testpaths = ["src/edge_platform/tests"]
 
 # 可选集成测试（pytest）发现路径
+# tests/ 为仓库级契约测试（适配层输出 vs 统一语义模型/协议确认书的一致性）
 [tool.pytest.ini_options]
-testpaths = ["src/edge_platform/tests"]
+testpaths = ["src/edge_platform/tests", "tests"]
 python_files = ["test_*.py"]
 
 # Ruff 配置：代码风格与静态检查

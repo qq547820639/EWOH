@@ -31,3 +31,8 @@ jobs:
 
       - name: 运行 ruff 静态检查
         run: ruff check src/edge_platform
+
+      - name: 断言零第三方运行时依赖（护栏 P0-1）
+        run: |
+          grep -q '^dependencies = \[\]' pyproject.toml || (echo "ERROR: project.dependencies 必须为空 []，违反零依赖硬约束"; exit 1)
+          echo "OK: 运行时零第三方依赖"

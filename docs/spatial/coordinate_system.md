@@ -162,7 +162,78 @@ get_frame_chain(frame_id) -> [frame_id, ...]   # 从根到本帧的链路
 - 静态底图变更须保留旧版本，回放历史班次时使用该班次对应的底图版本，而非最新版本；
 - 坐标变换帧注册时若 source_type 非 real，须在帧元数据中显式标记，且不得参与 real 验收的精度统计。
 
-## 9. 关联文档
+## 9. 实现对齐现状（空间模型 V1）
+
+本节记录 §1—§8 的规范口径与 `src/edge_platform/spatial/` **当前代码实现**之间的对应关系与差异。规范为目标态，代码为现状；两者不一致处在 §9.3 列出，须由架构评审裁定收敛方向后再改代码或改规范，**不得各自默认自己正确**。
+
+### 9.1 模块映射
+
+| 规范章节 | 实现文件 |
+| --- | --- |
+| §1 空间层级、§2 实体字段 | [`spatial/entities.py`](../../src/edge_platform/spatial/entities.py) |
+| §3 坐标与边界框、§4 坐标变换 | [`spatial/coordinate.py`](../../src/edge_platform/spatial/coordinate.py) |
+| §6 JSON 拓扑 | [`spatial/topology.py`](../../src/edge_platform/spatial/topology.py) |
+| §6 资产格式、§7 三维分级 | [`spatial/asset_registry.py`](../../src/edge_platform/spatial/asset_registry.py) |
+| 跨工厂扩展（V2.0 骨架） | [`spatial/multi_factory.py`](../../src/edge_platform/spatial/multi_factory.py) |
+
+### 9.2 代码实际字段契约
+
+以下为**代码中真实存在**的字段，序列化键名与此完全一致。
+
+**`coordinate.Pose`**：`x` / `y` / `z`（米，float，默认 0.0）、`yaw_deg`（度，默认 0.0）、`source`（str，如 `uwb` / `vision` / `imu_fusion` / `cad`）、`confidence`（0—1，默认 1.0）。提供 `to_dict()` / `from_dict()`。
+
+**`coordinate.BoundingBox`**：`min_x` / `min_y` / `max_x` / `max_y`（米，四个均必填）。方法 `contains(pose)`（含边界端点）、`intersects(other)`。
+
+**坐标变换函数**：`world_to_local(pose, origin)`、`local_to_world(pose, origin)`（平移 + 绕 Z 轴 yaw 旋转，互为逆变换）、`distance(a, b)`（XY 平面欧氏距离，**忽略 z**）。`source` 与 `confidence` 在变换中原样传递。
+
+**`entities.SpatialEntity`**：`entity_id`、`entity_type`（`EntityType` 枚举）、`parent_id`（默认 `None`）、`name`、`pose`（可空）、`bbox`（可空）、`status`（默认 `"active"`）、`source_type`（默认 `"real"`）、`confidence`（默认 1.0）、`updated_at`（空值时取 `now_iso()`，UTC 毫秒精度）、`version`（默认 1）。`touch()` 递增 `version` 并刷新 `updated_at`。
+
+**`entities.SpatialRegistry`**：`register`（`parent_id` 非空时校验父级必须已存在，否则抛 `ValueError`，故注册须自顶向下）、`get` / `children` / `ancestors` / `descendants` / `by_type` / `all`。
+
+**`topology`**：`TopologyNode(node_id, label)`；`TopologyEdge(from_id, to_id, distance_m, route_geojson)`。**边按无向处理**；`shortest_path()` 为 Dijkstra，返回 `(distance_m, path)`，不可达返回 `(None, None)`。`to_geojson()` 输出 `FeatureCollection`，**仅带几何的边**输出 `LineString`，`properties` 含 `from_id` / `to_id` / `distance_m`。
+
+**`asset_registry.SpatialAsset`**：`asset_id`、`name`、`asset_type`（`AssetType` 枚举：`GEOJSON` / `GLB` / `TILES_3D` / `POINTCLOUD` / `GAUSSIAN_SPLAT` / `TOPOLOGY_JSON`）、`lod`（`LOD` 枚举 `L0`—`L3`）、`spatial_scope`、`uri`、`version`（**由注册表自动分配**，手工赋值会被覆盖）、`source_type`、`created_at`、`checksum`（`compute_checksum(bytes)` 算 sha256）、`provenance`。`AssetRegistry` 按 `(name, asset_type)` 维护版本历史，`by_scope()` / `by_lod()` 每个键只返回最新版本。
+
+> **实现范围说明**：平台**不生成也不解析** GLB / 3D Tiles / 点云 / Gaussian Splat 二进制，仅通过 `uri` 引用外部文件并记录版本与校验和；这些资产由离线建模流程产出。
+>
+> **GeoJSON 坐标系**：`to_geojson()` 输出的是**工厂局部米制 XY**，非 WGS84 经纬度。RFC 7946 默认 CRS 为 WGS84，本系统输出属自定义局部 CRS，前端须按局部坐标渲染，不得直接叠加经纬度底图。
+
+### 9.3 规范与实现的差异清单（待收敛）
+
+| # | 项 | 规范（§1—§8） | 代码现状 | 说明 |
+| --- | --- | --- | --- | --- |
+| 1 | `entity_type` 取值 | 小写 `group`…`worker`/`task` | 大写 `GROUP`…**`PERSON`**/`TASK` | 大小写与 worker/PERSON 命名须统一，涉及接口契约 |
+| 2 | `yaw_deg` 基准 | 0 = 朝向 **+X**，**逆时针**为正 | 0 = 面朝**正北 +Y**，自北**顺时针** | **口径相反，风险最高**，须优先裁定并加回归测试 |
+| 3 | `pose.frame` | 必填，跨帧变换依据 | **不存在**；`Pose` 有 `source` / `confidence` | 多坐标帧未实现，当前只支持单一工厂帧 |
+| 4 | `bbox` | `{min:{x,y,z}, max:{x,y,z}, crs}` 三维 | `min_x/min_y/max_x/max_y` **二维 AABB**，无 z、无 crs | 高度维缺失，视锥/货架高度类需求受限 |
+| 5 | 坐标变换 API | `transform` / `register_frame` / `list_frames` / `get_frame_chain`，帧邻接表 + `residual` | 仅 `world_to_local` / `local_to_world` / `distance`，**无帧注册表、无 residual** | 帧图与残差回传未实现，感知融合置信度暂无残差输入 |
+| 6 | 集团层 `parent_id` | 空字符串 `""` | `None` | 序列化差异，须统一 |
+| 7 | `status` 枚举 | `active/idle/fault/offline/maintenance/blocked` | 默认 `"active"`，**代码不做枚举校验** | 建议补校验，防脏值入库 |
+| 8 | `entity_id` 格式 | `{type}-{uuid8}`，如 `station-3a2b1c0d` | `new_id(prefix)` → `STN-a1b2c3d4`，前缀由调用方传 | 前缀口径未强制，存在不一致风险 |
+| 9 | 资产精度字段 | 须携带「精度（米）」 | `SpatialAsset` **无精度字段** | 三维验收 ≤10cm 指标当前无字段承载 |
+| 10 | 资产存储路径 | 对象存储 `{entity_id}/{version}/{asset_type}` | `uri` 为自由字符串，注册表为**内存态** | 未持久化，重启丢失 |
+| 11 | 静态/动态分离（§5） | 静态底图版本化 + 动态层高频刷新 | `SpatialRegistry` 单层内存表，**未做静态/动态分离** | 回放历史班次用对应底图版本的能力尚未具备 |
+
+### 9.4 待现场数据补全项
+
+以下内容**当前环境无法完成**，需现场测绘 / CAD / 标定数据到位后填充。字段骨架已就绪，届时只需填数，不需改结构。
+
+| # | 待补项 | 依赖输入 | 影响范围 |
+| --- | --- | --- | --- |
+| 1 | 各工厂坐标系原点与轴向对齐 | 现场测绘基准点（含高程基准） | §3，全部 `Pose` 绝对值 |
+| 2 | 车间/产线/区域/工位边界框实际数值 | 厂区 CAD 图纸 | `bbox` 全部实例 |
+| 3 | 空间实体层级实例（真实工位清单） | 产线工艺布局文件 | §1 全部实体数据 |
+| 4 | 工位拓扑边与实际行走距离 | 现场路径实测 / CAD 通道中心线 | `distance_m`、`route_geojson` |
+| 5 | UWB 基站坐标与标定参数 | 基站安装测量 + 标定报告 | 定位精度、`Pose.confidence` |
+| 6 | 摄像头外参（安装位姿）与视锥几何 | 相机标定（见 [camera_calibration.md](camera_calibration.md)） | 视觉结果 → 工厂坐标系转换 |
+| 7 | L2/L3 三维资产文件 | 三维扫描 / CAD 导出 | `uri`、`checksum`、`provenance` |
+| 8 | 重点工位 ≤10cm 精度验收实测 | 现场验收测试 | §7 三维验收要求 |
+
+> 拓扑距离 `distance_m` 是**行走路径长度**，与 `coordinate.distance()` 的直线距离不同；调度计算必须使用前者。
+>
+> **当前仓库中的空间数据均为 `simulated` / `controlled_test`，不得作为真机验收依据。**
+
+## 10. 关联文档
 
 - [docs/architecture/embodied_factory.md](../architecture/embodied_factory.md) — 九层架构（第 4 节空间数字底座）
 - [docs/data/multimodal_schema.md](../data/multimodal_schema.md) — 多模态数据 schema V1（含 UWB/视觉字段）
