@@ -311,10 +311,12 @@ class ExoSemanticTest(unittest.TestCase):
             self.assertNotIn(k, d, "厂商私有字段 %s 不应出现在顶层" % k)
             for grp in ("pose", "load", "device", "quality"):
                 self.assertNotIn(k, d[grp], "厂商私有字段 %s 不应出现在 %s" % (k, grp))
-        # 顶层只包含统一字段（不泄漏）
+        # 顶层只包含统一字段 + 标准消息扩展字段（spec「标准消息扩展与数据质量」）
         self.assertEqual(set(d.keys()),
-                         {"entity_id", "worker_id", "event_time",
-                          "source_type", "pose", "load", "device", "quality"})
+                         {"entity_id", "worker_id", "event_time", "source_type",
+                          "pose", "load", "device", "quality",
+                          "record_id", "ingested_at", "device_model",
+                          "firmware_version", "protocol_version", "raw_ref"})
         # 统一字段已就位
         self.assertEqual(d["entity_id"], "EXO-001")
         self.assertEqual(d["worker_id"], "P-001")
@@ -361,7 +363,7 @@ class ExoSemanticTest(unittest.TestCase):
                       "cumulative_load_score": 0.42}
         frame.device = {"battery_pct": 78, "temperature_c": 36.5,
                         "fault_code": None, "health": "good"}
-        frame.quality = {"packet_loss_pct": 0.5, "confidence": 0.92}
+        frame.quality = {"packet_loss_pct": 0.5, "confidence": 0.92, "status": "good"}
         d = to_storage_dict(frame)
         self.assertEqual(d["entity_id"], "EXO-001")
         self.assertEqual(d["pose"]["trunk_pitch_deg"], 28.4)

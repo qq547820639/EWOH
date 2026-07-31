@@ -12,6 +12,12 @@
 
 存储 JSON 示例（to_storage_dict 输出格式）：
 {
+  "record_id": "REC-a1b2c3d4",
+  "ingested_at": "2026-07-31T08:30:00.123+00:00",
+  "device_model": "NY-EXO-A1",
+  "firmware_version": "1.2.0",
+  "protocol_version": "NXP1 v1.0",
+  "raw_ref": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   "entity_id": "EXO-001",
   "worker_id": "P-001",
   "event_time": "2026-07-31T08:30:00.000+00:00",
@@ -20,7 +26,7 @@
            "joint_angles_deg": {"left_knee": 45.0}},
   "load": {"assist_level": 0.6, "torque_nm": 18.5, "cumulative_load_score": 0.42},
   "device": {"battery_pct": 78, "temperature_c": 36.5, "fault_code": null, "health": "good"},
-  "quality": {"packet_loss_pct": 0.5, "confidence": 0.92}
+  "quality": {"packet_loss_pct": 0.5, "confidence": 0.92, "status": "good"}
 }
 
 纯 Python 标准库实现，沿用 edge_platform.spatial 的 now_iso 时间戳约定。
@@ -29,7 +35,7 @@
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, Optional
 
-from edge_platform.spatial import now_iso
+from edge_platform.spatial import new_id, now_iso
 
 
 # ---- 数据分级常量（spec 5.1：四级数据字段清单） ----
@@ -69,6 +75,12 @@ class UnifiedExoFrame:
 
     字段分组对应 spec：pose=运动级核心，load=负荷级核心，device=设备级核心，
     quality=数据质量与置信度；entity_id/worker_id/event_time/source_type 为业务级索引。
+
+    标准消息扩展字段（spec「标准消息扩展与数据质量」）：
+    - record_id：平台全局唯一记录 ID，适配器产出时生成（new_id("REC")）
+    - ingested_at：平台接收时刻（ISO 8601 UTC），区别于 event_time（设备产生时刻）
+    - device_model / firmware_version / protocol_version：设备元信息追溯
+    - raw_ref：原始帧字节 SHA256 引用，支持「标准消息 ↔ 原始帧」双向追溯
     """
     entity_id: str
     worker_id: Optional[str] = None
@@ -84,12 +96,23 @@ class UnifiedExoFrame:
         "battery_pct": None, "temperature_c": None, "fault_code": None, "health": "unknown",
     })
     quality: Dict[str, Any] = field(default_factory=lambda: {
-        "packet_loss_pct": None, "confidence": None,
+        "packet_loss_pct": None, "confidence": None, "status": "unknown",
     })
+    # ---- 标准消息扩展字段（spec「标准消息扩展与数据质量」） ----
+    record_id: str = ""
+    ingested_at: str = ""
+    device_model: str = ""
+    firmware_version: str = ""
+    protocol_version: str = ""
+    raw_ref: str = ""
 
     def __post_init__(self):
         if not self.event_time:
             self.event_time = now_iso()
+        if not self.record_id:
+            self.record_id = new_id("REC")
+        if not self.ingested_at:
+            self.ingested_at = now_iso()
         # 确保分组 dict 至少包含规范字段（缺失补 None / health 默认 unknown）
         for k in ("trunk_pitch_deg", "angular_velocity_dps", "joint_angles_deg"):
             self.pose.setdefault(k, None)
@@ -98,19 +121,23 @@ class UnifiedExoFrame:
         for k in ("battery_pct", "temperature_c", "fault_code"):
             self.device.setdefault(k, None)
         self.device.setdefault("health", "unknown")
-        for k in ("packet_loss_pct", "confidence"):
+        # 质量状态统一为 good/degraded/invalid/unknown（spec「标准消息扩展与数据质量」）
+        for k in ("packet_loss_pct", "confidence", "status"):
             self.quality.setdefault(k, None)
+        self.quality.setdefault("status", "unknown")
 
 
 def _set_path(frame: UnifiedExoFrame, path: str, value: Any):
     """按 'group.field' 形式的路径写入分组字段；未知路径忽略（保守不泄漏）。
 
-    顶层字段（entity_id/worker_id/event_time/source_type）通过 setattr 写入。
+    顶层字段（entity_id/worker_id/event_time/source_type 及标准消息扩展字段）通过 setattr 写入。
     """
     if not path or not isinstance(path, str):
         return
     if "." not in path:
-        if path in ("entity_id", "worker_id", "event_time", "source_type"):
+        if path in ("entity_id", "worker_id", "event_time", "source_type",
+                    "record_id", "ingested_at", "device_model",
+                    "firmware_version", "protocol_version", "raw_ref"):
             setattr(frame, path, value)
         return
     group, field_name = path.split(".", 1)
@@ -179,4 +206,10 @@ def from_storage_dict(d):
         load=dict(d.get("load") or {}),
         device=dict(d.get("device") or {}),
         quality=dict(d.get("quality") or {}),
+        record_id=d.get("record_id", ""),
+        ingested_at=d.get("ingested_at", ""),
+        device_model=d.get("device_model", ""),
+        firmware_version=d.get("firmware_version", ""),
+        protocol_version=d.get("protocol_version", ""),
+        raw_ref=d.get("raw_ref", ""),
     )

@@ -36,10 +36,13 @@ from edge_platform.edge.exo_semantic import UnifiedExoFrame, to_storage_dict  # 
 
 FIXTURE_DIR = SRC / "edge_platform" / "edge" / "adapters" / "ny_exo_a1" / "fixtures"
 
-#: spec 5.2 统一语义帧必备顶层字段
+#: spec 5.2 统一语义帧必备顶层字段 + spec「标准消息扩展」6 个扩展字段
 REQUIRED_TOP_FIELDS = (
     "entity_id", "worker_id", "event_time", "source_type",
     "pose", "load", "device", "quality",
+    # 标准消息扩展字段（spec「标准消息扩展与数据质量」）
+    "record_id", "ingested_at", "device_model",
+    "firmware_version", "protocol_version", "raw_ref",
 )
 
 #: 各分组必备子字段（与 exo_semantic.UnifiedExoFrame 默认值保持一致）
@@ -47,7 +50,8 @@ REQUIRED_GROUP_FIELDS = {
     "pose": ("trunk_pitch_deg", "angular_velocity_dps", "joint_angles_deg"),
     "load": ("assist_level", "torque_nm", "cumulative_load_score"),
     "device": ("battery_pct", "temperature_c", "fault_code", "health"),
-    "quality": ("packet_loss_pct", "confidence"),
+    # quality.status 统一为 good/degraded/invalid/unknown（spec「标准消息扩展与数据质量」）
+    "quality": ("packet_loss_pct", "confidence", "status"),
 }
 
 #: spec：来源隔离枚举
@@ -169,6 +173,122 @@ class TestUnifiedSemanticContract(unittest.TestCase):
                     self.assertIsInstance(getattr(probe, group), dict)
                 else:
                     self.assertIn(path, REQUIRED_TOP_FIELDS)
+
+
+class TestStandardMessageFields(unittest.TestCase):
+    """契约 (spec「标准消息扩展与数据质量」)：6 个标准消息扩展字段齐全且语义正确。
+
+    record_id / ingested_at / device_model / firmware_version / protocol_version / raw_ref
+    必须在每条统一帧上出现，且取值符合契约：
+    - record_id 全局唯一非空
+    - ingested_at 可被 datetime.fromisoformat 解析且带时区（平台接收时刻）
+    - device_model / protocol_version 非空（适配器已知值）
+    - raw_ref 为 64 位 hex（SHA256）
+    - quality.status 落在 {good, degraded, invalid, unknown}
+    """
+
+    TELEMETRY_FIXTURES = (
+        "telemetry_normal", "telemetry_low_battery", "telemetry_high_torque",
+        "telemetry_out_of_range", "telemetry_missing_field", "sequence_gap",
+    )
+
+    #: spec「标准消息扩展与数据质量」质量状态枚举
+    VALID_QUALITY_STATUSES = ("good", "degraded", "invalid", "unknown")
+
+    def setUp(self):
+        self.entries = _entries_by_name()
+
+    def _frames_for(self, name):
+        entry = self.entries[name]
+        return frames_from_bytes(_load_fixture(entry["file"]),
+                                 device_id=entry["device_id"], worker_id="P-TEST-001")
+
+    def test_record_id_is_non_empty_and_unique_per_frame(self):
+        for name in self.TELEMETRY_FIXTURES:
+            frames = self._frames_for(name)
+            with self.subTest(fixture=name):
+                ids = [f.record_id for f in frames]
+                self.assertTrue(all(ids), "record_id 不得为空")
+                # 同一 fixture 内多帧的 record_id 必须互异
+                self.assertEqual(len(ids), len(set(ids)),
+                                 "同一 fixture 内 record_id 必须唯一")
+
+    def test_record_id_has_rec_prefix(self):
+        """record_id 应带 REC- 前缀（new_id 约定），便于运维辨识。"""
+        for name in self.TELEMETRY_FIXTURES:
+            for frame in self._frames_for(name):
+                with self.subTest(fixture=name):
+                    self.assertTrue(frame.record_id.startswith("REC-"),
+                                    f"record_id 应以 REC- 开头，实际: {frame.record_id}")
+
+    def test_ingested_at_parses_with_fromisoformat(self):
+        for name in self.TELEMETRY_FIXTURES:
+            for frame in self._frames_for(name):
+                with self.subTest(fixture=name):
+                    parsed = datetime.fromisoformat(frame.ingested_at)
+                    self.assertIsNotNone(parsed.tzinfo,
+                                         "ingested_at 必须带时区偏移，不得为 naive")
+
+    def test_ingested_at_differs_from_event_time_semantically(self):
+        """ingested_at（平台接收时刻，UTC ISO）与 event_time（设备产生时刻，本地时区）是不同语义。"""
+        for frame in self._frames_for("telemetry_normal"):
+            self.assertNotEqual(frame.ingested_at, frame.event_time,
+                                "ingested_at 与 event_time 不应完全相同（一个是接收时刻，一个是设备时刻）")
+
+    def test_device_model_is_populated(self):
+        for name in self.TELEMETRY_FIXTURES:
+            for frame in self._frames_for(name):
+                with self.subTest(fixture=name):
+                    self.assertEqual(frame.device_model, "NY-EXO-A1")
+
+    def test_protocol_version_is_populated(self):
+        for name in self.TELEMETRY_FIXTURES:
+            for frame in self._frames_for(name):
+                with self.subTest(fixture=name):
+                    self.assertEqual(frame.protocol_version, protocol.PROTOCOL_VERSION)
+
+    def test_raw_ref_is_sha256_hex(self):
+        """raw_ref 必须是 64 位小写 hex（SHA256 输出）。"""
+        for name in self.TELEMETRY_FIXTURES:
+            for frame in self._frames_for(name):
+                with self.subTest(fixture=name):
+                    self.assertEqual(len(frame.raw_ref), 64,
+                                     f"raw_ref 应为 64 位 hex，实际长度: {len(frame.raw_ref)}")
+                    self.assertTrue(all(c in "0123456789abcdef" for c in frame.raw_ref),
+                                    "raw_ref 必须为小写 hex 字符")
+
+    def test_raw_ref_stable_for_same_fixture_bytes(self):
+        """同一 fixture 两次回放，相同帧字节的 raw_ref 必须一致（内容寻址）。"""
+        entry = self.entries["telemetry_normal"]
+        raw = _load_fixture(entry["file"])
+        first = frames_from_bytes(raw, device_id=entry["device_id"])[0]
+        second = frames_from_bytes(raw, device_id=entry["device_id"])[0]
+        self.assertEqual(first.raw_ref, second.raw_ref,
+                         "相同原始帧字节的 raw_ref 必须一致")
+
+    def test_quality_status_in_valid_enum(self):
+        for name in self.TELEMETRY_FIXTURES:
+            for frame in self._frames_for(name):
+                with self.subTest(fixture=name):
+                    self.assertIn(frame.quality["status"], self.VALID_QUALITY_STATUSES,
+                                  f"quality.status 必须落在 good/degraded/invalid/unknown，"
+                                  f"实际: {frame.quality['status']}")
+
+    def test_standard_fields_survive_round_trip(self):
+        """标准消息扩展字段经 to_storage_dict / from_storage_dict 往返后保持一致。"""
+        from edge_platform.edge.exo_semantic import from_storage_dict
+        entry = self.entries["telemetry_normal"]
+        frame = frames_from_bytes(_load_fixture(entry["file"]),
+                                  device_id=entry["device_id"])[0]
+        d = to_storage_dict(frame)
+        restored = from_storage_dict(d)
+        self.assertEqual(restored.record_id, frame.record_id)
+        self.assertEqual(restored.ingested_at, frame.ingested_at)
+        self.assertEqual(restored.device_model, frame.device_model)
+        self.assertEqual(restored.firmware_version, frame.firmware_version)
+        self.assertEqual(restored.protocol_version, frame.protocol_version)
+        self.assertEqual(restored.raw_ref, frame.raw_ref)
+        self.assertEqual(restored.quality.get("status"), frame.quality.get("status"))
 
 
 class TestSourceTypeIsolation(unittest.TestCase):

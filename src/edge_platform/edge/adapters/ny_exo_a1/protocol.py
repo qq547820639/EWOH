@@ -44,6 +44,23 @@ TYPE_NAMES = {
 #: i16 缺失/传感器故障哨兵值（协议确认书：异常值表示约定）
 MISSING_SENTINEL = 0x7FFF
 
+#: 故障码 → 名称（协议确认书 2.5）。0x00 表示无故障（恢复）。
+#: 全部故障情形下设备均进入**本地**安全态，助力退出逻辑由设备控制器执行，不依赖平台指令。
+FAULT_CODES = {
+    0x00: "NO_FAULT",
+    0x01: "IMU_FAULT",
+    0x02: "LOW_BATTERY",
+    0x03: "OVERTEMP",
+    0x04: "COMM_DEGRADED",
+}
+
+
+def fault_name(code):
+    """故障码 → 可读名称（协议确认书 2.5）；未知码返回 UNKNOWN_FAULT_0xNN。"""
+    if code is None:
+        return None
+    return FAULT_CODES.get(code, "UNKNOWN_FAULT_0x%02X" % (code & 0xFF))
+
 #: TELEMETRY 载荷长度（协议确认书 2.3：9×i16 + assist u8 + battery u8）
 TELEMETRY_PAYLOAD_LEN = 20
 
@@ -176,6 +193,7 @@ def parse_fault_payload(payload):
     code = payload[0]
     return {
         "fault_code": code,
+        "fault_name": fault_name(code),
         "fault_detail": payload[1] if len(payload) >= 2 else 0,
         "faulted": code != 0x00,
     }

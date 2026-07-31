@@ -33,8 +33,8 @@
   - [ ] 8.1 实现设备发现/身份版本查询/心跳/遥测读取/电量读取/传感器健康/故障码读取/断线识别/重连/本地缓存补传
   - [ ] 8.2 确认不实现任何平台→设备业务命令
 - [ ] Task 9: 标准消息扩展
-  - [ ] 9.1 增加 `record_id`、`ingested_at`、`device_model`、`firmware_version`、`protocol_version`、`raw_ref` 字段
-  - [ ] 9.2 质量状态统一为 `good/degraded/invalid/unknown`
+  - [x] 9.1 增加 `record_id`、`ingested_at`、`device_model`、`firmware_version`、`protocol_version`、`raw_ref` 字段
+  - [x] 9.2 质量状态统一为 `good/degraded/invalid/unknown`
 - [ ] Task 10: 数据质量处理
   - [ ] 10.1 处理序号重复/跳变、时间戳倒退/漂移、字段缺失、超量程、非数值、采样率异常、包损坏、重连后重复补传、固件升级字段变化
   - [ ] 10.2 invalid 数据保留原始但不进入推理管线

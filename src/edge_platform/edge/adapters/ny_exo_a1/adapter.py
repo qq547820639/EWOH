@@ -15,9 +15,11 @@ source_type ∈ {real, controlled_test, simulated} 实现来源隔离。
 纯 Python 标准库实现，不引入任何第三方依赖。
 """
 
+import hashlib
 import math
 import queue
 import struct
+from collections import deque
 from datetime import datetime, timedelta, timezone
 
 from edge_platform.edge.adapters.base import BaseAdapter
@@ -27,6 +29,7 @@ from edge_platform.edge.exo_semantic import (
     map_vendor_to_unified,
     to_storage_dict,
 )
+from edge_platform.spatial import now_iso
 
 #: 厂商原始字段 → 统一语义路径映射（spec 5.2；docs/data/multimodal_schema.md §6.2）
 #: 未列入本表的厂商字段一律不进入统一帧。
@@ -60,6 +63,12 @@ DEFAULT_TZ_OFFSET_HOURS = 8
 #: 电量健康阈值（协议确认书：低电量安全阈值 10%）
 LOW_BATTERY_PCT = 10
 
+#: BACKFILL 去重窗口：记住最近 N 个已产出的 SEQ（协议确认书 3.5「补传按 SEQ 去重」）
+BACKFILL_DEDUP_WINDOW = 4096
+
+#: 原始帧留存环形缓冲默认容量（Task 2.1「原始帧保留」/ Task 3.2「双向追溯」）
+DEFAULT_RAW_RING_SIZE = 512
+
 
 def ts_ms_to_iso(ts_ms, tz_offset_hours=DEFAULT_TZ_OFFSET_HOURS):
     """设备 epoch 毫秒 → ISO 8601 字符串（毫秒精度，带时区偏移）。
@@ -77,12 +86,29 @@ def _gyro_norm(gyro_dps):
     return round(math.sqrt(sum(v * v for v in gyro_dps)), 4)
 
 
+def _raw_ref(raw_bytes):
+    """原始帧字节 → SHA256 hex 引用（spec「标准消息扩展」raw_ref 字段）。
+
+    用于「标准消息 ↔ 原始帧」双向追溯；空输入返回空串。
+    """
+    if not raw_bytes:
+        return ""
+    return hashlib.sha256(raw_bytes).hexdigest()
+
+
 class NyExoA1Adapter(BaseAdapter):
     """NY-EXO-A1 外骨骼适配器。
 
-    真实驱动子类通过 `feed(raw_bytes)` 投递设备原始字节流（TCP 粘包由内部缓冲处理），
-    解析出的统一语义消息进入 `_inbox`；`read_message` 按 BaseAdapter 契约取出 dict。
-    需要 dataclass 对象时用 `read_unified_frame`。
+    真实驱动（`edge_platform.edge.device_driver`）通过 `feed(raw_bytes)` 投递设备原始
+    字节流（TCP 粘包由内部缓冲处理）。产出的统一语义帧有两种取用方式：
+
+    - **拉模式**（默认）：帧进入 `_inbox`，用 `read_message` / `read_unified_frame`
+      / `drain` 取出，符合 BaseAdapter 契约；
+    - **推模式**：构造时传入 `frame_sink=fn(unified_frame, meta)`，帧产出即回调，
+      驱动层据此直接落库并建立「统一消息 ↔ 原始帧」索引，不再入队。
+
+    `keep_raw=True` 时按环形缓冲留存原始帧字节（Task 2.1「原始帧保留」，
+    配合 `find_raw` 支持 Task 3.2 的双向追溯）。
     """
 
     DEVICE_TYPE = "exoskeleton"
@@ -90,23 +116,38 @@ class NyExoA1Adapter(BaseAdapter):
 
     def __init__(self, device_id, source_type="real", model="NY-EXO-A1",
                  firmware_version="", worker_id=None,
-                 tz_offset_hours=DEFAULT_TZ_OFFSET_HOURS, maxsize=1024):
+                 tz_offset_hours=DEFAULT_TZ_OFFSET_HOURS, maxsize=1024,
+                 frame_sink=None, keep_raw=False, raw_ring_size=DEFAULT_RAW_RING_SIZE):
         super().__init__(device_id, source_type=source_type, model=model,
                          firmware_version=firmware_version)
+        if frame_sink is not None and not callable(frame_sink):
+            raise TypeError("frame_sink 必须可调用或为 None")
         self.worker_id = worker_id
         self.tz_offset_hours = tz_offset_hours
         self.hardware_version = ""
+        self.frame_sink = frame_sink
+        self.keep_raw = bool(keep_raw)
         self._inbox = queue.Queue(maxsize=maxsize)
         self._buffer = bytearray()
         self._last_seq = None
         self._last_seen = None
         self._fault_code = None
+        self._fault_name = None
         self._battery_pct = None
         # 丢包统计：期望帧数与实际收到帧数（按 SEQ 连续性推算）
         self._expected_frames = 0
         self._received_frames = 0
         self._bad_crc_frames = 0
         self._malformed_frames = 0
+        # 补传去重（协议确认书 3.5）与背压/回调计数
+        self._seen_seqs = set()
+        self._seen_seq_order = deque(maxlen=BACKFILL_DEDUP_WINDOW)
+        self._backfill_frames = 0
+        self._backfill_duplicates = 0
+        self._dropped_frames = 0
+        self._sink_errors = 0
+        # 原始帧留存（record 形态见 _remember_raw）
+        self._raw_ring = deque(maxlen=int(raw_ring_size))
 
     # ---- 生命周期 ----
     def start(self):
@@ -117,7 +158,11 @@ class NyExoA1Adapter(BaseAdapter):
         self._running = False
 
     def reconnect(self):
-        # 重连后 SEQ 基线失效，避免把重连当成一次巨量丢包
+        """重连：清空半包缓冲与 SEQ 基线，恢复采集（平台无需重启，Task 6）。
+
+        SEQ 去重窗口 **不清空**——重连后设备会 BACKFILL 补传断线期间的缓存，
+        需要靠它把与实时帧重复的 SEQ 去掉（协议确认书 3.5）。
+        """
         self._last_seq = None
         self._buffer.clear()
         self._running = True
@@ -140,8 +185,14 @@ class NyExoA1Adapter(BaseAdapter):
             "started_at": self._started_at,
             "battery_pct": self._battery_pct,
             "fault_code": self._fault_code,
+            "fault_name": self._fault_name,
             "packet_loss_pct": self.packet_loss_pct(),
             "bad_crc_frames": self._bad_crc_frames,
+            "malformed_frames": self._malformed_frames,
+            "backfill_frames": self._backfill_frames,
+            "backfill_duplicates": self._backfill_duplicates,
+            "dropped_frames": self._dropped_frames,
+            "sink_errors": self._sink_errors,
         }
 
     def device_info(self):
@@ -179,9 +230,10 @@ class NyExoA1Adapter(BaseAdapter):
                 return out
 
     def feed(self, raw_bytes):
-        """投递设备原始字节流，解析并入队统一语义帧，返回本次新增帧数。
+        """投递设备原始字节流，解析并产出统一语义帧，返回本次新增帧数。
 
         内部维护粘包缓冲：不完整的尾部字节保留到下次 feed。
+        推模式（构造时给了 frame_sink）下帧直接回调，不入 `_inbox`。
         """
         self._buffer.extend(raw_bytes)
         produced = 0
@@ -189,24 +241,35 @@ class NyExoA1Adapter(BaseAdapter):
             frame, consumed = protocol.decode_frame(self._buffer)
             if consumed == 0:
                 break  # 数据不足一帧，等待后续字节
+            raw = bytes(self._buffer[:consumed])
             del self._buffer[:consumed]
             if frame is None:
                 continue  # 帧头失配，已跳字节重同步
-            unified = self._handle_frame(frame)
-            if unified is not None:
+            for unified, meta in self._handle_frame(frame, raw):
+                produced += 1
+                if self.frame_sink is not None:
+                    try:
+                        self.frame_sink(unified, meta)
+                    except Exception:  # noqa: BLE001 - 下游异常不得中断采集
+                        self._sink_errors += 1
+                    continue
                 try:
                     self._inbox.put_nowait(unified)
-                    produced += 1
                 except queue.Full:
-                    pass  # 背压：丢弃最新帧，由 packet_loss 统计体现
+                    self._dropped_frames += 1  # 背压：由 dropped_frames 统计体现
         return produced
 
     # ---- 内部：帧处理与统一语义映射 ----
-    def _handle_frame(self, frame):
-        """处理单帧：状态帧更新内部状态，TELEMETRY 返回 UnifiedExoFrame。"""
+    def _handle_frame(self, frame, raw=b""):
+        """处理单帧，返回 [(UnifiedExoFrame, meta), ...]。
+
+        状态帧（IDENT/HEARTBEAT/FAULT）只更新内部状态，返回空列表；
+        TELEMETRY 返回一条；BACKFILL 返回补传条目（按 SEQ 去重后）。
+        """
         if not frame["crc_ok"]:
             self._bad_crc_frames += 1
-            return None  # 坏帧不进入上层（spec：CRC 失败帧拒绝）
+            self._remember_raw(frame, raw, note="bad_crc")
+            return []  # 坏帧不进入上层（spec：CRC 失败帧拒绝）
 
         self._track_sequence(frame["seq"])
         self._last_seen = ts_ms_to_iso(frame["ts_ms"], self.tz_offset_hours)
@@ -215,22 +278,98 @@ class NyExoA1Adapter(BaseAdapter):
         except (ValueError, struct.error):
             # CRC 通过但载荷长度不合法（固件异常/协议不匹配）：丢弃该帧，不中断采集
             self._malformed_frames += 1
-            return None
+            self._remember_raw(frame, raw, note="malformed")
+            return []
+
+        self._remember_raw(frame, raw)
 
         if frame["type"] == protocol.TYPE_IDENT:
             self.device_id = payload.get("device_id") or self.device_id
             self.firmware_version = payload.get("firmware_version") or self.firmware_version
             self.hardware_version = payload.get("hardware_version") or self.hardware_version
-            return None
+            return []
         if frame["type"] == protocol.TYPE_FAULT:
-            self._fault_code = payload["fault_code"] if payload["faulted"] else None
-            return None
+            faulted = payload["faulted"]
+            self._fault_code = payload["fault_code"] if faulted else None
+            self._fault_name = payload.get("fault_name") if faulted else None
+            return []
         if frame["type"] == protocol.TYPE_HEARTBEAT:
             self._battery_pct = payload.get("battery_pct")
-            return None
+            return []
         if frame["type"] == protocol.TYPE_TELEMETRY:
-            return self.to_unified(payload, frame["ts_ms"])
-        return None  # BACKFILL 等类型由补传通道单独处理
+            # 实时帧一律产出（重复 SEQ 只在补传通道去重），但登记 SEQ 以便补传去重
+            self._mark_seq(frame["seq"])
+            return [(self.to_unified(payload, frame["ts_ms"], raw_bytes=raw),
+                     self._meta(frame, raw, frame["seq"], frame["ts_ms"], backfill=False))]
+        if frame["type"] == protocol.TYPE_BACKFILL:
+            return self._handle_backfill(payload, frame, raw)
+        return []  # 未知类型：忽略，不中断采集
+
+    def _handle_backfill(self, entries, frame, raw):
+        """补传帧展开为统一语义帧（协议确认书 3.5：按 SEQ 去重）。"""
+        self._backfill_frames += 1
+        out = []
+        for entry in entries:
+            seq = entry.get("seq", 0)
+            if not self._mark_seq(seq):
+                self._backfill_duplicates += 1
+                continue
+            ts_ms = entry.get("ts_ms", frame["ts_ms"])
+            out.append((self.to_unified(entry.get("telemetry") or {}, ts_ms, raw_bytes=raw),
+                        self._meta(frame, raw, seq, ts_ms, backfill=True)))
+        return out
+
+    def _mark_seq(self, seq):
+        """登记一个已产出的遥测 SEQ；返回 False 表示重复（应去重丢弃）。"""
+        if seq in self._seen_seqs:
+            return False
+        if len(self._seen_seq_order) == self._seen_seq_order.maxlen:
+            self._seen_seqs.discard(self._seen_seq_order[0])
+        self._seen_seq_order.append(seq)
+        self._seen_seqs.add(seq)
+        return True
+
+    def _meta(self, frame, raw, seq, ts_ms, backfill=False):
+        """统一帧的溯源元信息：驱动层据此建立「标准消息 ↔ 原始帧」索引。"""
+        return {
+            "device_id": self.device_id,
+            "source_type": self.source_type,
+            "seq": seq,
+            "ts_ms": ts_ms,
+            "frame_seq": frame["seq"],
+            "frame_type": frame["type"],
+            "frame_type_name": frame["type_name"],
+            "backfill": bool(backfill),
+            "raw": raw,
+            "raw_len": len(raw),
+        }
+
+    def _remember_raw(self, frame, raw, note="ok"):
+        """按环形缓冲留存原始帧（keep_raw=True 时生效）。"""
+        if not self.keep_raw or not raw:
+            return
+        self._raw_ring.append({
+            "seq": frame.get("seq"),
+            "ts_ms": frame.get("ts_ms"),
+            "frame_type": frame.get("type_name"),
+            "bytes_len": len(raw),
+            "note": note,
+            "raw_hex": raw.hex(),
+        })
+
+    def raw_frames(self, limit=None):
+        """返回已留存的原始帧记录（最近 limit 条），供 G2 原始数据样本导出。"""
+        items = list(self._raw_ring)
+        if limit is not None and limit > 0:
+            return items[-int(limit):]
+        return items
+
+    def find_raw(self, seq):
+        """按 SEQ 反查原始帧记录（Task 3.2 双向追溯）；未留存返回 None。"""
+        for item in reversed(self._raw_ring):
+            if item.get("seq") == seq:
+                return item
+        return None
 
     def _track_sequence(self, seq):
         """按 SEQ 连续性累计期望/实际帧数，用于丢包率统计。"""
@@ -253,13 +392,17 @@ class NyExoA1Adapter(BaseAdapter):
     def _is_low_battery(self):
         return self._battery_pct is not None and self._battery_pct < LOW_BATTERY_PCT
 
-    def to_unified(self, telemetry, ts_ms):
+    def to_unified(self, telemetry, ts_ms, raw_bytes=b""):
         """厂商遥测物理量 dict → UnifiedExoFrame（唯一的统一语义转换入口）。
 
         质量判定：
         - 越量程（pitch/roll/torque/battery）→ quality.status=invalid，置信度 0.0；
         - 关键字段缺失（哨兵 0x7FFF）→ quality.status=degraded，置信度打折；
         - 否则 good。
+
+        标准消息扩展字段（spec「标准消息扩展与数据质量」）在本方法填充：
+        device_model/firmware_version/protocol_version 取自适配器状态（IDENT/HEARTBEAT 维护），
+        raw_ref 为原始帧字节 SHA256 引用，record_id/ingested_at 由 UnifiedExoFrame.__post_init__ 生成。
         """
         pitch = telemetry.get("pitch_deg")
         torque = telemetry.get("torque_nm")
@@ -308,7 +451,17 @@ class NyExoA1Adapter(BaseAdapter):
             "confidence": confidence,
             "quality_status": quality_status,
         }
-        return map_vendor_to_unified(vendor, VENDOR_TO_UNIFIED)
+        frame = map_vendor_to_unified(vendor, VENDOR_TO_UNIFIED)
+        # 标准消息扩展字段（spec「标准消息扩展与数据质量」）：平台元信息直接写入帧，
+        # 不经 vendor mapping（这些是平台级字段，非厂商字段）。
+        # record_id / ingested_at 由 __post_init__ 自动生成；此处刷新 ingested_at 为
+        # 平台接收时刻，与 event_time（设备产生时刻）区分。
+        frame.ingested_at = now_iso()
+        frame.device_model = self.model
+        frame.firmware_version = self.firmware_version
+        frame.protocol_version = self.PROTOCOL_VERSION
+        frame.raw_ref = _raw_ref(raw_bytes)
+        return frame
 
 
 def frames_from_bytes(raw, device_id="EXO-UNKNOWN", source_type="real",

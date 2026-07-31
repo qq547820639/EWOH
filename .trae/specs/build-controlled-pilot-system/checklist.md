@@ -21,8 +21,8 @@
 - [ ] NY-EXO-A1 适配器迁移到新结构
 - [ ] 只读接入实现（发现/身份版本/心跳/遥测/电量/传感器健康/故障码/断线/重连/缓存补传）
 - [ ] 平台不存在任何平台→设备业务命令
-- [ ] 标准消息含 `record_id`/`ingested_at`/`device_model`/`firmware_version`/`protocol_version`/`raw_ref`
-- [ ] 质量状态统一为 `good/degraded/invalid/unknown`
+- [x] 标准消息含 `record_id`/`ingested_at`/`device_model`/`firmware_version`/`protocol_version`/`raw_ref`
+- [x] 质量状态统一为 `good/degraded/invalid/unknown`
 - [ ] 数据质量处理覆盖序号重复跳变/时间戳倒退漂移/字段缺失/超量程/非数值/采样率异常/包损坏/重连重复补传/固件升级字段变化
 - [ ] invalid 数据保留原始但不进入推理
 - [ ] 原始帧录制工具、协议测试样例、设备模拟回放器齐备
