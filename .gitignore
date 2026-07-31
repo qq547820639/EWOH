@@ -15,6 +15,8 @@ venv/
 
 # 运行时数据库（SQLite）
 *.db
+*.db-shm
+*.db-wal
 
 # 凭据与环境（仅样例 .env.example 入库，真实 .env 禁止提交）
 .env
@@ -23,3 +25,9 @@ venv/
 *.tmp
 *.log
 .tmp/
+
+# 工作目录
+.workbuddy/
+
+# Node.js
+node_modules/

@@ -1,4 +1,4 @@
-/* timeline/timeline.css — playback controls + shift timeline track */
+/* timeline/timeline.css — playback controls + shift timeline track + replay pane */
 .cm-tl-wrap { display: flex; flex-direction: column; gap: 8px; height: 100%; }
 .cm-tl-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .cm-tl-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
@@ -9,6 +9,7 @@
 .cm-tl-track {
   position: relative; height: 56px; margin: 18px 8px 8px;
   background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  cursor: pointer;
 }
 .cm-tl-axis { position: absolute; left: 0; right: 0; top: 28px; height: 2px; background: var(--border-2); }
 .cm-tl-tick { position: absolute; top: 24px; width: 1px; height: 10px; background: var(--muted-2); transform: translateX(-50%); }
@@ -26,5 +27,21 @@
 .cm-tl-jump-item:hover { background: var(--panel-2); border-color: var(--accent); }
 .cm-tl-jump-time { font-family: var(--mono); color: var(--muted); width: 64px; }
 .cm-tl-jump-id { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+/* 回放数据面板 */
+.cm-tl-replay {
+  flex: 1; min-height: 120px; overflow: auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 8px 10px;
+}
+.cm-tl-replay-loading, .cm-tl-replay-empty { color: var(--muted); font-size: 12px; padding: 20px 8px; text-align: center; }
+.cm-tl-replay-head { display: flex; gap: 16px; flex-wrap: wrap; font-size: 11px; color: var(--muted); padding-bottom: 6px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+.cm-tl-replay-head b { color: var(--text); font-family: var(--mono); }
+.cm-tl-replay-chart { background: var(--panel); border-radius: var(--radius-sm); padding: 4px; }
+.cm-tl-replay-cursor {
+  display: flex; gap: 16px; flex-wrap: wrap; margin-top: 6px; padding: 6px 8px;
+  background: var(--panel-2); border-radius: var(--radius-sm); font-size: 11px; color: var(--muted);
+}
+.cm-tl-replay-cursor b { color: var(--text); font-family: var(--mono); }
 
 .cm-tl-note { font-size: 11px; color: var(--muted); margin-top: auto; padding: 4px 0; }

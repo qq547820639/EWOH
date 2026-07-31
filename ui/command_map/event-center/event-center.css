@@ -1,6 +1,26 @@
-/* event-center/event-center.css — event stream list + detail */
+/* event-center/event-center.css — 事件流列表 + 详情 + 过滤 + 处置记录 + 证据窗 */
 .cm-ev-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; height: 100%; }
-.cm-ev-list { overflow-y: auto; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px; }
+.cm-ev-col { display: flex; flex-direction: column; min-height: 0; }
+
+/* 过滤条 */
+.cm-ev-filters {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  padding: 6px 8px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); margin-bottom: 6px;
+}
+.cm-ev-select {
+  padding: 4px 6px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  font-family: inherit; font-size: 11px; cursor: pointer;
+}
+.cm-ev-input {
+  flex: 1; min-width: 120px; padding: 4px 6px; background: var(--bg);
+  border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  color: var(--text); font-family: inherit; font-size: 11px;
+}
+.cm-ev-count { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-left: auto; }
+
+.cm-ev-list { overflow-y: auto; flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px; }
 .cm-ev-item { padding: 6px 8px; border-bottom: 1px solid var(--border); cursor: pointer; border-radius: var(--radius-sm); }
 .cm-ev-item:hover { background: var(--panel-2); }
 .cm-ev-item.active { background: var(--panel-3); border-left: 3px solid var(--accent); }
@@ -10,9 +30,9 @@
 .cm-ev-item-id { font-size: 10px; color: var(--muted-2); font-family: var(--mono); margin-top: 2px; }
 
 .cm-ev-detail { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; overflow-y: auto; }
-.cm-ev-empty { color: var(--muted); font-size: 12px; padding: 20px 8px; }
+.cm-ev-empty { color: var(--muted); font-size: 12px; padding: 10px 8px; }
 .cm-ev-d-head { padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
-.cm-ev-d-title { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.cm-ev-d-title { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .cm-ev-d-id { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .cm-ev-d-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
 .cm-ev-d-row span { color: var(--muted); }
@@ -20,3 +40,30 @@
 .cm-ev-d-detail { margin-top: 8px; padding: 8px; background: var(--panel); border-radius: var(--radius-sm); font-size: 12px; line-height: 1.6; border-left: 2px solid var(--warning); }
 .cm-ev-d-actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 .cm-mono { font-family: var(--mono); }
+
+/* 分区标题 */
+.cm-ev-d-section { margin-top: 12px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.cm-ev-d-sec-title { font-size: 12px; font-weight: 700; color: var(--accent-2); margin-bottom: 6px; }
+
+/* 处置 textarea */
+.cm-ev-textarea {
+  width: 100%; min-height: 48px; margin-top: 8px; padding: 6px 8px;
+  background: var(--bg); border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  color: var(--text); font-family: inherit; font-size: 12px; resize: vertical;
+}
+
+/* 现场事实标记区 */
+.cm-ev-d-sitefact { background: rgba(168,85,247,0.06); padding: 8px; border-radius: var(--radius-sm); border-left: 2px solid var(--purple); }
+.cm-ev-d-sitefact .cm-ev-select { width: 100%; margin-bottom: 6px; }
+
+/* 证据窗表格 */
+.cm-ev-evi-count { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.cm-ev-evi-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.cm-ev-evi-table th, .cm-ev-evi-table td { padding: 3px 6px; border-bottom: 1px solid var(--border); text-align: left; }
+.cm-ev-evi-table th { background: var(--bg-2); color: var(--muted); font-weight: 600; }
+
+/* 处置记录列表 */
+.cm-ev-handlings { list-style: none; margin: 0; padding: 0; }
+.cm-ev-handlings li { padding: 5px 6px; border-bottom: 1px solid var(--border); font-size: 11px; line-height: 1.5; }
+.cm-ev-handling-cmt { color: var(--text); margin-top: 2px; padding: 3px 6px; background: var(--panel); border-radius: 3px; }
+.cm-ev-audit-ref { display: inline-block; margin-top: 2px; font-size: 10px; color: var(--muted); }

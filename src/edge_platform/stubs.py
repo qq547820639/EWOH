@@ -140,8 +140,11 @@ class Storage:
     def __init__(self, db_path):
         self.db_path = str(db_path)
         self._lock = threading.Lock()
-        self._db = sqlite3.connect(self.db_path, check_same_thread=False)
+        self._db = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
         self._db.row_factory = sqlite3.Row
+        # WAL 模式 + busy_timeout 解决模拟器线程与 HTTP 请求线程并发写导致的 "database is locked"
+        self._db.execute("PRAGMA journal_mode=WAL")
+        self._db.execute("PRAGMA busy_timeout=30000")
         self.init_db()
 
     def init_db(self):
@@ -163,15 +166,17 @@ class Storage:
                              (msg["timestamp"], msg["device_id"]))
 
     def latest_telemetry(self, device_id):
-        row = self._db.execute("SELECT * FROM telemetry WHERE device_id=? ORDER BY ts DESC LIMIT 1",
-                               (device_id,)).fetchone()
-        return self._tele_row(row)
+        with self._lock:
+            row = self._db.execute("SELECT * FROM telemetry WHERE device_id=? ORDER BY ts DESC LIMIT 1",
+                                   (device_id,)).fetchone()
+            return self._tele_row(row)
 
     def query_telemetry(self, device_id, start, end, limit):
-        rows = self._db.execute(
-            "SELECT * FROM telemetry WHERE device_id=? AND ts BETWEEN ? AND ? ORDER BY ts LIMIT ?",
-            (device_id, start, end, int(limit))).fetchall()
-        return [self._tele_row(r) for r in rows]
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM telemetry WHERE device_id=? AND ts BETWEEN ? AND ? ORDER BY ts LIMIT ?",
+                (device_id, start, end, int(limit))).fetchall()
+            return [self._tele_row(r) for r in rows]
 
     def export_slice(self, device_id, start, end):
         records = self.query_telemetry(device_id, start, end, 100000)
@@ -190,10 +195,12 @@ class Storage:
 
     # -- 设备 / 人员 --
     def list_devices(self):
-        return [dict(r) for r in self._db.execute("SELECT * FROM device").fetchall()]
+        with self._lock:
+            return [dict(r) for r in self._db.execute("SELECT * FROM device").fetchall()]
 
     def list_people(self):
-        return [dict(r) for r in self._db.execute("SELECT * FROM person").fetchall()]
+        with self._lock:
+            return [dict(r) for r in self._db.execute("SELECT * FROM person").fetchall()]
 
     def upsert_device(self, **d):
         with self._lock, self._db:
@@ -219,15 +226,16 @@ class Storage:
                               json.dumps(res.get("meta", {}), ensure_ascii=False), res["source_type"]))
 
     def query_inference(self, device_id, start, end, limit):
-        rows = self._db.execute(
-            "SELECT * FROM inference WHERE device_id=? AND ts_end BETWEEN ? AND ? ORDER BY ts_end LIMIT ?",
-            (device_id, start, end, int(limit))).fetchall()
-        out = []
-        for r in rows:
-            d = dict(r)
-            d["meta"] = json.loads(d.pop("evidence_json") or "{}")
-            out.append(d)
-        return out
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM inference WHERE device_id=? AND ts_end BETWEEN ? AND ? ORDER BY ts_end LIMIT ?",
+                (device_id, start, end, int(limit))).fetchall()
+            out = []
+            for r in rows:
+                d = dict(r)
+                d["meta"] = json.loads(d.pop("evidence_json") or "{}")
+                out.append(d)
+            return out
 
     # -- 事件 --
     def insert_event(self, evt):
@@ -241,13 +249,15 @@ class Storage:
                               evt["source_type"], json.dumps(evt.get("handling"), ensure_ascii=False)))
 
     def list_events(self, limit):
-        rows = self._db.execute("SELECT * FROM risk_event ORDER BY start_time DESC LIMIT ?",
-                                (int(limit),)).fetchall()
-        return [self._evt_row(r) for r in rows]
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM risk_event ORDER BY start_time DESC LIMIT ?",
+                                    (int(limit),)).fetchall()
+            return [self._evt_row(r) for r in rows]
 
     def get_event(self, eid):
-        row = self._db.execute("SELECT * FROM risk_event WHERE event_id=?", (eid,)).fetchone()
-        return self._evt_row(row)
+        with self._lock:
+            row = self._db.execute("SELECT * FROM risk_event WHERE event_id=?", (eid,)).fetchone()
+            return self._evt_row(row)
 
     def update_event_status(self, eid, status, handling):
         with self._lock, self._db:
@@ -298,22 +308,23 @@ class Storage:
     def list_audit_logs(self, action=None, actor_id=None, target_type=None,
                         limit=100, offset=0):
         """分页查询审计日志；按 ts DESC, id DESC 排序。"""
-        clauses, params = [], []
-        if action is not None:
-            clauses.append("action=?")
-            params.append(action)
-        if actor_id is not None:
-            clauses.append("actor_id=?")
-            params.append(actor_id)
-        if target_type is not None:
-            clauses.append("target_type=?")
-            params.append(target_type)
-        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
-        sql = ("SELECT * FROM audit_log" + where +
-               " ORDER BY ts DESC, id DESC LIMIT ? OFFSET ?")
-        params.extend([int(limit), int(offset)])
-        rows = self._db.execute(sql, params).fetchall()
-        return [self._audit_log_row(r) for r in rows]
+        with self._lock:
+            clauses, params = [], []
+            if action is not None:
+                clauses.append("action=?")
+                params.append(action)
+            if actor_id is not None:
+                clauses.append("actor_id=?")
+                params.append(actor_id)
+            if target_type is not None:
+                clauses.append("target_type=?")
+                params.append(target_type)
+            where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+            sql = ("SELECT * FROM audit_log" + where +
+                   " ORDER BY ts DESC, id DESC LIMIT ? OFFSET ?")
+            params.extend([int(limit), int(offset)])
+            rows = self._db.execute(sql, params).fetchall()
+            return [self._audit_log_row(r) for r in rows]
 
     @staticmethod
     def _audit_log_row(row):
@@ -343,14 +354,15 @@ class Storage:
 
     def list_device_protocol_versions(self, device_id=None):
         """查询设备协议版本登记；可选按 device_id 过滤，按 upgraded_at DESC, id DESC。"""
-        if device_id is None:
-            rows = self._db.execute(
-                "SELECT * FROM device_protocol_version ORDER BY upgraded_at DESC, id DESC").fetchall()
-        else:
-            rows = self._db.execute(
-                "SELECT * FROM device_protocol_version WHERE device_id=?"
-                " ORDER BY upgraded_at DESC, id DESC", (device_id,)).fetchall()
-        return [dict(r) for r in rows]
+        with self._lock:
+            if device_id is None:
+                rows = self._db.execute(
+                    "SELECT * FROM device_protocol_version ORDER BY upgraded_at DESC, id DESC").fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM device_protocol_version WHERE device_id=?"
+                    " ORDER BY upgraded_at DESC, id DESC", (device_id,)).fetchall()
+            return [dict(r) for r in rows]
 
     def insert_event_handling(self, event_id, handler_id, action, comment=None, audit_ref=None):
         """记录一次事件处置动作；返回新记录字典。"""
@@ -367,14 +379,15 @@ class Storage:
 
     def list_event_handlings(self, event_id=None):
         """查询事件处置记录；可选按 event_id 过滤，按 handled_at DESC, id DESC。"""
-        if event_id is None:
-            rows = self._db.execute(
-                "SELECT * FROM event_handling ORDER BY handled_at DESC, id DESC").fetchall()
-        else:
-            rows = self._db.execute(
-                "SELECT * FROM event_handling WHERE event_id=? ORDER BY handled_at DESC, id DESC",
-                (event_id,)).fetchall()
-        return [dict(r) for r in rows]
+        with self._lock:
+            if event_id is None:
+                rows = self._db.execute(
+                    "SELECT * FROM event_handling ORDER BY handled_at DESC, id DESC").fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM event_handling WHERE event_id=? ORDER BY handled_at DESC, id DESC",
+                    (event_id,)).fetchall()
+            return [dict(r) for r in rows]
 
     def upsert_assignment(self, assignment_id, person_id, device_id=None, task_id=None,
                           status="proposed", recommended_by=None, confirmed_by=None,
@@ -398,17 +411,18 @@ class Storage:
 
     def list_assignments(self, person_id=None, status=None):
         """查询派工记录；可选按 person_id / status 过滤，按 id DESC。"""
-        clauses, params = [], []
-        if person_id is not None:
-            clauses.append("person_id=?")
-            params.append(person_id)
-        if status is not None:
-            clauses.append("status=?")
-            params.append(status)
-        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
-        sql = "SELECT * FROM assignment" + where + " ORDER BY id DESC"
-        rows = self._db.execute(sql, params).fetchall()
-        return [dict(r) for r in rows]
+        with self._lock:
+            clauses, params = [], []
+            if person_id is not None:
+                clauses.append("person_id=?")
+                params.append(person_id)
+            if status is not None:
+                clauses.append("status=?")
+                params.append(status)
+            where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+            sql = "SELECT * FROM assignment" + where + " ORDER BY id DESC"
+            rows = self._db.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
 
     def insert_model_record(self, model_id, model_type, version, status="candidate",
                             model_card_uri=None):
@@ -426,17 +440,18 @@ class Storage:
 
     def list_models(self, model_type=None, status=None):
         """查询模型注册表；可选按 model_type / status 过滤，按 id DESC。"""
-        clauses, params = [], []
-        if model_type is not None:
-            clauses.append("model_type=?")
-            params.append(model_type)
-        if status is not None:
-            clauses.append("status=?")
-            params.append(status)
-        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
-        sql = "SELECT * FROM model_registry" + where + " ORDER BY id DESC"
-        rows = self._db.execute(sql, params).fetchall()
-        return [dict(r) for r in rows]
+        with self._lock:
+            clauses, params = [], []
+            if model_type is not None:
+                clauses.append("model_type=?")
+                params.append(model_type)
+            if status is not None:
+                clauses.append("status=?")
+                params.append(status)
+            where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+            sql = "SELECT * FROM model_registry" + where + " ORDER BY id DESC"
+            rows = self._db.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
 
     def insert_rule_record(self, rule_id, rule_version, enabled=True, config_json=None,
                            severity=None, approver_id=None):
@@ -458,19 +473,20 @@ class Storage:
 
     def list_rules(self, enabled=None):
         """查询规则注册表；可选按 enabled 过滤（True/False/None），按 id DESC。"""
-        if enabled is None:
-            rows = self._db.execute(
-                "SELECT * FROM rule_registry ORDER BY id DESC").fetchall()
-        else:
-            rows = self._db.execute(
-                "SELECT * FROM rule_registry WHERE enabled=? ORDER BY id DESC",
-                (int(enabled),)).fetchall()
-        out = []
-        for r in rows:
-            d = dict(r)
-            d["config"] = self._json_loads_maybe(d.pop("config_json"))
-            out.append(d)
-        return out
+        with self._lock:
+            if enabled is None:
+                rows = self._db.execute(
+                    "SELECT * FROM rule_registry ORDER BY id DESC").fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM rule_registry WHERE enabled=? ORDER BY id DESC",
+                    (int(enabled),)).fetchall()
+            out = []
+            for r in rows:
+                d = dict(r)
+                d["config"] = self._json_loads_maybe(d.pop("config_json"))
+                out.append(d)
+            return out
 
     def insert_consent_record(self, record_id, person_id, purpose, granted_by,
                               status="active", revoked_at=None, revoke_reason=None,
@@ -490,23 +506,25 @@ class Storage:
 
     def list_consent_records(self, person_id=None, status=None):
         """查询授权记录；可选按 person_id / status 过滤，按 id DESC。"""
-        clauses, params = [], []
-        if person_id is not None:
-            clauses.append("person_id=?")
-            params.append(person_id)
-        if status is not None:
-            clauses.append("status=?")
-            params.append(status)
-        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
-        sql = "SELECT * FROM consent_record" + where + " ORDER BY id DESC"
-        rows = self._db.execute(sql, params).fetchall()
-        return [dict(r) for r in rows]
+        with self._lock:
+            clauses, params = [], []
+            if person_id is not None:
+                clauses.append("person_id=?")
+                params.append(person_id)
+            if status is not None:
+                clauses.append("status=?")
+                params.append(status)
+            where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+            sql = "SELECT * FROM consent_record" + where + " ORDER BY id DESC"
+            rows = self._db.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
 
     def counts(self):
-        def n(t):
-            return self._db.execute("SELECT COUNT(*) c FROM %s" % t).fetchone()["c"]
-        return {"person": n("person"), "device": n("device"), "telemetry": n("telemetry"),
-                "inference": n("inference"), "risk_event": n("risk_event")}
+        with self._lock:
+            def n(t):
+                return self._db.execute("SELECT COUNT(*) c FROM %s" % t).fetchone()["c"]
+            return {"person": n("person"), "device": n("device"), "telemetry": n("telemetry"),
+                    "inference": n("inference"), "risk_event": n("risk_event")}
 
     def reset_demo(self):
         """演示重置：清空 simulated/controlled_test 来源数据与设备在线状态（stub 专用钩子）。"""

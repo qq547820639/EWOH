@@ -160,6 +160,13 @@ def make_handler(ctx):
                 self._request_id = inbound or uuid.uuid4().hex[:8]
             super().send_response(code, message)
             self.send_header("X-Request-ID", self._request_id)
+            # CORS：指挥地图前端（ui/command_map）与 backend 跨端口部署时允许跨域，
+            # 仅当请求携带 Origin 时回送（边缘平台本地部署，不构成公网风险）
+            origin = self.headers.get("Origin") if self.headers else None
+            if origin:
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Access-Control-Allow-Credentials", "true")
+                self.send_header("Vary", "Origin")
 
         # ---- 基础工具 ----
         def _flush_post_audit(self):
@@ -404,6 +411,16 @@ def make_handler(ctx):
         def do_HEAD(self):
             self._request_id = None  # keep-alive 复用实例时重置请求 ID
             return super().do_HEAD()
+
+        def do_OPTIONS(self):
+            """CORS 预检：允许指挥地图前端跨端口调用 API（本地边缘部署）。"""
+            self._request_id = None
+            self.send_response(204)
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers",
+                             "Content-Type, Authorization, X-Request-ID")
+            self.send_header("Access-Control-Max-Age", "600")
+            self.end_headers()
 
         # ---- API 实现 ----
         def api_status(self):

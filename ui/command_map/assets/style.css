@@ -231,6 +231,16 @@ body {
 }
 .cm-pop-input-row button:disabled { opacity: 0.5; cursor: not-allowed; }
 .cm-pop-answer { margin-top: 10px; padding: 8px; background: var(--bg); border-radius: var(--radius-sm); font-size: 11px; color: var(--muted); line-height: 1.6; }
+.cm-pop-answer-text { color: var(--text); margin-bottom: 6px; white-space: pre-wrap; word-break: break-word; }
+.cm-pop-loading { color: var(--accent-2); font-style: italic; }
+.cm-pop-tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-bottom: 4px; }
+.cm-pop-ok { background: rgba(16,185,129,0.15); color: var(--success); }
+.cm-pop-refused { background: rgba(239,68,68,0.15); color: var(--danger); }
+.cm-pop-evidence { margin-top: 6px; }
+.cm-pop-evidence summary { cursor: pointer; color: var(--muted); font-size: 10px; }
+.cm-pop-evidence pre { margin-top: 4px; padding: 6px; background: var(--panel-3); border-radius: var(--radius-sm); font-size: 10px; color: var(--text); max-height: 120px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.cm-pop-source { display: block; margin-top: 6px; font-size: 10px; color: var(--muted-2); }
+.cm-pop-error { color: var(--danger); }
 
 /* ===== Generic badges ===== */
 .cm-badge {

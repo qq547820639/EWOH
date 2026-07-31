@@ -1,7 +1,8 @@
-/* entity-panel/entity-panel.js — right-side selected entity details.
-   Satisfies the "空间实体可追溯" scenario: shows full spec fields
-   id/parent/坐标/朝向/边界框/状态/来源/置信度/更新时间/版本 plus type-specific extras
-   and the person—device—task—station binding. */
+/* entity-panel/entity-panel.js — 右侧选中实体详情（Task 16 前端：看得懂）。
+   人员详情页：匿名编号/当前任务/位置/技能/外骨骼/当前动作/累计负荷/风险趋势/最近事件/建议/数据质量
+   外骨骼详情页：设备状态/电量/故障/最近推理/绑定人员/最新遥测
+   工位详情页：节拍/占用/积压/关联事件
+   V0.2：按需拉取 /api/person/profile、/api/devices/{id}/health、/api/events/{id} */
 (function () {
   'use strict';
   var CM = window.CM;
@@ -20,9 +21,57 @@
     return '<span class="cm-bind-link" data-id="' + id + '">' + id + (e ? ' · ' + CM.esc(e.name) : '') + '</span>';
   }
 
+  // 简单 SVG 风险趋势迷你图：基于事件历史与负荷推断（非医学诊断）
+  function riskSpark(personId, currentLoad, fatigueTrend) {
+    // 取该人员最近 12 条事件作为风险历史样本（按时间正序）
+    var evs = CM.DATA.events
+      .filter(function (e) { return e.person_id === personId; })
+      .sort(function (a, b) { return (a.time || '').localeCompare(b.time || ''); })
+      .slice(-12);
+    var pts = [];
+    var baseline = 0.2 + (fatigueTrend || 0) * 0.3;
+    for (var i = 0; i < 12; i++) {
+      var ev = evs[i];
+      var v;
+      if (ev) {
+        v = ev.severity === 'critical' ? 0.9 : ev.severity === 'warning' ? 0.65 : 0.3;
+      } else {
+        v = baseline + (currentLoad || 0) * 0.4;
+      }
+      pts.push([i * 12 + 4, 32 - v * 28]);
+    }
+    var path = pts.map(function (p, i) { return (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1]; }).join(' ');
+    var svg = '<svg class="cm-spark" width="150" height="36" viewBox="0 0 150 36">' +
+      '<path d="' + path + '" fill="none" stroke="#f59e0b" stroke-width="1.5"/>' +
+      '<line x1="0" y1="32" x2="150" y2="32" stroke="#2a3340" stroke-width="1"/>' +
+      '</svg>';
+    return '<div class="cm-sub-field"><div class="cm-sub-label">风险趋势（仅推断，非医学诊断）</div><div class="cm-sub-value">' + svg + '</div></div>';
+  }
+
+  // 基于规则的简短建议（非 LLM，避免虚构）
+  function suggestForPerson(p, profile) {
+    var tips = [];
+    var load = (p.person && p.person.load_level) || 0;
+    var fatigue = (p.person && p.person.fatigue_trend) || 0;
+    var workMin = (p.person && p.person.work_minutes) || 0;
+    var metrics = (profile && profile.metrics) || {};
+    if (load >= 0.7) tips.push('累计负荷偏高，建议安排换岗或短休（仅趋势建议，非医学诊断）');
+    if (fatigue >= 0.6) tips.push('疲劳趋势上升，建议检查连续作业时长');
+    if (workMin >= 120) tips.push('连续作业 ' + workMin + ' 分钟，接近常规归一化基准');
+    if (metrics.open_high_events > 0) tips.push('存在 ' + metrics.open_high_events + ' 条未处置高风险事件，须班组长确认');
+    if (metrics.open_events > 0 && metrics.open_high_events === 0) tips.push('存在 ' + metrics.open_events + ' 条未处置事件，关注处置进度');
+    if (p.consent_status && p.consent_status !== 'granted') tips.push('人员授权状态：' + p.consent_status + '，停止新增采集');
+    if (tips.length === 0) tips.push('当前指标在正常区间，维持现有作业安排');
+    return tips;
+  }
+
   CM.entityPanel = {
+    // 当前正在异步加载的实体 ID（避免重复请求）
+    _loadingId: null,
+
     render: function () {
       var host = document.getElementById('entity-detail');
+      if (!host) return;
       var id = CM.state.selectedId;
       if (!id) {
         host.innerHTML = '<div class="cm-empty">点击地图实体查看唯一 ID、父级空间、坐标、朝向、边界框、状态、来源、置信度、更新时间与版本。</div>';
@@ -38,7 +87,7 @@
         '<div class="cm-entity-src">' + CM.srcTag(e.source_type) + '</div>' +
         '</div>';
 
-      // core spec fields
+      // 核心字段
       html += '<div class="cm-field-group"><div class="cm-field-group-title">空间实体字段（可追溯）</div>';
       html += row('唯一 ID', CM.esc(e.entity_id), 'cm-mono');
       html += row('实体类型', CM.esc(e.entity_type));
@@ -53,16 +102,22 @@
       html += row('版本', 'v' + e.version, 'cm-mono');
       html += '</div>';
 
-      // type-specific extras
+      // 类型扩展块
       html += this._extras(e);
-      // binding
+      // 绑定关系
       html += this._binding(e);
 
       host.innerHTML = html;
-      // bind-link clicks jump selection to related entity.
       host.querySelectorAll('.cm-bind-link').forEach(function (lnk) {
         lnk.addEventListener('click', function () { CM.selectEntity(lnk.dataset.id); });
       });
+
+      // 人员/设备详情页：异步拉取 backend 增强字段
+      if (e.entity_type === 'person') {
+        this._loadPersonProfile(e);
+      } else if (e.entity_type === 'device') {
+        this._loadDeviceHealth(e);
+      }
     },
 
     _statusClass: function (s) {
@@ -82,12 +137,17 @@
         h += subRow('温度', e.device.temp + '℃');
         h += subRow('在线', e.device.online ? '是' : '否');
         h += subRow('故障码', e.device.fault_code || '无');
+        if (e.device.model_version) h += subRow('推理模型版本', e.device.model_version);
+        if (e.device.action_label) h += subRow('最近动作', e.device.action_label + ' (' + ((e.device.action_confidence || 0) * 100).toFixed(0) + '%)');
+        if (e.device.quality_status) h += subRow('数据质量', e.device.quality_status);
       } else if (e.person) {
+        h += subRow('匿名编号', (e.anonymized_name || e.entity_id));
         h += subRow('当前动作', e.person.action);
         h += subRow('技能', e.person.skill);
         h += subRow('负荷等级', e.person.load_level.toFixed(2));
         h += subRow('疲劳趋势', e.person.fatigue_trend.toFixed(2));
         h += subRow('连续作业', e.person.work_minutes + ' 分');
+        if (e.consent_status) h += subRow('授权状态', e.consent_status);
       } else if (e.station) {
         h += subRow('所属产线', e.station.line);
         h += subRow('节拍', e.station.takt + 's');
@@ -102,7 +162,7 @@
         h += subRow('路径点数', e.route.path.length);
         h += subRow('状态', e.status);
       } else {
-        return ''; // workshop has no extra block
+        return '';
       }
       h += '</div></div>';
       return h;
@@ -130,6 +190,104 @@
           '</div>';
       }
       return '';
+    },
+
+    // 异步加载人员画像（Task 16）：技能/动作分布/指标/最近事件/建议/数据质量
+    _loadPersonProfile: function (e) {
+      if (this._loadingId === e.entity_id) return;
+      this._loadingId = e.entity_id;
+      var host = document.getElementById('entity-detail');
+      if (!host) return;
+      // 先用本地数据补一版"建议"
+      var localSuggest = suggestForPerson(e, null);
+      var suggestHtml = '<div class="cm-field-group"><div class="cm-field-group-title">建议（规则推断，非 LLM，非医学诊断）</div>' +
+        '<ul class="cm-suggest-list">' + localSuggest.map(function (s) { return '<li>' + CM.esc(s) + '</li>'; }).join('') + '</ul></div>';
+      // 风险趋势迷你图（本地推断）
+      var sparkHtml = '<div class="cm-field-group"><div class="cm-field-group-title">风险趋势</div>' +
+        riskSpark(e.entity_id, e.person.load_level, e.person.fatigue_trend) + '</div>';
+      host.insertAdjacentHTML('beforeend', sparkHtml + suggestHtml +
+        '<div class="cm-field-group" id="profile-extra"><div class="cm-field-group-title">Backend 画像加载中…</div></div>');
+
+      // 仅在 backend 可用时拉取
+      if (CM.state.dataSource !== 'backend') {
+        var extra = document.getElementById('profile-extra');
+        if (extra) extra.innerHTML = '<div class="cm-field-group-title">Backend 画像</div><div class="cm-empty">离线样本模式：不调用 /api/person/profile。</div>';
+        this._loadingId = null;
+        return;
+      }
+      CM.api.fetchPersonProfile(e.entity_id).then(function (p) {
+        var extra = document.getElementById('profile-extra');
+        if (!extra) return;
+        var dist = p.action_distribution_24h || {};
+        var distRows = Object.keys(dist).map(function (k) {
+          return '<div class="cm-sub-field"><div class="cm-sub-label">' + CM.esc(k) + '</div><div class="cm-sub-value">' + dist[k] + ' 次</div></div>';
+        }).join('') || '<div class="cm-empty">无动作分布数据</div>';
+        var skills = (p.skills || []).join('、') || '--';
+        var m = p.metrics || {};
+        var quality = p.quality || 'unknown';
+        var evList = (p.events || []).slice(0, 5).map(function (ev) {
+          return '<li><span class="cm-mono">' + CM.esc(ev.start_time || '') + '</span> ' +
+                 '<span class="cm-badge cm-badge-' + (ev.severity === 'critical' ? 'danger' : ev.severity === 'warning' ? 'warning' : 'info') + '">' + CM.esc(ev.severity || '') + '</span> ' +
+                 CM.esc(ev.event_code || ev.event_id) + '</li>';
+        }).join('') || '<li>无最近事件</li>';
+        var device = p.device || {};
+        extra.innerHTML = '<div class="cm-field-group-title">人员画像（/api/person/profile）</div>' +
+          '<div class="cm-field-row">' +
+          subRow('技能', skills) +
+          subRow('当前负荷', m.current_load != null ? m.current_load.toFixed(3) : '--') +
+          subRow('连续作业分钟', m.work_minutes != null ? m.work_minutes.toFixed(1) : '--') +
+          subRow('未处置事件', m.open_events != null ? m.open_events : '--') +
+          subRow('高风险事件', m.open_high_events != null ? m.open_high_events : '--') +
+          subRow('近期风险评分', m.risk_recent != null ? m.risk_recent.toFixed(3) : '--') +
+          subRow('数据质量', quality) +
+          subRow('绑定设备', device.device_id || '--') +
+          '</div>' +
+          '<div class="cm-sub-field"><div class="cm-sub-label">24h 动作分布</div><div class="cm-sub-value cm-field-row">' + distRows + '</div></div>' +
+          '<div class="cm-sub-field"><div class="cm-sub-label">最近事件</div><div class="cm-sub-value"><ul class="cm-ev-mini">' + evList + '</ul></div></div>';
+        // 用真实 metrics 重新生成建议
+        var newSuggest = suggestForPerson(e, p);
+        var suggestBox = host.querySelector('.cm-suggest-list');
+        if (suggestBox) suggestBox.innerHTML = newSuggest.map(function (s) { return '<li>' + CM.esc(s) + '</li>'; }).join('');
+      }).catch(function (err) {
+        var extra = document.getElementById('profile-extra');
+        if (extra) extra.innerHTML = '<div class="cm-field-group-title">Backend 画像</div><div class="cm-empty">加载失败：' + CM.esc(err.message || '') + '</div>';
+      }).then(function () {
+        CM.entityPanel._loadingId = null;
+      });
+    },
+
+    // 异步加载设备健康（Task 16）：online/battery/fault/packet_loss/last_seen
+    _loadDeviceHealth: function (e) {
+      if (this._loadingId === e.entity_id) return;
+      this._loadingId = e.entity_id;
+      var host = document.getElementById('entity-detail');
+      if (!host) return;
+      host.insertAdjacentHTML('beforeend',
+        '<div class="cm-field-group" id="health-extra"><div class="cm-field-group-title">设备健康加载中…</div></div>');
+      if (CM.state.dataSource !== 'backend') {
+        var ex1 = document.getElementById('health-extra');
+        if (ex1) ex1.innerHTML = '<div class="cm-field-group-title">设备健康</div><div class="cm-empty">离线样本模式：不调用 /api/devices/{id}/health。</div>';
+        this._loadingId = null;
+        return;
+      }
+      CM.api.get('/api/devices/' + encodeURIComponent(e.entity_id) + '/health').then(function (h) {
+        var ex = document.getElementById('health-extra');
+        if (!ex) return;
+        ex.innerHTML = '<div class="cm-field-group-title">设备健康（/api/devices/{id}/health）</div>' +
+          '<div class="cm-field-row">' +
+          subRow('在线', h.online ? '是' : '否') +
+          subRow('最后通信', h.last_seen || '--') +
+          subRow('电量', h.battery_pct != null ? h.battery_pct + '%' : '--') +
+          subRow('故障', h.fault ? '是' : '否') +
+          subRow('丢包率', h.packet_loss_pct != null ? h.packet_loss_pct + '%' : '--') +
+          subRow('数据质量', h.quality_status || 'unknown') +
+          '</div>';
+      }).catch(function (err) {
+        var ex = document.getElementById('health-extra');
+        if (ex) ex.innerHTML = '<div class="cm-field-group-title">设备健康</div><div class="cm-empty">加载失败：' + CM.esc(err.message || '') + '</div>';
+      }).then(function () {
+        CM.entityPanel._loadingId = null;
+      });
     }
   };
 })();

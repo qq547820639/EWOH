@@ -1,0 +1,18 @@
+{
+  "name": "ewoh-feishu-app",
+  "version": "1.0.0",
+  "description": "EWOH外骨骼作业监督平台 — 飞书版全栈应用",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "node server/index.js",
+    "start": "node server/index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "better-sqlite3": "^13.0.2",
+    "cors": "^2.8.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
