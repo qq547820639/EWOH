@@ -14,8 +14,8 @@ from datetime import datetime, timezone
 
 
 def new_id(prefix):
-    """生成短随机业务 ID，如 STN-a1b2c3d4（沿用 inference.new_id 约定）。"""
-    return "%s-%s" % (prefix, uuid.uuid4().hex[:8])
+    """生成短随机业务 ID，如 STN-a1b2c3d4e5f6（uuid4 hex 前 12 位，碰撞概率足够低）。"""
+    return "%s-%s" % (prefix, uuid.uuid4().hex[:12])
 
 
 def now_iso():

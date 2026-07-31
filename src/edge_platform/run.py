@@ -2,7 +2,7 @@
 """EWOH 平台入口：按依赖契约装配真实模块；真实模块未就绪时回退到 stub（仅联调前自测/演示）。
 
 用法：
-  python -m edge_platform.run [--host 127.0.0.1] [--port 8765] [--db src/edge_platform/demo.db] [--stub]
+  python -m edge_platform.run [--host 127.0.0.1] [--port 8765] [--db demo.db] [--stub]
 """
 import argparse
 import sys
@@ -17,9 +17,11 @@ except (AttributeError, ValueError):
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 支持 python src/edge_platform/run.py 直接运行
 
 from edge_platform import server, stubs
+from edge_platform.config import Settings
+from edge_platform.monitoring import MetricsCollector
 
 
-def build_components(db_path, force_stub):
+def build_components(db_path, force_stub, adapter_ports, metrics):
     """优先装配真实 edge/inference/collection 模块；缺失时回退 stub。"""
     if not force_stub:
         try:
@@ -34,8 +36,9 @@ def build_components(db_path, force_stub):
             bus = Bus()
             registry = ModelRegistry(Path(db_path).parent / "models")
             rules = RuleEngine("risk-rule-v0.2", {})
-            pipeline = InferencePipeline(storage, bus, registry, rules)
-            manager = AdapterManager(storage, bus, {9001: "real", 9002: "controlled_test", 9003: "simulated"})
+            pipeline = InferencePipeline(storage, bus, registry, rules,
+                                         metrics_collector=metrics)
+            manager = AdapterManager(storage, bus, adapter_ports)
             manager.start()
             pipeline.start()
             print("[EWOH] 真实模块装配完成（适配层+推理管线已启动）")
@@ -47,7 +50,8 @@ def build_components(db_path, force_stub):
     bus = stubs.Bus()
     registry = stubs.ModelRegistry(Path(db_path).parent / "models")
     rules = stubs.RuleEngine("risk-rule-stub-0.1", {})
-    pipeline = stubs.InferencePipeline(storage, bus, registry, rules)
+    pipeline = stubs.InferencePipeline(storage, bus, registry, rules,
+                                       metrics_collector=metrics)
     manager = stubs.AdapterManager(storage, bus)
     manager.start()
     sim = stubs.DemoSimulator(storage)
@@ -57,14 +61,21 @@ def build_components(db_path, force_stub):
 
 
 def main():
+    settings = Settings.load()
     ap = argparse.ArgumentParser(description="EWOH 平台服务")
-    ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=8765)
-    ap.add_argument("--db", default=str(Path(__file__).resolve().parent / "demo.db"))
+    ap.add_argument("--host", default=settings.host)
+    ap.add_argument("--port", type=int, default=settings.port)
+    ap.add_argument("--db", default=settings.db_path)
     ap.add_argument("--stub", action="store_true", help="强制使用 stub（跳过真实模块）")
     args = ap.parse_args()
-    storage, bus, pipeline, registry, rules, manager, sim = build_components(args.db, args.stub)
-    ctx = server.Context(storage, bus=bus, pipeline=pipeline, registry=registry, rules=rules, manager=manager)
+    # Task 33：创建可注入 MetricsCollector 单例，传入 pipeline 与 server
+    metrics = MetricsCollector()
+    storage, bus, pipeline, registry, rules, manager, sim = build_components(
+        args.db, args.stub, settings.adapter_ports, metrics)
+    # storage 就绪后绑定到 collector，用于 snapshot() 派生 db_counts / open_event_count
+    metrics.bind_storage(storage)
+    ctx = server.Context(storage, bus=bus, pipeline=pipeline, registry=registry,
+                         rules=rules, manager=manager, metrics=metrics)
     httpd = server.build_server((args.host, args.port), ctx)
     print("[EWOH] 平台运行于 http://%s:%d （无公网依赖，可离线演示）" % (args.host, args.port))
     try:

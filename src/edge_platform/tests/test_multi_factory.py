@@ -293,7 +293,7 @@ class IdGenTest(unittest.TestCase):
     def test_new_ids(self):
         fid = new_factory_id()
         self.assertTrue(fid.startswith("FAC-"))
-        self.assertEqual(len(fid), len("FAC-") + 8)
+        self.assertEqual(len(fid), len("FAC-") + 12)
         lid = new_link_id("CFL")
         self.assertTrue(lid.startswith("CFL-"))
         pid = new_policy_id("FED")

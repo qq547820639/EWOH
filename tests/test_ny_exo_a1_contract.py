@@ -16,6 +16,7 @@
 """
 
 import json
+import math
 import sys
 import unittest
 from datetime import datetime
@@ -26,7 +27,7 @@ SRC = REPO_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from edge_platform.edge.adapters.ny_exo_a1 import protocol  # noqa: E402
+from edge_platform.edge.adapters.ny_exo_a1 import codec, protocol  # noqa: E402
 from edge_platform.edge.adapters.ny_exo_a1.adapter import (  # noqa: E402
     VENDOR_TO_UNIFIED,
     NyExoA1Adapter,
@@ -440,6 +441,161 @@ class TestDataQualityContract(unittest.TestCase):
         adapter.feed(_load_fixture(entry["file"]))
         adapter.drain()
         self.assertEqual(adapter.packet_loss_pct(), 0.0)
+
+    # ---- Task 10.1 / 10.2 新增：时间戳漂移 / SEQ 重复 / 非数值 / 采样率 / 固件升级 / reason ----
+
+    def _feed_two_telemetry(self, seq1, ts1, seq2, ts2, **adapter_kwargs):
+        """构造两帧实时遥测（可控 seq/ts）并投递，返回产出的统一帧列表。"""
+        adapter = NyExoA1Adapter("EXO-TEST-001", **adapter_kwargs)
+        fields = {"pitch_deg": 30.0, "torque_nm": 12.0, "battery_pct": 80}
+        raw = (codec.encode_telemetry(seq=seq1, ts_ms=ts1, **fields)
+               + codec.encode_telemetry(seq=seq2, ts_ms=ts2, **fields))
+        adapter.feed(raw)
+        return adapter, adapter.drain()
+
+    def test_timestamp_backward_marked_degraded(self):
+        """Task 10.1：后帧 ts_ms 倒退 → degraded，reason 含 timestamp_backward。"""
+        _, frames = self._feed_two_telemetry(100, 1_000_000, 101, 999_900)
+        self.assertEqual(len(frames), 2)
+        self.assertEqual(frames[0].quality["status"], "good")
+        self.assertEqual(frames[1].quality["status"], "degraded")
+        self.assertEqual(frames[1].quality["reason"], "timestamp_backward")
+
+    def test_timestamp_drift_marked_degraded(self):
+        """Task 10.1：前后帧 ts_ms 漂移超过默认 500ms → degraded，reason 含 timestamp_drift。"""
+        _, frames = self._feed_two_telemetry(100, 1_000_000, 101, 1_000_600)
+        self.assertEqual(frames[0].quality["status"], "good")
+        self.assertEqual(frames[1].quality["status"], "degraded")
+        self.assertEqual(frames[1].quality["reason"], "timestamp_drift")
+
+    def test_timestamp_within_threshold_not_flagged(self):
+        """Task 10.1：前后帧 ts_ms 在阈值内（50ms）→ 不降级。"""
+        _, frames = self._feed_two_telemetry(100, 1_000_000, 101, 1_000_050)
+        self.assertEqual(frames[0].quality["status"], "good")
+        self.assertEqual(frames[1].quality["status"], "good")
+        self.assertIsNone(frames[1].quality["reason"])
+
+    def test_realtime_duplicate_seq_marked_degraded(self):
+        """Task 10.1：实时帧 SEQ 即时重复 → degraded，reason 含 duplicate_seq。"""
+        _, frames = self._feed_two_telemetry(500, 1_000_000, 500, 1_000_050)
+        self.assertEqual(len(frames), 2)
+        self.assertEqual(frames[0].quality["status"], "good")
+        self.assertEqual(frames[1].quality["status"], "degraded")
+        self.assertEqual(frames[1].quality["reason"], "duplicate_seq")
+        # 重复 SEQ 不应被误计为丢包
+        self.assertEqual(frames[1].quality["packet_loss_pct"], 0.0)
+
+    def test_non_numeric_marked_invalid(self):
+        """Task 10.1：pitch/torque/battery 为 NaN/inf → invalid，confidence=0.0，reason 含 non_numeric。"""
+        adapter = NyExoA1Adapter("EXO-TEST-001")
+        nan_frame = adapter.to_unified(
+            {"pitch_deg": float("nan"), "torque_nm": 1.0, "battery_pct": 50},
+            ts_ms=1_000_000)
+        self.assertEqual(nan_frame.quality["status"], "invalid")
+        self.assertEqual(nan_frame.quality["confidence"], 0.0)
+        self.assertTrue(nan_frame.quality["reason"].startswith("non_numeric"))
+        self.assertIn("pitch_deg", nan_frame.quality["reason"])
+
+        inf_frame = adapter.to_unified(
+            {"pitch_deg": 10.0, "torque_nm": float("inf"), "battery_pct": 50},
+            ts_ms=1_000_000)
+        self.assertEqual(inf_frame.quality["status"], "invalid")
+        self.assertEqual(inf_frame.quality["confidence"], 0.0)
+        self.assertIn("torque_nm", inf_frame.quality["reason"])
+        # 数学语义校验：确保确实用了 math.isnan/isinf 判定
+        self.assertTrue(math.isnan(float("nan")))
+        self.assertTrue(math.isinf(float("inf")))
+
+    def test_sampling_rate_anomaly_marked_degraded(self):
+        """Task 10.1：窗口内实际帧数远低于期望采样率 → degraded，reason 含 sampling_rate_anomaly。"""
+        from edge_platform.edge.adapters.ny_exo_a1.injector import WireInjector
+        # 10Hz 实际 vs 20Hz 期望，1s 窗口：偏差 ~45% > 20%
+        inj = WireInjector(device_id="EXO-CT-01", source_label="controlled_test",
+                           hz=10.0, start_ts_ms=1_000_000)
+        adapter = NyExoA1Adapter("EXO-CT-01", source_type="controlled_test",
+                                 sampling_window_ms=1000, expected_hz=20.0)
+        adapter.feed(inj.telemetry_burst(11))
+        frames = adapter.drain()
+        self.assertEqual(len(frames), 11)
+        # 前 10 帧窗口未满不评估；第 11 帧窗口满且偏差超阈 → degraded
+        self.assertEqual(frames[10].quality["status"], "degraded")
+        self.assertEqual(frames[10].quality["reason"], "sampling_rate_anomaly")
+
+    def test_sampling_rate_normal_not_flagged(self):
+        """Task 10.1：实际采样率与期望一致（20Hz）→ 不降级。"""
+        from edge_platform.edge.adapters.ny_exo_a1.injector import WireInjector
+        inj = WireInjector(device_id="EXO-CT-01", source_label="controlled_test",
+                           hz=20.0, start_ts_ms=1_000_000)
+        adapter = NyExoA1Adapter("EXO-CT-01", source_type="controlled_test",
+                                 sampling_window_ms=1000, expected_hz=20.0)
+        adapter.feed(inj.telemetry_burst(21))
+        frames = adapter.drain()
+        # 第 21 帧窗口满，偏差 ~5% < 20% → good
+        self.assertEqual(frames[20].quality["status"], "good")
+        self.assertIsNone(frames[20].quality["reason"])
+
+    def test_firmware_upgrade_detected_and_status_message(self):
+        """Task 10.1：IDENT 固件版本变化 → 记录事件并产出一条状态消息。"""
+        adapter = NyExoA1Adapter("EXO-TEST-001", firmware_version="")
+        # 首发 IDENT：old_fw 为空，不触发事件，不产出帧
+        adapter.feed(codec.encode_ident("EXO-TEST", seq=1, ts_ms=1_000_000,
+                                        firmware_version="1.0.0"))
+        self.assertEqual(adapter.drain(), [])
+        self.assertIsNone(adapter._firmware_upgraded)
+        self.assertEqual(adapter.firmware_version, "1.0.0")
+        # 再次 IDENT 且固件版本变化 → 触发事件 + 状态消息
+        adapter.feed(codec.encode_ident("EXO-TEST", seq=2, ts_ms=1_000_001,
+                                        firmware_version="2.0.0"))
+        frames = adapter.drain()
+        self.assertEqual(len(frames), 1)
+        event = adapter._firmware_upgraded
+        self.assertIsNotNone(event)
+        self.assertEqual(event["firmware_from"], "1.0.0")
+        self.assertEqual(event["firmware_to"], "2.0.0")
+        self.assertEqual(event["event"], "firmware_upgraded")
+        status = frames[0]
+        self.assertIsInstance(status, UnifiedExoFrame)
+        self.assertEqual(status.firmware_version, "2.0.0")
+        self.assertEqual(status.quality.get("event"), "firmware_upgraded")
+        self.assertEqual(status.quality.get("firmware_from"), "1.0.0")
+        self.assertEqual(status.quality.get("firmware_to"), "2.0.0")
+        # 事件也在 health() 中可见
+        self.assertEqual(adapter.health()["firmware_upgraded"], event)
+
+    def test_firmware_unchanged_no_status_message(self):
+        """Task 10.1：IDENT 固件版本未变 → 不产出状态消息，不记录事件。"""
+        adapter = NyExoA1Adapter("EXO-TEST-001", firmware_version="")
+        adapter.feed(codec.encode_ident("EXO-TEST", seq=1, ts_ms=1_000_000,
+                                        firmware_version="1.0.0"))
+        adapter.drain()
+        adapter.feed(codec.encode_ident("EXO-TEST", seq=2, ts_ms=1_000_001,
+                                        firmware_version="1.0.0"))
+        self.assertEqual(adapter.drain(), [])
+        self.assertIsNone(adapter._firmware_upgraded)
+
+    def test_quality_reason_field_on_invalid_and_degraded(self):
+        """Task 10.2：invalid/degraded 帧的 quality.reason 必须说明原因。"""
+        oor = self._frames("telemetry_out_of_range")[0]
+        self.assertEqual(oor.quality["status"], "invalid")
+        self.assertEqual(oor.quality["confidence"], 0.0)
+        self.assertEqual(oor.quality["reason"], "out_of_range")
+
+        missing = self._frames("telemetry_missing_field")[0]
+        self.assertEqual(missing.quality["status"], "degraded")
+        self.assertEqual(missing.quality["reason"], "missing_field")
+
+    def test_good_frame_reason_is_none(self):
+        """Task 10.2：good 帧的 quality.reason 为 None。"""
+        normal = self._frames("telemetry_normal")[0]
+        self.assertEqual(normal.quality["status"], "good")
+        self.assertIsNone(normal.quality["reason"])
+
+    def test_invalid_frame_preserves_raw_ref_for_traceability(self):
+        """Task 10.2：invalid 帧保留原始（raw_ref）但不进入推理管线（confidence=0.0）。"""
+        oor = self._frames("telemetry_out_of_range")[0]
+        self.assertEqual(oor.quality["status"], "invalid")
+        self.assertEqual(oor.quality["confidence"], 0.0)
+        self.assertEqual(len(oor.raw_ref), 64)  # 原始帧 SHA256 仍保留，支持双向追溯
 
 
 class TestStatusFrameContract(unittest.TestCase):

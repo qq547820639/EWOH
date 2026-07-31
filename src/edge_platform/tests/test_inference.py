@@ -13,10 +13,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from inference import ms_to_ts, ts_to_ms
 from inference.features import extract_features, FEATURE_NAMES
-from inference.rules import RuleEngine
+from inference.rules import RuleEngine, DEFAULT_CONFIG, SEVERITY
 from inference.model import ActionModel, ModelRegistry, ModelError
 from inference.events import EventEngine
 from inference.pipeline import InferencePipeline
+from inference.rule_registry import RuleRegistry
 from inference import train as train_mod
 from collection.session import SessionManager
 from collection.dataset import export_dataset
@@ -98,16 +99,18 @@ class FakeBus:
 # ---------- 消息工厂 ----------
 def mk_msg(dev, person, t_ms, seq, pitch=10.0, roll=2.0, gyro=(1.0, 2.0, 2.0),
            accel=(0.0, 0.0, 9.8), torque=5.0, assist=0.2, status="good",
-           source="controlled_test"):
+           source="controlled_test", battery=80, packet_loss=0.0,
+           firmware_version=None):
     return {
         "record_id": "REC-%s-%d" % (dev, seq),
         "device_id": dev, "person_id": person,
         "timestamp": ms_to_ts(t_ms), "sequence": seq,
+        "firmware_version": firmware_version,
         "telemetry": {"pitch_deg": pitch, "roll_deg": roll,
                       "acceleration": list(accel), "angular_velocity": list(gyro),
                       "torque_nm": torque, "assist_level": assist,
-                      "battery_percent": 80},
-        "quality": {"status": status, "packet_loss": 0.0, "clock_offset_ms": 0},
+                      "battery_percent": battery},
+        "quality": {"status": status, "packet_loss": packet_loss, "clock_offset_ms": 0},
         "source_type": source,
     }
 
@@ -602,6 +605,510 @@ class DatasetExportTest(unittest.TestCase):
         self._build_person("P1", BASE_TS)
         with self.assertRaises(ValueError):
             export_dataset(self.storage, os.path.join(self.tmp, "ds2"), "0.1")
+
+
+# ---------- Task 20: carry 动作 + unknown 六路触发 ----------
+class CarryAndUnknownTest(unittest.TestCase):
+    """Task 20: carry 动作分类与 unknown 六路触发。"""
+
+    def test_carry_classification(self):
+        # walk 特征（gyro_mag > 40）+ 高扭矩 → carry
+        feats = extract_features(stream("D1", "P1", BASE_TS, 40,
+                                        gyro=(30.0, 50.0, 60.0), torque=20.0))
+        label, conf, reason = InferencePipeline._rule_label(feats)
+        self.assertEqual(label, "carry")
+        self.assertGreaterEqual(conf, 0.6)
+        self.assertIsNone(reason)
+
+    def test_carry_not_ambiguous(self):
+        # carry = walk + load 不应被 _is_ambiguous 判定为歧义
+        feats = extract_features(stream("D1", "P1", BASE_TS, 40,
+                                        gyro=(30.0, 50.0, 60.0), torque=20.0))
+        self.assertFalse(InferencePipeline._is_ambiguous(feats))
+
+    def test_unknown_data_quality(self):
+        # 特征为 None → data_quality
+        reason = InferencePipeline._rule_label(None)
+        self.assertEqual(reason[0], "unknown")
+        self.assertEqual(reason[2], "data_quality")
+
+    def test_unknown_low_confidence_rule_path(self):
+        # 规则路径 confidence < 0.6 → low_confidence
+        pipe = InferencePipeline(FakeStorage(), FakeBus(), None,
+                                 RuleEngine(config={"cooldown_sec": 30}))
+        feats = extract_features(stream("D1", "P1", BASE_TS, 40))
+        window = stream("D1", "P1", BASE_TS, 40)
+        reason = pipe._check_unknown_triggers(window, feats, "stand", 0.55,
+                                              None, True, None)
+        self.assertEqual(reason, "low_confidence")
+
+    def test_unknown_ambiguous_bend_plus_load(self):
+        # bend (pitch>35) + load (torque>15) 同时命中 → ambiguous
+        pipe = InferencePipeline(FakeStorage(), FakeBus(), None,
+                                 RuleEngine(config={"cooldown_sec": 30}))
+        feats = extract_features(stream("D1", "P1", BASE_TS, 40,
+                                        pitch=50.0, torque=20.0))
+        window = stream("D1", "P1", BASE_TS, 40, pitch=50.0, torque=20.0)
+        reason = pipe._check_unknown_triggers(window, feats, "bend", 0.7,
+                                              None, True, None)
+        self.assertEqual(reason, "ambiguous")
+
+    def test_unknown_firmware_unverified(self):
+        # firmware_version 不在白名单 → firmware_unverified
+        pipe = InferencePipeline(FakeStorage(), FakeBus(), None,
+                                 RuleEngine(config={"cooldown_sec": 30}),
+                                 firmware_whitelist={"fw-1.0", "fw-1.1"})
+        feats = extract_features(stream("D1", "P1", BASE_TS, 40))
+        window = stream("D1", "P1", BASE_TS, 40)
+        reason = pipe._check_unknown_triggers(window, feats, "stand", 0.6,
+                                              None, True, None)
+        self.assertEqual(reason, "firmware_unverified")
+
+    def test_unknown_firmware_verified(self):
+        # firmware_version 在白名单 → 不触发
+        pipe = InferencePipeline(FakeStorage(), FakeBus(), None,
+                                 RuleEngine(config={"cooldown_sec": 30}),
+                                 firmware_whitelist={"fw-1.0"})
+        window = stream("D1", "P1", BASE_TS, 40, firmware_version="fw-1.0")
+        feats = extract_features(window)
+        reason = pipe._check_unknown_triggers(window, feats, "stand", 0.6,
+                                              None, True, "fw-1.0")
+        self.assertIsNone(reason)
+
+    def test_unknown_out_of_distribution(self):
+        # pitch_mean 超出训练分布上限 → out_of_distribution
+        pipe = InferencePipeline(FakeStorage(), FakeBus(), None,
+                                 RuleEngine(config={"cooldown_sec": 30}))
+        feats = extract_features(stream("D1", "P1", BASE_TS, 40, pitch=150.0))
+        window = stream("D1", "P1", BASE_TS, 40, pitch=150.0)
+        reason = pipe._check_unknown_triggers(window, feats, "bend", 0.7,
+                                              None, True, None)
+        self.assertEqual(reason, "out_of_distribution")
+
+    def test_unknown_sensor_channel_missing(self):
+        # 最后一条遥测 torque_nm 为 None → sensor_channel_missing
+        pipe = InferencePipeline(FakeStorage(), FakeBus(), None,
+                                 RuleEngine(config={"cooldown_sec": 30}))
+        window = stream("D1", "P1", BASE_TS, 40)
+        window[-1]["telemetry"]["torque_nm"] = None
+        feats = extract_features(window)
+        # feats 仍可提取（1/40 invalid < 30%），但末条通道缺失
+        self.assertIsNotNone(feats)
+        reason = pipe._check_unknown_triggers(window, feats, "stand", 0.6,
+                                              None, True, None)
+        self.assertEqual(reason, "sensor_channel_missing")
+
+    def test_unknown_low_confidence_model_path(self):
+        # 模型路径：conf ∈ [0.55, 0.6) 时模型正预测，被 0.6 阈值降级为 unknown
+        storage = FakeStorage()
+        bus = FakeBus()
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        registry = ModelRegistry(tmp)
+        # 2 质心：stand=[0,...] walk=[1.0,0,...]，仅 pitch_mean 有区分度
+        zero_kw = dict(pitch=0.0, roll=0.0, gyro=(0, 0, 0),
+                       accel=(0, 0, 0), torque=0.0, assist=0.0)
+        one_kw = dict(pitch=1.0, roll=0.0, gyro=(0, 0, 0),
+                      accel=(0, 0, 0), torque=0.0, assist=0.0)
+        stand = extract_features(stream("D9", "P9", BASE_TS, 40, **zero_kw))
+        walk = extract_features(stream("D9", "P9", BASE_TS, 40, **one_kw))
+        m = ActionModel().fit([{"features": stand, "label": "stand"},
+                               {"features": walk, "label": "walk"}])
+        d = os.path.join(tmp, "action-classifier-v0.1.0")
+        os.makedirs(d)
+        m.save(os.path.join(d, "model.json"))
+        registry.register("0.1.0", "action-classifier-v0.1.0/model.json")
+        registry.activate("0.1.0")
+        rules = RuleEngine(config={"cooldown_sec": 30})
+        pipe = InferencePipeline(storage, bus, registry, rules)
+        # pitch=0.45 → conf ≈ 0.55（模型正预测），被 0.6 阈值降级
+        res = None
+        for msg in stream("D2", "P2", BASE_TS, 40, **dict(zero_kw, pitch=0.45)):
+            r = pipe.handle_telemetry(msg)
+            if r is not None:
+                res = r
+        self.assertIsNotNone(res)
+        self.assertEqual(res["label"], "unknown")
+        self.assertEqual(res["unknown_reason"], "low_confidence")
+
+
+# ---------- Task 21: 新增规则 ----------
+class NewRulesTest(unittest.TestCase):
+    """Task 21: LOW_BATTERY / TIME_SYNC_ANOMALY / PACKET_LOSS_BURST / ACTION_ANOMALY_LOW_QUALITY。"""
+
+    def test_low_battery_trigger(self):
+        r = RuleEngine(config={"low_battery_sec": 1, "cooldown_sec": 30})
+        drafts = []
+        for m in stream("D1", "P1", BASE_TS, 21, battery=5.0):
+            drafts += r.on_telemetry(m)
+        fires = [d for d in drafts if d["event_code"] == "LOW_BATTERY"
+                 and "end_time" not in d]
+        self.assertEqual(len(fires), 1)
+        self.assertEqual(fires[0]["severity"], "L1")
+        # 恢复 → 收口
+        close = r.on_telemetry(mk_msg("D1", "P1", BASE_TS + 1100, 600, battery=80))
+        closes = [x for x in close if x.get("end_time")
+                  and x["event_code"] == "LOW_BATTERY"]
+        self.assertEqual(len(closes), 1)
+
+    def test_time_sync_anomaly_regression(self):
+        r = RuleEngine(config={"time_sync_sec": 0, "cooldown_sec": 30})
+        # 第一条正常消息建立 last_ts
+        r.on_telemetry(mk_msg("D1", "P1", BASE_TS, 0))
+        # 第二条时间戳倒退 → 即时触发
+        drafts = r.on_telemetry(mk_msg("D1", "P1", BASE_TS - 500, 1))
+        fires = [d for d in drafts if d["event_code"] == "TIME_SYNC_ANOMALY"
+                 and "end_time" not in d]
+        self.assertEqual(len(fires), 1)
+        self.assertEqual(fires[0]["severity"], "L1")
+
+    def test_time_sync_anomaly_drift(self):
+        r = RuleEngine(config={"time_sync_sec": 0, "time_sync_drift_ms": 1000,
+                               "cooldown_sec": 30})
+        r.on_telemetry(mk_msg("D1", "P1", BASE_TS, 0))
+        # 漂移 2000ms > 1000ms 阈值
+        drafts = r.on_telemetry(mk_msg("D1", "P1", BASE_TS + 2000, 1))
+        fires = [d for d in drafts if d["event_code"] == "TIME_SYNC_ANOMALY"]
+        self.assertEqual(len(fires), 1)
+
+    def test_packet_loss_burst(self):
+        r = RuleEngine(config={"packet_loss_sec": 1, "cooldown_sec": 30})
+        drafts = []
+        for m in stream("D1", "P1", BASE_TS, 21, packet_loss=15.0):
+            drafts += r.on_telemetry(m)
+        fires = [d for d in drafts if d["event_code"] == "PACKET_LOSS_BURST"
+                 and "end_time" not in d]
+        self.assertEqual(len(fires), 1)
+        self.assertEqual(fires[0]["severity"], "L1")
+
+    def test_action_anomaly_low_quality(self):
+        r = RuleEngine(config={"action_anomaly_sec": 1, "cooldown_sec": 30})
+        # 先通过 on_telemetry 设置 person
+        r.on_telemetry(mk_msg("D1", "P1", BASE_TS, 0))
+        # 第一次推理结果：unknown + degraded → 开始计时
+        res1 = {"device_id": "D1", "ts_end": ms_to_ts(BASE_TS),
+                "label": "unknown", "data_quality": "degraded",
+                "source_type": "test"}
+        d1 = r.on_inference(res1)
+        self.assertEqual([x for x in d1 if "end_time" not in x], [])
+        # 1s 后第二次推理结果 → 触发
+        res2 = {"device_id": "D1", "ts_end": ms_to_ts(BASE_TS + 1000),
+                "label": "unknown", "data_quality": "degraded",
+                "source_type": "test"}
+        d2 = r.on_inference(res2)
+        fires = [x for x in d2 if "end_time" not in x
+                 and x["event_code"] == "ACTION_ANOMALY_LOW_QUALITY"]
+        self.assertEqual(len(fires), 1)
+        self.assertEqual(fires[0]["severity"], "L1")
+
+    def test_action_anomaly_no_trigger_when_good_quality(self):
+        r = RuleEngine(config={"action_anomaly_sec": 1, "cooldown_sec": 30})
+        r.on_telemetry(mk_msg("D1", "P1", BASE_TS, 0))
+        res = {"device_id": "D1", "ts_end": ms_to_ts(BASE_TS + 1000),
+               "label": "unknown", "data_quality": "good",
+               "source_type": "test"}
+        d = r.on_inference(res)
+        self.assertEqual([x for x in d if "end_time" not in x], [])
+
+    def test_new_rules_in_severity_and_config(self):
+        for code in ("LOW_BATTERY", "TIME_SYNC_ANOMALY",
+                     "PACKET_LOSS_BURST", "ACTION_ANOMALY_LOW_QUALITY"):
+            self.assertIn(code, SEVERITY)
+            self.assertEqual(SEVERITY[code], "L1")
+        for key in ("low_battery_pct", "low_battery_sec", "time_sync_drift_ms",
+                     "packet_loss_enter_pct", "packet_loss_sec", "action_anomaly_sec"):
+            self.assertIn(key, DEFAULT_CONFIG)
+
+
+# ---------- Task 21: 规则注册表 config dict ----------
+class RuleRegistryConfigTest(unittest.TestCase):
+    """Task 21.1: register_config / get_config / list_enabled。"""
+
+    def test_register_and_get_config(self):
+        reg = RuleRegistry()
+        reg.register_config("LOW_BATTERY", "v1.0", {
+            "thresholds": {"low_battery_pct": 10.0},
+            "duration_sec": 5,
+            "recovery_sec": 10,
+            "cooldown_sec": 30,
+            "severity": "L1",
+            "applicable_firmware": ["fw-1.0", "fw-1.1"],
+            "evidence_fields": ["battery_percent"],
+            "approver_id": "admin-001",
+            "effective_from": "2026-07-01T00:00:00+00:00",
+        })
+        got = reg.get_config("LOW_BATTERY", "v1.0")
+        self.assertIsNotNone(got)
+        self.assertEqual(got["rule_id"], "LOW_BATTERY")
+        self.assertEqual(got["rule_version"], "v1.0")
+        self.assertEqual(got["thresholds"]["low_battery_pct"], 10.0)
+        self.assertEqual(got["duration_sec"], 5)
+        self.assertEqual(got["severity"], "L1")
+        self.assertEqual(got["applicable_firmware"], ["fw-1.0", "fw-1.1"])
+        self.assertEqual(got["approver_id"], "admin-001")
+        self.assertTrue(reg.is_enabled("LOW_BATTERY", "v1.0"))
+
+    def test_register_config_disabled(self):
+        reg = RuleRegistry()
+        reg.register_config("TIME_SYNC_ANOMALY", "v1.0", {"enabled": False})
+        self.assertFalse(reg.is_enabled("TIME_SYNC_ANOMALY", "v1.0"))
+        got = reg.get_config("TIME_SYNC_ANOMALY", "v1.0")
+        self.assertFalse(got["enabled"])
+        # enable 后可用
+        self.assertTrue(reg.enable("TIME_SYNC_ANOMALY", "v1.0"))
+        self.assertTrue(reg.is_enabled("TIME_SYNC_ANOMALY", "v1.0"))
+
+    def test_list_enabled(self):
+        reg = RuleRegistry()
+        reg.register_config("LOW_BATTERY", "v1.0", {"severity": "L1", "duration_sec": 5})
+        reg.register_config("PACKET_LOSS_BURST", "v1.0",
+                            {"severity": "L1", "duration_sec": 5})
+        reg.register_config("TIME_SYNC_ANOMALY", "v1.0", {"enabled": False})
+        enabled = reg.list_enabled()
+        rids = [c["rule_id"] for c in enabled]
+        self.assertIn("LOW_BATTERY", rids)
+        self.assertIn("PACKET_LOSS_BURST", rids)
+        self.assertNotIn("TIME_SYNC_ANOMALY", rids)
+        # 每条含完整字段
+        for c in enabled:
+            for field in ("rule_id", "rule_version", "thresholds", "duration_sec",
+                          "severity", "applicable_firmware", "approver_id"):
+                self.assertIn(field, c)
+
+    def test_get_config_from_rule_instance(self):
+        reg = RuleRegistry()
+        from inference.spatial_rules import PostureThresholdRule
+        rule = PostureThresholdRule(config={"trunk_pitch_deg": 50.0, "sustained_sec": 10})
+        reg.register(rule)
+        got = reg.get_config("POSTURE_THRESHOLD", rule.rule_version)
+        self.assertIsNotNone(got)
+        self.assertEqual(got["rule_id"], "POSTURE_THRESHOLD")
+        self.assertEqual(got["thresholds"]["trunk_pitch_deg"], 50.0)
+
+    def test_versioning_preserved_with_config(self):
+        reg = RuleRegistry()
+        reg.register_config("LOW_BATTERY", "v1.0", {"duration_sec": 5})
+        reg.register_config("LOW_BATTERY", "v2.0", {"duration_sec": 3})
+        self.assertEqual(reg.versions("LOW_BATTERY"), ["v1.0", "v2.0"])
+        self.assertEqual(reg.get_config("LOW_BATTERY", "v1.0")["duration_sec"], 5)
+        self.assertEqual(reg.get_config("LOW_BATTERY", "v2.0")["duration_sec"], 3)
+
+
+# ---------- Task 22: 滞回区间 ----------
+class HysteresisTest(unittest.TestCase):
+    """Task 22: enter_threshold / exit_threshold 滞回区间。"""
+
+    def test_exit_threshold_auto_derived(self):
+        r = RuleEngine()
+        # exit = enter * 0.8
+        self.assertAlmostEqual(r.cfg["bend_pitch_exit_deg"], 45.0 * 0.8)
+        self.assertAlmostEqual(r.cfg["load_torque_exit_nm"], 20.0 * 0.8)
+        self.assertAlmostEqual(r.cfg["load_assist_exit"], 0.8 * 0.8)
+        # battery 反向裕度：exit = enter + 2
+        self.assertAlmostEqual(r.cfg["low_battery_exit_pct"], 12.0)
+
+    def test_exit_threshold_override(self):
+        r = RuleEngine(config={"bend_pitch_deg": 30.0, "bend_pitch_exit_deg": 25.0})
+        self.assertEqual(r.cfg["bend_pitch_exit_deg"], 25.0)
+
+    def test_hysteresis_bend_stays_open_in_zone(self):
+        # enter=45, exit=36（auto）：pitch=50 触发 → pitch=40（滞回区间）不收口
+        r = RuleEngine(config={"bend_sec": 1, "cooldown_sec": 30})
+        drafts = []
+        for m in stream("D1", "P1", BASE_TS, 21, pitch=50.0):
+            drafts += r.on_telemetry(m)
+        self.assertEqual(len([d for d in drafts
+                              if d["event_code"] == "POSTURE_BEND_LONG"
+                              and "end_time" not in d]), 1)
+        # pitch=40 在滞回区间（36 < 40 < 45）→ 不收口
+        hyst = r.on_telemetry(mk_msg("D1", "P1", BASE_TS + 1100, 200, pitch=40.0))
+        self.assertEqual([x for x in hyst if x.get("end_time")], [])
+        # pitch=30 低于 exit → 收口
+        close = r.on_telemetry(mk_msg("D1", "P1", BASE_TS + 1200, 201, pitch=30.0))
+        closes = [x for x in close if x.get("end_time")
+                  and x["event_code"] == "POSTURE_BEND_LONG"]
+        self.assertEqual(len(closes), 1)
+
+    def test_hysteresis_load_stays_open_in_zone(self):
+        # enter torque=20, exit=16：torque=30 触发 → torque=18（滞回）不收口
+        r = RuleEngine(config={"load_sec": 1, "cooldown_sec": 30})
+        for m in stream("D1", "P1", BASE_TS, 21, torque=30.0):
+            r.on_telemetry(m)
+        # torque=18 在滞回区间（16 < 18 < 20）→ 不收口
+        hyst = r.on_telemetry(mk_msg("D1", "P1", BASE_TS + 1100, 200, torque=18.0))
+        self.assertEqual([x for x in hyst if x.get("end_time")], [])
+        # torque=10 低于 exit → 收口
+        close = r.on_telemetry(mk_msg("D1", "P1", BASE_TS + 1200, 201, torque=10.0))
+        self.assertEqual(len([x for x in close if x.get("end_time")
+                              and x["event_code"] == "LOAD_CONTINUOUS"]), 1)
+
+
+# ---------- Task 22: 事件聚合 ----------
+class EventAggregationTest(unittest.TestCase):
+    """Task 22: 同设备多事件码 5s 窗口聚合（保守实现）。"""
+
+    def setUp(self):
+        self.storage = FakeStorage()
+        self.bus = FakeBus()
+        self.engine = EventEngine(self.storage, self.bus, window_sec=30)
+
+    def _draft(self, code, severity, t_ms):
+        return {
+            "event_code": code, "severity": severity, "person_id": "P1",
+            "device_id": "D1", "start_time": ms_to_ts(t_ms),
+            "trigger": {"type": "rule", "rule_version": "risk-rule-v1.0",
+                        "condition": "test"},
+            "source_type": "controlled_test",
+        }
+
+    def test_aggregate_two_events(self):
+        self.engine.handle_draft(self._draft("POSTURE_BEND_LONG", "L1", BASE_TS))
+        self.engine.handle_draft(self._draft("LOAD_CONTINUOUS", "L2", BASE_TS + 1000))
+        agg = self.engine.aggregate_recent("D1", BASE_TS + 2000)
+        self.assertIsNotNone(agg)
+        self.assertEqual(agg["event_code"], "AGGREGATE")
+        self.assertEqual(len(agg["aggregated_event_ids"]), 2)
+        self.assertIn("POSTURE_BEND_LONG", agg["aggregated_event_codes"])
+        self.assertIn("LOAD_CONTINUOUS", agg["aggregated_event_codes"])
+        # severity 取最高等级（L1 > L2）
+        self.assertEqual(agg["severity"], "L1")
+
+    def test_aggregate_single_event_returns_none(self):
+        self.engine.handle_draft(self._draft("POSTURE_BEND_LONG", "L1", BASE_TS))
+        agg = self.engine.aggregate_recent("D1", BASE_TS + 1000)
+        self.assertIsNone(agg)
+
+    def test_aggregate_outside_window(self):
+        self.engine.handle_draft(self._draft("POSTURE_BEND_LONG", "L1", BASE_TS))
+        self.engine.handle_draft(self._draft("LOAD_CONTINUOUS", "L2", BASE_TS + 10000))
+        # 5s 窗口内只有第一条（10s 后的第二条超出窗口）
+        agg = self.engine.aggregate_recent("D1", BASE_TS + 3000)
+        self.assertIsNone(agg)
+
+    def test_aggregate_does_not_modify_originals(self):
+        self.engine.handle_draft(self._draft("POSTURE_BEND_LONG", "L1", BASE_TS))
+        self.engine.handle_draft(self._draft("LOAD_CONTINUOUS", "L2", BASE_TS + 500))
+        agg = self.engine.aggregate_recent("D1", BASE_TS + 1000)
+        self.assertIsNotNone(agg)
+        # 原事件仍为 open
+        for eid in agg["aggregated_event_ids"]:
+            evt = self.storage.get_event(eid)
+            self.assertEqual(evt["status"], "open")
+
+
+# ---------- Task 31: 授权挂钩采集层 ----------
+class ConsentHookTest(unittest.TestCase):
+    """Task 31：handle_telemetry 入口的 consent 检查钩子。
+
+    - 未注入 consent_manager 时，行为不变（保持现有测试通过）；
+    - 注入拒绝授权的 consent_manager 时，推理结果不产出、不入库、不发布，
+      且审计日志被记录；
+    - 不同人员的授权独立判定。
+    """
+
+    def _make_pipe(self, consent_manager=None):
+        storage = FakeStorage()
+        bus = FakeBus()
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        registry = ModelRegistry(tmp)
+        rules = RuleEngine(config={"bend_sec": 1, "load_sec": 1,
+                                   "degraded_sec": 1, "cooldown_sec": 30})
+        return InferencePipeline(storage, bus, registry, rules,
+                                 consent_manager=consent_manager), storage, bus
+
+    def test_no_consent_manager_keeps_existing_behavior(self):
+        # 默认 consent_manager=None → 不检查，正常产出推理
+        pipe, storage, bus = self._make_pipe()
+        res = None
+        for m in stream("D1", "P1", BASE_TS, 40):
+            r = pipe.handle_telemetry(m)
+            if r is not None:
+                res = r
+        self.assertIsNotNone(res)
+        self.assertEqual(len(storage.inferences), 1)
+        self.assertEqual(len(bus.published.get("inference", [])), 1)
+
+    def test_denied_consent_skips_inference(self):
+        # 构造一个拒绝 TELEMETRY 的 consent_manager
+        from governance.consent import ConsentManager
+        mgr = ConsentManager()  # 不授予任何用途 → is_allowed 返回 False
+        pipe, storage, bus = self._make_pipe(consent_manager=mgr)
+        res = None
+        for m in stream("D1", "P1", BASE_TS, 40):
+            r = pipe.handle_telemetry(m)
+            if r is not None:
+                res = r
+        # 推理结果不产出
+        self.assertIsNone(res)
+        self.assertEqual(len(storage.inferences), 0)
+        self.assertEqual(len(bus.published.get("inference", [])), 0)
+        # 审计日志已记录（每帧一条）
+        self.assertEqual(len(pipe.consent_denied_log), 40)
+        entry = pipe.consent_denied_log[0]
+        self.assertEqual(entry["person_id"], "P1")
+        self.assertEqual(entry["reason"], "consent_denied")
+        self.assertEqual(entry["purpose"], "TELEMETRY")
+        self.assertIn("ts", entry)
+
+    def test_granted_consent_proceeds(self):
+        from governance.consent import ConsentManager, ConsentPurpose
+        mgr = ConsentManager()
+        mgr.grant("P1", [ConsentPurpose.TELEMETRY], [], "leader1")
+        pipe, storage, bus = self._make_pipe(consent_manager=mgr)
+        res = None
+        for m in stream("D1", "P1", BASE_TS, 40):
+            r = pipe.handle_telemetry(m)
+            if r is not None:
+                res = r
+        # 已授权 → 正常产出推理
+        self.assertIsNotNone(res)
+        self.assertEqual(len(storage.inferences), 1)
+        # 审计日志为空（无拒绝）
+        self.assertEqual(len(pipe.consent_denied_log), 0)
+
+    def test_consent_per_person_independent(self):
+        from governance.consent import ConsentManager, ConsentPurpose
+        mgr = ConsentManager()
+        # 仅授权 P1，P2 未授权
+        mgr.grant("P1", [ConsentPurpose.TELEMETRY], [], "leader1")
+        pipe, storage, bus = self._make_pipe(consent_manager=mgr)
+        # P1 的帧正常处理
+        r1 = None
+        for m in stream("D1", "P1", BASE_TS, 40):
+            r = pipe.handle_telemetry(m)
+            if r is not None:
+                r1 = r
+        self.assertIsNotNone(r1)
+        # P2 的帧被拒绝
+        r2 = None
+        for m in stream("D2", "P2", BASE_TS, 40, seq0=200):
+            r = pipe.handle_telemetry(m)
+            if r is not None:
+                r2 = r
+        self.assertIsNone(r2)
+        # 仅 P1 产出推理
+        self.assertEqual(len(storage.inferences), 1)
+        # 拒绝日志仅针对 P2
+        denied_persons = {e["person_id"] for e in pipe.consent_denied_log}
+        self.assertEqual(denied_persons, {"P2"})
+
+    def test_missing_person_id_passes(self):
+        # msg 缺 person_id → fail-open（不阻止）
+        from governance.consent import ConsentManager
+        mgr = ConsentManager()  # 不授权任何人
+        pipe, storage, bus = self._make_pipe(consent_manager=mgr)
+        msgs = stream("D1", "P1", BASE_TS, 40)
+        for m in msgs:
+            m.pop("person_id", None)  # 移除 person_id
+        res = None
+        for m in msgs:
+            r = pipe.handle_telemetry(m)
+            if r is not None:
+                res = r
+        # 无 person_id → 不检查，正常推理
+        self.assertIsNotNone(res)
+        self.assertEqual(len(pipe.consent_denied_log), 0)
 
 
 if __name__ == "__main__":

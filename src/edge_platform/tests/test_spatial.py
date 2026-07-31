@@ -141,7 +141,7 @@ class EntityTest(unittest.TestCase):
     def test_new_entity_id(self):
         eid = new_entity_id("STN")
         self.assertTrue(eid.startswith("STN-"))
-        self.assertEqual(len(eid), len("STN-") + 8)
+        self.assertEqual(len(eid), len("STN-") + 12)
 
 
 # ---------- 拓扑 ----------
@@ -271,7 +271,7 @@ class AssetRegistryTest(unittest.TestCase):
     def test_new_asset_id(self):
         aid = new_asset_id("TILES")
         self.assertTrue(aid.startswith("TILES-"))
-        self.assertEqual(len(aid), len("TILES-") + 8)
+        self.assertEqual(len(aid), len("TILES-") + 12)
 
 
 if __name__ == "__main__":

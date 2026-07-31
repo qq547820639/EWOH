@@ -5,8 +5,10 @@
   撤回产出 RevocationJob（含 delete/anonymize）、access_log 记录 check；
 - RetentionManager：HIGH_FREQ_TELEMETRY 默认 30 天过期、AUDIT_LOG 未满 180 天不清理、
   SPATIAL_BASEMAP/TRAINING_DATA 永不清理、策略版本历史保留；
-- ModelRegistry：register→CANDIDATE、未经 SHADOW 激活被拒、经 SHADOW 后激活→ACTIVE、
-  回滚到历史 ACTIVE 版本、active() 返回当前、审计链已记录。
+- ModelRegistry（Task 25 上线流程增强）：register→CANDIDATE、规范生命周期
+  CANDIDATE→REVIEWING→SHADOW→CONTROLLED_VALIDATION→CANARY→ACTIVE→RETIRED、
+  未经 CANARY 激活被拒、需 approver_id 人工批准、回滚到历史 ACTIVE 版本、active()
+  返回当前、审计链已记录；promote_to_shadow 捷径仍可用。
 
 纯 Python 标准库 unittest；运行：
   PYTHONPATH=src python -m unittest edge_platform.tests.test_governance -v
@@ -33,6 +35,20 @@ def _ts_days_ago(days):
     """返回 N 天前的 ISO 8601（毫秒精度，UTC）时间字符串。"""
     return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(
         timespec="milliseconds")
+
+
+def _advance_to_canary(reg, model_id, submitter="submitter-1",
+                       reviewer="reviewer-1", canary_ratio=0.1):
+    """Task 25：把模型按规范上线路径推进到 CANARY（激活前置状态）。
+
+    CANDIDATE → submit_for_review → REVIEWING → approve_review → SHADOW →
+    start_controlled_validation → CONTROLLED_VALIDATION → start_canary → CANARY。
+    """
+    reg.submit_for_review(model_id, submitter)
+    reg.approve_review(model_id, reviewer)
+    reg.start_controlled_validation(model_id)
+    reg.start_canary(model_id, canary_ratio=canary_ratio)
+    return reg.get(model_id)
 
 
 # ---------- 授权管理 ----------
@@ -278,27 +294,41 @@ class ModelRegistryTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             ModelRecord(model_type="not_a_type", version="1.0.0")
 
-    def test_activate_without_shadow_refused(self):
+    def test_activate_without_canary_refused(self):
+        # Task 25：激活必须先经 CANARY（人工批准）；CANDIDATE 直接 activate → 拒绝
         reg = ModelRegistry()
         rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0")
         reg.register(rec)
-        # CANDIDATE 直接 activate → 拒绝（影子运行未达标不得进入建议模式）
         with self.assertRaises(ValueError):
-            reg.activate(rec.model_id, "ref-1")
+            reg.activate(rec.model_id, "approver-1")
         # 状态不变
         self.assertEqual(rec.status, ModelStatus.CANDIDATE)
         self.assertIsNone(reg.active(ACTION_CLASSIFIER))
 
-    def test_activate_after_shadow(self):
+    def test_activate_after_full_flow(self):
+        # Task 25：规范上线路径 CANDIDATE→…→CANARY→ACTIVE
         reg = ModelRegistry()
         rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0")
         reg.register(rec)
-        reg.promote_to_shadow(rec.model_id, "ref-shadow")
-        self.assertEqual(rec.status, ModelStatus.SHADOW)
-        activated = reg.activate(rec.model_id, "ref-activate")
+        _advance_to_canary(reg, rec.model_id)
+        self.assertEqual(rec.status, ModelStatus.CANARY)
+        activated = reg.activate(rec.model_id, "approver-1")
         self.assertEqual(activated.status, ModelStatus.ACTIVE)
         self.assertIsNotNone(activated.activated_at)
         self.assertIs(reg.active(ACTION_CLASSIFIER), activated)
+        # approver_id 已记录
+        self.assertEqual(activated.approver_id, "approver-1")
+
+    def test_activate_requires_approver_id(self):
+        # Task 25：activate 需人工 approver_id 批准
+        reg = ModelRegistry()
+        rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0")
+        reg.register(rec)
+        _advance_to_canary(reg, rec.model_id)
+        with self.assertRaises(ValueError):
+            reg.activate(rec.model_id, "")
+        # 状态不变
+        self.assertEqual(rec.status, ModelStatus.CANARY)
 
     def test_promote_to_shadow_requires_candidate(self):
         reg = ModelRegistry()
@@ -315,12 +345,12 @@ class ModelRegistryTest(unittest.TestCase):
         m2 = ModelRecord(model_id="m2", model_type=ACTION_CLASSIFIER, version="2.0.0")
         reg.register(m1)
         reg.register(m2)
-        reg.promote_to_shadow("m1", "r")
-        reg.activate("m1", "r")
+        _advance_to_canary(reg, "m1")
+        reg.activate("m1", "approver-1")
         self.assertEqual(reg.active(ACTION_CLASSIFIER).model_id, "m1")
         # 激活 m2 → m1 自动退役
-        reg.promote_to_shadow("m2", "r")
-        reg.activate("m2", "r")
+        _advance_to_canary(reg, "m2")
+        reg.activate("m2", "approver-2")
         self.assertEqual(reg.active(ACTION_CLASSIFIER).model_id, "m2")
         self.assertEqual(m1.status, ModelStatus.RETIRED)
         self.assertIsNotNone(m1.retired_at)
@@ -331,10 +361,10 @@ class ModelRegistryTest(unittest.TestCase):
         m2 = ModelRecord(model_id="m2", model_type=ACTION_CLASSIFIER, version="2.0.0")
         reg.register(m1)
         reg.register(m2)
-        reg.promote_to_shadow("m1", "r")
-        reg.activate("m1", "r")
-        reg.promote_to_shadow("m2", "r")
-        reg.activate("m2", "r")   # m1 自动退役
+        _advance_to_canary(reg, "m1")
+        reg.activate("m1", "approver-1")
+        _advance_to_canary(reg, "m2")
+        reg.activate("m2", "approver-2")   # m1 自动退役
         self.assertEqual(reg.active(ACTION_CLASSIFIER).model_id, "m2")
         self.assertEqual(m1.status, ModelStatus.RETIRED)
 
@@ -351,9 +381,9 @@ class ModelRegistryTest(unittest.TestCase):
         m2 = ModelRecord(model_id="m2", model_type=ACTION_CLASSIFIER, version="2.0.0")
         reg.register(m1)
         reg.register(m2)
-        reg.promote_to_shadow("m1", "r")
-        reg.activate("m1", "r")
-        # m2 仍是 CANDIDATE（未曾 ACTIVE/SHADOW）→ 不允许回滚到它
+        _advance_to_canary(reg, "m1")
+        reg.activate("m1", "approver-1")
+        # m2 仍是 CANDIDATE（未曾 ACTIVE/SHADOW/CANARY）→ 不允许回滚到它
         with self.assertRaises(ValueError):
             reg.rollback(ACTION_CLASSIFIER, "m2", "ref")
         # 状态不变
@@ -370,16 +400,16 @@ class ModelRegistryTest(unittest.TestCase):
         self.assertEqual([m.model_id for m in reg.history(ACTION_CLASSIFIER)],
                          ["m1", "m2"])
         self.assertIsNone(reg.active(ACTION_CLASSIFIER))
-        reg.promote_to_shadow("m1", "r")
-        reg.activate("m1", "r")
+        _advance_to_canary(reg, "m1")
+        reg.activate("m1", "approver-1")
         self.assertEqual(reg.active(ACTION_CLASSIFIER).model_id, "m1")
 
     def test_retire(self):
         reg = ModelRegistry()
         m1 = ModelRecord(model_id="m1", model_type=ACTION_CLASSIFIER, version="1.0.0")
         reg.register(m1)
-        reg.promote_to_shadow("m1", "r")
-        reg.activate("m1", "r")
+        _advance_to_canary(reg, "m1")
+        reg.activate("m1", "approver-1")
         reg.retire("m1", "ref-retire")
         self.assertEqual(m1.status, ModelStatus.RETIRED)
         self.assertIsNotNone(m1.retired_at)
@@ -391,11 +421,14 @@ class ModelRegistryTest(unittest.TestCase):
                          data_version="ds-1", feature_version="f-1",
                          threshold_version="t-1")
         reg.register(m1)
-        reg.promote_to_shadow("m1", "ref-shadow")
-        reg.activate("m1", "ref-activate")
+        _advance_to_canary(reg, "m1")
+        reg.activate("m1", "approver-1")
         actions = [e["action"] for e in reg.audit_trail]
         self.assertIn("register", actions)
-        self.assertIn("promote_to_shadow", actions)
+        self.assertIn("submit_for_review", actions)
+        self.assertIn("approve_review", actions)
+        self.assertIn("start_controlled_validation", actions)
+        self.assertIn("start_canary", actions)
         self.assertIn("activate", actions)
         # 每条审计携带 ts / ref / from_status / to_status
         for e in reg.audit_trail:
@@ -407,11 +440,188 @@ class ModelRegistryTest(unittest.TestCase):
         self.assertIn("ds-1", reg_entry["detail"])
         self.assertIn("f-1", reg_entry["detail"])
         self.assertIn("t-1", reg_entry["detail"])
-        # activate 审计携带 ref
+        # activate 审计：actor_id=approver，from_status=CANARY→ACTIVE
         act_entry = [e for e in reg.audit_trail if e["action"] == "activate"][0]
-        self.assertEqual(act_entry["ref"], "ref-activate")
-        self.assertEqual(act_entry["from_status"], "SHADOW")
+        self.assertEqual(act_entry["actor_id"], "approver-1")
+        self.assertEqual(act_entry["from_status"], "CANARY")
         self.assertEqual(act_entry["to_status"], "ACTIVE")
+
+    # ---- Task 25：上线流程增强新增测试 ----
+    def test_submit_for_review(self):
+        reg = ModelRegistry()
+        rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0")
+        reg.register(rec)
+        reg.submit_for_review(rec.model_id, "submitter-A")
+        self.assertEqual(rec.status, ModelStatus.REVIEWING)
+        # 审计记录提交人
+        entry = [e for e in reg.audit_trail if e["action"] == "submit_for_review"][0]
+        self.assertEqual(entry["actor_id"], "submitter-A")
+        self.assertEqual(entry["to_status"], "REVIEWING")
+
+    def test_submit_for_review_requires_candidate(self):
+        reg = ModelRegistry()
+        rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0")
+        reg.register(rec)
+        reg.submit_for_review(rec.model_id, "s")
+        # 已 REVIEWING，再次提交 → 拒绝
+        with self.assertRaises(ValueError):
+            reg.submit_for_review(rec.model_id, "s")
+
+    def test_approve_review_records_reviewer(self):
+        reg = ModelRegistry()
+        rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0")
+        reg.register(rec)
+        reg.submit_for_review(rec.model_id, "submitter-A")
+        reg.approve_review(rec.model_id, "reviewer-B")
+        self.assertEqual(rec.status, ModelStatus.SHADOW)
+        # safety_reviewer_id 已记录
+        self.assertEqual(rec.safety_reviewer_id, "reviewer-B")
+        entry = [e for e in reg.audit_trail if e["action"] == "approve_review"][0]
+        self.assertEqual(entry["actor_id"], "reviewer-B")
+        self.assertEqual(entry["to_status"], "SHADOW")
+
+    def test_approve_review_requires_reviewer_id(self):
+        reg = ModelRegistry()
+        rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0")
+        reg.register(rec)
+        reg.submit_for_review(rec.model_id, "s")
+        with self.assertRaises(ValueError):
+            reg.approve_review(rec.model_id, "")
+
+    def test_approve_review_requires_reviewing(self):
+        reg = ModelRegistry()
+        rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0")
+        reg.register(rec)
+        # CANDIDATE 直接 approve_review → 拒绝
+        with self.assertRaises(ValueError):
+            reg.approve_review(rec.model_id, "reviewer-B")
+
+    def test_start_controlled_validation(self):
+        reg = ModelRegistry()
+        rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0")
+        reg.register(rec)
+        reg.submit_for_review(rec.model_id, "s")
+        reg.approve_review(rec.model_id, "r")
+        reg.start_controlled_validation(rec.model_id)
+        self.assertEqual(rec.status, ModelStatus.CONTROLLED_VALIDATION)
+
+    def test_start_controlled_validation_requires_shadow(self):
+        reg = ModelRegistry()
+        rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0")
+        reg.register(rec)
+        # CANDIDATE 直接进入受控验证 → 拒绝
+        with self.assertRaises(ValueError):
+            reg.start_controlled_validation(rec.model_id)
+
+    def test_start_canary_records_ratio(self):
+        reg = ModelRegistry()
+        rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0")
+        reg.register(rec)
+        reg.submit_for_review(rec.model_id, "s")
+        reg.approve_review(rec.model_id, "r")
+        reg.start_controlled_validation(rec.model_id)
+        reg.start_canary(rec.model_id, canary_ratio=0.25)
+        self.assertEqual(rec.status, ModelStatus.CANARY)
+        self.assertEqual(rec.canary_ratio, 0.25)
+        # 审计记录灰度比例
+        entry = [e for e in reg.audit_trail if e["action"] == "start_canary"][0]
+        self.assertIn("canary_ratio=0.25", entry["detail"])
+
+    def test_start_canary_default_ratio(self):
+        reg = ModelRegistry()
+        rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0")
+        reg.register(rec)
+        reg.submit_for_review(rec.model_id, "s")
+        reg.approve_review(rec.model_id, "r")
+        reg.start_controlled_validation(rec.model_id)
+        reg.start_canary(rec.model_id)
+        self.assertEqual(rec.canary_ratio, 0.1)  # 默认 10%
+
+    def test_start_canary_requires_controlled_validation(self):
+        reg = ModelRegistry()
+        rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0")
+        reg.register(rec)
+        reg.promote_to_shadow(rec.model_id, "r")  # SHADOW 但未受控验证
+        with self.assertRaises(ValueError):
+            reg.start_canary(rec.model_id)
+
+    def test_full_lifecycle(self):
+        # Task 25：完整生命周期 CANDIDATE→REVIEWING→SHADOW→
+        # CONTROLLED_VALIDATION→CANARY→ACTIVE→RETIRED
+        reg = ModelRegistry()
+        rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0",
+                          data_version="ds-1", feature_version="f-1",
+                          threshold_version="t-1", model_card_uri="card://m1")
+        reg.register(rec)
+        self.assertEqual(rec.status, ModelStatus.CANDIDATE)
+        reg.submit_for_review(rec.model_id, "submitter-1")
+        self.assertEqual(rec.status, ModelStatus.REVIEWING)
+        reg.approve_review(rec.model_id, "reviewer-1")
+        self.assertEqual(rec.status, ModelStatus.SHADOW)
+        reg.start_controlled_validation(rec.model_id)
+        self.assertEqual(rec.status, ModelStatus.CONTROLLED_VALIDATION)
+        reg.start_canary(rec.model_id, canary_ratio=0.2)
+        self.assertEqual(rec.status, ModelStatus.CANARY)
+        reg.activate(rec.model_id, "approver-1")
+        self.assertEqual(rec.status, ModelStatus.ACTIVE)
+        self.assertEqual(rec.approver_id, "approver-1")
+        self.assertEqual(rec.safety_reviewer_id, "reviewer-1")
+        self.assertEqual(rec.canary_ratio, 0.2)
+        reg.retire(rec.model_id, "ref-retire")
+        self.assertEqual(rec.status, ModelStatus.RETIRED)
+        # 全链路审计：每个流转都有记录
+        to_statuses = [e["to_status"] for e in reg.audit_trail]
+        for s in ("CANDIDATE", "REVIEWING", "SHADOW", "CONTROLLED_VALIDATION",
+                  "CANARY", "ACTIVE", "RETIRED"):
+            self.assertIn(s, to_statuses)
+
+    def test_state_transition_violations(self):
+        # Task 25：非法状态流转均被拒绝
+        reg = ModelRegistry()
+        rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0")
+        reg.register(rec)
+        # CANDIDATE 不能直接 start_controlled_validation
+        with self.assertRaises(ValueError):
+            reg.start_controlled_validation(rec.model_id)
+        # CANDIDATE 不能直接 start_canary
+        with self.assertRaises(ValueError):
+            reg.start_canary(rec.model_id)
+        # CANDIDATE 不能直接 activate
+        with self.assertRaises(ValueError):
+            reg.activate(rec.model_id, "approver-1")
+        # 进入 REVIEWING 后不能直接 activate（需经 SHADOW/CV/CANARY）
+        reg.submit_for_review(rec.model_id, "s")
+        with self.assertRaises(ValueError):
+            reg.activate(rec.model_id, "approver-1")
+        # REVIEWING 不能直接 start_controlled_validation（需先到 SHADOW）
+        with self.assertRaises(ValueError):
+            reg.start_controlled_validation(rec.model_id)
+        # 状态不变
+        self.assertEqual(rec.status, ModelStatus.REVIEWING)
+
+    def test_promote_to_shadow_shortcut_still_works(self):
+        # Task 25：promote_to_shadow 作为 CANDIDATE→SHADOW 捷径保留
+        reg = ModelRegistry()
+        rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0")
+        reg.register(rec)
+        reg.promote_to_shadow(rec.model_id, "ref-shadow")
+        self.assertEqual(rec.status, ModelStatus.SHADOW)
+        # 从 SHADOW 仍需走受控验证+灰度才能激活
+        reg.start_controlled_validation(rec.model_id)
+        reg.start_canary(rec.model_id)
+        reg.activate(rec.model_id, "approver-1")
+        self.assertEqual(rec.status, ModelStatus.ACTIVE)
+
+    def test_to_dict_includes_new_fields(self):
+        # Task 25：to_dict 包含新增字段
+        rec = ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0")
+        d = rec.to_dict()
+        self.assertIn("canary_ratio", d)
+        self.assertIn("approver_id", d)
+        self.assertIn("safety_reviewer_id", d)
+        self.assertIsNone(d["canary_ratio"])
+        self.assertIsNone(d["approver_id"])
+        self.assertIsNone(d["safety_reviewer_id"])
 
 
 if __name__ == "__main__":

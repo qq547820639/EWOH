@@ -27,9 +27,9 @@ def ms_to_ts(ms):
 
 
 def new_id(prefix):
-    """生成短随机业务 ID，如 INF-a1b2c3d4。"""
+    """生成短随机业务 ID，如 INF-a1b2c3d4e5f6（uuid4 hex 前 12 位，碰撞概率足够低）。"""
     import uuid
-    return "%s-%s" % (prefix, uuid.uuid4().hex[:8])
+    return "%s-%s" % (prefix, uuid.uuid4().hex[:12])
 
 
 # 空间与上下文感知规则（算法第一阶段）与版本化注册表。

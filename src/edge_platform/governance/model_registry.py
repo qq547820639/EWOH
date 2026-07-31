@@ -1,12 +1,19 @@
-"""模型与规则版本治理：注册/影子/激活/退役/回滚，全链路审计。
+"""模型与规则版本治理：注册/评审/影子/受控验证/灰度/激活/退役/回滚，全链路审计。
 
 对应 spec「算法分阶段实施」与「模型结果 100% 可追溯到模型和数据版本」：
-- 模型/规则生命周期：CANDIDATE（候选）→ SHADOW（影子运行，只记录不执行）→ ACTIVE
-  （建议模式）→ RETIRED（退役）；影子运行未达标不得进入建议模式（activate 需先经 SHADOW）。
+- Task 25 模型上线流程增强：生命周期
+  CANDIDATE（候选）→ REVIEWING（安全评审中）→ SHADOW（影子运行，只记录不执行）→
+  CONTROLLED_VALIDATION（受控验证中）→ CANARY（小范围启用中）→ ACTIVE（建议模式）→
+  RETIRED（退役）；激活需人工批准（approver_id），禁止模型自动在线学习直接覆盖生产模型
+  （spec「禁止模型自动在线学习直接覆盖生产模型」）。
 - 每个模型记录携带 model_type / version / data_version / feature_version /
   threshold_version / model_card_uri，保证「模型结果 100% 可追溯到模型和数据版本」。
 - 每次状态流转入审计（actor/ts/ref/from_status/to_status），支持 rollback 到曾
   ACTIVE/SHADOW 的历史版本。
+
+注：promote_to_shadow 作为 CANDIDATE→SHADOW 的便捷捷径保留（兼容已有调用）；
+规范上线路径为 submit_for_review → approve_review → start_controlled_validation →
+start_canary → activate。
 
 纯 Python 标准库实现；沿用 edge_platform.spatial 的 new_id / now_iso 约定。
 """
@@ -20,10 +27,13 @@ from edge_platform.spatial import new_id, now_iso
 
 class ModelStatus(enum.Enum):
     """模型/规则生命周期状态。"""
-    CANDIDATE = "CANDIDATE"   # 候选：已登记，未上线
-    SHADOW = "SHADOW"         # 影子运行：只记录不执行，与现行方案对比
-    ACTIVE = "ACTIVE"         # 建议/生效模式
-    RETIRED = "RETIRED"       # 退役
+    CANDIDATE = "CANDIDATE"                       # 候选：已登记，未上线
+    REVIEWING = "REVIEWING"                       # 安全评审中
+    SHADOW = "SHADOW"                             # 影子运行：只记录不执行，与现行方案对比
+    CONTROLLED_VALIDATION = "CONTROLLED_VALIDATION"  # 受控验证中
+    CANARY = "CANARY"                             # 小范围启用中（灰度）
+    ACTIVE = "ACTIVE"                             # 建议/生效模式
+    RETIRED = "RETIRED"                           # 退役
 
 
 # 合法模型类型（spec「算法分阶段实施」涉及的模型/规则类别）
@@ -43,7 +53,8 @@ class ModelRecord:
     """模型/规则版本记录：携带数据/特征/阈值版本与模型卡，保证可追溯。
 
     spec「模型结果 100% 可追溯到模型和数据版本」：data_version / feature_version /
-    threshold_version / model_card_uri 共同构成追溯链。
+    threshold_version / model_card_uri 共同构成追溯链。Task 25 新增上线流程字段：
+    canary_ratio（灰度比例）/ approver_id（激活批准人）/ safety_reviewer_id（安全评审人）。
     """
     model_type: str
     version: str
@@ -56,6 +67,10 @@ class ModelRecord:
     activated_at: Optional[str] = None
     retired_at: Optional[str] = None
     audit_ref: str = ""
+    # Task 25：上线流程增强字段
+    canary_ratio: Optional[float] = None       # 灰度比例（CANARY 阶段记录）
+    approver_id: Optional[str] = None          # 激活批准人（ACTIVE 阶段记录）
+    safety_reviewer_id: Optional[str] = None   # 安全评审人（REVIEWING→SHADOW 记录）
 
     def __post_init__(self):
         if not self.model_id:
@@ -78,16 +93,28 @@ class ModelRecord:
             "activated_at": self.activated_at,
             "retired_at": self.retired_at,
             "audit_ref": self.audit_ref,
+            "canary_ratio": self.canary_ratio,
+            "approver_id": self.approver_id,
+            "safety_reviewer_id": self.safety_reviewer_id,
         }
 
 
 class ModelRegistry:
     """模型/规则版本治理注册表。
 
+    Task 25 上线流程增强后的规范生命周期：
+    CANDIDATE →（submit_for_review）→ REVIEWING →（approve_review）→ SHADOW →
+    （start_controlled_validation）→ CONTROLLED_VALIDATION →（start_canary）→
+    CANARY →（activate，需 approver_id 人工批准）→ ACTIVE →（retire）→ RETIRED。
+
     - register：默认 CANDIDATE（生命周期必须从候选开始）；
-    - promote_to_shadow：CANDIDATE → SHADOW；
-    - activate：必须先处于 SHADOW（spec「影子运行未达标不得进入建议模式」）→ ACTIVE，
-      同时将同 model_type 的原 ACTIVE 自动置 RETIRED；
+    - submit_for_review：CANDIDATE → REVIEWING（安全评审中）；
+    - approve_review：REVIEWING → SHADOW（需 reviewer_id，记录 safety_reviewer_id）；
+    - promote_to_shadow：CANDIDATE → SHADOW 的便捷捷径（兼容已有调用）；
+    - start_controlled_validation：SHADOW → CONTROLLED_VALIDATION；
+    - start_canary：CONTROLLED_VALIDATION → CANARY（记录 canary_ratio）；
+    - activate：必须先处于 CANARY（spec「禁止模型自动在线学习直接覆盖生产模型」，
+      需人工 approver_id 批准）→ ACTIVE，同时将同 model_type 的原 ACTIVE 自动置 RETIRED；
     - retire：→ RETIRED；
     - active(model_type)：当前生效模型（每个 model_type 至多一个 ACTIVE）；
     - rollback：将当前 ACTIVE 置 RETIRED，把目标历史版本（曾 ACTIVE/SHADOW）重新置 ACTIVE。
@@ -127,9 +154,13 @@ class ModelRegistry:
         return rec
 
     def _was_active_or_shadow(self, model_id):
-        """是否曾进入 ACTIVE/SHADOW（依据审计流转记录判定）。"""
+        """是否曾进入 ACTIVE/SHADOW（依据审计流转记录判定）。
+
+        Task 25：CANARY 也视为可回滚目标（灰度阶段已通过影子运行）。
+        """
         for e in self.audit_trail:
-            if e["model_id"] == model_id and e["to_status"] in ("ACTIVE", "SHADOW"):
+            if e["model_id"] == model_id and e["to_status"] in (
+                    "ACTIVE", "SHADOW", "CANARY"):
                 return True
         return False
 
@@ -150,8 +181,78 @@ class ModelRegistry:
         )
         return model_record
 
+    # ---- Task 25：上线流程增强 ----
+    def submit_for_review(self, model_id, submitter_id):
+        """CANDIDATE → REVIEWING（提交安全评审）。
+
+        spec Task 25.1「安全评审」步骤：候选模型须先进入安全评审。
+        """
+        rec = self._require(model_id)
+        if rec.status is not ModelStatus.CANDIDATE:
+            raise ValueError(f"仅 CANDIDATE 可提交评审，当前状态: {rec.status.value}")
+        old = rec.status
+        rec.status = ModelStatus.REVIEWING
+        entry = self._log(model_id, "submit_for_review", submitter_id, "",
+                          old, ModelStatus.REVIEWING)
+        rec.audit_ref = entry["log_id"]
+        return rec
+
+    def approve_review(self, model_id, reviewer_id):
+        """REVIEWING → SHADOW（安全评审通过，需 reviewer_id）。
+
+        reviewer_id 记录于 ModelRecord.safety_reviewer_id，保证评审可追溯。
+        """
+        if not reviewer_id:
+            raise ValueError("approve_review 需要 reviewer_id（安全评审人）")
+        rec = self._require(model_id)
+        if rec.status is not ModelStatus.REVIEWING:
+            raise ValueError(f"仅 REVIEWING 可通过评审进入影子运行，当前状态: {rec.status.value}")
+        old = rec.status
+        rec.status = ModelStatus.SHADOW
+        rec.safety_reviewer_id = reviewer_id
+        entry = self._log(model_id, "approve_review", reviewer_id, "",
+                          old, ModelStatus.SHADOW)
+        rec.audit_ref = entry["log_id"]
+        return rec
+
+    def start_controlled_validation(self, model_id):
+        """SHADOW → CONTROLLED_VALIDATION（受控验证）。
+
+        spec Task 25.1「受控验证」步骤：影子运行达标后进入受控验证。
+        """
+        rec = self._require(model_id)
+        if rec.status is not ModelStatus.SHADOW:
+            raise ValueError(f"仅 SHADOW 可进入受控验证，当前状态: {rec.status.value}")
+        old = rec.status
+        rec.status = ModelStatus.CONTROLLED_VALIDATION
+        entry = self._log(model_id, "start_controlled_validation", "", "",
+                          old, ModelStatus.CONTROLLED_VALIDATION)
+        rec.audit_ref = entry["log_id"]
+        return rec
+
+    def start_canary(self, model_id, canary_ratio=0.1):
+        """CONTROLLED_VALIDATION → CANARY（小范围灰度启用）。
+
+        canary_ratio 记录于 ModelRecord.canary_ratio；spec Task 25.1「小范围启用」步骤。
+        """
+        rec = self._require(model_id)
+        if rec.status is not ModelStatus.CONTROLLED_VALIDATION:
+            raise ValueError(f"仅 CONTROLLED_VALIDATION 可进入灰度，当前状态: {rec.status.value}")
+        old = rec.status
+        rec.status = ModelStatus.CANARY
+        rec.canary_ratio = canary_ratio
+        entry = self._log(model_id, "start_canary", "", "",
+                          old, ModelStatus.CANARY,
+                          detail=f"canary_ratio={canary_ratio}")
+        rec.audit_ref = entry["log_id"]
+        return rec
+
     def promote_to_shadow(self, model_id, audit_ref):
-        """CANDIDATE → SHADOW；仅候选模型可进入影子运行。"""
+        """CANDIDATE → SHADOW 的便捷捷径（兼容已有调用）。
+
+        规范上线路径为 submit_for_review → approve_review；本方法保留以兼容既有调用，
+        允许跳过评审直接进入影子运行。
+        """
         rec = self._require(model_id)
         if rec.status is not ModelStatus.CANDIDATE:
             raise ValueError("仅 CANDIDATE 可进入影子运行，当前状态: %s" % rec.status.value)
@@ -162,27 +263,31 @@ class ModelRegistry:
         rec.audit_ref = entry["log_id"]
         return rec
 
-    def activate(self, model_id, audit_ref):
-        """SHADOW → ACTIVE；影子运行未达标不得进入建议模式（需先经 SHADOW）。
+    def activate(self, model_id, approver_id):
+        """CANARY → ACTIVE；需人工 approver_id 批准（spec「禁止模型自动在线学习直接覆盖生产模型」）。
 
         激活同时将同 model_type 的原 ACTIVE 自动置 RETIRED，保证每类至多一个生效模型。
+        approver_id 记录于 ModelRecord.approver_id，保证激活可追溯。
         """
+        if not approver_id:
+            raise ValueError("activate 需要 approver_id（人工批准）")
         rec = self._require(model_id)
-        if rec.status is not ModelStatus.SHADOW:
+        if rec.status is not ModelStatus.CANARY:
             raise ValueError(
-                "仅 SHADOW 可激活为建议模式，当前状态: %s（影子运行未达标不得进入建议模式）"
+                "仅 CANARY 可激活为建议模式（需人工批准），当前状态: %s"
                 % rec.status.value)
         cur = self.active(rec.model_type)
         if cur is not None and cur.model_id != model_id:
             old = cur.status
             cur.status = ModelStatus.RETIRED
             cur.retired_at = now_iso()
-            self._log(cur.model_id, "retire(auto)", "", audit_ref,
+            self._log(cur.model_id, "retire(auto)", "", "",
                       old, ModelStatus.RETIRED, detail="被 %s 取代" % model_id)
         old = rec.status
         rec.status = ModelStatus.ACTIVE
         rec.activated_at = now_iso()
-        entry = self._log(model_id, "activate", "", audit_ref, old, ModelStatus.ACTIVE)
+        rec.approver_id = approver_id
+        entry = self._log(model_id, "activate", approver_id, "", old, ModelStatus.ACTIVE)
         rec.audit_ref = entry["log_id"]
         return rec
 

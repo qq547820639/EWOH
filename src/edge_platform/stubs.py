@@ -33,6 +33,100 @@ CREATE TABLE IF NOT EXISTS risk_event (
   event_id TEXT PRIMARY KEY, event_code TEXT NOT NULL, severity TEXT NOT NULL, status TEXT NOT NULL,
   person_id TEXT, device_id TEXT, task_id TEXT, zone_id TEXT, start_time TEXT NOT NULL, end_time TEXT,
   trigger_json TEXT NOT NULL, evidence_json TEXT NOT NULL, source_type TEXT NOT NULL, handling_json TEXT);
+-- Task 17：handling_json 存储 {status(open/handled/closed), handler_id, action, comment,
+--   handled_at, end_time, closed_by, close_reason, rule_version}；evidence_json 存储
+--   {window_before_sec, window_after_sec, record_ids, data_quality, evidence_window_sec,
+--    evidence_quality, evidence_samples, evidence_summary}。
+-- Task 14.3：治理与审计表（CREATE TABLE IF NOT EXISTS，幂等，不影响旧表）
+CREATE TABLE IF NOT EXISTS device_protocol_version (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id TEXT NOT NULL,
+  protocol_version TEXT NOT NULL,
+  firmware_version TEXT,
+  hardware_version TEXT,
+  upgraded_at TEXT NOT NULL,
+  audit_ref TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_device_protocol_version_device ON device_protocol_version(device_id);
+CREATE TABLE IF NOT EXISTS event_handling (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id TEXT NOT NULL,
+  handler_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  comment TEXT,
+  handled_at TEXT NOT NULL,
+  audit_ref TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_event_handling_event ON event_handling(event_id);
+CREATE TABLE IF NOT EXISTS assignment (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  assignment_id TEXT UNIQUE NOT NULL,
+  task_id TEXT,
+  person_id TEXT NOT NULL,
+  device_id TEXT,
+  status TEXT NOT NULL DEFAULT 'proposed',
+  recommended_by TEXT,
+  confirmed_by TEXT,
+  confirmed_at TEXT,
+  audit_ref TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_assignment_person ON assignment(person_id);
+CREATE INDEX IF NOT EXISTS idx_assignment_status ON assignment(status);
+CREATE TABLE IF NOT EXISTS model_registry (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  model_id TEXT UNIQUE NOT NULL,
+  model_type TEXT NOT NULL,
+  version TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'candidate',
+  model_card_uri TEXT,
+  registered_at TEXT NOT NULL,
+  audit_ref TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_model_registry_type_status ON model_registry(model_type, status);
+CREATE TABLE IF NOT EXISTS rule_registry (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  rule_id TEXT NOT NULL,
+  rule_version TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  config_json TEXT,
+  severity TEXT,
+  approver_id TEXT,
+  effective_from TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(rule_id, rule_version)
+);
+CREATE INDEX IF NOT EXISTS idx_rule_registry_enabled ON rule_registry(enabled);
+CREATE TABLE IF NOT EXISTS consent_record (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  record_id TEXT UNIQUE NOT NULL,
+  person_id TEXT NOT NULL,
+  purpose TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  granted_by TEXT,
+  granted_at TEXT NOT NULL,
+  revoked_at TEXT,
+  revoke_reason TEXT,
+  audit_ref TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_consent_record_person ON consent_record(person_id);
+CREATE INDEX IF NOT EXISTS idx_consent_record_status ON consent_record(status);
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  audit_id TEXT UNIQUE NOT NULL,
+  action TEXT NOT NULL,
+  actor_id TEXT,
+  target_type TEXT,
+  target_id TEXT,
+  before_json TEXT,
+  after_json TEXT,
+  result TEXT,
+  request_id TEXT,
+  source_ip TEXT,
+  ts TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_action_ts ON audit_log(action, ts);
+CREATE INDEX IF NOT EXISTS idx_audit_log_actor_ts ON audit_log(actor_id, ts);
+CREATE INDEX IF NOT EXISTS idx_audit_log_target ON audit_log(target_type, target_id);
 """
 
 
@@ -170,6 +264,244 @@ class Storage:
         d["handling"] = json.loads(d.pop("handling_json") or "null")
         return d
 
+    # -- Task 14.3：治理与审计表 CRUD --
+    @staticmethod
+    def _json_dumps_maybe(value):
+        """dict/list → json 字符串；str 原样保留；None → None。"""
+        if value is None:
+            return None
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False)
+        return str(value)
+
+    @staticmethod
+    def _json_loads_maybe(value):
+        return json.loads(value) if value else None
+
+    def insert_audit_log(self, action, actor_id, target_type, target_id,
+                         before=None, after=None, result="success",
+                         request_id=None, source_ip=None):
+        """写入一条审计日志；返回新记录字典。"""
+        audit_id = "AUD-" + uuid.uuid4().hex[:12].upper()
+        ts = _now()
+        with self._lock, self._db:
+            cur = self._db.execute(
+                "INSERT INTO audit_log (audit_id, action, actor_id, target_type, target_id,"
+                " before_json, after_json, result, request_id, source_ip, ts)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (audit_id, action, actor_id, target_type, target_id,
+                 self._json_dumps_maybe(before), self._json_dumps_maybe(after),
+                 result, request_id, source_ip, ts))
+            row = self._db.execute("SELECT * FROM audit_log WHERE id=?", (cur.lastrowid,)).fetchone()
+        return self._audit_log_row(row)
+
+    def list_audit_logs(self, action=None, actor_id=None, target_type=None,
+                        limit=100, offset=0):
+        """分页查询审计日志；按 ts DESC, id DESC 排序。"""
+        clauses, params = [], []
+        if action is not None:
+            clauses.append("action=?")
+            params.append(action)
+        if actor_id is not None:
+            clauses.append("actor_id=?")
+            params.append(actor_id)
+        if target_type is not None:
+            clauses.append("target_type=?")
+            params.append(target_type)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        sql = ("SELECT * FROM audit_log" + where +
+               " ORDER BY ts DESC, id DESC LIMIT ? OFFSET ?")
+        params.extend([int(limit), int(offset)])
+        rows = self._db.execute(sql, params).fetchall()
+        return [self._audit_log_row(r) for r in rows]
+
+    @staticmethod
+    def _audit_log_row(row):
+        if not row:
+            return None
+        d = dict(row)
+        before_raw = d.pop("before_json")
+        after_raw = d.pop("after_json")
+        d["before"] = json.loads(before_raw) if before_raw else None
+        d["after"] = json.loads(after_raw) if after_raw else None
+        return d
+
+    def insert_device_protocol_version(self, device_id, protocol_version,
+                                       firmware_version, hardware_version, audit_ref=None):
+        """登记一次设备协议/固件版本升级；返回新记录字典。"""
+        upgraded_at = _now()
+        with self._lock, self._db:
+            cur = self._db.execute(
+                "INSERT INTO device_protocol_version"
+                " (device_id, protocol_version, firmware_version, hardware_version,"
+                " upgraded_at, audit_ref) VALUES (?,?,?,?,?,?)",
+                (device_id, protocol_version, firmware_version, hardware_version,
+                 upgraded_at, audit_ref))
+            row = self._db.execute(
+                "SELECT * FROM device_protocol_version WHERE id=?", (cur.lastrowid,)).fetchone()
+        return dict(row)
+
+    def list_device_protocol_versions(self, device_id=None):
+        """查询设备协议版本登记；可选按 device_id 过滤，按 upgraded_at DESC, id DESC。"""
+        if device_id is None:
+            rows = self._db.execute(
+                "SELECT * FROM device_protocol_version ORDER BY upgraded_at DESC, id DESC").fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT * FROM device_protocol_version WHERE device_id=?"
+                " ORDER BY upgraded_at DESC, id DESC", (device_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def insert_event_handling(self, event_id, handler_id, action, comment=None, audit_ref=None):
+        """记录一次事件处置动作；返回新记录字典。"""
+        handled_at = _now()
+        with self._lock, self._db:
+            cur = self._db.execute(
+                "INSERT INTO event_handling"
+                " (event_id, handler_id, action, comment, handled_at, audit_ref)"
+                " VALUES (?,?,?,?,?,?)",
+                (event_id, handler_id, action, comment, handled_at, audit_ref))
+            row = self._db.execute(
+                "SELECT * FROM event_handling WHERE id=?", (cur.lastrowid,)).fetchone()
+        return dict(row)
+
+    def list_event_handlings(self, event_id=None):
+        """查询事件处置记录；可选按 event_id 过滤，按 handled_at DESC, id DESC。"""
+        if event_id is None:
+            rows = self._db.execute(
+                "SELECT * FROM event_handling ORDER BY handled_at DESC, id DESC").fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT * FROM event_handling WHERE event_id=? ORDER BY handled_at DESC, id DESC",
+                (event_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def upsert_assignment(self, assignment_id, person_id, device_id=None, task_id=None,
+                          status="proposed", recommended_by=None, confirmed_by=None,
+                          confirmed_at=None, audit_ref=None):
+        """派工记录 upsert（按 assignment_id）；返回最新记录字典。"""
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO assignment (assignment_id, task_id, person_id, device_id, status,"
+                " recommended_by, confirmed_by, confirmed_at, audit_ref)"
+                " VALUES (?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(assignment_id) DO UPDATE SET"
+                " task_id=excluded.task_id, person_id=excluded.person_id,"
+                " device_id=excluded.device_id, status=excluded.status,"
+                " recommended_by=excluded.recommended_by, confirmed_by=excluded.confirmed_by,"
+                " confirmed_at=excluded.confirmed_at, audit_ref=excluded.audit_ref",
+                (assignment_id, task_id, person_id, device_id, status,
+                 recommended_by, confirmed_by, confirmed_at, audit_ref))
+            row = self._db.execute(
+                "SELECT * FROM assignment WHERE assignment_id=?", (assignment_id,)).fetchone()
+        return dict(row)
+
+    def list_assignments(self, person_id=None, status=None):
+        """查询派工记录；可选按 person_id / status 过滤，按 id DESC。"""
+        clauses, params = [], []
+        if person_id is not None:
+            clauses.append("person_id=?")
+            params.append(person_id)
+        if status is not None:
+            clauses.append("status=?")
+            params.append(status)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        sql = "SELECT * FROM assignment" + where + " ORDER BY id DESC"
+        rows = self._db.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def insert_model_record(self, model_id, model_type, version, status="candidate",
+                            model_card_uri=None):
+        """登记一个模型版本；返回新记录字典。"""
+        registered_at = _now()
+        with self._lock, self._db:
+            cur = self._db.execute(
+                "INSERT INTO model_registry"
+                " (model_id, model_type, version, status, model_card_uri, registered_at, audit_ref)"
+                " VALUES (?,?,?,?,?,?,?)",
+                (model_id, model_type, version, status, model_card_uri, registered_at, None))
+            row = self._db.execute(
+                "SELECT * FROM model_registry WHERE id=?", (cur.lastrowid,)).fetchone()
+        return dict(row)
+
+    def list_models(self, model_type=None, status=None):
+        """查询模型注册表；可选按 model_type / status 过滤，按 id DESC。"""
+        clauses, params = [], []
+        if model_type is not None:
+            clauses.append("model_type=?")
+            params.append(model_type)
+        if status is not None:
+            clauses.append("status=?")
+            params.append(status)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        sql = "SELECT * FROM model_registry" + where + " ORDER BY id DESC"
+        rows = self._db.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def insert_rule_record(self, rule_id, rule_version, enabled=True, config_json=None,
+                           severity=None, approver_id=None):
+        """登记一条规则版本；返回新记录字典。config_json 可为 dict 或字符串。"""
+        created_at = _now()
+        with self._lock, self._db:
+            cur = self._db.execute(
+                "INSERT INTO rule_registry"
+                " (rule_id, rule_version, enabled, config_json, severity, approver_id,"
+                " effective_from, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                (rule_id, rule_version, int(enabled),
+                 self._json_dumps_maybe(config_json), severity, approver_id,
+                 None, created_at))
+            row = self._db.execute(
+                "SELECT * FROM rule_registry WHERE id=?", (cur.lastrowid,)).fetchone()
+        d = dict(row)
+        d["config"] = self._json_loads_maybe(d.pop("config_json"))
+        return d
+
+    def list_rules(self, enabled=None):
+        """查询规则注册表；可选按 enabled 过滤（True/False/None），按 id DESC。"""
+        if enabled is None:
+            rows = self._db.execute(
+                "SELECT * FROM rule_registry ORDER BY id DESC").fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT * FROM rule_registry WHERE enabled=? ORDER BY id DESC",
+                (int(enabled),)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["config"] = self._json_loads_maybe(d.pop("config_json"))
+            out.append(d)
+        return out
+
+    def insert_consent_record(self, record_id, person_id, purpose, granted_by,
+                              status="active", revoked_at=None, revoke_reason=None,
+                              audit_ref=None):
+        """登记一条授权记录；返回新记录字典。"""
+        granted_at = _now()
+        with self._lock, self._db:
+            cur = self._db.execute(
+                "INSERT INTO consent_record"
+                " (record_id, person_id, purpose, status, granted_by, granted_at,"
+                " revoked_at, revoke_reason, audit_ref) VALUES (?,?,?,?,?,?,?,?,?)",
+                (record_id, person_id, purpose, status, granted_by, granted_at,
+                 revoked_at, revoke_reason, audit_ref))
+            row = self._db.execute(
+                "SELECT * FROM consent_record WHERE id=?", (cur.lastrowid,)).fetchone()
+        return dict(row)
+
+    def list_consent_records(self, person_id=None, status=None):
+        """查询授权记录；可选按 person_id / status 过滤，按 id DESC。"""
+        clauses, params = [], []
+        if person_id is not None:
+            clauses.append("person_id=?")
+            params.append(person_id)
+        if status is not None:
+            clauses.append("status=?")
+            params.append(status)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        sql = "SELECT * FROM consent_record" + where + " ORDER BY id DESC"
+        rows = self._db.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
     def counts(self):
         def n(t):
             return self._db.execute("SELECT COUNT(*) c FROM %s" % t).fetchone()["c"]
@@ -221,9 +553,11 @@ class AdapterManager:
 
 class InferencePipeline:
     """契约：inference/pipeline.py 的 stub。"""
-    def __init__(self, storage, bus, registry, rules):
+    def __init__(self, storage, bus, registry, rules, metrics_collector=None):
         self.storage, self.bus, self.registry, self.rules = storage, bus, registry, rules
         self._lat = []
+        # Task 33：可注入 MetricsCollector（与真实 InferencePipeline 契约对齐）
+        self._metrics = metrics_collector
 
     def start(self):
         pass

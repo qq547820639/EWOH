@@ -69,6 +69,18 @@ BACKFILL_DEDUP_WINDOW = 4096
 #: 原始帧留存环形缓冲默认容量（Task 2.1「原始帧保留」/ Task 3.2「双向追溯」）
 DEFAULT_RAW_RING_SIZE = 512
 
+#: 时间戳漂移阈值（ms）：实时遥测帧间 ts_ms 跳变超过该值判 degraded（Task 10.1）
+DEFAULT_TS_DRIFT_THRESHOLD_MS = 500
+
+#: 采样率统计窗口（ms）：按该窗口统计实际帧数与期望采样率比较（Task 10.1）
+DEFAULT_SAMPLING_WINDOW_MS = 10000
+
+#: 期望采样率（Hz，协议确认书 3.4：TELEMETRY 20Hz）
+DEFAULT_EXPECTED_HZ = 20.0
+
+#: 采样率偏差阈值：实际/期望偏差超过该比例判 degraded（Task 10.1）
+DEFAULT_SAMPLING_DEVIATION = 0.2
+
 
 def ts_ms_to_iso(ts_ms, tz_offset_hours=DEFAULT_TZ_OFFSET_HOURS):
     """设备 epoch 毫秒 → ISO 8601 字符串（毫秒精度，带时区偏移）。
@@ -117,7 +129,11 @@ class NyExoA1Adapter(BaseAdapter):
     def __init__(self, device_id, source_type="real", model="NY-EXO-A1",
                  firmware_version="", worker_id=None,
                  tz_offset_hours=DEFAULT_TZ_OFFSET_HOURS, maxsize=1024,
-                 frame_sink=None, keep_raw=False, raw_ring_size=DEFAULT_RAW_RING_SIZE):
+                 frame_sink=None, keep_raw=False, raw_ring_size=DEFAULT_RAW_RING_SIZE,
+                 ts_drift_threshold_ms=DEFAULT_TS_DRIFT_THRESHOLD_MS,
+                 sampling_window_ms=DEFAULT_SAMPLING_WINDOW_MS,
+                 expected_hz=DEFAULT_EXPECTED_HZ,
+                 sampling_deviation_threshold=DEFAULT_SAMPLING_DEVIATION):
         super().__init__(device_id, source_type=source_type, model=model,
                          firmware_version=firmware_version)
         if frame_sink is not None and not callable(frame_sink):
@@ -148,6 +164,19 @@ class NyExoA1Adapter(BaseAdapter):
         self._sink_errors = 0
         # 原始帧留存（record 形态见 _remember_raw）
         self._raw_ring = deque(maxlen=int(raw_ring_size))
+        # Task 10.1 数据质量增强参数
+        self._ts_drift_threshold_ms = int(ts_drift_threshold_ms)
+        self._sampling_window_ms = int(sampling_window_ms)
+        self._expected_hz = float(expected_hz)
+        self._sampling_deviation_threshold = float(sampling_deviation_threshold)
+        # 时间戳漂移/倒退基线（仅实时遥测帧维护，补传 ts 为历史值不参与）
+        self._last_telemetry_ts_ms = None
+        # 实时帧 SEQ 即时重复标志（由 _track_sequence 置位，TELEMETRY 分支消费）
+        self._last_seq_duplicate = False
+        # 采样率滑动窗口：最近一个窗口内的实时遥测 ts_ms（Task 10.1）
+        self._telemetry_ts_window = deque()
+        # 固件升级事件（最近一次，None 表示未发生；Task 10.1）
+        self._firmware_upgraded = None
 
     # ---- 生命周期 ----
     def start(self):
@@ -162,8 +191,12 @@ class NyExoA1Adapter(BaseAdapter):
 
         SEQ 去重窗口 **不清空**——重连后设备会 BACKFILL 补传断线期间的缓存，
         需要靠它把与实时帧重复的 SEQ 去掉（协议确认书 3.5）。
+        时间戳漂移基线与采样率窗口一并清空：重连后时间连续性已断，避免误报。
         """
         self._last_seq = None
+        self._last_seq_duplicate = False
+        self._last_telemetry_ts_ms = None
+        self._telemetry_ts_window.clear()
         self._buffer.clear()
         self._running = True
         return True
@@ -193,6 +226,7 @@ class NyExoA1Adapter(BaseAdapter):
             "backfill_duplicates": self._backfill_duplicates,
             "dropped_frames": self._dropped_frames,
             "sink_errors": self._sink_errors,
+            "firmware_upgraded": self._firmware_upgraded,
         }
 
     def device_info(self):
@@ -285,8 +319,22 @@ class NyExoA1Adapter(BaseAdapter):
 
         if frame["type"] == protocol.TYPE_IDENT:
             self.device_id = payload.get("device_id") or self.device_id
-            self.firmware_version = payload.get("firmware_version") or self.firmware_version
+            new_fw = payload.get("firmware_version")
+            old_fw = self.firmware_version
+            self.firmware_version = new_fw or self.firmware_version
             self.hardware_version = payload.get("hardware_version") or self.hardware_version
+            # Task 10.1：固件版本变化 → 记录事件并产出一条状态消息
+            if new_fw and old_fw and new_fw != old_fw:
+                self._firmware_upgraded = {
+                    "event": "firmware_upgraded",
+                    "device_id": self.device_id,
+                    "firmware_from": old_fw,
+                    "firmware_to": new_fw,
+                    "ts_ms": frame["ts_ms"],
+                    "event_time": ts_ms_to_iso(frame["ts_ms"], self.tz_offset_hours),
+                }
+                return [(self._firmware_upgrade_frame(self._firmware_upgraded),
+                         self._meta(frame, raw, frame["seq"], frame["ts_ms"], backfill=False))]
             return []
         if frame["type"] == protocol.TYPE_FAULT:
             faulted = payload["faulted"]
@@ -299,11 +347,85 @@ class NyExoA1Adapter(BaseAdapter):
         if frame["type"] == protocol.TYPE_TELEMETRY:
             # 实时帧一律产出（重复 SEQ 只在补传通道去重），但登记 SEQ 以便补传去重
             self._mark_seq(frame["seq"])
-            return [(self.to_unified(payload, frame["ts_ms"], raw_bytes=raw),
+            reasons = self._check_timestamp_drift(frame["ts_ms"])
+            if self._last_seq_duplicate:
+                reasons.append("duplicate_seq")
+            if self._check_sampling_rate(frame["ts_ms"]):
+                reasons.append("sampling_rate_anomaly")
+            return [(self.to_unified(payload, frame["ts_ms"], raw_bytes=raw,
+                                     quality_reasons=reasons),
                      self._meta(frame, raw, frame["seq"], frame["ts_ms"], backfill=False))]
         if frame["type"] == protocol.TYPE_BACKFILL:
             return self._handle_backfill(payload, frame, raw)
         return []  # 未知类型：忽略，不中断采集
+
+    def _firmware_upgrade_frame(self, event):
+        """固件升级状态消息：以 UnifiedExoFrame 形态承载事件，便于走既有产出通路。"""
+        status = UnifiedExoFrame(
+            entity_id=self.device_id,
+            worker_id=self.worker_id,
+            event_time=event["event_time"],
+            source_type=self.source_type,
+        )
+        status.ingested_at = now_iso()
+        status.device_model = self.model
+        status.firmware_version = self.firmware_version
+        status.protocol_version = self.PROTOCOL_VERSION
+        status.device = {
+            "battery_pct": self._battery_pct,
+            "temperature_c": None,
+            "fault_code": self._fault_code,
+            "health": "fault" if self._fault_code else "good",
+        }
+        status.quality = {
+            "packet_loss_pct": self.packet_loss_pct(),
+            "confidence": 1.0,
+            "status": "good",
+            "reason": None,
+            "event": "firmware_upgraded",
+            "firmware_from": event["firmware_from"],
+            "firmware_to": event["firmware_to"],
+        }
+        return status
+
+    def _check_timestamp_drift(self, ts_ms):
+        """实时遥测帧时间戳倒退/漂移检测（Task 10.1）。
+
+        比较当前帧与上一实时遥测帧 ts_ms：倒退或漂移超过阈值返回对应降级原因。
+        首帧（无基线）返回空列表。基线仅由实时帧维护，补传历史 ts 不参与。
+        """
+        reasons = []
+        if self._last_telemetry_ts_ms is not None:
+            delta = ts_ms - self._last_telemetry_ts_ms
+            if delta < 0:
+                reasons.append("timestamp_backward")
+            elif delta > self._ts_drift_threshold_ms:
+                reasons.append("timestamp_drift")
+        self._last_telemetry_ts_ms = ts_ms
+        return reasons
+
+    def _check_sampling_rate(self, ts_ms):
+        """滑动窗口采样率异常检测（Task 10.1）。
+
+        维护最近一个窗口内的实时遥测 ts_ms；窗口跨度达到 sampling_window_ms 时
+        统计实际帧数，与期望采样率比较，偏差超过阈值返回 True。窗口未满（启动期）
+        不评估，避免误报。
+        """
+        window = self._telemetry_ts_window
+        window.append(ts_ms)
+        cutoff = ts_ms - self._sampling_window_ms
+        while window and window[0] < cutoff:
+            window.popleft()
+        if len(window) < 2:
+            return False
+        span = ts_ms - window[0]
+        if span < self._sampling_window_ms:
+            return False  # 窗口未满，不评估
+        expected = (span / 1000.0) * self._expected_hz
+        if expected <= 0:
+            return False
+        deviation = abs(len(window) - expected) / expected
+        return deviation > self._sampling_deviation_threshold
 
     def _handle_backfill(self, entries, frame, raw):
         """补传帧展开为统一语义帧（协议确认书 3.5：按 SEQ 去重）。"""
@@ -372,15 +494,26 @@ class NyExoA1Adapter(BaseAdapter):
         return None
 
     def _track_sequence(self, seq):
-        """按 SEQ 连续性累计期望/实际帧数，用于丢包率统计。"""
+        """按 SEQ 连续性累计期望/实际帧数，用于丢包率统计。
+
+        Task 10.1：同时检测 SEQ 即时重复（delta==0，与上一帧同号），结果置入
+        `self._last_seq_duplicate` 供 TELEMETRY 分支标记 degraded。补传通道的
+        跨窗口去重仍由 `_mark_seq` 负责，两者互补。
+        """
         self._received_frames += 1
+        is_duplicate = False
         if self._last_seq is None:
             self._expected_frames += 1
         else:
             delta = (seq - self._last_seq) & 0xFFFFFFFF
-            # delta 过大视为重连/回绕，不计入丢包，避免统计被污染
-            self._expected_frames += delta if 0 < delta <= 1000 else 1
+            if delta == 0:
+                # 即时重复：SEQ 未前进，计入实际帧但不增加期望帧（与丢包区分）
+                is_duplicate = True
+            else:
+                # delta 过大视为重连/回绕，不计入丢包，避免统计被污染
+                self._expected_frames += delta if 0 < delta <= 1000 else 1
         self._last_seq = seq
+        self._last_seq_duplicate = is_duplicate
 
     def packet_loss_pct(self):
         """按 SEQ 推算的丢包率（0—100）。无样本时返回 0.0。"""
@@ -392,37 +525,61 @@ class NyExoA1Adapter(BaseAdapter):
     def _is_low_battery(self):
         return self._battery_pct is not None and self._battery_pct < LOW_BATTERY_PCT
 
-    def to_unified(self, telemetry, ts_ms, raw_bytes=b""):
+    def to_unified(self, telemetry, ts_ms, raw_bytes=b"", quality_reasons=None):
         """厂商遥测物理量 dict → UnifiedExoFrame（唯一的统一语义转换入口）。
 
-        质量判定：
-        - 越量程（pitch/roll/torque/battery）→ quality.status=invalid，置信度 0.0；
-        - 关键字段缺失（哨兵 0x7FFF）→ quality.status=degraded，置信度打折；
+        质量判定（Task 10.1/10.2）：
+        - 越量程（pitch/roll/torque/battery）→ invalid，置信度 0.0；
+        - 非数值（NaN/inf，防御性：协议层正常不产生，但 backfill/未来路径可能引入）
+          → invalid，置信度 0.0；
+        - 关键字段缺失（哨兵 0x7FFF）→ degraded，置信度打折；
+        - 上游降级原因（时间戳漂移/倒退、SEQ 重复、采样率异常）非空 → degraded；
         - 否则 good。
+
+        Task 10.2：invalid 帧保留原始（raw_ref）但 confidence=0.0 不进入推理管线；
+        quality dict 增加 `reason` 字段说明 invalid/degraded 原因（good 时为 None）。
 
         标准消息扩展字段（spec「标准消息扩展与数据质量」）在本方法填充：
         device_model/firmware_version/protocol_version 取自适配器状态（IDENT/HEARTBEAT 维护），
         raw_ref 为原始帧字节 SHA256 引用，record_id/ingested_at 由 UnifiedExoFrame.__post_init__ 生成。
         """
         pitch = telemetry.get("pitch_deg")
+        roll = telemetry.get("roll_deg")
         torque = telemetry.get("torque_nm")
         battery = telemetry.get("battery_pct")
         assist_pct = telemetry.get("assist_pct")
 
         out_of_range = not (
             protocol.in_range(pitch, protocol.RANGE_PITCH_DEG)
-            and protocol.in_range(telemetry.get("roll_deg"), protocol.RANGE_ROLL_DEG)
+            and protocol.in_range(roll, protocol.RANGE_ROLL_DEG)
             and protocol.in_range(torque, protocol.RANGE_TORQUE_NM)
             and protocol.in_range(battery, protocol.RANGE_BATTERY_PCT)
         )
         missing = pitch is None or torque is None
 
-        if out_of_range:
-            quality_status, confidence = "invalid", 0.0
+        # 非数值检测（NaN/inf）：协议层正常产出 None 或有限数值，此处为防御性兜底。
+        # 必须在越量程前判定——NaN 与任何量程边界比较均为 False，会被 in_range 误判为越界。
+        non_numeric_fields = [
+            name for name, val in (("pitch_deg", pitch), ("roll_deg", roll),
+                                   ("torque_nm", torque), ("battery_pct", battery))
+            if val is not None and (math.isnan(val) or math.isinf(val))
+        ]
+        non_numeric = bool(non_numeric_fields)
+
+        upstream_reasons = list(quality_reasons or [])
+
+        if non_numeric:
+            quality_status, confidence, reason = (
+                "invalid", 0.0, "non_numeric:" + ",".join(non_numeric_fields))
+        elif out_of_range:
+            quality_status, confidence, reason = "invalid", 0.0, "out_of_range"
         elif missing:
-            quality_status, confidence = "degraded", 0.5
+            quality_status, confidence, reason = "degraded", 0.5, "missing_field"
+        elif upstream_reasons:
+            quality_status, confidence, reason = (
+                "degraded", 0.5, ",".join(upstream_reasons))
         else:
-            quality_status, confidence = "good", 0.95
+            quality_status, confidence, reason = "good", 0.95, None
 
         if self._fault_code:
             health = "fault"
@@ -461,6 +618,8 @@ class NyExoA1Adapter(BaseAdapter):
         frame.firmware_version = self.firmware_version
         frame.protocol_version = self.PROTOCOL_VERSION
         frame.raw_ref = _raw_ref(raw_bytes)
+        # Task 10.2：quality.reason 说明 invalid/degraded 原因（good 时 None）
+        frame.quality["reason"] = reason
         return frame
 
 

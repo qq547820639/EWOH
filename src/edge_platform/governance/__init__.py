@@ -12,8 +12,10 @@
 - consent：授权授予/撤回/查询/访问审计，撤回触发删除/匿名化/移交作业；
 - retention：分层保留策略，版本化注册、过期判定与到期清理（永不清理底图/训练数据，
   审计日志至少 180 天）；
-- model_registry：模型/规则版本治理，CANDIDATE→SHADOW→ACTIVE→RETIRED 生命周期、
-  影子运行未达标不得激活、回滚到历史版本，全链路审计。
+- purge_executor：按保留策略分批删除过期记录的清理执行器（Task 15）；
+- model_registry：模型/规则版本治理，CANDIDATE→REVIEWING→SHADOW→
+  CONTROLLED_VALIDATION→CANARY→ACTIVE→RETIRED 生命周期、人工批准激活、回滚到历史版本，
+  全链路审计。
 
 纯 Python 标准库实现；沿用 edge_platform.spatial 的 new_id / now_iso 与
 edge_platform.inference 的 ts_to_ms 约定。
@@ -28,12 +30,15 @@ from .retention import (
 from .model_registry import (
     ModelStatus, ModelRecord, ModelRegistry,
 )
+from .purge_executor import PurgeExecutor
 
 __all__ = [
     # 授权管理
     "ConsentPurpose", "ConsentRecord", "ConsentManager", "RevocationJob",
     # 分层保留
     "DataClass", "RetentionPolicy", "RetentionManager", "DEFAULT_RETENTION",
+    # 数据保留清理执行器
+    "PurgeExecutor",
     # 模型与规则版本治理
     "ModelStatus", "ModelRecord", "ModelRegistry",
 ]
