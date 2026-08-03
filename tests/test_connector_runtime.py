@@ -10,6 +10,12 @@ SRC = REPO_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from edge_platform.connectors.modbus import (  # noqa: E402
+    ModbusAdapter,
+    ModbusError,
+    normalize_modbus_datapoint,
+    parse_modbus_register,
+)
 from edge_platform.connectors.opcua import (  # noqa: E402
     OpcUaAdapter,
     normalize_opcua_datapoint,
@@ -48,6 +54,7 @@ class TestManifestContract(unittest.TestCase):
                 "erp-mes-profile",
                 "sparkplug-b",
                 "opcua-generic",
+                "modbus-tcp-generic",
             },
         )
 
@@ -353,6 +360,57 @@ class TestOpcUa(unittest.TestCase):
         message = adapter.read_message(timeout=0.1)
         self.assertIsNotNone(message)
         self.assertEqual(message["entity_id"], "85")
+        self.assertEqual(message["source_type"], "simulated")
+        adapter.stop()
+
+
+class TestModbus(unittest.TestCase):
+    def test_register_parser_validates_address_and_function(self):
+        register = parse_modbus_register(40001, 3, 0.1)
+        self.assertEqual(register.address, 40001)
+        self.assertEqual(register.function_code, 3)
+        self.assertEqual(register.scale, 0.1)
+        with self.assertRaises(ModbusError):
+            parse_modbus_register(-1, 3)
+        with self.assertRaises(ModbusError):
+            parse_modbus_register(0, 99)
+
+    def test_normalize_applies_scaling(self):
+        point = normalize_modbus_datapoint(
+            {
+                "registerAddress": 40001,
+                "functionCode": 3,
+                "value": 1234,
+                "scale": 0.1,
+                "unit": "mm",
+            },
+            default_entity_id="CNC-01",
+            default_source_type="real",
+        )
+        self.assertEqual(point["entity_id"], "CNC-01")
+        self.assertEqual(point["scaled_value"], 123.4)
+        self.assertEqual(point["protocol_version"], "Modbus-TCP")
+
+    def test_adapter_enqueues_normalized_point(self):
+        adapter = ModbusAdapter(
+            "modbus-1",
+            "factory-lan",
+            port=502,
+            unit_id=1,
+            source_type="simulated",
+        )
+        adapter.start()
+        adapter._enqueue_raw(
+            {
+                "registerAddress": 0,
+                "functionCode": 3,
+                "value": 42,
+                "sourceTimestamp": "2026-08-03T00:00:00Z",
+            }
+        )
+        message = adapter.read_message(timeout=0.1)
+        self.assertIsNotNone(message)
+        self.assertEqual(message["entity_id"], "modbus:0")
         self.assertEqual(message["source_type"], "simulated")
         adapter.stop()
 

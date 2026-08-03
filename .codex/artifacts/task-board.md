@@ -445,6 +445,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-142 | OPC UA node ID/quality/adapter + connector manifest | V-CON/05 | Done | `round58-opcua-connector.md`; pytest 111; connector TCK 21/21 |
 
+## Wave Final5 - Modbus TCP Connector (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-143 | Modbus TCP register/scaling/adapter + connector manifest | V-CON/05 | Done | `round59-modbus-connector.md`; pytest 114; connector TCK 25/25 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

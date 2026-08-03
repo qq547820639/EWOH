@@ -16,6 +16,10 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from edge_platform.connectors.modbus import (  # noqa: E402
+    normalize_modbus_datapoint,
+    parse_modbus_register,
+)
 from edge_platform.connectors.opcua import (  # noqa: E402
     normalize_opcua_datapoint,
     parse_opcua_node_id,
@@ -62,6 +66,12 @@ CONFIGS = {
         "endpointUrl": "opc.tcp://factory-lan:4840",
         "nodeIds": ["ns=2;i=85"],
     },
+    "modbus-tcp-generic": {
+        "host": "factory-lan",
+        "port": 502,
+        "unitId": 1,
+        "registers": [{"address": 0, "functionCode": 3}],
+    },
 }
 
 checks: list[tuple[str, bool]] = []
@@ -72,7 +82,7 @@ def check(name: str, condition: bool) -> None:
 
 
 manifests = discover_manifests(MANIFEST_DIR)
-check("discover manifests >= 5", len(manifests) >= 5)
+check("discover manifests >= 6", len(manifests) >= 6)
 
 for manifest in manifests:
     config = CONFIGS[manifest.id]
@@ -201,6 +211,31 @@ check(
     opcua_point["entity_id"] == "85"
     and opcua_point["quality_status"] == "good"
     and opcua_point["value"] == 42.5,
+)
+
+modbus_register = parse_modbus_register(40001, 3, 0.1, "int32")
+check(
+    "modbus register",
+    modbus_register.address == 40001
+    and modbus_register.function_code == 3
+    and modbus_register.scale == 0.1,
+)
+modbus_point = normalize_modbus_datapoint(
+    {
+        "registerAddress": 40001,
+        "functionCode": 3,
+        "value": 1234,
+        "scale": 0.1,
+        "unit": "mm",
+    },
+    default_entity_id="CNC-01",
+    default_source_type="real",
+)
+check(
+    "modbus canonical point",
+    modbus_point["entity_id"] == "CNC-01"
+    and modbus_point["scaled_value"] == 123.4
+    and modbus_point["protocol_version"] == "Modbus-TCP",
 )
 
 failed = [name for name, ok in checks if not ok]

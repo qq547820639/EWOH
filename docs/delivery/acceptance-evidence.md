@@ -1,12 +1,12 @@
 # EWOH Acceptance Evidence
 
-Status: validated v1.9 (2026-08-03 OPC UA connector wave)
+Status: validated v1.10 (2026-08-03 Modbus TCP connector wave)
 Owner: AG-00/AG-41
 
 ## Automated Evidence
 
 - Python unittest: 667 passed.
-- Python repo contract tests: 111 passed.
+- Python repo contract tests: 114 passed.
 - NestJS Jest: 302 passed across 67 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
@@ -209,6 +209,9 @@ Owner: AG-00/AG-41
 - OPC UA connector: node ID parsing (`ns=<n>;i|s|g|b=<id>`), canonical data
   point normalization, quality mapping, edge adapter, and
   `opcua-generic-1.0.0` manifest; connector TCK is 21/21.
+- Modbus TCP connector: register address/function/scale validation, scaled
+  canonical data point normalization, edge adapter, and
+  `modbus-tcp-generic-1.0.0` manifest; connector TCK is 25/25.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.
