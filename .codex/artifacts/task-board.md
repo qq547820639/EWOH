@@ -553,6 +553,7 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-189 | Request ID audit correlation | AG-00/11 | Done | AsyncLocalStorage request context; audit entries auto-filled; repo facts 33/33 |
 | T-190 | Error leak sanitization | AG-00/12 | Done | HttpException details sanitized; site readiness generic error; Jest 76/362 |
 | T-191 | Devices page error/update state | AG-00/05 | Done | isError + retry + updatedAt display in device list |
+| T-192 | Command map query error banner | AG-00/06 | Done | failed query banner + retry; client 13/42 |
 
 ## Next Waves
 

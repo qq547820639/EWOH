@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T20:23:51.219Z",
+  "generatedAt": "2026-08-03T20:26:41.203Z",
   "gateCount": 14,
   "approvedCount": 0,
   "requiresApprovalCount": 4,
@@ -112,7 +112,7 @@
       "decidedAt": null,
       "conditions": [
         "Playwright screenshots: Standalone login mobile/desktop",
-        "client Jest 12 suites / 39 tests",
+        "client Jest 13 suites / 42 tests",
         "PWA manifest/service worker",
         "work console route and layout type-check"
       ],

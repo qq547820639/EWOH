@@ -58,6 +58,11 @@ import BrainPanel from './panels/BrainPanel';
 import AlertToast from '../../components/AlertToast';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
+import {
+  collectQueryErrors,
+  retryAll,
+  type QueryStateSnapshot,
+} from './queryState';
 
 interface TabItem {
   key: string;
@@ -120,7 +125,12 @@ const CommandMap = (): React.ReactElement => {
   const queryClient = useQueryClient();
 
   // 静态空间实体，30 秒刷新
-  const { data: entities } = useQuery<SpatialEntity[]>({
+  const {
+    data: entities,
+    isError: entitiesError,
+    dataUpdatedAt: entitiesUpdatedAt,
+    refetch: refetchEntities,
+  } = useQuery<SpatialEntity[]>({
     queryKey: queryKeys.spatialEntities,
     queryFn: () => getEntities(),
     refetchInterval: OPERATIONAL_REFETCH_INTERVAL_MS,
@@ -128,7 +138,12 @@ const CommandMap = (): React.ReactElement => {
   });
 
   // 动态世界状态，2 秒刷新
-  const { data: worldState } = useQuery<CurrentWorldState>({
+  const {
+    data: worldState,
+    isError: worldError,
+    dataUpdatedAt: worldUpdatedAt,
+    refetch: refetchWorld,
+  } = useQuery<CurrentWorldState>({
     queryKey: queryKeys.worldState,
     queryFn: getWorldState,
     refetchInterval: 2000,
@@ -136,7 +151,12 @@ const CommandMap = (): React.ReactElement => {
   });
 
   // KPI，5 秒刷新
-  const { data: overview } = useQuery<OverviewStats>({
+  const {
+    data: overview,
+    isError: overviewError,
+    dataUpdatedAt: overviewUpdatedAt,
+    refetch: refetchOverview,
+  } = useQuery<OverviewStats>({
     queryKey: queryKeys.overview,
     queryFn: getOverview,
     refetchInterval: 5000,
@@ -155,12 +175,68 @@ const CommandMap = (): React.ReactElement => {
     staleTime: QUERY_STALE_TIME_MS,
   });
 
-  const { data: environmentReadings } = useQuery<EnvironmentReading[]>({
+  const {
+    data: environmentReadings,
+    isError: environmentError,
+    dataUpdatedAt: environmentUpdatedAt,
+    refetch: refetchEnvironment,
+  } = useQuery<EnvironmentReading[]>({
     queryKey: queryKeys.environmentSummary,
     queryFn: getEnvironmentSummary,
     refetchInterval: 30000,
     staleTime: QUERY_STALE_TIME_MS,
   });
+
+  const querySnapshots = useMemo<QueryStateSnapshot[]>(
+    () => [
+      {
+        key: 'entities',
+        label: '空间实体',
+        isError: entitiesError,
+        dataUpdatedAt: entitiesUpdatedAt,
+        refetch: refetchEntities,
+      },
+      {
+        key: 'world',
+        label: '世界状态',
+        isError: worldError,
+        dataUpdatedAt: worldUpdatedAt,
+        refetch: refetchWorld,
+      },
+      {
+        key: 'overview',
+        label: '总览指标',
+        isError: overviewError,
+        dataUpdatedAt: overviewUpdatedAt,
+        refetch: refetchOverview,
+      },
+      {
+        key: 'environment',
+        label: '环境数据',
+        isError: environmentError,
+        dataUpdatedAt: environmentUpdatedAt,
+        refetch: refetchEnvironment,
+      },
+    ],
+    [
+      entitiesError,
+      entitiesUpdatedAt,
+      refetchEntities,
+      worldError,
+      worldUpdatedAt,
+      refetchWorld,
+      overviewError,
+      overviewUpdatedAt,
+      refetchOverview,
+      environmentError,
+      environmentUpdatedAt,
+      refetchEnvironment,
+    ],
+  );
+  const failedQueries = useMemo(
+    () => collectQueryErrors(querySnapshots),
+    [querySnapshots],
+  );
 
   const { data: organizations } = useQuery<OrganizationInfo[]>({
     queryKey: queryKeys.organizations,
@@ -398,6 +474,24 @@ const CommandMap = (): React.ReactElement => {
         onSelectEntity={setSelectedEntityId}
         searchRef={searchRef}
       />
+
+      {failedQueries.length > 0 && (
+        <div
+          role="alert"
+          className="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700"
+        >
+          <span>
+            部分数据加载失败：{failedQueries.map((query) => query.label).join('、')}
+          </span>
+          <button
+            type="button"
+            onClick={() => retryAll(failedQueries)}
+            className="rounded border border-red-300 bg-white px-2 py-1 font-medium hover:bg-red-100"
+          >
+            全部重试
+          </button>
+        </div>
+      )}
 
       {/* 中间三栏：左模式 / 中地图 / 右详情 */}
       <div className="relative flex-1 min-h-0 flex">

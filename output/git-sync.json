@@ -1,12 +1,12 @@
 {
   "schema": "ewoh:///git-sync/v1",
-  "generatedAt": "2026-08-03T20:23:51.397Z",
+  "generatedAt": "2026-08-03T20:26:41.404Z",
   "repository": "git@github.com:qq547820639/EWOH.git",
   "branch": "codex/ewoh-iteration-2026-08-04",
-  "headSha": "3e99429536b93c0868eabe37a11e3bca094250c3",
-  "itemCount": 212,
+  "headSha": "32e2e04af458e96efd9d997726c47bc8decdbfc5",
+  "itemCount": 213,
   "trackedCount": 0,
-  "missingCount": 212,
+  "missingCount": 213,
   "status": "offline",
   "source": ".codex/artifacts/work/git-sync.json",
   "items": [
@@ -2876,6 +2876,21 @@
       "missing": true
     },
     {
+      "workItemId": "T-192",
+      "title": "Command map query error banner",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/06",
+      "evidence": "failed query banner + retry; client 13/42",
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "issueNumber": null,
+      "prNumber": null,
+      "branch": null,
+      "commitSha": null,
+      "state": "unlinked",
+      "missing": true
+    },
+    {
       "workItemId": "W0",
       "title": "docs, repo inventory, C1-C6 v1, environment probes",
       "type": "wave",
@@ -3087,7 +3102,7 @@
     },
     {
       "workItemId": "W7",
-      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue/photo/PWA, ValidationPipe, command-map details, state guards, scale idempotency, request-audit correlation, error sanitization",
+      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue/photo/PWA, ValidationPipe, command-map details/error states, state guards, scale idempotency, request-audit correlation, error sanitization",
       "type": "wave",
       "status": "Proposed",
       "owner": "AG-00",

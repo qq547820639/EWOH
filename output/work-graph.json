@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T20:23:51.175Z",
+  "generatedAt": "2026-08-03T20:26:41.151Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 226,
+    "itemCount": 227,
     "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 83,
+    "evidenceCount": 84,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 36,
     "statusCounts": {
-      "Done": 133,
+      "Done": 134,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2312,6 +2312,18 @@
       "evidence": "isError + retry + updatedAt display in device list"
     },
     {
+      "id": "T-192",
+      "title": "Command map query error banner",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/06",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "failed query banner + retry; client 13/42"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -2373,7 +2385,7 @@
       "type": "gate",
       "status": "Validation",
       "owner": "AG-00",
-      "evidence": "Playwright screenshots: Standalone login mobile/desktop; client Jest 12 suites / 39 tests; PWA manifest/service worker; work console route and layout type-check"
+      "evidence": "Playwright screenshots: Standalone login mobile/desktop; client Jest 13 suites / 42 tests; PWA manifest/service worker; work console route and layout type-check"
     },
     {
       "id": "G8",
@@ -2551,12 +2563,12 @@
     },
     {
       "id": "W7",
-      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue/photo/PWA, ValidationPipe, command-map details, state guards, scale idempotency, request-audit correlation, error sanitization",
+      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue/photo/PWA, ValidationPipe, command-map details/error states, state guards, scale idempotency, request-audit correlation, error sanitization",
       "type": "wave",
       "status": "Proposed",
       "owner": "AG-00",
       "wave": "W7",
-      "summary": "standalone-check ALL PASSED; Jest 76/362; client 12/39; OpenAPI 232/232; repo facts 33/33; real PG E2E 29/29"
+      "summary": "standalone-check ALL PASSED; Jest 76/362; client 13/42; OpenAPI 232/232; repo facts 33/33; real PG E2E 29/29"
     },
     {
       "id": "WP-ENV-001",
@@ -2736,7 +2748,7 @@
       "to": "W7",
       "edgeType": "depends",
       "blocking": true,
-      "evidenceRequirement": "standalone-check ALL PASSED; Jest 76/362; client 12/39; OpenAPI 232/232; repo facts 33/33; real PG E2E 29/29"
+      "evidenceRequirement": "standalone-check ALL PASSED; Jest 76/362; client 13/42; OpenAPI 232/232; repo facts 33/33; real PG E2E 29/29"
     },
     {
       "id": "E-016",
@@ -3275,7 +3287,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "c65ec820292f60204d8cfc1a2b7666c2d4d5c265835d1f21a3a44c6c1e360831",
+      "checksum": "56d2c91e234d9d8c8d2ac7b4abe06438b9d66a568e7e93b49cedfdb82526f505",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3284,7 +3296,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "a4a438c24159ff4d431d6c4a394846f9e6829da955e333016f8b89538fd2785e",
+      "checksum": "6e250ae98f2175151001b232efdba58804f6d496354c3055c76f5c9e314a574e",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3320,7 +3332,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "802bae2538c50100edc78d817208aecef3f6c645516a9b011784571a646e08f5",
+      "checksum": "70c82c06cbb2924820cd59d7d1b5933922317703c0d53a3558ee02fe618be60c",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3329,7 +3341,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "74eb04c99a333222c83052a2a1917abe8d4a251ccec920120a05e670fd9dc39a",
+      "checksum": "9b7d6a6317119707382c6c122613052a6e6d44578edd5ab96e7892175b8146df",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3356,7 +3368,7 @@
       "artifactId": "work-task-graph-md",
       "path": "work/task-graph.md",
       "mediaType": "text/markdown",
-      "checksum": "325468c4f6094b2f1a9b82318576d04e28b5d3499d8d1e996447218b807c5913",
+      "checksum": "41bb651fa7b6aa175ed41d18dbbcf14f490ac5c905fb41f9185e77cb7ebe3dfe",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4147,6 +4159,15 @@
       "title": "Round 83 - 2026-08-04 Devices Error and Update State"
     },
     {
+      "evidenceId": "EVD-round84-command-map-query-state",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round84-command-map-query-state.md",
+      "checksum": "69e6e490c6ba6d3459e117357ed3acf5f1d429f4eba033d3de22fb9e6508c48b",
+      "result": "passed",
+      "title": "Round 84 - 2026-08-04 Command Map Query Error State"
+    },
+    {
       "evidenceId": "EVD-round9-observability-deploy-artifacts",
       "workItemId": "",
       "kind": "test",
@@ -4248,7 +4269,7 @@
       "humanDecision": null,
       "conditions": [
         "Playwright screenshots: Standalone login mobile/desktop",
-        "client Jest 12 suites / 39 tests",
+        "client Jest 13 suites / 42 tests",
         "PWA manifest/service worker",
         "work console route and layout type-check"
       ],

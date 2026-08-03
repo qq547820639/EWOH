@@ -57,8 +57,10 @@ Trace: EWOH-2026-08-04-principal-final6
   generic errors instead of raw exception text.
 - Devices page distinguishes loading, error (with retry), and empty states and
   shows the last successful data update time.
+- Command map shows a retryable banner when entity/world/overview/environment
+  queries fail instead of rendering silently empty placeholders.
 - Full standalone gate: typecheck, lint, Jest 76 suites / 362 tests, client
-  12 suites / 39 tests, repo facts 33/33, OpenAPI 232/232, production build, and
+  13 suites / 42 tests, repo facts 33/33, OpenAPI 232/232, production build, and
 
 ## Current Phase
 
