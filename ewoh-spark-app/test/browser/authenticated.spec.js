@@ -31,6 +31,15 @@ async function waitForHealth(timeoutMs = 45_000) {
   throw new Error('Standalone API did not become ready');
 }
 
+async function loginAsDispatcher(page, user) {
+  await page.goto(`${BASE_URL}/login`);
+  await page.fill('#username', user.username);
+  await page.fill('#password', user.password);
+  await page.click('button[type="submit"]');
+  await page.waitForURL(/command-center/, { timeout: 30_000 });
+  await expect(page.locator('body')).toContainText('指挥中心');
+}
+
 test.describe('authenticated browser flow', () => {
   let owner;
   let server;
@@ -122,17 +131,26 @@ test.describe('authenticated browser flow', () => {
   });
 
   test('logs in as dispatcher and renders the command center', async ({ page }) => {
-    await page.goto(`${BASE_URL}/login`);
-    await page.fill('#username', credentials.username);
-    await page.fill('#password', credentials.password);
-    await page.click('button[type="submit"]');
-    await page.waitForURL(/command-center/, { timeout: 30_000 });
-    await expect(page.locator('body')).toContainText('指挥中心');
+    await loginAsDispatcher(page, credentials);
 
     const screenshotDir = path.join(ROOT, 'output', 'playwright');
     fs.mkdirSync(screenshotDir, { recursive: true });
     await page.screenshot({
       path: path.join(screenshotDir, 'browser-authenticated-command-center.png'),
     });
+  });
+
+  test('renders the command map after login', async ({ page }) => {
+    await loginAsDispatcher(page, credentials);
+    await page.goto(`${BASE_URL}/command-map`);
+    await expect(page.locator('body')).toContainText('EWOH 指挥地图');
+    await expect(page.locator('input[placeholder*="搜索实体"]')).toBeVisible();
+  });
+
+  test('renders the mobile workbench after login', async ({ page }) => {
+    await loginAsDispatcher(page, credentials);
+    await page.goto(`${BASE_URL}/mobile-workbench`);
+    await expect(page.locator('body')).toContainText('移动工作台');
+    await expect(page.locator('input[placeholder*="扫码或输入工单号"]')).toBeVisible();
   });
 });

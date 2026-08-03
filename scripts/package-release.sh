@@ -17,6 +17,7 @@ echo "== copy application source =="
 rsync -a \
   --exclude 'node_modules' \
   --exclude 'dist' \
+  --exclude 'test-results' \
   --exclude 'logs' \
   --exclude '.git' \
   --exclude '.spark' \

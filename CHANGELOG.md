@@ -58,8 +58,8 @@
 - 版本同步：Helm appVersion、Compose/K8s 默认值、运行时默认版本与相关测试
   从 `0.6.0-rc3` 提升到 `0.6.0-rc4`。
 - 认证浏览器测试：新增 `npm run test:browser`，用真实 PostgreSQL fixture 启动
-  Standalone，Playwright 完成 dispatcher 登录并渲染指挥中心，截图到
-  `output/playwright/browser-authenticated-command-center.png`。
+  Standalone，Playwright 完成 dispatcher 登录、指挥中心、指挥地图和移动工作台
+  渲染，截图到 `output/playwright/browser-authenticated-command-center.png`。
 
 ## [0.6.0-rc3] - 2026-08-04
 

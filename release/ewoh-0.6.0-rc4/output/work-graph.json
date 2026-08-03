@@ -1,6 +1,6 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T20:38:50.268Z",
+  "generatedAt": "2026-08-03T20:39:56.448Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
@@ -2333,7 +2333,7 @@
         "AG-51"
       ],
       "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
-      "evidence": "`release/ewoh-0.6.0-rc4` 1200 files; SHA256SUMS; scale-release-review PASSED"
+      "evidence": "`release/ewoh-0.6.0-rc4` 1199 files; SHA256SUMS; scale-release-review PASSED"
     },
     {
       "id": "T-194",
@@ -3311,7 +3311,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "60c7a758281c56997be3a974f51c43e8d62d8fdf4498f1fd3640861ccb862338",
+      "checksum": "a3d4a68e4d9045c758cd790f0bb4dc0133954e72805c9fe532d530e7fb07fd35",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3356,7 +3356,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "dbae811c8f92fc5337398083a2a2ef8c6bc3cbcb4ba96452e84cf48fa596602e",
+      "checksum": "5eb7a1e7b7c108ca37366183785836a956c71116c57b4195cd3d98969d7a5788",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3365,7 +3365,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "19f9443e573767d763964edca421f5e81105a3e8a52a30c260712c0f228c4052",
+      "checksum": "f3047a0b81fe999e735a3b7f550db6d1deeb5187cfdc9ac8203f9612042a9329",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4196,7 +4196,7 @@
       "workItemId": "",
       "kind": "test",
       "path": ".codex/artifacts/work/evidence/round85-rc4-candidate-bundle.md",
-      "checksum": "b14b34b6262bba3ea9709a3795dd7476ef1c3942e04db51029efc63e60502690",
+      "checksum": "40af7daa376dcea09b3b1b3fd217015a30ad395e51efc84ebed4fe1732558e1b",
       "result": "passed",
       "title": "Round 85 - 2026-08-04 EWOH 0.6.0-rc4 Candidate Bundle"
     },
