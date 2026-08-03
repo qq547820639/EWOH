@@ -1,12 +1,12 @@
 {
   "schema": "ewoh:///git-sync/v1",
-  "generatedAt": "2026-08-03T19:45:17.405Z",
+  "generatedAt": "2026-08-03T19:48:14.085Z",
   "repository": "git@github.com:qq547820639/EWOH.git",
   "branch": "codex/ewoh-iteration-2026-08-04",
-  "headSha": "e5f47e75b89ef32b5cef551e05ff4986c275bb96",
-  "itemCount": 200,
+  "headSha": "41d4c96d5d4e62bfefafca11a224868e57e35608",
+  "itemCount": 201,
   "trackedCount": 0,
-  "missingCount": 200,
+  "missingCount": 201,
   "status": "offline",
   "source": ".codex/artifacts/work/git-sync.json",
   "items": [
@@ -2696,6 +2696,21 @@
       "missing": true
     },
     {
+      "workItemId": "T-180",
+      "title": "Mobile offline pending-action queue",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/07",
+      "evidence": "`lib/offlineQueue.ts` + tests; queue/flush on reconnect; client 10/35",
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "issueNumber": null,
+      "prNumber": null,
+      "branch": null,
+      "commitSha": null,
+      "state": "unlinked",
+      "missing": true
+    },
+    {
       "workItemId": "W0",
       "title": "docs, repo inventory, C1-C6 v1, environment probes",
       "type": "wave",
@@ -2907,7 +2922,7 @@
     },
     {
       "workItemId": "W7",
-      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline, ValidationPipe, command-map details",
+      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue, ValidationPipe, command-map details",
       "type": "wave",
       "status": "Proposed",
       "owner": "AG-00",

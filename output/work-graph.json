@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T19:45:17.211Z",
+  "generatedAt": "2026-08-03T19:48:13.885Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 214,
+    "itemCount": 215,
     "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 71,
+    "evidenceCount": 72,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 36,
     "statusCounts": {
-      "Done": 121,
+      "Done": 122,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 47,
@@ -2168,6 +2168,18 @@
       "evidence": "`entityDetailData.ts` + tests; organization/exoskeleton/risk/alerts/events/disposition entry; client 9/33"
     },
     {
+      "id": "T-180",
+      "title": "Mobile offline pending-action queue",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/07",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`lib/offlineQueue.ts` + tests; queue/flush on reconnect; client 10/35"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -2229,7 +2241,7 @@
       "type": "gate",
       "status": "Validation",
       "owner": "AG-00",
-      "evidence": "Playwright smoke: login, command center, command map, devices, alerts render with real data; client Jest 9 suites / 33 tests; work console route and layout type-check"
+      "evidence": "Playwright smoke: login, command center, command map, devices, alerts render with real data; client Jest 10 suites / 35 tests; work console route and layout type-check"
     },
     {
       "id": "G8",
@@ -2407,12 +2419,12 @@
     },
     {
       "id": "W7",
-      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline, ValidationPipe, command-map details",
+      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue, ValidationPipe, command-map details",
       "type": "wave",
       "status": "Proposed",
       "owner": "AG-00",
       "wave": "W7",
-      "summary": "standalone-check ALL PASSED; Jest 76/349; client 9/33; OpenAPI 232/232"
+      "summary": "standalone-check ALL PASSED; Jest 76/349; client 10/35; OpenAPI 232/232"
     },
     {
       "id": "WP-ENV-001",
@@ -2592,7 +2604,7 @@
       "to": "W7",
       "edgeType": "depends",
       "blocking": true,
-      "evidenceRequirement": "standalone-check ALL PASSED; Jest 76/349; client 9/33; OpenAPI 232/232"
+      "evidenceRequirement": "standalone-check ALL PASSED; Jest 76/349; client 10/35; OpenAPI 232/232"
     },
     {
       "id": "E-016",
@@ -3131,7 +3143,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "e857604a618d8f785a17af6be927cad09e4b175b64d83dcc2988d99bf01e4b4c",
+      "checksum": "a832e6eec11ae18bb941a41bcb6f4f5b3a338724528a9307215376ef0f3df0a6",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3140,7 +3152,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "540206d9c5145b37318aa059e3f9afe891043ce242653a13cf059cb9ec860fde",
+      "checksum": "8a3b8bfcebc9265fe2e0f3e94938956a6726c438a3e8d1c6ed60188ac99d631b",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3158,7 +3170,7 @@
       "artifactId": "risk-register-md",
       "path": "risk-register.md",
       "mediaType": "text/markdown",
-      "checksum": "694400c1b578e59a6d52dc58daf5ee993609525bab2b4dbcf86b7c4dcc348e02",
+      "checksum": "f05dcf118e107f18da026a7dda19fa8af870b18695ccdc4487ffbcbaf357622e",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3176,7 +3188,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "1182d649a3a504ea238b6e0730bb5a6a3b3d9fa43dbbe8c4374cfdbca6784104",
+      "checksum": "b6a6ee30f8fce6ac65306269f244fd92449471bdb07605b7bea1e465feef539a",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3185,7 +3197,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "e6b01103b65dda8ed20859b1383c3f4e17611315387e240f19769e48d2205ebb",
+      "checksum": "a16e0f97a6d2e164c7588033214d38fa1a3e0c06e1b5f45563bb10815fb38183",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3212,7 +3224,7 @@
       "artifactId": "work-task-graph-md",
       "path": "work/task-graph.md",
       "mediaType": "text/markdown",
-      "checksum": "d2ffc05e2a053ce1843abc83c339d10fcb35d904a7dd47a41a158473007b31a1",
+      "checksum": "6655e577bd7bb5e4816f66727b25afee856699b40e4992c313ae65e3faa5597d",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3886,6 +3898,15 @@
       "title": "Round 71 - 2026-08-04 Validation Pipe and Command-Map Details"
     },
     {
+      "evidenceId": "EVD-round72-mobile-offline-queue",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round72-mobile-offline-queue.md",
+      "checksum": "34a8824611baec95f39cd2ff3bce582d76f82945afc2fd9ffbb9ae508c71f9e9",
+      "result": "passed",
+      "title": "Round 72 - 2026-08-04 Mobile Offline Pending-Action Queue"
+    },
+    {
       "evidenceId": "EVD-round8-org-scope-hardening",
       "workItemId": "",
       "kind": "test",
@@ -3996,7 +4017,7 @@
       "humanDecision": null,
       "conditions": [
         "Playwright smoke: login, command center, command map, devices, alerts render with real data",
-        "client Jest 9 suites / 33 tests",
+        "client Jest 10 suites / 35 tests",
         "work console route and layout type-check"
       ],
       "approver": null,
@@ -4189,9 +4210,9 @@
     },
     {
       "id": "R-015",
-      "title": "Mobile offline resilience is limited to banner + retry; no local queue or photo attachment upload",
+      "title": "Mobile photo attachment upload and PWA installability still missing",
       "severity": "medium",
-      "mitigation": "Mutations are disabled offline and retried manually; no PWA cache or pending queue",
+      "mitigation": "Offline pending-action queue implemented and flushed on reconnect; photo attachments/PWA cache remain follow-ups",
       "status": "open",
       "linkedItems": []
     }

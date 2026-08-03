@@ -12,6 +12,11 @@ import {
   type MobileWorkbenchStep,
 } from '../../api/mobile';
 import { getAuthUser } from '../../lib/auth';
+import {
+  appendPendingAction,
+  readPendingActions,
+  removePendingAction,
+} from '../../lib/offlineQueue';
 import { queryKeys } from '../../hooks/queryKeys';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
@@ -63,6 +68,7 @@ const MobileWorkbench = (): React.ReactElement => {
   const [isOnline, setIsOnline] = useState(
     () => (typeof navigator === 'undefined' ? true : navigator.onLine),
   );
+  const [pendingCount, setPendingCount] = useState(() => readPendingActions().length);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -77,6 +83,48 @@ const MobileWorkbench = (): React.ReactElement => {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isOnline) {
+      return undefined;
+    }
+    let cancelled = false;
+    const flushPending = async () => {
+      const queue = readPendingActions();
+      if (queue.length === 0) {
+        return;
+      }
+      for (const item of queue) {
+        if (cancelled) {
+          return;
+        }
+        try {
+          if (item.type === 'transition') {
+            await transitionMobileStep(item.orderId, item.stepId, item.action ?? '', item.body);
+          } else {
+            await inspectMobileStep(item.orderId, item.stepId, {
+              result: (item.body?.result as 'pass' | 'fail' | 'rework') ?? 'pass',
+              note: item.body?.note as string | undefined,
+            });
+          }
+          removePendingAction(item.id);
+        } catch (error) {
+          toast.error(`待同步操作失败：${item.stepId}`, {
+            description: error instanceof Error ? error.message : undefined,
+          });
+          return;
+        }
+      }
+      setPendingCount(readPendingActions().length);
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.mobileWorkbench(personId),
+      });
+    };
+    flushPending();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOnline, personId, queryClient]);
 
   const workbenchQuery = useQuery({
     queryKey: queryKeys.mobileWorkbench(personId),
@@ -193,17 +241,50 @@ const MobileWorkbench = (): React.ReactElement => {
     scanMutation.mutate(orderId);
   };
 
+  const submitTransition = (
+    orderId: string,
+    stepId: string,
+    action: string,
+    body?: Record<string, unknown>,
+  ) => {
+    if (isOnline) {
+      transitionMutation.mutate({ orderId, stepId, action, body });
+      return;
+    }
+    appendPendingAction({ type: 'transition', orderId, stepId, action, body });
+    setPendingCount(readPendingActions().length);
+    toast.info('已加入待同步队列，联网后自动提交');
+  };
+
+  const submitInspection = (
+    orderId: string,
+    stepId: string,
+    result: 'pass' | 'fail' | 'rework',
+    note?: string,
+  ) => {
+    if (isOnline) {
+      inspectMutation.mutate({ orderId, stepId, result, note });
+      return;
+    }
+    appendPendingAction({
+      type: 'inspection',
+      orderId,
+      stepId,
+      body: { result, note: note ?? null },
+    });
+    setPendingCount(readPendingActions().length);
+    toast.info('质检已加入待同步队列');
+  };
+
   const handleException = (stepId: string) => {
     const note = exceptionNote[stepId]?.trim();
     if (!note) {
       toast.error('请填写异常说明');
       return;
     }
-    transitionMutation.mutate({
-      orderId: activeOrder!.workOrder.scheduleTaskId,
-      stepId,
-      action: 'pause',
-      body: { code: 'MOBILE_EXCEPTION', note },
+    submitTransition(activeOrder!.workOrder.scheduleTaskId, stepId, 'pause', {
+      code: 'MOBILE_EXCEPTION',
+      note,
     });
   };
 
@@ -213,21 +294,26 @@ const MobileWorkbench = (): React.ReactElement => {
       toast.error('请选择质检结果');
       return;
     }
-    inspectMutation.mutate({
-      orderId: activeOrder!.workOrder.scheduleTaskId,
+    submitInspection(
+      activeOrder!.workOrder.scheduleTaskId,
       stepId,
       result,
-      note: qcNote[stepId]?.trim() || undefined,
-    });
+      qcNote[stepId]?.trim() || undefined,
+    );
   };
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5 p-4 sm:p-6">
       <header>
         <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">移动工作台</h1>
-        <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">
-          扫码查单、待办工序与移动端开工/报工/审核/交收。
-        </p>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <p className="text-sm text-[hsl(218_10%_42%)]">
+            扫码查单、待办工序与移动端开工/报工/审核/交收。
+          </p>
+          {pendingCount > 0 && (
+            <Badge variant="outline">待同步 {pendingCount}</Badge>
+          )}
+        </div>
       </header>
 
       {!isOnline && (
@@ -235,7 +321,7 @@ const MobileWorkbench = (): React.ReactElement => {
           role="alert"
           className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800"
         >
-          当前处于离线状态，操作不会发送；恢复网络后请重试。
+          当前处于离线状态，操作会加入待同步队列，联网后自动提交。
         </div>
       )}
 
@@ -345,7 +431,6 @@ const MobileWorkbench = (): React.ReactElement => {
                     key={step.stepId}
                     step={step}
                     pending={transitionMutation.isPending || inspectMutation.isPending}
-                    online={isOnline}
                     error={stepError}
                     exceptionOpen={Boolean(exceptionOpen[step.stepId])}
                     exceptionNote={exceptionNote[step.stepId] ?? ''}
@@ -395,12 +480,12 @@ const MobileWorkbench = (): React.ReactElement => {
                       }
                     }}
                     onAction={(action, body) =>
-                      transitionMutation.mutate({
-                        orderId: activeOrder.workOrder.scheduleTaskId,
-                        stepId: step.stepId,
+                      submitTransition(
+                        activeOrder.workOrder.scheduleTaskId,
+                        step.stepId,
                         action,
                         body,
-                      })
+                      )
                     }
                   />
                 );
@@ -421,7 +506,6 @@ const MobileWorkbench = (): React.ReactElement => {
 function StepCard({
   step,
   pending,
-  online,
   error,
   exceptionOpen,
   exceptionNote,
@@ -440,7 +524,6 @@ function StepCard({
 }: {
   step: MobileWorkbenchStep;
   pending: boolean;
-  online: boolean;
   error: Error | null;
   exceptionOpen: boolean;
   exceptionNote: string;
@@ -508,7 +591,7 @@ function StepCard({
             key={action}
             size="sm"
             variant="outline"
-            disabled={!actionMeta[action].canRun || pending || !online}
+            disabled={!actionMeta[action].canRun || pending}
             onClick={() => onAction(action)}
           >
             {actionMeta[action].label}
@@ -519,7 +602,7 @@ function StepCard({
         <Button
           size="sm"
           variant="outline"
-          disabled={pending || !online}
+          disabled={pending}
           onClick={() => onExceptionOpenChange(!exceptionOpen)}
         >
           异常上报
@@ -528,9 +611,7 @@ function StepCard({
           size="sm"
           variant="outline"
           disabled={
-            pending ||
-            !online ||
-            !['in_progress', 'reported', 'reviewed'].includes(step.status)
+            pending || !['in_progress', 'reported', 'reviewed'].includes(step.status)
           }
           onClick={() => onQcOpenChange(!qcOpen)}
         >
@@ -557,7 +638,7 @@ function StepCard({
             aria-label="异常说明"
             className="h-8 min-w-0 flex-1"
           />
-          <Button size="sm" onClick={onSubmitException} disabled={pending || !online}>
+          <Button size="sm" onClick={onSubmitException} disabled={pending}>
             提交异常
           </Button>
         </div>
@@ -595,7 +676,7 @@ function StepCard({
           <Button
             size="sm"
             onClick={onSubmitInspection}
-            disabled={!qcResult || pending || !online}
+            disabled={!qcResult || pending}
           >
             提交质检
           </Button>

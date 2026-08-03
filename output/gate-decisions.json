@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T19:45:17.251Z",
+  "generatedAt": "2026-08-03T19:48:13.926Z",
   "gateCount": 14,
   "approvedCount": 0,
   "requiresApprovalCount": 4,
@@ -112,7 +112,7 @@
       "decidedAt": null,
       "conditions": [
         "Playwright smoke: login, command center, command map, devices, alerts render with real data",
-        "client Jest 9 suites / 33 tests",
+        "client Jest 10 suites / 35 tests",
         "work console route and layout type-check"
       ],
       "evidenceCount": 0

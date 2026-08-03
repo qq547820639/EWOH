@@ -541,6 +541,7 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-177 | Independent review and first-round evidence | AG-13/00 | Done | conditional pass 0 critical/0 major; `work/reviews/iteration-review-2026-08-04.md`; `round70-iteration-p0-2026-08-04.md` |
 | T-178 | Global ValidationPipe with structured fieldErrors | AG-00/03 | Done | `server/common/pipes/validation.pipe.ts`; APP_PIPE in both bootstraps; 5 validation-pipe tests; Jest 76/349 |
 | T-179 | Command-map person/device detail enrichment | AG-00/06 | Done | `entityDetailData.ts` + tests; organization/exoskeleton/risk/alerts/events/disposition entry; client 9/33 |
+| T-180 | Mobile offline pending-action queue | AG-00/07 | Done | `lib/offlineQueue.ts` + tests; queue/flush on reconnect; client 10/35 |
 
 ## Next Waves
 

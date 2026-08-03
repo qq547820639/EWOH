@@ -25,8 +25,10 @@ Trace: EWOH-2026-08-04-principal-final6
   `class-validator` errors now map to `fieldErrors` and `VALIDATION_ERROR`.
 - Command-map entity details now resolve personnel/device archives with
   organization, exoskeleton, risk, alerts, recent events, and disposition entry.
+- Mobile workbench now queues offline actions in `localStorage` and flushes them
+  in order when connectivity returns; pending count is shown in the header.
 - Full standalone gate: typecheck, lint, Jest 76 suites / 349 tests, client
-  9 suites / 33 tests, repo facts 31/31, OpenAPI 232/232, production build, and
+  10 suites / 35 tests, repo facts 31/31, OpenAPI 232/232, production build, and
   DDL hygiene all PASSED. Independent review: conditional pass with 0 critical
   and 0 major findings. HTTP+PostgreSQL E2E remains skipped locally because
   `EWOH_E2E_RUNTIME_DATABASE_URL` is not set.

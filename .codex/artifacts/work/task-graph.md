@@ -27,7 +27,7 @@ blocked by real API and scenario gates.
 | W6-4 | second factory no-fork replication; device/ERP integration; training | W6-3 assets and production approval | no customer core branch |
 | W6-5 | third factory config-driven replication; partner shadow delivery; fleet upgrade | second-factory review | 80% config satisfaction |
 | W6-6 | production SLO, DR, supply-chain security, Final 6 acceptance | previous waves | G10/G11/G13 evidence |
-| W7 | P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline, ValidationPipe, command-map details | Final 6.0 control plane | standalone-check ALL PASSED; Jest 76/349; client 9/33; OpenAPI 232/232 |
+| W7 | P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue, ValidationPipe, command-map details | Final 6.0 control plane | standalone-check ALL PASSED; Jest 76/349; client 10/35; OpenAPI 232/232 |
 
 ## Package Index
 
