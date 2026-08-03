@@ -17,10 +17,10 @@ artifacts:
   deploy: deploy/cloud/
   contracts: .codex/artifacts/contracts/
 evidence:
-  jest: "57 suites / 237 tests"
+  jest: "57 suites / 240 tests"
   client_jest: "6 suites / 20 tests"
   e2e: "19/19 HTTP + PostgreSQL"
-  openapi: "158/158 documented, 0 unimplemented"
+  openapi: "160/160 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/openapi/e2e/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; logical backup/restore of 54 tables / 25 rows with row-count verify"
@@ -43,6 +43,7 @@ evidence:
   helm_deployment_factory: "Helm chart 0.1.0 for 0.6.0-rc2; factory values/upgrade ring; migration hook; 123 static checks; Jest contract 4/4"
   golden_factory: "Golden Factory Profile 1.0.0; 7 modules/3 connectors/4 scenario packs; install API deterministic + idempotent; 47 contract checks"
   mapping_dsl: "mapping-schema.json v1; exoskeleton example 11 rules; mapping asset API; mapping TCK; 10 contract checks"
+  fleet_rings_support: "ring-filtered upgrade/rollback; fleet status registry; redacted support bundle; fleet state machine contract"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

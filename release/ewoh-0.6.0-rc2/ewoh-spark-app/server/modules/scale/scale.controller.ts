@@ -119,15 +119,35 @@ export class ScaleController {
 
   @Post('fleet/upgrade')
   fleetUpgrade(
-    @Body() body: { packageId: string },
+    @Body() body: { packageId: string; ring?: string },
     @Req() request: { userContext?: OrgContext },
   ) {
-    return this.scaleService.fleetUpgrade(body.packageId, request.userContext);
+    return this.scaleService.fleetUpgrade(
+      body.packageId,
+      request.userContext,
+      body.ring,
+    );
   }
 
   @Post('fleet/rollback')
-  fleetRollback(@Req() request: { userContext?: OrgContext }) {
-    return this.scaleService.fleetRollback(request.userContext);
+  fleetRollback(
+    @Body() body: { ring?: string },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.scaleService.fleetRollback(
+      request.userContext,
+      body?.ring,
+    );
+  }
+
+  @Get('fleet/status')
+  fleetStatus() {
+    return this.scaleService.fleetStatus();
+  }
+
+  @Post('fleet/support-bundle')
+  generateSupportBundle(@Req() request: { userContext?: OrgContext }) {
+    return this.scaleService.generateSupportBundle(request.userContext);
   }
 
   @Post('golden-factory/install')

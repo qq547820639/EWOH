@@ -223,6 +223,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-105 | Mapping DSL schema + example + registry API + TCK | PX-05/04 | Done | `round21-mapping-dsl.md`; audit 10 checks; E2E mapping register/conformance passed |
 
+## Wave Final5 - Fleet Ops Rings (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-106 | Upgrade rings + fleet registry + redacted support bundle | PX-09/10 | Done | `round22-fleet-rings-support.md`; E2E ring staging/status/support bundle passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

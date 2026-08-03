@@ -413,4 +413,169 @@ describe('ScaleService templates and assets', () => {
       expect.objectContaining({ action: 'scale.fleet.rollback' }),
     );
   });
+
+  it('upgrades only profiles in the requested ring', async () => {
+    const profiles = [
+      {
+        profileId: 'PRF-1',
+        status: 'installed',
+        configJson: { upgradeRing: 'pilot' },
+      },
+      {
+        profileId: 'PRF-2',
+        status: 'installed',
+        configJson: { upgradeRing: 'shadow' },
+      },
+    ];
+    const asset = {
+      packageId: 'PKG-CONN',
+      packageType: 'connector',
+      version: '1.2.0',
+      manifestJson: {
+        runtime: 'edge-python',
+        protocol: 'opcua',
+        configSchema: {},
+        compatibility: {},
+        outputEvents: ['DeviceStateChanged'],
+      },
+    };
+    const select = jest.fn(() => ({
+      from: jest.fn(() => ({
+        orderBy: jest.fn().mockResolvedValue(profiles),
+        where: jest.fn().mockResolvedValue([asset]),
+      })),
+    }));
+    const updateWhere = jest.fn().mockResolvedValue([]);
+    const db = {
+      select,
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: updateWhere,
+        })),
+      })),
+    };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.fleetUpgrade('PKG-CONN', undefined, 'shadow');
+
+    expect(result.targetRing).toBe('shadow');
+    expect(result.updatedProfiles).toBe(1);
+    expect(result.skippedProfiles).toBe(1);
+    expect(updateWhere).toHaveBeenCalledTimes(1);
+    expect(audit.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'scale.fleet.upgrade',
+        after: expect.objectContaining({
+          targetRing: 'shadow',
+          updatedProfiles: 1,
+          skippedProfiles: 1,
+        }),
+      }),
+    );
+  });
+
+  it('rolls back only profiles in the requested ring', async () => {
+    const profiles = [
+      {
+        profileId: 'PRF-1',
+        status: 'upgraded',
+        configJson: { upgradeRing: 'pilot' },
+      },
+      {
+        profileId: 'PRF-2',
+        status: 'upgraded',
+        configJson: { upgradeRing: 'small' },
+      },
+    ];
+    const select = jest.fn(() => ({
+      from: jest.fn(() => ({
+        orderBy: jest.fn().mockResolvedValue(profiles),
+      })),
+    }));
+    const updateWhere = jest.fn().mockResolvedValue([]);
+    const db = {
+      select,
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: updateWhere,
+        })),
+      })),
+    };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.fleetRollback(undefined, 'small');
+
+    expect(result.targetRing).toBe('small');
+    expect(result.rolledBackProfiles).toBe(1);
+    expect(result.skippedProfiles).toBe(1);
+    expect(updateWhere).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports fleet status and generates a redacted support bundle', async () => {
+    const profiles = [
+      {
+        profileId: 'PRF-1',
+        factoryName: 'Factory A',
+        templateId: 'TPL-1',
+        status: 'upgraded',
+        configJson: { upgradeRing: 'shadow' },
+        installedAt: null,
+        createdAt: new Date(),
+      },
+    ];
+    const templates = [
+      {
+        templateId: 'TPL-1',
+        name: 'golden',
+        version: '1.0.0',
+        lifecycleStatus: 'published',
+        compatibleCore: '>=0.6.0-rc2',
+        publishedAt: null,
+      },
+    ];
+    const assets = [
+      {
+        packageId: 'PKG-1',
+        packageType: 'mapping',
+        name: 'mapping-a',
+        version: '1.0.0',
+        status: 'published',
+        publishedAt: null,
+      },
+    ];
+    const select = jest.fn(() => ({
+      from: jest.fn((table: unknown) => ({
+        orderBy: jest.fn().mockResolvedValue(
+          table === ewohFactoryProfile
+            ? profiles
+            : table === ewohFactoryTemplate
+              ? templates
+              : assets,
+        ),
+      })),
+    }));
+    const db = { select };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new ScaleService(db as never, audit as never);
+
+    const status = await service.fleetStatus();
+    expect(status.factoryCount).toBe(1);
+    expect(status.templateCount).toBe(1);
+    expect(status.assetPackageCount).toBe(1);
+    expect(status.ringCounts.shadow).toBe(1);
+    expect(status.profiles[0].upgradeRing).toBe('shadow');
+
+    const bundle = await service.generateSupportBundle({
+      userId: 'user-1',
+      primaryOrgId: 'org-1',
+    });
+    expect(bundle.bundleId).toMatch(/^SB-/);
+    expect(bundle.includesSecrets).toBe(false);
+    expect(bundle.orgId).toBe('org-1');
+    expect(audit.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'scale.support_bundle.generate' }),
+    );
+  });
 });

@@ -7,7 +7,7 @@ Owner: AG-00/AG-41
 
 - Python unittest: 667 passed.
 - Python repo contract tests: 59 passed.
-- NestJS Jest: 237 passed across 57 suites (includes SP-01..SP-08 scenario
+- NestJS Jest: 240 passed across 57 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
 - Client Jest: 20 passed across 6 suites.
@@ -21,7 +21,7 @@ Owner: AG-00/AG-41
 - NestJS type check, lint, and Standalone production build: passed.
 - One-click `scripts/standalone-check.sh`: passed with E2E, OpenAPI strict
   audit, DDL plans, and standalone DDL hygiene.
-- OpenAPI contract: 158 controller operations documented, 0 undocumented,
+- OpenAPI contract: 160 controller operations documented, 0 undocumented,
   0 unimplemented; `openapi/route-manifest.json` generated.
 - Full release drill: `RELEASE DRILL PASSED` against disposable PostgreSQL 17,
   including migration/RLS/audit/rollback/rebuild, 176 Jest tests, 107/107
@@ -84,6 +84,12 @@ Owner: AG-00/AG-41
   asset package registry; mapping TCK validates source/target schema refs,
   non-empty rules, rule paths, and schema version; E2E verifies register,
   list/detail, conformance, and org scoping; contract audit passes 10 checks.
+- Upgrade rings and fleet ops: fleet upgrade/rollback support ring-filtered
+  staging, `GET /api/scale/fleet/status` exposes the org fleet registry, and
+  `POST /api/scale/fleet/support-bundle` returns a redacted audited diagnostic
+  bundle; `contracts/state-machines/fleet.yaml` freezes ring and status
+  transitions; E2E verifies shadow-ring install/upgrade/rollback, fleet status,
+  and support bundle generation.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

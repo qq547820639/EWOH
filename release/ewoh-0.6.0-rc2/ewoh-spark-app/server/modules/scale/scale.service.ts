@@ -36,6 +36,17 @@ export function nextTemplateStatus(current: string, action: string): string | nu
   }
 }
 
+export const UPGRADE_RINGS = [
+  'dev',
+  'integration',
+  'shadow',
+  'pilot',
+  'small',
+  'full',
+] as const;
+
+export type UpgradeRing = (typeof UPGRADE_RINGS)[number];
+
 interface GoldenFactorySpec {
   apiVersion: string;
   kind: string;
@@ -579,16 +590,26 @@ export class ScaleService {
     return updated;
   }
 
-  async fleetUpgrade(packageId: string, actor?: OrgContext) {
+  async fleetUpgrade(
+    packageId: string,
+    actor?: OrgContext,
+    requestedRing?: string,
+  ) {
     const conformance = await this.runConformance(packageId, actor);
     if (!conformance.passed) {
       throw new BadRequestException(
         `Package ${packageId} does not pass conformance`,
       );
     }
+    const ring = requestedRing
+      ? this.normalizeRing(requestedRing)
+      : null;
     const profiles = await this.listProfiles();
+    const targets = ring
+      ? profiles.filter((profile) => this.profileRing(profile) === ring)
+      : profiles;
     let updated = 0;
-    for (const profile of profiles) {
+    for (const profile of targets) {
       await this.db
         .update(ewohFactoryProfile)
         .set({ status: 'upgraded', installedAt: new Date() })
@@ -602,15 +623,30 @@ export class ScaleService {
       entityType: 'asset_package',
       entityId: packageId,
       before: null,
-      after: { updatedProfiles: updated },
+      after: {
+        targetRing: ring ?? 'all',
+        updatedProfiles: updated,
+        skippedProfiles: profiles.length - targets.length,
+      },
     });
-    return { packageId, updatedProfiles: updated };
+    return {
+      packageId,
+      targetRing: ring ?? 'all',
+      updatedProfiles: updated,
+      skippedProfiles: profiles.length - targets.length,
+    };
   }
 
-  async fleetRollback(actor?: OrgContext) {
+  async fleetRollback(actor?: OrgContext, requestedRing?: string) {
+    const ring = requestedRing
+      ? this.normalizeRing(requestedRing)
+      : null;
     const profiles = await this.listProfiles();
+    const targets = ring
+      ? profiles.filter((profile) => this.profileRing(profile) === ring)
+      : profiles;
     let updated = 0;
-    for (const profile of profiles) {
+    for (const profile of targets) {
       await this.db
         .update(ewohFactoryProfile)
         .set({ status: 'rolled_back', installedAt: new Date() })
@@ -624,9 +660,173 @@ export class ScaleService {
       entityType: 'factory_profile',
       entityId: 'fleet',
       before: null,
-      after: { rolledBackProfiles: updated },
+      after: {
+        targetRing: ring ?? 'all',
+        rolledBackProfiles: updated,
+        skippedProfiles: profiles.length - targets.length,
+      },
     });
-    return { rolledBackProfiles: updated };
+    return {
+      targetRing: ring ?? 'all',
+      rolledBackProfiles: updated,
+      skippedProfiles: profiles.length - targets.length,
+    };
+  }
+
+  private normalizeRing(value: string): UpgradeRing {
+    const candidate = value.trim().toLowerCase();
+    if (!UPGRADE_RINGS.includes(candidate as UpgradeRing)) {
+      throw new BadRequestException(
+        `ring must be one of ${UPGRADE_RINGS.join(', ')}`,
+      );
+    }
+    return candidate as UpgradeRing;
+  }
+
+  private profileRing(profile: { configJson?: unknown }): UpgradeRing {
+    const config = (profile.configJson as Record<string, unknown> | null) ?? {};
+    const raw =
+      typeof config.upgradeRing === 'string' ? config.upgradeRing : 'pilot';
+    const candidate = raw.trim().toLowerCase();
+    return UPGRADE_RINGS.includes(candidate as UpgradeRing)
+      ? (candidate as UpgradeRing)
+      : 'pilot';
+  }
+
+  private sanitizeProfile(profile: {
+    profileId: string;
+    factoryName: string;
+    templateId: string;
+    status: string;
+    configJson?: unknown;
+    installedAt: Date | null;
+    createdAt: Date;
+  }) {
+    return {
+      profileId: profile.profileId,
+      factoryName: profile.factoryName,
+      templateId: profile.templateId,
+      status: profile.status,
+      upgradeRing: this.profileRing(profile),
+      installedAt: profile.installedAt,
+      createdAt: profile.createdAt,
+    };
+  }
+
+  private sanitizeTemplate(template: {
+    templateId: string;
+    name: string;
+    version: string;
+    lifecycleStatus: string;
+    compatibleCore: string | null;
+    publishedAt: Date | null;
+  }) {
+    return {
+      templateId: template.templateId,
+      name: template.name,
+      version: template.version,
+      lifecycleStatus: template.lifecycleStatus,
+      compatibleCore: template.compatibleCore,
+      publishedAt: template.publishedAt,
+    };
+  }
+
+  private sanitizeAsset(asset: {
+    packageId: string;
+    packageType: string;
+    name: string;
+    version: string;
+    status: string;
+    publishedAt: Date | null;
+  }) {
+    return {
+      packageId: asset.packageId,
+      packageType: asset.packageType,
+      name: asset.name,
+      version: asset.version,
+      status: asset.status,
+      publishedAt: asset.publishedAt,
+    };
+  }
+
+  private redact(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.redact(item));
+    }
+    if (value && typeof value === 'object') {
+      const result: Record<string, unknown> = {};
+      for (const [key, entry] of Object.entries(
+        value as Record<string, unknown>,
+      )) {
+        if (/password|secret|token|api[_-]?key|private[_-]?key|credential/i.test(key)) {
+          result[key] = '[REDACTED]';
+        } else {
+          result[key] = this.redact(entry);
+        }
+      }
+      return result;
+    }
+    return value;
+  }
+
+  async fleetStatus() {
+    const [profiles, templates, assets] = await Promise.all([
+      this.listProfiles(),
+      this.listTemplates(),
+      this.listAssetPackages(),
+    ]);
+    const statusCounts: Record<string, number> = {};
+    const ringCounts: Record<string, number> = {};
+    for (const profile of profiles) {
+      statusCounts[profile.status] = (statusCounts[profile.status] ?? 0) + 1;
+      const ring = this.profileRing(profile);
+      ringCounts[ring] = (ringCounts[ring] ?? 0) + 1;
+    }
+    return {
+      generatedAt: new Date().toISOString(),
+      factoryCount: profiles.length,
+      templateCount: templates.length,
+      assetPackageCount: assets.length,
+      statusCounts,
+      ringCounts,
+      profiles: profiles.map((profile) => this.sanitizeProfile(profile)),
+      templates: templates.map((template) => this.sanitizeTemplate(template)),
+      assetPackages: assets.map((asset) => this.sanitizeAsset(asset)),
+    };
+  }
+
+  async generateSupportBundle(actor?: OrgContext) {
+    const status = await this.fleetStatus();
+    const bundle = {
+      bundleId: `SB-${randomUUID().slice(0, 8)}`,
+      generatedAt: status.generatedAt,
+      product: 'EWOH 0.6.0-rc2',
+      orgId: actor?.primaryOrgId ?? null,
+      factoryCount: status.factoryCount,
+      templateCount: status.templateCount,
+      assetPackageCount: status.assetPackageCount,
+      statusCounts: status.statusCounts,
+      ringCounts: status.ringCounts,
+      profiles: this.redact(status.profiles),
+      templates: this.redact(status.templates),
+      assetPackages: this.redact(status.assetPackages),
+      includesSecrets: false,
+    };
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'scale.support_bundle.generate',
+      entityType: 'fleet',
+      entityId: bundle.bundleId,
+      before: null,
+      after: {
+        bundleId: bundle.bundleId,
+        factoryCount: bundle.factoryCount,
+        templateCount: bundle.templateCount,
+        assetPackageCount: bundle.assetPackageCount,
+      },
+    });
+    return bundle;
   }
 
   private goldenSpec(): GoldenFactorySpec {

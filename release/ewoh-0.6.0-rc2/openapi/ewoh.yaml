@@ -1949,6 +1949,15 @@ paths:
               properties:
                 packageId:
                   type: string
+                ring:
+                  type: string
+                  enum:
+                    - dev
+                    - integration
+                    - shadow
+                    - pilot
+                    - small
+                    - full
               required:
                 - packageId
       responses:
@@ -1973,6 +1982,12 @@ paths:
       tags:
         - scale
       summary: Roll back all factory profiles
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FleetRollbackRequest'
       responses:
         '201':
           description: Successful response
@@ -1980,6 +1995,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FleetRollbackResult'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/fleet/status:
+    get:
+      tags:
+        - scale
+      summary: Read the org fleet registry
+      responses:
+        '200':
+          description: Fleet status summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FleetStatusResult'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/fleet/support-bundle:
+    post:
+      tags:
+        - scale
+      summary: Generate a redacted fleet support bundle
+      responses:
+        '201':
+          description: Redacted support bundle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportBundleResult'
         Unauthorized:
           $ref: '#/components/responses/Unauthorized'
         Forbidden:
@@ -7126,13 +7177,110 @@ components:
       properties:
         packageId:
           type: string
+        targetRing:
+          type: string
         updatedProfiles:
+          type: integer
+        skippedProfiles:
           type: integer
     FleetRollbackResult:
       type: object
       properties:
+        targetRing:
+          type: string
         rolledBackProfiles:
           type: integer
+        skippedProfiles:
+          type: integer
+    FleetRollbackRequest:
+      type: object
+      properties:
+        ring:
+          type: string
+          enum:
+            - dev
+            - integration
+            - shadow
+            - pilot
+            - small
+            - full
+    FleetProfileSummary:
+      type: object
+      properties:
+        profileId:
+          type: string
+        factoryName:
+          type: string
+        templateId:
+          type: string
+        status:
+          type: string
+        upgradeRing:
+          type: string
+        installedAt:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+    FleetStatusResult:
+      type: object
+      properties:
+        generatedAt:
+          type: string
+        factoryCount:
+          type: integer
+        templateCount:
+          type: integer
+        assetPackageCount:
+          type: integer
+        statusCounts:
+          type: object
+          additionalProperties:
+            type: integer
+        ringCounts:
+          type: object
+          additionalProperties:
+            type: integer
+        profiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/FleetProfileSummary'
+        templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/FactoryTemplate'
+        assetPackages:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssetPackage'
+    SupportBundleResult:
+      type: object
+      properties:
+        bundleId:
+          type: string
+        generatedAt:
+          type: string
+        product:
+          type: string
+        orgId:
+          type: string
+          nullable: true
+        factoryCount:
+          type: integer
+        templateCount:
+          type: integer
+        assetPackageCount:
+          type: integer
+        statusCounts:
+          type: object
+          additionalProperties:
+            type: integer
+        ringCounts:
+          type: object
+          additionalProperties:
+            type: integer
+        includesSecrets:
+          type: boolean
     GoldenFactoryInstallRequest:
       type: object
       properties:

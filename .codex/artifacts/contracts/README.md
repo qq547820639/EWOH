@@ -31,6 +31,10 @@ Productization mapping contract: `contracts/mapping/mapping-schema.json`
 (`ewoh:///mapping/v1`). It is owned by PX-05, validated by
 `scripts/audit-mapping-contracts.js`, and consumed by `/api/scale/mappings`.
 
+Fleet state machine: `contracts/state-machines/fleet.yaml` freezes upgrade
+rings and profile status transitions. It is owned by PX-09 and enforced by
+`/api/scale/fleet/upgrade`, `/api/scale/fleet/rollback`, and fleet status.
+
 Freeze scope note: C3-C6 are frozen as contracts for the current real
 implementation. Each document explicitly separates service-enforced behavior
 from pending items; the pending items do not reopen the contract but define

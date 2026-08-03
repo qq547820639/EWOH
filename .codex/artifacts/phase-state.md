@@ -61,13 +61,15 @@ production approval gate.
 - Mapping DSL and Schema Registry: versioned JSON Schema with a canonical
   exoskeleton telemetry example, mapping asset API, and mapping TCK checks;
   contract audit 10 checks.
+- Upgrade rings and fleet ops: ring-filtered fleet upgrade/rollback, fleet
+  status registry, and redacted support bundle are implemented, audited, and
+  covered by unit and E2E tests.
 
 ## Active Tasks
 
 - Fleet Ops (upgrade/rollback) and event catalog round closed.
 - Productization kernels remaining: connector SDK/runtime, mapping DSL,
-  OTel resource attributes, upgrade ring drill, partner shadow delivery and
-  Scale Release 1.0.
+  OTel resource attributes, partner shadow delivery and Scale Release 1.0.
 - Training/acceptance evidence and production gate preparation.
 - Production DDL/deploy approval gate.
 

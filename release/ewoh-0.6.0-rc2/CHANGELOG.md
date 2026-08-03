@@ -80,6 +80,15 @@
   检查（source/target/rules/schemaVersion）。
 - Mapping 契约审计：`scripts/audit-mapping-contracts.js`（10 项检查）、
   `npm run contract:mapping` 与 `test/contract/mapping.spec.ts`。
+- 升级环与 Fleet Ops：`fleet/upgrade` 与 `fleet/rollback` 支持按
+  `dev/integration/shadow/pilot/small/full` 升级环分批执行，未指定环时保持
+  全量操作兼容。
+- Fleet 状态注册表：`GET /api/scale/fleet/status` 返回工厂 Profile 的环、
+  状态、模板/资产包计数与环/状态分布。
+- Support Bundle：`POST /api/scale/fleet/support-bundle` 生成脱敏诊断包
+  （`includesSecrets: false`）并写审计。
+- 舰队状态机契约：`contracts/state-machines/fleet.yaml` 冻结升级环与
+  installed/replayed/upgraded/rolled_back 迁移关系。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

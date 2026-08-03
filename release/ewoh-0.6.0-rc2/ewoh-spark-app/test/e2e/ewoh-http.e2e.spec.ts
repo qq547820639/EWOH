@@ -1302,6 +1302,109 @@ if (!e2eConfig) {
       expect(fleetRows.length).toBeGreaterThanOrEqual(2);
       expect(fleetRows.every((row) => row.status === 'rolled_back')).toBe(true);
 
+      const shadowInstall = await apiRequest<{
+        profileId: string;
+        status: string;
+      }>(baseUrl, `/api/scale/templates/${templateId}/install`, {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          factoryName: `Shadow Factory ${runId}`,
+          config: { upgradeRing: 'shadow' },
+        }),
+      });
+      expect(shadowInstall.status).toBe(201);
+      expect(shadowInstall.body.status).toBe('installed');
+
+      const ringUpgrade = await apiRequest<{
+        targetRing: string;
+        updatedProfiles: number;
+        skippedProfiles: number;
+      }>(baseUrl, '/api/scale/fleet/upgrade', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          packageId: connector.body.packageId,
+          ring: 'shadow',
+        }),
+      });
+      expect(ringUpgrade.status).toBe(201);
+      expect(ringUpgrade.body.targetRing).toBe('shadow');
+      expect(ringUpgrade.body.updatedProfiles).toBeGreaterThanOrEqual(1);
+
+      const shadowUpgradedRows = await owner!.unsafe<
+        Array<{ status: string; org_id: string }>
+      >(
+        `select status, org_id::text
+         from public.ewoh_factory_profile
+         where profile_id = $1`,
+        [shadowInstall.body.profileId],
+      );
+      expect(shadowUpgradedRows).toHaveLength(1);
+      expect(shadowUpgradedRows[0].status).toBe('upgraded');
+      expect(shadowUpgradedRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const ringRollback = await apiRequest<{
+        targetRing: string;
+        rolledBackProfiles: number;
+      }>(baseUrl, '/api/scale/fleet/rollback', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({ ring: 'shadow' }),
+      });
+      expect(ringRollback.status).toBe(201);
+      expect(ringRollback.body.targetRing).toBe('shadow');
+      expect(ringRollback.body.rolledBackProfiles).toBeGreaterThanOrEqual(1);
+
+      const shadowRolledBackRows = await owner!.unsafe<
+        Array<{ status: string }>
+      >(
+        `select status
+         from public.ewoh_factory_profile
+         where profile_id = $1`,
+        [shadowInstall.body.profileId],
+      );
+      expect(shadowRolledBackRows).toHaveLength(1);
+      expect(shadowRolledBackRows[0].status).toBe('rolled_back');
+
+      const fleetStatus = await apiRequest<{
+        factoryCount: number;
+        statusCounts: Record<string, number>;
+        profiles: Array<{ profileId: string; upgradeRing: string }>;
+      }>(baseUrl, '/api/scale/fleet/status', {
+        headers: jsonHeaders(token),
+      });
+      expect(fleetStatus.status).toBe(200);
+      expect(fleetStatus.body.factoryCount).toBeGreaterThanOrEqual(2);
+      expect(
+        fleetStatus.body.profiles.some(
+          (profile) => profile.profileId === shadowInstall.body.profileId,
+        ),
+      ).toBe(true);
+      expect(
+        fleetStatus.body.profiles.find(
+          (profile) => profile.profileId === shadowInstall.body.profileId,
+        )?.upgradeRing,
+      ).toBe('shadow');
+      expect(fleetStatus.body.statusCounts.rolled_back).toBeGreaterThanOrEqual(
+        1,
+      );
+
+      const supportBundle = await apiRequest<{
+        bundleId: string;
+        includesSecrets: boolean;
+        factoryCount: number;
+        orgId: string | null;
+      }>(baseUrl, '/api/scale/fleet/support-bundle', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+      });
+      expect(supportBundle.status).toBe(201);
+      expect(supportBundle.body.bundleId).toMatch(/^SB-/);
+      expect(supportBundle.body.includesSecrets).toBe(false);
+      expect(supportBundle.body.factoryCount).toBeGreaterThanOrEqual(2);
+      expect(supportBundle.body.orgId).toBe(fixture!.orgA.id);
+
       const secondProfileRows = await owner!.unsafe<
         Array<{ profile_id: string; org_id: string }>
       >(
