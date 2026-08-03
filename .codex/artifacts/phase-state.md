@@ -115,6 +115,8 @@ production approval gate.
   org-scoped factory differences for recycling/platformization.
 - Difference resolution: `POST /api/scale/differences/:key/resolve` marks
   recycled differences as resolved with audit.
+- Cross-tenant TCK: `scripts/cross-tenant-tck.sh` runs the HTTP+PostgreSQL
+  org-isolation E2E suite as one gate.
 
 ## Active Tasks
 

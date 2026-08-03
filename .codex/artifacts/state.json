@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 5.0 adopted; scale kernel + connector/scenario catalog + conformance/replay + fleet ops + event catalog + Helm deployment factory + Golden Factory Profile + Mapping DSL + upgrade rings/fleet registry/support bundle + OTel resource attributes + compatibility catalog + policy engine + template diff preview + connector runtime + factory onboarding + release review + workflow engine + feature flags + edge backfill + twin package pipeline + partner shadow + deployment TCK + scale UI + ERP/MES connector profile + scale metrics + scenario uninstall + connector TCK + scenario TCK + third factory drill + factory differences + difference resolve implemented; 63 Jest suites / 275 tests; client 6/21; pytest 82 passed; E2E 23/23; OpenAPI 178/178; release review 24/24; deployment TCK passed; connector TCK 11/11; scenario TCK 5 gates; managed tables 51",
+  "current_status": "Final 5.0 adopted; scale kernel + connector/scenario catalog + conformance/replay + fleet ops + event catalog + Helm deployment factory + Golden Factory Profile + Mapping DSL + upgrade rings/fleet registry/support bundle + OTel resource attributes + compatibility catalog + policy engine + template diff preview + connector runtime + factory onboarding + release review + workflow engine + feature flags + edge backfill + twin package pipeline + partner shadow + deployment TCK + scale UI + ERP/MES connector profile + scale metrics + scenario uninstall + connector TCK + scenario TCK + third factory drill + factory differences + difference resolve + cross-tenant TCK implemented; 63 Jest suites / 275 tests; client 6/21; pytest 82 passed; E2E 23/23; OpenAPI 178/178; release review 24/24; deployment TCK passed; connector TCK 11/11; scenario TCK 5 gates; cross-tenant TCK passed; managed tables 51",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
@@ -207,6 +207,8 @@
     "factory_differences": "POST/GET /api/scale/differences with diff.* config keys, audit, org scoping; E2E passed"
     ,
     "difference_resolve": "POST /api/scale/differences/:key/resolve marks resolved with audit; E2E passed"
+    ,
+    "cross_tenant_tck": "scripts/cross-tenant-tck.sh + make/npm entry; HTTP+PostgreSQL org isolation E2E 23/23 passed"
   },
   "subagent_state": {
     "planned": [

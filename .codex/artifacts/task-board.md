@@ -361,6 +361,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-128 | Factory difference resolve API + audit | PX-05/12 | Done | `round44-difference-resolve.md`; E2E resolve passed |
 
+## Wave Final5 - Cross-Tenant TCK (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-129 | Cross-tenant full-chain TCK gate | V-SEC/41 | Done | `round45-cross-tenant-tck.md`; E2E 23/23 passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

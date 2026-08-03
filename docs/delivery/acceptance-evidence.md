@@ -157,6 +157,8 @@ Owner: AG-00/AG-41
   org-scoped factory differences with audit; verified in E2E.
 - Difference resolution: `POST /api/scale/differences/:key/resolve` closes a
   recycled difference with `resolved` status and audit; verified in E2E.
+- Cross-tenant TCK: `scripts/cross-tenant-tck.sh` runs the HTTP + PostgreSQL
+  org-isolation E2E suite as one gate (`npm run cross-tenant:tck`).
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.
