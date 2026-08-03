@@ -7,8 +7,9 @@ Owner: AG-00/AG-41
 
 - Python unittest: 667 passed.
 - Python repo contract tests: 59 passed.
-- NestJS Jest: 232 passed across 56 suites (includes SP-01..SP-08 scenario
-  suite and event catalog, Helm chart, and Golden Factory contract tests).
+- NestJS Jest: 237 passed across 57 suites (includes SP-01..SP-08 scenario
+  suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
+  contract tests).
 - Client Jest: 20 passed across 6 suites.
 - HTTP + PostgreSQL E2E: 19 passed (auth, RBAC, refresh rotation/logout, org
   isolation, control/resource/world persistence, canonical UnifiedExoFrame
@@ -20,7 +21,7 @@ Owner: AG-00/AG-41
 - NestJS type check, lint, and Standalone production build: passed.
 - One-click `scripts/standalone-check.sh`: passed with E2E, OpenAPI strict
   audit, DDL plans, and standalone DDL hygiene.
-- OpenAPI contract: 154 controller operations documented, 0 undocumented,
+- OpenAPI contract: 158 controller operations documented, 0 undocumented,
   0 unimplemented; `openapi/route-manifest.json` generated.
 - Full release drill: `RELEASE DRILL PASSED` against disposable PostgreSQL 17,
   including migration/RLS/audit/rollback/rebuild, 176 Jest tests, 107/107
@@ -78,6 +79,11 @@ Owner: AG-00/AG-41
   publishes the template, installs TCK-passing scenario packs, and installs or
   reuses an org-scoped factory profile; E2E verifies idempotent reuse and
   persisted status; contract audit passes 47 checks.
+- Mapping DSL and Schema Registry: `contracts/mapping/mapping-schema.json`
+  defines versioned mapping contracts; mapping assets register through the
+  asset package registry; mapping TCK validates source/target schema refs,
+  non-empty rules, rule paths, and schema version; E2E verifies register,
+  list/detail, conformance, and org scoping; contract audit passes 10 checks.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

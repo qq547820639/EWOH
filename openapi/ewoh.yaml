@@ -1778,6 +1778,77 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scale/mappings:
+    post:
+      tags:
+        - scale
+      summary: Register a mapping DSL asset package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MappingRegisterRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - scale
+      summary: List mapping asset packages
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackageList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/mappings/{id}:
+    get:
+      tags:
+        - scale
+      summary: Get one mapping asset package
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/profiles/{id}/replay:
     post:
       tags:
@@ -7176,6 +7247,54 @@ components:
       required:
         - name
         - version
+    MappingEndpoint:
+      type: object
+      properties:
+        system:
+          type: string
+        schemaRef:
+          type: string
+      required:
+        - system
+        - schemaRef
+    MappingRule:
+      type: object
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        transform:
+          type: string
+        required:
+          type: boolean
+      required:
+        - from
+        - to
+    MappingRegisterRequest:
+      type: object
+      properties:
+        mappingId:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        source:
+          $ref: '#/components/schemas/MappingEndpoint'
+        target:
+          $ref: '#/components/schemas/MappingEndpoint'
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/MappingRule'
+          minItems: 1
+      required:
+        - name
+        - version
+        - source
+        - target
+        - rules
     AssetPackage:
       type: object
       properties:
@@ -7188,6 +7307,7 @@ components:
             - connector
             - scenario
             - deploy
+            - mapping
         name:
           type: string
         version:

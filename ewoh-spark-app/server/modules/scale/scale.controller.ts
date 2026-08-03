@@ -91,6 +91,24 @@ export class ScaleController {
     return this.scaleService.listScenarioPacks();
   }
 
+  @Post('mappings')
+  registerMapping(
+    @Body() body: Record<string, never>,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.scaleService.registerMapping(body as never, request.userContext);
+  }
+
+  @Get('mappings')
+  listMappings() {
+    return this.scaleService.listMappings();
+  }
+
+  @Get('mappings/:id')
+  getMapping(@Param('id') id: string) {
+    return this.scaleService.getMapping(id);
+  }
+
   @Post('scenario-packs/:id/install')
   installScenarioPack(
     @Param('id') id: string,

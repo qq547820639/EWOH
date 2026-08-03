@@ -18,6 +18,7 @@ cd "$ROOT_DIR"
 node scripts/audit-openapi-routes.js --strict
 node scripts/audit-event-catalog.js
 node scripts/audit-golden-factory.js
+node scripts/audit-mapping-contracts.js
 node scripts/verify-helm-chart.js
 node scripts/verify-deploy-artifacts.js
 

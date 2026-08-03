@@ -263,7 +263,12 @@ export class ScaleService {
   async registerAssetPackage(
     body: {
       packageId?: string;
-      packageType: 'template' | 'connector' | 'scenario' | 'deploy';
+      packageType:
+        | 'template'
+        | 'connector'
+        | 'scenario'
+        | 'deploy'
+        | 'mapping';
       name: string;
       version: string;
       manifest?: Record<string, unknown>;
@@ -378,6 +383,78 @@ export class ScaleService {
       .orderBy(desc(ewohAssetPackage.createdAt));
   }
 
+  async registerMapping(
+    body: {
+      mappingId?: string;
+      name: string;
+      version: string;
+      source: { system: string; schemaRef: string };
+      target: { system: string; schemaRef: string };
+      rules: Array<{
+        from: string;
+        to: string;
+        transform?: string;
+        required?: boolean;
+      }>;
+    },
+    actor?: OrgContext,
+  ) {
+    if (
+      !body.name?.trim() ||
+      !body.version?.trim() ||
+      !body.source?.system?.trim() ||
+      !body.source?.schemaRef?.trim() ||
+      !body.target?.system?.trim() ||
+      !body.target?.schemaRef?.trim() ||
+      !Array.isArray(body.rules) ||
+      body.rules.length === 0
+    ) {
+      throw new BadRequestException(
+        'name, version, source, target, and non-empty rules are required',
+      );
+    }
+    if (
+      body.rules.some(
+        (rule) =>
+          !rule.from?.trim() ||
+          !rule.to?.trim(),
+      )
+    ) {
+      throw new BadRequestException('every mapping rule requires from and to');
+    }
+    return this.registerAssetPackage(
+      {
+        packageId: body.mappingId?.trim(),
+        packageType: 'mapping',
+        name: body.name.trim(),
+        version: body.version.trim(),
+        manifest: {
+          mappingSchemaVersion: 'v1',
+          source: body.source,
+          target: body.target,
+          rules: body.rules,
+        },
+      },
+      actor,
+    );
+  }
+
+  async listMappings() {
+    return this.db
+      .select()
+      .from(ewohAssetPackage)
+      .where(eq(ewohAssetPackage.packageType, 'mapping'))
+      .orderBy(desc(ewohAssetPackage.createdAt));
+  }
+
+  async getMapping(packageId: string) {
+    const row = await this.getAssetPackage(packageId);
+    if (row.packageType !== 'mapping') {
+      throw new BadRequestException('packageType must be mapping');
+    }
+    return row;
+  }
+
   async listAssetPackages() {
     return this.db
       .select()
@@ -424,6 +501,33 @@ export class ScaleService {
     } else if (asset.packageType === 'deploy') {
       push('compatibleCore', typeof manifest.compatibleCore === 'string');
       push('config', manifest.config !== undefined);
+    } else if (asset.packageType === 'mapping') {
+      const source = manifest.source as
+        | { system?: string; schemaRef?: string }
+        | undefined;
+      const target = manifest.target as
+        | { system?: string; schemaRef?: string }
+        | undefined;
+      const rules = Array.isArray(manifest.rules) ? manifest.rules : [];
+      push(
+        'source',
+        typeof source?.system === 'string' &&
+          typeof source?.schemaRef === 'string',
+      );
+      push(
+        'target',
+        typeof target?.system === 'string' &&
+          typeof target?.schemaRef === 'string',
+      );
+      push('rules', rules.length > 0);
+      push(
+        'rulePaths',
+        rules.every((rule) => {
+          const mapped = rule as { from?: unknown; to?: unknown };
+          return typeof mapped?.from === 'string' && typeof mapped?.to === 'string';
+        }),
+      );
+      push('mappingSchemaVersion', manifest.mappingSchemaVersion === 'v1');
     }
     push('version', /^\d+\.\d+\.\d+/.test(asset.version), 'semver-like version');
 

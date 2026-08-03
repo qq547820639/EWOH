@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 5.0 adopted; scale kernel + connector/scenario catalog + conformance/replay + fleet ops + event catalog + Helm deployment factory + Golden Factory Profile implemented; 56 Jest suites / 232 tests; E2E 19/19; OpenAPI 155/155; managed tables 51",
+  "current_status": "Final 5.0 adopted; scale kernel + connector/scenario catalog + conformance/replay + fleet ops + event catalog + Helm deployment factory + Golden Factory Profile + Mapping DSL implemented; 57 Jest suites / 237 tests; E2E 19/19; OpenAPI 158/158; managed tables 51",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
@@ -159,6 +159,8 @@
     "helm_deployment_factory": "Helm chart ewoh 0.1.0 for 0.6.0-rc2 with factory values/upgrade ring, migration hook, HA templates, no generated secrets; verify-helm-chart 123 checks passed"
     ,
     "golden_factory": "versioned Golden Factory manifest (7 modules/3 connectors/4 scenario packs); /api/scale/golden-factory/install deterministic + idempotent + TCK-gated; audit 47 checks; E2E install/reuse passed"
+    ,
+    "mapping_dsl": "mapping-schema.json v1 + exoskeleton-telemetry example (11 rules); /api/scale/mappings CRUD on asset registry; mapping TCK checks; audit 10 checks; E2E passed"
   },
   "subagent_state": {
     "planned": [

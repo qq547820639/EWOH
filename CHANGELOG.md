@@ -72,6 +72,14 @@
   一次完成模板发布、连接器发布、场景包 TCK 安装与工厂 Profile 安装/复用。
 - Golden Factory 契约审计：`scripts/audit-golden-factory.js`（47 项检查）、
   `npm run contract:golden` 与 `test/contract/golden-factory.spec.ts`。
+- Mapping DSL 与 Schema Registry：`contracts/mapping/mapping-schema.json`
+  定义 `mappingId/name/version/source/target/rules` 契约，并提供
+  `exoskeleton-telemetry-v1` 规范示例。
+- Mapping 资产 API：`POST/GET /api/scale/mappings` 与
+  `GET /api/scale/mappings/:id` 复用资产包注册表；TCK 增加 mapping 一致性
+  检查（source/target/rules/schemaVersion）。
+- Mapping 契约审计：`scripts/audit-mapping-contracts.js`（10 项检查）、
+  `npm run contract:mapping` 与 `test/contract/mapping.spec.ts`。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

@@ -1418,6 +1418,66 @@ if (!e2eConfig) {
       expect(
         goldenScenarioRows.every((row) => row.status === 'installed'),
       ).toBe(true);
+
+      const mapping = await apiRequest<{
+        packageId: string;
+        packageType: string;
+      }>(baseUrl, '/api/scale/mappings', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          name: 'exoskeleton-telemetry-v1',
+          version: '1.0.0',
+          source: { system: 'exo-jsonl', schemaRef: 'ewoh:///schemas/exo-frame/v1' },
+          target: { system: 'ewoh', schemaRef: 'ewoh:///schemas/telemetry/v1' },
+          rules: [
+            { from: 'entity_id', to: 'entityId', required: true },
+            { from: 'load.total_kg', to: 'payload.load.totalKg' },
+          ],
+        }),
+      });
+      expect(mapping.status).toBe(201);
+      expect(mapping.body.packageType).toBe('mapping');
+
+      const mappingList = await apiRequest<Array<{ packageId: string }>>(
+        baseUrl,
+        '/api/scale/mappings',
+        { headers: jsonHeaders(token) },
+      );
+      expect(mappingList.status).toBe(200);
+      expect(
+        mappingList.body.some((row) => row.packageId === mapping.body.packageId),
+      ).toBe(true);
+
+      const mappingDetail = await apiRequest<{ packageId: string }>(
+        baseUrl,
+        `/api/scale/mappings/${mapping.body.packageId}`,
+        { headers: jsonHeaders(token) },
+      );
+      expect(mappingDetail.status).toBe(200);
+      expect(mappingDetail.body.packageId).toBe(mapping.body.packageId);
+
+      const mappingConformance = await apiRequest<{ passed: boolean }>(
+        baseUrl,
+        `/api/scale/assets/${mapping.body.packageId}/conformance`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+        },
+      );
+      expect(mappingConformance.status).toBe(201);
+      expect(mappingConformance.body.passed).toBe(true);
+
+      const mappingRows = await owner!.unsafe<
+        Array<{ package_id: string; org_id: string }>
+      >(
+        `select package_id, org_id::text
+         from public.ewoh_asset_package
+         where package_id = $1`,
+        [mapping.body.packageId],
+      );
+      expect(mappingRows).toHaveLength(1);
+      expect(mappingRows[0].org_id).toBe(fixture!.orgA.id);
     });
 
     it('persists approval instances, steps, and audit operations', async () => {

@@ -175,6 +175,37 @@ describe('ScaleService templates and assets', () => {
     expect(result.packageType).toBe('scenario');
   });
 
+  it('registers a mapping asset package', async () => {
+    const row = { packageId: 'PKG-MAP', packageType: 'mapping' };
+    const { insert, entries } = createInsertMock([row]);
+    const service = new ScaleService(
+      { insert } as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    const result = await service.registerMapping({
+      mappingId: 'PKG-MAP',
+      name: 'exoskeleton-telemetry-v1',
+      version: '1.0.0',
+      source: { system: 'exo-jsonl', schemaRef: 'ewoh:///schemas/exo-frame/v1' },
+      target: { system: 'ewoh', schemaRef: 'ewoh:///schemas/telemetry/v1' },
+      rules: [
+        { from: 'entity_id', to: 'entityId', required: true },
+        { from: 'load.total_kg', to: 'payload.load.totalKg' },
+      ],
+    });
+
+    expect(result.packageType).toBe('mapping');
+    expect(entries[0].table).toBe(ewohAssetPackage);
+    expect(
+      (
+        entries[0].rows as {
+          manifestJson: Record<string, unknown>;
+        }
+      ).manifestJson.mappingSchemaVersion,
+    ).toBe('v1');
+  });
+
   it('replays a factory profile by merging template config with profile overrides', async () => {
     const profile = {
       profileId: 'PRF-1',
@@ -262,6 +293,39 @@ describe('ScaleService templates and assets', () => {
 
     expect(result.passed).toBe(true);
     expect(result.checks.every((check) => check.passed)).toBe(true);
+  });
+
+  it('runs mapping conformance checks', async () => {
+    const asset = {
+      packageId: 'PKG-MAP',
+      packageType: 'mapping',
+      version: '1.0.0',
+      manifestJson: {
+        mappingSchemaVersion: 'v1',
+        source: { system: 'exo-jsonl', schemaRef: 'ewoh:///schemas/exo-frame/v1' },
+        target: { system: 'ewoh', schemaRef: 'ewoh:///schemas/telemetry/v1' },
+        rules: [
+          { from: 'entity_id', to: 'entityId' },
+          { from: 'load.total_kg', to: 'payload.load.totalKg' },
+        ],
+      },
+    };
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue([asset]),
+        })),
+      })),
+    };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.runConformance('PKG-MAP');
+
+    expect(result.passed).toBe(true);
+    expect(
+      result.checks.some((check) => check.check === 'mappingSchemaVersion'),
+    ).toBe(true);
   });
 
   it('installs a scenario pack', async () => {

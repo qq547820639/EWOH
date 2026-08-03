@@ -28,6 +28,7 @@
     "contract:events": "node ../scripts/audit-event-catalog.js",
     "verify:helm": "node ../scripts/verify-helm-chart.js",
     "contract:golden": "node ../scripts/audit-golden-factory.js",
+    "contract:mapping": "node ../scripts/audit-mapping-contracts.js",
     "perf:smoke": "node scripts/perf-smoke.js",
     "eslint": "eslint . --quiet",
     "stylelint": "stylelint client/src/**/*.css --quiet",

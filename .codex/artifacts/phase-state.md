@@ -58,12 +58,16 @@ production approval gate.
 - Golden Factory Profile: versioned manifest with 7 modules, 3 connectors and
   4 scenario packs; one-command install API is deterministic, TCK-gated,
   org-scoped and idempotent; contract audit 47 checks.
+- Mapping DSL and Schema Registry: versioned JSON Schema with a canonical
+  exoskeleton telemetry example, mapping asset API, and mapping TCK checks;
+  contract audit 10 checks.
 
 ## Active Tasks
 
 - Fleet Ops (upgrade/rollback) and event catalog round closed.
 - Productization kernels remaining: connector SDK/runtime, mapping DSL,
-  OTel resource attributes, partner shadow delivery and Scale Release 1.0.
+  OTel resource attributes, upgrade ring drill, partner shadow delivery and
+  Scale Release 1.0.
 - Training/acceptance evidence and production gate preparation.
 - Production DDL/deploy approval gate.
 

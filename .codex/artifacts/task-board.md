@@ -217,6 +217,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-104 | Golden Factory Profile manifest + install API | PX-07/09 | Done | `round20-golden-factory.md`; audit 47 checks; E2E golden install/reuse passed |
 
+## Wave Final5 - Mapping DSL (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-105 | Mapping DSL schema + example + registry API + TCK | PX-05/04 | Done | `round21-mapping-dsl.md`; audit 10 checks; E2E mapping register/conformance passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.
