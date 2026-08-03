@@ -79,6 +79,9 @@ production approval gate.
 - Connector runtime: `src/edge_platform/connectors` loads/validates versioned
   manifests, checks health/config, redacts secrets, and manages lifecycle;
   exoskeleton-frame and equipment-state sample manifests are included.
+- Factory onboarding: `POST /api/scale/onboarding/run` executes the F0-F6
+  single-factory import steps with per-step evidence and audit; checklist API
+  exposes the machine-readable steps.
 
 ## Active Tasks
 

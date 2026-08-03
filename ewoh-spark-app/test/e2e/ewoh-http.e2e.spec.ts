@@ -1712,6 +1712,47 @@ if (!e2eConfig) {
         )?.compatible,
       ).toBe(true);
       expect(compatibility.body.incompatibleCount).toBeGreaterThanOrEqual(1);
+
+      const onboardingChecklist = await apiRequest<{
+        version: string;
+        steps: Array<{ code: string; name: string }>;
+      }>(baseUrl, '/api/scale/onboarding/checklist', {
+        headers: jsonHeaders(token),
+      });
+      expect(onboardingChecklist.status).toBe(200);
+      expect(onboardingChecklist.body.steps).toHaveLength(7);
+      expect(onboardingChecklist.body.steps[0].code).toBe('F0');
+
+      const onboarding = await apiRequest<{
+        runId: string;
+        overall: string;
+        profileId: string;
+        supportBundleId: string;
+        steps: Array<{ code: string; passed: boolean; detail?: string }>;
+      }>(baseUrl, '/api/scale/onboarding/run', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          factoryName: `Onboarding Factory ${runId}`,
+        }),
+      });
+      expect(onboarding.status).toBe(201);
+      expect(onboarding.body.overall).toBe('passed');
+      expect(onboarding.body.steps).toHaveLength(7);
+      expect(onboarding.body.steps.every((step) => step.passed)).toBe(true);
+      expect(onboarding.body.supportBundleId).toMatch(/^SB-/);
+
+      const onboardingProfileRows = await owner!.unsafe<
+        Array<{ status: string; org_id: string }>
+      >(
+        `select status, org_id::text
+         from public.ewoh_factory_profile
+         where profile_id = $1`,
+        [onboarding.body.profileId],
+      );
+      expect(onboardingProfileRows).toHaveLength(1);
+      expect(onboardingProfileRows[0].status).toBe('installed');
+      expect(onboardingProfileRows[0].org_id).toBe(fixture!.orgA.id);
     });
 
     it('persists approval instances, steps, and audit operations', async () => {

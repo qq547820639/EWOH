@@ -39,6 +39,7 @@ import { MobileModule } from './modules/mobile/mobile.module';
 import { ScaleModule } from './modules/scale/scale.module';
 import { EventCatalogModule } from './modules/events/event-catalog.module';
 import { PolicyModule } from './modules/policy/policy.module';
+import { OnboardingModule } from './modules/onboarding/onboarding.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { PolicyModule } from './modules/policy/policy.module';
     ScaleModule,
     EventCatalogModule,
     PolicyModule,
+    OnboardingModule,
   ],
   providers: [
     {

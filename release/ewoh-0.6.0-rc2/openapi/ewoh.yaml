@@ -2115,6 +2115,50 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scale/onboarding/checklist:
+    get:
+      tags:
+        - scale
+      summary: Read the factory onboarding checklist
+      responses:
+        '200':
+          description: Onboarding checklist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingChecklist'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/onboarding/run:
+    post:
+      tags:
+        - scale
+      summary: Run the factory onboarding steps
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnboardingRunRequest'
+      responses:
+        '201':
+          description: Onboarding run result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingRunResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/fleet/support-bundle:
     post:
       tags:
@@ -7499,6 +7543,73 @@ components:
                 type: boolean
               reason:
                 type: string
+    OnboardingStepDefinition:
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+    OnboardingChecklist:
+      type: object
+      properties:
+        version:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/OnboardingStepDefinition'
+    OnboardingRunRequest:
+      type: object
+      properties:
+        factoryName:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
+      required:
+        - factoryName
+    OnboardingStepResult:
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        passed:
+          type: boolean
+        detail:
+          type: string
+        durationMs:
+          type: integer
+        data:
+          type: object
+          additionalProperties: true
+    OnboardingRunResult:
+      type: object
+      properties:
+        runId:
+          type: string
+        startedAt:
+          type: string
+        completedAt:
+          type: string
+        factoryName:
+          type: string
+        templateId:
+          type: string
+        profileId:
+          type: string
+        supportBundleId:
+          type: string
+        overall:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/OnboardingStepResult'
     SupportBundleResult:
       type: object
       properties:

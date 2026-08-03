@@ -7,7 +7,7 @@ Owner: AG-00/AG-41
 
 - Python unittest: 667 passed.
 - Python repo contract tests: 69 passed.
-- NestJS Jest: 254 passed across 60 suites (includes SP-01..SP-08 scenario
+- NestJS Jest: 257 passed across 61 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
 - Client Jest: 20 passed across 6 suites.
@@ -22,7 +22,7 @@ Owner: AG-00/AG-41
 - NestJS type check, lint, and Standalone production build: passed.
 - One-click `scripts/standalone-check.sh`: passed with E2E, OpenAPI strict
   audit, DDL plans, and standalone DDL hygiene.
-- OpenAPI contract: 164 controller operations documented, 0 undocumented,
+- OpenAPI contract: 166 controller operations documented, 0 undocumented,
   0 unimplemented; `openapi/route-manifest.json` generated.
 - Full release drill: `RELEASE DRILL PASSED` against disposable PostgreSQL 17,
   including migration/RLS/audit/rollback/rebuild, 176 Jest tests, 107/107
@@ -109,6 +109,9 @@ Owner: AG-00/AG-41
   and redact config through `src/edge_platform/connectors`; sample
   exoskeleton-frame and equipment-state packages cover the connector SDK
   contract; 10 new Python tests pass.
+- Factory onboarding: `POST /api/scale/onboarding/run` executes F0-F6 import
+  steps with per-step pass/fail/duration evidence, real TCK and profile
+  operations, and a support bundle; E2E verifies the installed profile row.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

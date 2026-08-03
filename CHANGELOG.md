@@ -106,6 +106,9 @@
 - 连接器运行时：`src/edge_platform/connectors/runtime.py` 提供 Manifest
   加载/校验、配置校验、健康检查、密钥脱敏与生命周期；新增
   `exoskeleton-frame` 与 `equipment-state` 样例连接器包。
+- 工厂上线：`GET /api/scale/onboarding/checklist` 提供 F0-F6 步骤清单，
+  `POST /api/scale/onboarding/run` 真实执行模板发布、连接器/场景包安装、
+  Profile 安装、TCK 与 Support Bundle，并输出步骤级证据与审计。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

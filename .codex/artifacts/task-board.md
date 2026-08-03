@@ -259,6 +259,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-111 | Connector runtime + exoskeleton/equipment-state manifests | PX-04/13 | Done | `round27-connector-runtime.md`; pytest 69 passed |
 
+## Wave Final5 - Factory Onboarding (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-112 | F0-F6 factory onboarding checklist + run API | PX-12/07 | Done | `round28-factory-onboarding.md`; E2E onboarding passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.
