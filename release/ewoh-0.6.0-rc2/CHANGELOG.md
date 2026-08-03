@@ -153,6 +153,8 @@
 - Workflow 实例：`POST/GET /api/workflows/instances` 与
   `POST /api/workflows/instances/:key/advance` 将实例持久化到
   `workflow.*` 配置键，角色门禁推进并写审计。
+- Support Bundle 界面：`/scale` 页面一键生成脱敏诊断包并展示
+  bundleId/工厂数/敏感信息状态。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

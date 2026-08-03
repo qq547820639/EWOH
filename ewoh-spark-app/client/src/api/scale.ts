@@ -69,6 +69,13 @@ export interface FactoryDifference {
   updatedAt: string;
 }
 
+export interface SupportBundleResult {
+  bundleId: string;
+  generatedAt: string;
+  factoryCount: number;
+  includesSecrets: boolean;
+}
+
 export async function listScaleTemplates(): Promise<ScaleTemplate[]> {
   const res = await axiosForBackend({ url: '/api/scale/templates', method: 'GET' });
   return res.data;
@@ -124,6 +131,14 @@ export async function resolveFactoryDifference(
 ): Promise<FactoryDifference> {
   const res = await axiosForBackend({
     url: `/api/scale/differences/${encodeURIComponent(key)}/resolve`,
+    method: 'POST',
+  });
+  return res.data;
+}
+
+export async function generateSupportBundle(): Promise<SupportBundleResult> {
+  const res = await axiosForBackend({
+    url: '/api/scale/fleet/support-bundle',
     method: 'POST',
   });
   return res.data;

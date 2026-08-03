@@ -164,6 +164,8 @@ Owner: AG-00/AG-41
 - Workflow instances: `POST/GET /api/workflows/instances` persists workflow
   state, and `POST .../:key/advance` applies role gating and audit; E2E covers
   start/advance/list.
+- Support bundle UI: the `/scale` page generates redacted fleet diagnostic
+  bundles with one click and shows the result.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

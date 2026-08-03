@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Boxes, Factory, GitCompareArrows, Layers3, ListChecks, Play } from 'lucide-react';
+import { Boxes, Factory, GitCompareArrows, Layers3, ListChecks, PackageSearch, Play } from 'lucide-react';
 import {
+  generateSupportBundle,
   listFactoryDifferences,
   getScaleCompatibility,
   listScaleAssets,
@@ -12,6 +13,7 @@ import {
   runScaleOnboarding,
   type FactoryDifference,
   type OnboardingRunResult,
+  type SupportBundleResult,
 } from '../../api/scale';
 import { queryKeys } from '../../hooks/queryKeys';
 import {
@@ -46,6 +48,9 @@ const Scale = (): React.ReactElement => {
   const [diffKey, setDiffKey] = useState('');
   const [diffCategory, setDiffCategory] = useState('general');
   const [diffValue, setDiffValue] = useState('true');
+  const [supportBundle, setSupportBundle] = useState<SupportBundleResult | null>(
+    null,
+  );
 
   const query = useQuery<ScaleData>({
     queryKey: queryKeys.scaleDashboard,
@@ -105,6 +110,11 @@ const Scale = (): React.ReactElement => {
     },
   });
 
+  const bundleMutation = useMutation({
+    mutationFn: generateSupportBundle,
+    onSuccess: setSupportBundle,
+  });
+
   const data = query.data;
   const templates = data?.templates ?? [];
   const profiles = data?.profiles ?? [];
@@ -125,7 +135,31 @@ const Scale = (): React.ReactElement => {
           <GitCompareArrows className="h-4 w-4 text-emerald-600" />
           核心版本：{compatibility?.coreVersion ?? '—'}
         </div>
+        <button
+          type="button"
+          disabled={bundleMutation.isPending}
+          onClick={() => bundleMutation.mutate()}
+          className="inline-flex h-9 items-center gap-2 rounded-lg bg-slate-800 px-4 text-sm font-medium text-white disabled:opacity-50"
+        >
+          <PackageSearch className="h-4 w-4" />
+          {bundleMutation.isPending ? '生成中' : '生成诊断包'}
+        </button>
       </header>
+
+      {supportBundle && (
+        <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          诊断包 {supportBundle.bundleId} 已生成，工厂数{' '}
+          {supportBundle.factoryCount}，包含敏感信息：
+          {supportBundle.includesSecrets ? '是' : '否'}
+        </div>
+      )}
+      {bundleMutation.isError && (
+        <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {bundleMutation.error instanceof Error
+            ? bundleMutation.error.message
+            : '诊断包生成失败'}
+        </div>
+      )}
 
       <QueryState
         isLoading={query.isLoading}

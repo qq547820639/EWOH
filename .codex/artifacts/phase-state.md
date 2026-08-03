@@ -122,6 +122,8 @@ production approval gate.
 - Workflow instances: `POST/GET /api/workflows/instances` and
   `POST .../:key/advance` persist org-scoped workflow state with role gating
   and audit.
+- Support bundle UI: `/scale` page generates redacted fleet diagnostic bundles
+  with one click and shows the result.
 
 ## Active Tasks
 

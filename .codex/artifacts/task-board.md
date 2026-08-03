@@ -379,6 +379,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-131 | Stateful workflow instance start/list/advance API | PX-06/16 | Done | `round47-workflow-instances.md`; E2E lifecycle passed |
 
+## Wave Final5 - Support Bundle UI (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-132 | One-click support bundle generation UI on /scale | AG-30/31 | Done | `round48-support-bundle-ui.md`; client build passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.
