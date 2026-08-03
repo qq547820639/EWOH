@@ -1,0 +1,32 @@
+apiVersion: ewoh.io/v1alpha1
+kind: ScenarioPack
+metadata:
+  name: inventory-collaboration
+  version: 1.0.0
+spec:
+  requires:
+    connectors:
+      - erp-inventory@1.x
+    mappings:
+      - erp-inventory-to-ewoh@1.x
+    dataContracts:
+      - stock-projection@1.x
+    features:
+      - stock-balance-projection
+      - batch-receive
+      - material-preorder
+      - material-issue
+      - material-return
+      - shortage-risk
+  workflows:
+    - stock-projection
+    - batch-receive
+    - preorder-reserve
+    - issue-material
+    - return-material
+    - shortage-risk-flag
+  policies:
+    - inventory-availability
+  acceptance: e2e-inventory-collaboration
+  privacy: external stock projected read-only; no financial totals or payable data
+  degradation: stale stock projection warning; oversell prevention remains enforced

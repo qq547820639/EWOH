@@ -1,0 +1,31 @@
+apiVersion: ewoh.io/v1alpha1
+kind: ScenarioPack
+metadata:
+  name: mobile-esop
+  version: 1.0.0
+spec:
+  requires:
+    connectors:
+      - identity@1.x
+      - equipment-state@1.x
+      - exoskeleton-frame@1.x
+    dataContracts:
+      - UnifiedExoFrame@2.x
+    features:
+      - task-signoff
+      - scan-context
+      - esop-versioning
+      - offline-replay
+  workflows:
+    - task-accept
+    - scan-context
+    - sop-signoff
+    - work-report
+    - quality-check
+    - exception-raise
+    - exo-acknowledge
+  policies:
+    - operator-safety
+  acceptance: e2e-mobile-esop
+  privacy: precise personnel location redacted after 30 days; offline replay audited
+  degradation: offline queue with conflict detection; quality and safety checks never bypassed

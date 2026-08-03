@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ewoh:///factory-profile/v1",
+  "title": "EWOH Factory Profile",
+  "description": "Contract for installed factory profiles consumed by the scale control plane.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "type": "string", "const": "ewoh.io/v1alpha1" },
+    "kind": { "type": "string", "const": "FactoryProfile" },
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "spec": { "$ref": "#/$defs/spec" }
+  },
+  "$defs": {
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileId", "factoryName", "templateId", "version"],
+      "properties": {
+        "profileId": { "type": "string", "minLength": 1 },
+        "factoryName": { "type": "string", "minLength": 1 },
+        "templateId": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "upgradeRing", "config", "compatibleCore"],
+      "properties": {
+        "status": { "type": "string", "minLength": 1 },
+        "upgradeRing": { "type": "string", "minLength": 1 },
+        "config": { "type": "object" },
+        "compatibleCore": { "type": "string", "minLength": 1 },
+        "scenarioPacks": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "connectors": { "type": "array", "items": { "type": "string" } },
+        "installedAt": { "type": "string" }
+      }
+    }
+  }
+}

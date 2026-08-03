@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EWOH Risk Event",
+  "type": "object",
+  "required": [
+    "event_id",
+    "event_code",
+    "severity",
+    "status",
+    "start_time",
+    "trigger",
+    "evidence",
+    "source_type"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string"
+    },
+    "event_code": {
+      "type": "string"
+    },
+    "severity": {
+      "enum": [
+        "L0",
+        "L1",
+        "L2",
+        "L3"
+      ]
+    },
+    "status": {
+      "enum": [
+        "open",
+        "confirmed",
+        "closed",
+        "dismissed"
+      ]
+    },
+    "start_time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trigger": {
+      "type": "object"
+    },
+    "evidence": {
+      "type": "object"
+    },
+    "source_type": {
+      "enum": [
+        "real",
+        "controlled_test",
+        "simulated"
+      ]
+    }
+  }
+}

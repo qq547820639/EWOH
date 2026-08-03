@@ -1,0 +1,67 @@
+# EWOH 受控试点系统 - 测试与静态检查 CI
+# 触发：push 与 pull_request
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装 Python 开发依赖（ruff、bandit、pytest）
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements-dev.txt
+
+      - name: 运行 unittest 测试套件
+        run: make test
+
+      - name: 运行仓库级契约测试
+        run: make test-contract
+
+      - name: 运行 ruff 静态检查
+        run: ruff check src/edge_platform
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ewoh-spark-app/package-lock.json
+
+      - name: 安装前端/后端依赖
+        run: npm ci
+        working-directory: ewoh-spark-app
+
+      - name: 仓库事实源一致性校验（P0-1）
+        run: node scripts/audit-repo-facts.js --strict
+
+      - name: NestJS 类型检查
+        run: npm run type:check
+        working-directory: ewoh-spark-app
+
+      - name: NestJS Jest 测试
+        run: npm test -- --runInBand
+        working-directory: ewoh-spark-app
+
+      - name: NestJS 生产构建（跳过交互式插件初始化）
+        run: EWOH_SKIP_PLUGIN_INIT=1 npm run build:prod
+        working-directory: ewoh-spark-app
+
+      - name: 断言零第三方运行时依赖（护栏 P0-1）
+        run: |
+          grep -q '^dependencies = \[\]' pyproject.toml || (echo "ERROR: project.dependencies 必须为空 []，违反零依赖硬约束"; exit 1)
+          echo "OK: 运行时零第三方依赖"

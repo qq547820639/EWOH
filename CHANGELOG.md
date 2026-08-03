@@ -3,7 +3,7 @@
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 1.1.0 规范，
 并使用[语义化版本](https://semver.org/lang/zh-CN/) 2.0.0 进行版本管理。
 
-## [Unreleased]
+## [0.6.0-rc4] - 2026-08-04
 
 ### Added
 - 仓库事实源一致性门禁：`scripts/audit-repo-facts.js` 校验 README 导航、CHANGELOG、
@@ -55,6 +55,8 @@
   扫描 28286 行，0 medium/high。
 - 指挥地图查询状态：空间实体/世界状态/总览/环境任一查询失败时显示错误横幅
   与“全部重试”，不再静默渲染为空地图。
+- 版本同步：Helm appVersion、Compose/K8s 默认值、运行时默认版本与相关测试
+  从 `0.6.0-rc3` 提升到 `0.6.0-rc4`。
 
 ## [0.6.0-rc3] - 2026-08-04
 

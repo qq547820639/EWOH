@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ewoh.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "ewoh.labels" . | nindent 4 }}
+data:
+  NODE_ENV: "production"
+  EWOH_DEPLOY_TARGET: "standalone"
+  LOG_DIR: {{ .Values.config.logDir | quote }}
+  CORS_ORIGINS: {{ .Values.config.corsOrigins | quote }}
+  TRUST_PROXY: {{ .Values.config.trustProxy | quote }}
+  BODY_LIMIT: {{ .Values.config.bodyLimit | quote }}
+  EWOH_CONTRACTS_DIR: {{ .Values.config.contractsDir | quote }}
+  EWOH_FACTORY_ID: {{ .Values.factory.id | quote }}
+  EWOH_FACTORY_NAME: {{ .Values.factory.name | quote }}
+  EWOH_FACTORY_UPGRADE_RING: {{ .Values.factory.upgradeRing | quote }}
+  EWOH_RELEASE_VERSION: {{ .Values.factory.releaseVersion | quote }}
+  EWOH_REGION: {{ .Values.factory.region | quote }}
+  EWOH_WORK_ARTIFACTS_DIR: {{ .Values.work.artifactsDir | quote }}
+  EWOH_WORK_TOOLS_DIR: {{ .Values.work.toolsDir | quote }}
+  EWOH_WORK_WRITABLE: {{ .Values.work.writable | quote }}
+  TZ: {{ .Values.factory.timezone | quote }}
+  STORAGE_DRIVER: {{ .Values.storage.driver | quote }}
+  STORAGE_LOCAL_PATH: {{ .Values.storage.localPath | quote }}
+  S3_BUCKET: {{ .Values.storage.s3.bucket | quote }}
+  S3_REGION: {{ .Values.storage.s3.region | quote }}
+  S3_ENDPOINT: {{ .Values.storage.s3.endpoint | quote }}

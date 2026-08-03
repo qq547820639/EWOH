@@ -1,0 +1,836 @@
+[Normal] EWOH 工厂具身智能操作系统
+[Normal] 最终产品实施方案
+[Normal] 从外骨骼监测系统升级为组织驱动、数字孪生、可调度、可推演的人机协同工业操作系统
+[Normal] 文档版本：Final 1.0
+实施状态：可进入环境探针、DDL生成与功能开发
+编制日期：2026年8月2日
+适用范围：一期产品、数据库、后端、前端、测试与验收
+[Heading 1] 文档控制
+[Heading 1] 目录
+[List Number] 1. 执行摘要与项目结论
+[List Number] 2. 产品定位、目标与边界
+[List Number] 3. 用户、角色与权限
+[List Number] 4. 业务架构与核心对象
+[List Number] 5. 总体技术架构
+[List Number] 6. 十一个产品能力中心
+[List Number] 7. 核心业务流程与状态机
+[List Number] 8. 数字世界与3D数字孪生
+[List Number] 9. AI决策与轻量推演
+[List Number] 10. 设备、人员与外骨骼实施规格
+[List Number] 11. 数据、回放、隐私与审计
+[List Number] 12. 数据库与DDL实施方案
+[List Number] 13. 后端实施方案
+[List Number] 14. 前端实施方案
+[List Number] 15. API与集成规范
+[List Number] 16. 安全与权限实施
+[List Number] 17. 数据迁移与兼容
+[List Number] 18. 分阶段开发计划
+[List Number] 19. 测试、验收与冻结
+[List Number] 20. 交付物、治理与风险
+[List Number] 附录A-H
+[Heading 1] 1. 执行摘要与项目结论
+[Normal] EWOH 一期可以进入开发。项目将现有外骨骼监测、设备遥测、事件和调度能力重构为“工厂具身智能操作系统”：以组织和空间为骨架，以设备、人员、外骨骼和任务为实体，以秒级近实时数字世界为统一交互界面，以规则、AI建议、方案推演、审批和任务执行为决策闭环。
+[Normal] 一期实施不追求无人化自动工厂，而是建立一套安全、可追溯、可逐步扩展的数字运营底座。AI输出始终是建议、预测或模拟结果；所有现实任务、设备参数和高风险控制必须经过人工确认、审批、审计和工业网关。
+[Heading 1] 2. 产品定位、目标与边界
+[Heading 2] 2.1 产品定位
+[Normal] 系统定位为工厂的具身智能操作系统，而非单一外骨骼监控大屏。其核心隐喻是“工厂即机器人”：传感器和摄像头是皮肤，设备与产线是器官，外骨骼是增强肢体，组织、调度、数据和本地工业模型构成决策大脑。
+[List Bullet] 组织优先：所有实体、权限、数据和业务流程首先归属组织，再关联空间和资源。
+[List Bullet] 真实世界持续数据化：摄像头、UWB、外骨骼遥测、设备、环境和任务状态进入统一世界状态。
+[List Bullet] 数字世界秒级近实时映射：在无 WebSocket/SSE 条件下采用统一快照与增量游标接口。
+[List Bullet] 游戏化但不娱乐化：提供层级、角色、交互语法、资源编排、推演、回放和双向同步。
+[List Bullet] 人机协同：AI自动发现异常，但建议和方案必须由人主动触发、编辑、审批和采用。
+[List Bullet] 安全优先：任何高风险下发、人员撤离和设备控制都有结构化规则、二次确认、审批和审计。
+[Heading 2] 2.2 一期成功标准
+[List Bullet] 用户可从 L0 集团/园区逐级下钻到 L4 人员与外骨骼，每层都有真实数据和可交互实体。
+[List Bullet] 统一世界接口完成 snapshot → cursor → delta → cursor expired → snapshot rebuild 的一致性闭环。
+[List Bullet] 设备中心支持19维度搜索、12类配置、三类绑定和完整历史审计。
+[List Bullet] 任务支持多人员、多设备、多步骤、步骤级分配、依赖、资源预占、物料/工具与执行日志。
+[List Bullet] AI能力明确分为 A1异常识别、A2建议、A3方案生成；自动审批、自动下发和自动调度不启用。
+[List Bullet] 告警、审批、控制请求均具备正式状态机、操作记录、超时/重试和审计。
+[List Bullet] 物理DDL、RLS、权限、审计链和并发预占通过临时库自动化测试。
+[Heading 2] 2.3 一期范围与暂不开发
+[Heading 1] 3. 用户、角色与权限
+[Heading 2] 3.1 数据范围
+[List Bullet] 业务数据范围为当前组织及授权下级组织；集团/基地角色可访问授权下属范围。
+[List Bullet] 配置继承为当前组织 → 最近上级 → 更高上级 → 全局公开配置 → 代码默认值。
+[List Bullet] 人员精确负载、疲劳、生理数据和定位属于敏感数据，普通角色仅查看高/中/低粗粒度。
+[List Bullet] 人员详情查询、健康数据查看、控制和审批跳过都写入高风险审计。
+[List Bullet] 所有外部最终用户通过 NestJS API 访问，不能直接获得数据库连接或执行任意SQL/RPC。
+[Heading 1] 4. 业务架构与核心对象
+[Heading 2] 4.1 组织与空间双层结构
+[Heading 2] 4.2 核心对象分类
+[Heading 1] 5. 总体技术架构
+[Heading 1] 6. 十一个产品能力中心
+[Heading 2] 6.1 指挥中心
+[Normal] KPI、简化3D态势、重大告警、任务概览、人员负荷、快速导航。禁止3D编辑和推演。
+[List Bullet] 核心指标：设备总数、在线率、活跃告警、执行中任务、风险人员、资源利用率。
+[List Bullet] 点击简化3D缩略图跳转数字世界对应组织/区域。
+[List Bullet] 告警和任务摘要支持快速进入详情。
+[List Bullet] 不提供框选、拖拽、模型编辑和推演。
+[Heading 2] 6.2 数字世界
+[Normal] 全屏3D、L0-L4、实体详情、框选、热力图、轨迹、调度、推演、回放。
+[List Bullet] 四种模式：观察、调度、推演、回放。
+[List Bullet] 实体点击显示设备/人员/空间/任务详情。
+[List Bullet] 调度模式支持框选、拖拽、批量分配和规则校验。
+[List Bullet] 推演结果使用is_simulation/shadow标记，提交后进入审批。
+[Heading 2] 6.3 生产调度中心
+[Normal] 任务看板、资源调配、冲突检查、方案推演、审批、下发、执行跟踪。
+[List Bullet] 任务按草稿、待确认、待审批、待下发、执行、异常、完成分类。
+[List Bullet] 支持步骤级人员、设备、空间、物料、工具分配。
+[List Bullet] 资源分配执行硬约束、软约束和建议约束。
+[List Bullet] 执行阶段显示接收、开始、暂停、异常、恢复和完成日志。
+[Heading 2] 6.4 AI决策中心
+[Normal] 手动触发建议与方案、方案对比、多版本编辑、风险与不确定性、采用记录。
+[List Bullet] 页面初始化不生成建议或方案。
+[List Bullet] 用户点击“生成AI建议”触发A2；选择方向后点击“生成调度方案”触发A3。
+[List Bullet] 输出必须包含问题、数据范围、完整性、依据、建议、风险、不确定性、人工确认和失效条件。
+[List Bullet] 所有方案可编辑、对比、保存版本和提交审批。
+[Heading 2] 6.5 设备中心
+[Normal] 19维度搜索、12类配置、生命周期/运行/健康状态、绑定和关系视图。
+[List Bullet] 列表与详情分离，搜索支持分页、组合筛选、空状态和导出。
+[List Bullet] 配置按12类折叠面板展示，敏感凭证不明文显示。
+[List Bullet] 设备空间位置只从绑定/世界状态读取。
+[List Bullet] worker_name仅兼容保留，新代码禁止读写。
+[Heading 2] 6.6 人员与外骨骼中心
+[Normal] 档案、技能资质、岗位/班组、外骨骼绑定、负载疲劳、轨迹与任务历史。
+[List Bullet] 人员详情包含档案、岗位、技能、资质、当前任务、绑定设备、负载疲劳和告警。
+[List Bullet] 非安全管理员仅查看粗粒度健康风险。
+[List Bullet] 绑定记录必须保留开始、结束、原因、操作者和版本。
+[List Bullet] 全身、上肢、下肢和定位标签按排他矩阵校验。
+[Heading 2] 6.7 风险与告警中心
+[Normal] 风险汇总、告警确认/分派/处置/升级/关闭/重开、SLA、复盘。
+[List Bullet] 告警支持确认、处置、升级、关闭、重开和误报。
+[List Bullet] 状态与升级等级分离。
+[List Bullet] 每次操作记录操作者、时间、说明和证据。
+[List Bullet] 告警可手动触发AI分析，并在复盘中关联任务与控制记录。
+[Heading 2] 6.8 组织与空间中心
+[Normal] 组织树、空间树、实体关系图谱、坐标、模型节点和组织—空间关联。
+[List Bullet] 组织层与空间层概念严格分离。
+[List Bullet] 支持组织—站点—设备—人员—任务关系追溯。
+[List Bullet] 空间坐标采用米制世界坐标；支持x/y/z、roll/pitch/yaw、边界框和模型节点。
+[Heading 2] 6.9 模型管理中心
+[Normal] 采集任务、外部重建、语义识别、人工校验、发布、版本和差异。
+[List Bullet] model_asset是3D场景资产唯一权威来源；model_registry仅用于AI/算法模型。
+[List Bullet] 重建任务为外部异步任务，前端轮询进度。
+[List Bullet] 模型需经过语义匹配、人工校验和发布后才进入数字世界。
+[Heading 2] 6.10 数据资产中心
+[Normal] 数据源、健康、质量、延迟、目录、只读血缘视图和接入凭证。
+[List Bullet] 一期数据质量和血缘为只读聚合视图。
+[List Bullet] 数据源展示健康状态、质量评分、最近同步、延迟和权限。
+[List Bullet] auth_config采用AES-256-GCM和版本化密钥环。
+[Heading 2] 6.11 系统管理
+[Normal] 用户角色、权限、配置、阈值、规则、通知、审计、接口与三级停止。
+[List Bullet] 系统配置支持组织继承、版本、唯一生效和全局公开标记。
+[List Bullet] 审计日志提供查询，不提供直接修改和删除。
+[List Bullet] 三级停止：调度冻结、指令冻结、现实设备急停标记；Web不直接代替物理急停。
+[Heading 1] 7. 核心业务流程与状态机
+[Heading 2] 7.1 端到端决策闭环
+[Heading 2] 7.2 任务状态机
+[Heading 2] 7.3 审批状态机
+[Heading 2] 7.4 告警状态机
+[Heading 2] 7.5 方案状态机
+[Heading 2] 7.6 控制请求状态机
+[List Bullet] 一个控制请求只对应一台设备，但可包含多个command_key。
+[List Bullet] 每次通信重试创建新的命令尝试记录，使用root_command_id和attempt_no形成逻辑链。
+[List Bullet] 聚合只读取每个逻辑指令链的最新尝试，旧失败记录不影响当前结果。
+[List Bullet] 相同idempotency_key重复提交返回原请求，不创建重复请求。
+[Heading 1] 8. 数字世界与3D数字孪生
+[Heading 2] 8.1 L0-L4层级
+[Heading 2] 8.2 四种操作模式
+[Heading 2] 8.3 交互语法
+[Heading 2] 8.4 技术实现
+[List Bullet] 渲染：@react-three/fiber v9、@react-three/drei、Three.js、Zustand。
+[List Bullet] 实体渲染：Instances/InstancedMesh，目标同时渲染不超过500实体；L0/L1聚合、视锥剔除和区域过滤。
+[List Bullet] 射线检测：Bvh；静态页面frameloop="demand"并在数据更新后invalidate。
+[List Bullet] 近实时：React Query 3-5秒拉取统一增量接口，写入Zustand；useFrame通过ref更新mesh，避免React重渲染。
+[List Bullet] 模型：LOD0≤20MB在5秒内可交互，LOD1≤50MB在10秒内后台完成并无缝替换。
+[List Bullet] 2D降级：WebGL2不支持或GPU tier<1时切换SVG/Canvas地图；用户也可手动切换。
+[List Bullet] 坐标：统一米制世界坐标；空间实体保存x/y/z、roll/pitch/yaw、bbox_w/h/d、坐标系和原点。
+[Heading 1] 9. AI决策与轻量推演
+[List Bullet] AI会话必须冻结数据快照，并记录模型版本、提示词版本、数据时间范围和触发人。
+[List Bullet] AI输出结构至少包含：当前问题、使用数据、数据时间范围、完整性、判断依据、建议、影响范围、风险、不确定性、人工确认项、失效条件。
+[List Bullet] 人员真实姓名和工号不传给模型，使用脱敏ID；服务端对输出JSON进行结构和字段校验。
+[List Bullet] AI不可用时返回明确提示并保留全手工业务流程。
+[List Bullet] 建议与方案分离，一条建议可生成多个方案；方案支持父版本、模拟标记、采用记录和审批关联。
+[Heading 2] 9.1 一期规则型轻量推演
+[Heading 1] 10. 设备、人员与外骨骼实施规格
+[Heading 2] 10.1 设备搜索19维度（实施合并字段）
+[Heading 2] 10.2 设备配置12类
+[Heading 2] 10.3 设备绑定与外骨骼兼容
+[List Bullet] 设备—空间：固定设备同时只能有一个active/installed位置；移动位置进入世界状态。
+[List Bullet] 设备—人员：一台外骨骼同时只能绑定一人，绑定历史不删除。
+[List Bullet] 设备—设备：支持网关、子设备、传感模块；Service写入前进行循环检测。
+[List Bullet] 外骨骼排他组：upper_body、lower_body、full_body、positioning_tag。
+[List Bullet] 上肢与下肢可共存；full_body不能与上肢或下肢同时绑定；定位标签可与全部共存。
+[List Bullet] 存在有效绑定时禁止修改device_category或影响排他组的equipmentType，必要时先结束绑定再变更。
+[Heading 2] 10.4 人员隐私与健康显示
+[List Bullet] 列表不展示精确健康详情，仅显示风险等级和当前是否需要关注。
+[List Bullet] 安全管理员可在详情页查看精确负载、疲劳或生理指标，访问写入审计。
+[List Bullet] 人员精确位置和轨迹保留30天；30-90天仅保留区域级去标识化聚合。
+[List Bullet] 离职人员状态设为inactive，保留历史，不出现在活跃列表和分配候选中。
+[Heading 1] 11. 数据、回放、隐私与审计
+[Heading 2] 11.1 统一世界接口
+[List Bullet] world_delta_log使用全局单调seq bigint IDENTITY。
+[List Bullet] 游标编码为base64(snapshot_version:last_seq)。
+[List Bullet] 客户端前台3-5秒轮询，后台暂停；错误采用抖动、指数退避和断线补偿。
+[List Bullet] 50并发用户场景通过合并请求、缓存和统一接口控制服务端QPS。
+[Heading 2] 11.2 数据保留
+[Heading 2] 11.3 审计完整性保护
+[List Bullet] 所有create/update/delete/approve/control及敏感查询写入统一审计日志。
+[List Bullet] 应用角色不可直接INSERT/UPDATE/DELETE审计表；写入仅通过可信后端调用SECURITY DEFINER函数。
+[List Bullet] 服务层先按实体Schema深度脱敏；数据库函数对顶层密码、密钥、认证、健康和控制凭证二次脱敏。
+[List Bullet] 每个组织独立哈希链，使用advisory transaction lock防止并发分叉。
+[List Bullet] 哈希载荷覆盖prevHash、操作人、组织、操作类型、实体、before/after、原因、IP、requestId、风险标记和UTC时间。
+[List Bullet] 每日使用完整链LAG校验连续性，并重新计算哈希；异常触发告警并冻结高风险操作。
+[List Bullet] 一期术语为“完整性保护”，后续HMAC或外部不可变存储后才称真正不可篡改。
+[Heading 1] 12. 数据库与DDL实施方案
+[Heading 2] 12.1 最终口径
+[Heading 2] 12.2 36张新表（当前执行包装）
+[Heading 2] 12.3 12张既有表改造
+[Heading 2] 12.4 逻辑能力映射门禁
+[Heading 2] 12.5 通用DDL规则
+[List Bullet] 主表和关系表默认id uuid PRIMARY KEY DEFAULT gen_random_uuid()；轨迹等特殊表可使用复合主键。
+[List Bullet] 业务ID使用varchar(255) UNIQUE NOT NULL；逻辑引用字段类型必须与被引用字段一致。
+[List Bullet] 所有受管表包含平台审计列；user_profile构造表达式根据环境探针动态生成。
+[List Bullet] 数量使用numeric(18,4)，禁止real用于库存、预占、领用和消耗。
+[List Bullet] 主数据软删除；绑定通过end_time/status结束；任务/审批/告警/控制按生命周期保留；日志按保留策略归档。
+[List Bullet] world_delta_log.seq与audit_log.audit_seq使用bigint GENERATED ALWAYS AS IDENTITY。
+[List Bullet] 所有DDL使用IF EXISTS/IF NOT EXISTS或可重入迁移设计，并提供回滚脚本。
+[Heading 1] 13. 后端实施方案
+[Heading 2] 13.1 现有模块基线
+[Heading 2] 13.2 核心基础设施
+[Heading 2] 13.3 新增业务模块
+[Heading 1] 14. 前端实施方案
+[Heading 2] 14.1 基础设施改造
+[List Bullet] client/src/api/index.ts按organization、workstation、task、resource、control、eventRule、model、knowledge、notification、system导出命名空间。
+[List Bullet] queryKeys.ts按组织和筛选条件设计稳定查询键，组织切换时统一失效缓存。
+[List Bullet] app.tsx新增11个中心路由，首页跳转/command-center。
+[List Bullet] Layout.tsx按态势层、管理层、决策层、基建层分组并按角色过滤。
+[List Bullet] 所有页面实现loading、empty、error、permission denied和stale data状态。
+[Heading 2] 14.2 新建与重构页面
+[Heading 1] 15. API与集成规范
+[Heading 2] 15.1 通用契约
+[List Bullet] 所有写接口要求登录、组织上下文、幂等键、状态版本或乐观锁。
+[List Bullet] 统一分页：page/pageSize或cursor/limit，响应包含items、total/nextCursor、hasMore。
+[List Bullet] 统一错误格式：{"code":"ERROR_CODE","message":"人类可读描述","details":{}}。
+[List Bullet] 时间均使用ISO 8601带时区；服务端存储timestamptz。
+[List Bullet] 列表接口默认不返回敏感健康数据和明文接入凭证。
+[Heading 2] 15.2 关键接口
+[Heading 2] 15.3 外部系统边界
+[Heading 1] 16. 安全与权限实施
+[Heading 2] 16.1 数据库访问模型
+[List Bullet] authenticated角色对业务表不得拥有INSERT/UPDATE/DELETE；若前端无需直接读表，可进一步REVOKE ALL。
+[List Bullet] 后端运行时角色必须通过临时API端点确认；不能使用可信服务角色时停止DDL执行。
+[List Bullet] 若service_role具有BYPASSRLS，必须记录RLS不能约束该角色，所有租户隔离由Service和测试保证；优先使用非BYPASS受控角色。
+[List Bullet] 审计写入函数仅可信后端角色可执行。
+[Heading 2] 16.2 RLS与组织上下文
+[List Bullet] 每个HTTP请求使用request-scoped transaction。
+[List Bullet] 在事务内依次设置app.user_id、app.current_org_id、app.current_org_ids、app.is_global_admin。
+[List Bullet] 所有set_config使用参数化SQL，第三参数true（事务级）。
+[List Bullet] 后台任务、模拟器和消息消费者也必须显式设置服务身份和目标组织。
+[Heading 2] 16.3 数据源凭证
+[List Bullet] AES-256-GCM加密，随机12字节nonce，保存ciphertext、nonce、tag和keyVersion。
+[List Bullet] 密钥环使用版本化环境变量DATA_SOURCE_CREDENTIALS_KEY_YYYY_Qn。
+[List Bullet] 每90天轮换；删除旧密钥前确认无数据引用；可后台重加密。
+[List Bullet] 审计日志永不记录明文凭证、密钥或认证配置。
+[Heading 1] 17. 数据迁移与兼容
+[Heading 2] 17.1 迁移原则
+[List Bullet] 不物理删除旧数据；迁移前备份并保留回滚脚本。
+[List Bullet] 12张既有表先增加nullable org_id，创建default-org并回填，再按表设NOT NULL。
+[List Bullet] 删除或替换平台默认宽松policy前先导出策略清单。
+[List Bullet] 旧API在兼容期保持可用，新API稳定后再下线。
+[List Bullet] worker_name、topology、schedule_audit等废弃对象仅停止新代码使用，后续版本再删除。
+[Heading 2] 17.2 推荐迁移八步
+[Heading 1] 18. 分阶段开发计划
+[Heading 1] 19. 测试、验收与冻结
+[Heading 2] 19.1 环境探针
+[Heading 2] 19.2 临时库八类测试
+[Heading 2] 19.3 非功能验收
+[Heading 2] 19.4 产品验收清单
+[List Number] 组织和空间层级可创建、编辑、查询和追溯；factory与site概念不混用。
+[List Number] 数字世界L0-L4、四种模式、实体点击、3-5秒增量、2D降级全部可用。
+[List Number] 设备19维搜索和12类配置可用；三类绑定和外骨骼排他矩阵通过测试。
+[List Number] 人员档案、技能资质、外骨骼绑定、负载疲劳和隐私权限可用。
+[List Number] 任务支持步骤、人员、设备、空间、物料/工具、依赖、预占和执行日志。
+[List Number] AI建议和方案只能主动触发；输出结构、版本、审批和采用记录完整。
+[List Number] 告警、审批和控制请求状态机、超时、重试和审计完整。
+[List Number] 世界快照、增量、回放、保留和脱敏策略执行。
+[List Number] authenticated无业务DML；跨组织越权被拒绝；审计写入不可直接伪造。
+[List Number] 13项探针、8类测试、API自测和性能测试全部通过。
+[Heading 1] 20. 交付物、治理与风险
+[Heading 2] 20.1 交付物
+[Heading 2] 20.2 变更控制
+[List Bullet] 产品架构、一期范围、逻辑模型和状态机已冻结。
+[List Bullet] 允许的DDL微调：varchar长度、非唯一性能索引、注释、可重入语法修正。
+[List Bullet] 任何删除能力、改变状态机、扩大自动控制权限或改变隐私保留期必须提交变更评审。
+[List Bullet] 后续不再以新增Markdown版本替代代码验证；以DDL、测试和迁移结果为准。
+[Heading 2] 20.3 主要风险与应对
+[Heading 1] 附录A：用户故事追踪矩阵
+[Heading 1] 附录B：数据软删除与生命周期策略
+[Heading 1] 附录C：关键数据库约束
+[Heading 1] 附录D：物料预占记账规则
+[List Bullet] inventory.quantity表示当前账面可用实物库存，领用时扣减。
+[List Bullet] 创建预占可用量 = quantity - SUM(有效预占的reserved_qty-issued_qty)。
+[List Bullet] 从已有预占领用时只校验issue_qty≤本预占未领用量且quantity≥issue_qty，不重复扣除自身预占。
+[List Bullet] 创建预占和领用均锁定库存行；领用同时锁定预占行。
+[List Bullet] pending和partial_consumed占用未领用部分；issued/consumed/released不再占用。
+[Heading 1] 附录E：控制指令聚合原则
+[List Bullet] 每个command_key在同一request内只有一条逻辑链。
+[List Bullet] 首次命令root_command_id=id，attempt_no=1；重试创建新id并递增attempt_no。
+[List Bullet] 存在pending/sent/可重试expired时请求为pending_gateway。
+[List Bullet] 全部executed为executed；全部failed为failed；成功和失败并存为partial_success。
+[List Bullet] 全部acknowledged/executed/failed且未终结时为gateway_received。
+[List Bullet] request_expires_at仅将pending_gateway/gateway_received覆盖为timeout，不覆盖终态。
+[Heading 1] 附录F：实施建议团队（非冻结需求）
+[Heading 1] 附录G：最终开工检查表
+[Heading 1] 附录H：术语表
+[Normal] — 文档结束 —
+[TABLE] ### TABLE 1 ###
+[ROW] 项目 | 内容
+[ROW] 文档名称 | EWOH 工厂具身智能操作系统最终产品实施方案
+[ROW] 文档目的 | 统一历次需求、产品架构、数据模型、DDL约束、开发计划和验收标准，作为一期研发与验收唯一实施依据。
+[ROW] 产品能力基线 | v4 产品架构及 v4.1 技术勘误中冻结的组织、空间、设备、人员、外骨骼、调度、AI、告警、审批、控制、回放和审计能力。
+[ROW] 物理实施口径 | 当前代码基线采用“36张新表 CREATE + 12张既有表 ALTER = 48张受管表”的部署包装；功能能力不得因表名或表数量演进而被删减。
+[ROW] 安全实施基线 | 所有最终用户数据访问通过 NestJS；后端使用可信数据库角色；RLS、Service 层 org_id 过滤、审计完整性保护与安全测试共同构成防线。
+[ROW] 冻结规则 | 产品架构、一期范围、逻辑模型和状态机冻结；物理 DDL 以临时 PostgreSQL 编译与8类自动化测试通过为最终冻结条件。
+[TABLE] ### TABLE 2 ###
+[ROW] 权威口径说明：历史资料中存在“48张新表+3张修改表”和“36张新表+12张既有表改造”两种计数。本文将前者视为完整逻辑能力模型，将后者视为当前代码基线下的物理部署包装。DDL生成前必须输出“逻辑能力—物理表”映射，任何能力不得静默丢失。
+[TABLE] ### TABLE 3 ###
+[ROW] 版本 | 说明 | 状态
+[ROW] v1-v3 | 完成产品目标、数字世界、任务调度、AI分级、告警、审批与数据模型逐步补全。 | 历史设计输入
+[ROW] v4/v4.1 | 完成产品与架构定版、技术勘误、状态机、隐私、RLS、审计和非功能指标冻结。 | 产品能力基线
+[ROW] DDL补丁系列 | 完成主键、约束、游标、物料预占、审计链、控制重试、权限与环境门禁。 | 数据库实现基线
+[ROW] 最终执行方案 | 采用36新表+12既有表改造，分阶段完成DDL、后端、前端与测试。 | 当前实施基线
+[TABLE] ### TABLE 4 ###
+[ROW] 目标层 | 一期结果
+[ROW] 产品层 | 11个能力中心、角色化导航、指挥中心与数字世界边界清晰。
+[ROW] 业务层 | 组织—空间—设备—人员—外骨骼—任务—告警—审批—控制形成闭环。
+[ROW] 数据层 | org_id 多租户隔离、统一审计列、RLS、增量游标、回放与保留策略落地。
+[ROW] 技术层 | NestJS + Drizzle/PostgreSQL；React + React Query + Zustand；React Three Fiber/Drei/Three.js。
+[ROW] 实施层 | 13项环境探针、DDL分批执行、核心基础设施、模块开发、前端重构、8类临时库测试。
+[ROW] 冻结层 | 测试全部通过后宣布一期物理 DDL 冻结和产品一期可交付。
+[TABLE] ### TABLE 5 ###
+[ROW] 开工门禁：开发可以开始，但数据库变更必须先完成环境探针和逻辑能力—物理表映射；DDL不得直接在生产库一次性执行。
+[TABLE] ### TABLE 6 ###
+[ROW] 范围 | 一期处理
+[ROW] 真实3D场景 | 支持程序化几何体、手工上传GLB/GLTF、外部重建任务状态；自动GPU重建作为外部服务集成。
+[ROW] 调度推演 | 一期为规则型轻量推演：冲突、时间窗、资源占用、预计完成时间、基础风险。
+[ROW] 现实设备控制 | 本系统生成控制请求与指令记录，由工业网关执行；不直接绕过网关控制设备。
+[ROW] 自动调度 | 不启用。AI不自动审批、不自动下发、不自动调度。
+[ROW] 完整仿真 | 产线节拍、物流路径、离散事件仿真后续接入专用仿真服务。
+[ROW] 外部系统 | MES、ERP、WMS、HR、门禁、UWB、视频平台按接口预留；一期可使用本系统数据或模拟数据。
+[ROW] 移动端 | 一期仅支持工业PC和大屏，不支持移动端。
+[TABLE] ### TABLE 7 ###
+[ROW] 角色 | 核心职责 | 主要页面 | 高风险权限
+[ROW] 全局管理者 | 组织、空间、系统配置、跨工厂汇总和模型发布。 | 指挥中心、组织与空间、模型、数据资产、系统管理 | 全局配置、跨组织查询、紧急策略管理
+[ROW] 调度员 | 任务编排、资源分配、AI建议/方案、推演、下发与执行跟踪。 | 数字世界、生产调度、AI决策、设备、告警 | 任务下发、方案提交、控制请求发起
+[ROW] 车间负责人 | 本车间资源和任务管理、异常处置和方案审核。 | 数字世界、生产调度、人员、告警 | 任务审批、异常恢复
+[ROW] 安全管理员 | 人员健康与负载、风险告警、紧急跳过审批、事故证据。 | 指挥中心、人员与外骨骼、告警、审计 | 敏感健康详情、bypassed审批、风险处置
+[ROW] 设备运维 | 设备档案、配置、生命周期、绑定、模型和数据接入。 | 设备中心、模型管理、数据资产 | 设备参数变更、维护状态
+[ROW] 一线执行人 | 接收任务、开始/暂停/完成步骤、异常上报。 | 个人任务入口、个人风险与告警 | 无设备高风险控制权限
+[TABLE] ### TABLE 8 ###
+[ROW] 层面 | 层级 | 说明
+[ROW] 组织层 | group → base → factory | 集团、基地、工厂，决定数据归属、权限和审批链。
+[ROW] 空间层 | site → building → floor → workshop → zone → route / restricted_zone → workstation | 空间实体仅描述场所，不包含人员或设备。一个factory组织可关联一个或多个site。
+[TABLE] ### TABLE 9 ###
+[ROW] 唯一事实来源：固定设备位置来自设备—空间绑定；移动设备和人员实时位置来自world_state/增量世界状态；设备表和人员表不得再保存第二套实时位置事实。
+[TABLE] ### TABLE 10 ###
+[ROW] 对象 | 权威来源/表族 | 关键关系
+[ROW] 组织 | organization | 组织层级、数据范围、配置继承、审批层级。
+[ROW] 空间 | spatial_entity / spatial_relation / hierarchy | 站点、建筑、楼层、车间、区域、路线、工位。
+[ROW] 设备 | device / capability / telemetry | 外骨骼、摄像头、UWB、产线、机器、机器人、传感器。
+[ROW] 人员 | person / skill / role | 人员档案、岗位、技能、资质、班组或角色关系。
+[ROW] 绑定 | device_person / device_space / device_device 或 resource_binding | 记录当前关系和历史，不覆盖原实体。
+[ROW] 任务与计划 | task / schedule_plan / schedule_task / assignment | 从建议与方案转为正式生产任务并跟踪执行。
+[ROW] 资源 | resource_preorder/reservation / material reservation | 人员、设备、空间、工具排他预占；物料数量型预占。
+[ROW] 告警与事件 | event/alert / chain / rule / action | 异常、风险、告警、处置、升级、关闭、复盘。
+[ROW] AI决策 | AI session/suggestion + schedule_plan | 数据快照、建议、方案、版本、风险、不确定性和采用记录。
+[ROW] 控制 | control_request / command / result | 业务请求、通信尝试、执行回执和状态聚合。
+[ROW] 世界状态 | world_state / snapshot / delta_log / trajectory | 近实时状态、快照、增量、轨迹和回放。
+[ROW] 审计与配置 | audit_log / system_config | 完整性保护、版本化配置、继承与公开范围。
+[TABLE] ### TABLE 11 ###
+[ROW] 浏览器 / 指挥大屏 /     ↓ HTTPS（只访问 NestJS API） / React 前端：React Query + Zustand + R3F/Drei/Three.js /     ↓ REST / 短轮询 / 统一游标 / NestJS：Controller → Service → 规则/审批/审计/组织上下文 /     ↓ 同一事务与同一连接 / PostgreSQL / Drizzle：org_id + RLS + 审计列 + 状态机约束 /     ↓ 外部适配 / UWB / 外骨骼平台 / 视频平台 / 工业网关 / AI能力 / FileService / 3D重建服务
+[TABLE] ### TABLE 12 ###
+[ROW] 层 | 主要技术 | 实施要点
+[ROW] 前端 | React、React Query、Zustand、React Three Fiber、Drei、Three.js | 11个能力中心；3D/2D降级；统一API命名空间；角色化导航。
+[ROW] 后端 | NestJS、Drizzle ORM、CapabilityService、FileService | 模块化Service；组织上下文拦截器；审计服务；状态机和规则引擎。
+[ROW] 数据库 | PostgreSQL、RLS、IDENTITY、jsonb、advisory lock | 36 CREATE +12 ALTER；无物理FK；逻辑引用由Service维护；软删除。
+[ROW] 近实时 | 短轮询、快照、增量游标、ETag | 3-5秒更新；后台暂停；抖动与退避；断线补偿；410游标过期重建。
+[ROW] 文件与模型 | FileService/dataloom、GLB/GLTF、Draco | 数据库仅保存downloadURL；LOD0/LOD1分级加载。
+[ROW] AI | 现有brain_suggestion能力与服务端编排 | A1自动识别；A2/A3人工触发；结构化输出校验；不可直接执行。
+[TABLE] ### TABLE 13 ###
+[ROW] 能力中心 | 路由 | 可见角色 | 一期规格
+[ROW] 指挥中心 | /command-center | 全局管理者、调度员、安全管理员 | KPI、简化3D态势、重大告警、任务概览、人员负荷、快速导航。禁止3D编辑和推演。
+[ROW] 数字世界 | /digital-world | 调度员、车间负责人 | 全屏3D、L0-L4、实体详情、框选、热力图、轨迹、调度、推演、回放。
+[ROW] 生产调度中心 | /scheduling | 调度员、车间负责人 | 任务看板、资源调配、冲突检查、方案推演、审批、下发、执行跟踪。
+[ROW] AI决策中心 | /ai-decision | 调度员、全局管理者 | 手动触发建议与方案、方案对比、多版本编辑、风险与不确定性、采用记录。
+[ROW] 设备中心 | /devices | 设备运维、调度员 | 19维度搜索、12类配置、生命周期/运行/健康状态、绑定和关系视图。
+[ROW] 人员与外骨骼中心 | /personnel | 车间负责人、安全管理员 | 档案、技能资质、岗位/班组、外骨骼绑定、负载疲劳、轨迹与任务历史。
+[ROW] 风险与告警中心 | /alerts | 安全管理员、调度员 | 风险汇总、告警确认/分派/处置/升级/关闭/重开、SLA、复盘。
+[ROW] 组织与空间中心 | /organization | 全局管理者 | 组织树、空间树、实体关系图谱、坐标、模型节点和组织—空间关联。
+[ROW] 模型管理中心 | /model-management | 全局管理者、设备运维 | 采集任务、外部重建、语义识别、人工校验、发布、版本和差异。
+[ROW] 数据资产中心 | /data-assets | 全局管理者 | 数据源、健康、质量、延迟、目录、只读血缘视图和接入凭证。
+[ROW] 系统管理 | /system | 全局管理者、安全管理员 | 用户角色、权限、配置、阈值、规则、通知、审计、接口与三级停止。
+[TABLE] ### TABLE 14 ###
+[ROW] 现实数据采集 / → 世界状态与异常识别（A1） / → 用户主动生成AI建议（A2） / → 用户主动生成结构化方案（A3） / → 人工编辑与规则型推演 / → 审批/紧急跳过（高风险审计） / → 转为生产任务或控制请求 / → 执行反馈、告警、回放与复盘 / → 数据沉淀与规则/模型迭代
+[TABLE] ### TABLE 15 ###
+[ROW] 当前状态 | 目标状态 | 角色 | 前置条件
+[ROW] draft | pending_confirm | 创建人 | 必填字段完整
+[ROW] pending_confirm | pending_approval | 调度员 | 规则判断需要审批
+[ROW] pending_confirm | pending_dispatch | 调度员 | 规则判断无需审批
+[ROW] pending_approval | pending_dispatch | 审批人 | 审批通过或bypassed
+[ROW] pending_approval | draft | 审批人 | 驳回并填写原因
+[ROW] pending_dispatch | dispatched | 调度员 | 资源已预占
+[ROW] dispatched | received | 执行人 | 接受任务
+[ROW] received | executing | 执行人 | 开始执行
+[ROW] executing | paused | 执行人/调度员 | 填写暂停原因
+[ROW] executing | exception | 系统/执行人 | 异常上报
+[ROW] paused | executing | 执行人 | 恢复
+[ROW] exception | executing | 调度员 | 异常解决
+[ROW] executing | completed | 执行人 | 全部步骤完成
+[ROW] 任一非终态 | cancelled | 有权限角色 | 记录取消原因
+[TABLE] ### TABLE 16 ###
+[ROW] 当前 | 目标 | 条件/说明
+[ROW] 实例 pending | approved | 全部步骤通过
+[ROW] 实例 pending | rejected | 任一步骤驳回
+[ROW] 实例 pending | cancelled | 发起人撤回
+[ROW] 实例 pending | expired | 超过deadline且未紧急跳过
+[ROW] 实例 pending | bypassed | 高权限管理员紧急跳过，等同approved但高风险审计
+[ROW] 步骤 pending | delegated | 委托他人并创建新步骤
+[ROW] 步骤 pending | skipped | 高权限管理员跳过并记录依据
+[ROW] 步骤 pending | expired | 步骤超时
+[TABLE] ### TABLE 17 ###
+[ROW] 当前 | 目标 | 条件/说明
+[ROW] open | acknowledged | 确认告警
+[ROW] acknowledged | processing | 开始处置
+[ROW] processing | closed | 处置完成
+[ROW] closed | reopened | 安全管理员重开
+[ROW] reopened | acknowledged | 确认重开
+[ROW] reopened | processing | 直接处置
+[TABLE] ### TABLE 18 ###
+[ROW] 当前 | 目标 | 条件/说明
+[ROW] shadow | simulating | 发起推演
+[ROW] simulating | shadow | 放弃推演
+[ROW] simulating | pending_review | 推演完成提交审核
+[ROW] pending_review | approved | 审批通过
+[ROW] pending_review | shadow | 驳回修改
+[ROW] approved | dispatched | 转为生产任务
+[ROW] approved | expired | 超过有效期
+[ROW] 任意 | archived | 归档
+[TABLE] ### TABLE 19 ###
+[ROW] 当前 | 目标 | 条件
+[ROW] created | pending_approval | 需要审批
+[ROW] created | pending_gateway | 无需审批
+[ROW] pending_approval | approved | 审批通过
+[ROW] approved | pending_gateway | 生成并发送逻辑指令
+[ROW] pending_gateway | gateway_received | 所有当前尝试已被网关接收
+[ROW] gateway_received | executed | 各逻辑指令最新尝试全部成功
+[ROW] gateway_received | partial_success | 最新尝试有成功也有失败
+[ROW] gateway_received | failed | 最新尝试全部失败
+[ROW] pending_gateway/gateway_received | timeout | 请求业务截止时间到期
+[ROW] 非执行终态 | revoked | 网关确认未执行或审批前撤销
+[TABLE] ### TABLE 20 ###
+[ROW] 层级 | 视角 | 主要内容 | 交互
+[ROW] L0 | 集团/园区俯瞰 | 跨工厂产能、告警、资源和导航 | 选择组织、进入基地/工厂
+[ROW] L1 | 建筑群45度俯视 | 建筑、人员设备分布、在线与风险 | 点击建筑进入、筛选聚合
+[ROW] L2 | 车间平视 | 热力图、区域风险、瓶颈、任务分布 | 区域选择、路径与任务查看
+[ROW] L3 | 工位/设备近景 | 设备状态、参数、当前任务、资源 | 详情、绑定、调度、控制申请
+[ROW] L4 | 人员/外骨骼跟随 | 负载、姿态、轨迹、环境和附近设备 | 人员详情、任务、告警、绑定历史
+[TABLE] ### TABLE 21 ###
+[ROW] 模式 | 能力 | 安全边界
+[ROW] 观察 | 下钻、筛选、搜索、热力图、轨迹、历史状态 | 只读，不改变现实资源。
+[ROW] 调度 | 框选、拖拽、批量分配、优先级、顺序、冲突检查 | 硬约束不满足时禁止提交。
+[ROW] 推演 | 创建临时分支、改变分配、计算时间/占用/风险、方案对比 | 全部标记为模拟，不直接写现实任务。
+[ROW] 回放 | 选择时间范围，重建人员/设备/告警/决策变化 | 遵守数据保留和人员隐私脱敏。
+[TABLE] ### TABLE 22 ###
+[ROW] 操作 | 行为
+[ROW] 单击 | 打开实体详情侧边栏
+[ROW] 双击 | 相机聚焦并下钻一层
+[ROW] 框选 | 批量选择人员/设备/空间资源
+[ROW] 拖拽 | 在调度或推演模式中临时分配资源
+[ROW] 右键/动作菜单 | 创建任务、生成建议、查看历史、发起控制
+[ROW] 时间轴 | 回放或选择推演时间
+[ROW] 提交 | 模拟方案进入审核，审批后转为现实任务
+[TABLE] ### TABLE 23 ###
+[ROW] 能力等级 | 触发方式 | 一期能力 | 是否直接执行
+[ROW] A1 异常识别 | 系统自动 | 发现异常、风险和数据质量问题 | 否
+[ROW] A2 建议 | 用户主动点击 | 问题摘要、原因分析、风险判断、建议方向 | 否
+[ROW] A3 方案生成 | 用户主动点击 | 结构化人员/设备/时间/步骤方案，可编辑和对比 | 否
+[ROW] 自动审批/调度/控制 | 不启用 | 仅显示未启用状态 | 禁止
+[TABLE] ### TABLE 24 ###
+[ROW] 计算项 | 实现
+[ROW] 人员/设备冲突 | 检查同一时间窗口内有效资源预占和任务分配。
+[ROW] 时间窗口冲突 | 检查任务步骤计划区间、班次和维护窗口。
+[ROW] 资源占用 | 计算人员、设备、空间和工具利用率。
+[ROW] 预计完成时间 | 按步骤estimated_minutes、依赖和等待时间计算。
+[ROW] 基础风险 | 负载、资质、设备健康、环境和告警规则加权。
+[ROW] 方案对比 | 展示完成时间、风险、冲突数、资源利用率和需人工确认项。
+[TABLE] ### TABLE 25 ###
+[ROW] 序号 | 搜索维度
+[ROW] 1 | 关键字/名称
+[ROW] 2 | 设备业务ID
+[ROW] 3 | 设备分类
+[ROW] 4 | 型号
+[ROW] 5 | 厂商
+[ROW] 6 | 序列号
+[ROW] 7 | 所属组织
+[ROW] 8 | 空间位置
+[ROW] 9 | 生命周期状态
+[ROW] 10 | 运行状态
+[ROW] 11 | 在线/离线状态
+[ROW] 12 | 健康状态
+[ROW] 13 | 绑定状态
+[ROW] 14 | 当前绑定人员
+[ROW] 15 | 协议类型
+[ROW] 16 | 固件版本
+[ROW] 17 | 数据来源
+[ROW] 18 | 数据质量等级
+[ROW] 19 | 维护状态/下一维护时间
+[TABLE] ### TABLE 26 ###
+[ROW] 字段映射门禁：上述19项为历次设备需求的合并实施清单。DDL和GET /api/devices查询DTO必须逐项映射到实际字段、jsonb路径或聚合视图，并在接口测试中验证组合筛选。
+[TABLE] ### TABLE 27 ###
+[ROW] 分类 | 字段范围
+[ROW] 1. 基础身份 | 名称、业务ID、分类、型号、厂商、序列号
+[ROW] 2. 归属与安装 | org_id、空间绑定、安装日期、负责人
+[ROW] 3. 接入身份 | 数据源、接入类型、认证引用
+[ROW] 4. 网络接入 | IP、端口、MAC
+[ROW] 5. 协议 | 协议版本、MQTT/HTTP/Modbus/OPC UA
+[ROW] 6. 采集频率 | telemetry_interval_ms、sampling_rate
+[ROW] 7. 上报规则 | 频率、条件、批大小
+[ROW] 8. 告警阈值 | 温度、电量、负载、故障码规则
+[ROW] 9. 控制权限 | 只读、参数调整、急停级别
+[ROW] 10. 固件 | 版本、升级地址、升级状态
+[ROW] 11. 维护策略 | 周期、上次维护、下次维护
+[ROW] 12. 数据质量 | 检查开关、丢包阈值、置信度阈值
+[TABLE] ### TABLE 28 ###
+[ROW] 首次加载：GET /api/world/snapshot / 返回：snapshotVersion + cursor + entities + generatedAt /  / 持续增量：GET /api/world/delta?cursor=...&limit=... / 返回：nextCursor + upserts + removals + hasMore + etag /  / 游标过期：HTTP 410 / CURSOR_EXPIRED / 客户端重新获取snapshot并重建本地store /  / 回放过期：HTTP 410 / REPLAY_DATA_EXPIRED
+[TABLE] ### TABLE 29 ###
+[ROW] 数据 | 保留期 | 处理
+[ROW] 精细增量日志 | 7天 | 自动删除
+[ROW] 历史快照 | 90天 | >30天的人员坐标脱敏，90天后删除
+[ROW] 人员精确轨迹 | 30天 | 转为区域级聚合后删除原始记录
+[ROW] 设备轨迹 | 90天 | 自动删除
+[ROW] 告警记录及证据 | 365天 | 告警相关轨迹证据随告警封存
+[ROW] 审计日志 | 365天热数据 | 归档到冷存储，不保存完整人员位置序列
+[TABLE] ### TABLE 30 ###
+[ROW] 层次 | 口径 | 执行规则
+[ROW] 逻辑能力模型 | 覆盖组织、人员、设备、空间、任务、资源、告警、AI、审批、控制、回放、审计和配置。 | 每个冻结能力必须映射到物理表或既有表扩展。
+[ROW] 物理部署包装 | 36张新表 CREATE +12张既有表 ALTER =48张受管表。 | 最终以DDL生成器的冻结清单和映射矩阵为准。
+[ROW] 安全与权限 | org_id、RLS、显式GRANT/REVOKE、Service层过滤。 | authenticated无DML；可信后端角色写入；审计函数权限独立。
+[ROW] 引用完整性 | 不创建物理外键。 | Service层事务校验、逻辑引用类型一致、软删除和审计。
+[TABLE] ### TABLE 31 ###
+[ROW] DDL生成前必交付：《逻辑能力—物理表映射矩阵》必须逐项覆盖v4.1能力。最新36+12表名与早期48逻辑表名存在差异，未映射项不得以“后续再做”方式静默删除。
+[TABLE] ### TABLE 32 ###
+[ROW] 域 | 新表
+[ROW] 组织域 | ewoh_organization, ewoh_person, ewoh_person_skill, ewoh_skill, ewoh_role, ewoh_person_role
+[ROW] 设备域 | ewoh_device_person_binding, ewoh_device_capability
+[ROW] 空间域 | ewoh_spatial_relation, ewoh_spatial_hierarchy
+[ROW] 模型域 | ewoh_model_asset, ewoh_model_binding
+[ROW] 工位域 | ewoh_workstation, ewoh_workstation_device, ewoh_workstation_person, ewoh_workstation_skill, ewoh_workstation_relation
+[ROW] 任务域 | ewoh_task_template, ewoh_task_step, ewoh_task_skill_req
+[ROW] 排班域 | ewoh_schedule_task, ewoh_schedule_task_step, ewoh_schedule_assignment
+[ROW] 资源域 | ewoh_resource_preorder, ewoh_resource_binding
+[ROW] 控制域 | ewoh_control_request, ewoh_control_command, ewoh_control_result
+[ROW] 事件域 | ewoh_event_rule, ewoh_event_action, ewoh_event_subscription
+[ROW] 世界域 | ewoh_world_snapshot, ewoh_world_delta_log
+[ROW] 系统域 | ewoh_system_config, ewoh_knowledge_base, ewoh_knowledge_entry, ewoh_notification, ewoh_audit_log
+[TABLE] ### TABLE 33 ###
+[ROW] 序号 | 既有表 | 改造
+[ROW] 1 | ewoh_scheduler_config | 增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+[ROW] 2 | ewoh_environment | 增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+[ROW] 3 | ewoh_model_registry | 增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+[ROW] 4 | ewoh_schedule_audit | 增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+[ROW] 5 | ewoh_schedule_plan | 增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+[ROW] 6 | ewoh_event_chain | 增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+[ROW] 7 | ewoh_world_state | 增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+[ROW] 8 | ewoh_topology | 增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+[ROW] 9 | ewoh_spatial_entity | 增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+[ROW] 10 | ewoh_telemetry | 增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+[ROW] 11 | ewoh_event | 增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+[ROW] 12 | ewoh_device | 增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+[TABLE] ### TABLE 34 ###
+[ROW] 重点表 | 字段改造
+[ROW] ewoh_spatial_entity | org_id；z；roll/pitch；bbox_d；model_node_id；model_version_id；coordinate_system；coordinate_origin；floor_elevation；unit。采用分字段三维姿态。
+[ROW] ewoh_device | org_id；lifecycle_status；runtime_status；health_status；device_category；extra。worker_name仅兼容保留，新代码禁用。
+[ROW] ewoh_schedule_plan | org_id；suggestion_id；session_id；version；parent_plan_id；is_simulation；approval_id。
+[TABLE] ### TABLE 35 ###
+[ROW] 冻结能力 | 物理映射要求
+[ROW] 组织、人员、技能、角色、班组/班次 | organization/person/skill/role及关系表；若班组和班次未独立建表，必须给出等价物理实现。
+[ROW] 设备三类绑定与外骨骼排他 | device_person_binding、resource_binding、空间关系或既有表；必须满足唯一性和历史。
+[ROW] 任务与步骤级资源 | task_template/step、schedule_task/step/assignment、resource_preorder/binding；必须覆盖任务状态机与执行日志。
+[ROW] 物料与工具 | 资源域或新增数量型预占实现；必须支持numeric数量、批次、领用、消耗和释放。
+[ROW] 告警闭环 | event/event_chain/rule/action/subscription或alert表族；必须覆盖确认、处置、升级、关闭、重开、SLA。
+[ROW] AI建议与方案 | 现有brain能力、schedule_plan/audit、knowledge；必须保留会话快照、建议/方案分离和版本。
+[ROW] 审批 | 必须有可查询的实例、步骤和操作记录，或明确映射到等价表。
+[ROW] 控制 | control_request/command/result；必须支持多逻辑指令、重试链、幂等和聚合。
+[ROW] 回放 | world_state/snapshot/delta_log，必要时轨迹聚合；必须满足30/90天隐私与回放。
+[ROW] 审计与配置 | audit_log/system_config；完整性保护、版本继承、全局公开规则。
+[TABLE] ### TABLE 36 ###
+[ROW] 现有模块 | 改造
+[ROW] shared | 新增组织上下文、审计服务、统一错误、分页、幂等和引用校验工具。
+[ROW] dashboard | 适配组织范围，输出指挥中心KPI和摘要。
+[ROW] simulator | 模拟组织、人员、绑定、任务、告警、审批、控制和回放。
+[ROW] spatial | 严格空间实体化，增加3D坐标、层级和模型节点。
+[ROW] world | 统一snapshot/delta/replay接口。
+[ROW] scheduler | 接入新任务/资源/计划/审批模型，废弃自动触发AI。
+[ROW] devices | 适配设备三状态、19维搜索、12类配置和绑定。
+[ROW] embodiment | L0-L4聚合、人员外骨骼负载和风险。
+[ROW] brain | 快照冻结、A1/A2/A3分级、建议与方案分离。
+[ROW] view | 角色化页面聚合和前端数据接口。
+[TABLE] ### TABLE 37 ###
+[ROW] 组件 | 职责 | 关键约束
+[ROW] OrgContextInterceptor | 从req.userContext解析userId、primaryOrgId、角色和可访问组织，并设置数据库上下文。 | 必须使用事务级set_config(..., true)，并保证同一事务/连接内执行全部受RLS保护查询。
+[ROW] AuditService | 统一调用append_audit_log，执行服务层深度脱敏。 | 调用方不传operator；requestId和clientIp自动获取；高风险标记强制。
+[ROW] OrgScopeService | 解析下级数据范围和上级配置继承。 | 递归CTE或5分钟缓存；组织结构变更后清缓存。
+[ROW] StateMachineGuard | 统一校验任务、审批、告警、方案和控制状态转换。 | 非法转换返回409 STATE_NOT_ALLOWED。
+[ROW] ReferenceIntegrityService | 在无FK条件下校验逻辑引用、软删除和循环关系。 | 所有写操作在同一事务中完成。
+[ROW] IdempotencyService | 保存和查询idempotency_key。 | 重复请求返回原响应。
+[TABLE] ### TABLE 38 ###
+[ROW] 连接池修正：执行方案中曾建议连接级GUC（set_config第三参数false），这会产生连接池租户上下文残留风险。最终实现必须使用事务级GUC（第三参数true），每个请求的受保护数据库操作包裹在同一request-scoped transaction中。
+[TABLE] ### TABLE 39 ###
+[ROW] 优先级 | 模块 | 范围
+[ROW] P0 | organization | 组织、人员、技能、角色及关系CRUD。
+[ROW] P0 | workstation | 工位、设备、人员、技能和工位关系。
+[ROW] P0 | task | 任务模板、步骤、技能要求、状态机。
+[ROW] P0 | resource | 预占、绑定、冲突校验、并发锁和释放。
+[ROW] P0 | control | 请求、命令、结果、幂等、审批和重试。
+[ROW] P1 | event-rule | 事件规则、动作和订阅。
+[ROW] P1 | model | 模型资产、绑定、版本和发布。
+[ROW] P1 | knowledge | 知识库和知识条目。
+[ROW] P1 | notification | 通知模板、接收人和发送状态。
+[ROW] P1 | system | 系统配置、继承、公开范围和阈值规则。
+[TABLE] ### TABLE 40 ###
+[ROW] 页面 | 实施组件
+[ROW] Organization | 组织树、人员表、角色技能、关系追溯、编辑Dialog。
+[ROW] Scheduler | 任务Kanban、方案列表、确认/拒绝/派发、执行时间线；复用既有scheduler.ts API。
+[ROW] Workstation | 工位树、设备/人员/技能配置和关系图。
+[ROW] Resource | 资源预占日历、冲突列表、利用率和释放。
+[ROW] Control | 控制请求列表、指令链、回执、审批和重试。
+[ROW] Tasks | 任务模板、步骤设计器、依赖和技能要求。
+[ROW] AuditLog | 过滤、详情、完整性状态和高风险标识，只读。
+[ROW] Settings | 组织配置、上级继承、全局公开和版本。
+[ROW] DigitalWorld | FactoryScene、ModelLoader、EntityLayer、Heatmap、Trajectory、Camera、LevelSwitcher、SimulationPanel。
+[TABLE] ### TABLE 41 ###
+[ROW] 既有页面 | 处理
+[ROW] Overview | 并入指挥中心。
+[ROW] CommandMap | 升级为指挥中心的简化3D态势与数字世界入口。
+[ROW] Devices/DeviceManagement | 合并为设备中心，适配新状态和绑定。
+[ROW] Events | 合并到风险与告警中心。
+[ROW] Workers | 合并到人员与外骨骼中心。
+[ROW] DataQuality | 合并到数据资产中心。
+[ROW] EmbodimentOverview | 并入指挥中心具身智能面板。
+[ROW] Dashboard/Employees | 删除游戏遗留入口。
+[TABLE] ### TABLE 42 ###
+[ROW] 场景 | HTTP | 错误码
+[ROW] 参数校验失败 | 400 | INVALID_PARAMS
+[ROW] 无权限 | 403 | FORBIDDEN
+[ROW] 资源不存在 | 404 | NOT_FOUND
+[ROW] 游标过期 | 410 | CURSOR_EXPIRED
+[ROW] 回放过期 | 410 | REPLAY_DATA_EXPIRED
+[ROW] 资源冲突 | 409 | RESOURCE_RESERVED
+[ROW] 状态转换非法 | 409 | STATE_NOT_ALLOWED
+[ROW] 唯一约束冲突 | 409 | CONFLICT
+[TABLE] ### TABLE 43 ###
+[ROW] 域 | 接口族 | 说明
+[ROW] 世界 | GET /api/world/snapshot；GET /api/world/delta；GET /api/world/replay | 快照、增量、回放
+[ROW] 组织 | GET/POST/PUT /api/organization；人员/角色/技能子资源 | 组织和人员管理
+[ROW] 设备 | GET /api/devices；GET /:id；PUT /:id/config；绑定接口 | 19维搜索、配置、绑定
+[ROW] 调度 | 任务、计划、资源、派发、执行日志、推演接口 | 任务闭环
+[ROW] AI | POST /api/ai/suggestions；POST /api/ai/plans；方案对比/采用 | 仅人工触发
+[ROW] 告警 | 告警列表、详情、确认、处置、升级、关闭、重开 | SLA与复盘
+[ROW] 审批 | 创建实例、审批、驳回、委托、跳过、超时 | 高风险操作
+[ROW] 控制 | 创建请求、审批、发送、撤销、重试、回执 | 网关控制闭环
+[ROW] 模型 | 采集、重建状态、资产上传、校验、发布 | FileService + 外部服务
+[ROW] 审计 | GET /api/audit | 按实体、操作人和时间查询
+[TABLE] ### TABLE 44 ###
+[ROW] 数据/能力 | 一期来源 | 后续集成
+[ROW] 组织/人员 | 本系统 | HR/通讯录
+[ROW] 生产任务 | 本系统 | MES
+[ROW] 物料库存 | 本系统或资源模块 | WMS
+[ROW] 设备档案 | 本系统 | 设备管理平台
+[ROW] 人员位置 | UWB/模拟器 | UWB API
+[ROW] 外骨骼遥测 | 设备平台/模拟器 | MQTT/HTTP
+[ROW] 视频 | 仅引用摄像头状态 | 视频平台，不存储视频
+[ROW] 控制 | 控制请求记录 | 工业协议网关
+[ROW] 3D重建 | 手工上传/外部任务 | GPU重建服务
+[TABLE] ### TABLE 45 ###
+[ROW] 最终用户 / 浏览器 /     × 不允许数据库直连或任意SQL/RPC /     ↓ / NestJS API（唯一数据访问通道） /     ↓ 可信后端数据库角色 / PostgreSQL：显式表权限 + RLS + Service层org_id约束
+[TABLE] ### TABLE 46 ###
+[ROW] 表组 | 策略
+[ROW] 44张org_id NOT NULL表 | 按current_org_ids或global_admin读取/写入；可信后端写。
+[ROW] world_snapshot | 组织记录按范围；org_id NULL仅global_admin。
+[ROW] world_delta_log | 组织记录按范围；org_id NULL仅global_admin。
+[ROW] system_config | 组织记录按范围；全局记录仅global_admin或is_public=true读取；写入全局必须管理员。
+[ROW] audit_log | 组织范围只读；普通角色和服务角色无直接写policy。
+[TABLE] ### TABLE 47 ###
+[ROW] 步骤 | 动作 | 回滚点
+[ROW] 1 | 导出schema、policy、权限和数据备份 | 恢复备份
+[ROW] 2 | 执行环境探针和逻辑—物理映射校验 | 不执行DDL
+[ROW] 3 | 创建扩展、函数、基础组织和新表 | 删除新对象
+[ROW] 4 | ALTER既有表增加nullable字段和索引 | 回滚ALTER
+[ROW] 5 | 迁移数据、回填default-org、生成校验报告 | 恢复迁移前数据
+[ROW] 6 | 创建RLS、GRANT/REVOKE和触发器 | 恢复旧策略
+[ROW] 7 | codegen并部署兼容后端/前端 | 回滚应用版本
+[ROW] 8 | 通过测试后设置NOT NULL和冻结 | 按批次回滚
+[TABLE] ### TABLE 48 ###
+[ROW] 阶段 | 工作 | 交付
+[ROW] Phase 1 环境探针 | 执行13项探针；验证角色、SHA-256、SECURITY DEFINER、触发器、RLS、IDENTITY、user_profile、外部访问面。 | probe-results.md及四项决策
+[ROW] Phase 2 DDL生成与执行 | 生成6个批次SQL；36 CREATE、12 ALTER、函数、RLS、权限、触发器、索引；codegen。 | DDL文件、schema.ts、执行日志
+[ROW] Phase 3 核心基础设施 | OrgContextInterceptor、AuditService、状态机、组织范围、引用校验、幂等。 | 可复用后端基础组件
+[ROW] Phase 4a 组织模块 | 组织、人员、角色、技能CRUD和审计。 | 组织中心后端可用
+[ROW] Phase 4b 既有模块改造 | shared、devices、spatial、scheduler、world、dashboard、brain、embodiment、simulator增加org_id。 | 现有功能多租户化
+[ROW] Phase 4c 新域模块 | workstation、task、resource、control优先；event/model/knowledge/notification/system随后。 | 新增CRUD与核心流程
+[ROW] Phase 5 前端 | 11中心路由、导航、新页面和既有页面重构；3D数字世界。 | 前端可交互版本
+[ROW] Phase 6 测试与冻结 | 8类临时库测试、API自测、性能与验收。 | 物理DDL冻结与一期交付
+[TABLE] ### TABLE 49 ###
+[ROW] 依赖关系 | 说明
+[ROW] Phase 1→2→3 | 必须串行，数据库能力和权限不确定前不得生成最终DDL。
+[ROW] Phase 4a与4b | 核心基础设施完成后可并行。
+[ROW] Phase 4c | 按P0/P1分批，可与部分前端基础设施并行。
+[ROW] Phase 5 | API契约稳定后按模块推进，数字世界可使用模拟数据先行。
+[ROW] Phase 6 | 数据库、后端和前端均完成后执行，测试结果是唯一冻结依据。
+[TABLE] ### TABLE 50 ###
+[ROW] # | 探针 | 门禁
+[ROW] 1 | gen_random_uuid() | 失败则尝试pgcrypto，仍失败停止
+[ROW] 2 | digest SHA-256 | 失败停止，不降级MD5
+[ROW] 3 | SECURITY DEFINER函数 | 失败停止
+[ROW] 4 | 完整触发器创建/插入/删除 | 失败停止
+[ROW] 5 | pg_advisory_xact_lock | 失败停止
+[ROW] 6 | public schema CREATE权限 | 如开放则撤销或使用全限定名
+[ROW] 7 | FORCE RLS | 失败停止
+[ROW] 8 | IDENTITY列 | 失败停止
+[ROW] 9a | DDL工具current_user | 记录
+[ROW] 9b | NestJS运行时current_user | 必须是可信后端角色
+[ROW] 10 | 函数owner/表owner/RLS绕过 | 确定审计表模式
+[ROW] 11 | user_profile五项探针 | 动态生成审计列表达式
+[ROW] 12 | service_role rolbypassrls | 确定后端RLS策略
+[ROW] 13 | 外部访问面 | 确认无数据库直连/RPC
+[TABLE] ### TABLE 51 ###
+[ROW] 测试 | 内容
+[ROW] 权限 | authenticated无DML；审计函数无权限；可信角色权限正确。
+[ROW] RLS | 同组织通过、跨组织拒绝、global_admin、nullable全局记录规则。
+[ROW] 并发预占 | 两个事务同时预占不超卖；锁和回滚正确。
+[ROW] 领用 | 预占→领用→消耗→释放，库存和预占数量正确。
+[ROW] 审计链 | LAG连续性、哈希重算、UTC时间、并发写入和敏感脱敏。
+[ROW] 指令重试 | 失败→重试→最新尝试聚合→expired→timeout，终态不被覆盖。
+[ROW] 回滚 | 任一事务失败后无部分数据、无脏预占、无半条审计链。
+[ROW] 安全 | 无外部DB通道、SQL注入阻断、GUC只由可信后端设置。
+[TABLE] ### TABLE 52 ###
+[ROW] 指标 | 目标 | 测试条件
+[ROW] 首屏加载 | <3秒 | Chrome 110+、8GB、100Mbps、无缓存
+[ROW] LOD0可交互 | ≤5秒 | ≤20MB GLB/Draco
+[ROW] 完整模型 | ≤10秒 | ≤50MB后台加载
+[ROW] L0-L4切换 | <1秒 | 同页面相机移动
+[ROW] 设备搜索 | P95<500ms | 1万设备、含网络
+[ROW] 实体详情 | P95<200ms | 服务端响应
+[ROW] 3D帧率 | ≥30FPS | 500 InstancedMesh
+[ROW] 增量接口 | P95<200ms | 服务端
+[ROW] API P95 | <500ms | 除AI
+[ROW] API P99 | <1000ms | 除AI
+[ROW] API错误率 | <1% | 50并发/1小时
+[ROW] AI建议 | <30秒 | 服务端
+[ROW] 方案生成 | <60秒 | 服务端
+[TABLE] ### TABLE 53 ###
+[ROW] 容量 | 目标
+[ROW] 组织 | 10
+[ROW] 工厂 | 50
+[ROW] 单工厂设备 | 5000
+[ROW] 在线外骨骼 | 500
+[ROW] 人员 | 2000
+[ROW] 遥测 | 1000条/秒
+[ROW] 在线用户 | 50
+[ROW] 3D同时实例 | ≤500
+[ROW] 模型大小 | ≤50MB
+[ROW] 可用率 | 99.5%
+[ROW] RPO/RTO | 1小时 / 4小时
+[TABLE] ### TABLE 54 ###
+[ROW] 类别 | 交付内容
+[ROW] 产品 | 本实施方案、页面原型/交互说明、角色权限矩阵、验收清单。
+[ROW] 数据库 | 探针SQL、结果报告、6批DDL、回滚SQL、逻辑—物理映射、迁移校验报告。
+[ROW] 后端 | 核心基础设施、更新的10个既有模块、组织模块和9个新域模块、API接口。
+[ROW] 前端 | 11中心导航、8+新页面、6个既有页面重构、数字世界组件。
+[ROW] 测试 | 环境门禁、临时库测试、API测试、性能测试、安全测试和缺陷清单。
+[ROW] 运维 | 配置说明、密钥轮换、备份恢复、审计归档、监控告警和应急手册。
+[TABLE] ### TABLE 55 ###
+[ROW] 风险 | 影响 | 应对
+[ROW] 两套48表口径 | 逻辑能力与物理包装不一致导致遗漏 | DDL前强制能力—物理表映射，自动校验未映射能力。
+[ROW] GUC与连接池 | 组织上下文残留或连接切换 | request-scoped transaction + set_config(...,true) + 连接池专项测试。
+[ROW] service_role BYPASSRLS | RLS无法保护后端 | 优先非BYPASS角色；否则Service层强制org过滤并专项越权测试。
+[ROW] 无物理FK | 产生孤儿引用 | Service事务校验、逻辑引用类型矩阵、软删除和定期一致性检查。
+[ROW] 3D性能 | 实体和模型过多导致卡顿 | LOD、Instancing、视锥剔除、按需渲染、2D降级。
+[ROW] AI不稳定 | 格式错误或产生危险建议 | 结构化输出校验、脱敏、人工确认、降级手工流程。
+[ROW] 物料/资源并发 | 超卖或重复分配 | FOR UPDATE/advisory lock、数值CHECK、并发测试。
+[ROW] 审计链并发 | 哈希链分叉 | 组织级事务锁、audit_seq、每日重算。
+[ROW] 外部重建/网关缺失 | 真实场景和现实控制无法完成 | 一期手工GLB+模拟网关，接口先行，真实集成后续。
+[TABLE] ### TABLE 56 ###
+[ROW] ID | 需求 | 页面 | 数据域 | 验收
+[ROW] US-01 | 管理组织与空间层级 | 组织与空间中心 | 组织/空间/关系表 | 组织树、空间树、追溯通过
+[ROW] US-02 | 搜索和查看设备 | 设备中心 | device/telemetry/binding | 19维筛选、分页、空状态
+[ROW] US-03 | 配置设备参数 | 设备中心 | device/capability/config | 12类配置、审计、权限
+[ROW] US-04 | 管理三类设备绑定 | 设备/人员/组织中心 | binding/relation | 唯一性、历史、循环检测
+[ROW] US-05 | 人员与外骨骼 | 人员中心 | person/skill/role/binding | 排他矩阵、负载与隐私
+[ROW] US-06 | 指挥中心态势 | 指挥中心 | 聚合视图/world | KPI、摘要、跳转
+[ROW] US-07 | 创建生产任务 | 调度/任务 | task/schedule | 状态、优先级、计划
+[ROW] US-08 | 分配资源并执行 | 调度/资源 | assignment/preorder | 冲突、派发、进度
+[ROW] US-09 | 主动触发AI建议 | AI决策 | session/suggestion | 页面不预生成、A2
+[ROW] US-10 | 生成编辑确认方案 | AI/调度/审批 | schedule_plan/audit/approval | 版本、推演、审批、转任务
+[ROW] US-11 | 查看处理告警 | 告警中心 | event/alert/action | 闭环、SLA、复盘
+[ROW] US-12 | 查看实体详情 | 数字世界/各中心 | 各实体聚合接口 | 设备、人员、空间详情与数据质量
+[TABLE] ### TABLE 57 ###
+[ROW] 类别 | 策略 | 示例
+[ROW] 主数据 | status=archived/inactive，不物理删除 | organization、person、material、tool、model、data_source
+[ROW] 关系/绑定 | end_time + status=inactive | team_member、device/person/space binding
+[ROW] 任务/审批/告警/控制 | 按状态机保留，终态不可回改 | task、approval、alert、control
+[ROW] 追加日志 | 只追加，按保留策略归档 | audit、delta、execution log、action、receipt
+[ROW] 资源日历 | 按资源+日期覆盖更新 | resource_calendar
+[ROW] 系统配置 | 版本化，旧版本is_active=false | system_config
+[TABLE] ### TABLE 58 ###
+[ROW] 约束 | 规则
+[ROW] 人员当前正式归属 | 同一人员同时只有一个有效班组/角色归属。
+[ROW] 固定设备位置 | 同一设备同时只有一个active installed空间绑定。
+[ROW] 外骨骼绑定 | 设备同时只绑一人；人员同一排他组只有一个worn绑定。
+[ROW] 库存唯一 | org + material + spatial + COALESCE(batch_no,'')唯一。
+[ROW] 库存数值 | quantity≥0；reserved>0；issued≤reserved；consumed≤issued。
+[ROW] 任务步骤 | task_id + step_no唯一。
+[ROW] 任务人员/设备 | task + COALESCE(step) + resource唯一。
+[ROW] 配置版本 | 组织/全局的config_key+version唯一；每层同键只有一个active。
+[ROW] 控制尝试 | request_id + command_key + attempt_no唯一；receipt.command_id唯一。
+[ROW] 世界增量 | seq全局唯一单调；snapshot_version+seq索引。
+[TABLE] ### TABLE 59 ###
+[ROW] 说明：本节为实施组织建议，用于项目管理，不改变冻结产品需求。
+[TABLE] ### TABLE 60 ###
+[ROW] 职责 | 建议投入方向
+[ROW] 产品/业务负责人 | 需求验收、角色流程、范围和变更控制。
+[ROW] 技术负责人 | 架构、代码审查、逻辑—物理映射和跨模块一致性。
+[ROW] 数据库工程 | 探针、DDL、RLS、迁移、回滚、性能和安全测试。
+[ROW] 后端工程 | 基础设施、组织/任务/资源/控制模块和既有模块改造。
+[ROW] 前端工程 | 页面、路由、状态管理、3D数字世界和性能优化。
+[ROW] 测试工程 | 数据库、API、RLS、并发、安全、性能和回归。
+[ROW] 安全/运维 | 密钥、权限、审计归档、备份恢复和上线门禁。
+[TABLE] ### TABLE 61 ###
+[ROW] # | 检查项 | 状态
+[ROW] 1 | 已确认本方案作为一期实施总纲。 | □
+[ROW] 2 | 已完成逻辑能力—物理表映射。 | □
+[ROW] 3 | NestJS实际数据库角色已通过探针。 | □
+[ROW] 4 | 最终用户无数据库直连或任意RPC。 | □
+[ROW] 5 | SHA-256、触发器、RLS、IDENTITY、advisory lock可用。 | □
+[ROW] 6 | user_profile构造表达式探针通过。 | □
+[ROW] 7 | DDL回滚脚本和数据备份已准备。 | □
+[ROW] 8 | 默认组织和既有数据回填方案已确认。 | □
+[ROW] 9 | 数字世界可先使用模拟数据和程序化模型。 | □
+[ROW] 10 | 外部网关/重建服务未就绪时采用接口模拟。 | □
+[ROW] 11 | 环境探针全部通过后才执行DDL。 | □
+[ROW] 12 | 8类临时库测试全部通过后才冻结DDL。 | □
+[TABLE] ### TABLE 62 ###
+[ROW] 术语 | 定义
+[ROW] EWOH | 本项目工厂具身智能操作系统。
+[ROW] 具身智能 | 感知、人员、设备、外骨骼、任务和环境通过数字世界形成可交互闭环。
+[ROW] 数字世界 | 全屏3D/2D双态数字孪生操作界面。
+[ROW] 指挥中心 | 管理者KPI和态势概览，不承担编辑和推演。
+[ROW] L0-L4 | 从集团/园区到人员外骨骼的逐级下钻层级。
+[ROW] A1/A2/A3 | 异常识别、建议、方案生成的AI能力等级。
+[ROW] RLS | PostgreSQL行级安全。
+[ROW] GUC | PostgreSQL会话/事务上下文变量。
+[ROW] 完整性保护 | 追加写、权限限制、脱敏、哈希链和校验；不等同绝对不可篡改。
+[ROW] 逻辑引用 | 无物理FK时由Service维护的跨表引用。
+[ROW] 轻量推演 | 基于规则和资源数据的冲突、时间、占用和风险计算。

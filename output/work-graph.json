@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T20:26:41.151Z",
+  "generatedAt": "2026-08-03T20:30:47.294Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 227,
+    "itemCount": 228,
     "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 84,
+    "evidenceCount": 85,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 36,
     "statusCounts": {
-      "Done": 134,
+      "Done": 135,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2324,6 +2324,18 @@
       "evidence": "failed query banner + retry; client 13/42"
     },
     {
+      "id": "T-193",
+      "title": "EWOH 0.6.0-rc4 candidate bundle",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`release/ewoh-0.6.0-rc4` 1195 files; SHA256SUMS; scale-release-review PASSED"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -3287,7 +3299,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "56d2c91e234d9d8c8d2ac7b4abe06438b9d66a568e7e93b49cedfdb82526f505",
+      "checksum": "873abdc7d417dd0d569904616c78bbacd1b649f63b231d1c45e2383000ccef4e",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3332,7 +3344,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "70c82c06cbb2924820cd59d7d1b5933922317703c0d53a3558ee02fe618be60c",
+      "checksum": "ba09c7e655c0a5162a794aa8e710baf08b88f3c9a9964a4feca1fdee82c11477",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3341,7 +3353,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "9b7d6a6317119707382c6c122613052a6e6d44578edd5ab96e7892175b8146df",
+      "checksum": "c265afc24bdc513b7ee591160cc86595afd475eee3cb0dd9f44cd9a57aaf5368",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4166,6 +4178,15 @@
       "checksum": "69e6e490c6ba6d3459e117357ed3acf5f1d429f4eba033d3de22fb9e6508c48b",
       "result": "passed",
       "title": "Round 84 - 2026-08-04 Command Map Query Error State"
+    },
+    {
+      "evidenceId": "EVD-round85-rc4-candidate-bundle",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round85-rc4-candidate-bundle.md",
+      "checksum": "c9c5f3d259f8c84f8e42a2b323206ddc0b64ae55c1073f45b545876ba71da33b",
+      "result": "passed",
+      "title": "Round 85 - 2026-08-04 EWOH 0.6.0-rc4 Candidate Bundle"
     },
     {
       "evidenceId": "EVD-round9-observability-deploy-artifacts",

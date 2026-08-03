@@ -1,0 +1,15 @@
+{{- if and (eq .Values.storage.driver "local") .Values.storage.createPvc }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.storage.pvcName }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "ewoh.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.storage.capacity | quote }}
+{{- end }}

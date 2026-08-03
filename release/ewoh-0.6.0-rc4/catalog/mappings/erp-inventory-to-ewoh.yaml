@@ -1,0 +1,27 @@
+mappingId: erp-inventory-to-ewoh
+name: ERP Inventory to EWOH Stock Projection
+version: 1.0.0
+source:
+  system: erp
+  schemaRef: erp-inventory-1.3
+target:
+  system: ewoh
+  schemaRef: ewoh-stock-projection-1.0
+rules:
+  - from: material_code
+    to: materialCode
+    required: true
+  - from: plant_code
+    to: plantCode
+    required: true
+  - from: available_qty
+    to: availableQuantity
+    transform: numeric(18,4)
+  - from: reserved_qty
+    to: reservedQuantity
+    transform: numeric(18,4)
+  - from: batch_no
+    to: batchNo
+  - from: updated_at
+    to: observedAt
+    transform: iso8601

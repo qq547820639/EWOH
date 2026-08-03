@@ -1,0 +1,106 @@
+{
+  "paths": [
+    {
+      "path": ".codex/artifacts/task-board.md",
+      "required": true,
+      "owner": "AG-00",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": ".codex/artifacts/gates.md",
+      "required": true,
+      "owner": "AG-00",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": ".codex/artifacts/agent-registry.md",
+      "required": true,
+      "owner": "AG-00",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": ".codex/artifacts/risk-register.md",
+      "required": true,
+      "owner": "AG-00",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": ".codex/artifacts/decision-log.md",
+      "required": true,
+      "owner": "AG-00",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": ".codex/artifacts/phase-state.md",
+      "required": true,
+      "owner": "AG-00",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": ".codex/artifacts/state.json",
+      "required": true,
+      "owner": "AG-00",
+      "mediaType": "application/json"
+    },
+    {
+      "path": ".codex/artifacts/intent-anchor.md",
+      "required": true,
+      "owner": "AG-00",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": ".codex/artifacts/understanding.md",
+      "required": true,
+      "owner": "AG-00",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": ".codex/artifacts/work/task-graph.md",
+      "required": true,
+      "owner": "AG-00",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": ".codex/artifacts/authoritative-plan-final6.txt",
+      "required": true,
+      "owner": "AG-00",
+      "mediaType": "text/plain"
+    },
+    {
+      "path": ".codex/artifacts/contracts/README.md",
+      "required": true,
+      "owner": "AG-03",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": ".codex/artifacts/work/evidence",
+      "required": true,
+      "owner": "AG-50",
+      "mediaType": "directory"
+    },
+    {
+      "path": ".codex/artifacts/inventory/environment.md",
+      "required": true,
+      "owner": "AG-10",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": ".codex/artifacts/inventory/frontend-nestjs.md",
+      "required": false,
+      "owner": "AG-30",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": ".codex/artifacts/inventory/docs-gap-report.md",
+      "required": false,
+      "owner": "AG-01",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": ".codex/artifacts/work/git-sync.json",
+      "required": false,
+      "owner": "ORCH-01",
+      "mediaType": "application/json"
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+openapi: 3.0.3
+info:
+  title: EWOH Operations API
+  version: 0.5.0
+servers:
+  - url: http://127.0.0.1:8765/api
+paths:
+  /status:
+    get:
+      summary: Service health and offline status
+      responses:
+        '200': {description: OK}
+  /devices:
+    get:
+      summary: List devices
+      responses: {'200': {description: OK}}
+  /telemetry:
+    get:
+      summary: Latest normalized telemetry
+      parameters:
+        - in: query
+          name: device_id
+          schema: {type: string}
+      responses: {'200': {description: OK}}
+  /events:
+    get:
+      summary: List risk events
+      responses: {'200': {description: OK}}
+  /simulate/action:
+    post:
+      summary: Set simulated action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action: {type: string, enum: [stand, walk, bend, lift, high_load, abnormal]}
+      responses: {'200': {description: Updated}}
+  /tasks/recommend:
+    post:
+      summary: Recommend people for a task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskRequest'}
+      responses: {'200': {description: Ranking}}
+  /query:
+    post:
+      summary: Local evidence-grounded query
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {question: {type: string}}
+      responses: {'200': {description: Answer with evidence}}
+  /scenario/evaluate:
+    post:
+      summary: Evaluate a pilot scenario
+      responses: {'200': {description: Pilot recommendation}}
+  /reset:
+    post:
+      summary: Reset the demo state
+      responses: {'200': {description: Reset}}
+components:
+  schemas:
+    TaskRequest:
+      type: object
+      required: [task_id, required_skill, zone_id]
+      properties:
+        task_id: {type: string}
+        required_skill: {type: string}
+        zone_id: {type: string}
+        load_level: {type: number, minimum: 0, maximum: 1}

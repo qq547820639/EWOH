@@ -1,10 +1,10 @@
-release: 0.6.0-rc3
+release: 0.6.0-rc4
 date: 2026-08-04
 status: candidate-for-production (approval-gated)
 bundle:
-  path: release/ewoh-0.6.0-rc3
-  checksums: release/ewoh-0.6.0-rc3/SHA256SUMS.txt
-  files: 1542
+  path: release/ewoh-0.6.0-rc4
+  checksums: release/ewoh-0.6.0-rc4/SHA256SUMS.txt
+  files: 1195
 artifacts:
   api: ewoh-spark-app/dist/server
   client: ewoh-spark-app/dist/client/index.standalone.html
@@ -29,16 +29,16 @@ artifacts:
   final6_catalog: catalog/
   contracts: contracts/
 evidence:
-  jest: "74 suites / 332 tests"
-  client_jest: "7 suites / 27 tests"
+  jest: "76 suites / 362 tests"
+  client_jest: "13 suites / 42 tests"
   e2e: "29/29 HTTP + PostgreSQL"
-  openapi: "231/231 documented, 0 unimplemented"
-  standalone_check: "passed (typecheck/lint/jest/client-jest/openapi/e2e/build/ddl/hygiene)"
+  openapi: "232/232 documented, 0 unimplemented"
+  standalone_check: "passed (typecheck/lint/jest/client-jest/repo-facts/openapi/e2e/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   postgres_gate: "standalone-postgres-check PASSED; 51 managed tables / 51 RLS / audit chain / rollback to 0 objects / rebuild"
   gate_sweep: "scenario 8 gates; connector 32; AAS 7; Rego 4; deployment 4; cross-tenant E2E 29/29"
   python: "unittest 667 passed; pytest 120 passed; ruff clean"
-  perf: "1000 req / 50 concurrency on /health/live, 1368 qps, p95 74.80ms"
+  perf: "500 req / 50 concurrency on /health/live, 4610 qps, p95 26.83ms"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; 57 tables backup/restore/verify; identity sequence advanced"
   work_graph: "202 items / 21 edges / 48 actors / 69 evidence / 14 gates / 0 conflicts"
   git_sync: "offline-first issue/PR plan; 188 items; live creation approval-gated"

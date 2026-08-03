@@ -1,0 +1,32 @@
+{
+  "id": "http-webhook-generic",
+  "version": "1.0.0",
+  "runtime": "edge-python",
+  "protocol": "http-webhook",
+  "inputProfile": "http-webhook-generic",
+  "outputEvents": [
+    "TelemetryObserved",
+    "DeviceStateChanged"
+  ],
+  "configSchema": {
+    "required": [
+      "endpointPath",
+      "signatureHeader"
+    ],
+    "properties": {
+      "endpointPath": {"type": "string"},
+      "signatureHeader": {"type": "string"}
+    }
+  },
+  "compatibility": {
+    "core": ">=0.6.0-rc2 <1.0.0",
+    "edgeRuntime": ">=1.0.0 <2.0.0"
+  },
+  "permissions": {
+    "network": ["http://factory-lan:*"],
+    "api": ["POST /api/ingestion/*"]
+  },
+  "tck": "tests/connector-tck.yaml",
+  "sbom": "sbom.cdx.json",
+  "rollback": "supported"
+}

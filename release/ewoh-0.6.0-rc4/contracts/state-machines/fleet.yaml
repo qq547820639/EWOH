@@ -1,0 +1,23 @@
+version: 1.0.0
+owner: PX-09
+rings:
+  - dev
+  - integration
+  - shadow
+  - pilot
+  - small
+  - full
+states:
+  - draft
+  - installed
+  - replayed
+  - upgraded
+  - rolled_back
+transitions:
+  - { from: installed, to: upgraded, condition: fleet_upgrade, ring: any }
+  - { from: replayed, to: upgraded, condition: fleet_upgrade, ring: any }
+  - { from: upgraded, to: rolled_back, condition: fleet_rollback, ring: any }
+  - { from: installed, to: rolled_back, condition: fleet_rollback, ring: any }
+  - { from: replayed, to: rolled_back, condition: fleet_rollback, ring: any }
+  - { from: rolled_back, to: upgraded, condition: fleet_upgrade, ring: any }
+terminal: []

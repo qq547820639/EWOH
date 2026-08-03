@@ -1,0 +1,18 @@
+{
+  "id": "assembly-cell",
+  "version": "1.0.0",
+  "modelFormat": "gltf",
+  "coordinateSystem": "rh-y-up",
+  "unit": "mm",
+  "calibration": {
+    "required": ["cameraToWorld"],
+    "status": "calibrated"
+  },
+  "semantics": ["station", "tool", "material"],
+  "compatibility": {
+    "core": ">=0.6.0-rc2 <1.0.0"
+  },
+  "tck": "tests/twin-tck.yaml",
+  "sbom": "sbom.cdx.json",
+  "rollback": "supported"
+}

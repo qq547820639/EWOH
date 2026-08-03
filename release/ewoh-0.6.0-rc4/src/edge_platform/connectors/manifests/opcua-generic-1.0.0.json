@@ -1,0 +1,32 @@
+{
+  "id": "opcua-generic",
+  "version": "1.0.0",
+  "runtime": "edge-python",
+  "protocol": "opcua",
+  "inputProfile": "opc-ua-generic-machinery",
+  "outputEvents": [
+    "DeviceStateChanged",
+    "TelemetryObserved"
+  ],
+  "configSchema": {
+    "required": [
+      "endpointUrl",
+      "nodeIds"
+    ],
+    "properties": {
+      "endpointUrl": {"type": "string"},
+      "nodeIds": {"type": "array", "items": {"type": "string"}}
+    }
+  },
+  "compatibility": {
+    "core": ">=0.6.0-rc2 <1.0.0",
+    "edgeRuntime": ">=1.0.0 <2.0.0"
+  },
+  "permissions": {
+    "network": ["opc.tcp://factory-lan:*"],
+    "api": ["POST /api/ingestion/*"]
+  },
+  "tck": "tests/connector-tck.yaml",
+  "sbom": "sbom.cdx.json",
+  "rollback": "supported"
+}

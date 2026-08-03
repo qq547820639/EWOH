@@ -1,0 +1,17 @@
+/* admin/admin.css — model & rule registry tables */
+.cm-ad-wrap { display: flex; flex-direction: column; gap: 14px; }
+.cm-ad-section { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.cm-ad-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.cm-ad-head h3 { margin: 0; font-size: 13px; }
+.cm-ad-note { font-size: 11px; color: var(--muted); }
+
+.cm-ad-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.cm-ad-table th, .cm-ad-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+.cm-ad-table th { color: var(--muted); font-weight: 600; background: var(--panel); }
+.cm-ad-table td { color: var(--text); }
+.cm-ad-table tbody tr:hover { background: var(--panel-2); }
+.cm-mono { font-family: var(--mono); }
+
+.cm-ad-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding-top: 4px; }
+.cm-ad-meta { font-size: 11px; color: var(--muted); }
+.cm-btn-sm { padding: 3px 8px; font-size: 11px; }

@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented; 2026-08-04 iteration adds repo-facts consistency gate, unified error contract, full data-source vocabulary, nested request-transaction reuse, mobile SOP/exception/QC/offline queue/photo/PWA, global ValidationPipe with fieldErrors, command-map entity details/error states, state guards, scale idempotency, request-audit correlation, and error sanitization; standalone check PASSED, Jest 76 suites / 362 tests, client 13 suites / 42 tests, OpenAPI 232/232, repo facts 33/33, real PG E2E 29/29, build PASSED",
+  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented; 2026-08-04 iteration adds repo-facts consistency gate, unified error contract, full data-source vocabulary, nested request-transaction reuse, mobile SOP/exception/QC/offline queue/photo/PWA, global ValidationPipe with fieldErrors, command-map entity details/error states, state guards, scale idempotency, request-audit correlation, error sanitization, and EWOH 0.6.0-rc4 candidate bundle; standalone check PASSED, Jest 76 suites / 362 tests, client 13 suites / 42 tests, OpenAPI 232/232, repo facts 33/33, real PG E2E 29/29, build PASSED",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
@@ -253,7 +253,8 @@
     "error_sanitization_2026_08_04": "HttpException details no longer serialize raw response objects; site readiness returns generic error; exception filter + work orchestration tests; Jest 76/362",
     "devices_error_state_2026_08_04": "Devices page shows retryable error state and data update time instead of conflating failures with empty results",
     "bandit_2026_08_04": "python3 -m bandit -r src/edge_platform -ll: 0 medium/high issues over 28286 lines",
-    "command_map_query_state_2026_08_04": "failed entity/world/overview/environment queries show retryable banner; queryState helpers + 3 client tests; client 13/42"
+    "command_map_query_state_2026_08_04": "failed entity/world/overview/environment queries show retryable banner; queryState helpers + 3 client tests; client 13/42",
+    "release_rc4_2026_08_04": "release/ewoh-0.6.0-rc4 generated: 1195 files, SHA256SUMS.txt, scale-release-review PASSED; manifest release=0.6.0-rc4"
   },
   "subagent_state": {
     "planned": [
