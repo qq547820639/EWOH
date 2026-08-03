@@ -1648,6 +1648,92 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scale/connectors:
+    post:
+      tags:
+        - scale
+      summary: Register a connector package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectorPackageRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - scale
+      summary: List connector packages
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackageList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/scenario-packs:
+    post:
+      tags:
+        - scale
+      summary: Register a scenario pack
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScenarioPackRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - scale
+      summary: List scenario packs
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackageList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/assets:
     post:
       tags:
@@ -6738,6 +6824,58 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/FactoryProfile'
+    ConnectorPackageRequest:
+      type: object
+      properties:
+        packageId:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        runtime:
+          type: string
+        protocol:
+          type: string
+        inputProfile:
+          type: string
+        outputEvents:
+          type: array
+          items:
+            type: string
+        configSchema:
+          type: object
+        compatibility:
+          type: object
+      required:
+        - name
+        - version
+        - runtime
+        - protocol
+    ScenarioPackRequest:
+      type: object
+      properties:
+        packageId:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        requires:
+          type: object
+        workflows:
+          type: array
+          items:
+            type: string
+        policies:
+          type: array
+          items:
+            type: string
+        acceptance:
+          type: string
+      required:
+        - name
+        - version
     AssetPackage:
       type: object
       properties:

@@ -42,6 +42,8 @@ the production approval gate.
 - Mobile workbench React page is implemented and verified with client tests.
 - Final 5.0 adopted; scale kernel (factory template/profile/asset registry) is
   implemented and verified with 51 managed tables.
+- Connector and scenario pack catalog are implemented and verified; a
+  published template installs multiple factory profiles without a code fork.
 
 ## Active Tasks
 

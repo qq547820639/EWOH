@@ -1050,6 +1050,22 @@ if (!e2eConfig) {
       expect(installed.status).toBe(201);
       expect(installed.body.status).toBe('installed');
 
+      const secondInstall = await apiRequest<{
+        profileId: string;
+        factoryName: string;
+        status: string;
+      }>(baseUrl, `/api/scale/templates/${templateId}/install`, {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          factoryName: 'E2E 工厂C',
+          config: { shift: { count: 3 } },
+        }),
+      });
+      expect(secondInstall.status).toBe(201);
+      expect(secondInstall.body.profileId).not.toBe(installed.body.profileId);
+      expect(secondInstall.body.status).toBe('installed');
+
       const asset = await apiRequest<{ packageId: string; status: string }>(
         baseUrl,
         '/api/scale/assets',
@@ -1088,6 +1104,60 @@ if (!e2eConfig) {
         true,
       );
 
+      const connector = await apiRequest<{
+        packageId: string;
+        packageType: string;
+      }>(baseUrl, '/api/scale/connectors', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          name: 'opcua-generic-machinery',
+          version: '1.2.0',
+          runtime: 'edge-python',
+          protocol: 'opcua',
+          outputEvents: ['DeviceStateChanged'],
+        }),
+      });
+      expect(connector.status).toBe(201);
+      expect(connector.body.packageType).toBe('connector');
+
+      const scenarioPack = await apiRequest<{
+        packageId: string;
+        packageType: string;
+      }>(baseUrl, '/api/scale/scenario-packs', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          name: 'heavy-lifting-safety',
+          version: '1.0.0',
+          requires: { connectors: ['exoskeleton-frame@1.x'] },
+        }),
+      });
+      expect(scenarioPack.status).toBe(201);
+      expect(scenarioPack.body.packageType).toBe('scenario');
+
+      const connectors = await apiRequest<Array<{ packageId: string }>>(
+        baseUrl,
+        '/api/scale/connectors',
+        { headers: jsonHeaders(token) },
+      );
+      expect(connectors.status).toBe(200);
+      expect(
+        connectors.body.some((row) => row.packageId === connector.body.packageId),
+      ).toBe(true);
+
+      const scenarioPacks = await apiRequest<Array<{ packageId: string }>>(
+        baseUrl,
+        '/api/scale/scenario-packs',
+        { headers: jsonHeaders(token) },
+      );
+      expect(scenarioPacks.status).toBe(200);
+      expect(
+        scenarioPacks.body.some(
+          (row) => row.packageId === scenarioPack.body.packageId,
+        ),
+      ).toBe(true);
+
       const templateRows = await owner!.unsafe<
         Array<{ template_id: string; lifecycle_status: string; org_id: string }>
       >(
@@ -1112,6 +1182,17 @@ if (!e2eConfig) {
       expect(profileRows[0].status).toBe('installed');
       expect(profileRows[0].org_id).toBe(fixture!.orgA.id);
 
+      const secondProfileRows = await owner!.unsafe<
+        Array<{ profile_id: string; org_id: string }>
+      >(
+        `select profile_id, org_id::text
+         from public.ewoh_factory_profile
+         where profile_id = $1`,
+        [secondInstall.body.profileId],
+      );
+      expect(secondProfileRows).toHaveLength(1);
+      expect(secondProfileRows[0].org_id).toBe(fixture!.orgA.id);
+
       const assetRows = await owner!.unsafe<
         Array<{ package_id: string; org_id: string }>
       >(
@@ -1122,6 +1203,28 @@ if (!e2eConfig) {
       );
       expect(assetRows).toHaveLength(1);
       expect(assetRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const connectorRows = await owner!.unsafe<
+        Array<{ package_id: string; org_id: string }>
+      >(
+        `select package_id, org_id::text
+         from public.ewoh_asset_package
+         where package_id = $1`,
+        [connector.body.packageId],
+      );
+      expect(connectorRows).toHaveLength(1);
+      expect(connectorRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const scenarioRows = await owner!.unsafe<
+        Array<{ package_id: string; org_id: string }>
+      >(
+        `select package_id, org_id::text
+         from public.ewoh_asset_package
+         where package_id = $1`,
+        [scenarioPack.body.packageId],
+      );
+      expect(scenarioRows).toHaveLength(1);
+      expect(scenarioRows[0].org_id).toBe(fixture!.orgA.id);
     });
 
     it('persists approval instances, steps, and audit operations', async () => {

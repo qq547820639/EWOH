@@ -226,6 +226,87 @@ export class ScaleService {
     return row;
   }
 
+  async registerConnector(
+    body: {
+      packageId?: string;
+      name: string;
+      version: string;
+      runtime: string;
+      protocol: string;
+      inputProfile?: string;
+      outputEvents?: string[];
+      configSchema?: Record<string, unknown>;
+      compatibility?: Record<string, unknown>;
+    },
+    actor?: OrgContext,
+  ) {
+    if (!body.runtime?.trim() || !body.protocol?.trim()) {
+      throw new BadRequestException('runtime and protocol are required');
+    }
+    return this.registerAssetPackage(
+      {
+        packageId: body.packageId,
+        packageType: 'connector',
+        name: body.name,
+        version: body.version,
+        manifest: {
+          runtime: body.runtime,
+          protocol: body.protocol,
+          inputProfile: body.inputProfile ?? null,
+          outputEvents: body.outputEvents ?? [],
+          configSchema: body.configSchema ?? {},
+          compatibility: body.compatibility ?? {},
+        },
+      },
+      actor,
+    );
+  }
+
+  async listConnectors() {
+    return this.db
+      .select()
+      .from(ewohAssetPackage)
+      .where(eq(ewohAssetPackage.packageType, 'connector'))
+      .orderBy(desc(ewohAssetPackage.createdAt));
+  }
+
+  async registerScenarioPack(
+    body: {
+      packageId?: string;
+      name: string;
+      version: string;
+      requires?: Record<string, unknown>;
+      workflows?: string[];
+      policies?: string[];
+      acceptance?: string;
+    },
+    actor?: OrgContext,
+  ) {
+    return this.registerAssetPackage(
+      {
+        packageId: body.packageId,
+        packageType: 'scenario',
+        name: body.name,
+        version: body.version,
+        manifest: {
+          requires: body.requires ?? {},
+          workflows: body.workflows ?? [],
+          policies: body.policies ?? [],
+          acceptance: body.acceptance ?? null,
+        },
+      },
+      actor,
+    );
+  }
+
+  async listScenarioPacks() {
+    return this.db
+      .select()
+      .from(ewohAssetPackage)
+      .where(eq(ewohAssetPackage.packageType, 'scenario'))
+      .orderBy(desc(ewohAssetPackage.createdAt));
+  }
+
   async listAssetPackages() {
     return this.db
       .select()

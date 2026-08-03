@@ -57,6 +57,32 @@ export class ScaleController {
     return this.scaleService.listProfiles();
   }
 
+  @Post('connectors')
+  registerConnector(
+    @Body() body: Record<string, never>,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.scaleService.registerConnector(body as never, request.userContext);
+  }
+
+  @Get('connectors')
+  listConnectors() {
+    return this.scaleService.listConnectors();
+  }
+
+  @Post('scenario-packs')
+  registerScenarioPack(
+    @Body() body: Record<string, never>,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.scaleService.registerScenarioPack(body as never, request.userContext);
+  }
+
+  @Get('scenario-packs')
+  listScenarioPacks() {
+    return this.scaleService.listScenarioPacks();
+  }
+
   @Post('assets')
   registerAssetPackage(
     @Body() body: Record<string, never>,

@@ -186,6 +186,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-097 | Final 5.0 baseline adoption | AG-00 | Done | `authoritative-plan-final5.txt`; D-014/D-015 |
 | T-098 | Factory template/profile/asset scale kernel | PX-03 | Done | `round15-final5-scale-kernel.md`; E2E 18/18; managed tables 51 |
 
+## Wave Final5 - Connector/Scenario Catalog (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-099 | Connector + scenario pack catalog and second-factory drill | PX-04/07 | Done | `round16-connector-scenario.md`; OpenAPI 147/147; E2E 18/18 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

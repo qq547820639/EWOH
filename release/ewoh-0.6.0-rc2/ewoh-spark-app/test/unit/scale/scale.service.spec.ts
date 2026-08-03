@@ -133,4 +133,45 @@ describe('ScaleService templates and assets', () => {
     expect(result.packageId).toBe('PKG-1');
     expect(entries[0].table).toBe(ewohAssetPackage);
   });
+
+  it('registers a connector package', async () => {
+    const row = { packageId: 'PKG-CONN', packageType: 'connector' };
+    const { insert, entries } = createInsertMock([row]);
+    const service = new ScaleService(
+      { insert } as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    const result = await service.registerConnector({
+      name: 'opcua-generic-machinery',
+      version: '1.2.0',
+      runtime: 'edge-python',
+      protocol: 'opcua',
+      outputEvents: ['DeviceStateChanged'],
+    });
+
+    expect(result.packageType).toBe('connector');
+    expect(entries[0].table).toBe(ewohAssetPackage);
+    expect(
+      (entries[0].rows as { manifestJson: Record<string, unknown> }).manifestJson
+        .protocol,
+    ).toBe('opcua');
+  });
+
+  it('registers a scenario pack', async () => {
+    const row = { packageId: 'PKG-SCEN', packageType: 'scenario' };
+    const { insert } = createInsertMock([row]);
+    const service = new ScaleService(
+      { insert } as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    const result = await service.registerScenarioPack({
+      name: 'heavy-lifting-safety',
+      version: '1.0.0',
+      requires: { connectors: ['exoskeleton-frame@1.x'] },
+    });
+
+    expect(result.packageType).toBe('scenario');
+  });
 });

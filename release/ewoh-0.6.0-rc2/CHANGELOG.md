@@ -47,6 +47,9 @@
 - 规模化内核：工厂模板注册/继承/生命周期、模板安装生成工厂 Profile、
   资产包注册；新增 `ewoh_factory_template` / `ewoh_factory_profile` /
   `ewoh_asset_package`，受管表 48 → 51。
+- 连接器/场景包目录：连接器（runtime/protocol/configSchema）与场景包
+  （requires/workflows/policies）复用资产包注册；同一模板可安装多个工厂
+  Profile，验证“第二工厂无分叉”。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。
