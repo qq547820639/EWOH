@@ -31,6 +31,11 @@ export class MesController {
     return this.mesService.getWorkOrder(id);
   }
 
+  @Get('work-orders/:id/trace')
+  trace(@Param('id') id: string) {
+    return this.mesService.getTrace(id);
+  }
+
   @Post('work-orders/:id/state')
   transition(
     @Param('id') id: string,

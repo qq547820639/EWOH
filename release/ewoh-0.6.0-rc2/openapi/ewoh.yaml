@@ -1485,6 +1485,134 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/mobile/workbench:
+    get:
+      tags:
+        - mobile
+      summary: List assigned workbench steps for a person
+      parameters:
+        - name: personId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileWorkbenchList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mobile/workbench/scan:
+    post:
+      tags:
+        - mobile
+      summary: Scan a work order into the mobile workbench
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                orderId:
+                  type: string
+              required:
+                - orderId
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MesWorkOrderDetail'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mobile/workbench/orders/{orderId}:
+    get:
+      tags:
+        - mobile
+      summary: Mobile work order detail
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MesWorkOrderDetail'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mobile/workbench/orders/{orderId}/steps/{stepId}/state:
+    post:
+      tags:
+        - mobile
+      summary: Mobile step transition
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: action
+          in: query
+          required: true
+          description: start, report, review, or handover
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MesStep'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/oee/device-status:
     post:
       tags:
@@ -1766,6 +1894,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MesWorkOrderDetail'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/work-orders/{id}/trace:
+    get:
+      tags:
+        - mes
+      summary: Quality trace graph for a work order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Work order id
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MesTraceGraph'
         Unauthorized:
           $ref: '#/components/responses/Unauthorized'
         Forbidden:
@@ -6258,6 +6413,70 @@ components:
               type: integer
             open:
               type: integer
+    MesTraceGraph:
+      type: object
+      properties:
+        workOrder:
+          $ref: '#/components/schemas/MesWorkOrder'
+        steps:
+          $ref: '#/components/schemas/MesStepList'
+        materials:
+          $ref: '#/components/schemas/MaterialConsumptionList'
+        inspections:
+          type: array
+          items:
+            type: object
+        nodes:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              type:
+                type: string
+              label:
+                type: string
+        links:
+          type: array
+          items:
+            type: object
+            properties:
+              from:
+                type: string
+              to:
+                type: string
+              type:
+                type: string
+    MobileWorkbenchStep:
+      type: object
+      properties:
+        stepId:
+          type: string
+        scheduleTaskId:
+          type: string
+        stepNo:
+          type: integer
+        name:
+          type: string
+        status:
+          type: string
+        assignedPersonId:
+          type: string
+        assignedDeviceId:
+          type: string
+        spatialEntityId:
+          type: string
+        actualStart:
+          type: string
+          nullable: true
+        resultJson:
+          type: object
+          nullable: true
+    MobileWorkbenchList:
+      type: array
+      items:
+        $ref: '#/components/schemas/MobileWorkbenchStep'
     MesWorkOrder:
       type: object
       properties:

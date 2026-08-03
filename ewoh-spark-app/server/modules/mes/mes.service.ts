@@ -177,6 +177,69 @@ export class MesService {
     return { workOrder, steps, materials };
   }
 
+  async getTrace(orderId: string) {
+    const detail = await this.getWorkOrder(orderId);
+    const qualityEvents = await this.db
+      .select()
+      .from(ewohEvent)
+      .where(eq(ewohEvent.eventType, 'quality'));
+    const inspections = qualityEvents.filter(
+      (event) =>
+        (event.evidenceJson as Record<string, unknown> | null)?.workOrderId ===
+        orderId,
+    );
+    const nodes = [
+      {
+        id: detail.workOrder.scheduleTaskId,
+        type: 'work_order',
+        label: detail.workOrder.title,
+      },
+      ...detail.steps.map((step) => ({
+        id: step.stepId,
+        type: 'step',
+        label: step.name,
+      })),
+      ...detail.materials.map((material) => ({
+        id: material.bindingId,
+        type: 'material',
+        label: material.resourceId,
+      })),
+      ...inspections.map((event) => ({
+        id: event.eventId,
+        type: 'inspection',
+        label: event.title,
+      })),
+    ];
+    const links = [
+      ...detail.steps.map((step) => ({
+        from: detail.workOrder.scheduleTaskId,
+        to: step.stepId,
+        type: 'has_step',
+      })),
+      ...detail.materials.map((material) => ({
+        from: detail.workOrder.scheduleTaskId,
+        to: material.bindingId,
+        type: 'consumed',
+      })),
+      ...inspections.map((event) => ({
+        from: String(
+          (event.evidenceJson as Record<string, unknown> | null)?.stepId ??
+            detail.workOrder.scheduleTaskId,
+        ),
+        to: event.eventId,
+        type: 'inspected',
+      })),
+    ];
+    return {
+      workOrder: detail.workOrder,
+      steps: detail.steps,
+      materials: detail.materials,
+      inspections,
+      nodes,
+      links,
+    };
+  }
+
   async transitionWorkOrder(
     orderId: string,
     action: string,

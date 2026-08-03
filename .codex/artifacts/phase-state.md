@@ -38,6 +38,7 @@ the production approval gate.
   machine, and SLA escalation notification are implemented and verified.
 - ERP connector: idempotent inbound orders, outbound queue with ack, and
   reconciliation summary are implemented and verified.
+- Quality trace graph and mobile workbench API are implemented and verified.
 
 ## Active Tasks
 

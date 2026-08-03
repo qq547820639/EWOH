@@ -167,6 +167,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-094 | ERP connector skeleton | AG-18/03/11 | Done | `round12-erp-connector.md`; E2E 17/17; OpenAPI 129/129 |
 
+## Wave Final4 - Trace/Mobile (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-095 | Quality trace graph + mobile workbench API | AG-11/13/21 | Done | `round13-trace-mobile.md`; E2E 17/17; OpenAPI 134/134 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

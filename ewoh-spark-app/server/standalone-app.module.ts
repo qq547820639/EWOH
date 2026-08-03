@@ -35,6 +35,7 @@ import { MetricsInterceptor } from './modules/metrics/metrics.interceptor';
 import { MesModule } from './modules/mes/mes.module';
 import { OeeModule } from './modules/oee/oee.module';
 import { ErpModule } from './modules/erp/erp.module';
+import { MobileModule } from './modules/mobile/mobile.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { ErpModule } from './modules/erp/erp.module';
     MesModule,
     OeeModule,
     ErpModule,
+    MobileModule,
   ],
   providers: [
     {

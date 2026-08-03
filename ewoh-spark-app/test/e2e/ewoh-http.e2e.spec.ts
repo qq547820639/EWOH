@@ -551,7 +551,11 @@ if (!e2eConfig) {
           orderQty: 10,
           batchNo: `BATCH-${runId}`,
           steps: [
-            { name: '上料', assignedDeviceId: 'EXO-001' },
+            {
+              name: '上料',
+              assignedDeviceId: 'EXO-001',
+              assignedPersonId: `P-E2E-${runId}`,
+            },
             { name: '装配', assignedDeviceId: 'EXO-001' },
           ],
         }),
@@ -576,7 +580,42 @@ if (!e2eConfig) {
 
       const firstStep = created.body.steps[0];
       const secondStep = created.body.steps[1];
-      for (const action of ['start', 'report']) {
+      for (const action of ['start']) {
+        const stepState = await apiRequest(
+          baseUrl,
+          `/api/mes/work-orders/${orderId}/steps/${firstStep.stepId}/state?action=${action}`,
+          {
+            method: 'POST',
+            headers: jsonHeaders(token),
+            body: JSON.stringify({ quantity: 5 }),
+          },
+        );
+        expect(stepState.status).toBe(201);
+      }
+
+      const workbench = await apiRequest<
+        Array<{ stepId: string; status: string }>
+      >(
+        baseUrl,
+        `/api/mobile/workbench?personId=${encodeURIComponent(`P-E2E-${runId}`)}`,
+        { headers: jsonHeaders(token) },
+      );
+      expect(workbench.status).toBe(200);
+      expect(
+        workbench.body.some((step) => step.stepId === firstStep.stepId),
+      ).toBe(true);
+
+      const scanned = await apiRequest<{
+        workOrder: { scheduleTaskId: string };
+      }>(baseUrl, '/api/mobile/workbench/scan', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({ orderId }),
+      });
+      expect(scanned.status).toBe(201);
+      expect(scanned.body.workOrder.scheduleTaskId).toBe(orderId);
+
+      for (const action of ['report']) {
         const stepState = await apiRequest(
           baseUrl,
           `/api/mes/work-orders/${orderId}/steps/${firstStep.stepId}/state?action=${action}`,
@@ -635,9 +674,13 @@ if (!e2eConfig) {
         expect(stepState.status).toBe(201);
       }
       for (const action of ['start', 'report', 'review', 'handover']) {
+        const isMobileStart = action === 'start';
+        const endpoint = isMobileStart
+          ? `/api/mobile/workbench/orders/${orderId}/steps/${secondStep.stepId}/state?action=${action}`
+          : `/api/mes/work-orders/${orderId}/steps/${secondStep.stepId}/state?action=${action}`;
         const stepState = await apiRequest(
           baseUrl,
-          `/api/mes/work-orders/${orderId}/steps/${secondStep.stepId}/state?action=${action}`,
+          endpoint,
           {
             method: 'POST',
             headers: jsonHeaders(token),
@@ -658,6 +701,18 @@ if (!e2eConfig) {
       );
       expect(completed.status).toBe(201);
       expect((completed.body as { status: string }).status).toBe('completed');
+
+      const trace = await apiRequest<{
+        nodes: Array<{ type: string }>;
+        links: Array<{ type: string }>;
+      }>(baseUrl, `/api/mes/work-orders/${orderId}/trace`, {
+        headers: jsonHeaders(token),
+      });
+      expect(trace.status).toBe(200);
+      expect(trace.body.nodes.some((node) => node.type === 'work_order')).toBe(true);
+      expect(trace.body.nodes.some((node) => node.type === 'inspection')).toBe(true);
+      expect(trace.body.nodes.some((node) => node.type === 'material')).toBe(true);
+      expect(trace.body.links.some((link) => link.type === 'inspected')).toBe(true);
 
       const orderRows = await owner!.unsafe<
         Array<{ schedule_task_id: string; status: string; source: string; org_id: string }>
