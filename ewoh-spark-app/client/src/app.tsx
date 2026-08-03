@@ -19,6 +19,7 @@ const CommandMap = React.lazy(() => import('./pages/CommandMap/CommandMap'));
 const MobileWorkbench = React.lazy(() => import('./pages/MobileWorkbench/MobileWorkbench'));
 const Scale = React.lazy(() => import('./pages/Scale/Scale'));
 const Operations = React.lazy(() => import('./pages/Operations/Operations'));
+const RoleWorkbench = React.lazy(() => import('./pages/RoleWorkbench/RoleWorkbench'));
 const WorkOrchestration = React.lazy(() => import('./pages/WorkOrchestration/WorkOrchestration'));
 const NotFound = React.lazy(() => import('./pages/NotFound/NotFound'));
 const Login = React.lazy(() => import('./pages/Login/Login'));
@@ -85,6 +86,7 @@ const RoutesComponent = () => {
           <Route path="mobile-workbench" element={<RequireRole path="/mobile-workbench"><MobileWorkbench /></RequireRole>} />
           <Route path="scale" element={<RequireRole path="/scale"><Scale /></RequireRole>} />
           <Route path="operations" element={<RequireRole path="/operations"><Operations /></RequireRole>} />
+          <Route path="role-workbench" element={<RequireRole path="/role-workbench"><RoleWorkbench /></RequireRole>} />
           <Route path="work-orchestration" element={<RequireRole path="/work-orchestration"><WorkOrchestration /></RequireRole>} />
           {/* 旧路由保留为跳转别名 */}
           <Route path="events" element={<Navigate to="/alerts" replace />} />

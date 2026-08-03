@@ -1812,6 +1812,38 @@ if (!e2eConfig) {
       expect(passed.body.eventId).toBeTruthy();
     });
 
+    it('serves role workbench aggregations for production roles', async () => {
+      const dispatcher = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcher.status).toBe(201);
+      const token = dispatcher.body.accessToken;
+
+      for (const role of ['operator', 'team_lead', 'quality', 'equipment', 'manager']) {
+        const response = await apiRequest<{
+          role: string;
+          data: Record<string, unknown>;
+        }>(
+          baseUrl,
+          `/api/operations/role-workbench?role=${role}`,
+          { headers: jsonHeaders(token) },
+        );
+        expect(response.status).toBe(200);
+        expect(response.body.role).toBe(role);
+        expect(typeof response.body.data).toBe('object');
+      }
+
+      const invalid = await apiRequest(
+        baseUrl,
+        '/api/operations/role-workbench?role=auditor',
+        { headers: jsonHeaders(token) },
+      );
+      expect(invalid.status).toBe(400);
+      expect(JSON.stringify(invalid.body)).toContain('role must be one of');
+    });
+
     it('records device status, calculates OEE, and escalates andon SLA', async () => {
       const dispatcher = await login(
         baseUrl,

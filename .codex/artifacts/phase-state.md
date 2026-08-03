@@ -165,6 +165,13 @@ Trace: EWOH-2026-08-04-principal-final6
 - Full suite remains server 80/388, client 13/46, OpenAPI 246/246; work graph
   246 items / 103 evidence / 0 invariant conflicts.
 
+## Latest Round - 2026-08-04 MES Role Workbench
+
+- `GET /api/operations/role-workbench` aggregates operator/team lead/quality/
+  equipment/manager views from production tables.
+- New `/role-workbench` page with role tabs, summary cards, and table views.
+- Real PostgreSQL E2E: 33/33; authenticated browser: 5/5.
+
 ## Current Phase
 
 Final 6.0 work orchestration wave: C7-C9 contracts, file-backed Work Graph

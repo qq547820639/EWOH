@@ -51,6 +51,7 @@ export const queryKeys = {
   operationsStandardHours: ['operations-standard-hours'] as const,
   operationsEfficiency: ['operations-efficiency'] as const,
   operationsEfficiencySummary: ['operations-efficiency-summary'] as const,
+  roleWorkbench: (role: string) => ['role-workbench', role] as const,
   parameters: ['parameters'] as const,
   parameterSummary: ['parameter-summary'] as const,
   aasAssets: ['aas-assets'] as const,

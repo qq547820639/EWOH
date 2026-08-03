@@ -578,6 +578,7 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-209 | Quality scheme registry, auto-match, required check items, and result consistency | AG-11/20 | Done | `round96-quality-schemes.md`; unit + E2E 32/32 |
 | T-210 | Slow transaction detection, statement timeout, slow-query API and metric | AG-11/46 | Done | `round97-slow-query-observability.md`; unit + E2E 32/32 |
 | T-211 | Frontend route lazy loading and cancellable world/replay requests | AG-30/31 | Done | `round98-frontend-performance.md`; browser 4/4; main bundle split |
+| T-212 | MES role task workbench API + role workbench page | AG-11/30/31 | Done | `round99-role-workbench.md`; unit + E2E 33/33; browser 5/5 |
 
 ## Next Waves
 

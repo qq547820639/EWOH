@@ -104,6 +104,8 @@
   `GET /api/observability/slow-queries` 与 `ewoh_slow_queries_total` 指标。
 - 前端性能：页面路由改为 `React.lazy` 分块加载，Standalone 主包从约 2.3MB
   降至约 374KB；世界状态与回放请求支持 `AbortSignal` 取消。
+- MES 角色工作台：`GET /api/operations/role-workbench` 聚合操作员、班组长、
+  质检、设备与管理者视图，新增 `/role-workbench` 页面。
 
 ## [0.6.0-rc3] - 2026-08-04
 

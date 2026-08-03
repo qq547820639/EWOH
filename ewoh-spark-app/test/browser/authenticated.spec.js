@@ -159,4 +159,13 @@ test.describe('authenticated browser flow', () => {
     await page.goto(`${BASE_URL}/alerts`);
     await expect(page.locator('body')).toContainText('风险与告警');
   });
+
+  test('renders the role workbench after login', async ({ page }) => {
+    await loginAsDispatcher(page, credentials);
+    await page.goto(`${BASE_URL}/role-workbench`);
+    await expect(page.locator('body')).toContainText('角色任务工作台');
+    await expect(page.locator('button[aria-pressed="true"]')).toContainText(
+      '管理者',
+    );
+  });
 });

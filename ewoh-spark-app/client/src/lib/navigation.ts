@@ -5,6 +5,7 @@ import {
   BrainCircuit,
   Building2,
   CalendarClock,
+  ClipboardList,
   Cpu,
   Database,
   Factory,
@@ -32,6 +33,7 @@ export const ALL_ROLES: EwohRole[] = [
   'workshop_lead',
   'safety_admin',
   'device_ops',
+  'worker',
 ];
 
 export const navGroups: Array<{ label: string; items: NavItem[] }> = [
@@ -90,6 +92,12 @@ export const navGroups: Array<{ label: string; items: NavItem[] }> = [
         label: '运营管理',
         icon: Wrench,
         roles: ['global_admin', 'dispatcher', 'workshop_lead', 'safety_admin', 'device_ops'],
+      },
+      {
+        to: '/role-workbench',
+        label: '角色工作台',
+        icon: ClipboardList,
+        roles: ['global_admin', 'dispatcher', 'workshop_lead', 'worker', 'device_ops'],
       },
       {
         to: '/organization',
