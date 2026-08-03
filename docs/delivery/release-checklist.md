@@ -37,6 +37,16 @@ Owner: AG-00/AG-51
 | C9 | Production load/HA verification | Pending |
 | C10 | File service with local + S3-compatible storage | Implemented; live object storage pending credentials |
 
+## RC4 Status (2026-08-04)
+
+- G4/G5/G6/G8/G9/G10 locally: PostgreSQL 17 apply/verify/RLS/audit/rollback/
+  rebuild, Jest 76/362, client 13/42, OpenAPI 232/232, E2E 29/29,
+  Playwright 3/3, release drill PASSED, bandit 0 medium/high.
+- G7: authenticated browser flows for command center, command map, and mobile
+  workbench render against a real PostgreSQL fixture.
+- C9 remains Pending: production load/HA verification requires deployment
+  approval and external infrastructure.
+
 ## Before Production
 
 - User approval for DDL, deployment, credentials, and irreversible changes.

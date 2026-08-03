@@ -322,6 +322,21 @@ Owner: AG-00/AG-41
 - Device contract routes `/api/devices*` are enforced for
   `global_admin`/`dispatcher`/`device_ops` and verified in E2E.
 
+## RC4 Iteration Evidence (2026-08-04)
+
+- `ALL STANDALONE CHECKS PASSED` with a real PostgreSQL 17 environment:
+  NestJS Jest 76 suites / 362 tests, client Jest 13 suites / 42 tests,
+  repo facts 33/33, OpenAPI 232/232, HTTP + PostgreSQL E2E 29/29, and
+  Playwright authenticated browser flows 3/3.
+- `RELEASE DRILL PASSED` on embedded PostgreSQL 17 (apply/verify/RLS/audit/
+  rollback/rebuild + standalone gate + E2E).
+- Perf smoke: `GET /health/live` 500 req / 50 concurrency = 4610 QPS,
+  p95 26.83ms, 0 failures.
+- Static security: `python3 -m bandit -r src/edge_platform -ll` reports
+  0 medium/high issues; `STANDALONE SECURITY VERIFY OK`.
+- `release/ewoh-0.6.0-rc4` bundle: 1200 files with `SHA256SUMS.txt`;
+  `scale-release-review` PASSED.
+
 ## Pending
 
 - Real device/gateway integration evidence.

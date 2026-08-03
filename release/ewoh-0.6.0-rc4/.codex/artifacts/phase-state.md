@@ -59,7 +59,7 @@ Trace: EWOH-2026-08-04-principal-final6
   shows the last successful data update time.
 - Command map shows a retryable banner when entity/world/overview/environment
   queries fail instead of rendering silently empty placeholders.
-- `EWOH 0.6.0-rc4` candidate bundle generated: 1199 files, SHA256SUMS,
+- `EWOH 0.6.0-rc4` candidate bundle generated: 1200 files, SHA256SUMS,
   `scale-release-review` PASSED.
 - Authenticated Playwright tests pass 3/3: dispatcher login plus command
   center, command map, and mobile workbench renders against a real PostgreSQL

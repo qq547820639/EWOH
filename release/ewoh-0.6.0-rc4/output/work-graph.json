@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T20:42:02.767Z",
+  "generatedAt": "2026-08-03T20:43:49.871Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 229,
+    "itemCount": 230,
     "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 86,
+    "evidenceCount": 87,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 36,
     "statusCounts": {
-      "Done": 136,
+      "Done": 137,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2333,7 +2333,7 @@
         "AG-51"
       ],
       "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
-      "evidence": "`release/ewoh-0.6.0-rc4` 1199 files; SHA256SUMS; scale-release-review PASSED"
+      "evidence": "`release/ewoh-0.6.0-rc4` 1200 files; SHA256SUMS; scale-release-review PASSED"
     },
     {
       "id": "T-194",
@@ -2346,6 +2346,18 @@
       ],
       "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
       "evidence": "dispatcher login + command center/map/mobile workbench on real PG fixture; `npm run test:browser` 3/3"
+    },
+    {
+      "id": "T-195",
+      "title": "Browser tests in CI",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51/13",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`standalone.yml` installs Chromium and runs `npm run test:browser`"
     },
     {
       "id": "G0",
@@ -3311,7 +3323,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "916646ab4ddb55f0ba550c61038156fd354257e0eeaca477fa1af3151d325676",
+      "checksum": "36bebe3b2f73011e769f82f93f381218071fc8aa5ce90353c250e33b67af1261",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3356,7 +3368,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "1f2bec26e6b340e35d5160993ab4af316bbe5f6e6ad68dc6b28dcd03c554a2ce",
+      "checksum": "98ea3984169165f7514c1353574fe6a2697b72e5a7411c0fbe6c9251b8dd9e3f",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3365,7 +3377,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "ccfb68ce87a789e8fef99f42d36efcdb9d54f7eb4792c204e3748c933a1ba347",
+      "checksum": "9d56ceddb2d61f4b31d5c2c6242a156fdd8c078c7a629f7d9851e840f988c0df",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4196,7 +4208,7 @@
       "workItemId": "",
       "kind": "test",
       "path": ".codex/artifacts/work/evidence/round85-rc4-candidate-bundle.md",
-      "checksum": "40af7daa376dcea09b3b1b3fd217015a30ad395e51efc84ebed4fe1732558e1b",
+      "checksum": "b14b34b6262bba3ea9709a3795dd7476ef1c3942e04db51029efc63e60502690",
       "result": "passed",
       "title": "Round 85 - 2026-08-04 EWOH 0.6.0-rc4 Candidate Bundle"
     },
@@ -4208,6 +4220,15 @@
       "checksum": "ab9dfe9d795e8de0a0b99cedac5284133cbe2b1ad3ca0098517884e4c19e39ab",
       "result": "passed",
       "title": "Round 86 - 2026-08-04 Authenticated Playwright Browser Test"
+    },
+    {
+      "evidenceId": "EVD-round87-browser-tests-in-ci",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round87-browser-tests-in-ci.md",
+      "checksum": "11682ea2cd56e050be2511af6e52504dbb3dbd62b720946ea3f344ba22f38b7e",
+      "result": "passed",
+      "title": "Round 87 - 2026-08-04 Browser Tests in CI"
     },
     {
       "evidenceId": "EVD-round9-observability-deploy-artifacts",
