@@ -1,12 +1,12 @@
 {
   "schema": "ewoh:///git-sync/v1",
-  "generatedAt": "2026-08-03T20:01:01.528Z",
+  "generatedAt": "2026-08-03T20:04:02.533Z",
   "repository": "git@github.com:qq547820639/EWOH.git",
   "branch": "codex/ewoh-iteration-2026-08-04",
-  "headSha": "ca471576f74788560a3d513b822cc7fcf640f0c4",
-  "itemCount": 205,
+  "headSha": "9100b8e7386197767912cf5dddb64f7823037c09",
+  "itemCount": 206,
   "trackedCount": 0,
-  "missingCount": 205,
+  "missingCount": 206,
   "status": "offline",
   "source": ".codex/artifacts/work/git-sync.json",
   "items": [
@@ -2771,6 +2771,21 @@
       "missing": true
     },
     {
+      "workItemId": "T-185",
+      "title": "PWA installability assets",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/07",
+      "evidence": "manifest + service worker + registration; repo facts 32/32",
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "issueNumber": null,
+      "prNumber": null,
+      "branch": null,
+      "commitSha": null,
+      "state": "unlinked",
+      "missing": true
+    },
+    {
       "workItemId": "W0",
       "title": "docs, repo inventory, C1-C6 v1, environment probes",
       "type": "wave",
@@ -2982,7 +2997,7 @@
     },
     {
       "workItemId": "W7",
-      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue/photo, ValidationPipe, command-map details, state guards, scale idempotency",
+      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue/photo/PWA, ValidationPipe, command-map details, state guards, scale idempotency",
       "type": "wave",
       "status": "Proposed",
       "owner": "AG-00",

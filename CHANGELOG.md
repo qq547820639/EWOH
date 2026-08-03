@@ -35,6 +35,8 @@
   参数、AAS、Work Orchestration 与幂等场景。
 - 移动异常照片附件：异常上报表单支持选择 JPG/PNG/WebP 照片，先经
   `/api/files` 上传并把文件引用写入 `resultJson.exception.attachments`。
+- PWA 可安装基础：`manifest.webmanifest` + 最小 Service Worker + 客户端注册，
+  Standalone 页面可安装到移动端/工业平板；repo-facts 增加 PWA 资产门禁。
 
 ## [0.6.0-rc3] - 2026-08-04
 

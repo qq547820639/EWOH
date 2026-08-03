@@ -301,6 +301,30 @@ function auditRepoFacts(rootDir) {
     'ValidationPipe must be registered via APP_PIPE in both AppModule and StandaloneAppModule',
   );
 
+  const pwaManifest = readFile(
+    rootDir,
+    'ewoh-spark-app/client/public/manifest.webmanifest',
+  );
+  const serviceWorker = readFile(rootDir, 'ewoh-spark-app/client/public/sw.js');
+  const standaloneHtml = readFile(
+    rootDir,
+    'ewoh-spark-app/client/index.standalone.html',
+  );
+  const clientEntry = readFile(rootDir, 'ewoh-spark-app/client/src/index.tsx');
+  const pwaAssetsReady = Boolean(
+    pwaManifest?.includes('"display": "standalone"') &&
+      pwaManifest?.includes('"start_url"') &&
+      serviceWorker?.includes("addEventListener('fetch'") &&
+      standaloneHtml?.includes('manifest.webmanifest') &&
+      clientEntry?.includes('serviceWorker.register'),
+  );
+  check(
+    checks,
+    'pwa_installability_assets',
+    pwaAssetsReady,
+    'PWA manifest, service worker, HTML link, and client registration must all exist',
+  );
+
   return checks;
 }
 
