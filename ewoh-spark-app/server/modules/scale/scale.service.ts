@@ -537,6 +537,46 @@ export class ScaleService {
     };
   }
 
+  async scaleMetrics() {
+    const [assets, profiles, templates, compatibility] = await Promise.all([
+      this.listAssetPackages(),
+      this.listProfiles(),
+      this.listTemplates(),
+      this.compatibilityCatalog(),
+    ]);
+    const readyStatuses = new Set(['published', 'installed']);
+    const published = assets.filter((asset) =>
+      readyStatuses.has(asset.status),
+    ).length;
+    const ringCounts: Record<string, number> = {};
+    for (const profile of profiles) {
+      const ring = this.profileRing(profile);
+      ringCounts[ring] = (ringCounts[ring] ?? 0) + 1;
+    }
+    return {
+      generatedAt: new Date().toISOString(),
+      templateCount: templates.length,
+      profileCount: profiles.length,
+      assetPackageCount: assets.length,
+      scenarioCount: assets.filter(
+        (asset) => asset.packageType === 'scenario',
+      ).length,
+      connectorCount: assets.filter(
+        (asset) => asset.packageType === 'connector',
+      ).length,
+      mappingCount: assets.filter((asset) => asset.packageType === 'mapping')
+        .length,
+      publishedRate: assets.length
+        ? Number((published / assets.length).toFixed(3))
+        : 0,
+      ringCounts,
+      compatibility: {
+        compatibleCount: compatibility.compatibleCount,
+        incompatibleCount: compatibility.incompatibleCount,
+      },
+    };
+  }
+
   async listAssetPackages() {
     return this.db
       .select()

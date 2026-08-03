@@ -7,7 +7,7 @@ Owner: AG-00/AG-41
 
 - Python unittest: 667 passed.
 - Python repo contract tests: 82 passed.
-- NestJS Jest: 270 passed across 63 suites (includes SP-01..SP-08 scenario
+- NestJS Jest: 271 passed across 63 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
 - Client Jest: 21 passed across 6 suites.
@@ -23,7 +23,7 @@ Owner: AG-00/AG-41
 - NestJS type check, lint, and Standalone production build: passed.
 - One-click `scripts/standalone-check.sh`: passed with E2E, OpenAPI strict
   audit, DDL plans, and standalone DDL hygiene.
-- OpenAPI contract: 173 controller operations documented, 0 undocumented,
+- OpenAPI contract: 174 controller operations documented, 0 undocumented,
   0 unimplemented; `openapi/route-manifest.json` generated.
 - Full release drill: `RELEASE DRILL PASSED` against disposable PostgreSQL 17,
   including migration/RLS/audit/rollback/rebuild, 176 Jest tests, 107/107
@@ -141,6 +141,9 @@ Owner: AG-00/AG-41
   tests and the standalone production build pass.
 - ERP/MES connector profile: `erp-mes-profile-1.0.0` is a versioned connector
   package with secret-reference config and runtime test coverage.
+- Scale metrics: `GET /api/scale/metrics` computes real productization metrics
+  (counts, published rate, ring distribution, compatibility) and is verified
+  in E2E.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

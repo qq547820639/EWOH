@@ -17,10 +17,10 @@ artifacts:
   deploy: deploy/cloud/
   contracts: .codex/artifacts/contracts/
 evidence:
-  jest: "63 suites / 270 tests"
+  jest: "63 suites / 271 tests"
   client_jest: "6 suites / 21 tests"
   e2e: "23/23 HTTP + PostgreSQL"
-  openapi: "173/173 documented, 0 unimplemented"
+  openapi: "174/174 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/openapi/e2e/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; logical backup/restore of 54 tables / 25 rows with row-count verify"
@@ -59,6 +59,7 @@ evidence:
   deployment_tck: "deployment-tck.js one-command gate: deploy artifacts 66 + Helm 125 + release review 24"
   scale_ui: "/scale page wired to templates/profiles/assets/compatibility/onboarding APIs"
   erp_mes_connector: "erp-mes-profile-1.0.0 manifest; secret-ref config; connector tests 11; pytest 82 passed"
+  scale_metrics: "GET /api/scale/metrics counts/published rate/ring distribution/compatibility"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

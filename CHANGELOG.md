@@ -132,6 +132,8 @@
   并支持从页面执行 F0-F6 工厂上线运行。
 - ERP/MES 连接器 Profile：新增 `erp-mes-profile-1.0.0` Manifest，配置使用
   `secretName` 引用而非内嵌凭证，并纳入 Connector Runtime 测试集。
+- 规模化指标：`GET /api/scale/metrics` 输出模板/Profile/资产/场景/连接器/
+  映射计数、发布率、升级环分布与兼容性汇总。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

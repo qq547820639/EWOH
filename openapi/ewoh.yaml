@@ -2159,6 +2159,24 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scale/metrics:
+    get:
+      tags:
+        - scale
+      summary: Read scale productization metrics
+      responses:
+        '200':
+          description: Scale metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScaleMetricsResult'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/onboarding/checklist:
     get:
       tags:
@@ -7792,6 +7810,36 @@ components:
                 type: boolean
               reason:
                 type: string
+    ScaleMetricsResult:
+      type: object
+      properties:
+        generatedAt:
+          type: string
+        templateCount:
+          type: integer
+        profileCount:
+          type: integer
+        assetPackageCount:
+          type: integer
+        scenarioCount:
+          type: integer
+        connectorCount:
+          type: integer
+        mappingCount:
+          type: integer
+        publishedRate:
+          type: number
+        ringCounts:
+          type: object
+          additionalProperties:
+            type: integer
+        compatibility:
+          type: object
+          properties:
+            compatibleCount:
+              type: integer
+            incompatibleCount:
+              type: integer
     OnboardingStepDefinition:
       type: object
       properties:

@@ -1895,6 +1895,22 @@ if (!e2eConfig) {
       expect(partnerRun.body.overall).toBe('passed');
       expect(partnerRun.body.partner).toBe(true);
       expect(partnerRun.body.steps.every((step) => step.passed)).toBe(true);
+
+      const scaleMetrics = await apiRequest<{
+        templateCount: number;
+        profileCount: number;
+        assetPackageCount: number;
+        publishedRate: number;
+        ringCounts: Record<string, number>;
+      }>(baseUrl, '/api/scale/metrics', {
+        headers: jsonHeaders(token),
+      });
+      expect(scaleMetrics.status).toBe(200);
+      expect(scaleMetrics.body.templateCount).toBeGreaterThanOrEqual(1);
+      expect(scaleMetrics.body.profileCount).toBeGreaterThanOrEqual(2);
+      expect(scaleMetrics.body.assetPackageCount).toBeGreaterThanOrEqual(3);
+      expect(scaleMetrics.body.publishedRate).toBeGreaterThan(0);
+      expect(scaleMetrics.body.ringCounts).toBeDefined();
     });
 
     it('persists approval instances, steps, and audit operations', async () => {

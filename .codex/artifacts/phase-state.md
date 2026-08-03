@@ -101,6 +101,8 @@ production approval gate.
   compatibility and runs F0-F6 onboarding against real APIs.
 - ERP/MES connector profile: versioned manifest with HTTP REST protocol,
   secret-reference config, and runtime test coverage.
+- Scale metrics: `GET /api/scale/metrics` exposes template/profile/asset
+  counts, published rate, ring distribution, and compatibility summary.
 
 ## Active Tasks
 

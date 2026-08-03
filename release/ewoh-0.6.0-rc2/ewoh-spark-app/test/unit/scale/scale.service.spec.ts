@@ -665,4 +665,90 @@ describe('ScaleService templates and assets', () => {
       result.assets.find((row) => row.packageId === 'PKG-MAP')?.reason,
     ).toBe('unconstrained');
   });
+
+  it('returns scale productization metrics', async () => {
+    const assets = [
+      {
+        packageId: 'PKG-SCEN',
+        packageType: 'scenario',
+        name: 'mes',
+        version: '1.0.0',
+        status: 'installed',
+        manifestJson: {},
+      },
+      {
+        packageId: 'PKG-CONN',
+        packageType: 'connector',
+        name: 'opcua',
+        version: '1.0.0',
+        status: 'published',
+        manifestJson: {},
+      },
+      {
+        packageId: 'PKG-MAP',
+        packageType: 'mapping',
+        name: 'mapping',
+        version: '1.0.0',
+        status: 'draft',
+        manifestJson: {},
+      },
+    ];
+    const profiles = [
+      {
+        profileId: 'PRF-1',
+        factoryName: 'A',
+        templateId: 'TPL-1',
+        status: 'installed',
+        configJson: { upgradeRing: 'pilot' },
+        installedAt: null,
+        createdAt: new Date(),
+      },
+      {
+        profileId: 'PRF-2',
+        factoryName: 'B',
+        templateId: 'TPL-1',
+        status: 'installed',
+        configJson: { upgradeRing: 'shadow' },
+        installedAt: null,
+        createdAt: new Date(),
+      },
+    ];
+    const templates = [
+      {
+        templateId: 'TPL-1',
+        name: 'golden',
+        version: '1.0.0',
+        lifecycleStatus: 'published',
+        compatibleCore: null,
+        publishedAt: null,
+      },
+    ];
+    const select = jest.fn(() => ({
+      from: jest.fn((table: unknown) => ({
+        orderBy: jest.fn().mockResolvedValue(
+          table === ewohAssetPackage
+            ? assets
+            : table === ewohFactoryProfile
+              ? profiles
+              : templates,
+        ),
+      })),
+    }));
+    const service = new ScaleService(
+      { select } as never,
+      { appendAuditLog: jest.fn() } as never,
+    );
+
+    const result = await service.scaleMetrics();
+
+    expect(result.templateCount).toBe(1);
+    expect(result.profileCount).toBe(2);
+    expect(result.assetPackageCount).toBe(3);
+    expect(result.scenarioCount).toBe(1);
+    expect(result.connectorCount).toBe(1);
+    expect(result.mappingCount).toBe(1);
+    expect(result.publishedRate).toBeCloseTo(0.667, 3);
+    expect(result.ringCounts).toEqual({ pilot: 1, shadow: 1 });
+    expect(result.compatibility.compatibleCount).toBe(3);
+  });
 });

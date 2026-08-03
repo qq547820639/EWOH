@@ -319,6 +319,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-121 | ERP/MES connector profile manifest + runtime tests | PX-04/18 | Done | `round37-erp-mes-connector.md`; pytest 82 passed |
 
+## Wave Final5 - Scale Metrics (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-122 | Scale productization metrics API | PX-13/10 | Done | `round38-scale-metrics.md`; E2E metrics passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.
