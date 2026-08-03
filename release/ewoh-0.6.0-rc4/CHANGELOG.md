@@ -64,6 +64,8 @@
   `npm run test:browser`，推送/PR 都会执行认证浏览器流程。
 - 交付文档同步：`acceptance-evidence.md` 与 `release-checklist.md` 记录 RC4
   本地门禁、E2E、浏览器、性能、安全和发布包证据。
+- README 更新为全栈产品导航：Python 边缘平台、Standalone 云产品命令、
+  Playwright 浏览器门禁与 `0.6.0-rc4` 发布包校验。
 
 ## [0.6.0-rc3] - 2026-08-04
 

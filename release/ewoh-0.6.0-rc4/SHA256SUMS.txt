@@ -135,9 +135,9 @@ b74e54b28f0de645fd4fb54315c34fc12585c65535383ad2d0698923179fdb3a  ./.codex/artif
 d9d7560e7cf44d4fae1af32d7342d598ee2d42430bb80eaf02034509ee4e065c  ./.github/workflows/security.yml
 6114aa15574bf18ce38e4dd23829c1f2095c25a588fce119fb8f67f60a613d7d  ./.github/workflows/standalone.yml
 9986a7b6c7d86ae9a513fe0eac29345dbd934193a38a32cd2211d04cf73601d8  ./.github/workflows/test.yml
-674ff85134370572b5f8a08c7c3c4d6a27410adf081f42ceaaa332a0c6d4f871  ./CHANGELOG.md
+429323ddf8b3ca44216cc98ecd50b220b2fcdea18c5a1ecf179399fe1336b45a  ./CHANGELOG.md
 712ad74bca7fd2d09f12a2ad2eca55371d68f0ae31ca47174c4dc0ca4f10651f  ./Makefile
-60dd4e2df80addc4a2f46d0ff36dd49b04a32c88124f8ffa7720cc56e1ea5efe  ./README.md
+6156c97b9a6b034dc34ee01f88d43946b9d6bf810fa0c02aa124f9f2f95bf119  ./README.md
 b25cb71b03dbfa29ddd0dc6bc65680578ea8334ce93a50d71e9e1450b48f6b6d  ./RELEASE-README.md
 f9c1a56fddd12930b5b1c984fab0ddc8db425c21efffe2d014e463822fd592c4  ./SECURITY.md
 f2d4dc9756c8265600b8ff27dc6fcf6a1790b03deeffab3a381f3562dbdd0b14  ./catalog/connectors/erp/erp-inventory.yaml
@@ -936,9 +936,9 @@ f40dc4209d8e2741b56a972c058d2bcc276371c49e089152032de2e415d478cf  ./ewoh-spark-a
 82d75de6dabb8e0f998120cdcfb1e38c3d9bb8f687bf2ed29606383f2943a933  ./openapi/ewoh.yaml
 66a95e21e6605f76b487e1fcae84fb91938dcb7bb1470efbc483a87b5a28e178  ./openapi/route-manifest.json
 c71d0b9b08d5793ced49eb1a31bd224a54f35aff431698714b4a2b1de17c304e  ./openapi/work-orchestration.yaml
-e3027bcdd406cc8697edde35b51b230d6e3bb92bfda21cb4246c12deed32bc46  ./output/gate-decisions.json
-0bf258f9099b071293685dc092073b724771e4fa34167ace308c4685d5d84a6c  ./output/git-sync.json
-7309133f065f243ec48c7bd88491a5cac88dea282051e941f5c9a94090cde910  ./output/handoffs.json
+e12b773f6c3998da539a75ea0ca7de7e2cd4c0b988670e2297571183ba11982a  ./output/gate-decisions.json
+94b7320d80c94109132cf3f5d783299279951b830db08b576f1b2d1d7523084f  ./output/git-sync.json
+eedceb8b1a3e63c8d5e6805ccc7f3acbb89336af79d032c3ac385a81f6e39ae5  ./output/handoffs.json
 f19e56ce9fc4d98e2355b65380244703600edf2b8934396579ebcda89d97501a  ./output/playwright/browser-authenticated-command-center.png
 712c0dd4a2848194ecea4d5f4ff3a9b8923f6a1419edc75664a6421168da788f  ./output/playwright/iteration-login-desktop-2026-08-04.png
 6862c96110fa2485c16ffadc589ba13b27ccd1820e564fc57dfeb603fffef6ec  ./output/playwright/iteration-login-mobile-2026-08-04.png
@@ -947,8 +947,8 @@ e3fd7b0b0e4930162a9fb3ad4f0ffc81d2d5eb3c14fdf2532c42a35e3b9cf4be  ./output/playw
 eb2b7d5a6ac46a32ff8df8f8b5b549f2439c1f793a0b59b79e8308d708f1c0e5  ./output/playwright/work-orchestration-git-sync.png
 c96c5aefe24a5b3910a0227f8df7b6b70592f8d9e52d6a68d6361a0e6b57454e  ./output/playwright/work-orchestration-ux.png
 d58d89dec2feff0a5a3f37275e2cde15172a1277d998cfd5c550379aa0c504ba  ./output/playwright/work-orchestration.png
-59b382cf60468bb8f99a0349c85568cd6ae2b7a5cc597bcb451cebb0035c5b60  ./output/resource-registry.json
-afaa1837a5debed5820cc0d3a5b95e88445b2d48a3eeab5d812b710cd83c3c32  ./output/work-graph.json
+8d171e7291dda6151e6b51fa4ed1d845ed266fca5af2ab027d41ee6bbf3a8050  ./output/resource-registry.json
+af4e5973731cbae77f3ace5e62e4f8f281d024c3328076c02c1bd55f027c802b  ./output/work-graph.json
 4725d9be64f3a431717c046f5c3b92e19b2e8a285eaef438fdff86a8af0cbd96  ./pyproject.toml
 31046728329b98137a00c36ee883ca8ec9362f471553933c6cfd6592bcacc48f  ./requirements-dev.txt
 d76c874bb49d37e3aa5bfeaa3510dd95d1548a9e46bb907fb30b042a1b75376a  ./run.py

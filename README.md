@@ -1,6 +1,8 @@
-# EWOH 受控试点系统
+# EWOH 工厂具身智能操作系统
 
-外骨骼人员作业协同与风险分析平台。纯 Python 标准库实现，运行时零第三方依赖。
+外骨骼人员作业协同、设备/安灯/ERP 业务闭环与规模化工厂复制平台。
+仓库由 Python 边缘平台、NestJS 后端、React 客户端、PostgreSQL 数据库与
+文件化多 Agent 编排控制台组成；发布候选为 `0.6.0-rc4`。
 
 本仓库分为两层：
 
@@ -48,6 +50,8 @@ OpenAPI 路由清单、数据来源词汇与错误契约）由
 
 ## 快速开始（开发环境）
 
+### Python 边缘平台
+
 ```bash
 python -m pip install -r requirements-dev.txt   # 可选：ruff/bandit/pytest
 python run.py     # 最简启动：无需 make/PYTHONPATH，访问 http://127.0.0.1:8765
@@ -59,6 +63,42 @@ make lint         # ruff 静态检查
 代码采用 `src/` 布局。`python run.py` 与 `make run`（等价于 `PYTHONPATH=src python -m edge_platform.run`）
 都会在真实模块未就绪时自动回退 stub 模式。注意：直接 `python -m edge_platform.run` 需先设置
 `PYTHONPATH=src`，否则找不到包；用根目录 `run.py` 可免去这一步。
+
+### Standalone 云产品（NestJS + React + PostgreSQL）
+
+```bash
+cd ewoh-spark-app
+npm ci
+npm run type:check
+npm run lint
+npm test -- --runInBand
+npm run test:client
+npm run build:prod:standalone
+```
+
+带真实 PostgreSQL 环境的完整门禁：
+
+```bash
+EWOH_E2E_RUNTIME_DATABASE_URL='postgresql://ewoh_api:...@127.0.0.1:55432/postgres' \
+  bash ../scripts/standalone-check.sh
+```
+
+认证浏览器流程（Playwright）：
+
+```bash
+EWOH_E2E_RUNTIME_DATABASE_URL='postgresql://ewoh_api:...@127.0.0.1:55432/postgres' \
+  npm run test:browser
+```
+
+## 发布候选
+
+`release/ewoh-0.6.0-rc4` 包含 Standalone 源码、数据库迁移、部署工件、契约、
+Work Orchestration 工具/目录、交付文档与校验和：
+
+```bash
+cd release/ewoh-0.6.0-rc4
+shasum -a 256 -c SHA256SUMS.txt
+```
 
 ## 试点部署
 
