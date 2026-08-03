@@ -127,9 +127,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
             message:
               typeof exceptionResponse === 'string' ? exceptionResponse : exception.message,
             details:
-              typeof exceptionResponse === 'object'
-                ? JSON.stringify(exceptionResponse)
-                : undefined,
+              typeof exceptionResponse === 'string' ? exceptionResponse : undefined,
             timestamp: Date.now(),
           },
           requestId,

@@ -1,12 +1,12 @@
 {
   "schema": "ewoh:///git-sync/v1",
-  "generatedAt": "2026-08-03T20:17:34.475Z",
+  "generatedAt": "2026-08-03T20:21:18.521Z",
   "repository": "git@github.com:qq547820639/EWOH.git",
   "branch": "codex/ewoh-iteration-2026-08-04",
-  "headSha": "6e76d58149866f0afbb88992cb35750c7defbdb2",
-  "itemCount": 210,
+  "headSha": "265d4e9f5cc778631088f5039a00ae786cce5e17",
+  "itemCount": 211,
   "trackedCount": 0,
-  "missingCount": 210,
+  "missingCount": 211,
   "status": "offline",
   "source": ".codex/artifacts/work/git-sync.json",
   "items": [
@@ -2846,6 +2846,21 @@
       "missing": true
     },
     {
+      "workItemId": "T-190",
+      "title": "Error leak sanitization",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/12",
+      "evidence": "HttpException details sanitized; site readiness generic error; Jest 76/362",
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "issueNumber": null,
+      "prNumber": null,
+      "branch": null,
+      "commitSha": null,
+      "state": "unlinked",
+      "missing": true
+    },
+    {
       "workItemId": "W0",
       "title": "docs, repo inventory, C1-C6 v1, environment probes",
       "type": "wave",
@@ -3057,7 +3072,7 @@
     },
     {
       "workItemId": "W7",
-      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue/photo/PWA, ValidationPipe, command-map details, state guards, scale idempotency, request-audit correlation",
+      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue/photo/PWA, ValidationPipe, command-map details, state guards, scale idempotency, request-audit correlation, error sanitization",
       "type": "wave",
       "status": "Proposed",
       "owner": "AG-00",

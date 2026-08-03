@@ -328,4 +328,24 @@ describe('WorkOrchestrationService', () => {
       ),
     ).toThrow('EWOH_WORK_WRITABLE');
   });
+
+  it('sanitizes invalid site readiness report errors', () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'ewoh-repo-'));
+    const artifacts = join(repoRoot, 'artifacts');
+    mkdirSync(join(repoRoot, 'catalog', 'factory-sites'), { recursive: true });
+    mkdirSync(artifacts, { recursive: true });
+    writeFileSync(
+      join(repoRoot, 'catalog', 'factory-sites', 'bad.json'),
+      '{not-json',
+      'utf8',
+    );
+    process.env.EWOH_WORK_ARTIFACTS_DIR = artifacts;
+    const localService = new WorkOrchestrationService();
+
+    const result = localService.getSiteReadiness();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].ready).toBe(false);
+    expect(result[0].error).toBe('Invalid site readiness report');
+  });
 });

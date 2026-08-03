@@ -354,7 +354,7 @@ export class WorkOrchestrationService {
           sourcePath,
           example: file.includes('.example.'),
           ready: false,
-          error: error instanceof Error ? error.message : String(error),
+          error: 'Invalid site readiness report',
         });
       }
     }

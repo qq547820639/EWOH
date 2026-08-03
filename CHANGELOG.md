@@ -47,6 +47,8 @@
 - 请求关联：TracingInterceptor 通过 `AsyncLocalStorage` 把 `requestId` 传给
   审计写入路径，`AuditLogEntry.requestId` 自动填充；repo-facts 增加
   `request_context_correlation` 门禁。
+- 错误脱敏：`HttpException` 不再把原始响应对象序列化进 `details`；
+  Site Readiness 解析失败只返回通用错误码，不泄露底层异常文本。
 
 ## [0.6.0-rc3] - 2026-08-04
 

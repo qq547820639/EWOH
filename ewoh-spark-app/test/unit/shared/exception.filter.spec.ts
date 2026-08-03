@@ -123,4 +123,17 @@ describe('GlobalExceptionFilter', () => {
 
     expect(json.mock.calls[0][0].error.requestId).toBe('server-trace');
   });
+
+  it('does not serialize raw HttpException response objects into details', () => {
+    process.env.NODE_ENV = 'production';
+    const { host, json } = createHost();
+
+    new GlobalExceptionFilter().catch(
+      new BadRequestException({ message: 'bad payload', password: 'secret' }),
+      host,
+    );
+
+    expect(json.mock.calls[0][0].error.details).toBeUndefined();
+    expect(JSON.stringify(json.mock.calls[0][0])).not.toContain('secret');
+  });
 });

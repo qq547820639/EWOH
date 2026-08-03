@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T20:17:34.249Z",
+  "generatedAt": "2026-08-03T20:21:18.285Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 224,
+    "itemCount": 225,
     "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 81,
+    "evidenceCount": 82,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 36,
     "statusCounts": {
-      "Done": 131,
+      "Done": 132,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2288,6 +2288,18 @@
       "evidence": "AsyncLocalStorage request context; audit entries auto-filled; repo facts 33/33"
     },
     {
+      "id": "T-190",
+      "title": "Error leak sanitization",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/12",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "HttpException details sanitized; site readiness generic error; Jest 76/362"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -2333,7 +2345,7 @@
       "type": "gate",
       "status": "Passed for standalone base",
       "owner": "AG-00",
-      "evidence": "request transaction/GUC, auth, errors, health, rate limit tests; Jest 76 suites / 360 tests"
+      "evidence": "request transaction/GUC, auth, errors, health, rate limit tests; Jest 76 suites / 362 tests"
     },
     {
       "id": "G6",
@@ -2527,12 +2539,12 @@
     },
     {
       "id": "W7",
-      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue/photo/PWA, ValidationPipe, command-map details, state guards, scale idempotency, request-audit correlation",
+      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue/photo/PWA, ValidationPipe, command-map details, state guards, scale idempotency, request-audit correlation, error sanitization",
       "type": "wave",
       "status": "Proposed",
       "owner": "AG-00",
       "wave": "W7",
-      "summary": "standalone-check ALL PASSED; Jest 76/360; client 12/39; OpenAPI 232/232; repo facts 33/33; real PG E2E 29/29"
+      "summary": "standalone-check ALL PASSED; Jest 76/362; client 12/39; OpenAPI 232/232; repo facts 33/33; real PG E2E 29/29"
     },
     {
       "id": "WP-ENV-001",
@@ -2712,7 +2724,7 @@
       "to": "W7",
       "edgeType": "depends",
       "blocking": true,
-      "evidenceRequirement": "standalone-check ALL PASSED; Jest 76/360; client 12/39; OpenAPI 232/232; repo facts 33/33; real PG E2E 29/29"
+      "evidenceRequirement": "standalone-check ALL PASSED; Jest 76/362; client 12/39; OpenAPI 232/232; repo facts 33/33; real PG E2E 29/29"
     },
     {
       "id": "E-016",
@@ -3251,7 +3263,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "f36c15770684bd99582be54e5d895a0be0a527adc3400140122ab956c6ccec3c",
+      "checksum": "9d1b4ecf26e6696707d026a8332e40f9eab3a8407cf7fd42a659a3e0d1a3aaca",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3260,7 +3272,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "157224908f718acc9615c6c708bfc6fc2a5b6e5359dc5c2055abdf0aba1b7751",
+      "checksum": "a4a438c24159ff4d431d6c4a394846f9e6829da955e333016f8b89538fd2785e",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3296,7 +3308,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "83f114da9d5636e9ad17f1ab1eee9fd935bdee38756fff59ebc520907dcfbac5",
+      "checksum": "da05fd261660e68540e8f6bdef95d8be1a4d7854b7577f31c13236c044b02a2a",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3305,7 +3317,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "0d9338cd6b6fcca7506c89814346e05fb660629b267744fa5483c4e85a37b5fc",
+      "checksum": "41588201995e030c7be169b611e32a241b721e16d2c7ef1b5ca03517af4dae92",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3332,7 +3344,7 @@
       "artifactId": "work-task-graph-md",
       "path": "work/task-graph.md",
       "mediaType": "text/markdown",
-      "checksum": "882606d2f1d55ba022c451992f5a50ab4a3b2b66fde89cfa5587cda9213828cf",
+      "checksum": "325468c4f6094b2f1a9b82318576d04e28b5d3499d8d1e996447218b807c5913",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4105,6 +4117,15 @@
       "title": "Round 81 - 2026-08-04 Request ID and Audit Correlation"
     },
     {
+      "evidenceId": "EVD-round82-error-sanitization",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round82-error-sanitization.md",
+      "checksum": "d0257f2ad09c594a6b9fa788b8a0b3810ddbfd6185497cc80a6c6a3a53aa4548",
+      "result": "passed",
+      "title": "Round 82 - 2026-08-04 Error Leak Sanitization"
+    },
+    {
       "evidenceId": "EVD-round9-observability-deploy-artifacts",
       "workItemId": "",
       "kind": "test",
@@ -4182,7 +4203,7 @@
       "humanDecision": null,
       "conditions": [
         "request transaction/GUC, auth, errors, health, rate limit tests",
-        "Jest 76 suites / 360 tests"
+        "Jest 76 suites / 362 tests"
       ],
       "approver": null,
       "decidedAt": null

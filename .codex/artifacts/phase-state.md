@@ -52,7 +52,9 @@ Trace: EWOH-2026-08-04-principal-final6
   (390x844) and desktop (1440x900) viewports in `output/playwright/`.
 - Request tracing and audit are correlated: `requestId` flows through
   AsyncLocalStorage from the tracing interceptor into audit entries.
-- Full standalone gate: typecheck, lint, Jest 76 suites / 360 tests, client
+- HttpException details are sanitized and site-readiness parse failures return
+  generic errors instead of raw exception text.
+- Full standalone gate: typecheck, lint, Jest 76 suites / 362 tests, client
   12 suites / 39 tests, repo facts 33/33, OpenAPI 232/232, production build, and
 
 ## Current Phase

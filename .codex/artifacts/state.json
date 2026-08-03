@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented; 2026-08-04 iteration adds repo-facts consistency gate, unified error contract, full data-source vocabulary, nested request-transaction reuse, mobile SOP/exception/QC/offline queue/photo/PWA, global ValidationPipe with fieldErrors, command-map entity details, state guards, scale idempotency, and request-audit correlation; standalone check PASSED, Jest 76 suites / 360 tests, client 12 suites / 39 tests, OpenAPI 232/232, repo facts 33/33, real PG E2E 29/29, build PASSED",
+  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented; 2026-08-04 iteration adds repo-facts consistency gate, unified error contract, full data-source vocabulary, nested request-transaction reuse, mobile SOP/exception/QC/offline queue/photo/PWA, global ValidationPipe with fieldErrors, command-map entity details, state guards, scale idempotency, request-audit correlation, and error sanitization; standalone check PASSED, Jest 76 suites / 362 tests, client 12 suites / 39 tests, OpenAPI 232/232, repo facts 33/33, real PG E2E 29/29, build PASSED",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
@@ -249,7 +249,8 @@
     "perf_smoke_2026_08_04_iteration": "GET /health/live 500 req / 50 concurrency: 4610 qps, p50 4.77ms, p95 26.83ms, 0 failures",
     "security_probe_2026_08_04_iteration": "STANDALONE SECURITY VERIFY OK: runtime role least-privilege, SECURITY DEFINER lookups, RLS A/B, audit chain tamper detection",
     "playwright_2026_08_04": "Playwright screenshots of Standalone /login at mobile 390x844 and desktop 1440x900 saved under output/playwright/iteration-login-*.png",
-    "request_context_correlation_2026_08_04": "AsyncLocalStorage request context carries traceId into audit entries; tracing interceptor + audit service tests; repo facts 33/33; Jest 76/360"
+    "request_context_correlation_2026_08_04": "AsyncLocalStorage request context carries traceId into audit entries; tracing interceptor + audit service tests; repo facts 33/33; Jest 76/360",
+    "error_sanitization_2026_08_04": "HttpException details no longer serialize raw response objects; site readiness returns generic error; exception filter + work orchestration tests; Jest 76/362"
   },
   "subagent_state": {
     "planned": [

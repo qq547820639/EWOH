@@ -551,6 +551,7 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-187 | Release drill + perf + security verification | AG-13/51 | Done | `RELEASE DRILL PASSED`; perf 4610 QPS p95 26.83ms; security probe OK; bandit unexecuted locally |
 | T-188 | Playwright browser screenshots | AG-13/30 | Done | mobile + desktop `/login` screenshots in `output/playwright/` |
 | T-189 | Request ID audit correlation | AG-00/11 | Done | AsyncLocalStorage request context; audit entries auto-filled; repo facts 33/33 |
+| T-190 | Error leak sanitization | AG-00/12 | Done | HttpException details sanitized; site readiness generic error; Jest 76/362 |
 
 ## Next Waves
 
