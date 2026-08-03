@@ -6,7 +6,7 @@ Owner: AG-00/AG-41
 ## Automated Evidence
 
 - Python unittest: 667 passed.
-- Python repo contract tests: 59 passed.
+- Python repo contract tests: 69 passed.
 - NestJS Jest: 254 passed across 60 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
@@ -105,6 +105,10 @@ Owner: AG-00/AG-41
 - Template config diff preview: `POST /api/scale/templates/:id/diff-preview`
   returns inherited and merged config with added/changed/removed key diffs;
   E2E verifies a published template preview without mutation.
+- Connector runtime: versioned connector manifests load, validate, health-check
+  and redact config through `src/edge_platform/connectors`; sample
+  exoskeleton-frame and equipment-state packages cover the connector SDK
+  contract; 10 new Python tests pass.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

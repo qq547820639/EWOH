@@ -48,6 +48,7 @@ evidence:
   compatibility_catalog: "asset/core compatibility matrix; semver-like range matcher; E2E incompatible connector verified"
   policy_engine: "policy schema v1; evaluate API; operator-safety example; 7 contract checks; E2E deny/allow"
   diff_preview: "template config inheritance/override merge; added/changed/removed diff; read-only API"
+  connector_runtime: "edge connector runtime with manifest/config/health/redaction/lifecycle; exoskeleton-frame + equipment-state manifests; pytest 69 passed"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

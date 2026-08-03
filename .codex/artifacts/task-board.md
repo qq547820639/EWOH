@@ -253,6 +253,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-110 | Template config inheritance diff preview API | PX-03/05 | Done | `round26-diff-preview.md`; E2E preview passed |
 
+## Wave Final5 - Connector Runtime (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-111 | Connector runtime + exoskeleton/equipment-state manifests | PX-04/13 | Done | `round27-connector-runtime.md`; pytest 69 passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

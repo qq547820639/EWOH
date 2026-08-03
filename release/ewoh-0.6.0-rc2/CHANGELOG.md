@@ -103,6 +103,9 @@
 - 模板配置差异预览：`POST /api/scale/templates/:id/diff-preview` 只读合并
   模板默认配置与请求覆盖配置，返回 `added/changed/removed` 键差异，便于
   第二工厂安装前评估影响。
+- 连接器运行时：`src/edge_platform/connectors/runtime.py` 提供 Manifest
+  加载/校验、配置校验、健康检查、密钥脱敏与生命周期；新增
+  `exoskeleton-frame` 与 `equipment-state` 样例连接器包。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

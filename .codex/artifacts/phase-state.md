@@ -76,6 +76,9 @@ production approval gate.
 - Template config diff preview: `POST /api/scale/templates/:id/diff-preview`
   returns inherited/merged config and added/changed/removed keys without
   mutating state.
+- Connector runtime: `src/edge_platform/connectors` loads/validates versioned
+  manifests, checks health/config, redacts secrets, and manages lifecycle;
+  exoskeleton-frame and equipment-state sample manifests are included.
 
 ## Active Tasks
 

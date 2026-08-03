@@ -2,7 +2,7 @@
 d9d7560e7cf44d4fae1af32d7342d598ee2d42430bb80eaf02034509ee4e065c  ./.github/workflows/security.yml
 e837948cc1f6815a1d29ef788831e7e9da7b614ffbca656e427de5e73c9b8779  ./.github/workflows/standalone.yml
 04119e083d0290c47810d2d70659c39bd710a98359dbbe1f07d4e09d799283b3  ./.github/workflows/test.yml
-6e18fae07a2d3c292ea23b809ab132bb739b53074c0c7c4fee3626c4cc2a389a  ./CHANGELOG.md
+c950523c1becb9ef520d95446e32a40e9e79d214e0039de3fd6633a6633facbd  ./CHANGELOG.md
 9b65f03fe4fbf5413248e2ed3b81d7de0d8c9cb890d93621a9d3e6a8f15b87b2  ./Makefile
 5eff92ef060482e7e19977a0a8294ffffe91c8a9b47d437cde70c6f79b85f4c0  ./README.md
 18aed5a0dba2bf9e17396e8d25d95524c8a6cd64d0e57b7768031c0a614f2ab8  ./RELEASE-README.md
@@ -142,10 +142,10 @@ cb4944c957e4888c137480614fa6f276afcc54bbd4fc0f5fa4571e411d4f9f7f  ./docs/archite
 3517965f70039dd3c9a8897bb81cf1374351d54790971d6292b5925ce1f272f7  ./docs/architecture/product_definition.md
 e97cc156f3348a1ca926e3dcbd3cfac5a35192f68b93c9585af1ebf9af8de492  ./docs/architecture/product_review_2026-07-31.md
 fa66e2ce1360765d98a85f8ebb7d1efa6b1d4acd8ccee343d1cfea18846ea5af  ./docs/data/multimodal_schema.md
-cd2283d827aabbdc62cf4e6cdb9683bc1c55950f3f45d8073db909131d4794b8  ./docs/delivery/acceptance-evidence.md
+b62f940affec0e9b5f52eab79fce91a1b020b2d9f341e310e77051e66512ef77  ./docs/delivery/acceptance-evidence.md
 d75812a1a317ebf61514bc4bcc14dcf4577a979de182352358fcdb084ffad1c3  ./docs/delivery/deployment-runbook.md
 97e5db9b47056c73ed7e77416c6300f2139c957601f89a7f0a464027ec995483  ./docs/delivery/release-checklist.md
-20af5ead2e90eb8575579b40dfd77326f35f2f7074a407f75c767dccf34c6376  ./docs/delivery/release-manifest.yaml
+035fcc778b0b9ff974da200dc55d281879f74bb3775810a0f358d863362520df  ./docs/delivery/release-manifest.yaml
 d429609ca4f89bfad846d2af8551a9ce4a3d8c3449e5fc8c394d1c93272379e6  ./docs/delivery/standalone-product-pack.md
 0a4104abf8bbe2035f4959bc07c2c4289def7d5ad0837d42a438821d32298918  ./docs/delivery/training-plan.md
 4c159e70e257fa9e9028238c0485549153f8177e314e70f0b4474bcedf5bfe70  ./docs/deployment/README.md
@@ -741,6 +741,10 @@ e922047930d57473a106a9f1d57673755ed3f6cbcd38844210c5c739b77b589c  ./src/edge_pla
 0468e5f6f914ab942fb7ebe20131aee7deddc3f82725adfb01a1af870234792e  ./src/edge_platform/collection/dataset.py
 64ebf45576e32d746d72670efe5fb5d58b2c81382a1f4d43dab80f5e794f61bf  ./src/edge_platform/collection/session.py
 76bcd87369ce892a4d6c77f506fb75faff612634e411140e3ee888814d468c17  ./src/edge_platform/config.py
+95104d92203d9caac2654bb8895e67c6f2fa8f8f06447abccadd9bb7cd7a17e1  ./src/edge_platform/connectors/__init__.py
+11aaab177d1e29ac2df1a5882f860e2ccfdf786e3b3a2cf6697bf1c4c93fc448  ./src/edge_platform/connectors/manifests/equipment-state-1.0.0.json
+f9ac488628f112e27a858cacae71f209abf9c2492ff6c9e542ec562826ad5650  ./src/edge_platform/connectors/manifests/exoskeleton-frame-1.0.0.json
+6d244de43a466ab3ed7085b2057f3f9582ac4a3e0ab8898c45ffd9e8e3082db0  ./src/edge_platform/connectors/runtime.py
 eff70f354c6035d11f07a1144d7bfa082567d85a9a862726c4dd09f9e1d1f005  ./src/edge_platform/demo.db
 6a55fc302b56b21224d70a2313a90d8c2fcce3abde8f32df9447566dade0ed7c  ./src/edge_platform/edge/__init__.py
 4ee62eb9e76db2a93cd98b631b5a42cff2e75936b58d7c584f20c6f049af95a9  ./src/edge_platform/edge/adapters/base.py
@@ -876,6 +880,7 @@ e14556ecf38a2b6504203fb6589422b7d5ad59c2fd64864ca915dc28275c2c8f  ./src/edge_pla
 a4a60bfcaa9d760d578a0c221f8b6c5a426d812e2b1ac0e125c464f84edacd4a  ./src/edge_platform/world_model/replay.py
 63bebb1d8f3945159ebf4f6c9a4bb3f8a5c6a083502480b0e35207ec3b62a2e2  ./src/edge_platform/world_model/state_store.py
 33a6165740c44f67f9ed1112d00ae8d25dea53f119c2e4f42f4ad98d032ca68a  ./tests/__init__.py
+ed132dcb297a3fcb5bf286b1a4832313d745119e076aa4f3ff13801526b7dbe7  ./tests/test_connector_runtime.py
 756daf2bcb62e23efe7eb06a6d0dcd64f0896ed5ad427d391f48caa8ac5e0905  ./tests/test_edge_bridge_ingest.py
 2d0e1da8bee641ed7c1cc8d95770d1c1d41efae17e68cb3a14fd7d8718d7547a  ./tests/test_ny_exo_a1_contract.py
 be2b5aaf9c54637219620026a22b159a4bfc88f95d5803c5fb68c19fb7fcd099  ./ui/command_map/admin/admin.css
