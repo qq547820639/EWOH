@@ -115,3 +115,8 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
 - Result: `PILOT READINESS: NOT READY`; production readiness remains gated.
 - Work graph after pilot rerun: 249 items / 36 edges / 106 evidence /
   0 invariant conflicts.
+
+## 2026-08-04 Replay Context UI Gate
+
+- Event center can fetch and display replay before/during/after context.
+- Replay context summarizer is unit-tested.

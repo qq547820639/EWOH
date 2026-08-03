@@ -192,6 +192,13 @@ Trace: EWOH-2026-08-04-principal-final6
 - Result: `PILOT READINESS: NOT READY`; G10-G13 remain approval-gated.
 - Work graph after pilot rerun: 249 items / 106 evidence / 0 conflicts.
 
+## Latest Round - 2026-08-04 Replay Context UI
+
+- Event center detail adds “回放上下文” button using
+  `GET /api/world/replay/context/:eventId`.
+- Shows 事发前/事发时/处置后 timestamps and timeline event count.
+- Client suite: 15 suites / 50 tests.
+
 ## Current Phase
 
 Final 6.0 work orchestration wave: C7-C9 contracts, file-backed Work Graph

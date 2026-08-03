@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { toast } from 'sonner';
-import { CheckCircle2, Hammer, Loader2 } from 'lucide-react';
+import { CheckCircle2, Hammer, History, Loader2 } from 'lucide-react';
 import { getEvents, handleEvent } from '@client/src/api/dashboard';
+import { getEventContext } from '../../../api/world';
 import type { EventInfo } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { queryKeys } from '@client/src/hooks/queryKeys';
@@ -11,6 +12,7 @@ import { getCurrentOperator } from '@client/src/lib/auth';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
 import { ScrollArea } from '@client/src/components/ui/scroll-area';
+import { summarizeReplayContext, type ReplayContextSummary } from '../replayContext';
 
 interface EventCenterPanelProps {
   selectedEventId?: string | null;
@@ -84,6 +86,9 @@ export default function EventCenterPanel({
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [severityFilter, setSeverityFilter] = useState<string | undefined>(undefined);
   const [internalSelectedId, setInternalSelectedId] = useState<string | null>(null);
+  const [replayContext, setReplayContext] = useState<ReplayContextSummary | null>(null);
+  const [contextLoading, setContextLoading] = useState(false);
+  const [contextError, setContextError] = useState('');
   const queryClient = useQueryClient();
 
   const selectedId = selectedEventId ?? internalSelectedId;
@@ -97,6 +102,8 @@ export default function EventCenterPanel({
       setStatusFilter(undefined);
       setSeverityFilter(undefined);
     }
+    setReplayContext(null);
+    setContextError('');
   }, [selectedEventId]);
 
   const { data: events, isLoading, isError } = useQuery<EventInfo[]>({
@@ -141,6 +148,19 @@ export default function EventCenterPanel({
       filteredEvents.find((e) => e.id === selectedId || e.eventId === selectedId) ?? null
     );
   }, [filteredEvents, selectedId]);
+
+  const loadReplayContext = async (eventId: string) => {
+    setContextLoading(true);
+    setContextError('');
+    try {
+      const context = await getEventContext(eventId, 10);
+      setReplayContext(summarizeReplayContext(context));
+    } catch (error) {
+      setContextError(error instanceof Error ? error.message : '回放上下文加载失败');
+    } finally {
+      setContextLoading(false);
+    }
+  };
 
   const handleRowKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, id: string) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -273,6 +293,58 @@ export default function EventCenterPanel({
               />
               <DetailRow label="处置动作" value={selectedEvent.handlerAction ?? '—'} />
             </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full h-7 text-[10px]"
+              disabled={contextLoading}
+              onClick={() => loadReplayContext(selectedEvent.eventId)}
+              aria-label={`回放上下文：${selectedEvent.title}`}
+            >
+              {contextLoading ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <History className="w-3 h-3" />
+              )}
+              回放上下文
+            </Button>
+            {replayContext && (
+              <div className="rounded-lg border border-white/10 bg-white/5 p-2 text-xs">
+                <div className="text-[10px] text-white/60 uppercase tracking-wide mb-1">
+                  事发前 / 事发时 / 处置后
+                </div>
+                <DetailRow
+                  label="前"
+                  value={
+                    replayContext.beforeTs
+                      ? dayjs(replayContext.beforeTs).format('HH:mm:ss')
+                      : '无'
+                  }
+                />
+                <DetailRow
+                  label="中"
+                  value={
+                    replayContext.duringTs
+                      ? dayjs(replayContext.duringTs).format('HH:mm:ss')
+                      : '无'
+                  }
+                />
+                <DetailRow
+                  label="后"
+                  value={
+                    replayContext.afterTs
+                      ? dayjs(replayContext.afterTs).format('HH:mm:ss')
+                      : '无'
+                  }
+                />
+                <DetailRow label="事件" value={String(replayContext.timelineCount)} />
+              </div>
+            )}
+            {contextError && (
+              <p className="rounded bg-red-500/10 p-2 text-[10px] text-red-400">
+                {contextError}
+              </p>
+            )}
             <div className="flex gap-2 pt-1">
               <Button
                 size="sm"

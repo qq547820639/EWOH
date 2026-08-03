@@ -581,6 +581,7 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-212 | MES role task workbench API + role workbench page | AG-11/30/31 | Done | `round99-role-workbench.md`; unit + E2E 33/33; browser 5/5 |
 | T-213 | Progressive list rendering helper + load more in role workbench | AG-30 | Done | `round100-progressive-lists.md`; client 14/48 |
 | T-214 | Pilot readiness rerun with current code and real PG | AG-51/00 | Done | `round101-pilot-readiness-rerun.md`; passed=7 failed=3 pending=5 NOT READY |
+| T-215 | Event replay context UI in command map event center | AG-31 | Done | `round102-replay-context-ui.md`; client 15/50 |
 
 ## Next Waves
 

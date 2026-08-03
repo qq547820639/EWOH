@@ -51,3 +51,4 @@
 | D-049 | 2026-08-04 | Add role workbench aggregation API and page for operator/team lead/quality/equipment/manager | The plan requires role-driven task centers instead of module-menu stacking | Reversible per API/page |
 | D-050 | 2026-08-04 | Add progressive list slicing with load-more for large workbench lists | The plan requires large-list rendering to stay responsive | Reversible per UI |
 | D-051 | 2026-08-04 | Re-run Pilot Go/No-Go with current code and real PostgreSQL | Local green must not be reported as production-ready; external blockers remain explicit | Evidence only |
+| D-052 | 2026-08-04 | Add replay context button and before/during/after summary to event center | The plan requires alert-to-snapshot analysis in the world model UX | Reversible per UI |
