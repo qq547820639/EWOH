@@ -117,6 +117,8 @@ production approval gate.
   recycled differences as resolved with audit.
 - Cross-tenant TCK: `scripts/cross-tenant-tck.sh` runs the HTTP+PostgreSQL
   org-isolation E2E suite as one gate.
+- Factory differences UI: `/scale` page registers, lists, and resolves
+  factory differences through the real API.
 
 ## Active Tasks
 

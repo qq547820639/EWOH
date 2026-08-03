@@ -67,6 +67,7 @@ evidence:
   factory_differences: "POST/GET /api/scale/differences; diff.* config keys; audit; org scoped"
   difference_resolve: "POST /api/scale/differences/:key/resolve; resolved status + audit"
   cross_tenant_tck: "scripts/cross-tenant-tck.sh; HTTP+PostgreSQL org isolation E2E 23/23"
+  differences_ui: "/scale page difference register/list/resolve UI; client build passed"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

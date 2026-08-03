@@ -159,6 +159,8 @@ Owner: AG-00/AG-41
   recycled difference with `resolved` status and audit; verified in E2E.
 - Cross-tenant TCK: `scripts/cross-tenant-tck.sh` runs the HTTP + PostgreSQL
   org-isolation E2E suite as one gate (`npm run cross-tenant:tck`).
+- Factory differences UI: the `/scale` page registers, lists, and resolves
+  factory differences through real APIs; client tests and build pass.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

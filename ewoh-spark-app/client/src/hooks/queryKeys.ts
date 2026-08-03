@@ -39,4 +39,5 @@ export const queryKeys = {
   scaleAssets: ['scale-assets'] as const,
   scaleCompatibility: ['scale-compatibility'] as const,
   scaleDashboard: ['scale-dashboard'] as const,
+  scaleDifferences: ['scale-differences'] as const,
 };

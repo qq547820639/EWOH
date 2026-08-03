@@ -148,6 +148,8 @@
   `resolved` 并写审计。
 - 跨租户 TCK：`scripts/cross-tenant-tck.sh`、`make cross-tenant-tck` 与
   `npm run cross-tenant:tck` 把 HTTP+PostgreSQL 组织隔离 E2E 串成门禁。
+- 工厂差异界面：`/scale` 页面新增差异登记表单、状态徽标与逐行解决操作，
+  接入真实差异 API。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

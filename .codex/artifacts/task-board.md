@@ -367,6 +367,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-129 | Cross-tenant full-chain TCK gate | V-SEC/41 | Done | `round45-cross-tenant-tck.md`; E2E 23/23 passed |
 
+## Wave Final5 - Differences UI (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-130 | Factory differences register/resolve UI on /scale | AG-30/31 | Done | `round46-differences-ui.md`; client build passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

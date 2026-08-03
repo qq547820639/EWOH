@@ -1,12 +1,16 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Boxes, Factory, GitCompareArrows, Layers3, Play } from 'lucide-react';
+import { Boxes, Factory, GitCompareArrows, Layers3, ListChecks, Play } from 'lucide-react';
 import {
+  listFactoryDifferences,
   getScaleCompatibility,
   listScaleAssets,
   listScaleProfiles,
   listScaleTemplates,
+  registerFactoryDifference,
+  resolveFactoryDifference,
   runScaleOnboarding,
+  type FactoryDifference,
   type OnboardingRunResult,
 } from '../../api/scale';
 import { queryKeys } from '../../hooks/queryKeys';
@@ -26,10 +30,22 @@ interface ScaleData {
 const formatTime = (value: string | null | undefined): string =>
   value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—';
 
+const parseJsonValue = (value: string): unknown => {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+};
+
 const Scale = (): React.ReactElement => {
   const queryClient = useQueryClient();
   const [factoryName, setFactoryName] = useState('');
   const [lastRun, setLastRun] = useState<OnboardingRunResult | null>(null);
+  const [diffFactoryName, setDiffFactoryName] = useState('');
+  const [diffKey, setDiffKey] = useState('');
+  const [diffCategory, setDiffCategory] = useState('general');
+  const [diffValue, setDiffValue] = useState('true');
 
   const query = useQuery<ScaleData>({
     queryKey: queryKeys.scaleDashboard,
@@ -58,11 +74,43 @@ const Scale = (): React.ReactElement => {
     },
   });
 
+  const differencesQuery = useQuery<FactoryDifference[]>({
+    queryKey: queryKeys.scaleDifferences,
+    queryFn: listFactoryDifferences,
+    refetchInterval: ADMIN_REFETCH_INTERVAL_MS,
+    staleTime: QUERY_STALE_TIME_MS,
+  });
+
+  const registerDiff = useMutation({
+    mutationFn: () =>
+      registerFactoryDifference({
+        factoryName: diffFactoryName.trim(),
+        key: diffKey.trim(),
+        category: diffCategory.trim() || 'general',
+        value: parseJsonValue(diffValue),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.scaleDifferences });
+      setDiffFactoryName('');
+      setDiffKey('');
+      setDiffCategory('general');
+      setDiffValue('true');
+    },
+  });
+
+  const resolveDiff = useMutation({
+    mutationFn: resolveFactoryDifference,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.scaleDifferences });
+    },
+  });
+
   const data = query.data;
   const templates = data?.templates ?? [];
   const profiles = data?.profiles ?? [];
   const assets = data?.assets ?? [];
   const compatibility = data?.compatibility;
+  const differences = differencesQuery.data ?? [];
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -291,6 +339,114 @@ const Scale = (): React.ReactElement => {
                         <td className="px-5 py-3">{profile.status}</td>
                         <td className="px-5 py-3 text-xs text-[hsl(218_10%_42%)]">
                           {formatTime(profile.installedAt)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
+            <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+              <ListChecks className="h-4 w-4 text-violet-600" />
+              <h2 className="font-semibold text-[hsl(220_14%_14%)]">工厂差异</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+              <input
+                value={diffFactoryName}
+                onChange={(event) => setDiffFactoryName(event.target.value)}
+                placeholder="工厂名称"
+                className="h-9 w-44 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+              />
+              <input
+                value={diffKey}
+                onChange={(event) => setDiffKey(event.target.value)}
+                placeholder="差异键"
+                className="h-9 w-44 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+              />
+              <input
+                value={diffCategory}
+                onChange={(event) => setDiffCategory(event.target.value)}
+                placeholder="分类"
+                className="h-9 w-36 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+              />
+              <input
+                value={diffValue}
+                onChange={(event) => setDiffValue(event.target.value)}
+                placeholder="值 (JSON)"
+                className="h-9 w-36 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+              />
+              <button
+                type="button"
+                disabled={!diffFactoryName.trim() || !diffKey.trim() || registerDiff.isPending}
+                onClick={() => registerDiff.mutate()}
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-medium text-white disabled:opacity-50"
+              >
+                登记差异
+              </button>
+            </div>
+            {registerDiff.isError && (
+              <div className="border-b border-red-100 bg-red-50 px-5 py-3 text-sm text-red-700">
+                {registerDiff.error instanceof Error
+                  ? registerDiff.error.message
+                  : '登记失败'}
+              </div>
+            )}
+            {differences.length === 0 ? (
+              <div className="p-6 text-sm text-[hsl(218_10%_42%)]">暂无工厂差异。</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[900px] text-left text-sm">
+                  <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+                    <tr>
+                      <th className="px-5 py-3 font-medium">差异键</th>
+                      <th className="px-5 py-3 font-medium">工厂</th>
+                      <th className="px-5 py-3 font-medium">分类</th>
+                      <th className="px-5 py-3 font-medium">值</th>
+                      <th className="px-5 py-3 font-medium">状态</th>
+                      <th className="px-5 py-3 font-medium">更新时间</th>
+                      <th className="px-5 py-3 font-medium">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+                    {differences.map((difference) => (
+                      <tr key={difference.key} className="hover:bg-[hsl(220_14%_96%)]">
+                        <td className="px-5 py-3 font-mono text-xs">{difference.key}</td>
+                        <td className="px-5 py-3">{difference.factoryName}</td>
+                        <td className="px-5 py-3">{difference.category}</td>
+                        <td className="px-5 py-3 font-mono text-xs">
+                          {typeof difference.value === 'string'
+                            ? difference.value
+                            : JSON.stringify(difference.value)}
+                        </td>
+                        <td className="px-5 py-3">
+                          <span
+                            className={`rounded-md px-2 py-1 text-xs font-medium ${
+                              difference.status === 'resolved'
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : 'bg-amber-50 text-amber-700'
+                            }`}
+                          >
+                            {difference.status}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3 text-xs text-[hsl(218_10%_42%)]">
+                          {formatTime(difference.updatedAt)}
+                        </td>
+                        <td className="px-5 py-3">
+                          <button
+                            type="button"
+                            disabled={
+                              difference.status === 'resolved' ||
+                              resolveDiff.isPending
+                            }
+                            onClick={() => resolveDiff.mutate(difference.key)}
+                            className="rounded-lg border border-[hsl(220_14%_89%)] px-3 py-1.5 text-xs font-medium text-[hsl(220_14%_14%)] disabled:opacity-40"
+                          >
+                            解决
+                          </button>
                         </td>
                       </tr>
                     ))}

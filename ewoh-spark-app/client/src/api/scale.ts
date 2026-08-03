@@ -59,6 +59,16 @@ export interface OnboardingRunResult {
   steps: OnboardingStepResult[];
 }
 
+export interface FactoryDifference {
+  key: string;
+  factoryName: string;
+  category: string;
+  value: unknown;
+  status: string;
+  updatedBy: string | null;
+  updatedAt: string;
+}
+
 export async function listScaleTemplates(): Promise<ScaleTemplate[]> {
   const res = await axiosForBackend({ url: '/api/scale/templates', method: 'GET' });
   return res.data;
@@ -86,6 +96,35 @@ export async function runScaleOnboarding(
     url: '/api/scale/onboarding/run',
     method: 'POST',
     data: { factoryName },
+  });
+  return res.data;
+}
+
+export async function listFactoryDifferences(): Promise<FactoryDifference[]> {
+  const res = await axiosForBackend({ url: '/api/scale/differences', method: 'GET' });
+  return res.data;
+}
+
+export async function registerFactoryDifference(body: {
+  factoryName: string;
+  key: string;
+  category?: string;
+  value?: unknown;
+}): Promise<FactoryDifference> {
+  const res = await axiosForBackend({
+    url: '/api/scale/differences',
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}
+
+export async function resolveFactoryDifference(
+  key: string,
+): Promise<FactoryDifference> {
+  const res = await axiosForBackend({
+    url: `/api/scale/differences/${encodeURIComponent(key)}/resolve`,
+    method: 'POST',
   });
   return res.data;
 }
