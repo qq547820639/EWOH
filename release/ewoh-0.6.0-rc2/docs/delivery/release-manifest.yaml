@@ -17,10 +17,10 @@ artifacts:
   deploy: deploy/cloud/
   contracts: .codex/artifacts/contracts/
 evidence:
-  jest: "63 suites / 264 tests"
+  jest: "63 suites / 268 tests"
   client_jest: "6 suites / 20 tests"
-  e2e: "22/22 HTTP + PostgreSQL"
-  openapi: "168/168 documented, 0 unimplemented"
+  e2e: "23/23 HTTP + PostgreSQL"
+  openapi: "171/171 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/openapi/e2e/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; logical backup/restore of 54 tables / 25 rows with row-count verify"
@@ -52,6 +52,7 @@ evidence:
   factory_onboarding: "F0-F6 onboarding checklist + run API with per-step evidence/audit"
   release_review: "scale-release-review.js packaging gate; 24/24 checks; bundle integrity + contracts + OpenAPI + audits"
   workflow_engine: "workflow schema v1; role-aware advance API; mes-execution example; 16 contract checks"
+  feature_flags: "org-scoped feature.* flags in system config; global_admin write; RLS isolation verified"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

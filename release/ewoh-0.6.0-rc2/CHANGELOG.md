@@ -115,6 +115,9 @@
 - Workflow 引擎骨架：`contracts/workflow/workflow-schema.json` 定义
   角色化步骤流转；`POST /api/workflows/advance` 返回当前动作许可与
   角色过滤后的下一步；`mes-execution` 规范流程示例纳入契约审计。
+- Feature Flag：`GET/PUT /api/system/feature-flags` 在
+  `ewoh_system_config` 持久化组织级 `feature.*` 开关，写入限定
+  `global_admin`，读取按 RLS 组织隔离。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

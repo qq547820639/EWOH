@@ -337,6 +337,69 @@ if (!e2eConfig) {
       expect(control.body.id).toBeTruthy();
     });
 
+    it('persists org feature flags and enforces write roles', async () => {
+      const adminA = await login(
+        baseUrl,
+        fixture!.globalAdminA.username,
+        fixture!.globalAdminA.password,
+      );
+      expect(adminA.status).toBe(201);
+      const adminToken = adminA.body.accessToken;
+      const flagKey = `feature.e2e.${runId}`;
+
+      const setFlag = await apiRequest<{
+        key: string;
+        enabled: boolean;
+        metadata: Record<string, unknown>;
+      }>(baseUrl, `/api/system/feature-flags/${flagKey}`, {
+        method: 'PUT',
+        headers: jsonHeaders(adminToken),
+        body: JSON.stringify({ enabled: true, metadata: { owner: 'e2e' } }),
+      });
+      expect(setFlag.status).toBe(200);
+      expect(setFlag.body.key).toBe(flagKey);
+      expect(setFlag.body.enabled).toBe(true);
+      expect(setFlag.body.metadata).toEqual({ owner: 'e2e' });
+
+      const listFlags = await apiRequest<
+        Array<{ key: string; enabled: boolean }>
+      >(baseUrl, '/api/system/feature-flags', {
+        headers: jsonHeaders(adminToken),
+      });
+      expect(listFlags.status).toBe(200);
+      expect(
+        listFlags.body.find((flag) => flag.key === flagKey)?.enabled,
+      ).toBe(true);
+
+      const viewerB = await login(
+        baseUrl,
+        fixture!.viewerB.username,
+        fixture!.viewerB.password,
+      );
+      expect(viewerB.status).toBe(201);
+      const viewerBToken = viewerB.body.accessToken;
+      const viewerBFlags = await apiRequest<Array<{ key: string }>>(
+        baseUrl,
+        '/api/system/feature-flags',
+        { headers: jsonHeaders(viewerBToken) },
+      );
+      expect(viewerBFlags.status).toBe(200);
+      expect(
+        viewerBFlags.body.some((flag) => flag.key === flagKey),
+      ).toBe(false);
+
+      const deniedWrite = await apiRequest(
+        baseUrl,
+        `/api/system/feature-flags/${flagKey}`,
+        {
+          method: 'PUT',
+          headers: jsonHeaders(viewerBToken),
+          body: JSON.stringify({ enabled: false }),
+        },
+      );
+      expect(deniedWrite.status).toBe(403);
+    });
+
     it('rotates refresh tokens and revokes them after reuse/logout', async () => {
       const first = await login(
         baseUrl,

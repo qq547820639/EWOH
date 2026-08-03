@@ -58,3 +58,81 @@ describe('SystemService upsert', () => {
     );
   });
 });
+
+describe('SystemService feature flags', () => {
+  it('rejects feature flag keys without the feature. prefix', async () => {
+    const service = new SystemService({ insert: jest.fn() } as never);
+    await expect(
+      service.setFeatureFlag('not-a-flag', true, {}),
+    ).rejects.toThrow('must start with feature.');
+  });
+
+  it('persists feature flag enabled state and metadata', async () => {
+    const row = {
+      id: 'flag-1',
+      configKey: 'feature.scale.diffPreview',
+      configValue: { enabled: true, metadata: { owner: 'scale' } },
+      updatedBy: 'user-1',
+      createdAt: new Date('2026-08-03T00:00:00Z'),
+      updatedAt: new Date('2026-08-03T00:00:00Z'),
+    };
+    const returning = jest.fn().mockResolvedValue([row]);
+    const onConflictDoUpdate = jest.fn().mockReturnValue({ returning });
+    const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
+    const insert = jest.fn().mockReturnValue({ values });
+    const service = new SystemService({ insert } as never);
+
+    const result = await service.setFeatureFlag(
+      'feature.scale.diffPreview',
+      true,
+      { owner: 'scale' },
+      'user-1',
+    );
+
+    expect(result.enabled).toBe(true);
+    expect(result.metadata).toEqual({ owner: 'scale' });
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        configValue: { enabled: true, metadata: { owner: 'scale' } },
+      }),
+    );
+  });
+
+  it('lists and gets feature flags from the org-scoped config store', async () => {
+    const rows = [
+      {
+        configKey: 'feature.scale.diffPreview',
+        configValue: { enabled: true, metadata: {} },
+        updatedBy: 'user-1',
+        updatedAt: new Date('2026-08-03T00:00:00Z'),
+      },
+    ];
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn(() => ({
+            orderBy: jest.fn().mockResolvedValue(rows),
+          })),
+        })),
+      })),
+    };
+    const service = new SystemService(db as never);
+    const flags = await service.listFeatureFlags();
+    expect(flags).toHaveLength(1);
+    expect(flags[0].enabled).toBe(true);
+  });
+
+  it('throws not found for missing feature flags', async () => {
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue([]),
+        })),
+      })),
+    };
+    const service = new SystemService(db as never);
+    await expect(
+      service.getFeatureFlag('feature.missing'),
+    ).rejects.toThrow('not found');
+  });
+});

@@ -3784,6 +3784,83 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/system/feature-flags:
+    get:
+      tags:
+        - system
+      summary: List org feature flags
+      responses:
+        '200':
+          description: Feature flag list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureFlagList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/system/feature-flags/{key}:
+    get:
+      tags:
+        - system
+      summary: Get one org feature flag
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Feature flag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureFlag'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags:
+        - system
+      summary: Upsert an org feature flag
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetFeatureFlagRequest'
+      responses:
+        '200':
+          description: Feature flag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureFlag'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scheduler/plans:
     get:
       tags:
@@ -8384,6 +8461,39 @@ components:
       required:
         - configValue
       additionalProperties: false
+    FeatureFlag:
+      type: object
+      properties:
+        key:
+          type: string
+        enabled:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+        updatedBy:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+      required:
+        - key
+        - enabled
+        - metadata
+    FeatureFlagList:
+      type: array
+      items:
+        $ref: '#/components/schemas/FeatureFlag'
+    SetFeatureFlagRequest:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+      required:
+        - enabled
     HandleEventRequest:
       type: object
       properties:

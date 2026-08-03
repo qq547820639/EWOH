@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { SystemConfigController } from './system.controller';
+import { FeatureFlagsController, SystemConfigController } from './system.controller';
 import { SystemService } from './system.service';
 
 @Module({
-  controllers: [SystemConfigController],
+  controllers: [SystemConfigController, FeatureFlagsController],
   providers: [SystemService],
   exports: [SystemService],
 })

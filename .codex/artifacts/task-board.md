@@ -277,6 +277,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-114 | Workflow schema + role-aware advance API + audit | PX-06/16 | Done | `round30-workflow-engine.md`; E2E role gating passed |
 
+## Wave Final5 - Feature Flags (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-115 | Org-scoped feature flag API on system config store | PX-06/21 | Done | `round31-feature-flags.md`; E2E org isolation passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

@@ -1,6 +1,6 @@
 import { Injectable, Inject, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, like } from 'drizzle-orm';
 import { ewohSchedulerConfig } from '@server/database/schema';
 
 const SENSITIVE_KEY = /(password|passwd|secret|token|credential|apikey|accesskey|authconfig|privatekey)/i;
@@ -17,6 +17,25 @@ export function maskSensitiveConfig(value: unknown): unknown {
     return result;
   }
   return value;
+}
+
+function parseFeatureFlag(row: {
+  configKey: string;
+  configValue: unknown;
+  updatedBy: string | null;
+  updatedAt: Date | string;
+}) {
+  const value = (row.configValue as Record<string, unknown> | null) ?? {};
+  return {
+    key: row.configKey,
+    enabled: value.enabled === true,
+    metadata: value.metadata ?? {},
+    updatedBy: row.updatedBy,
+    updatedAt:
+      typeof row.updatedAt === 'string'
+        ? row.updatedAt
+        : row.updatedAt.toISOString(),
+  };
 }
 
 @Injectable()
@@ -84,5 +103,45 @@ export class SystemService {
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };
+  }
+
+  async listFeatureFlags() {
+    const rows = await this.db
+      .select()
+      .from(ewohSchedulerConfig)
+      .where(like(ewohSchedulerConfig.configKey, 'feature.%'))
+      .orderBy(desc(ewohSchedulerConfig.updatedAt));
+    return rows.map((row) => parseFeatureFlag(row));
+  }
+
+  async getFeatureFlag(key: string) {
+    if (!key?.startsWith('feature.')) {
+      throw new BadRequestException('feature flag key must start with feature.');
+    }
+    const [row] = await this.db
+      .select()
+      .from(ewohSchedulerConfig)
+      .where(eq(ewohSchedulerConfig.configKey, key));
+    if (!row) {
+      throw new NotFoundException(`Feature flag ${key} not found`);
+    }
+    return parseFeatureFlag(row);
+  }
+
+  async setFeatureFlag(
+    key: string,
+    enabled: boolean,
+    metadata: Record<string, unknown>,
+    updatedBy?: string,
+  ) {
+    if (!key?.startsWith('feature.')) {
+      throw new BadRequestException('feature flag key must start with feature.');
+    }
+    const saved = await this.setConfig(
+      key,
+      { enabled: Boolean(enabled), metadata: metadata ?? {} },
+      updatedBy,
+    );
+    return parseFeatureFlag(saved);
   }
 }

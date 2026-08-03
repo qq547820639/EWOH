@@ -87,6 +87,8 @@ production approval gate.
 - Workflow engine: versioned workflow contract plus role-aware
   `POST /api/workflows/advance`; canonical MES execution flow is covered by
   contract and E2E tests.
+- Feature flags: org-scoped `feature.*` flags persist in `ewoh_system_config`;
+  global-admin writes are enforced and cross-org reads are RLS-isolated.
 
 ## Active Tasks
 
