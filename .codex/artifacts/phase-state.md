@@ -94,6 +94,8 @@ Trace: EWOH-2026-08-04-principal-final6
 - Independent review closed: worker write-path assignment guard,
   conflict discard, CI strict indexer, scan body guard, and stronger
   predicate tests.
+- Round 91 evidence binds the review fixes to `fac2e6f`; work graph now has
+  238 items / 25 edges / 95 evidence with 0 invariant conflicts.
 
 ## Current Phase
 

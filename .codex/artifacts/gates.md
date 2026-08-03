@@ -42,3 +42,5 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
   7 minors; the major is fixed with `WORKER_STEP_ASSIGNMENT_REQUIRED` guards,
   offline conflict items can be discarded, CI now runs work-indexer with
   `--strict --invariants`, and scan handles a missing body without 500.
+- Review fixes are recorded in `round91-review-fixes.md` with server 78/375,
+  client 13/46, invariants 0 conflicts, and work-console strict pass.

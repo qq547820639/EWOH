@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T21:46:50.242Z",
+  "generatedAt": "2026-08-03T22:04:48.443Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 237,
-    "edgeCount": 24,
+    "itemCount": 238,
+    "edgeCount": 25,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 94,
+    "evidenceCount": 95,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 39,
     "statusCounts": {
-      "Done": 144,
+      "Done": 145,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2444,6 +2444,18 @@
       "evidence": "`round90-p0-mobile-orchestration.md`; work-console tests; strict CLI passed"
     },
     {
+      "id": "T-203",
+      "title": "Independent review fixes: worker write guard, conflict discard, CI strict, scan body guard",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/11/30",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)",
+      "evidence": "`round91-review-fixes.md`; server 78/375; client 13/46"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -2929,6 +2941,13 @@
       "id": "E-024",
       "from": "T-202",
       "to": "EVD-round90-p0-mobile-orchestration-5",
+      "edgeType": "evidence",
+      "blocking": false
+    },
+    {
+      "id": "E-025",
+      "from": "T-203",
+      "to": "EVD-round91-review-fixes",
       "edgeType": "evidence",
       "blocking": false
     }
@@ -3420,7 +3439,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "e6ac89f9edaf51f02bec356fc18105618849d29e48f58a713a7600e125ef66c3",
+      "checksum": "29ac33112322f9caeb0dffab989fbb4b72ec49e71da2e33633eb6b3c127f9f3f",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3429,7 +3448,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "84338f37c1b147b8593fe190fcc8cd9eea50e5d0ec08749d797b274806f6809d",
+      "checksum": "a272afdf5431717a86016594da409819bb221dac46eaa0d60bfb21fb10b9171a",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3465,7 +3484,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "f7148a0a8c1bb2b0e1f1e52cfffb5852fd598b90fa8ab73e23d39968ca05cf2d",
+      "checksum": "8019ed2b7fddaad8f34345701baf5dace04b0c84ac127de5fee0f13a9f8fb208",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3474,7 +3493,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "6e7853a47081028d8ef8e7595098175257327882d5d97a1c97f3c33f9c9c0b40",
+      "checksum": "f3af71b41abae35c643f783afd8d78a5016485d2442c37feed4ccbb70ddcfed7",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -5260,7 +5279,8 @@
       "testTime": "2026-08-04T06:00:00.000Z",
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
-      "status": "valid"
+      "status": "stale",
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-2",
@@ -5278,7 +5298,8 @@
       "testTime": "2026-08-04T06:00:00.000Z",
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
-      "status": "valid"
+      "status": "stale",
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-3",
@@ -5296,7 +5317,8 @@
       "testTime": "2026-08-04T06:00:00.000Z",
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
-      "status": "valid"
+      "status": "stale",
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-4",
@@ -5314,7 +5336,8 @@
       "testTime": "2026-08-04T06:00:00.000Z",
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
-      "status": "valid"
+      "status": "stale",
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-5",
@@ -5332,6 +5355,25 @@
       "testTime": "2026-08-04T06:00:00.000Z",
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
+      "status": "stale",
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2"
+    },
+    {
+      "evidenceId": "EVD-round91-review-fixes",
+      "workItemId": "T-203",
+      "kind": "review",
+      "path": ".codex/artifacts/work/evidence/round91-review-fixes.md",
+      "checksum": "89cc265eb62a8b0fc7535119298c822aa50f1daf8fa4eb2cac7e2e9d22bee12f",
+      "result": "passed",
+      "title": "Round 91 - 2026-08-04 Independent Review Fixes",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-04T07:00:00.000Z",
+      "verifier": "AG-00 local gate",
+      "expiresAt": "2026-11-02T07:00:00.000Z",
       "status": "valid"
     }
   ],
