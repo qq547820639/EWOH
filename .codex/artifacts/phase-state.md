@@ -151,6 +151,8 @@ Trace: EWOH-2026-08-04-principal-final6
 - `GET /api/observability/slow-queries` returns bounded slow transaction
   records with requestId; `/metrics` exposes `ewoh_slow_queries_total`.
 - Real PostgreSQL E2E: 32/32 passed including slow-query API and metric.
+- Full suite after observability wave: server Jest 80/388, client 13/46,
+  OpenAPI 246/246, work graph 245 nodes / 102 evidence / 0 invariant conflicts.
 
 ## Current Phase
 

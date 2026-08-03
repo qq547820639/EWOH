@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented; 2026-08-04 iterations add mobile P0, evidence/gate hardening, onboarding F0-F3 real execution, mapping dry-run, unified world replay, E-SOP, quality schemes, and real-PG validation; standalone check PASSED with E2E 32/32 + browser 4/4, server Jest 79 suites / 386 tests, client 13 suites / 46 tests, OpenAPI 245/245, repo facts 33/33, work graph invariants 0 conflicts, build PASSED",
+  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented; 2026-08-04 iterations add mobile P0, evidence/gate hardening, onboarding F0-F3 real execution, mapping dry-run, unified world replay, E-SOP, quality schemes, slow-query observability, and real-PG validation; standalone check PASSED with E2E 32/32 + browser 4/4, server Jest 80 suites / 388 tests, client 13 suites / 46 tests, OpenAPI 246/246, repo facts 33/33, work graph invariants 0 conflicts, build PASSED",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
