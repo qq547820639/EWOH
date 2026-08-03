@@ -126,3 +126,5 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
 - Apply endpoint is exposed but fails closed without `EWOH_WORK_WRITABLE`.
 - Real GitHub creation remains approval-gated by environment and human
   decision.
+- Work graph after git sync apply wave: 251 items / 108 evidence /
+  0 invariant conflicts.

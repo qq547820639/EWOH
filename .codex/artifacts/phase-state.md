@@ -361,6 +361,8 @@ factory replication drills, partner shadow delivery, and production SLO/approval
   `EWOH_GIT_SYNC_ENABLED/GITHUB_TOKEN/EWOH_GIT_SYNC_APPROVED`.
 - Real PostgreSQL E2E verifies the write gate rejects apply in read-only
   mode.
+- Work graph after git sync apply wave: 251 items / 108 evidence /
+  0 invariant conflicts.
 
 ## Active Tasks
 
