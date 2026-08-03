@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T19:48:13.885Z",
+  "generatedAt": "2026-08-03T19:53:00.896Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 215,
+    "itemCount": 216,
     "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 72,
+    "evidenceCount": 73,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 36,
     "statusCounts": {
-      "Done": 122,
+      "Done": 123,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 47,
@@ -2180,6 +2180,18 @@
       "evidence": "`lib/offlineQueue.ts` + tests; queue/flush on reconnect; client 10/35"
     },
     {
+      "id": "T-181",
+      "title": "Control/work orchestration state guards",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/03/04",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "control terminal/in-flight guards; handoff state machine; gate decision idempotency + history; Jest 76/355"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -2225,7 +2237,7 @@
       "type": "gate",
       "status": "Passed for standalone base",
       "owner": "AG-00",
-      "evidence": "request transaction/GUC, auth, errors, health, rate limit tests; Jest 76 suites / 349 tests"
+      "evidence": "request transaction/GUC, auth, errors, health, rate limit tests; Jest 76 suites / 355 tests"
     },
     {
       "id": "G6",
@@ -2419,12 +2431,12 @@
     },
     {
       "id": "W7",
-      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue, ValidationPipe, command-map details",
+      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue, ValidationPipe, command-map details, state guards",
       "type": "wave",
       "status": "Proposed",
       "owner": "AG-00",
       "wave": "W7",
-      "summary": "standalone-check ALL PASSED; Jest 76/349; client 10/35; OpenAPI 232/232"
+      "summary": "standalone-check ALL PASSED; Jest 76/355; client 10/35; OpenAPI 232/232"
     },
     {
       "id": "WP-ENV-001",
@@ -2604,7 +2616,7 @@
       "to": "W7",
       "edgeType": "depends",
       "blocking": true,
-      "evidenceRequirement": "standalone-check ALL PASSED; Jest 76/349; client 10/35; OpenAPI 232/232"
+      "evidenceRequirement": "standalone-check ALL PASSED; Jest 76/355; client 10/35; OpenAPI 232/232"
     },
     {
       "id": "E-016",
@@ -3143,7 +3155,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "a832e6eec11ae18bb941a41bcb6f4f5b3a338724528a9307215376ef0f3df0a6",
+      "checksum": "f5598e486c22ee92f66f0934e10287f25d374599b03eea4f0e2d2e6e672513c6",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3152,7 +3164,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "8a3b8bfcebc9265fe2e0f3e94938956a6726c438a3e8d1c6ed60188ac99d631b",
+      "checksum": "3cd69c818e0d060b5c9156f867615e7a583793c62aec3a33dd0d4ce7c66e8b4b",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3188,7 +3200,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "b6a6ee30f8fce6ac65306269f244fd92449471bdb07605b7bea1e465feef539a",
+      "checksum": "7f8df55849b3b9f4738888ef91d4665d446efbd00e0b7e2b0e897988e0681c19",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3197,7 +3209,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "a16e0f97a6d2e164c7588033214d38fa1a3e0c06e1b5f45563bb10815fb38183",
+      "checksum": "8f2b761966e341502bd1d8415d71c2406401f292eb88c6b5d602e014ee0e65b4",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3224,7 +3236,7 @@
       "artifactId": "work-task-graph-md",
       "path": "work/task-graph.md",
       "mediaType": "text/markdown",
-      "checksum": "6655e577bd7bb5e4816f66727b25afee856699b40e4992c313ae65e3faa5597d",
+      "checksum": "a7d02837bdf010ab47500f1987ac3661c48fc17ab97f3d284ea86d8b6b764b39",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3907,6 +3919,15 @@
       "title": "Round 72 - 2026-08-04 Mobile Offline Pending-Action Queue"
     },
     {
+      "evidenceId": "EVD-round73-state-guards",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round73-state-guards.md",
+      "checksum": "dcbfed15f981d2705daba6364cef0d866bb6c729e295e8cda4e514e28186838c",
+      "result": "passed",
+      "title": "Round 73 - 2026-08-04 Control and Work Orchestration State Guards"
+    },
+    {
       "evidenceId": "EVD-round8-org-scope-hardening",
       "workItemId": "",
       "kind": "test",
@@ -3993,7 +4014,7 @@
       "humanDecision": null,
       "conditions": [
         "request transaction/GUC, auth, errors, health, rate limit tests",
-        "Jest 76 suites / 349 tests"
+        "Jest 76 suites / 355 tests"
       ],
       "approver": null,
       "decidedAt": null

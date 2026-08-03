@@ -94,6 +94,10 @@ export function aggregateControlStatus(attempts: ControlAttempt[]): string {
   return 'pending_gateway';
 }
 
+const TERMINAL_REQUEST_STATUSES = new Set(['executed', 'failed', 'timeout']);
+const NO_FURTHER_ACTION_STATUSES = new Set(['executed', 'timeout']);
+const IN_FLIGHT_ATTEMPT_STATUSES = new Set(['pending', 'sent', 'gateway_received']);
+
 @Injectable()
 export class ControlService {
   private readonly logger = new Logger(ControlService.name);
@@ -167,8 +171,22 @@ export class ControlService {
     actor?: OrgContext,
   ): Promise<ControlRequest> {
     const requestRow = await this.getRequest(requestId);
+    const requestStatus = aggregateControlStatus(requestRow.attempts);
+    if (NO_FURTHER_ACTION_STATUSES.has(requestStatus)) {
+      throw new BadRequestException(
+        `Cannot send command on terminal request ${requestId}`,
+      );
+    }
     if (!requestRow.commandKeys.includes(commandKey)) {
       throw new BadRequestException(`Unknown commandKey ${commandKey}`);
+    }
+    const latestAttempt = [...requestRow.attempts]
+      .filter((attempt) => attempt.commandKey === commandKey)
+      .sort((a, b) => b.attemptNo - a.attemptNo)[0];
+    if (latestAttempt && IN_FLIGHT_ATTEMPT_STATUSES.has(latestAttempt.status)) {
+      throw new BadRequestException(
+        `Attempt already in flight for commandKey ${commandKey}`,
+      );
     }
     const attemptNo =
       requestRow.attempts.filter((attempt) => attempt.commandKey === commandKey).length + 1;
@@ -218,11 +236,22 @@ export class ControlService {
     receipt?: Record<string, unknown>,
   ): Promise<ControlRequest> {
     const request = await this.getRequest(requestId);
+    const requestStatus = aggregateControlStatus(request.attempts);
+    if (NO_FURTHER_ACTION_STATUSES.has(requestStatus)) {
+      throw new BadRequestException(
+        `Cannot record receipt on terminal request ${requestId}`,
+      );
+    }
     const latest = [...request.attempts]
       .filter((attempt) => attempt.commandKey === commandKey)
       .sort((a, b) => b.attemptNo - a.attemptNo)[0];
     if (!latest) {
       throw new BadRequestException(`No attempt for commandKey ${commandKey}`);
+    }
+    if (latest.status === 'executed' || latest.status === 'failed') {
+      throw new BadRequestException(
+        `Duplicate receipt for commandKey ${commandKey}`,
+      );
     }
     const receiptJson = receipt ? JSON.stringify(receipt) : '{}';
     await this.safeExecute('record control command result', sql`

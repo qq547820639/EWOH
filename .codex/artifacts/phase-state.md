@@ -27,7 +27,10 @@ Trace: EWOH-2026-08-04-principal-final6
   organization, exoskeleton, risk, alerts, recent events, and disposition entry.
 - Mobile workbench now queues offline actions in `localStorage` and flushes them
   in order when connectivity returns; pending count is shown in the header.
-- Full standalone gate: typecheck, lint, Jest 76 suites / 349 tests, client
+- Control commands now reject terminal-state sends/receipts and duplicate
+  in-flight sends; work orchestration handoffs use a strict state machine and
+  gate decisions preserve history with idempotent repeats.
+- Full standalone gate: typecheck, lint, Jest 76 suites / 355 tests, client
   10 suites / 35 tests, repo facts 31/31, OpenAPI 232/232, production build, and
   DDL hygiene all PASSED. Independent review: conditional pass with 0 critical
   and 0 major findings. HTTP+PostgreSQL E2E remains skipped locally because

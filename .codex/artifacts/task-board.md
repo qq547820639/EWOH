@@ -542,6 +542,7 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-178 | Global ValidationPipe with structured fieldErrors | AG-00/03 | Done | `server/common/pipes/validation.pipe.ts`; APP_PIPE in both bootstraps; 5 validation-pipe tests; Jest 76/349 |
 | T-179 | Command-map person/device detail enrichment | AG-00/06 | Done | `entityDetailData.ts` + tests; organization/exoskeleton/risk/alerts/events/disposition entry; client 9/33 |
 | T-180 | Mobile offline pending-action queue | AG-00/07 | Done | `lib/offlineQueue.ts` + tests; queue/flush on reconnect; client 10/35 |
+| T-181 | Control/work orchestration state guards | AG-00/03/04 | Done | control terminal/in-flight guards; handoff state machine; gate decision idempotency + history; Jest 76/355 |
 
 ## Next Waves
 

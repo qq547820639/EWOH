@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { WorkOrchestrationService } from '@server/modules/work-orchestration/work-orchestration.service';
@@ -238,6 +238,35 @@ describe('WorkOrchestrationService', () => {
     expect(service.getHandoffs()[0].status).toBe('accepted');
   });
 
+  it('rejects illegal handoff transitions', () => {
+    process.env.EWOH_WORK_WRITABLE = 'true';
+    const handoff = service.createHandoff(
+      { fromActor: 'AG-11', toActor: 'ORCH-05', scope: 'illegal transition' },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+
+    expect(() =>
+      service.updateHandoffStatus(
+        handoff.handoffId,
+        { status: 'closed' },
+        { userId: 'user-1', primaryOrgId: 'org-1' },
+      ),
+    ).toThrow(/not allowed/);
+
+    service.updateHandoffStatus(
+      handoff.handoffId,
+      { status: 'accepted' },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+    expect(() =>
+      service.updateHandoffStatus(
+        handoff.handoffId,
+        { status: 'accepted' },
+        { userId: 'user-1', primaryOrgId: 'org-1' },
+      ),
+    ).toThrow(/not allowed/);
+  });
+
   it('records human gate decisions into the decision file', () => {
     process.env.EWOH_WORK_WRITABLE = 'true';
     const record = service.recordGateDecision(
@@ -261,6 +290,34 @@ describe('WorkOrchestrationService', () => {
     const gates = service.getGates();
     expect(gates.find((gate) => gate.gateId === 'G2')?.humanDecision).toBe('conditional');
     expect(gates.find((gate) => gate.gateId === 'G10')?.humanDecision).toBe('conditional');
+  });
+
+  it('keeps gate decision history when a decision changes and is idempotent on repeat', () => {
+    process.env.EWOH_WORK_WRITABLE = 'true';
+    const first = service.recordGateDecision(
+      'G2',
+      { decision: 'approved', conditions: ['contracts frozen'] },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+    const repeated = service.recordGateDecision(
+      'G2',
+      { decision: 'approved', conditions: ['contracts frozen'] },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+    expect(repeated.decidedAt).toBe(first.decidedAt);
+
+    const changed = service.recordGateDecision(
+      'G2',
+      { decision: 'conditional', conditions: ['add evidence'] },
+      { userId: 'user-2', primaryOrgId: 'org-1' },
+    );
+    expect(changed.decision).toBe('conditional');
+    const historyFile = join(artifactsDir, 'work', 'gate-decision-history.json');
+    expect(existsSync(historyFile)).toBe(true);
+    const history = JSON.parse(readFileSync(historyFile, 'utf8'));
+    expect(history).toHaveLength(1);
+    expect(history[0].decision).toBe('approved');
+    expect(history[0].decidedAt).toBe(first.decidedAt);
   });
 
   it('blocks writes when EWOH_WORK_WRITABLE is not enabled', () => {

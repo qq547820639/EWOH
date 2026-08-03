@@ -118,6 +118,71 @@ describe('ControlService persistence', () => {
     expect(JSON.stringify(execute.mock.calls[3][0])).toContain('ewoh_control_result');
   });
 
+  it('rejects sending commands on terminal requests', async () => {
+    const execute = jest
+      .fn()
+      .mockResolvedValueOnce([requestRow])
+      .mockResolvedValueOnce([commandRow({ status: 'executed' })]);
+    const service = new ControlService({ execute } as never);
+
+    await expect(service.sendCommand('ctl-1', 'start')).rejects.toThrow(
+      /terminal request/,
+    );
+  });
+
+  it('rejects duplicate sends while an attempt is in flight', async () => {
+    const execute = jest
+      .fn()
+      .mockResolvedValueOnce([requestRow])
+      .mockResolvedValueOnce([commandRow({ status: 'sent' })]);
+    const service = new ControlService({ execute } as never);
+
+    await expect(service.sendCommand('ctl-1', 'start')).rejects.toThrow(
+      /already in flight/,
+    );
+  });
+
+  it('rejects duplicate receipts for an already-terminal attempt', async () => {
+    const execute = jest
+      .fn()
+      .mockResolvedValueOnce([requestRow])
+      .mockResolvedValueOnce([
+        commandRow({ status: 'executed' }),
+        commandRow({
+          command_id: 'att-2',
+          root_command_id: 'att-2',
+          command_key: 'stop',
+          status: 'sent',
+        }),
+      ]);
+    const service = new ControlService({ execute } as never);
+
+    await expect(
+      service.receiveReceipt('ctl-1', 'start', 'executed', { ok: true }),
+    ).rejects.toThrow(/Duplicate receipt/);
+  });
+
+  it('rejects receipts on terminal requests', async () => {
+    const execute = jest
+      .fn()
+      .mockResolvedValueOnce([requestRow])
+      .mockResolvedValueOnce([
+        commandRow({ status: 'executed', response_at: '2026-08-03T00:00:01.000Z' }),
+        commandRow({
+          command_id: 'att-2',
+          root_command_id: 'att-2',
+          command_key: 'stop',
+          status: 'executed',
+          response_at: '2026-08-03T00:00:01.000Z',
+        }),
+      ]);
+    const service = new ControlService({ execute } as never);
+
+    await expect(
+      service.receiveReceipt('ctl-1', 'start', 'executed', { ok: true }),
+    ).rejects.toThrow(/terminal request/);
+  });
+
   it('uses the latest attempt per command key when computing status', async () => {
     const execute = jest
       .fn()

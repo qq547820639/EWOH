@@ -10,6 +10,13 @@ import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { load } from 'js-yaml';
 
+const HANDOFF_TRANSITIONS: Record<string, string[]> = {
+  open: ['accepted', 'rejected'],
+  accepted: ['closed'],
+  rejected: ['closed'],
+  closed: [],
+};
+
 export interface WorkItem {
   id: string;
   title: string;
@@ -508,6 +515,11 @@ export class WorkOrchestrationService {
     if (!['accepted', 'rejected', 'closed'].includes(body.status)) {
       throw new BadRequestException('status must be accepted, rejected, or closed');
     }
+    if (!HANDOFF_TRANSITIONS[handoff.status]?.includes(body.status)) {
+      throw new BadRequestException(
+        `Handoff transition ${handoff.status} -> ${body.status} not allowed`,
+      );
+    }
     this.assertWritable();
     const file = join(this.artifactsDir(), 'work', 'handoffs', `${handoffId}.md`);
     if (!existsSync(file)) {
@@ -545,7 +557,6 @@ export class WorkOrchestrationService {
       throw new BadRequestException('decision must be approved, rejected, or conditional');
     }
     this.assertWritable();
-    const decisions = this.loadGateDecisions().filter((entry) => entry.gateId !== gateId);
     const record: GateDecisionRecord = {
       gateId,
       decision: body.decision,
@@ -553,6 +564,20 @@ export class WorkOrchestrationService {
       decidedAt: new Date().toISOString(),
       conditions: body.conditions,
     };
+    const decisions = this.loadGateDecisions();
+    const existingIndex = decisions.findIndex((entry) => entry.gateId === gateId);
+    if (existingIndex >= 0) {
+      const existing = decisions[existingIndex];
+      if (
+        existing.decision === record.decision &&
+        JSON.stringify(existing.conditions ?? null) ===
+          JSON.stringify(record.conditions ?? null)
+      ) {
+        return existing;
+      }
+      this.appendGateDecisionHistory(existing);
+      decisions.splice(existingIndex, 1);
+    }
     decisions.push(record);
     const file = join(this.artifactsDir(), 'work', 'gate-decisions.json');
     mkdirSync(join(this.artifactsDir(), 'work'), { recursive: true });
@@ -580,17 +605,33 @@ export class WorkOrchestrationService {
     if (missing.length > 0) {
       throw new NotFoundException(`Gates not found: ${missing.join(', ')}`);
     }
-    const decisions = this.loadGateDecisions().filter(
-      (entry) => !body.gateIds.includes(entry.gateId),
-    );
-    const records: GateDecisionRecord[] = body.gateIds.map((gateId) => ({
-      gateId,
-      decision: body.decision,
-      approver: actor?.userId ?? 'anonymous',
-      decidedAt: new Date().toISOString(),
-      conditions: body.conditions,
-    }));
-    decisions.push(...records);
+    const decisions = this.loadGateDecisions();
+    const records: GateDecisionRecord[] = [];
+    for (const gateId of body.gateIds) {
+      const record: GateDecisionRecord = {
+        gateId,
+        decision: body.decision,
+        approver: actor?.userId ?? 'anonymous',
+        decidedAt: new Date().toISOString(),
+        conditions: body.conditions,
+      };
+      const existingIndex = decisions.findIndex((entry) => entry.gateId === gateId);
+      if (existingIndex >= 0) {
+        const existing = decisions[existingIndex];
+        if (
+          existing.decision === record.decision &&
+          JSON.stringify(existing.conditions ?? null) ===
+            JSON.stringify(record.conditions ?? null)
+        ) {
+          records.push(existing);
+          continue;
+        }
+        this.appendGateDecisionHistory(existing);
+        decisions.splice(existingIndex, 1);
+      }
+      decisions.push(record);
+      records.push(record);
+    }
     const file = join(this.artifactsDir(), 'work', 'gate-decisions.json');
     mkdirSync(join(this.artifactsDir(), 'work'), { recursive: true });
     writeFileSync(file, `${JSON.stringify(decisions, null, 2)}\n`, 'utf8');
@@ -627,6 +668,24 @@ export class WorkOrchestrationService {
     } catch {
       return [];
     }
+  }
+
+  private appendGateDecisionHistory(record: GateDecisionRecord): void {
+    const file = join(this.artifactsDir(), 'work', 'gate-decision-history.json');
+    let history: GateDecisionRecord[] = [];
+    if (existsSync(file)) {
+      try {
+        const parsed = JSON.parse(readFileSync(file, 'utf8')) as GateDecisionRecord[];
+        if (Array.isArray(parsed)) {
+          history = parsed;
+        }
+      } catch {
+        history = [];
+      }
+    }
+    history.push(record);
+    mkdirSync(join(this.artifactsDir(), 'work'), { recursive: true });
+    writeFileSync(file, `${JSON.stringify(history, null, 2)}\n`, 'utf8');
   }
 
   private loadGitSyncRegistry(): Array<Record<string, unknown>> {
