@@ -487,6 +487,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-149 | Regenerate RC2 release bundle with all new capabilities | AG-51 | Done | `round65-release-bundle-rerolled.md`; 1315 files; review 24/24 |
 
+## Wave Final5 - Final Gate Sweep (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-150 | Final one-click gate sweep (ops/scenario/deploy/AAS/Rego/connector/cross-tenant) | AG-00/51 | Done | `round66-final-gate-sweep.md`; all gates passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.
