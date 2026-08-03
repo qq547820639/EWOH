@@ -64,6 +64,8 @@ Trace: EWOH-2026-08-04-principal-final6
 - Authenticated Playwright tests pass 3/3: dispatcher login plus command
   center, command map, and mobile workbench renders against a real PostgreSQL
   fixture (`npm run test:browser`).
+- CI runs the Playwright browser suite: `standalone.yml` installs Chromium and
+  executes `npm run test:browser` after HTTP+PostgreSQL E2E.
 - Full standalone gate: typecheck, lint, Jest 76 suites / 362 tests, client
   13 suites / 42 tests, repo facts 33/33, OpenAPI 232/232, production build, and
 

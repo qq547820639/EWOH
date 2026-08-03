@@ -97,6 +97,17 @@ jobs:
           EWOH_E2E_RUNTIME_DATABASE_URL: postgresql://ewoh_api:${{ env.EWOH_API_DATABASE_PASSWORD }}@127.0.0.1:5432/ewoh
         run: npm run test:e2e
 
+      - name: Install Playwright browsers
+        working-directory: ewoh-spark-app
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser authenticated flows
+        working-directory: ewoh-spark-app
+        env:
+          EWOH_E2E_OWNER_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_E2E_RUNTIME_DATABASE_URL: postgresql://ewoh_api:${{ env.EWOH_API_DATABASE_PASSWORD }}@127.0.0.1:5432/ewoh
+        run: npm run test:browser
+
       - name: Build Docker image
         run: |
           docker build -f deploy/cloud/Dockerfile.api -t ewoh-api:ci .

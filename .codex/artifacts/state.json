@@ -254,8 +254,9 @@
     "devices_error_state_2026_08_04": "Devices page shows retryable error state and data update time instead of conflating failures with empty results",
     "bandit_2026_08_04": "python3 -m bandit -r src/edge_platform -ll: 0 medium/high issues over 28286 lines",
     "command_map_query_state_2026_08_04": "failed entity/world/overview/environment queries show retryable banner; queryState helpers + 3 client tests; client 13/42",
-    "release_rc4_2026_08_04": "release/ewoh-0.6.0-rc4 generated: 1199 files, SHA256SUMS.txt, scale-release-review PASSED; manifest release=0.6.0-rc4",
-    "browser_test_2026_08_04": "npm run test:browser 3/3 passed: dispatcher login + command center/command map/mobile workbench render against real PostgreSQL fixture; screenshot output/playwright/browser-authenticated-command-center.png"
+    "release_rc4_2026_08_04": "release/ewoh-0.6.0-rc4 generated: 1200 files, SHA256SUMS.txt, scale-release-review PASSED; manifest release=0.6.0-rc4",
+    "browser_test_2026_08_04": "npm run test:browser 3/3 passed: dispatcher login + command center/command map/mobile workbench render against real PostgreSQL fixture; screenshot output/playwright/browser-authenticated-command-center.png",
+    "browser_test_ci_2026_08_04": "standalone.yml installs Playwright Chromium and runs npm run test:browser after E2E"
   },
   "subagent_state": {
     "planned": [

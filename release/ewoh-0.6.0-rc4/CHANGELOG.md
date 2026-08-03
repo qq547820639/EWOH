@@ -60,6 +60,8 @@
 - 认证浏览器测试：新增 `npm run test:browser`，用真实 PostgreSQL fixture 启动
   Standalone，Playwright 完成 dispatcher 登录、指挥中心、指挥地图和移动工作台
   渲染，截图到 `output/playwright/browser-authenticated-command-center.png`。
+- CI 接入：`standalone.yml` 在 E2E 后安装 Playwright Chromium 并运行
+  `npm run test:browser`，推送/PR 都会执行认证浏览器流程。
 
 ## [0.6.0-rc3] - 2026-08-04
 
