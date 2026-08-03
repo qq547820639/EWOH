@@ -344,7 +344,16 @@ export interface ReplaySnapshot {
     loadScore?: number;
   }>;
   devices: Array<{ entityId: string; x: number; y: number; status: string }>;
-  events: Array<{ eventId: string; severity: string; title: string }>;
+  events: Array<{
+    eventId: string;
+    severity: string;
+    title: string;
+    lane?: string;
+    entityId?: string;
+    sourceType?: string;
+    status?: string;
+    eventCode?: string;
+  }>;
 }
 
 // ===== 调度方案与审计 =====

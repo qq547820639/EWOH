@@ -25,3 +25,30 @@ export async function getReplay(
   const res = await axiosForBackend({ url: '/api/world/replay', method: 'GET', params });
   return res.data;
 }
+
+export async function getEventContext(
+  eventId: string,
+  windowMinutes = 10,
+): Promise<Record<string, unknown>> {
+  const res = await axiosForBackend({
+    url: `/api/world/replay/context/${encodeURIComponent(eventId)}`,
+    method: 'GET',
+    params: { windowMinutes: String(windowMinutes) },
+  });
+  return res.data;
+}
+
+export async function createReplayItem(body: {
+  eventId: string;
+  kind: 'issue' | 'task' | 'evidence';
+  title?: string;
+  note?: string;
+  replayTime?: string;
+}): Promise<{ eventId: string; kind: string; title: string; createdAt: string }> {
+  const res = await axiosForBackend({
+    url: '/api/world/replay/items',
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}

@@ -1397,6 +1397,85 @@ if (!e2eConfig) {
       expect(eventRows[0].org_id).toBe(fixture!.orgA.id);
     });
 
+    it('serves unified replay lanes and creates replay-derived issues', async () => {
+      const dispatcher = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcher.status).toBe(201);
+      const token = dispatcher.body.accessToken;
+
+      const replay = await apiRequest<
+        Array<{
+          ts: string;
+          events: Array<{
+            eventId: string;
+            lane?: string;
+            title: string;
+          }>;
+        }>
+      >(
+        baseUrl,
+        `/api/world/replay?from=${encodeURIComponent('2020-01-01T00:00:00.000Z')}&to=${encodeURIComponent('2030-01-01T00:00:00.000Z')}&limit=500`,
+        { headers: jsonHeaders(token) },
+      );
+      expect(replay.status).toBe(200);
+      const allEvents = (replay.body ?? []).flatMap((snap) => snap.events);
+      expect(
+        allEvents.some(
+          (event) => event.lane === 'task' || event.lane === 'material',
+        ),
+      ).toBe(true);
+      const source = allEvents.find((event) => event.lane === 'quality') ?? allEvents[0];
+      expect(source.eventId).toBeTruthy();
+
+      const context = await apiRequest<{
+        eventId: string;
+        before: unknown;
+        during: unknown;
+        after: unknown;
+      }>(
+        baseUrl,
+        `/api/world/replay/context/${encodeURIComponent(source.eventId)}?windowMinutes=30`,
+        { headers: jsonHeaders(token) },
+      );
+      expect(context.status).toBe(200);
+      expect(context.body.eventId).toBe(source.eventId);
+
+      const created = await apiRequest<{
+        eventId: string;
+        kind: string;
+      }>(baseUrl, '/api/world/replay/items', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          eventId: source.eventId,
+          kind: 'issue',
+          title: `回放跟进 ${runId}`,
+          note: 'E2E replay-derived issue',
+        }),
+      });
+      expect(created.status).toBe(201);
+      expect(created.body.eventId).toMatch(/^RPL-/);
+
+      const chain = await apiRequest<
+        Array<{ causalType: string; parentEventId: string }>
+      >(
+        baseUrl,
+        `/api/world/events/chain/${encodeURIComponent(created.body.eventId)}`,
+        { headers: jsonHeaders(token) },
+      );
+      expect(chain.status).toBe(200);
+      expect(
+        chain.body.some(
+          (row) =>
+            row.causalType === 'derived_from_replay' &&
+            row.parentEventId === source.eventId,
+        ),
+      ).toBe(true);
+    });
+
     it('records device status, calculates OEE, and escalates andon SLA', async () => {
       const dispatcher = await login(
         baseUrl,

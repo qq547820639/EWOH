@@ -94,6 +94,8 @@
 - 映射 Dry Run：`POST /api/scale/mappings/:id/dry-run` 对样本载荷执行规则，
   返回 `REQUIRED_FIELD_MISSING`/`TRANSFORM_ERROR` 并定位源字段与目标字段。
 - 真实数据库验证：HTTP+PostgreSQL E2E 29/29 通过，认证浏览器流程 4/4 通过。
+- 世界回放统一时间轴：`/api/world/replay` 合并任务/工序/物料/质检/告警泳道，
+  新增事件前后对比接口与从回放创建跟进问题的审计链路。
 
 ## [0.6.0-rc3] - 2026-08-04
 

@@ -13,6 +13,10 @@ interface TimelineEvent {
   eventId: string;
   severity: string;
   title: string;
+  lane?: string;
+  entityId?: string;
+  sourceType?: string;
+  status?: string;
 }
 
 interface TimelinePanelProps {
@@ -28,6 +32,7 @@ interface TimelinePanelProps {
   speed: number;
   onSpeedChange: (next: number) => void;
   onSelectEvent: (eventId: string) => void;
+  onCreateItem?: (event: TimelineEvent) => void;
 }
 
 export default function TimelinePanel({
@@ -43,6 +48,7 @@ export default function TimelinePanel({
   speed,
   onSpeedChange,
   onSelectEvent,
+  onCreateItem,
 }: TimelinePanelProps): React.ReactElement {
   const allEvents: TimelineEvent[] = useMemo(() => {
     if (!snapshots) return [];
@@ -278,25 +284,45 @@ export default function TimelinePanel({
                 <div className="flex items-center gap-2 overflow-x-auto h-full">
                   <span className="text-[10px] text-white/60 shrink-0">事件:</span>
                   {selectedSnapshot.events.map((ev, i) => (
-                    <button
+                    <div
                       key={`${ev.eventId}-${i}`}
-                      type="button"
-                      aria-label={eventAccessibleLabel(ev.title, ev.severity)}
-                      onClick={() => selectEvent({ ts: selectedSnapshot.ts, ...ev })}
-                      className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-white/5 hover:bg-white/10 shrink-0"
+                      className="flex items-center gap-1 shrink-0"
                     >
-                      <span
-                        className={cn(
-                          'w-1.5 h-1.5 rounded-full',
-                          ev.severity === 'L3'
-                            ? 'bg-red-500'
-                            : ev.severity === 'L2'
-                              ? 'bg-orange-500'
-                              : 'bg-yellow-500',
+                      <button
+                        type="button"
+                        aria-label={eventAccessibleLabel(ev.title, ev.severity)}
+                        onClick={() => selectEvent({ ts: selectedSnapshot.ts, ...ev })}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-white/5 hover:bg-white/10"
+                      >
+                        <span
+                          className={cn(
+                            'w-1.5 h-1.5 rounded-full',
+                            ev.severity === 'L3'
+                              ? 'bg-red-500'
+                              : ev.severity === 'L2'
+                                ? 'bg-orange-500'
+                                : 'bg-yellow-500',
+                          )}
+                        />
+                        <span className="text-white/80">{ev.title}</span>
+                        {ev.lane && (
+                          <span className="text-white/40 border-l border-white/10 pl-1">
+                            {ev.lane}
+                          </span>
                         )}
-                      />
-                      <span className="text-white/80">{ev.title}</span>
-                    </button>
+                      </button>
+                      {onCreateItem && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onCreateItem({ ts: selectedSnapshot.ts, ...ev })
+                          }
+                          className="rounded px-1.5 py-0.5 text-[10px] text-cyan-300 hover:bg-cyan-400/10"
+                        >
+                          跟进
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               ) : (

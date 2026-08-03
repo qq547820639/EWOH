@@ -244,6 +244,79 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/world/replay/context/{eventId}:
+    get:
+      tags:
+        - world
+      summary: Event before/during/after replay context
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: windowMinutes
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Before/during/after snapshots around the event
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/world/replay/items:
+    post:
+      tags:
+        - world
+      summary: Create issue/task/evidence from a replay event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - eventId
+                - kind
+              properties:
+                eventId:
+                  type: string
+                kind:
+                  type: string
+                  enum: [issue, task, evidence]
+                title:
+                  type: string
+                note:
+                  type: string
+                replayTime:
+                  type: string
+      responses:
+        '201':
+          description: Replay-derived event created
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/world/state:
     get:
       tags:

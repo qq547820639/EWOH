@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T22:12:19.051Z",
+  "generatedAt": "2026-08-03T22:23:55.913Z",
   "spec": "openapi/ewoh.yaml",
   "controllerKeys": [
     "DELETE /api/dashboard/devices/{deviceId}/bindings",
@@ -117,6 +117,7 @@
     "GET /api/world/delta",
     "GET /api/world/events/chain/{eventId}",
     "GET /api/world/replay",
+    "GET /api/world/replay/context/{eventId}",
     "GET /api/world/snapshot",
     "GET /api/world/state",
     "GET /health/live",
@@ -231,6 +232,7 @@
     "POST /api/workflows/advance",
     "POST /api/workflows/instances",
     "POST /api/workflows/instances/{key}/advance",
+    "POST /api/world/replay/items",
     "PUT /api/parameters/{key}",
     "PUT /api/scheduler/weights",
     "PUT /api/system/config/{key}",
@@ -352,6 +354,7 @@
     "GET /api/world/delta",
     "GET /api/world/events/chain/{eventId}",
     "GET /api/world/replay",
+    "GET /api/world/replay/context/{eventId}",
     "GET /api/world/snapshot",
     "GET /api/world/state",
     "GET /health/live",
@@ -466,14 +469,15 @@
     "POST /api/workflows/advance",
     "POST /api/workflows/instances",
     "POST /api/workflows/instances/{key}/advance",
+    "POST /api/world/replay/items",
     "PUT /api/parameters/{key}",
     "PUT /api/scheduler/weights",
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 233,
-  "specOperations": 233,
-  "documentedControllerOperations": 233,
+  "controllerOperations": 235,
+  "specOperations": 235,
+  "documentedControllerOperations": 235,
   "undocumented": [],
   "unimplemented": []
 }

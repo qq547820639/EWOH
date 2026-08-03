@@ -108,6 +108,17 @@ Trace: EWOH-2026-08-04-principal-final6
 - Full gate with runtime DB: server Jest 78/377, client 13/46, OpenAPI 233/233,
   repo facts 33/33, work graph 241 nodes / 0 invariant conflicts, build passed.
 
+## Latest Round - 2026-08-04 World Replay Unified Timeline
+
+- `GET /api/world/replay` now merges world states, events, tasks, steps, and
+  material changes into lane-aware snapshots.
+- `GET /api/world/replay/context/:eventId` returns before/during/after
+  snapshots around an event.
+- `POST /api/world/replay/items` creates an issue/task/evidence from a replay
+  event and writes a `derived_from_replay` causal chain with audit.
+- TimelinePanel displays lane labels and a one-click “跟进” action.
+- Real PostgreSQL E2E: 30/30 passed including the new replay scenario.
+
 ## Current Phase
 
 Final 6.0 work orchestration wave: C7-C9 contracts, file-backed Work Graph

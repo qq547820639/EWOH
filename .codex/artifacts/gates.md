@@ -56,3 +56,11 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
 - Full one-click gate with runtime database: `ALL STANDALONE CHECKS PASSED`
   including E2E 29/29 and browser 4/4; server 78/377, client 13/46,
   OpenAPI 233/233.
+
+## 2026-08-04 World Replay Unified Timeline Gate
+
+- Replay merges task/material/quality/alert lanes; event context provides
+  before/during/after snapshots; replay-derived items are audited and linked
+  to source events via `ewoh_event_chain`.
+- Unit tests added for replay merging, context selection, and replay item
+  creation; real PostgreSQL E2E now 30/30.

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Clock,
   AlertCircle,
@@ -13,7 +13,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { getEntities } from '../../api/spatial';
-import { getReplay, getWorldState } from '../../api/world';
+import { createReplayItem, getReplay, getWorldState } from '../../api/world';
 import {
   getOverview,
   getEvents,
@@ -448,6 +448,24 @@ const CommandMap = (): React.ReactElement => {
     [focusEventEntity],
   );
 
+  const createReplayItemMutation = useMutation({
+    mutationFn: (event: { eventId: string; title: string; ts: string }) =>
+      createReplayItem({
+        eventId: event.eventId,
+        kind: 'issue',
+        title: `跟进：${event.title}`,
+        replayTime: event.ts,
+      }),
+    onSuccess: () => {
+      toast.success('已从回放创建跟进问题');
+    },
+    onError: (error) => {
+      toast.error('创建跟进问题失败', {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    },
+  });
+
   return (
     <div
       id="command-map-main"
@@ -619,6 +637,13 @@ const CommandMap = (): React.ReactElement => {
               speed={replaySpeed}
               onSpeedChange={setReplaySpeed}
               onSelectEvent={handleSelectReplayEvent}
+              onCreateItem={(event) =>
+                createReplayItemMutation.mutate({
+                  eventId: event.eventId,
+                  title: event.title,
+                  ts: event.ts,
+                })
+              }
             />
           )}
           {activeTab === 'events' && (
