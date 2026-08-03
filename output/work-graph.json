@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T22:17:13.461Z",
+  "generatedAt": "2026-08-03T22:27:54.369Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 241,
-    "edgeCount": 28,
+    "itemCount": 242,
+    "edgeCount": 29,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 98,
+    "evidenceCount": 99,
     "gateCount": 14,
     "riskCount": 15,
-    "decisionCount": 41,
+    "decisionCount": 42,
     "statusCounts": {
-      "Done": 148,
+      "Done": 149,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2492,6 +2492,18 @@
       "evidence": "`round92-real-pg-e2e-browser.md`; E2E 29/29; browser 4/4"
     },
     {
+      "id": "T-207",
+      "title": "Unified replay lanes, event context, and replay-derived issue creation",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-14/31",
+      "agents": [
+        "AG-14"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)",
+      "evidence": "`round94-world-replay-unified-timeline.md`; unit + E2E 30/30"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -3007,6 +3019,13 @@
       "to": "EVD-round93-onboarding-mapping-real-gate-2",
       "edgeType": "evidence",
       "blocking": false
+    },
+    {
+      "id": "E-029",
+      "from": "T-207",
+      "to": "EVD-round94-world-replay-unified-timeline",
+      "edgeType": "evidence",
+      "blocking": false
     }
   ],
   "actors": [
@@ -3496,7 +3515,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "a93afa01931158d4c7a9975822c487e551abed35e898b51ced251034558ed391",
+      "checksum": "46f28e1e62743ab83fe5dfc70ebde63bb28fc90f4de604c2346f1fe7353ad786",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3505,7 +3524,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "5aa8fd6ef27f8f233651e01c20fd465d97e536ab3b2efd738ef26158a97b8468",
+      "checksum": "7123dfb28e75887ba8819871e0a83ad982abf96f853ee94fb4b70950412b946d",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3532,7 +3551,7 @@
       "artifactId": "decision-log-md",
       "path": "decision-log.md",
       "mediaType": "text/markdown",
-      "checksum": "9d5b8cd192cd54f744360dd14fd2558acd1cdca085e1fe050c1bd28b3c67eb41",
+      "checksum": "4199e2b46eed5fdd4a5f5eb6150f920a775b91c080a9af06879395ee8f2efd0c",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3541,7 +3560,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "87e7883d0822a6948a2901fbefa98971ece305f9dee41f9a454c9f2cda47aa83",
+      "checksum": "797c68917f54786ac71b866a131768e211e07501a399503e226637682a8f3fb2",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -5337,7 +5356,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD ce93fc022c35779ee0bd9c14bebd0f417ae09d78"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD d9d7dc546f6684759385dafff2a12c6b657d0ceb"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-2",
@@ -5356,7 +5375,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD ce93fc022c35779ee0bd9c14bebd0f417ae09d78"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD d9d7dc546f6684759385dafff2a12c6b657d0ceb"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-3",
@@ -5375,7 +5394,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD ce93fc022c35779ee0bd9c14bebd0f417ae09d78"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD d9d7dc546f6684759385dafff2a12c6b657d0ceb"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-4",
@@ -5394,7 +5413,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD ce93fc022c35779ee0bd9c14bebd0f417ae09d78"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD d9d7dc546f6684759385dafff2a12c6b657d0ceb"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-5",
@@ -5413,7 +5432,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD ce93fc022c35779ee0bd9c14bebd0f417ae09d78"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD d9d7dc546f6684759385dafff2a12c6b657d0ceb"
     },
     {
       "evidenceId": "EVD-round91-review-fixes",
@@ -5432,7 +5451,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T07:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2 differs from code HEAD ce93fc022c35779ee0bd9c14bebd0f417ae09d78"
+      "staleReason": "evidence commit fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2 differs from code HEAD d9d7dc546f6684759385dafff2a12c6b657d0ceb"
     },
     {
       "evidenceId": "EVD-round92-real-pg-e2e-browser",
@@ -5450,7 +5469,8 @@
       "testTime": "2026-08-04T08:00:00.000Z",
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T08:00:00.000Z",
-      "status": "valid"
+      "status": "stale",
+      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD d9d7dc546f6684759385dafff2a12c6b657d0ceb"
     },
     {
       "evidenceId": "EVD-round93-onboarding-mapping-real-gate-1",
@@ -5468,7 +5488,8 @@
       "testTime": "2026-08-04T08:00:00.000Z",
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T08:00:00.000Z",
-      "status": "valid"
+      "status": "stale",
+      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD d9d7dc546f6684759385dafff2a12c6b657d0ceb"
     },
     {
       "evidenceId": "EVD-round93-onboarding-mapping-real-gate-2",
@@ -5486,6 +5507,25 @@
       "testTime": "2026-08-04T08:00:00.000Z",
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T08:00:00.000Z",
+      "status": "stale",
+      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD d9d7dc546f6684759385dafff2a12c6b657d0ceb"
+    },
+    {
+      "evidenceId": "EVD-round94-world-replay-unified-timeline",
+      "workItemId": "T-207",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round94-world-replay-unified-timeline.md",
+      "checksum": "7317193e66aa8e2f0ba5e4d296e8e8018a24ff0557054067ad6a2ee4998051d4",
+      "result": "passed",
+      "title": "Round 94 - Unified World Replay Timeline",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "d9d7dc546f6684759385dafff2a12c6b657d0ceb",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-04T09:00:00.000Z",
+      "verifier": "AG-00 local gate",
+      "expiresAt": "2026-11-02T09:00:00.000Z",
       "status": "valid"
     }
   ],
@@ -6111,6 +6151,14 @@
       "decision": "Add mapping dry-run/preflight API that maps sample payloads and localizes required/transform errors to source and target fields",
       "rationale": "Factory implementation needs pre-import validation without touching production data",
       "reversibility": "Reversible per API"
+    },
+    {
+      "id": "D-044",
+      "title": "Extend world replay into a unified lane timeline (task/material/quality/alert) with before/during/after context and replay-derived issue creation",
+      "date": "2026-08-04",
+      "decision": "Extend world replay into a unified lane timeline (task/material/quality/alert) with before/during/after context and replay-derived issue creation",
+      "rationale": "The plan requires alert-to-snapshot analysis and traceable follow-up from replay",
+      "reversibility": "Reversible per API/UI"
     }
   ],
   "resources": [

@@ -118,6 +118,8 @@ Trace: EWOH-2026-08-04-principal-final6
   event and writes a `derived_from_replay` causal chain with audit.
 - TimelinePanel displays lane labels and a one-click “跟进” action.
 - Real PostgreSQL E2E: 30/30 passed including the new replay scenario.
+- Full suite after replay wave: server Jest 79/380, client 13/46, OpenAPI
+  235/235, work graph 242 nodes / 99 evidence / 0 invariant conflicts.
 
 ## Current Phase
 
