@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T20:26:41.151Z",
+  "generatedAt": "2026-08-03T20:37:38.183Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 227,
+    "itemCount": 229,
     "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 84,
+    "evidenceCount": 86,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 36,
     "statusCounts": {
-      "Done": 134,
+      "Done": 136,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2324,6 +2324,30 @@
       "evidence": "failed query banner + retry; client 13/42"
     },
     {
+      "id": "T-193",
+      "title": "EWOH 0.6.0-rc4 candidate bundle",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`release/ewoh-0.6.0-rc4` 1195 files; SHA256SUMS; scale-release-review PASSED"
+    },
+    {
+      "id": "T-194",
+      "title": "Authenticated Playwright browser test",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-13/30",
+      "agents": [
+        "AG-13"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "dispatcher login + command center render on real PG fixture; `npm run test:browser` 1/1"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -2385,7 +2409,7 @@
       "type": "gate",
       "status": "Validation",
       "owner": "AG-00",
-      "evidence": "Playwright screenshots: Standalone login mobile/desktop; client Jest 13 suites / 42 tests; PWA manifest/service worker; work console route and layout type-check"
+      "evidence": "Playwright authenticated flow: dispatcher login + command center render on real PG; client Jest 13 suites / 42 tests; PWA manifest/service worker; work console route and layout type-check"
     },
     {
       "id": "G8",
@@ -3287,7 +3311,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "56d2c91e234d9d8c8d2ac7b4abe06438b9d66a568e7e93b49cedfdb82526f505",
+      "checksum": "c3313458f31a13d0eca85ac320326320b6e26ab9ab53de9464a01da8f16f345d",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3296,7 +3320,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "6e250ae98f2175151001b232efdba58804f6d496354c3055c76f5c9e314a574e",
+      "checksum": "09b6817d072ccc512a19815d977d02deb86a2cbdc73365464febb4a31d0229bc",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3332,7 +3356,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "70c82c06cbb2924820cd59d7d1b5933922317703c0d53a3558ee02fe618be60c",
+      "checksum": "24567953e9232cbf05dc4341537f2954d7111adb42d991cd905276d882a8d323",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3341,7 +3365,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "9b7d6a6317119707382c6c122613052a6e6d44578edd5ab96e7892175b8146df",
+      "checksum": "bc8979c27a8e45d37f88fc9980ff1d31d387d62704a605bd16f12e58b02dbdc7",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4168,6 +4192,24 @@
       "title": "Round 84 - 2026-08-04 Command Map Query Error State"
     },
     {
+      "evidenceId": "EVD-round85-rc4-candidate-bundle",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round85-rc4-candidate-bundle.md",
+      "checksum": "c9c5f3d259f8c84f8e42a2b323206ddc0b64ae55c1073f45b545876ba71da33b",
+      "result": "passed",
+      "title": "Round 85 - 2026-08-04 EWOH 0.6.0-rc4 Candidate Bundle"
+    },
+    {
+      "evidenceId": "EVD-round86-authenticated-browser-test",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round86-authenticated-browser-test.md",
+      "checksum": "596c53c4b1ea7539702e4800173272bcebe3124ef074db534f3505b6f374913e",
+      "result": "passed",
+      "title": "Round 86 - 2026-08-04 Authenticated Playwright Browser Test"
+    },
+    {
       "evidenceId": "EVD-round9-observability-deploy-artifacts",
       "workItemId": "",
       "kind": "test",
@@ -4268,7 +4310,7 @@
       "calculatedStatus": "in_progress",
       "humanDecision": null,
       "conditions": [
-        "Playwright screenshots: Standalone login mobile/desktop",
+        "Playwright authenticated flow: dispatcher login + command center render on real PG",
         "client Jest 13 suites / 42 tests",
         "PWA manifest/service worker",
         "work console route and layout type-check"

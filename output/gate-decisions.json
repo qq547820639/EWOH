@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T20:30:47.346Z",
+  "generatedAt": "2026-08-03T20:38:50.314Z",
   "gateCount": 14,
   "approvedCount": 0,
   "requiresApprovalCount": 4,
@@ -111,7 +111,7 @@
       "approver": null,
       "decidedAt": null,
       "conditions": [
-        "Playwright screenshots: Standalone login mobile/desktop",
+        "Playwright authenticated flow: dispatcher login + command center render on real PG",
         "client Jest 13 suites / 42 tests",
         "PWA manifest/service worker",
         "work console route and layout type-check"

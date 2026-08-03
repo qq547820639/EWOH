@@ -43,8 +43,9 @@ echo "== e2e (requires runtime DB env) =="
 if [[ -n "${EWOH_E2E_RUNTIME_DATABASE_URL:-}" ]]; then
   cd "$ROOT_DIR/ewoh-spark-app"
   npm run test:e2e
+  npm run test:browser
 else
-  echo "EWOH_E2E_RUNTIME_DATABASE_URL not set; skipping E2E"
+  echo "EWOH_E2E_RUNTIME_DATABASE_URL not set; skipping E2E and browser tests"
 fi
 
 echo "== standalone build =="

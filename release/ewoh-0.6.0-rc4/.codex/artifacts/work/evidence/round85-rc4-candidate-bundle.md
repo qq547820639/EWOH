@@ -9,7 +9,7 @@ EWOH_RELEASE_VERSION=0.6.0-rc4 bash scripts/package-release.sh
 
 Release bundle: /Volumes/Extra/CodeProj/EWOH/release/ewoh-0.6.0-rc4
 16M release/ewoh-0.6.0-rc4
-1194 files (excluding SHA256SUMS.txt)
+1195 files (excluding SHA256SUMS.txt)
 release/ewoh-0.6.0-rc4/SHA256SUMS.txt generated
 scale-release-review PASSED
 ```

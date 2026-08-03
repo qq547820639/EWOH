@@ -4,7 +4,7 @@ status: candidate-for-production (approval-gated)
 bundle:
   path: release/ewoh-0.6.0-rc4
   checksums: release/ewoh-0.6.0-rc4/SHA256SUMS.txt
-  files: 1194
+  files: 1195
 artifacts:
   api: ewoh-spark-app/dist/server
   client: ewoh-spark-app/dist/client/index.standalone.html

@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T20:30:47.294Z",
+  "generatedAt": "2026-08-03T20:38:50.268Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 228,
+    "itemCount": 229,
     "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 85,
+    "evidenceCount": 86,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 36,
     "statusCounts": {
-      "Done": 135,
+      "Done": 136,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2333,7 +2333,19 @@
         "AG-51"
       ],
       "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
-      "evidence": "`release/ewoh-0.6.0-rc4` 1195 files; SHA256SUMS; scale-release-review PASSED"
+      "evidence": "`release/ewoh-0.6.0-rc4` 1200 files; SHA256SUMS; scale-release-review PASSED"
+    },
+    {
+      "id": "T-194",
+      "title": "Authenticated Playwright browser test",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-13/30",
+      "agents": [
+        "AG-13"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "dispatcher login + command center render on real PG fixture; `npm run test:browser` 1/1"
     },
     {
       "id": "G0",
@@ -2397,7 +2409,7 @@
       "type": "gate",
       "status": "Validation",
       "owner": "AG-00",
-      "evidence": "Playwright screenshots: Standalone login mobile/desktop; client Jest 13 suites / 42 tests; PWA manifest/service worker; work console route and layout type-check"
+      "evidence": "Playwright authenticated flow: dispatcher login + command center render on real PG; client Jest 13 suites / 42 tests; PWA manifest/service worker; work console route and layout type-check"
     },
     {
       "id": "G8",
@@ -3299,7 +3311,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "873abdc7d417dd0d569904616c78bbacd1b649f63b231d1c45e2383000ccef4e",
+      "checksum": "60c7a758281c56997be3a974f51c43e8d62d8fdf4498f1fd3640861ccb862338",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3308,7 +3320,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "6e250ae98f2175151001b232efdba58804f6d496354c3055c76f5c9e314a574e",
+      "checksum": "09b6817d072ccc512a19815d977d02deb86a2cbdc73365464febb4a31d0229bc",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3344,7 +3356,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "ba09c7e655c0a5162a794aa8e710baf08b88f3c9a9964a4feca1fdee82c11477",
+      "checksum": "dbae811c8f92fc5337398083a2a2ef8c6bc3cbcb4ba96452e84cf48fa596602e",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3353,7 +3365,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "c265afc24bdc513b7ee591160cc86595afd475eee3cb0dd9f44cd9a57aaf5368",
+      "checksum": "19f9443e573767d763964edca421f5e81105a3e8a52a30c260712c0f228c4052",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4184,9 +4196,18 @@
       "workItemId": "",
       "kind": "test",
       "path": ".codex/artifacts/work/evidence/round85-rc4-candidate-bundle.md",
-      "checksum": "c9c5f3d259f8c84f8e42a2b323206ddc0b64ae55c1073f45b545876ba71da33b",
+      "checksum": "b14b34b6262bba3ea9709a3795dd7476ef1c3942e04db51029efc63e60502690",
       "result": "passed",
       "title": "Round 85 - 2026-08-04 EWOH 0.6.0-rc4 Candidate Bundle"
+    },
+    {
+      "evidenceId": "EVD-round86-authenticated-browser-test",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round86-authenticated-browser-test.md",
+      "checksum": "596c53c4b1ea7539702e4800173272bcebe3124ef074db534f3505b6f374913e",
+      "result": "passed",
+      "title": "Round 86 - 2026-08-04 Authenticated Playwright Browser Test"
     },
     {
       "evidenceId": "EVD-round9-observability-deploy-artifacts",
@@ -4289,7 +4310,7 @@
       "calculatedStatus": "in_progress",
       "humanDecision": null,
       "conditions": [
-        "Playwright screenshots: Standalone login mobile/desktop",
+        "Playwright authenticated flow: dispatcher login + command center render on real PG",
         "client Jest 13 suites / 42 tests",
         "PWA manifest/service worker",
         "work console route and layout type-check"

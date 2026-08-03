@@ -554,7 +554,8 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-190 | Error leak sanitization | AG-00/12 | Done | HttpException details sanitized; site readiness generic error; Jest 76/362 |
 | T-191 | Devices page error/update state | AG-00/05 | Done | isError + retry + updatedAt display in device list |
 | T-192 | Command map query error banner | AG-00/06 | Done | failed query banner + retry; client 13/42 |
-| T-193 | EWOH 0.6.0-rc4 candidate bundle | AG-51 | Done | `release/ewoh-0.6.0-rc4` 1195 files; SHA256SUMS; scale-release-review PASSED |
+| T-193 | EWOH 0.6.0-rc4 candidate bundle | AG-51 | Done | `release/ewoh-0.6.0-rc4` 1200 files; SHA256SUMS; scale-release-review PASSED |
+| T-194 | Authenticated Playwright browser test | AG-13/30 | Done | dispatcher login + command center render on real PG fixture; `npm run test:browser` 1/1 |
 
 ## Next Waves
 
