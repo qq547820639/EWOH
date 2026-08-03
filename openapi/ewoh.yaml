@@ -4043,6 +4043,30 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/system/feature-flags/evaluate:
+    post:
+      tags:
+        - system
+      summary: Evaluate org feature flags with OpenFeature-style targeting context
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeatureFlagEvaluateRequest'
+      responses:
+        '201':
+          description: Feature flag evaluation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureFlagEvaluationList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/system/feature-flags/{key}:
     get:
       tags:
@@ -9645,6 +9669,49 @@ components:
           additionalProperties: true
       required:
         - enabled
+    FeatureFlagEvaluateRequest:
+      type: object
+      properties:
+        keys:
+          type: array
+          items:
+            type: string
+        context:
+          type: object
+          properties:
+            orgId:
+              type: string
+            factoryId:
+              type: string
+            upgradeRing:
+              type: string
+            roles:
+              type: array
+              items:
+                type: string
+      required: []
+    FeatureFlagEvaluation:
+      type: object
+      properties:
+        key:
+          type: string
+        enabled:
+          type: boolean
+        reason:
+          type: string
+        variant:
+          type: string
+        targetingApplied:
+          type: boolean
+      required:
+        - key
+        - enabled
+        - reason
+        - variant
+    FeatureFlagEvaluationList:
+      type: array
+      items:
+        $ref: '#/components/schemas/FeatureFlagEvaluation'
     HandleEventRequest:
       type: object
       properties:

@@ -441,6 +441,126 @@ if (!e2eConfig) {
       expect(deniedWrite.status).toBe(403);
     });
 
+    it('evaluates feature flags with OpenFeature-style targeting and safe closed default', async () => {
+      const adminA = await login(
+        baseUrl,
+        fixture!.globalAdminA.username,
+        fixture!.globalAdminA.password,
+      );
+      expect(adminA.status).toBe(201);
+      const adminToken = adminA.body.accessToken;
+      const flagKey = `feature.e2e.canary.${runId}`;
+
+      const setFlag = await apiRequest<{ key: string; enabled: boolean }>(
+        baseUrl,
+        `/api/system/feature-flags/${flagKey}`,
+        {
+          method: 'PUT',
+          headers: jsonHeaders(adminToken),
+          body: JSON.stringify({
+            enabled: true,
+            metadata: {
+              owner: 'e2e',
+              targeting: {
+                rings: ['shadow'],
+                roles: ['dispatcher'],
+                orgIds: [fixture!.orgA.id],
+                factories: ['factory-a'],
+              },
+            },
+          }),
+        },
+      );
+      expect(setFlag.status).toBe(200);
+
+      const dispatcherA = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcherA.status).toBe(201);
+      const matchingContext = {
+        orgId: fixture!.orgA.id,
+        factoryId: 'factory-a',
+        upgradeRing: 'shadow',
+        roles: ['dispatcher'],
+      };
+      const on = await apiRequest<
+        Array<{
+          key: string;
+          enabled: boolean;
+          reason: string;
+          variant: string;
+          targetingApplied: boolean;
+        }>
+      >(baseUrl, '/api/system/feature-flags/evaluate', {
+        method: 'POST',
+        headers: jsonHeaders(dispatcherA.body.accessToken),
+        body: JSON.stringify({
+          keys: [flagKey, 'feature.missing'],
+          context: matchingContext,
+        }),
+      });
+      expect(on.status).toBe(201);
+      expect(on.body[0]).toMatchObject({
+        key: flagKey,
+        enabled: true,
+        reason: 'default_on',
+        variant: 'on',
+        targetingApplied: true,
+      });
+      expect(on.body[1]).toMatchObject({
+        key: 'feature.missing',
+        enabled: false,
+        reason: 'flag_not_found',
+        variant: 'off',
+      });
+
+      const off = await apiRequest<
+        Array<{ enabled: boolean; reason: string }>
+      >(baseUrl, '/api/system/feature-flags/evaluate', {
+        method: 'POST',
+        headers: jsonHeaders(dispatcherA.body.accessToken),
+        body: JSON.stringify({
+          keys: [flagKey],
+          context: { ...matchingContext, upgradeRing: 'full' },
+        }),
+      });
+      expect(off.status).toBe(201);
+      expect(off.body[0]).toMatchObject({
+        enabled: false,
+        reason: 'ring_mismatch',
+        variant: 'off',
+      });
+
+      const viewerB = await login(
+        baseUrl,
+        fixture!.viewerB.username,
+        fixture!.viewerB.password,
+      );
+      expect(viewerB.status).toBe(201);
+      const hidden = await apiRequest<
+        Array<{ enabled: boolean; reason: string }>
+      >(baseUrl, '/api/system/feature-flags/evaluate', {
+        method: 'POST',
+        headers: jsonHeaders(viewerB.body.accessToken),
+        body: JSON.stringify({
+          keys: [flagKey],
+          context: {
+            orgId: fixture!.orgB.id,
+            factoryId: 'factory-a',
+            upgradeRing: 'shadow',
+            roles: ['dispatcher'],
+          },
+        }),
+      });
+      expect(hidden.status).toBe(201);
+      expect(hidden.body[0]).toMatchObject({
+        enabled: false,
+        reason: 'flag_not_found',
+      });
+    });
+
     it('rotates refresh tokens and revokes them after reuse/logout', async () => {
       const first = await login(
         baseUrl,

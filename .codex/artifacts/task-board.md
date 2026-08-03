@@ -409,6 +409,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-136 | EAM/tooling + work-center config + standard hours/efficiency | PX-14/15 | Done | `round52-operations-capability.md`; Jest 65/291; client 6/22; OpenAPI 198/198; E2E 24/24; standalone check PASSED |
 
+## Wave Final5 - Standard Protocol & Flag SDK (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-137 | Sparkplug B connector + OpenFeature flag evaluation | V-CON/06 | Done | `round53-sparkplug-openfeature.md`; pytest 89; Jest 65/292; client 6/22; OpenAPI 199/199; E2E 25/25; connector TCK 17/17 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

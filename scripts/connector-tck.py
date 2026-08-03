@@ -7,6 +7,7 @@ against the connector runtime and edge sequence buffer.
 
 from __future__ import annotations
 
+import struct
 import sys
 from pathlib import Path
 
@@ -21,6 +22,12 @@ from edge_platform.connectors.runtime import (  # noqa: E402
     healthcheck,
     redact_config,
     validate_config,
+)
+from edge_platform.connectors.sparkplug import (  # noqa: E402
+    SparkplugSessionState,
+    decode_sparkplug_payload,
+    normalize_sparkplug_message,
+    parse_sparkplug_topic,
 )
 from edge_platform.edge.backfill import SequenceBuffer  # noqa: E402
 
@@ -42,6 +49,11 @@ CONFIGS = {
         "clientId": "mes-edge",
         "secretName": "erp-credentials",
     },
+    "sparkplug-b": {
+        "brokerUrl": "mqtt://factory-lan",
+        "groupId": "factory-a",
+        "clientId": "edge-1",
+    },
 }
 
 checks: list[tuple[str, bool]] = []
@@ -52,7 +64,7 @@ def check(name: str, condition: bool) -> None:
 
 
 manifests = discover_manifests(MANIFEST_DIR)
-check("discover manifests >= 3", len(manifests) >= 3)
+check("discover manifests >= 4", len(manifests) >= 4)
 
 for manifest in manifests:
     config = CONFIGS[manifest.id]
@@ -83,6 +95,82 @@ gap.ready()
 check("gap detection", gap.missing() == [2])
 gap.push({"seq": 2})
 check("backfill", [f["seq"] for f in gap.ready()] == [2, 3])
+
+
+def _varint(value):
+    out = bytearray()
+    while True:
+        byte = value & 0x7F
+        value >>= 7
+        if value:
+            out.append(byte | 0x80)
+        else:
+            out.append(byte)
+            break
+    return bytes(out)
+
+
+def _field(field_no, wire_type, value):
+    return _varint((field_no << 3) | wire_type) + value
+
+
+def _string_field(field_no, text):
+    raw = text.encode("utf-8")
+    return _field(field_no, 2, _varint(len(raw)) + raw)
+
+
+def _numeric_metric_field(value_field, value):
+    if value_field == 12:
+        return _field(12, 1, struct.pack("<d", float(value)))
+    return _field(value_field, 0, _varint(value))
+
+
+def _sparkplug_payload(seq, metric_name, datatype, value_field, value):
+    metric_body = _string_field(1, metric_name) + _field(
+        4, 0, _varint(datatype)
+    ) + _numeric_metric_field(value_field, value)
+    return (
+        _field(1, 0, _varint(1_756_000_000_000))
+        + _field(2, 0, _varint(seq))
+        + _field(5, 2, _varint(len(metric_body)) + metric_body)
+    )
+
+
+topic = parse_sparkplug_topic("spBv1.0/factory-a/DDATA/edge-1/cnc-01")
+check(
+    "sparkplug topic",
+    topic.group_id == "factory-a"
+    and topic.message_type == "DDATA"
+    and topic.device_id == "cnc-01",
+)
+payload = _sparkplug_payload(3, "temp_c", 9, 12, 230)
+decoded = decode_sparkplug_payload(payload)
+check(
+    "sparkplug codec",
+    decoded.seq == 3
+    and decoded.metrics[0].name == "temp_c"
+    and decoded.metrics[0].value == 230,
+)
+message = normalize_sparkplug_message(
+    "spBv1.0/factory-a/DDATA/edge-1/cnc-01",
+    payload,
+    source_type="real",
+)
+check(
+    "sparkplug canonical envelope",
+    message["entity_id"] == "cnc-01"
+    and message["protocol_version"] == "spBv1.0"
+    and message["event_type"] == "TelemetryObserved",
+)
+session = SparkplugSessionState("factory-a", "edge-1")
+session.record("NBIRTH", 1)
+session.record("NDATA", 1)
+check(
+    "sparkplug session state",
+    session.snapshot()["online"]
+    and session.snapshot()["duplicate"]
+    and session.snapshot()["births"] == ["edge-1"],
+)
 
 failed = [name for name, ok in checks if not ok]
 if failed:

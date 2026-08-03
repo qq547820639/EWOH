@@ -171,6 +171,16 @@
   偏差、效率与人员公平性标准差。
 - 运营管理前端：新增 `/operations` 页面，包含总览、维保资产、维保任务、
   工装校验、工作中心、标准工时与人员效率七个视图并接入真实 API。
+- Sparkplug B 连接器：`src/edge_platform/connectors/sparkplug.py` 提供
+  `spBv1.0` 主题解析、纯标准库 protobuf 载荷解码、出生/死亡/会话/序号状态
+  与统一遥测帧适配器；新增 `sparkplug-b-1.0.0` Manifest 并纳入连接器 TCK。
+- 连接器 TCK 升级：`scripts/connector-tck.py` 由 11 项扩展到 17 项，覆盖
+  Sparkplug 主题、载荷、规范帧与会话状态检查。
+- OpenFeature 语义功能开关：`POST /api/system/feature-flags/evaluate` 支持
+  按组织/工厂/升级环/角色进行定位评估，默认安全关闭并返回
+  `reason/variant/targetingApplied` 评估原因。
+- 系统管理页新增功能开关评估器：输入开关键、升级环、工厂 ID 与角色即可
+  查看当前上下文下的开启状态与评估原因。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

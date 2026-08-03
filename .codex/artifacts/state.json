@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 5.0 adopted; scale kernel + connector/scenario catalog + conformance/replay + fleet ops + event catalog + Helm deployment factory + Golden Factory Profile + Mapping DSL + upgrade rings/fleet registry/support bundle + OTel resource attributes + compatibility catalog + policy engine + template diff preview + connector runtime + factory onboarding + release review + workflow engine + feature flags + edge backfill + twin package pipeline + partner shadow + deployment TCK + scale UI + ERP/MES connector profile + scale metrics + scenario uninstall + connector TCK + scenario TCK + third factory drill + factory differences + difference resolve + cross-tenant TCK + differences UI + workflow instances + support bundle UI + fleet UI + workflow instances UI + scenario UI + operations capability implemented; 65 Jest suites / 291 tests; client 6/22; pytest 82 passed; E2E 24/24; OpenAPI 198/198; release review 24/24; deployment TCK passed; connector TCK 11/11; scenario TCK 5 gates; cross-tenant TCK passed; managed tables 51",
+  "current_status": "Final 5.0 adopted; scale kernel + connector/scenario catalog + conformance/replay + fleet ops + event catalog + Helm deployment factory + Golden Factory Profile + Mapping DSL + upgrade rings/fleet registry/support bundle + OTel resource attributes + compatibility catalog + policy engine + template diff preview + connector runtime + factory onboarding + release review + workflow engine + feature flags + edge backfill + twin package pipeline + partner shadow + deployment TCK + scale UI + ERP/MES connector profile + scale metrics + scenario uninstall + connector TCK + scenario TCK + third factory drill + factory differences + difference resolve + cross-tenant TCK + differences UI + workflow instances + support bundle UI + fleet UI + workflow instances UI + scenario UI + operations capability + Sparkplug B connector + OpenFeature flag evaluation implemented; 65 Jest suites / 292 tests; client 6/22; pytest 89 passed; E2E 25/25; OpenAPI 199/199; release review 24/24; deployment TCK passed; connector TCK 17/17; scenario TCK 5 gates; cross-tenant TCK passed; managed tables 51",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
@@ -221,7 +221,8 @@
     "workflow_instances_ui": "/scale page workflow instance start/list/advance UI; client build passed"
     ,
     "scenario_ui": "/scale asset table scenario pack install/uninstall actions; client build passed",
-    "operations_capability": "EAM/tooling lifecycle, work center capability flags, standard hours, personnel efficiency; /api/operations/* 17 routes on org-scoped scheduler config with audit; Jest 65 suites / 291 tests; client 6 suites / 22 tests; OpenAPI 198/198; E2E 24/24; standalone check PASSED"
+    "operations_capability": "EAM/tooling lifecycle, work center capability flags, standard hours, personnel efficiency; /api/operations/* 17 routes on org-scoped scheduler config with audit; Jest 65 suites / 291 tests; client 6 suites / 22 tests; OpenAPI 198/198; E2E 24/24; standalone check PASSED",
+    "sparkplug_openfeature": "Sparkplug B topic/payload/session codec + adapter; sparkplug-b manifest; POST /api/system/feature-flags/evaluate with ring/role/org/factory targeting and safe-closed default; System page evaluator; pytest 89; Jest 65 suites / 292 tests; client 6 suites / 22 tests; OpenAPI 199/199; E2E 25/25; connector TCK 17/17"
   },
   "subagent_state": {
     "planned": [

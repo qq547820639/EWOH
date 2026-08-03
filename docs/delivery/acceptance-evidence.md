@@ -1,17 +1,17 @@
 # EWOH Acceptance Evidence
 
-Status: validated v1.3 (2026-08-03 operations capability wave)
+Status: validated v1.4 (2026-08-03 standard protocol + flag SDK wave)
 Owner: AG-00/AG-41
 
 ## Automated Evidence
 
 - Python unittest: 667 passed.
-- Python repo contract tests: 82 passed.
-- NestJS Jest: 291 passed across 65 suites (includes SP-01..SP-08 scenario
+- Python repo contract tests: 89 passed.
+- NestJS Jest: 292 passed across 65 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
 - Client Jest: 22 passed across 6 suites.
-- HTTP + PostgreSQL E2E: 24 passed (auth, RBAC, refresh rotation/logout, org
+- HTTP + PostgreSQL E2E: 25 passed (auth, RBAC, refresh rotation/logout, org
   isolation, control/resource/world persistence, canonical UnifiedExoFrame
   ingestion, gamification allocation persistence, approval persistence,
   system config org scoping, complete MES work order execution, and
@@ -19,11 +19,12 @@ Owner: AG-00/AG-41
   template publish/install/asset registration, scenario install + fleet
   upgrade/rollback, the event catalog API, `/metrics` resource attributes,
   policy evaluation, role-aware workflow advance, feature flag org isolation,
-  and maintenance/work-center/efficiency org isolation).
+  OpenFeature-style flag targeting, and maintenance/work-center/efficiency
+  org isolation).
 - NestJS type check, lint, and Standalone production build: passed.
 - One-click `scripts/standalone-check.sh`: passed with E2E, OpenAPI strict
   audit, DDL plans, and standalone DDL hygiene.
-- OpenAPI contract: 198 controller operations documented, 0 undocumented,
+- OpenAPI contract: 199 controller operations documented, 0 undocumented,
   0 unimplemented; `openapi/route-manifest.json` generated.
 - Full release drill: `RELEASE DRILL PASSED` against disposable PostgreSQL 17,
   including migration/RLS/audit/rollback/rebuild, 176 Jest tests, 107/107
@@ -178,6 +179,14 @@ Owner: AG-00/AG-41
   page wires summary, lifecycle actions, calibration, work center flags, and
   efficiency recording to real APIs; E2E verifies the full lifecycle and
   cross-org denial.
+- Sparkplug B connector: topic parser, minimal pure-Python protobuf payload
+  decoder, canonical telemetry envelope, birth/death/session/sequence state,
+  and a `BaseAdapter`-compatible edge adapter; `sparkplug-b-1.0.0` manifest is
+  part of the connector catalog and TCK (17/17 checks).
+- OpenFeature-style flag evaluation:
+  `POST /api/system/feature-flags/evaluate` applies ring/role/org/factory
+  targeting with safe-closed defaults, explicit reasons and variants; the
+  System page includes an evaluator wired to the real API.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Param, Body, Req } from '@nestjs/common';
+import { Controller, Get, Put, Post, Param, Body, Req } from '@nestjs/common';
 import { SystemService } from './system.service';
 import { ANY_AUTHENTICATED_ROLES, Roles } from '../shared/roles.decorator';
 
@@ -55,6 +55,25 @@ export class FeatureFlagsController {
       body.enabled ?? false,
       body.metadata ?? {},
       request.userContext?.userId,
+    );
+  }
+
+  @Post('evaluate')
+  evaluate(
+    @Body()
+    body: {
+      keys?: string[];
+      context?: {
+        orgId?: string;
+        factoryId?: string;
+        upgradeRing?: string;
+        roles?: string[];
+      };
+    },
+  ) {
+    return this.systemService.evaluateFeatureFlags(
+      body.keys,
+      body.context ?? {},
     );
   }
 }
