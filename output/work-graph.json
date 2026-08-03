@@ -1,14 +1,14 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T22:14:24.754Z",
+  "generatedAt": "2026-08-03T22:17:13.461Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
     "itemCount": 241,
-    "edgeCount": 25,
+    "edgeCount": 28,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 95,
+    "evidenceCount": 98,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 41,
@@ -2986,6 +2986,27 @@
       "to": "EVD-round91-review-fixes",
       "edgeType": "evidence",
       "blocking": false
+    },
+    {
+      "id": "E-026",
+      "from": "T-206",
+      "to": "EVD-round92-real-pg-e2e-browser",
+      "edgeType": "evidence",
+      "blocking": false
+    },
+    {
+      "id": "E-027",
+      "from": "T-204",
+      "to": "EVD-round93-onboarding-mapping-real-gate-1",
+      "edgeType": "evidence",
+      "blocking": false
+    },
+    {
+      "id": "E-028",
+      "from": "T-205",
+      "to": "EVD-round93-onboarding-mapping-real-gate-2",
+      "edgeType": "evidence",
+      "blocking": false
     }
   ],
   "actors": [
@@ -3484,7 +3505,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "8e09b0989bdeeb97078f62ab61375fc7be0b6c8c0761393010bf4ddc776868fe",
+      "checksum": "5aa8fd6ef27f8f233651e01c20fd465d97e536ab3b2efd738ef26158a97b8468",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3520,7 +3541,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "9a642a90e645bce5cb6abd56b2234d045bf8a117d184e8c0bcd1f03e792203d4",
+      "checksum": "87e7883d0822a6948a2901fbefa98971ece305f9dee41f9a454c9f2cda47aa83",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3529,7 +3550,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "f3af71b41abae35c643f783afd8d78a5016485d2442c37feed4ccbb70ddcfed7",
+      "checksum": "ad2a8b39a467c45cfb648922519e2ee5a89eaf59abd68e41bf8d40305cd72bdd",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -5316,7 +5337,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD ce93fc022c35779ee0bd9c14bebd0f417ae09d78"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-2",
@@ -5335,7 +5356,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD ce93fc022c35779ee0bd9c14bebd0f417ae09d78"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-3",
@@ -5354,7 +5375,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD ce93fc022c35779ee0bd9c14bebd0f417ae09d78"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-4",
@@ -5373,7 +5394,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD ce93fc022c35779ee0bd9c14bebd0f417ae09d78"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-5",
@@ -5392,7 +5413,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD ce93fc022c35779ee0bd9c14bebd0f417ae09d78"
     },
     {
       "evidenceId": "EVD-round91-review-fixes",
@@ -5410,6 +5431,61 @@
       "testTime": "2026-08-04T07:00:00.000Z",
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T07:00:00.000Z",
+      "status": "stale",
+      "staleReason": "evidence commit fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2 differs from code HEAD ce93fc022c35779ee0bd9c14bebd0f417ae09d78"
+    },
+    {
+      "evidenceId": "EVD-round92-real-pg-e2e-browser",
+      "workItemId": "T-206",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round92-real-pg-e2e-browser.md",
+      "checksum": "ca264cd5da0efa207dc8aa96c0e735347c09d4c20747677c5b4872c38b4d676c",
+      "result": "passed",
+      "title": "Round 92 - Real PostgreSQL E2E and Browser Validation",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "ce93fc022c35779ee0bd9c14bebd0f417ae09d78",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-04T08:00:00.000Z",
+      "verifier": "AG-00 local gate",
+      "expiresAt": "2026-11-02T08:00:00.000Z",
+      "status": "valid"
+    },
+    {
+      "evidenceId": "EVD-round93-onboarding-mapping-real-gate-1",
+      "workItemId": "T-204",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round93-onboarding-mapping-real-gate.md",
+      "checksum": "ee62e219fa2dfde67a986e11e83b3b629b3112b3459838887fffa7dc6db98bea",
+      "result": "passed",
+      "title": "Round 93 - Onboarding Real Execution and Mapping Dry Run",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "ce93fc022c35779ee0bd9c14bebd0f417ae09d78",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-04T08:00:00.000Z",
+      "verifier": "AG-00 local gate",
+      "expiresAt": "2026-11-02T08:00:00.000Z",
+      "status": "valid"
+    },
+    {
+      "evidenceId": "EVD-round93-onboarding-mapping-real-gate-2",
+      "workItemId": "T-205",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round93-onboarding-mapping-real-gate.md",
+      "checksum": "ee62e219fa2dfde67a986e11e83b3b629b3112b3459838887fffa7dc6db98bea",
+      "result": "passed",
+      "title": "Round 93 - Onboarding Real Execution and Mapping Dry Run",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "ce93fc022c35779ee0bd9c14bebd0f417ae09d78",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-04T08:00:00.000Z",
+      "verifier": "AG-00 local gate",
+      "expiresAt": "2026-11-02T08:00:00.000Z",
       "status": "valid"
     }
   ],
