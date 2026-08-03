@@ -107,6 +107,8 @@ production approval gate.
   scenario pack with audit, completing install/demo/accept/remove flow.
 - Connector TCK: `scripts/connector-tck.py` and `make connector-tck` run 11
   manifest/config/health/redaction/sequence checks.
+- Scenario TCK: `scripts/scenario-tck.js` and `npm run scenario:tck` run five
+  scenario-related contract audits as one gate.
 
 ## Active Tasks
 

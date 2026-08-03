@@ -62,6 +62,7 @@ evidence:
   scale_metrics: "GET /api/scale/metrics counts/published rate/ring distribution/compatibility"
   scenario_uninstall: "POST /api/scale/scenario-packs/:id/uninstall with audit"
   connector_tck: "scripts/connector-tck.py + make connector-tck; 11 checks"
+  scenario_tck: "scripts/scenario-tck.js + npm run scenario:tck; 5 gates"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

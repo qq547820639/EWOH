@@ -337,6 +337,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-124 | Connector TCK runner + make entry | V-CON/11 | Done | `round40-connector-tck.md`; 11 checks passed |
 
+## Wave Final5 - Scenario TCK (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-125 | Scenario TCK runner across golden/policy/workflow/mapping/events | PX-11/07 | Done | `round41-scenario-tck.md`; 5 gates passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

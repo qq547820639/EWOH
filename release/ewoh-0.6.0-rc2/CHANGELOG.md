@@ -138,6 +138,8 @@
   `uninstalled` 并写审计，补齐安装/演示/验收/移除生命周期。
 - 连接器 TCK：`scripts/connector-tck.py` 与 `make connector-tck` 执行 11 项
   Manifest/配置/健康/脱敏/乱序补传检查。
+- 场景包 TCK：`scripts/scenario-tck.js` 与 `npm run scenario:tck` 将
+  Golden Factory/策略/Workflow/Mapping/事件目录 5 个审计串成场景验收门禁。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

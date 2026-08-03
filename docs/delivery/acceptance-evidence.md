@@ -148,6 +148,9 @@ Owner: AG-00/AG-41
   scenario pack `uninstalled`, writes audit, and is verified in PostgreSQL.
 - Connector TCK: `scripts/connector-tck.py` runs 11 manifest/config/health/
   redaction/sequence checks and is exposed through `make connector-tck`.
+- Scenario TCK: `scripts/scenario-tck.js` runs Golden Factory, policy,
+  workflow, mapping, and event catalog audits as one scenario gate
+  (`npm run scenario:tck`).
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.
