@@ -3447,6 +3447,19 @@ if (!e2eConfig) {
       expect(gitSync.body.itemCount).toBeGreaterThan(0);
       expect(gitSync.body.status).toBe('offline');
 
+      const gitSyncApply = await apiRequest(
+        baseUrl,
+        '/api/work/git-sync/apply',
+        {
+          method: 'POST',
+          headers: jsonHeaders(adminToken),
+        },
+      );
+      expect(gitSyncApply.status).toBe(400);
+      expect(JSON.stringify(gitSyncApply.body)).toContain(
+        'EWOH_WORK_WRITABLE is not enabled',
+      );
+
       const siteReadiness = await apiRequest<
         Array<{ sourcePath: string; ready: boolean }>
       >(baseUrl, '/api/work/site-readiness', {

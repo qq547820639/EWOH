@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T22:54:24.073Z",
+  "generatedAt": "2026-08-03T23:10:19.714Z",
   "spec": "openapi/ewoh.yaml",
   "controllerKeys": [
     "DELETE /api/dashboard/devices/{deviceId}/bindings",
@@ -237,6 +237,7 @@
     "POST /api/tasks/{id}/state",
     "POST /api/work/gates/batch-decision",
     "POST /api/work/gates/{id}/decision",
+    "POST /api/work/git-sync/apply",
     "POST /api/work/handoffs",
     "POST /api/work/handoffs/{id}/state",
     "POST /api/work/resources/{id}/lock",
@@ -486,6 +487,7 @@
     "POST /api/tasks/{id}/state",
     "POST /api/work/gates/batch-decision",
     "POST /api/work/gates/{id}/decision",
+    "POST /api/work/git-sync/apply",
     "POST /api/work/handoffs",
     "POST /api/work/handoffs/{id}/state",
     "POST /api/work/resources/{id}/lock",
@@ -499,9 +501,9 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 247,
-  "specOperations": 247,
-  "documentedControllerOperations": 247,
+  "controllerOperations": 248,
+  "specOperations": 248,
+  "documentedControllerOperations": 248,
   "undocumented": [],
   "unimplemented": []
 }

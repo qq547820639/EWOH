@@ -52,3 +52,4 @@
 | D-050 | 2026-08-04 | Add progressive list slicing with load-more for large workbench lists | The plan requires large-list rendering to stay responsive | Reversible per UI |
 | D-051 | 2026-08-04 | Re-run Pilot Go/No-Go with current code and real PostgreSQL | Local green must not be reported as production-ready; external blockers remain explicit | Evidence only |
 | D-052 | 2026-08-04 | Add replay context button and before/during/after summary to event center | The plan requires alert-to-snapshot analysis in the world model UX | Reversible per UI |
+| D-053 | 2026-08-04 | Add approval-gated Git Sync apply API; live creation still requires work-writable + GitHub approval env | Live GitHub issue creation must remain human-approved | Reversible per endpoint |

@@ -354,6 +354,14 @@ factory replication drills, partner shadow delivery, and production SLO/approval
 - Scenario UI: `/scale` asset table supports scenario pack install/uninstall
   actions.
 
+## Latest Round - 2026-08-04 Git Sync Apply Gate
+
+- `POST /api/work/git-sync/apply` added; returns 400 unless
+  `EWOH_WORK_WRITABLE=true`, and live GitHub creation still requires
+  `EWOH_GIT_SYNC_ENABLED/GITHUB_TOKEN/EWOH_GIT_SYNC_APPROVED`.
+- Real PostgreSQL E2E verifies the write gate rejects apply in read-only
+  mode.
+
 ## Active Tasks
 
 - Fleet Ops (upgrade/rollback) and event catalog round closed.

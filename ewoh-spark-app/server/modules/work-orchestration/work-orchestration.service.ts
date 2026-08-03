@@ -142,6 +142,11 @@ interface GitSyncModule {
     git: { branch?: string; headSha?: string; remote?: string },
   ): Record<string, unknown>;
   gitInfo(root: string): { branch: string; headSha: string; remote: string };
+  liveApply(
+    plan: Record<string, unknown>,
+    registryFile: string,
+    root: string,
+  ): { created: Array<Record<string, unknown>>; registryFile: string };
 }
 
 interface SiteReadinessModule {
@@ -340,6 +345,36 @@ export class WorkOrchestrationService {
       registry,
       sync.gitInfo(this.repoRoot()),
     );
+  }
+
+  applyGitSync() {
+    if (!this.isWritable()) {
+      throw new BadRequestException('EWOH_WORK_WRITABLE is not enabled');
+    }
+    const graph = this.getGraph();
+    const registry = this.loadGitSyncRegistry();
+    const sync = this.gitSync();
+    const plan = sync.buildGitSyncPlan(
+      graph.items,
+      registry,
+      sync.gitInfo(this.repoRoot()),
+    );
+    try {
+      const result = sync.liveApply(
+        plan,
+        join(this.artifactsDir(), 'work', 'git-sync.json'),
+        this.repoRoot(),
+      );
+      return {
+        status: 'live',
+        appliedAt: new Date().toISOString(),
+        ...result,
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'live GitHub sync failed',
+      );
+    }
   }
 
   getSiteReadiness() {

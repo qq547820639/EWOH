@@ -111,6 +111,7 @@
 - Pilot Go/No-Go 重跑：7 通过 / 3 失败（本机无 Docker/Kubectl/Helm）/
   5 待批准，结果仍为 NOT READY。
 - 事件中心新增“回放上下文”：展示事发前/事发时/处置后的快照摘要。
+- 编排控制台新增受写回与人工批准保护的 `POST /api/work/git-sync/apply`。
 
 ## [0.6.0-rc3] - 2026-08-04
 

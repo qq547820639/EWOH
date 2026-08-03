@@ -120,3 +120,9 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
 
 - Event center can fetch and display replay before/during/after context.
 - Replay context summarizer is unit-tested.
+
+## 2026-08-04 Git Sync Apply Gate
+
+- Apply endpoint is exposed but fails closed without `EWOH_WORK_WRITABLE`.
+- Real GitHub creation remains approval-gated by environment and human
+  decision.
