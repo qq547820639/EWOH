@@ -187,6 +187,11 @@
   `ewoh_scheduler_config` 并保持 RLS 组织隔离与审计链。
 - 系统管理页新增参数注册中心 UI：登记表单、行内更新、
   审批/回滚/停用操作与汇总统计均接入真实 API。
+- AAS/IEC 63278 资产壳：新增 `src/edge_platform/aas/codec.py`，纯标准库实现
+  AAS 3.0 JSON 子集解析/导出、AASX 类似 OPC 包导入导出、孪生子模型双向映射
+  与敏感值脱敏；提供离散机加工线 AAS 示例。
+- AAS TCK：`scripts/aas-tck.py` 与 `make aas-tck` 执行 7 项检查，覆盖
+  样例解析、JSON 往返、孪生映射、AASX 往返与脱敏。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

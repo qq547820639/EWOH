@@ -76,6 +76,7 @@ evidence:
   operations_capability: "EAM/tooling lifecycle, work center flags, standard hours, personnel efficiency; /api/operations/* 17 routes; org RLS + audit; E2E 24/24"
   sparkplug_openfeature: "Sparkplug B topic/payload/session codec + edge adapter; sparkplug-b manifest; OpenFeature-style flag evaluation with ring/role/org/factory targeting and safe-closed default; E2E 25/25"
   parameter_registry: "typed parameters with validation/scope/source/validity/approval/version history/rollback; /api/parameters/* 8 routes; org RLS + audit; E2E 26/26"
+  aas_codec: "AAS 3.0 JSON subset + AASX-like package codec; twin submodel mapping; discrete-machining AAS sample; make aas-tck 7/7; pytest 99"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

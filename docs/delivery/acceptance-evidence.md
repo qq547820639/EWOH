@@ -1,12 +1,12 @@
 # EWOH Acceptance Evidence
 
-Status: validated v1.5 (2026-08-03 parameter registry wave)
+Status: validated v1.6 (2026-08-03 AAS asset exchange wave)
 Owner: AG-00/AG-41
 
 ## Automated Evidence
 
 - Python unittest: 667 passed.
-- Python repo contract tests: 89 passed.
+- Python repo contract tests: 99 passed.
 - NestJS Jest: 298 passed across 66 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
@@ -192,6 +192,10 @@ Owner: AG-00/AG-41
   lifecycle, version history and rollback under `/api/parameters/*`; the
   System page includes a registry UI with inline update/approve/rollback/
   retire actions; E2E verifies lifecycle and org-scoped audit.
+- AAS/IEC 63278 asset exchange: dependency-free AAS 3.0 JSON subset codec,
+  AASX-like package import/export, and bidirectional twin submodel mapping;
+  the discrete machining AAS sample is covered by `make aas-tck` (7/7 checks)
+  and 10 Python contract tests.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

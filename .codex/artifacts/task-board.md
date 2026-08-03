@@ -421,6 +421,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-138 | Typed parameter registry with approval/version/rollback | PX-06/21 | Done | `round54-parameter-registry.md`; Jest 66/298; client 6/22; OpenAPI 207/207; E2E 26/26 |
 
+## Wave Final5 - AAS Asset Exchange (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-139 | AAS/IEC 63278 JSON + AASX codec and twin submodel mapping | PX-08/14 | Done | `round55-aas-codec.md`; pytest 99; AAS TCK 7/7 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.
