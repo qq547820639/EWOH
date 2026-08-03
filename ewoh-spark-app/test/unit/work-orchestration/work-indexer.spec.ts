@@ -80,4 +80,38 @@ describe('work indexer invariants and evidence binding', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('creates one bound evidence record per explicit workItemIds', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ewoh-evidence-multi-'));
+    const evidenceDir = join(dir, '.codex', 'artifacts', 'work', 'evidence');
+    mkdirSync(evidenceDir, { recursive: true });
+    writeFileSync(
+      join(evidenceDir, 'round-multi.md'),
+      [
+        '---',
+        'workItemIds: T-198,T-199',
+        'commitSha: abc123',
+        'result: passed',
+        'expiresAt: 2099-01-01T00:00:00.000Z',
+        '---',
+        '# Multi Evidence',
+        'PASSED',
+      ].join('\n'),
+      'utf8',
+    );
+    try {
+      const evidence = parseEvidence(
+        join(dir, '.codex', 'artifacts'),
+        dir,
+      );
+      expect(evidence).toHaveLength(2);
+      expect(evidence.map((entry) => entry.workItemId)).toEqual([
+        'T-198',
+        'T-199',
+      ]);
+      expect(evidence[0].evidenceId).not.toBe(evidence[1].evidenceId);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

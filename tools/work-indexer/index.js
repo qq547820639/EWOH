@@ -165,6 +165,14 @@ function deriveEvidenceBinding(artifactsDir, root, entry, file, sourceText) {
     ? String(frontMatter.verifier)
     : 'unknown';
   const hasFrontMatter = Object.keys(frontMatter).length > 0;
+  const workItemIds = Array.isArray(frontMatter.workItemIds)
+    ? frontMatter.workItemIds.map(String)
+    : typeof frontMatter.workItemIds === 'string'
+      ? frontMatter.workItemIds
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : [];
   const expired = Date.parse(expiresAt) <= Date.now();
   const staleByCommit = Boolean(codeHead && commitSha && codeHead !== commitSha);
   const staleByEnv =
@@ -190,6 +198,7 @@ function deriveEvidenceBinding(artifactsDir, root, entry, file, sourceText) {
     workItemId: frontMatter.workItemId
       ? String(frontMatter.workItemId)
       : linked?.[1] || '',
+    workItemIds,
     commitSha,
     branch,
     buildVersion,
@@ -572,9 +581,16 @@ function parseEvidence(artifactsDir, root) {
       : /FAILED|failed|BLOCKED|blocked/i.test(binding.body)
         ? 'failed'
         : 'unknown';
-    result.push({
-      evidenceId: `EVD-${entry.replace(/\.md$/, '').replace(/[^A-Za-z0-9]+/g, '-')}`,
-      workItemId: binding.workItemId,
+    const baseEvidenceId = `EVD-${entry.replace(/\.md$/, '').replace(/[^A-Za-z0-9]+/g, '-')}`;
+    const linkedItems =
+      binding.workItemIds.length > 0
+        ? binding.workItemIds
+        : [binding.workItemId];
+    for (const [index, workItemId] of linkedItems.entries()) {
+      result.push({
+      evidenceId:
+        linkedItems.length > 1 ? `${baseEvidenceId}-${index + 1}` : baseEvidenceId,
+      workItemId,
       kind,
       path: `.codex/artifacts/work/evidence/${entry}`,
       checksum: checksum(file),
@@ -590,7 +606,8 @@ function parseEvidence(artifactsDir, root) {
       expiresAt: binding.expiresAt,
       status: binding.status,
       staleReason: binding.staleReason,
-    });
+      });
+    }
   }
   return result;
 }
