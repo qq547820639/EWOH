@@ -2275,5 +2275,231 @@ if (!e2eConfig) {
       );
       expect(rows.map((row) => row.org_id)).toEqual([fixture!.orgA.id]);
     });
+
+    it('runs maintenance, work-center, and efficiency lifecycle with org isolation', async () => {
+      const dispatcher = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcher.status).toBe(201);
+      const token = dispatcher.body.accessToken;
+
+      const asset = await apiRequest<{
+        assetId: string;
+        status: string;
+        nextDueAt: string;
+      }>(baseUrl, '/api/operations/assets', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          name: `E2E CNC-01 ${runId}`,
+          category: 'device',
+          intervalDays: 30,
+          location: 'A1',
+        }),
+      });
+      expect(asset.status).toBe(201);
+      expect(asset.body.status).toBe('active');
+
+      const task = await apiRequest<{
+        taskId: string;
+        status: string;
+      }>(baseUrl, '/api/operations/tasks', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          assetId: asset.body.assetId,
+          title: `E2E 保养 ${runId}`,
+          taskType: 'preventive',
+          priority: 'high',
+        }),
+      });
+      expect(task.status).toBe(201);
+      expect(task.body.status).toBe('planned');
+
+      const started = await apiRequest<{ status: string }>(
+        baseUrl,
+        `/api/operations/tasks/${task.body.taskId}/state?action=start`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({}),
+        },
+      );
+      expect(started.status).toBe(201);
+      expect(started.body.status).toBe('in_progress');
+
+      const completed = await apiRequest<{
+        status: string;
+        result: string;
+      }>(
+        baseUrl,
+        `/api/operations/tasks/${task.body.taskId}/state?action=complete`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({ result: 'PASS', note: 'e2e evidence' }),
+        },
+      );
+      expect(completed.status).toBe(201);
+      expect(completed.body.status).toBe('completed');
+      expect(completed.body.result).toBe('PASS');
+
+      const assets = await apiRequest<
+        Array<{ assetId: string; status: string; lastCompletedAt: string; nextDueAt: string }>
+      >(baseUrl, '/api/operations/assets', {
+        headers: jsonHeaders(token),
+      });
+      expect(assets.status).toBe(200);
+      const refreshed = assets.body.find(
+        (row) => row.assetId === asset.body.assetId,
+      );
+      expect(refreshed?.status).toBe('active');
+      expect(refreshed?.lastCompletedAt).toBeTruthy();
+      expect(refreshed && refreshed.nextDueAt > refreshed.lastCompletedAt).toBe(
+        true,
+      );
+
+      const tool = await apiRequest<{
+        toolId: string;
+        status: string;
+        nextCalibrationAt: string;
+      }>(baseUrl, '/api/operations/tools', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          name: `E2E 扭矩扳手 ${runId}`,
+          category: 'tooling',
+          calibrationIntervalDays: 90,
+        }),
+      });
+      expect(tool.status).toBe(201);
+      const calibrated = await apiRequest<{
+        status: string;
+        lastCalibratedAt: string;
+      }>(
+        baseUrl,
+        `/api/operations/tools/${tool.body.toolId}/state?action=calibrate`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({}),
+        },
+      );
+      expect(calibrated.status).toBe(201);
+      expect(calibrated.body.status).toBe('active');
+      expect(calibrated.body.lastCalibratedAt).toBeTruthy();
+
+      const workCenter = await apiRequest<{
+        workCenterId: string;
+        flags: Record<string, boolean>;
+      }>(baseUrl, '/api/operations/work-centers', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          name: `E2E 加工中心 ${runId}`,
+          location: 'A1',
+          capabilities: ['mes-p0', 'oee'],
+          flags: {
+            firstInspectionRequired: true,
+            scanRequired: true,
+            exoskeletonRequired: true,
+            riskConfirmationRequired: true,
+          },
+        }),
+      });
+      expect(workCenter.status).toBe(201);
+      expect(workCenter.body.flags.firstInspectionRequired).toBe(true);
+      expect(workCenter.body.flags.handoverRequired).toBe(false);
+
+      const standardHour = await apiRequest<{
+        standardHourId: string;
+        standardMinutes: number;
+      }>(baseUrl, '/api/operations/standard-hours', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          workCenterId: workCenter.body.workCenterId,
+          operationCode: 'OP-100',
+          operationName: '精加工',
+          standardMinutes: 10,
+        }),
+      });
+      expect(standardHour.status).toBe(201);
+      expect(standardHour.body.standardMinutes).toBe(10);
+
+      const efficiency = await apiRequest<{
+        entryId: string;
+        efficiencyPercent: number;
+        deviationMinutes: number;
+      }>(baseUrl, '/api/operations/efficiency', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          workerId: 'P-E2E-01',
+          workCenterId: workCenter.body.workCenterId,
+          operationCode: 'OP-100',
+          actualMinutes: 8,
+        }),
+      });
+      expect(efficiency.status).toBe(201);
+      expect(efficiency.body.efficiencyPercent).toBe(125);
+      expect(efficiency.body.deviationMinutes).toBe(-2);
+
+      const summary = await apiRequest<{
+        assetCount: number;
+        taskCount: number;
+        toolCount: number;
+        workCenterCount: number;
+        efficiencyEntryCount: number;
+      }>(baseUrl, '/api/operations/summary', {
+        headers: jsonHeaders(token),
+      });
+      expect(summary.status).toBe(200);
+      expect(summary.body.assetCount).toBeGreaterThanOrEqual(1);
+      expect(summary.body.taskCount).toBeGreaterThanOrEqual(1);
+      expect(summary.body.toolCount).toBeGreaterThanOrEqual(1);
+      expect(summary.body.workCenterCount).toBeGreaterThanOrEqual(1);
+      expect(summary.body.efficiencyEntryCount).toBeGreaterThanOrEqual(1);
+
+      const viewerB = await login(
+        baseUrl,
+        fixture!.viewerB.username,
+        fixture!.viewerB.password,
+      );
+      expect(viewerB.status).toBe(201);
+      const forbidden = await apiRequest(
+        baseUrl,
+        '/api/operations/summary',
+        { headers: jsonHeaders(viewerB.body.accessToken) },
+      );
+      expect(forbidden.status).toBe(403);
+
+      const configRows = await owner!.unsafe<
+        Array<{ org_id: string }>
+      >(
+        `select org_id::text
+         from public.ewoh_scheduler_config
+         where config_key = $1`,
+        [`eam.asset.${asset.body.assetId}`],
+      );
+      expect(configRows).toHaveLength(1);
+      expect(configRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const auditRows = await owner!.unsafe<
+        Array<{ action: string; entity_id: string; org_id: string }>
+      >(
+        `select action, entity_id, org_id::text
+         from public.ewoh_audit_log
+         where entity_type = 'maintenance_asset' and entity_id = $1
+         order by audit_seq`,
+        [asset.body.assetId],
+      );
+      expect(auditRows.length).toBeGreaterThanOrEqual(1);
+      expect(
+        auditRows.every((row) => row.org_id === fixture!.orgA.id),
+      ).toBe(true);
+    });
   });
 }

@@ -14,6 +14,7 @@ import {
   ShieldAlert,
   Smartphone,
   Users,
+  Wrench,
 } from 'lucide-react';
 import { type EwohRole } from '@client/src/types/ewoh';
 
@@ -82,6 +83,12 @@ export const navGroups: Array<{ label: string; items: NavItem[] }> = [
         label: '移动工作台',
         icon: Smartphone,
         roles: ['global_admin', 'dispatcher', 'workshop_lead', 'device_ops'],
+      },
+      {
+        to: '/operations',
+        label: '运营管理',
+        icon: Wrench,
+        roles: ['global_admin', 'dispatcher', 'workshop_lead', 'safety_admin', 'device_ops'],
       },
       {
         to: '/organization',

@@ -403,6 +403,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-135 | Scenario pack install/uninstall UI on /scale | AG-30/31 | Done | `round51-scenario-ui.md`; client build passed |
 
+## Wave Final5 - Operations Capability (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-136 | EAM/tooling + work-center config + standard hours/efficiency | PX-14/15 | Done | `round52-operations-capability.md`; Jest 65/291; client 6/22; OpenAPI 198/198; E2E 24/24; standalone check PASSED |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

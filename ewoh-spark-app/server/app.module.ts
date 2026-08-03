@@ -29,6 +29,7 @@ import { ResourceModule } from './modules/resource/resource.module';
 import { AiModule } from './modules/ai/ai.module';
 import { WorldCursorModule } from './modules/world-cursor/world-cursor.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { OperationsModule } from './modules/operations/operations.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { AuditModule } from './modules/audit/audit.module';
     AiModule,
     WorldCursorModule,
     AuditModule,
+    OperationsModule,
     // ====== @route-section: business-modules END ======
 
     // ⚠️ @route-order: last

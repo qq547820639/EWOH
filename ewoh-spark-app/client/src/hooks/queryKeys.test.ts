@@ -11,6 +11,9 @@ describe('queryKeys', () => {
     expect(queryKeys.systemConfigs).toEqual(['system-configs']);
     expect(queryKeys.aiSuggestions).toEqual(['ai-suggestions']);
     expect(queryKeys.aiPlans).toEqual(['ai-plans']);
+    expect(queryKeys.operationsSummary).toEqual(['operations-summary']);
+    expect(queryKeys.operationsAssets).toEqual(['operations-assets']);
+    expect(queryKeys.operationsWorkCenters).toEqual(['operations-work-centers']);
   });
 
   it('embeds filters into personnel keys', () => {

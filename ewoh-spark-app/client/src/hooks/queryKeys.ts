@@ -42,4 +42,12 @@ export const queryKeys = {
   scaleDifferences: ['scale-differences'] as const,
   scaleFleetStatus: ['scale-fleet-status'] as const,
   workflowInstances: ['workflow-instances'] as const,
+  operationsSummary: ['operations-summary'] as const,
+  operationsAssets: ['operations-assets'] as const,
+  operationsTasks: ['operations-tasks'] as const,
+  operationsTools: ['operations-tools'] as const,
+  operationsWorkCenters: ['operations-work-centers'] as const,
+  operationsStandardHours: ['operations-standard-hours'] as const,
+  operationsEfficiency: ['operations-efficiency'] as const,
+  operationsEfficiencySummary: ['operations-efficiency-summary'] as const,
 };

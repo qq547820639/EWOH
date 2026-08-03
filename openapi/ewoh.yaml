@@ -33,6 +33,7 @@ tags:
   - name: files
   - name: health
   - name: view
+  - name: operations
 paths:
   /api/auth/login:
     post:
@@ -4884,6 +4885,405 @@ paths:
             text/html:
               schema:
                 type: string
+  /api/operations/assets:
+    get:
+      tags:
+        - operations
+      summary: List maintenance assets
+      responses:
+        '200':
+          description: Maintenance asset list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceAssetList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - operations
+      summary: Register a maintenance asset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationsAssetRequest'
+      responses:
+        '201':
+          description: Registered maintenance asset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceAsset'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/assets/{id}/state:
+    post:
+      tags:
+        - operations
+      summary: Transition a maintenance asset lifecycle state
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: action
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Updated maintenance asset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceAsset'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/tasks:
+    get:
+      tags:
+        - operations
+      summary: List maintenance tasks
+      responses:
+        '200':
+          description: Maintenance task list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceTaskList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - operations
+      summary: Register a maintenance task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceTaskRequest'
+      responses:
+        '201':
+          description: Registered maintenance task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceTask'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/tasks/{id}/state:
+    post:
+      tags:
+        - operations
+      summary: Transition a maintenance task lifecycle state
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: action
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationsTaskTransitionRequest'
+      responses:
+        '201':
+          description: Updated maintenance task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceTask'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/tools:
+    get:
+      tags:
+        - operations
+      summary: List tools and fixtures
+      responses:
+        '200':
+          description: Tool list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceToolList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - operations
+      summary: Register a tool or fixture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceToolRequest'
+      responses:
+        '201':
+          description: Registered tool
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceTool'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/tools/{id}/state:
+    post:
+      tags:
+        - operations
+      summary: Transition a tool lifecycle state
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: action
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Updated tool
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceTool'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/work-centers:
+    get:
+      tags:
+        - operations
+      summary: List work center capability configurations
+      responses:
+        '200':
+          description: Work center list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkCenterList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - operations
+      summary: Upsert a work center capability configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkCenterRequest'
+      responses:
+        '201':
+          description: Saved work center
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkCenter'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/standard-hours:
+    get:
+      tags:
+        - operations
+      summary: List standard operation hours
+      responses:
+        '200':
+          description: Standard hour list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardHourList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - operations
+      summary: Register a standard operation hour
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StandardHourRequest'
+      responses:
+        '201':
+          description: Registered standard hour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardHour'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/efficiency:
+    get:
+      tags:
+        - operations
+      summary: List personnel efficiency entries
+      responses:
+        '200':
+          description: Efficiency entry list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EfficiencyEntryList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - operations
+      summary: Record a personnel efficiency entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EfficiencyEntryRequest'
+      responses:
+        '201':
+          description: Registered efficiency entry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EfficiencyEntry'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/efficiency/summary:
+    get:
+      tags:
+        - operations
+      summary: Summarize personnel efficiency and fairness
+      responses:
+        '200':
+          description: Efficiency summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EfficiencySummary'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/summary:
+    get:
+      tags:
+        - operations
+      summary: Read operations readiness summary
+      responses:
+        '200':
+          description: Operations summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationsSummary'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
 components:
   securitySchemes:
     BearerAuth:
@@ -4976,6 +5376,386 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    OperationsAssetRequest:
+      type: object
+      properties:
+        assetId:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+          enum: [device, tooling, utility]
+        location:
+          type: string
+        strategy:
+          type: string
+        intervalDays:
+          type: number
+        nextDueAt:
+          type: string
+        description:
+          type: string
+      required:
+        - name
+    MaintenanceAsset:
+      type: object
+      properties:
+        assetId:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+        location:
+          type: string
+          nullable: true
+        strategy:
+          type: string
+        intervalDays:
+          type: number
+        status:
+          type: string
+        nextDueAt:
+          type: string
+        lastCompletedAt:
+          type: string
+          nullable: true
+        history:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required: []
+    MaintenanceAssetList:
+      type: array
+      items:
+        $ref: '#/components/schemas/MaintenanceAsset'
+    MaintenanceTaskRequest:
+      type: object
+      properties:
+        taskId:
+          type: string
+        assetId:
+          type: string
+        title:
+          type: string
+        taskType:
+          type: string
+          enum: [inspection, repair, preventive, calibration]
+        priority:
+          type: string
+        assigneeId:
+          type: string
+        scheduledStart:
+          type: string
+        scheduledEnd:
+          type: string
+        description:
+          type: string
+        spareParts:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              quantity:
+                type: number
+      required:
+        - title
+    MaintenanceTask:
+      type: object
+      properties:
+        taskId:
+          type: string
+        assetId:
+          type: string
+          nullable: true
+        title:
+          type: string
+        taskType:
+          type: string
+        priority:
+          type: string
+        status:
+          type: string
+        result:
+          type: string
+          nullable: true
+        completedAt:
+          type: string
+          nullable: true
+        history:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required: []
+    MaintenanceTaskList:
+      type: array
+      items:
+        $ref: '#/components/schemas/MaintenanceTask'
+    OperationsTaskTransitionRequest:
+      type: object
+      properties:
+        result:
+          type: string
+        note:
+          type: string
+    MaintenanceToolRequest:
+      type: object
+      properties:
+        toolId:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+        lifespanLimit:
+          type: number
+        usageCount:
+          type: number
+        calibrationIntervalDays:
+          type: number
+        lastCalibratedAt:
+          type: string
+      required:
+        - name
+    MaintenanceTool:
+      type: object
+      properties:
+        toolId:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+        lifespanLimit:
+          type: number
+          nullable: true
+        usageCount:
+          type: number
+        calibrationIntervalDays:
+          type: number
+        lastCalibratedAt:
+          type: string
+          nullable: true
+        nextCalibrationAt:
+          type: string
+        status:
+          type: string
+        calibrationHistory:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required: []
+    MaintenanceToolList:
+      type: array
+      items:
+        $ref: '#/components/schemas/MaintenanceTool'
+    WorkCenterRequest:
+      type: object
+      properties:
+        workCenterId:
+          type: string
+        name:
+          type: string
+        location:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        flags:
+          type: object
+          additionalProperties:
+            type: boolean
+      required:
+        - name
+    WorkCenter:
+      type: object
+      properties:
+        workCenterId:
+          type: string
+        name:
+          type: string
+        location:
+          type: string
+          nullable: true
+        capabilities:
+          type: array
+          items:
+            type: string
+        flags:
+          type: object
+          additionalProperties:
+            type: boolean
+        updatedBy:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+      required: []
+    WorkCenterList:
+      type: array
+      items:
+        $ref: '#/components/schemas/WorkCenter'
+    StandardHourRequest:
+      type: object
+      properties:
+        standardHourId:
+          type: string
+        workCenterId:
+          type: string
+        operationCode:
+          type: string
+        operationName:
+          type: string
+        standardMinutes:
+          type: number
+        skillLevel:
+          type: string
+        effectiveFrom:
+          type: string
+      required:
+        - workCenterId
+        - operationCode
+        - standardMinutes
+    StandardHour:
+      type: object
+      properties:
+        standardHourId:
+          type: string
+        workCenterId:
+          type: string
+        operationCode:
+          type: string
+        operationName:
+          type: string
+        standardMinutes:
+          type: number
+        skillLevel:
+          type: string
+        effectiveFrom:
+          type: string
+        updatedAt:
+          type: string
+      required: []
+    StandardHourList:
+      type: array
+      items:
+        $ref: '#/components/schemas/StandardHour'
+    EfficiencyEntryRequest:
+      type: object
+      properties:
+        entryId:
+          type: string
+        workerId:
+          type: string
+        workCenterId:
+          type: string
+        operationCode:
+          type: string
+        actualMinutes:
+          type: number
+        standardMinutes:
+          type: number
+        completedAt:
+          type: string
+        reason:
+          type: string
+        source:
+          type: string
+      required:
+        - workerId
+        - workCenterId
+        - actualMinutes
+    EfficiencyEntry:
+      type: object
+      properties:
+        entryId:
+          type: string
+        workerId:
+          type: string
+        workCenterId:
+          type: string
+        operationCode:
+          type: string
+        actualMinutes:
+          type: number
+        standardMinutes:
+          type: number
+        deviationMinutes:
+          type: number
+        efficiencyPercent:
+          type: number
+        completedAt:
+          type: string
+        reason:
+          type: string
+          nullable: true
+        source:
+          type: string
+        updatedAt:
+          type: string
+      required: []
+    EfficiencyEntryList:
+      type: array
+      items:
+        $ref: '#/components/schemas/EfficiencyEntry'
+    EfficiencySummary:
+      type: object
+      properties:
+        entryCount:
+          type: number
+        workerCount:
+          type: number
+        averageEfficiencyPercent:
+          type: number
+        fairnessStdDev:
+          type: number
+        bySource:
+          type: object
+          additionalProperties:
+            type: number
+      required: []
+    OperationsSummary:
+      type: object
+      properties:
+        assetCount:
+          type: number
+        activeAssetCount:
+          type: number
+        maintenanceRequiredCount:
+          type: number
+        taskCount:
+          type: number
+        plannedTasks:
+          type: number
+        inProgressTasks:
+          type: number
+        completedTasks:
+          type: number
+        cancelledTasks:
+          type: number
+        toolCount:
+          type: number
+        calibrationDueCount:
+          type: number
+        workCenterCount:
+          type: number
+        standardHourCount:
+          type: number
+        efficiencyEntryCount:
+          type: number
+        nextMaintenanceDue:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required: []
     ErrorResponse:
       type: object
       properties:
