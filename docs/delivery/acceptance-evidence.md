@@ -1,17 +1,17 @@
 # EWOH Acceptance Evidence
 
-Status: validated v1.12 (2026-08-03 CSV/File connector wave)
+Status: validated v1.13 (2026-08-03 request tracing wave)
 Owner: AG-00/AG-41
 
 ## Automated Evidence
 
 - Python unittest: 667 passed.
 - Python repo contract tests: 120 passed.
-- NestJS Jest: 302 passed across 67 suites (includes SP-01..SP-08 scenario
+- NestJS Jest: 306 passed across 69 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
 - Client Jest: 22 passed across 6 suites.
-- HTTP + PostgreSQL E2E: 27 passed (auth, RBAC, refresh rotation/logout, org
+- HTTP + PostgreSQL E2E: 28 passed (auth, RBAC, refresh rotation/logout, org
   isolation, control/resource/world persistence, canonical UnifiedExoFrame
   ingestion, gamification allocation persistence, approval persistence,
   system config org scoping, complete MES work order execution, and
@@ -21,11 +21,11 @@ Owner: AG-00/AG-41
   policy evaluation, role-aware workflow advance, feature flag org isolation,
   OpenFeature-style flag targeting, and maintenance/work-center/efficiency
   org isolation, typed parameter approval/update/rollback/audit, and AAS asset
-  import/detail/twin-semantics/audit).
+  import/detail/twin-semantics/audit, plus OTel-style request tracing).
 - NestJS type check, lint, and Standalone production build: passed.
 - One-click `scripts/standalone-check.sh`: passed with E2E, OpenAPI strict
   audit, DDL plans, and standalone DDL hygiene.
-- OpenAPI contract: 211 controller operations documented, 0 undocumented,
+- OpenAPI contract: 212 controller operations documented, 0 undocumented,
   0 unimplemented; `openapi/route-manifest.json` generated.
 - Full release drill: `RELEASE DRILL PASSED` against disposable PostgreSQL 17,
   including migration/RLS/audit/rollback/rebuild, 176 Jest tests, 107/107
@@ -218,6 +218,10 @@ Owner: AG-00/AG-41
 - CSV/File connector: header-mapped row parsing, numeric/string value
   inference, batch ingestion, edge adapter, and `csv-file-generic-1.0.0`
   manifest; connector TCK is 32/32.
+- OTel-style request tracing: every HTTP request gets `traceId`/`spanId` and
+  an `x-trace-id` response header; a bounded trace store exposes method/path/
+  status/duration/error via `GET /api/observability/traces` to
+  `global_admin`/`safety_admin`.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

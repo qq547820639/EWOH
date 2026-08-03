@@ -36,6 +36,7 @@ tags:
   - name: operations
   - name: parameters
   - name: aas
+  - name: observability
 paths:
   /api/auth/login:
     post:
@@ -5611,6 +5612,31 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/observability/traces:
+    get:
+      tags:
+        - observability
+      summary: List recent OTel-style request traces
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            maximum: 500
+      responses:
+        '200':
+          description: Trace list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraceRecordList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
 components:
   securitySchemes:
     BearerAuth:
@@ -10251,6 +10277,38 @@ components:
             type: object
             additionalProperties: true
       required: []
+    TraceRecord:
+      type: object
+      properties:
+        traceId:
+          type: string
+        spanId:
+          type: string
+        method:
+          type: string
+        path:
+          type: string
+        status:
+          type: number
+        durationMs:
+          type: number
+        startedAt:
+          type: string
+        finishedAt:
+          type: string
+        error:
+          type: string
+          nullable: true
+      required:
+        - traceId
+        - spanId
+        - method
+        - path
+        - status
+    TraceRecordList:
+      type: array
+      items:
+        $ref: '#/components/schemas/TraceRecord'
     HandleEventRequest:
       type: object
       properties:

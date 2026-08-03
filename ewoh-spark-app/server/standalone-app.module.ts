@@ -44,6 +44,8 @@ import { WorkflowModule } from './modules/workflow/workflow.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { ParametersModule } from './modules/parameters/parameters.module';
 import { AasModule } from './modules/aas/aas.module';
+import { TracingModule } from './modules/tracing/tracing.module';
+import { TracingInterceptor } from './modules/tracing/tracing.interceptor';
 
 @Module({
   imports: [
@@ -84,6 +86,7 @@ import { AasModule } from './modules/aas/aas.module';
     OperationsModule,
     ParametersModule,
     AasModule,
+    TracingModule,
   ],
   providers: [
     {
@@ -109,6 +112,10 @@ import { AasModule } from './modules/aas/aas.module';
     {
       provide: APP_INTERCEPTOR,
       useClass: MetricsInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TracingInterceptor,
     },
   ],
 })

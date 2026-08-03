@@ -215,6 +215,9 @@
 - CSV/File 连接器：`src/edge_platform/connectors/csvfile.py` 提供表头映射、
   行数据规范化与批量入队适配器；新增 `csv-file-generic-1.0.0` Manifest
   并纳入连接器 TCK（32 项检查）。
+- OTel 风格请求追踪：`TracingInterceptor` 为每个 HTTP 请求生成
+  `traceId/spanId` 并返回 `x-trace-id` 响应头；`TracingService` 维护有界
+  追踪缓冲，`GET /api/observability/traces` 提供只读查询。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

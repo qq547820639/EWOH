@@ -463,6 +463,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-145 | CSV/File header mapping/row normalization/adapter + connector manifest | V-CON/05 | Done | `round61-csv-file-connector.md`; pytest 120; connector TCK 32/32 |
 
+## Wave Final5 - Observability Traces (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-146 | OTel-style request tracing interceptor/service/API | PX-10/46 | Done | `round62-otel-request-tracing.md`; Jest 69/306; OpenAPI 212/212; E2E 28/28 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

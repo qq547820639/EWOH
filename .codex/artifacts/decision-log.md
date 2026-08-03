@@ -25,3 +25,4 @@
 | D-023 | 2026-08-03 | Implement Modbus TCP connector surface (register validation/scaling, data point normalization, edge adapter, manifest) | Final 5.0 AA-05 lists Modbus TCP in the first standardized OT connector batch | Reversible per-module |
 | D-024 | 2026-08-03 | Implement HTTP/Webhook connector surface (payload normalization, HMAC signature verification, edge adapter, manifest) | Final 5.0 AA-05 lists HTTP/Webhook in the first standardized OT connector batch | Reversible per-module |
 | D-025 | 2026-08-03 | Implement CSV/File connector surface (header mapping, row normalization, batch ingestion, edge adapter, manifest) | Final 5.0 AA-05 lists CSV/file in the first standardized OT connector batch | Reversible per-module |
+| D-026 | 2026-08-03 | Implement OTel-style request tracing (trace/span IDs, headers, bounded trace store, read-only API) | Final 5.0 AA-09 requires unified trace observability alongside metrics | Reversible per-module |

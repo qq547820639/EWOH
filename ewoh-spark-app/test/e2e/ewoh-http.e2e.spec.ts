@@ -774,6 +774,51 @@ if (!e2eConfig) {
       expect(denied.status).toBe(403);
     });
 
+    it('records OTel-style request traces with trace headers', async () => {
+      const adminA = await login(
+        baseUrl,
+        fixture!.globalAdminA.username,
+        fixture!.globalAdminA.password,
+      );
+      expect(adminA.status).toBe(201);
+      const token = adminA.body.accessToken;
+
+      const meResponse = await fetch(`${baseUrl}/api/me`, {
+        headers: jsonHeaders(token),
+      });
+      expect(meResponse.status).toBe(200);
+      const traceId = meResponse.headers.get('x-trace-id');
+      expect(traceId).toMatch(/^[a-f0-9]{32}$/);
+
+      const traces = await apiRequest<
+        Array<{ traceId: string; path: string; status: number }>
+      >(baseUrl, '/api/observability/traces?limit=50', {
+        headers: jsonHeaders(token),
+      });
+      expect(traces.status).toBe(200);
+      expect(
+        traces.body.some(
+          (trace) =>
+            trace.traceId === traceId &&
+            trace.path === '/api/me' &&
+            trace.status === 200,
+        ),
+      ).toBe(true);
+
+      const viewerB = await login(
+        baseUrl,
+        fixture!.viewerB.username,
+        fixture!.viewerB.password,
+      );
+      expect(viewerB.status).toBe(201);
+      const denied = await apiRequest(
+        baseUrl,
+        '/api/observability/traces',
+        { headers: jsonHeaders(viewerB.body.accessToken) },
+      );
+      expect(denied.status).toBe(403);
+    });
+
     it('rotates refresh tokens and revokes them after reuse/logout', async () => {
       const first = await login(
         baseUrl,
