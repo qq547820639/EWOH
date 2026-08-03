@@ -1,5 +1,7 @@
 """Connector SDK/runtime contract tests (Final 5.0 Y1-03)."""
 
+import hashlib
+import hmac
 import struct
 import sys
 import unittest
@@ -39,6 +41,11 @@ from edge_platform.connectors.sparkplug import (  # noqa: E402
     normalize_sparkplug_message,
     parse_sparkplug_topic,
 )
+from edge_platform.connectors.webhook import (  # noqa: E402
+    WebhookAdapter,
+    normalize_webhook_payload,
+    verify_webhook_signature,
+)
 
 MANIFEST_DIR = SRC / "edge_platform" / "connectors" / "manifests"
 
@@ -55,6 +62,7 @@ class TestManifestContract(unittest.TestCase):
                 "sparkplug-b",
                 "opcua-generic",
                 "modbus-tcp-generic",
+                "http-webhook-generic",
             },
         )
 
@@ -411,6 +419,38 @@ class TestModbus(unittest.TestCase):
         message = adapter.read_message(timeout=0.1)
         self.assertIsNotNone(message)
         self.assertEqual(message["entity_id"], "modbus:0")
+        self.assertEqual(message["source_type"], "simulated")
+        adapter.stop()
+
+
+class TestWebhook(unittest.TestCase):
+    def test_signature_verification_is_constant_time(self):
+        payload = b'{"deviceId":"CNC-01"}'
+        signature = hmac.new(b"secret", payload, hashlib.sha256).hexdigest()
+        self.assertTrue(verify_webhook_signature(payload, signature, "secret"))
+        self.assertFalse(verify_webhook_signature(payload, signature, "wrong"))
+
+    def test_normalize_payload(self):
+        point = normalize_webhook_payload(
+            {"deviceId": "CNC-01", "eventType": "TelemetryObserved"},
+            default_source_type="real",
+        )
+        self.assertEqual(point["entity_id"], "CNC-01")
+        self.assertEqual(point["protocol_version"], "HTTP-Webhook")
+
+    def test_adapter_enqueues_payload(self):
+        adapter = WebhookAdapter(
+            "webhook-1",
+            endpoint_path="/webhook/ewoh",
+            source_type="simulated",
+        )
+        adapter.start()
+        adapter._enqueue_raw(
+            {"deviceId": "CNC-01", "eventType": "DeviceStateChanged"}
+        )
+        message = adapter.read_message(timeout=0.1)
+        self.assertIsNotNone(message)
+        self.assertEqual(message["entity_id"], "CNC-01")
         self.assertEqual(message["source_type"], "simulated")
         adapter.stop()
 

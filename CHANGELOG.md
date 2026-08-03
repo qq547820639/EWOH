@@ -209,6 +209,9 @@
 - Modbus TCP 连接器：`src/edge_platform/connectors/modbus.py` 提供寄存器
   地址/功能码/缩放校验、规范化遥测帧与边缘适配器；新增
   `modbus-tcp-generic-1.0.0` Manifest 并纳入连接器 TCK（25 项检查）。
+- HTTP/Webhook 连接器：`src/edge_platform/connectors/webhook.py` 提供载荷
+  规范化、常量时间 HMAC 签名校验与边缘适配器；新增
+  `http-webhook-generic-1.0.0` Manifest 并纳入连接器 TCK（29 项检查）。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

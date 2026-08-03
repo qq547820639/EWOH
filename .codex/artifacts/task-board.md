@@ -451,6 +451,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-143 | Modbus TCP register/scaling/adapter + connector manifest | V-CON/05 | Done | `round59-modbus-connector.md`; pytest 114; connector TCK 25/25 |
 
+## Wave Final5 - HTTP/Webhook Connector (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-144 | HTTP/Webhook payload/signature/adapter + connector manifest | V-CON/05 | Done | `round60-webhook-connector.md`; pytest 117; connector TCK 29/29 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

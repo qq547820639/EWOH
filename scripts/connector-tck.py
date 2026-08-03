@@ -7,6 +7,8 @@ against the connector runtime and edge sequence buffer.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import struct
 import sys
 from pathlib import Path
@@ -36,6 +38,10 @@ from edge_platform.connectors.sparkplug import (  # noqa: E402
     decode_sparkplug_payload,
     normalize_sparkplug_message,
     parse_sparkplug_topic,
+)
+from edge_platform.connectors.webhook import (  # noqa: E402
+    normalize_webhook_payload,
+    verify_webhook_signature,
 )
 from edge_platform.edge.backfill import SequenceBuffer  # noqa: E402
 
@@ -72,6 +78,10 @@ CONFIGS = {
         "unitId": 1,
         "registers": [{"address": 0, "functionCode": 3}],
     },
+    "http-webhook-generic": {
+        "endpointPath": "/webhook/ewoh",
+        "signatureHeader": "x-ewoh-signature",
+    },
 }
 
 checks: list[tuple[str, bool]] = []
@@ -82,7 +92,7 @@ def check(name: str, condition: bool) -> None:
 
 
 manifests = discover_manifests(MANIFEST_DIR)
-check("discover manifests >= 6", len(manifests) >= 6)
+check("discover manifests >= 7", len(manifests) >= 7)
 
 for manifest in manifests:
     config = CONFIGS[manifest.id]
@@ -236,6 +246,27 @@ check(
     modbus_point["entity_id"] == "CNC-01"
     and modbus_point["scaled_value"] == 123.4
     and modbus_point["protocol_version"] == "Modbus-TCP",
+)
+
+webhook_payload = b'{"deviceId":"CNC-01","value":1}'
+signature = hmac.new(
+    b"secret",
+    webhook_payload,
+    hashlib.sha256,
+).hexdigest()
+check(
+    "webhook signature",
+    verify_webhook_signature(webhook_payload, signature, "secret")
+    and not verify_webhook_signature(webhook_payload, signature, "wrong"),
+)
+webhook_point = normalize_webhook_payload(
+    {"deviceId": "CNC-01", "eventType": "TelemetryObserved"},
+    default_source_type="real",
+)
+check(
+    "webhook canonical point",
+    webhook_point["entity_id"] == "CNC-01"
+    and webhook_point["protocol_version"] == "HTTP-Webhook",
 )
 
 failed = [name for name, ok in checks if not ok]
