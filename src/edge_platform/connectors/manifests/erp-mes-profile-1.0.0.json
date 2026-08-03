@@ -1,0 +1,36 @@
+{
+  "id": "erp-mes-profile",
+  "version": "1.0.0",
+  "runtime": "edge-python",
+  "protocol": "http-rest",
+  "inputProfile": "mes-erp",
+  "outputEvents": [
+    "OrderReceived",
+    "OrderAcknowledged",
+    "TaskCreated",
+    "AuditEntryAppended"
+  ],
+  "configSchema": {
+    "required": [
+      "baseUrl",
+      "clientId",
+      "secretName"
+    ],
+    "properties": {
+      "baseUrl": {"type": "string"},
+      "clientId": {"type": "string"},
+      "secretName": {"type": "string"}
+    }
+  },
+  "compatibility": {
+    "core": ">=0.6.0-rc2 <1.0.0",
+    "edgeRuntime": ">=1.0.0 <2.0.0"
+  },
+  "permissions": {
+    "network": ["https://erp.example.com/*"],
+    "api": ["POST /api/ingestion/*", "GET /api/erp/*"]
+  },
+  "tck": "tests/connector-tck.yaml",
+  "sbom": "sbom.cdx.json",
+  "rollback": "supported"
+}

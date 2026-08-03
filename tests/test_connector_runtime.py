@@ -28,7 +28,7 @@ class TestManifestContract(unittest.TestCase):
         manifests = discover_manifests(MANIFEST_DIR)
         self.assertEqual(
             {manifest.id for manifest in manifests},
-            {"exoskeleton-frame", "equipment-state"},
+            {"exoskeleton-frame", "equipment-state", "erp-mes-profile"},
         )
 
     def test_exoskeleton_manifest_has_productization_fields(self):
@@ -104,6 +104,21 @@ class TestConfigAndHealth(unittest.TestCase):
         )
         self.assertEqual(report["status"], "degraded")
         self.assertTrue(any("brokerUrl" in reason for reason in report["reasons"]))
+
+    def test_erp_mes_profile_requires_secret_reference_not_value(self):
+        manifest = load_manifest(MANIFEST_DIR / "erp-mes-profile-1.0.0.json")
+        report = healthcheck(
+            manifest,
+            {
+                "baseUrl": "https://erp.example.com",
+                "clientId": "mes-edge",
+                "secretName": "erp-credentials",
+            },
+        )
+        self.assertEqual(report["status"], "ok")
+        self.assertIn("OrderAcknowledged", report["outputEvents"])
+        with self.assertRaises(ConnectorManifestError):
+            validate_config(manifest, {"baseUrl": "https://erp.example.com"})
 
     def test_redact_config_hides_secrets_recursively(self):
         config = {

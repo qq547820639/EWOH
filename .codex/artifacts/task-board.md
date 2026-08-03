@@ -313,6 +313,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-120 | Scale operations page wired to real scale APIs | AG-30/31 | Done | `round36-scale-ui.md`; client Jest 6/21; build passed |
 
+## Wave Final5 - Connector Profile (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-121 | ERP/MES connector profile manifest + runtime tests | PX-04/18 | Done | `round37-erp-mes-connector.md`; pytest 82 passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

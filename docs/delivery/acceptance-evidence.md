@@ -6,7 +6,7 @@ Owner: AG-00/AG-41
 ## Automated Evidence
 
 - Python unittest: 667 passed.
-- Python repo contract tests: 81 passed.
+- Python repo contract tests: 82 passed.
 - NestJS Jest: 270 passed across 63 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
@@ -139,6 +139,8 @@ Owner: AG-00/AG-41
 - Scale operations UI: the `/scale` page renders templates, profiles, assets,
   compatibility, and an F0-F6 onboarding runner against real APIs; client
   tests and the standalone production build pass.
+- ERP/MES connector profile: `erp-mes-profile-1.0.0` is a versioned connector
+  package with secret-reference config and runtime test coverage.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.
