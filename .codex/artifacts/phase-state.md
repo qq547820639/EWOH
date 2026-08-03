@@ -5,12 +5,12 @@ Trace: EWOH-2026-08-03-principal-001
 
 ## Current Phase
 
-RC2 hardening + ops readiness + org scope hardening: canonical ingestion, M2M
-org context, gamification persistence, logical backup/restore drill, ops
-runbooks, and warning-free org scope resolution are implemented and validated;
-observability and deploy artifact verification are also complete; next
-workflow is OEE/andon, quality traceability, ERP connector, then training and
-the production approval gate.
+Final 5.0 productization: scale kernel, connector/scenario catalog, asset
+conformance, factory profile replay, fleet upgrade/rollback, and the
+AsyncAPI/CloudEvents event catalog are implemented and validated. Next is the
+remaining productization kernels (connector SDK/runtime, mapping/event
+contracts, Helm/factory values, OTel resource attributes) before the
+production approval gate.
 
 ## Just Completed
 
@@ -46,11 +46,18 @@ the production approval gate.
   published template installs multiple factory profiles without a code fork.
 - Asset conformance TCK and factory profile replay are implemented and
   verified.
+- Scenario pack install now requires a passing scenario TCK; fleet
+  upgrade/rollback endpoints update all org-visible profiles and are audited.
+- AsyncAPI 2.6 + CloudEvents 1.0 event catalog with 13 event types is
+  implemented as a contract, an audited API, and a CI-validated artifact.
+- Full Jest regression: 54 suites / 224 tests; HTTP+PostgreSQL E2E 19/19;
+  OpenAPI strict audit 154/154; standalone production build passed.
 
 ## Active Tasks
 
-- RC2 release drill and bundle regeneration (drill PASSED, bundle exists).
-- OEE/andon (WP-OEE-01) and ERP connector (WP-ERP-01).
+- Fleet Ops (upgrade/rollback) and event catalog round closed.
+- Productization kernels: connector SDK/runtime, mapping DSL, Helm/factory
+  values, OTel resource attributes.
 - Training/acceptance evidence and production gate preparation.
 - Production DDL/deploy approval gate.
 
@@ -70,6 +77,6 @@ the production approval gate.
 
 ## Next Action
 
-Finalize RC2 bundle with Final 4.0 + MES P0 evidence, then implement OEE/andon
-and ERP connector before training/acceptance. Production DDL/deploy remain
-approval-gated.
+Close the remaining Final 5.0 productization kernels in bounded waves, rerun
+the standalone check and release drill, then prepare Scale Release evidence.
+Production DDL/deploy remain approval-gated.

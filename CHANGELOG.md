@@ -53,6 +53,14 @@
 - 资产一致性检查（TCK）：按连接器/场景包/模板/部署类型校验 Manifest。
 - 工厂 Profile 回放：模板配置与 Profile 覆盖值合并，状态置为
   `replayed` 并写审计。
+- 场景包安装门禁：安装前必须通过场景 TCK，失败返回 400 并保留审计。
+- 舰队升级/回滚：`POST /api/scale/fleet/upgrade` /
+  `/api/scale/fleet/rollback` 对组织可见 Factory Profile 批量变更状态并写审计。
+- AsyncAPI/CloudEvents 事件目录：`contracts/events/event-catalog.yaml` 定义
+  13 个事件类型与 13 条通道，`GET /api/events/catalog` 与
+  `GET /api/events/catalog/:type` 提供只读 API，独立契约审计接入
+  `standalone-check.sh`。
+- Docker 运行时镜像携带 `/app/contracts`，事件目录在生产容器内可读。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

@@ -415,4 +415,85 @@ export class ScaleService {
       checks,
     };
   }
+
+  async installScenarioPack(packageId: string, actor?: OrgContext) {
+    const asset = await this.getAssetPackage(packageId);
+    if (asset.packageType !== 'scenario') {
+      throw new BadRequestException('packageType must be scenario');
+    }
+    const conformance = await this.runConformance(packageId, actor);
+    if (!conformance.passed) {
+      throw new BadRequestException(
+        `Scenario pack ${packageId} does not pass conformance`,
+      );
+    }
+    const [updated] = await this.db
+      .update(ewohAssetPackage)
+      .set({ status: 'installed', publishedAt: new Date() })
+      .where(eq(ewohAssetPackage.packageId, packageId))
+      .returning();
+    if (!updated) {
+      throw new ConflictException('STATE_CONFLICT');
+    }
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'scale.scenario.install',
+      entityType: 'asset_package',
+      entityId: packageId,
+      before: { status: asset.status },
+      after: { status: updated.status },
+    });
+    return updated;
+  }
+
+  async fleetUpgrade(packageId: string, actor?: OrgContext) {
+    const conformance = await this.runConformance(packageId, actor);
+    if (!conformance.passed) {
+      throw new BadRequestException(
+        `Package ${packageId} does not pass conformance`,
+      );
+    }
+    const profiles = await this.listProfiles();
+    let updated = 0;
+    for (const profile of profiles) {
+      await this.db
+        .update(ewohFactoryProfile)
+        .set({ status: 'upgraded', installedAt: new Date() })
+        .where(eq(ewohFactoryProfile.profileId, profile.profileId));
+      updated += 1;
+    }
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'scale.fleet.upgrade',
+      entityType: 'asset_package',
+      entityId: packageId,
+      before: null,
+      after: { updatedProfiles: updated },
+    });
+    return { packageId, updatedProfiles: updated };
+  }
+
+  async fleetRollback(actor?: OrgContext) {
+    const profiles = await this.listProfiles();
+    let updated = 0;
+    for (const profile of profiles) {
+      await this.db
+        .update(ewohFactoryProfile)
+        .set({ status: 'rolled_back', installedAt: new Date() })
+        .where(eq(ewohFactoryProfile.profileId, profile.profileId));
+      updated += 1;
+    }
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'scale.fleet.rollback',
+      entityType: 'factory_profile',
+      entityId: 'fleet',
+      before: null,
+      after: { rolledBackProfiles: updated },
+    });
+    return { rolledBackProfiles: updated };
+  }
 }

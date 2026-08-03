@@ -16,6 +16,7 @@ npm test -- --runInBand
 echo "== openapi strict audit =="
 cd "$ROOT_DIR"
 node scripts/audit-openapi-routes.js --strict
+node scripts/audit-event-catalog.js
 
 echo "== e2e (requires runtime DB env) =="
 if [[ -n "${EWOH_E2E_RUNTIME_DATABASE_URL:-}" ]]; then

@@ -18,6 +18,10 @@ Supporting inventory: `inventory/frontend-nestjs.md`,
 `inventory/ui-devops-inventory.md`, `inventory/environment.md`,
 `inventory/docs-gap-report.md`.
 
+Productization event contract: `contracts/events/event-catalog.yaml`
+(AsyncAPI 2.6 / CloudEvents 1.0). It is owned by AG-04/AG-22, validated by
+`scripts/audit-event-catalog.js`, and exposed by `GET /api/events/catalog`.
+
 Freeze scope note: C3-C6 are frozen as contracts for the current real
 implementation. Each document explicitly separates service-enforced behavior
 from pending items; the pending items do not reopen the contract but define

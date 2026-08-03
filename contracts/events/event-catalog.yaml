@@ -1,0 +1,521 @@
+asyncapi: '2.6.0'
+info:
+  title: EWOH Event Catalog
+  version: 1.0.0
+  description: |
+    Machine-readable event contract for the EWOH embodied factory operating
+    system. Every event is a CloudEvents 1.0 message carrying org_id context.
+    Connectors, scenario packs, and integrations must reference this catalog
+    instead of inventing private event types.
+defaultContentType: application/cloudevents+json
+x-event-types:
+  - DeviceBirth
+  - DeviceStateChanged
+  - TelemetryObserved
+  - TaskCreated
+  - TaskStateChanged
+  - TaskStepStateChanged
+  - AndonRaised
+  - OrderReceived
+  - OrderAcknowledged
+  - AssetConformanceFailed
+  - FleetUpgradeStarted
+  - FleetRollbackCompleted
+  - AuditEntryAppended
+channels:
+  device.birth:
+    publish:
+      message:
+        $ref: '#/components/messages/DeviceBirth'
+  device.state.changed:
+    publish:
+      message:
+        $ref: '#/components/messages/DeviceStateChanged'
+  telemetry.observed:
+    publish:
+      message:
+        $ref: '#/components/messages/TelemetryObserved'
+  task.created:
+    publish:
+      message:
+        $ref: '#/components/messages/TaskCreated'
+  task.state.changed:
+    publish:
+      message:
+        $ref: '#/components/messages/TaskStateChanged'
+  task.step.state.changed:
+    publish:
+      message:
+        $ref: '#/components/messages/TaskStepStateChanged'
+  andon.raised:
+    publish:
+      message:
+        $ref: '#/components/messages/AndonRaised'
+  order.received:
+    subscribe:
+      message:
+        $ref: '#/components/messages/OrderReceived'
+  order.acknowledged:
+    publish:
+      message:
+        $ref: '#/components/messages/OrderAcknowledged'
+  asset.conformance.failed:
+    publish:
+      message:
+        $ref: '#/components/messages/AssetConformanceFailed'
+  fleet.upgrade.started:
+    publish:
+      message:
+        $ref: '#/components/messages/FleetUpgradeStarted'
+  fleet.rollback.completed:
+    publish:
+      message:
+        $ref: '#/components/messages/FleetRollbackCompleted'
+  audit.entry.appended:
+    publish:
+      message:
+        $ref: '#/components/messages/AuditEntryAppended'
+components:
+  messages:
+    DeviceBirth:
+      name: DeviceBirth
+      title: Device Birth
+      summary: A device is registered and available on the platform.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.device.birth
+        source: ewoh:///organizations/{orgId}/devices/{deviceId}
+        subject: devices/{deviceId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId:
+            type: string
+            format: uuid
+          deviceId:
+            type: string
+          model:
+            type: string
+          firmwareVersion:
+            type: string
+          capabilities:
+            type: array
+            items:
+              type: string
+          occurredAt:
+            type: string
+            format: date-time
+        required:
+          - orgId
+          - deviceId
+          - model
+          - occurredAt
+    DeviceStateChanged:
+      name: DeviceStateChanged
+      title: Device State Changed
+      summary: A device moved between operational states.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.device.state_changed
+        source: ewoh:///organizations/{orgId}/devices/{deviceId}
+        subject: devices/{deviceId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId:
+            type: string
+            format: uuid
+          deviceId:
+            type: string
+          state:
+            type: string
+          previousState:
+            type: string
+          reason:
+            type: string
+          occurredAt:
+            type: string
+            format: date-time
+        required:
+          - orgId
+          - deviceId
+          - state
+          - occurredAt
+    TelemetryObserved:
+      name: TelemetryObserved
+      title: Telemetry Observed
+      summary: Canonical telemetry frame captured from an edge device.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.telemetry.observed
+        source: ewoh:///organizations/{orgId}/entities/{entityId}
+        subject: entities/{entityId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId:
+            type: string
+            format: uuid
+          entityId:
+            type: string
+          sourceType:
+            type: string
+            enum:
+              - real
+              - controlled_test
+              - simulated
+          observedAt:
+            type: string
+            format: date-time
+          occurredAt:
+            type: string
+            format: date-time
+          payload:
+            type: object
+            properties:
+              pose:
+                type: object
+              load:
+                type: object
+              device:
+                type: object
+              quality:
+                type: object
+        required:
+          - orgId
+          - entityId
+          - sourceType
+          - observedAt
+          - occurredAt
+    TaskCreated:
+      name: TaskCreated
+      title: Task Created
+      summary: A production task was created.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.task.created
+        source: ewoh:///organizations/{orgId}/tasks/{taskId}
+        subject: tasks/{taskId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId:
+            type: string
+            format: uuid
+          taskId:
+            type: string
+          taskType:
+            type: string
+          priority:
+            type: integer
+          occurredAt:
+            type: string
+            format: date-time
+        required:
+          - orgId
+          - taskId
+          - taskType
+          - occurredAt
+    TaskStateChanged:
+      name: TaskStateChanged
+      title: Task State Changed
+      summary: A task transitioned through its lifecycle state machine.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.task.state_changed
+        source: ewoh:///organizations/{orgId}/tasks/{taskId}
+        subject: tasks/{taskId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId:
+            type: string
+            format: uuid
+          taskId:
+            type: string
+          fromState:
+            type: string
+          toState:
+            type: string
+          reason:
+            type: string
+          occurredAt:
+            type: string
+            format: date-time
+        required:
+          - orgId
+          - taskId
+          - toState
+          - occurredAt
+    TaskStepStateChanged:
+      name: TaskStepStateChanged
+      title: Task Step State Changed
+      summary: A task step transitioned through its MES state machine.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.task.step_state_changed
+        source: ewoh:///organizations/{orgId}/tasks/{taskId}/steps/{stepId}
+        subject: tasks/{taskId}/steps/{stepId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId:
+            type: string
+            format: uuid
+          taskId:
+            type: string
+          stepId:
+            type: string
+          fromState:
+            type: string
+          toState:
+            type: string
+          operatorId:
+            type: string
+          occurredAt:
+            type: string
+            format: date-time
+        required:
+          - orgId
+          - taskId
+          - stepId
+          - toState
+          - occurredAt
+    AndonRaised:
+      name: AndonRaised
+      title: Andon Raised
+      summary: An andon escalation was raised for a station or device.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.andon.raised
+        source: ewoh:///organizations/{orgId}/andons/{andonId}
+        subject: andons/{andonId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId:
+            type: string
+            format: uuid
+          andonId:
+            type: string
+          deviceId:
+            type: string
+          stationId:
+            type: string
+          level:
+            type: string
+          slaMinutes:
+            type: integer
+          occurredAt:
+            type: string
+            format: date-time
+        required:
+          - orgId
+          - andonId
+          - level
+          - occurredAt
+    OrderReceived:
+      name: OrderReceived
+      title: Order Received
+      summary: An external order was received and idempotency-checked.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.order.received
+        source: ewoh:///organizations/{orgId}/orders/{orderId}
+        subject: orders/{orderId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId:
+            type: string
+            format: uuid
+          orderId:
+            type: string
+          externalSource:
+            type: string
+          payload:
+            type: object
+          occurredAt:
+            type: string
+            format: date-time
+        required:
+          - orgId
+          - orderId
+          - occurredAt
+    OrderAcknowledged:
+      name: OrderAcknowledged
+      title: Order Acknowledged
+      summary: An outbound order acknowledgment was recorded.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.order.acknowledged
+        source: ewoh:///organizations/{orgId}/orders/{orderId}
+        subject: orders/{orderId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId:
+            type: string
+            format: uuid
+          orderId:
+            type: string
+          status:
+            type: string
+            enum:
+              - pending
+              - confirmed
+              - failed
+          occurredAt:
+            type: string
+            format: date-time
+        required:
+          - orgId
+          - orderId
+          - status
+          - occurredAt
+    AssetConformanceFailed:
+      name: AssetConformanceFailed
+      title: Asset Conformance Failed
+      summary: An asset package failed its TCK conformance gate.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.asset.conformance_failed
+        source: ewoh:///organizations/{orgId}/assets/{packageId}
+        subject: assets/{packageId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId:
+            type: string
+            format: uuid
+          packageId:
+            type: string
+          packageType:
+            type: string
+          failedChecks:
+            type: array
+            items:
+              type: string
+          occurredAt:
+            type: string
+            format: date-time
+        required:
+          - orgId
+          - packageId
+          - failedChecks
+          - occurredAt
+    FleetUpgradeStarted:
+      name: FleetUpgradeStarted
+      title: Fleet Upgrade Started
+      summary: A conformant package was selected for fleet upgrade.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.fleet.upgrade_started
+        source: ewoh:///organizations/{orgId}/fleet/upgrades/{runId}
+        subject: fleet/upgrades/{runId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId:
+            type: string
+            format: uuid
+          packageId:
+            type: string
+          profileIds:
+            type: array
+            items:
+              type: string
+          occurredAt:
+            type: string
+            format: date-time
+        required:
+          - orgId
+          - packageId
+          - profileIds
+          - occurredAt
+    FleetRollbackCompleted:
+      name: FleetRollbackCompleted
+      title: Fleet Rollback Completed
+      summary: Fleet profiles were rolled back after a failed or cancelled upgrade.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.fleet.rollback_completed
+        source: ewoh:///organizations/{orgId}/fleet/rollbacks/{runId}
+        subject: fleet/rollbacks/{runId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId:
+            type: string
+            format: uuid
+          profileIds:
+            type: array
+            items:
+              type: string
+          occurredAt:
+            type: string
+            format: date-time
+        required:
+          - orgId
+          - profileIds
+          - occurredAt
+    AuditEntryAppended:
+      name: AuditEntryAppended
+      title: Audit Entry Appended
+      summary: A SHA-256 chained audit entry was appended.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.audit.entry_appended
+        source: ewoh:///organizations/{orgId}/audit/{auditId}
+        subject: audit/{auditId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId:
+            type: string
+            format: uuid
+          auditId:
+            type: string
+          action:
+            type: string
+          entityType:
+            type: string
+          entityId:
+            type: string
+          hash:
+            type: string
+          occurredAt:
+            type: string
+            format: date-time
+        required:
+          - orgId
+          - auditId
+          - action
+          - hash
+          - occurredAt

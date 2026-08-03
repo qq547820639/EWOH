@@ -17,10 +17,10 @@ artifacts:
   deploy: deploy/cloud/
   contracts: .codex/artifacts/contracts/
 evidence:
-  jest: "52 suites / 213 tests"
+  jest: "54 suites / 224 tests"
   client_jest: "6 suites / 20 tests"
-  e2e: "18/18 HTTP + PostgreSQL"
-  openapi: "149/149 documented, 0 unimplemented"
+  e2e: "19/19 HTTP + PostgreSQL"
+  openapi: "154/154 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/openapi/e2e/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; logical backup/restore of 54 tables / 25 rows with row-count verify"
@@ -38,6 +38,8 @@ evidence:
   scale_kernel: "factory template lifecycle, profile install, asset package registry"
   connector_scenario: "connector and scenario pack catalog with second-factory no-fork install drill"
   conformance_replay: "asset conformance TCK and factory profile replay/upgrade"
+  fleet_ops: "scenario install TCK gate + fleet upgrade/rollback with audit"
+  event_catalog: "AsyncAPI 2.6 + CloudEvents 1.0; 13 events/13 channels; read API; contract audit wired"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

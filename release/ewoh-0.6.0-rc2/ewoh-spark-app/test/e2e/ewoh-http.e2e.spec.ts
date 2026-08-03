@@ -130,6 +130,37 @@ if (!e2eConfig) {
       expect(allowed.status).toBe(200);
     });
 
+    it('serves the AsyncAPI/CloudEvents event catalog to authenticated users', async () => {
+      const auth = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(auth.status).toBe(201);
+
+      const catalog = await apiRequest<{
+        info: { title: string; version: string };
+        channels: Record<string, unknown>;
+      }>(baseUrl, '/api/events/catalog', {
+        headers: jsonHeaders(auth.body.accessToken),
+      });
+      expect(catalog.status).toBe(200);
+      expect(catalog.body.info.title).toBe('EWOH Event Catalog');
+      expect(Object.keys(catalog.body.channels).length).toBeGreaterThanOrEqual(
+        13,
+      );
+
+      const eventType = await apiRequest<{
+        eventType: string;
+        channel: string;
+      }>(baseUrl, '/api/events/catalog/TelemetryObserved', {
+        headers: jsonHeaders(auth.body.accessToken),
+      });
+      expect(eventType.status).toBe(200);
+      expect(eventType.body.eventType).toBe('TelemetryObserved');
+      expect(eventType.body.channel).toBe('telemetry.observed');
+    });
+
     it('lets global_admin read/write system config, read audit, and create control requests', async () => {
       const auth = await login(
         baseUrl,
@@ -1131,10 +1162,24 @@ if (!e2eConfig) {
           name: 'heavy-lifting-safety',
           version: '1.0.0',
           requires: { connectors: ['exoskeleton-frame@1.x'] },
+          workflows: ['mes-execution', 'safety-monitoring'],
+          policies: ['operator-safety'],
+          acceptance: 'smoke',
         }),
       });
       expect(scenarioPack.status).toBe(201);
       expect(scenarioPack.body.packageType).toBe('scenario');
+
+      const installedScenario = await apiRequest<{ status: string }>(
+        baseUrl,
+        `/api/scale/scenario-packs/${scenarioPack.body.packageId}/install`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+        },
+      );
+      expect(installedScenario.status).toBe(201);
+      expect(installedScenario.body.status).toBe('installed');
 
       const connectors = await apiRequest<Array<{ packageId: string }>>(
         baseUrl,
@@ -1187,6 +1232,28 @@ if (!e2eConfig) {
         shift: { count: 2 },
       });
 
+      const fleetUpgrade = await apiRequest<{
+        packageId: string;
+        updatedProfiles: number;
+      }>(baseUrl, '/api/scale/fleet/upgrade', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({ packageId: connector.body.packageId }),
+      });
+      expect(fleetUpgrade.status).toBe(201);
+      expect(fleetUpgrade.body.updatedProfiles).toBeGreaterThanOrEqual(2);
+
+      const fleetRollback = await apiRequest<{ rolledBackProfiles: number }>(
+        baseUrl,
+        '/api/scale/fleet/rollback',
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+        },
+      );
+      expect(fleetRollback.status).toBe(201);
+      expect(fleetRollback.body.rolledBackProfiles).toBeGreaterThanOrEqual(2);
+
       const templateRows = await owner!.unsafe<
         Array<{ template_id: string; lifecycle_status: string; org_id: string }>
       >(
@@ -1208,7 +1275,7 @@ if (!e2eConfig) {
         [installed.body.profileId],
       );
       expect(profileRows).toHaveLength(1);
-      expect(profileRows[0].status).toBe('replayed');
+      expect(profileRows[0].status).toBe('rolled_back');
       expect(profileRows[0].org_id).toBe(fixture!.orgA.id);
 
       const replayedRows = await owner!.unsafe<
@@ -1220,8 +1287,20 @@ if (!e2eConfig) {
         [installed.body.profileId],
       );
       expect(replayedRows).toHaveLength(1);
-      expect(replayedRows[0].status).toBe('replayed');
+      expect(replayedRows[0].status).toBe('rolled_back');
       expect(replayedRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const fleetRows = await owner!.unsafe<
+        Array<{ status: string; org_id: string }>
+      >(
+        `select status, org_id::text
+         from public.ewoh_factory_profile
+         where org_id = $1::uuid
+         order by profile_id`,
+        [fixture!.orgA.id],
+      );
+      expect(fleetRows.length).toBeGreaterThanOrEqual(2);
+      expect(fleetRows.every((row) => row.status === 'rolled_back')).toBe(true);
 
       const secondProfileRows = await owner!.unsafe<
         Array<{ profile_id: string; org_id: string }>

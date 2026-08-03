@@ -1485,6 +1485,50 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/events/catalog:
+    get:
+      tags:
+        - events
+      summary: Read the AsyncAPI/CloudEvents event catalog
+      responses:
+        '200':
+          description: Event catalog contract
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventCatalog'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/events/catalog/{type}:
+    get:
+      tags:
+        - events
+      summary: Read one event type from the catalog
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Event type definition and its channel
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventTypeDetail'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/templates:
     post:
       tags:
@@ -1788,6 +1832,87 @@ paths:
           $ref: '#/components/responses/Forbidden'
         NotFound:
           $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/scenario-packs/{id}/install:
+    post:
+      tags:
+        - scale
+      summary: Install a scenario pack
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/fleet/upgrade:
+    post:
+      tags:
+        - scale
+      summary: Upgrade all factory profiles from a conformant package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                packageId:
+                  type: string
+              required:
+                - packageId
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FleetUpgradeResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/fleet/rollback:
+    post:
+      tags:
+        - scale
+      summary: Roll back all factory profiles
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FleetRollbackResult'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
   /api/scale/assets:
@@ -4619,6 +4744,25 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/DeviceBindingRecord'
+    EventCatalog:
+      type: object
+      description: AsyncAPI 2.6 EWOH event catalog with CloudEvents metadata
+      additionalProperties: true
+    EventTypeDetail:
+      type: object
+      properties:
+        eventType:
+          type: string
+        channel:
+          type: string
+          nullable: true
+        message:
+          type: object
+          additionalProperties: true
+      required:
+        - eventType
+        - message
+      additionalProperties: false
     EventInfo:
       type: object
       properties:
@@ -6880,6 +7024,18 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/FactoryProfile'
+    FleetUpgradeResult:
+      type: object
+      properties:
+        packageId:
+          type: string
+        updatedProfiles:
+          type: integer
+    FleetRollbackResult:
+      type: object
+      properties:
+        rolledBackProfiles:
+          type: integer
     ConformanceCheck:
       type: object
       properties:

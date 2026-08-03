@@ -91,6 +91,27 @@ export class ScaleController {
     return this.scaleService.listScenarioPacks();
   }
 
+  @Post('scenario-packs/:id/install')
+  installScenarioPack(
+    @Param('id') id: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.scaleService.installScenarioPack(id, request.userContext);
+  }
+
+  @Post('fleet/upgrade')
+  fleetUpgrade(
+    @Body() body: { packageId: string },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.scaleService.fleetUpgrade(body.packageId, request.userContext);
+  }
+
+  @Post('fleet/rollback')
+  fleetRollback(@Req() request: { userContext?: OrgContext }) {
+    return this.scaleService.fleetRollback(request.userContext);
+  }
+
   @Post('assets')
   registerAssetPackage(
     @Body() body: Record<string, never>,

@@ -263,4 +263,90 @@ describe('ScaleService templates and assets', () => {
     expect(result.passed).toBe(true);
     expect(result.checks.every((check) => check.passed)).toBe(true);
   });
+
+  it('installs a scenario pack', async () => {
+    const asset = {
+      packageId: 'PKG-SCEN',
+      packageType: 'scenario',
+      version: '1.0.0',
+      status: 'draft',
+      manifestJson: {
+        requires: {},
+        workflows: ['mes-execution'],
+        policies: ['operator-safety'],
+        acceptance: 'smoke',
+      },
+    };
+    const selectWhere = jest.fn().mockResolvedValue([asset]);
+    const updateReturning = jest.fn().mockResolvedValue([
+      { ...asset, status: 'installed' },
+    ]);
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({ where: selectWhere })),
+      })),
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn(() => ({ returning: updateReturning })),
+        })),
+      })),
+    };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.installScenarioPack('PKG-SCEN');
+
+    expect(result.status).toBe('installed');
+    expect(audit.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'scale.scenario.install' }),
+    );
+  });
+
+  it('rejects installing a scenario pack that fails conformance', async () => {
+    const asset = {
+      packageId: 'PKG-SCEN-BAD',
+      packageType: 'scenario',
+      version: '1.0.0',
+      status: 'draft',
+      manifestJson: {},
+    };
+    const selectWhere = jest.fn().mockResolvedValue([asset]);
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({ where: selectWhere })),
+      })),
+    };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new ScaleService(db as never, audit as never);
+
+    await expect(service.installScenarioPack('PKG-SCEN-BAD')).rejects.toThrow(
+      'does not pass conformance',
+    );
+    expect(audit.appendAuditLog).toHaveBeenCalledTimes(1);
+  });
+
+  it('rolls back all factory profiles', async () => {
+    const profiles = [{ profileId: 'PRF-1' }, { profileId: 'PRF-2' }];
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          orderBy: jest.fn().mockResolvedValue(profiles),
+        })),
+      })),
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue([]),
+        })),
+      })),
+    };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.fleetRollback();
+
+    expect(result.rolledBackProfiles).toBe(2);
+    expect(audit.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'scale.fleet.rollback' }),
+    );
+  });
 });

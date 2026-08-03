@@ -198,6 +198,13 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-100 | Asset conformance TCK + factory profile replay | PX-11/09 | Done | `round17-conformance-replay.md`; OpenAPI 149/149; E2E 18/18 |
 
+## Wave Final5 - Fleet Ops + Event Catalog (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-101 | Scenario install TCK gate + fleet upgrade/rollback | PX-09/07 | Done | `round18-fleet-ops-event-catalog.md`; Jest 54/224; E2E 19/19; OpenAPI 154/154 |
+| T-102 | AsyncAPI/CloudEvents event catalog + API + audit | PX-10/11 | Done | `contracts/events/event-catalog.yaml`; `GET /api/events/catalog`; contract audit 13/13 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

@@ -7,19 +7,20 @@ Owner: AG-00/AG-41
 
 - Python unittest: 667 passed.
 - Python repo contract tests: 59 passed.
-- NestJS Jest: 213 passed across 52 suites (includes SP-01..SP-08 scenario
+- NestJS Jest: 224 passed across 54 suites (includes SP-01..SP-08 scenario
   suite).
 - Client Jest: 20 passed across 6 suites.
-- HTTP + PostgreSQL E2E: 18 passed (auth, RBAC, refresh rotation/logout, org
+- HTTP + PostgreSQL E2E: 19 passed (auth, RBAC, refresh rotation/logout, org
   isolation, control/resource/world persistence, canonical UnifiedExoFrame
   ingestion, gamification allocation persistence, approval persistence,
   system config org scoping, complete MES work order execution, and
   OEE/andon SLA escalation, ERP inbound/outbound/reconcile, and scale
-  template publish/install/asset registration).
+  template publish/install/asset registration, scenario install + fleet
+  upgrade/rollback, and the event catalog API).
 - NestJS type check, lint, and Standalone production build: passed.
 - One-click `scripts/standalone-check.sh`: passed with E2E, OpenAPI strict
   audit, DDL plans, and standalone DDL hygiene.
-- OpenAPI contract: 149 controller operations documented, 0 undocumented,
+- OpenAPI contract: 154 controller operations documented, 0 undocumented,
   0 unimplemented; `openapi/route-manifest.json` generated.
 - Full release drill: `RELEASE DRILL PASSED` against disposable PostgreSQL 17,
   including migration/RLS/audit/rollback/rebuild, 176 Jest tests, 107/107
@@ -57,6 +58,15 @@ Owner: AG-00/AG-41
 - Conformance TCK: asset packages run package-type consistency checks.
 - Factory profile replay: template config merges with profile overrides,
   status becomes `replayed`, and the operation is audited.
+- Scenario install gate: a scenario pack must pass its TCK before the package
+  can be installed; failed installs return 400.
+- Fleet upgrade/rollback: `POST /api/scale/fleet/upgrade` and
+  `/api/scale/fleet/rollback` update all org-visible factory profiles and write
+  audit entries; E2E verifies every profile is `rolled_back` after rollback.
+- Event catalog: AsyncAPI 2.6 + CloudEvents 1.0 contract defines 13 event
+  types and 13 channels; `GET /api/events/catalog` and
+  `GET /api/events/catalog/:type` are served to authenticated users; a strict
+  contract audit is wired into `standalone-check.sh` and Docker runtime images.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.
