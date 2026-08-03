@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T22:51:16.235Z",
+  "generatedAt": "2026-08-03T22:58:39.175Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 246,
-    "edgeCount": 33,
+    "itemCount": 247,
+    "edgeCount": 34,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 103,
+    "evidenceCount": 104,
     "gateCount": 14,
     "riskCount": 15,
-    "decisionCount": 46,
+    "decisionCount": 47,
     "statusCounts": {
-      "Done": 153,
+      "Done": 154,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2552,6 +2552,18 @@
       "evidence": "`round98-frontend-performance.md`; browser 4/4; main bundle split"
     },
     {
+      "id": "T-212",
+      "title": "MES role task workbench API + role workbench page",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-11/30/31",
+      "agents": [
+        "AG-11"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)",
+      "evidence": "`round99-role-workbench.md`; unit + E2E 33/33; browser 5/5"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -3102,6 +3114,13 @@
       "to": "EVD-round98-frontend-performance",
       "edgeType": "evidence",
       "blocking": false
+    },
+    {
+      "id": "E-034",
+      "from": "T-212",
+      "to": "EVD-round99-role-workbench",
+      "edgeType": "evidence",
+      "blocking": false
     }
   ],
   "actors": [
@@ -3591,7 +3610,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "800d569d7df58bd4eed719a3014285126af622152bdb564b00a0e58411b35e42",
+      "checksum": "a01455e330f72c3d550c3457f64d7307b7b0ccb78fa4ff78c08630ef25ab1dab",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3600,7 +3619,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "2226d8e4c981545f900116dc2463e3e112e645e462cb907b412f994cadd58a63",
+      "checksum": "7b6f9a72ad656a09b72e8cbdda9f67fc18a9ac6721290a7b5713298e80d501e9",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3627,7 +3646,7 @@
       "artifactId": "decision-log-md",
       "path": "decision-log.md",
       "mediaType": "text/markdown",
-      "checksum": "5ea2858fe367160501239ef9ee8417977cbaca17cdcf13dde587eeb7efa2590e",
+      "checksum": "dbb97e9fc52148cc9e36a37b46a1fee29a165cefb1584528e9e7e3b02c82b138",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3636,7 +3655,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "f5a437af89f31e32ee17be3f1200bd2c7551542939e63158fc8014fee18058ad",
+      "checksum": "23508c026a60a213b2040a10cf019ec07536f5cef3739fc49119c6f3ec9de1db",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3645,7 +3664,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "7cc88e7dc9c60184d8421127155d097d85cb0f0b97e7b5682f09ac522e02b337",
+      "checksum": "c6f42fe7ce945e237363cfa3374898927379c4c24c98e3ef7c1b74789283cc1b",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -5432,7 +5451,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 034b26340137cea24c34550153f8ef67175efa86"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-2",
@@ -5451,7 +5470,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 034b26340137cea24c34550153f8ef67175efa86"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-3",
@@ -5470,7 +5489,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 034b26340137cea24c34550153f8ef67175efa86"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-4",
@@ -5489,7 +5508,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 034b26340137cea24c34550153f8ef67175efa86"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-5",
@@ -5508,7 +5527,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 034b26340137cea24c34550153f8ef67175efa86"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f"
     },
     {
       "evidenceId": "EVD-round91-review-fixes",
@@ -5527,7 +5546,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T07:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2 differs from code HEAD 034b26340137cea24c34550153f8ef67175efa86"
+      "staleReason": "evidence commit fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2 differs from code HEAD 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f"
     },
     {
       "evidenceId": "EVD-round92-real-pg-e2e-browser",
@@ -5546,7 +5565,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T08:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 034b26340137cea24c34550153f8ef67175efa86"
+      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f"
     },
     {
       "evidenceId": "EVD-round93-onboarding-mapping-real-gate-1",
@@ -5565,7 +5584,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T08:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 034b26340137cea24c34550153f8ef67175efa86"
+      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f"
     },
     {
       "evidenceId": "EVD-round93-onboarding-mapping-real-gate-2",
@@ -5584,7 +5603,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T08:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 034b26340137cea24c34550153f8ef67175efa86"
+      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f"
     },
     {
       "evidenceId": "EVD-round94-world-replay-unified-timeline",
@@ -5603,7 +5622,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T09:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit d9d7dc546f6684759385dafff2a12c6b657d0ceb differs from code HEAD 034b26340137cea24c34550153f8ef67175efa86"
+      "staleReason": "evidence commit d9d7dc546f6684759385dafff2a12c6b657d0ceb differs from code HEAD 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f"
     },
     {
       "evidenceId": "EVD-round95-esop-signoff",
@@ -5622,7 +5641,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T10:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 64d237576133b93e73a44a0cb8ac8495f110b877 differs from code HEAD 034b26340137cea24c34550153f8ef67175efa86"
+      "staleReason": "evidence commit 64d237576133b93e73a44a0cb8ac8495f110b877 differs from code HEAD 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f"
     },
     {
       "evidenceId": "EVD-round96-quality-schemes",
@@ -5641,7 +5660,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T11:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5 differs from code HEAD 034b26340137cea24c34550153f8ef67175efa86"
+      "staleReason": "evidence commit d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5 differs from code HEAD 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f"
     },
     {
       "evidenceId": "EVD-round97-slow-query-observability",
@@ -5660,7 +5679,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T12:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 98716f200f10587384c6da881f42906589563b14 differs from code HEAD 034b26340137cea24c34550153f8ef67175efa86"
+      "staleReason": "evidence commit 98716f200f10587384c6da881f42906589563b14 differs from code HEAD 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f"
     },
     {
       "evidenceId": "EVD-round98-frontend-performance",
@@ -5678,6 +5697,25 @@
       "testTime": "2026-08-04T13:00:00.000Z",
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T13:00:00.000Z",
+      "status": "stale",
+      "staleReason": "evidence commit 034b26340137cea24c34550153f8ef67175efa86 differs from code HEAD 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f"
+    },
+    {
+      "evidenceId": "EVD-round99-role-workbench",
+      "workItemId": "T-212",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round99-role-workbench.md",
+      "checksum": "fbf25b6d55fa6223985d139fea5180bf03bdecc6e046593a14bc8ff8b891ab4f",
+      "result": "passed",
+      "title": "Round 99 - MES Role Task Workbench",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "056eae1e28ab02537ab8f2207c2ca61ff02b2e0f",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-04T14:00:00.000Z",
+      "verifier": "AG-00 local gate",
+      "expiresAt": "2026-11-02T14:00:00.000Z",
       "status": "valid"
     }
   ],
@@ -6343,6 +6381,14 @@
       "decision": "Convert client page routes to `React.lazy` and make world/replay requests cancellable",
       "rationale": "The plan requires frontend lazy loading and cancellable requests",
       "reversibility": "Reversible per route/api"
+    },
+    {
+      "id": "D-049",
+      "title": "Add role workbench aggregation API and page for operator/team lead/quality/equipment/manager",
+      "date": "2026-08-04",
+      "decision": "Add role workbench aggregation API and page for operator/team lead/quality/equipment/manager",
+      "rationale": "The plan requires role-driven task centers instead of module-menu stacking",
+      "reversibility": "Reversible per API/page"
     }
   ],
   "resources": [

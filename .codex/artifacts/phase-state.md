@@ -171,6 +171,8 @@ Trace: EWOH-2026-08-04-principal-final6
   equipment/manager views from production tables.
 - New `/role-workbench` page with role tabs, summary cards, and table views.
 - Real PostgreSQL E2E: 33/33; authenticated browser: 5/5.
+- Full suite after role workbench wave: server Jest 81/391, client 13/46,
+  OpenAPI 247/247, work graph 247 items / 104 evidence / 0 conflicts.
 
 ## Current Phase
 
