@@ -40,6 +40,7 @@
   `ewoh_schedule_task_step`。
 - 质量追溯图：工单→工序→投料→质量检验的节点与关系图。
 - 移动工作台 API：按人员列出待办工序、扫码查工单、移动端工序状态流转。
+- 移动工作台前端页面：扫码查单、待办工序列表、开工/报工/审核/交收操作。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

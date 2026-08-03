@@ -173,6 +173,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-095 | Quality trace graph + mobile workbench API | AG-11/13/21 | Done | `round13-trace-mobile.md`; E2E 17/17; OpenAPI 134/134 |
 
+## Wave Final4 - Mobile UI (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-096 | Mobile workbench React page | AG-30/31 | Done | `round14-mobile-workbench-ui.md`; client tests 20/20; release drill passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

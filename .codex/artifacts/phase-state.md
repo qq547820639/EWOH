@@ -39,6 +39,7 @@ the production approval gate.
 - ERP connector: idempotent inbound orders, outbound queue with ack, and
   reconciliation summary are implemented and verified.
 - Quality trace graph and mobile workbench API are implemented and verified.
+- Mobile workbench React page is implemented and verified with client tests.
 
 ## Active Tasks
 

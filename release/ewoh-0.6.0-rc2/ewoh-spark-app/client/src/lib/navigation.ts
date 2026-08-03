@@ -11,6 +11,7 @@ import {
   Map,
   Settings,
   ShieldAlert,
+  Smartphone,
   Users,
 } from 'lucide-react';
 import { type EwohRole } from '@client/src/types/ewoh';
@@ -74,6 +75,12 @@ export const navGroups: Array<{ label: string; items: NavItem[] }> = [
         label: '排产调度',
         icon: CalendarClock,
         roles: ['dispatcher', 'workshop_lead'],
+      },
+      {
+        to: '/mobile-workbench',
+        label: '移动工作台',
+        icon: Smartphone,
+        roles: ['global_admin', 'dispatcher', 'workshop_lead', 'device_ops'],
       },
       {
         to: '/organization',

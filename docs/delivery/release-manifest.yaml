@@ -4,7 +4,7 @@ status: candidate-for-production (approval-gated)
 bundle:
   path: release/ewoh-0.6.0-rc2
   checksums: release/ewoh-0.6.0-rc2/SHA256SUMS.txt
-  files: 852
+  files: 855
 artifacts:
   api: ewoh-spark-app/dist/server
   client: ewoh-spark-app/dist/client/index.standalone.html
@@ -18,6 +18,7 @@ artifacts:
   contracts: .codex/artifacts/contracts/
 evidence:
   jest: "51 suites / 203 tests"
+  client_jest: "6 suites / 20 tests"
   e2e: "17/17 HTTP + PostgreSQL"
   openapi: "134/134 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/openapi/e2e/build/ddl/hygiene)"
@@ -33,6 +34,7 @@ evidence:
   oee_andon: "device status timeline, OEE, andon state machine, SLA escalation notification persisted and audited"
   erp_connector: "idempotent inbound orders, outbound queue with ack, reconcile summary persisted and audited"
   trace_mobile: "quality trace graph and mobile workbench API with MES delegation"
+  mobile_ui: "React mobile workbench page with scan/step actions"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

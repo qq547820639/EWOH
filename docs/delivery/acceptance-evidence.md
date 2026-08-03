@@ -9,6 +9,7 @@ Owner: AG-00/AG-41
 - Python repo contract tests: 59 passed.
 - NestJS Jest: 203 passed across 51 suites (includes SP-01..SP-08 scenario
   suite).
+- Client Jest: 20 passed across 6 suites.
 - HTTP + PostgreSQL E2E: 17 passed (auth, RBAC, refresh rotation/logout, org
   isolation, control/resource/world persistence, canonical UnifiedExoFrame
   ingestion, gamification allocation persistence, approval persistence,
@@ -45,6 +46,8 @@ Owner: AG-00/AG-41
   step, material, and inspection nodes/links.
 - Mobile workbench API: assigned-step list, order scan, and step transitions
   delegate to the MES state machine.
+- Mobile workbench UI: React page with QR/order scan, assigned-step list, and
+  start/report/review/handover actions wired to the API.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

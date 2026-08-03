@@ -13,6 +13,7 @@ import ModelManagement from './pages/ModelManagement/ModelManagement';
 import DataAssets from './pages/DataAssets/DataAssets';
 import System from './pages/System/System';
 import CommandMap from './pages/CommandMap/CommandMap';
+import MobileWorkbench from './pages/MobileWorkbench/MobileWorkbench';
 import NotFound from './pages/NotFound/NotFound';
 import Login from './pages/Login/Login';
 import Forbidden from './pages/Forbidden/Forbidden';
@@ -70,6 +71,7 @@ const RoutesComponent = () => {
         <Route path="model-management" element={<RequireRole path="/model-management"><ModelManagement /></RequireRole>} />
         <Route path="data-assets" element={<RequireRole path="/data-assets"><DataAssets /></RequireRole>} />
         <Route path="system" element={<RequireRole path="/system"><System /></RequireRole>} />
+        <Route path="mobile-workbench" element={<RequireRole path="/mobile-workbench"><MobileWorkbench /></RequireRole>} />
         {/* 旧路由保留为跳转别名 */}
         <Route path="events" element={<Navigate to="/alerts" replace />} />
         <Route path="workers" element={<Navigate to="/personnel" replace />} />

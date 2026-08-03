@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 4.0 adopted; MES P0, OEE/andon, ERP connector, quality trace, and mobile workbench API implemented and verified; next is frontend mobile page",
+  "current_status": "Final 4.0 adopted; MES P0, OEE/andon, ERP connector, quality trace, and mobile workbench UI implemented and verified; next is PWA/offline and field gates",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
@@ -140,6 +140,8 @@
     "oee_andon": "OeeModule device status/OEE/andon/SLA notification; 49 Jest suites / 196 tests; E2E 16/16; OpenAPI 123/123",
     "erp_connector": "ErpModule idempotent inbound/outbound/reconcile; 50 Jest suites / 201 tests; E2E 17/17; OpenAPI 129/129",
     "trace_mobile": "MesService trace graph + MobileModule workbench API; 51 Jest suites / 203 tests; E2E 17/17; OpenAPI 134/134"
+    ,
+    "mobile_ui": "React mobile workbench page; client Jest 6 suites / 20 tests; release drill passed"
   },
   "subagent_state": {
     "planned": [
