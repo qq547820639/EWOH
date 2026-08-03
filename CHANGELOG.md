@@ -218,6 +218,8 @@
 - OTel 风格请求追踪：`TracingInterceptor` 为每个 HTTP 请求生成
   `traceId/spanId` 并返回 `x-trace-id` 响应头；`TracingService` 维护有界
   追踪缓冲，`GET /api/observability/traces` 提供只读查询。
+- Support Bundle 追踪：`POST /api/scale/fleet/support-bundle` 携带最近 20 条
+  脱敏请求追踪与 `traceCount`，诊断包可直接用于伙伴/支持排查。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

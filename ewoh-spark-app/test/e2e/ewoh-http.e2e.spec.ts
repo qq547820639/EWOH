@@ -2053,6 +2053,8 @@ if (!e2eConfig) {
         includesSecrets: boolean;
         factoryCount: number;
         orgId: string | null;
+        traceCount: number;
+        traces: unknown[];
       }>(baseUrl, '/api/scale/fleet/support-bundle', {
         method: 'POST',
         headers: jsonHeaders(token),
@@ -2062,6 +2064,8 @@ if (!e2eConfig) {
       expect(supportBundle.body.includesSecrets).toBe(false);
       expect(supportBundle.body.factoryCount).toBeGreaterThanOrEqual(2);
       expect(supportBundle.body.orgId).toBe(fixture!.orgA.id);
+      expect(supportBundle.body.traceCount).toBeGreaterThanOrEqual(1);
+      expect(Array.isArray(supportBundle.body.traces)).toBe(true);
 
       const secondProfileRows = await owner!.unsafe<
         Array<{ profile_id: string; org_id: string }>

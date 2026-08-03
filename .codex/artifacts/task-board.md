@@ -469,6 +469,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-146 | OTel-style request tracing interceptor/service/API | PX-10/46 | Done | `round62-otel-request-tracing.md`; Jest 69/306; OpenAPI 212/212; E2E 28/28 |
 
+## Wave Final5 - Support Bundle Trace Inclusion (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-147 | Support bundle includes redacted recent traces | PX-10/09 | Done | `round63-support-bundle-traces.md`; E2E 28/28 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.
