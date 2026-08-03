@@ -35,6 +35,9 @@
   `ewoh_event`，48 张受管表包装不变。
 - OEE/安灯闭环：设备状态时序、OEE 计算与停机原因分布、安灯状态机、
   SLA 升级通知与审计，复用 `ewoh_event` / `ewoh_notification`。
+- ERP 连接器：入站订单幂等并自动生成工单、出站消息队列与确认/失败状态、
+  对账汇总，复用 `ewoh_event` / `ewoh_schedule_task` /
+  `ewoh_schedule_task_step`。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

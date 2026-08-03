@@ -7,17 +7,17 @@ Owner: AG-00/AG-41
 
 - Python unittest: 667 passed.
 - Python repo contract tests: 59 passed.
-- NestJS Jest: 196 passed across 49 suites (includes SP-01..SP-08 scenario
+- NestJS Jest: 201 passed across 50 suites (includes SP-01..SP-08 scenario
   suite).
-- HTTP + PostgreSQL E2E: 16 passed (auth, RBAC, refresh rotation/logout, org
+- HTTP + PostgreSQL E2E: 17 passed (auth, RBAC, refresh rotation/logout, org
   isolation, control/resource/world persistence, canonical UnifiedExoFrame
   ingestion, gamification allocation persistence, approval persistence,
   system config org scoping, complete MES work order execution, and
-  OEE/andon SLA escalation).
+  OEE/andon SLA escalation, plus ERP inbound/outbound/reconcile).
 - NestJS type check, lint, and Standalone production build: passed.
 - One-click `scripts/standalone-check.sh`: passed with E2E, OpenAPI strict
   audit, DDL plans, and standalone DDL hygiene.
-- OpenAPI contract: 123 controller operations documented, 0 undocumented,
+- OpenAPI contract: 129 controller operations documented, 0 undocumented,
   0 unimplemented; `openapi/route-manifest.json` generated.
 - Full release drill: `RELEASE DRILL PASSED` against disposable PostgreSQL 17,
   including migration/RLS/audit/rollback/rebuild, 176 Jest tests, 107/107
@@ -39,6 +39,8 @@ Owner: AG-00/AG-41
 - OEE/andon: device status timeline, OEE calculation with downtime breakdown,
   andon state machine, and SLA escalation notification persisted to
   PostgreSQL with org scoping and audit.
+- ERP connector: idempotent inbound orders, outbound message queue with ack,
+  and reconciliation summary persisted to PostgreSQL with org scoping.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

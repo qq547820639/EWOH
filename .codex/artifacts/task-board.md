@@ -161,6 +161,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-093 | OEE/Andon closed loop | AG-12/14/22 | Done | `round11-oee-andon.md`; E2E 16/16; OpenAPI 123/123 |
 
+## Wave Final4 - ERP Connector (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-094 | ERP connector skeleton | AG-18/03/11 | Done | `round12-erp-connector.md`; E2E 17/17; OpenAPI 129/129 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

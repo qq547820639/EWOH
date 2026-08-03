@@ -1344,6 +1344,147 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/erp/orders:
+    post:
+      tags:
+        - erp
+      summary: Receive ERP order and create a work order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErpInboundOrderRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErpOrderEvent'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - erp
+      summary: List received ERP orders
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErpOrderList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/erp/outbound:
+    post:
+      tags:
+        - erp
+      summary: Queue an ERP outbound message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErpOutboundRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErpOutboundEvent'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - erp
+      summary: List ERP outbound messages
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErpOutboundList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/erp/outbound/{id}/ack:
+    post:
+      tags:
+        - erp
+      summary: Acknowledge ERP outbound delivery
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Outbound event id
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErpAckRequest'
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErpOutboundEvent'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/erp/reconcile:
+    post:
+      tags:
+        - erp
+      summary: Reconcile ERP orders and outbound messages
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErpReconcileReport'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/oee/device-status:
     post:
       tags:
@@ -5854,6 +5995,122 @@ components:
       required:
         - quantity
       additionalProperties: false
+    ErpInboundOrderRequest:
+      type: object
+      properties:
+        externalOrderId:
+          type: string
+        productCode:
+          type: string
+        quantity:
+          type: number
+        dueDate:
+          type: string
+        bom:
+          type: array
+          items:
+            type: object
+            properties:
+              materialId:
+                type: string
+              quantity:
+                type: number
+      required:
+        - externalOrderId
+        - productCode
+        - quantity
+    ErpOrderEvent:
+      type: object
+      properties:
+        eventId:
+          type: string
+        eventCode:
+          type: string
+        eventType:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+        evidenceJson:
+          type: object
+          nullable: true
+    ErpOrderList:
+      type: array
+      items:
+        $ref: '#/components/schemas/ErpOrderEvent'
+    ErpOutboundRequest:
+      type: object
+      properties:
+        outboundId:
+          type: string
+        type:
+          type: string
+          enum:
+            - production_report
+            - material_consumption
+            - inventory_receipt
+        externalOrderId:
+          type: string
+        payload:
+          type: object
+      required:
+        - outboundId
+        - type
+        - externalOrderId
+        - payload
+    ErpOutboundEvent:
+      type: object
+      properties:
+        eventId:
+          type: string
+        eventCode:
+          type: string
+        eventType:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+        evidenceJson:
+          type: object
+          nullable: true
+    ErpOutboundList:
+      type: array
+      items:
+        $ref: '#/components/schemas/ErpOutboundEvent'
+    ErpAckRequest:
+      type: object
+      properties:
+        success:
+          type: boolean
+        error:
+          type: string
+      required:
+        - success
+    ErpReconcileReport:
+      type: object
+      properties:
+        orders:
+          type: object
+          properties:
+            total:
+              type: integer
+            byStatus:
+              type: object
+        outbound:
+          type: object
+          properties:
+            total:
+              type: integer
+            byStatus:
+              type: object
+        completedErpWorkOrders:
+          type: integer
     DeviceStatusEvent:
       type: object
       properties:

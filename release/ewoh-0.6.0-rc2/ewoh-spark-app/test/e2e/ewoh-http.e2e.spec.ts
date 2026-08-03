@@ -824,6 +824,118 @@ if (!e2eConfig) {
       expect(andonRows[0].org_id).toBe(fixture!.orgA.id);
     });
 
+    it('receives ERP orders idempotently and tracks outbound acknowledgments', async () => {
+      const dispatcher = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcher.status).toBe(201);
+      const token = dispatcher.body.accessToken;
+      const externalOrderId = `SO-E2E-${runId}`;
+      const outboundId = `OB-E2E-${runId}`;
+
+      const first = await apiRequest<{
+        duplicate: boolean;
+        order: { eventId: string };
+        workOrderId: string;
+      }>(baseUrl, '/api/erp/orders', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          externalOrderId,
+          productCode: 'ERP-PROD',
+          quantity: 10,
+          bom: [{ materialId: 'MAT-ERP', quantity: 2 }],
+        }),
+      });
+      expect(first.status).toBe(201);
+      expect(first.body.duplicate).toBe(false);
+      expect(first.body.workOrderId).toBeTruthy();
+
+      const second = await apiRequest<{
+        duplicate: boolean;
+        order: { eventId: string };
+      }>(baseUrl, '/api/erp/orders', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          externalOrderId,
+          productCode: 'ERP-PROD',
+          quantity: 10,
+        }),
+      });
+      expect(second.status).toBe(201);
+      expect(second.body.duplicate).toBe(true);
+      expect(second.body.order.eventId).toBe(first.body.order.eventId);
+
+      const queued = await apiRequest<{
+        duplicate: boolean;
+        outbound: { eventId: string; status: string };
+      }>(baseUrl, '/api/erp/outbound', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          outboundId,
+          type: 'production_report',
+          externalOrderId,
+          payload: { quantity: 10 },
+        }),
+      });
+      expect(queued.status).toBe(201);
+      expect(queued.body.duplicate).toBe(false);
+      expect(queued.body.outbound.status).toBe('pending');
+
+      const acked = await apiRequest<{ status: string }>(
+        baseUrl,
+        `/api/erp/outbound/${queued.body.outbound.eventId}/ack`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({ success: true }),
+        },
+      );
+      expect(acked.status).toBe(201);
+      expect(acked.body.status).toBe('sent');
+
+      const reconcile = await apiRequest<{
+        orders: { total: number; byStatus: Record<string, number> };
+        outbound: { total: number; byStatus: Record<string, number> };
+        completedErpWorkOrders: number;
+      }>(baseUrl, '/api/erp/reconcile', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+      });
+      expect(reconcile.status).toBe(201);
+      expect(reconcile.body.orders.total).toBeGreaterThanOrEqual(1);
+      expect(reconcile.body.outbound.total).toBeGreaterThanOrEqual(1);
+      expect(reconcile.body.outbound.byStatus.sent).toBeGreaterThanOrEqual(1);
+      expect(reconcile.body.completedErpWorkOrders).toBe(0);
+
+      const orderRows = await owner!.unsafe<
+        Array<{ event_id: string; org_id: string }>
+      >(
+        `select event_id, org_id::text
+         from public.ewoh_event
+         where event_id = $1`,
+        [first.body.order.eventId],
+      );
+      expect(orderRows).toHaveLength(1);
+      expect(orderRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const workOrderRows = await owner!.unsafe<
+        Array<{ schedule_task_id: string; source: string; org_id: string }>
+      >(
+        `select schedule_task_id, source, org_id::text
+         from public.ewoh_schedule_task
+         where schedule_task_id = $1`,
+        [first.body.workOrderId],
+      );
+      expect(workOrderRows).toHaveLength(1);
+      expect(workOrderRows[0].source).toBe('erp');
+      expect(workOrderRows[0].org_id).toBe(fixture!.orgA.id);
+    });
+
     it('persists approval instances, steps, and audit operations', async () => {
       const adminA = await login(
         baseUrl,

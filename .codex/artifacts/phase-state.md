@@ -36,6 +36,8 @@ the production approval gate.
   inspection closed loop is implemented and verified end to end.
 - OEE/andon closed loop: device status timeline, OEE calculation, andon state
   machine, and SLA escalation notification are implemented and verified.
+- ERP connector: idempotent inbound orders, outbound queue with ack, and
+  reconciliation summary are implemented and verified.
 
 ## Active Tasks
 
