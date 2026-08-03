@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T23:14:00.257Z",
+  "generatedAt": "2026-08-03T23:19:05.199Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 251,
-    "edgeCount": 38,
+    "itemCount": 252,
+    "edgeCount": 39,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 108,
+    "evidenceCount": 109,
     "gateCount": 14,
     "riskCount": 15,
-    "decisionCount": 51,
+    "decisionCount": 52,
     "statusCounts": {
-      "Done": 158,
+      "Done": 159,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2612,6 +2612,18 @@
       "evidence": "`round103-git-sync-apply-gate.md`; E2E 33/33"
     },
     {
+      "id": "T-217",
+      "title": "Final standalone gate with real PG on current code",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51/00",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)",
+      "evidence": "`round104-final-standalone-gate.md`; ALL STANDALONE CHECKS PASSED"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -3088,111 +3100,118 @@
     },
     {
       "id": "E-023",
+      "from": "T-217",
+      "to": "EVD-round104-final-standalone-gate",
+      "edgeType": "evidence",
+      "blocking": false
+    },
+    {
+      "id": "E-024",
       "from": "G10",
       "to": "EVD-round69-final6-work-orchestration",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-024",
+      "id": "E-025",
       "from": "T-198",
       "to": "EVD-round90-p0-mobile-orchestration-1",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-025",
+      "id": "E-026",
       "from": "T-199",
       "to": "EVD-round90-p0-mobile-orchestration-2",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-026",
+      "id": "E-027",
       "from": "T-200",
       "to": "EVD-round90-p0-mobile-orchestration-3",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-027",
+      "id": "E-028",
       "from": "T-201",
       "to": "EVD-round90-p0-mobile-orchestration-4",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-028",
+      "id": "E-029",
       "from": "T-202",
       "to": "EVD-round90-p0-mobile-orchestration-5",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-029",
+      "id": "E-030",
       "from": "T-203",
       "to": "EVD-round91-review-fixes",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-030",
+      "id": "E-031",
       "from": "T-206",
       "to": "EVD-round92-real-pg-e2e-browser",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-031",
+      "id": "E-032",
       "from": "T-204",
       "to": "EVD-round93-onboarding-mapping-real-gate-1",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-032",
+      "id": "E-033",
       "from": "T-205",
       "to": "EVD-round93-onboarding-mapping-real-gate-2",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-033",
+      "id": "E-034",
       "from": "T-207",
       "to": "EVD-round94-world-replay-unified-timeline",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-034",
+      "id": "E-035",
       "from": "T-208",
       "to": "EVD-round95-esop-signoff",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-035",
+      "id": "E-036",
       "from": "T-209",
       "to": "EVD-round96-quality-schemes",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-036",
+      "id": "E-037",
       "from": "T-210",
       "to": "EVD-round97-slow-query-observability",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-037",
+      "id": "E-038",
       "from": "T-211",
       "to": "EVD-round98-frontend-performance",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-038",
+      "id": "E-039",
       "from": "T-212",
       "to": "EVD-round99-role-workbench",
       "edgeType": "evidence",
@@ -3686,7 +3705,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "c0478b6b755c7b255cd1a5bcdf305d6bb82e2ed7d957a756519be01132818ed2",
+      "checksum": "18e6d2eb637016f838775df3e7deb88fabb7c88873413d654495d79105ce2a0e",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3695,7 +3714,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "8009f858b6631676d62359a714c690abc55271afd9054e3cb23d39eebedba464",
+      "checksum": "f6a98133fb53b3dc6425a1c97b81dd862658934d54dfb99af7f7f0afbd673275",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3722,7 +3741,7 @@
       "artifactId": "decision-log-md",
       "path": "decision-log.md",
       "mediaType": "text/markdown",
-      "checksum": "d3b13e39fa47773c25e712c523265be515fa4abacc174f25f2ac9b5ee62d534e",
+      "checksum": "acf180302c4e773e6cf7a497938e59a98725eae3eec0de3b45588fef2687f32d",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3731,7 +3750,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "e3885989d9b9ce9137375cddc924c17f1a8fd9ea1f6dcb2d8995652023990ba7",
+      "checksum": "21b07e62a1b81a7ff67b4981a6c19d3e75cb242e24891cfa5612f3bc5dc1e29f",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3740,7 +3759,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "e145863369609c3e1b41a699de8e63d07d9919f70b7fe29c5b5d33e262226761",
+      "checksum": "5f13ee0eb9584dc40a502e04aede61d20fdf2890b8aff6448a0f674b96298789",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3930,6 +3949,24 @@
       "testTime": "2026-08-04T18:00:00.000Z",
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T18:00:00.000Z",
+      "status": "valid"
+    },
+    {
+      "evidenceId": "EVD-round104-final-standalone-gate",
+      "workItemId": "T-217",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round104-final-standalone-gate.md",
+      "checksum": "026967a2efd28293a6177182d2c757202125105a6a39cb8debc754f3b1b69ace",
+      "result": "passed",
+      "title": "Round 104 - Final Standalone Gate",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "3013633c237f1ce9d63f1374e759b173378e2640",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-04T19:00:00.000Z",
+      "verifier": "AG-00 local gate",
+      "expiresAt": "2026-11-02T19:00:00.000Z",
       "status": "valid"
     },
     {
@@ -6573,6 +6610,14 @@
       "decision": "Add approval-gated Git Sync apply API; live creation still requires work-writable + GitHub approval env",
       "rationale": "Live GitHub issue creation must remain human-approved",
       "reversibility": "Reversible per endpoint"
+    },
+    {
+      "id": "D-054",
+      "title": "Run final standalone gate with real PG after all recent waves",
+      "date": "2026-08-04",
+      "decision": "Run final standalone gate with real PG after all recent waves",
+      "rationale": "One-click gate must prove current code, not historical evidence",
+      "reversibility": "Evidence only"
     }
   ],
   "resources": [

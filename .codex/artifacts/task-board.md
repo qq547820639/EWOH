@@ -583,6 +583,7 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-214 | Pilot readiness rerun with current code and real PG | AG-51/00 | Done | `round101-pilot-readiness-rerun.md`; passed=7 failed=3 pending=5 NOT READY |
 | T-215 | Event replay context UI in command map event center | AG-31 | Done | `round102-replay-context-ui.md`; client 15/50 |
 | T-216 | Approval-gated Git Sync apply endpoint | ORCH-01/51 | Done | `round103-git-sync-apply-gate.md`; E2E 33/33 |
+| T-217 | Final standalone gate with real PG on current code | AG-51/00 | Done | `round104-final-standalone-gate.md`; ALL STANDALONE CHECKS PASSED |
 
 ## Next Waves
 

@@ -128,3 +128,9 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
   decision.
 - Work graph after git sync apply wave: 251 items / 108 evidence /
   0 invariant conflicts.
+
+## 2026-08-04 Final Standalone Gate
+
+- Full one-click gate with real PostgreSQL: `ALL STANDALONE CHECKS PASSED`.
+- Server 81/391, client 15/50, E2E 33/33, browser 5/5, OpenAPI 248/248.
+- Work graph: 252 items / 109 evidence / 0 invariant conflicts.
