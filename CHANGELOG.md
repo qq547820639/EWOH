@@ -44,6 +44,9 @@
   `STANDALONE SECURITY VERIFY OK`。
 - 浏览器证据：Playwright 对 Standalone `/login` 在移动端（390x844）与桌面端
   （1440x900）截图，输出到 `output/playwright/iteration-login-*.png`。
+- 请求关联：TracingInterceptor 通过 `AsyncLocalStorage` 把 `requestId` 传给
+  审计写入路径，`AuditLogEntry.requestId` 自动填充；repo-facts 增加
+  `request_context_correlation` 门禁。
 
 ## [0.6.0-rc3] - 2026-08-04
 

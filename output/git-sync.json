@@ -1,12 +1,12 @@
 {
   "schema": "ewoh:///git-sync/v1",
-  "generatedAt": "2026-08-03T20:13:02.404Z",
+  "generatedAt": "2026-08-03T20:17:34.475Z",
   "repository": "git@github.com:qq547820639/EWOH.git",
   "branch": "codex/ewoh-iteration-2026-08-04",
-  "headSha": "fa3c31c247c7e01865bd95217d80a9135327db69",
-  "itemCount": 209,
+  "headSha": "6e76d58149866f0afbb88992cb35750c7defbdb2",
+  "itemCount": 210,
   "trackedCount": 0,
-  "missingCount": 209,
+  "missingCount": 210,
   "status": "offline",
   "source": ".codex/artifacts/work/git-sync.json",
   "items": [
@@ -2831,6 +2831,21 @@
       "missing": true
     },
     {
+      "workItemId": "T-189",
+      "title": "Request ID audit correlation",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/11",
+      "evidence": "AsyncLocalStorage request context; audit entries auto-filled; repo facts 33/33",
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "issueNumber": null,
+      "prNumber": null,
+      "branch": null,
+      "commitSha": null,
+      "state": "unlinked",
+      "missing": true
+    },
+    {
       "workItemId": "W0",
       "title": "docs, repo inventory, C1-C6 v1, environment probes",
       "type": "wave",
@@ -3042,7 +3057,7 @@
     },
     {
       "workItemId": "W7",
-      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue/photo/PWA, ValidationPipe, command-map details, state guards, scale idempotency",
+      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue/photo/PWA, ValidationPipe, command-map details, state guards, scale idempotency, request-audit correlation",
       "type": "wave",
       "status": "Proposed",
       "owner": "AG-00",

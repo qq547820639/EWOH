@@ -325,6 +325,30 @@ function auditRepoFacts(rootDir) {
     'PWA manifest, service worker, HTML link, and client registration must all exist',
   );
 
+  const requestContextFile = readFile(
+    rootDir,
+    'ewoh-spark-app/server/common/request-context.ts',
+  );
+  const tracingInterceptor = readFile(
+    rootDir,
+    'ewoh-spark-app/server/modules/tracing/tracing.interceptor.ts',
+  );
+  const auditService = readFile(
+    rootDir,
+    'ewoh-spark-app/server/modules/shared/audit.service.ts',
+  );
+  const requestContextCorrelated = Boolean(
+    requestContextFile?.includes('AsyncLocalStorage') &&
+      tracingInterceptor?.includes('withRequestContext') &&
+      auditService?.includes('currentRequestContext'),
+  );
+  check(
+    checks,
+    'request_context_correlation',
+    requestContextCorrelated,
+    'Request ID must flow from tracing into audit entries via AsyncLocalStorage',
+  );
+
   return checks;
 }
 

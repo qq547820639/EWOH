@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { currentRequestContext } from '../../common/request-context';
 import { DatabaseAuditSink } from './database-audit-sink';
 
 export interface AuditLogEntry {
@@ -98,6 +99,7 @@ export class AuditService {
   async appendAuditLog(entry: AuditLogEntry): Promise<void> {
     const record: AuditLogEntry = {
       ...entry,
+      requestId: entry.requestId ?? currentRequestContext()?.requestId,
       before: this.redact(entry.before),
       after: this.redact(entry.after),
       metadata: entry.metadata ? (this.redact(entry.metadata) as Record<string, unknown>) : undefined,

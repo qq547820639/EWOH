@@ -1,3 +1,4 @@
+import { withRequestContext } from '../../../server/common/request-context';
 import { AuditService, InMemoryAuditSink } from '../../../server/modules/shared/audit.service';
 
 describe('AuditService', () => {
@@ -57,5 +58,22 @@ describe('AuditService', () => {
     expect(redacted.health.controlCredential).toBe('[REDACTED]');
     expect(redacted.nested.keyVersion).toBe(3);
     expect(redacted.username).toBe('alice');
+  });
+
+  it('attaches the active request id to audit entries', async () => {
+    const sink = new InMemoryAuditSink();
+    const service = new AuditService(sink);
+
+    await withRequestContext({ requestId: 'req-123' }, () =>
+      service.appendAuditLog({
+        actorId: 'user-1',
+        orgId: 'org-1',
+        action: 'device.update',
+        entityType: 'device',
+        entityId: 'dev-1',
+      }),
+    );
+
+    expect(sink.entries[0].requestId).toBe('req-123');
   });
 });

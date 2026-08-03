@@ -5,7 +5,8 @@ import {
   NestInterceptor,
 } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
-import { catchError, Observable, tap } from 'rxjs';
+import { catchError, defer, lastValueFrom, Observable, tap } from 'rxjs';
+import { withRequestContext } from '../../common/request-context';
 import { TracingService, type TraceRecord } from './tracing.service';
 
 @Injectable()
@@ -34,31 +35,45 @@ export class TracingInterceptor implements NestInterceptor {
     const method = request.method ?? 'UNKNOWN';
     const path = request.route?.path ?? request.path ?? '';
 
-    return next.handle().pipe(
-      tap(() => {
-        this.record(traceId, spanId, method, path, response.statusCode ?? 200, startedAt, startedIso);
-      }),
-      catchError((error: unknown) => {
-        const status =
-          typeof (error as { status?: unknown })?.status === 'number'
-            ? Number((error as { status: unknown }).status)
-            : response.statusCode ?? 500;
-        this.record(
-          traceId,
-          spanId,
-          method,
-          path,
-          status,
-          startedAt,
-          startedIso,
-          error instanceof Error
-            ? error.message
-            : error !== null && typeof error === 'object'
-              ? JSON.stringify(error)
-              : String(error),
-        );
-        throw error;
-      }),
+    return defer(() =>
+      withRequestContext({ requestId: traceId }, () =>
+        lastValueFrom(
+          next.handle().pipe(
+            tap(() => {
+              this.record(
+                traceId,
+                spanId,
+                method,
+                path,
+                response.statusCode ?? 200,
+                startedAt,
+                startedIso,
+              );
+            }),
+            catchError((error: unknown) => {
+              const status =
+                typeof (error as { status?: unknown })?.status === 'number'
+                  ? Number((error as { status: unknown }).status)
+                  : response.statusCode ?? 500;
+              this.record(
+                traceId,
+                spanId,
+                method,
+                path,
+                status,
+                startedAt,
+                startedIso,
+                error instanceof Error
+                  ? error.message
+                  : error !== null && typeof error === 'object'
+                    ? JSON.stringify(error)
+                    : String(error),
+              );
+              throw error;
+            }),
+          ),
+        ),
+      ),
     );
   }
 

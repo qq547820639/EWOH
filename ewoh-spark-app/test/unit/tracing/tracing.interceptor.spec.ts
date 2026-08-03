@@ -1,4 +1,5 @@
 import { lastValueFrom, of, throwError } from 'rxjs';
+import { currentRequestContext } from '../../../server/common/request-context';
 import { TracingInterceptor } from '../../../server/modules/tracing/tracing.interceptor';
 import { TracingService } from '../../../server/modules/tracing/tracing.service';
 
@@ -23,14 +24,19 @@ describe('TracingInterceptor', () => {
       },
       statusCode: 200,
     };
+    let seenRequestId: string | undefined;
 
     await lastValueFrom(
       interceptor.intercept(context(response) as never, {
-        handle: () => of({ ok: true }),
+        handle: () => {
+          seenRequestId = currentRequestContext()?.requestId;
+          return of({ ok: true });
+        },
       } as never),
     );
 
     expect(headers['x-trace-id']).toMatch(/^[a-f0-9]{32}$/);
+    expect(seenRequestId).toBe(headers['x-trace-id']);
     const traces = service.list();
     expect(traces).toHaveLength(1);
     expect(traces[0].path).toBe('/api/me');
