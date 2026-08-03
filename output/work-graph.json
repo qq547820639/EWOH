@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T20:45:45.175Z",
+  "generatedAt": "2026-08-03T20:47:18.166Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 230,
+    "itemCount": 231,
     "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 87,
+    "evidenceCount": 88,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 36,
     "statusCounts": {
-      "Done": 137,
+      "Done": 138,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2333,7 +2333,7 @@
         "AG-51"
       ],
       "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
-      "evidence": "`release/ewoh-0.6.0-rc4` 1200 files; SHA256SUMS; scale-release-review PASSED"
+      "evidence": "`release/ewoh-0.6.0-rc4` 1201 files; SHA256SUMS; scale-release-review PASSED"
     },
     {
       "id": "T-194",
@@ -2358,6 +2358,18 @@
       ],
       "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
       "evidence": "`standalone.yml` installs Chromium and runs `npm run test:browser`"
+    },
+    {
+      "id": "T-196",
+      "title": "Pilot readiness rerun (RC4)",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51/00",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "7 passed / 3 failed (Docker/Kubectl/Helm absent) / 5 pending external; NOT READY"
     },
     {
       "id": "G0",
@@ -3323,7 +3335,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "36bebe3b2f73011e769f82f93f381218071fc8aa5ce90353c250e33b67af1261",
+      "checksum": "03ba0d9155630f43e79a7ce5ae0b9c39f9cf926ba886af979da7a8f9fb4e6c60",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3368,7 +3380,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "98ea3984169165f7514c1353574fe6a2697b72e5a7411c0fbe6c9251b8dd9e3f",
+      "checksum": "da9b266b7dbd240f2cdbd7c660a0bdf7e5472517c59d93144de9e77cb649e859",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3377,7 +3389,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "9d56ceddb2d61f4b31d5c2c6242a156fdd8c078c7a629f7d9851e840f988c0df",
+      "checksum": "0b57fbd6018296b561cbd9182b95860704f912e3789385e847b5f58752d5276c",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4208,7 +4220,7 @@
       "workItemId": "",
       "kind": "test",
       "path": ".codex/artifacts/work/evidence/round85-rc4-candidate-bundle.md",
-      "checksum": "b14b34b6262bba3ea9709a3795dd7476ef1c3942e04db51029efc63e60502690",
+      "checksum": "59c9629c492ca2c5b2b82efd38022d4d1fd57e0f44e79bda353377675f56c629",
       "result": "passed",
       "title": "Round 85 - 2026-08-04 EWOH 0.6.0-rc4 Candidate Bundle"
     },
@@ -4229,6 +4241,15 @@
       "checksum": "11682ea2cd56e050be2511af6e52504dbb3dbd62b720946ea3f344ba22f38b7e",
       "result": "passed",
       "title": "Round 87 - 2026-08-04 Browser Tests in CI"
+    },
+    {
+      "evidenceId": "EVD-round88-pilot-readiness-rc4",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round88-pilot-readiness-rc4.md",
+      "checksum": "c7d03dfc161e280485e4e6294fcffe2a1690b99c5428365b31d63b7c0725cb59",
+      "result": "passed",
+      "title": "Round 88 - 2026-08-04 Pilot Readiness Gate (RC4)"
     },
     {
       "evidenceId": "EVD-round9-observability-deploy-artifacts",

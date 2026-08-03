@@ -557,6 +557,7 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-193 | EWOH 0.6.0-rc4 candidate bundle | AG-51 | Done | `release/ewoh-0.6.0-rc4` 1200 files; SHA256SUMS; scale-release-review PASSED |
 | T-194 | Authenticated Playwright browser tests | AG-13/30 | Done | dispatcher login + command center/map/mobile workbench on real PG fixture; `npm run test:browser` 3/3 |
 | T-195 | Browser tests in CI | AG-51/13 | Done | `standalone.yml` installs Chromium and runs `npm run test:browser` |
+| T-196 | Pilot readiness rerun (RC4) | AG-51/00 | Done | 7 passed / 3 failed (Docker/Kubectl/Helm absent) / 5 pending external; NOT READY |
 
 ## Next Waves
 

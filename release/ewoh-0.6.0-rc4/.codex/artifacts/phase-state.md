@@ -66,6 +66,9 @@ Trace: EWOH-2026-08-04-principal-final6
   fixture (`npm run test:browser`).
 - CI runs the Playwright browser suite: `standalone.yml` installs Chromium and
   executes `npm run test:browser` after HTTP+PostgreSQL E2E.
+- Pilot readiness rerun: 7 passed (rc4 bundle, evidence, training, runbook,
+  manifest, DB verify, runtime connect), 3 failed (Docker/Kubectl/Helm absent
+  locally), 5 pending external approval/signoff; result NOT READY.
 - Full standalone gate: typecheck, lint, Jest 76 suites / 362 tests, client
   13 suites / 42 tests, repo facts 33/33, OpenAPI 232/232, production build, and
 
