@@ -61,6 +61,7 @@ evidence:
   erp_mes_connector: "erp-mes-profile-1.0.0 manifest; secret-ref config; connector tests 11; pytest 82 passed"
   scale_metrics: "GET /api/scale/metrics counts/published rate/ring distribution/compatibility"
   scenario_uninstall: "POST /api/scale/scenario-packs/:id/uninstall with audit"
+  connector_tck: "scripts/connector-tck.py + make connector-tck; 11 checks"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

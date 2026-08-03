@@ -136,6 +136,8 @@
   映射计数、发布率、升级环分布与兼容性汇总。
 - 场景包卸载：`POST /api/scale/scenario-packs/:id/uninstall` 将场景包置为
   `uninstalled` 并写审计，补齐安装/演示/验收/移除生命周期。
+- 连接器 TCK：`scripts/connector-tck.py` 与 `make connector-tck` 执行 11 项
+  Manifest/配置/健康/脱敏/乱序补传检查。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

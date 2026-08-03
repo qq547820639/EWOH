@@ -3,7 +3,7 @@
 # 开发环境推荐以进程方式运行（make run），docker-compose 用于试点部署。
 # 代码采用 src/ 布局，运行入口通过 PYTHONPATH=src 解析 edge_platform 包。
 
-.PHONY: run run-stub demo test test-contract lint lint-fix security format clean help
+.PHONY: run run-stub demo test test-contract connector-tck lint lint-fix security format clean help
 
 PYTHON ?= python3
 
@@ -24,6 +24,9 @@ test:  ## 运行 unittest 测试套件
 
 test-contract:  ## 运行契约测试（tests/，需 pytest；也可用 unittest 运行）
 	PYTHONPATH=src $(PYTHON) -m pytest tests/ -q
+
+connector-tck:  ## 运行连接器 TCK（Manifest/配置/健康/脱敏/乱序补传）
+	PYTHONPATH=src $(PYTHON) scripts/connector-tck.py
 
 lint:  ## 静态检查（ruff，不修改代码）
 	ruff check src/edge_platform

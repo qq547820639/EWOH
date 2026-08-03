@@ -105,6 +105,8 @@ production approval gate.
   counts, published rate, ring distribution, and compatibility summary.
 - Scenario lifecycle: `POST /api/scale/scenario-packs/:id/uninstall` removes a
   scenario pack with audit, completing install/demo/accept/remove flow.
+- Connector TCK: `scripts/connector-tck.py` and `make connector-tck` run 11
+  manifest/config/health/redaction/sequence checks.
 
 ## Active Tasks
 

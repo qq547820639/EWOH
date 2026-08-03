@@ -331,6 +331,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-123 | Scenario pack uninstall API + audit | PX-07/18 | Done | `round39-scenario-uninstall.md`; E2E uninstall passed |
 
+## Wave Final5 - Connector TCK (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-124 | Connector TCK runner + make entry | V-CON/11 | Done | `round40-connector-tck.md`; 11 checks passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

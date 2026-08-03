@@ -146,6 +146,8 @@ Owner: AG-00/AG-41
   in E2E.
 - Scenario uninstall: `POST /api/scale/scenario-packs/:id/uninstall` marks a
   scenario pack `uninstalled`, writes audit, and is verified in PostgreSQL.
+- Connector TCK: `scripts/connector-tck.py` runs 11 manifest/config/health/
+  redaction/sequence checks and is exposed through `make connector-tck`.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.
