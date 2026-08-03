@@ -30,10 +30,10 @@ artifacts:
   final6_catalog: catalog/
   contracts: contracts/
 evidence:
-  jest: "79 suites / 380 tests"
+  jest: "79 suites / 383 tests"
   client_jest: "13 suites / 46 tests"
-  e2e: "30/30 HTTP + PostgreSQL (onboarding/mapping/replay real paths included)"
-  openapi: "235/235 documented, 0 unimplemented"
+  e2e: "31/31 HTTP + PostgreSQL (onboarding/mapping/replay/SOP real paths included)"
+  openapi: "240/240 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/client-jest/repo-facts/openapi/e2e/browser/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   postgres_gate: "standalone-postgres-check PASSED; 51 managed tables / 51 RLS / audit chain / rollback to 0 objects / rebuild"
@@ -41,10 +41,11 @@ evidence:
   python: "unittest 667 passed; pytest 120 passed; ruff clean"
   perf: "500 req / 50 concurrency on /health/live, 4610 qps, p95 26.83ms"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; 57 tables backup/restore/verify; identity sequence advanced"
-  work_graph: "242 items / 29 edges / 48 actors / 99 evidence / 14 gates / 0 invariant conflicts"
-  git_sync: "offline-first issue/PR plan; 228 items; live creation approval-gated"
+  work_graph: "243 items / 30 edges / 48 actors / 100 evidence / 14 gates / 0 invariant conflicts"
+  git_sync: "offline-first issue/PR plan; 229 items; live creation approval-gated"
   console_ux: "DAG pan/zoom, node search, gate/evidence filters, evidence content preview, batch gate decisions, handoff state actions, lock countdown, site readiness tab, q/limit/offset API, tools/work-console blocker diagnosis, evidence binding status"
   world_replay: "unified task/material/quality/alert lanes; event before/during/after context; replay-derived issue creation with causal chain"
+  esop: "versioned SOP register/publish/diff; mandatory step sign-off; tool/material confirmation persisted in resultJson.sop.signatures"
   factory_replication: "replication-report schema + passing/failing fixtures; 20 factory contract checks"
   site_readiness: "site-readiness schema + ready/not-ready fixtures; standalone gate passes ready fixture"
   release_review: "scale-release-review.js packaging gate; 34/34 checks"

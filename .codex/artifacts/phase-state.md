@@ -131,6 +131,8 @@ Trace: EWOH-2026-08-04-principal-final6
   materials timestamp.
 - Real PostgreSQL E2E: 31/31 passed including SOP register/publish/diff and
   sign-off gating.
+- Full suite after E-SOP wave: server Jest 79/383, client 13/46, OpenAPI
+  240/240, work graph 243 nodes / 100 evidence / 0 invariant conflicts.
 
 ## Current Phase
 
