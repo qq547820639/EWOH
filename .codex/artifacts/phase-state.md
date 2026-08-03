@@ -154,6 +154,15 @@ Trace: EWOH-2026-08-04-principal-final6
 - Full suite after observability wave: server Jest 80/388, client 13/46,
   OpenAPI 246/246, work graph 245 nodes / 102 evidence / 0 invariant conflicts.
 
+## Latest Round - 2026-08-04 Frontend Performance
+
+- Client page routes now use `React.lazy` with a shared Suspense fallback;
+  standalone build splits per-page chunks and the main bundle drops from
+  ~2.3MB to ~374KB.
+- World state and replay requests accept `AbortSignal` through React Query,
+  enabling cancellation on unmount/refetch.
+- Authenticated browser flows still pass 4/4.
+
 ## Current Phase
 
 Final 6.0 work orchestration wave: C7-C9 contracts, file-backed Work Graph

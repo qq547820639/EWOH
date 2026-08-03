@@ -145,7 +145,7 @@ const CommandMap = (): React.ReactElement => {
     refetch: refetchWorld,
   } = useQuery<CurrentWorldState>({
     queryKey: queryKeys.worldState,
-    queryFn: getWorldState,
+    queryFn: ({ signal }) => getWorldState(signal),
     refetchInterval: 2000,
     staleTime: QUERY_STALE_TIME_MS,
   });
@@ -170,7 +170,7 @@ const CommandMap = (): React.ReactElement => {
     isError: replayError,
   } = useQuery<ReplaySnapshot[]>({
     queryKey: queryKeys.replaySnapshots,
-    queryFn: () => getReplay(undefined, undefined, 120),
+    queryFn: ({ signal }) => getReplay(undefined, undefined, 120, signal),
     refetchInterval: replayMode ? 0 : 30000,
     staleTime: QUERY_STALE_TIME_MS,
   });

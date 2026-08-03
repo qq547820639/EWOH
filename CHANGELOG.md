@@ -102,6 +102,8 @@
   自动匹配；质检接口强制必检项并校验结果一致性。
 - 慢查询观测：数据库事务支持 `statement_timeout` 与慢事务阈值记录，新增
   `GET /api/observability/slow-queries` 与 `ewoh_slow_queries_total` 指标。
+- 前端性能：页面路由改为 `React.lazy` 分块加载，Standalone 主包从约 2.3MB
+  降至约 374KB；世界状态与回放请求支持 `AbortSignal` 取消。
 
 ## [0.6.0-rc3] - 2026-08-04
 
