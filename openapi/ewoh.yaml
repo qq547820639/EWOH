@@ -3549,6 +3549,183 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/mes/quality-schemes:
+    get:
+      tags:
+        - mes
+      summary: List quality inspection schemes
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AssetPackage'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - mes
+      summary: Register a quality inspection scheme
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - version
+                - stage
+                - checkItems
+              properties:
+                schemeId:
+                  type: string
+                name:
+                  type: string
+                version:
+                  type: string
+                stage:
+                  type: string
+                  enum: [first, in_process, final]
+                deviceIds:
+                  type: array
+                  items:
+                    type: string
+                stepTypes:
+                  type: array
+                  items:
+                    type: string
+                productCodes:
+                  type: array
+                  items:
+                    type: string
+                checkItems:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - itemId
+                      - name
+                    properties:
+                      itemId:
+                        type: string
+                      name:
+                        type: string
+                      required:
+                        type: boolean
+                      defectCode:
+                        type: string
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/quality-schemes/match:
+    get:
+      tags:
+        - mes
+      summary: Match published quality schemes by device/step/product
+      parameters:
+        - name: deviceId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: stepType
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: productCode
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Matching schemes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/quality-schemes/{id}:
+    get:
+      tags:
+        - mes
+      summary: Get one quality scheme
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/quality-schemes/{id}/publish:
+    post:
+      tags:
+        - mes
+      summary: Publish a quality scheme
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/tasks/{id}:
     get:
       tags:
@@ -10241,6 +10418,26 @@ components:
           type: number
         note:
           type: string
+        schemeId:
+          type: string
+        stage:
+          type: string
+          enum: [first, in_process, final]
+        checkResults:
+          type: array
+          items:
+            type: object
+            required:
+              - itemId
+              - result
+            properties:
+              itemId:
+                type: string
+              result:
+                type: string
+                enum: [pass, fail]
+              note:
+                type: string
       required:
         - stepId
         - result

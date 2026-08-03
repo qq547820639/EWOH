@@ -134,6 +134,14 @@ Trace: EWOH-2026-08-04-principal-final6
 - Full suite after E-SOP wave: server Jest 79/383, client 13/46, OpenAPI
   240/240, work graph 243 nodes / 100 evidence / 0 invariant conflicts.
 
+## Latest Round - 2026-08-04 Quality Schemes
+
+- Quality schemes registered/published/matched under `/api/mes/quality-schemes`
+  with `first/in_process/final` stages and required check items.
+- `qualityInspection` accepts `schemeId/stage/checkResults`, rejects missing
+  required checks and inconsistent pass results, and persists scheme results.
+- Real PostgreSQL E2E: 32/32 passed including scheme match and enforcement.
+
 ## Current Phase
 
 Final 6.0 work orchestration wave: C7-C9 contracts, file-backed Work Graph

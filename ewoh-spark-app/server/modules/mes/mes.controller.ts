@@ -132,4 +132,57 @@ export class MesController {
   diffSops(@Param('id') id: string, @Param('otherId') otherId: string) {
     return this.mesService.diffSops(id, otherId);
   }
+
+  @Get('quality-schemes')
+  listQualitySchemes() {
+    return this.mesService.listQualitySchemes();
+  }
+
+  @Get('quality-schemes/match')
+  matchQualitySchemes(
+    @Query('deviceId') deviceId?: string,
+    @Query('stepType') stepType?: string,
+    @Query('productCode') productCode?: string,
+  ) {
+    return this.mesService.matchQualitySchemes({
+      deviceId,
+      stepType,
+      productCode,
+    });
+  }
+
+  @Post('quality-schemes')
+  registerQualityScheme(
+    @Body() body: {
+      schemeId?: string;
+      name: string;
+      version: string;
+      stage: 'first' | 'in_process' | 'final';
+      checkItems: Array<{
+        itemId: string;
+        name: string;
+        required?: boolean;
+        defectCode?: string;
+      }>;
+      deviceIds?: string[];
+      stepTypes?: string[];
+      productCodes?: string[];
+    },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.mesService.registerQualityScheme(body, request.userContext);
+  }
+
+  @Get('quality-schemes/:id')
+  getQualityScheme(@Param('id') id: string) {
+    return this.mesService.getQualityScheme(id);
+  }
+
+  @Post('quality-schemes/:id/publish')
+  publishQualityScheme(
+    @Param('id') id: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.mesService.publishQualityScheme(id, request.userContext);
+  }
 }

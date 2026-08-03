@@ -71,3 +71,10 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
   confirmation are implemented and persisted without new DB tables.
 - Real PostgreSQL E2E now 31/31; server unit tests cover sign-off rejection
   and accepted signature persistence.
+
+## 2026-08-04 Quality Scheme Gate
+
+- Quality scheme registry, publish, auto-match, required check enforcement,
+  and result consistency are implemented and persisted.
+- Real PostgreSQL E2E now 32/32; server unit tests cover stage mismatch,
+  missing required checks, result mismatch, and passing checks.

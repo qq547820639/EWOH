@@ -1646,6 +1646,163 @@ if (!e2eConfig) {
       expect(reported.body.status).toBe('reported');
     });
 
+    it('matches quality schemes and enforces inspection check items', async () => {
+      const dispatcher = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcher.status).toBe(201);
+      const token = dispatcher.body.accessToken;
+      const schemeId = `QS-E2E-${runId}`;
+
+      const scheme = await apiRequest<{
+        packageId: string;
+        status: string;
+      }>(baseUrl, '/api/mes/quality-schemes', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          schemeId,
+          name: `首检 ${runId}`,
+          version: '1.0.0',
+          stage: 'first',
+          deviceIds: [`EXO-QS-${runId}`],
+          productCodes: [`PROD-QS-${runId}`],
+          checkItems: [
+            { itemId: 'CHK-1', name: '外观', required: true },
+            { itemId: 'CHK-2', name: '尺寸', required: false },
+          ],
+        }),
+      });
+      expect(scheme.status).toBe(201);
+
+      const published = await apiRequest<{ status: string }>(
+        baseUrl,
+        `/api/mes/quality-schemes/${schemeId}/publish`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+        },
+      );
+      expect(published.status).toBe(201);
+      expect(published.body.status).toBe('published');
+
+      const matched = await apiRequest<
+        Array<{ schemeId: string; stage: string }>
+      >(
+        baseUrl,
+        `/api/mes/quality-schemes/match?deviceId=${encodeURIComponent(`EXO-QS-${runId}`)}&productCode=${encodeURIComponent(`PROD-QS-${runId}`)}`,
+        { headers: jsonHeaders(token) },
+      );
+      expect(matched.status).toBe(200);
+      expect(matched.body.some((row) => row.schemeId === schemeId)).toBe(true);
+
+      const orderId = `WO-QS-${runId}`;
+      const created = await apiRequest<{
+        workOrder: { scheduleTaskId: string; status: string };
+        steps: Array<{ stepId: string; status: string }>;
+      }>(baseUrl, '/api/mes/work-orders', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          orderId,
+          title: `质检工单 ${runId}`,
+          productCode: `PROD-QS-${runId}`,
+          steps: [
+            {
+              name: '装配',
+              assignedDeviceId: `EXO-QS-${runId}`,
+            },
+          ],
+        }),
+      });
+      expect(created.status).toBe(201);
+
+      for (const action of ['release', 'start']) {
+        const state = await apiRequest(
+          baseUrl,
+          `/api/mes/work-orders/${orderId}/state?action=${action}`,
+          {
+            method: 'POST',
+            headers: jsonHeaders(token),
+            body: '{}',
+          },
+        );
+        expect(state.status).toBe(201);
+      }
+      const stepId = created.body.steps[0].stepId;
+      const stepState = await apiRequest(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/steps/${stepId}/state?action=start`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({ quantity: 1 }),
+        },
+      );
+      expect(stepState.status).toBe(201);
+
+      const missingCheck = await apiRequest(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/inspections`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            stepId,
+            result: 'pass',
+            schemeId,
+            stage: 'first',
+            checkResults: [],
+          }),
+        },
+      );
+      expect(missingCheck.status).toBe(400);
+      expect(JSON.stringify(missingCheck.body)).toContain(
+        'QUALITY_CHECK_REQUIRED',
+      );
+
+      const resultMismatch = await apiRequest(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/inspections`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            stepId,
+            result: 'pass',
+            schemeId,
+            stage: 'first',
+            checkResults: [{ itemId: 'CHK-1', result: 'fail' }],
+          }),
+        },
+      );
+      expect(resultMismatch.status).toBe(400);
+      expect(JSON.stringify(resultMismatch.body)).toContain(
+        'QUALITY_RESULT_MISMATCH',
+      );
+
+      const passed = await apiRequest<{ eventId: string; result: string }>(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/inspections`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            stepId,
+            result: 'pass',
+            schemeId,
+            stage: 'first',
+            checkResults: [{ itemId: 'CHK-1', result: 'pass' }],
+          }),
+        },
+      );
+      expect(passed.status).toBe(201);
+      expect(passed.body.result).toBe('pass');
+      expect(passed.body.eventId).toBeTruthy();
+    });
+
     it('records device status, calculates OEE, and escalates andon SLA', async () => {
       const dispatcher = await login(
         baseUrl,

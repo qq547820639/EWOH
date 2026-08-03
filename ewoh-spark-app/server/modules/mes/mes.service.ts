@@ -713,6 +713,195 @@ export class MesService {
     };
   }
 
+  async registerQualityScheme(
+    body: {
+      schemeId?: string;
+      name: string;
+      version: string;
+      stage: 'first' | 'in_process' | 'final';
+      checkItems: Array<{
+        itemId: string;
+        name: string;
+        required?: boolean;
+        defectCode?: string;
+      }>;
+      deviceIds?: string[];
+      stepTypes?: string[];
+      productCodes?: string[];
+    },
+    actor?: OrgContext,
+  ) {
+    if (
+      !body.name?.trim() ||
+      !body.version?.trim() ||
+      !['first', 'in_process', 'final'].includes(body.stage) ||
+      !Array.isArray(body.checkItems) ||
+      body.checkItems.length === 0
+    ) {
+      throw new BadRequestException(
+        'name, version, stage, and non-empty checkItems are required',
+      );
+    }
+    const schemeId =
+      body.schemeId?.trim() || `QS-${randomUUID().slice(0, 8)}`;
+    const [row] = await this.db
+      .insert(ewohAssetPackage)
+      .values({
+        packageId: schemeId,
+        packageType: 'quality_scheme',
+        name: body.name.trim(),
+        version: body.version.trim(),
+        manifestJson: {
+          qualitySchemaVersion: 'v1',
+          stage: body.stage,
+          checkItems: body.checkItems,
+          deviceIds: body.deviceIds ?? [],
+          stepTypes: body.stepTypes ?? [],
+          productCodes: body.productCodes ?? [],
+        },
+        status: 'draft',
+      })
+      .returning();
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'mes.quality_scheme.register',
+      entityType: 'asset_package',
+      entityId: schemeId,
+      before: null,
+      after: {
+        name: row.name,
+        version: row.version,
+        stage: body.stage,
+        checkCount: body.checkItems.length,
+      },
+    });
+    return row;
+  }
+
+  async listQualitySchemes() {
+    return this.db
+      .select()
+      .from(ewohAssetPackage)
+      .where(eq(ewohAssetPackage.packageType, 'quality_scheme'))
+      .orderBy(desc(ewohAssetPackage.createdAt));
+  }
+
+  async getQualityScheme(schemeId: string) {
+    const [row] = await this.db
+      .select()
+      .from(ewohAssetPackage)
+      .where(
+        and(
+          eq(ewohAssetPackage.packageId, schemeId),
+          eq(ewohAssetPackage.packageType, 'quality_scheme'),
+        ),
+      );
+    if (!row) {
+      throw new NotFoundException(`Quality scheme ${schemeId} not found`);
+    }
+    return row;
+  }
+
+  async publishQualityScheme(schemeId: string, actor?: OrgContext) {
+    const scheme = await this.getQualityScheme(schemeId);
+    if (scheme.status === 'published') {
+      return scheme;
+    }
+    const [updated] = await this.db
+      .update(ewohAssetPackage)
+      .set({ status: 'published', publishedAt: new Date() })
+      .where(eq(ewohAssetPackage.packageId, schemeId))
+      .returning();
+    if (!updated) {
+      throw new ConflictException('STATE_CONFLICT');
+    }
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'mes.quality_scheme.publish',
+      entityType: 'asset_package',
+      entityId: schemeId,
+      before: { status: scheme.status },
+      after: { status: updated.status },
+    });
+    return updated;
+  }
+
+  async matchQualitySchemes(filters: {
+    deviceId?: string;
+    stepType?: string;
+    productCode?: string;
+  }) {
+    const schemes = await this.listQualitySchemes();
+    return schemes
+      .filter((scheme) => scheme.status === 'published')
+      .filter((scheme) => {
+        const manifest = (scheme.manifestJson as Record<string, unknown>) ?? {};
+        const deviceIds = Array.isArray(manifest.deviceIds)
+          ? (manifest.deviceIds as string[])
+          : [];
+        const stepTypes = Array.isArray(manifest.stepTypes)
+          ? (manifest.stepTypes as string[])
+          : [];
+        const productCodes = Array.isArray(manifest.productCodes)
+          ? (manifest.productCodes as string[])
+          : [];
+        if (deviceIds.length > 0 && filters.deviceId && !deviceIds.includes(filters.deviceId)) {
+          return false;
+        }
+        if (stepTypes.length > 0 && filters.stepType && !stepTypes.includes(filters.stepType)) {
+          return false;
+        }
+        if (productCodes.length > 0 && filters.productCode && !productCodes.includes(filters.productCode)) {
+          return false;
+        }
+        return true;
+      })
+      .map((scheme) => ({
+        schemeId: scheme.packageId,
+        name: scheme.name,
+        version: scheme.version,
+        stage: (scheme.manifestJson as { stage?: string } | null)?.stage ?? null,
+      }));
+  }
+
+  private async validateQualityScheme(
+    schemeId: string,
+    stage: string | undefined,
+    checkResults: Array<{ itemId: string; result: 'pass' | 'fail'; note?: string }> | undefined,
+  ) {
+    const scheme = await this.getQualityScheme(schemeId);
+    if (scheme.status !== 'published') {
+      throw new BadRequestException('QUALITY_SCHEME_NOT_PUBLISHED');
+    }
+    const manifest = (scheme.manifestJson as {
+      stage?: string;
+      checkItems?: Array<{ itemId: string; required?: boolean }>;
+    }) ?? {};
+    if (manifest.stage !== stage) {
+      throw new BadRequestException(
+        `QUALITY_STAGE_MISMATCH: expected ${manifest.stage}, got ${stage ?? 'none'}`,
+      );
+    }
+    const results = Array.isArray(checkResults) ? checkResults : [];
+    for (const item of manifest.checkItems ?? []) {
+      if (
+        item.required !== false &&
+        !results.some((result) => result.itemId === item.itemId)
+      ) {
+        throw new BadRequestException(`QUALITY_CHECK_REQUIRED: ${item.itemId}`);
+      }
+    }
+    return {
+      schemeId,
+      version: scheme.version,
+      stage: manifest.stage,
+      checkResults: results,
+      hasFail: results.some((result) => result.result === 'fail'),
+    };
+  }
+
   async qualityInspection(
     orderId: string,
     body: {
@@ -722,6 +911,13 @@ export class MesService {
       defectCode?: string;
       quantity?: number;
       note?: string;
+      schemeId?: string;
+      stage?: 'first' | 'in_process' | 'final';
+      checkResults?: Array<{
+        itemId: string;
+        result: 'pass' | 'fail';
+        note?: string;
+      }>;
     },
     actor?: OrgContext,
   ) {
@@ -739,6 +935,19 @@ export class MesService {
     if (!['pass', 'fail', 'rework'].includes(body.result)) {
       throw new BadRequestException('result must be pass, fail, or rework');
     }
+    let schemeInfo: Awaited<ReturnType<typeof this.validateQualityScheme>> | undefined;
+    if (body.schemeId) {
+      schemeInfo = await this.validateQualityScheme(
+        body.schemeId,
+        body.stage,
+        body.checkResults,
+      );
+      if (schemeInfo.hasFail && body.result === 'pass') {
+        throw new BadRequestException(
+          'QUALITY_RESULT_MISMATCH: failed check items require fail or rework result',
+        );
+      }
+    }
     const resultJson = { ...((step.resultJson as Record<string, unknown> | null) ?? {}) };
     resultJson.quality = {
       inspectorId: body.inspectorId ?? actor?.userId ?? null,
@@ -747,6 +956,7 @@ export class MesService {
       quantity: body.quantity ?? null,
       note: body.note ?? null,
       inspectedAt: new Date().toISOString(),
+      scheme: schemeInfo ?? null,
     };
     await this.db
       .update(ewohScheduleTaskStep)
@@ -771,6 +981,9 @@ export class MesService {
         defectCode: body.defectCode ?? null,
         quantity: body.quantity ?? null,
         note: body.note ?? null,
+        schemeId: body.schemeId ?? null,
+        stage: body.stage ?? null,
+        checkResults: body.checkResults ?? [],
       },
     });
     await this.auditService.appendAuditLog({
