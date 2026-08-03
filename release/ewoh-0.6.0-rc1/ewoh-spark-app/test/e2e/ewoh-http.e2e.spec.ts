@@ -1,0 +1,568 @@
+import { randomUUID } from 'node:crypto';
+import { resolveE2EConfig } from '../helpers/e2e-config';
+import {
+  cleanupE2EFixture,
+  connectOwner,
+  createE2EFixture,
+  findControlRequest,
+  type E2EFixture,
+  type OwnerSql,
+} from '../helpers/e2e-db';
+import {
+  startE2EApp,
+  type E2EAppHandle,
+} from '../helpers/e2e-app';
+import {
+  apiRequest,
+  jsonHeaders,
+  login,
+  logout,
+  refresh,
+} from '../helpers/e2e-http';
+
+const e2eConfig = resolveE2EConfig();
+
+if (!e2eConfig) {
+  describe.skip('EWOH HTTP + PostgreSQL E2E (skipped)', () => {
+    it('requires a runtime DATABASE_URL', () => {
+      expect(e2eConfig).not.toBeNull();
+    });
+  });
+} else {
+  describe('EWOH HTTP + PostgreSQL E2E (SP-01..SP-08)', () => {
+    const runId = randomUUID().slice(0, 12);
+    let owner: OwnerSql | undefined;
+    let fixture: E2EFixture | undefined;
+    let handle: E2EAppHandle | undefined;
+    let baseUrl = '';
+
+    beforeAll(async () => {
+      owner = await connectOwner(e2eConfig.ownerDatabaseUrl);
+      fixture = await createE2EFixture(owner);
+      handle = await startE2EApp(e2eConfig, fixture.orgA.id);
+      baseUrl = handle.baseUrl;
+    }, 60000);
+
+    afterAll(async () => {
+      if (handle) {
+        await handle.close();
+      }
+      if (owner) {
+        if (fixture) {
+          await cleanupE2EFixture(owner, fixture);
+        }
+        await owner.end();
+      }
+    });
+
+    it('serves /health/live and /health/ready with 200', async () => {
+      const live = await apiRequest<{ status: string }>(baseUrl, '/health/live');
+      expect(live.status).toBe(200);
+      expect(live.body.status).toBe('ok');
+
+      const ready = await apiRequest<{
+        status: string;
+        checks: { database: string };
+      }>(baseUrl, '/health/ready');
+      expect(ready.status).toBe(200);
+      expect(ready.body.checks?.database).toBe('ok');
+    });
+
+    it('rejects unauthenticated business API calls with 401', async () => {
+      for (const path of ['/api/me', '/api/system/config', '/api/audit']) {
+        const response = await apiRequest(baseUrl, path);
+        expect(response.status).toBe(401);
+      }
+    });
+
+    it('blocks viewer access to admin config, audit, and control writes', async () => {
+      const auth = await login(
+        baseUrl,
+        fixture!.viewerA.username,
+        fixture!.viewerA.password,
+      );
+      expect(auth.status).toBe(201);
+      expect(auth.body.user.roles).toContain('viewer');
+      expect(auth.body.user.orgId).toBe(fixture!.orgA.id);
+      expect(auth.body.accessToken).toBeTruthy();
+
+      const viewerToken = auth.body.accessToken;
+      for (const path of ['/api/system/config', '/api/audit']) {
+        const response = await apiRequest(baseUrl, path, {
+          headers: jsonHeaders(viewerToken),
+        });
+        expect(response.status).toBe(403);
+      }
+
+      const write = await apiRequest(baseUrl, '/api/control/requests', {
+        method: 'POST',
+        headers: jsonHeaders(viewerToken),
+        body: JSON.stringify({
+          deviceId: 'EXO-E2E-VIEWER',
+          commandKeys: ['start'],
+          idempotencyKey: `viewer-${runId}`,
+        }),
+      });
+      expect(write.status).toBe(403);
+    });
+
+    it('enforces device contract route roles', async () => {
+      const viewer = await login(
+        baseUrl,
+        fixture!.viewerA.username,
+        fixture!.viewerA.password,
+      );
+      expect(viewer.status).toBe(201);
+      const denied = await apiRequest(baseUrl, '/api/devices', {
+        headers: jsonHeaders(viewer.body.accessToken),
+      });
+      expect(denied.status).toBe(403);
+
+      const dispatcher = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcher.status).toBe(201);
+      const allowed = await apiRequest(baseUrl, '/api/devices', {
+        headers: jsonHeaders(dispatcher.body.accessToken),
+      });
+      expect(allowed.status).toBe(200);
+    });
+
+    it('lets global_admin read/write system config, read audit, and create control requests', async () => {
+      const auth = await login(
+        baseUrl,
+        fixture!.globalAdminA.username,
+        fixture!.globalAdminA.password,
+      );
+      expect(auth.status).toBe(201);
+      expect(auth.body.user.roles).toContain('global_admin');
+      const adminToken = auth.body.accessToken;
+
+      const configList = await apiRequest<unknown[]>(
+        baseUrl,
+        '/api/system/config',
+        { headers: jsonHeaders(adminToken) },
+      );
+      expect(configList.status).toBe(200);
+      expect(Array.isArray(configList.body)).toBe(true);
+
+      const configKey = `e2e.admin.${runId}`;
+      const configSet = await apiRequest<{
+        configKey: string;
+        configValue: unknown;
+      }>(baseUrl, `/api/system/config/${configKey}`, {
+        method: 'PUT',
+        headers: jsonHeaders(adminToken),
+        body: JSON.stringify({
+          configValue: { enabled: true, actor: 'global-admin' },
+        }),
+      });
+      expect(configSet.status).toBe(200);
+      expect(configSet.body.configKey).toBe(configKey);
+
+      const audit = await apiRequest<{
+        items: unknown[];
+        total: number;
+      }>(baseUrl, '/api/audit', { headers: jsonHeaders(adminToken) });
+      expect(audit.status).toBe(200);
+      expect(Array.isArray(audit.body.items)).toBe(true);
+
+      const control = await apiRequest<{ id: string }>(
+        baseUrl,
+        '/api/control/requests',
+        {
+          method: 'POST',
+          headers: jsonHeaders(adminToken),
+          body: JSON.stringify({
+            deviceId: 'EXO-E2E-ADMIN',
+            commandKeys: ['start'],
+            idempotencyKey: `admin-${runId}`,
+          }),
+        },
+      );
+      expect(control.status).toBe(201);
+      expect(control.body.id).toBeTruthy();
+    });
+
+    it('rotates refresh tokens and revokes them after reuse/logout', async () => {
+      const first = await login(
+        baseUrl,
+        fixture!.viewerB.username,
+        fixture!.viewerB.password,
+      );
+      expect(first.status).toBe(201);
+      const firstRefresh = first.body.refreshToken;
+
+      const rotated = await refresh(baseUrl, firstRefresh);
+      expect(rotated.status).toBe(201);
+      expect(rotated.body.refreshToken).not.toBe(firstRefresh);
+
+      const reused = await refresh(baseUrl, firstRefresh);
+      expect(reused.status).toBe(401);
+
+      const signedOut = await logout(baseUrl, rotated.body.refreshToken);
+      expect(signedOut.status).toBe(201);
+
+      const afterLogout = await refresh(baseUrl, rotated.body.refreshToken);
+      expect(afterLogout.status).toBe(401);
+    });
+
+    it('isolates org A control data from org B over HTTP', async () => {
+      const dispatcherA = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcherA.status).toBe(201);
+
+      const created = await apiRequest<{ id: string }>(
+        baseUrl,
+        '/api/control/requests',
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherA.body.accessToken),
+          body: JSON.stringify({
+            deviceId: 'EXO-E2E-ORG-A',
+            commandKeys: ['start'],
+            idempotencyKey: `isolation-a-${runId}`,
+          }),
+        },
+      );
+      expect(created.status).toBe(201);
+      const requestId = created.body.id;
+
+      const dispatcherB = await login(
+        baseUrl,
+        fixture!.dispatcherB.username,
+        fixture!.dispatcherB.password,
+      );
+      expect(dispatcherB.status).toBe(201);
+      const hidden = await apiRequest(baseUrl, `/api/control/requests/${requestId}`, {
+        headers: jsonHeaders(dispatcherB.body.accessToken),
+      });
+      expect(hidden.status).toBe(404);
+
+      const hiddenWrite = await apiRequest(
+        baseUrl,
+        `/api/control/requests/${requestId}/commands`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherB.body.accessToken),
+          body: JSON.stringify({ commandKey: 'start' }),
+        },
+      );
+      expect(hiddenWrite.status).toBe(404);
+
+      const own = await apiRequest(baseUrl, `/api/control/requests/${requestId}`, {
+        headers: jsonHeaders(dispatcherA.body.accessToken),
+      });
+      expect(own.status).toBe(200);
+      expect((own.body as { request: { id: string } }).request.id).toBe(requestId);
+    });
+
+    it('persists world snapshots/deltas and expires old cursors', async () => {
+      const dispatcherA = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcherA.status).toBe(201);
+      const token = dispatcherA.body.accessToken;
+
+      const firstSnapshot = await apiRequest<{
+        snapshotVersion: number;
+        cursor: string;
+        entities: unknown[];
+      }>(baseUrl, '/api/world/snapshot', { headers: jsonHeaders(token) });
+      expect(firstSnapshot.status).toBe(200);
+      expect(firstSnapshot.body.snapshotVersion).toBeGreaterThanOrEqual(1);
+      expect(firstSnapshot.body.cursor).toBeTruthy();
+
+      const delta = await apiRequest<{
+        nextCursor: string;
+        upserts: unknown[];
+        removals: string[];
+      }>(
+        baseUrl,
+        `/api/world/delta?cursor=${encodeURIComponent(firstSnapshot.body.cursor)}`,
+        { headers: jsonHeaders(token) },
+      );
+      expect(delta.status).toBe(200);
+      expect(Array.isArray(delta.body.upserts)).toBe(true);
+      expect(delta.body.nextCursor).toBeTruthy();
+
+      const secondSnapshot = await apiRequest<{
+        snapshotVersion: number;
+        cursor: string;
+      }>(baseUrl, '/api/world/snapshot', { headers: jsonHeaders(token) });
+      expect(secondSnapshot.status).toBe(200);
+      expect(secondSnapshot.body.snapshotVersion).toBeGreaterThan(
+        firstSnapshot.body.snapshotVersion,
+      );
+
+      const expired = await apiRequest(
+        baseUrl,
+        `/api/world/delta?cursor=${encodeURIComponent(firstSnapshot.body.cursor)}`,
+        { headers: jsonHeaders(token) },
+      );
+      expect(expired.status).toBe(410);
+    });
+
+    it('persists control requests to PostgreSQL for the creating org', async () => {
+      const dispatcherA = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcherA.status).toBe(201);
+
+      const created = await apiRequest<{ id: string }>(
+        baseUrl,
+        '/api/control/requests',
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherA.body.accessToken),
+          body: JSON.stringify({
+            deviceId: 'EXO-E2E-DB',
+            commandKeys: ['start'],
+            idempotencyKey: `db-check-${runId}`,
+          }),
+        },
+      );
+      expect(created.status).toBe(201);
+
+      const row = await findControlRequest(
+        owner!,
+        created.body.id,
+        fixture!.orgA.id,
+      );
+      expect(row).not.toBeNull();
+      expect(row?.device_id).toBe('EXO-E2E-DB');
+      expect(row?.status).toBe('created');
+      expect(row?.org_id).toBe(fixture!.orgA.id);
+    });
+
+    it('persists approval instances, steps, and audit operations', async () => {
+      const adminA = await login(
+        baseUrl,
+        fixture!.globalAdminA.username,
+        fixture!.globalAdminA.password,
+      );
+      expect(adminA.status).toBe(201);
+      const token = adminA.body.accessToken;
+      const entityId = `T-${runId}`;
+
+      const created = await apiRequest<{
+        id: string;
+        entityType: string;
+        entityId: string;
+        status: string;
+        steps: Array<{ id: string; status: string }>;
+        createdAt: string;
+      }>(baseUrl, '/api/approvals', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          entityType: 'production_task',
+          entityId,
+          roles: ['lead', 'safety'],
+        }),
+      });
+      expect(created.status).toBe(201);
+      expect(created.body.id).toBeTruthy();
+      expect(created.body.entityType).toBe('production_task');
+      expect(created.body.entityId).toBe(entityId);
+      expect(created.body.steps).toHaveLength(2);
+
+      const eventRows = await owner!.unsafe<
+        Array<{
+          event_id: string;
+          event_type: string;
+          title: string;
+          status: string;
+          org_id: string;
+          evidence_json: {
+            entityType: string;
+            entityId: string;
+            createdAt: string;
+          };
+        }>
+      >(
+        `select event_id, event_type, title, status, org_id::text, evidence_json
+         from public.ewoh_event
+         where event_id = $1 and event_type = 'approval_instance'`,
+        [created.body.id],
+      );
+      expect(eventRows).toHaveLength(1);
+      expect(eventRows[0].status).toBe('pending');
+      expect(eventRows[0].org_id).toBe(fixture!.orgA.id);
+      expect(eventRows[0].evidence_json).toEqual({
+        entityType: 'production_task',
+        entityId,
+        createdAt: created.body.createdAt,
+      });
+
+      const chainRows = await owner!.unsafe<
+        Array<{
+          event_id: string;
+          parent_event_id: string;
+          causal_type: string;
+          description: string;
+          org_id: string;
+        }>
+      >(
+        `select event_id, parent_event_id, causal_type, description, org_id::text
+         from public.ewoh_event_chain
+         where parent_event_id = $1 and causal_type = 'approval_step'
+         order by created_at`,
+        [created.body.id],
+      );
+      expect(chainRows).toHaveLength(2);
+      expect(chainRows[0].parent_event_id).toBe(created.body.id);
+      expect(chainRows[0].causal_type).toBe('approval_step');
+      expect(chainRows[0].org_id).toBe(fixture!.orgA.id);
+      for (const row of chainRows) {
+        expect(JSON.parse(row.description)).toMatchObject({ status: 'pending' });
+      }
+
+      const fetched = await apiRequest<
+        { id: string; status: string; steps: Array<{ status: string }> }
+      >(baseUrl, `/api/approvals/${created.body.id}`, {
+        headers: jsonHeaders(token),
+      });
+      expect(fetched.status).toBe(200);
+      expect(fetched.body.id).toBe(created.body.id);
+      expect(fetched.body.steps).toHaveLength(2);
+
+      const stepId = created.body.steps[0].id;
+      const approved = await apiRequest<{
+        status: string;
+        steps: Array<{ status: string }>;
+      }>(
+        baseUrl,
+        `/api/approvals/${created.body.id}/steps/${stepId}/state?action=approve`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({ reason: 'e2e approve' }),
+        },
+      );
+      expect(approved.status).toBe(200);
+      expect(approved.body.status).toBe('pending');
+      expect(approved.body.steps[0].status).toBe('approved');
+
+      const auditRows = await owner!.unsafe<
+        Array<{
+          action: string;
+          entity_type: string;
+          entity_id: string;
+          org_id: string;
+          before_json: { stepStatus: string } | null;
+          after_json: { stepStatus: string } | null;
+        }>
+      >(
+        `select action, entity_type, entity_id, org_id::text, before_json, after_json
+         from public.ewoh_audit_log
+         where entity_type = 'approval' and entity_id = $1
+         order by audit_seq`,
+        [created.body.id],
+      );
+      expect(auditRows.length).toBeGreaterThanOrEqual(1);
+      expect(auditRows.every((row) => row.org_id === fixture!.orgA.id)).toBe(true);
+      const approveAudit = auditRows.find((row) => row.action === 'approval.approve');
+      expect(approveAudit).toBeTruthy();
+      expect(approveAudit?.before_json).toMatchObject({ stepStatus: 'pending' });
+      expect(approveAudit?.after_json).toMatchObject({ stepStatus: 'approved' });
+    });
+
+    it('reuses scheduler plans for the same idempotency key', async () => {
+      const dispatcher = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcher.status).toBe(201);
+      const token = dispatcher.body.accessToken;
+      const idempotencyKey = `e2e-plan-${runId}`;
+      const body = JSON.stringify({ idempotencyKey });
+
+      const first = await apiRequest<Array<{ planId: string }>>(
+        baseUrl,
+        '/api/scheduler/plans',
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body,
+        },
+      );
+      expect(first.status).toBe(201);
+      expect(Array.isArray(first.body)).toBe(true);
+      expect(first.body.length).toBeGreaterThan(0);
+
+      const second = await apiRequest<Array<{ planId: string }>>(
+        baseUrl,
+        '/api/scheduler/plans',
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body,
+        },
+      );
+      expect(second.status).toBe(201);
+      expect(second.body.map((plan) => plan.planId).sort()).toEqual(
+        first.body.map((plan) => plan.planId).sort(),
+      );
+    });
+
+    it('keeps system config rows org-scoped and unreadable by org B users', async () => {
+      const adminA = await login(
+        baseUrl,
+        fixture!.globalAdminA.username,
+        fixture!.globalAdminA.password,
+      );
+      expect(adminA.status).toBe(201);
+
+      const configKey = `e2e.org.${runId}`;
+      const set = await apiRequest(baseUrl, `/api/system/config/${configKey}`, {
+        method: 'PUT',
+        headers: jsonHeaders(adminA.body.accessToken),
+        body: JSON.stringify({
+          configValue: { scope: 'org-a-only', ok: true },
+        }),
+      });
+      expect(set.status).toBe(200);
+
+      const viewerB = await login(
+        baseUrl,
+        fixture!.viewerB.username,
+        fixture!.viewerB.password,
+      );
+      expect(viewerB.status).toBe(201);
+      const hidden = await apiRequest(
+        baseUrl,
+        `/api/system/config/${configKey}`,
+        { headers: jsonHeaders(viewerB.body.accessToken) },
+      );
+      expect(hidden.status).toBe(403);
+
+      const own = await apiRequest<{ configKey: string; configValue: unknown }>(
+        baseUrl,
+        `/api/system/config/${configKey}`,
+        { headers: jsonHeaders(adminA.body.accessToken) },
+      );
+      expect(own.status).toBe(200);
+      expect(own.body.configKey).toBe(configKey);
+      expect(own.body.configValue).toEqual({ scope: 'org-a-only', ok: true });
+
+      const rows = await owner!.unsafe<Array<{ org_id: string }>>(
+        `select org_id::text
+         from public.ewoh_scheduler_config
+         where config_key = $1`,
+        [configKey],
+      );
+      expect(rows.map((row) => row.org_id)).toEqual([fixture!.orgA.id]);
+    });
+  });
+}

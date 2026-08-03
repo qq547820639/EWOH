@@ -28,6 +28,19 @@ venv/
 
 # 工作目录
 .workbuddy/
+.codebuddy/
+
+# 本地测试与临时产物（不入库）
+.playwright-cli/
+tmp/
+.pytest_cache/
+.ruff_cache/
 
 # Node.js
 node_modules/
+
+# 构建产物
+dist/
+build/
+.turbo/
+*.tsbuildinfo

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EWOH Telemetry",
+  "type": "object",
+  "required": [
+    "device_id",
+    "timestamp",
+    "seq",
+    "source_type",
+    "telemetry",
+    "quality"
+  ],
+  "properties": {
+    "device_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source_type": {
+      "enum": [
+        "real",
+        "controlled_test",
+        "simulated"
+      ]
+    },
+    "telemetry": {
+      "type": "object"
+    },
+    "quality": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "good",
+            "degraded",
+            "invalid"
+          ]
+        },
+        "packet_loss_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    }
+  }
+}

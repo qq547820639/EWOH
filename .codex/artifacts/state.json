@@ -1,0 +1,217 @@
+{
+  "trace_id": "EWOH-2026-08-03-principal-001",
+  "intent_anchor": {
+    "objective": "EWOH Embodied Factory OS full lifecycle implementation",
+    "success": "Contracts frozen, DDL/RLS/audit verified, backend/frontend/scenarios passing, deploy/rollback/delivery ready",
+    "constraints": [
+      "no auto approval/dispatch/scheduling",
+      "no platform realtime joint/safety control",
+      "NestJS-only user data access",
+      "source_type isolation",
+      "production operations require user approval"
+    ]
+  },
+  "project_root": "/Volumes/Extra/CodeProj/EWOH",
+  "current_status": "RC2 hardening + ops/observability/deploy-artifacts: ingestion aligned, backup/restore passed, org lookup without fallback, /metrics live, deploy artifact verifier 62/62; 182 Jest / 14 E2E / 59 pytest / 108 OpenAPI",
+  "source_refs": [
+    "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
+    "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
+    ".codex/artifacts/authoritative-plan.txt",
+    ".codex/artifacts/final-implementation-plan.txt",
+    "delivery/02_技术规范/database.sql",
+    "delivery/02_技术规范/openapi.yaml",
+    "docs/architecture/embodied_factory.md"
+  ],
+  "decision_log": [
+    "D-001 adopt authoritative-plan Final 3.0 as the master execution baseline",
+    "D-002 physical packaging: 36 new tables + 12 altered tables = 48 managed tables",
+    "D-003 all production DB/deploy/credential operations require explicit user approval",
+    "D-004 user worktree changes are preserved",
+    "D-006 Miaoda is demo-only; production target is standalone cloud deployment with HA and high concurrency",
+    "D-007 request-scoped business-table org_id defaults come from app.current_org_id; RLS WITH CHECK remains the cross-org write authority"
+  ],
+  "verification_state": {
+    "python_pytest_repo": "53 passed",
+    "python_unittest": "667 passed",
+    "python_lint": "76 errors after flynt conversion + ruff format (609 -> 76; 68 UP031 + 8 E501); tests pass",
+    "npm_test": "79 passed across 33 suites",
+    "npm_typecheck": "server + client pass",
+    "npm_lint": "pass",
+    "npm_build_server": "pass",
+    "npm_build_client": "pass (3.2MB chunk warning)",
+    "jest_tests": "79 passed across 33 suites",
+    "jest_tests_latest": "160 passed across 41 suites",
+    "shared_backend": "OrgContextInterceptor, AuditService, OrgScopeService, StateMachineGuard, IdempotencyService, pagination/errors implemented and tested",
+    "frontend_shell": "11 center routes, grouped Layout, placeholders, API namespaces, queryKeys added",
+    "organization_module": "api/organization + api/personnel implemented; CommandCenter and Personnel pages use real APIs",
+    "schema_codegen": "server/database/schema.ts synced to live DB 18 tables",
+    "device_search": "GET /api/dashboard/devices/search with pagination, firmware/protocol/fault/binding filters",
+    "model_registry": "GET/POST /api/models + state transitions with tests",
+    "roles_guard": "global RolesGuard; sensitive personnel route requires safety_admin/global_admin",
+    "system_config": "GET/PUT /api/system/config with sensitive value masking",
+    "task_state_machine": "api/tasks transitions draft->...->completed/cancelled",
+    "alert_state_machine": "api/alerts open/acknowledged/processing/closed/reopened",
+    "control_aggregation": "api/control/requests with latest-attempt aggregation and idempotency",
+    "approval_state_machine": "api/approvals with steps and bypass/cancel/expire",
+    "resource_preorder": "api/resource/preorders with no-oversell reservation math",
+    "ai_manual_decision": "api/ai suggestions/plans only on manual trigger, structured output",
+    "world_cursor_protocol": "api/world snapshot/delta with base64 cursor and 410 expiry",
+    "frontend_real_pages": "Scheduling, Alerts, AI, Model, System pages fetch real APIs",
+    "audit_hash_chain": "SHA-256 per-org chain with continuity verification and tamper detection",
+    "scenario_packages": "SP-01..SP-08 automated scenario smoke suite passes",
+    "frontend_all_centers": "11 centers wired: real APIs or contract placeholders; DigitalWorld/Organization/DataAssets added",
+    "delivery_docs": "deployment-runbook, release-checklist, acceptance-evidence, training-plan drafted",
+    "demo_seed": "db/seed/001_demo_seed.sql with runner --plan seed verified",
+    "command_map_l34": "L3 workstation close-up and L4 person follow views added",
+    "standalone_bootstrap": "server/standalone-app.module + standalone-main verified on :3100",
+    "cloud_deploy_artifacts": ".env.standalone.example, deploy/cloud/Dockerfile.api, docker-compose.standalone.yml, README",
+    "standalone_client": "vite.standalone.config.ts + lib/http.ts + local AppContainer; title EWOH, no Feishu CDN, bundle 3481 modules",
+    "standalone_jwt_auth": "/api/auth/login, /refresh, /me verified on :3100; sensitive route 403 without token",
+    "standalone_login_page": "/login page and axios Bearer interceptor added",
+    "kubernetes_manifests": "namespace/configmap/secret/deployment/service/ingress/HPA/PDB",
+    "redis_rate_limit": "ioredis RedisService with memory fallback; RateLimitGuard 429",
+    "user_table_bcrypt": "002_ewoh_users migration/seed; AuthService DB lookup with bcrypt and env fallback",
+    "standalone_ci": ".github/workflows/standalone.yml type/lint/jest/build/ddl/docker",
+    "perf_smoke": "/health 500 req 6794 qps p95 21.8ms; /api/models 300 req 255 qps p95 154ms",
+    "standalone_ddl": "standalone_001_schema/verify/seed + users generated; no user_profile/workspace tokens",
+    "standalone_check_script": "scripts/standalone-check.sh all passed (type/lint/jest/build/ddl/hygiene)",
+    "file_service": "/api/files upload/list/download/delete roundtrip verified",
+    "uuid_robustness": "server/common/uuid.ts + org/task/model entry guards; invalid UUIDs return 404; 56 tests / 25 suites pass",
+    "object_storage": "local + S3-compatible drivers; STORAGE_DRIVER factory; files/<uuid> + meta.json sidecar; env/compose/k8s contract wired; live upload/download/delete smoke on :3100/:3101",
+    "npm_full_build": "pass with EWOH_SKIP_PLUGIN_INIT=1 (~99s, 278MB dist)",
+    "postgres_probe": "PostgreSQL 17.10 reachable on local test instance; public has 54 ewoh tables (53 request-scoped business tables plus ewoh_user), and all 53 org_id columns use the request organization default",
+    "standalone_postgres_gate": "PostgreSQL 17.10 apply, verify, seed, runtime-role bootstrap, idempotent reapply, RLS, audit hash chain, destructive rollback to zero objects, and rebuild all passed",
+    "runtime_database_role": "ewoh_api is LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, NOBYPASSRLS; direct ewoh_user reads are denied",
+    "http_auth_rls_acceptance": "127.0.0.1:3101: live/ready 200, unauthenticated API 401, login/refresh pass, token types cannot be exchanged, A/B read-write isolation passes, global-admin cross-org read passes, request org_id default persisted",
+    "http_audit_acceptance": "127.0.0.1:3101: unauthenticated /api/audit 401; A/B write actions persisted to SHA-256 chain; /api/audit returned only request-scoped rows; hash/prev_hash 64 hex and chain_seq positive; /api/me alias 200",
+    "dev_server_nestjs": "http://localhost:3000/app/app_17b7bgq1e4a/ (200; restarted after latest full build)",
+    "dev_server_vite": "http://localhost:8080/app/app_17b7bgq1e4a/ (nested SPA fallback pending)",
+    "sqlite_probe": "demo.db 13 tables; src demo.db 5 tables",
+    "e2e_tests": "12 passed across 1 suite (HTTP + PostgreSQL)",
+    "route_audit": "106 controller operations; 0 unimplemented; openapi/route-manifest.json generated",
+    "standalone_security_probe": "role attrs, user lookup, RLS A/B, global admin, audit chain OK",
+    "pg_verify": "48 managed, 48 RLS, 0 missing/loose, identities/audit fn OK",
+    "verify_sql_fix": "policy_missing scalar subquery fixed in standalone_001_verify.sql and 001_verify.sql",
+    "browser_ui": "Playwright login/command-center/command-map/devices/alerts pass; QueryClient and world replay fixed",
+    "world_replay": "GET /api/world/replay returns 200 with proper timestamptz bounds",
+    "c2_contract": "C2 v1.0 frozen: 106 operations documented, strict audit 0/0",
+    "approval_persistence": "mapped to ewoh_event/ewoh_event_chain/ewoh_audit_log; E2E approval case passes",
+    "contracts": "C1-C6 frozen/validated; G2 passed; requirements trace v1.0",
+    "release_drill": "PASSED locally: rollback/rebuild, security probe, 137 Jest, 106/106 OpenAPI, 11/11 E2E, build, DDL hygiene",
+    "ddl_generator": "uq_ewoh_scheduler_config_org_key emitted on regeneration; verify includes scheduler_config_org_key=1",
+    "yaml_contracts": "13/13 YAML files parse (OpenAPI, access matrix, release manifest, schema manifest, compose, k8s)",
+    "delivery_boundary": "delivery/00 completion-boundary statement updated with standalone product status",
+    "release_bundle": "release/ewoh-0.6.0-rc1: 818 files, SHA256SUMS OK",
+    "dockerfile_lint": "Dockerfile.api and Dockerfile.migrate: 0 issues",
+    "dev_db_probe": "SUDA role cannot CREATE schema/db; ewoh_api absent; external migration blocked by credentials",
+    "github_actions": "604d831 full green (standalone/test/security); six commits green total",
+    "bandit": "bandit -ll 0 medium/high",
+    "ruff": "ruff 0 errors",
+    "client_tests": "19 passed across 5 suites",
+    "second_wave": "org hierarchy wired; scheduler weights persisted; control/resource audit; rule dedup DB-backed; 10 centers React Query; scheduling/data assets actions; L3/L4 filter; responsive",
+    "third_wave": "device.update and event.handle audit wired; controller test added",
+    "fourth_wave": "resource inventory persisted via ewoh_resource_binding; quantity column in DDL; FakeSqlDb extended",
+    "fifth_wave": "scheduler plan generation idempotency via idempotencyKey",
+    "sixth_wave": "security response headers added to standalone bootstrap; CI 604d831 pushed",
+    "seventh_wave": "accessibility/UX landed; CI 3906132 security success, test/standalone pending rate-limit window",
+    "e2e_scheduler_idempotency": "duplicate idempotencyKey returns existing plans over HTTP",
+    "eighth_wave": "environment summary endpoint + CommandMap real data; live HTTP smoke passed",
+    "ingest_protocol_alignment": "canonical entity_id/nested UnifiedExoFrame mapping; X-Org-Id M2M GUC; assist_level real; OpenAPI X-Org-Id contract",
+    "ingest_jest": "44 suites / 176 tests passed",
+    "ingest_e2e": "14/14 HTTP + PostgreSQL includes canonical ingestion, raw_ref dedup, org isolation, gamification allocation persistence",
+    "edge_bridge_pytest": "59 passed; edge bridge canonical frame, batch buffer, and X-Org-Id header tests added",
+    "ops_backup_restore": "postgres-logical-backup.mjs exports/restores 54 ewoh tables; standalone-ops-check.sh PASSED with row-count verify and identity sequence smoke",
+    "ops_perf_smoke": "1000 req / 50 concurrency against built API on PostgreSQL 17: 4943 qps, p95 17.50ms, 0 failures",
+    "ops_runbooks": "operations README and deployment README placeholders replaced with alert/fault/recovery/emergency procedures and one-command drills",
+    "org_scope_hardening": "ewoh_find_org/ewoh_find_org_children SECURITY DEFINER; security probe random fixtures; browser login no fallback warnings",
+    "browser_rc2": "Playwright login + command center + command map rendered with real data; screenshot output/playwright/rc2-command-map.png",
+    "training_plan": "docs/delivery/training-plan.md v1.1 ready with sessions, hands-on exercises, and verification",
+    "metrics_endpoint": "GET /metrics Prometheus text verified; HTTP counters/active/uptime/db-ready; SPA fallback excluded",
+    "perf_business_path": "GET /api/dashboard/overview 200 req / 25 concurrency: 514 qps, p95 60.93ms, 0 failures",
+    "deploy_artifact_verifier": "scripts/verify-deploy-artifacts.js 62 checks passed for k8s/compose/Dockerfiles"
+  },
+  "subagent_state": {
+    "planned": [
+      "AG-01 requirements trace",
+      "AG-03 data contract",
+      "AG-04 API contract",
+      "AG-05 state machines",
+      "AG-06 security contract",
+      "AG-30 UI contract",
+      "AG-51 DevOps contract",
+      "AG-10 DDL/migrations"
+    ],
+    "active": [],
+    "failed": [
+      {
+        "id": "019fc43c-5f8a-7c43-97fb-554ff5cc565e",
+        "nickname": "Banach",
+        "role": "independent standalone security review",
+        "reason": "upstream model quota unavailable"
+      },
+      {
+        "id": "019fc43c-601a-7762-938c-1abd9fa94c0b",
+        "nickname": "Anscombe",
+        "role": "backend persistence and tenancy audit",
+        "reason": "upstream model quota unavailable"
+      },
+      {
+        "id": "019fc43c-6072-7f73-b11e-abdcbe3da553",
+        "nickname": "Socrates",
+        "role": "frontend and scenario workflow audit",
+        "reason": "upstream model quota unavailable"
+      }
+    ],
+    "completed": [
+      {
+        "id": "019fc371-0d62-7fa0-8b0f-dd606b7b1723",
+        "nickname": "Cicero",
+        "role": "contract extraction C1/C2/C3/C4",
+        "outcome": "closed before writing; principal wrote drafts"
+      },
+      {
+        "id": "019fc371-0dd7-7a82-90a7-df673df20344",
+        "nickname": "Newton",
+        "role": "requirements/UI/DevOps contract extraction",
+        "outcome": "wrote ui-devops-inventory.md"
+      },
+      {
+        "id": "019fc371-0e36-7180-87f2-e33f8bdc8397",
+        "nickname": "Galileo",
+        "role": "Python backend inventory",
+        "outcome": "closed before writing python-backend.md"
+      },
+      {
+        "id": "019fc371-0ec7-7b91-a940-822b857e7ff7",
+        "nickname": "Kuhn",
+        "role": "NestJS/frontend inventory",
+        "outcome": "wrote frontend-nestjs.md"
+      },
+      {
+        "id": "019fc378-a987-7310-aa78-270914924fe7",
+        "nickname": "Pauli",
+        "role": "AG-10 DDL/migration package",
+        "outcome": "manifest 48 rows, 1540-line migration, rollback, verify, runner, capability CSV; plan mode verified"
+      },
+      {
+        "id": "019fc378-aa5a-7d20-8544-a11c3b72fe8d",
+        "nickname": "Socrates",
+        "role": "AG-11 backend shared infrastructure",
+        "outcome": "shared module + 6 test suites implemented; 18 Jest tests pass"
+      },
+      {
+        "id": "019fc378-aac5-79a3-a17c-27a1d34de208",
+        "nickname": "Noether",
+        "role": "AG-30 frontend 11-center shell",
+        "outcome": "11 routes, grouped Layout, placeholders; namespaces/queryKeys completed by principal"
+      }
+    ],
+    "planned_next": [
+      "close C2 route DTO docs for 70 operations",
+      "approval physical persistence mapping",
+      "production DDL/deploy approval gate",
+      "frontend browser-level UI regression"
+    ]
+  },
+  "next_entrypoint": "docs/delivery/acceptance-evidence.md"
+}

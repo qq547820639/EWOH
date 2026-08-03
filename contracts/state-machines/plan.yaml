@@ -1,0 +1,20 @@
+version: 1.0-draft
+owner: AG-05
+states:
+  - shadow
+  - simulating
+  - pending_review
+  - approved
+  - dispatched
+  - expired
+  - archived
+transitions:
+  - { from: shadow, to: simulating, condition: start_simulation }
+  - { from: simulating, to: shadow, condition: abandon }
+  - { from: simulating, to: pending_review, condition: submit }
+  - { from: pending_review, to: approved, role: approver, condition: approve }
+  - { from: pending_review, to: shadow, role: approver, condition: reject_and_revise }
+  - { from: approved, to: dispatched, condition: convert_to_task }
+  - { from: approved, to: expired, condition: validity_passed }
+  - { from: any, to: archived, condition: archive }
+terminal: [dispatched, expired, archived]

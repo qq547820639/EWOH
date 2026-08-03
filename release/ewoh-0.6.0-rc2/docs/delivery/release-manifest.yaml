@@ -1,0 +1,99 @@
+release: 0.6.0-rc2
+date: 2026-08-03
+status: candidate-for-production (approval-gated)
+bundle:
+  path: release/ewoh-0.6.0-rc2
+  checksums: release/ewoh-0.6.0-rc2/SHA256SUMS.txt
+  files: 835
+artifacts:
+  api: ewoh-spark-app/dist/server
+  client: ewoh-spark-app/dist/client/index.standalone.html
+  ddl_standalone: db/migrations/standalone_001_schema.sql
+  ddl_verify: db/verify/standalone_001_verify.sql
+  users: db/migrations/standalone_002_users.sql
+  runtime_role: db/migrations/standalone_003_runtime_role.sql
+  openapi: openapi/ewoh.yaml
+  route_manifest: openapi/route-manifest.json
+  deploy: deploy/cloud/
+  contracts: .codex/artifacts/contracts/
+evidence:
+  jest: "47 suites / 182 tests"
+  e2e: "14/14 HTTP + PostgreSQL"
+  openapi: "108/108 documented, 0 unimplemented"
+  standalone_check: "passed (typecheck/lint/jest/openapi/e2e/build/ddl/hygiene)"
+  release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
+  ops_drill: "ALL STANDALONE OPS CHECKS PASSED; logical backup/restore of 54 tables / 25 rows with row-count verify"
+  db_verify: "48 managed tables / 48 RLS / audit chain / security probe OK incl. org_lookup"
+  browser: "Playwright login + command center/map/devices/alerts; no org-scope fallback warnings"
+  perf: "1000 req / 50 concurrency, 4943 qps, p95 17.50ms"
+  perf_business: "200 req / 25 concurrency on /api/dashboard/overview, 514 qps, p95 60.93ms"
+  metrics: "GET /metrics Prometheus text: HTTP counters, active requests, uptime, db readiness"
+  deploy_artifacts: "62 checks passed (k8s, compose, Dockerfiles)"
+  github_actions:
+    branch: codex/rc1-ci-full
+    commits:
+      - 7474121b8b4be88192ea34750a5db0cd038b6db7
+      - ad3dc108bbd5ee557494c02265e67f43bebef00e
+      - bb4cd1fdc10e7f07aafdc418bb80a50b3b1fe7b6
+      - 148d98993242020a2590839274d6aa34219c4bf7
+      - d9f7c9926ff0279d449ed5cbd416e2e842ab3f1b
+      - 604d83146af022a38cc259dc315cedfdda7ac353
+    status: all success (standalone/test/security; Docker build included)
+  second_wave:
+    org_hierarchy: wired
+    scheduler_weights: persisted
+    control_resource_audit: added
+    rule_dedup: database-backed
+    frontend_react_query: 10 centers
+    scheduling_actions: added
+    data_assets: real lists
+    l3l4_filter: implemented
+    responsive: implemented
+  third_wave:
+    device_update_audit: added
+    event_handle_audit: added
+    dashboard_controller_test: added
+  fourth_wave:
+    resource_inventory: persisted via ewoh_resource_binding
+    quantity_column: added to DDL generator
+    fake_db_conditions: extended
+  fifth_wave:
+    scheduler_idempotency: idempotencyKey supported for plan generation
+  eighth_wave:
+    environment_summary: real endpoint wired into CommandMap environment mode
+  ingestion_protocol:
+    canonical_mapping: entity_id + nested pose/load/device/quality
+    m2m_org_context: X-Org-Id header or EWOH_INGEST_ORG_ID
+    assist_level_ddl: real
+    openapi_org_header: required on all 7 ingest routes
+  org_scope:
+    security_definer_lookup: ewoh_find_org + ewoh_find_org_children
+    probe_fixture_isolation: random UUIDs; seed rows preserved
+    browser_login: org scope resolved without fallback
+gates:
+  G0: passed
+  G1: validated
+  G2: passed
+  G3: passed
+  G4: passed (local standalone)
+  G5: passed
+  G6: passed (standalone)
+  G7: passed
+  G8: passed
+  G9: passed (local)
+  G10: partial
+  G11: pending
+  G12: pending
+  G13: pending
+approvals_required:
+  - production database DDL/migration
+  - production deployment
+  - credentials and permission changes
+  - irreversible data operations
+pending:
+  - container image build/apply with Docker/Kubernetes (CI Docker build green; local runtime absent)
+  - production migration and rollback drill
+  - monitoring/alerting and HA load verification
+  - real device/gateway integration
+  - training delivery and business acceptance signoff
+  - follow-on phase acceptance and closeout

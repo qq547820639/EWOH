@@ -1,0 +1,24 @@
+# Checklist
+
+- [x] `DeviceInfo` 类型已扩展 entityId/parentId/boundPersonId/boundPersonName/sourceType/firmwareVersion/hardwareVersion/protocolVersion/temperatureC/faultCode 字段
+- [x] `DeviceSearchQuery` / `CreateDeviceDto` / `UpdateDeviceDto` / `DeviceBinding` / `BindDeviceRequest` 类型已定义
+- [x] `GET /api/dashboard/devices` 支持 keyword/online/batteryMin/batteryMax/sourceType/model/orderby 查询参数
+- [x] `getDevices` 服务通过 LEFT JOIN ewoh_spatial_entity 返回 entityId/parentId，LEFT JOIN 人员实体返回 boundPersonId/boundPersonName
+- [x] `POST /api/dashboard/devices` 端点已实现，含 deviceId 重复校验（冲突返回 400）
+- [x] `PATCH /api/dashboard/devices/:deviceId` 端点已实现，支持部分字段更新
+- [x] `GET /api/dashboard/devices/:deviceId/bindings` 端点已实现，返回建筑层级路径与绑定人员
+- [x] `POST /api/dashboard/devices/:deviceId/bindings` 端点已实现，更新 spatial_entity.parentId + 人员 extra.device_id + 设备 extra.worker_id 双向绑定
+- [x] `DELETE /api/dashboard/devices/:deviceId/bindings` 端点已实现，清除 parentId 与 extra 绑定字段
+- [x] 前端 `searchDevices` / `createDevice` / `updateDevice` / `getDeviceBindings` / `bindDevice` / `unbindDevice` API 函数已封装
+- [x] Devices 页面顶部搜索栏支持关键字、在线状态、电量区间、来源类型、型号、排序
+- [x] 设备列表表格新增「来源」「绑定工位」「绑定人员」列与「编辑」「绑定」操作按钮
+- [x] 设备配置抽屉支持查看/编辑设备元信息与运行状态
+- [x] 设备配置抽屉支持「新增设备」与「编辑设备」两种模式
+- [x] 层级绑定面板展示当前建筑层级路径与绑定人员
+- [x] 空间实体层级树选择器仅允许选择 workstation/production_line/zone/workshop/factory 节点
+- [x] 人员下拉选择器调用 `getEntities({type:'person'})` 填充
+- [x] 「解绑」按钮调用 unbindDevice 并刷新绑定关系
+- [x] `npm run type:check:server` 通过
+- [x] `npm run type:check:client` 通过
+- [x] `npm run build:server` 通过
+- [x] `npm run build:client` 通过

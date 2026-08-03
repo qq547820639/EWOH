@@ -1,0 +1,700 @@
+import { Injectable, Inject, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
+import {
+  ewohDevice,
+  ewohTelemetry,
+  ewohEvent,
+  ewohSpatialEntity,
+  ewohSchedulePlan,
+  ewohScheduleAudit,
+} from '@server/database/schema';
+import { eq, desc, and, sql, gte, inArray } from 'drizzle-orm';
+import type {
+  PlayerRole,
+  PlayerRoleInfo,
+  ResourceAllocationRequest,
+  ResourceAllocationResult,
+  AllocationEvaluation,
+  TaskOrchestrationRequest,
+  TaskOrchestrationResult,
+  TaktSimulation,
+  ProcessNode,
+  DispatchRequest,
+  DispatchResult,
+  ExoFeedbackRequest,
+  ExoFeedbackResult,
+  BrainSuggestion,
+} from '@shared/api.interface';
+
+/**
+ * 游戏化玩法 + 具身智能服务（工厂即具身机器人）
+ * G3.1 玩家角色 / G3.2 资源分配 / G3.3 任务编排
+ * G3.5 调度下发 / G3.6 外骨骼反馈 / G3.7 大脑推理
+ */
+@Injectable()
+export class GamificationService {
+  private readonly logger = new Logger(GamificationService.name);
+
+  constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
+
+  // ===== G3.1 玩家角色系统 =====
+
+  getRole(): PlayerRoleInfo {
+    const role = (process.env.EWOH_PLAYER_ROLE ?? 'shift_leader') as PlayerRole;
+    const playerName = process.env.EWOH_PLAYER_NAME ?? '当前用户';
+
+    const roleMap: Record<PlayerRole, { roleName: string; visibleLevels: string[]; permissions: string[] }> = {
+      shift_leader: {
+        roleName: '班组长',
+        visibleLevels: ['L0', 'L1', 'L2'],
+        permissions: ['view', 'allocate_resource', 'orchestrate_task', 'confirm_plan', 'handle_event'],
+      },
+      workshop_director: {
+        roleName: '车间主任',
+        visibleLevels: ['L0', 'L1', 'L2'],
+        permissions: [
+          'view',
+          'allocate_resource',
+          'orchestrate_task',
+          'confirm_plan',
+          'dispatch_plan',
+          'handle_event',
+          'exo_feedback',
+        ],
+      },
+      factory_manager: {
+        roleName: '厂长',
+        visibleLevels: ['L0', 'L1', 'L2'],
+        permissions: [
+          'view',
+          'allocate_resource',
+          'orchestrate_task',
+          'confirm_plan',
+          'dispatch_plan',
+          'handle_event',
+          'exo_feedback',
+          'adjust_weights',
+          'manage_model',
+        ],
+      },
+    };
+
+    const info = roleMap[role] ?? roleMap.shift_leader;
+    return {
+      role,
+      roleName: info.roleName,
+      visibleLevels: info.visibleLevels,
+      permissions: info.permissions,
+      playerName,
+    };
+  }
+
+  // ===== G3.2 资源分配 =====
+
+  async allocateResources(req: ResourceAllocationRequest): Promise<ResourceAllocationResult> {
+    try {
+      if (!req.allocations || req.allocations.length === 0) {
+        throw new BadRequestException('allocations is required');
+      }
+
+      const operator = req.operator ?? 'supervisor';
+      const planId = `ALLOC-${Date.now()}-${this.randomSuffix(4)}`;
+      const allocationResults: ResourceAllocationResult['allocations'] = [];
+      const conflicts: string[] = [];
+      const suggestions: string[] = [];
+
+      // 收集已分配人员/设备的 entity_id（用于负荷与电量评估）
+      const allocatedEntityIds = req.allocations.map((a) => a.entityId);
+
+      // 1. 冲突检测：人员离线（ewoh_device.device_id = entityId 且 online=false）
+      const deviceRows = allocatedEntityIds.length
+        ? await this.db
+            .select()
+            .from(ewohDevice)
+            .where(inArray(ewohDevice.deviceId, allocatedEntityIds))
+        : [];
+
+      const offlineSet = new Set(deviceRows.filter((d) => d.online === false).map((d) => d.deviceId));
+      const batteryByDevice = new Map<string, number>(
+        deviceRows.map((d) => [d.deviceId, d.batteryPct ?? 100]),
+      );
+
+      // 2. 加载已分配人员最近 1h 的平均负荷（按 deviceId 聚合）
+      const loadRows = allocatedEntityIds.length
+        ? await this.db
+            .select({
+              deviceId: ewohTelemetry.deviceId,
+              avgLoad: sql<number>`coalesce(avg(${ewohTelemetry.loadScore}), 0)::float`,
+            })
+            .from(ewohTelemetry)
+            .where(
+              and(
+                inArray(ewohTelemetry.deviceId, allocatedEntityIds),
+                gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`),
+              ),
+            )
+            .groupBy(ewohTelemetry.deviceId)
+        : [];
+      const loadByDevice = new Map<string, number>(loadRows.map((r) => [r.deviceId, r.avgLoad ?? 0]));
+
+      // 3. 逐条执行分配（更新 ewoh_spatial_entity.parent_id = targetId）
+      for (const alloc of req.allocations) {
+        if (offlineSet.has(alloc.entityId)) {
+          conflicts.push(`实体 ${alloc.entityId} 关联设备离线，无法分配`);
+          allocationResults.push({
+            entityId: alloc.entityId,
+            targetId: alloc.targetId,
+            success: false,
+            error: '设备离线',
+          });
+          continue;
+        }
+        try {
+          await this.db
+            .update(ewohSpatialEntity)
+            .set({ parentId: alloc.targetId })
+            .where(eq(ewohSpatialEntity.entityId, alloc.entityId));
+          allocationResults.push({
+            entityId: alloc.entityId,
+            targetId: alloc.targetId,
+            success: true,
+          });
+        } catch (err) {
+          this.logger.error(`分配失败 entityId=${alloc.entityId}`, err);
+          allocationResults.push({
+            entityId: alloc.entityId,
+            targetId: alloc.targetId,
+            success: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      // 4. 评估指标
+      const loadScores = req.allocations
+        .map((a) => loadByDevice.get(a.entityId))
+        .filter((v): v is number => typeof v === 'number');
+      const loadBalance = this.computeStdDevNormalized(loadScores); // 0-1，越高越均衡
+      const skillMatch = 0.8; // 暂无技能数据，默认 0.8
+
+      const batteryValues = req.allocations
+        .map((a) => batteryByDevice.get(a.entityId))
+        .filter((v): v is number => typeof v === 'number');
+      const batteryEndurance =
+        batteryValues.length > 0
+          ? Number((batteryValues.reduce((s, v) => s + v, 0) / batteryValues.length / 100).toFixed(3))
+          : 0.8;
+
+      if (loadBalance < 0.6) {
+        suggestions.push('负荷均衡度偏低，建议将高负荷人员任务部分转移给低负荷人员');
+      }
+      if (batteryEndurance < 0.3) {
+        suggestions.push('整体电量续航不足，建议优先安排换电或充电');
+      }
+      if (conflicts.length > 0) {
+        suggestions.push('存在离线冲突，请先恢复设备在线状态后再分配');
+      }
+
+      const overall: AllocationEvaluation['overall'] =
+        conflicts.length > 0 || loadBalance < 0.4 || batteryEndurance < 0.2
+          ? 'red'
+          : loadBalance < 0.7 || batteryEndurance < 0.4
+            ? 'yellow'
+            : 'green';
+
+      const evaluation: AllocationEvaluation = {
+        overall,
+        loadBalance: Number(loadBalance.toFixed(3)),
+        skillMatch,
+        batteryEndurance,
+        conflicts,
+        suggestions,
+      };
+
+      // 5. 写入 ewoh_schedule_plan（strategy='resource_alloc', status='proposed'）
+      const now = new Date();
+      await this.db.insert(ewohSchedulePlan).values({
+        planId,
+        planName: `资源分配-${planId}`,
+        strategy: 'resource_alloc',
+        status: 'proposed',
+        taktImprovement: 0,
+        highLoadPersons: loadScores.filter((v) => v > 0.7).length,
+        lowBatteryRisk: batteryValues.filter((v) => v < 20).length,
+        affectedPersons: req.allocations.length,
+        metricsJson: {
+          allocatedEntities: allocatedEntityIds,
+          loadBalance: Number(loadBalance.toFixed(3)),
+          skillMatch,
+          batteryEndurance,
+          overall,
+          conflicts,
+        } as Record<string, unknown>,
+        reason: req.reason ?? `资源分配 ${req.allocations.length} 项，综合评估 ${overall}`,
+        createdAt: now,
+      });
+
+      // 6. 写入审计 action='allocate'
+      const [auditRow] = await this.db
+        .insert(ewohScheduleAudit)
+        .values({
+          auditId: `AUDIT-${Date.now()}-${this.randomSuffix(4)}`,
+          planId,
+          action: 'allocate',
+          operator,
+          reason: req.reason ?? `资源分配 ${req.allocations.length} 项`,
+          createdAt: now,
+        })
+        .returning();
+
+      this.logger.log(
+        `allocateResources planId=${planId} overall=${overall} conflicts=${conflicts.length} auditId=${auditRow.auditId}`,
+      );
+
+      return {
+        planId,
+        evaluation,
+        allocations: allocationResults,
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      this.logger.error('allocateResources 失败', error);
+      throw error;
+    }
+  }
+
+  // ===== G3.3 任务编排 =====
+
+  async orchestrateTask(req: TaskOrchestrationRequest): Promise<TaskOrchestrationResult> {
+    try {
+      if (!req.nodes || req.nodes.length === 0) {
+        throw new BadRequestException('nodes is required');
+      }
+
+      const operator = req.operator ?? 'supervisor';
+      const planId = `ORCH-${Date.now()}-${this.randomSuffix(4)}`;
+      const now = new Date();
+
+      // 1. 节拍模拟：每个已分配工位的节点 takt = 30 + random*30
+      const nodes: ProcessNode[] = req.nodes.map((n) => ({
+        ...n,
+        estimatedTakt: n.estimatedTakt ?? Number((30 + Math.random() * 30).toFixed(2)),
+      }));
+
+      const stationTakts: TaktSimulation['stationTakts'] = [];
+      const stationNameMap = new Map<string, string>();
+
+      // 查询工位名称
+      const workstationIds = nodes
+        .map((n) => n.assignedWorkstationId)
+        .filter((v): v is string => typeof v === 'string' && v.length > 0);
+      if (workstationIds.length > 0) {
+        const wsRows = await this.db
+          .select({ entityId: ewohSpatialEntity.entityId, name: ewohSpatialEntity.name })
+          .from(ewohSpatialEntity)
+          .where(inArray(ewohSpatialEntity.entityId, workstationIds));
+        for (const r of wsRows) stationNameMap.set(r.entityId, r.name);
+      }
+
+      let bottleneckTakt = 0;
+      let bottleneckNodeId: string | null = null;
+      let sumTakt = 0;
+
+      for (const node of nodes) {
+        const takt = node.estimatedTakt ?? 30;
+        sumTakt += takt;
+        if (takt > bottleneckTakt) {
+          bottleneckTakt = takt;
+          bottleneckNodeId = node.nodeId;
+        }
+        if (node.assignedWorkstationId) {
+          stationTakts.push({
+            workstationId: node.assignedWorkstationId,
+            workstationName: stationNameMap.get(node.assignedWorkstationId) ?? node.assignedWorkstationId,
+            taktSec: Number(takt.toFixed(2)),
+            isBottleneck: false,
+          });
+        }
+      }
+
+      // 标记瓶颈工位
+      const bottleneckWorkstationId =
+        stationTakts.length > 0
+          ? stationTakts.reduce((max, cur) => (cur.taktSec > max.taktSec ? cur : max), stationTakts[0])
+              .workstationId
+          : null;
+      for (const s of stationTakts) {
+        s.isBottleneck = s.workstationId === bottleneckWorkstationId;
+      }
+
+      const bottleneckWorkstationName = bottleneckWorkstationId
+        ? stationNameMap.get(bottleneckWorkstationId) ?? bottleneckWorkstationId
+        : null;
+
+      // 顺序执行：预计完成时间 = 各工位节拍之和；每小时产量 = 3600 / 瓶颈节拍
+      const estimatedCompletionSec = Number(sumTakt.toFixed(2));
+      const throughputPerHour = bottleneckTakt > 0 ? Number((3600 / bottleneckTakt).toFixed(2)) : 0;
+
+      const simulation: TaktSimulation = {
+        bottleneckWorkstationId,
+        bottleneckWorkstationName,
+        estimatedCompletionSec,
+        throughputPerHour,
+        stationTakts,
+      };
+
+      // 2. 写入 ewoh_schedule_plan（strategy='task_orchest', status='proposed'）
+      const assignedEntities = nodes
+        .map((n) => n.assignedPersonId)
+        .filter((v): v is string => typeof v === 'string' && v.length > 0);
+
+      await this.db.insert(ewohSchedulePlan).values({
+        planId,
+        planName: `任务编排-${req.orderId}`,
+        strategy: 'task_orchest',
+        status: 'proposed',
+        taktImprovement: 0,
+        highLoadPersons: 0,
+        lowBatteryRisk: 0,
+        affectedPersons: assignedEntities.length,
+        metricsJson: {
+          takt: Number(bottleneckTakt.toFixed(2)),
+          bottleneck: bottleneckWorkstationId,
+          completion_sec: estimatedCompletionSec,
+          throughput: throughputPerHour,
+          orderId: req.orderId,
+          assignedEntities,
+        } as Record<string, unknown>,
+        reason: `工单 ${req.orderId} 编排 ${nodes.length} 道工序，瓶颈节拍 ${bottleneckTakt.toFixed(1)}s，预计完成 ${estimatedCompletionSec}s`,
+        createdAt: now,
+      });
+
+      // 3. 写入审计 action='orchestrate'
+      const [auditRow] = await this.db
+        .insert(ewohScheduleAudit)
+        .values({
+          auditId: `AUDIT-${Date.now()}-${this.randomSuffix(4)}`,
+          planId,
+          action: 'orchestrate',
+          operator,
+          reason: `工单 ${req.orderId} 任务编排`,
+          createdAt: now,
+        })
+        .returning();
+
+      this.logger.log(
+        `orchestrateTask planId=${planId} orderId=${req.orderId} bottleneck=${bottleneckWorkstationId} takt=${bottleneckTakt.toFixed(1)} throughput=${throughputPerHour} auditId=${auditRow.auditId}`,
+      );
+
+      return {
+        planId,
+        simulation,
+        nodes,
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      this.logger.error('orchestrateTask 失败', error);
+      throw error;
+    }
+  }
+
+  // ===== G3.5 调度下发 =====
+
+  async dispatchPlan(planId: string, req: DispatchRequest): Promise<DispatchResult> {
+    try {
+      // 1. 校验方案存在且已确认
+      const [existing] = await this.db
+        .select()
+        .from(ewohSchedulePlan)
+        .where(eq(ewohSchedulePlan.planId, planId))
+        .limit(1);
+
+      if (!existing) {
+        throw new NotFoundException(`Schedule plan ${planId} not found`);
+      }
+      if (existing.status !== 'confirmed') {
+        throw new BadRequestException(`Schedule plan ${planId} is not confirmed (current: ${existing.status})`);
+      }
+
+      const operator = req.operator ?? 'dispatcher';
+      const now = new Date();
+
+      // 2. 冲突检测：从 metricsJson 提取关联实体/设备，检查是否离线
+      const metrics = (existing.metricsJson as Record<string, unknown> | null) ?? {};
+      const entityIds = this.extractEntityIds(metrics);
+
+      let conflicts: string[] = [];
+      if (entityIds.length > 0) {
+        const deviceRows = await this.db
+          .select({ deviceId: ewohDevice.deviceId, online: ewohDevice.online, workerName: ewohDevice.workerName })
+          .from(ewohDevice)
+          .where(inArray(ewohDevice.deviceId, entityIds));
+        conflicts = deviceRows
+          .filter((d) => d.online === false)
+          .map((d) => `设备 ${d.workerName ?? d.deviceId} 离线，无法下发`);
+      }
+
+      // 3. 写入审计 action='dispatch'
+      const [auditRow] = await this.db
+        .insert(ewohScheduleAudit)
+        .values({
+          auditId: `AUDIT-${Date.now()}-${this.randomSuffix(4)}`,
+          planId,
+          action: 'dispatch',
+          operator,
+          reason:
+            conflicts.length > 0
+              ? `下发冲突：${conflicts.join('; ')}`
+              : req.executionNote ?? `方案下发执行`,
+          createdAt: now,
+        })
+        .returning();
+
+      if (conflicts.length > 0) {
+        // 存在冲突，保持已确认状态，返回 conflict
+        this.logger.warn(`dispatchPlan planId=${planId} conflict: ${conflicts.length} issues`);
+        return {
+          planId,
+          status: 'conflict',
+          conflicts,
+          dispatchedAt: now.toISOString(),
+          auditId: auditRow.auditId,
+        };
+      }
+
+      // 4. 无冲突，更新方案状态为 'dispatched'
+      await this.db
+        .update(ewohSchedulePlan)
+        .set({ status: 'dispatched' })
+        .where(eq(ewohSchedulePlan.planId, planId));
+
+      this.logger.log(`dispatchPlan planId=${planId} dispatched auditId=${auditRow.auditId}`);
+
+      return {
+        planId,
+        status: 'dispatched',
+        conflicts: [],
+        dispatchedAt: now.toISOString(),
+        auditId: auditRow.auditId,
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof NotFoundException) throw error;
+      this.logger.error('dispatchPlan 失败', error);
+      throw error;
+    }
+  }
+
+  // ===== G3.6 外骨骼反馈 =====
+
+  async sendExoFeedback(deviceId: string, req: ExoFeedbackRequest): Promise<ExoFeedbackResult> {
+    try {
+      // 1. 校验设备存在
+      const [device] = await this.db
+        .select()
+        .from(ewohDevice)
+        .where(eq(ewohDevice.deviceId, deviceId))
+        .limit(1);
+
+      if (!device) {
+        return {
+          deviceId,
+          accepted: false,
+          delivered: false,
+          error: '设备不存在',
+        };
+      }
+
+      // 2. 校验在线状态
+      if (device.online !== true) {
+        return {
+          deviceId,
+          accepted: false,
+          delivered: false,
+          error: '设备离线',
+        };
+      }
+
+      // 3. 写入事件 ewoh_event
+      const priority = req.priority ?? 'normal';
+      const severityMap: Record<string, string> = {
+        critical: 'L3',
+        high: 'L2',
+        normal: 'L1',
+        low: 'L1',
+      };
+      const severity = severityMap[priority] ?? 'L1';
+      const title = `外骨骼反馈-${req.type}${req.message ? `: ${req.message}` : ''}`;
+      const now = new Date();
+
+      await this.db.insert(ewohEvent).values({
+        eventId: `EVT-${Date.now()}-${this.randomSuffix(6)}`,
+        deviceId,
+        eventCode: 'EXO_FEEDBACK',
+        eventType: 'feedback',
+        severity,
+        title,
+        status: 'open',
+        createdAt: now,
+        sourceType: 'simulated',
+        evidenceJson: {
+          type: req.type,
+          tactilePattern: req.tactilePattern ?? null,
+          message: req.message ?? null,
+          arContent: req.arContent ?? null,
+          priority,
+          reason: req.reason ?? null,
+        } as Record<string, unknown>,
+      });
+
+      this.logger.log(`sendExoFeedback deviceId=${deviceId} type=${req.type} priority=${priority} delivered`);
+
+      return {
+        deviceId,
+        accepted: true,
+        delivered: true,
+      };
+    } catch (error) {
+      this.logger.error('sendExoFeedback 失败', error);
+      throw error;
+    }
+  }
+
+  // ===== G3.7 大脑推理建议 =====
+
+  async getBrainSuggestions(): Promise<BrainSuggestion[]> {
+    try {
+      // 1. 查询最近 1h 遥测：按 deviceId 分组的平均负荷
+      const telemetryRows = await this.db
+        .select({
+          deviceId: ewohTelemetry.deviceId,
+          avgLoad: sql<number>`coalesce(avg(${ewohTelemetry.loadScore}), 0)::float`,
+          avgBattery: sql<number>`coalesce(avg(${ewohTelemetry.batteryPct}), 100)::float`,
+        })
+        .from(ewohTelemetry)
+        .where(gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`))
+        .groupBy(ewohTelemetry.deviceId);
+
+      // 2. 查询未结事件
+      const openEvents = await this.db
+        .select()
+        .from(ewohEvent)
+        .where(eq(ewohEvent.status, 'open'));
+
+      // 3. 查询低电量设备
+      const lowBatteryDevices = await this.db
+        .select({ deviceId: ewohDevice.deviceId, workerName: ewohDevice.workerName, batteryPct: ewohDevice.batteryPct })
+        .from(ewohDevice)
+        .where(sql`${ewohDevice.batteryPct} < 20`);
+
+      const suggestions: BrainSuggestion[] = [];
+
+      const highLoadDevices = telemetryRows.filter((r) => (r.avgLoad ?? 0) > 0.7);
+      const overloadDevices = telemetryRows.filter((r) => (r.avgLoad ?? 0) > 0.8);
+      const l3Events = openEvents.filter((e) => e.severity === 'L3');
+
+      // 建议 1: 负荷均衡（avg load > 0.8）
+      if (overloadDevices.length > 0) {
+        const maxLoad = Math.max(...overloadDevices.map((r) => r.avgLoad ?? 0));
+        const confidence = Number(Math.min(0.6 + (maxLoad - 0.8) * 2, 0.95).toFixed(2));
+        suggestions.push({
+          type: 'load_balance',
+          title: '高负荷人员负荷均衡',
+          description: `检测到 ${overloadDevices.length} 台设备平均负荷超过 0.8，建议将高负荷人员任务部分转移给低负荷人员。`,
+          affectedEntities: overloadDevices.map((r) => r.deviceId),
+          expectedBenefit: `预计平均负荷下降 15-20%，最大负荷由 ${maxLoad.toFixed(2)} 降至 0.7 以下`,
+          confidence,
+        });
+      }
+
+      // 建议 2: 换电（battery < 20）
+      if (lowBatteryDevices.length > 0) {
+        const minBattery = Math.min(...lowBatteryDevices.map((d) => d.batteryPct ?? 100));
+        const confidence = Number(Math.min(0.7 + (20 - minBattery) / 40, 0.95).toFixed(2));
+        suggestions.push({
+          type: 'battery_swap',
+          title: '低电量设备换电',
+          description: `检测到 ${lowBatteryDevices.length} 台设备电量低于 20%，建议立即安排换电或充电。`,
+          affectedEntities: lowBatteryDevices.map((d) => d.deviceId),
+          expectedBenefit: `避免设备停机，最低电量 ${minBattery}%，换电后可持续作业 4 小时`,
+          confidence,
+        });
+      }
+
+      // 建议 3: 安全介入（L3 事件）
+      if (l3Events.length > 0) {
+        suggestions.push({
+          type: 'safety_intervene',
+          title: 'L3 安全事件介入',
+          description: `检测到 ${l3Events.length} 项 L3 级未结安全事件，建议立即介入处理。`,
+          affectedEntities: l3Events.map((e) => e.eventId),
+          expectedBenefit: '及时处置可避免安全事故升级，降低人员受伤风险',
+          confidence: 0.9,
+        });
+      }
+
+      // 建议 4: 节拍优化（高负荷设备 > 0）
+      if (highLoadDevices.length > 0) {
+        const confidence = Number((0.65 + Math.min(highLoadDevices.length * 0.05, 0.25)).toFixed(2));
+        suggestions.push({
+          type: 'takt_improve',
+          title: '瓶颈工位节拍优化',
+          description: `${highLoadDevices.length} 台设备处于高负荷状态，可能存在瓶颈工位，建议优化工序分配。`,
+          affectedEntities: highLoadDevices.map((r) => r.deviceId),
+          expectedBenefit: '通过瓶颈工位拆分或并行化，预计节拍提升 5-10%',
+          confidence,
+        });
+      }
+
+      // 建议 5: 无问题时给出通用优化建议
+      if (suggestions.length === 0) {
+        suggestions.push({
+          type: 'bottleneck_resolve',
+          title: '产线瓶颈通用优化',
+          description: '当前各项指标平稳，建议持续监控并识别潜在瓶颈工位进行预防性优化。',
+          affectedEntities: [],
+          expectedBenefit: '预防性优化可提升整体产线稳定性，预计节拍提升 2-3%',
+          confidence: 0.5,
+        });
+      }
+
+      this.logger.log(`getBrainSuggestions generated ${suggestions.length} suggestions`);
+      return suggestions;
+    } catch (error) {
+      this.logger.error('getBrainSuggestions 失败', error);
+      throw error;
+    }
+  }
+
+  // ===== 私有辅助方法 =====
+
+  /** 计算负荷均衡度（0-1，越高越均衡；基于标准差的归一化） */
+  private computeStdDevNormalized(values: number[]): number {
+    if (values.length === 0) return 1;
+    const mean = values.reduce((s, v) => s + v, 0) / values.length;
+    const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length;
+    const stdDev = Math.sqrt(variance);
+    // 归一化：stdDev 越小越均衡，1 / (1 + stdDev) 映射到 0-1
+    return Number((1 / (1 + stdDev)).toFixed(3));
+  }
+
+  /** 从 metricsJson 提取关联实体 ID（兼容 resource_alloc / task_orchest 两种存储格式） */
+  private extractEntityIds(metrics: Record<string, unknown>): string[] {
+    const ids = new Set<string>();
+    const allocated = metrics['allocatedEntities'];
+    if (Array.isArray(allocated)) {
+      for (const v of allocated) if (typeof v === 'string') ids.add(v);
+    }
+    const assigned = metrics['assignedEntities'];
+    if (Array.isArray(assigned)) {
+      for (const v of assigned) if (typeof v === 'string') ids.add(v);
+    }
+    return Array.from(ids);
+  }
+
+  private randomSuffix(len: number): string {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let s = '';
+    for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return s;
+  }
+}

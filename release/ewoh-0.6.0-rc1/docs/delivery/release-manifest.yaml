@@ -1,0 +1,85 @@
+release: 0.6.0-rc1
+date: 2026-08-03
+status: candidate-for-production (approval-gated)
+bundle:
+  path: release/ewoh-0.6.0-rc1
+  checksums: release/ewoh-0.6.0-rc1/SHA256SUMS.txt
+  files: 818
+artifacts:
+  api: ewoh-spark-app/dist/server
+  client: ewoh-spark-app/dist/client/index.standalone.html
+  ddl_standalone: db/migrations/standalone_001_schema.sql
+  ddl_verify: db/verify/standalone_001_verify.sql
+  users: db/migrations/standalone_002_users.sql
+  runtime_role: db/migrations/standalone_003_runtime_role.sql
+  openapi: openapi/ewoh.yaml
+  route_manifest: openapi/route-manifest.json
+  deploy: deploy/cloud/
+  contracts: .codex/artifacts/contracts/
+evidence:
+  jest: "40 suites / 155 tests"
+  e2e: "11/11 HTTP + PostgreSQL"
+  openapi: "106/106 documented, 0 unimplemented"
+  standalone_check: "passed (typecheck/lint/jest/openapi/e2e/build/ddl/hygiene)"
+  db_verify: "48 managed tables / 48 RLS / audit chain / security probe OK"
+  browser: "Playwright login + command center/map/devices/alerts"
+  perf: "1000 req / 50 concurrency, 6718 qps, p95 14.63ms"
+  github_actions:
+    branch: codex/rc1-ci-full
+    commits:
+      - 7474121b8b4be88192ea34750a5db0cd038b6db7
+      - ad3dc108bbd5ee557494c02265e67f43bebef00e
+      - bb4cd1fdc10e7f07aafdc418bb80a50b3b1fe7b6
+      - 148d98993242020a2590839274d6aa34219c4bf7
+      - d9f7c9926ff0279d449ed5cbd416e2e842ab3f1b
+      - 604d83146af022a38cc259dc315cedfdda7ac353
+    status: all success (standalone/test/security; Docker build included)
+  second_wave:
+    org_hierarchy: wired
+    scheduler_weights: persisted
+    control_resource_audit: added
+    rule_dedup: database-backed
+    frontend_react_query: 10 centers
+    scheduling_actions: added
+    data_assets: real lists
+    l3l4_filter: implemented
+    responsive: implemented
+  third_wave:
+    device_update_audit: added
+    event_handle_audit: added
+    dashboard_controller_test: added
+  fourth_wave:
+    resource_inventory: persisted via ewoh_resource_binding
+    quantity_column: added to DDL generator
+    fake_db_conditions: extended
+  fifth_wave:
+    scheduler_idempotency: idempotencyKey supported for plan generation
+  eighth_wave:
+    environment_summary: real endpoint wired into CommandMap environment mode
+gates:
+  G0: passed
+  G1: validated
+  G2: passed
+  G3: passed
+  G4: passed (local standalone)
+  G5: passed
+  G6: passed (standalone)
+  G7: passed
+  G8: passed
+  G9: passed (local)
+  G10: partial
+  G11: pending
+  G12: pending
+  G13: pending
+approvals_required:
+  - production database DDL/migration
+  - production deployment
+  - credentials and permission changes
+  - irreversible data operations
+pending:
+  - container image build/apply with Docker/Kubernetes
+  - production migration and rollback drill
+  - monitoring/alerting and HA load verification
+  - real device/gateway integration
+  - training delivery and business acceptance signoff
+  - follow-on phase acceptance and closeout

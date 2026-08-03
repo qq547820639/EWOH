@@ -1,0 +1,95 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ewoh_owner
+      POSTGRES_PASSWORD: ${EWOH_OWNER_DATABASE_PASSWORD:?EWOH_OWNER_DATABASE_PASSWORD must be set}
+      POSTGRES_DB: ewoh
+    volumes:
+      - ewoh-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ewoh_owner -d ewoh"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ewoh-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/cloud/Dockerfile.migrate
+    environment:
+      EWOH_DATABASE_URL: postgresql://ewoh_owner:${EWOH_OWNER_DATABASE_PASSWORD:?EWOH_OWNER_DATABASE_PASSWORD must be set}@postgres:5432/ewoh
+      EWOH_ALLOW_DDL: "1"
+      EWOH_API_DATABASE_PASSWORD: ${EWOH_API_DATABASE_PASSWORD:?EWOH_API_DATABASE_PASSWORD must be set}
+      EWOH_BOOTSTRAP_ADMIN_USERNAME: ${EWOH_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      EWOH_BOOTSTRAP_ADMIN_PASSWORD: ${EWOH_BOOTSTRAP_ADMIN_PASSWORD:?EWOH_BOOTSTRAP_ADMIN_PASSWORD must be set}
+      EWOH_BOOTSTRAP_ADMIN_DISPLAY_NAME: ${EWOH_BOOTSTRAP_ADMIN_DISPLAY_NAME:-EWOH Administrator}
+    command:
+      - sh
+      - -ec
+      - |
+        node db/runner/run_migrations.js --apply-standalone
+        node db/runner/run_migrations.js --verify-standalone
+        node db/runner/run_migrations.js --apply-standalone-users
+        node db/runner/run_migrations.js --apply-standalone-runtime-role
+        node db/runner/run_migrations.js --seed-standalone-admin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/cloud/Dockerfile.api
+    environment:
+      EWOH_DEPLOY_TARGET: standalone
+      HOST: 0.0.0.0
+      PORT: 3000
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      DATABASE_URL: postgresql://ewoh_api:${EWOH_API_DATABASE_PASSWORD:?EWOH_API_DATABASE_PASSWORD must be set}@postgres:5432/ewoh
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      DB_POOL_MAX: 20
+      BODY_LIMIT: 1mb
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}
+      UPLOAD_DIR: /app/data/uploads
+      OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-}
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-auto}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-}
+      OBJECT_STORAGE_FORCE_PATH_STYLE: ${OBJECT_STORAGE_FORCE_PATH_STYLE:-true}
+      OBJECT_STORAGE_PREFIX: ${OBJECT_STORAGE_PREFIX:-files}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    volumes:
+      - ewoh-uploads:/app/data/uploads
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  ewoh-pgdata:
+  ewoh-redis-data:
+  ewoh-uploads:

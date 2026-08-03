@@ -1,0 +1,16 @@
+version: 1.0-draft
+owner: AG-05
+states:
+  - open
+  - acknowledged
+  - processing
+  - closed
+  - reopened
+transitions:
+  - { from: open, to: acknowledged, role: handler, condition: confirm }
+  - { from: acknowledged, to: processing, role: handler, condition: start_handling }
+  - { from: processing, to: closed, role: handler, condition: complete }
+  - { from: closed, to: reopened, role: safety_admin, condition: reopen }
+  - { from: reopened, to: acknowledged, role: handler, condition: confirm_reopen }
+  - { from: reopened, to: processing, role: handler, condition: direct_handling }
+terminal: [closed]

@@ -1,0 +1,30 @@
+version: 1.0-draft
+owner: AG-05
+states:
+  - draft
+  - pending_confirm
+  - pending_approval
+  - pending_dispatch
+  - dispatched
+  - received
+  - executing
+  - paused
+  - exception
+  - completed
+  - cancelled
+transitions:
+  - { from: draft, to: pending_confirm, role: creator, condition: required_fields_complete }
+  - { from: pending_confirm, to: pending_approval, role: dispatcher, condition: approval_required }
+  - { from: pending_confirm, to: pending_dispatch, role: dispatcher, condition: no_approval_required }
+  - { from: pending_approval, to: pending_dispatch, role: approver, condition: approved_or_bypassed }
+  - { from: pending_approval, to: draft, role: approver, condition: rejected_with_reason }
+  - { from: pending_dispatch, to: dispatched, role: dispatcher, condition: resources_reserved }
+  - { from: dispatched, to: received, role: worker, condition: accept }
+  - { from: received, to: executing, role: worker, condition: start }
+  - { from: executing, to: paused, role: [worker, dispatcher], condition: reason_required }
+  - { from: executing, to: exception, role: [system, worker], condition: anomaly }
+  - { from: paused, to: executing, role: worker, condition: resume }
+  - { from: exception, to: executing, role: dispatcher, condition: resolved }
+  - { from: executing, to: completed, role: worker, condition: all_steps_complete }
+  - { from: any_non_terminal, to: cancelled, role: authorized, condition: reason_required }
+terminal: [completed, cancelled]

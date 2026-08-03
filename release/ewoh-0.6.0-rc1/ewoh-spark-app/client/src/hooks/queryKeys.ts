@@ -1,0 +1,35 @@
+import type { ApiNamespace } from '../api/namespaces';
+import type { DeviceSearchQuery, PersonnelQuery } from '@shared/api.interface';
+
+export const queryKeys = {
+  org: (orgId: string) => ['org', orgId] as const,
+  scope: (orgId: string) => ['org', orgId, 'scope'] as const,
+  center: (orgId: string, center: string) => ['org', orgId, 'center', center] as const,
+  list: (orgId: string, resource: ApiNamespace, filters?: Record<string, unknown>) =>
+    ['org', orgId, resource, 'list', filters ?? {}] as const,
+  detail: (orgId: string, resource: ApiNamespace, id: string) =>
+    ['org', orgId, resource, 'detail', id] as const,
+  world: (orgId: string) => ['org', orgId, 'world'] as const,
+  audit: (orgId: string, filters?: Record<string, unknown>) =>
+    ['org', orgId, 'audit', filters ?? {}] as const,
+  spatialEntities: ['spatial-entities'] as const,
+  spatialHierarchy: ['spatial-hierarchy'] as const,
+  worldState: ['world-state'] as const,
+  overview: ['overview'] as const,
+  events: (status?: string) => ['events', status ?? 'all'] as const,
+  devices: (query?: DeviceSearchQuery) => ['devices', query ?? {}] as const,
+  deviceBindings: (deviceId?: string) => ['device-bindings', deviceId ?? 'none'] as const,
+  replaySnapshots: ['world-replay'] as const,
+  schedulerPlans: (status?: string) => ['scheduler-plans', status ?? 'all'] as const,
+  commandCenter: ['command-center'] as const,
+  digitalWorld: ['digital-world'] as const,
+  personnel: (query?: PersonnelQuery) => ['personnel', query ?? {}] as const,
+  alerts: ['alerts'] as const,
+  organizationTree: ['organization-tree'] as const,
+  models: ['models'] as const,
+  dataAssets: ['data-assets'] as const,
+  systemConfigs: ['system-configs'] as const,
+  aiSuggestions: ['ai-suggestions'] as const,
+  aiPlans: ['ai-plans'] as const,
+  environmentSummary: ['environment-summary'] as const,
+};

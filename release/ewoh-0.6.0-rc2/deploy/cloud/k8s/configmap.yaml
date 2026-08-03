@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ewoh-api-config
+  namespace: ewoh
+data:
+  HOST: "0.0.0.0"
+  PORT: "3000"
+  EWOH_DEPLOY_TARGET: "standalone"
+  PUBLIC_BASE_URL: "https://ewoh.example.com"
+  CORS_ORIGINS: "https://ewoh.example.com"
+  DB_POOL_MAX: "20"
+  JWT_EXPIRES_IN: "8h"
+  REFRESH_TOKEN_EXPIRES_IN: "30d"
+  LOG_LEVEL: "info"
+  METRICS_ENABLED: "true"
+  UPLOAD_DIR: "/app/data/uploads"
+  MAX_UPLOAD_BYTES: "20971520"
+  # Local-disk fallback is enabled until an S3-compatible endpoint/bucket is
+  # provisioned; setting this to true with empty endpoint/bucket crashes startup.
+  REQUIRE_OBJECT_STORAGE: "false"
+  OBJECT_STORAGE_ENDPOINT: ""
+  OBJECT_STORAGE_BUCKET: ""
+  OBJECT_STORAGE_REGION: "auto"
+  OBJECT_STORAGE_FORCE_PATH_STYLE: "true"
+  OBJECT_STORAGE_PREFIX: "files"

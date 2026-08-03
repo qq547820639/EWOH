@@ -1,0 +1,19 @@
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY ewoh-spark-app/package*.json ./
+RUN npm ci
+COPY ewoh-spark-app/ ./
+ENV EWOH_SKIP_PLUGIN_INIT=1
+RUN npm run build:prod:standalone
+
+FROM node:22-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+ENV EWOH_DEPLOY_TARGET=standalone
+RUN mkdir -p /app/data/uploads && chown -R node:node /app
+COPY --chown=node:node --from=build /app/dist ./dist
+COPY --chown=node:node --from=build /app/node_modules ./node_modules
+COPY --chown=node:node --from=build /app/package.json ./
+USER node
+EXPOSE 3000
+CMD ["node", "dist/server/main.js"]

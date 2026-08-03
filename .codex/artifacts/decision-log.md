@@ -1,0 +1,12 @@
+# Decision Log
+
+| ID | Date | Decision | Rationale | Reversibility |
+|----|------|----------|-----------|---------------|
+| D-001 | 2026-08-03 | Adopt `EWOH工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案.docx` Final 3.0 as master execution baseline | Latest frozen multi-agent plan; explicitly named as authoritative by user | Reversible via superseding plan |
+| D-002 | 2026-08-03 | Physical packaging = 36 new tables + 12 altered tables = 48 managed tables | Plan table 75/76 defines current execution packaging; logical capability mapping required | Reversible before DDL freeze |
+| D-003 | 2026-08-03 | No production DB DDL/deploy/credential changes without explicit user approval | User goal lists these as approval-required operations | N/A |
+| D-004 | 2026-08-03 | Preserve all existing worktree changes | Developer policy and user trust | N/A |
+| D-005 | 2026-08-03 | Run read-only PostgreSQL probes against project-configured `SUDA_DATABASE_URL` only; no DDL | Environment probe is first-batch work; project env is the authorized dev target | N/A |
+| D-008 | 2026-08-03 | Fix `policy_missing` scalar-subquery defect in both verify SQL files; standalone verify re-passed 48/48 | Live local PostgreSQL verify errored before fix; after fix all expected counts pass | Fully reversible |
+| D-009 | 2026-08-03 | Launch WP-HARDEN-001 as four parallel workers from independent review findings | Security/persistence/frontend reviews returned fail with majors; fixes must precede gate closure | Per-change reversible |
+| D-010 | 2026-08-03 | Approval domain has no physical table in the frozen 48-table DDL; keep service-aggregate until C1 maps approval to equivalent tables | Plan table 80 allows explicit mapping; adding tables would break the frozen 48-table packaging | Reversible via C1 contract update |

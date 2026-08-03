@@ -1,0 +1,157 @@
+/* workbench/workbench.css — 班组长工作台（Task 16.4）
+   沿用全局深色主题：背景 #0d1117 / 文字 #e6edf3 / 边框 #30363d（取全局 --border）。
+   严重度色：critical #ef4444 / warning #f59e0b / info #3b82f6。 */
+
+.cm-wb-section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.cm-wb-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-2);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cm-wb-note {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.cm-wb-empty {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 4px 0;
+}
+
+/* ===== Section A: KPI 网格 ===== */
+.cm-wb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+.cm-wb-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.cm-wb-kpi-label { font-size: 11px; color: var(--muted); }
+.cm-wb-kpi-value { font-size: 18px; font-weight: 700; color: var(--text); font-family: var(--mono); }
+.cm-wb-kpi-sub { font-size: 10px; color: var(--muted-2); }
+.cm-wb-kpi-good .cm-wb-kpi-value { color: var(--success); }
+.cm-wb-kpi-warning .cm-wb-kpi-value { color: var(--warning); }
+.cm-wb-kpi-danger .cm-wb-kpi-value { color: var(--danger); }
+
+/* ===== Section B: 待审批调度方案 ===== */
+.cm-wb-plans {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 8px;
+}
+.cm-wb-plan-item {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+.cm-wb-plan-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cm-wb-plan-name { font-size: 13px; font-weight: 700; }
+.cm-wb-plan-target { font-size: 11px; color: var(--accent-2); margin: 4px 0; }
+.cm-wb-plan-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 4px 0;
+}
+.cm-wb-plan-metrics span {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 3px 6px;
+  background: var(--bg);
+  border-radius: 3px;
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+}
+.cm-wb-plan-metrics b { font-family: var(--mono); color: var(--text); font-weight: 600; }
+.cm-wb-plan-actions {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+
+/* ===== Section C: 需关注事件 ===== */
+.cm-wb-events { display: flex; flex-direction: column; gap: 6px; }
+.cm-wb-event-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+.cm-wb-event-item.cm-wb-sev-critical { border-left-color: #ef4444; }
+.cm-wb-event-item.cm-wb-sev-warning { border-left-color: #f59e0b; }
+.cm-wb-event-item.cm-wb-sev-info { border-left-color: #3b82f6; }
+.cm-wb-event-main { flex: 1; min-width: 0; }
+.cm-wb-event-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cm-wb-event-title { font-size: 13px; font-weight: 600; }
+.cm-wb-event-status { margin-left: auto; font-size: 10px; color: var(--muted); }
+.cm-wb-event-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--muted);
+  margin: 3px 0;
+}
+.cm-wb-event-detail { font-size: 11px; color: var(--text); line-height: 1.5; }
+.cm-wb-event-actions { flex-shrink: 0; }
+
+/* ===== Section D: 快速操作 + 安全红线 ===== */
+.cm-wb-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.cm-wb-safety {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: var(--radius-sm);
+}
+.cm-wb-safety-line {
+  font-size: 11px;
+  color: var(--danger);
+  margin: 2px 0;
+  opacity: 0.9;
+}
+
+@media (max-width: 720px) {
+  .cm-wb-grid { grid-template-columns: 1fr 1fr; }
+  .cm-wb-plan-metrics { grid-template-columns: 1fr; }
+}

@@ -1,0 +1,103 @@
+name: standalone
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ewoh-ci-owner-only
+          POSTGRES_DB: ewoh
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ewoh"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ewoh-spark-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ewoh-spark-app
+        run: npm ci
+
+      - name: Type check
+        working-directory: ewoh-spark-app
+        run: npm run type:check
+
+      - name: Lint
+        working-directory: ewoh-spark-app
+        run: npm run lint
+
+      - name: Jest
+        working-directory: ewoh-spark-app
+        run: npm test -- --runInBand
+
+      - name: OpenAPI route audit (strict)
+        run: node scripts/audit-openapi-routes.js --strict
+
+      - name: Build standalone
+        working-directory: ewoh-spark-app
+        run: npm run build:prod:standalone
+
+      - name: DDL runner plans
+        run: |
+          node db/runner/run_migrations.js --plan > /tmp/plan.sql
+          node db/runner/run_migrations.js --plan rollback > /tmp/rollback.sql
+          node db/runner/run_migrations.js --plan seed > /tmp/seed.sql
+          node db/runner/run_migrations.js --plan users > /tmp/users.sql
+          node db/runner/run_migrations.js --plan users_rollback > /tmp/users_rollback.sql
+          node db/runner/run_migrations.js --plan users_seed > /tmp/users_seed.sql
+          node db/runner/run_migrations.js --plan standalone > /tmp/standalone.sql
+          node db/runner/run_migrations.js --plan standalone_rollback > /tmp/standalone_rollback.sql
+          node db/runner/run_migrations.js --plan standalone_verify > /tmp/standalone_verify.sql
+          node db/runner/run_migrations.js --plan standalone_seed > /tmp/standalone_seed.sql
+          node db/runner/run_migrations.js --plan standalone_users > /tmp/standalone_users.sql
+          node db/runner/run_migrations.js --plan standalone_users_rollback > /tmp/standalone_users_rollback.sql
+          node db/runner/run_migrations.js --plan standalone_runtime_role > /tmp/standalone_runtime_role.sql
+          node db/runner/run_migrations.js --plan standalone_runtime_role_rollback > /tmp/standalone_runtime_role_rollback.sql
+
+      - name: PostgreSQL 17 migration, RLS, audit, and rollback
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_BOOTSTRAP_ADMIN_USERNAME: ci_admin
+          EWOH_BOOTSTRAP_ADMIN_DISPLAY_NAME: CI Admin
+        run: |
+          runtime_password="$(openssl rand -hex 24)"
+          admin_password="$(openssl rand -hex 24)"
+          export EWOH_API_DATABASE_PASSWORD="$runtime_password"
+          export EWOH_RUNTIME_DATABASE_URL="postgresql://ewoh_api:${runtime_password}@127.0.0.1:5432/ewoh"
+          export EWOH_BOOTSTRAP_ADMIN_PASSWORD="$admin_password"
+          echo "EWOH_API_DATABASE_PASSWORD=${runtime_password}" >> "$GITHUB_ENV"
+          echo "EWOH_RUNTIME_DATABASE_URL=postgresql://ewoh_api:${runtime_password}@127.0.0.1:5432/ewoh" >> "$GITHUB_ENV"
+          bash scripts/standalone-postgres-check.sh
+
+      - name: E2E HTTP + PostgreSQL
+        working-directory: ewoh-spark-app
+        env:
+          EWOH_E2E_OWNER_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_E2E_RUNTIME_DATABASE_URL: postgresql://ewoh_api:${{ env.EWOH_API_DATABASE_PASSWORD }}@127.0.0.1:5432/ewoh
+        run: npm run test:e2e
+
+      - name: Build Docker image
+        run: |
+          docker build -f deploy/cloud/Dockerfile.api -t ewoh-api:ci .
+          docker build -f deploy/cloud/Dockerfile.migrate -t ewoh-migrate:ci .

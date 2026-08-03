@@ -1,0 +1,17 @@
+version: 1.0-draft
+owner: AG-05
+states:
+  - pending
+  - approved
+  - rejected
+  - cancelled
+  - expired
+  - bypassed
+transitions:
+  - { from: pending, to: approved, condition: all_steps_approved }
+  - { from: pending, to: rejected, condition: any_step_rejected }
+  - { from: pending, to: cancelled, role: initiator, condition: withdraw }
+  - { from: pending, to: expired, condition: deadline_passed }
+  - { from: pending, to: bypassed, role: high_privilege_admin, condition: emergency, audit: high_risk }
+terminal: [approved, rejected, cancelled, expired, bypassed]
+step_states: [pending, delegated, skipped, approved, rejected, expired]

@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.app.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "incremental": false,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "types": ["node", "jest", "vite/client"]
+  },
+  "include": ["src/**/*.test.ts", "../shared/**/*.ts"]
+}

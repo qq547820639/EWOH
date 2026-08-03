@@ -1,0 +1,29 @@
+# Shared Contracts
+
+Each contract has a single owner and a version. Agents consume the contract,
+not chat history. C1/C2 are already frozen; C3/C4/C5/C6 were updated on
+2026-08-03 to the current implementation and are frozen as v1.0 with their
+remaining items listed inside each document.
+
+| Contract | File | Owner | Status | Evidence |
+|----------|------|-------|--------|----------|
+| C1 Data | `data-contract.md` | AG-03 | v1.1 frozen | live DB probe, DDL + verify SQL, approval equivalent mapping |
+| C2 API | `api-contract.md` | AG-04 | v1.0 frozen | `openapi/ewoh.yaml`, route manifest, strict audit 106/106 |
+| C3 State machines | `state-machines.md` | AG-05 | v1.0 frozen/validated | service conditional-update 409 tests, E2E control/world/approval persistence |
+| C4 Security | `security-contract.md` | AG-06 | v1.0 frozen/validated | security probe, E2E auth/roles/RLS, `security/access-matrix.yaml` |
+| C5 UI | `ui-contract.md` | AG-30 | v1.0 frozen/validated | Playwright page captures, `round4.md`, `gates.md` G7 |
+| C6 DevOps | `devops-contract.md` | AG-51 | v1.0 frozen/validated | standalone.yml/test.yml/security.yml, standalone checks, route audit |
+
+Supporting inventory: `inventory/frontend-nestjs.md`,
+`inventory/ui-devops-inventory.md`, `inventory/environment.md`,
+`inventory/docs-gap-report.md`.
+
+Freeze scope note: C3-C6 are frozen as contracts for the current real
+implementation. Each document explicitly separates service-enforced behavior
+from pending items; the pending items do not reopen the contract but define
+the next validation wave and completion conditions in
+`requirements-trace.md`.
+
+Change flow: change request -> impact analysis -> owner version bump -> AG-00
+and verification review -> user approval for scope/security changes -> update
+consumers -> rerun verification.
