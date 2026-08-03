@@ -244,6 +244,79 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/world/replay/context/{eventId}:
+    get:
+      tags:
+        - world
+      summary: Event before/during/after replay context
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: windowMinutes
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Before/during/after snapshots around the event
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/world/replay/items:
+    post:
+      tags:
+        - world
+      summary: Create issue/task/evidence from a replay event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - eventId
+                - kind
+              properties:
+                eventId:
+                  type: string
+                kind:
+                  type: string
+                  enum: [issue, task, evidence]
+                title:
+                  type: string
+                note:
+                  type: string
+                replayTime:
+                  type: string
+      responses:
+        '201':
+          description: Replay-derived event created
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/world/state:
     get:
       tags:
@@ -326,7 +399,7 @@ paths:
           name: sourceType
           in: query
           required: false
-          description: simulated, real, or controlled_test
+          description: real, controlled_test, simulated, replayed, stale, or offline
           schema:
             type: string
         - &ref_6
@@ -2052,6 +2125,47 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scale/mappings/{id}/dry-run:
+    post:
+      tags:
+        - scale
+      summary: Dry-run mapping rules against a sample payload
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - sample
+              properties:
+                sample:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '201':
+          description: Mapping dry-run result with localized field errors
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/profiles/{id}/replay:
     post:
       tags:
@@ -2588,7 +2702,7 @@ paths:
     post:
       tags:
         - mobile
-      summary: Scan a work order into the mobile workbench
+      summary: Scan a work order, step, device, material, batch, station, or factory reference
       requestBody:
         required: true
         content:
@@ -2596,17 +2710,18 @@ paths:
             schema:
               type: object
               properties:
+                scanValue:
+                  type: string
                 orderId:
                   type: string
-              required:
-                - orderId
       responses:
         '201':
-          description: Successful response
+          description: Work order detail or typed scan result
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MesWorkOrderDetail'
+                type: object
+                additionalProperties: true
         Unauthorized:
           $ref: '#/components/responses/Unauthorized'
         Forbidden:
@@ -2660,7 +2775,7 @@ paths:
         - name: action
           in: query
           required: true
-          description: start, report, review, or handover
+          description: start, report, pause, resume, review, or handover
           schema:
             type: string
       requestBody:
@@ -2686,6 +2801,64 @@ paths:
           $ref: '#/components/responses/NotFound'
         Conflict:
           $ref: '#/components/responses/Conflict'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mobile/workbench/orders/{orderId}/steps/{stepId}/quality:
+    post:
+      tags:
+        - mobile
+      summary: Record a mobile quality inspection for a work step
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                result:
+                  type: string
+                  enum: [pass, fail, rework]
+                defectCode:
+                  type: string
+                quantity:
+                  type: integer
+                note:
+                  type: string
+              required:
+                - result
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stepId:
+                    type: string
+                  eventId:
+                    type: string
+                  result:
+                    type: string
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
   /api/oee/device-status:
@@ -3203,6 +3376,354 @@ paths:
           $ref: '#/components/responses/Forbidden'
         NotFound:
           $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/sops:
+    get:
+      tags:
+        - mes
+      summary: List SOP assets
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AssetPackage'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - mes
+      summary: Register a versioned SOP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - version
+                - steps
+              properties:
+                sopId:
+                  type: string
+                title:
+                  type: string
+                version:
+                  type: string
+                effectiveFrom:
+                  type: string
+                effectiveTo:
+                  type: string
+                checksum:
+                  type: string
+                steps:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - name
+                    properties:
+                      name:
+                        type: string
+                      instruction:
+                        type: string
+                      mandatory:
+                        type: boolean
+                      media:
+                        type: array
+                        items:
+                          type: string
+                      tools:
+                        type: array
+                        items:
+                          type: string
+                      materials:
+                        type: array
+                        items:
+                          type: string
+      responses:
+        '201':
+          description: SOP created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/sops/{id}:
+    get:
+      tags:
+        - mes
+      summary: Get one SOP
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/sops/{id}/publish:
+    post:
+      tags:
+        - mes
+      summary: Publish an SOP
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/sops/{id}/diff/{otherId}:
+    get:
+      tags:
+        - mes
+      summary: Diff two SOP versions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: otherId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Version diff
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/quality-schemes:
+    get:
+      tags:
+        - mes
+      summary: List quality inspection schemes
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AssetPackage'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - mes
+      summary: Register a quality inspection scheme
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - version
+                - stage
+                - checkItems
+              properties:
+                schemeId:
+                  type: string
+                name:
+                  type: string
+                version:
+                  type: string
+                stage:
+                  type: string
+                  enum: [first, in_process, final]
+                deviceIds:
+                  type: array
+                  items:
+                    type: string
+                stepTypes:
+                  type: array
+                  items:
+                    type: string
+                productCodes:
+                  type: array
+                  items:
+                    type: string
+                checkItems:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - itemId
+                      - name
+                    properties:
+                      itemId:
+                        type: string
+                      name:
+                        type: string
+                      required:
+                        type: boolean
+                      defectCode:
+                        type: string
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/quality-schemes/match:
+    get:
+      tags:
+        - mes
+      summary: Match published quality schemes by device/step/product
+      parameters:
+        - name: deviceId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: stepType
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: productCode
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Matching schemes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/quality-schemes/{id}:
+    get:
+      tags:
+        - mes
+      summary: Get one quality scheme
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/quality-schemes/{id}/publish:
+    post:
+      tags:
+        - mes
+      summary: Publish a quality scheme
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
   /api/tasks/{id}:
@@ -4955,6 +5476,35 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/observability/slow-queries:
+    get:
+      tags:
+        - observability
+      summary: List slow database transactions
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+            maximum: 500
+      responses:
+        '200':
+          description: Slow query records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/operations/assets/{id}/state:
     post:
       tags:
@@ -5305,6 +5855,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OperationsSummary'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/role-workbench:
+    get:
+      tags:
+        - operations
+      summary: Read role-specific task workbench aggregation
+      parameters:
+        - name: role
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [operator, team_lead, quality, equipment, manager]
+        - name: personId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Role workbench data
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
         Unauthorized:
           $ref: '#/components/responses/Unauthorized'
         Forbidden:
@@ -6112,19 +6695,49 @@ components:
     ErrorResponse:
       type: object
       properties:
-        code:
-          type: string
-          description: Business or validation error code
-        message:
-          type: string
-          description: Human-readable error message
-        details:
+        error:
           type: object
-          description: Optional structured details
-          additionalProperties: true
+          properties:
+            code:
+              type: string
+              description: Legacy business or validation error code
+            errorCode:
+              type: string
+              description: Unified business or validation error code
+            message:
+              type: string
+              description: Human-readable error message
+            details:
+              type: string
+              description: Optional structured details
+            fieldErrors:
+              type: object
+              description: Field-level validation errors
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+            requestId:
+              type: string
+              description: Request ID used to correlate logs, audit, and support bundles
+            retryable:
+              type: boolean
+              description: Whether the operation can be safely retried
+            recommendedAction:
+              type: string
+              description: Operator-facing recommended next action
+            timestamp:
+              type: number
+              description: Error timestamp in milliseconds
+          required:
+            - code
+            - errorCode
+            - message
+            - requestId
+            - retryable
+            - recommendedAction
       required:
-        - code
-        - message
+        - error
       additionalProperties: false
     CursorPage:
       type: object
@@ -6354,7 +6967,7 @@ components:
           description: Spatial y coordinate in mm
         sourceType:
           type: string
-          description: simulated, real, or controlled_test
+          description: real, controlled_test, simulated, replayed, stale, or offline
         firmwareVersion:
           type: string
           nullable: true
@@ -6427,7 +7040,7 @@ components:
           description: Initial online state
         sourceType:
           type: string
-          description: simulated, real, or controlled_test
+          description: real, controlled_test, simulated, replayed, stale, or offline
         firmwareVersion:
           type: string
           description: Firmware version
@@ -6804,7 +7417,7 @@ components:
           nullable: true
         sourceType:
           type: string
-          description: simulated, real, or controlled_test
+          description: real, controlled_test, simulated, replayed, stale, or offline
         triggerRecordId:
           type: string
           nullable: true
@@ -6871,7 +7484,7 @@ components:
           nullable: true
         sourceType:
           type: string
-          description: simulated, real, or controlled_test
+          description: real, controlled_test, simulated, replayed, stale, or offline
         recordId:
           type: string
           nullable: true
@@ -7181,7 +7794,7 @@ components:
           type: string
         sourceType:
           type: string
-          description: seed, simulated, lidar_scan, etc.
+          description: seed, simulated, lidar_scan, replayed, stale, offline, etc.
         confidence:
           type: number
           description: 0-1
@@ -7609,6 +8222,9 @@ components:
             - simulated
             - real
             - controlled_test
+            - replayed
+            - stale
+            - offline
         record_id:
           type: string
           description: UUID used for idempotency
@@ -7693,6 +8309,9 @@ components:
             - simulated
             - real
             - controlled_test
+            - replayed
+            - stale
+            - offline
         record_id:
           type: string
         data_confidence:
@@ -7757,6 +8376,9 @@ components:
             - simulated
             - real
             - controlled_test
+            - replayed
+            - stale
+            - offline
         record_id:
           type: string
       required:
@@ -7789,6 +8411,9 @@ components:
             - simulated
             - real
             - controlled_test
+            - replayed
+            - stale
+            - offline
         record_id:
           type: string
       required:
@@ -7866,6 +8491,9 @@ components:
             - simulated
             - real
             - controlled_test
+            - replayed
+            - stale
+            - offline
         record_id:
           type: string
       required:
@@ -9605,6 +10233,9 @@ components:
           type: integer
         name:
           type: string
+        instruction:
+          type: string
+          nullable: true
         status:
           type: string
         assignedPersonId:
@@ -9613,6 +10244,9 @@ components:
           type: string
         spatialEntityId:
           type: string
+        progress:
+          type: integer
+          nullable: true
         actualStart:
           type: string
           nullable: true
@@ -9846,6 +10480,26 @@ components:
           type: number
         note:
           type: string
+        schemeId:
+          type: string
+        stage:
+          type: string
+          enum: [first, in_process, final]
+        checkResults:
+          type: array
+          items:
+            type: object
+            required:
+              - itemId
+              - result
+            properties:
+              itemId:
+                type: string
+              result:
+                type: string
+                enum: [pass, fail]
+              note:
+                type: string
       required:
         - stepId
         - result

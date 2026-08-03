@@ -102,6 +102,11 @@ export class WorkOrchestrationController {
     return this.workService.getGitSyncStatus();
   }
 
+  @Post('git-sync/apply')
+  applyGitSync() {
+    return this.workService.applyGitSync();
+  }
+
   @Get('site-readiness')
   getSiteReadiness() {
     return this.workService.getSiteReadiness();

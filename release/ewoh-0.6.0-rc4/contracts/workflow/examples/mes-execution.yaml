@@ -1,0 +1,13 @@
+workflowId: mes-execution
+version: 1.0.0
+description: MES P0 production execution workflow.
+start: create
+steps:
+  - { name: create, action: create, allowedRoles: [dispatcher], next: [release] }
+  - { name: release, action: release, allowedRoles: [dispatcher], next: [start] }
+  - { name: start, action: start, allowedRoles: [worker], next: [report] }
+  - { name: report, action: report, allowedRoles: [worker], next: [inspect] }
+  - { name: inspect, action: inspect, allowedRoles: [quality], next: [review] }
+  - { name: review, action: review, allowedRoles: [lead], next: [handover] }
+  - { name: handover, action: handover, allowedRoles: [lead, worker], next: [complete] }
+  - { name: complete, action: complete, allowedRoles: [lead], next: [] }

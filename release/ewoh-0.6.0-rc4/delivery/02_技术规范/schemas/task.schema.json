@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EWOH Task",
+  "type": "object",
+  "required": [
+    "task_id",
+    "task_name",
+    "zone_id",
+    "status"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string"
+    },
+    "task_name": {
+      "type": "string"
+    },
+    "zone_id": {
+      "type": "string"
+    },
+    "required_skill": {
+      "type": "string"
+    },
+    "load_level": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "recommended",
+        "assigned",
+        "in_progress",
+        "done",
+        "cancelled"
+      ]
+    }
+  }
+}

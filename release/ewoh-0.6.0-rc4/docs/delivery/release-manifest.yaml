@@ -1,0 +1,78 @@
+release: 0.6.0-rc4
+date: 2026-08-04
+status: candidate-for-production (approval-gated)
+bundle:
+  path: release/ewoh-0.6.0-rc4
+  checksums: release/ewoh-0.6.0-rc4/SHA256SUMS.txt
+  files: 1202
+artifacts:
+  api: ewoh-spark-app/dist/server
+  client: ewoh-spark-app/dist/client/index.standalone.html
+  ddl_standalone: db/migrations/standalone_001_schema.sql
+  ddl_verify: db/verify/standalone_001_verify.sql
+  users: db/migrations/standalone_002_users.sql
+  runtime_role: db/migrations/standalone_003_runtime_role.sql
+  openapi:
+    - openapi/ewoh.yaml
+    - openapi/work-orchestration.yaml
+  route_manifest: openapi/route-manifest.json
+  deploy: deploy/cloud/
+  work_control_plane: ewoh-spark-app/server/modules/work-orchestration/
+  work_console: ewoh-spark-app/client/src/pages/WorkOrchestration/
+  work_tools:
+    - tools/work-indexer/
+    - tools/gate-engine/
+    - tools/resource-registry/
+    - tools/handoff-service/
+    - tools/git-sync/
+    - tools/factory-replication/
+  final6_catalog: catalog/
+  contracts: contracts/
+evidence:
+  jest: "76 suites / 362 tests"
+  client_jest: "13 suites / 42 tests"
+  e2e: "29/29 HTTP + PostgreSQL"
+  openapi: "232/232 documented, 0 unimplemented"
+  standalone_check: "passed (typecheck/lint/jest/client-jest/repo-facts/openapi/e2e/build/ddl/hygiene)"
+  release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
+  postgres_gate: "standalone-postgres-check PASSED; 51 managed tables / 51 RLS / audit chain / rollback to 0 objects / rebuild"
+  gate_sweep: "scenario 8 gates; connector 32; AAS 7; Rego 4; deployment 4; cross-tenant E2E 29/29"
+  python: "unittest 667 passed; pytest 120 passed; ruff clean"
+  perf: "500 req / 50 concurrency on /health/live, 4610 qps, p95 26.83ms"
+  ops_drill: "ALL STANDALONE OPS CHECKS PASSED; 57 tables backup/restore/verify; identity sequence advanced"
+  work_graph: "202 items / 21 edges / 48 actors / 69 evidence / 14 gates / 0 conflicts"
+  git_sync: "offline-first issue/PR plan; 188 items; live creation approval-gated"
+  console_ux: "DAG pan/zoom, node search, gate/evidence filters, evidence content preview, batch gate decisions, handoff state actions, lock countdown, site readiness tab, q/limit/offset API"
+  factory_replication: "replication-report schema + passing/failing fixtures; 20 factory contract checks"
+  site_readiness: "site-readiness schema + ready/not-ready fixtures; standalone gate passes ready fixture"
+  release_review: "scale-release-review.js packaging gate; 34/34 checks"
+  browser: "Playwright command center/map/devices/alerts + /work-orchestration DAG/gates/Git Sync"
+  pilot_readiness: "Go/No-Go blockers documented; production approval/factory/device/training/signoff pending"
+gates:
+  G0: passed
+  G1: passed
+  G2: passed
+  G3: passed
+  G4: passed (local standalone)
+  G5: passed
+  G6: passed locally
+  G7: validation
+  G8: validation
+  G9: validation
+  G10: partial
+  G11: pending
+  G12: pending
+  G13: pending
+approvals_required:
+  - production database DDL/migration
+  - production deployment
+  - credentials and permission changes
+  - irreversible data operations
+  - real GitHub issue/PR creation
+pending:
+  - GitHub live issue/PR creation and branch/PR tracking
+  - two real factory replication drills with VAL-62 acceptance
+  - partner shadow delivery
+  - production SLO/DR and HA verification
+  - container/K8s runtime execution (Docker/Kubectl/Helm absent locally)
+  - training delivery, business acceptance signoff, and closeout

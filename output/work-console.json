@@ -1,0 +1,1787 @@
+{
+  "generatedAt": "2026-08-03T23:19:24.939Z",
+  "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
+  "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
+  "counts": {
+    "itemCount": 252,
+    "edgeCount": 39,
+    "actorCount": 48,
+    "artifactCount": 15,
+    "evidenceCount": 109,
+    "gateCount": 14,
+    "riskCount": 15,
+    "decisionCount": 52,
+    "statusCounts": {
+      "Done": 159,
+      "In Progress": 2,
+      "Refining": 9,
+      "Validation": 46,
+      "Review": 5,
+      "Passed for local implementation": 1,
+      "Passed": 2,
+      "Passed for local standalone scope": 1,
+      "Passed for standalone": 1,
+      "Passed for standalone base": 1,
+      "Passed locally": 2,
+      "Passed locally, production pending": 1,
+      "Pending": 3,
+      "Proposed": 19
+    },
+    "conflicts": []
+  },
+  "blocked": {
+    "blockedItems": [],
+    "affectedItems": [],
+    "unblockOwners": []
+  },
+  "missingEvidence": [
+    {
+      "id": "T-001",
+      "title": "Read authoritative docs",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-012",
+      "title": "Baseline test harness fix",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-013",
+      "title": "DDL/migration package generation",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-014",
+      "title": "Backend shared infrastructure",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-015",
+      "title": "Frontend 11-center shell",
+      "status": "Review",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-016",
+      "title": "Drizzle schema codegen sync to live DB (18 tables)",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-017",
+      "title": "Organization/personnel backend module",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-018",
+      "title": "Command center + personnel real-data pages",
+      "status": "Review",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-019",
+      "title": "Device search extension (available fields + pagination + binding filter)",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-020",
+      "title": "Model registry management module",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-021",
+      "title": "Role guard + sensitive personnel endpoint",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-022",
+      "title": "System config module with credential masking",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-023",
+      "title": "Task state machine service",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-024",
+      "title": "Alert state machine service",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-025",
+      "title": "Control request aggregation service",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-026",
+      "title": "Approval instance/step service",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-027",
+      "title": "Resource preorder/issue/release",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-028",
+      "title": "AI manual suggestion/plan service",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-029",
+      "title": "World snapshot/delta cursor protocol",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-030",
+      "title": "Scheduling/Alerts/AI/Model/System real pages",
+      "status": "Review",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-031",
+      "title": "Audit hash chain service",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-032",
+      "title": "SP-01..SP-08 scenario smoke suite",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-033",
+      "title": "DigitalWorld/Organization/DataAssets real pages",
+      "status": "Review",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-034",
+      "title": "Delivery docs: runbook/release/acceptance/training",
+      "status": "Review",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-035",
+      "title": "Demo seed SQL + runner --seed",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-036",
+      "title": "Command Map L3/L4 views",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-037",
+      "title": "Standalone NestJS bootstrap without Miaoda PlatformModule",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-038",
+      "title": "Standard env contract + Docker Compose",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-039",
+      "title": "Client HTTP layer without Miaoda toolkit",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-040",
+      "title": "JWT auth for standalone",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-041",
+      "title": "Standalone login page + token storage",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-042",
+      "title": "Kubernetes/HA manifests",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-043",
+      "title": "Redis service + rate limit guard",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-044",
+      "title": "ewoh_user migration + seed",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-045",
+      "title": "DB-backed auth with bcrypt",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-046",
+      "title": "Standalone CI/CD workflow",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-047",
+      "title": "Concurrency smoke script + evidence",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-048",
+      "title": "Standalone standard DDL variant",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-049",
+      "title": "One-click standalone check script",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-050",
+      "title": "File service (upload/download/delete)",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-051",
+      "title": "UUID input robustness (404 instead of DB 22P02 500)",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-052",
+      "title": "S3-compatible object storage driver",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-053",
+      "title": "Strict standalone auth and request-scoped DB context",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-054",
+      "title": "PostgreSQL 17 standalone migration/security/rollback gate",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-055",
+      "title": "HTTP multi-organization authorization acceptance",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-056",
+      "title": "OpenAPI/controller route drift audit",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-057",
+      "title": "DB-backed audit chain sink + read-only audit API",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-058",
+      "title": "Independent security/persistence/frontend reviews",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-059",
+      "title": "Security hardening: RBAC, refresh rotation/logout, rate limit, config unique index, audit roles, k8s config",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-060",
+      "title": "Runtime context/state machines: legacy auth fail-fast, simulator GUC, conditional transitions, audit wiring",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-061",
+      "title": "Persist control/resource/world-cursor to existing tables; approval gap documented",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-062",
+      "title": "Frontend/command map majors: event drill-down, real replay, role nav/guard, 401 refresh, 3D mode/fallback",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-063",
+      "title": "Real HTTP+PostgreSQL E2E scenario suite",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-064",
+      "title": "Browser UI regression: QueryClient provider fix + world replay 500 fix",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-065",
+      "title": "OpenAPI 106-route DTO contract",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-066",
+      "title": "Approval persistence via event/event_chain/audit equivalent mapping",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-067",
+      "title": "Freeze C3-C6 contracts + requirements trace",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-068",
+      "title": "Contract deviation fixes: device roles, system roles, client logout revocation",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-069",
+      "title": "Release drill script + full local drill pass",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-070",
+      "title": "DDL generator unique-index regression fix",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-071",
+      "title": "RC1 release bundle + checksums + Dockerfile lint",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-072",
+      "title": "GitHub Actions full CI green",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-073",
+      "title": "Bandit/ruff Python cleanup",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-074",
+      "title": "Backend deepening: org hierarchy, scheduler weights, control/resource audit, rule dedup",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-075",
+      "title": "Frontend UX deepening: React Query centers, scheduling/data assets actions, L3/L4 filter, responsive",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-076",
+      "title": "Second/third/fourth-wave CI re-verification",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-077",
+      "title": "Third wave: device/event audit coverage",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-078",
+      "title": "Resource inventory persistence via ewoh_resource_binding",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-079",
+      "title": "Scheduler plan generation idempotency",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-080",
+      "title": "Fifth-wave CI verification",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-081",
+      "title": "Security response headers",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-082",
+      "title": "Accessibility/UX seventh wave",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-083",
+      "title": "E2E scheduler idempotency case",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-084",
+      "title": "Environment mode real data",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-085",
+      "title": "Canonical UnifiedExoFrame ingestion + M2M org context",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-086",
+      "title": "PostgreSQL logical backup/restore drill + ops runbooks",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-087",
+      "title": "SECURITY DEFINER org lookup + security probe fixture isolation",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-088",
+      "title": "Training plan executable v1.1",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-089",
+      "title": "Prometheus metrics endpoint + business-path perf smoke",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-090",
+      "title": "Local deploy artifact verifier",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-091",
+      "title": "Final 4.0 baseline adoption",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-092",
+      "title": "MES P0 production execution closed loop",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-093",
+      "title": "OEE/Andon closed loop",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-094",
+      "title": "ERP connector skeleton",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-095",
+      "title": "Quality trace graph + mobile workbench API",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-096",
+      "title": "Mobile workbench React page",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-097",
+      "title": "Final 5.0 baseline adoption",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-098",
+      "title": "Factory template/profile/asset scale kernel",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-099",
+      "title": "Connector + scenario pack catalog and second-factory drill",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-100",
+      "title": "Asset conformance TCK + factory profile replay",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-101",
+      "title": "Scenario install TCK gate + fleet upgrade/rollback",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-102",
+      "title": "AsyncAPI/CloudEvents event catalog + API + audit",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-103",
+      "title": "Helm chart + Factory Values + static chart audit",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-104",
+      "title": "Golden Factory Profile manifest + install API",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-105",
+      "title": "Mapping DSL schema + example + registry API + TCK",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-106",
+      "title": "Upgrade rings + fleet registry + redacted support bundle",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-107",
+      "title": "OTel resource attributes across metrics and deployment env",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-108",
+      "title": "Asset/core compatibility catalog API + range matcher",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-109",
+      "title": "Policy schema + evaluation API + contract audit",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-110",
+      "title": "Template config inheritance diff preview API",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-111",
+      "title": "Connector runtime + exoskeleton/equipment-state manifests",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-112",
+      "title": "F0-F6 factory onboarding checklist + run API",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-113",
+      "title": "Scale Release review gate + package hook",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-114",
+      "title": "Workflow schema + role-aware advance API + audit",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-115",
+      "title": "Org-scoped feature flag API on system config store",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-116",
+      "title": "Sequence buffer for out-of-order/duplicate/backfill",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-117",
+      "title": "Twin package manifest/calibration pipeline + samples",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-118",
+      "title": "Partner shadow checklist + shadow-run API",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-119",
+      "title": "Deployment TCK gate across deploy/Helm/release checks",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-120",
+      "title": "Scale operations page wired to real scale APIs",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-121",
+      "title": "ERP/MES connector profile manifest + runtime tests",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-122",
+      "title": "Scale productization metrics API",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-123",
+      "title": "Scenario pack uninstall API + audit",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-124",
+      "title": "Connector TCK runner + make entry",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-125",
+      "title": "Scenario TCK runner across golden/policy/workflow/mapping/events",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-126",
+      "title": "Third factory config-driven install drill",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-127",
+      "title": "Factory difference register/list API + audit",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-128",
+      "title": "Factory difference resolve API + audit",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-129",
+      "title": "Cross-tenant full-chain TCK gate",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-130",
+      "title": "Factory differences register/resolve UI on /scale",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-131",
+      "title": "Stateful workflow instance start/list/advance API",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-132",
+      "title": "One-click support bundle generation UI on /scale",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-133",
+      "title": "Fleet status + ring upgrade/rollback UI on /scale",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-134",
+      "title": "Workflow instance start/list/advance UI on /scale",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-135",
+      "title": "Scenario pack install/uninstall UI on /scale",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-136",
+      "title": "EAM/tooling + work-center config + standard hours/efficiency",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-137",
+      "title": "Sparkplug B connector + OpenFeature flag evaluation",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-138",
+      "title": "Typed parameter registry with approval/version/rollback",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-139",
+      "title": "AAS/IEC 63278 JSON + AASX codec and twin submodel mapping",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-140",
+      "title": "Rego policy-as-code deployment gate + deployment TCK integration",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-141",
+      "title": "AAS asset registry API + twin semantics + Data Assets UI",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-142",
+      "title": "OPC UA node ID/quality/adapter + connector manifest",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-143",
+      "title": "Modbus TCP register/scaling/adapter + connector manifest",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-144",
+      "title": "HTTP/Webhook payload/signature/adapter + connector manifest",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-145",
+      "title": "CSV/File header mapping/row normalization/adapter + connector manifest",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-146",
+      "title": "OTel-style request tracing interceptor/service/API",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-147",
+      "title": "Support bundle includes redacted recent traces",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-148",
+      "title": "System page request tracing viewer",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-149",
+      "title": "Regenerate RC2 release bundle with all new capabilities",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-150",
+      "title": "Final one-click gate sweep (ops/scenario/deploy/AAS/Rego/connector/cross-tenant)",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-151",
+      "title": "Pilot readiness Go/No-Go blocker gate",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-152",
+      "title": "Rebuild RC2 bundle with pilot readiness gate",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-153",
+      "title": "Final 6.0 baseline adoption and authoritative plan extraction",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-154",
+      "title": "C7 Work Graph / C8 Asset Catalog / C9 Factory Profile contracts + audits",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-155",
+      "title": "Work Graph indexer, gate engine, resource registry, handoff CLI",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-156",
+      "title": "Work orchestration NestJS APIs + OpenAPI",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-157",
+      "title": "Work orchestration control plane UI",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-158",
+      "title": "Final 6 scenario packs, ERP connectors and mappings",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-159",
+      "title": "Final 6 verification sweep and evidence",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-160",
+      "title": "Offline-first GitHub Issue/PR sync plan and API",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-161",
+      "title": "Fresh PostgreSQL 17 DDL/RLS/audit/rollback/rebuild gate",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-162",
+      "title": "Environment probe refresh and local gate sweep",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-163",
+      "title": "Factory replication acceptance TCK",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-164",
+      "title": "Perf, ops backup/restore, and pilot readiness evidence",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-165",
+      "title": "Client Jest runner and audit chain stress coverage",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-166",
+      "title": "EWOH 0.6.0-rc3 release bundle",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-167",
+      "title": "Factory site-readiness evaluator and fixtures",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-168",
+      "title": "Final release drill and Python/security evidence",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-169",
+      "title": "Work console UX deepening and API filters",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-170",
+      "title": "Factory site readiness control-plane API/UI",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-171",
+      "title": "Handoff state workflow",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-172",
+      "title": "Repo facts consistency audit + CI wiring",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-173",
+      "title": "Unified error contract: errorCode/requestId/retryable/recommendedAction/details",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-174",
+      "title": "Data source vocabulary + reusable badge",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-175",
+      "title": "Nested request transaction reuse for scheduler/background GUC",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-176",
+      "title": "Mobile SOP/exception/QC/offline UX",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-177",
+      "title": "Independent review and first-round evidence",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-178",
+      "title": "Global ValidationPipe with structured fieldErrors",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-179",
+      "title": "Command-map person/device detail enrichment",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-180",
+      "title": "Mobile offline pending-action queue",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-181",
+      "title": "Control/work orchestration state guards",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-182",
+      "title": "Scale mutation idempotency guards",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-183",
+      "title": "Real PostgreSQL HTTP E2E acceptance",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-184",
+      "title": "Mobile exception photo attachments",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-185",
+      "title": "PWA installability assets",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-186",
+      "title": "Offline photo queue",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-187",
+      "title": "Release drill + perf + security verification",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-188",
+      "title": "Playwright browser screenshots",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-189",
+      "title": "Request ID audit correlation",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-190",
+      "title": "Error leak sanitization",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-191",
+      "title": "Devices page error/update state",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-192",
+      "title": "Command map query error banner",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-193",
+      "title": "EWOH 0.6.0-rc4 candidate bundle",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-194",
+      "title": "Authenticated Playwright browser tests",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-195",
+      "title": "Browser tests in CI",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-196",
+      "title": "Pilot readiness rerun (RC4)",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-197",
+      "title": "Ops backup/restore drill (RC4)",
+      "status": "Done",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "T-198",
+      "title": "Mobile workbench person/org filtering + worker role",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round90-p0-mobile-orchestration-1"
+      ]
+    },
+    {
+      "id": "T-199",
+      "title": "Typed scan recognition for order/step/device/material/batch/station/factory",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round90-p0-mobile-orchestration-2"
+      ]
+    },
+    {
+      "id": "T-200",
+      "title": "Exception attachment persistence + offline queue state machine",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round90-p0-mobile-orchestration-3"
+      ]
+    },
+    {
+      "id": "T-201",
+      "title": "Evidence binding metadata + invalidation + graph invariants",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round90-p0-mobile-orchestration-4"
+      ]
+    },
+    {
+      "id": "T-202",
+      "title": "Work Console CLI + standalone-check/CI wiring",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round90-p0-mobile-orchestration-5"
+      ]
+    },
+    {
+      "id": "T-203",
+      "title": "Independent review fixes: worker write guard, conflict discard, CI strict, scan body guard",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round91-review-fixes"
+      ]
+    },
+    {
+      "id": "T-204",
+      "title": "Onboarding F0-F3 real execution: site readiness, connector publish, scenario install",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round93-onboarding-mapping-real-gate-1"
+      ]
+    },
+    {
+      "id": "T-205",
+      "title": "Mapping dry-run/preflight API with localized source/target errors",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round93-onboarding-mapping-real-gate-2"
+      ]
+    },
+    {
+      "id": "T-206",
+      "title": "Real PostgreSQL E2E + authenticated browser validation",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round92-real-pg-e2e-browser"
+      ]
+    },
+    {
+      "id": "T-207",
+      "title": "Unified replay lanes, event context, and replay-derived issue creation",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round94-world-replay-unified-timeline"
+      ]
+    },
+    {
+      "id": "T-208",
+      "title": "E-SOP versioning, sign-off, and mandatory tool/material confirmation gates",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round95-esop-signoff"
+      ]
+    },
+    {
+      "id": "T-209",
+      "title": "Quality scheme registry, auto-match, required check items, and result consistency",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round96-quality-schemes"
+      ]
+    },
+    {
+      "id": "T-210",
+      "title": "Slow transaction detection, statement timeout, slow-query API and metric",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round97-slow-query-observability"
+      ]
+    },
+    {
+      "id": "T-211",
+      "title": "Frontend route lazy loading and cancellable world/replay requests",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round98-frontend-performance"
+      ]
+    },
+    {
+      "id": "T-212",
+      "title": "MES role task workbench API + role workbench page",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round99-role-workbench"
+      ]
+    },
+    {
+      "id": "T-213",
+      "title": "Progressive list rendering helper + load more in role workbench",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round100-progressive-lists"
+      ]
+    },
+    {
+      "id": "T-214",
+      "title": "Pilot readiness rerun with current code and real PG",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round101-pilot-readiness-rerun"
+      ]
+    },
+    {
+      "id": "T-215",
+      "title": "Event replay context UI in command map event center",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round102-replay-context-ui"
+      ]
+    },
+    {
+      "id": "G7",
+      "title": "Frontend and command map pass",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "G9",
+      "title": "Security/performance/regression pass",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    },
+    {
+      "id": "WP-ENV-001",
+      "title": "WP-ENV-001",
+      "status": "Validation",
+      "evidenceCount": 0,
+      "missing": true,
+      "staleEvidence": []
+    }
+  ],
+  "gateSummary": {
+    "requiresApproval": [
+      {
+        "gateId": "G10",
+        "title": "Release/rollback/ops ready",
+        "calculatedStatus": "requires_approval",
+        "conditions": [
+          "`RELEASE DRILL PASSED` on disposable PostgreSQL 17 (2026-08-04 iteration)",
+          "security probe OK",
+          "GitHub Actions Docker build + PG migration/rollback green",
+          "K8s apply and production observability drill pending"
+        ]
+      },
+      {
+        "gateId": "G11",
+        "title": "Business acceptance and delivery complete",
+        "calculatedStatus": "requires_approval",
+        "conditions": [
+          "acceptance signoff"
+        ]
+      },
+      {
+        "gateId": "G12",
+        "title": "Follow-on phases accepted",
+        "calculatedStatus": "requires_approval",
+        "conditions": [
+          "phase acceptance reports"
+        ]
+      },
+      {
+        "gateId": "G13",
+        "title": "Final project closeout",
+        "calculatedStatus": "requires_approval",
+        "conditions": [
+          "closeout package"
+        ]
+      }
+    ]
+  },
+  "answers": {
+    "whereBlocked": "当前没有状态为 blocked 的任务节点",
+    "whyBlocked": "无阻塞节点",
+    "whoCanUnblock": "无阻塞节点",
+    "missingEvidence": "T-001（现有 0 条，过期/失效 0 条）；T-012（现有 0 条，过期/失效 0 条）；T-013（现有 0 条，过期/失效 0 条）；T-014（现有 0 条，过期/失效 0 条）；T-015（现有 0 条，过期/失效 0 条）；T-016（现有 0 条，过期/失效 0 条）；T-017（现有 0 条，过期/失效 0 条）；T-018（现有 0 条，过期/失效 0 条）；T-019（现有 0 条，过期/失效 0 条）；T-020（现有 0 条，过期/失效 0 条）；T-021（现有 0 条，过期/失效 0 条）；T-022（现有 0 条，过期/失效 0 条）；T-023（现有 0 条，过期/失效 0 条）；T-024（现有 0 条，过期/失效 0 条）；T-025（现有 0 条，过期/失效 0 条）；T-026（现有 0 条，过期/失效 0 条）；T-027（现有 0 条，过期/失效 0 条）；T-028（现有 0 条，过期/失效 0 条）；T-029（现有 0 条，过期/失效 0 条）；T-030（现有 0 条，过期/失效 0 条）；T-031（现有 0 条，过期/失效 0 条）；T-032（现有 0 条，过期/失效 0 条）；T-033（现有 0 条，过期/失效 0 条）；T-034（现有 0 条，过期/失效 0 条）；T-035（现有 0 条，过期/失效 0 条）；T-036（现有 0 条，过期/失效 0 条）；T-037（现有 0 条，过期/失效 0 条）；T-038（现有 0 条，过期/失效 0 条）；T-039（现有 0 条，过期/失效 0 条）；T-040（现有 0 条，过期/失效 0 条）；T-041（现有 0 条，过期/失效 0 条）；T-042（现有 0 条，过期/失效 0 条）；T-043（现有 0 条，过期/失效 0 条）；T-044（现有 0 条，过期/失效 0 条）；T-045（现有 0 条，过期/失效 0 条）；T-046（现有 0 条，过期/失效 0 条）；T-047（现有 0 条，过期/失效 0 条）；T-048（现有 0 条，过期/失效 0 条）；T-049（现有 0 条，过期/失效 0 条）；T-050（现有 0 条，过期/失效 0 条）；T-051（现有 0 条，过期/失效 0 条）；T-052（现有 0 条，过期/失效 0 条）；T-053（现有 0 条，过期/失效 0 条）；T-054（现有 0 条，过期/失效 0 条）；T-055（现有 0 条，过期/失效 0 条）；T-056（现有 0 条，过期/失效 0 条）；T-057（现有 0 条，过期/失效 0 条）；T-058（现有 0 条，过期/失效 0 条）；T-059（现有 0 条，过期/失效 0 条）；T-060（现有 0 条，过期/失效 0 条）；T-061（现有 0 条，过期/失效 0 条）；T-062（现有 0 条，过期/失效 0 条）；T-063（现有 0 条，过期/失效 0 条）；T-064（现有 0 条，过期/失效 0 条）；T-065（现有 0 条，过期/失效 0 条）；T-066（现有 0 条，过期/失效 0 条）；T-067（现有 0 条，过期/失效 0 条）；T-068（现有 0 条，过期/失效 0 条）；T-069（现有 0 条，过期/失效 0 条）；T-070（现有 0 条，过期/失效 0 条）；T-071（现有 0 条，过期/失效 0 条）；T-072（现有 0 条，过期/失效 0 条）；T-073（现有 0 条，过期/失效 0 条）；T-074（现有 0 条，过期/失效 0 条）；T-075（现有 0 条，过期/失效 0 条）；T-076（现有 0 条，过期/失效 0 条）；T-077（现有 0 条，过期/失效 0 条）；T-078（现有 0 条，过期/失效 0 条）；T-079（现有 0 条，过期/失效 0 条）；T-080（现有 0 条，过期/失效 0 条）；T-081（现有 0 条，过期/失效 0 条）；T-082（现有 0 条，过期/失效 0 条）；T-083（现有 0 条，过期/失效 0 条）；T-084（现有 0 条，过期/失效 0 条）；T-085（现有 0 条，过期/失效 0 条）；T-086（现有 0 条，过期/失效 0 条）；T-087（现有 0 条，过期/失效 0 条）；T-088（现有 0 条，过期/失效 0 条）；T-089（现有 0 条，过期/失效 0 条）；T-090（现有 0 条，过期/失效 0 条）；T-091（现有 0 条，过期/失效 0 条）；T-092（现有 0 条，过期/失效 0 条）；T-093（现有 0 条，过期/失效 0 条）；T-094（现有 0 条，过期/失效 0 条）；T-095（现有 0 条，过期/失效 0 条）；T-096（现有 0 条，过期/失效 0 条）；T-097（现有 0 条，过期/失效 0 条）；T-098（现有 0 条，过期/失效 0 条）；T-099（现有 0 条，过期/失效 0 条）；T-100（现有 0 条，过期/失效 0 条）；T-101（现有 0 条，过期/失效 0 条）；T-102（现有 0 条，过期/失效 0 条）；T-103（现有 0 条，过期/失效 0 条）；T-104（现有 0 条，过期/失效 0 条）；T-105（现有 0 条，过期/失效 0 条）；T-106（现有 0 条，过期/失效 0 条）；T-107（现有 0 条，过期/失效 0 条）；T-108（现有 0 条，过期/失效 0 条）；T-109（现有 0 条，过期/失效 0 条）；T-110（现有 0 条，过期/失效 0 条）；T-111（现有 0 条，过期/失效 0 条）；T-112（现有 0 条，过期/失效 0 条）；T-113（现有 0 条，过期/失效 0 条）；T-114（现有 0 条，过期/失效 0 条）；T-115（现有 0 条，过期/失效 0 条）；T-116（现有 0 条，过期/失效 0 条）；T-117（现有 0 条，过期/失效 0 条）；T-118（现有 0 条，过期/失效 0 条）；T-119（现有 0 条，过期/失效 0 条）；T-120（现有 0 条，过期/失效 0 条）；T-121（现有 0 条，过期/失效 0 条）；T-122（现有 0 条，过期/失效 0 条）；T-123（现有 0 条，过期/失效 0 条）；T-124（现有 0 条，过期/失效 0 条）；T-125（现有 0 条，过期/失效 0 条）；T-126（现有 0 条，过期/失效 0 条）；T-127（现有 0 条，过期/失效 0 条）；T-128（现有 0 条，过期/失效 0 条）；T-129（现有 0 条，过期/失效 0 条）；T-130（现有 0 条，过期/失效 0 条）；T-131（现有 0 条，过期/失效 0 条）；T-132（现有 0 条，过期/失效 0 条）；T-133（现有 0 条，过期/失效 0 条）；T-134（现有 0 条，过期/失效 0 条）；T-135（现有 0 条，过期/失效 0 条）；T-136（现有 0 条，过期/失效 0 条）；T-137（现有 0 条，过期/失效 0 条）；T-138（现有 0 条，过期/失效 0 条）；T-139（现有 0 条，过期/失效 0 条）；T-140（现有 0 条，过期/失效 0 条）；T-141（现有 0 条，过期/失效 0 条）；T-142（现有 0 条，过期/失效 0 条）；T-143（现有 0 条，过期/失效 0 条）；T-144（现有 0 条，过期/失效 0 条）；T-145（现有 0 条，过期/失效 0 条）；T-146（现有 0 条，过期/失效 0 条）；T-147（现有 0 条，过期/失效 0 条）；T-148（现有 0 条，过期/失效 0 条）；T-149（现有 0 条，过期/失效 0 条）；T-150（现有 0 条，过期/失效 0 条）；T-151（现有 0 条，过期/失效 0 条）；T-152（现有 0 条，过期/失效 0 条）；T-153（现有 0 条，过期/失效 0 条）；T-154（现有 0 条，过期/失效 0 条）；T-155（现有 0 条，过期/失效 0 条）；T-156（现有 0 条，过期/失效 0 条）；T-157（现有 0 条，过期/失效 0 条）；T-158（现有 0 条，过期/失效 0 条）；T-159（现有 0 条，过期/失效 0 条）；T-160（现有 0 条，过期/失效 0 条）；T-161（现有 0 条，过期/失效 0 条）；T-162（现有 0 条，过期/失效 0 条）；T-163（现有 0 条，过期/失效 0 条）；T-164（现有 0 条，过期/失效 0 条）；T-165（现有 0 条，过期/失效 0 条）；T-166（现有 0 条，过期/失效 0 条）；T-167（现有 0 条，过期/失效 0 条）；T-168（现有 0 条，过期/失效 0 条）；T-169（现有 0 条，过期/失效 0 条）；T-170（现有 0 条，过期/失效 0 条）；T-171（现有 0 条，过期/失效 0 条）；T-172（现有 0 条，过期/失效 0 条）；T-173（现有 0 条，过期/失效 0 条）；T-174（现有 0 条，过期/失效 0 条）；T-175（现有 0 条，过期/失效 0 条）；T-176（现有 0 条，过期/失效 0 条）；T-177（现有 0 条，过期/失效 0 条）；T-178（现有 0 条，过期/失效 0 条）；T-179（现有 0 条，过期/失效 0 条）；T-180（现有 0 条，过期/失效 0 条）；T-181（现有 0 条，过期/失效 0 条）；T-182（现有 0 条，过期/失效 0 条）；T-183（现有 0 条，过期/失效 0 条）；T-184（现有 0 条，过期/失效 0 条）；T-185（现有 0 条，过期/失效 0 条）；T-186（现有 0 条，过期/失效 0 条）；T-187（现有 0 条，过期/失效 0 条）；T-188（现有 0 条，过期/失效 0 条）；T-189（现有 0 条，过期/失效 0 条）；T-190（现有 0 条，过期/失效 0 条）；T-191（现有 0 条，过期/失效 0 条）；T-192（现有 0 条，过期/失效 0 条）；T-193（现有 0 条，过期/失效 0 条）；T-194（现有 0 条，过期/失效 0 条）；T-195（现有 0 条，过期/失效 0 条）；T-196（现有 0 条，过期/失效 0 条）；T-197（现有 0 条，过期/失效 0 条）；T-198（现有 1 条，过期/失效 1 条）；T-199（现有 1 条，过期/失效 1 条）；T-200（现有 1 条，过期/失效 1 条）；T-201（现有 1 条，过期/失效 1 条）；T-202（现有 1 条，过期/失效 1 条）；T-203（现有 1 条，过期/失效 1 条）；T-204（现有 1 条，过期/失效 1 条）；T-205（现有 1 条，过期/失效 1 条）；T-206（现有 1 条，过期/失效 1 条）；T-207（现有 1 条，过期/失效 1 条）；T-208（现有 1 条，过期/失效 1 条）；T-209（现有 1 条，过期/失效 1 条）；T-210（现有 1 条，过期/失效 1 条）；T-211（现有 1 条，过期/失效 1 条）；T-212（现有 1 条，过期/失效 1 条）；T-213（现有 1 条，过期/失效 1 条）；T-214（现有 1 条，过期/失效 1 条）；T-215（现有 1 条，过期/失效 1 条）；G7（现有 0 条，过期/失效 0 条）；G9（现有 0 条，过期/失效 0 条）；WP-ENV-001（现有 0 条，过期/失效 0 条）",
+    "affectedTasks": "无受影响任务"
+  },
+  "invariantConflicts": [],
+  "canUnblock": true
+}

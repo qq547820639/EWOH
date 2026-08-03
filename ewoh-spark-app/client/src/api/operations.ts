@@ -288,3 +288,25 @@ export async function getEfficiencySummary(): Promise<EfficiencySummary> {
   });
   return res.data;
 }
+
+export type RoleWorkbenchRole =
+  | 'operator'
+  | 'team_lead'
+  | 'quality'
+  | 'equipment'
+  | 'manager';
+
+export async function getRoleWorkbench(
+  role: RoleWorkbenchRole,
+  personId?: string,
+): Promise<{ role: string; generatedAt: string; data: Record<string, unknown> }> {
+  const res = await axiosForBackend({
+    url: '/api/operations/role-workbench',
+    method: 'GET',
+    params: {
+      role,
+      ...(personId ? { personId } : {}),
+    },
+  });
+  return res.data;
+}

@@ -1,17 +1,47 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Inject,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { ewohSpatialEntity, ewohWorldState, ewohEvent, ewohEventChain } from '@server/database/schema';
+import {
+  ewohSpatialEntity,
+  ewohWorldState,
+  ewohEvent,
+  ewohEventChain,
+  ewohScheduleTask,
+  ewohScheduleTaskStep,
+  ewohResourceBinding,
+} from '@server/database/schema';
 import { eq, desc, and, gte, lte, sql, or, asc, inArray } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import type { CurrentWorldState, EventChainNode, ReplaySnapshot } from '@shared/api.interface';
+import { AuditService } from '../shared/audit.service';
 
 type SpatialEntityRow = typeof ewohSpatialEntity.$inferSelect;
 type WorldStateRow = typeof ewohWorldState.$inferSelect;
+
+function laneForEventType(eventType?: string | null): string {
+  const value = String(eventType || '').toLowerCase();
+  if (value.includes('quality')) return 'quality';
+  if (value.includes('approval')) return 'approval';
+  if (value.includes('control')) return 'control';
+  if (value.includes('rollback')) return 'rollback';
+  if (value.includes('material')) return 'material';
+  if (value.includes('task') || value.includes('work_order')) return 'task';
+  return 'alert';
+}
 
 @Injectable()
 export class WorldService {
   private readonly logger = new Logger(WorldService.name);
 
-  constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
+  constructor(
+    @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
+    private readonly auditService: AuditService,
+  ) {}
 
   /**
    * 聚合当前世界状态快照：人员 / 设备 / 工位 / 最近事件
@@ -150,7 +180,7 @@ export class WorldService {
   }
 
   /**
-   * 时间轴回放：按分钟分组取代表记录，构建 ReplaySnapshot
+   * 时间轴回放：合并世界状态、事件、任务、工序与物料变化的统一时间轴
    */
   async getReplay(from?: string, to?: string, limit = 100): Promise<ReplaySnapshot[]> {
     try {
@@ -159,7 +189,6 @@ export class WorldService {
       const fromTime = from ? new Date(from) : new Date(toTime.getTime() - 60 * 60 * 1000);
       const safeLimit = Math.min(Math.max(limit, 1), 1000);
 
-      // 边界校验：非法时间或区间反向直接返回空
       if (
         Number.isNaN(fromTime.getTime()) ||
         Number.isNaN(toTime.getTime()) ||
@@ -175,7 +204,45 @@ export class WorldService {
         .orderBy(desc(ewohWorldState.ts))
         .limit(safeLimit * 10);
 
-      // 按 ts 分钟分组（YYYY-MM-DDTHH:MM）
+      const events = await this.db
+        .select()
+        .from(ewohEvent)
+        .where(and(gte(ewohEvent.createdAt, fromTime), lte(ewohEvent.createdAt, toTime)))
+        .orderBy(desc(ewohEvent.createdAt));
+
+      const tasks = await this.db
+        .select()
+        .from(ewohScheduleTask)
+        .where(
+          and(
+            gte(ewohScheduleTask.updatedAt, fromTime),
+            lte(ewohScheduleTask.updatedAt, toTime),
+          ),
+        )
+        .limit(2000);
+
+      const steps = await this.db
+        .select()
+        .from(ewohScheduleTaskStep)
+        .where(
+          and(
+            gte(ewohScheduleTaskStep.updatedAt, fromTime),
+            lte(ewohScheduleTaskStep.updatedAt, toTime),
+          ),
+        )
+        .limit(4000);
+
+      const materials = await this.db
+        .select()
+        .from(ewohResourceBinding)
+        .where(
+          and(
+            gte(ewohResourceBinding.startTime, fromTime),
+            lte(ewohResourceBinding.startTime, toTime),
+          ),
+        )
+        .limit(2000);
+
       const byMinute = new Map<string, WorldStateRow[]>();
       for (const s of states) {
         const key = s.ts.toISOString().slice(0, 16);
@@ -183,17 +250,84 @@ export class WorldService {
         byMinute.get(key)!.push(s);
       }
 
-      // 时间范围内的事件
-      const events = await this.db
-        .select()
-        .from(ewohEvent)
-        .where(and(gte(ewohEvent.createdAt, fromTime), lte(ewohEvent.createdAt, toTime)))
-        .orderBy(desc(ewohEvent.createdAt));
+      type TimelineEvent = ReplaySnapshot['events'][number];
+      const eventByMinute = new Map<string, TimelineEvent[]>();
+      const addTimelineEvent = (ts: Date, event: TimelineEvent) => {
+        const key = ts.toISOString().slice(0, 16);
+        const list = eventByMinute.get(key) ?? [];
+        list.push(event);
+        eventByMinute.set(key, list);
+      };
 
-      const sortedKeys = Array.from(byMinute.keys()).sort().reverse().slice(0, safeLimit);
+      for (const e of events) {
+        const ts = e.createdAt ?? e.updatedAt;
+        if (!ts) continue;
+        addTimelineEvent(ts, {
+          eventId: e.eventId,
+          severity: e.severity ?? '',
+          title: e.title ?? '',
+          lane: laneForEventType(e.eventType),
+          entityId: e.deviceId ?? undefined,
+          sourceType: e.sourceType ?? 'simulated',
+          status: e.status ?? undefined,
+          eventCode: e.eventCode ?? undefined,
+        });
+      }
+
+      for (const task of tasks) {
+        const ts = task.updatedAt ?? task.createdAt;
+        if (!ts) continue;
+        addTimelineEvent(ts, {
+          eventId: `TSK-${task.scheduleTaskId}`,
+          severity: 'L1',
+          title: `工单 ${task.scheduleTaskId} ${task.status}`,
+          lane: 'task',
+          entityId: task.scheduleTaskId,
+          sourceType: 'real',
+          status: task.status,
+          eventCode: 'WORK_ORDER',
+        });
+      }
+
+      for (const step of steps) {
+        const ts = step.updatedAt ?? step.createdAt;
+        if (!ts) continue;
+        addTimelineEvent(ts, {
+          eventId: `STP-${step.stepId}`,
+          severity: 'L1',
+          title: `工序 ${step.stepId} ${step.status}`,
+          lane: 'task',
+          entityId: step.stepId,
+          sourceType: 'real',
+          status: step.status,
+          eventCode: 'TASK_STEP',
+        });
+      }
+
+      for (const binding of materials) {
+        const ts = binding.startTime;
+        if (!ts) continue;
+        addTimelineEvent(ts, {
+          eventId: `MAT-${binding.bindingId}`,
+          severity: 'L1',
+          title: `物料 ${binding.resourceId} ${binding.bindingType}`,
+          lane: 'material',
+          entityId: binding.targetId,
+          sourceType: 'real',
+          status: binding.status,
+          eventCode: 'MATERIAL',
+        });
+      }
+
+      const minuteKeys = Array.from(
+        new Set([...byMinute.keys(), ...eventByMinute.keys()]),
+      )
+        .sort()
+        .reverse()
+        .slice(0, safeLimit);
       const snapshots: ReplaySnapshot[] = [];
-      for (const key of sortedKeys) {
-        const groupStates = byMinute.get(key)!;
+      for (const key of minuteKeys) {
+        const groupStates = byMinute.get(key) ?? [];
         const persons: ReplaySnapshot['persons'] = [];
         const devices: ReplaySnapshot['devices'] = [];
         for (const s of groupStates) {
@@ -215,19 +349,11 @@ export class WorldService {
             devices.push(entry);
           }
         }
-        const ts = new Date(key + ':00Z');
-        const minuteEvents = events.filter(
-          (e) => e.createdAt && Math.abs(e.createdAt.getTime() - ts.getTime()) < 60000,
-        );
         snapshots.push({
-          ts: ts.toISOString(),
+          ts: new Date(key + ':00Z').toISOString(),
           persons,
           devices,
-          events: minuteEvents.map((e) => ({
-            eventId: e.eventId,
-            severity: e.severity ?? '',
-            title: e.title ?? '',
-          })),
+          events: eventByMinute.get(key) ?? [],
         });
       }
       return snapshots;
@@ -235,5 +361,120 @@ export class WorldService {
       this.logger.error('getReplay 失败', error);
       throw error;
     }
+  }
+
+  async getEventContext(eventId: string, windowMinutes = 10) {
+    const [source] = await this.db
+      .select()
+      .from(ewohEvent)
+      .where(eq(ewohEvent.eventId, eventId));
+    if (!source) {
+      throw new NotFoundException(`Event ${eventId} not found`);
+    }
+    const base = source.createdAt ?? source.updatedAt;
+    if (!base) {
+      throw new NotFoundException(`Event ${eventId} has no timestamp`);
+    }
+    const fromTime = new Date(base.getTime() - windowMinutes * 60 * 1000);
+    const toTime = new Date(base.getTime() + windowMinutes * 60 * 1000);
+    const snapshots = await this.getReplay(
+      fromTime.toISOString(),
+      toTime.toISOString(),
+      200,
+    );
+    const chronological = [...snapshots].sort(
+      (a, b) => Date.parse(a.ts) - Date.parse(b.ts),
+    );
+    const baseMs = base.getTime();
+    const before = chronological
+      .filter((snap) => Date.parse(snap.ts) < baseMs)
+      .at(-1);
+    const during = chronological.find(
+      (snap) => Math.abs(Date.parse(snap.ts) - baseMs) <= 60 * 1000,
+    );
+    const after = chronological.find((snap) => Date.parse(snap.ts) > baseMs);
+    return {
+      eventId,
+      occurredAt: base.toISOString(),
+      windowMinutes,
+      before: before ?? null,
+      during: during ?? null,
+      after: after ?? null,
+      timelineCount: snapshots.reduce(
+        (count, snap) => count + snap.events.length,
+        0,
+      ),
+    };
+  }
+
+  async createReplayItem(
+    body: {
+      eventId: string;
+      kind: 'issue' | 'task' | 'evidence';
+      title?: string;
+      note?: string;
+      replayTime?: string;
+    },
+    actor?: { userId: string; primaryOrgId: string },
+  ) {
+    if (!body.eventId?.trim()) {
+      throw new BadRequestException('eventId is required');
+    }
+    if (!['issue', 'task', 'evidence'].includes(body.kind)) {
+      throw new BadRequestException('kind must be issue, task, or evidence');
+    }
+    const [source] = await this.db
+      .select()
+      .from(ewohEvent)
+      .where(eq(ewohEvent.eventId, body.eventId));
+    if (!source) {
+      throw new NotFoundException(`Event ${body.eventId} not found`);
+    }
+    const newEventId = `RPL-${randomUUID().slice(0, 8)}`;
+    const createdAt = new Date();
+    await this.db.insert(ewohEvent).values({
+      eventId: newEventId,
+      deviceId: source.deviceId ?? null,
+      eventCode: `REPLAY_${body.kind.toUpperCase()}`,
+      eventType: body.kind,
+      severity: body.kind === 'issue' ? 'L2' : 'L1',
+      title: body.title?.trim() || `回放${body.kind}：${source.title ?? source.eventId}`,
+      status: 'open',
+      createdAt,
+      sourceType: 'replayed',
+      evidenceJson: {
+        sourceEventId: body.eventId,
+        sourceTitle: source.title ?? null,
+        note: body.note?.trim() ?? null,
+        replayTime: body.replayTime ?? null,
+        originalSeverity: source.severity ?? null,
+      },
+    });
+    await this.db.insert(ewohEventChain).values({
+      eventId: newEventId,
+      parentEventId: body.eventId,
+      causalType: 'derived_from_replay',
+      description: `${body.kind} created from replay context`,
+      createdAt,
+    });
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'world.replay.item.create',
+      entityType: 'event',
+      entityId: newEventId,
+      before: null,
+      after: {
+        sourceEventId: body.eventId,
+        kind: body.kind,
+        title: body.title?.trim() ?? null,
+      },
+    });
+    return {
+      eventId: newEventId,
+      kind: body.kind,
+      title: body.title?.trim() || source.title,
+      createdAt: createdAt.toISOString(),
+    };
   }
 }

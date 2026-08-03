@@ -35,6 +35,7 @@ venv/
 tmp/
 .pytest_cache/
 .ruff_cache/
+test-results/
 output/ewoh-storage.json
 
 # Node.js

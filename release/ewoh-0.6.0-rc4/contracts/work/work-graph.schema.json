@@ -1,0 +1,308 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ewoh:///work-graph/v1",
+  "title": "EWOH Work Graph",
+  "description": "Canonical graph produced from versioned repository artifacts by the EWOH work indexer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "generatedAt",
+    "sourceRoot",
+    "criticalPath",
+    "summary",
+    "items",
+    "edges",
+    "actors",
+    "artifacts",
+    "evidence",
+    "gates",
+    "risks",
+    "decisions",
+    "resources",
+    "handoffs"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "ewoh:///work-graph/v1"
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "sourceRoot": {
+      "type": "string",
+      "minLength": 1
+    },
+    "criticalPath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/workItem"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/workEdge"
+      }
+    },
+    "actors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/actor"
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    },
+    "gates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/gate"
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/risk"
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/decision"
+      }
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/resource"
+      }
+    },
+    "handoffs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/handoff"
+      }
+    }
+  },
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "itemCount",
+        "edgeCount",
+        "actorCount",
+        "artifactCount",
+        "evidenceCount",
+        "gateCount",
+        "riskCount",
+        "decisionCount",
+        "statusCounts",
+        "conflicts"
+      ],
+      "properties": {
+        "itemCount": { "type": "integer", "minimum": 0 },
+        "edgeCount": { "type": "integer", "minimum": 0 },
+        "actorCount": { "type": "integer", "minimum": 0 },
+        "artifactCount": { "type": "integer", "minimum": 0 },
+        "evidenceCount": { "type": "integer", "minimum": 0 },
+        "gateCount": { "type": "integer", "minimum": 0 },
+        "riskCount": { "type": "integer", "minimum": 0 },
+        "decisionCount": { "type": "integer", "minimum": 0 },
+        "statusCounts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "workItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "type", "status", "owner"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "type": {
+          "type": "string",
+          "enum": ["task", "gate", "package", "wave", "decision", "phase"]
+        },
+        "status": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string", "minLength": 1 },
+        "agents": { "type": "array", "items": { "type": "string" } },
+        "wave": { "type": "string" },
+        "priority": { "type": "string" },
+        "dueAt": { "type": "string" },
+        "version": { "type": "string" },
+        "evidence": { "type": "string" },
+        "summary": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "workEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "from", "to", "edgeType"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 },
+        "edgeType": {
+          "type": "string",
+          "enum": ["depends", "evidence", "approval", "rework", "derived", "gate"]
+        },
+        "condition": { "type": "string" },
+        "blocking": { "type": "boolean" },
+        "evidenceRequirement": { "type": "string" }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actorId", "name", "kind", "role"],
+      "properties": {
+        "actorId": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "enum": ["human", "agent", "team"] },
+        "role": { "type": "string", "minLength": 1 },
+        "ownership": { "type": "string" },
+        "permissions": { "type": "array", "items": { "type": "string" } },
+        "runtime": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactId", "path", "mediaType", "checksum"],
+      "properties": {
+        "artifactId": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "mediaType": { "type": "string", "minLength": 1 },
+        "checksum": { "type": "string", "minLength": 1 },
+        "version": { "type": "string" },
+        "producedBy": { "type": "string" },
+        "sensitivity": { "type": "string" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceId", "workItemId", "kind", "path"],
+      "properties": {
+        "evidenceId": { "type": "string", "minLength": 1 },
+        "workItemId": { "type": "string" },
+        "title": { "type": "string" },
+        "kind": { "type": "string", "minLength": 1 },
+        "environment": { "type": "string" },
+        "commitSha": { "type": "string" },
+        "result": { "type": "string" },
+        "expiresAt": { "type": "string" },
+        "verifier": { "type": "string" },
+        "path": { "type": "string", "minLength": 1 },
+        "checksum": { "type": "string", "minLength": 1 }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gateId", "title", "calculatedStatus"],
+      "properties": {
+        "gateId": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "calculatedStatus": { "type": "string", "minLength": 1 },
+        "humanDecision": {
+          "type": ["string", "null"],
+          "enum": ["approved", "rejected", "conditional", null]
+        },
+        "conditions": { "type": "array", "items": { "type": "string" } },
+        "approver": { "type": ["string", "null"] },
+        "decidedAt": { "type": ["string", "null"] }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "severity", "status"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "severity": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"]
+        },
+        "likelihood": { "type": "string" },
+        "trigger": { "type": "string" },
+        "owner": { "type": "string" },
+        "mitigation": { "type": "string" },
+        "status": { "type": "string", "minLength": 1 },
+        "linkedItems": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "date"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "date": { "type": "string", "minLength": 1 },
+        "decision": { "type": "string" },
+        "rationale": { "type": "string" },
+        "reversibility": { "type": "string" }
+      }
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resourceId", "name", "kind", "status"],
+      "properties": {
+        "resourceId": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "minLength": 1 },
+        "holder": { "type": "string" },
+        "purpose": { "type": "string" },
+        "acquiredAt": { "type": "string" },
+        "expiresAt": { "type": "string" }
+      }
+    },
+    "handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["handoffId", "fromActor", "toActor", "status", "createdAt"],
+      "properties": {
+        "handoffId": { "type": "string", "minLength": 1 },
+        "fromActor": { "type": "string", "minLength": 1 },
+        "toActor": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string" },
+        "contextPack": { "type": "string" },
+        "openQuestions": { "type": "array", "items": { "type": "string" } },
+        "acceptance": { "type": "string" },
+        "status": { "type": "string", "minLength": 1 },
+        "createdAt": { "type": "string" }
+      }
+    }
+  }
+}

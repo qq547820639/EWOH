@@ -9,8 +9,9 @@ import {
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, desc, eq, like } from 'drizzle-orm';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import { load } from 'js-yaml';
 import { matchesCoreRange } from './compatibility';
@@ -51,6 +52,82 @@ export const UPGRADE_RINGS = [
 ] as const;
 
 export type UpgradeRing = (typeof UPGRADE_RINGS)[number];
+
+function readJsonPath(source: unknown, path: string): unknown {
+  let current: unknown = source;
+  for (const segment of path.split('.')) {
+    if (
+      current === null ||
+      current === undefined ||
+      typeof current !== 'object'
+    ) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+function writeJsonPath(
+  target: Record<string, unknown>,
+  path: string,
+  value: unknown,
+) {
+  const segments = path.split('.');
+  let current = target;
+  for (const segment of segments.slice(0, -1)) {
+    if (
+      typeof current[segment] !== 'object' ||
+      current[segment] === null
+    ) {
+      current[segment] = {};
+    }
+    current = current[segment] as Record<string, unknown>;
+  }
+  current[segments[segments.length - 1]] = value;
+}
+
+function applyMappingTransform(
+  value: unknown,
+  transform?: string,
+): { value: unknown; error?: string } {
+  if (!transform) {
+    return { value };
+  }
+  const [name, ...args] = transform.split(':');
+  switch (name.toLowerCase()) {
+    case 'trim':
+      return {
+        value: typeof value === 'string' ? value.trim() : value,
+      };
+    case 'upper':
+      return {
+        value: typeof value === 'string' ? value.toUpperCase() : value,
+      };
+    case 'lower':
+      return {
+        value: typeof value === 'string' ? value.toLowerCase() : value,
+      };
+    case 'number':
+      return {
+        value: Number.isNaN(Number(value)) ? undefined : Number(value),
+        error: Number.isNaN(Number(value))
+          ? `value is not numeric for transform ${transform}`
+          : undefined,
+      };
+    case 'string':
+      return { value: String(value ?? '') };
+    case 'default':
+      return {
+        value: value === undefined || value === null ? args.join(':') : value,
+      };
+    default:
+      return {
+        value,
+        error: `unsupported transform ${name}`,
+      };
+  }
+}
 
 interface GoldenFactorySpec {
   apiVersion: string;
@@ -499,9 +576,86 @@ export class ScaleService {
     return row;
   }
 
+  async dryRunMapping(
+    packageId: string,
+    sample: Record<string, unknown>,
+    actor?: OrgContext,
+  ) {
+    const mapping = await this.getMapping(packageId);
+    const manifest = (mapping.manifestJson as Record<string, unknown> | null) ?? {};
+    const rules =
+      (manifest.rules as Array<{
+        from: string;
+        to: string;
+        transform?: string;
+        required?: boolean;
+      }>) ?? [];
+    if (!sample || typeof sample !== 'object' || Array.isArray(sample)) {
+      throw new BadRequestException('sample must be a JSON object');
+    }
+    const mapped: Record<string, unknown> = {};
+    const errors: Array<{
+      code: string;
+      sourceSystem?: string;
+      sourceField: string;
+      targetField: string;
+      rule?: number;
+      message: string;
+    }> = [];
+    rules.forEach((rule, index) => {
+      const sourceValue = readJsonPath(sample, rule.from);
+      if (sourceValue === undefined && rule.required) {
+        errors.push({
+          code: 'REQUIRED_FIELD_MISSING',
+          sourceSystem: (manifest.source as { system?: string } | undefined)
+            ?.system,
+          sourceField: rule.from,
+          targetField: rule.to,
+          rule: index + 1,
+          message: `required source field ${rule.from} is missing`,
+        });
+        return;
+      }
+      const transformed = applyMappingTransform(sourceValue, rule.transform);
+      if (transformed.error) {
+        errors.push({
+          code: 'TRANSFORM_ERROR',
+          sourceSystem: (manifest.source as { system?: string } | undefined)
+            ?.system,
+          sourceField: rule.from,
+          targetField: rule.to,
+          rule: index + 1,
+          message: transformed.error,
+        });
+        return;
+      }
+      writeJsonPath(mapped, rule.to, transformed.value);
+    });
+    const passed = errors.length === 0;
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'scale.mapping.dry_run',
+      entityType: 'asset_package',
+      entityId: packageId,
+      before: null,
+      after: { passed, ruleCount: rules.length, errorCount: errors.length },
+    });
+    return {
+      packageId,
+      mappingName: mapping.name,
+      passed,
+      sourceSystem: (manifest.source as { system?: string } | undefined)?.system,
+      targetSystem: (manifest.target as { system?: string } | undefined)?.system,
+      ruleCount: rules.length,
+      mapped,
+      errors,
+    };
+  }
+
   async compatibilityCatalog() {
     const coreVersion =
-      process.env.EWOH_RELEASE_VERSION?.trim() || '0.6.0-rc3';
+      process.env.EWOH_RELEASE_VERSION?.trim() || '0.6.0-rc4';
     const assets = await this.listAssetPackages();
     const rows = assets.map((asset) => {
       const manifest = (asset.manifestJson as Record<string, unknown> | null) ?? {};
@@ -672,6 +826,9 @@ export class ScaleService {
     }
     const previousValue =
       (row.configValue as Record<string, unknown> | null) ?? {};
+    if (previousValue.status === 'resolved') {
+      return this.parseDifference(row);
+    }
     const configValue = {
       ...previousValue,
       status: 'resolved',
@@ -791,6 +948,9 @@ export class ScaleService {
     if (asset.packageType !== 'scenario') {
       throw new BadRequestException('packageType must be scenario');
     }
+    if (asset.status === 'installed') {
+      return asset;
+    }
     const conformance = await this.runConformance(packageId, actor);
     if (!conformance.passed) {
       throw new BadRequestException(
@@ -821,6 +981,9 @@ export class ScaleService {
     const asset = await this.getAssetPackage(packageId);
     if (asset.packageType !== 'scenario') {
       throw new BadRequestException('packageType must be scenario');
+    }
+    if (asset.status === 'uninstalled') {
+      return asset;
     }
     const [updated] = await this.db
       .update(ewohAssetPackage)
@@ -862,6 +1025,9 @@ export class ScaleService {
       : profiles;
     let updated = 0;
     for (const profile of targets) {
+      if (profile.status === 'upgraded') {
+        continue;
+      }
       await this.db
         .update(ewohFactoryProfile)
         .set({ status: 'upgraded', installedAt: new Date() })
@@ -899,6 +1065,9 @@ export class ScaleService {
       : profiles;
     let updated = 0;
     for (const profile of targets) {
+      if (profile.status === 'rolled_back') {
+        continue;
+      }
       await this.db
         .update(ewohFactoryProfile)
         .set({ status: 'rolled_back', installedAt: new Date() })
@@ -1052,7 +1221,7 @@ export class ScaleService {
     const bundle = {
       bundleId: `SB-${randomUUID().slice(0, 8)}`,
       generatedAt: status.generatedAt,
-      product: 'EWOH 0.6.0-rc3',
+      product: 'EWOH 0.6.0-rc4',
       orgId: actor?.primaryOrgId ?? null,
       factoryCount: status.factoryCount,
       templateCount: status.templateCount,
@@ -1081,6 +1250,102 @@ export class ScaleService {
       },
     });
     return bundle;
+  }
+
+  private siteReadinessModule() {
+    const root =
+      [process.cwd(), resolve(process.cwd(), '..')].find((candidate) =>
+        existsSync(resolve(candidate, 'catalog', 'factory-sites')),
+      ) || process.cwd();
+    const requireFromRoot = createRequire(resolve(root, 'package.json'));
+    return requireFromRoot(
+      resolve(root, 'tools/factory-replication/site-readiness.js'),
+    );
+  }
+
+  async validateSiteReadiness(
+    factoryName: string,
+    config?: Record<string, unknown>,
+    actor?: OrgContext,
+  ) {
+    let report = (config?.siteReadiness as Record<string, unknown> | undefined) ?? null;
+    if (!report) {
+      const root =
+        [process.cwd(), resolve(process.cwd(), '..')].find((candidate) =>
+          existsSync(resolve(candidate, 'catalog', 'factory-sites')),
+        ) || process.cwd();
+      const directory = resolve(root, 'catalog', 'factory-sites');
+      if (existsSync(directory)) {
+        for (const file of readdirSync(directory)) {
+          if (!file.endsWith('.json')) continue;
+          try {
+            const candidate = JSON.parse(
+              readFileSync(resolve(directory, file), 'utf8'),
+            ) as Record<string, unknown>;
+            if (candidate.factoryName === factoryName) {
+              report = candidate;
+              break;
+            }
+          } catch {
+            // skip malformed site files
+          }
+        }
+      }
+    }
+    if (!report) {
+      throw new BadRequestException(
+        `site readiness evidence required for factory ${factoryName}`,
+      );
+    }
+    const evaluation = this.siteReadinessModule().evaluateSiteReadiness(report);
+    if (!evaluation.ready) {
+      throw new BadRequestException(
+        `site readiness failed for ${factoryName}: ${evaluation.requiredFailed} required checks failed`,
+      );
+    }
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'scale.onboarding.site_validate',
+      entityType: 'factory_profile',
+      entityId: factoryName,
+      before: null,
+      after: {
+        factoryName,
+        ready: evaluation.ready,
+        requiredCount: evaluation.requiredCount,
+        requiredPassed: evaluation.requiredPassed,
+      },
+    });
+    return evaluation;
+  }
+
+  async ensureConnectorInstalled(packageId: string, actor?: OrgContext) {
+    const asset = await this.getAssetPackage(packageId);
+    if (asset.packageType !== 'connector') {
+      throw new BadRequestException('packageType must be connector');
+    }
+    if (asset.status === 'published') {
+      return asset;
+    }
+    const [updated] = await this.db
+      .update(ewohAssetPackage)
+      .set({ status: 'published', publishedAt: new Date() })
+      .where(eq(ewohAssetPackage.packageId, packageId))
+      .returning();
+    if (!updated) {
+      throw new ConflictException('STATE_CONFLICT');
+    }
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'scale.connector.install',
+      entityType: 'asset_package',
+      entityId: packageId,
+      before: { status: asset.status },
+      after: { status: updated.status },
+    });
+    return updated;
   }
 
   private goldenSpec(): GoldenFactorySpec {

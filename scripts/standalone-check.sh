@@ -18,8 +18,11 @@ npm run test:client
 
 echo "== openapi strict audit =="
 cd "$ROOT_DIR"
+node scripts/audit-repo-facts.js --strict
 node tools/work-indexer/index.js --root "$ROOT_DIR" --output output/work-graph.json --strict
+node tools/work-indexer/index.js --root "$ROOT_DIR" --invariants
 node tools/gate-engine/index.js --root "$ROOT_DIR" --output output/gate-decisions.json
+node tools/work-console/index.js --root "$ROOT_DIR" --output output/work-console.json --strict
 node tools/resource-registry/index.js --root "$ROOT_DIR" --output output/resource-registry.json
 node tools/handoff-service/index.js --root "$ROOT_DIR" --output output/handoffs.json
 node tools/git-sync/index.js --root "$ROOT_DIR" --output output/git-sync.json
@@ -42,8 +45,9 @@ echo "== e2e (requires runtime DB env) =="
 if [[ -n "${EWOH_E2E_RUNTIME_DATABASE_URL:-}" ]]; then
   cd "$ROOT_DIR/ewoh-spark-app"
   npm run test:e2e
+  npm run test:browser
 else
-  echo "EWOH_E2E_RUNTIME_DATABASE_URL not set; skipping E2E"
+  echo "EWOH_E2E_RUNTIME_DATABASE_URL not set; skipping E2E and browser tests"
 fi
 
 echo "== standalone build =="

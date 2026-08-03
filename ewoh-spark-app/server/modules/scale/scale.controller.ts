@@ -117,6 +117,19 @@ export class ScaleController {
     return this.scaleService.getMapping(id);
   }
 
+  @Post('mappings/:id/dry-run')
+  dryRunMapping(
+    @Param('id') id: string,
+    @Body() body: { sample: Record<string, unknown> },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.scaleService.dryRunMapping(
+      id,
+      body?.sample,
+      request.userContext,
+    );
+  }
+
   @Post('scenario-packs/:id/install')
   installScenarioPack(
     @Param('id') id: string,

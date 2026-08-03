@@ -106,11 +106,13 @@ export async function axiosForBackend<T = unknown>(config: {
   method?: string;
   params?: Record<string, unknown>;
   data?: unknown;
+  signal?: AbortSignal;
 }): Promise<{ data: any }> {
   return http.request({
     url: config.url,
     method: (config.method ?? 'GET') as never,
     params: config.params,
     data: config.data,
+    signal: config.signal,
   });
 }

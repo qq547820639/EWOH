@@ -4,6 +4,7 @@ import {
   nextWorkOrderStatus,
 } from '../../../server/modules/mes/mes.service';
 import {
+  ewohAssetPackage,
   ewohEvent,
   ewohScheduleTask,
   ewohScheduleTaskStep,
@@ -65,6 +66,347 @@ describe('MES state machines', () => {
   });
 });
 
+describe('MesService SOP registry and confirmation gating', () => {
+  function createStepTransitionDb(workOrder: unknown, step: unknown) {
+    const { db } = createGetDb([workOrder], [step], []);
+    const updateSet = jest.fn((values: Record<string, unknown>) => ({
+      where: jest.fn(() => ({
+        returning: jest.fn().mockResolvedValue([{ ...(step as object), ...values }]),
+      })),
+    }));
+    return {
+      dbWithUpdate: {
+        ...db,
+        update: jest.fn(() => ({ set: updateSet })),
+      },
+      updateSet,
+    };
+  }
+
+  it('registers a versioned SOP asset with audit', async () => {
+    const row = {
+      packageId: 'SOP-1',
+      packageType: 'sop',
+      name: '上料 SOP',
+      version: '1.0.0',
+      status: 'draft',
+    };
+    const insert = jest.fn((_table: unknown) => ({
+      values: jest.fn(() => ({ returning: jest.fn().mockResolvedValue([row]) })),
+    }));
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new MesService({ insert } as never, audit as never);
+
+    const result = await service.registerSop({
+      title: '上料 SOP',
+      version: '1.0.0',
+      steps: [{ name: '准备工具', mandatory: true, tools: ['扳手'] }],
+    });
+
+    expect(result.packageId).toBe('SOP-1');
+    expect(audit.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'mes.sop.register' }),
+    );
+  });
+
+  it('requires SOP sign-off and tool/material confirmations before start', async () => {
+    const workOrder = {
+      scheduleTaskId: 'WO-1',
+      title: '装配',
+      status: 'in_progress',
+    };
+    const step = {
+      stepId: 'S1',
+      status: 'pending',
+      progress: 0,
+      actualStart: null,
+      actualEnd: null,
+      resultJson: {
+        sop: {
+          sopId: 'SOP-1',
+          version: '1.0.0',
+          mandatory: true,
+          requiredTools: ['扳手'],
+          requiredMaterials: ['螺栓'],
+        },
+      },
+    };
+    const { dbWithUpdate, updateSet } = createStepTransitionDb(workOrder, step);
+    const service = new MesService(
+      dbWithUpdate as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    await expect(
+      service.transitionStep('WO-1', 'S1', 'start', {}),
+    ).rejects.toThrow('SOP_SIGN_REQUIRED');
+
+    await expect(
+      service.transitionStep('WO-1', 'S1', 'start', { sopSigned: true }),
+    ).rejects.toThrow('SOP_TOOLS_REQUIRED');
+
+    const result = await service.transitionStep(
+      'WO-1',
+      'S1',
+      'start',
+      {
+        sopSigned: true,
+        confirmedTools: ['扳手'],
+        confirmedMaterials: ['螺栓'],
+      },
+      { userId: 'worker-1', primaryOrgId: 'org-1' },
+    );
+
+    expect(result.status).toBe('in_progress');
+    const resultJson = updateSet.mock.calls[0][0]
+      .resultJson as Record<string, unknown>;
+    expect(
+      (resultJson.sop as Record<string, unknown>).signatures,
+    ).toEqual(
+      expect.objectContaining({
+        signedBy: 'worker-1',
+        tools: ['扳手'],
+        materials: ['螺栓'],
+      }),
+    );
+  });
+
+  it('computes SOP version differences by step name and content', async () => {
+    const from = {
+      packageId: 'SOP-1',
+      packageType: 'sop',
+      manifestJson: {
+        steps: [
+          { name: '准备', instruction: 'old' },
+          { name: '移除', instruction: 'x' },
+        ],
+      },
+    };
+    const to = {
+      packageId: 'SOP-2',
+      packageType: 'sop',
+      manifestJson: {
+        steps: [
+          { name: '准备', instruction: 'new' },
+          { name: '新增', instruction: 'y' },
+        ],
+      },
+    };
+    const where = jest
+      .fn()
+      .mockResolvedValueOnce([from])
+      .mockResolvedValueOnce([to]);
+    const select = jest.fn(() => ({
+      from: jest.fn(() => ({
+        where,
+      })),
+    }));
+    const service = new MesService(
+      { select } as never,
+      { appendAuditLog: jest.fn() } as never,
+    );
+
+    const diff = await service.diffSops('SOP-1', 'SOP-2');
+
+    expect(diff.added).toEqual(['新增']);
+    expect(diff.removed).toEqual(['移除']);
+    expect(diff.changed).toEqual(['准备']);
+  });
+});
+
+describe('MesService quality schemes', () => {
+  it('registers a quality scheme with audit', async () => {
+    const row = {
+      packageId: 'QS-1',
+      packageType: 'quality_scheme',
+      name: '首检方案',
+      version: '1.0.0',
+      status: 'draft',
+    };
+    const insert = jest.fn((_table: unknown) => ({
+      values: jest.fn(() => ({ returning: jest.fn().mockResolvedValue([row]) })),
+    }));
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new MesService({ insert } as never, audit as never);
+
+    const result = await service.registerQualityScheme({
+      name: '首检方案',
+      version: '1.0.0',
+      stage: 'first',
+      checkItems: [{ itemId: 'CHK-1', name: '外观', required: true }],
+      deviceIds: ['EXO-1'],
+    });
+
+    expect(result.packageId).toBe('QS-1');
+    expect(audit.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'mes.quality_scheme.register' }),
+    );
+  });
+
+  it('matches published schemes by device and product code', async () => {
+    const rows = [
+      {
+        packageId: 'QS-1',
+        packageType: 'quality_scheme',
+        name: '首检',
+        version: '1.0.0',
+        status: 'published',
+        manifestJson: {
+          stage: 'first',
+          deviceIds: ['EXO-1'],
+          stepTypes: [],
+          productCodes: ['P-1'],
+          checkItems: [],
+        },
+      },
+      {
+        packageId: 'QS-2',
+        packageType: 'quality_scheme',
+        name: '终检',
+        version: '1.0.0',
+        status: 'draft',
+        manifestJson: { stage: 'final', deviceIds: [], stepTypes: [], productCodes: [] },
+      },
+    ];
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn(() => ({
+            orderBy: jest.fn().mockResolvedValue(rows),
+          })),
+        })),
+      })),
+    };
+    const service = new MesService(
+      db as never,
+      { appendAuditLog: jest.fn() } as never,
+    );
+
+    const matches = await service.matchQualitySchemes({
+      deviceId: 'EXO-1',
+      productCode: 'P-1',
+    });
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0].schemeId).toBe('QS-1');
+  });
+
+  it('enforces scheme stage, required checks, and result consistency', async () => {
+    const workOrder = {
+      scheduleTaskId: 'WO-1',
+      title: '装配',
+      status: 'in_progress',
+    };
+    const step = {
+      stepId: 'S1',
+      status: 'reported',
+      assignedDeviceId: 'EXO-1',
+      resultJson: null,
+    };
+    const scheme = {
+      packageId: 'QS-1',
+      packageType: 'quality_scheme',
+      name: '首检',
+      version: '1.0.0',
+      status: 'published',
+      manifestJson: {
+        stage: 'first',
+        checkItems: [
+          { itemId: 'CHK-1', name: '外观', required: true },
+          { itemId: 'CHK-2', name: '尺寸', required: false },
+        ],
+      },
+    };
+    const rowsFor = (table: unknown) => {
+      if (table === ewohAssetPackage) return [scheme];
+      if (table === ewohScheduleTask) return [workOrder];
+      if (table === ewohScheduleTaskStep) return [step];
+      return [];
+    };
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn((table: unknown) => {
+          const chain = {
+            where: jest.fn(() => chain),
+            orderBy: jest.fn(() => chain),
+            limit: jest.fn(() => chain),
+            then: (resolve: (value: unknown[]) => void) =>
+              resolve(rowsFor(table)),
+          };
+          return chain;
+        }),
+      })),
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue([]),
+        })),
+      })),
+      insert: jest.fn((_table: unknown) => ({
+        values: jest.fn(() => ({
+          returning: jest.fn().mockResolvedValue([]),
+        })),
+      })),
+    };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new MesService(db as never, audit as never);
+
+    await expect(
+      service.qualityInspection(
+        'WO-1',
+        {
+          stepId: 'S1',
+          result: 'pass',
+          schemeId: 'QS-1',
+          stage: 'final',
+          checkResults: [],
+        },
+        { userId: 'inspector-1', primaryOrgId: 'org-1' },
+      ),
+    ).rejects.toThrow('QUALITY_STAGE_MISMATCH');
+
+    await expect(
+      service.qualityInspection(
+        'WO-1',
+        {
+          stepId: 'S1',
+          result: 'pass',
+          schemeId: 'QS-1',
+          stage: 'first',
+          checkResults: [],
+        },
+        { userId: 'inspector-1', primaryOrgId: 'org-1' },
+      ),
+    ).rejects.toThrow('QUALITY_CHECK_REQUIRED');
+
+    await expect(
+      service.qualityInspection(
+        'WO-1',
+        {
+          stepId: 'S1',
+          result: 'pass',
+          schemeId: 'QS-1',
+          stage: 'first',
+          checkResults: [{ itemId: 'CHK-1', result: 'fail' }],
+        },
+        { userId: 'inspector-1', primaryOrgId: 'org-1' },
+      ),
+    ).rejects.toThrow('QUALITY_RESULT_MISMATCH');
+
+    const passed = await service.qualityInspection(
+      'WO-1',
+      {
+        stepId: 'S1',
+        result: 'pass',
+        schemeId: 'QS-1',
+        stage: 'first',
+        checkResults: [{ itemId: 'CHK-1', result: 'pass' }],
+      },
+      { userId: 'inspector-1', primaryOrgId: 'org-1' },
+    );
+    expect(passed.result).toBe('pass');
+  });
+});
+
 describe('MesService work order creation', () => {
   it('creates a work order and its steps with audit', async () => {
     const scheduleRow = {
@@ -93,7 +435,17 @@ describe('MesService work order creation', () => {
         title: '装配工单',
         productCode: 'P-001',
         orderQty: 10,
-        steps: [{ name: '上料' }, { name: '装配' }],
+        steps: [
+          {
+            name: '上料',
+            sopId: 'SOP-1',
+            sopVersion: '1.0.0',
+            sopMandatory: true,
+            requiredTools: ['扳手'],
+            requiredMaterials: ['螺栓'],
+          },
+          { name: '装配' },
+        ],
       },
       { userId: 'user-1', primaryOrgId: 'org-1' },
     );
@@ -102,6 +454,20 @@ describe('MesService work order creation', () => {
     expect(insert).toHaveBeenCalledTimes(2);
     expect(insertEntries[0].table).toBe(ewohScheduleTask);
     expect(insertEntries[1].table).toBe(ewohScheduleTaskStep);
+    const firstStep = (
+      insertEntries[1].rows as Array<{
+        resultJson: { sop: Record<string, unknown> } | null;
+      }>
+    )[0];
+    expect(firstStep.resultJson?.sop).toEqual(
+      expect.objectContaining({
+        sopId: 'SOP-1',
+        version: '1.0.0',
+        mandatory: true,
+        requiredTools: ['扳手'],
+        requiredMaterials: ['螺栓'],
+      }),
+    );
     expect(audit.appendAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({
         actorId: 'user-1',
@@ -251,5 +617,180 @@ describe('MesService materials and quality', () => {
       expect.objectContaining({ action: 'mes.quality.inspect' }),
     );
     expect(dbWithUpdate.insert).toHaveBeenCalledWith(ewohEvent);
+  });
+});
+
+describe('MesService step exception lifecycle', () => {
+  function createStepTransitionDb(workOrder: unknown, step: unknown) {
+    const { db } = createGetDb([workOrder], [step], []);
+    const updateSet = jest.fn((values: Record<string, unknown>) => ({
+      where: jest.fn(() => ({
+        returning: jest.fn().mockResolvedValue([{ ...(step as object), ...values }]),
+      })),
+    }));
+    const dbWithUpdate = {
+      ...db,
+      update: jest.fn(() => ({ set: updateSet })),
+    };
+    return { dbWithUpdate, updateSet };
+  }
+
+  it('stores exception details when a step is paused', async () => {
+    const workOrder = {
+      scheduleTaskId: 'WO-1',
+      title: '装配',
+      status: 'in_progress',
+    };
+    const step = {
+      stepId: 'S1',
+      status: 'in_progress',
+      progress: 10,
+      actualStart: null,
+      actualEnd: null,
+      resultJson: null,
+    };
+    const { dbWithUpdate, updateSet } = createStepTransitionDb(workOrder, step);
+    const service = new MesService(
+      dbWithUpdate as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    await service.transitionStep(
+      'WO-1',
+      'S1',
+      'pause',
+      {
+        code: 'MATERIAL_MISSING',
+        note: '缺料',
+        attachments: [
+          {
+            id: 'file-1',
+            filename: '缺料.jpg',
+            contentType: 'image/jpeg',
+            url: 'https://example.test/files/file-1',
+            extra: 'dropped',
+          },
+        ],
+      },
+      { userId: 'worker-1', primaryOrgId: 'org-1' },
+    );
+
+    const resultJson = updateSet.mock.calls[0][0]
+      .resultJson as Record<string, unknown>;
+    expect(resultJson.exception).toEqual(
+      expect.objectContaining({
+        code: 'MATERIAL_MISSING',
+        note: '缺料',
+        operator: 'worker-1',
+        attachments: [
+          {
+            id: 'file-1',
+            filename: '缺料.jpg',
+            contentType: 'image/jpeg',
+            url: 'https://example.test/files/file-1',
+          },
+        ],
+      }),
+    );
+  });
+
+  it('records a resume note when a paused step is resumed', async () => {
+    const workOrder = {
+      scheduleTaskId: 'WO-1',
+      title: '装配',
+      status: 'in_progress',
+    };
+    const step = {
+      stepId: 'S1',
+      status: 'paused',
+      progress: 10,
+      actualStart: null,
+      actualEnd: null,
+      resultJson: { exception: { note: '缺料' } },
+    };
+    const { dbWithUpdate, updateSet } = createStepTransitionDb(workOrder, step);
+    const service = new MesService(
+      dbWithUpdate as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    await service.transitionStep(
+      'WO-1',
+      'S1',
+      'resume',
+      { note: '补料完成' },
+      { userId: 'worker-1', primaryOrgId: 'org-1' },
+    );
+
+    const resultJson = updateSet.mock.calls[0][0]
+      .resultJson as Record<string, unknown>;
+    expect(resultJson.resume).toEqual(
+      expect.objectContaining({ note: '补料完成', operator: 'worker-1' }),
+    );
+    expect(resultJson.exception).toEqual({ note: '缺料' });
+  });
+
+  it('rejects a worker operating a step assigned to another person', async () => {
+    const workOrder = {
+      scheduleTaskId: 'WO-1',
+      title: '装配',
+      status: 'in_progress',
+    };
+    const step = {
+      stepId: 'S1',
+      status: 'in_progress',
+      progress: 10,
+      actualStart: null,
+      actualEnd: null,
+      assignedPersonId: 'other-worker',
+      resultJson: null,
+    };
+    const { dbWithUpdate } = createStepTransitionDb(workOrder, step);
+    const service = new MesService(
+      dbWithUpdate as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    await expect(
+      service.transitionStep(
+        'WO-1',
+        'S1',
+        'report',
+        { quantity: 1 },
+        { userId: 'worker-1', primaryOrgId: 'org-1', role: 'worker' },
+      ),
+    ).rejects.toThrow('WORKER_STEP_ASSIGNMENT_REQUIRED');
+  });
+
+  it('allows a worker to operate their own step', async () => {
+    const workOrder = {
+      scheduleTaskId: 'WO-1',
+      title: '装配',
+      status: 'in_progress',
+    };
+    const step = {
+      stepId: 'S1',
+      status: 'in_progress',
+      progress: 10,
+      actualStart: null,
+      actualEnd: null,
+      assignedPersonId: 'worker-1',
+      resultJson: null,
+    };
+    const { dbWithUpdate } = createStepTransitionDb(workOrder, step);
+    const service = new MesService(
+      dbWithUpdate as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    const result = await service.transitionStep(
+      'WO-1',
+      'S1',
+      'report',
+      { quantity: 1 },
+      { userId: 'worker-1', primaryOrgId: 'org-1', role: 'worker' },
+    );
+
+    expect(result.status).toBe('reported');
   });
 });

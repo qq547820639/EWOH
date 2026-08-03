@@ -145,10 +145,17 @@ export class OnboardingService {
       }
     };
 
-    let passed = await execute(ONBOARDING_STEPS[0], async () => ({
-      detail: `profile selected for ${body.factoryName}`,
-      data: { config: body.config ?? {} },
-    }));
+    let passed = await execute(ONBOARDING_STEPS[0], async () => {
+      const readiness = await this.scaleService.validateSiteReadiness(
+        body.factoryName,
+        body.config,
+        actor,
+      );
+      return {
+        detail: `site readiness validated: ${readiness.requiredPassed}/${readiness.requiredCount} required checks passed`,
+        data: { config: body.config ?? {}, readiness },
+      };
+    });
 
     if (passed) {
       passed = await execute(ONBOARDING_STEPS[1], async () => {
@@ -166,18 +173,44 @@ export class OnboardingService {
 
     if (passed) {
       passed = await execute(ONBOARDING_STEPS[2], async () => {
+        const installed = [];
+        for (const packageId of golden!.connectors) {
+          const connector = await this.scaleService.ensureConnectorInstalled(
+            packageId,
+            actor,
+          );
+          installed.push({
+            packageId,
+            name: connector.name,
+            version: connector.version,
+            status: connector.status,
+          });
+        }
         return {
-          detail: `${golden!.connectors.length} connectors ready`,
-          data: { connectors: golden!.connectors },
+          detail: `${installed.length} connectors published/verified`,
+          data: { connectors: installed },
         };
       });
     }
 
     if (passed) {
       passed = await execute(ONBOARDING_STEPS[3], async () => {
+        const installed = [];
+        for (const packageId of golden!.scenarioPacks) {
+          const scenario = await this.scaleService.installScenarioPack(
+            packageId,
+            actor,
+          );
+          installed.push({
+            packageId,
+            name: scenario.name,
+            version: scenario.version,
+            status: scenario.status,
+          });
+        }
         return {
-          detail: `${golden!.scenarioPacks.length} scenario packs installed`,
-          data: { scenarioPacks: golden!.scenarioPacks },
+          detail: `${installed.length} scenario packs installed/verified`,
+          data: { scenarioPacks: installed },
         };
       });
     }

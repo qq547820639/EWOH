@@ -1,0 +1,51 @@
+/* map/map.css — SVG text styling for map entities */
+.cm-map-zonelabel { fill: #94a3b8; font-size: 11px; font-weight: 600; text-anchor: start; pointer-events: none; }
+.cm-map-stationlabel { fill: #f1f5f9; font-size: 11px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+.cm-map-personlabel { fill: #e6edf3; font-size: 10px; font-weight: 600; text-anchor: middle; pointer-events: none; }
+.cm-map-idlabel { fill: #8b95a5; font-size: 9px; font-family: var(--mono); text-anchor: middle; pointer-events: none; }
+.cm-map-modelabel { fill: #cbd5e1; font-size: 9px; text-anchor: middle; pointer-events: none; font-weight: 600; }
+
+#map-svg text { user-select: none; }
+#map-svg g[data-entity-id]:hover rect,
+#map-svg g[data-entity-id]:hover circle {
+  filter: brightness(1.25);
+}
+
+/* ===== L0/L1 视图等级切换 ===== */
+.cm-level-toggle { display: inline-flex; gap: 2px; margin-left: 8px; vertical-align: middle; }
+.cm-level-btn {
+  padding: 2px 10px; font-size: 11px; font-weight: 600;
+  border: 1px solid #38414f; background: #1c232d; color: #8b95a5;
+  border-radius: 4px; cursor: pointer; transition: all 0.15s;
+}
+.cm-level-btn:hover { color: #cbd5e1; border-color: #475569; }
+.cm-level-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+
+/* ===== L1 2.5D：摄像头视锥 ===== */
+.cm-camera-cone {
+  fill: #22d3ee; fill-opacity: 0.12;
+  stroke: #22d3ee; stroke-opacity: 0.5; stroke-width: 1;
+  pointer-events: none;
+}
+
+/* ===== L1 2.5D：UWB 覆盖圆 ===== */
+.cm-uwb-coverage {
+  fill: #3b82f6; fill-opacity: 0.08;
+  stroke: #3b82f6; stroke-opacity: 0.4; stroke-width: 1; stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
+/* ===== L1 2.5D：高度/楼层标识 ===== */
+.cm-height-badge { fill: #22d3ee; font-size: 8px; font-weight: 600; text-anchor: middle; pointer-events: none; }
+
+/* ===== L2 轻量三维占位 ===== */
+.cm-l2-placeholder {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 100%; height: 100%; min-height: 400px; text-align: center;
+  background: #0d1117; color: #8b949e; gap: 12px; padding: 40px;
+}
+.cm-l2-icon { font-size: 48px; opacity: 0.6; }
+.cm-l2-title { font-size: 18px; font-weight: 700; color: #e6edf3; }
+.cm-l2-desc { font-size: 13px; max-width: 480px; line-height: 1.6; color: #8b949e; }
+.cm-l2-note { font-size: 12px; max-width: 480px; line-height: 1.5; color: #6e7681; }
+.cm-l2-spec { font-size: 12px; color: #3b82f6; margin-top: 8px; }

@@ -237,6 +237,98 @@ describe('ScaleService templates and assets', () => {
     ).toBe('v1');
   });
 
+  it('dry-runs mapping rules against a sample payload', async () => {
+    const mappingRow = {
+      packageId: 'PKG-MAP',
+      packageType: 'mapping',
+      name: 'erp-order-to-ewoh',
+      manifestJson: {
+        mappingSchemaVersion: 'v1',
+        source: { system: 'erp', schemaRef: 'ewoh:///schemas/erp-order/v1' },
+        target: { system: 'ewoh', schemaRef: 'ewoh:///schemas/order/v1' },
+        rules: [
+          { from: 'order.id', to: 'orderId', required: true },
+          { from: 'note', to: 'note', transform: 'trim' },
+          { from: 'qty', to: 'quantity', transform: 'number' },
+        ],
+      },
+    };
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue([mappingRow]),
+        })),
+      })),
+    };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.dryRunMapping(
+      'PKG-MAP',
+      { order: { id: 'O-1' }, note: '  ready  ', qty: '3' },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+
+    expect(result.passed).toBe(true);
+    expect(result.mapped).toEqual({
+      orderId: 'O-1',
+      note: 'ready',
+      quantity: 3,
+    });
+    expect(audit.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'scale.mapping.dry_run' }),
+    );
+  });
+
+  it('localizes required and transform errors to source/target fields', async () => {
+    const mappingRow = {
+      packageId: 'PKG-MAP-BAD',
+      packageType: 'mapping',
+      name: 'bad-mapping',
+      manifestJson: {
+        mappingSchemaVersion: 'v1',
+        source: { system: 'erp', schemaRef: 'ewoh:///schemas/erp-order/v1' },
+        target: { system: 'ewoh', schemaRef: 'ewoh:///schemas/order/v1' },
+        rules: [
+          { from: 'order.id', to: 'orderId', required: true },
+          { from: 'qty', to: 'quantity', transform: 'number' },
+        ],
+      },
+    };
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue([mappingRow]),
+        })),
+      })),
+    };
+    const service = new ScaleService(
+      db as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    const result = await service.dryRunMapping(
+      'PKG-MAP-BAD',
+      { qty: 'not-a-number' },
+    );
+
+    expect(result.passed).toBe(false);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'REQUIRED_FIELD_MISSING',
+          sourceField: 'order.id',
+          targetField: 'orderId',
+        }),
+        expect.objectContaining({
+          code: 'TRANSFORM_ERROR',
+          sourceField: 'qty',
+          targetField: 'quantity',
+        }),
+      ]),
+    );
+  });
+
   it('replays a factory profile by merging template config with profile overrides', async () => {
     const profile = {
       profileId: 'PRF-1',
@@ -397,6 +489,29 @@ describe('ScaleService templates and assets', () => {
     );
   });
 
+  it('is idempotent when a scenario pack is already installed', async () => {
+    const asset = {
+      packageId: 'PKG-SCEN',
+      packageType: 'scenario',
+      status: 'installed',
+    };
+    const selectWhere = jest.fn().mockResolvedValue([asset]);
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({ where: selectWhere })),
+      })),
+      update: jest.fn(),
+    };
+    const audit = { appendAuditLog: jest.fn() };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.installScenarioPack('PKG-SCEN');
+
+    expect(result.status).toBe('installed');
+    expect(db.update).not.toHaveBeenCalled();
+    expect(audit.appendAuditLog).not.toHaveBeenCalled();
+  });
+
   it('rejects installing a scenario pack that fails conformance', async () => {
     const asset = {
       packageId: 'PKG-SCEN-BAD',
@@ -449,6 +564,29 @@ describe('ScaleService templates and assets', () => {
     expect(audit.appendAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'scale.scenario.uninstall' }),
     );
+  });
+
+  it('is idempotent when a scenario pack is already uninstalled', async () => {
+    const asset = {
+      packageId: 'PKG-SCEN',
+      packageType: 'scenario',
+      status: 'uninstalled',
+    };
+    const selectWhere = jest.fn().mockResolvedValue([asset]);
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({ where: selectWhere })),
+      })),
+      update: jest.fn(),
+    };
+    const audit = { appendAuditLog: jest.fn() };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.uninstallScenarioPack('PKG-SCEN');
+
+    expect(result.status).toBe('uninstalled');
+    expect(db.update).not.toHaveBeenCalled();
+    expect(audit.appendAuditLog).not.toHaveBeenCalled();
   });
 
   it('rolls back all factory profiles', async () => {
@@ -535,6 +673,47 @@ describe('ScaleService templates and assets', () => {
         }),
       }),
     );
+  });
+
+  it('skips profiles that are already upgraded', async () => {
+    const profiles = [
+      { profileId: 'PRF-1', status: 'upgraded' },
+      { profileId: 'PRF-2', status: 'installed' },
+    ];
+    const asset = {
+      packageId: 'PKG-CONN',
+      packageType: 'connector',
+      version: '1.2.0',
+      manifestJson: {
+        runtime: 'edge-python',
+        protocol: 'opcua',
+        configSchema: {},
+        compatibility: {},
+        outputEvents: ['DeviceStateChanged'],
+      },
+    };
+    const select = jest.fn(() => ({
+      from: jest.fn(() => ({
+        orderBy: jest.fn().mockResolvedValue(profiles),
+        where: jest.fn().mockResolvedValue([asset]),
+      })),
+    }));
+    const updateWhere = jest.fn().mockResolvedValue([]);
+    const db = {
+      select,
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: updateWhere,
+        })),
+      })),
+    };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.fleetUpgrade('PKG-CONN');
+
+    expect(result.updatedProfiles).toBe(1);
+    expect(updateWhere).toHaveBeenCalledTimes(1);
   });
 
   it('rolls back only profiles in the requested ring', async () => {
@@ -684,7 +863,7 @@ describe('ScaleService templates and assets', () => {
 
     const result = await service.compatibilityCatalog();
 
-    expect(result.coreVersion).toBe('0.6.0-rc3');
+    expect(result.coreVersion).toBe('0.6.0-rc4');
     expect(result.compatibleCount).toBe(2);
     expect(result.incompatibleCount).toBe(1);
     expect(
@@ -901,5 +1080,38 @@ describe('ScaleService templates and assets', () => {
     expect(audit.appendAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'scale.difference.resolve' }),
     );
+  });
+
+  it('is idempotent when a factory difference is already resolved', async () => {
+    const row = {
+      configKey: 'diff.FactoryA.weighing',
+      configValue: {
+        factoryName: 'FactoryA',
+        key: 'weighing',
+        category: 'process',
+        value: true,
+        status: 'resolved',
+      },
+      updatedBy: 'user-1',
+      updatedAt: new Date('2026-08-03T00:00:00Z'),
+    };
+    const selectWhere = jest.fn().mockResolvedValue([row]);
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({ where: selectWhere })),
+      })),
+      update: jest.fn(),
+    };
+    const audit = { appendAuditLog: jest.fn() };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.resolveFactoryDifference(
+      'diff.FactoryA.weighing',
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+
+    expect(result.status).toBe('resolved');
+    expect(db.update).not.toHaveBeenCalled();
+    expect(audit.appendAuditLog).not.toHaveBeenCalled();
   });
 });

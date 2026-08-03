@@ -3,6 +3,118 @@
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 1.1.0 规范，
 并使用[语义化版本](https://semver.org/lang/zh-CN/) 2.0.0 进行版本管理。
 
+## [0.6.0-rc4] - 2026-08-04
+
+### Added
+- 仓库事实源一致性门禁：`scripts/audit-repo-facts.js` 校验 README 导航、CHANGELOG、
+  发布清单、Task Board、门禁、OpenAPI 路由清单、数据来源词汇与错误契约；
+  已接入 `scripts/standalone-check.sh` 与 `test.yml`（30/30 通过）。
+- 统一错误契约补全：错误响应增加 `errorCode`、`requestId`、`retryable`、
+  `recommendedAction` 与 `details`，`requestId` 与 Tracing 的 `x-trace-id` 关联。
+- 数据来源词汇扩展为 `real / controlled_test / simulated / replayed / stale /
+  offline`，OpenAPI 枚举同步；新增可复用 `DataSourceBadge`，设备页接入。
+- `RequestDatabaseContext.runInTransaction` 复用活动请求事务，避免 Scheduler
+  在 HTTP 事务内再开根事务连接。
+- 移动工作台：SOP 说明展示、暂停/恢复、异常上报（写 `resultJson.exception`）、
+  质检（新 `POST /api/mobile/.../quality`）、离线提示与失败重试入口。
+- 全局 `ValidationPipe`（`APP_PIPE`）注册到 Legacy 与 Standalone 两个启动路径，
+  `class-validator` 错误映射为统一 `fieldErrors` 与 `VALIDATION_ERROR` 422 响应。
+- 指挥地图实体详情：人员档案（组织/岗位/班组/技能/风险/外骨骼）与设备档案
+  （电量/固件/协议/故障/温度/最近通信），并展示关联告警、最近事件与处置入口。
+- 移动工作台离线待同步队列：离线操作进入 `localStorage` 队列并显示待同步数量，
+  恢复联网后按顺序自动提交；队列工具与单元测试覆盖。
+- 控制指令状态守卫：终态（executed/timeout）禁止再次发送或回执，同一指令存在
+  in-flight 尝试时禁止重复发送，终态尝试禁止重复回执；失败后仍允许重试发送。
+- Work Orchestration 交接状态机：open → accepted/rejected → closed，非法跳转
+  拒绝；门禁决定重复提交幂等，变更前决定写入 `gate-decision-history.json`。
+- Scale 幂等守卫：已 installed/uninstalled 的场景包重复安装/卸载直接返回；
+  fleet upgrade/rollback 跳过已处于目标状态的 Profile；已 resolved 的工厂
+  差异重复解决直接返回。
+- 本地真实 PostgreSQL E2E：HTTP + PostgreSQL 29/29 通过（embedded PG 17，
+  `127.0.0.1:55432`），覆盖鉴权/RBAC、组织隔离、MES/OEE/ERP、Scale、
+  参数、AAS、Work Orchestration 与幂等场景。
+- 移动异常照片附件：异常上报表单支持选择 JPG/PNG/WebP 照片，先经
+  `/api/files` 上传并把文件引用写入 `resultJson.exception.attachments`。
+- PWA 可安装基础：`manifest.webmanifest` + 最小 Service Worker + 客户端注册，
+  Standalone 页面可安装到移动端/工业平板；repo-facts 增加 PWA 资产门禁。
+- 离线照片队列：离线异常照片以 Data URL 存入待同步队列（约 2MB 上限），
+  恢复联网后先上传 `/api/files`，再把文件引用写入异常附件后提交。
+- 发布验证证据：`RELEASE DRILL PASSED`（PG apply/verify/RLS/audit/rollback/
+  rebuild + 全门禁 + E2E 29/29）；性能冒烟 4610 QPS / p95 26.83ms；
+  `STANDALONE SECURITY VERIFY OK`。
+- 浏览器证据：Playwright 对 Standalone `/login` 在移动端（390x844）与桌面端
+  （1440x900）截图，输出到 `output/playwright/iteration-login-*.png`。
+- 请求关联：TracingInterceptor 通过 `AsyncLocalStorage` 把 `requestId` 传给
+  审计写入路径，`AuditLogEntry.requestId` 自动填充；repo-facts 增加
+  `request_context_correlation` 门禁。
+- 错误脱敏：`HttpException` 不再把原始响应对象序列化进 `details`；
+  Site Readiness 解析失败只返回通用错误码，不泄露底层异常文本。
+- 设备页加载状态：失败时显示可重试错误状态，并展示最近更新时间，避免把
+  加载失败误渲染为“未找到设备”。
+- 静态安全扫描本地可执行：`python3 -m bandit -r src/edge_platform -ll`
+  扫描 28286 行，0 medium/high。
+- 指挥地图查询状态：空间实体/世界状态/总览/环境任一查询失败时显示错误横幅
+  与“全部重试”，不再静默渲染为空地图。
+- 版本同步：Helm appVersion、Compose/K8s 默认值、运行时默认版本与相关测试
+  从 `0.6.0-rc3` 提升到 `0.6.0-rc4`。
+- 认证浏览器测试：新增 `npm run test:browser`，用真实 PostgreSQL fixture 启动
+  Standalone，Playwright 完成 dispatcher 登录、指挥中心、指挥地图、移动工作台
+  和风险告警渲染（4/4），截图到
+  `output/playwright/browser-authenticated-command-center.png`。
+- CI 接入：`standalone.yml` 在 E2E 后安装 Playwright Chromium 并运行
+  `npm run test:browser`，推送/PR 都会执行认证浏览器流程。
+- 交付文档同步：`acceptance-evidence.md` 与 `release-checklist.md` 记录 RC4
+  本地门禁、E2E、浏览器、性能、安全和发布包证据。
+- README 更新为全栈产品导航：Python 边缘平台、Standalone 云产品命令、
+  Playwright 浏览器门禁与 `0.6.0-rc4` 发布包校验。
+- Pilot 就绪门禁重跑：本地 7 项通过（含数据库验证/运行库连接），3 项因
+  本机无 Docker/Kubectl/Helm 失败，5 项等待外部批准与现场输入。
+- 运维备份/恢复门禁重跑：`standalone-ops-check.sh` PASSED，57 表逻辑备份、
+  恢复到一次性数据库、行数校验与身份序列推进全部通过。
+- P0 移动工作台硬化：工作台按 `assigned_person_id` + `org_id` 过滤并
+  fail-closed；扫码支持工单/工序/设备/物料/批次/工位/工厂类型识别；
+  异常附件服务端持久化；离线队列增加
+  `local/queued/syncing/synced/failed/conflict` 状态，单项失败不再阻塞后续项；
+  `worker` 角色开放移动工作台。
+- Work Graph 证据绑定与失效：证据 Markdown 支持 front matter
+  （`commitSha/branch/buildVersion/envFingerprint/dependencyVersion/testTime/
+  verifier/expiresAt`），解析器自动推导并输出
+  `valid/stale/expired/unbound` 状态；`--invariants` 检查孤立边、循环依赖、
+  重复 ID 与无 Owner 任务。
+- 新增 `tools/work-console` 一键阻塞诊断 CLI：回答当前卡点、原因、解除人、
+  缺失证据与受影响任务；接入 `standalone-check.sh` 与 CI。
+- 修正 Task Graph 依赖引用为真实节点 ID，消除 19 条孤立边；重新生成
+  `output/work-graph.json`、`output/gate-decisions.json`、
+  `output/git-sync.json` 并新增 `output/work-console.json`。
+- 独立审查修复：worker 只能操作 `assigned_person_id` 归属自己的工序；
+  离线冲突项提供丢弃入口且不再自动重放；CI 使用
+  `work-indexer --strict --invariants`；扫码空请求体返回 400 而非 500。
+- Onboarding F0-F3 真执行：F0 校验场地就绪证据，F2 发布并核验连接器，
+  F3 安装并核验场景包，均写审计。
+- 映射 Dry Run：`POST /api/scale/mappings/:id/dry-run` 对样本载荷执行规则，
+  返回 `REQUIRED_FIELD_MISSING`/`TRANSFORM_ERROR` 并定位源字段与目标字段。
+- 真实数据库验证：HTTP+PostgreSQL E2E 29/29 通过，认证浏览器流程 4/4 通过。
+- 世界回放统一时间轴：`/api/world/replay` 合并任务/工序/物料/质检/告警泳道，
+  新增事件前后对比接口与从回放创建跟进问题的审计链路。
+- E-SOP：`/api/mes/sops` 支持版本注册、发布与 Diff；工序可绑定 SOP、强制
+  步骤、必需工具/物料；开工与报工前强制签收并记录签名。
+- 质检方案：`/api/mes/quality-schemes` 支持首检/巡检/终检方案注册、发布与
+  自动匹配；质检接口强制必检项并校验结果一致性。
+- 慢查询观测：数据库事务支持 `statement_timeout` 与慢事务阈值记录，新增
+  `GET /api/observability/slow-queries` 与 `ewoh_slow_queries_total` 指标。
+- 前端性能：页面路由改为 `React.lazy` 分块加载，Standalone 主包从约 2.3MB
+  降至约 374KB；世界状态与回放请求支持 `AbortSignal` 取消。
+- MES 角色工作台：`GET /api/operations/role-workbench` 聚合操作员、班组长、
+  质检、设备与管理者视图，新增 `/role-workbench` 页面。
+- 渐进列表：新增 `progressiveSlice/hasMoreItems/nextProgressiveLimit`，
+  角色工作台大列表先渲染 50 条并支持“加载更多”。
+- Pilot Go/No-Go 重跑：7 通过 / 3 失败（本机无 Docker/Kubectl/Helm）/
+  5 待批准，结果仍为 NOT READY。
+- 事件中心新增“回放上下文”：展示事发前/事发时/处置后的快照摘要。
+- 编排控制台新增受写回与人工批准保护的 `POST /api/work/git-sync/apply`。
+- 最终全量门禁重跑：`ALL STANDALONE CHECKS PASSED`（真实 PG E2E 33/33、
+  浏览器 5/5、server 81/391、client 15/50、OpenAPI 248/248）。
+
 ## [0.6.0-rc3] - 2026-08-04
 
 ### Added

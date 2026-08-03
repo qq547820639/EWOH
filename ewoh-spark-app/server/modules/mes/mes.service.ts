@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -9,6 +10,7 @@ import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack
 import { and, desc, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import {
+  ewohAssetPackage,
   ewohEvent,
   ewohResourceBinding,
   ewohScheduleTask,
@@ -25,6 +27,11 @@ export interface MesStepInput {
   spatialEntityId?: string;
   plannedStart?: string;
   plannedEnd?: string;
+  sopId?: string;
+  sopVersion?: string;
+  sopMandatory?: boolean;
+  requiredTools?: string[];
+  requiredMaterials?: string[];
 }
 
 export interface CreateWorkOrderDto {
@@ -73,6 +80,99 @@ export function nextStepStatus(current: string, action: string): string | null {
     default:
       return null;
   }
+}
+
+function sanitizeExceptionAttachments(value: unknown): Record<string, string>[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const allowedKeys = ['id', 'filename', 'contentType', 'url'] as const;
+  return value
+    .filter(
+      (entry): entry is Record<string, unknown> =>
+        !!entry && typeof entry === 'object',
+    )
+    .map((entry) => {
+      const sanitized: Record<string, string> = {};
+      for (const key of allowedKeys) {
+        const field = entry[key];
+        if (typeof field === 'string' && field.trim() !== '') {
+          sanitized[key] = field;
+        }
+      }
+      return sanitized;
+    })
+    .filter((entry) => Object.keys(entry).length > 0);
+}
+
+function assertWorkerStepAssignment(
+  step: { assignedPersonId?: string | null },
+  actor?: OrgContext,
+) {
+  if (actor?.role !== 'worker') {
+    return;
+  }
+  if (!step.assignedPersonId || step.assignedPersonId !== actor.userId) {
+    throw new ForbiddenException(
+      'WORKER_STEP_ASSIGNMENT_REQUIRED: worker can only operate steps assigned to them',
+    );
+  }
+}
+
+function validateSopConfirmation(
+  step: { resultJson?: unknown },
+  action: string,
+  body?: Record<string, unknown>,
+  actor?: OrgContext,
+) {
+  if (action !== 'start' && action !== 'report') {
+    return undefined;
+  }
+  const result = (step.resultJson as Record<string, unknown> | null) ?? {};
+  const sop = (result.sop as Record<string, unknown> | undefined);
+  if (!sop || sop.mandatory === false) {
+    return undefined;
+  }
+  const bodyRecord = body ?? {};
+  if (bodyRecord.sopSigned !== true) {
+    throw new BadRequestException(
+      'SOP_SIGN_REQUIRED: SOP sign-off is required before start/report',
+    );
+  }
+  const requiredTools = Array.isArray(sop.requiredTools)
+    ? (sop.requiredTools as string[])
+    : [];
+  const confirmedTools = Array.isArray(bodyRecord.confirmedTools)
+    ? (bodyRecord.confirmedTools as string[])
+    : [];
+  const missingTools = requiredTools.filter(
+    (tool) => !confirmedTools.includes(tool),
+  );
+  if (missingTools.length > 0) {
+    throw new BadRequestException(
+      `SOP_TOOLS_REQUIRED: missing tool confirmations: ${missingTools.join(', ')}`,
+    );
+  }
+  const requiredMaterials = Array.isArray(sop.requiredMaterials)
+    ? (sop.requiredMaterials as string[])
+    : [];
+  const confirmedMaterials = Array.isArray(bodyRecord.confirmedMaterials)
+    ? (bodyRecord.confirmedMaterials as string[])
+    : [];
+  const missingMaterials = requiredMaterials.filter(
+    (material) => !confirmedMaterials.includes(material),
+  );
+  if (missingMaterials.length > 0) {
+    throw new BadRequestException(
+      `SOP_MATERIALS_REQUIRED: missing material confirmations: ${missingMaterials.join(', ')}`,
+    );
+  }
+  return {
+    signedAt: new Date().toISOString(),
+    signedBy: actor?.userId ?? bodyRecord.operatorId ?? null,
+    tools: confirmedTools,
+    materials: confirmedMaterials,
+  };
 }
 
 @Injectable()
@@ -130,6 +230,17 @@ export class MesService {
       assignedDeviceId: step.assignedDeviceId ?? null,
       spatialEntityId: step.spatialEntityId ?? null,
       progress: 0,
+      resultJson: step.sopId
+        ? {
+            sop: {
+              sopId: step.sopId,
+              version: step.sopVersion ?? null,
+              mandatory: step.sopMandatory ?? true,
+              requiredTools: step.requiredTools ?? [],
+              requiredMaterials: step.requiredMaterials ?? [],
+            },
+          }
+        : null,
     }));
     if (steps.length > 0) {
       await this.db.insert(ewohScheduleTaskStep).values(steps);
@@ -149,6 +260,17 @@ export class MesService {
       },
     });
     return this.getWorkOrder(orderId);
+  }
+
+  async getStep(stepId: string) {
+    const [step] = await this.db
+      .select()
+      .from(ewohScheduleTaskStep)
+      .where(eq(ewohScheduleTaskStep.stepId, stepId));
+    if (!step) {
+      throw new NotFoundException(`Step ${stepId} not found`);
+    }
+    return step;
   }
 
   async getWorkOrder(orderId: string) {
@@ -306,6 +428,8 @@ export class MesService {
     if (!step) {
       throw new NotFoundException(`Step ${stepId} not found in work order ${orderId}`);
     }
+    assertWorkerStepAssignment(step, actor);
+    const sopSignature = validateSopConfirmation(step, action, body, actor);
     if (action === 'start' && !['released', 'in_progress'].includes(workOrder.workOrder.status)) {
       throw new BadRequestException('Work order must be released or in progress');
     }
@@ -336,6 +460,28 @@ export class MesService {
       resultJson.handover = {
         receiver: body?.receiver ?? null,
         handedOverAt: new Date().toISOString(),
+      };
+    }
+    if (action === 'pause') {
+      resultJson.exception = {
+        code: body?.code ?? null,
+        note: body?.note ?? body?.reason ?? null,
+        reportedAt: new Date().toISOString(),
+        operator: actor?.userId ?? body?.operatorId ?? null,
+        attachments: sanitizeExceptionAttachments(body?.attachments),
+      };
+    }
+    if (action === 'resume') {
+      resultJson.resume = {
+        note: body?.note ?? null,
+        resumedAt: new Date().toISOString(),
+        operator: actor?.userId ?? body?.operatorId ?? null,
+      };
+    }
+    if (sopSignature) {
+      resultJson.sop = {
+        ...((resultJson.sop as Record<string, unknown> | null) ?? {}),
+        signatures: sopSignature,
       };
     }
     const [row] = await this.db
@@ -430,6 +576,332 @@ export class MesService {
       .orderBy(ewohResourceBinding.startTime);
   }
 
+  async registerSop(
+    body: {
+      sopId?: string;
+      title: string;
+      version: string;
+      steps: Array<{
+        name: string;
+        instruction?: string;
+        mandatory?: boolean;
+        media?: string[];
+        tools?: string[];
+        materials?: string[];
+      }>;
+      effectiveFrom?: string;
+      effectiveTo?: string;
+      checksum?: string;
+    },
+    actor?: OrgContext,
+  ) {
+    if (
+      !body.title?.trim() ||
+      !body.version?.trim() ||
+      !Array.isArray(body.steps) ||
+      body.steps.length === 0
+    ) {
+      throw new BadRequestException(
+        'title, version, and non-empty steps are required',
+      );
+    }
+    const sopId = body.sopId?.trim() || `SOP-${randomUUID().slice(0, 8)}`;
+    const [row] = await this.db
+      .insert(ewohAssetPackage)
+      .values({
+        packageId: sopId,
+        packageType: 'sop',
+        name: body.title.trim(),
+        version: body.version.trim(),
+        manifestJson: {
+          sopSchemaVersion: 'v1',
+          effectiveFrom: body.effectiveFrom ?? null,
+          effectiveTo: body.effectiveTo ?? null,
+          checksum: body.checksum ?? null,
+          steps: body.steps,
+        },
+        status: 'draft',
+      })
+      .returning();
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'mes.sop.register',
+      entityType: 'asset_package',
+      entityId: sopId,
+      before: null,
+      after: { title: row.name, version: row.version, stepCount: body.steps.length },
+    });
+    return row;
+  }
+
+  async listSops() {
+    return this.db
+      .select()
+      .from(ewohAssetPackage)
+      .where(eq(ewohAssetPackage.packageType, 'sop'))
+      .orderBy(desc(ewohAssetPackage.createdAt));
+  }
+
+  async getSop(sopId: string) {
+    const [row] = await this.db
+      .select()
+      .from(ewohAssetPackage)
+      .where(
+        and(
+          eq(ewohAssetPackage.packageId, sopId),
+          eq(ewohAssetPackage.packageType, 'sop'),
+        ),
+      );
+    if (!row) {
+      throw new NotFoundException(`SOP ${sopId} not found`);
+    }
+    return row;
+  }
+
+  async publishSop(sopId: string, actor?: OrgContext) {
+    const sop = await this.getSop(sopId);
+    if (sop.status === 'published') {
+      return sop;
+    }
+    const [updated] = await this.db
+      .update(ewohAssetPackage)
+      .set({ status: 'published', publishedAt: new Date() })
+      .where(eq(ewohAssetPackage.packageId, sopId))
+      .returning();
+    if (!updated) {
+      throw new ConflictException('STATE_CONFLICT');
+    }
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'mes.sop.publish',
+      entityType: 'asset_package',
+      entityId: sopId,
+      before: { status: sop.status },
+      after: { status: updated.status },
+    });
+    return updated;
+  }
+
+  async diffSops(fromId: string, toId: string) {
+    const from = await this.getSop(fromId);
+    const to = await this.getSop(toId);
+    const fromSteps = (
+      (from.manifestJson as { steps?: Array<{ name: string }> } | null)
+        ?.steps ?? []
+    );
+    const toSteps = (
+      (to.manifestJson as { steps?: Array<{ name: string }> } | null)?.steps ?? []
+    );
+    const fromMap = new Map(fromSteps.map((step) => [step.name, step]));
+    const toMap = new Map(toSteps.map((step) => [step.name, step]));
+    return {
+      fromId,
+      toId,
+      added: toSteps
+        .filter((step) => !fromMap.has(step.name))
+        .map((step) => step.name),
+      removed: fromSteps
+        .filter((step) => !toMap.has(step.name))
+        .map((step) => step.name),
+      changed: [...fromMap.keys()].filter(
+        (name) =>
+          toMap.has(name) &&
+          JSON.stringify(fromMap.get(name)) !== JSON.stringify(toMap.get(name)),
+      ),
+    };
+  }
+
+  async registerQualityScheme(
+    body: {
+      schemeId?: string;
+      name: string;
+      version: string;
+      stage: 'first' | 'in_process' | 'final';
+      checkItems: Array<{
+        itemId: string;
+        name: string;
+        required?: boolean;
+        defectCode?: string;
+      }>;
+      deviceIds?: string[];
+      stepTypes?: string[];
+      productCodes?: string[];
+    },
+    actor?: OrgContext,
+  ) {
+    if (
+      !body.name?.trim() ||
+      !body.version?.trim() ||
+      !['first', 'in_process', 'final'].includes(body.stage) ||
+      !Array.isArray(body.checkItems) ||
+      body.checkItems.length === 0
+    ) {
+      throw new BadRequestException(
+        'name, version, stage, and non-empty checkItems are required',
+      );
+    }
+    const schemeId =
+      body.schemeId?.trim() || `QS-${randomUUID().slice(0, 8)}`;
+    const [row] = await this.db
+      .insert(ewohAssetPackage)
+      .values({
+        packageId: schemeId,
+        packageType: 'quality_scheme',
+        name: body.name.trim(),
+        version: body.version.trim(),
+        manifestJson: {
+          qualitySchemaVersion: 'v1',
+          stage: body.stage,
+          checkItems: body.checkItems,
+          deviceIds: body.deviceIds ?? [],
+          stepTypes: body.stepTypes ?? [],
+          productCodes: body.productCodes ?? [],
+        },
+        status: 'draft',
+      })
+      .returning();
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'mes.quality_scheme.register',
+      entityType: 'asset_package',
+      entityId: schemeId,
+      before: null,
+      after: {
+        name: row.name,
+        version: row.version,
+        stage: body.stage,
+        checkCount: body.checkItems.length,
+      },
+    });
+    return row;
+  }
+
+  async listQualitySchemes() {
+    return this.db
+      .select()
+      .from(ewohAssetPackage)
+      .where(eq(ewohAssetPackage.packageType, 'quality_scheme'))
+      .orderBy(desc(ewohAssetPackage.createdAt));
+  }
+
+  async getQualityScheme(schemeId: string) {
+    const [row] = await this.db
+      .select()
+      .from(ewohAssetPackage)
+      .where(
+        and(
+          eq(ewohAssetPackage.packageId, schemeId),
+          eq(ewohAssetPackage.packageType, 'quality_scheme'),
+        ),
+      );
+    if (!row) {
+      throw new NotFoundException(`Quality scheme ${schemeId} not found`);
+    }
+    return row;
+  }
+
+  async publishQualityScheme(schemeId: string, actor?: OrgContext) {
+    const scheme = await this.getQualityScheme(schemeId);
+    if (scheme.status === 'published') {
+      return scheme;
+    }
+    const [updated] = await this.db
+      .update(ewohAssetPackage)
+      .set({ status: 'published', publishedAt: new Date() })
+      .where(eq(ewohAssetPackage.packageId, schemeId))
+      .returning();
+    if (!updated) {
+      throw new ConflictException('STATE_CONFLICT');
+    }
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'mes.quality_scheme.publish',
+      entityType: 'asset_package',
+      entityId: schemeId,
+      before: { status: scheme.status },
+      after: { status: updated.status },
+    });
+    return updated;
+  }
+
+  async matchQualitySchemes(filters: {
+    deviceId?: string;
+    stepType?: string;
+    productCode?: string;
+  }) {
+    const schemes = await this.listQualitySchemes();
+    return schemes
+      .filter((scheme) => scheme.status === 'published')
+      .filter((scheme) => {
+        const manifest = (scheme.manifestJson as Record<string, unknown>) ?? {};
+        const deviceIds = Array.isArray(manifest.deviceIds)
+          ? (manifest.deviceIds as string[])
+          : [];
+        const stepTypes = Array.isArray(manifest.stepTypes)
+          ? (manifest.stepTypes as string[])
+          : [];
+        const productCodes = Array.isArray(manifest.productCodes)
+          ? (manifest.productCodes as string[])
+          : [];
+        if (deviceIds.length > 0 && filters.deviceId && !deviceIds.includes(filters.deviceId)) {
+          return false;
+        }
+        if (stepTypes.length > 0 && filters.stepType && !stepTypes.includes(filters.stepType)) {
+          return false;
+        }
+        if (productCodes.length > 0 && filters.productCode && !productCodes.includes(filters.productCode)) {
+          return false;
+        }
+        return true;
+      })
+      .map((scheme) => ({
+        schemeId: scheme.packageId,
+        name: scheme.name,
+        version: scheme.version,
+        stage: (scheme.manifestJson as { stage?: string } | null)?.stage ?? null,
+      }));
+  }
+
+  private async validateQualityScheme(
+    schemeId: string,
+    stage: string | undefined,
+    checkResults: Array<{ itemId: string; result: 'pass' | 'fail'; note?: string }> | undefined,
+  ) {
+    const scheme = await this.getQualityScheme(schemeId);
+    if (scheme.status !== 'published') {
+      throw new BadRequestException('QUALITY_SCHEME_NOT_PUBLISHED');
+    }
+    const manifest = (scheme.manifestJson as {
+      stage?: string;
+      checkItems?: Array<{ itemId: string; required?: boolean }>;
+    }) ?? {};
+    if (manifest.stage !== stage) {
+      throw new BadRequestException(
+        `QUALITY_STAGE_MISMATCH: expected ${manifest.stage}, got ${stage ?? 'none'}`,
+      );
+    }
+    const results = Array.isArray(checkResults) ? checkResults : [];
+    for (const item of manifest.checkItems ?? []) {
+      if (
+        item.required !== false &&
+        !results.some((result) => result.itemId === item.itemId)
+      ) {
+        throw new BadRequestException(`QUALITY_CHECK_REQUIRED: ${item.itemId}`);
+      }
+    }
+    return {
+      schemeId,
+      version: scheme.version,
+      stage: manifest.stage,
+      checkResults: results,
+      hasFail: results.some((result) => result.result === 'fail'),
+    };
+  }
+
   async qualityInspection(
     orderId: string,
     body: {
@@ -439,6 +911,13 @@ export class MesService {
       defectCode?: string;
       quantity?: number;
       note?: string;
+      schemeId?: string;
+      stage?: 'first' | 'in_process' | 'final';
+      checkResults?: Array<{
+        itemId: string;
+        result: 'pass' | 'fail';
+        note?: string;
+      }>;
     },
     actor?: OrgContext,
   ) {
@@ -447,6 +926,7 @@ export class MesService {
     if (!step) {
       throw new NotFoundException(`Step ${body.stepId} not found`);
     }
+    assertWorkerStepAssignment(step, actor);
     if (!['in_progress', 'reported', 'reviewed'].includes(step.status)) {
       throw new BadRequestException(
         `Inspection is not allowed from step status ${step.status}`,
@@ -454,6 +934,19 @@ export class MesService {
     }
     if (!['pass', 'fail', 'rework'].includes(body.result)) {
       throw new BadRequestException('result must be pass, fail, or rework');
+    }
+    let schemeInfo: Awaited<ReturnType<typeof this.validateQualityScheme>> | undefined;
+    if (body.schemeId) {
+      schemeInfo = await this.validateQualityScheme(
+        body.schemeId,
+        body.stage,
+        body.checkResults,
+      );
+      if (schemeInfo.hasFail && body.result === 'pass') {
+        throw new BadRequestException(
+          'QUALITY_RESULT_MISMATCH: failed check items require fail or rework result',
+        );
+      }
     }
     const resultJson = { ...((step.resultJson as Record<string, unknown> | null) ?? {}) };
     resultJson.quality = {
@@ -463,6 +956,7 @@ export class MesService {
       quantity: body.quantity ?? null,
       note: body.note ?? null,
       inspectedAt: new Date().toISOString(),
+      scheme: schemeInfo ?? null,
     };
     await this.db
       .update(ewohScheduleTaskStep)
@@ -487,6 +981,9 @@ export class MesService {
         defectCode: body.defectCode ?? null,
         quantity: body.quantity ?? null,
         note: body.note ?? null,
+        schemeId: body.schemeId ?? null,
+        stage: body.stage ?? null,
+        checkResults: body.checkResults ?? [],
       },
     });
     await this.auditService.appendAuditLog({

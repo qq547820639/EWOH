@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented: C7-C9 contracts, file-backed Work Graph indexer, gate engine, resource registry, handoff service, NestJS /api/work/*, React /work-orchestration console, Final 6 scenario/connector/mapping catalogs, deploy env wiring; standalone check PASSED, Jest 74 suites / 332 tests, E2E 29/29, OpenAPI 231/231, work graph 202 items / 21 edges / 48 actors / 14 gates / 0 conflicts, release review 34/34; rc3 bundle 1537 files; release drill PASSED",
+  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented; 2026-08-04 iterations add mobile P0, evidence/gate hardening, onboarding F0-F3 real execution, mapping dry-run, unified world replay, E-SOP, quality schemes, slow-query observability, frontend lazy loading, MES role workbench, progressive lists, replay context UI, git sync apply gate, final standalone gate, pilot readiness rerun, and real-PG validation; ALL STANDALONE CHECKS PASSED with E2E 33/33 + browser 5/5, server Jest 81 suites / 391 tests, client 15 suites / 50 tests, OpenAPI 248/248, repo facts 33/33, work graph 252/109/0 conflicts, build PASSED; PILOT READINESS NOT READY (7/3/5)",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
@@ -234,7 +234,31 @@
     "release_drill_2026_08_04": "RELEASE DRILL PASSED on disposable PostgreSQL 17 including DDL/RLS/audit/rollback/rebuild, standalone check, client Jest, E2E, build",
     "console_ux_deepening": "DAG pan/zoom, node search, gate/evidence filters, evidence content preview, batch gate decisions, handoff state actions, lock countdown, site readiness tab, q/limit/offset API, resource lock expiry",
     "site_readiness_api": "GET /api/work/site-readiness over catalog/factory-sites/*.json; console tab; audit 25 checks",
-    "handoff_state_workflow": "POST /api/work/handoffs/:id/state with accepted/rejected/closed transitions persisted to markdown; UI actions added"
+    "handoff_state_workflow": "POST /api/work/handoffs/:id/state with accepted/rejected/closed transitions persisted to markdown; UI actions added",
+    "iteration_2026_08_04_p0": "repo facts 31/31; unified error response includes errorCode/message/fieldErrors/requestId/retryable/recommendedAction/details; DataSourceType real/controlled_test/simulated/replayed/stale/offline; DataSourceBadge reused in Devices; RequestDatabaseContext reuses active transaction; mobile quality API + SOP/exception/QC/offline UX; Jest 76/349, client 9/33, OpenAPI 232/232, standalone build PASSED; independent review conditional pass 0/0; E2E skipped locally (no runtime DB env)",
+    "iteration_2026_08_04_validation_pipe": "global ValidationPipe via APP_PIPE in AppModule/StandaloneAppModule; class-validator errors map to fieldErrors/VALIDATION_ERROR 422; 5 unit tests including plain-object passthrough and decorated DTO end-to-end; repo-facts includes validation_pipe_registered",
+    "iteration_2026_08_04_command_map_details": "EntityDetail resolves personnel/device archives with organization/exoskeleton/risk/alerts/recent events/disposition; entityDetailData helper + 3 client tests; client 9/33",
+    "iteration_2026_08_04_offline_queue": "mobile workbench queues transition/inspection actions in localStorage when offline and flushes on reconnect; offlineQueue helpers + 2 client tests; client 10/35",
+    "iteration_2026_08_04_state_guards": "control send/receipt reject terminal requests and duplicate in-flight/terminal attempts while preserving failed retry; handoff transitions open->accepted/rejected->closed enforced; gate decisions idempotent with history file; Jest 76/355",
+    "iteration_2026_08_04_scale_idempotency": "scenario install/uninstall, fleet upgrade/rollback, and difference resolve are idempotent in target states; 4 new scale tests; Jest 76/359",
+    "e2e_2026_08_04_real_pg": "npm run test:e2e 29/29 passed on embedded PostgreSQL 17 (127.0.0.1:55432): auth/RBAC, org isolation, MES/OEE/ERP, parameters, AAS, scale, work orchestration, idempotency",
+    "iteration_2026_08_04_photo_attachments": "mobile exception report uploads JPG/PNG/WebP through /api/files and stores attachment refs in resultJson.exception.attachments; exceptionPayload helper + 2 client tests; client 11/37",
+    "iteration_2026_08_04_pwa": "manifest.webmanifest + sw.js + client registration; repo-facts pwa_installability_assets check; repo facts 32/32",
+    "iteration_2026_08_04_offline_photo_queue": "offline exception photos queued as data URLs (2MB limit) and uploaded/attached on reconnect; attachmentDataUrl helpers + 2 client tests; client 12/39",
+    "release_drill_2026_08_04_iteration": "RELEASE DRILL PASSED on embedded PG 17: apply/verify/RLS/audit/rollback/rebuild, security probe OK, Jest 76/359, client 12/39, repo facts 32/32, OpenAPI 232/232, E2E 29/29, build PASSED",
+    "perf_smoke_2026_08_04_iteration": "GET /health/live 500 req / 50 concurrency: 4610 qps, p50 4.77ms, p95 26.83ms, 0 failures",
+    "security_probe_2026_08_04_iteration": "STANDALONE SECURITY VERIFY OK: runtime role least-privilege, SECURITY DEFINER lookups, RLS A/B, audit chain tamper detection",
+    "playwright_2026_08_04": "Playwright screenshots of Standalone /login at mobile 390x844 and desktop 1440x900 saved under output/playwright/iteration-login-*.png",
+    "request_context_correlation_2026_08_04": "AsyncLocalStorage request context carries traceId into audit entries; tracing interceptor + audit service tests; repo facts 33/33; Jest 76/360",
+    "error_sanitization_2026_08_04": "HttpException details no longer serialize raw response objects; site readiness returns generic error; exception filter + work orchestration tests; Jest 76/362",
+    "devices_error_state_2026_08_04": "Devices page shows retryable error state and data update time instead of conflating failures with empty results",
+    "bandit_2026_08_04": "python3 -m bandit -r src/edge_platform -ll: 0 medium/high issues over 28286 lines",
+    "command_map_query_state_2026_08_04": "failed entity/world/overview/environment queries show retryable banner; queryState helpers + 3 client tests; client 13/42",
+    "release_rc4_2026_08_04": "release/ewoh-0.6.0-rc4 generated: 1202 files, SHA256SUMS.txt, scale-release-review PASSED; manifest release=0.6.0-rc4",
+    "browser_test_2026_08_04": "npm run test:browser 4/4 passed: dispatcher login + command center/command map/mobile workbench/alerts render against real PostgreSQL fixture; screenshot output/playwright/browser-authenticated-command-center.png",
+    "browser_test_ci_2026_08_04": "standalone.yml installs Playwright Chromium and runs npm run test:browser after E2E",
+    "pilot_readiness_rc4_2026_08_04": "pilot-readiness-check.sh: 7 passed / 3 failed (Docker/Kubectl/Helm absent) / 5 pending external; PILOT READINESS NOT READY",
+    "ops_drill_rc4_2026_08_04": "standalone-ops-check.sh PASSED: 57 tables backup/restore/verify; identity sequence advanced"
   },
   "subagent_state": {
     "planned": [

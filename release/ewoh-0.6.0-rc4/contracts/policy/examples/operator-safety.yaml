@@ -1,0 +1,11 @@
+policyId: deny-dispatch-high-risk
+version: 1.0.0
+description: Deny plan dispatch when risk is high and approval is required.
+effect: deny
+rules:
+  - field: plan.riskLevel
+    operator: in
+    value: [high, critical]
+  - field: plan.requiresApproval
+    operator: eq
+    value: true

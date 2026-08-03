@@ -1,0 +1,46 @@
+{
+  "assetId": "urn:ewoh:factory-a:discrete-machining-line:001",
+  "idShort": "离散机加工线",
+  "submodels": [
+    {
+      "id": "urn:ewoh:submodel:operations:001",
+      "idShort": "operations",
+      "elements": [
+        {
+          "idShort": "oeeAvailabilityTarget",
+          "value": 0.85,
+          "valueType": "number",
+          "unit": "%",
+          "semanticId": "ewoh:oee:availability"
+        },
+        {
+          "idShort": "shiftCount",
+          "value": 3,
+          "valueType": "integer",
+          "unit": "shift",
+          "semanticId": "ewoh:shift:count"
+        }
+      ]
+    },
+    {
+      "id": "urn:ewoh:submodel:maintenance:001",
+      "idShort": "maintenance",
+      "elements": [
+        {
+          "idShort": "inspectionIntervalDays",
+          "value": 30,
+          "valueType": "integer",
+          "unit": "day",
+          "semanticId": "ewoh:maintenance:interval"
+        },
+        {
+          "idShort": "toolCalibrationIntervalDays",
+          "value": 180,
+          "valueType": "integer",
+          "unit": "day",
+          "semanticId": "ewoh:maintenance:calibration"
+        }
+      ]
+    }
+  ]
+}

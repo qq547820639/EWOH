@@ -529,6 +529,62 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-170 | Factory site readiness control-plane API/UI | ORCH-01/05 | Done | `GET /api/work/site-readiness`, catalog examples, 场地就绪 tab; audit 25 checks; OpenAPI 230/230 |
 | T-171 | Handoff state workflow | ORCH-06/01 | Done | `POST /api/work/handoffs/:id/state`; receive/reject/close UI; Jest 74/332; OpenAPI 231/231 |
 
+## Wave Iteration 2026-08-04 - P0 Hardening (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-172 | Repo facts consistency audit + CI wiring | AG-00/01 | Done | `scripts/audit-repo-facts.js` 30/30; wired into `standalone-check.sh` and `test.yml` |
+| T-173 | Unified error contract: errorCode/requestId/retryable/recommendedAction/details | AG-00/03 | Done | `exception.filter.ts` + `api_response.interface.ts` + OpenAPI `ErrorResponse`; 8 filter tests; Jest 75/344 |
+| T-174 | Data source vocabulary + reusable badge | AG-00/05 | Done | `DataSourceType` six values; `DataSourceBadge`; Devices uses shared component; client 8/30 |
+| T-175 | Nested request transaction reuse for scheduler/background GUC | AG-00/04 | Done | `RequestDatabaseContext` active-store reuse; unit test; no nested root transaction |
+| T-176 | Mobile SOP/exception/QC/offline UX | AG-00/07 | Done | MES pause/resume resultJson; mobile quality API; MobileWorkbench SOP/异常/质检/离线/重试; MES+mobile unit tests |
+| T-177 | Independent review and first-round evidence | AG-13/00 | Done | conditional pass 0 critical/0 major; `work/reviews/iteration-review-2026-08-04.md`; `round70-iteration-p0-2026-08-04.md` |
+| T-178 | Global ValidationPipe with structured fieldErrors | AG-00/03 | Done | `server/common/pipes/validation.pipe.ts`; APP_PIPE in both bootstraps; 5 validation-pipe tests; Jest 76/349 |
+| T-179 | Command-map person/device detail enrichment | AG-00/06 | Done | `entityDetailData.ts` + tests; organization/exoskeleton/risk/alerts/events/disposition entry; client 9/33 |
+| T-180 | Mobile offline pending-action queue | AG-00/07 | Done | `lib/offlineQueue.ts` + tests; queue/flush on reconnect; client 10/35 |
+| T-181 | Control/work orchestration state guards | AG-00/03/04 | Done | control terminal/in-flight guards; handoff state machine; gate decision idempotency + history; Jest 76/355 |
+| T-182 | Scale mutation idempotency guards | AG-00/09 | Done | scenario install/uninstall idempotent; fleet upgrade/rollback skip target state; difference resolve idempotent; Jest 76/359 |
+| T-183 | Real PostgreSQL HTTP E2E acceptance | AG-13/41 | Done | `npm run test:e2e` 29/29 on embedded PG 17 (`127.0.0.1:55432`) |
+| T-184 | Mobile exception photo attachments | AG-00/07 | Done | `/api/files` upload + `resultJson.exception.attachments`; client 11/37 |
+| T-185 | PWA installability assets | AG-00/07 | Done | manifest + service worker + registration; repo facts 32/32 |
+| T-186 | Offline photo queue | AG-00/07 | Done | data URL queue + flush upload/attach; client 12/39 |
+| T-187 | Release drill + perf + security verification | AG-13/51 | Done | `RELEASE DRILL PASSED`; perf 4610 QPS p95 26.83ms; security probe OK; bandit 0 medium/high |
+| T-188 | Playwright browser screenshots | AG-13/30 | Done | mobile + desktop `/login` screenshots in `output/playwright/` |
+| T-189 | Request ID audit correlation | AG-00/11 | Done | AsyncLocalStorage request context; audit entries auto-filled; repo facts 33/33 |
+| T-190 | Error leak sanitization | AG-00/12 | Done | HttpException details sanitized; site readiness generic error; Jest 76/362 |
+| T-191 | Devices page error/update state | AG-00/05 | Done | isError + retry + updatedAt display in device list |
+| T-192 | Command map query error banner | AG-00/06 | Done | failed query banner + retry; client 13/42 |
+| T-193 | EWOH 0.6.0-rc4 candidate bundle | AG-51 | Done | `release/ewoh-0.6.0-rc4` 1202 files; SHA256SUMS; scale-release-review PASSED |
+| T-194 | Authenticated Playwright browser tests | AG-13/30 | Done | dispatcher login + command center/map/mobile workbench/alerts on real PG fixture; `npm run test:browser` 4/4 |
+| T-195 | Browser tests in CI | AG-51/13 | Done | `standalone.yml` installs Chromium and runs `npm run test:browser` |
+| T-196 | Pilot readiness rerun (RC4) | AG-51/00 | Done | 7 passed / 3 failed (Docker/Kubectl/Helm absent) / 5 pending external; NOT READY |
+| T-197 | Ops backup/restore drill (RC4) | AG-10/51 | Done | `standalone-ops-check.sh` PASSED; 57 tables backup/restore/verify; identity advanced |
+
+## Wave Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-198 | Mobile workbench person/org filtering + worker role | AG-11/30 | Done | `round90-p0-mobile-orchestration.md`; mobile service unit tests; typecheck/client pass |
+| T-199 | Typed scan recognition for order/step/device/material/batch/station/factory | AG-11/30 | Done | `round90-p0-mobile-orchestration.md`; scan parser tests |
+| T-200 | Exception attachment persistence + offline queue state machine | AG-07/11 | Done | `round90-p0-mobile-orchestration.md`; mes/offlineQueue tests |
+| T-201 | Evidence binding metadata + invalidation + graph invariants | ORCH-01/02 | Done | `round90-p0-mobile-orchestration.md`; work-indexer tests; `--invariants` passed |
+| T-202 | Work Console CLI + standalone-check/CI wiring | ORCH-05/51 | Done | `round90-p0-mobile-orchestration.md`; work-console tests; strict CLI passed |
+| T-203 | Independent review fixes: worker write guard, conflict discard, CI strict, scan body guard | AG-00/11/30 | Done | `round91-review-fixes.md`; server 78/375; client 13/46 |
+| T-204 | Onboarding F0-F3 real execution: site readiness, connector publish, scenario install | PX-03/07/51 | Done | `round93-onboarding-mapping-real-gate.md`; unit + E2E 29/29 |
+| T-205 | Mapping dry-run/preflight API with localized source/target errors | PX-05/04 | Done | `round93-onboarding-mapping-real-gate.md`; unit + E2E 29/29 |
+| T-206 | Real PostgreSQL E2E + authenticated browser validation | AG-41/13 | Done | `round92-real-pg-e2e-browser.md`; E2E 29/29; browser 4/4 |
+| T-207 | Unified replay lanes, event context, and replay-derived issue creation | AG-14/31 | Done | `round94-world-replay-unified-timeline.md`; unit + E2E 30/30 |
+| T-208 | E-SOP versioning, sign-off, and mandatory tool/material confirmation gates | AG-11/20 | Done | `round95-esop-signoff.md`; unit + E2E 31/31 |
+| T-209 | Quality scheme registry, auto-match, required check items, and result consistency | AG-11/20 | Done | `round96-quality-schemes.md`; unit + E2E 32/32 |
+| T-210 | Slow transaction detection, statement timeout, slow-query API and metric | AG-11/46 | Done | `round97-slow-query-observability.md`; unit + E2E 32/32 |
+| T-211 | Frontend route lazy loading and cancellable world/replay requests | AG-30/31 | Done | `round98-frontend-performance.md`; browser 4/4; main bundle split |
+| T-212 | MES role task workbench API + role workbench page | AG-11/30/31 | Done | `round99-role-workbench.md`; unit + E2E 33/33; browser 5/5 |
+| T-213 | Progressive list rendering helper + load more in role workbench | AG-30 | Done | `round100-progressive-lists.md`; client 14/48 |
+| T-214 | Pilot readiness rerun with current code and real PG | AG-51/00 | Done | `round101-pilot-readiness-rerun.md`; passed=7 failed=3 pending=5 NOT READY |
+| T-215 | Event replay context UI in command map event center | AG-31 | Done | `round102-replay-context-ui.md`; client 15/50 |
+| T-216 | Approval-gated Git Sync apply endpoint | ORCH-01/51 | Done | `round103-git-sync-apply-gate.md`; E2E 33/33 |
+| T-217 | Final standalone gate with real PG on current code | AG-51/00 | Done | `round104-final-standalone-gate.md`; ALL STANDALONE CHECKS PASSED |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

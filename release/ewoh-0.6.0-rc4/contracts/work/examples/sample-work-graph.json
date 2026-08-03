@@ -1,0 +1,100 @@
+{
+  "schema": "ewoh:///work-graph/v1",
+  "generatedAt": "2026-08-04T00:00:00.000Z",
+  "sourceRoot": ".codex/artifacts",
+  "criticalPath": "baseline -> contracts -> indexer -> console -> evidence -> acceptance",
+  "summary": {
+    "itemCount": 2,
+    "edgeCount": 1,
+    "actorCount": 1,
+    "artifactCount": 1,
+    "evidenceCount": 1,
+    "gateCount": 1,
+    "riskCount": 1,
+    "decisionCount": 1,
+    "statusCounts": { "Validation": 1, "In Progress": 1 },
+    "conflicts": []
+  },
+  "items": [
+    {
+      "id": "T-001",
+      "title": "Read authoritative docs",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00",
+      "wave": "W0",
+      "evidence": "authoritative-plan.txt"
+    },
+    {
+      "id": "G2",
+      "title": "Six shared contracts frozen",
+      "type": "gate",
+      "status": "Passed",
+      "owner": "AG-04"
+    }
+  ],
+  "edges": [
+    {
+      "id": "E-001",
+      "from": "T-001",
+      "to": "G2",
+      "edgeType": "evidence",
+      "blocking": true
+    }
+  ],
+  "actors": [
+    {
+      "actorId": "AG-00",
+      "name": "Principal orchestrator",
+      "kind": "agent",
+      "role": "Principal orchestrator",
+      "ownership": ".codex/artifacts/"
+    }
+  ],
+  "artifacts": [
+    {
+      "artifactId": "task-board",
+      "path": ".codex/artifacts/task-board.md",
+      "mediaType": "text/markdown",
+      "checksum": "abc123"
+    }
+  ],
+  "evidence": [
+    {
+      "evidenceId": "EVD-001",
+      "workItemId": "T-001",
+      "kind": "review",
+      "path": ".codex/artifacts/work/evidence/round1.md",
+      "checksum": "abc123"
+    }
+  ],
+  "gates": [
+    {
+      "gateId": "G2",
+      "title": "Six shared contracts frozen",
+      "calculatedStatus": "passed",
+      "humanDecision": null
+    }
+  ],
+  "risks": [
+    {
+      "id": "R-001",
+      "title": "Artifact drift",
+      "severity": "high",
+      "status": "open",
+      "owner": "AG-00"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "D-001",
+      "title": "Adopt baseline",
+      "date": "2026-08-04",
+      "decision": "adopt",
+      "rationale": "authoritative",
+      "reversibility": "reversible"
+    }
+  ],
+  "resources": [],
+  "handoffs": []
+}

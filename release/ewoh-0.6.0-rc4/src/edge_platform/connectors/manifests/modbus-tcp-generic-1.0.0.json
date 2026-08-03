@@ -1,0 +1,35 @@
+{
+  "id": "modbus-tcp-generic",
+  "version": "1.0.0",
+  "runtime": "edge-python",
+  "protocol": "modbus-tcp",
+  "inputProfile": "modbus-tcp-generic-machinery",
+  "outputEvents": [
+    "TelemetryObserved"
+  ],
+  "configSchema": {
+    "required": [
+      "host",
+      "port",
+      "unitId",
+      "registers"
+    ],
+    "properties": {
+      "host": {"type": "string"},
+      "port": {"type": "integer"},
+      "unitId": {"type": "integer"},
+      "registers": {"type": "array", "items": {"type": "object"}}
+    }
+  },
+  "compatibility": {
+    "core": ">=0.6.0-rc2 <1.0.0",
+    "edgeRuntime": ">=1.0.0 <2.0.0"
+  },
+  "permissions": {
+    "network": ["tcp://factory-lan:502"],
+    "api": ["POST /api/ingestion/*"]
+  },
+  "tck": "tests/connector-tck.yaml",
+  "sbom": "sbom.cdx.json",
+  "rollback": "supported"
+}

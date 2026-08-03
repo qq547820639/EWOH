@@ -1,0 +1,7 @@
+model_reasoning_summary = "detailed"
+model_verbosity = "high"
+web_search = "live"
+
+sandbox_mode = "danger-full-access"
+[sandbox_workspace_write]
+network_access = true

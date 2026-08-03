@@ -1,5 +1,28 @@
 import { OnboardingService } from '@server/modules/onboarding/onboarding.service';
 
+function siteReadiness(factoryName: string) {
+  return {
+    factoryName,
+    siteContact: 'site@example.com',
+    items: [
+      {
+        id: 'DEV-INV',
+        label: '设备台账',
+        required: true,
+        status: 'pass',
+        evidence: 'device-inventory.xlsx',
+      },
+      {
+        id: 'ERP-EP',
+        label: 'ERP 端点',
+        required: true,
+        status: 'pass',
+        evidence: 'erp-endpoint.json',
+      },
+    ],
+  };
+}
+
 describe('OnboardingService', () => {
   it('returns the F0-F6 onboarding checklist', () => {
     const service = new OnboardingService(
@@ -35,7 +58,29 @@ describe('OnboardingService', () => {
       reused: false,
     };
     const scaleService = {
+      validateSiteReadiness: jest.fn().mockResolvedValue({
+        ready: true,
+        requiredCount: 2,
+        requiredPassed: 2,
+        requiredFailed: 0,
+      }),
       installGoldenFactory: jest.fn().mockResolvedValue(golden),
+      ensureConnectorInstalled: jest
+        .fn()
+        .mockImplementation(async (packageId: string) => ({
+          packageId,
+          name: packageId,
+          version: '1.0.0',
+          status: 'published',
+        })),
+      installScenarioPack: jest
+        .fn()
+        .mockImplementation(async (packageId: string) => ({
+          packageId,
+          name: packageId,
+          version: '1.0.0',
+          status: 'installed',
+        })),
       runConformance: jest.fn().mockResolvedValue({ passed: true }),
       generateSupportBundle: jest
         .fn()
@@ -45,7 +90,10 @@ describe('OnboardingService', () => {
     const service = new OnboardingService(scaleService as never, audit as never);
 
     const result = await service.run(
-      { factoryName: 'Factory Onboarding' },
+      {
+        factoryName: 'Factory Onboarding',
+        config: { siteReadiness: siteReadiness('Factory Onboarding') },
+      },
       { userId: 'user-1', primaryOrgId: 'org-1' },
     );
 
@@ -54,6 +102,13 @@ describe('OnboardingService', () => {
     expect(result.steps.every((step) => step.passed)).toBe(true);
     expect(result.supportBundleId).toBe('SB-ONB');
     expect(scaleService.installGoldenFactory).toHaveBeenCalledTimes(1);
+    expect(scaleService.validateSiteReadiness).toHaveBeenCalledWith(
+      'Factory Onboarding',
+      expect.objectContaining({ siteReadiness: expect.any(Object) }),
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+    expect(scaleService.ensureConnectorInstalled).toHaveBeenCalledTimes(2);
+    expect(scaleService.installScenarioPack).toHaveBeenCalledTimes(2);
     expect(scaleService.runConformance).toHaveBeenCalledTimes(4);
     expect(audit.appendAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'scale.onboarding.run' }),
@@ -62,6 +117,12 @@ describe('OnboardingService', () => {
 
   it('reports failed steps when template install fails', async () => {
     const scaleService = {
+      validateSiteReadiness: jest.fn().mockResolvedValue({
+        ready: true,
+        requiredCount: 2,
+        requiredPassed: 2,
+        requiredFailed: 0,
+      }),
       installGoldenFactory: jest
         .fn()
         .mockRejectedValue(new Error('template not published')),
@@ -89,7 +150,17 @@ describe('OnboardingService', () => {
       reused: false,
     };
     const scaleService = {
+      validateSiteReadiness: jest.fn().mockResolvedValue({
+        ready: true,
+        requiredCount: 2,
+        requiredPassed: 2,
+        requiredFailed: 0,
+      }),
       installGoldenFactory: jest.fn().mockResolvedValue(golden),
+      ensureConnectorInstalled: jest
+        .fn()
+        .mockResolvedValue({ status: 'published' }),
+      installScenarioPack: jest.fn().mockResolvedValue({ status: 'installed' }),
       runConformance: jest.fn().mockResolvedValue({ passed: true }),
       generateSupportBundle: jest
         .fn()
@@ -100,6 +171,7 @@ describe('OnboardingService', () => {
 
     const result = await service.partnerShadowRun({
       factoryName: 'Partner Factory',
+      config: { siteReadiness: siteReadiness('Partner Factory') },
     });
 
     expect(result.partner).toBe(true);

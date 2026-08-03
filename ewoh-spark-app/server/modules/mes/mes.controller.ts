@@ -86,4 +86,103 @@ export class MesController {
   ) {
     return this.mesService.qualityInspection(id, body, request.userContext);
   }
+
+  @Get('sops')
+  listSops() {
+    return this.mesService.listSops();
+  }
+
+  @Post('sops')
+  registerSop(
+    @Body() body: {
+      sopId?: string;
+      title: string;
+      version: string;
+      steps: Array<{
+        name: string;
+        instruction?: string;
+        mandatory?: boolean;
+        media?: string[];
+        tools?: string[];
+        materials?: string[];
+      }>;
+      effectiveFrom?: string;
+      effectiveTo?: string;
+      checksum?: string;
+    },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.mesService.registerSop(body, request.userContext);
+  }
+
+  @Get('sops/:id')
+  getSop(@Param('id') id: string) {
+    return this.mesService.getSop(id);
+  }
+
+  @Post('sops/:id/publish')
+  publishSop(
+    @Param('id') id: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.mesService.publishSop(id, request.userContext);
+  }
+
+  @Get('sops/:id/diff/:otherId')
+  diffSops(@Param('id') id: string, @Param('otherId') otherId: string) {
+    return this.mesService.diffSops(id, otherId);
+  }
+
+  @Get('quality-schemes')
+  listQualitySchemes() {
+    return this.mesService.listQualitySchemes();
+  }
+
+  @Get('quality-schemes/match')
+  matchQualitySchemes(
+    @Query('deviceId') deviceId?: string,
+    @Query('stepType') stepType?: string,
+    @Query('productCode') productCode?: string,
+  ) {
+    return this.mesService.matchQualitySchemes({
+      deviceId,
+      stepType,
+      productCode,
+    });
+  }
+
+  @Post('quality-schemes')
+  registerQualityScheme(
+    @Body() body: {
+      schemeId?: string;
+      name: string;
+      version: string;
+      stage: 'first' | 'in_process' | 'final';
+      checkItems: Array<{
+        itemId: string;
+        name: string;
+        required?: boolean;
+        defectCode?: string;
+      }>;
+      deviceIds?: string[];
+      stepTypes?: string[];
+      productCodes?: string[];
+    },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.mesService.registerQualityScheme(body, request.userContext);
+  }
+
+  @Get('quality-schemes/:id')
+  getQualityScheme(@Param('id') id: string) {
+    return this.mesService.getQualityScheme(id);
+  }
+
+  @Post('quality-schemes/:id/publish')
+  publishQualityScheme(
+    @Param('id') id: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.mesService.publishQualityScheme(id, request.userContext);
+  }
 }

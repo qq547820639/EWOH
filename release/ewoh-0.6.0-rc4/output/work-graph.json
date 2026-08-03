@@ -1,0 +1,4921 @@
+{
+  "schema": "ewoh:///work-graph/v1",
+  "generatedAt": "2026-08-03T20:48:58.859Z",
+  "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
+  "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
+  "summary": {
+    "itemCount": 232,
+    "edgeCount": 22,
+    "actorCount": 48,
+    "artifactCount": 15,
+    "evidenceCount": 89,
+    "gateCount": 14,
+    "riskCount": 15,
+    "decisionCount": 36,
+    "statusCounts": {
+      "Done": 139,
+      "In Progress": 2,
+      "Refining": 9,
+      "Validation": 46,
+      "Review": 5,
+      "Passed for local implementation": 1,
+      "Passed": 2,
+      "Passed for local standalone scope": 1,
+      "Passed for standalone": 1,
+      "Passed for standalone base": 1,
+      "Passed locally": 2,
+      "Passed locally, production pending": 1,
+      "Pending": 3,
+      "Proposed": 19
+    },
+    "conflicts": []
+  },
+  "items": [
+    {
+      "id": "T-001",
+      "title": "Read authoritative docs",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "W0 - Baseline, Contracts, Probes (current)",
+      "evidence": "`.codex/artifacts/authoritative-plan.txt`, `final-implementation-plan.txt`"
+    },
+    {
+      "id": "T-002",
+      "title": "Repo/module/table inventory",
+      "type": "task",
+      "status": "In Progress",
+      "owner": "AG-00 + explorers",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "W0 - Baseline, Contracts, Probes (current)",
+      "evidence": "`inventory/*.md`"
+    },
+    {
+      "id": "T-003",
+      "title": "Environment probes",
+      "type": "task",
+      "status": "In Progress",
+      "owner": "AG-10",
+      "agents": [
+        "AG-10"
+      ],
+      "wave": "W0 - Baseline, Contracts, Probes (current)",
+      "evidence": "`inventory/environment.md`"
+    },
+    {
+      "id": "T-004",
+      "title": "C1 data contract",
+      "type": "task",
+      "status": "Refining",
+      "owner": "AG-03",
+      "agents": [
+        "AG-03"
+      ],
+      "wave": "W0 - Baseline, Contracts, Probes (current)",
+      "evidence": "`contracts/data-contract.md`"
+    },
+    {
+      "id": "T-005",
+      "title": "C2 API contract",
+      "type": "task",
+      "status": "Refining",
+      "owner": "AG-04",
+      "agents": [
+        "AG-04"
+      ],
+      "wave": "W0 - Baseline, Contracts, Probes (current)",
+      "evidence": "`contracts/api-contract.md`"
+    },
+    {
+      "id": "T-006",
+      "title": "C3 state machines",
+      "type": "task",
+      "status": "Refining",
+      "owner": "AG-05",
+      "agents": [
+        "AG-05"
+      ],
+      "wave": "W0 - Baseline, Contracts, Probes (current)",
+      "evidence": "`contracts/state-machines.md`"
+    },
+    {
+      "id": "T-007",
+      "title": "C4 security contract",
+      "type": "task",
+      "status": "Refining",
+      "owner": "AG-06",
+      "agents": [
+        "AG-06"
+      ],
+      "wave": "W0 - Baseline, Contracts, Probes (current)",
+      "evidence": "`contracts/security-contract.md`"
+    },
+    {
+      "id": "T-008",
+      "title": "C5 UI contract",
+      "type": "task",
+      "status": "Refining",
+      "owner": "AG-30",
+      "agents": [
+        "AG-30"
+      ],
+      "wave": "W0 - Baseline, Contracts, Probes (current)",
+      "evidence": "`contracts/ui-contract.md`"
+    },
+    {
+      "id": "T-009",
+      "title": "C6 DevOps contract",
+      "type": "task",
+      "status": "Refining",
+      "owner": "AG-51",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "W0 - Baseline, Contracts, Probes (current)",
+      "evidence": "`contracts/devops-contract.md`"
+    },
+    {
+      "id": "T-010",
+      "title": "Requirements traceability",
+      "type": "task",
+      "status": "Refining",
+      "owner": "AG-01/41",
+      "agents": [
+        "AG-01"
+      ],
+      "wave": "W0 - Baseline, Contracts, Probes (current)",
+      "evidence": "`contracts/requirements-trace.md`"
+    },
+    {
+      "id": "T-011",
+      "title": "Logical capability -> physical table map",
+      "type": "task",
+      "status": "Refining",
+      "owner": "AG-03/10",
+      "agents": [
+        "AG-03"
+      ],
+      "wave": "W0 - Baseline, Contracts, Probes (current)",
+      "evidence": "`contracts/data-contract.md`"
+    },
+    {
+      "id": "T-012",
+      "title": "Baseline test harness fix",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-10/51",
+      "agents": [
+        "AG-10"
+      ],
+      "wave": "W0 - Baseline, Contracts, Probes (current)",
+      "evidence": "`inventory/environment.md`, Makefile, package.json, test.yml"
+    },
+    {
+      "id": "T-013",
+      "title": "DDL/migration package generation",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-10",
+      "agents": [
+        "AG-10"
+      ],
+      "wave": "W0 - Baseline, Contracts, Probes (current)",
+      "evidence": "`db/`, `tmp/ddl/`, runner plan mode OK; live DDL pending"
+    },
+    {
+      "id": "T-014",
+      "title": "Backend shared infrastructure",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-11",
+      "agents": [
+        "AG-11"
+      ],
+      "wave": "W0 - Baseline, Contracts, Probes (current)",
+      "evidence": "7 Jest suites / 18 tests pass; type check pass"
+    },
+    {
+      "id": "T-015",
+      "title": "Frontend 11-center shell",
+      "type": "task",
+      "status": "Review",
+      "owner": "AG-30",
+      "agents": [
+        "AG-30"
+      ],
+      "wave": "W0 - Baseline, Contracts, Probes (current)",
+      "evidence": "11 routes, grouped Layout, placeholders, namespaces, queryKeys"
+    },
+    {
+      "id": "T-016",
+      "title": "Drizzle schema codegen sync to live DB (18 tables)",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-10/codegen",
+      "agents": [
+        "AG-10"
+      ],
+      "wave": "W2 - Master Data Domains (started)",
+      "evidence": "`server/database/schema.ts` 556 lines, type check pass"
+    },
+    {
+      "id": "T-017",
+      "title": "Organization/personnel backend module",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-12",
+      "agents": [
+        "AG-12"
+      ],
+      "wave": "W2 - Master Data Domains (started)",
+      "evidence": "`server/modules/organization/`, 2 tests, type check pass"
+    },
+    {
+      "id": "T-018",
+      "title": "Command center + personnel real-data pages",
+      "type": "task",
+      "status": "Review",
+      "owner": "AG-31/32",
+      "agents": [
+        "AG-31"
+      ],
+      "wave": "W2 - Master Data Domains (started)",
+      "evidence": "CommandCenter/Personnel pages fetch APIs, type check pass"
+    },
+    {
+      "id": "T-019",
+      "title": "Device search extension (available fields + pagination + binding filter)",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-13",
+      "agents": [
+        "AG-13"
+      ],
+      "wave": "W2 - Master Data Domains (started)",
+      "evidence": "`/api/dashboard/devices/search`, 2 tests"
+    },
+    {
+      "id": "T-020",
+      "title": "Model registry management module",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-15",
+      "agents": [
+        "AG-15"
+      ],
+      "wave": "W2 - Master Data Domains (started)",
+      "evidence": "`/api/models`, lifecycle transition tests"
+    },
+    {
+      "id": "T-021",
+      "title": "Role guard + sensitive personnel endpoint",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-06/12",
+      "agents": [
+        "AG-06"
+      ],
+      "wave": "W2 - Master Data Domains (started)",
+      "evidence": "`@Roles` guard, `/api/personnel/:id/sensitive`, tests"
+    },
+    {
+      "id": "T-022",
+      "title": "System config module with credential masking",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-21",
+      "agents": [
+        "AG-21"
+      ],
+      "wave": "W2 - Master Data Domains (started)",
+      "evidence": "`/api/system/config`, masking tests"
+    },
+    {
+      "id": "T-023",
+      "title": "Task state machine service",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-16",
+      "agents": [
+        "AG-16"
+      ],
+      "wave": "W3 - Operations Loop (started)",
+      "evidence": "`api/tasks` + transitions tests"
+    },
+    {
+      "id": "T-024",
+      "title": "Alert state machine service",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-18",
+      "agents": [
+        "AG-18"
+      ],
+      "wave": "W3 - Operations Loop (started)",
+      "evidence": "`api/alerts` + transitions tests"
+    },
+    {
+      "id": "T-025",
+      "title": "Control request aggregation service",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-19",
+      "agents": [
+        "AG-19"
+      ],
+      "wave": "W3 - Operations Loop (started)",
+      "evidence": "`api/control/requests`, latest-attempt aggregation tests"
+    },
+    {
+      "id": "T-026",
+      "title": "Approval instance/step service",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-18",
+      "agents": [
+        "AG-18"
+      ],
+      "wave": "W3 - Operations Loop (started)",
+      "evidence": "`api/approvals`, step aggregation tests"
+    },
+    {
+      "id": "T-027",
+      "title": "Resource preorder/issue/release",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-17",
+      "agents": [
+        "AG-17"
+      ],
+      "wave": "W3 - Operations Loop (started)",
+      "evidence": "`api/resource/preorders`, no-oversell math tests"
+    },
+    {
+      "id": "T-028",
+      "title": "AI manual suggestion/plan service",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-20",
+      "agents": [
+        "AG-20"
+      ],
+      "wave": "W3 - Operations Loop (started)",
+      "evidence": "`api/ai`, no pre-generation, structured output tests"
+    },
+    {
+      "id": "T-029",
+      "title": "World snapshot/delta cursor protocol",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-14",
+      "agents": [
+        "AG-14"
+      ],
+      "wave": "W3 - Operations Loop (started)",
+      "evidence": "`api/world/snapshot"
+    },
+    {
+      "id": "T-030",
+      "title": "Scheduling/Alerts/AI/Model/System real pages",
+      "type": "task",
+      "status": "Review",
+      "owner": "AG-31/33/34/35",
+      "agents": [
+        "AG-31"
+      ],
+      "wave": "W3 - Operations Loop (started)",
+      "evidence": "pages fetch real APIs; type check + lint pass"
+    },
+    {
+      "id": "T-031",
+      "title": "Audit hash chain service",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-06",
+      "agents": [
+        "AG-06"
+      ],
+      "wave": "W5 - Scenario and Independent Validation (started)",
+      "evidence": "SHA-256 per-org chain, tamper detection tests"
+    },
+    {
+      "id": "T-032",
+      "title": "SP-01..SP-08 scenario smoke suite",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-50",
+      "agents": [
+        "AG-50"
+      ],
+      "wave": "W5 - Scenario and Independent Validation (started)",
+      "evidence": "`test/scenarios/scenario-packages.spec.ts` passes"
+    },
+    {
+      "id": "T-033",
+      "title": "DigitalWorld/Organization/DataAssets real pages",
+      "type": "task",
+      "status": "Review",
+      "owner": "AG-31/32/35",
+      "agents": [
+        "AG-31"
+      ],
+      "wave": "W5 - Scenario and Independent Validation (started)",
+      "evidence": "pages fetch spatial/world/org/model/system APIs"
+    },
+    {
+      "id": "T-034",
+      "title": "Delivery docs: runbook/release/acceptance/training",
+      "type": "task",
+      "status": "Review",
+      "owner": "AG-51/52",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "W5 - Scenario and Independent Validation (started)",
+      "evidence": "`docs/delivery/*.md`"
+    },
+    {
+      "id": "T-035",
+      "title": "Demo seed SQL + runner --seed",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-10/50",
+      "agents": [
+        "AG-10"
+      ],
+      "wave": "W5 - Scenario and Independent Validation (started)",
+      "evidence": "`db/seed/001_demo_seed.sql`, runner plan seed"
+    },
+    {
+      "id": "T-036",
+      "title": "Command Map L3/L4 views",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-31",
+      "agents": [
+        "AG-31"
+      ],
+      "wave": "W5 - Scenario and Independent Validation (started)",
+      "evidence": "L3 workstation close-up, L4 person follow; type/lint pass"
+    },
+    {
+      "id": "T-037",
+      "title": "Standalone NestJS bootstrap without Miaoda PlatformModule",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-11",
+      "agents": [
+        "AG-11"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "`/health` 200, `/` 200, `/api/models` 200 on 3100"
+    },
+    {
+      "id": "T-038",
+      "title": "Standard env contract + Docker Compose",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-51",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "`.env.standalone.example`, `deploy/cloud/*`"
+    },
+    {
+      "id": "T-039",
+      "title": "Client HTTP layer without Miaoda toolkit",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-30",
+      "agents": [
+        "AG-30"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "standard axios lib, standalone Vite config, no Feishu CDN in HTML"
+    },
+    {
+      "id": "T-040",
+      "title": "JWT auth for standalone",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-06/11",
+      "agents": [
+        "AG-06"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "/api/auth/login/refresh/me; roles guard enforced"
+    },
+    {
+      "id": "T-041",
+      "title": "Standalone login page + token storage",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-30",
+      "agents": [
+        "AG-30"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "`/login` 200, axios attaches Bearer"
+    },
+    {
+      "id": "T-042",
+      "title": "Kubernetes/HA manifests",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-51",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "deployment/service/ingress/HPA/PDB"
+    },
+    {
+      "id": "T-043",
+      "title": "Redis service + rate limit guard",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-11/46",
+      "agents": [
+        "AG-11"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "ioredis with memory fallback; 429 guard test"
+    },
+    {
+      "id": "T-044",
+      "title": "ewoh_user migration + seed",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-10",
+      "agents": [
+        "AG-10"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "`002_ewoh_users.sql`, `002_default_admin.sql`, runner plans"
+    },
+    {
+      "id": "T-045",
+      "title": "DB-backed auth with bcrypt",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-06/11",
+      "agents": [
+        "AG-06"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "AuthService queries ewoh_user, bcrypt compare, env fallback"
+    },
+    {
+      "id": "T-046",
+      "title": "Standalone CI/CD workflow",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-51",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "`.github/workflows/standalone.yml`"
+    },
+    {
+      "id": "T-047",
+      "title": "Concurrency smoke script + evidence",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-46",
+      "agents": [
+        "AG-46"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "`scripts/perf-smoke.js`; /health 6794 qps, /api/models 255 qps"
+    },
+    {
+      "id": "T-048",
+      "title": "Standalone standard DDL variant",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-10",
+      "agents": [
+        "AG-10"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "generator + runner plans; no user_profile/workspace tokens"
+    },
+    {
+      "id": "T-049",
+      "title": "One-click standalone check script",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-51",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "`scripts/standalone-check.sh` passes end-to-end"
+    },
+    {
+      "id": "T-050",
+      "title": "File service (upload/download/delete)",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-21",
+      "agents": [
+        "AG-21"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "`/api/files` roundtrip verified on :3100"
+    },
+    {
+      "id": "T-051",
+      "title": "UUID input robustness (404 instead of DB 22P02 500)",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-11/12/16/15",
+      "agents": [
+        "AG-11"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "`server/common/uuid.ts`; org/task/model guards; 56 tests / 25 suites pass"
+    },
+    {
+      "id": "T-052",
+      "title": "S3-compatible object storage driver",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-21",
+      "agents": [
+        "AG-21"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "local + S3 drivers, env contract, compose/k8s wiring; live upload/download/delete on :3101; 59 tests / 26 suites pass"
+    },
+    {
+      "id": "T-053",
+      "title": "Strict standalone auth and request-scoped DB context",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-06/11",
+      "agents": [
+        "AG-06"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "bcrypt-only auth, HS256 payload/type validation, fail-closed DB lookup, ALS transaction/GUC context; 76 tests / 31 suites pass"
+    },
+    {
+      "id": "T-054",
+      "title": "PostgreSQL 17 standalone migration/security/rollback gate",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-10/41",
+      "agents": [
+        "AG-10"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "PG 17.10 apply/verify/idempotency/RLS/audit/rollback/rebuild pass; 53/53 request org defaults present"
+    },
+    {
+      "id": "T-055",
+      "title": "HTTP multi-organization authorization acceptance",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-41",
+      "agents": [
+        "AG-41"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "`:3101` runtime-role service: health 200, unauth 401, token-type rejection, A/B isolation, global read, auto `org_id` all pass"
+    },
+    {
+      "id": "T-056",
+      "title": "OpenAPI/controller route drift audit",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-04/41",
+      "agents": [
+        "AG-04"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "reusable audit script; 102 controller vs 36 spec operations, 69 undocumented and 3 unimplemented"
+    },
+    {
+      "id": "T-057",
+      "title": "DB-backed audit chain sink + read-only audit API",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-06/41",
+      "agents": [
+        "AG-06"
+      ],
+      "wave": "Cloud - Standalone Product (started)",
+      "evidence": "`ewoh_append_audit_log` sink, `GET /api/audit` pagination/filter, org write instrumentation; live create/update audit + per-org isolation passed"
+    },
+    {
+      "id": "T-058",
+      "title": "Independent security/persistence/frontend reviews",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-40/41/44",
+      "agents": [
+        "AG-40"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "three reports in `.codex/artifacts/work/reviews/`"
+    },
+    {
+      "id": "T-059",
+      "title": "Security hardening: RBAC, refresh rotation/logout, rate limit, config unique index, audit roles, k8s config",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-06/11",
+      "agents": [
+        "AG-06"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "WP-HARDEN-001 H-01; tests + DB verify pass"
+    },
+    {
+      "id": "T-060",
+      "title": "Runtime context/state machines: legacy auth fail-fast, simulator GUC, conditional transitions, audit wiring",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-11/16/18/15",
+      "agents": [
+        "AG-11"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "WP-HARDEN-001 H-02; 121 Jest tests pass"
+    },
+    {
+      "id": "T-061",
+      "title": "Persist control/resource/world-cursor to existing tables; approval gap documented",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-17/19/14",
+      "agents": [
+        "AG-17"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "WP-HARDEN-001 H-03; 121 Jest tests pass"
+    },
+    {
+      "id": "T-062",
+      "title": "Frontend/command map majors: event drill-down, real replay, role nav/guard, 401 refresh, 3D mode/fallback",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-30/31/44",
+      "agents": [
+        "AG-30"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "WP-HARDEN-001 H-04; typecheck/build/client tests pass"
+    },
+    {
+      "id": "T-063",
+      "title": "Real HTTP+PostgreSQL E2E scenario suite",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-50/41",
+      "agents": [
+        "AG-50"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "`test/e2e/ewoh-http.e2e.spec.ts`; 9/9 pass on local PostgreSQL"
+    },
+    {
+      "id": "T-064",
+      "title": "Browser UI regression: QueryClient provider fix + world replay 500 fix",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-30/44",
+      "agents": [
+        "AG-30"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "Playwright login/command-center/command-map/devices/alerts pass; `/api/world/replay` 200"
+    },
+    {
+      "id": "T-065",
+      "title": "OpenAPI 106-route DTO contract",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-04",
+      "agents": [
+        "AG-04"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "`openapi/ewoh.yaml` 93 paths / 106 ops; strict audit 0/0; C2 v1.0 frozen"
+    },
+    {
+      "id": "T-066",
+      "title": "Approval persistence via event/event_chain/audit equivalent mapping",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-18",
+      "agents": [
+        "AG-18"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "ApprovalPersistenceService; C1 mapping validated; E2E 10/10"
+    },
+    {
+      "id": "T-067",
+      "title": "Freeze C3-C6 contracts + requirements trace",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-01/05/06/30/51/41",
+      "agents": [
+        "AG-01"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "C3-C6 v1.0 frozen; requirements-trace v1.0 validated; G2 passed"
+    },
+    {
+      "id": "T-068",
+      "title": "Contract deviation fixes: device roles, system roles, client logout revocation",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-06/30/04",
+      "agents": [
+        "AG-06"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "E2E 11/11 includes device route roles; logout revokes server session"
+    },
+    {
+      "id": "T-069",
+      "title": "Release drill script + full local drill pass",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51/10",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "`scripts/release-drill.sh`; `RELEASE DRILL PASSED` with rollback/rebuild, 137 tests, 106/106 OpenAPI, 11/11 E2E"
+    },
+    {
+      "id": "T-070",
+      "title": "DDL generator unique-index regression fix",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-10",
+      "agents": [
+        "AG-10"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "`(org_id, config_key)` index and verify check added to generator; `scheduler_config_org_key=1`"
+    },
+    {
+      "id": "T-071",
+      "title": "RC1 release bundle + checksums + Dockerfile lint",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "`release/ewoh-0.6.0-rc1` 566 files; SHA256SUMS OK; Dockerfile lint 0 issues"
+    },
+    {
+      "id": "T-072",
+      "title": "GitHub Actions full CI green",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51/41",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "`codex/rc1-ci-full` 7474121: standalone/test/security all success, Docker build included"
+    },
+    {
+      "id": "T-073",
+      "title": "Bandit/ruff Python cleanup",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-06/41",
+      "agents": [
+        "AG-06"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "bandit `-ll` 0 medium/high; ruff 0 errors"
+    },
+    {
+      "id": "T-074",
+      "title": "Backend deepening: org hierarchy, scheduler weights, control/resource audit, rule dedup",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-14/16/17/18/19",
+      "agents": [
+        "AG-14"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "40 suites / 155 tests; E2E 11/11"
+    },
+    {
+      "id": "T-075",
+      "title": "Frontend UX deepening: React Query centers, scheduling/data assets actions, L3/L4 filter, responsive",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-30/31/32/33/34/35",
+      "agents": [
+        "AG-30"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "14 client tests; typecheck/build pass"
+    },
+    {
+      "id": "T-076",
+      "title": "Second/third/fourth-wave CI re-verification",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51/41",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "`ad3dc10`, `bb4cd1f`, `148d989` all standalone/test/security success"
+    },
+    {
+      "id": "T-077",
+      "title": "Third wave: device/event audit coverage",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-06/12/18",
+      "agents": [
+        "AG-06"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "Jest 41/156; E2E 11/11; build pass"
+    },
+    {
+      "id": "T-078",
+      "title": "Resource inventory persistence via ewoh_resource_binding",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-17",
+      "agents": [
+        "AG-17"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "inventory row + conditional quantity update; Jest 41/158; E2E 11/11"
+    },
+    {
+      "id": "T-079",
+      "title": "Scheduler plan generation idempotency",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-16",
+      "agents": [
+        "AG-16"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "`idempotencyKey` deterministic plan IDs; existing plans returned; Jest 41/159"
+    },
+    {
+      "id": "T-080",
+      "title": "Fifth-wave CI verification",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51/41",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "`d9f7c99` standalone/test/security success"
+    },
+    {
+      "id": "T-081",
+      "title": "Security response headers",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-06/11",
+      "agents": [
+        "AG-06"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "standalone-main headers + unit test; CI `604d831` all green"
+    },
+    {
+      "id": "T-082",
+      "title": "Accessibility/UX seventh wave",
+      "type": "task",
+      "status": "Validation",
+      "owner": "AG-30/31/44",
+      "agents": [
+        "AG-30"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "skip link, labels, focus, aria-live, contrast; client 19 tests; CI 3906132 pending"
+    },
+    {
+      "id": "T-083",
+      "title": "E2E scheduler idempotency case",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-16/41",
+      "agents": [
+        "AG-16"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "duplicate-key reuse verified; E2E 12/12"
+    },
+    {
+      "id": "T-084",
+      "title": "Environment mode real data",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-14/30/31",
+      "agents": [
+        "AG-14"
+      ],
+      "wave": "W5 Hardening (WP-HARDEN-001, in progress)",
+      "evidence": "`/api/dashboard/environment/summary`; live HTTP smoke; OpenAPI 107/107"
+    },
+    {
+      "id": "T-085",
+      "title": "Canonical UnifiedExoFrame ingestion + M2M org context",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-11/14/50",
+      "agents": [
+        "AG-11"
+      ],
+      "wave": "RC2 - Ingestion Protocol Alignment (in progress)",
+      "evidence": "`round6-ingestion-protocol.md`; 44 Jest suites / 176 tests; E2E 14/14; pytest 59"
+    },
+    {
+      "id": "T-086",
+      "title": "PostgreSQL logical backup/restore drill + ops runbooks",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51/10",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "RC2 - Operations Readiness (in progress)",
+      "evidence": "`round7-ops-readiness.md`; `standalone-ops-check.sh` PASSED; perf smoke 4943 qps"
+    },
+    {
+      "id": "T-087",
+      "title": "SECURITY DEFINER org lookup + security probe fixture isolation",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-06/11",
+      "agents": [
+        "AG-06"
+      ],
+      "wave": "RC2 - Org Scope Hardening (in progress)",
+      "evidence": "`round8-org-scope-hardening.md`; release drill PASSED; browser login no fallback"
+    },
+    {
+      "id": "T-088",
+      "title": "Training plan executable v1.1",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-52",
+      "agents": [
+        "AG-52"
+      ],
+      "wave": "RC2 - Training Materials (in progress)",
+      "evidence": "`docs/delivery/training-plan.md`; session model, hands-on exercises, verification"
+    },
+    {
+      "id": "T-089",
+      "title": "Prometheus metrics endpoint + business-path perf smoke",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-11/46",
+      "agents": [
+        "AG-11"
+      ],
+      "wave": "RC2 - Observability and Deploy Artifacts (in progress)",
+      "evidence": "`round9-observability-deploy-artifacts.md`; `/metrics` 200; overview 514 qps"
+    },
+    {
+      "id": "T-090",
+      "title": "Local deploy artifact verifier",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "RC2 - Observability and Deploy Artifacts (in progress)",
+      "evidence": "`scripts/verify-deploy-artifacts.js`; 62 checks / 0 failures"
+    },
+    {
+      "id": "T-091",
+      "title": "Final 4.0 baseline adoption",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Final4 - MES P0 (in progress)",
+      "evidence": "`authoritative-plan-final4.txt`; D-011/D-012/D-013"
+    },
+    {
+      "id": "T-092",
+      "title": "MES P0 production execution closed loop",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-11/13/20",
+      "agents": [
+        "AG-11"
+      ],
+      "wave": "Final4 - MES P0 (in progress)",
+      "evidence": "`round10-mes-p0.md`; E2E 15/15; OpenAPI 116/116"
+    },
+    {
+      "id": "T-093",
+      "title": "OEE/Andon closed loop",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-12/14/22",
+      "agents": [
+        "AG-12"
+      ],
+      "wave": "Final4 - OEE/Andon (in progress)",
+      "evidence": "`round11-oee-andon.md`; E2E 16/16; OpenAPI 123/123"
+    },
+    {
+      "id": "T-094",
+      "title": "ERP connector skeleton",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-18/03/11",
+      "agents": [
+        "AG-18"
+      ],
+      "wave": "Final4 - ERP Connector (in progress)",
+      "evidence": "`round12-erp-connector.md`; E2E 17/17; OpenAPI 129/129"
+    },
+    {
+      "id": "T-095",
+      "title": "Quality trace graph + mobile workbench API",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-11/13/21",
+      "agents": [
+        "AG-11"
+      ],
+      "wave": "Final4 - Trace/Mobile (in progress)",
+      "evidence": "`round13-trace-mobile.md`; E2E 17/17; OpenAPI 134/134"
+    },
+    {
+      "id": "T-096",
+      "title": "Mobile workbench React page",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-30/31",
+      "agents": [
+        "AG-30"
+      ],
+      "wave": "Final4 - Mobile UI (in progress)",
+      "evidence": "`round14-mobile-workbench-ui.md`; client tests 20/20; release drill passed"
+    },
+    {
+      "id": "T-097",
+      "title": "Final 5.0 baseline adoption",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Final5 - Scale Kernel (in progress)",
+      "evidence": "`authoritative-plan-final5.txt`; D-014/D-015"
+    },
+    {
+      "id": "T-098",
+      "title": "Factory template/profile/asset scale kernel",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-03",
+      "agents": [
+        "PX-03"
+      ],
+      "wave": "Final5 - Scale Kernel (in progress)",
+      "evidence": "`round15-final5-scale-kernel.md`; E2E 18/18; managed tables 51"
+    },
+    {
+      "id": "T-099",
+      "title": "Connector + scenario pack catalog and second-factory drill",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-04/07",
+      "agents": [
+        "PX-04"
+      ],
+      "wave": "Final5 - Connector/Scenario Catalog (in progress)",
+      "evidence": "`round16-connector-scenario.md`; OpenAPI 147/147; E2E 18/18"
+    },
+    {
+      "id": "T-100",
+      "title": "Asset conformance TCK + factory profile replay",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-11/09",
+      "agents": [
+        "PX-11"
+      ],
+      "wave": "Final5 - Conformance/Replay (in progress)",
+      "evidence": "`round17-conformance-replay.md`; OpenAPI 149/149; E2E 18/18"
+    },
+    {
+      "id": "T-101",
+      "title": "Scenario install TCK gate + fleet upgrade/rollback",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-09/07",
+      "agents": [
+        "PX-09"
+      ],
+      "wave": "Final5 - Fleet Ops + Event Catalog (in progress)",
+      "evidence": "`round18-fleet-ops-event-catalog.md`; Jest 54/224; E2E 19/19; OpenAPI 154/154"
+    },
+    {
+      "id": "T-102",
+      "title": "AsyncAPI/CloudEvents event catalog + API + audit",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-10/11",
+      "agents": [
+        "PX-10"
+      ],
+      "wave": "Final5 - Fleet Ops + Event Catalog (in progress)",
+      "evidence": "`contracts/events/event-catalog.yaml`; `GET /api/events/catalog`; contract audit 13/13"
+    },
+    {
+      "id": "T-103",
+      "title": "Helm chart + Factory Values + static chart audit",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-09/51",
+      "agents": [
+        "PX-09"
+      ],
+      "wave": "Final5 - Deployment Factory (in progress)",
+      "evidence": "`round19-helm-deployment-factory.md`; chart audit 123 checks; Jest 4/4"
+    },
+    {
+      "id": "T-104",
+      "title": "Golden Factory Profile manifest + install API",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-07/09",
+      "agents": [
+        "PX-07"
+      ],
+      "wave": "Final5 - Golden Factory (in progress)",
+      "evidence": "`round20-golden-factory.md`; audit 47 checks; E2E golden install/reuse passed"
+    },
+    {
+      "id": "T-105",
+      "title": "Mapping DSL schema + example + registry API + TCK",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-05/04",
+      "agents": [
+        "PX-05"
+      ],
+      "wave": "Final5 - Mapping DSL (in progress)",
+      "evidence": "`round21-mapping-dsl.md`; audit 10 checks; E2E mapping register/conformance passed"
+    },
+    {
+      "id": "T-106",
+      "title": "Upgrade rings + fleet registry + redacted support bundle",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-09/10",
+      "agents": [
+        "PX-09"
+      ],
+      "wave": "Final5 - Fleet Ops Rings (in progress)",
+      "evidence": "`round22-fleet-rings-support.md`; E2E ring staging/status/support bundle passed"
+    },
+    {
+      "id": "T-107",
+      "title": "OTel resource attributes across metrics and deployment env",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-10/51",
+      "agents": [
+        "PX-10"
+      ],
+      "wave": "Final5 - Observability (in progress)",
+      "evidence": "`round23-otel-resource-attributes.md`; E2E /metrics 20/20; verifier 66/66"
+    },
+    {
+      "id": "T-108",
+      "title": "Asset/core compatibility catalog API + range matcher",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-11/04",
+      "agents": [
+        "PX-11"
+      ],
+      "wave": "Final5 - Compatibility Catalog (in progress)",
+      "evidence": "`round24-compatibility-catalog.md`; E2E incompatible legacy connector verified"
+    },
+    {
+      "id": "T-109",
+      "title": "Policy schema + evaluation API + contract audit",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-06/20",
+      "agents": [
+        "PX-06"
+      ],
+      "wave": "Final5 - Policy Engine (in progress)",
+      "evidence": "`round25-policy-engine.md`; E2E risky deny/safe allow passed"
+    },
+    {
+      "id": "T-110",
+      "title": "Template config inheritance diff preview API",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-03/05",
+      "agents": [
+        "PX-03"
+      ],
+      "wave": "Final5 - Config Inheritance (in progress)",
+      "evidence": "`round26-diff-preview.md`; E2E preview passed"
+    },
+    {
+      "id": "T-111",
+      "title": "Connector runtime + exoskeleton/equipment-state manifests",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-04/13",
+      "agents": [
+        "PX-04"
+      ],
+      "wave": "Final5 - Connector Runtime (in progress)",
+      "evidence": "`round27-connector-runtime.md`; pytest 69 passed"
+    },
+    {
+      "id": "T-112",
+      "title": "F0-F6 factory onboarding checklist + run API",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-12/07",
+      "agents": [
+        "PX-12"
+      ],
+      "wave": "Final5 - Factory Onboarding (in progress)",
+      "evidence": "`round28-factory-onboarding.md`; E2E onboarding passed"
+    },
+    {
+      "id": "T-113",
+      "title": "Scale Release review gate + package hook",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-09/51",
+      "agents": [
+        "PX-09"
+      ],
+      "wave": "Final5 - Scale Release (in progress)",
+      "evidence": "`round29-scale-release-review.md`; review 24/24 passed"
+    },
+    {
+      "id": "T-114",
+      "title": "Workflow schema + role-aware advance API + audit",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-06/16",
+      "agents": [
+        "PX-06"
+      ],
+      "wave": "Final5 - Workflow Engine (in progress)",
+      "evidence": "`round30-workflow-engine.md`; E2E role gating passed"
+    },
+    {
+      "id": "T-115",
+      "title": "Org-scoped feature flag API on system config store",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-06/21",
+      "agents": [
+        "PX-06"
+      ],
+      "wave": "Final5 - Feature Flags (in progress)",
+      "evidence": "`round31-feature-flags.md`; E2E org isolation passed"
+    },
+    {
+      "id": "T-116",
+      "title": "Sequence buffer for out-of-order/duplicate/backfill",
+      "type": "task",
+      "status": "Done",
+      "owner": "V-CON/13",
+      "agents": [],
+      "wave": "Final5 - Edge Resilience (in progress)",
+      "evidence": "`round32-edge-backfill.md`; pytest 74 passed"
+    },
+    {
+      "id": "T-117",
+      "title": "Twin package manifest/calibration pipeline + samples",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-08/14",
+      "agents": [
+        "PX-08"
+      ],
+      "wave": "Final5 - Twin Package (in progress)",
+      "evidence": "`round33-twin-package.md`; pytest 81 passed"
+    },
+    {
+      "id": "T-118",
+      "title": "Partner shadow checklist + shadow-run API",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-13/12",
+      "agents": [
+        "PX-13"
+      ],
+      "wave": "Final5 - Partner Shadow (in progress)",
+      "evidence": "`round34-partner-shadow.md`; E2E partner run passed"
+    },
+    {
+      "id": "T-119",
+      "title": "Deployment TCK gate across deploy/Helm/release checks",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-09/51",
+      "agents": [
+        "PX-09"
+      ],
+      "wave": "Final5 - Deployment TCK (in progress)",
+      "evidence": "`round35-deployment-tck.md`; 3 gates passed"
+    },
+    {
+      "id": "T-120",
+      "title": "Scale operations page wired to real scale APIs",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-30/31",
+      "agents": [
+        "AG-30"
+      ],
+      "wave": "Final5 - Scale UI (in progress)",
+      "evidence": "`round36-scale-ui.md`; client Jest 6/21; build passed"
+    },
+    {
+      "id": "T-121",
+      "title": "ERP/MES connector profile manifest + runtime tests",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-04/18",
+      "agents": [
+        "PX-04"
+      ],
+      "wave": "Final5 - Connector Profile (in progress)",
+      "evidence": "`round37-erp-mes-connector.md`; pytest 82 passed"
+    },
+    {
+      "id": "T-122",
+      "title": "Scale productization metrics API",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-13/10",
+      "agents": [
+        "PX-13"
+      ],
+      "wave": "Final5 - Scale Metrics (in progress)",
+      "evidence": "`round38-scale-metrics.md`; E2E metrics passed"
+    },
+    {
+      "id": "T-123",
+      "title": "Scenario pack uninstall API + audit",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-07/18",
+      "agents": [
+        "PX-07"
+      ],
+      "wave": "Final5 - Scenario Lifecycle (in progress)",
+      "evidence": "`round39-scenario-uninstall.md`; E2E uninstall passed"
+    },
+    {
+      "id": "T-124",
+      "title": "Connector TCK runner + make entry",
+      "type": "task",
+      "status": "Done",
+      "owner": "V-CON/11",
+      "agents": [],
+      "wave": "Final5 - Connector TCK (in progress)",
+      "evidence": "`round40-connector-tck.md`; 11 checks passed"
+    },
+    {
+      "id": "T-125",
+      "title": "Scenario TCK runner across golden/policy/workflow/mapping/events",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-11/07",
+      "agents": [
+        "PX-11"
+      ],
+      "wave": "Final5 - Scenario TCK (in progress)",
+      "evidence": "`round41-scenario-tck.md`; 5 gates passed"
+    },
+    {
+      "id": "T-126",
+      "title": "Third factory config-driven install drill",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-12/04",
+      "agents": [
+        "PX-12"
+      ],
+      "wave": "Final5 - Third Factory (in progress)",
+      "evidence": "`round42-third-factory-drill.md`; E2E config install passed"
+    },
+    {
+      "id": "T-127",
+      "title": "Factory difference register/list API + audit",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-05/12",
+      "agents": [
+        "PX-05"
+      ],
+      "wave": "Final5 - Difference Recycling (in progress)",
+      "evidence": "`round43-factory-differences.md`; E2E difference registry passed"
+    },
+    {
+      "id": "T-128",
+      "title": "Factory difference resolve API + audit",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-05/12",
+      "agents": [
+        "PX-05"
+      ],
+      "wave": "Final5 - Difference Resolve (in progress)",
+      "evidence": "`round44-difference-resolve.md`; E2E resolve passed"
+    },
+    {
+      "id": "T-129",
+      "title": "Cross-tenant full-chain TCK gate",
+      "type": "task",
+      "status": "Done",
+      "owner": "V-SEC/41",
+      "agents": [],
+      "wave": "Final5 - Cross-Tenant TCK (in progress)",
+      "evidence": "`round45-cross-tenant-tck.md`; E2E 23/23 passed"
+    },
+    {
+      "id": "T-130",
+      "title": "Factory differences register/resolve UI on /scale",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-30/31",
+      "agents": [
+        "AG-30"
+      ],
+      "wave": "Final5 - Differences UI (in progress)",
+      "evidence": "`round46-differences-ui.md`; client build passed"
+    },
+    {
+      "id": "T-131",
+      "title": "Stateful workflow instance start/list/advance API",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-06/16",
+      "agents": [
+        "PX-06"
+      ],
+      "wave": "Final5 - Workflow Instances (in progress)",
+      "evidence": "`round47-workflow-instances.md`; E2E lifecycle passed"
+    },
+    {
+      "id": "T-132",
+      "title": "One-click support bundle generation UI on /scale",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-30/31",
+      "agents": [
+        "AG-30"
+      ],
+      "wave": "Final5 - Support Bundle UI (in progress)",
+      "evidence": "`round48-support-bundle-ui.md`; client build passed"
+    },
+    {
+      "id": "T-133",
+      "title": "Fleet status + ring upgrade/rollback UI on /scale",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-30/31",
+      "agents": [
+        "AG-30"
+      ],
+      "wave": "Final5 - Fleet UI (in progress)",
+      "evidence": "`round49-fleet-ui.md`; client build passed"
+    },
+    {
+      "id": "T-134",
+      "title": "Workflow instance start/list/advance UI on /scale",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-30/31",
+      "agents": [
+        "AG-30"
+      ],
+      "wave": "Final5 - Workflow UI (in progress)",
+      "evidence": "`round50-workflow-instances-ui.md`; client build passed"
+    },
+    {
+      "id": "T-135",
+      "title": "Scenario pack install/uninstall UI on /scale",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-30/31",
+      "agents": [
+        "AG-30"
+      ],
+      "wave": "Final5 - Scenario UI (in progress)",
+      "evidence": "`round51-scenario-ui.md`; client build passed"
+    },
+    {
+      "id": "T-136",
+      "title": "EAM/tooling + work-center config + standard hours/efficiency",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-14/15",
+      "agents": [
+        "PX-14"
+      ],
+      "wave": "Final5 - Operations Capability (in progress)",
+      "evidence": "`round52-operations-capability.md`; Jest 65/291; client 6/22; OpenAPI 198/198; E2E 24/24; standalone check PASSED"
+    },
+    {
+      "id": "T-137",
+      "title": "Sparkplug B connector + OpenFeature flag evaluation",
+      "type": "task",
+      "status": "Done",
+      "owner": "V-CON/06",
+      "agents": [],
+      "wave": "Final5 - Standard Protocol & Flag SDK (in progress)",
+      "evidence": "`round53-sparkplug-openfeature.md`; pytest 89; Jest 65/292; client 6/22; OpenAPI 199/199; E2E 25/25; connector TCK 17/17"
+    },
+    {
+      "id": "T-138",
+      "title": "Typed parameter registry with approval/version/rollback",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-06/21",
+      "agents": [
+        "PX-06"
+      ],
+      "wave": "Final5 - Parameter Registry (in progress)",
+      "evidence": "`round54-parameter-registry.md`; Jest 66/298; client 6/22; OpenAPI 207/207; E2E 26/26"
+    },
+    {
+      "id": "T-139",
+      "title": "AAS/IEC 63278 JSON + AASX codec and twin submodel mapping",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-08/14",
+      "agents": [
+        "PX-08"
+      ],
+      "wave": "Final5 - AAS Asset Exchange (in progress)",
+      "evidence": "`round55-aas-codec.md`; pytest 99; AAS TCK 7/7"
+    },
+    {
+      "id": "T-140",
+      "title": "Rego policy-as-code deployment gate + deployment TCK integration",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-06/51",
+      "agents": [
+        "PX-06"
+      ],
+      "wave": "Final5 - OPA Policy-as-Code (in progress)",
+      "evidence": "`round56-rego-policy-as-code.md`; pytest 107; rego TCK 4/4; deployment TCK 4 gates"
+    },
+    {
+      "id": "T-141",
+      "title": "AAS asset registry API + twin semantics + Data Assets UI",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-08/21",
+      "agents": [
+        "PX-08"
+      ],
+      "wave": "Final5 - AAS Asset Registry API (in progress)",
+      "evidence": "`round57-aas-asset-api.md`; Jest 67/302; client 6/22; OpenAPI 211/211; E2E 27/27"
+    },
+    {
+      "id": "T-142",
+      "title": "OPC UA node ID/quality/adapter + connector manifest",
+      "type": "task",
+      "status": "Done",
+      "owner": "V-CON/05",
+      "agents": [],
+      "wave": "Final5 - OPC UA Connector (in progress)",
+      "evidence": "`round58-opcua-connector.md`; pytest 111; connector TCK 21/21"
+    },
+    {
+      "id": "T-143",
+      "title": "Modbus TCP register/scaling/adapter + connector manifest",
+      "type": "task",
+      "status": "Done",
+      "owner": "V-CON/05",
+      "agents": [],
+      "wave": "Final5 - Modbus TCP Connector (in progress)",
+      "evidence": "`round59-modbus-connector.md`; pytest 114; connector TCK 25/25"
+    },
+    {
+      "id": "T-144",
+      "title": "HTTP/Webhook payload/signature/adapter + connector manifest",
+      "type": "task",
+      "status": "Done",
+      "owner": "V-CON/05",
+      "agents": [],
+      "wave": "Final5 - HTTP/Webhook Connector (in progress)",
+      "evidence": "`round60-webhook-connector.md`; pytest 117; connector TCK 29/29"
+    },
+    {
+      "id": "T-145",
+      "title": "CSV/File header mapping/row normalization/adapter + connector manifest",
+      "type": "task",
+      "status": "Done",
+      "owner": "V-CON/05",
+      "agents": [],
+      "wave": "Final5 - CSV/File Connector (in progress)",
+      "evidence": "`round61-csv-file-connector.md`; pytest 120; connector TCK 32/32"
+    },
+    {
+      "id": "T-146",
+      "title": "OTel-style request tracing interceptor/service/API",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-10/46",
+      "agents": [
+        "PX-10"
+      ],
+      "wave": "Final5 - Observability Traces (in progress)",
+      "evidence": "`round62-otel-request-tracing.md`; Jest 69/306; OpenAPI 212/212; E2E 28/28"
+    },
+    {
+      "id": "T-147",
+      "title": "Support bundle includes redacted recent traces",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-10/09",
+      "agents": [
+        "PX-10"
+      ],
+      "wave": "Final5 - Support Bundle Trace Inclusion (in progress)",
+      "evidence": "`round63-support-bundle-traces.md`; E2E 28/28"
+    },
+    {
+      "id": "T-148",
+      "title": "System page request tracing viewer",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-34/35",
+      "agents": [
+        "AG-34"
+      ],
+      "wave": "Final5 - Tracing UI (in progress)",
+      "evidence": "`round64-tracing-ui.md`; client 6/22; build passed"
+    },
+    {
+      "id": "T-149",
+      "title": "Regenerate RC2 release bundle with all new capabilities",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Final5 - RC2 Release Bundle (in progress)",
+      "evidence": "`round65-release-bundle-rerolled.md`; 1315 files; review 24/24"
+    },
+    {
+      "id": "T-150",
+      "title": "Final one-click gate sweep (ops/scenario/deploy/AAS/Rego/connector/cross-tenant)",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/51",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Final5 - Final Gate Sweep (in progress)",
+      "evidence": "`round66-final-gate-sweep.md`; all gates passed"
+    },
+    {
+      "id": "T-151",
+      "title": "Pilot readiness Go/No-Go blocker gate",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51/00",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Final5 - Pilot Readiness Gate (in progress)",
+      "evidence": "`round67-pilot-readiness-blockers.md`; blockers documented"
+    },
+    {
+      "id": "T-152",
+      "title": "Rebuild RC2 bundle with pilot readiness gate",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Final5 - Release Bundle Re-roll with Pilot Gate (in progress)",
+      "evidence": "`round68-release-bundle-includes-pilot-gate.md`; 1316 files; review 24/24"
+    },
+    {
+      "id": "T-153",
+      "title": "Final 6.0 baseline adoption and authoritative plan extraction",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`authoritative-plan-final6.txt`; D-033"
+    },
+    {
+      "id": "T-154",
+      "title": "C7 Work Graph / C8 Asset Catalog / C9 Factory Profile contracts + audits",
+      "type": "task",
+      "status": "Done",
+      "owner": "ORCH-01/PX-03",
+      "agents": [
+        "ORCH-01",
+        "PX-03"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`contracts/work/`, `contracts/catalog/`, `contracts/factory/`, 17+32+8 audit checks"
+    },
+    {
+      "id": "T-155",
+      "title": "Work Graph indexer, gate engine, resource registry, handoff CLI",
+      "type": "task",
+      "status": "Done",
+      "owner": "ORCH-02/03/04/06",
+      "agents": [
+        "ORCH-02"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`tools/work-indexer/`, `tools/gate-engine/`, `tools/resource-registry/`, `tools/handoff-service/`"
+    },
+    {
+      "id": "T-156",
+      "title": "Work orchestration NestJS APIs + OpenAPI",
+      "type": "task",
+      "status": "Done",
+      "owner": "ORCH-01/11",
+      "agents": [
+        "ORCH-01"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`server/modules/work-orchestration/`, `openapi/work-orchestration.yaml`, 226/226 route audit"
+    },
+    {
+      "id": "T-157",
+      "title": "Work orchestration control plane UI",
+      "type": "task",
+      "status": "Done",
+      "owner": "ORCH-05/30",
+      "agents": [
+        "ORCH-05"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`client/src/pages/WorkOrchestration/`, Playwright render, no console errors"
+    },
+    {
+      "id": "T-158",
+      "title": "Final 6 scenario packs, ERP connectors and mappings",
+      "type": "task",
+      "status": "Done",
+      "owner": "PROD-31/32/33/INT-31",
+      "agents": [
+        "PROD-31",
+        "INT-31"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`catalog/` 8 assets; asset catalog audit 32 checks"
+    },
+    {
+      "id": "T-159",
+      "title": "Final 6 verification sweep and evidence",
+      "type": "task",
+      "status": "Done",
+      "owner": "ORCH-01/VAL-61",
+      "agents": [
+        "ORCH-01",
+        "VAL-61"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`round69-final6-work-orchestration.md`; standalone check, E2E 29/29, release review 32/32"
+    },
+    {
+      "id": "T-160",
+      "title": "Offline-first GitHub Issue/PR sync plan and API",
+      "type": "task",
+      "status": "Done",
+      "owner": "ORCH-01",
+      "agents": [
+        "ORCH-01"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`tools/git-sync/`, `GET /api/work/git-sync`, Git Sync UI; live apply approval-gated"
+    },
+    {
+      "id": "T-161",
+      "title": "Fresh PostgreSQL 17 DDL/RLS/audit/rollback/rebuild gate",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-10/41",
+      "agents": [
+        "AG-10"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`standalone-postgres-check.sh` PASSED; 51 tables, RLS, audit chain, 0 objects after rollback"
+    },
+    {
+      "id": "T-162",
+      "title": "Environment probe refresh and local gate sweep",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-10/50/51",
+      "agents": [
+        "AG-10"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`inventory/environment.md`; scenario/connector/AAS/Rego/deploy/cross-tenant all passed"
+    },
+    {
+      "id": "T-163",
+      "title": "Factory replication acceptance TCK",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-03/07/VAL-62",
+      "agents": [
+        "PX-03",
+        "VAL-62"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`tools/factory-replication/`, `replication-report.schema.json`, passing/failing fixtures"
+    },
+    {
+      "id": "T-164",
+      "title": "Perf, ops backup/restore, and pilot readiness evidence",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-46/51",
+      "agents": [
+        "AG-46"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "perf 1368 QPS; ops 57 tables; pilot readiness NOT READY with documented external blockers"
+    },
+    {
+      "id": "T-165",
+      "title": "Client Jest runner and audit chain stress coverage",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-30/06",
+      "agents": [
+        "AG-30"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`client/jest.config.cjs`, `npm run test:client` 7/25; audit chain 100 entries"
+    },
+    {
+      "id": "T-166",
+      "title": "EWOH 0.6.0-rc3 release bundle",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`release/ewoh-0.6.0-rc3` 1537 files; SHA256SUMS; review 34/34"
+    },
+    {
+      "id": "T-167",
+      "title": "Factory site-readiness evaluator and fixtures",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-03/07",
+      "agents": [
+        "PX-03"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`site-readiness.js`, `site-readiness.schema.json`, ready/not-ready fixtures; audit 20 checks"
+    },
+    {
+      "id": "T-168",
+      "title": "Final release drill and Python/security evidence",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51/10",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`RELEASE DRILL PASSED`; unittest 667, pytest 120, ruff clean"
+    },
+    {
+      "id": "T-169",
+      "title": "Work console UX deepening and API filters",
+      "type": "task",
+      "status": "Done",
+      "owner": "ORCH-05/01",
+      "agents": [
+        "ORCH-05"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "DAG pan/zoom, node search, gate/evidence filters, evidence preview, batch gate decisions, lock countdown, `q/limit/offset`; Jest 74/331, client 7/27"
+    },
+    {
+      "id": "T-170",
+      "title": "Factory site readiness control-plane API/UI",
+      "type": "task",
+      "status": "Done",
+      "owner": "ORCH-01/05",
+      "agents": [
+        "ORCH-01"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`GET /api/work/site-readiness`, catalog examples, 场地就绪 tab; audit 25 checks; OpenAPI 230/230"
+    },
+    {
+      "id": "T-171",
+      "title": "Handoff state workflow",
+      "type": "task",
+      "status": "Done",
+      "owner": "ORCH-06/01",
+      "agents": [
+        "ORCH-06"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`POST /api/work/handoffs/:id/state`; receive/reject/close UI; Jest 74/332; OpenAPI 231/231"
+    },
+    {
+      "id": "T-172",
+      "title": "Repo facts consistency audit + CI wiring",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/01",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`scripts/audit-repo-facts.js` 30/30; wired into `standalone-check.sh` and `test.yml`"
+    },
+    {
+      "id": "T-173",
+      "title": "Unified error contract: errorCode/requestId/retryable/recommendedAction/details",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/03",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`exception.filter.ts` + `api_response.interface.ts` + OpenAPI `ErrorResponse`; 8 filter tests; Jest 75/344"
+    },
+    {
+      "id": "T-174",
+      "title": "Data source vocabulary + reusable badge",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/05",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`DataSourceType` six values; `DataSourceBadge`; Devices uses shared component; client 8/30"
+    },
+    {
+      "id": "T-175",
+      "title": "Nested request transaction reuse for scheduler/background GUC",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/04",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`RequestDatabaseContext` active-store reuse; unit test; no nested root transaction"
+    },
+    {
+      "id": "T-176",
+      "title": "Mobile SOP/exception/QC/offline UX",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/07",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "MES pause/resume resultJson; mobile quality API; MobileWorkbench SOP/异常/质检/离线/重试; MES+mobile unit tests"
+    },
+    {
+      "id": "T-177",
+      "title": "Independent review and first-round evidence",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-13/00",
+      "agents": [
+        "AG-13"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "conditional pass 0 critical/0 major; `work/reviews/iteration-review-2026-08-04.md`; `round70-iteration-p0-2026-08-04.md`"
+    },
+    {
+      "id": "T-178",
+      "title": "Global ValidationPipe with structured fieldErrors",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/03",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`server/common/pipes/validation.pipe.ts`; APP_PIPE in both bootstraps; 5 validation-pipe tests; Jest 76/349"
+    },
+    {
+      "id": "T-179",
+      "title": "Command-map person/device detail enrichment",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/06",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`entityDetailData.ts` + tests; organization/exoskeleton/risk/alerts/events/disposition entry; client 9/33"
+    },
+    {
+      "id": "T-180",
+      "title": "Mobile offline pending-action queue",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/07",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`lib/offlineQueue.ts` + tests; queue/flush on reconnect; client 10/35"
+    },
+    {
+      "id": "T-181",
+      "title": "Control/work orchestration state guards",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/03/04",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "control terminal/in-flight guards; handoff state machine; gate decision idempotency + history; Jest 76/355"
+    },
+    {
+      "id": "T-182",
+      "title": "Scale mutation idempotency guards",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/09",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "scenario install/uninstall idempotent; fleet upgrade/rollback skip target state; difference resolve idempotent; Jest 76/359"
+    },
+    {
+      "id": "T-183",
+      "title": "Real PostgreSQL HTTP E2E acceptance",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-13/41",
+      "agents": [
+        "AG-13"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`npm run test:e2e` 29/29 on embedded PG 17 (`127.0.0.1:55432`)"
+    },
+    {
+      "id": "T-184",
+      "title": "Mobile exception photo attachments",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/07",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`/api/files` upload + `resultJson.exception.attachments`; client 11/37"
+    },
+    {
+      "id": "T-185",
+      "title": "PWA installability assets",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/07",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "manifest + service worker + registration; repo facts 32/32"
+    },
+    {
+      "id": "T-186",
+      "title": "Offline photo queue",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/07",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "data URL queue + flush upload/attach; client 12/39"
+    },
+    {
+      "id": "T-187",
+      "title": "Release drill + perf + security verification",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-13/51",
+      "agents": [
+        "AG-13"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`RELEASE DRILL PASSED`; perf 4610 QPS p95 26.83ms; security probe OK; bandit 0 medium/high"
+    },
+    {
+      "id": "T-188",
+      "title": "Playwright browser screenshots",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-13/30",
+      "agents": [
+        "AG-13"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "mobile + desktop `/login` screenshots in `output/playwright/`"
+    },
+    {
+      "id": "T-189",
+      "title": "Request ID audit correlation",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/11",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "AsyncLocalStorage request context; audit entries auto-filled; repo facts 33/33"
+    },
+    {
+      "id": "T-190",
+      "title": "Error leak sanitization",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/12",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "HttpException details sanitized; site readiness generic error; Jest 76/362"
+    },
+    {
+      "id": "T-191",
+      "title": "Devices page error/update state",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/05",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "isError + retry + updatedAt display in device list"
+    },
+    {
+      "id": "T-192",
+      "title": "Command map query error banner",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/06",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "failed query banner + retry; client 13/42"
+    },
+    {
+      "id": "T-193",
+      "title": "EWOH 0.6.0-rc4 candidate bundle",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`release/ewoh-0.6.0-rc4` 1202 files; SHA256SUMS; scale-release-review PASSED"
+    },
+    {
+      "id": "T-194",
+      "title": "Authenticated Playwright browser tests",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-13/30",
+      "agents": [
+        "AG-13"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "dispatcher login + command center/map/mobile workbench on real PG fixture; `npm run test:browser` 3/3"
+    },
+    {
+      "id": "T-195",
+      "title": "Browser tests in CI",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51/13",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`standalone.yml` installs Chromium and runs `npm run test:browser`"
+    },
+    {
+      "id": "T-196",
+      "title": "Pilot readiness rerun (RC4)",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51/00",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "7 passed / 3 failed (Docker/Kubectl/Helm absent) / 5 pending external; NOT READY"
+    },
+    {
+      "id": "T-197",
+      "title": "Ops backup/restore drill (RC4)",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-10/51",
+      "agents": [
+        "AG-10"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`standalone-ops-check.sh` PASSED; 57 tables backup/restore/verify; identity advanced"
+    },
+    {
+      "id": "G0",
+      "title": "Environment and materials accessible",
+      "type": "gate",
+      "status": "Passed for local implementation",
+      "owner": "AG-00",
+      "evidence": "authoritative docs extracted, repo/dependencies readable, capability limits recorded"
+    },
+    {
+      "id": "G1",
+      "title": "Requirements and terminology baseline frozen",
+      "type": "gate",
+      "status": "Passed",
+      "owner": "AG-00",
+      "evidence": "Final 5.0/Final 6.0 terminology reconciled; authoritative plan extracted to `authoritative-plan-final6.txt`"
+    },
+    {
+      "id": "G2",
+      "title": "Shared contracts frozen",
+      "type": "gate",
+      "status": "Passed",
+      "owner": "AG-00",
+      "evidence": "C1-C9 v1.x frozen; strict OpenAPI audit 232/232; work graph/asset catalog/factory profile audits pass"
+    },
+    {
+      "id": "G3",
+      "title": "Environment probes pass",
+      "type": "gate",
+      "status": "Passed for local standalone scope",
+      "owner": "AG-00",
+      "evidence": "PostgreSQL 17.10 and runtime role probed; Docker/Kubernetes tools recorded unavailable"
+    },
+    {
+      "id": "G4",
+      "title": "DDL compile/migration tests pass",
+      "type": "gate",
+      "status": "Passed for standalone",
+      "owner": "AG-00",
+      "evidence": "real apply/verify/RLS/audit/rollback/rebuild on PostgreSQL 17.10; unique org-key index verified"
+    },
+    {
+      "id": "G5",
+      "title": "Backend infrastructure passes",
+      "type": "gate",
+      "status": "Passed for standalone base",
+      "owner": "AG-00",
+      "evidence": "request transaction/GUC, auth, errors, health, rate limit tests; Jest 76 suites / 362 tests"
+    },
+    {
+      "id": "G6",
+      "title": "Core domain modules/APIs pass",
+      "type": "gate",
+      "status": "Passed locally",
+      "owner": "AG-00",
+      "evidence": "232 routes, 0 unimplemented; work orchestration APIs documented and tested over HTTP"
+    },
+    {
+      "id": "G7",
+      "title": "Frontend and command map pass",
+      "type": "gate",
+      "status": "Validation",
+      "owner": "AG-00",
+      "evidence": "Playwright authenticated flow: dispatcher login + command center render on real PG; client Jest 13 suites / 42 tests; PWA manifest/service worker; work console route and layout type-check"
+    },
+    {
+      "id": "G8",
+      "title": "Cross-module scenario tests pass",
+      "type": "gate",
+      "status": "Passed locally",
+      "owner": "AG-00",
+      "evidence": "SP-01..SP-08 unit suite + HTTP+PostgreSQL E2E 29/29 on embedded PG 17; Final 6 scenario pack and connector audits pass"
+    },
+    {
+      "id": "G9",
+      "title": "Security/performance/regression pass",
+      "type": "gate",
+      "status": "Validation",
+      "owner": "AG-00",
+      "evidence": "security fixes + DB probe pass; control plane writes gated by `EWOH_WORK_WRITABLE`; Jest/lint/typecheck/build pass"
+    },
+    {
+      "id": "G10",
+      "title": "Release/rollback/ops ready",
+      "type": "gate",
+      "status": "Passed locally, production pending",
+      "owner": "AG-00",
+      "evidence": "`RELEASE DRILL PASSED` on disposable PostgreSQL 17 (2026-08-04 iteration); security probe OK; GitHub Actions Docker build + PG migration/rollback green; K8s apply and production observability drill pending"
+    },
+    {
+      "id": "G11",
+      "title": "Business acceptance and delivery complete",
+      "type": "gate",
+      "status": "Pending",
+      "owner": "AG-00",
+      "evidence": "acceptance signoff"
+    },
+    {
+      "id": "G12",
+      "title": "Follow-on phases accepted",
+      "type": "gate",
+      "status": "Pending",
+      "owner": "AG-00",
+      "evidence": "phase acceptance reports"
+    },
+    {
+      "id": "G13",
+      "title": "Final project closeout",
+      "type": "gate",
+      "status": "Pending",
+      "owner": "AG-00",
+      "evidence": "closeout package"
+    },
+    {
+      "id": "W0",
+      "title": "docs, repo inventory, C1-C6 v1, environment probes",
+      "type": "wave",
+      "status": "Proposed",
+      "owner": "AG-00",
+      "wave": "W0",
+      "summary": "contracts ready gate"
+    },
+    {
+      "id": "W1",
+      "title": "DDL/migrations, backend shared, frontend shell, test harness, CI",
+      "type": "wave",
+      "status": "Proposed",
+      "owner": "AG-00",
+      "wave": "W1",
+      "summary": "runnable skeleton + temp DB"
+    },
+    {
+      "id": "W2",
+      "title": "org/person, devices/embodiment, spatial/model, data governance",
+      "type": "wave",
+      "status": "Proposed",
+      "owner": "AG-00",
+      "wave": "W2",
+      "summary": "domain CRUD + tests"
+    },
+    {
+      "id": "W3",
+      "title": "task/resource, alert/approval, control, event/notification, pages",
+      "type": "wave",
+      "status": "Proposed",
+      "owner": "AG-00",
+      "wave": "W3",
+      "summary": "operations loop API + pages"
+    },
+    {
+      "id": "W4",
+      "title": "AI, reconstruction, gateway, external adapters",
+      "type": "wave",
+      "status": "Proposed",
+      "owner": "AG-00",
+      "wave": "W4",
+      "summary": "intelligent pilot"
+    },
+    {
+      "id": "W5",
+      "title": "scenario packages, RLS, concurrency, perf, UI, security, rollback",
+      "type": "wave",
+      "status": "Proposed",
+      "owner": "AG-00",
+      "wave": "W5",
+      "summary": "independent validation"
+    },
+    {
+      "id": "W6",
+      "title": "migration, gray release, monitoring, training, release",
+      "type": "wave",
+      "status": "Proposed",
+      "owner": "AG-00",
+      "wave": "W6",
+      "summary": "accepted phase"
+    },
+    {
+      "id": "W6-0",
+      "title": "authoritative artifact reconciliation; C1-C9 update; Work Graph schema and path registry",
+      "type": "wave",
+      "status": "Proposed",
+      "owner": "AG-00",
+      "wave": "W6-0",
+      "summary": "artifact conflicts cleared or approved"
+    },
+    {
+      "id": "W6-1",
+      "title": "indexer, gate engine, resource registry, read-only DAG and evidence drawer",
+      "type": "wave",
+      "status": "Proposed",
+      "owner": "AG-00",
+      "wave": "W6-1",
+      "summary": "graph matches source files 100%"
+    },
+    {
+      "id": "W6-2",
+      "title": "handoff/gate write-back, GitHub Issue/PR sync, CI evidence, resource locks",
+      "type": "wave",
+      "status": "Proposed",
+      "owner": "AG-00",
+      "wave": "W6-2",
+      "summary": "every state change has actor/commit/evidence"
+    },
+    {
+      "id": "W6-3",
+      "title": "Order-to-Delivery, mobile E-SOP, quality trace, ERP/MRP/inventory connectors",
+      "type": "wave",
+      "status": "Proposed",
+      "owner": "AG-00",
+      "wave": "W6-3",
+      "summary": "connector and scenario TCK pass"
+    },
+    {
+      "id": "W6-4",
+      "title": "second factory no-fork replication; device/ERP integration; training",
+      "type": "wave",
+      "status": "Proposed",
+      "owner": "AG-00",
+      "wave": "W6-4",
+      "summary": "no customer core branch"
+    },
+    {
+      "id": "W6-5",
+      "title": "third factory config-driven replication; partner shadow delivery; fleet upgrade",
+      "type": "wave",
+      "status": "Proposed",
+      "owner": "AG-00",
+      "wave": "W6-5",
+      "summary": "80% config satisfaction"
+    },
+    {
+      "id": "W6-6",
+      "title": "production SLO, DR, supply-chain security, Final 6 acceptance",
+      "type": "wave",
+      "status": "Proposed",
+      "owner": "AG-00",
+      "wave": "W6-6",
+      "summary": "G10/G11/G13 evidence"
+    },
+    {
+      "id": "W7",
+      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue/photo/PWA, ValidationPipe, command-map details/error states, state guards, scale idempotency, request-audit correlation, error sanitization",
+      "type": "wave",
+      "status": "Proposed",
+      "owner": "AG-00",
+      "wave": "W7",
+      "summary": "standalone-check ALL PASSED; Jest 76/362; client 13/42; OpenAPI 232/232; repo facts 33/33; real PG E2E 29/29"
+    },
+    {
+      "id": "WP-ENV-001",
+      "title": "WP-ENV-001",
+      "type": "package",
+      "status": "Validation",
+      "owner": "AG-10",
+      "agents": [
+        "AG-10"
+      ]
+    },
+    {
+      "id": "WP-CONTRACTS-001",
+      "title": "WP-CONTRACTS-001",
+      "type": "package",
+      "status": "Refining",
+      "owner": "AG-01..06/30/51",
+      "agents": []
+    },
+    {
+      "id": "WP-DDL-001",
+      "title": "WP-DDL-001",
+      "type": "package",
+      "status": "Proposed",
+      "owner": "AG-10",
+      "agents": [
+        "AG-10"
+      ]
+    },
+    {
+      "id": "WP-SHARED-001",
+      "title": "WP-SHARED-001",
+      "type": "package",
+      "status": "Proposed",
+      "owner": "AG-11",
+      "agents": [
+        "AG-11"
+      ]
+    },
+    {
+      "id": "WP-FRONTEND-SHELL-001",
+      "title": "WP-FRONTEND-SHELL-001",
+      "type": "package",
+      "status": "Proposed",
+      "owner": "AG-30",
+      "agents": [
+        "AG-30"
+      ]
+    },
+    {
+      "id": "WP-HARNESS-001",
+      "title": "WP-HARNESS-001",
+      "type": "package",
+      "status": "Proposed",
+      "owner": "AG-51",
+      "agents": [
+        "AG-51"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "E-001",
+      "from": "existing materials",
+      "to": "W0",
+      "edgeType": "depends",
+      "blocking": true,
+      "evidenceRequirement": "contracts ready gate"
+    },
+    {
+      "id": "E-002",
+      "from": "W0",
+      "to": "W1",
+      "edgeType": "depends",
+      "blocking": true,
+      "evidenceRequirement": "runnable skeleton + temp DB"
+    },
+    {
+      "id": "E-003",
+      "from": "DDL + shared",
+      "to": "W2",
+      "edgeType": "depends",
+      "blocking": true,
+      "evidenceRequirement": "domain CRUD + tests"
+    },
+    {
+      "id": "E-004",
+      "from": "state machines + master data",
+      "to": "W3",
+      "edgeType": "depends",
+      "blocking": true,
+      "evidenceRequirement": "operations loop API + pages"
+    },
+    {
+      "id": "E-005",
+      "from": "stable world + ops data",
+      "to": "W4",
+      "edgeType": "depends",
+      "blocking": true,
+      "evidenceRequirement": "intelligent pilot"
+    },
+    {
+      "id": "E-006",
+      "from": "integration candidate",
+      "to": "W5",
+      "edgeType": "depends",
+      "blocking": true,
+      "evidenceRequirement": "independent validation"
+    },
+    {
+      "id": "E-007",
+      "from": "release gate",
+      "to": "W6",
+      "edgeType": "depends",
+      "blocking": true,
+      "evidenceRequirement": "accepted phase"
+    },
+    {
+      "id": "E-008",
+      "from": "Final 6.0 plan",
+      "to": "W6-0",
+      "edgeType": "depends",
+      "blocking": true,
+      "evidenceRequirement": "artifact conflicts cleared or approved"
+    },
+    {
+      "id": "E-009",
+      "from": "W6-0 schema",
+      "to": "W6-1",
+      "edgeType": "depends",
+      "blocking": true,
+      "evidenceRequirement": "graph matches source files 100%"
+    },
+    {
+      "id": "E-010",
+      "from": "W6-1 console",
+      "to": "W6-2",
+      "edgeType": "depends",
+      "blocking": true,
+      "evidenceRequirement": "every state change has actor/commit/evidence"
+    },
+    {
+      "id": "E-011",
+      "from": "C1-C9 and catalog contracts",
+      "to": "W6-3",
+      "edgeType": "depends",
+      "blocking": true,
+      "evidenceRequirement": "connector and scenario TCK pass"
+    },
+    {
+      "id": "E-012",
+      "from": "W6-3 assets and production approval",
+      "to": "W6-4",
+      "edgeType": "depends",
+      "blocking": true,
+      "evidenceRequirement": "no customer core branch"
+    },
+    {
+      "id": "E-013",
+      "from": "second-factory review",
+      "to": "W6-5",
+      "edgeType": "depends",
+      "blocking": true,
+      "evidenceRequirement": "80% config satisfaction"
+    },
+    {
+      "id": "E-014",
+      "from": "previous waves",
+      "to": "W6-6",
+      "edgeType": "depends",
+      "blocking": true,
+      "evidenceRequirement": "G10/G11/G13 evidence"
+    },
+    {
+      "id": "E-015",
+      "from": "Final 6.0 control plane",
+      "to": "W7",
+      "edgeType": "depends",
+      "blocking": true,
+      "evidenceRequirement": "standalone-check ALL PASSED; Jest 76/362; client 13/42; OpenAPI 232/232; repo facts 33/33; real PG E2E 29/29"
+    },
+    {
+      "id": "E-016",
+      "from": "none",
+      "to": "WP-ENV-001",
+      "edgeType": "depends",
+      "blocking": true
+    },
+    {
+      "id": "E-017",
+      "from": "WP-ENV-001 evidence",
+      "to": "WP-CONTRACTS-001",
+      "edgeType": "depends",
+      "blocking": true
+    },
+    {
+      "id": "E-018",
+      "from": "WP-CONTRACTS-001 C1/C4",
+      "to": "WP-DDL-001",
+      "edgeType": "depends",
+      "blocking": true
+    },
+    {
+      "id": "E-019",
+      "from": "WP-DDL-001",
+      "to": "WP-SHARED-001",
+      "edgeType": "depends",
+      "blocking": true
+    },
+    {
+      "id": "E-020",
+      "from": "WP-CONTRACTS-001 C2/C5",
+      "to": "WP-FRONTEND-SHELL-001",
+      "edgeType": "depends",
+      "blocking": true
+    },
+    {
+      "id": "E-021",
+      "from": "none",
+      "to": "WP-HARNESS-001",
+      "edgeType": "depends",
+      "blocking": true
+    },
+    {
+      "id": "E-022",
+      "from": "G10",
+      "to": "EVD-round69-final6-work-orchestration",
+      "edgeType": "evidence",
+      "blocking": false
+    }
+  ],
+  "actors": [
+    {
+      "actorId": "AG-00",
+      "name": "AG-00",
+      "kind": "agent",
+      "role": "Principal orchestrator",
+      "ownership": "`.codex/artifacts/` plan/state/decision files",
+      "permissions": [],
+      "runtime": "root session",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-01",
+      "name": "AG-01",
+      "kind": "agent",
+      "role": "Requirements baseline",
+      "ownership": "`requirements/`, `docs/product/`",
+      "permissions": [],
+      "runtime": "explorer/contract agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-02",
+      "name": "AG-02",
+      "kind": "agent",
+      "role": "Architecture/ADR",
+      "ownership": "`docs/architecture/`, `adr/`",
+      "permissions": [],
+      "runtime": "explorer/contract agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-03",
+      "name": "AG-03",
+      "kind": "agent",
+      "role": "Data contract",
+      "ownership": "`db/contracts/`, schema manifest",
+      "permissions": [],
+      "runtime": "explorer/contract agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-04",
+      "name": "AG-04",
+      "kind": "agent",
+      "role": "API contract",
+      "ownership": "`openapi/`, `shared/api.interface.ts`",
+      "permissions": [],
+      "runtime": "explorer/contract agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-05",
+      "name": "AG-05",
+      "kind": "agent",
+      "role": "State machines",
+      "ownership": "`contracts/state-machines/`",
+      "permissions": [],
+      "runtime": "explorer/contract agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-06",
+      "name": "AG-06",
+      "kind": "agent",
+      "role": "Security/permissions",
+      "ownership": "`security/`, `db/policies/`",
+      "permissions": [],
+      "runtime": "explorer/contract agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-10",
+      "name": "AG-10",
+      "kind": "agent",
+      "role": "DDL/migrations",
+      "ownership": "`db/migrations/`, `tmp/ddl/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-11",
+      "name": "AG-11",
+      "kind": "agent",
+      "role": "Backend shared",
+      "ownership": "`server/modules/shared/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-12",
+      "name": "AG-12",
+      "kind": "agent",
+      "role": "Organization/person",
+      "ownership": "`server/modules/organization/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-13",
+      "name": "AG-13",
+      "kind": "agent",
+      "role": "Devices/embodiment",
+      "ownership": "`server/modules/devices/`, `embodiment/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-14",
+      "name": "AG-14",
+      "kind": "agent",
+      "role": "Spatial/twin",
+      "ownership": "`server/modules/spatial/`, `world/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-15",
+      "name": "AG-15",
+      "kind": "agent",
+      "role": "Workstation/model",
+      "ownership": "`server/modules/workstation/`, `model/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-16",
+      "name": "AG-16",
+      "kind": "agent",
+      "role": "Task/scheduler",
+      "ownership": "`server/modules/task/`, `scheduler/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-17",
+      "name": "AG-17",
+      "kind": "agent",
+      "role": "Resource/material",
+      "ownership": "`server/modules/resource/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-18",
+      "name": "AG-18",
+      "kind": "agent",
+      "role": "Alert/approval",
+      "ownership": "`server/modules/alert/`, `approval/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-19",
+      "name": "AG-19",
+      "kind": "agent",
+      "role": "Control",
+      "ownership": "`server/modules/control/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-20",
+      "name": "AG-20",
+      "kind": "agent",
+      "role": "AI decision",
+      "ownership": "`server/modules/brain/`, `ai/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-21",
+      "name": "AG-21",
+      "kind": "agent",
+      "role": "Data governance",
+      "ownership": "`server/modules/data/`, `system/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-22",
+      "name": "AG-22",
+      "kind": "agent",
+      "role": "Events/notifications",
+      "ownership": "`server/modules/event-rule/`, `notification/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-30",
+      "name": "AG-30",
+      "kind": "agent",
+      "role": "Frontend framework",
+      "ownership": "`client/src/app`, `api`, shared components",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-31",
+      "name": "AG-31",
+      "kind": "agent",
+      "role": "Command map pages",
+      "ownership": "`client/src/pages/CommandMap/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-32",
+      "name": "AG-32",
+      "kind": "agent",
+      "role": "Org/device/person pages",
+      "ownership": "corresponding `pages/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-33",
+      "name": "AG-33",
+      "kind": "agent",
+      "role": "Scheduling/resource/control pages",
+      "ownership": "corresponding `pages/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-34",
+      "name": "AG-34",
+      "kind": "agent",
+      "role": "Alert/audit/config pages",
+      "ownership": "corresponding `pages/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-35",
+      "name": "AG-35",
+      "kind": "agent",
+      "role": "AI/data pages",
+      "ownership": "corresponding `pages/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-40",
+      "name": "AG-40",
+      "kind": "agent",
+      "role": "DB compile/security verification",
+      "ownership": "`tests/db/`, `reports/`",
+      "permissions": [],
+      "runtime": "reviewer agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-41",
+      "name": "AG-41",
+      "kind": "agent",
+      "role": "Requirements trace verification",
+      "ownership": "`reports/traceability/`",
+      "permissions": [],
+      "runtime": "reviewer agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-42",
+      "name": "AG-42",
+      "kind": "agent",
+      "role": "API contract verification",
+      "ownership": "`tests/contract/`",
+      "permissions": [],
+      "runtime": "reviewer agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-43",
+      "name": "AG-43",
+      "kind": "agent",
+      "role": "State machine/concurrency verification",
+      "ownership": "`tests/state/`, `tests/concurrency/`",
+      "permissions": [],
+      "runtime": "reviewer agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-44",
+      "name": "AG-44",
+      "kind": "agent",
+      "role": "UI regression/usability",
+      "ownership": "`tests/e2e/`",
+      "permissions": [],
+      "runtime": "reviewer agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-45",
+      "name": "AG-45",
+      "kind": "agent",
+      "role": "AI safety/quality",
+      "ownership": "`tests/ai/`, `evals/`",
+      "permissions": [],
+      "runtime": "reviewer agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-46",
+      "name": "AG-46",
+      "kind": "agent",
+      "role": "Performance/reliability",
+      "ownership": "`tests/perf/`",
+      "permissions": [],
+      "runtime": "reviewer agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-50",
+      "name": "AG-50",
+      "kind": "agent",
+      "role": "Integration/scenario packages",
+      "ownership": "`integration/`, `fixtures/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-51",
+      "name": "AG-51",
+      "kind": "agent",
+      "role": "DevOps/release",
+      "ownership": "`deploy/`, `ops/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "AG-52",
+      "name": "AG-52",
+      "kind": "agent",
+      "role": "Docs/training/handover",
+      "ownership": "`docs/delivery/`",
+      "permissions": [],
+      "runtime": "worker agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "ORCH-01",
+      "name": "ORCH-01",
+      "kind": "agent",
+      "role": "Work Graph architecture and contract",
+      "ownership": "`.codex/artifacts/schema/`, `openapi/work-orchestration.yaml`",
+      "permissions": [],
+      "runtime": "work orchestration worker",
+      "status": "registered"
+    },
+    {
+      "actorId": "ORCH-02",
+      "name": "ORCH-02",
+      "kind": "agent",
+      "role": "Artifact parsing, indexing, Git/CI collection",
+      "ownership": "`tools/work-indexer/`",
+      "permissions": [],
+      "runtime": "work orchestration worker",
+      "status": "registered"
+    },
+    {
+      "actorId": "ORCH-03",
+      "name": "ORCH-03",
+      "kind": "agent",
+      "role": "Evidence, gate calculation, expiry",
+      "ownership": "`tools/gate-engine/`",
+      "permissions": [],
+      "runtime": "work orchestration worker",
+      "status": "registered"
+    },
+    {
+      "actorId": "ORCH-04",
+      "name": "ORCH-04",
+      "kind": "agent",
+      "role": "Resource locks, permissions, ownership",
+      "ownership": "`tools/resource-registry/`",
+      "permissions": [],
+      "runtime": "work orchestration worker",
+      "status": "registered"
+    },
+    {
+      "actorId": "ORCH-05",
+      "name": "ORCH-05",
+      "kind": "agent",
+      "role": "Control plane frontend",
+      "ownership": "`tools/work-console/` or `client/src/pages/WorkOrchestration/`",
+      "permissions": [],
+      "runtime": "work orchestration worker",
+      "status": "registered"
+    },
+    {
+      "actorId": "ORCH-06",
+      "name": "ORCH-06",
+      "kind": "agent",
+      "role": "Handoffs, context packs, approval workflow",
+      "ownership": "`tools/handoff-service/`",
+      "permissions": [],
+      "runtime": "work orchestration worker",
+      "status": "registered"
+    },
+    {
+      "actorId": "PROD-31",
+      "name": "PROD-31",
+      "kind": "agent",
+      "role": "Order-to-Delivery scenario pack",
+      "ownership": "`catalog/scenarios/order-delivery/`",
+      "permissions": [],
+      "runtime": "scenario worker",
+      "status": "registered"
+    },
+    {
+      "actorId": "PROD-32",
+      "name": "PROD-32",
+      "kind": "agent",
+      "role": "Mobile E-SOP and scan workflows",
+      "ownership": "`catalog/scenarios/mobile-esop/`",
+      "permissions": [],
+      "runtime": "scenario worker",
+      "status": "registered"
+    },
+    {
+      "actorId": "PROD-33",
+      "name": "PROD-33",
+      "kind": "agent",
+      "role": "Quality and traceability pack",
+      "ownership": "`catalog/scenarios/quality-trace/`",
+      "permissions": [],
+      "runtime": "scenario worker",
+      "status": "registered"
+    },
+    {
+      "actorId": "INT-31",
+      "name": "INT-31",
+      "kind": "agent",
+      "role": "ERP/MRP/inventory connectors and mappings",
+      "ownership": "`catalog/connectors/erp/`, `catalog/mappings/`",
+      "permissions": [],
+      "runtime": "integration worker",
+      "status": "registered"
+    },
+    {
+      "actorId": "VAL-61",
+      "name": "VAL-61",
+      "kind": "agent",
+      "role": "Independent work graph and evidence verification",
+      "ownership": "read-only repo reviews",
+      "permissions": [],
+      "runtime": "reviewer agent",
+      "status": "registered"
+    },
+    {
+      "actorId": "VAL-62",
+      "name": "VAL-62",
+      "kind": "agent",
+      "role": "Independent factory replication acceptance",
+      "ownership": "factory profiles and TCK evidence",
+      "permissions": [],
+      "runtime": "reviewer agent",
+      "status": "registered"
+    }
+  ],
+  "artifacts": [
+    {
+      "artifactId": "task-board-md",
+      "path": "task-board.md",
+      "mediaType": "text/markdown",
+      "checksum": "ceeeb090b770d42aa87df742e07a1e100674dc6a7dc68da092e5d4f83fc1d6ed",
+      "version": "current",
+      "producedBy": "AG-00",
+      "sensitivity": "internal"
+    },
+    {
+      "artifactId": "gates-md",
+      "path": "gates.md",
+      "mediaType": "text/markdown",
+      "checksum": "09b6817d072ccc512a19815d977d02deb86a2cbdc73365464febb4a31d0229bc",
+      "version": "current",
+      "producedBy": "AG-00",
+      "sensitivity": "internal"
+    },
+    {
+      "artifactId": "agent-registry-md",
+      "path": "agent-registry.md",
+      "mediaType": "text/markdown",
+      "checksum": "9ebc3e37b48e8edb9f0e7e406f70c6d691e9d414c91c84161b3679e1a8136134",
+      "version": "current",
+      "producedBy": "AG-00",
+      "sensitivity": "internal"
+    },
+    {
+      "artifactId": "risk-register-md",
+      "path": "risk-register.md",
+      "mediaType": "text/markdown",
+      "checksum": "4a9f970d23aa0a278aef53c28c9477fae8d633b0004f0b2f96da814bc6a987e4",
+      "version": "current",
+      "producedBy": "AG-00",
+      "sensitivity": "internal"
+    },
+    {
+      "artifactId": "decision-log-md",
+      "path": "decision-log.md",
+      "mediaType": "text/markdown",
+      "checksum": "fb2e8ab92bf525a6937049e3430716eadd44192f47e3e46b8f55ce5db712327d",
+      "version": "current",
+      "producedBy": "AG-00",
+      "sensitivity": "internal"
+    },
+    {
+      "artifactId": "phase-state-md",
+      "path": "phase-state.md",
+      "mediaType": "text/markdown",
+      "checksum": "471cbc33331d28d4024126388690fdcc756d7fe37552051a8e50b029df375b50",
+      "version": "current",
+      "producedBy": "AG-00",
+      "sensitivity": "internal"
+    },
+    {
+      "artifactId": "state-json",
+      "path": "state.json",
+      "mediaType": "application/json",
+      "checksum": "243937e6a070e50b5fb978228215376df44d04056c31149737ed5096d0576d94",
+      "version": "current",
+      "producedBy": "AG-00",
+      "sensitivity": "internal"
+    },
+    {
+      "artifactId": "intent-anchor-md",
+      "path": "intent-anchor.md",
+      "mediaType": "text/markdown",
+      "checksum": "04237c142e28310a65b58a4023b49211643eb22bc9dadbd5891c4bc3417b0847",
+      "version": "current",
+      "producedBy": "AG-00",
+      "sensitivity": "internal"
+    },
+    {
+      "artifactId": "understanding-md",
+      "path": "understanding.md",
+      "mediaType": "text/markdown",
+      "checksum": "491a27946e17c206cfb087518b70f6addb1665eb9fa485b980e042e7df4ff9c8",
+      "version": "current",
+      "producedBy": "AG-00",
+      "sensitivity": "internal"
+    },
+    {
+      "artifactId": "work-task-graph-md",
+      "path": "work/task-graph.md",
+      "mediaType": "text/markdown",
+      "checksum": "41bb651fa7b6aa175ed41d18dbbcf14f490ac5c905fb41f9185e77cb7ebe3dfe",
+      "version": "current",
+      "producedBy": "AG-00",
+      "sensitivity": "internal"
+    },
+    {
+      "artifactId": "authoritative-plan-final6-txt",
+      "path": "authoritative-plan-final6.txt",
+      "mediaType": "text/plain",
+      "checksum": "03b1388615d5341d8c746c9d02eca51e3027e21f66edc7661815da7fac92ea5f",
+      "version": "current",
+      "producedBy": "AG-00",
+      "sensitivity": "internal"
+    },
+    {
+      "artifactId": "contracts-README-md",
+      "path": "contracts/README.md",
+      "mediaType": "text/markdown",
+      "checksum": "aa8b7ee663d0b6b4a3c5f6ac9a4add5b2efb8f9df78d4dd30e8843684ba52196",
+      "version": "current",
+      "producedBy": "AG-03",
+      "sensitivity": "internal"
+    },
+    {
+      "artifactId": "inventory-environment-md",
+      "path": "inventory/environment.md",
+      "mediaType": "text/markdown",
+      "checksum": "91daace9d99efac0a12a8cdb33add02f83d47560ba6c0cd149491a568851942f",
+      "version": "current",
+      "producedBy": "AG-10",
+      "sensitivity": "internal"
+    },
+    {
+      "artifactId": "inventory-frontend-nestjs-md",
+      "path": "inventory/frontend-nestjs.md",
+      "mediaType": "text/markdown",
+      "checksum": "9d58c98226db7537d55d25b4cb2a6dac14bff6022522e798f8d34b91d56d8479",
+      "version": "current",
+      "producedBy": "AG-30",
+      "sensitivity": "internal"
+    },
+    {
+      "artifactId": "inventory-docs-gap-report-md",
+      "path": "inventory/docs-gap-report.md",
+      "mediaType": "text/markdown",
+      "checksum": "205a141c6d7180a03cb6a3fb6b954ba8517b6e1914079e83f2859069c4682569",
+      "version": "current",
+      "producedBy": "AG-01",
+      "sensitivity": "internal"
+    }
+  ],
+  "evidence": [
+    {
+      "evidenceId": "EVD-round1",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round1.md",
+      "checksum": "25c78a5e09a51c209b727fa5eb64aec4e9fb54aeea67a8fed31383f65d52ed85",
+      "result": "passed",
+      "title": "EWOH Round 1 Execution Evidence"
+    },
+    {
+      "evidenceId": "EVD-round10-mes-p0",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round10-mes-p0.md",
+      "checksum": "433171a150d3443d6b306164dbcd8628da25481ef2a1d2f31def1bb995b345a4",
+      "result": "passed",
+      "title": "EWOH Round 10 Evidence - Final 4.0 Adoption and MES P0"
+    },
+    {
+      "evidenceId": "EVD-round11-oee-andon",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round11-oee-andon.md",
+      "checksum": "5e870a0496f019fe27b148d18e9d23596b3359bdd44e477fe6ac7487293e5e85",
+      "result": "passed",
+      "title": "EWOH Round 11 Evidence - OEE and Andon"
+    },
+    {
+      "evidenceId": "EVD-round12-erp-connector",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round12-erp-connector.md",
+      "checksum": "18e5424ffeab13b359554916f1b1cc575b8d69a5e8812050a3f1200828cc56a6",
+      "result": "passed",
+      "title": "EWOH Round 12 Evidence - ERP Connector"
+    },
+    {
+      "evidenceId": "EVD-round13-trace-mobile",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round13-trace-mobile.md",
+      "checksum": "23094adefcdb6ea08435d638d5938e9c6108c90f18a63a5d6cfd239c1119834b",
+      "result": "passed",
+      "title": "EWOH Round 13 Evidence - Quality Trace and Mobile Workbench API"
+    },
+    {
+      "evidenceId": "EVD-round14-mobile-workbench-ui",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round14-mobile-workbench-ui.md",
+      "checksum": "0ff31363d461921a668f19ff8d93da351a42f3e25d279d983060a1345a0cd668",
+      "result": "passed",
+      "title": "EWOH Round 14 Evidence - Mobile Workbench UI"
+    },
+    {
+      "evidenceId": "EVD-round15-final5-scale-kernel",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round15-final5-scale-kernel.md",
+      "checksum": "3f1337169235e7158e8cba1c05b5a7c27ce98c71f40af479e327e519fca72ed1",
+      "result": "passed",
+      "title": "EWOH Round 15 Evidence - Final 5.0 Adoption and Scale Kernel"
+    },
+    {
+      "evidenceId": "EVD-round16-connector-scenario",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round16-connector-scenario.md",
+      "checksum": "47b86b43a7cce777a0eda4773bd8e3aeb9339aac2327a86b28a01d6f39bf228a",
+      "result": "passed",
+      "title": "EWOH Round 16 Evidence - Connector and Scenario Pack Catalog"
+    },
+    {
+      "evidenceId": "EVD-round17-conformance-replay",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round17-conformance-replay.md",
+      "checksum": "f9c3fff82974e8f0baf580838351d0c1e548e55029f7211f3a583d88e6eb5900",
+      "result": "passed",
+      "title": "EWOH Round 17 Evidence - Conformance TCK and Factory Profile Replay"
+    },
+    {
+      "evidenceId": "EVD-round18-fleet-ops-event-catalog",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round18-fleet-ops-event-catalog.md",
+      "checksum": "ab5bbf181d417f1436c8ebe7aed676d6dbd71b79d86c82d928688efc371a15de",
+      "result": "passed",
+      "title": "Round 18 Evidence - Fleet Ops + AsyncAPI/CloudEvents Catalog"
+    },
+    {
+      "evidenceId": "EVD-round19-helm-deployment-factory",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round19-helm-deployment-factory.md",
+      "checksum": "d4114c784b7ed2d39e442d6133e92728cc632b7630a4ebfb63ffcad5b74bdd2a",
+      "result": "passed",
+      "title": "Round 19 Evidence - Helm Deployment Factory"
+    },
+    {
+      "evidenceId": "EVD-round2",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round2.md",
+      "checksum": "df92c93ee18ef707c8eca10454df6f85a35ab1dbd361e90d6b25bc7c967169be",
+      "result": "passed",
+      "title": "EWOH Round 2 Execution Evidence"
+    },
+    {
+      "evidenceId": "EVD-round20-golden-factory",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round20-golden-factory.md",
+      "checksum": "30854b001b7afe854598084b19101de1a78e753f0af56caa81f5feb7e94b0546",
+      "result": "passed",
+      "title": "Round 20 Evidence - Golden Factory Profile"
+    },
+    {
+      "evidenceId": "EVD-round21-mapping-dsl",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round21-mapping-dsl.md",
+      "checksum": "f4f92de2b9eb4bf01001b96441cd62df03c92f19e1fd4bbf1f5d4c77c527a725",
+      "result": "passed",
+      "title": "Round 21 Evidence - Mapping DSL and Schema Registry"
+    },
+    {
+      "evidenceId": "EVD-round22-fleet-rings-support",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round22-fleet-rings-support.md",
+      "checksum": "342b88d32f8e669f963d69d175c6cca198eb903f14e29b860b3a4e0a0ae97c40",
+      "result": "passed",
+      "title": "Round 22 Evidence - Upgrade Rings, Fleet Registry, Support Bundle"
+    },
+    {
+      "evidenceId": "EVD-round23-otel-resource-attributes",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round23-otel-resource-attributes.md",
+      "checksum": "0b0b88a6ffb00df70ef171f50d0c3aeaf86b6f59829c8637fcc925bb786ae8f5",
+      "result": "passed",
+      "title": "Round 23 Evidence - OTel Resource Attributes"
+    },
+    {
+      "evidenceId": "EVD-round24-compatibility-catalog",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round24-compatibility-catalog.md",
+      "checksum": "b9bbdde8a54ec610bdc662f29dd045ab843f9b124bca1b05bd17b1950da8581c",
+      "result": "passed",
+      "title": "Round 24 Evidence - Compatibility Catalog"
+    },
+    {
+      "evidenceId": "EVD-round25-policy-engine",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round25-policy-engine.md",
+      "checksum": "c5bc54ef13403f401d64038d1aeaed222184b5748abc0c3214b9c3d0fe0c5e2f",
+      "result": "passed",
+      "title": "Round 25 Evidence - Policy Engine"
+    },
+    {
+      "evidenceId": "EVD-round26-diff-preview",
+      "workItemId": "",
+      "kind": "review",
+      "path": ".codex/artifacts/work/evidence/round26-diff-preview.md",
+      "checksum": "e0e727419d0b335ff1b8693429f869a1d75200298a5852cbf11513306a772862",
+      "result": "passed",
+      "title": "Round 26 Evidence - Template Config Diff Preview"
+    },
+    {
+      "evidenceId": "EVD-round27-connector-runtime",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round27-connector-runtime.md",
+      "checksum": "b61884e94e8c144deb6f346a9bb959805778cadf3f4174ae146fcdae65b6102e",
+      "result": "passed",
+      "title": "Round 27 Evidence - Connector SDK/Runtime"
+    },
+    {
+      "evidenceId": "EVD-round28-factory-onboarding",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round28-factory-onboarding.md",
+      "checksum": "cc5d2cae2240a5cc5d81b0d14d044888c06e354fa23c028e7349fb28b965a812",
+      "result": "passed",
+      "title": "Round 28 Evidence - Factory Onboarding"
+    },
+    {
+      "evidenceId": "EVD-round29-scale-release-review",
+      "workItemId": "",
+      "kind": "review",
+      "path": ".codex/artifacts/work/evidence/round29-scale-release-review.md",
+      "checksum": "ccddaec2b5b608eaf10d34b7b29b03f3c28859e695d6714179e907c49452f5fb",
+      "result": "passed",
+      "title": "Round 29 Evidence - Scale Release Review"
+    },
+    {
+      "evidenceId": "EVD-round3",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round3.md",
+      "checksum": "333dd62bdcb7869c0fbd537f6f9cd25a09c07fd9f044f9285ba58ec9c1630b6e",
+      "result": "passed",
+      "title": "EWOH Round 3 Execution Evidence"
+    },
+    {
+      "evidenceId": "EVD-round30-workflow-engine",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round30-workflow-engine.md",
+      "checksum": "bd6e09b14b61f9c002868452ed9a26e55cecbb6df13219889fa02a58285355d1",
+      "result": "passed",
+      "title": "Round 30 Evidence - Workflow Engine Skeleton"
+    },
+    {
+      "evidenceId": "EVD-round31-feature-flags",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round31-feature-flags.md",
+      "checksum": "fc703e0486aaff2200d1e5598eaccf50233957b64ccb0ccee6e421f6ced49192",
+      "result": "passed",
+      "title": "Round 31 Evidence - Feature Flags"
+    },
+    {
+      "evidenceId": "EVD-round32-edge-backfill",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round32-edge-backfill.md",
+      "checksum": "7ac4c04da24c1a607d8fab663026dda05efe70a06fb5d199da0fac0290e8e947",
+      "result": "passed",
+      "title": "Round 32 Evidence - Edge Backfill and Out-of-Order Handling"
+    },
+    {
+      "evidenceId": "EVD-round33-twin-package",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round33-twin-package.md",
+      "checksum": "1758ce528d6c91e9f529e31ab731d43d7e789fcb64c93a136e63cf42e743293f",
+      "result": "passed",
+      "title": "Round 33 Evidence - Twin Package Pipeline"
+    },
+    {
+      "evidenceId": "EVD-round34-partner-shadow",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round34-partner-shadow.md",
+      "checksum": "327a9ceaa9956f8549acdbd63494d275308848c91d46ae738495937e6e92063e",
+      "result": "passed",
+      "title": "Round 34 Evidence - Partner Shadow Delivery"
+    },
+    {
+      "evidenceId": "EVD-round35-deployment-tck",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round35-deployment-tck.md",
+      "checksum": "947aac7d2eb198139e41abad5531685959c08ebd1471519ae4e1b9ca96add4f6",
+      "result": "passed",
+      "title": "Round 35 Evidence - Deployment TCK"
+    },
+    {
+      "evidenceId": "EVD-round36-scale-ui",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round36-scale-ui.md",
+      "checksum": "faeda40dd74c39a983e5d705536313efb306356749c67b032624e6a9387e91f4",
+      "result": "passed",
+      "title": "Round 36 Evidence - Scale Operations UI"
+    },
+    {
+      "evidenceId": "EVD-round37-erp-mes-connector",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round37-erp-mes-connector.md",
+      "checksum": "19d74b5cc4c58c24fb5ee553c0f3f53f38b267b7f90944b2e96d7b72705aa75e",
+      "result": "passed",
+      "title": "Round 37 Evidence - ERP/MES Connector Profile"
+    },
+    {
+      "evidenceId": "EVD-round38-scale-metrics",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round38-scale-metrics.md",
+      "checksum": "0b4c4ac3c4c1d1089aa9bb23c1a8c815c50d180ed840d26d765299736351f3db",
+      "result": "passed",
+      "title": "Round 38 Evidence - Scale Productization Metrics"
+    },
+    {
+      "evidenceId": "EVD-round39-scenario-uninstall",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round39-scenario-uninstall.md",
+      "checksum": "b831f59f2af2dc71d095693fdea07b294922a38cd7922255f77bb23ba8010b6e",
+      "result": "passed",
+      "title": "Round 39 Evidence - Scenario Pack Uninstall"
+    },
+    {
+      "evidenceId": "EVD-round4",
+      "workItemId": "WP-HARDEN-001",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round4.md",
+      "checksum": "891d7a52938fcdcf738dd82386a476062a40a266a79f18aecaec9aac6c22436c",
+      "result": "passed",
+      "title": "EWOH Round 4 Execution Evidence"
+    },
+    {
+      "evidenceId": "EVD-round40-connector-tck",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round40-connector-tck.md",
+      "checksum": "8fd556eab001aba23980af9399cb2baf34431ebaaab98b5005ec7114602bb879",
+      "result": "passed",
+      "title": "Round 40 Evidence - Connector TCK"
+    },
+    {
+      "evidenceId": "EVD-round41-scenario-tck",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round41-scenario-tck.md",
+      "checksum": "f3860a01da5dface66390bd32d02b415cb65e3b008e3167a3d580b76875c11a9",
+      "result": "passed",
+      "title": "Round 41 Evidence - Scenario TCK"
+    },
+    {
+      "evidenceId": "EVD-round42-third-factory-drill",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round42-third-factory-drill.md",
+      "checksum": "c67bb4ab4b94ecbc2697de8400d9577c4b94d66e3562e4ef35c95fe48d457903",
+      "result": "passed",
+      "title": "Round 42 Evidence - Third Factory Config-Driven Drill"
+    },
+    {
+      "evidenceId": "EVD-round43-factory-differences",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round43-factory-differences.md",
+      "checksum": "58d6bb1dee3dd7bcac9a03a3c3b87ce2f2eb9857eea84acd3017a4a96d24c8ac",
+      "result": "passed",
+      "title": "Round 43 Evidence - Factory Difference Recycling"
+    },
+    {
+      "evidenceId": "EVD-round44-difference-resolve",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round44-difference-resolve.md",
+      "checksum": "4c027a6bd2eb20983183a5d116d81fdcf59f73e487c2f7a27a5909b2e16b6108",
+      "result": "passed",
+      "title": "Round 44 Evidence - Factory Difference Resolution"
+    },
+    {
+      "evidenceId": "EVD-round45-cross-tenant-tck",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round45-cross-tenant-tck.md",
+      "checksum": "49792c9f74164fe2cee34fb20f4ed0af2c426297aa31f538a19453efd51779c2",
+      "result": "passed",
+      "title": "Round 45 Evidence - Cross-Tenant TCK"
+    },
+    {
+      "evidenceId": "EVD-round46-differences-ui",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round46-differences-ui.md",
+      "checksum": "d314b08895960e48f69f7f18e3b628876b38e9ebf79d2efda2ae07fb77a9c846",
+      "result": "passed",
+      "title": "Round 46 Evidence - Factory Differences UI"
+    },
+    {
+      "evidenceId": "EVD-round47-workflow-instances",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round47-workflow-instances.md",
+      "checksum": "9bad2762bc9a49614175dd38ed647006efd935aa281b6a1a3f450500539ad53c",
+      "result": "passed",
+      "title": "Round 47 Evidence - Stateful Workflow Instances"
+    },
+    {
+      "evidenceId": "EVD-round48-support-bundle-ui",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round48-support-bundle-ui.md",
+      "checksum": "98d604baa69623cf922b121c617240c615666b3da0b3621a963eebd6fc435a3c",
+      "result": "passed",
+      "title": "Round 48 Evidence - Support Bundle UI"
+    },
+    {
+      "evidenceId": "EVD-round49-fleet-ui",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round49-fleet-ui.md",
+      "checksum": "f8abc88464e268b7d41b89ac3147ea0118a822006a0cc7a8462080bd83a07e7f",
+      "result": "passed",
+      "title": "Round 49 Evidence - Fleet Upgrade Ring UI"
+    },
+    {
+      "evidenceId": "EVD-round5",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round5.md",
+      "checksum": "75a1d553df5eb15f94b3ab2b8c72c8a9aef6dae0f747859043bd1ec27f391519",
+      "result": "passed",
+      "title": "EWOH Round 5 CI Evidence"
+    },
+    {
+      "evidenceId": "EVD-round50-workflow-instances-ui",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round50-workflow-instances-ui.md",
+      "checksum": "f622465bd54de44f775daa1ec933e8192fe7610acb054e76ea894b1d134e1ac1",
+      "result": "passed",
+      "title": "Round 50 Evidence - Workflow Instances UI"
+    },
+    {
+      "evidenceId": "EVD-round51-scenario-ui",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round51-scenario-ui.md",
+      "checksum": "9447033a9055f47a6c91497d913bf28525bd26647d8ac2a365a9c4810c30d976",
+      "result": "passed",
+      "title": "Round 51 Evidence - Scenario Pack Lifecycle UI"
+    },
+    {
+      "evidenceId": "EVD-round52-operations-capability",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round52-operations-capability.md",
+      "checksum": "134d92545a221dd11db24649fc78a41848932e8865adc7395b79d55368d9da79",
+      "result": "passed",
+      "title": "Round 52 Evidence - Operations Capability Package (EAM / Work Center / Efficiency)"
+    },
+    {
+      "evidenceId": "EVD-round53-sparkplug-openfeature",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round53-sparkplug-openfeature.md",
+      "checksum": "1903515fb88fa4bf4ff8a9f661d7cf8991f28088ea351824de7425629d3fe90b",
+      "result": "passed",
+      "title": "Round 53 Evidence - Sparkplug B Connector + OpenFeature Flag Evaluation"
+    },
+    {
+      "evidenceId": "EVD-round54-parameter-registry",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round54-parameter-registry.md",
+      "checksum": "d8dce1f6b67e0b8c23926ee94ed1a96b2e014870a829a33804f05c98b530661b",
+      "result": "passed",
+      "title": "Round 54 Evidence - Parameter Registry"
+    },
+    {
+      "evidenceId": "EVD-round55-aas-codec",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round55-aas-codec.md",
+      "checksum": "62f6d15ee1a73102cf4993f47a94e26661a5b1fcdc9b58659513dab82a308642",
+      "result": "passed",
+      "title": "Round 55 Evidence - AAS/IEC 63278 Codec"
+    },
+    {
+      "evidenceId": "EVD-round56-rego-policy-as-code",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round56-rego-policy-as-code.md",
+      "checksum": "53506ef79d1f63c1475372c351f1d666ba6b9bf2091935d4597fbdc8aa0ca5c6",
+      "result": "passed",
+      "title": "Round 56 Evidence - Rego Policy-as-Code Deployment Gate"
+    },
+    {
+      "evidenceId": "EVD-round57-aas-asset-api",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round57-aas-asset-api.md",
+      "checksum": "97163cc13816b7b60505fe8c09df57817255144efbb17d632b39d849c333e329",
+      "result": "passed",
+      "title": "Round 57 Evidence - AAS Asset Registry API + Data Assets UI"
+    },
+    {
+      "evidenceId": "EVD-round58-opcua-connector",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round58-opcua-connector.md",
+      "checksum": "5ff9d6fbd3c9f8c06db71cf69d08ea1dfbb8e09045689f22a0eb556eddb07dc4",
+      "result": "passed",
+      "title": "Round 58 Evidence - OPC UA Connector"
+    },
+    {
+      "evidenceId": "EVD-round59-modbus-connector",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round59-modbus-connector.md",
+      "checksum": "6e9ee363d52d0cf426539fd77ff2b6aaddf2a392061977807e7fd157a223888b",
+      "result": "passed",
+      "title": "Round 59 Evidence - Modbus TCP Connector"
+    },
+    {
+      "evidenceId": "EVD-round6-ingestion-protocol",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round6-ingestion-protocol.md",
+      "checksum": "499d8570b9d7096e4ba795e2268b1d619ef1c58d6336f635ffe8cc57895eae75",
+      "result": "passed",
+      "title": "EWOH Round 6 Evidence - Ingestion Protocol Alignment"
+    },
+    {
+      "evidenceId": "EVD-round60-webhook-connector",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round60-webhook-connector.md",
+      "checksum": "f14051175b718511ba9c5ded302133662d712067ee18036f7eb5991431bb9a1b",
+      "result": "passed",
+      "title": "Round 60 Evidence - HTTP/Webhook Connector"
+    },
+    {
+      "evidenceId": "EVD-round61-csv-file-connector",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round61-csv-file-connector.md",
+      "checksum": "7704cd08ec35a64f69d8a56d44c9ff7421f1cdcba476ef1007e8a4d36985ce07",
+      "result": "passed",
+      "title": "Round 61 Evidence - CSV/File Connector"
+    },
+    {
+      "evidenceId": "EVD-round62-otel-request-tracing",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round62-otel-request-tracing.md",
+      "checksum": "52ed5975c46ddd158638cd6ab98a4bd7c8be33e041f922b3729a97909956b47c",
+      "result": "passed",
+      "title": "Round 62 Evidence - OTel-Style Request Tracing"
+    },
+    {
+      "evidenceId": "EVD-round63-support-bundle-traces",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round63-support-bundle-traces.md",
+      "checksum": "701a640aa1a3f0a03c4986bb4298ec9d15da66149ded9f07cc5dbb3c3ff77305",
+      "result": "passed",
+      "title": "Round 63 Evidence - Support Bundle Trace Inclusion"
+    },
+    {
+      "evidenceId": "EVD-round64-tracing-ui",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round64-tracing-ui.md",
+      "checksum": "f2ebe2cb63c8b0aed2ae8a9f1192be6c3df0cff3b873838da3add7d678c5bde4",
+      "result": "passed",
+      "title": "Round 64 Evidence - Request Tracing UI"
+    },
+    {
+      "evidenceId": "EVD-round65-release-bundle-rerolled",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round65-release-bundle-rerolled.md",
+      "checksum": "74b5299f800a778a28f9d6981cd72d419ba67fa923f9f558a2d62fd02246f441",
+      "result": "passed",
+      "title": "Round 65 Evidence - RC2 Release Bundle Rerolled"
+    },
+    {
+      "evidenceId": "EVD-round66-final-gate-sweep",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round66-final-gate-sweep.md",
+      "checksum": "d67f047ad3a2ae1207b4c6e9f8997f988aa3f1c55766787f1d8925aca1fbc90b",
+      "result": "passed",
+      "title": "Round 66 Evidence - Final One-Click Gate Sweep"
+    },
+    {
+      "evidenceId": "EVD-round67-pilot-readiness-blockers",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round67-pilot-readiness-blockers.md",
+      "checksum": "f5ddb65932105ff8a42928d130d4208d43572a926038341c977f0d76b8961455",
+      "result": "passed",
+      "title": "Round 67 Evidence - Pilot Readiness Blocker Gate"
+    },
+    {
+      "evidenceId": "EVD-round68-release-bundle-includes-pilot-gate",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round68-release-bundle-includes-pilot-gate.md",
+      "checksum": "9084398b4a90430fca6afc8e81cb55a3bbad321d3b9a0f7789fb40ba129425bb",
+      "result": "passed",
+      "title": "Round 68 Evidence - Release Bundle Includes Pilot Gate"
+    },
+    {
+      "evidenceId": "EVD-round69-final6-work-orchestration",
+      "workItemId": "G10",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round69-final6-work-orchestration.md",
+      "checksum": "8f079b14a29e9bd4af4aeecd75439cfffa7fa3433a57aaff3900dd129618a8a0",
+      "result": "passed",
+      "title": "Round 69 - Final 6.0 Work Orchestration Control Plane"
+    },
+    {
+      "evidenceId": "EVD-round7-ops-readiness",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round7-ops-readiness.md",
+      "checksum": "8724625758d1976e4c3f975101e5525ac436931a75b55199f540f4ca93629061",
+      "result": "passed",
+      "title": "EWOH Round 7 Evidence - Operations Readiness"
+    },
+    {
+      "evidenceId": "EVD-round70-iteration-p0-2026-08-04",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round70-iteration-p0-2026-08-04.md",
+      "checksum": "f8593aab454a48f76ef66ee85d521441ec9c7612c37e2f6325e54c5f3b1833c0",
+      "result": "passed",
+      "title": "Round 70 - 2026-08-04 P0 Hardening Iteration"
+    },
+    {
+      "evidenceId": "EVD-round71-validation-and-command-map",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round71-validation-and-command-map.md",
+      "checksum": "90e1c861a40555731c0cc042487914f49bc40b0122419f681bcbaeb8936e0071",
+      "result": "passed",
+      "title": "Round 71 - 2026-08-04 Validation Pipe and Command-Map Details"
+    },
+    {
+      "evidenceId": "EVD-round72-mobile-offline-queue",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round72-mobile-offline-queue.md",
+      "checksum": "34a8824611baec95f39cd2ff3bce582d76f82945afc2fd9ffbb9ae508c71f9e9",
+      "result": "passed",
+      "title": "Round 72 - 2026-08-04 Mobile Offline Pending-Action Queue"
+    },
+    {
+      "evidenceId": "EVD-round73-state-guards",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round73-state-guards.md",
+      "checksum": "dcbfed15f981d2705daba6364cef0d866bb6c729e295e8cda4e514e28186838c",
+      "result": "passed",
+      "title": "Round 73 - 2026-08-04 Control and Work Orchestration State Guards"
+    },
+    {
+      "evidenceId": "EVD-round74-scale-idempotency",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round74-scale-idempotency.md",
+      "checksum": "71c5ea3df44341526945f3b3db90b708fc3c820dba4e97ab1e0f5b04fba86877",
+      "result": "passed",
+      "title": "Round 74 - 2026-08-04 Scale Mutation Idempotency"
+    },
+    {
+      "evidenceId": "EVD-round75-real-postgres-e2e",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round75-real-postgres-e2e.md",
+      "checksum": "473c7fa5e0d30d08db6c687482f8f68f2b915b2eb46e6d4c66ada46ba9c70157",
+      "result": "passed",
+      "title": "Round 75 - 2026-08-04 Real PostgreSQL HTTP E2E"
+    },
+    {
+      "evidenceId": "EVD-round76-mobile-photo-attachments",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round76-mobile-photo-attachments.md",
+      "checksum": "37083ff82fc573593c16a94556f25de7ca0d5b8f1d5e23630e0d81a16b83eee6",
+      "result": "passed",
+      "title": "Round 76 - 2026-08-04 Mobile Exception Photo Attachments"
+    },
+    {
+      "evidenceId": "EVD-round77-pwa-installability",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round77-pwa-installability.md",
+      "checksum": "300376cc11b9b966e28e34eb8f08533398835d62db46b4cb2097a8a5bf8f15b8",
+      "result": "passed",
+      "title": "Round 77 - 2026-08-04 PWA Installability Assets"
+    },
+    {
+      "evidenceId": "EVD-round78-offline-photo-queue",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round78-offline-photo-queue.md",
+      "checksum": "553b193eea8db9e46c61e0cdaea234390d27bdc9a27de1f3d8cda58f5a9dd08c",
+      "result": "passed",
+      "title": "Round 78 - 2026-08-04 Offline Photo Queue"
+    },
+    {
+      "evidenceId": "EVD-round79-release-drill-and-verification",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round79-release-drill-and-verification.md",
+      "checksum": "7a6f932e74d5fa53df2967ca67ffe18076d8a50c64ce562bfbed84262013d975",
+      "result": "passed",
+      "title": "Round 79 - 2026-08-04 Release Drill and Verification Gates"
+    },
+    {
+      "evidenceId": "EVD-round8-org-scope-hardening",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round8-org-scope-hardening.md",
+      "checksum": "0029dd8ad411873762c5da81c1eace55a07c6db2ec5087e4fb8d87e37e549e38",
+      "result": "passed",
+      "title": "EWOH Round 8 Evidence - Org Scope Hardening"
+    },
+    {
+      "evidenceId": "EVD-round80-playwright-browser-evidence",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round80-playwright-browser-evidence.md",
+      "checksum": "6551d95f89eaa8606755ea57e7fa4a2f53a6528763d0272801435ebbd0436ef7",
+      "result": "unknown",
+      "title": "Round 80 - 2026-08-04 Playwright Browser Evidence"
+    },
+    {
+      "evidenceId": "EVD-round81-request-audit-correlation",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round81-request-audit-correlation.md",
+      "checksum": "8001186ae91342a0cb2c0751fc90983176cd62d043c50ab15936f53f87c33e7d",
+      "result": "passed",
+      "title": "Round 81 - 2026-08-04 Request ID and Audit Correlation"
+    },
+    {
+      "evidenceId": "EVD-round82-error-sanitization",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round82-error-sanitization.md",
+      "checksum": "d0257f2ad09c594a6b9fa788b8a0b3810ddbfd6185497cc80a6c6a3a53aa4548",
+      "result": "passed",
+      "title": "Round 82 - 2026-08-04 Error Leak Sanitization"
+    },
+    {
+      "evidenceId": "EVD-round83-devices-error-state",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round83-devices-error-state.md",
+      "checksum": "10acfc44929d6c03757dae589619a7a5b2c9f16837b8355ae1509162da5ec9c7",
+      "result": "passed",
+      "title": "Round 83 - 2026-08-04 Devices Error and Update State"
+    },
+    {
+      "evidenceId": "EVD-round84-command-map-query-state",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round84-command-map-query-state.md",
+      "checksum": "69e6e490c6ba6d3459e117357ed3acf5f1d429f4eba033d3de22fb9e6508c48b",
+      "result": "passed",
+      "title": "Round 84 - 2026-08-04 Command Map Query Error State"
+    },
+    {
+      "evidenceId": "EVD-round85-rc4-candidate-bundle",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round85-rc4-candidate-bundle.md",
+      "checksum": "75c7b470d531481fed1d4c529dc4a51e8ed2a8869bed50333309df0a76ed98b5",
+      "result": "passed",
+      "title": "Round 85 - 2026-08-04 EWOH 0.6.0-rc4 Candidate Bundle"
+    },
+    {
+      "evidenceId": "EVD-round86-authenticated-browser-test",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round86-authenticated-browser-test.md",
+      "checksum": "ab9dfe9d795e8de0a0b99cedac5284133cbe2b1ad3ca0098517884e4c19e39ab",
+      "result": "passed",
+      "title": "Round 86 - 2026-08-04 Authenticated Playwright Browser Test"
+    },
+    {
+      "evidenceId": "EVD-round87-browser-tests-in-ci",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round87-browser-tests-in-ci.md",
+      "checksum": "11682ea2cd56e050be2511af6e52504dbb3dbd62b720946ea3f344ba22f38b7e",
+      "result": "passed",
+      "title": "Round 87 - 2026-08-04 Browser Tests in CI"
+    },
+    {
+      "evidenceId": "EVD-round88-pilot-readiness-rc4",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round88-pilot-readiness-rc4.md",
+      "checksum": "c7d03dfc161e280485e4e6294fcffe2a1690b99c5428365b31d63b7c0725cb59",
+      "result": "passed",
+      "title": "Round 88 - 2026-08-04 Pilot Readiness Gate (RC4)"
+    },
+    {
+      "evidenceId": "EVD-round89-ops-drill-rc4",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round89-ops-drill-rc4.md",
+      "checksum": "0e8b1b02f4f2bc42ed596233e492cd49cb09d45b101a74e83dd586daa652f227",
+      "result": "passed",
+      "title": "Round 89 - 2026-08-04 Standalone Ops Drill (RC4)"
+    },
+    {
+      "evidenceId": "EVD-round9-observability-deploy-artifacts",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round9-observability-deploy-artifacts.md",
+      "checksum": "37aad379b4b7cfd6bbb639d7b12e07702891a218605714c94756584b052d8e01",
+      "result": "passed",
+      "title": "EWOH Round 9 Evidence - Observability and Deploy Artifacts"
+    }
+  ],
+  "gates": [
+    {
+      "gateId": "G0",
+      "title": "Environment and materials accessible",
+      "calculatedStatus": "passed",
+      "humanDecision": null,
+      "conditions": [
+        "authoritative docs extracted, repo/dependencies readable, capability limits recorded"
+      ],
+      "approver": null,
+      "decidedAt": null
+    },
+    {
+      "gateId": "G1",
+      "title": "Requirements and terminology baseline frozen",
+      "calculatedStatus": "passed",
+      "humanDecision": null,
+      "conditions": [
+        "Final 5.0/Final 6.0 terminology reconciled",
+        "authoritative plan extracted to `authoritative-plan-final6.txt`"
+      ],
+      "approver": null,
+      "decidedAt": null
+    },
+    {
+      "gateId": "G2",
+      "title": "Shared contracts frozen",
+      "calculatedStatus": "passed",
+      "humanDecision": null,
+      "conditions": [
+        "C1-C9 v1.x frozen",
+        "strict OpenAPI audit 232/232",
+        "work graph/asset catalog/factory profile audits pass"
+      ],
+      "approver": null,
+      "decidedAt": null
+    },
+    {
+      "gateId": "G3",
+      "title": "Environment probes pass",
+      "calculatedStatus": "passed",
+      "humanDecision": null,
+      "conditions": [
+        "PostgreSQL 17.10 and runtime role probed",
+        "Docker/Kubernetes tools recorded unavailable"
+      ],
+      "approver": null,
+      "decidedAt": null
+    },
+    {
+      "gateId": "G4",
+      "title": "DDL compile/migration tests pass",
+      "calculatedStatus": "passed",
+      "humanDecision": null,
+      "conditions": [
+        "real apply/verify/RLS/audit/rollback/rebuild on PostgreSQL 17.10",
+        "unique org-key index verified"
+      ],
+      "approver": null,
+      "decidedAt": null
+    },
+    {
+      "gateId": "G5",
+      "title": "Backend infrastructure passes",
+      "calculatedStatus": "passed",
+      "humanDecision": null,
+      "conditions": [
+        "request transaction/GUC, auth, errors, health, rate limit tests",
+        "Jest 76 suites / 362 tests"
+      ],
+      "approver": null,
+      "decidedAt": null
+    },
+    {
+      "gateId": "G6",
+      "title": "Core domain modules/APIs pass",
+      "calculatedStatus": "passed",
+      "humanDecision": null,
+      "conditions": [
+        "232 routes, 0 unimplemented",
+        "work orchestration APIs documented and tested over HTTP"
+      ],
+      "approver": null,
+      "decidedAt": null
+    },
+    {
+      "gateId": "G7",
+      "title": "Frontend and command map pass",
+      "calculatedStatus": "in_progress",
+      "humanDecision": null,
+      "conditions": [
+        "Playwright authenticated flow: dispatcher login + command center render on real PG",
+        "client Jest 13 suites / 42 tests",
+        "PWA manifest/service worker",
+        "work console route and layout type-check"
+      ],
+      "approver": null,
+      "decidedAt": null
+    },
+    {
+      "gateId": "G8",
+      "title": "Cross-module scenario tests pass",
+      "calculatedStatus": "passed",
+      "humanDecision": null,
+      "conditions": [
+        "SP-01..SP-08 unit suite + HTTP+PostgreSQL E2E 29/29 on embedded PG 17",
+        "Final 6 scenario pack and connector audits pass"
+      ],
+      "approver": null,
+      "decidedAt": null
+    },
+    {
+      "gateId": "G9",
+      "title": "Security/performance/regression pass",
+      "calculatedStatus": "in_progress",
+      "humanDecision": null,
+      "conditions": [
+        "security fixes + DB probe pass",
+        "control plane writes gated by `EWOH_WORK_WRITABLE`",
+        "Jest/lint/typecheck/build pass"
+      ],
+      "approver": null,
+      "decidedAt": null
+    },
+    {
+      "gateId": "G10",
+      "title": "Release/rollback/ops ready",
+      "calculatedStatus": "passed",
+      "humanDecision": null,
+      "conditions": [
+        "`RELEASE DRILL PASSED` on disposable PostgreSQL 17 (2026-08-04 iteration)",
+        "security probe OK",
+        "GitHub Actions Docker build + PG migration/rollback green",
+        "K8s apply and production observability drill pending"
+      ],
+      "approver": null,
+      "decidedAt": null
+    },
+    {
+      "gateId": "G11",
+      "title": "Business acceptance and delivery complete",
+      "calculatedStatus": "requires_approval",
+      "humanDecision": null,
+      "conditions": [
+        "acceptance signoff"
+      ],
+      "approver": null,
+      "decidedAt": null
+    },
+    {
+      "gateId": "G12",
+      "title": "Follow-on phases accepted",
+      "calculatedStatus": "requires_approval",
+      "humanDecision": null,
+      "conditions": [
+        "phase acceptance reports"
+      ],
+      "approver": null,
+      "decidedAt": null
+    },
+    {
+      "gateId": "G13",
+      "title": "Final project closeout",
+      "calculatedStatus": "requires_approval",
+      "humanDecision": null,
+      "conditions": [
+        "closeout package"
+      ],
+      "approver": null,
+      "decidedAt": null
+    }
+  ],
+  "risks": [
+    {
+      "id": "R-001",
+      "title": "Dirty worktree contains extensive user and generated changes",
+      "severity": "high",
+      "mitigation": "Preserve all unrelated edits; use scoped patches and validation",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-002",
+      "title": "Some domain services may be in-memory despite API-complete appearance",
+      "severity": "high",
+      "mitigation": "Active persistence audit; do not count module existence as scenario completion",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-003",
+      "title": "Unit-composed scenario tests may overstate real HTTP/database coverage",
+      "severity": "high",
+      "mitigation": "Active workflow audit; add true integration acceptance per selected scenario",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-004",
+      "title": "Container and Kubernetes artifacts cannot be built/applied locally",
+      "severity": "medium",
+      "mitigation": "YAML parses; CI definition exists; report Docker/K8s checks as unexecuted",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-005",
+      "title": "Production migration/deployment is irreversible or externally visible",
+      "severity": "high",
+      "mitigation": "Keep approval gate; use local PostgreSQL only without explicit approval",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-006",
+      "title": "Local standalone test service uses temporary JWT configuration",
+      "severity": "low",
+      "mitigation": "Bind to loopback, use test-only DB, remove temporary acceptance identities",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-007",
+      "title": "Control plane becomes a second fact source instead of rendering repository artifacts",
+      "severity": "high",
+      "mitigation": "Work Graph schema, indexer consistency CLI, source files remain authoritative; UI writes generate versioned records",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-008",
+      "title": "Artifact drift between task board, gates, OpenAPI, and contracts",
+      "severity": "high",
+      "mitigation": "Path registry, generated `output/work-graph.json`, strict contract audits",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-009",
+      "title": "Simulated factory replication presented as real replication",
+      "severity": "high",
+      "mitigation": "VAL-62 independent acceptance; only real factory evidence counts",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-010",
+      "title": "ERP/order backlog expands EWOH into accounting or procurement settlement",
+      "severity": "medium",
+      "mitigation": "Read-only projections, connectors, scenario packs; no financial ledger in EWOH",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-011",
+      "title": "Agent over-autonomy in gate approval or shared contract edits",
+      "severity": "high",
+      "mitigation": "Minimum permissions, `EWOH_WORK_WRITABLE` gate, human decisions separated for G10+",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-012",
+      "title": "Evidence expires or becomes invalid after code changes",
+      "severity": "medium",
+      "mitigation": "Evidence binds commit/environment/checksum; audits fail when required artifacts are missing",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-013",
+      "title": "Manual validation paths still return single-message errors instead of `fieldErrors`",
+      "severity": "medium",
+      "mitigation": "Global `APP_PIPE` maps class-validator errors to fieldErrors; manual controller checks remain to be converted incrementally",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-014",
+      "title": "Command-map person/device details lack organization, exoskeleton, risk, alerts, recent events, and disposition entry",
+      "severity": "high",
+      "mitigation": "EntityDetail shows only a subset; PersonnelInfo/DeviceInfo do not yet carry the required operational fields",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-015",
+      "title": "Offline photo size limit (~2MB) and compression UX",
+      "severity": "low",
+      "mitigation": "Offline photo queue implemented via data URLs and flushed to `/api/files` on reconnect; large photos require compression",
+      "status": "open",
+      "linkedItems": []
+    }
+  ],
+  "decisions": [
+    {
+      "id": "D-001",
+      "title": "Adopt `EWOH工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案.docx` Final 3.0 as master execution baseline",
+      "date": "2026-08-03",
+      "decision": "Adopt `EWOH工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案.docx` Final 3.0 as master execution baseline",
+      "rationale": "Latest frozen multi-agent plan; explicitly named as authoritative by user",
+      "reversibility": "Reversible via superseding plan"
+    },
+    {
+      "id": "D-002",
+      "title": "Physical packaging = 36 new tables + 12 altered tables = 48 managed tables",
+      "date": "2026-08-03",
+      "decision": "Physical packaging = 36 new tables + 12 altered tables = 48 managed tables",
+      "rationale": "Plan table 75/76 defines current execution packaging; logical capability mapping required",
+      "reversibility": "Reversible before DDL freeze"
+    },
+    {
+      "id": "D-003",
+      "title": "No production DB DDL/deploy/credential changes without explicit user approval",
+      "date": "2026-08-03",
+      "decision": "No production DB DDL/deploy/credential changes without explicit user approval",
+      "rationale": "User goal lists these as approval-required operations",
+      "reversibility": "N/A"
+    },
+    {
+      "id": "D-004",
+      "title": "Preserve all existing worktree changes",
+      "date": "2026-08-03",
+      "decision": "Preserve all existing worktree changes",
+      "rationale": "Developer policy and user trust",
+      "reversibility": "N/A"
+    },
+    {
+      "id": "D-005",
+      "title": "Run read-only PostgreSQL probes against project-configured `SUDA_DATABASE_URL` only; no DDL",
+      "date": "2026-08-03",
+      "decision": "Run read-only PostgreSQL probes against project-configured `SUDA_DATABASE_URL` only; no DDL",
+      "rationale": "Environment probe is first-batch work; project env is the authorized dev target",
+      "reversibility": "N/A"
+    },
+    {
+      "id": "D-008",
+      "title": "Fix `policy_missing` scalar-subquery defect in both verify SQL files; standalone verify re-passed 48/48",
+      "date": "2026-08-03",
+      "decision": "Fix `policy_missing` scalar-subquery defect in both verify SQL files; standalone verify re-passed 48/48",
+      "rationale": "Live local PostgreSQL verify errored before fix; after fix all expected counts pass",
+      "reversibility": "Fully reversible"
+    },
+    {
+      "id": "D-009",
+      "title": "Launch WP-HARDEN-001 as four parallel workers from independent review findings",
+      "date": "2026-08-03",
+      "decision": "Launch WP-HARDEN-001 as four parallel workers from independent review findings",
+      "rationale": "Security/persistence/frontend reviews returned fail with majors; fixes must precede gate closure",
+      "reversibility": "Per-change reversible"
+    },
+    {
+      "id": "D-010",
+      "title": "Approval domain has no physical table in the frozen 48-table DDL; keep service-aggregate until C1 maps approval to equivalent tables",
+      "date": "2026-08-03",
+      "decision": "Approval domain has no physical table in the frozen 48-table DDL; keep service-aggregate until C1 maps approval to equivalent tables",
+      "rationale": "Plan table 80 allows explicit mapping; adding tables would break the frozen 48-table packaging",
+      "reversibility": "Reversible via C1 contract update"
+    },
+    {
+      "id": "D-011",
+      "title": "Adopt `EWOH工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案_最新研究升级版.docx` Final 4.0 as master execution baseline",
+      "date": "2026-08-03",
+      "decision": "Adopt `EWOH工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案_最新研究升级版.docx` Final 4.0 as master execution baseline",
+      "rationale": "User supplied Final 4.0 as latest authoritative plan; it supersedes Final 3.0 and names 0.6.0-rc2 as the real implementation baseline",
+      "reversibility": "Reversible via superseding plan"
+    },
+    {
+      "id": "D-012",
+      "title": "Next critical path is MES P0 production execution: work order -> steps -> material -> inspection -> report -> review -> handover -> completion",
+      "date": "2026-08-03",
+      "decision": "Next critical path is MES P0 production execution: work order -> steps -> material -> inspection -> report -> review -> handover -> completion",
+      "rationale": "Final 4.0 R9/R10/WP-MES-01 defines it as the key path after SSOT and environment reverification",
+      "reversibility": "Per-change reversible"
+    },
+    {
+      "id": "D-013",
+      "title": "MES P0 maps to existing `ewoh_schedule_task` / `ewoh_schedule_task_step` / `ewoh_resource_binding` / `ewoh_event`; physical 48-table packaging remains unchanged",
+      "date": "2026-08-03",
+      "decision": "MES P0 maps to existing `ewoh_schedule_task` / `ewoh_schedule_task_step` / `ewoh_resource_binding` / `ewoh_event`; physical 48-table packaging remains unchanged",
+      "rationale": "Final 4.0 requires capability mapping and forbids silent capability loss; no new physical tables are needed for the first MES increment",
+      "reversibility": "Reversible via C1 contract update"
+    },
+    {
+      "id": "D-014",
+      "title": "Adopt `EWOH工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案_规模化复制版_Final5.0.docx` as master execution baseline",
+      "date": "2026-08-03",
+      "decision": "Adopt `EWOH工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案_规模化复制版_Final5.0.docx` as master execution baseline",
+      "rationale": "User supplied Final 5.0 as latest authoritative plan; it supersedes Final 4.0 and targets multi-factory productization",
+      "reversibility": "Reversible via superseding plan"
+    },
+    {
+      "id": "D-015",
+      "title": "Scale layer adds `ewoh_factory_template` / `ewoh_factory_profile` / `ewoh_asset_package`; managed table packaging becomes 51",
+      "date": "2026-08-03",
+      "decision": "Scale layer adds `ewoh_factory_template` / `ewoh_factory_profile` / `ewoh_asset_package`; managed table packaging becomes 51",
+      "rationale": "Final 5.0 S7/S8/W defines template center and asset packages as the first productization kernels; generator/verify auto-adopt NEW_TABLES",
+      "reversibility": "Reversible via DDL regeneration"
+    },
+    {
+      "id": "D-016",
+      "title": "Implement EAM/tooling, work-center capability flags, standard hours and personnel efficiency as org-scoped `ewoh_scheduler_config` records under `/api/operations/*`",
+      "date": "2026-08-03",
+      "decision": "Implement EAM/tooling, work-center capability flags, standard hours and personnel efficiency as org-scoped `ewoh_scheduler_config` records under `/api/operations/*`",
+      "rationale": "Final 5.0 Appendix T EAM-001/CFG-001 and R5 P1 production capabilities; avoids new physical tables while keeping RLS/audit",
+      "reversibility": "Reversible per-API without schema change"
+    },
+    {
+      "id": "D-017",
+      "title": "Implement Sparkplug B connector (topic/payload/session codec + adapter) and OpenFeature-style `/api/system/feature-flags/evaluate` targeting",
+      "date": "2026-08-03",
+      "decision": "Implement Sparkplug B connector (topic/payload/session codec + adapter) and OpenFeature-style `/api/system/feature-flags/evaluate` targeting",
+      "rationale": "Final 5.0 AA-06/AA-11 and S11 feature-flag requirements; safe-closed evaluation defaults",
+      "reversibility": "Reversible per-module without schema change"
+    },
+    {
+      "id": "D-018",
+      "title": "Implement typed Parameter Registry with validation, scope, source, validity, approval, version history and rollback under `/api/parameters/*`",
+      "date": "2026-08-03",
+      "decision": "Implement typed Parameter Registry with validation, scope, source, validity, approval, version history and rollback under `/api/parameters/*`",
+      "rationale": "Final 5.0 S11 Parameter Registry; config conflicts must be explainable and auditable",
+      "reversibility": "Reversible per-API without schema change"
+    },
+    {
+      "id": "D-019",
+      "title": "Implement dependency-free AAS 3.0 JSON subset + AASX-like package codec and twin submodel mapping in `src/edge_platform/aas`",
+      "date": "2026-08-03",
+      "decision": "Implement dependency-free AAS 3.0 JSON subset + AASX-like package codec and twin submodel mapping in `src/edge_platform/aas`",
+      "rationale": "Final 5.0 AA-07 requires AASX exchange and core submodel mapping before full AAS SDK integration",
+      "reversibility": "Reversible per-module"
+    },
+    {
+      "id": "D-020",
+      "title": "Implement dependency-free Rego subset for deployment/package policy gates and wire it into Deployment TCK and standalone-check",
+      "date": "2026-08-03",
+      "decision": "Implement dependency-free Rego subset for deployment/package policy gates and wire it into Deployment TCK and standalone-check",
+      "rationale": "Final 5.0 AA-10 OPA policy-as-code for CI/deploy; avoid external OPA dependency in offline environment",
+      "reversibility": "Reversible per-module"
+    },
+    {
+      "id": "D-021",
+      "title": "Productize AAS exchange through org-scoped `/api/aas/assets` registry and Data Assets UI",
+      "date": "2026-08-03",
+      "decision": "Productize AAS exchange through org-scoped `/api/aas/assets` registry and Data Assets UI",
+      "rationale": "Final 5.0 AA-07 requires AASX/core submodel exchange to be usable beyond the Python codec",
+      "reversibility": "Reversible per-API"
+    },
+    {
+      "id": "D-022",
+      "title": "Implement OPC UA connector surface (node ID parsing, data point normalization, quality mapping, edge adapter, manifest)",
+      "date": "2026-08-03",
+      "decision": "Implement OPC UA connector surface (node ID parsing, data point normalization, quality mapping, edge adapter, manifest)",
+      "rationale": "Final 5.0 AA-05 OPC UA is the first OT standard connector target",
+      "reversibility": "Reversible per-module"
+    },
+    {
+      "id": "D-023",
+      "title": "Implement Modbus TCP connector surface (register validation/scaling, data point normalization, edge adapter, manifest)",
+      "date": "2026-08-03",
+      "decision": "Implement Modbus TCP connector surface (register validation/scaling, data point normalization, edge adapter, manifest)",
+      "rationale": "Final 5.0 AA-05 lists Modbus TCP in the first standardized OT connector batch",
+      "reversibility": "Reversible per-module"
+    },
+    {
+      "id": "D-024",
+      "title": "Implement HTTP/Webhook connector surface (payload normalization, HMAC signature verification, edge adapter, manifest)",
+      "date": "2026-08-03",
+      "decision": "Implement HTTP/Webhook connector surface (payload normalization, HMAC signature verification, edge adapter, manifest)",
+      "rationale": "Final 5.0 AA-05 lists HTTP/Webhook in the first standardized OT connector batch",
+      "reversibility": "Reversible per-module"
+    },
+    {
+      "id": "D-025",
+      "title": "Implement CSV/File connector surface (header mapping, row normalization, batch ingestion, edge adapter, manifest)",
+      "date": "2026-08-03",
+      "decision": "Implement CSV/File connector surface (header mapping, row normalization, batch ingestion, edge adapter, manifest)",
+      "rationale": "Final 5.0 AA-05 lists CSV/file in the first standardized OT connector batch",
+      "reversibility": "Reversible per-module"
+    },
+    {
+      "id": "D-026",
+      "title": "Implement OTel-style request tracing (trace/span IDs, headers, bounded trace store, read-only API)",
+      "date": "2026-08-03",
+      "decision": "Implement OTel-style request tracing (trace/span IDs, headers, bounded trace store, read-only API)",
+      "rationale": "Final 5.0 AA-09 requires unified trace observability alongside metrics",
+      "reversibility": "Reversible per-module"
+    },
+    {
+      "id": "D-027",
+      "title": "Include redacted recent request traces in fleet support bundles",
+      "date": "2026-08-03",
+      "decision": "Include redacted recent request traces in fleet support bundles",
+      "rationale": "Diagnostics should carry request-level evidence for partner/support workflows",
+      "reversibility": "Reversible per-API"
+    },
+    {
+      "id": "D-028",
+      "title": "Add request tracing viewer to the System page",
+      "date": "2026-08-03",
+      "decision": "Add request tracing viewer to the System page",
+      "rationale": "Observability must be visible in the UI, not only API/metrics",
+      "reversibility": "Reversible per-UI"
+    },
+    {
+      "id": "D-029",
+      "title": "Reroll RC2 release bundle so new capabilities and checksums are in the deliverable",
+      "date": "2026-08-03",
+      "decision": "Reroll RC2 release bundle so new capabilities and checksums are in the deliverable",
+      "rationale": "Deliverable must match current source, not an older snapshot",
+      "reversibility": "Rebuild is reversible"
+    },
+    {
+      "id": "D-030",
+      "title": "Run final one-click gate sweep as delivery evidence",
+      "date": "2026-08-03",
+      "decision": "Run final one-click gate sweep as delivery evidence",
+      "rationale": "Independent gates must be re-run after implementation waves, not assumed",
+      "reversibility": "Reversible re-run"
+    },
+    {
+      "id": "D-031",
+      "title": "Add executable Pilot Go/No-Go readiness gate with explicit blockers",
+      "date": "2026-08-03",
+      "decision": "Add executable Pilot Go/No-Go readiness gate with explicit blockers",
+      "rationale": "Local green must not be reported as production-ready; approvals/external state remain pending",
+      "reversibility": "Reversible per-script"
+    },
+    {
+      "id": "D-032",
+      "title": "Rebuild RC2 bundle to include pilot readiness gate and updated evidence",
+      "date": "2026-08-03",
+      "decision": "Rebuild RC2 bundle to include pilot readiness gate and updated evidence",
+      "rationale": "Deliverable must include the latest delivery gate",
+      "reversibility": "Rebuild is reversible"
+    },
+    {
+      "id": "D-033",
+      "title": "Adopt `EWOH工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案_Final6.0...docx` as master execution baseline",
+      "date": "2026-08-04",
+      "decision": "Adopt `EWOH工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案_Final6.0...docx` as master execution baseline",
+      "rationale": "User supplied Final 6.0 as latest authoritative plan; it adds the Work Orchestration Control Plane and P0 scenario packs",
+      "reversibility": "Reversible via superseding plan"
+    },
+    {
+      "id": "D-034",
+      "title": "Freeze C7 Work Graph, C8 Asset Catalog, C9 Factory Profile as new shared contracts",
+      "date": "2026-08-04",
+      "decision": "Freeze C7 Work Graph, C8 Asset Catalog, C9 Factory Profile as new shared contracts",
+      "rationale": "Final 6.0 N9 requires control-plane contracts; existing C1-C6 remain frozen",
+      "reversibility": "Reversible via contract version bump"
+    },
+    {
+      "id": "D-035",
+      "title": "Implement Work Graph as a file-backed index over `.codex/artifacts`; repository files remain authoritative",
+      "date": "2026-08-04",
+      "decision": "Implement Work Graph as a file-backed index over `.codex/artifacts`; repository files remain authoritative",
+      "rationale": "Final 6.0 requires no second fact source; UI writes append versioned records only",
+      "reversibility": "Reversible per module"
+    },
+    {
+      "id": "D-036",
+      "title": "P0 scenarios and ERP/MRP/inventory connectors are shipped as catalog manifests and mapping contracts, not core business-code forks",
+      "date": "2026-08-04",
+      "decision": "P0 scenarios and ERP/MRP/inventory connectors are shipped as catalog manifests and mapping contracts, not core business-code forks",
+      "rationale": "Final 6.0 N6/N14 and productization rules require asset-pack delivery",
+      "reversibility": "Reversible per asset"
+    },
+    {
+      "id": "D-037",
+      "title": "Control-plane write APIs are disabled unless `EWOH_WORK_WRITABLE=true`",
+      "date": "2026-08-04",
+      "decision": "Control-plane write APIs are disabled unless `EWOH_WORK_WRITABLE=true`",
+      "rationale": "Prevents agent over-autonomy and unintended artifact mutation in read-only/CI environments",
+      "reversibility": "Reversible per environment"
+    },
+    {
+      "id": "D-038",
+      "title": "Keep `code` as a legacy alias and add `errorCode` to the unified error envelope; all responses must carry `requestId/retryable/recommendedAction`",
+      "date": "2026-08-04",
+      "decision": "Keep `code` as a legacy alias and add `errorCode` to the unified error envelope; all responses must carry `requestId/retryable/recommendedAction`",
+      "rationale": "Goal requires the exact field names while existing clients already consume `code`; non-breaking migration wins",
+      "reversibility": "Reversible via contract version bump"
+    }
+  ],
+  "resources": [
+    {
+      "resourceId": "RES-python",
+      "name": "Python",
+      "kind": "environment",
+      "status": "missing",
+      "purpose": "3.9.6 `python` alias missing; use `python3`"
+    },
+    {
+      "resourceId": "RES-node-js",
+      "name": "Node.js",
+      "kind": "environment",
+      "status": "available",
+      "purpose": "26.5.1"
+    },
+    {
+      "resourceId": "RES-npm",
+      "name": "npm",
+      "kind": "environment",
+      "status": "available",
+      "purpose": "11.17.0"
+    },
+    {
+      "resourceId": "RES-sqlite3",
+      "name": "sqlite3",
+      "kind": "environment",
+      "status": "available",
+      "purpose": "3.54.0"
+    },
+    {
+      "resourceId": "RES-git",
+      "name": "git",
+      "kind": "environment",
+      "status": "available",
+      "purpose": "2.54.0 branch `main`, head `33802e3`"
+    },
+    {
+      "resourceId": "RES-docker",
+      "name": "docker",
+      "kind": "environment",
+      "status": "missing",
+      "purpose": "missing local docker-compose cannot be exercised"
+    },
+    {
+      "resourceId": "RES-psql",
+      "name": "psql",
+      "kind": "environment",
+      "status": "missing",
+      "purpose": "missing DB probes use Node `postgres` driver"
+    }
+  ],
+  "handoffs": []
+}

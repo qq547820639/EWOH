@@ -1,0 +1,34 @@
+mappingId: exoskeleton-telemetry-v1
+name: Exoskeleton Telemetry to EWOH Canonical
+version: 1.0.0
+source:
+  system: exo-jsonl
+  schemaRef: ewoh:///schemas/exo-frame/v1
+target:
+  system: ewoh
+  schemaRef: ewoh:///schemas/telemetry/v1
+rules:
+  - from: entity_id
+    to: entityId
+    required: true
+  - from: pose.position.x
+    to: payload.pose.position.x
+  - from: pose.position.y
+    to: payload.pose.position.y
+  - from: pose.position.z
+    to: payload.pose.position.z
+  - from: pose.orientation.w
+    to: payload.pose.orientation.w
+  - from: pose.orientation.x
+    to: payload.pose.orientation.x
+  - from: pose.orientation.y
+    to: payload.pose.orientation.y
+  - from: pose.orientation.z
+    to: payload.pose.orientation.z
+  - from: load.total_kg
+    to: payload.load.totalKg
+    transform: round(2)
+  - from: device.battery_percent
+    to: payload.device.batteryPercent
+  - from: quality.confidence
+    to: payload.quality.confidence

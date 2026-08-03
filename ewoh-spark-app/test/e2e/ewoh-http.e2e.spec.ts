@@ -72,15 +72,16 @@ if (!e2eConfig) {
       process.env.EWOH_FACTORY_ID = `factory-${runId}`;
       process.env.EWOH_FACTORY_NAME = 'E2E Factory';
       process.env.EWOH_FACTORY_UPGRADE_RING = 'shadow';
-      process.env.EWOH_RELEASE_VERSION = '0.6.0-rc3';
+      process.env.EWOH_RELEASE_VERSION = '0.6.0-rc4';
       process.env.EWOH_REGION = 'cn-north-1';
 
       const metrics = await apiRequest<string>(baseUrl, '/metrics');
       expect(metrics.status).toBe(200);
       expect(metrics.body).toContain(
-        `ewoh_resource_info{factory_id="factory-${runId}",factory_name="E2E Factory",upgrade_ring="shadow",release_version="0.6.0-rc3",region="cn-north-1"} 1`,
+        `ewoh_resource_info{factory_id="factory-${runId}",factory_name="E2E Factory",upgrade_ring="shadow",release_version="0.6.0-rc4",region="cn-north-1"} 1`,
       );
       expect(metrics.body).toContain('ewoh_process_uptime_seconds');
+      expect(metrics.body).toContain('ewoh_slow_queries_total');
     });
 
     it('rejects unauthenticated business API calls with 401', async () => {
@@ -805,6 +806,14 @@ if (!e2eConfig) {
         ),
       ).toBe(true);
 
+      const slowQueries = await apiRequest<unknown[]>(
+        baseUrl,
+        '/api/observability/slow-queries?limit=10',
+        { headers: jsonHeaders(token) },
+      );
+      expect(slowQueries.status).toBe(200);
+      expect(Array.isArray(slowQueries.body)).toBe(true);
+
       const viewerB = await login(
         baseUrl,
         fixture!.viewerB.username,
@@ -1395,6 +1404,444 @@ if (!e2eConfig) {
       expect(eventRows).toHaveLength(1);
       expect(eventRows[0].event_code).toBe('QUALITY_INSPECTION');
       expect(eventRows[0].org_id).toBe(fixture!.orgA.id);
+    });
+
+    it('serves unified replay lanes and creates replay-derived issues', async () => {
+      const dispatcher = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcher.status).toBe(201);
+      const token = dispatcher.body.accessToken;
+
+      const replay = await apiRequest<
+        Array<{
+          ts: string;
+          events: Array<{
+            eventId: string;
+            lane?: string;
+            title: string;
+          }>;
+        }>
+      >(
+        baseUrl,
+        `/api/world/replay?from=${encodeURIComponent('2020-01-01T00:00:00.000Z')}&to=${encodeURIComponent('2030-01-01T00:00:00.000Z')}&limit=500`,
+        { headers: jsonHeaders(token) },
+      );
+      expect(replay.status).toBe(200);
+      const allEvents = (replay.body ?? []).flatMap((snap) => snap.events);
+      expect(
+        allEvents.some(
+          (event) => event.lane === 'task' || event.lane === 'material',
+        ),
+      ).toBe(true);
+      const source = allEvents.find((event) => event.lane === 'quality') ?? allEvents[0];
+      expect(source.eventId).toBeTruthy();
+
+      const context = await apiRequest<{
+        eventId: string;
+        before: unknown;
+        during: unknown;
+        after: unknown;
+      }>(
+        baseUrl,
+        `/api/world/replay/context/${encodeURIComponent(source.eventId)}?windowMinutes=30`,
+        { headers: jsonHeaders(token) },
+      );
+      expect(context.status).toBe(200);
+      expect(context.body.eventId).toBe(source.eventId);
+
+      const created = await apiRequest<{
+        eventId: string;
+        kind: string;
+      }>(baseUrl, '/api/world/replay/items', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          eventId: source.eventId,
+          kind: 'issue',
+          title: `回放跟进 ${runId}`,
+          note: 'E2E replay-derived issue',
+        }),
+      });
+      expect(created.status).toBe(201);
+      expect(created.body.eventId).toMatch(/^RPL-/);
+
+      const chain = await apiRequest<
+        Array<{ causalType: string; parentEventId: string }>
+      >(
+        baseUrl,
+        `/api/world/events/chain/${encodeURIComponent(created.body.eventId)}`,
+        { headers: jsonHeaders(token) },
+      );
+      expect(chain.status).toBe(200);
+      expect(
+        chain.body.some(
+          (row) =>
+            row.causalType === 'derived_from_replay' &&
+            row.parentEventId === source.eventId,
+        ),
+      ).toBe(true);
+    });
+
+    it('registers SOP versions and enforces sign-off before work execution', async () => {
+      const dispatcher = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcher.status).toBe(201);
+      const token = dispatcher.body.accessToken;
+      const sopId = `SOP-E2E-${runId}`;
+      const sopIdV2 = `SOP-E2E-V2-${runId}`;
+
+      const sop = await apiRequest<{
+        packageId: string;
+        status: string;
+      }>(baseUrl, '/api/mes/sops', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          sopId,
+          title: `上料 SOP ${runId}`,
+          version: '1.0.0',
+          steps: [
+            {
+              name: '准备工具',
+              instruction: '确认扳手与螺栓',
+              mandatory: true,
+              tools: ['扳手'],
+              materials: ['螺栓'],
+            },
+          ],
+        }),
+      });
+      expect(sop.status).toBe(201);
+      expect(sop.body.packageId).toBe(sopId);
+
+      const published = await apiRequest<{ status: string }>(
+        baseUrl,
+        `/api/mes/sops/${sopId}/publish`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+        },
+      );
+      expect(published.status).toBe(201);
+      expect(published.body.status).toBe('published');
+
+      const sopV2 = await apiRequest<{ packageId: string }>(
+        baseUrl,
+        '/api/mes/sops',
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            sopId: sopIdV2,
+            title: `上料 SOP ${runId}`,
+            version: '2.0.0',
+            steps: [
+              {
+                name: '准备工具',
+                instruction: '新增检查',
+                mandatory: true,
+                tools: ['扳手', '扭力扳手'],
+                materials: ['螺栓'],
+              },
+              { name: '移除旧料', instruction: 'x', mandatory: false },
+            ],
+          }),
+        },
+      );
+      expect(sopV2.status).toBe(201);
+
+      const diff = await apiRequest<{
+        added: string[];
+        removed: string[];
+        changed: string[];
+      }>(
+        baseUrl,
+        `/api/mes/sops/${sopId}/diff/${sopIdV2}`,
+        { headers: jsonHeaders(token) },
+      );
+      expect(diff.status).toBe(200);
+      expect(diff.body.added).toEqual(['移除旧料']);
+      expect(diff.body.changed).toEqual(['准备工具']);
+
+      const orderId = `WO-SOP-${runId}`;
+      const created = await apiRequest<{
+        workOrder: { scheduleTaskId: string; status: string };
+        steps: Array<{ stepId: string; status: string }>;
+      }>(baseUrl, '/api/mes/work-orders', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          orderId,
+          title: `SOP 工单 ${runId}`,
+          steps: [
+            {
+              name: '上料',
+              sopId,
+              sopVersion: '1.0.0',
+              sopMandatory: true,
+              requiredTools: ['扳手'],
+              requiredMaterials: ['螺栓'],
+              assignedPersonId: `P-SOP-${runId}`,
+            },
+          ],
+        }),
+      });
+      expect(created.status).toBe(201);
+
+      for (const action of ['release', 'start']) {
+        const state = await apiRequest(
+          baseUrl,
+          `/api/mes/work-orders/${orderId}/state?action=${action}`,
+          {
+            method: 'POST',
+            headers: jsonHeaders(token),
+            body: '{}',
+          },
+        );
+        expect(state.status).toBe(201);
+      }
+      const stepId = created.body.steps[0].stepId;
+
+      const unsigned = await apiRequest(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/steps/${stepId}/state?action=start`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({ quantity: 1 }),
+        },
+      );
+      expect(unsigned.status).toBe(400);
+      expect(JSON.stringify(unsigned.body)).toContain('SOP_SIGN_REQUIRED');
+
+      const signed = await apiRequest<{ status: string }>(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/steps/${stepId}/state?action=start`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            quantity: 1,
+            sopSigned: true,
+            confirmedTools: ['扳手'],
+            confirmedMaterials: ['螺栓'],
+          }),
+        },
+      );
+      expect(signed.status).toBe(201);
+      expect(signed.body.status).toBe('in_progress');
+
+      const reported = await apiRequest<{ status: string }>(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/steps/${stepId}/state?action=report`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            quantity: 1,
+            sopSigned: true,
+            confirmedTools: ['扳手'],
+            confirmedMaterials: ['螺栓'],
+          }),
+        },
+      );
+      expect(reported.status).toBe(201);
+      expect(reported.body.status).toBe('reported');
+    });
+
+    it('matches quality schemes and enforces inspection check items', async () => {
+      const dispatcher = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcher.status).toBe(201);
+      const token = dispatcher.body.accessToken;
+      const schemeId = `QS-E2E-${runId}`;
+
+      const scheme = await apiRequest<{
+        packageId: string;
+        status: string;
+      }>(baseUrl, '/api/mes/quality-schemes', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          schemeId,
+          name: `首检 ${runId}`,
+          version: '1.0.0',
+          stage: 'first',
+          deviceIds: [`EXO-QS-${runId}`],
+          productCodes: [`PROD-QS-${runId}`],
+          checkItems: [
+            { itemId: 'CHK-1', name: '外观', required: true },
+            { itemId: 'CHK-2', name: '尺寸', required: false },
+          ],
+        }),
+      });
+      expect(scheme.status).toBe(201);
+
+      const published = await apiRequest<{ status: string }>(
+        baseUrl,
+        `/api/mes/quality-schemes/${schemeId}/publish`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+        },
+      );
+      expect(published.status).toBe(201);
+      expect(published.body.status).toBe('published');
+
+      const matched = await apiRequest<
+        Array<{ schemeId: string; stage: string }>
+      >(
+        baseUrl,
+        `/api/mes/quality-schemes/match?deviceId=${encodeURIComponent(`EXO-QS-${runId}`)}&productCode=${encodeURIComponent(`PROD-QS-${runId}`)}`,
+        { headers: jsonHeaders(token) },
+      );
+      expect(matched.status).toBe(200);
+      expect(matched.body.some((row) => row.schemeId === schemeId)).toBe(true);
+
+      const orderId = `WO-QS-${runId}`;
+      const created = await apiRequest<{
+        workOrder: { scheduleTaskId: string; status: string };
+        steps: Array<{ stepId: string; status: string }>;
+      }>(baseUrl, '/api/mes/work-orders', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          orderId,
+          title: `质检工单 ${runId}`,
+          productCode: `PROD-QS-${runId}`,
+          steps: [
+            {
+              name: '装配',
+              assignedDeviceId: `EXO-QS-${runId}`,
+            },
+          ],
+        }),
+      });
+      expect(created.status).toBe(201);
+
+      for (const action of ['release', 'start']) {
+        const state = await apiRequest(
+          baseUrl,
+          `/api/mes/work-orders/${orderId}/state?action=${action}`,
+          {
+            method: 'POST',
+            headers: jsonHeaders(token),
+            body: '{}',
+          },
+        );
+        expect(state.status).toBe(201);
+      }
+      const stepId = created.body.steps[0].stepId;
+      const stepState = await apiRequest(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/steps/${stepId}/state?action=start`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({ quantity: 1 }),
+        },
+      );
+      expect(stepState.status).toBe(201);
+
+      const missingCheck = await apiRequest(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/inspections`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            stepId,
+            result: 'pass',
+            schemeId,
+            stage: 'first',
+            checkResults: [],
+          }),
+        },
+      );
+      expect(missingCheck.status).toBe(400);
+      expect(JSON.stringify(missingCheck.body)).toContain(
+        'QUALITY_CHECK_REQUIRED',
+      );
+
+      const resultMismatch = await apiRequest(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/inspections`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            stepId,
+            result: 'pass',
+            schemeId,
+            stage: 'first',
+            checkResults: [{ itemId: 'CHK-1', result: 'fail' }],
+          }),
+        },
+      );
+      expect(resultMismatch.status).toBe(400);
+      expect(JSON.stringify(resultMismatch.body)).toContain(
+        'QUALITY_RESULT_MISMATCH',
+      );
+
+      const passed = await apiRequest<{ eventId: string; result: string }>(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/inspections`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            stepId,
+            result: 'pass',
+            schemeId,
+            stage: 'first',
+            checkResults: [{ itemId: 'CHK-1', result: 'pass' }],
+          }),
+        },
+      );
+      expect(passed.status).toBe(201);
+      expect(passed.body.result).toBe('pass');
+      expect(passed.body.eventId).toBeTruthy();
+    });
+
+    it('serves role workbench aggregations for production roles', async () => {
+      const dispatcher = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcher.status).toBe(201);
+      const token = dispatcher.body.accessToken;
+
+      for (const role of ['operator', 'team_lead', 'quality', 'equipment', 'manager']) {
+        const response = await apiRequest<{
+          role: string;
+          data: Record<string, unknown>;
+        }>(
+          baseUrl,
+          `/api/operations/role-workbench?role=${role}`,
+          { headers: jsonHeaders(token) },
+        );
+        expect(response.status).toBe(200);
+        expect(response.body.role).toBe(role);
+        expect(typeof response.body.data).toBe('object');
+      }
+
+      const invalid = await apiRequest(
+        baseUrl,
+        '/api/operations/role-workbench?role=auditor',
+        { headers: jsonHeaders(token) },
+      );
+      expect(invalid.status).toBe(400);
+      expect(JSON.stringify(invalid.body)).toContain('role must be one of');
     });
 
     it('records device status, calculates OEE, and escalates andon SLA', async () => {
@@ -2245,6 +2692,33 @@ if (!e2eConfig) {
       expect(mappingDetail.status).toBe(200);
       expect(mappingDetail.body.packageId).toBe(mapping.body.packageId);
 
+      const mappingDryRun = await apiRequest<{
+        passed: boolean;
+        mapped: Record<string, unknown>;
+        errors: unknown[];
+      }>(
+        baseUrl,
+        `/api/scale/mappings/${mapping.body.packageId}/dry-run`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            sample: {
+              entity_id: 'EXO-E2E',
+              load: { total_kg: 12.5 },
+            },
+          }),
+        },
+      );
+      expect(mappingDryRun.status).toBe(201);
+      expect(mappingDryRun.body.passed).toBe(true);
+      expect(mappingDryRun.body.mapped.entityId).toBe('EXO-E2E');
+      expect(
+        (mappingDryRun.body.mapped.payload as { load: { totalKg: number } })
+          .load.totalKg,
+      ).toBe(12.5);
+      expect(mappingDryRun.body.errors).toEqual([]);
+
       const mappingConformance = await apiRequest<{ passed: boolean }>(
         baseUrl,
         `/api/scale/assets/${mapping.body.packageId}/conformance`,
@@ -2297,7 +2771,7 @@ if (!e2eConfig) {
         headers: jsonHeaders(token),
       });
       expect(compatibility.status).toBe(200);
-      expect(compatibility.body.coreVersion).toBe('0.6.0-rc3');
+      expect(compatibility.body.coreVersion).toBe('0.6.0-rc4');
       expect(
         compatibility.body.assets.find(
           (row) => row.packageId === legacyConnector.body.packageId,
@@ -2331,6 +2805,28 @@ if (!e2eConfig) {
         headers: jsonHeaders(token),
         body: JSON.stringify({
           factoryName: `Onboarding Factory ${runId}`,
+          config: {
+            siteReadiness: {
+              factoryName: `Onboarding Factory ${runId}`,
+              siteContact: 'site@example.com',
+              items: [
+                {
+                  id: 'DEV-INV',
+                  label: '设备台账',
+                  required: true,
+                  status: 'pass',
+                  evidence: 'device-inventory.xlsx',
+                },
+                {
+                  id: 'ERP-EP',
+                  label: 'ERP 端点',
+                  required: true,
+                  status: 'pass',
+                  evidence: 'erp-endpoint.json',
+                },
+              ],
+            },
+          },
         }),
       });
       expect(onboarding.status).toBe(201);
@@ -2370,6 +2866,21 @@ if (!e2eConfig) {
         headers: jsonHeaders(token),
         body: JSON.stringify({
           factoryName: `Partner Shadow ${runId}`,
+          config: {
+            siteReadiness: {
+              factoryName: `Partner Shadow ${runId}`,
+              siteContact: 'site@example.com',
+              items: [
+                {
+                  id: 'DEV-INV',
+                  label: '设备台账',
+                  required: true,
+                  status: 'pass',
+                  evidence: 'device-inventory.xlsx',
+                },
+              ],
+            },
+          },
         }),
       });
       expect(partnerRun.status).toBe(201);
@@ -2935,6 +3446,19 @@ if (!e2eConfig) {
       expect(gitSync.body.schema).toBe('ewoh:///git-sync/v1');
       expect(gitSync.body.itemCount).toBeGreaterThan(0);
       expect(gitSync.body.status).toBe('offline');
+
+      const gitSyncApply = await apiRequest(
+        baseUrl,
+        '/api/work/git-sync/apply',
+        {
+          method: 'POST',
+          headers: jsonHeaders(adminToken),
+        },
+      );
+      expect(gitSyncApply.status).toBe(400);
+      expect(JSON.stringify(gitSyncApply.body)).toContain(
+        'EWOH_WORK_WRITABLE is not enabled',
+      );
 
       const siteReadiness = await apiRequest<
         Array<{ sourcePath: string; ready: boolean }>

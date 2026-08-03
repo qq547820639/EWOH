@@ -5,10 +5,12 @@ export interface MobileWorkbenchStep {
   scheduleTaskId: string;
   stepNo: number;
   name: string;
+  instruction?: string | null;
   status: string;
   assignedPersonId: string | null;
   assignedDeviceId: string | null;
   spatialEntityId: string | null;
+  progress?: number | null;
   actualStart: string | null;
   resultJson: Record<string, unknown> | null;
 }
@@ -24,6 +26,24 @@ export interface MobileWorkOrderDetail {
   materials: unknown[];
 }
 
+export interface MobileStepScanResult {
+  scanType: 'step';
+  step: MobileWorkbenchStep;
+  workOrder: MobileWorkOrderDetail['workOrder'];
+}
+
+export interface MobileReferenceScanResult {
+  scanType: 'device' | 'material' | 'batch' | 'station' | 'factory';
+  reference: string;
+  recognized: true;
+  context: Record<string, unknown>;
+}
+
+export type MobileScanResult =
+  | MobileWorkOrderDetail
+  | MobileStepScanResult
+  | MobileReferenceScanResult;
+
 export async function getWorkbench(personId: string): Promise<MobileWorkbenchStep[]> {
   const res = await axiosForBackend({
     url: `/api/mobile/workbench?personId=${encodeURIComponent(personId)}`,
@@ -32,11 +52,11 @@ export async function getWorkbench(personId: string): Promise<MobileWorkbenchSte
   return res.data;
 }
 
-export async function scanWorkOrder(orderId: string): Promise<MobileWorkOrderDetail> {
+export async function scanWorkbench(value: string): Promise<MobileScanResult> {
   const res = await axiosForBackend({
     url: '/api/mobile/workbench/scan',
     method: 'POST',
-    data: { orderId },
+    data: { scanValue: value },
   });
   return res.data;
 }
@@ -57,6 +77,24 @@ export async function transitionMobileStep(
 ): Promise<MobileWorkbenchStep> {
   const res = await axiosForBackend({
     url: `/api/mobile/workbench/orders/${encodeURIComponent(orderId)}/steps/${encodeURIComponent(stepId)}/state?action=${action}`,
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}
+
+export async function inspectMobileStep(
+  orderId: string,
+  stepId: string,
+  body: {
+    result: 'pass' | 'fail' | 'rework';
+    defectCode?: string;
+    quantity?: number;
+    note?: string;
+  },
+): Promise<{ stepId: string; eventId: string; result: string }> {
+  const res = await axiosForBackend({
+    url: `/api/mobile/workbench/orders/${encodeURIComponent(orderId)}/steps/${encodeURIComponent(stepId)}/quality`,
     method: 'POST',
     data: body,
   });

@@ -1,0 +1,33 @@
+{
+  "id": "csv-file-generic",
+  "version": "1.0.0",
+  "runtime": "edge-python",
+  "protocol": "csv-file",
+  "inputProfile": "csv-file-generic",
+  "outputEvents": [
+    "TelemetryObserved"
+  ],
+  "configSchema": {
+    "required": [
+      "filePattern",
+      "entityIdColumn",
+      "valueColumn"
+    ],
+    "properties": {
+      "filePattern": {"type": "string"},
+      "entityIdColumn": {"type": "string"},
+      "valueColumn": {"type": "string"}
+    }
+  },
+  "compatibility": {
+    "core": ">=0.6.0-rc2 <1.0.0",
+    "edgeRuntime": ">=1.0.0 <2.0.0"
+  },
+  "permissions": {
+    "network": [],
+    "api": ["POST /api/ingestion/*"]
+  },
+  "tck": "tests/connector-tck.yaml",
+  "sbom": "sbom.cdx.json",
+  "rollback": "supported"
+}

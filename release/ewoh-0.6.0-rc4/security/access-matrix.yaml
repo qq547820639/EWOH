@@ -1,0 +1,68 @@
+version: 1.0
+status: validated
+owner: AG-06
+description: EWOH role and permission access matrix, synced to the standalone
+  NestJS implementation on 2026-08-03. Centers follow enforced API roles;
+  known UI/API divergences are listed in the notes section.
+
+roles:
+  global_admin:
+    centers: [command-center, digital-world, scheduling, ai-decision, devices, personnel, alerts, organization, model-management, data-assets, system, audit, command-map]
+    high_risk:
+      - global_config_write
+      - cross_org_read
+      - emergency_policy_manage
+  dispatcher:
+    centers: [command-center, digital-world, scheduling, ai-decision, devices, alerts, command-map]
+    high_risk:
+      - task_dispatch
+      - plan_submit
+      - control_request
+  workshop_lead:
+    centers: [digital-world, scheduling, personnel, alerts, command-map]
+    high_risk:
+      - task_approve
+      - exception_recover
+  safety_admin:
+    centers: [command-center, personnel, alerts, audit, command-map]
+    high_risk:
+      - sensitive_health_read
+      - approval_bypass
+      - risk_dispose
+  device_ops:
+    centers: [devices, model-management, data-assets, command-map]
+    high_risk:
+      - device_param_change
+      - maintenance_state_write
+  worker:
+    centers: []
+    high_risk: []
+
+rules:
+  - role: anonymous
+    action: read_public
+    allowed: true
+  - role: any_authenticated
+    action: direct_db_dml
+    allowed: false
+  - role: any_authenticated
+    action: audit_write
+    allowed: false
+  - role: any_authenticated
+    action: auto_approve
+    allowed: false
+  - role: any_authenticated
+    action: auto_dispatch
+    allowed: false
+  - role: any_authenticated
+    action: realtime_joint_control
+    allowed: false
+  - role: any_controller
+    action: default_deny_without_role_metadata
+    allowed: false
+
+notes:
+  - "system center: GET /api/system/config is available to global_admin and safety_admin; PUT is global_admin only, matching UI visibility and write sensitivity."
+  - "device contract routes: /api/devices is enforced as global_admin/dispatcher/device_ops."
+  - "worker centers my-tasks/my-risk are planned but not routed or implemented; worker is a valid authenticated role with /api/me access only."
+  - "command-map is available to all five operational roles in the current UI."

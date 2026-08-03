@@ -1,12 +1,29 @@
 import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import { OperationsService } from './operations.service';
+import { RoleWorkbenchService } from './role-workbench.service';
 import { Roles } from '../shared/roles.decorator';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
 @Controller('api/operations')
-@Roles('workshop_lead', 'dispatcher', 'device_ops', 'safety_admin', 'global_admin')
+@Roles('workshop_lead', 'dispatcher', 'device_ops', 'safety_admin', 'global_admin', 'worker')
 export class OperationsController {
-  constructor(private readonly operationsService: OperationsService) {}
+  constructor(
+    private readonly operationsService: OperationsService,
+    private readonly roleWorkbenchService: RoleWorkbenchService,
+  ) {}
+
+  @Get('role-workbench')
+  roleWorkbench(
+    @Query('role') role: string,
+    @Req() request: { userContext?: OrgContext },
+    @Query('personId') personId?: string,
+  ) {
+    return this.roleWorkbenchService.getWorkbench(
+      role,
+      personId,
+      request.userContext,
+    );
+  }
 
   @Post('assets')
   registerAsset(

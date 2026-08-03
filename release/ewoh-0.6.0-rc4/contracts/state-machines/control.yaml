@@ -1,0 +1,31 @@
+version: 1.0-draft
+owner: AG-05
+states:
+  - created
+  - pending_approval
+  - approved
+  - pending_gateway
+  - gateway_received
+  - executed
+  - partial_success
+  - failed
+  - timeout
+  - revoked
+transitions:
+  - { from: created, to: pending_approval, condition: approval_required }
+  - { from: created, to: pending_gateway, condition: no_approval_required }
+  - { from: pending_approval, to: approved, role: approver, condition: approve }
+  - { from: approved, to: pending_gateway, condition: logical_command_sent }
+  - { from: pending_gateway, to: gateway_received, condition: current_attempts_received }
+  - { from: gateway_received, to: executed, condition: latest_attempts_all_success }
+  - { from: gateway_received, to: partial_success, condition: mixed_results }
+  - { from: gateway_received, to: failed, condition: latest_attempts_all_failed }
+  - { from: [pending_gateway, gateway_received], to: timeout, condition: business_deadline }
+  - { from: non_executing, to: revoked, condition: gateway_not_executed_or_pre_approval }
+terminal: [executed, partial_success, failed, timeout, revoked]
+aggregation:
+  one_request_one_device: true
+  retry_new_attempt: true
+  root_command_id_attempt_no: true
+  latest_attempt_only: true
+  idempotency_key_returns_original: true

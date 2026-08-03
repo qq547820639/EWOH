@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T18:01:32.791Z",
+  "generatedAt": "2026-08-03T23:19:18.436Z",
   "gateCount": 14,
   "approvedCount": 0,
   "requiresApprovalCount": 4,
@@ -41,7 +41,7 @@
       "decidedAt": null,
       "conditions": [
         "C1-C9 v1.x frozen",
-        "strict OpenAPI audit 226/226",
+        "strict OpenAPI audit 232/232",
         "work graph/asset catalog/factory profile audits pass"
       ],
       "evidenceCount": 0
@@ -84,7 +84,7 @@
       "decidedAt": null,
       "conditions": [
         "request transaction/GUC, auth, errors, health, rate limit tests",
-        "76 Jest tests total"
+        "Jest 76 suites / 362 tests"
       ],
       "evidenceCount": 0
     },
@@ -97,7 +97,7 @@
       "approver": null,
       "decidedAt": null,
       "conditions": [
-        "226 routes, 0 unimplemented",
+        "232 routes, 0 unimplemented",
         "work orchestration APIs documented and tested over HTTP"
       ],
       "evidenceCount": 0
@@ -111,7 +111,9 @@
       "approver": null,
       "decidedAt": null,
       "conditions": [
-        "Playwright smoke: login, command center, command map, devices, alerts render with real data",
+        "Playwright authenticated flow: dispatcher login + command center render on real PG",
+        "client Jest 13 suites / 42 tests",
+        "PWA manifest/service worker",
         "work console route and layout type-check"
       ],
       "evidenceCount": 0
@@ -119,13 +121,13 @@
     {
       "gateId": "G8",
       "title": "Cross-module scenario tests pass",
-      "calculatedStatus": "in_progress",
-      "baseStatus": "in_progress",
+      "calculatedStatus": "passed",
+      "baseStatus": "passed",
       "humanDecision": null,
       "approver": null,
       "decidedAt": null,
       "conditions": [
-        "SP-01..SP-12 unit suite + HTTP+PostgreSQL E2E",
+        "SP-01..SP-08 unit suite + HTTP+PostgreSQL E2E 29/29 on embedded PG 17",
         "Final 6 scenario pack and connector audits pass"
       ],
       "evidenceCount": 0
@@ -154,7 +156,8 @@
       "approver": null,
       "decidedAt": null,
       "conditions": [
-        "`RELEASE DRILL PASSED` on disposable PostgreSQL 17",
+        "`RELEASE DRILL PASSED` on disposable PostgreSQL 17 (2026-08-04 iteration)",
+        "security probe OK",
         "GitHub Actions Docker build + PG migration/rollback green",
         "K8s apply and production observability drill pending"
       ],

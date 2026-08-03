@@ -9,6 +9,7 @@ import { RolesGuard } from './roles.guard';
 import { AuditChainService } from './audit-chain.service';
 import { RedisService } from './redis.service';
 import { RateLimitGuard } from './rate-limit.guard';
+import { SlowQueryService } from '../observability/slow-query.service';
 
 @Global()
 @Module({
@@ -23,6 +24,7 @@ import { RateLimitGuard } from './rate-limit.guard';
     AuditChainService,
     RedisService,
     RateLimitGuard,
+    SlowQueryService,
   ],
   exports: [
     AuditService,
@@ -34,6 +36,7 @@ import { RateLimitGuard } from './rate-limit.guard';
     AuditChainService,
     RedisService,
     RateLimitGuard,
+    SlowQueryService,
   ],
 })
 export class SharedModule {}

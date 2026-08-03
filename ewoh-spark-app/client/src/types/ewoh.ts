@@ -4,6 +4,7 @@ export const EWOH_ROLES = [
   'workshop_lead',
   'safety_admin',
   'device_ops',
+  'worker',
 ] as const;
 
 export type EwohRole = (typeof EWOH_ROLES)[number];
@@ -14,4 +15,5 @@ export const EWOH_ROLE_LABELS: Record<EwohRole, string> = {
   workshop_lead: '班组长',
   safety_admin: '安全管理员',
   device_ops: '设备运维',
+  worker: '一线作业员',
 };

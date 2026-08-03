@@ -1,0 +1,19 @@
+/* layers/layers.css — mode toggle buttons (single-active) */
+.cm-modes { display: flex; flex-direction: column; gap: 3px; }
+.cm-mode-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px; border-radius: var(--radius-sm);
+  background: transparent; border: 1px solid transparent;
+  color: var(--text); cursor: pointer; text-align: left;
+  font-size: 12px; font-family: inherit; width: 100%;
+  transition: background 0.12s, border-color 0.12s;
+}
+.cm-mode-btn:hover { background: var(--panel-2); }
+.cm-mode-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.cm-mode-name { font-weight: 600; }
+.cm-mode-desc { color: var(--muted); font-size: 10px; margin-left: auto; }
+.cm-mode-btn.active {
+  background: var(--panel-3); border-color: var(--accent);
+}
+.cm-mode-btn.active .cm-mode-name { color: var(--accent-2); }
+.cm-mode-btn.active .cm-mode-desc { color: var(--muted-2); }

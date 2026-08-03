@@ -3,6 +3,204 @@
 Updated: 2026-08-04
 Trace: EWOH-2026-08-04-principal-final6
 
+## Latest Round - 2026-08-04 P0 Hardening
+
+- Repo facts gate `scripts/audit-repo-facts.js` added and wired into
+  `standalone-check.sh` / `test.yml`: README navigation, CHANGELOG vs release
+  manifest, Task Board evidence, G0-G13 coverage, phase trace, route manifest
+  freshness, data-source vocabulary, and error contract all pass (30/30).
+- Unified error envelope now carries `errorCode` (with `code` as legacy alias),
+  `message`, `fieldErrors`, `requestId`, `retryable`, `recommendedAction`,
+  `details`, and correlates `requestId` with Tracing `x-trace-id`.
+- Data-source vocabulary extended to `real / controlled_test / simulated /
+  replayed / stale / offline`; OpenAPI enums synced; reusable `DataSourceBadge`
+  wired into the Devices page.
+- `RequestDatabaseContext` reuses an active request transaction for nested
+  `runInTransaction` calls, eliminating the scheduler's nested root transaction.
+- Mobile workbench now shows SOP instruction text, supports pause/resume,
+  exception reporting (`resultJson.exception`), quality inspection via
+  `POST /api/mobile/workbench/orders/:orderId/steps/:stepId/quality`, offline
+  indication, and inline retry after a failed action.
+- Global `ValidationPipe` registered in Legacy and Standalone bootstraps;
+  `class-validator` errors now map to `fieldErrors` and `VALIDATION_ERROR`.
+- Command-map entity details now resolve personnel/device archives with
+  organization, exoskeleton, risk, alerts, recent events, and disposition entry.
+- Mobile workbench now queues offline actions in `localStorage` and flushes them
+  in order when connectivity returns; pending count is shown in the header.
+- Mobile exception reports support photo attachments uploaded through
+  `/api/files`; the file reference is stored in `resultJson.exception.attachments`.
+- Standalone client now ships a PWA manifest, service worker, and registration
+  so the app can be installed on phones and industrial tablets.
+- Offline exception photos are queued as data URLs and uploaded/attached
+  automatically when connectivity returns.
+- Control commands now reject terminal-state sends/receipts and duplicate
+  in-flight sends; work orchestration handoffs use a strict state machine and
+  gate decisions preserve history with idempotent repeats.
+- Scale mutations are idempotent for repeated scenario install/uninstall,
+  fleet upgrade/rollback to the same target state, and already-resolved
+  factory differences.
+- Full standalone gate: typecheck, lint, Jest 76 suites / 359 tests, client
+  12 suites / 39 tests, repo facts 32/32, OpenAPI 232/232, production build, and
+  DDL hygiene all PASSED. Independent review: conditional pass with 0 critical
+  and 0 major findings. HTTP+PostgreSQL E2E passed locally on embedded PG 17:
+  `29/29` across SP-01..SP-08 and work orchestration acceptance.
+- `RELEASE DRILL PASSED` on embedded PG 17 (apply/verify/RLS/audit/rollback/
+  rebuild + standalone gate + E2E); perf smoke `/health/live` 500 req /
+  50 concurrency = 4610 QPS, p95 26.83ms, 0 failures; standalone security probe
+  `STANDALONE SECURITY VERIFY OK`; `python3 -m bandit -r src/edge_platform -ll`
+  reports 0 medium/high issues.
+- Playwright browser evidence captured for Standalone `/login` at mobile
+  (390x844) and desktop (1440x900) viewports in `output/playwright/`.
+- Request tracing and audit are correlated: `requestId` flows through
+  AsyncLocalStorage from the tracing interceptor into audit entries.
+- HttpException details are sanitized and site-readiness parse failures return
+  generic errors instead of raw exception text.
+- Devices page distinguishes loading, error (with retry), and empty states and
+  shows the last successful data update time.
+- Command map shows a retryable banner when entity/world/overview/environment
+  queries fail instead of rendering silently empty placeholders.
+- `EWOH 0.6.0-rc4` candidate bundle generated: 1202 files, SHA256SUMS,
+  `scale-release-review` PASSED.
+- Authenticated Playwright tests pass 4/4: dispatcher login plus command
+  center, command map, mobile workbench, and alerts renders against a real
+  PostgreSQL fixture (`npm run test:browser`).
+- CI runs the Playwright browser suite: `standalone.yml` installs Chromium and
+  executes `npm run test:browser` after HTTP+PostgreSQL E2E.
+- Pilot readiness rerun: 7 passed (rc4 bundle, evidence, training, runbook,
+  manifest, DB verify, runtime connect), 3 failed (Docker/Kubectl/Helm absent
+  locally), 5 pending external approval/signoff; result NOT READY.
+- Standalone ops drill passed on rc4: 57-table logical backup/restore/verify
+  and post-restore identity sequence check (`ALL STANDALONE OPS CHECKS PASSED`).
+- Full standalone gate: typecheck, lint, Jest 76 suites / 362 tests, client
+  13 suites / 42 tests, repo facts 33/33, OpenAPI 232/232, production build, and
+
+## Latest Round - 2026-08-04 P0 Mobile/Orchestration
+
+- Mobile workbench P0 closed: person/org filtering with fail-closed, typed
+  scan recognition, exception attachment persistence, offline queue states,
+  per-item retry, and `worker` role access.
+- Work Graph evidence binding closed: front matter parsing, derived
+  commit/env/dependency/build metadata, `valid/stale/expired/unbound`
+  invalidation, and `--invariants` graph checks.
+- `tools/work-console` added and wired into `standalone-check.sh` and CI:
+  blockers, missing evidence, unblock owners, affected tasks, and gate
+  approval summary in one command.
+- Task Graph dependency references corrected to real node IDs; 19 orphan
+  edges removed; generated outputs refreshed.
+- Verification: server Jest 78 suites / 375 tests, client 13 suites / 46
+  tests, typecheck/lint/build pass, repo facts 33/33, OpenAPI 232/232,
+  work graph contract audit 20/20, invariants 0 conflicts, work-console
+  strict pass.
+- Independent review closed: worker write-path assignment guard,
+  conflict discard, CI strict indexer, scan body guard, and stronger
+  predicate tests.
+- Round 91 evidence binds the review fixes to `fac2e6f`; work graph now has
+  238 items / 25 edges / 95 evidence with 0 invariant conflicts.
+
+## Latest Round - 2026-08-04 Onboarding/Mapping Real Gate
+
+- Onboarding F0 now validates site readiness evidence before profile work;
+  F2 publishes/verifies connectors; F3 installs/verifies scenario packs.
+- Mapping dry-run API `POST /api/scale/mappings/:id/dry-run` applies rules to
+  a sample payload and returns localized required/transform errors.
+- Real PostgreSQL E2E passed 29/29 including the new onboarding and mapping
+  paths; authenticated browser flow passed 4/4.
+- Full gate with runtime DB: server Jest 78/377, client 13/46, OpenAPI 233/233,
+  repo facts 33/33, work graph 241 nodes / 0 invariant conflicts, build passed.
+
+## Latest Round - 2026-08-04 World Replay Unified Timeline
+
+- `GET /api/world/replay` now merges world states, events, tasks, steps, and
+  material changes into lane-aware snapshots.
+- `GET /api/world/replay/context/:eventId` returns before/during/after
+  snapshots around an event.
+- `POST /api/world/replay/items` creates an issue/task/evidence from a replay
+  event and writes a `derived_from_replay` causal chain with audit.
+- TimelinePanel displays lane labels and a one-click “跟进” action.
+- Real PostgreSQL E2E: 30/30 passed including the new replay scenario.
+- Full suite after replay wave: server Jest 79/380, client 13/46, OpenAPI
+  235/235, work graph 242 nodes / 99 evidence / 0 invariant conflicts.
+
+## Latest Round - 2026-08-04 E-SOP Sign-off
+
+- SOP assets registered/published/diffed under `/api/mes/sops` using existing
+  `ewoh_asset_package` storage.
+- Work order steps can bind SOP version, mandatory flag, required tools and
+  materials; start/report enforce sign-off and confirmations.
+- Signatures are persisted in `resultJson.sop.signatures` with actor/tools/
+  materials timestamp.
+- Real PostgreSQL E2E: 31/31 passed including SOP register/publish/diff and
+  sign-off gating.
+- Full suite after E-SOP wave: server Jest 79/383, client 13/46, OpenAPI
+  240/240, work graph 243 nodes / 100 evidence / 0 invariant conflicts.
+
+## Latest Round - 2026-08-04 Quality Schemes
+
+- Quality schemes registered/published/matched under `/api/mes/quality-schemes`
+  with `first/in_process/final` stages and required check items.
+- `qualityInspection` accepts `schemeId/stage/checkResults`, rejects missing
+  required checks and inconsistent pass results, and persists scheme results.
+- Real PostgreSQL E2E: 32/32 passed including scheme match and enforcement.
+- Full suite after quality wave: server Jest 79/386, client 13/46, OpenAPI
+  245/245, work graph 244 nodes / 101 evidence / 0 invariant conflicts.
+
+## Latest Round - 2026-08-04 Slow Query Observability
+
+- `RequestDatabaseContext` applies `EWOH_DB_STATEMENT_TIMEOUT_MS` and records
+  transactions over `EWOH_DB_SLOW_THRESHOLD_MS`.
+- `GET /api/observability/slow-queries` returns bounded slow transaction
+  records with requestId; `/metrics` exposes `ewoh_slow_queries_total`.
+- Real PostgreSQL E2E: 32/32 passed including slow-query API and metric.
+- Full suite after observability wave: server Jest 80/388, client 13/46,
+  OpenAPI 246/246, work graph 245 nodes / 102 evidence / 0 invariant conflicts.
+
+## Latest Round - 2026-08-04 Frontend Performance
+
+- Client page routes now use `React.lazy` with a shared Suspense fallback;
+  standalone build splits per-page chunks and the main bundle drops from
+  ~2.3MB to ~374KB.
+- World state and replay requests accept `AbortSignal` through React Query,
+  enabling cancellation on unmount/refetch.
+- Authenticated browser flows still pass 4/4.
+- Full suite remains server 80/388, client 13/46, OpenAPI 246/246; work graph
+  246 items / 103 evidence / 0 invariant conflicts.
+
+## Latest Round - 2026-08-04 MES Role Workbench
+
+- `GET /api/operations/role-workbench` aggregates operator/team lead/quality/
+  equipment/manager views from production tables.
+- New `/role-workbench` page with role tabs, summary cards, and table views.
+- Real PostgreSQL E2E: 33/33; authenticated browser: 5/5.
+- Full suite after role workbench wave: server Jest 81/391, client 13/46,
+  OpenAPI 247/247, work graph 247 items / 104 evidence / 0 conflicts.
+
+## Latest Round - 2026-08-04 Progressive Lists
+
+- `progressiveSlice/hasMoreItems/nextProgressiveLimit` helper added with unit
+  tests.
+- Role workbench list tables render 50 rows at a time with a “加载更多”
+  button.
+- Client suite: 14 suites / 48 tests.
+- Work graph after progressive list wave: 248 items / 105 evidence /
+  0 invariant conflicts.
+
+## Latest Round - 2026-08-04 Pilot Readiness Rerun
+
+- Pilot readiness rerun on current code: passed=7, failed=3
+  (docker/kubectl/helm absent locally), pending=5 (factory, approval,
+  training, signoff, device config).
+- Result: `PILOT READINESS: NOT READY`; G10-G13 remain approval-gated.
+- Work graph after pilot rerun: 249 items / 106 evidence / 0 conflicts.
+
+## Latest Round - 2026-08-04 Replay Context UI
+
+- Event center detail adds “回放上下文” button using
+  `GET /api/world/replay/context/:eventId`.
+- Shows 事发前/事发时/处置后 timestamps and timeline event count.
+- Client suite: 15 suites / 50 tests.
+- Work graph after replay context UI wave: 250 items / 107 evidence /
+  0 invariant conflicts.
+
 ## Current Phase
 
 Final 6.0 work orchestration wave: C7-C9 contracts, file-backed Work Graph
@@ -155,6 +353,23 @@ factory replication drills, partner shadow delivery, and production SLO/approval
   with role input.
 - Scenario UI: `/scale` asset table supports scenario pack install/uninstall
   actions.
+
+## Latest Round - 2026-08-04 Git Sync Apply Gate
+
+- `POST /api/work/git-sync/apply` added; returns 400 unless
+  `EWOH_WORK_WRITABLE=true`, and live GitHub creation still requires
+  `EWOH_GIT_SYNC_ENABLED/GITHUB_TOKEN/EWOH_GIT_SYNC_APPROVED`.
+- Real PostgreSQL E2E verifies the write gate rejects apply in read-only
+  mode.
+- Work graph after git sync apply wave: 251 items / 108 evidence /
+  0 invariant conflicts.
+
+## Latest Round - 2026-08-04 Final Standalone Gate
+
+- `ALL STANDALONE CHECKS PASSED` with real PostgreSQL.
+- Server 81/391, client 15/50, E2E 33/33, browser 5/5, OpenAPI 248/248,
+  work graph 251/108/0.
+- Final work graph after evidence: 252 items / 109 evidence / 0 conflicts.
 
 ## Active Tasks
 

@@ -159,6 +159,18 @@ export interface EventStats {
   trend: { time: string; count: number }[];
 }
 
+/** 文件服务记录（`/api/files`） */
+export interface FileRecord {
+  id: string;
+  orgId: string;
+  uploadedBy: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  note?: string;
+  createdAt: string;
+}
+
 export interface WorkerLoad {
   deviceId: string;
   workerName: string;
@@ -332,7 +344,16 @@ export interface ReplaySnapshot {
     loadScore?: number;
   }>;
   devices: Array<{ entityId: string; x: number; y: number; status: string }>;
-  events: Array<{ eventId: string; severity: string; title: string }>;
+  events: Array<{
+    eventId: string;
+    severity: string;
+    title: string;
+    lane?: string;
+    entityId?: string;
+    sourceType?: string;
+    status?: string;
+    eventCode?: string;
+  }>;
 }
 
 // ===== 调度方案与审计 =====
@@ -448,8 +469,14 @@ export interface SimulatorStatus {
 
 // ===== Ingestion 真机接入网关 DTO =====
 
-/** 数据来源类型 */
-export type DataSourceType = 'simulated' | 'real' | 'controlled_test';
+/** 数据来源类型（页面与 API 必须明确标注，禁止模拟数据伪装为真实状态） */
+export type DataSourceType =
+  | 'real'
+  | 'controlled_test'
+  | 'simulated'
+  | 'replayed'
+  | 'stale'
+  | 'offline';
 
 /** 数据质量等级 */
 export type DataQuality = 'good' | 'degraded' | 'invalid';
