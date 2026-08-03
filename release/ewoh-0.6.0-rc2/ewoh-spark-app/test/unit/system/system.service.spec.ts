@@ -135,4 +135,103 @@ describe('SystemService feature flags', () => {
       service.getFeatureFlag('feature.missing'),
     ).rejects.toThrow('not found');
   });
+
+  it('evaluates feature flags with OpenFeature-style targeting context', async () => {
+    const rows = [
+      {
+        configKey: 'feature.scale.canary',
+        configValue: {
+          enabled: true,
+          metadata: {
+            targeting: {
+              rings: ['shadow', 'pilot'],
+              roles: ['dispatcher'],
+              orgIds: ['org-a'],
+              factories: ['factory-a'],
+            },
+          },
+        },
+        updatedBy: 'user-1',
+        updatedAt: new Date('2026-08-03T00:00:00Z'),
+      },
+      {
+        configKey: 'feature.scale.safe',
+        configValue: { enabled: true, metadata: {} },
+        updatedBy: 'user-1',
+        updatedAt: new Date('2026-08-03T00:00:00Z'),
+      },
+      {
+        configKey: 'feature.scale.fallback',
+        configValue: {
+          enabled: true,
+          metadata: {
+            targeting: { rings: ['shadow'] },
+            fallbackEnabled: true,
+          },
+        },
+        updatedBy: 'user-1',
+        updatedAt: new Date('2026-08-03T00:00:00Z'),
+      },
+    ];
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn(() => ({
+            orderBy: jest.fn().mockResolvedValue(rows),
+          })),
+        })),
+      })),
+    };
+    const service = new SystemService(db as never);
+    const context = {
+      orgId: 'org-a',
+      factoryId: 'factory-a',
+      upgradeRing: 'shadow',
+      roles: ['dispatcher'],
+    };
+
+    const result = await service.evaluateFeatureFlags(
+      ['feature.scale.canary', 'feature.scale.safe', 'feature.missing'],
+      context,
+    );
+    expect(result).toEqual([
+      expect.objectContaining({
+        key: 'feature.scale.canary',
+        enabled: true,
+        reason: 'default_on',
+        targetingApplied: true,
+      }),
+      expect.objectContaining({
+        key: 'feature.scale.safe',
+        enabled: true,
+        reason: 'default_on',
+        targetingApplied: false,
+      }),
+      expect.objectContaining({
+        key: 'feature.missing',
+        enabled: false,
+        reason: 'flag_not_found',
+        variant: 'off',
+      }),
+    ]);
+
+    const ringMiss = await service.evaluateFeatureFlags(
+      ['feature.scale.canary', 'feature.scale.fallback'],
+      { ...context, upgradeRing: 'full' },
+    );
+    expect(ringMiss[0]).toEqual(
+      expect.objectContaining({
+        enabled: false,
+        reason: 'ring_mismatch',
+        variant: 'off',
+      }),
+    );
+    expect(ringMiss[1]).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        reason: 'ring_mismatch',
+        variant: 'on',
+      }),
+    );
+  });
 });

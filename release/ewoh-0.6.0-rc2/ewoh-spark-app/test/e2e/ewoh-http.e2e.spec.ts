@@ -441,6 +441,384 @@ if (!e2eConfig) {
       expect(deniedWrite.status).toBe(403);
     });
 
+    it('evaluates feature flags with OpenFeature-style targeting and safe closed default', async () => {
+      const adminA = await login(
+        baseUrl,
+        fixture!.globalAdminA.username,
+        fixture!.globalAdminA.password,
+      );
+      expect(adminA.status).toBe(201);
+      const adminToken = adminA.body.accessToken;
+      const flagKey = `feature.e2e.canary.${runId}`;
+
+      const setFlag = await apiRequest<{ key: string; enabled: boolean }>(
+        baseUrl,
+        `/api/system/feature-flags/${flagKey}`,
+        {
+          method: 'PUT',
+          headers: jsonHeaders(adminToken),
+          body: JSON.stringify({
+            enabled: true,
+            metadata: {
+              owner: 'e2e',
+              targeting: {
+                rings: ['shadow'],
+                roles: ['dispatcher'],
+                orgIds: [fixture!.orgA.id],
+                factories: ['factory-a'],
+              },
+            },
+          }),
+        },
+      );
+      expect(setFlag.status).toBe(200);
+
+      const dispatcherA = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcherA.status).toBe(201);
+      const matchingContext = {
+        orgId: fixture!.orgA.id,
+        factoryId: 'factory-a',
+        upgradeRing: 'shadow',
+        roles: ['dispatcher'],
+      };
+      const on = await apiRequest<
+        Array<{
+          key: string;
+          enabled: boolean;
+          reason: string;
+          variant: string;
+          targetingApplied: boolean;
+        }>
+      >(baseUrl, '/api/system/feature-flags/evaluate', {
+        method: 'POST',
+        headers: jsonHeaders(dispatcherA.body.accessToken),
+        body: JSON.stringify({
+          keys: [flagKey, 'feature.missing'],
+          context: matchingContext,
+        }),
+      });
+      expect(on.status).toBe(201);
+      expect(on.body[0]).toMatchObject({
+        key: flagKey,
+        enabled: true,
+        reason: 'default_on',
+        variant: 'on',
+        targetingApplied: true,
+      });
+      expect(on.body[1]).toMatchObject({
+        key: 'feature.missing',
+        enabled: false,
+        reason: 'flag_not_found',
+        variant: 'off',
+      });
+
+      const off = await apiRequest<
+        Array<{ enabled: boolean; reason: string }>
+      >(baseUrl, '/api/system/feature-flags/evaluate', {
+        method: 'POST',
+        headers: jsonHeaders(dispatcherA.body.accessToken),
+        body: JSON.stringify({
+          keys: [flagKey],
+          context: { ...matchingContext, upgradeRing: 'full' },
+        }),
+      });
+      expect(off.status).toBe(201);
+      expect(off.body[0]).toMatchObject({
+        enabled: false,
+        reason: 'ring_mismatch',
+        variant: 'off',
+      });
+
+      const viewerB = await login(
+        baseUrl,
+        fixture!.viewerB.username,
+        fixture!.viewerB.password,
+      );
+      expect(viewerB.status).toBe(201);
+      const hidden = await apiRequest<
+        Array<{ enabled: boolean; reason: string }>
+      >(baseUrl, '/api/system/feature-flags/evaluate', {
+        method: 'POST',
+        headers: jsonHeaders(viewerB.body.accessToken),
+        body: JSON.stringify({
+          keys: [flagKey],
+          context: {
+            orgId: fixture!.orgB.id,
+            factoryId: 'factory-a',
+            upgradeRing: 'shadow',
+            roles: ['dispatcher'],
+          },
+        }),
+      });
+      expect(hidden.status).toBe(201);
+      expect(hidden.body[0]).toMatchObject({
+        enabled: false,
+        reason: 'flag_not_found',
+      });
+    });
+
+    it('registers, approves, updates, and rolls back typed parameters with audit', async () => {
+      const adminA = await login(
+        baseUrl,
+        fixture!.globalAdminA.username,
+        fixture!.globalAdminA.password,
+      );
+      expect(adminA.status).toBe(201);
+      const token = adminA.body.accessToken;
+      const key = `oee.target.${runId}`;
+
+      const created = await apiRequest<{
+        key: string;
+        status: string;
+        version: number;
+        current: number;
+      }>(baseUrl, '/api/parameters', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          key,
+          name: 'OEE 可用率目标',
+          dataType: 'number',
+          current: 0.85,
+          unit: '%',
+          approvalRequired: true,
+          validation: { min: 0, max: 1 },
+          scope: { factoryId: 'factory-a' },
+        }),
+      });
+      expect(created.status).toBe(201);
+      expect(created.body.status).toBe('pending');
+      expect(created.body.version).toBe(1);
+
+      const approved = await apiRequest<{ status: string }>(
+        baseUrl,
+        `/api/parameters/${encodeURIComponent(key)}/approve`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+        },
+      );
+      expect(approved.status).toBe(201);
+      expect(approved.body.status).toBe('active');
+
+      const updated = await apiRequest<{
+        current: number;
+        version: number;
+        status: string;
+        history: unknown[];
+      }>(baseUrl, `/api/parameters/${encodeURIComponent(key)}`, {
+        method: 'PUT',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({ current: 0.9, note: 'e2e tune' }),
+      });
+      expect(updated.status).toBe(200);
+      expect(updated.body.current).toBe(0.9);
+      expect(updated.body.version).toBe(2);
+      expect(updated.body.status).toBe('pending');
+      expect(updated.body.history).toHaveLength(1);
+
+      await apiRequest(
+        baseUrl,
+        `/api/parameters/${encodeURIComponent(key)}/approve`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+        },
+      );
+      const rolledBack = await apiRequest<{
+        current: number;
+        version: number;
+        status: string;
+      }>(baseUrl, `/api/parameters/${encodeURIComponent(key)}/rollback`, {
+        method: 'POST',
+        headers: jsonHeaders(token),
+      });
+      expect(rolledBack.status).toBe(201);
+      expect(rolledBack.body.current).toBe(0.85);
+      expect(rolledBack.body.version).toBe(3);
+      expect(rolledBack.body.status).toBe('pending');
+
+      const summary = await apiRequest<{
+        totalCount: number;
+        pendingApprovalCount: number;
+      }>(baseUrl, '/api/parameters/summary', {
+        headers: jsonHeaders(token),
+      });
+      expect(summary.status).toBe(200);
+      expect(summary.body.totalCount).toBeGreaterThanOrEqual(1);
+      expect(summary.body.pendingApprovalCount).toBeGreaterThanOrEqual(1);
+
+      const auditRows = await owner!.unsafe<
+        Array<{ action: string; entity_id: string; org_id: string }>
+      >(
+        `select action, entity_id, org_id::text
+         from public.ewoh_audit_log
+         where entity_type = 'parameter' and entity_id = $1
+         order by audit_seq`,
+        [key],
+      );
+      expect(auditRows.length).toBeGreaterThanOrEqual(3);
+      expect(auditRows.every((row) => row.org_id === fixture!.orgA.id)).toBe(true);
+
+      const viewerB = await login(
+        baseUrl,
+        fixture!.viewerB.username,
+        fixture!.viewerB.password,
+      );
+      expect(viewerB.status).toBe(201);
+      const denied = await apiRequest(
+        baseUrl,
+        '/api/parameters',
+        { headers: jsonHeaders(viewerB.body.accessToken) },
+      );
+      expect(denied.status).toBe(403);
+    });
+
+    it('imports AAS assets and exposes twin semantic mapping with audit', async () => {
+      const adminA = await login(
+        baseUrl,
+        fixture!.globalAdminA.username,
+        fixture!.globalAdminA.password,
+      );
+      expect(adminA.status).toBe(201);
+      const token = adminA.body.accessToken;
+      const assetId = `urn:ewoh:e2e:${runId}`;
+
+      const imported = await apiRequest<{
+        assetId: string;
+        idShort: string;
+        submodels: Array<{ id: string; idShort: string }>;
+      }>(baseUrl, '/api/aas/assets', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          assetId,
+          idShort: 'E2E 离散机加工线',
+          submodels: [
+            {
+              id: 'urn:ewoh:submodel:operations',
+              idShort: 'operations',
+              elements: [
+                {
+                  idShort: 'oeeAvailabilityTarget',
+                  value: 0.85,
+                  valueType: 'number',
+                  unit: '%',
+                  semanticId: 'ewoh:oee:availability',
+                },
+              ],
+            },
+          ],
+        }),
+      });
+      expect(imported.status).toBe(201);
+      expect(imported.body.assetId).toBe(assetId);
+      expect(imported.body.submodels).toHaveLength(1);
+
+      const list = await apiRequest<Array<{ assetId: string }>>(
+        baseUrl,
+        '/api/aas/assets',
+        { headers: jsonHeaders(token) },
+      );
+      expect(list.status).toBe(200);
+      expect(list.body.some((row) => row.assetId === assetId)).toBe(true);
+
+      const fetched = await apiRequest<{ idShort: string }>(
+        baseUrl,
+        `/api/aas/assets/${encodeURIComponent(assetId)}`,
+        { headers: jsonHeaders(token) },
+      );
+      expect(fetched.status).toBe(200);
+      expect(fetched.body.idShort).toBe('E2E 离散机加工线');
+
+      const semantics = await apiRequest<{
+        semantics: string[];
+        submodels: Array<{ properties: Array<{ name: string }> }>;
+      }>(baseUrl, `/api/aas/assets/${encodeURIComponent(assetId)}/semantics`, {
+        headers: jsonHeaders(token),
+      });
+      expect(semantics.status).toBe(200);
+      expect(semantics.body.semantics).toEqual(['operations']);
+      expect(semantics.body.submodels[0].properties[0].name).toBe(
+        'oeeAvailabilityTarget',
+      );
+
+      const auditRows = await owner!.unsafe<
+        Array<{ action: string; entity_id: string; org_id: string }>
+      >(
+        `select action, entity_id, org_id::text
+         from public.ewoh_audit_log
+         where entity_type = 'aas_asset' and entity_id = $1
+         order by audit_seq`,
+        [assetId],
+      );
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0].action).toBe('aas.asset.import');
+      expect(auditRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const viewerB = await login(
+        baseUrl,
+        fixture!.viewerB.username,
+        fixture!.viewerB.password,
+      );
+      expect(viewerB.status).toBe(201);
+      const denied = await apiRequest(
+        baseUrl,
+        '/api/aas/assets',
+        { headers: jsonHeaders(viewerB.body.accessToken) },
+      );
+      expect(denied.status).toBe(403);
+    });
+
+    it('records OTel-style request traces with trace headers', async () => {
+      const adminA = await login(
+        baseUrl,
+        fixture!.globalAdminA.username,
+        fixture!.globalAdminA.password,
+      );
+      expect(adminA.status).toBe(201);
+      const token = adminA.body.accessToken;
+
+      const meResponse = await fetch(`${baseUrl}/api/me`, {
+        headers: jsonHeaders(token),
+      });
+      expect(meResponse.status).toBe(200);
+      const traceId = meResponse.headers.get('x-trace-id');
+      expect(traceId).toMatch(/^[a-f0-9]{32}$/);
+
+      const traces = await apiRequest<
+        Array<{ traceId: string; path: string; status: number }>
+      >(baseUrl, '/api/observability/traces?limit=50', {
+        headers: jsonHeaders(token),
+      });
+      expect(traces.status).toBe(200);
+      expect(
+        traces.body.some(
+          (trace) =>
+            trace.traceId === traceId &&
+            trace.path === '/api/me' &&
+            trace.status === 200,
+        ),
+      ).toBe(true);
+
+      const viewerB = await login(
+        baseUrl,
+        fixture!.viewerB.username,
+        fixture!.viewerB.password,
+      );
+      expect(viewerB.status).toBe(201);
+      const denied = await apiRequest(
+        baseUrl,
+        '/api/observability/traces',
+        { headers: jsonHeaders(viewerB.body.accessToken) },
+      );
+      expect(denied.status).toBe(403);
+    });
+
     it('rotates refresh tokens and revokes them after reuse/logout', async () => {
       const first = await login(
         baseUrl,
@@ -1675,6 +2053,8 @@ if (!e2eConfig) {
         includesSecrets: boolean;
         factoryCount: number;
         orgId: string | null;
+        traceCount: number;
+        traces: unknown[];
       }>(baseUrl, '/api/scale/fleet/support-bundle', {
         method: 'POST',
         headers: jsonHeaders(token),
@@ -1684,6 +2064,8 @@ if (!e2eConfig) {
       expect(supportBundle.body.includesSecrets).toBe(false);
       expect(supportBundle.body.factoryCount).toBeGreaterThanOrEqual(2);
       expect(supportBundle.body.orgId).toBe(fixture!.orgA.id);
+      expect(supportBundle.body.traceCount).toBeGreaterThanOrEqual(1);
+      expect(Array.isArray(supportBundle.body.traces)).toBe(true);
 
       const secondProfileRows = await owner!.unsafe<
         Array<{ profile_id: string; org_id: string }>
@@ -2274,6 +2656,232 @@ if (!e2eConfig) {
         [configKey],
       );
       expect(rows.map((row) => row.org_id)).toEqual([fixture!.orgA.id]);
+    });
+
+    it('runs maintenance, work-center, and efficiency lifecycle with org isolation', async () => {
+      const dispatcher = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcher.status).toBe(201);
+      const token = dispatcher.body.accessToken;
+
+      const asset = await apiRequest<{
+        assetId: string;
+        status: string;
+        nextDueAt: string;
+      }>(baseUrl, '/api/operations/assets', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          name: `E2E CNC-01 ${runId}`,
+          category: 'device',
+          intervalDays: 30,
+          location: 'A1',
+        }),
+      });
+      expect(asset.status).toBe(201);
+      expect(asset.body.status).toBe('active');
+
+      const task = await apiRequest<{
+        taskId: string;
+        status: string;
+      }>(baseUrl, '/api/operations/tasks', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          assetId: asset.body.assetId,
+          title: `E2E 保养 ${runId}`,
+          taskType: 'preventive',
+          priority: 'high',
+        }),
+      });
+      expect(task.status).toBe(201);
+      expect(task.body.status).toBe('planned');
+
+      const started = await apiRequest<{ status: string }>(
+        baseUrl,
+        `/api/operations/tasks/${task.body.taskId}/state?action=start`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({}),
+        },
+      );
+      expect(started.status).toBe(201);
+      expect(started.body.status).toBe('in_progress');
+
+      const completed = await apiRequest<{
+        status: string;
+        result: string;
+      }>(
+        baseUrl,
+        `/api/operations/tasks/${task.body.taskId}/state?action=complete`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({ result: 'PASS', note: 'e2e evidence' }),
+        },
+      );
+      expect(completed.status).toBe(201);
+      expect(completed.body.status).toBe('completed');
+      expect(completed.body.result).toBe('PASS');
+
+      const assets = await apiRequest<
+        Array<{ assetId: string; status: string; lastCompletedAt: string; nextDueAt: string }>
+      >(baseUrl, '/api/operations/assets', {
+        headers: jsonHeaders(token),
+      });
+      expect(assets.status).toBe(200);
+      const refreshed = assets.body.find(
+        (row) => row.assetId === asset.body.assetId,
+      );
+      expect(refreshed?.status).toBe('active');
+      expect(refreshed?.lastCompletedAt).toBeTruthy();
+      expect(refreshed && refreshed.nextDueAt > refreshed.lastCompletedAt).toBe(
+        true,
+      );
+
+      const tool = await apiRequest<{
+        toolId: string;
+        status: string;
+        nextCalibrationAt: string;
+      }>(baseUrl, '/api/operations/tools', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          name: `E2E 扭矩扳手 ${runId}`,
+          category: 'tooling',
+          calibrationIntervalDays: 90,
+        }),
+      });
+      expect(tool.status).toBe(201);
+      const calibrated = await apiRequest<{
+        status: string;
+        lastCalibratedAt: string;
+      }>(
+        baseUrl,
+        `/api/operations/tools/${tool.body.toolId}/state?action=calibrate`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({}),
+        },
+      );
+      expect(calibrated.status).toBe(201);
+      expect(calibrated.body.status).toBe('active');
+      expect(calibrated.body.lastCalibratedAt).toBeTruthy();
+
+      const workCenter = await apiRequest<{
+        workCenterId: string;
+        flags: Record<string, boolean>;
+      }>(baseUrl, '/api/operations/work-centers', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          name: `E2E 加工中心 ${runId}`,
+          location: 'A1',
+          capabilities: ['mes-p0', 'oee'],
+          flags: {
+            firstInspectionRequired: true,
+            scanRequired: true,
+            exoskeletonRequired: true,
+            riskConfirmationRequired: true,
+          },
+        }),
+      });
+      expect(workCenter.status).toBe(201);
+      expect(workCenter.body.flags.firstInspectionRequired).toBe(true);
+      expect(workCenter.body.flags.handoverRequired).toBe(false);
+
+      const standardHour = await apiRequest<{
+        standardHourId: string;
+        standardMinutes: number;
+      }>(baseUrl, '/api/operations/standard-hours', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          workCenterId: workCenter.body.workCenterId,
+          operationCode: 'OP-100',
+          operationName: '精加工',
+          standardMinutes: 10,
+        }),
+      });
+      expect(standardHour.status).toBe(201);
+      expect(standardHour.body.standardMinutes).toBe(10);
+
+      const efficiency = await apiRequest<{
+        entryId: string;
+        efficiencyPercent: number;
+        deviationMinutes: number;
+      }>(baseUrl, '/api/operations/efficiency', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          workerId: 'P-E2E-01',
+          workCenterId: workCenter.body.workCenterId,
+          operationCode: 'OP-100',
+          actualMinutes: 8,
+        }),
+      });
+      expect(efficiency.status).toBe(201);
+      expect(efficiency.body.efficiencyPercent).toBe(125);
+      expect(efficiency.body.deviationMinutes).toBe(-2);
+
+      const summary = await apiRequest<{
+        assetCount: number;
+        taskCount: number;
+        toolCount: number;
+        workCenterCount: number;
+        efficiencyEntryCount: number;
+      }>(baseUrl, '/api/operations/summary', {
+        headers: jsonHeaders(token),
+      });
+      expect(summary.status).toBe(200);
+      expect(summary.body.assetCount).toBeGreaterThanOrEqual(1);
+      expect(summary.body.taskCount).toBeGreaterThanOrEqual(1);
+      expect(summary.body.toolCount).toBeGreaterThanOrEqual(1);
+      expect(summary.body.workCenterCount).toBeGreaterThanOrEqual(1);
+      expect(summary.body.efficiencyEntryCount).toBeGreaterThanOrEqual(1);
+
+      const viewerB = await login(
+        baseUrl,
+        fixture!.viewerB.username,
+        fixture!.viewerB.password,
+      );
+      expect(viewerB.status).toBe(201);
+      const forbidden = await apiRequest(
+        baseUrl,
+        '/api/operations/summary',
+        { headers: jsonHeaders(viewerB.body.accessToken) },
+      );
+      expect(forbidden.status).toBe(403);
+
+      const configRows = await owner!.unsafe<
+        Array<{ org_id: string }>
+      >(
+        `select org_id::text
+         from public.ewoh_scheduler_config
+         where config_key = $1`,
+        [`eam.asset.${asset.body.assetId}`],
+      );
+      expect(configRows).toHaveLength(1);
+      expect(configRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const auditRows = await owner!.unsafe<
+        Array<{ action: string; entity_id: string; org_id: string }>
+      >(
+        `select action, entity_id, org_id::text
+         from public.ewoh_audit_log
+         where entity_type = 'maintenance_asset' and entity_id = $1
+         order by audit_seq`,
+        [asset.body.assetId],
+      );
+      expect(auditRows.length).toBeGreaterThanOrEqual(1);
+      expect(
+        auditRows.every((row) => row.org_id === fixture!.orgA.id),
+      ).toBe(true);
     });
   });
 }

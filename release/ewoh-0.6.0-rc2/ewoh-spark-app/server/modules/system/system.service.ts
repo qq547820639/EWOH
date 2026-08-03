@@ -19,6 +19,20 @@ export function maskSensitiveConfig(value: unknown): unknown {
   return value;
 }
 
+export interface FlagEvaluationContext {
+  orgId?: string;
+  factoryId?: string;
+  upgradeRing?: string;
+  roles?: string[];
+}
+
+interface FlagTargeting {
+  rings?: string[];
+  roles?: string[];
+  orgIds?: string[];
+  factories?: string[];
+}
+
 function parseFeatureFlag(row: {
   configKey: string;
   configValue: unknown;
@@ -143,5 +157,76 @@ export class SystemService {
       updatedBy,
     );
     return parseFeatureFlag(saved);
+  }
+
+  async evaluateFeatureFlags(
+    keys?: string[],
+    context: FlagEvaluationContext = {},
+  ) {
+    const flags = await this.listFeatureFlags();
+    const requested = keys && keys.length > 0 ? keys : flags.map((flag) => flag.key);
+    return requested.map((key) => {
+      const flag = flags.find((candidate) => candidate.key === key);
+      if (!flag) {
+        return {
+          key,
+          enabled: false,
+          reason: 'flag_not_found',
+          variant: 'off',
+          targetingApplied: false,
+        };
+      }
+      const metadata = flag.metadata as {
+        targeting?: FlagTargeting;
+        fallbackEnabled?: boolean;
+      };
+      const targeting = metadata.targeting;
+      let reason = 'default';
+      let targetingApplied = false;
+      if (targeting && typeof targeting === 'object') {
+        targetingApplied = true;
+        if (
+          Array.isArray(targeting.rings) &&
+          targeting.rings.length > 0 &&
+          !targeting.rings.includes(context.upgradeRing ?? '')
+        ) {
+          reason = 'ring_mismatch';
+        }
+        if (
+          reason === 'default' &&
+          Array.isArray(targeting.roles) &&
+          targeting.roles.length > 0 &&
+          !(context.roles ?? []).some((role) => targeting.roles!.includes(role))
+        ) {
+          reason = 'role_mismatch';
+        }
+        if (
+          reason === 'default' &&
+          Array.isArray(targeting.orgIds) &&
+          targeting.orgIds.length > 0 &&
+          !targeting.orgIds.includes(context.orgId ?? '')
+        ) {
+          reason = 'org_mismatch';
+        }
+        if (
+          reason === 'default' &&
+          Array.isArray(targeting.factories) &&
+          targeting.factories.length > 0 &&
+          !targeting.factories.includes(context.factoryId ?? '')
+        ) {
+          reason = 'factory_mismatch';
+        }
+      }
+      const safeClosed =
+        reason !== 'default' && metadata.fallbackEnabled !== true;
+      const enabled = safeClosed ? false : flag.enabled;
+      return {
+        key,
+        enabled,
+        reason: reason === 'default' ? (flag.enabled ? 'default_on' : 'default_off') : reason,
+        variant: enabled ? 'on' : 'off',
+        targetingApplied,
+      };
+    });
   }
 }

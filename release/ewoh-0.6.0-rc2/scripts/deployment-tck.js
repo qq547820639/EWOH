@@ -6,21 +6,22 @@ const { execFileSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
 const steps = [
-  ['scripts/verify-deploy-artifacts.js', []],
-  ['scripts/verify-helm-chart.js', []],
-  ['scripts/scale-release-review.js', []],
+  { command: process.execPath, script: 'scripts/verify-deploy-artifacts.js', args: [] },
+  { command: process.execPath, script: 'scripts/verify-helm-chart.js', args: [] },
+  { command: process.execPath, script: 'scripts/scale-release-review.js', args: [] },
+  { command: 'python3', script: 'scripts/rego-tck.py', args: [] },
 ];
 
 const failures = [];
-for (const [script, args] of steps) {
+for (const step of steps) {
   try {
-    execFileSync(process.execPath, [path.join(root, script), ...args], {
+    execFileSync(step.command, [path.join(root, step.script), ...step.args], {
       cwd: root,
       stdio: 'inherit',
       encoding: 'utf8',
     });
   } catch (error) {
-    failures.push(script);
+    failures.push(step.script);
   }
 }
 

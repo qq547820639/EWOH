@@ -158,6 +158,73 @@
 - Fleet 升级环界面：`/scale` 页面展示环分布，并支持按环升级/回滚操作。
 - Workflow 实例界面：`/scale` 页面支持启动、列表与角色推进 Workflow 实例。
 - 场景包界面：`/scale` 资产表支持场景包安装/卸载操作。
+- 运营能力包：新增 `/api/operations/*`（17 条路由）覆盖维保资产/任务/工装
+  生命周期、工作中心能力开关、标准工时与人员效率，记录复用
+  `ewoh_scheduler_config` 并保持 RLS 组织隔离与审计链。
+- 维保闭环：资产 `active/maintenance_required/decommissioned`、任务
+  `planned/in_progress/completed/cancelled`，任务完成自动刷新资产下次维保
+  日期并记录结果/备件/历史。
+- 工装校验：校准周期、上次/下次校准时间与校准历史，支持校准/报废操作。
+- 工作中心配置：首检、投料、报工审核、交收、扫码、外骨骼、风险确认与
+  工装点检八类功能开关按工作中心持久化。
+- 标准工时与人员效率：按工作中心/工序登记标准分钟，实际报工自动计算
+  偏差、效率与人员公平性标准差。
+- 运营管理前端：新增 `/operations` 页面，包含总览、维保资产、维保任务、
+  工装校验、工作中心、标准工时与人员效率七个视图并接入真实 API。
+- Sparkplug B 连接器：`src/edge_platform/connectors/sparkplug.py` 提供
+  `spBv1.0` 主题解析、纯标准库 protobuf 载荷解码、出生/死亡/会话/序号状态
+  与统一遥测帧适配器；新增 `sparkplug-b-1.0.0` Manifest 并纳入连接器 TCK。
+- 连接器 TCK 升级：`scripts/connector-tck.py` 由 11 项扩展到 17 项，覆盖
+  Sparkplug 主题、载荷、规范帧与会话状态检查。
+- OpenFeature 语义功能开关：`POST /api/system/feature-flags/evaluate` 支持
+  按组织/工厂/升级环/角色进行定位评估，默认安全关闭并返回
+  `reason/variant/targetingApplied` 评估原因。
+- 系统管理页新增功能开关评估器：输入开关键、升级环、工厂 ID 与角色即可
+  查看当前上下文下的开启状态与评估原因。
+- 参数注册中心：新增 `/api/parameters/*`（8 条路由）支持
+  `number/integer/string/boolean/json` 类型参数、范围/来源/有效期、
+  数值/枚举/正则校验、审批门禁、版本历史与回滚，记录复用
+  `ewoh_scheduler_config` 并保持 RLS 组织隔离与审计链。
+- 系统管理页新增参数注册中心 UI：登记表单、行内更新、
+  审批/回滚/停用操作与汇总统计均接入真实 API。
+- AAS/IEC 63278 资产壳：新增 `src/edge_platform/aas/codec.py`，纯标准库实现
+  AAS 3.0 JSON 子集解析/导出、AASX 类似 OPC 包导入导出、孪生子模型双向映射
+  与敏感值脱敏；提供离散机加工线 AAS 示例。
+- AAS TCK：`scripts/aas-tck.py` 与 `make aas-tck` 执行 7 项检查，覆盖
+  样例解析、JSON 往返、孪生映射、AASX 往返与脱敏。
+- OPA 风格策略即代码：新增 `src/edge_platform/policy/rego.py`，纯标准库实现
+  Rego 子集解释器（package/default/allow/deny[msg]、input 路径、比较、
+  `in`/`not` 与消息捕获），并新增 `contracts/policy/deploy-gate.rego`
+  部署门禁策略。
+- Rego 部署门禁接入：`make rego-tck`（4 项检查）、`scripts/deployment-tck.js`
+  扩展为 4 道门禁，`scripts/standalone-check.sh` 纳入 Rego TCK。
+- AAS 资产注册 API：新增 `/api/aas/assets`（4 条路由）支持 AAS 资产导入、
+  列表、详情与孪生语义映射，记录复用 `ewoh_scheduler_config` 并保持
+  RLS 组织隔离与审计链。
+- 数据资产页新增 AAS 资产壳视图：JSON 导入表单、资产清单与语义映射查看器
+  均接入真实 API。
+- OPC UA 连接器：`src/edge_platform/connectors/opcua.py` 提供节点 ID 解析、
+  数据点规范化、质量码映射与边缘适配器；新增 `opcua-generic-1.0.0`
+  Manifest 并纳入连接器 TCK（21 项检查）。
+- Modbus TCP 连接器：`src/edge_platform/connectors/modbus.py` 提供寄存器
+  地址/功能码/缩放校验、规范化遥测帧与边缘适配器；新增
+  `modbus-tcp-generic-1.0.0` Manifest 并纳入连接器 TCK（25 项检查）。
+- HTTP/Webhook 连接器：`src/edge_platform/connectors/webhook.py` 提供载荷
+  规范化、常量时间 HMAC 签名校验与边缘适配器；新增
+  `http-webhook-generic-1.0.0` Manifest 并纳入连接器 TCK（29 项检查）。
+- CSV/File 连接器：`src/edge_platform/connectors/csvfile.py` 提供表头映射、
+  行数据规范化与批量入队适配器；新增 `csv-file-generic-1.0.0` Manifest
+  并纳入连接器 TCK（32 项检查）。
+- OTel 风格请求追踪：`TracingInterceptor` 为每个 HTTP 请求生成
+  `traceId/spanId` 并返回 `x-trace-id` 响应头；`TracingService` 维护有界
+  追踪缓冲，`GET /api/observability/traces` 提供只读查询。
+- Support Bundle 追踪：`POST /api/scale/fleet/support-bundle` 携带最近 20 条
+  脱敏请求追踪与 `traceCount`，诊断包可直接用于伙伴/支持排查。
+- 系统管理页新增请求追踪视图：展示最近 50 条 trace 的方法、路径、状态、
+  耗时、开始时间与错误信息，并按运营刷新周期自动更新。
+- RC2 发布包重新构建：`scripts/package-release.sh` 重新生成
+  `release/ewoh-0.6.0-rc2`（1315 文件）与 `SHA256SUMS.txt`，Scale Release
+  Review 24/24 通过。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

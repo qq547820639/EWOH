@@ -1,29 +1,31 @@
 # EWOH Acceptance Evidence
 
-Status: validated v1.2 (2026-08-03 hardening wave)
+Status: validated v1.16 (2026-08-03 RC2 bundle reroll wave)
 Owner: AG-00/AG-41
 
 ## Automated Evidence
 
 - Python unittest: 667 passed.
-- Python repo contract tests: 82 passed.
-- NestJS Jest: 278 passed across 64 suites (includes SP-01..SP-08 scenario
+- Python repo contract tests: 120 passed.
+- NestJS Jest: 306 passed across 69 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
-- Client Jest: 21 passed across 6 suites.
-- HTTP + PostgreSQL E2E: 23 passed (auth, RBAC, refresh rotation/logout, org
+- Client Jest: 22 passed across 6 suites.
+- HTTP + PostgreSQL E2E: 28 passed (auth, RBAC, refresh rotation/logout, org
   isolation, control/resource/world persistence, canonical UnifiedExoFrame
   ingestion, gamification allocation persistence, approval persistence,
   system config org scoping, complete MES work order execution, and
   OEE/andon SLA escalation, ERP inbound/outbound/reconcile, and scale
   template publish/install/asset registration, scenario install + fleet
   upgrade/rollback, the event catalog API, `/metrics` resource attributes,
-  policy evaluation, role-aware workflow advance, and feature flag org
-  isolation).
+  policy evaluation, role-aware workflow advance, feature flag org isolation,
+  OpenFeature-style flag targeting, and maintenance/work-center/efficiency
+  org isolation, typed parameter approval/update/rollback/audit, and AAS asset
+  import/detail/twin-semantics/audit, plus OTel-style request tracing).
 - NestJS type check, lint, and Standalone production build: passed.
 - One-click `scripts/standalone-check.sh`: passed with E2E, OpenAPI strict
   audit, DDL plans, and standalone DDL hygiene.
-- OpenAPI contract: 181 controller operations documented, 0 undocumented,
+- OpenAPI contract: 212 controller operations documented, 0 undocumented,
   0 unimplemented; `openapi/route-manifest.json` generated.
 - Full release drill: `RELEASE DRILL PASSED` against disposable PostgreSQL 17,
   including migration/RLS/audit/rollback/rebuild, 176 Jest tests, 107/107
@@ -134,8 +136,9 @@ Owner: AG-00/AG-41
   executes the F0-F6 onboarding path with `partnerShadow: true` and returns
   step-level evidence; E2E verifies a full partner shadow run.
 - Deployment TCK: `npm run deployment:tck` runs deploy artifact verification
-  (66 checks), Helm chart audit (125 checks), and Scale Release review
-  (24 checks) as one deployment acceptance gate.
+  (66 checks), Helm chart audit (125 checks), Scale Release review
+  (24 checks), and the Rego deployment policy gate as one acceptance gate
+  (4 gates passed).
 - Scale operations UI: the `/scale` page renders templates, profiles, assets,
   compatibility, and an F0-F6 onboarding runner against real APIs; client
   tests and the standalone production build pass.
@@ -172,6 +175,62 @@ Owner: AG-00/AG-41
   through real APIs.
 - Scenario UI: the `/scale` asset table provides scenario pack install and
   uninstall actions through real APIs.
+- Operations capability: maintenance assets/tasks/tools, work center
+  capability flags, standard operation hours, and personnel efficiency are
+  persisted org-scoped with audit under `/api/operations/*`; a new `/operations`
+  page wires summary, lifecycle actions, calibration, work center flags, and
+  efficiency recording to real APIs; E2E verifies the full lifecycle and
+  cross-org denial.
+- Sparkplug B connector: topic parser, minimal pure-Python protobuf payload
+  decoder, canonical telemetry envelope, birth/death/session/sequence state,
+  and a `BaseAdapter`-compatible edge adapter; `sparkplug-b-1.0.0` manifest is
+  part of the connector catalog and TCK (17/17 checks).
+- OpenFeature-style flag evaluation:
+  `POST /api/system/feature-flags/evaluate` applies ring/role/org/factory
+  targeting with safe-closed defaults, explicit reasons and variants; the
+  System page includes an evaluator wired to the real API.
+- Parameter Registry: typed `number/integer/string/boolean/json` parameters
+  with validation, unit, scope, source, validity windows, approval-required
+  lifecycle, version history and rollback under `/api/parameters/*`; the
+  System page includes a registry UI with inline update/approve/rollback/
+  retire actions; E2E verifies lifecycle and org-scoped audit.
+- AAS/IEC 63278 asset exchange: dependency-free AAS 3.0 JSON subset codec,
+  AASX-like package import/export, and bidirectional twin submodel mapping;
+  the discrete machining AAS sample is covered by `make aas-tck` (7/7 checks)
+  and 10 Python contract tests.
+- Rego policy-as-code deployment gate: a dependency-free Rego subset supports
+  `package` / `default allow` / `allow` / `deny[msg]` with input path access,
+  comparisons, `in`, `not`, and message capture; `contracts/policy/deploy-gate.rego`
+  gates deployment on artifacts/checks/contracts and is covered by
+  `make rego-tck` (4/4), Deployment TCK, and `standalone-check.sh`.
+- AAS asset registry API: `/api/aas/assets` imports, lists, reads, and maps
+  AAS assets to twin semantics with org RLS and audit; the Data Assets page
+  includes an AAS import form, asset table, and semantic mapping viewer.
+- OPC UA connector: node ID parsing (`ns=<n>;i|s|g|b=<id>`), canonical data
+  point normalization, quality mapping, edge adapter, and
+  `opcua-generic-1.0.0` manifest; connector TCK is 21/21.
+- Modbus TCP connector: register address/function/scale validation, scaled
+  canonical data point normalization, edge adapter, and
+  `modbus-tcp-generic-1.0.0` manifest; connector TCK is 25/25.
+- HTTP/Webhook connector: canonical payload normalization, constant-time HMAC
+  signature verification, edge adapter, and `http-webhook-generic-1.0.0`
+  manifest; connector TCK is 29/29.
+- CSV/File connector: header-mapped row parsing, numeric/string value
+  inference, batch ingestion, edge adapter, and `csv-file-generic-1.0.0`
+  manifest; connector TCK is 32/32.
+- OTel-style request tracing: every HTTP request gets `traceId`/`spanId` and
+  an `x-trace-id` response header; a bounded trace store exposes method/path/
+  status/duration/error via `GET /api/observability/traces` to
+  `global_admin`/`safety_admin`.
+- Support bundle tracing: `POST /api/scale/fleet/support-bundle` includes the
+  latest 20 redacted request traces and a `traceCount`, so diagnostics carry
+  request-level evidence for partner/support workflows.
+- Request tracing UI: the System page shows the latest 50 traces with trace
+  ID, method, path, status, duration, start time and error, refreshed at the
+  operational interval.
+- RC2 release bundle reroll: `release/ewoh-0.6.0-rc2` rebuilt with all new
+  capabilities, 1315 files, regenerated `SHA256SUMS.txt`, and Scale Release
+  Review 24/24 passed.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
@@ -20,6 +21,7 @@ import {
   ewohSchedulerConfig,
 } from '@server/database/schema';
 import { AuditService } from '../shared/audit.service';
+import { TracingService } from '../tracing/tracing.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
 export function nextTemplateStatus(current: string, action: string): string | null {
@@ -80,6 +82,7 @@ export class ScaleService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly auditService: AuditService,
+    @Optional() private readonly tracingService?: TracingService,
   ) {}
 
   async registerTemplate(
@@ -1059,6 +1062,8 @@ export class ScaleService {
       profiles: this.redact(status.profiles),
       templates: this.redact(status.templates),
       assetPackages: this.redact(status.assetPackages),
+      traces: this.redact(this.tracingService?.list(20) ?? []),
+      traceCount: this.tracingService?.list(20).length ?? 0,
       includesSecrets: false,
     };
     await this.auditService.appendAuditLog({

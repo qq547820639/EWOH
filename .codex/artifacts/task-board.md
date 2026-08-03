@@ -481,6 +481,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-148 | System page request tracing viewer | AG-34/35 | Done | `round64-tracing-ui.md`; client 6/22; build passed |
 
+## Wave Final5 - RC2 Release Bundle (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-149 | Regenerate RC2 release bundle with all new capabilities | AG-51 | Done | `round65-release-bundle-rerolled.md`; 1315 files; review 24/24 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

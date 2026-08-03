@@ -4,7 +4,7 @@ status: candidate-for-production (approval-gated)
 bundle:
   path: release/ewoh-0.6.0-rc2
   checksums: release/ewoh-0.6.0-rc2/SHA256SUMS.txt
-  files: 860
+  files: 1315
 artifacts:
   api: ewoh-spark-app/dist/server
   client: ewoh-spark-app/dist/client/index.standalone.html
@@ -17,10 +17,10 @@ artifacts:
   deploy: deploy/cloud/
   contracts: .codex/artifacts/contracts/
 evidence:
-  jest: "64 suites / 278 tests"
-  client_jest: "6 suites / 21 tests"
-  e2e: "23/23 HTTP + PostgreSQL"
-  openapi: "181/181 documented, 0 unimplemented"
+  jest: "69 suites / 306 tests"
+  client_jest: "6 suites / 22 tests"
+  e2e: "28/28 HTTP + PostgreSQL"
+  openapi: "212/212 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/openapi/e2e/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; logical backup/restore of 54 tables / 25 rows with row-count verify"
@@ -56,12 +56,12 @@ evidence:
   edge_backfill: "SequenceBuffer out-of-order/duplicate/gap/backfill; pytest 74 passed"
   twin_package: "twin manifest/calibration/redaction pipeline; discrete-machining-line + assembly-cell samples; pytest 81 passed"
   partner_shadow: "partner checklist + shadow-run on F0-F6 onboarding; partnerShadow config; E2E passed"
-  deployment_tck: "deployment-tck.js one-command gate: deploy artifacts 66 + Helm 125 + release review 24"
+  deployment_tck: "deployment-tck.js one-command gate: deploy artifacts 66 + Helm 125 + release review 24 + Rego policy gate; 4 gates passed"
   scale_ui: "/scale page wired to templates/profiles/assets/compatibility/onboarding APIs"
   erp_mes_connector: "erp-mes-profile-1.0.0 manifest; secret-ref config; connector tests 11; pytest 82 passed"
   scale_metrics: "GET /api/scale/metrics counts/published rate/ring distribution/compatibility"
   scenario_uninstall: "POST /api/scale/scenario-packs/:id/uninstall with audit"
-  connector_tck: "scripts/connector-tck.py + make connector-tck; 11 checks"
+  connector_tck: "scripts/connector-tck.py + make connector-tck; 32 checks"
   scenario_tck: "scripts/scenario-tck.js + npm run scenario:tck; 5 gates"
   third_factory_drill: "E2E third factory config-driven install from same template"
   factory_differences: "POST/GET /api/scale/differences; diff.* config keys; audit; org scoped"
@@ -73,6 +73,20 @@ evidence:
   fleet_ui: "/scale page fleet status + ring upgrade/rollback actions; client build passed"
   workflow_instances_ui: "/scale page workflow instance start/list/advance UI; client build passed"
   scenario_ui: "/scale asset table scenario pack install/uninstall actions; client build passed"
+  operations_capability: "EAM/tooling lifecycle, work center flags, standard hours, personnel efficiency; /api/operations/* 17 routes; org RLS + audit; E2E 24/24"
+  sparkplug_openfeature: "Sparkplug B topic/payload/session codec + edge adapter; sparkplug-b manifest; OpenFeature-style flag evaluation with ring/role/org/factory targeting and safe-closed default; E2E 25/25"
+  parameter_registry: "typed parameters with validation/scope/source/validity/approval/version history/rollback; /api/parameters/* 8 routes; org RLS + audit; E2E 26/26"
+  aas_codec: "AAS 3.0 JSON subset + AASX-like package codec; twin submodel mapping; discrete-machining AAS sample; make aas-tck 7/7; pytest 99"
+  rego_policy_gate: "dependency-free Rego subset; deploy-gate.rego; make rego-tck 4/4; wired into deployment TCK and standalone-check; pytest 107"
+  aas_asset_api: "org-scoped AAS asset import/list/detail/semantics API; Data Assets UI; audit + RLS; E2E 27/27"
+  opcua_connector: "OPC UA node ID parsing/data point normalization/quality mapping/edge adapter; opcua-generic manifest; connector TCK 21/21; pytest 111"
+  modbus_connector: "Modbus TCP register validation/scaling/normalization/edge adapter; modbus-tcp-generic manifest; connector TCK 25/25; pytest 114"
+  webhook_connector: "HTTP/Webhook payload normalization/HMAC signature verification/edge adapter; http-webhook-generic manifest; connector TCK 29/29; pytest 117"
+  csv_file_connector: "CSV/File header mapping/row normalization/batch ingestion/edge adapter; csv-file-generic manifest; connector TCK 32/32; pytest 120"
+  otel_request_tracing: "trace/span IDs, x-trace-id header, bounded trace store, GET /api/observability/traces; E2E 28/28"
+  support_bundle_traces: "fleet support bundle includes latest redacted traces + traceCount"
+  tracing_ui: "System page request tracing viewer (latest 50 traces); client build passed"
+  release_bundle_rerolled: "RC2 bundle rebuilt with all new capabilities; 1315 files; SHA256SUMS regenerated; review 24/24"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

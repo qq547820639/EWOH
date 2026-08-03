@@ -4,7 +4,7 @@ status: candidate-for-production (approval-gated)
 bundle:
   path: release/ewoh-0.6.0-rc2
   checksums: release/ewoh-0.6.0-rc2/SHA256SUMS.txt
-  files: 860
+  files: 1315
 artifacts:
   api: ewoh-spark-app/dist/server
   client: ewoh-spark-app/dist/client/index.standalone.html
@@ -86,6 +86,7 @@ evidence:
   otel_request_tracing: "trace/span IDs, x-trace-id header, bounded trace store, GET /api/observability/traces; E2E 28/28"
   support_bundle_traces: "fleet support bundle includes latest redacted traces + traceCount"
   tracing_ui: "System page request tracing viewer (latest 50 traces); client build passed"
+  release_bundle_rerolled: "RC2 bundle rebuilt with all new capabilities; 1315 files; SHA256SUMS regenerated; review 24/24"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

@@ -23,4 +23,19 @@ describe('navigation mobile workbench', () => {
     const paths = groups.flatMap((group) => group.items.map((item) => item.to));
     expect(paths).toContain('/scale');
   });
+
+  it('exposes operations management to operations roles', () => {
+    expect(getAllowedRoles('/operations')).toEqual(
+      expect.arrayContaining([
+        'global_admin',
+        'dispatcher',
+        'workshop_lead',
+        'safety_admin',
+        'device_ops',
+      ]),
+    );
+    const groups = getVisibleNavGroups(['device_ops']);
+    const paths = groups.flatMap((group) => group.items.map((item) => item.to));
+    expect(paths).toContain('/operations');
+  });
 });

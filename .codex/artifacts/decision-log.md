@@ -28,3 +28,4 @@
 | D-026 | 2026-08-03 | Implement OTel-style request tracing (trace/span IDs, headers, bounded trace store, read-only API) | Final 5.0 AA-09 requires unified trace observability alongside metrics | Reversible per-module |
 | D-027 | 2026-08-03 | Include redacted recent request traces in fleet support bundles | Diagnostics should carry request-level evidence for partner/support workflows | Reversible per-API |
 | D-028 | 2026-08-03 | Add request tracing viewer to the System page | Observability must be visible in the UI, not only API/metrics | Reversible per-UI |
+| D-029 | 2026-08-03 | Reroll RC2 release bundle so new capabilities and checksums are in the deliverable | Deliverable must match current source, not an older snapshot | Rebuild is reversible |

@@ -1,6 +1,6 @@
 # EWOH Acceptance Evidence
 
-Status: validated v1.15 (2026-08-03 tracing UI wave)
+Status: validated v1.16 (2026-08-03 RC2 bundle reroll wave)
 Owner: AG-00/AG-41
 
 ## Automated Evidence
@@ -228,6 +228,9 @@ Owner: AG-00/AG-41
 - Request tracing UI: the System page shows the latest 50 traces with trace
   ID, method, path, status, duration, start time and error, refreshed at the
   operational interval.
+- RC2 release bundle reroll: `release/ewoh-0.6.0-rc2` rebuilt with all new
+  capabilities, 1315 files, regenerated `SHA256SUMS.txt`, and Scale Release
+  Review 24/24 passed.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

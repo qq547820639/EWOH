@@ -15,6 +15,7 @@ import System from './pages/System/System';
 import CommandMap from './pages/CommandMap/CommandMap';
 import MobileWorkbench from './pages/MobileWorkbench/MobileWorkbench';
 import Scale from './pages/Scale/Scale';
+import Operations from './pages/Operations/Operations';
 import NotFound from './pages/NotFound/NotFound';
 import Login from './pages/Login/Login';
 import Forbidden from './pages/Forbidden/Forbidden';
@@ -74,6 +75,7 @@ const RoutesComponent = () => {
         <Route path="system" element={<RequireRole path="/system"><System /></RequireRole>} />
         <Route path="mobile-workbench" element={<RequireRole path="/mobile-workbench"><MobileWorkbench /></RequireRole>} />
         <Route path="scale" element={<RequireRole path="/scale"><Scale /></RequireRole>} />
+        <Route path="operations" element={<RequireRole path="/operations"><Operations /></RequireRole>} />
         {/* 旧路由保留为跳转别名 */}
         <Route path="events" element={<Navigate to="/alerts" replace />} />
         <Route path="workers" element={<Navigate to="/personnel" replace />} />

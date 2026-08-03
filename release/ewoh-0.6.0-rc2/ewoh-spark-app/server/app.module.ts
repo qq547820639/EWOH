@@ -29,6 +29,11 @@ import { ResourceModule } from './modules/resource/resource.module';
 import { AiModule } from './modules/ai/ai.module';
 import { WorldCursorModule } from './modules/world-cursor/world-cursor.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { OperationsModule } from './modules/operations/operations.module';
+import { ParametersModule } from './modules/parameters/parameters.module';
+import { AasModule } from './modules/aas/aas.module';
+import { TracingModule } from './modules/tracing/tracing.module';
+import { TracingInterceptor } from './modules/tracing/tracing.interceptor';
 
 @Module({
   imports: [
@@ -59,6 +64,10 @@ import { AuditModule } from './modules/audit/audit.module';
     AiModule,
     WorldCursorModule,
     AuditModule,
+    OperationsModule,
+    ParametersModule,
+    AasModule,
+    TracingModule,
     // ====== @route-section: business-modules END ======
 
     // ⚠️ @route-order: last

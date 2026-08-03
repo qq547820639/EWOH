@@ -222,6 +222,9 @@
   脱敏请求追踪与 `traceCount`，诊断包可直接用于伙伴/支持排查。
 - 系统管理页新增请求追踪视图：展示最近 50 条 trace 的方法、路径、状态、
   耗时、开始时间与错误信息，并按运营刷新周期自动更新。
+- RC2 发布包重新构建：`scripts/package-release.sh` 重新生成
+  `release/ewoh-0.6.0-rc2`（1315 文件）与 `SHA256SUMS.txt`，Scale Release
+  Review 24/24 通过。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。
