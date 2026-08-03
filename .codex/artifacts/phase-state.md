@@ -89,6 +89,8 @@ production approval gate.
   contract and E2E tests.
 - Feature flags: org-scoped `feature.*` flags persist in `ewoh_system_config`;
   global-admin writes are enforced and cross-org reads are RLS-isolated.
+- Edge resilience: `SequenceBuffer` handles out-of-order, duplicate, stale,
+  gap, and backfill cases for connector/edge bridge telemetry.
 
 ## Active Tasks
 

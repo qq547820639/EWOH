@@ -118,6 +118,8 @@
 - Feature Flag：`GET/PUT /api/system/feature-flags` 在
   `ewoh_system_config` 持久化组织级 `feature.*` 开关，写入限定
   `global_admin`，读取按 RLS 组织隔离。
+- 边缘乱序/补传：`src/edge_platform/edge/backfill.py` 提供 `SequenceBuffer`，
+  按序列号连续释放帧并拒绝重复/过期/超窗帧；补传后自动续传。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

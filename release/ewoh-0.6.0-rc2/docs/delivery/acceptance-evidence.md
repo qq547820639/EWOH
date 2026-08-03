@@ -6,7 +6,7 @@ Owner: AG-00/AG-41
 ## Automated Evidence
 
 - Python unittest: 667 passed.
-- Python repo contract tests: 69 passed.
+- Python repo contract tests: 74 passed.
 - NestJS Jest: 268 passed across 63 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
@@ -124,6 +124,9 @@ Owner: AG-00/AG-41
 - Feature flags: org-scoped `feature.*` flags persist in `ewoh_system_config`;
   E2E verifies global-admin writes, authenticated reads, cross-org isolation,
   and 403 for non-admin writes.
+- Edge backfill: `SequenceBuffer` reorders out-of-order frames, rejects
+  duplicates/stale/out-of-window frames, detects gaps, and continues after
+  backfill; covered by 5 new Python tests.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

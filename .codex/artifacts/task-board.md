@@ -283,6 +283,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-115 | Org-scoped feature flag API on system config store | PX-06/21 | Done | `round31-feature-flags.md`; E2E org isolation passed |
 
+## Wave Final5 - Edge Resilience (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-116 | Sequence buffer for out-of-order/duplicate/backfill | V-CON/13 | Done | `round32-edge-backfill.md`; pytest 74 passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.
