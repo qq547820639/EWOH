@@ -3,7 +3,7 @@
 # 开发环境推荐以进程方式运行（make run），docker-compose 用于试点部署。
 # 代码采用 src/ 布局，运行入口通过 PYTHONPATH=src 解析 edge_platform 包。
 
-.PHONY: run run-stub demo test test-contract connector-tck aas-tck rego-tck cross-tenant-tck lint lint-fix security format clean help
+.PHONY: run run-stub demo test test-contract connector-tck aas-tck rego-tck cross-tenant-tck pilot-readiness lint lint-fix security format clean help
 
 PYTHON ?= python3
 
@@ -33,6 +33,9 @@ aas-tck:  ## 运行 AAS/IEC 63278 编解码 TCK（JSON/AASX/映射/脱敏）
 
 rego-tck:  ## 运行 Rego 策略即代码 TCK（部署门禁）
 	PYTHONPATH=src $(PYTHON) scripts/rego-tck.py
+
+pilot-readiness:  ## 运行 Pilot 就绪检查（Go/No-Go 门禁）
+	bash scripts/pilot-readiness-check.sh
 
 cross-tenant-tck:  ## 运行跨租户全链 TCK（需 E2E 数据库环境）
 	bash scripts/cross-tenant-tck.sh

@@ -88,6 +88,7 @@ evidence:
   tracing_ui: "System page request tracing viewer (latest 50 traces); client build passed"
   release_bundle_rerolled: "RC2 bundle rebuilt with all new capabilities; 1315 files; SHA256SUMS regenerated; review 24/24"
   final_gate_sweep: "ops backup/restore PASSED; scenario 5 gates; deployment 4 gates; AAS 7/7; Rego 4/4; connector 32/32; cross-tenant E2E 28/28"
+  pilot_readiness_gate: "scripts/pilot-readiness-check.sh; Go/No-Go blockers documented"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

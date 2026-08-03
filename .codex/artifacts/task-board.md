@@ -493,6 +493,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-150 | Final one-click gate sweep (ops/scenario/deploy/AAS/Rego/connector/cross-tenant) | AG-00/51 | Done | `round66-final-gate-sweep.md`; all gates passed |
 
+## Wave Final5 - Pilot Readiness Gate (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-151 | Pilot readiness Go/No-Go blocker gate | AG-51/00 | Done | `round67-pilot-readiness-blockers.md`; blockers documented |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

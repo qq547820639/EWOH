@@ -227,6 +227,9 @@
   Review 24/24 通过。
 - 最终门禁扫描：逻辑备份/恢复、场景 TCK、部署 TCK、AAS TCK、Rego TCK、
   连接器 TCK 与跨租户 E2E 全部通过，作为本轮交付证据。
+- Pilot 就绪检查：`scripts/pilot-readiness-check.sh` 与 `make pilot-readiness`
+  提供可执行 Go/No-Go 门禁，明确列出容器工具、数据库、试点工厂、生产批准、
+  培训、验收签署与真机配置等未决阻塞项。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

@@ -1,6 +1,6 @@
 # EWOH Acceptance Evidence
 
-Status: validated v1.17 (2026-08-03 final gate sweep wave)
+Status: validated v1.18 (2026-08-03 pilot readiness gate wave)
 Owner: AG-00/AG-41
 
 ## Automated Evidence
@@ -234,6 +234,10 @@ Owner: AG-00/AG-41
 - Final one-click gate sweep: ops logical backup/restore, scenario TCK,
   deployment TCK, AAS TCK, Rego TCK, connector TCK, and cross-tenant E2E all
   passed after the latest implementation waves.
+- Pilot readiness gate: `scripts/pilot-readiness-check.sh` / `make pilot-readiness`
+  provides an executable Go/No-Go blocker list; current local run honestly
+  reports container tooling, DB env, pilot factory, production approval,
+  training, signoff and real-device config as pending/blocked.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.
