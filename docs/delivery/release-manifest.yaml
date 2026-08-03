@@ -31,7 +31,7 @@ artifacts:
   contracts: contracts/
 evidence:
   jest: "81 suites / 391 tests"
-  client_jest: "14 suites / 48 tests"
+  client_jest: "15 suites / 50 tests"
   e2e: "33/33 HTTP + PostgreSQL (onboarding/mapping/replay/SOP/quality/slow-query/role-workbench paths included)"
   openapi: "247/247 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/client-jest/repo-facts/openapi/e2e/browser/build/ddl/hygiene)"
@@ -41,8 +41,8 @@ evidence:
   python: "unittest 667 passed; pytest 120 passed; ruff clean"
   perf: "500 req / 50 concurrency on /health/live, 4610 qps, p95 26.83ms"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; 57 tables backup/restore/verify; identity sequence advanced"
-  work_graph: "249 items / 36 edges / 48 actors / 106 evidence / 14 gates / 0 invariant conflicts"
-  git_sync: "offline-first issue/PR plan; 235 items; live creation approval-gated"
+  work_graph: "250 items / 37 edges / 48 actors / 107 evidence / 14 gates / 0 invariant conflicts"
+  git_sync: "offline-first issue/PR plan; 236 items; live creation approval-gated"
   console_ux: "DAG pan/zoom, node search, gate/evidence filters, evidence content preview, batch gate decisions, handoff state actions, lock countdown, site readiness tab, q/limit/offset API, tools/work-console blocker diagnosis, evidence binding status"
   world_replay: "unified task/material/quality/alert lanes; event before/during/after context; replay-derived issue creation with causal chain"
   esop: "versioned SOP register/publish/diff; mandatory step sign-off; tool/material confirmation persisted in resultJson.sop.signatures"
@@ -51,6 +51,7 @@ evidence:
   frontend_perf: "React.lazy per-page chunks; standalone main bundle ~374KB; world/replay AbortSignal cancellation"
   role_workbench: "operator/team_lead/quality/equipment/manager aggregation API and /role-workbench page; browser 5/5"
   progressive_lists: "progressiveSlice/hasMoreItems/nextProgressiveLimit; role workbench load-more at 50"
+  replay_context_ui: "event center replay before/during/after button; summarizeReplayContext tested"
   factory_replication: "replication-report schema + passing/failing fixtures; 20 factory contract checks"
   site_readiness: "site-readiness schema + ready/not-ready fixtures; standalone gate passes ready fixture"
   release_review: "scale-release-review.js packaging gate; 34/34 checks"

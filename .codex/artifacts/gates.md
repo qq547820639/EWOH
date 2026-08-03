@@ -35,7 +35,7 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
 - `node tools/work-indexer/index.js --root . --invariants` passes 0 conflicts;
   `node tools/work-console/index.js --root . --strict` passes with 0 blocked
   and 0 invariant conflicts; G10-G13 still require human approval.
-- Full server Jest: 81 suites / 391 tests; client Jest: 14 suites / 48 tests;
+- Full server Jest: 81 suites / 391 tests; client Jest: 15 suites / 50 tests;
   typecheck, lint, standalone production build, repo-facts 33/33, OpenAPI
   247/247, and work graph contract audit 20/20 all pass.
 - Independent review found 1 major (worker write-path assignment bypass) and
@@ -54,7 +54,7 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
 - Real PostgreSQL E2E: 29/29 passed with the new onboarding and mapping paths;
   authenticated Playwright: 4/4 passed.
 - Full one-click gate with runtime database: `ALL STANDALONE CHECKS PASSED`
-  including E2E 33/33 and browser 5/5; server 81/391, client 14/48,
+  including E2E 33/33 and browser 5/5; server 81/391, client 15/50,
   OpenAPI 247/247.
 
 ## 2026-08-04 World Replay Unified Timeline Gate

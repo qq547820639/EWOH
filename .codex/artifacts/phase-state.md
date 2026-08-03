@@ -198,6 +198,8 @@ Trace: EWOH-2026-08-04-principal-final6
   `GET /api/world/replay/context/:eventId`.
 - Shows 事发前/事发时/处置后 timestamps and timeline event count.
 - Client suite: 15 suites / 50 tests.
+- Work graph after replay context UI wave: 250 items / 107 evidence /
+  0 invariant conflicts.
 
 ## Current Phase
 

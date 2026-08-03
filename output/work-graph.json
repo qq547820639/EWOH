@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T23:05:23.085Z",
+  "generatedAt": "2026-08-03T23:07:56.105Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 249,
-    "edgeCount": 36,
+    "itemCount": 250,
+    "edgeCount": 37,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 106,
+    "evidenceCount": 107,
     "gateCount": 14,
     "riskCount": 15,
-    "decisionCount": 49,
+    "decisionCount": 50,
     "statusCounts": {
-      "Done": 156,
+      "Done": 157,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2588,6 +2588,18 @@
       "evidence": "`round101-pilot-readiness-rerun.md`; passed=7 failed=3 pending=5 NOT READY"
     },
     {
+      "id": "T-215",
+      "title": "Event replay context UI in command map event center",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-31",
+      "agents": [
+        "AG-31"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)",
+      "evidence": "`round102-replay-context-ui.md`; client 15/50"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -3050,111 +3062,118 @@
     },
     {
       "id": "E-021",
+      "from": "T-215",
+      "to": "EVD-round102-replay-context-ui",
+      "edgeType": "evidence",
+      "blocking": false
+    },
+    {
+      "id": "E-022",
       "from": "G10",
       "to": "EVD-round69-final6-work-orchestration",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-022",
+      "id": "E-023",
       "from": "T-198",
       "to": "EVD-round90-p0-mobile-orchestration-1",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-023",
+      "id": "E-024",
       "from": "T-199",
       "to": "EVD-round90-p0-mobile-orchestration-2",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-024",
+      "id": "E-025",
       "from": "T-200",
       "to": "EVD-round90-p0-mobile-orchestration-3",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-025",
+      "id": "E-026",
       "from": "T-201",
       "to": "EVD-round90-p0-mobile-orchestration-4",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-026",
+      "id": "E-027",
       "from": "T-202",
       "to": "EVD-round90-p0-mobile-orchestration-5",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-027",
+      "id": "E-028",
       "from": "T-203",
       "to": "EVD-round91-review-fixes",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-028",
+      "id": "E-029",
       "from": "T-206",
       "to": "EVD-round92-real-pg-e2e-browser",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-029",
+      "id": "E-030",
       "from": "T-204",
       "to": "EVD-round93-onboarding-mapping-real-gate-1",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-030",
+      "id": "E-031",
       "from": "T-205",
       "to": "EVD-round93-onboarding-mapping-real-gate-2",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-031",
+      "id": "E-032",
       "from": "T-207",
       "to": "EVD-round94-world-replay-unified-timeline",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-032",
+      "id": "E-033",
       "from": "T-208",
       "to": "EVD-round95-esop-signoff",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-033",
+      "id": "E-034",
       "from": "T-209",
       "to": "EVD-round96-quality-schemes",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-034",
+      "id": "E-035",
       "from": "T-210",
       "to": "EVD-round97-slow-query-observability",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-035",
+      "id": "E-036",
       "from": "T-211",
       "to": "EVD-round98-frontend-performance",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-036",
+      "id": "E-037",
       "from": "T-212",
       "to": "EVD-round99-role-workbench",
       "edgeType": "evidence",
@@ -3648,7 +3667,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "2c525b3cb8e556f420787a466be3ca37343afccc39608645e06775e8b41b126b",
+      "checksum": "9c4ca74ddd481e31d9379de3343e21c451c82faa6e598668ee56daf87a9afa43",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3657,7 +3676,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "97500149ec1d30699acb100b70fb4019cd5c4b32bd7528b2c75e6b9855a5bb06",
+      "checksum": "3a823a38ae70254f0362a2eb4e41a3ea1c5082abbc78710dbab26e222384b7e6",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3684,7 +3703,7 @@
       "artifactId": "decision-log-md",
       "path": "decision-log.md",
       "mediaType": "text/markdown",
-      "checksum": "0aab7b49135662892a2e00118c24a687a6bf30b4fea9c562c96f335d1ec32d87",
+      "checksum": "24361170625bc6407127a4f1e359b6cc976d59e278dcefea81ddc8f62951eb94",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3693,7 +3712,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "12d53f082b6bcc66f3b88813c460679adfc4c4c488ffc5856bd53c55beb40841",
+      "checksum": "112f1523f541e8cbc081704cca411e69c50451717c9804de72af0adb95c5c937",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3702,7 +3721,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "b159fca3deafe9dade0a94eeba0575a982b911ee5000052109be63d23dbbfa85",
+      "checksum": "711576750f2333e2523b033d38805c565cf6cbbe092594e825d8c269e03da2cc",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3835,7 +3854,8 @@
       "testTime": "2026-08-04T15:00:00.000Z",
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T15:00:00.000Z",
-      "status": "valid"
+      "status": "stale",
+      "staleReason": "evidence commit 93b605dadba097c812cb0b12922a979bb60feaf8 differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
     },
     {
       "evidenceId": "EVD-round101-pilot-readiness-rerun",
@@ -3853,6 +3873,25 @@
       "testTime": "2026-08-04T16:00:00.000Z",
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T16:00:00.000Z",
+      "status": "stale",
+      "staleReason": "evidence commit 93b605dadba097c812cb0b12922a979bb60feaf8 differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
+    },
+    {
+      "evidenceId": "EVD-round102-replay-context-ui",
+      "workItemId": "T-215",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round102-replay-context-ui.md",
+      "checksum": "3092cd037432cba4b6940b33f73855f073123d264011457f0ebd31d09eadf266",
+      "result": "passed",
+      "title": "Round 102 - Event Replay Context UI",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "4406f218a4dcd3a820b1d753ed3009066bbb1aed",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-04T17:00:00.000Z",
+      "verifier": "AG-00 local gate",
+      "expiresAt": "2026-11-02T17:00:00.000Z",
       "status": "valid"
     },
     {
@@ -5525,7 +5564,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 93b605dadba097c812cb0b12922a979bb60feaf8"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-2",
@@ -5544,7 +5583,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 93b605dadba097c812cb0b12922a979bb60feaf8"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-3",
@@ -5563,7 +5602,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 93b605dadba097c812cb0b12922a979bb60feaf8"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-4",
@@ -5582,7 +5621,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 93b605dadba097c812cb0b12922a979bb60feaf8"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-5",
@@ -5601,7 +5640,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 93b605dadba097c812cb0b12922a979bb60feaf8"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
     },
     {
       "evidenceId": "EVD-round91-review-fixes",
@@ -5620,7 +5659,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T07:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2 differs from code HEAD 93b605dadba097c812cb0b12922a979bb60feaf8"
+      "staleReason": "evidence commit fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2 differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
     },
     {
       "evidenceId": "EVD-round92-real-pg-e2e-browser",
@@ -5639,7 +5678,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T08:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 93b605dadba097c812cb0b12922a979bb60feaf8"
+      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
     },
     {
       "evidenceId": "EVD-round93-onboarding-mapping-real-gate-1",
@@ -5658,7 +5697,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T08:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 93b605dadba097c812cb0b12922a979bb60feaf8"
+      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
     },
     {
       "evidenceId": "EVD-round93-onboarding-mapping-real-gate-2",
@@ -5677,7 +5716,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T08:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 93b605dadba097c812cb0b12922a979bb60feaf8"
+      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
     },
     {
       "evidenceId": "EVD-round94-world-replay-unified-timeline",
@@ -5696,7 +5735,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T09:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit d9d7dc546f6684759385dafff2a12c6b657d0ceb differs from code HEAD 93b605dadba097c812cb0b12922a979bb60feaf8"
+      "staleReason": "evidence commit d9d7dc546f6684759385dafff2a12c6b657d0ceb differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
     },
     {
       "evidenceId": "EVD-round95-esop-signoff",
@@ -5715,7 +5754,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T10:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 64d237576133b93e73a44a0cb8ac8495f110b877 differs from code HEAD 93b605dadba097c812cb0b12922a979bb60feaf8"
+      "staleReason": "evidence commit 64d237576133b93e73a44a0cb8ac8495f110b877 differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
     },
     {
       "evidenceId": "EVD-round96-quality-schemes",
@@ -5734,7 +5773,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T11:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5 differs from code HEAD 93b605dadba097c812cb0b12922a979bb60feaf8"
+      "staleReason": "evidence commit d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5 differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
     },
     {
       "evidenceId": "EVD-round97-slow-query-observability",
@@ -5753,7 +5792,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T12:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 98716f200f10587384c6da881f42906589563b14 differs from code HEAD 93b605dadba097c812cb0b12922a979bb60feaf8"
+      "staleReason": "evidence commit 98716f200f10587384c6da881f42906589563b14 differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
     },
     {
       "evidenceId": "EVD-round98-frontend-performance",
@@ -5772,7 +5811,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T13:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 034b26340137cea24c34550153f8ef67175efa86 differs from code HEAD 93b605dadba097c812cb0b12922a979bb60feaf8"
+      "staleReason": "evidence commit 034b26340137cea24c34550153f8ef67175efa86 differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
     },
     {
       "evidenceId": "EVD-round99-role-workbench",
@@ -5791,7 +5830,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T14:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f differs from code HEAD 93b605dadba097c812cb0b12922a979bb60feaf8"
+      "staleReason": "evidence commit 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f differs from code HEAD 4406f218a4dcd3a820b1d753ed3009066bbb1aed"
     }
   ],
   "gates": [
@@ -6480,6 +6519,14 @@
       "decision": "Re-run Pilot Go/No-Go with current code and real PostgreSQL",
       "rationale": "Local green must not be reported as production-ready; external blockers remain explicit",
       "reversibility": "Evidence only"
+    },
+    {
+      "id": "D-052",
+      "title": "Add replay context button and before/during/after summary to event center",
+      "date": "2026-08-04",
+      "decision": "Add replay context button and before/during/after summary to event center",
+      "rationale": "The plan requires alert-to-snapshot analysis in the world model UX",
+      "reversibility": "Reversible per UI"
     }
   ],
   "resources": [
