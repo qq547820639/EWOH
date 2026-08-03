@@ -141,6 +141,8 @@ Trace: EWOH-2026-08-04-principal-final6
 - `qualityInspection` accepts `schemeId/stage/checkResults`, rejects missing
   required checks and inconsistent pass results, and persists scheme results.
 - Real PostgreSQL E2E: 32/32 passed including scheme match and enforcement.
+- Full suite after quality wave: server Jest 79/386, client 13/46, OpenAPI
+  245/245, work graph 244 nodes / 101 evidence / 0 invariant conflicts.
 
 ## Current Phase
 

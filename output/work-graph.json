@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T22:34:48.505Z",
+  "generatedAt": "2026-08-03T22:40:43.408Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 243,
-    "edgeCount": 30,
+    "itemCount": 244,
+    "edgeCount": 31,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 100,
+    "evidenceCount": 101,
     "gateCount": 14,
     "riskCount": 15,
-    "decisionCount": 43,
+    "decisionCount": 44,
     "statusCounts": {
-      "Done": 150,
+      "Done": 151,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2516,6 +2516,18 @@
       "evidence": "`round95-esop-signoff.md`; unit + E2E 31/31"
     },
     {
+      "id": "T-209",
+      "title": "Quality scheme registry, auto-match, required check items, and result consistency",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-11/20",
+      "agents": [
+        "AG-11"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)",
+      "evidence": "`round96-quality-schemes.md`; unit + E2E 32/32"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -3045,6 +3057,13 @@
       "to": "EVD-round95-esop-signoff",
       "edgeType": "evidence",
       "blocking": false
+    },
+    {
+      "id": "E-031",
+      "from": "T-209",
+      "to": "EVD-round96-quality-schemes",
+      "edgeType": "evidence",
+      "blocking": false
     }
   ],
   "actors": [
@@ -3534,7 +3553,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "490d6f89ea197a8a160b1b281c28bc41dd4e8f390fcc1398ce4fdc48328757e3",
+      "checksum": "19c2b1fba2bfe177289e7c68d44eca360c555de9e5e5eeb7dcdb7865587b8ae9",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3543,7 +3562,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "8a68291b66e3cdf482700098a8b5569a3acf9b16ff943aa0ab344a45c0904ba1",
+      "checksum": "e581af556736a9bc38ff379a60fae2ab79ed42e368630e51d695fc3b50485660",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3570,7 +3589,7 @@
       "artifactId": "decision-log-md",
       "path": "decision-log.md",
       "mediaType": "text/markdown",
-      "checksum": "b198bfcdb8d703c2454b080809289e44f8c413ac066a5b15bfcbefe5b431433d",
+      "checksum": "17efa540fbb761a820314bec737eb720f1fe8db690d518e8bc8f7f7390ff6b49",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3579,7 +3598,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "31b5443ab815c9a612d42472ca4600c536c5394d231589735aec1a9af8842b7d",
+      "checksum": "f1657c4050fed3b296d8e638d77c7ddf090868456012a0a3642068af2d1e0475",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3588,7 +3607,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "d11795d46d2018dbe912161f62d46414d12ad6fe74cb9c0500d1ea60f21e392e",
+      "checksum": "17ac947aca61e6340b34dec4f782cbe7c1da8e311cda68e030d86692627dfa3e",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -5375,7 +5394,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 64d237576133b93e73a44a0cb8ac8495f110b877"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-2",
@@ -5394,7 +5413,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 64d237576133b93e73a44a0cb8ac8495f110b877"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-3",
@@ -5413,7 +5432,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 64d237576133b93e73a44a0cb8ac8495f110b877"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-4",
@@ -5432,7 +5451,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 64d237576133b93e73a44a0cb8ac8495f110b877"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-5",
@@ -5451,7 +5470,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 64d237576133b93e73a44a0cb8ac8495f110b877"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5"
     },
     {
       "evidenceId": "EVD-round91-review-fixes",
@@ -5470,7 +5489,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T07:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2 differs from code HEAD 64d237576133b93e73a44a0cb8ac8495f110b877"
+      "staleReason": "evidence commit fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2 differs from code HEAD d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5"
     },
     {
       "evidenceId": "EVD-round92-real-pg-e2e-browser",
@@ -5489,7 +5508,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T08:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 64d237576133b93e73a44a0cb8ac8495f110b877"
+      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5"
     },
     {
       "evidenceId": "EVD-round93-onboarding-mapping-real-gate-1",
@@ -5508,7 +5527,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T08:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 64d237576133b93e73a44a0cb8ac8495f110b877"
+      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5"
     },
     {
       "evidenceId": "EVD-round93-onboarding-mapping-real-gate-2",
@@ -5527,7 +5546,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T08:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 64d237576133b93e73a44a0cb8ac8495f110b877"
+      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5"
     },
     {
       "evidenceId": "EVD-round94-world-replay-unified-timeline",
@@ -5546,7 +5565,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T09:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit d9d7dc546f6684759385dafff2a12c6b657d0ceb differs from code HEAD 64d237576133b93e73a44a0cb8ac8495f110b877"
+      "staleReason": "evidence commit d9d7dc546f6684759385dafff2a12c6b657d0ceb differs from code HEAD d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5"
     },
     {
       "evidenceId": "EVD-round95-esop-signoff",
@@ -5564,6 +5583,25 @@
       "testTime": "2026-08-04T10:00:00.000Z",
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T10:00:00.000Z",
+      "status": "stale",
+      "staleReason": "evidence commit 64d237576133b93e73a44a0cb8ac8495f110b877 differs from code HEAD d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5"
+    },
+    {
+      "evidenceId": "EVD-round96-quality-schemes",
+      "workItemId": "T-209",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round96-quality-schemes.md",
+      "checksum": "88c211784fc66458880d46e897b3601daaa6f0eb71eadd8a3224014d34cbac36",
+      "result": "passed",
+      "title": "Round 96 - Quality Scheme Matching and Inspection Gates",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-04T11:00:00.000Z",
+      "verifier": "AG-00 local gate",
+      "expiresAt": "2026-11-02T11:00:00.000Z",
       "status": "valid"
     }
   ],
@@ -6204,6 +6242,14 @@
       "date": "2026-08-04",
       "decision": "Implement E-SOP as versioned `ewoh_asset_package` records with step sign-off and mandatory tool/material confirmation gates",
       "rationale": "The plan requires SOP versioning and mandatory confirmation without adding new physical tables",
+      "reversibility": "Reversible per API"
+    },
+    {
+      "id": "D-046",
+      "title": "Implement quality schemes as `quality_scheme` assets with stage matching, required check items, and result consistency",
+      "date": "2026-08-04",
+      "decision": "Implement quality schemes as `quality_scheme` assets with stage matching, required check items, and result consistency",
+      "rationale": "The plan requires first/in-process/final inspection scheme matching and traceable check results",
       "reversibility": "Reversible per API"
     }
   ],
