@@ -222,6 +222,33 @@ export class ScaleService {
     return profile;
   }
 
+  async diffPreview(
+    templateId: string,
+    body: { config?: Record<string, unknown> },
+  ) {
+    const template = await this.getTemplate(templateId);
+    const templateConfig =
+      (template.configJson as Record<string, unknown> | null) ?? {};
+    const requestedConfig = body.config ?? {};
+    const mergedConfig = { ...templateConfig, ...requestedConfig };
+    const templateKeys = Object.keys(templateConfig);
+    const mergedKeys = Object.keys(mergedConfig);
+    const added = mergedKeys.filter((key) => !(key in templateConfig));
+    const changed = mergedKeys.filter(
+      (key) =>
+        key in templateConfig &&
+        JSON.stringify(templateConfig[key]) !== JSON.stringify(mergedConfig[key]),
+    );
+    const removed = templateKeys.filter((key) => !(key in mergedConfig));
+    return {
+      templateId,
+      templateConfig,
+      requestedConfig,
+      mergedConfig,
+      diff: { added, changed, removed },
+    };
+  }
+
   async listProfiles() {
     return this.db
       .select()

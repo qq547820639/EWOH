@@ -115,6 +115,36 @@ describe('ScaleService templates and assets', () => {
     ).rejects.toThrow('must be published');
   });
 
+  it('previews template config inheritance and diff', async () => {
+    const template = {
+      templateId: 'TPL-1',
+      configJson: { shift: { count: 1 }, safety: { enabled: true } },
+    };
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue([template]),
+        })),
+      })),
+    };
+    const service = new ScaleService(
+      db as never,
+      { appendAuditLog: jest.fn() } as never,
+    );
+
+    const result = await service.diffPreview('TPL-1', {
+      config: { shift: { count: 3 }, newFlag: true },
+    });
+
+    expect(result.mergedConfig).toEqual({
+      shift: { count: 3 },
+      safety: { enabled: true },
+      newFlag: true,
+    });
+    expect(result.diff.changed).toContain('shift');
+    expect(result.diff.added).toContain('newFlag');
+  });
+
   it('registers an asset package', async () => {
     const row = { packageId: 'PKG-1', packageType: 'scenario' };
     const { insert, entries } = createInsertMock([row]);

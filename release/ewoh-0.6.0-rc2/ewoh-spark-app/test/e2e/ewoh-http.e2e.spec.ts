@@ -1148,6 +1148,27 @@ if (!e2eConfig) {
       expect(installed.status).toBe(201);
       expect(installed.body.status).toBe('installed');
 
+      const diffPreview = await apiRequest<{
+        templateId: string;
+        mergedConfig: Record<string, unknown>;
+        diff: { changed: string[]; added: string[] };
+      }>(baseUrl, `/api/scale/templates/${templateId}/diff-preview`, {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          config: { shift: { count: 3 }, newFlag: true },
+        }),
+      });
+      expect(diffPreview.status).toBe(201);
+      expect(diffPreview.body.templateId).toBe(templateId);
+      expect(
+        (diffPreview.body.mergedConfig.shift as { count: number }).count,
+      ).toBe(3);
+      expect(diffPreview.body.mergedConfig.newFlag).toBe(true);
+      expect(diffPreview.body.diff.added).toContain('shift');
+      expect(diffPreview.body.diff.added).toContain('newFlag');
+      expect(diffPreview.body.diff.changed).toEqual([]);
+
       const secondInstall = await apiRequest<{
         profileId: string;
         factoryName: string;

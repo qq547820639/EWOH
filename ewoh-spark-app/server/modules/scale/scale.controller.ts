@@ -52,6 +52,14 @@ export class ScaleController {
     return this.scaleService.installTemplate(id, body, request.userContext);
   }
 
+  @Post('templates/:id/diff-preview')
+  diffPreview(
+    @Param('id') id: string,
+    @Body() body: { config?: Record<string, unknown> },
+  ) {
+    return this.scaleService.diffPreview(id, body);
+  }
+
   @Get('profiles')
   listProfiles() {
     return this.scaleService.listProfiles();

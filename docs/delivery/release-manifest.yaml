@@ -17,10 +17,10 @@ artifacts:
   deploy: deploy/cloud/
   contracts: .codex/artifacts/contracts/
 evidence:
-  jest: "60 suites / 253 tests"
+  jest: "60 suites / 254 tests"
   client_jest: "6 suites / 20 tests"
   e2e: "21/21 HTTP + PostgreSQL"
-  openapi: "163/163 documented, 0 unimplemented"
+  openapi: "164/164 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/openapi/e2e/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; logical backup/restore of 54 tables / 25 rows with row-count verify"
@@ -47,6 +47,7 @@ evidence:
   otel_resource_attributes: "ewoh_resource_info gauge; factory/ring/version/region env contract across standalone/compose/k8s/helm"
   compatibility_catalog: "asset/core compatibility matrix; semver-like range matcher; E2E incompatible connector verified"
   policy_engine: "policy schema v1; evaluate API; operator-safety example; 7 contract checks; E2E deny/allow"
+  diff_preview: "template config inheritance/override merge; added/changed/removed diff; read-only API"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

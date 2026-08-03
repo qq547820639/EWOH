@@ -100,6 +100,9 @@
 - 策略引擎：`contracts/policy/policy-schema.json` 定义策略契约；
   `POST /api/policies/evaluate` 按 dot-path 规则求值，`GET /api/policies/examples`
   提供规范示例；`scripts/audit-policy-contracts.js` 纳入一键检查。
+- 模板配置差异预览：`POST /api/scale/templates/:id/diff-preview` 只读合并
+  模板默认配置与请求覆盖配置，返回 `added/changed/removed` 键差异，便于
+  第二工厂安装前评估影响。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

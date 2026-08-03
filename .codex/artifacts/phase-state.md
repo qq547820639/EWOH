@@ -73,12 +73,15 @@ production approval gate.
 - Policy engine: `contracts/policy/policy-schema.json` plus
   `POST /api/policies/evaluate` provide schema-validated rule evaluation;
   canonical operator-safety policy is served and exercised in E2E.
+- Template config diff preview: `POST /api/scale/templates/:id/diff-preview`
+  returns inherited/merged config and added/changed/removed keys without
+  mutating state.
 
 ## Active Tasks
 
 - Fleet Ops (upgrade/rollback) and event catalog round closed.
 - Productization kernels remaining: connector SDK/runtime, mapping DSL,
-  workflow skeletons, partner shadow delivery and Scale Release 1.0.
+  partner shadow delivery and Scale Release 1.0.
 - Training/acceptance evidence and production gate preparation.
 - Production DDL/deploy approval gate.
 

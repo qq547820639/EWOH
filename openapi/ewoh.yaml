@@ -1718,6 +1718,40 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scale/templates/{id}/diff-preview:
+    post:
+      tags:
+        - scale
+      summary: Preview template config inheritance and diff
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateDiffPreviewRequest'
+      responses:
+        '201':
+          description: Config merge preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateDiffPreviewResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/profiles:
     get:
       tags:
@@ -7316,6 +7350,41 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/FactoryProfile'
+    TemplateDiffPreviewRequest:
+      type: object
+      properties:
+        config:
+          type: object
+          additionalProperties: true
+    TemplateDiffPreviewResult:
+      type: object
+      properties:
+        templateId:
+          type: string
+        templateConfig:
+          type: object
+          additionalProperties: true
+        requestedConfig:
+          type: object
+          additionalProperties: true
+        mergedConfig:
+          type: object
+          additionalProperties: true
+        diff:
+          type: object
+          properties:
+            added:
+              type: array
+              items:
+                type: string
+            changed:
+              type: array
+              items:
+                type: string
+            removed:
+              type: array
+              items:
+                type: string
     FleetUpgradeResult:
       type: object
       properties:

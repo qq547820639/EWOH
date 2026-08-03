@@ -247,6 +247,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-109 | Policy schema + evaluation API + contract audit | PX-06/20 | Done | `round25-policy-engine.md`; E2E risky deny/safe allow passed |
 
+## Wave Final5 - Config Inheritance (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-110 | Template config inheritance diff preview API | PX-03/05 | Done | `round26-diff-preview.md`; E2E preview passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.
