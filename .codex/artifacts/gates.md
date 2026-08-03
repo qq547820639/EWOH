@@ -107,3 +107,11 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
 - Progressive list helpers are unit-tested.
 - Role workbench tables slice to 50 and support load-more without replacing
   the data source.
+
+## 2026-08-04 Pilot Readiness Rerun
+
+- Current code: 7 passed, 3 failed (Docker/Kubectl/Helm unavailable locally),
+  5 pending external approval/input.
+- Result: `PILOT READINESS: NOT READY`; production readiness remains gated.
+- Work graph after pilot rerun: 249 items / 36 edges / 106 evidence /
+  0 invariant conflicts.

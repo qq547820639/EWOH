@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T23:02:08.926Z",
+  "generatedAt": "2026-08-03T23:05:23.085Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 248,
-    "edgeCount": 35,
+    "itemCount": 249,
+    "edgeCount": 36,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 105,
+    "evidenceCount": 106,
     "gateCount": 14,
     "riskCount": 15,
-    "decisionCount": 48,
+    "decisionCount": 49,
     "statusCounts": {
-      "Done": 155,
+      "Done": 156,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2576,6 +2576,18 @@
       "evidence": "`round100-progressive-lists.md`; client 14/48"
     },
     {
+      "id": "T-214",
+      "title": "Pilot readiness rerun with current code and real PG",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-51/00",
+      "agents": [
+        "AG-51"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)",
+      "evidence": "`round101-pilot-readiness-rerun.md`; passed=7 failed=3 pending=5 NOT READY"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -3031,111 +3043,118 @@
     },
     {
       "id": "E-020",
+      "from": "T-214",
+      "to": "EVD-round101-pilot-readiness-rerun",
+      "edgeType": "evidence",
+      "blocking": false
+    },
+    {
+      "id": "E-021",
       "from": "G10",
       "to": "EVD-round69-final6-work-orchestration",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-021",
+      "id": "E-022",
       "from": "T-198",
       "to": "EVD-round90-p0-mobile-orchestration-1",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-022",
+      "id": "E-023",
       "from": "T-199",
       "to": "EVD-round90-p0-mobile-orchestration-2",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-023",
+      "id": "E-024",
       "from": "T-200",
       "to": "EVD-round90-p0-mobile-orchestration-3",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-024",
+      "id": "E-025",
       "from": "T-201",
       "to": "EVD-round90-p0-mobile-orchestration-4",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-025",
+      "id": "E-026",
       "from": "T-202",
       "to": "EVD-round90-p0-mobile-orchestration-5",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-026",
+      "id": "E-027",
       "from": "T-203",
       "to": "EVD-round91-review-fixes",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-027",
+      "id": "E-028",
       "from": "T-206",
       "to": "EVD-round92-real-pg-e2e-browser",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-028",
+      "id": "E-029",
       "from": "T-204",
       "to": "EVD-round93-onboarding-mapping-real-gate-1",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-029",
+      "id": "E-030",
       "from": "T-205",
       "to": "EVD-round93-onboarding-mapping-real-gate-2",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-030",
+      "id": "E-031",
       "from": "T-207",
       "to": "EVD-round94-world-replay-unified-timeline",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-031",
+      "id": "E-032",
       "from": "T-208",
       "to": "EVD-round95-esop-signoff",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-032",
+      "id": "E-033",
       "from": "T-209",
       "to": "EVD-round96-quality-schemes",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-033",
+      "id": "E-034",
       "from": "T-210",
       "to": "EVD-round97-slow-query-observability",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-034",
+      "id": "E-035",
       "from": "T-211",
       "to": "EVD-round98-frontend-performance",
       "edgeType": "evidence",
       "blocking": false
     },
     {
-      "id": "E-035",
+      "id": "E-036",
       "from": "T-212",
       "to": "EVD-round99-role-workbench",
       "edgeType": "evidence",
@@ -3629,7 +3648,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "12324a4e385e740f46bc8e57c7dac47a710c4898223136233059b91b5f4ac4bb",
+      "checksum": "2c525b3cb8e556f420787a466be3ca37343afccc39608645e06775e8b41b126b",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3638,7 +3657,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "baca814d651e1718427889eb9c794c71c19a359a41241be86bc99b0e0ad1a88a",
+      "checksum": "97500149ec1d30699acb100b70fb4019cd5c4b32bd7528b2c75e6b9855a5bb06",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3665,7 +3684,7 @@
       "artifactId": "decision-log-md",
       "path": "decision-log.md",
       "mediaType": "text/markdown",
-      "checksum": "79353bf253323b6b89c87d4572a296ceb242ecf17cb560861e169851cb796cc4",
+      "checksum": "0aab7b49135662892a2e00118c24a687a6bf30b4fea9c562c96f335d1ec32d87",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3674,7 +3693,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "207bbef903ea847951d6f02cb4babdeb83173783b60ac2ee92fcffc2c59d1bd2",
+      "checksum": "12d53f082b6bcc66f3b88813c460679adfc4c4c488ffc5856bd53c55beb40841",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3683,7 +3702,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "0ce5f76c8a541b178c6241a6c0e214db2728c65426d9b6b569cad8e73c3b8043",
+      "checksum": "b159fca3deafe9dade0a94eeba0575a982b911ee5000052109be63d23dbbfa85",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3816,6 +3835,24 @@
       "testTime": "2026-08-04T15:00:00.000Z",
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T15:00:00.000Z",
+      "status": "valid"
+    },
+    {
+      "evidenceId": "EVD-round101-pilot-readiness-rerun",
+      "workItemId": "T-214",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round101-pilot-readiness-rerun.md",
+      "checksum": "9aa3c0e6ca1b61fd85a4b5bb5ebf5322c56237e8f2717bb9406d9ca48d904887",
+      "result": "passed",
+      "title": "Round 101 - Pilot Readiness Rerun",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "93b605dadba097c812cb0b12922a979bb60feaf8",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-04T16:00:00.000Z",
+      "verifier": "AG-00 local gate",
+      "expiresAt": "2026-11-02T16:00:00.000Z",
       "status": "valid"
     },
     {
@@ -6435,6 +6472,14 @@
       "decision": "Add progressive list slicing with load-more for large workbench lists",
       "rationale": "The plan requires large-list rendering to stay responsive",
       "reversibility": "Reversible per UI"
+    },
+    {
+      "id": "D-051",
+      "title": "Re-run Pilot Go/No-Go with current code and real PostgreSQL",
+      "date": "2026-08-04",
+      "decision": "Re-run Pilot Go/No-Go with current code and real PostgreSQL",
+      "rationale": "Local green must not be reported as production-ready; external blockers remain explicit",
+      "reversibility": "Evidence only"
     }
   ],
   "resources": [

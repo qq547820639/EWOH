@@ -184,6 +184,14 @@ Trace: EWOH-2026-08-04-principal-final6
 - Work graph after progressive list wave: 248 items / 105 evidence /
   0 invariant conflicts.
 
+## Latest Round - 2026-08-04 Pilot Readiness Rerun
+
+- Pilot readiness rerun on current code: passed=7, failed=3
+  (docker/kubectl/helm absent locally), pending=5 (factory, approval,
+  training, signoff, device config).
+- Result: `PILOT READINESS: NOT READY`; G10-G13 remain approval-gated.
+- Work graph after pilot rerun: 249 items / 106 evidence / 0 conflicts.
+
 ## Current Phase
 
 Final 6.0 work orchestration wave: C7-C9 contracts, file-backed Work Graph

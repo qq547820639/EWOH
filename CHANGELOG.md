@@ -108,6 +108,8 @@
   质检、设备与管理者视图，新增 `/role-workbench` 页面。
 - 渐进列表：新增 `progressiveSlice/hasMoreItems/nextProgressiveLimit`，
   角色工作台大列表先渲染 50 条并支持“加载更多”。
+- Pilot Go/No-Go 重跑：7 通过 / 3 失败（本机无 Docker/Kubectl/Helm）/
+  5 待批准，结果仍为 NOT READY。
 
 ## [0.6.0-rc3] - 2026-08-04
 
