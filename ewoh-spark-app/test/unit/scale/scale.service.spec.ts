@@ -174,4 +174,93 @@ describe('ScaleService templates and assets', () => {
 
     expect(result.packageType).toBe('scenario');
   });
+
+  it('replays a factory profile by merging template config with profile overrides', async () => {
+    const profile = {
+      profileId: 'PRF-1',
+      templateId: 'TPL-1',
+      status: 'installed',
+      configJson: { shift: { count: 3 } },
+      installedAt: null,
+    };
+    const template = {
+      templateId: 'TPL-1',
+      lifecycleStatus: 'published',
+      configJson: { shift: { count: 1 }, safety: { enabled: true } },
+      publishedAt: null,
+    };
+    const select = jest.fn(() => ({
+      from: jest.fn((table: unknown) => ({
+        where: jest.fn(() => {
+          if (table === ewohFactoryProfile) {
+            return Promise.resolve([profile]);
+          }
+          return Promise.resolve([template]);
+        }),
+      })),
+    }));
+    const updateReturning = jest.fn().mockResolvedValue([
+      {
+        ...profile,
+        status: 'replayed',
+        configJson: {
+          shift: { count: 3 },
+          safety: { enabled: true },
+        },
+      },
+    ]);
+    const db = {
+      select,
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn(() => ({ returning: updateReturning })),
+        })),
+      })),
+    };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.replayProfile('PRF-1', {
+      userId: 'user-1',
+      primaryOrgId: 'org-1',
+    });
+
+    expect(result.status).toBe('replayed');
+    expect(result.configJson).toEqual({
+      shift: { count: 3 },
+      safety: { enabled: true },
+    });
+    expect(audit.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'scale.profile.replay' }),
+    );
+  });
+
+  it('runs connector conformance checks', async () => {
+    const asset = {
+      packageId: 'PKG-CONN',
+      packageType: 'connector',
+      version: '1.2.0',
+      manifestJson: {
+        runtime: 'edge-python',
+        protocol: 'opcua',
+        configSchema: {},
+        compatibility: {},
+        outputEvents: ['DeviceStateChanged'],
+      },
+    };
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue([asset]),
+        })),
+      })),
+    };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.runConformance('PKG-CONN');
+
+    expect(result.passed).toBe(true);
+    expect(result.checks.every((check) => check.passed)).toBe(true);
+  });
 });

@@ -189,6 +189,49 @@ export class ScaleService {
       .orderBy(desc(ewohFactoryProfile.createdAt));
   }
 
+  async getProfile(profileId: string) {
+    const [row] = await this.db
+      .select()
+      .from(ewohFactoryProfile)
+      .where(eq(ewohFactoryProfile.profileId, profileId));
+    if (!row) {
+      throw new NotFoundException(`Factory profile ${profileId} not found`);
+    }
+    return row;
+  }
+
+  async replayProfile(profileId: string, actor?: OrgContext) {
+    const profile = await this.getProfile(profileId);
+    const template = await this.getTemplate(profile.templateId);
+    const templateConfig =
+      (template.configJson as Record<string, unknown> | null) ?? {};
+    const profileConfig =
+      (profile.configJson as Record<string, unknown> | null) ?? {};
+    const mergedConfig = { ...templateConfig, ...profileConfig };
+    const [updated] = await this.db
+      .update(ewohFactoryProfile)
+      .set({
+        configJson: mergedConfig,
+        status: 'replayed',
+        installedAt: new Date(),
+      })
+      .where(eq(ewohFactoryProfile.profileId, profileId))
+      .returning();
+    if (!updated) {
+      throw new ConflictException('STATE_CONFLICT');
+    }
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'scale.profile.replay',
+      entityType: 'factory_profile',
+      entityId: profileId,
+      before: { status: profile.status, templateId: profile.templateId },
+      after: { status: updated.status, templateId: updated.templateId },
+    });
+    return updated;
+  }
+
   async registerAssetPackage(
     body: {
       packageId?: string;
@@ -323,5 +366,53 @@ export class ScaleService {
       throw new NotFoundException(`Asset package ${packageId} not found`);
     }
     return row;
+  }
+
+  async runConformance(packageId: string, actor?: OrgContext) {
+    const asset = await this.getAssetPackage(packageId);
+    const manifest = (asset.manifestJson as Record<string, unknown> | null) ?? {};
+    const checks: Array<{ check: string; passed: boolean; detail?: string }> = [];
+    const push = (check: string, condition: boolean, detail?: string) =>
+      checks.push({ check, passed: Boolean(condition), detail });
+
+    if (asset.packageType === 'connector') {
+      push('runtime', typeof manifest.runtime === 'string' && manifest.runtime.length > 0);
+      push('protocol', typeof manifest.protocol === 'string' && manifest.protocol.length > 0);
+      push('configSchema', manifest.configSchema !== undefined);
+      push('compatibility', manifest.compatibility !== undefined);
+      push(
+        'outputEvents',
+        Array.isArray(manifest.outputEvents),
+        'outputEvents should be an array',
+      );
+    } else if (asset.packageType === 'scenario') {
+      push('requires', manifest.requires !== undefined);
+      push('workflows', Array.isArray(manifest.workflows));
+      push('policies', Array.isArray(manifest.policies));
+      push('acceptance', typeof manifest.acceptance === 'string');
+    } else if (asset.packageType === 'template') {
+      push('modules', Array.isArray(manifest.modules));
+      push('scenarioPacks', Array.isArray(manifest.scenarioPacks));
+    } else if (asset.packageType === 'deploy') {
+      push('compatibleCore', typeof manifest.compatibleCore === 'string');
+      push('config', manifest.config !== undefined);
+    }
+    push('version', /^\d+\.\d+\.\d+/.test(asset.version), 'semver-like version');
+
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'scale.conformance.run',
+      entityType: 'asset_package',
+      entityId: packageId,
+      before: null,
+      after: { passed: checks.every((check) => check.passed), checks: checks.length },
+    });
+    return {
+      packageId,
+      packageType: asset.packageType,
+      passed: checks.every((check) => check.passed),
+      checks,
+    };
   }
 }

@@ -1734,6 +1734,62 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scale/profiles/{id}/replay:
+    post:
+      tags:
+        - scale
+      summary: Replay a factory profile from its template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FactoryProfile'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/assets/{id}/conformance:
+    post:
+      tags:
+        - scale
+      summary: Run asset package conformance checks
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConformanceResult'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/assets:
     post:
       tags:
@@ -6824,6 +6880,29 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/FactoryProfile'
+    ConformanceCheck:
+      type: object
+      properties:
+        check:
+          type: string
+        passed:
+          type: boolean
+        detail:
+          type: string
+          nullable: true
+    ConformanceResult:
+      type: object
+      properties:
+        packageId:
+          type: string
+        packageType:
+          type: string
+        passed:
+          type: boolean
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConformanceCheck'
     ConnectorPackageRequest:
       type: object
       properties:

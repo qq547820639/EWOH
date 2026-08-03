@@ -44,6 +44,8 @@ the production approval gate.
   implemented and verified with 51 managed tables.
 - Connector and scenario pack catalog are implemented and verified; a
   published template installs multiple factory profiles without a code fork.
+- Asset conformance TCK and factory profile replay are implemented and
+  verified.
 
 ## Active Tasks
 

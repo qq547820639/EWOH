@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 5.0 adopted; scale kernel + connector/scenario catalog implemented; 52 Jest suites / 211 tests; E2E 18/18; OpenAPI 147/147; managed tables 51",
+  "current_status": "Final 5.0 adopted; scale kernel + connector/scenario catalog + conformance/replay implemented; 52 Jest suites / 213 tests; E2E 18/18; OpenAPI 149/149; managed tables 51",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
@@ -150,6 +150,8 @@
     "scale_kernel": "ScaleModule template lifecycle/profile install/asset registry; managed tables 51; E2E 18/18; OpenAPI 143/143"
     ,
     "connector_scenario": "connector/scenario catalog on asset registry; second-factory no-fork install drill; OpenAPI 147/147"
+    ,
+    "conformance_replay": "asset conformance TCK + factory profile replay/upgrade; OpenAPI 149/149"
   },
   "subagent_state": {
     "planned": [

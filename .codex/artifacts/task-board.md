@@ -192,6 +192,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-099 | Connector + scenario pack catalog and second-factory drill | PX-04/07 | Done | `round16-connector-scenario.md`; OpenAPI 147/147; E2E 18/18 |
 
+## Wave Final5 - Conformance/Replay (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-100 | Asset conformance TCK + factory profile replay | PX-11/09 | Done | `round17-conformance-replay.md`; OpenAPI 149/149; E2E 18/18 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

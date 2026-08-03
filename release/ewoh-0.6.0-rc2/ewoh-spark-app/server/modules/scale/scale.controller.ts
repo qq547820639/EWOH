@@ -57,6 +57,14 @@ export class ScaleController {
     return this.scaleService.listProfiles();
   }
 
+  @Post('profiles/:id/replay')
+  replayProfile(
+    @Param('id') id: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.scaleService.replayProfile(id, request.userContext);
+  }
+
   @Post('connectors')
   registerConnector(
     @Body() body: Record<string, never>,
@@ -99,5 +107,13 @@ export class ScaleController {
   @Get('assets/:id')
   getAssetPackage(@Param('id') id: string) {
     return this.scaleService.getAssetPackage(id);
+  }
+
+  @Post('assets/:id/conformance')
+  runConformance(
+    @Param('id') id: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.scaleService.runConformance(id, request.userContext);
   }
 }

@@ -1158,6 +1158,35 @@ if (!e2eConfig) {
         ),
       ).toBe(true);
 
+      const conformance = await apiRequest<{
+        passed: boolean;
+        checks: Array<{ check: string; passed: boolean }>;
+      }>(baseUrl, `/api/scale/assets/${connector.body.packageId}/conformance`, {
+        method: 'POST',
+        headers: jsonHeaders(token),
+      });
+      expect(conformance.status).toBe(201);
+      expect(conformance.body.passed).toBe(true);
+      expect(
+        conformance.body.checks.some(
+          (check) => check.check === 'runtime' && check.passed,
+        ),
+      ).toBe(true);
+
+      const replayed = await apiRequest<{
+        profileId: string;
+        status: string;
+        configJson: Record<string, unknown>;
+      }>(baseUrl, `/api/scale/profiles/${installed.body.profileId}/replay`, {
+        method: 'POST',
+        headers: jsonHeaders(token),
+      });
+      expect(replayed.status).toBe(201);
+      expect(replayed.body.status).toBe('replayed');
+      expect(replayed.body.configJson).toEqual({
+        shift: { count: 2 },
+      });
+
       const templateRows = await owner!.unsafe<
         Array<{ template_id: string; lifecycle_status: string; org_id: string }>
       >(
@@ -1179,8 +1208,20 @@ if (!e2eConfig) {
         [installed.body.profileId],
       );
       expect(profileRows).toHaveLength(1);
-      expect(profileRows[0].status).toBe('installed');
+      expect(profileRows[0].status).toBe('replayed');
       expect(profileRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const replayedRows = await owner!.unsafe<
+        Array<{ status: string; org_id: string }>
+      >(
+        `select status, org_id::text
+         from public.ewoh_factory_profile
+         where profile_id = $1`,
+        [installed.body.profileId],
+      );
+      expect(replayedRows).toHaveLength(1);
+      expect(replayedRows[0].status).toBe('replayed');
+      expect(replayedRows[0].org_id).toBe(fixture!.orgA.id);
 
       const secondProfileRows = await owner!.unsafe<
         Array<{ profile_id: string; org_id: string }>
