@@ -128,6 +128,8 @@
 - Deployment TCK：`scripts/deployment-tck.js` 将部署工件（66项）、Helm Chart
   （125项）与 Scale Release 评审（24项）串成统一部署验收门禁；
   `npm run deployment:tck` 一键执行。
+- 规模化运营前端：新增 `/scale` 页面，展示模板/Profile/资产/兼容目录，
+  并支持从页面执行 F0-F6 工厂上线运行。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

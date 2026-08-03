@@ -307,6 +307,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-119 | Deployment TCK gate across deploy/Helm/release checks | PX-09/51 | Done | `round35-deployment-tck.md`; 3 gates passed |
 
+## Wave Final5 - Scale UI (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-120 | Scale operations page wired to real scale APIs | AG-30/31 | Done | `round36-scale-ui.md`; client Jest 6/21; build passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

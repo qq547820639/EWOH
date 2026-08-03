@@ -97,6 +97,8 @@ production approval gate.
   F0-F6 onboarding path with `partnerShadow` config and step-level evidence.
 - Deployment TCK: `scripts/deployment-tck.js` runs deploy artifact, Helm, and
   release review gates as one deployment acceptance command.
+- Scale operations UI: `/scale` page shows templates/profiles/assets/
+  compatibility and runs F0-F6 onboarding against real APIs.
 
 ## Active Tasks
 

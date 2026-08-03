@@ -10,7 +10,7 @@ Owner: AG-00/AG-41
 - NestJS Jest: 270 passed across 63 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
-- Client Jest: 20 passed across 6 suites.
+- Client Jest: 21 passed across 6 suites.
 - HTTP + PostgreSQL E2E: 23 passed (auth, RBAC, refresh rotation/logout, org
   isolation, control/resource/world persistence, canonical UnifiedExoFrame
   ingestion, gamification allocation persistence, approval persistence,
@@ -136,6 +136,9 @@ Owner: AG-00/AG-41
 - Deployment TCK: `npm run deployment:tck` runs deploy artifact verification
   (66 checks), Helm chart audit (125 checks), and Scale Release review
   (24 checks) as one deployment acceptance gate.
+- Scale operations UI: the `/scale` page renders templates, profiles, assets,
+  compatibility, and an F0-F6 onboarding runner against real APIs; client
+  tests and the standalone production build pass.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

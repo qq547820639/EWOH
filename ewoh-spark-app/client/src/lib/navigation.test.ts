@@ -14,4 +14,13 @@ describe('navigation mobile workbench', () => {
     const paths = groups.flatMap((group) => group.items.map((item) => item.to));
     expect(paths).toContain('/mobile-workbench');
   });
+
+  it('exposes scale operations to platform roles', () => {
+    expect(getAllowedRoles('/scale')).toEqual(
+      expect.arrayContaining(['global_admin', 'dispatcher', 'workshop_lead']),
+    );
+    const groups = getVisibleNavGroups(['dispatcher']);
+    const paths = groups.flatMap((group) => group.items.map((item) => item.to));
+    expect(paths).toContain('/scale');
+  });
 });

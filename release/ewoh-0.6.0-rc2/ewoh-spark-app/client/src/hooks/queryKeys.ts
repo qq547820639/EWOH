@@ -34,4 +34,9 @@ export const queryKeys = {
   environmentSummary: ['environment-summary'] as const,
   mobileWorkbench: (personId: string) => ['mobile-workbench', personId] as const,
   mobileOrder: (orderId: string) => ['mobile-order', orderId] as const,
+  scaleTemplates: ['scale-templates'] as const,
+  scaleProfiles: ['scale-profiles'] as const,
+  scaleAssets: ['scale-assets'] as const,
+  scaleCompatibility: ['scale-compatibility'] as const,
+  scaleDashboard: ['scale-dashboard'] as const,
 };
