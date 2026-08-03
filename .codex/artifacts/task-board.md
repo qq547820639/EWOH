@@ -569,6 +569,7 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-200 | Exception attachment persistence + offline queue state machine | AG-07/11 | Done | `round90-p0-mobile-orchestration.md`; mes/offlineQueue tests |
 | T-201 | Evidence binding metadata + invalidation + graph invariants | ORCH-01/02 | Done | `round90-p0-mobile-orchestration.md`; work-indexer tests; `--invariants` passed |
 | T-202 | Work Console CLI + standalone-check/CI wiring | ORCH-05/51 | Done | `round90-p0-mobile-orchestration.md`; work-console tests; strict CLI passed |
+| T-203 | Independent review fixes: worker write guard, conflict discard, CI strict, scan body guard | AG-00/11/30 | Done | `round91-review-fixes.md`; server 78/375; client 13/46 |
 
 ## Next Waves
 

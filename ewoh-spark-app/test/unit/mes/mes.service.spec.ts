@@ -363,4 +363,68 @@ describe('MesService step exception lifecycle', () => {
     );
     expect(resultJson.exception).toEqual({ note: '缺料' });
   });
+
+  it('rejects a worker operating a step assigned to another person', async () => {
+    const workOrder = {
+      scheduleTaskId: 'WO-1',
+      title: '装配',
+      status: 'in_progress',
+    };
+    const step = {
+      stepId: 'S1',
+      status: 'in_progress',
+      progress: 10,
+      actualStart: null,
+      actualEnd: null,
+      assignedPersonId: 'other-worker',
+      resultJson: null,
+    };
+    const { dbWithUpdate } = createStepTransitionDb(workOrder, step);
+    const service = new MesService(
+      dbWithUpdate as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    await expect(
+      service.transitionStep(
+        'WO-1',
+        'S1',
+        'report',
+        { quantity: 1 },
+        { userId: 'worker-1', primaryOrgId: 'org-1', role: 'worker' },
+      ),
+    ).rejects.toThrow('WORKER_STEP_ASSIGNMENT_REQUIRED');
+  });
+
+  it('allows a worker to operate their own step', async () => {
+    const workOrder = {
+      scheduleTaskId: 'WO-1',
+      title: '装配',
+      status: 'in_progress',
+    };
+    const step = {
+      stepId: 'S1',
+      status: 'in_progress',
+      progress: 10,
+      actualStart: null,
+      actualEnd: null,
+      assignedPersonId: 'worker-1',
+      resultJson: null,
+    };
+    const { dbWithUpdate } = createStepTransitionDb(workOrder, step);
+    const service = new MesService(
+      dbWithUpdate as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    const result = await service.transitionStep(
+      'WO-1',
+      'S1',
+      'report',
+      { quantity: 1 },
+      { userId: 'worker-1', primaryOrgId: 'org-1', role: 'worker' },
+    );
+
+    expect(result.status).toBe('reported');
+  });
 });

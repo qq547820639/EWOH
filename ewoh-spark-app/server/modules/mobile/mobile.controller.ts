@@ -26,9 +26,9 @@ export class MobileController {
 
   @Post('workbench/scan')
   scan(
-    @Body() body: { scanValue?: string; orderId?: string },
+    @Body() body?: { scanValue?: string; orderId?: string },
   ) {
-    return this.mobileService.scan(body.scanValue ?? body.orderId ?? '');
+    return this.mobileService.scan(body?.scanValue ?? body?.orderId ?? '');
   }
 
   @Get('workbench/orders/:orderId')

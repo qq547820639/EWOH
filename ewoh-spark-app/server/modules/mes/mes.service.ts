@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -96,6 +97,20 @@ function sanitizeExceptionAttachments(value: unknown): Record<string, string>[] 
       return sanitized;
     })
     .filter((entry) => Object.keys(entry).length > 0);
+}
+
+function assertWorkerStepAssignment(
+  step: { assignedPersonId?: string | null },
+  actor?: OrgContext,
+) {
+  if (actor?.role !== 'worker') {
+    return;
+  }
+  if (!step.assignedPersonId || step.assignedPersonId !== actor.userId) {
+    throw new ForbiddenException(
+      'WORKER_STEP_ASSIGNMENT_REQUIRED: worker can only operate steps assigned to them',
+    );
+  }
 }
 
 @Injectable()
@@ -340,6 +355,7 @@ export class MesService {
     if (!step) {
       throw new NotFoundException(`Step ${stepId} not found in work order ${orderId}`);
     }
+    assertWorkerStepAssignment(step, actor);
     if (action === 'start' && !['released', 'in_progress'].includes(workOrder.workOrder.status)) {
       throw new BadRequestException('Work order must be released or in progress');
     }
@@ -497,6 +513,7 @@ export class MesService {
     if (!step) {
       throw new NotFoundException(`Step ${body.stepId} not found`);
     }
+    assertWorkerStepAssignment(step, actor);
     if (!['in_progress', 'reported', 'reviewed'].includes(step.status)) {
       throw new BadRequestException(
         `Inspection is not allowed from step status ${step.status}`,

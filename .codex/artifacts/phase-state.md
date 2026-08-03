@@ -87,10 +87,13 @@ Trace: EWOH-2026-08-04-principal-final6
   approval summary in one command.
 - Task Graph dependency references corrected to real node IDs; 19 orphan
   edges removed; generated outputs refreshed.
-- Verification: server Jest 78 suites / 372 tests, client 13 suites / 44
+- Verification: server Jest 78 suites / 375 tests, client 13 suites / 46
   tests, typecheck/lint/build pass, repo facts 33/33, OpenAPI 232/232,
   work graph contract audit 20/20, invariants 0 conflicts, work-console
   strict pass.
+- Independent review closed: worker write-path assignment guard,
+  conflict discard, CI strict indexer, scan body guard, and stronger
+  predicate tests.
 
 ## Current Phase
 

@@ -56,7 +56,7 @@ jobs:
 
       - name: Work Graph 不变量与阻塞诊断（P0-6/P0-7）
         run: |
-          node tools/work-indexer/index.js --root "$GITHUB_WORKSPACE" --invariants
+          node tools/work-indexer/index.js --root "$GITHUB_WORKSPACE" --strict --invariants
           node tools/work-console/index.js --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/output/work-console.json" --strict
 
       - name: Build standalone

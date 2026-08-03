@@ -124,8 +124,8 @@ P2：
 “移动端不绕过安全/质检/审计、编排控制台可追溯、旧证据自动失效”的完整 P0 验收标准。
 本报告发布后的同一迭代已实际关闭 P0-01 至 P0-07：移动工作台人员/组织过滤、
 扫码识别、附件持久化、离线队列状态机、证据绑定与失效、图不变量、Work Console CLI
-均已实现并通过测试。验证结果：server Jest 78 套件 / 372 测试，client 13 套件 /
-44 测试，typecheck/lint/build 通过，repo-facts 33/33，OpenAPI 232/232，
+均已实现并通过测试。验证结果：server Jest 78 套件 / 375 测试，client 13 套件 /
+46 测试，typecheck/lint/build 通过，repo-facts 33/33，OpenAPI 232/232，
 work graph contract 20/20，invariants 0 冲突，work-console strict 通过。
 剩余 P1/P2（SOP 版本管理、质检方案、统一世界回放、Onboarding 真执行、真回滚等）
 在后续波次继续实施。

@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented; 2026-08-04 P0 mobile/orchestration iteration adds workbench person/org filtering, typed scan, attachment persistence, offline queue state machine, worker role, evidence binding/invalidation, graph invariants, and tools/work-console; standalone check PASSED, server Jest 78 suites / 372 tests, client 13 suites / 44 tests, OpenAPI 232/232, repo facts 33/33, work graph invariants 0 conflicts, build PASSED",
+  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented; 2026-08-04 P0 mobile/orchestration iteration adds workbench person/org filtering, worker write-path assignment guard, typed scan, attachment persistence, offline queue state machine with conflict discard, worker role, evidence binding/invalidation, graph invariants, and tools/work-console; standalone check PASSED, server Jest 78 suites / 375 tests, client 13 suites / 46 tests, OpenAPI 232/232, repo facts 33/33, work graph invariants 0 conflicts, build PASSED",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",

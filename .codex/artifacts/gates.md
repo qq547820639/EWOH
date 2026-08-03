@@ -35,6 +35,10 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
 - `node tools/work-indexer/index.js --root . --invariants` passes 0 conflicts;
   `node tools/work-console/index.js --root . --strict` passes with 0 blocked
   and 0 invariant conflicts; G10-G13 still require human approval.
-- Full server Jest: 78 suites / 372 tests; client Jest: 13 suites / 44 tests;
+- Full server Jest: 78 suites / 375 tests; client Jest: 13 suites / 46 tests;
   typecheck, lint, standalone production build, repo-facts 33/33, OpenAPI
   232/232, and work graph contract audit 20/20 all pass.
+- Independent review found 1 major (worker write-path assignment bypass) and
+  7 minors; the major is fixed with `WORKER_STEP_ASSIGNMENT_REQUIRED` guards,
+  offline conflict items can be discarded, CI now runs work-indexer with
+  `--strict --invariants`, and scan handles a missing body without 500.

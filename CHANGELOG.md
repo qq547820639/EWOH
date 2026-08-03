@@ -86,6 +86,9 @@
 - 修正 Task Graph 依赖引用为真实节点 ID，消除 19 条孤立边；重新生成
   `output/work-graph.json`、`output/gate-decisions.json`、
   `output/git-sync.json` 并新增 `output/work-console.json`。
+- 独立审查修复：worker 只能操作 `assigned_person_id` 归属自己的工序；
+  离线冲突项提供丢弃入口且不再自动重放；CI 使用
+  `work-indexer --strict --invariants`；扫码空请求体返回 400 而非 500。
 
 ## [0.6.0-rc3] - 2026-08-04
 

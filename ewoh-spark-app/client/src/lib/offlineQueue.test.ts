@@ -107,6 +107,23 @@ describe('offline pending action queue', () => {
     expect(patched[0].error?.message).toBe('boom');
   });
 
+  it('coerces unknown statuses to local instead of dropping actions', () => {
+    const storage = createStorage({
+      [PENDING_ACTIONS_STORAGE_KEY]: JSON.stringify([
+        {
+          id: 'x',
+          type: 'transition',
+          orderId: 'WO-1',
+          stepId: 'S1',
+          status: 'future-status',
+        },
+      ]),
+    });
+    const queue = readPendingActions(storage);
+    expect(queue).toHaveLength(1);
+    expect(queue[0].status).toBe('local');
+  });
+
   it('keeps flushing later items when one conflicts and one fails', async () => {
     const storage = createStorage();
     appendPendingAction(
@@ -159,5 +176,57 @@ describe('offline pending action queue', () => {
     expect(remaining.map((item) => item.status)).toEqual(['conflict', 'failed']);
     expect(remaining[0].error?.code).toBe('STATE_CONFLICT');
     expect(syncOne).toHaveBeenCalledTimes(3);
+  });
+
+  it('skips failed and conflict items on auto-flush and retries them manually', async () => {
+    const storage = createStorage();
+    const first = appendPendingAction(
+      {
+        type: 'transition',
+        orderId: 'WO-1',
+        stepId: 'S1',
+        action: 'report',
+      },
+      storage,
+    )[0];
+    const second = appendPendingAction(
+      {
+        type: 'transition',
+        orderId: 'WO-1',
+        stepId: 'S2',
+        action: 'report',
+      },
+      storage,
+    )[1];
+    markPendingAction(
+      first.id,
+      'conflict',
+      { code: 'STATE_CONFLICT' },
+      storage,
+    );
+    markPendingAction(
+      second.id,
+      'failed',
+      { code: 'SYNC_ERROR' },
+      storage,
+    );
+
+    const syncOne = jest.fn().mockResolvedValue(undefined);
+    const autoSummary = await flushPendingQueue(
+      syncOne,
+      readPendingActions(storage),
+      storage,
+    );
+    expect(autoSummary.synced).toEqual([]);
+    expect(syncOne).not.toHaveBeenCalled();
+
+    const manualSummary = await flushPendingQueue(
+      syncOne,
+      readPendingActions(storage),
+      storage,
+      { includeManual: true },
+    );
+    expect(manualSummary.synced).toHaveLength(2);
+    expect(syncOne).toHaveBeenCalledTimes(2);
   });
 });

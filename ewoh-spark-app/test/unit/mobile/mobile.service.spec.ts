@@ -3,6 +3,34 @@ import {
   parseScanValue,
 } from '../../../server/modules/mobile/mobile.service';
 
+function sqlText(
+  value: unknown,
+  seen = new WeakSet<object>(),
+): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sqlText(item, seen)).join(' ');
+  }
+  if (!value || typeof value !== 'object') {
+    return String(value ?? '');
+  }
+  if (seen.has(value)) {
+    return '';
+  }
+  seen.add(value);
+  const record = value as Record<string, unknown>;
+  const parts: string[] = [];
+  if (typeof record.value === 'string') parts.push(record.value);
+  if (typeof record.name === 'string') parts.push(record.name);
+  if (Array.isArray(record.queryChunks)) {
+    parts.push(sqlText(record.queryChunks, seen));
+  }
+  return parts.join(' ');
+}
+
 describe('MobileService', () => {
   it('lists only steps assigned to the caller within the caller org', async () => {
     const orderBy = jest.fn().mockResolvedValue([
@@ -25,6 +53,12 @@ describe('MobileService', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].stepId).toBe('S1');
     expect(where).toHaveBeenCalledTimes(1);
+    const predicate = sqlText(
+      (where as unknown as jest.Mock).mock.calls[0]?.[0] ?? '',
+    );
+    expect(predicate).toContain('assigned_person_id');
+    expect(predicate).toContain('P-1');
+    expect(predicate).toContain('org-1');
   });
 
   it('fails closed when the caller has no person or org context', async () => {

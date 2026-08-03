@@ -17,6 +17,7 @@ import {
   appendPendingAction,
   flushPendingQueue,
   readPendingActions,
+  removePendingAction,
   type PendingActionStatus,
   type PendingMobileAction,
 } from '../../lib/offlineQueue';
@@ -263,7 +264,12 @@ const MobileWorkbench = (): React.ReactElement => {
       toast.error('当前处于离线状态，无法重试');
       return;
     }
-    const result = await flushPendingQueue(syncPendingItem, [item]);
+    const result = await flushPendingQueue(
+      syncPendingItem,
+      [item],
+      undefined,
+      { includeManual: true },
+    );
     setPendingActions(readPendingActions());
     if (result.synced.length > 0) {
       toast.success(`已重试同步：${item.stepId}`);
@@ -279,6 +285,12 @@ const MobileWorkbench = (): React.ReactElement => {
         )?.error?.message,
       });
     }
+  };
+
+  const discardPendingAction = (id: string) => {
+    removePendingAction(id);
+    setPendingActions(readPendingActions());
+    toast.info('已丢弃冲突项，请核对现场实际状态');
   };
 
   const transitionMutation = useMutation({
@@ -538,6 +550,15 @@ const MobileWorkbench = (): React.ReactElement => {
                   >
                     <RefreshCw className="size-3" />
                     重试
+                  </Button>
+                )}
+                {item.status === 'conflict' && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => discardPendingAction(item.id)}
+                  >
+                    丢弃
                   </Button>
                 )}
               </li>

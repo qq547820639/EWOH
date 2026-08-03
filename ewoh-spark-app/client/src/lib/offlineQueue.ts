@@ -60,7 +60,10 @@ function normalizePendingAction(value: unknown): PendingMobileAction | null {
     candidate.status !== undefined &&
     !PENDING_ACTION_STATUSES.includes(candidate.status as PendingActionStatus)
   ) {
-    return null;
+    return {
+      ...(value as PendingMobileAction),
+      status: 'local',
+    };
   }
   return {
     ...(value as PendingMobileAction),
@@ -216,6 +219,7 @@ export async function flushPendingQueue(
   syncOne: (item: PendingMobileAction) => Promise<void>,
   queue: PendingMobileAction[],
   storage?: StorageLike,
+  options: { includeManual?: boolean } = {},
 ): Promise<PendingActionSyncSummary> {
   const summary: PendingActionSyncSummary = {
     synced: [],
@@ -223,6 +227,12 @@ export async function flushPendingQueue(
     failed: [],
   };
   for (const item of queue) {
+    if (
+      !options.includeManual &&
+      (item.status === 'failed' || item.status === 'conflict')
+    ) {
+      continue;
+    }
     markPendingAction(item.id, 'syncing', undefined, storage);
     try {
       await syncOne(item);
@@ -236,7 +246,7 @@ export async function flushPendingQueue(
           {
             code: 'STATE_CONFLICT',
             message: pendingActionErrorMessage(error),
-            retryable: true,
+            retryable: false,
           },
           storage,
         );
