@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 5.0 adopted; scale kernel + connector/scenario catalog + conformance/replay + fleet ops + event catalog + Helm deployment factory + Golden Factory Profile + Mapping DSL + upgrade rings/fleet registry/support bundle + OTel resource attributes implemented; 57 Jest suites / 241 tests; E2E 20/20; OpenAPI 160/160; managed tables 51",
+  "current_status": "Final 5.0 adopted; scale kernel + connector/scenario catalog + conformance/replay + fleet ops + event catalog + Helm deployment factory + Golden Factory Profile + Mapping DSL + upgrade rings/fleet registry/support bundle + OTel resource attributes + compatibility catalog implemented; 58 Jest suites / 246 tests; E2E 20/20; OpenAPI 161/161; managed tables 51",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
@@ -165,6 +165,8 @@
     "fleet_rings_support": "ring-filtered fleet upgrade/rollback; GET /api/scale/fleet/status registry; POST /api/scale/fleet/support-bundle redacted + audited; fleet state machine contract; E2E passed"
     ,
     "otel_resource_attributes": "ewoh_resource_info gauge with factory id/name/ring/version/region; env contract in standalone/compose/k8s/helm; verifier 66/66; E2E /metrics passed"
+    ,
+    "compatibility_catalog": "GET /api/scale/compatibility asset/core matrix; semver-like range matcher; unconstrained packages compatible; E2E incompatible legacy connector verified"
   },
   "subagent_state": {
     "planned": [

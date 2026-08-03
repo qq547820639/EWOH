@@ -1596,6 +1596,49 @@ if (!e2eConfig) {
       );
       expect(mappingRows).toHaveLength(1);
       expect(mappingRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const legacyConnector = await apiRequest<{
+        packageId: string;
+        packageType: string;
+      }>(baseUrl, '/api/scale/connectors', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          name: 'legacy-connector',
+          version: '0.5.0',
+          runtime: 'edge-python',
+          protocol: 'legacy',
+          compatibility: { core: '>0.6.0' },
+        }),
+      });
+      expect(legacyConnector.status).toBe(201);
+
+      const compatibility = await apiRequest<{
+        coreVersion: string;
+        compatibleCount: number;
+        incompatibleCount: number;
+        assets: Array<{
+          packageId: string;
+          packageType: string;
+          compatible: boolean;
+          reason: string;
+        }>;
+      }>(baseUrl, '/api/scale/compatibility', {
+        headers: jsonHeaders(token),
+      });
+      expect(compatibility.status).toBe(200);
+      expect(compatibility.body.coreVersion).toBe('0.6.0-rc2');
+      expect(
+        compatibility.body.assets.find(
+          (row) => row.packageId === legacyConnector.body.packageId,
+        )?.compatible,
+      ).toBe(false);
+      expect(
+        compatibility.body.assets.find(
+          (row) => row.packageId === connector.body.packageId,
+        )?.compatible,
+      ).toBe(true);
+      expect(compatibility.body.incompatibleCount).toBeGreaterThanOrEqual(1);
     });
 
     it('persists approval instances, steps, and audit operations', async () => {

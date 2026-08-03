@@ -145,6 +145,11 @@ export class ScaleController {
     return this.scaleService.fleetStatus();
   }
 
+  @Get('compatibility')
+  compatibilityCatalog() {
+    return this.scaleService.compatibilityCatalog();
+  }
+
   @Post('fleet/support-bundle')
   generateSupportBundle(@Req() request: { userContext?: OrgContext }) {
     return this.scaleService.generateSupportBundle(request.userContext);

@@ -578,4 +578,61 @@ describe('ScaleService templates and assets', () => {
       expect.objectContaining({ action: 'scale.support_bundle.generate' }),
     );
   });
+
+  it('returns a compatibility catalog for asset packages', async () => {
+    const assets = [
+      {
+        packageId: 'PKG-CONN',
+        packageType: 'connector',
+        name: 'opcua',
+        version: '1.2.0',
+        status: 'published',
+        manifestJson: {
+          compatibility: { core: '>=0.6.0-rc2 <1.0.0' },
+        },
+      },
+      {
+        packageId: 'PKG-OLD',
+        packageType: 'connector',
+        name: 'legacy',
+        version: '0.5.0',
+        status: 'published',
+        manifestJson: {
+          compatibility: { core: '>0.6.0' },
+        },
+      },
+      {
+        packageId: 'PKG-MAP',
+        packageType: 'mapping',
+        name: 'mapping-a',
+        version: '1.0.0',
+        status: 'published',
+        manifestJson: {},
+      },
+    ];
+    const select = jest.fn(() => ({
+      from: jest.fn(() => ({
+        orderBy: jest.fn().mockResolvedValue(assets),
+      })),
+    }));
+    const service = new ScaleService(
+      { select } as never,
+      { appendAuditLog: jest.fn() } as never,
+    );
+
+    const result = await service.compatibilityCatalog();
+
+    expect(result.coreVersion).toBe('0.6.0-rc2');
+    expect(result.compatibleCount).toBe(2);
+    expect(result.incompatibleCount).toBe(1);
+    expect(
+      result.assets.find((row) => row.packageId === 'PKG-CONN')?.compatible,
+    ).toBe(true);
+    expect(
+      result.assets.find((row) => row.packageId === 'PKG-OLD')?.compatible,
+    ).toBe(false);
+    expect(
+      result.assets.find((row) => row.packageId === 'PKG-MAP')?.reason,
+    ).toBe('unconstrained');
+  });
 });

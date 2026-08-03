@@ -235,6 +235,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-107 | OTel resource attributes across metrics and deployment env | PX-10/51 | Done | `round23-otel-resource-attributes.md`; E2E /metrics 20/20; verifier 66/66 |
 
+## Wave Final5 - Compatibility Catalog (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-108 | Asset/core compatibility catalog API + range matcher | PX-11/04 | Done | `round24-compatibility-catalog.md`; E2E incompatible legacy connector verified |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

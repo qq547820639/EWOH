@@ -94,6 +94,9 @@
   Helm。
 - 部署工件校验升级到 66 项，覆盖 Compose 资源属性环境契约；Helm Chart
   静态审计 125 项。
+- 兼容目录：`GET /api/scale/compatibility` 返回资产包与核心版本兼容矩阵，
+  支持 `>=/<=/>/</=` 与空格 AND 范围；未声明范围的资产标记
+  `unconstrained` 兼容。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

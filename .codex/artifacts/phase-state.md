@@ -67,6 +67,9 @@ production approval gate.
 - OTel resource attributes: `/metrics` exposes factory id/name/upgrade ring/
   release version/region; the environment contract is wired through standalone
   env, Compose, Kubernetes, and Helm.
+- Compatibility catalog: `GET /api/scale/compatibility` returns the asset/core
+  matrix with semver-like range matching; E2E verifies an incompatible legacy
+  connector is flagged.
 
 ## Active Tasks
 

@@ -2019,6 +2019,24 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scale/compatibility:
+    get:
+      tags:
+        - scale
+      summary: Read the asset/core compatibility catalog
+      responses:
+        '200':
+          description: Compatibility matrix
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompatibilityCatalogResult'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/fleet/support-bundle:
     post:
       tags:
@@ -7253,6 +7271,39 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AssetPackage'
+    CompatibilityCatalogResult:
+      type: object
+      properties:
+        coreVersion:
+          type: string
+        generatedAt:
+          type: string
+        compatibleCount:
+          type: integer
+        incompatibleCount:
+          type: integer
+        assets:
+          type: array
+          items:
+            type: object
+            properties:
+              packageId:
+                type: string
+              packageType:
+                type: string
+              name:
+                type: string
+              version:
+                type: string
+              status:
+                type: string
+              range:
+                type: string
+                nullable: true
+              compatible:
+                type: boolean
+              reason:
+                type: string
     SupportBundleResult:
       type: object
       properties:

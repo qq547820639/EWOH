@@ -11,6 +11,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { load } from 'js-yaml';
+import { matchesCoreRange } from './compatibility';
 import {
   ewohAssetPackage,
   ewohFactoryProfile,
@@ -464,6 +465,49 @@ export class ScaleService {
       throw new BadRequestException('packageType must be mapping');
     }
     return row;
+  }
+
+  async compatibilityCatalog() {
+    const coreVersion =
+      process.env.EWOH_RELEASE_VERSION?.trim() || '0.6.0-rc2';
+    const assets = await this.listAssetPackages();
+    const rows = assets.map((asset) => {
+      const manifest = (asset.manifestJson as Record<string, unknown> | null) ?? {};
+      const compatibility = manifest.compatibility as
+        | { core?: string }
+        | undefined;
+      const range =
+        typeof manifest.compatibleCore === 'string'
+          ? manifest.compatibleCore
+          : typeof compatibility?.core === 'string'
+            ? compatibility.core
+            : typeof (manifest.requires as { core?: string } | undefined)?.core ===
+                'string'
+              ? (manifest.requires as { core: string }).core
+              : null;
+      const compatible = matchesCoreRange(range, coreVersion);
+      return {
+        packageId: asset.packageId,
+        packageType: asset.packageType,
+        name: asset.name,
+        version: asset.version,
+        status: asset.status,
+        range,
+        compatible,
+        reason: range
+          ? compatible
+            ? 'within range'
+            : 'out of range'
+          : 'unconstrained',
+      };
+    });
+    return {
+      coreVersion,
+      generatedAt: new Date().toISOString(),
+      compatibleCount: rows.filter((row) => row.compatible).length,
+      incompatibleCount: rows.filter((row) => !row.compatible).length,
+      assets: rows,
+    };
   }
 
   async listAssetPackages() {
