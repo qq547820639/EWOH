@@ -1265,6 +1265,14 @@ const EvidenceRow = ({
     <p className="mt-1 text-xs text-[hsl(218_10%_42%)]">
       校验 {entry.checksum.slice(0, 12)} · 结果 {entry.result ?? 'unknown'}
     </p>
+    {(entry.status || entry.commitSha || entry.expiresAt || entry.verifier) && (
+      <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[hsl(218_10%_42%)]">
+        <StatusBadge status={entry.status ?? 'unbound'} />
+        {entry.commitSha && <span>提交 {entry.commitSha.slice(0, 8)}</span>}
+        {entry.expiresAt && <span>到期 {formatTime(entry.expiresAt)}</span>}
+        {entry.verifier && <span>验证人 {entry.verifier}</span>}
+      </p>
+    )}
   </div>
 );
 

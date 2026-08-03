@@ -293,7 +293,19 @@ describe('MesService step exception lifecycle', () => {
       'WO-1',
       'S1',
       'pause',
-      { code: 'MATERIAL_MISSING', note: '缺料' },
+      {
+        code: 'MATERIAL_MISSING',
+        note: '缺料',
+        attachments: [
+          {
+            id: 'file-1',
+            filename: '缺料.jpg',
+            contentType: 'image/jpeg',
+            url: 'https://example.test/files/file-1',
+            extra: 'dropped',
+          },
+        ],
+      },
       { userId: 'worker-1', primaryOrgId: 'org-1' },
     );
 
@@ -304,6 +316,14 @@ describe('MesService step exception lifecycle', () => {
         code: 'MATERIAL_MISSING',
         note: '缺料',
         operator: 'worker-1',
+        attachments: [
+          {
+            id: 'file-1',
+            filename: '缺料.jpg',
+            contentType: 'image/jpeg',
+            url: 'https://example.test/files/file-1',
+          },
+        ],
       }),
     );
   });

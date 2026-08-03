@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T20:50:29.089Z",
+  "generatedAt": "2026-08-03T21:43:58.744Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 232,
-    "edgeCount": 22,
+    "itemCount": 237,
+    "edgeCount": 19,
     "actorCount": 48,
     "artifactCount": 15,
     "evidenceCount": 89,
     "gateCount": 14,
     "riskCount": 15,
-    "decisionCount": 36,
+    "decisionCount": 39,
     "statusCounts": {
-      "Done": 139,
+      "Done": 144,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2384,6 +2384,66 @@
       "evidence": "`standalone-ops-check.sh` PASSED; 57 tables backup/restore/verify; identity advanced"
     },
     {
+      "id": "T-198",
+      "title": "Mobile workbench person/org filtering + worker role",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-11/30",
+      "agents": [
+        "AG-11"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)",
+      "evidence": "`round90-p0-mobile-orchestration.md`; mobile service unit tests; typecheck/client pass"
+    },
+    {
+      "id": "T-199",
+      "title": "Typed scan recognition for order/step/device/material/batch/station/factory",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-11/30",
+      "agents": [
+        "AG-11"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)",
+      "evidence": "`round90-p0-mobile-orchestration.md`; scan parser tests"
+    },
+    {
+      "id": "T-200",
+      "title": "Exception attachment persistence + offline queue state machine",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-07/11",
+      "agents": [
+        "AG-07"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)",
+      "evidence": "`round90-p0-mobile-orchestration.md`; mes/offlineQueue tests"
+    },
+    {
+      "id": "T-201",
+      "title": "Evidence binding metadata + invalidation + graph invariants",
+      "type": "task",
+      "status": "Done",
+      "owner": "ORCH-01/02",
+      "agents": [
+        "ORCH-01"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)",
+      "evidence": "`round90-p0-mobile-orchestration.md`; work-indexer tests; `--invariants` passed"
+    },
+    {
+      "id": "T-202",
+      "title": "Work Console CLI + standalone-check/CI wiring",
+      "type": "task",
+      "status": "Done",
+      "owner": "ORCH-05/51",
+      "agents": [
+        "ORCH-05"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)",
+      "evidence": "`round90-p0-mobile-orchestration.md`; work-console tests; strict CLI passed"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -2692,14 +2752,6 @@
   "edges": [
     {
       "id": "E-001",
-      "from": "existing materials",
-      "to": "W0",
-      "edgeType": "depends",
-      "blocking": true,
-      "evidenceRequirement": "contracts ready gate"
-    },
-    {
-      "id": "E-002",
       "from": "W0",
       "to": "W1",
       "edgeType": "depends",
@@ -2707,153 +2759,139 @@
       "evidenceRequirement": "runnable skeleton + temp DB"
     },
     {
-      "id": "E-003",
-      "from": "DDL + shared",
+      "id": "E-002",
+      "from": "W1",
       "to": "W2",
       "edgeType": "depends",
       "blocking": true,
       "evidenceRequirement": "domain CRUD + tests"
     },
     {
-      "id": "E-004",
-      "from": "state machines + master data",
+      "id": "E-003",
+      "from": "W2",
       "to": "W3",
       "edgeType": "depends",
       "blocking": true,
       "evidenceRequirement": "operations loop API + pages"
     },
     {
-      "id": "E-005",
-      "from": "stable world + ops data",
+      "id": "E-004",
+      "from": "W3",
       "to": "W4",
       "edgeType": "depends",
       "blocking": true,
       "evidenceRequirement": "intelligent pilot"
     },
     {
-      "id": "E-006",
-      "from": "integration candidate",
+      "id": "E-005",
+      "from": "W4",
       "to": "W5",
       "edgeType": "depends",
       "blocking": true,
       "evidenceRequirement": "independent validation"
     },
     {
-      "id": "E-007",
-      "from": "release gate",
+      "id": "E-006",
+      "from": "W5",
       "to": "W6",
       "edgeType": "depends",
       "blocking": true,
       "evidenceRequirement": "accepted phase"
     },
     {
-      "id": "E-008",
-      "from": "Final 6.0 plan",
+      "id": "E-007",
+      "from": "W6",
       "to": "W6-0",
       "edgeType": "depends",
       "blocking": true,
       "evidenceRequirement": "artifact conflicts cleared or approved"
     },
     {
-      "id": "E-009",
-      "from": "W6-0 schema",
+      "id": "E-008",
+      "from": "W6-0",
       "to": "W6-1",
       "edgeType": "depends",
       "blocking": true,
       "evidenceRequirement": "graph matches source files 100%"
     },
     {
-      "id": "E-010",
-      "from": "W6-1 console",
+      "id": "E-009",
+      "from": "W6-1",
       "to": "W6-2",
       "edgeType": "depends",
       "blocking": true,
       "evidenceRequirement": "every state change has actor/commit/evidence"
     },
     {
-      "id": "E-011",
-      "from": "C1-C9 and catalog contracts",
+      "id": "E-010",
+      "from": "W6-0",
       "to": "W6-3",
       "edgeType": "depends",
       "blocking": true,
       "evidenceRequirement": "connector and scenario TCK pass"
     },
     {
-      "id": "E-012",
-      "from": "W6-3 assets and production approval",
+      "id": "E-011",
+      "from": "W6-3",
       "to": "W6-4",
       "edgeType": "depends",
       "blocking": true,
       "evidenceRequirement": "no customer core branch"
     },
     {
-      "id": "E-013",
-      "from": "second-factory review",
+      "id": "E-012",
+      "from": "W6-4",
       "to": "W6-5",
       "edgeType": "depends",
       "blocking": true,
       "evidenceRequirement": "80% config satisfaction"
     },
     {
-      "id": "E-014",
-      "from": "previous waves",
+      "id": "E-013",
+      "from": "W6-5",
       "to": "W6-6",
       "edgeType": "depends",
       "blocking": true,
       "evidenceRequirement": "G10/G11/G13 evidence"
     },
     {
-      "id": "E-015",
-      "from": "Final 6.0 control plane",
+      "id": "E-014",
+      "from": "W6-3",
       "to": "W7",
       "edgeType": "depends",
       "blocking": true,
       "evidenceRequirement": "standalone-check ALL PASSED; Jest 76/362; client 13/42; OpenAPI 232/232; repo facts 33/33; real PG E2E 29/29"
     },
     {
-      "id": "E-016",
-      "from": "none",
-      "to": "WP-ENV-001",
-      "edgeType": "depends",
-      "blocking": true
-    },
-    {
-      "id": "E-017",
-      "from": "WP-ENV-001 evidence",
+      "id": "E-015",
+      "from": "WP-ENV-001",
       "to": "WP-CONTRACTS-001",
       "edgeType": "depends",
       "blocking": true
     },
     {
-      "id": "E-018",
-      "from": "WP-CONTRACTS-001 C1/C4",
+      "id": "E-016",
+      "from": "WP-CONTRACTS-001",
       "to": "WP-DDL-001",
       "edgeType": "depends",
       "blocking": true
     },
     {
-      "id": "E-019",
+      "id": "E-017",
       "from": "WP-DDL-001",
       "to": "WP-SHARED-001",
       "edgeType": "depends",
       "blocking": true
     },
     {
-      "id": "E-020",
-      "from": "WP-CONTRACTS-001 C2/C5",
+      "id": "E-018",
+      "from": "WP-CONTRACTS-001",
       "to": "WP-FRONTEND-SHELL-001",
       "edgeType": "depends",
       "blocking": true
     },
     {
-      "id": "E-021",
-      "from": "none",
-      "to": "WP-HARNESS-001",
-      "edgeType": "depends",
-      "blocking": true
-    },
-    {
-      "id": "E-022",
+      "id": "E-019",
       "from": "G10",
       "to": "EVD-round69-final6-work-orchestration",
       "edgeType": "evidence",
@@ -3347,7 +3385,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "a3333e9bf091fc824ceb94c378550ed625f013eb95a9fa6d3b8129c8cd80c483",
+      "checksum": "e6ac89f9edaf51f02bec356fc18105618849d29e48f58a713a7600e125ef66c3",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3356,7 +3394,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "09b6817d072ccc512a19815d977d02deb86a2cbdc73365464febb4a31d0229bc",
+      "checksum": "84338f37c1b147b8593fe190fcc8cd9eea50e5d0ec08749d797b274806f6809d",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3383,7 +3421,7 @@
       "artifactId": "decision-log-md",
       "path": "decision-log.md",
       "mediaType": "text/markdown",
-      "checksum": "fb2e8ab92bf525a6937049e3430716eadd44192f47e3e46b8f55ce5db712327d",
+      "checksum": "5f20e81f90fb8a49a50b7e579efeb1068a28ce4fd232e25fe8af1b8b6db68ce4",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3392,7 +3430,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "a21a9f9717b3dd7a040d04ff6ff0e0e4f8817055298a78c1915083e408da261b",
+      "checksum": "f7148a0a8c1bb2b0e1f1e52cfffb5852fd598b90fa8ab73e23d39968ca05cf2d",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3401,7 +3439,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "a881f3ecf47bd1fb460ecc69e878d7d6e1dc552b4d83294461708a07cd26ef93",
+      "checksum": "6e7853a47081028d8ef8e7595098175257327882d5d97a1c97f3c33f9c9c0b40",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3428,7 +3466,7 @@
       "artifactId": "work-task-graph-md",
       "path": "work/task-graph.md",
       "mediaType": "text/markdown",
-      "checksum": "41bb651fa7b6aa175ed41d18dbbcf14f490ac5c905fb41f9185e77cb7ebe3dfe",
+      "checksum": "d396f903e4be8c947b0d5c89663da2a06bc569d8c23107667b04af3bb4cf0466",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3487,7 +3525,17 @@
       "path": ".codex/artifacts/work/evidence/round1.md",
       "checksum": "25c78a5e09a51c209b727fa5eb64aec4e9fb54aeea67a8fed31383f65d52ed85",
       "result": "passed",
-      "title": "EWOH Round 1 Execution Evidence"
+      "title": "EWOH Round 1 Execution Evidence",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "954c79f51c79befefc99fc059d8fd85dc5aad9a6",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-02T17:32:49.052Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-10-31T17:32:49.052Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round10-mes-p0",
@@ -3496,7 +3544,17 @@
       "path": ".codex/artifacts/work/evidence/round10-mes-p0.md",
       "checksum": "433171a150d3443d6b306164dbcd8628da25481ef2a1d2f31def1bb995b345a4",
       "result": "passed",
-      "title": "EWOH Round 10 Evidence - Final 4.0 Adoption and MES P0"
+      "title": "EWOH Round 10 Evidence - Final 4.0 Adoption and MES P0",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "db6e011cea3adf4000e323337519e5828541022c",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T02:34:38.671Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T02:34:38.671Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round11-oee-andon",
@@ -3505,7 +3563,17 @@
       "path": ".codex/artifacts/work/evidence/round11-oee-andon.md",
       "checksum": "5e870a0496f019fe27b148d18e9d23596b3359bdd44e477fe6ac7487293e5e85",
       "result": "passed",
-      "title": "EWOH Round 11 Evidence - OEE and Andon"
+      "title": "EWOH Round 11 Evidence - OEE and Andon",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "019fb514dc4ab837925b1dee1713e47161cd0c9d",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T02:51:19.804Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T02:51:19.804Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round12-erp-connector",
@@ -3514,7 +3582,17 @@
       "path": ".codex/artifacts/work/evidence/round12-erp-connector.md",
       "checksum": "18e5424ffeab13b359554916f1b1cc575b8d69a5e8812050a3f1200828cc56a6",
       "result": "passed",
-      "title": "EWOH Round 12 Evidence - ERP Connector"
+      "title": "EWOH Round 12 Evidence - ERP Connector",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "492d2aa398d6eb6f7496730df3a572cfdeb88a0d",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T02:58:44.083Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T02:58:44.083Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round13-trace-mobile",
@@ -3523,7 +3601,17 @@
       "path": ".codex/artifacts/work/evidence/round13-trace-mobile.md",
       "checksum": "23094adefcdb6ea08435d638d5938e9c6108c90f18a63a5d6cfd239c1119834b",
       "result": "passed",
-      "title": "EWOH Round 13 Evidence - Quality Trace and Mobile Workbench API"
+      "title": "EWOH Round 13 Evidence - Quality Trace and Mobile Workbench API",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "f781867b441bd45e0ae49608b47195544f7831cf",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T03:05:51.520Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T03:05:51.520Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round14-mobile-workbench-ui",
@@ -3532,7 +3620,17 @@
       "path": ".codex/artifacts/work/evidence/round14-mobile-workbench-ui.md",
       "checksum": "0ff31363d461921a668f19ff8d93da351a42f3e25d279d983060a1345a0cd668",
       "result": "passed",
-      "title": "EWOH Round 14 Evidence - Mobile Workbench UI"
+      "title": "EWOH Round 14 Evidence - Mobile Workbench UI",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "a3a253ff46b8a8b72190e1e6b786b4fdad36f2b0",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T03:15:00.412Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T03:15:00.412Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round15-final5-scale-kernel",
@@ -3541,7 +3639,17 @@
       "path": ".codex/artifacts/work/evidence/round15-final5-scale-kernel.md",
       "checksum": "3f1337169235e7158e8cba1c05b5a7c27ce98c71f40af479e327e519fca72ed1",
       "result": "passed",
-      "title": "EWOH Round 15 Evidence - Final 5.0 Adoption and Scale Kernel"
+      "title": "EWOH Round 15 Evidence - Final 5.0 Adoption and Scale Kernel",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "178cc3123f0590068291acaa9f06ecf6f19dc99b",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T03:28:08.828Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T03:28:08.828Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round16-connector-scenario",
@@ -3550,7 +3658,17 @@
       "path": ".codex/artifacts/work/evidence/round16-connector-scenario.md",
       "checksum": "47b86b43a7cce777a0eda4773bd8e3aeb9339aac2327a86b28a01d6f39bf228a",
       "result": "passed",
-      "title": "EWOH Round 16 Evidence - Connector and Scenario Pack Catalog"
+      "title": "EWOH Round 16 Evidence - Connector and Scenario Pack Catalog",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "ba0c87958e89d1e428fd8caf4751935e90f4afd9",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T03:36:00.899Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T03:36:00.899Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round17-conformance-replay",
@@ -3559,7 +3677,17 @@
       "path": ".codex/artifacts/work/evidence/round17-conformance-replay.md",
       "checksum": "f9c3fff82974e8f0baf580838351d0c1e548e55029f7211f3a583d88e6eb5900",
       "result": "passed",
-      "title": "EWOH Round 17 Evidence - Conformance TCK and Factory Profile Replay"
+      "title": "EWOH Round 17 Evidence - Conformance TCK and Factory Profile Replay",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "277d75ac53904f5c73e8bb01203ec6848b10a622",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T03:44:21.221Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T03:44:21.221Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round18-fleet-ops-event-catalog",
@@ -3568,7 +3696,17 @@
       "path": ".codex/artifacts/work/evidence/round18-fleet-ops-event-catalog.md",
       "checksum": "ab5bbf181d417f1436c8ebe7aed676d6dbd71b79d86c82d928688efc371a15de",
       "result": "passed",
-      "title": "Round 18 Evidence - Fleet Ops + AsyncAPI/CloudEvents Catalog"
+      "title": "Round 18 Evidence - Fleet Ops + AsyncAPI/CloudEvents Catalog",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "3ee786f27d17a1da3c2f43ff0cc9980bf11cd6d8",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T04:17:42.559Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T04:17:42.559Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round19-helm-deployment-factory",
@@ -3577,7 +3715,17 @@
       "path": ".codex/artifacts/work/evidence/round19-helm-deployment-factory.md",
       "checksum": "d4114c784b7ed2d39e442d6133e92728cc632b7630a4ebfb63ffcad5b74bdd2a",
       "result": "passed",
-      "title": "Round 19 Evidence - Helm Deployment Factory"
+      "title": "Round 19 Evidence - Helm Deployment Factory",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "a402ae35d1458f1edb73ec55b358f3eae2852da2",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T04:22:54.923Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T04:22:54.923Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round2",
@@ -3586,7 +3734,17 @@
       "path": ".codex/artifacts/work/evidence/round2.md",
       "checksum": "df92c93ee18ef707c8eca10454df6f85a35ab1dbd361e90d6b25bc7c967169be",
       "result": "passed",
-      "title": "EWOH Round 2 Execution Evidence"
+      "title": "EWOH Round 2 Execution Evidence",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "954c79f51c79befefc99fc059d8fd85dc5aad9a6",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-02T19:26:18.678Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-10-31T19:26:18.678Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round20-golden-factory",
@@ -3595,7 +3753,17 @@
       "path": ".codex/artifacts/work/evidence/round20-golden-factory.md",
       "checksum": "30854b001b7afe854598084b19101de1a78e753f0af56caa81f5feb7e94b0546",
       "result": "passed",
-      "title": "Round 20 Evidence - Golden Factory Profile"
+      "title": "Round 20 Evidence - Golden Factory Profile",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "70132e8e82376b7af281f0a27c6e55d9986a560a",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T04:28:29.607Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T04:28:29.607Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round21-mapping-dsl",
@@ -3604,7 +3772,17 @@
       "path": ".codex/artifacts/work/evidence/round21-mapping-dsl.md",
       "checksum": "f4f92de2b9eb4bf01001b96441cd62df03c92f19e1fd4bbf1f5d4c77c527a725",
       "result": "passed",
-      "title": "Round 21 Evidence - Mapping DSL and Schema Registry"
+      "title": "Round 21 Evidence - Mapping DSL and Schema Registry",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "514e9d735c99b9cae074924386a0c36a741973da",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T04:33:43.758Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T04:33:43.758Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round22-fleet-rings-support",
@@ -3613,7 +3791,17 @@
       "path": ".codex/artifacts/work/evidence/round22-fleet-rings-support.md",
       "checksum": "342b88d32f8e669f963d69d175c6cca198eb903f14e29b860b3a4e0a0ae97c40",
       "result": "passed",
-      "title": "Round 22 Evidence - Upgrade Rings, Fleet Registry, Support Bundle"
+      "title": "Round 22 Evidence - Upgrade Rings, Fleet Registry, Support Bundle",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "c0b4f0cf6429900b182d543e49a5febfbf19a937",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T04:40:19.217Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T04:40:19.217Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round23-otel-resource-attributes",
@@ -3622,7 +3810,17 @@
       "path": ".codex/artifacts/work/evidence/round23-otel-resource-attributes.md",
       "checksum": "0b0b88a6ffb00df70ef171f50d0c3aeaf86b6f59829c8637fcc925bb786ae8f5",
       "result": "passed",
-      "title": "Round 23 Evidence - OTel Resource Attributes"
+      "title": "Round 23 Evidence - OTel Resource Attributes",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "2ba45d6137f0edd987fac01a06d6848b9329d217",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T04:45:32.236Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T04:45:32.236Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round24-compatibility-catalog",
@@ -3631,7 +3829,17 @@
       "path": ".codex/artifacts/work/evidence/round24-compatibility-catalog.md",
       "checksum": "b9bbdde8a54ec610bdc662f29dd045ab843f9b124bca1b05bd17b1950da8581c",
       "result": "passed",
-      "title": "Round 24 Evidence - Compatibility Catalog"
+      "title": "Round 24 Evidence - Compatibility Catalog",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "adfe8e3c91e0a80b31b55decdfafb9bcbd18ff61",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T04:49:50.254Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T04:49:50.254Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round25-policy-engine",
@@ -3640,7 +3848,17 @@
       "path": ".codex/artifacts/work/evidence/round25-policy-engine.md",
       "checksum": "c5bc54ef13403f401d64038d1aeaed222184b5748abc0c3214b9c3d0fe0c5e2f",
       "result": "passed",
-      "title": "Round 25 Evidence - Policy Engine"
+      "title": "Round 25 Evidence - Policy Engine",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "d2a7ce7f5c970586935f65ba1d5a95f7b0f9afd9",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T04:53:40.426Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T04:53:40.426Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round26-diff-preview",
@@ -3649,7 +3867,17 @@
       "path": ".codex/artifacts/work/evidence/round26-diff-preview.md",
       "checksum": "e0e727419d0b335ff1b8693429f869a1d75200298a5852cbf11513306a772862",
       "result": "passed",
-      "title": "Round 26 Evidence - Template Config Diff Preview"
+      "title": "Round 26 Evidence - Template Config Diff Preview",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "5168771a021a7ad116d801db753f05feaa855f4e",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T04:57:56.194Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T04:57:56.194Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round27-connector-runtime",
@@ -3658,7 +3886,17 @@
       "path": ".codex/artifacts/work/evidence/round27-connector-runtime.md",
       "checksum": "b61884e94e8c144deb6f346a9bb959805778cadf3f4174ae146fcdae65b6102e",
       "result": "passed",
-      "title": "Round 27 Evidence - Connector SDK/Runtime"
+      "title": "Round 27 Evidence - Connector SDK/Runtime",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "920b16bbd7a85e3e83c9e53aa9f2ca1816043fe8",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:01:16.195Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:01:16.195Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round28-factory-onboarding",
@@ -3667,7 +3905,17 @@
       "path": ".codex/artifacts/work/evidence/round28-factory-onboarding.md",
       "checksum": "cc5d2cae2240a5cc5d81b0d14d044888c06e354fa23c028e7349fb28b965a812",
       "result": "passed",
-      "title": "Round 28 Evidence - Factory Onboarding"
+      "title": "Round 28 Evidence - Factory Onboarding",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "2ff1fd5dee54023a43aee63054d0ea82e70cdd9a",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:06:01.221Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:06:01.221Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round29-scale-release-review",
@@ -3676,7 +3924,17 @@
       "path": ".codex/artifacts/work/evidence/round29-scale-release-review.md",
       "checksum": "ccddaec2b5b608eaf10d34b7b29b03f3c28859e695d6714179e907c49452f5fb",
       "result": "passed",
-      "title": "Round 29 Evidence - Scale Release Review"
+      "title": "Round 29 Evidence - Scale Release Review",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "4e22d211afe1f6a7b4adbdad8457a8a47b9e05e6",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:14:45.695Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:14:45.695Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round3",
@@ -3685,7 +3943,17 @@
       "path": ".codex/artifacts/work/evidence/round3.md",
       "checksum": "333dd62bdcb7869c0fbd537f6f9cd25a09c07fd9f044f9285ba58ec9c1630b6e",
       "result": "passed",
-      "title": "EWOH Round 3 Execution Evidence"
+      "title": "EWOH Round 3 Execution Evidence",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "954c79f51c79befefc99fc059d8fd85dc5aad9a6",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-02T21:02:48.926Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-10-31T21:02:48.926Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round30-workflow-engine",
@@ -3694,7 +3962,17 @@
       "path": ".codex/artifacts/work/evidence/round30-workflow-engine.md",
       "checksum": "bd6e09b14b61f9c002868452ed9a26e55cecbb6df13219889fa02a58285355d1",
       "result": "passed",
-      "title": "Round 30 Evidence - Workflow Engine Skeleton"
+      "title": "Round 30 Evidence - Workflow Engine Skeleton",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "4e22d211afe1f6a7b4adbdad8457a8a47b9e05e6",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:13:19.787Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:13:19.787Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round31-feature-flags",
@@ -3703,7 +3981,17 @@
       "path": ".codex/artifacts/work/evidence/round31-feature-flags.md",
       "checksum": "fc703e0486aaff2200d1e5598eaccf50233957b64ccb0ccee6e421f6ced49192",
       "result": "passed",
-      "title": "Round 31 Evidence - Feature Flags"
+      "title": "Round 31 Evidence - Feature Flags",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "07f0026301079f8fe518269a37a508b6c645ae44",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:18:49.403Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:18:49.403Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round32-edge-backfill",
@@ -3712,7 +4000,17 @@
       "path": ".codex/artifacts/work/evidence/round32-edge-backfill.md",
       "checksum": "7ac4c04da24c1a607d8fab663026dda05efe70a06fb5d199da0fac0290e8e947",
       "result": "passed",
-      "title": "Round 32 Evidence - Edge Backfill and Out-of-Order Handling"
+      "title": "Round 32 Evidence - Edge Backfill and Out-of-Order Handling",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "c83a6591393be8e2b38d61f3ab9a9eff4c0a8a5c",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:21:23.516Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:21:23.516Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round33-twin-package",
@@ -3721,7 +4019,17 @@
       "path": ".codex/artifacts/work/evidence/round33-twin-package.md",
       "checksum": "1758ce528d6c91e9f529e31ab731d43d7e789fcb64c93a136e63cf42e743293f",
       "result": "passed",
-      "title": "Round 33 Evidence - Twin Package Pipeline"
+      "title": "Round 33 Evidence - Twin Package Pipeline",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "a88ad00b78395bd9108dbd9988438f9ac4a080ba",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:22:19.599Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:22:19.599Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round34-partner-shadow",
@@ -3730,7 +4038,17 @@
       "path": ".codex/artifacts/work/evidence/round34-partner-shadow.md",
       "checksum": "327a9ceaa9956f8549acdbd63494d275308848c91d46ae738495937e6e92063e",
       "result": "passed",
-      "title": "Round 34 Evidence - Partner Shadow Delivery"
+      "title": "Round 34 Evidence - Partner Shadow Delivery",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "6bd291ef568c39aed9a5f5af2f0375813a093b25",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:24:57.477Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:24:57.477Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round35-deployment-tck",
@@ -3739,7 +4057,17 @@
       "path": ".codex/artifacts/work/evidence/round35-deployment-tck.md",
       "checksum": "947aac7d2eb198139e41abad5531685959c08ebd1471519ae4e1b9ca96add4f6",
       "result": "passed",
-      "title": "Round 35 Evidence - Deployment TCK"
+      "title": "Round 35 Evidence - Deployment TCK",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "269c80827975b42522094ddc586535d83aa3c954",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:26:45.498Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:26:45.498Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round36-scale-ui",
@@ -3748,7 +4076,17 @@
       "path": ".codex/artifacts/work/evidence/round36-scale-ui.md",
       "checksum": "faeda40dd74c39a983e5d705536313efb306356749c67b032624e6a9387e91f4",
       "result": "passed",
-      "title": "Round 36 Evidence - Scale Operations UI"
+      "title": "Round 36 Evidence - Scale Operations UI",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "45ddec00f5de97d2feb47b26ef0a8d786343b1ab",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:29:53.772Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:29:53.772Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round37-erp-mes-connector",
@@ -3757,7 +4095,17 @@
       "path": ".codex/artifacts/work/evidence/round37-erp-mes-connector.md",
       "checksum": "19d74b5cc4c58c24fb5ee553c0f3f53f38b267b7f90944b2e96d7b72705aa75e",
       "result": "passed",
-      "title": "Round 37 Evidence - ERP/MES Connector Profile"
+      "title": "Round 37 Evidence - ERP/MES Connector Profile",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "564af53853639c0f83827c490bbca5a752fbe5ef",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:31:57.159Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:31:57.159Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round38-scale-metrics",
@@ -3766,7 +4114,17 @@
       "path": ".codex/artifacts/work/evidence/round38-scale-metrics.md",
       "checksum": "0b4c4ac3c4c1d1089aa9bb23c1a8c815c50d180ed840d26d765299736351f3db",
       "result": "passed",
-      "title": "Round 38 Evidence - Scale Productization Metrics"
+      "title": "Round 38 Evidence - Scale Productization Metrics",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "5d73e839ac6a303c3533fdb95c3a0844bf0717dc",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:33:35.895Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:33:35.895Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round39-scenario-uninstall",
@@ -3775,7 +4133,17 @@
       "path": ".codex/artifacts/work/evidence/round39-scenario-uninstall.md",
       "checksum": "b831f59f2af2dc71d095693fdea07b294922a38cd7922255f77bb23ba8010b6e",
       "result": "passed",
-      "title": "Round 39 Evidence - Scenario Pack Uninstall"
+      "title": "Round 39 Evidence - Scenario Pack Uninstall",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "8ddc88676768fe7c90777a11297bb74d28d5e402",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:36:56.047Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:36:56.047Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round4",
@@ -3784,7 +4152,17 @@
       "path": ".codex/artifacts/work/evidence/round4.md",
       "checksum": "891d7a52938fcdcf738dd82386a476062a40a266a79f18aecaec9aac6c22436c",
       "result": "passed",
-      "title": "EWOH Round 4 Execution Evidence"
+      "title": "EWOH Round 4 Execution Evidence",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "954c79f51c79befefc99fc059d8fd85dc5aad9a6",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-02T22:50:47.012Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-10-31T22:50:47.012Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round40-connector-tck",
@@ -3793,7 +4171,17 @@
       "path": ".codex/artifacts/work/evidence/round40-connector-tck.md",
       "checksum": "8fd556eab001aba23980af9399cb2baf34431ebaaab98b5005ec7114602bb879",
       "result": "passed",
-      "title": "Round 40 Evidence - Connector TCK"
+      "title": "Round 40 Evidence - Connector TCK",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "91e8a1a0cb91e10078b19345b7c9f41f895157e3",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:38:59.121Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:38:59.121Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round41-scenario-tck",
@@ -3802,7 +4190,17 @@
       "path": ".codex/artifacts/work/evidence/round41-scenario-tck.md",
       "checksum": "f3860a01da5dface66390bd32d02b415cb65e3b008e3167a3d580b76875c11a9",
       "result": "passed",
-      "title": "Round 41 Evidence - Scenario TCK"
+      "title": "Round 41 Evidence - Scenario TCK",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "ad9bd9162962a2b8e3adc6c3e2016715c0eba58b",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:39:45.659Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:39:45.659Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round42-third-factory-drill",
@@ -3811,7 +4209,17 @@
       "path": ".codex/artifacts/work/evidence/round42-third-factory-drill.md",
       "checksum": "c67bb4ab4b94ecbc2697de8400d9577c4b94d66e3562e4ef35c95fe48d457903",
       "result": "passed",
-      "title": "Round 42 Evidence - Third Factory Config-Driven Drill"
+      "title": "Round 42 Evidence - Third Factory Config-Driven Drill",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "6d19d1edb9b113aa9712c241d7712c21c707a413",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:42:45.853Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:42:45.853Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round43-factory-differences",
@@ -3820,7 +4228,17 @@
       "path": ".codex/artifacts/work/evidence/round43-factory-differences.md",
       "checksum": "58d6bb1dee3dd7bcac9a03a3c3b87ce2f2eb9857eea84acd3017a4a96d24c8ac",
       "result": "passed",
-      "title": "Round 43 Evidence - Factory Difference Recycling"
+      "title": "Round 43 Evidence - Factory Difference Recycling",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "ae6a6253de2df9976d9fd6aa54ae25757821b368",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:47:23.770Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:47:23.770Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round44-difference-resolve",
@@ -3829,7 +4247,17 @@
       "path": ".codex/artifacts/work/evidence/round44-difference-resolve.md",
       "checksum": "4c027a6bd2eb20983183a5d116d81fdcf59f73e487c2f7a27a5909b2e16b6108",
       "result": "passed",
-      "title": "Round 44 Evidence - Factory Difference Resolution"
+      "title": "Round 44 Evidence - Factory Difference Resolution",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "a62e2c4830bde1c66791408c46d4800b0a0070fa",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:53:13.117Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:53:13.117Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round45-cross-tenant-tck",
@@ -3838,7 +4266,17 @@
       "path": ".codex/artifacts/work/evidence/round45-cross-tenant-tck.md",
       "checksum": "49792c9f74164fe2cee34fb20f4ed0af2c426297aa31f538a19453efd51779c2",
       "result": "passed",
-      "title": "Round 45 Evidence - Cross-Tenant TCK"
+      "title": "Round 45 Evidence - Cross-Tenant TCK",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "b28f75da7af77da4cb2e7001628131994a5fac5e",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:55:54.530Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:55:54.530Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round46-differences-ui",
@@ -3847,7 +4285,17 @@
       "path": ".codex/artifacts/work/evidence/round46-differences-ui.md",
       "checksum": "d314b08895960e48f69f7f18e3b628876b38e9ebf79d2efda2ae07fb77a9c846",
       "result": "passed",
-      "title": "Round 46 Evidence - Factory Differences UI"
+      "title": "Round 46 Evidence - Factory Differences UI",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "8a80b2dd1f9762c08971175c8fd6d56f344b32d2",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T05:58:23.741Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T05:58:23.741Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round47-workflow-instances",
@@ -3856,7 +4304,17 @@
       "path": ".codex/artifacts/work/evidence/round47-workflow-instances.md",
       "checksum": "9bad2762bc9a49614175dd38ed647006efd935aa281b6a1a3f450500539ad53c",
       "result": "passed",
-      "title": "Round 47 Evidence - Stateful Workflow Instances"
+      "title": "Round 47 Evidence - Stateful Workflow Instances",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "d5e9f1606a5e830230fad67d5abe5e60431a568b",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T06:02:03.451Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T06:02:03.451Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round48-support-bundle-ui",
@@ -3865,7 +4323,17 @@
       "path": ".codex/artifacts/work/evidence/round48-support-bundle-ui.md",
       "checksum": "98d604baa69623cf922b121c617240c615666b3da0b3621a963eebd6fc435a3c",
       "result": "passed",
-      "title": "Round 48 Evidence - Support Bundle UI"
+      "title": "Round 48 Evidence - Support Bundle UI",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "4569a4a51d05aed8b2c92365597187e93d1cc9c5",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T06:05:00.989Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T06:05:00.989Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round49-fleet-ui",
@@ -3874,7 +4342,17 @@
       "path": ".codex/artifacts/work/evidence/round49-fleet-ui.md",
       "checksum": "f8abc88464e268b7d41b89ac3147ea0118a822006a0cc7a8462080bd83a07e7f",
       "result": "passed",
-      "title": "Round 49 Evidence - Fleet Upgrade Ring UI"
+      "title": "Round 49 Evidence - Fleet Upgrade Ring UI",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "c15af25b9981e7760ddef9f388c64a0d5ce0f8e3",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T06:07:03.679Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T06:07:03.679Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round5",
@@ -3883,7 +4361,17 @@
       "path": ".codex/artifacts/work/evidence/round5.md",
       "checksum": "75a1d553df5eb15f94b3ab2b8c72c8a9aef6dae0f747859043bd1ec27f391519",
       "result": "passed",
-      "title": "EWOH Round 5 CI Evidence"
+      "title": "EWOH Round 5 CI Evidence",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "954c79f51c79befefc99fc059d8fd85dc5aad9a6",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T00:53:21.518Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T00:53:21.518Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round50-workflow-instances-ui",
@@ -3892,7 +4380,17 @@
       "path": ".codex/artifacts/work/evidence/round50-workflow-instances-ui.md",
       "checksum": "f622465bd54de44f775daa1ec933e8192fe7610acb054e76ea894b1d134e1ac1",
       "result": "passed",
-      "title": "Round 50 Evidence - Workflow Instances UI"
+      "title": "Round 50 Evidence - Workflow Instances UI",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "790dabd3a1730d25a6522e5f2911db80f93974a3",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T06:09:26.614Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T06:09:26.614Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round51-scenario-ui",
@@ -3901,7 +4399,17 @@
       "path": ".codex/artifacts/work/evidence/round51-scenario-ui.md",
       "checksum": "9447033a9055f47a6c91497d913bf28525bd26647d8ac2a365a9c4810c30d976",
       "result": "passed",
-      "title": "Round 51 Evidence - Scenario Pack Lifecycle UI"
+      "title": "Round 51 Evidence - Scenario Pack Lifecycle UI",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "ded639c6fae1db4c029f93c3374adc59595ff67e",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T06:11:10.026Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T06:11:10.026Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round52-operations-capability",
@@ -3910,7 +4418,17 @@
       "path": ".codex/artifacts/work/evidence/round52-operations-capability.md",
       "checksum": "134d92545a221dd11db24649fc78a41848932e8865adc7395b79d55368d9da79",
       "result": "passed",
-      "title": "Round 52 Evidence - Operations Capability Package (EAM / Work Center / Efficiency)"
+      "title": "Round 52 Evidence - Operations Capability Package (EAM / Work Center / Efficiency)",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "904b69f1beda17958a6d99c756407451a753dbc0",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T08:03:36.307Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T08:03:36.307Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round53-sparkplug-openfeature",
@@ -3919,7 +4437,17 @@
       "path": ".codex/artifacts/work/evidence/round53-sparkplug-openfeature.md",
       "checksum": "1903515fb88fa4bf4ff8a9f661d7cf8991f28088ea351824de7425629d3fe90b",
       "result": "passed",
-      "title": "Round 53 Evidence - Sparkplug B Connector + OpenFeature Flag Evaluation"
+      "title": "Round 53 Evidence - Sparkplug B Connector + OpenFeature Flag Evaluation",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "a211ec289b0593335564bf371975158f6af6e1a5",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T08:11:51.748Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T08:11:51.748Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round54-parameter-registry",
@@ -3928,7 +4456,17 @@
       "path": ".codex/artifacts/work/evidence/round54-parameter-registry.md",
       "checksum": "d8dce1f6b67e0b8c23926ee94ed1a96b2e014870a829a33804f05c98b530661b",
       "result": "passed",
-      "title": "Round 54 Evidence - Parameter Registry"
+      "title": "Round 54 Evidence - Parameter Registry",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "37c4a19351e0cb10fa835ac5e1a1a28f24ded10d",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T08:18:36.385Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T08:18:36.385Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round55-aas-codec",
@@ -3937,7 +4475,17 @@
       "path": ".codex/artifacts/work/evidence/round55-aas-codec.md",
       "checksum": "62f6d15ee1a73102cf4993f47a94e26661a5b1fcdc9b58659513dab82a308642",
       "result": "passed",
-      "title": "Round 55 Evidence - AAS/IEC 63278 Codec"
+      "title": "Round 55 Evidence - AAS/IEC 63278 Codec",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "b984304fe9d4a7bdb8eb6455e9443d3feb1ca91f",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T08:22:35.610Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T08:22:35.610Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round56-rego-policy-as-code",
@@ -3946,7 +4494,17 @@
       "path": ".codex/artifacts/work/evidence/round56-rego-policy-as-code.md",
       "checksum": "53506ef79d1f63c1475372c351f1d666ba6b9bf2091935d4597fbdc8aa0ca5c6",
       "result": "passed",
-      "title": "Round 56 Evidence - Rego Policy-as-Code Deployment Gate"
+      "title": "Round 56 Evidence - Rego Policy-as-Code Deployment Gate",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "41a61c90a1543450060a89eda4647384067ec815",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T08:27:12.549Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T08:27:12.549Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round57-aas-asset-api",
@@ -3955,7 +4513,17 @@
       "path": ".codex/artifacts/work/evidence/round57-aas-asset-api.md",
       "checksum": "97163cc13816b7b60505fe8c09df57817255144efbb17d632b39d849c333e329",
       "result": "passed",
-      "title": "Round 57 Evidence - AAS Asset Registry API + Data Assets UI"
+      "title": "Round 57 Evidence - AAS Asset Registry API + Data Assets UI",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "914230efd771d7579e404e26ce6bb74becf82761",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T08:33:32.248Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T08:33:32.248Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round58-opcua-connector",
@@ -3964,7 +4532,17 @@
       "path": ".codex/artifacts/work/evidence/round58-opcua-connector.md",
       "checksum": "5ff9d6fbd3c9f8c06db71cf69d08ea1dfbb8e09045689f22a0eb556eddb07dc4",
       "result": "passed",
-      "title": "Round 58 Evidence - OPC UA Connector"
+      "title": "Round 58 Evidence - OPC UA Connector",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "dec9a12b2f9cad890a15ad1c28a0a8b529ab92f7",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T08:36:43.210Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T08:36:43.210Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round59-modbus-connector",
@@ -3973,7 +4551,17 @@
       "path": ".codex/artifacts/work/evidence/round59-modbus-connector.md",
       "checksum": "6e9ee363d52d0cf426539fd77ff2b6aaddf2a392061977807e7fd157a223888b",
       "result": "passed",
-      "title": "Round 59 Evidence - Modbus TCP Connector"
+      "title": "Round 59 Evidence - Modbus TCP Connector",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "3cbd092bd4176079d8f26c112fa08daa599a244e",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T08:40:44.437Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T08:40:44.437Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round6-ingestion-protocol",
@@ -3982,7 +4570,17 @@
       "path": ".codex/artifacts/work/evidence/round6-ingestion-protocol.md",
       "checksum": "499d8570b9d7096e4ba795e2268b1d619ef1c58d6336f635ffe8cc57895eae75",
       "result": "passed",
-      "title": "EWOH Round 6 Evidence - Ingestion Protocol Alignment"
+      "title": "EWOH Round 6 Evidence - Ingestion Protocol Alignment",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "954c79f51c79befefc99fc059d8fd85dc5aad9a6",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T01:14:43.711Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T01:14:43.711Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round60-webhook-connector",
@@ -3991,7 +4589,17 @@
       "path": ".codex/artifacts/work/evidence/round60-webhook-connector.md",
       "checksum": "f14051175b718511ba9c5ded302133662d712067ee18036f7eb5991431bb9a1b",
       "result": "passed",
-      "title": "Round 60 Evidence - HTTP/Webhook Connector"
+      "title": "Round 60 Evidence - HTTP/Webhook Connector",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "8a5a3a98824fcdea201e8e48291cb77f27e14e56",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T08:44:45.610Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T08:44:45.610Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round61-csv-file-connector",
@@ -4000,7 +4608,17 @@
       "path": ".codex/artifacts/work/evidence/round61-csv-file-connector.md",
       "checksum": "7704cd08ec35a64f69d8a56d44c9ff7421f1cdcba476ef1007e8a4d36985ce07",
       "result": "passed",
-      "title": "Round 61 Evidence - CSV/File Connector"
+      "title": "Round 61 Evidence - CSV/File Connector",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "ab844f3c3ba17dc2330fb9e54d7b860fcf0d9eb1",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T08:48:47.512Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T08:48:47.512Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round62-otel-request-tracing",
@@ -4009,7 +4627,17 @@
       "path": ".codex/artifacts/work/evidence/round62-otel-request-tracing.md",
       "checksum": "52ed5975c46ddd158638cd6ab98a4bd7c8be33e041f922b3729a97909956b47c",
       "result": "passed",
-      "title": "Round 62 Evidence - OTel-Style Request Tracing"
+      "title": "Round 62 Evidence - OTel-Style Request Tracing",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "8fbaa93d1abf152637262c6b7799db929787f3bb",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T08:56:23.130Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T08:56:23.130Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round63-support-bundle-traces",
@@ -4018,7 +4646,17 @@
       "path": ".codex/artifacts/work/evidence/round63-support-bundle-traces.md",
       "checksum": "701a640aa1a3f0a03c4986bb4298ec9d15da66149ded9f07cc5dbb3c3ff77305",
       "result": "passed",
-      "title": "Round 63 Evidence - Support Bundle Trace Inclusion"
+      "title": "Round 63 Evidence - Support Bundle Trace Inclusion",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "a18e44de39243c426682b2035a73cead25eb38b1",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T09:01:01.433Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T09:01:01.433Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round64-tracing-ui",
@@ -4027,7 +4665,17 @@
       "path": ".codex/artifacts/work/evidence/round64-tracing-ui.md",
       "checksum": "f2ebe2cb63c8b0aed2ae8a9f1192be6c3df0cff3b873838da3add7d678c5bde4",
       "result": "passed",
-      "title": "Round 64 Evidence - Request Tracing UI"
+      "title": "Round 64 Evidence - Request Tracing UI",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "53129d8aa011894eaa7f4e69725f022a477939ac",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T09:04:05.954Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T09:04:05.954Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round65-release-bundle-rerolled",
@@ -4036,7 +4684,17 @@
       "path": ".codex/artifacts/work/evidence/round65-release-bundle-rerolled.md",
       "checksum": "74b5299f800a778a28f9d6981cd72d419ba67fa923f9f558a2d62fd02246f441",
       "result": "passed",
-      "title": "Round 65 Evidence - RC2 Release Bundle Rerolled"
+      "title": "Round 65 Evidence - RC2 Release Bundle Rerolled",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "1a8e8a24f49a38647256ec8c496bcdd2e39ac961",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T09:06:31.877Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T09:06:31.877Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round66-final-gate-sweep",
@@ -4045,7 +4703,17 @@
       "path": ".codex/artifacts/work/evidence/round66-final-gate-sweep.md",
       "checksum": "d67f047ad3a2ae1207b4c6e9f8997f988aa3f1c55766787f1d8925aca1fbc90b",
       "result": "passed",
-      "title": "Round 66 Evidence - Final One-Click Gate Sweep"
+      "title": "Round 66 Evidence - Final One-Click Gate Sweep",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "896dca96ef3f3880f18e709887f1cb86c931cce0",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T09:10:38.204Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T09:10:38.204Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round67-pilot-readiness-blockers",
@@ -4054,7 +4722,17 @@
       "path": ".codex/artifacts/work/evidence/round67-pilot-readiness-blockers.md",
       "checksum": "f5ddb65932105ff8a42928d130d4208d43572a926038341c977f0d76b8961455",
       "result": "passed",
-      "title": "Round 67 Evidence - Pilot Readiness Blocker Gate"
+      "title": "Round 67 Evidence - Pilot Readiness Blocker Gate",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "d2d65c85140ebe4b9b8c801368dd59c31efb35d5",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T09:13:37.568Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T09:13:37.568Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round68-release-bundle-includes-pilot-gate",
@@ -4063,7 +4741,17 @@
       "path": ".codex/artifacts/work/evidence/round68-release-bundle-includes-pilot-gate.md",
       "checksum": "9084398b4a90430fca6afc8e81cb55a3bbad321d3b9a0f7789fb40ba129425bb",
       "result": "passed",
-      "title": "Round 68 Evidence - Release Bundle Includes Pilot Gate"
+      "title": "Round 68 Evidence - Release Bundle Includes Pilot Gate",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "33802e3e8eb83499513f70b36a6f59d8dcefcc0c",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T09:15:51.401Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T09:15:51.401Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round69-final6-work-orchestration",
@@ -4072,7 +4760,17 @@
       "path": ".codex/artifacts/work/evidence/round69-final6-work-orchestration.md",
       "checksum": "8f079b14a29e9bd4af4aeecd75439cfffa7fa3433a57aaff3900dd129618a8a0",
       "result": "passed",
-      "title": "Round 69 - Final 6.0 Work Orchestration Control Plane"
+      "title": "Round 69 - Final 6.0 Work Orchestration Control Plane",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "aa522504622713ec235fe2c7207025a81f8e3827",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T18:43:01.124Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T18:43:01.124Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round7-ops-readiness",
@@ -4081,7 +4779,17 @@
       "path": ".codex/artifacts/work/evidence/round7-ops-readiness.md",
       "checksum": "8724625758d1976e4c3f975101e5525ac436931a75b55199f540f4ca93629061",
       "result": "passed",
-      "title": "EWOH Round 7 Evidence - Operations Readiness"
+      "title": "EWOH Round 7 Evidence - Operations Readiness",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "954c79f51c79befefc99fc059d8fd85dc5aad9a6",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T01:19:20.475Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T01:19:20.475Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round70-iteration-p0-2026-08-04",
@@ -4090,7 +4798,17 @@
       "path": ".codex/artifacts/work/evidence/round70-iteration-p0-2026-08-04.md",
       "checksum": "f8593aab454a48f76ef66ee85d521441ec9c7612c37e2f6325e54c5f3b1833c0",
       "result": "passed",
-      "title": "Round 70 - 2026-08-04 P0 Hardening Iteration"
+      "title": "Round 70 - 2026-08-04 P0 Hardening Iteration",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "e5f47e75b89ef32b5cef551e05ff4986c275bb96",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T19:35:04.046Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T19:35:04.046Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round71-validation-and-command-map",
@@ -4099,7 +4817,17 @@
       "path": ".codex/artifacts/work/evidence/round71-validation-and-command-map.md",
       "checksum": "90e1c861a40555731c0cc042487914f49bc40b0122419f681bcbaeb8936e0071",
       "result": "passed",
-      "title": "Round 71 - 2026-08-04 Validation Pipe and Command-Map Details"
+      "title": "Round 71 - 2026-08-04 Validation Pipe and Command-Map Details",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "41d4c96d5d4e62bfefafca11a224868e57e35608",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T19:45:13.207Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T19:45:13.207Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round72-mobile-offline-queue",
@@ -4108,7 +4836,17 @@
       "path": ".codex/artifacts/work/evidence/round72-mobile-offline-queue.md",
       "checksum": "34a8824611baec95f39cd2ff3bce582d76f82945afc2fd9ffbb9ae508c71f9e9",
       "result": "passed",
-      "title": "Round 72 - 2026-08-04 Mobile Offline Pending-Action Queue"
+      "title": "Round 72 - 2026-08-04 Mobile Offline Pending-Action Queue",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "2cb394ae140551a665eccd076eec2e5cb87b6aac",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T19:47:22.926Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T19:47:22.926Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round73-state-guards",
@@ -4117,7 +4855,17 @@
       "path": ".codex/artifacts/work/evidence/round73-state-guards.md",
       "checksum": "dcbfed15f981d2705daba6364cef0d866bb6c729e295e8cda4e514e28186838c",
       "result": "passed",
-      "title": "Round 73 - 2026-08-04 Control and Work Orchestration State Guards"
+      "title": "Round 73 - 2026-08-04 Control and Work Orchestration State Guards",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "8dfb7dda9e9f4a52742ab387f6ca3a5590d97696",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T19:52:11.151Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T19:52:11.151Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round74-scale-idempotency",
@@ -4126,7 +4874,17 @@
       "path": ".codex/artifacts/work/evidence/round74-scale-idempotency.md",
       "checksum": "71c5ea3df44341526945f3b3db90b708fc3c820dba4e97ab1e0f5b04fba86877",
       "result": "passed",
-      "title": "Round 74 - 2026-08-04 Scale Mutation Idempotency"
+      "title": "Round 74 - 2026-08-04 Scale Mutation Idempotency",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "3dbbefaa1827ccf8f72ec53afb9da0c0559980b6",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T19:55:36.951Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T19:55:36.951Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round75-real-postgres-e2e",
@@ -4135,7 +4893,17 @@
       "path": ".codex/artifacts/work/evidence/round75-real-postgres-e2e.md",
       "checksum": "473c7fa5e0d30d08db6c687482f8f68f2b915b2eb46e6d4c66ada46ba9c70157",
       "result": "passed",
-      "title": "Round 75 - 2026-08-04 Real PostgreSQL HTTP E2E"
+      "title": "Round 75 - 2026-08-04 Real PostgreSQL HTTP E2E",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "ca471576f74788560a3d513b822cc7fcf640f0c4",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T19:57:46.339Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T19:57:46.339Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round76-mobile-photo-attachments",
@@ -4144,7 +4912,17 @@
       "path": ".codex/artifacts/work/evidence/round76-mobile-photo-attachments.md",
       "checksum": "37083ff82fc573593c16a94556f25de7ca0d5b8f1d5e23630e0d81a16b83eee6",
       "result": "passed",
-      "title": "Round 76 - 2026-08-04 Mobile Exception Photo Attachments"
+      "title": "Round 76 - 2026-08-04 Mobile Exception Photo Attachments",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "9100b8e7386197767912cf5dddb64f7823037c09",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T19:59:41.293Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T19:59:41.293Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round77-pwa-installability",
@@ -4153,7 +4931,17 @@
       "path": ".codex/artifacts/work/evidence/round77-pwa-installability.md",
       "checksum": "300376cc11b9b966e28e34eb8f08533398835d62db46b4cb2097a8a5bf8f15b8",
       "result": "passed",
-      "title": "Round 77 - 2026-08-04 PWA Installability Assets"
+      "title": "Round 77 - 2026-08-04 PWA Installability Assets",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "65d28b56349bfcd4736bc08d8d04935fcb635409",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T20:02:58.140Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T20:02:58.140Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round78-offline-photo-queue",
@@ -4162,7 +4950,17 @@
       "path": ".codex/artifacts/work/evidence/round78-offline-photo-queue.md",
       "checksum": "553b193eea8db9e46c61e0cdaea234390d27bdc9a27de1f3d8cda58f5a9dd08c",
       "result": "passed",
-      "title": "Round 78 - 2026-08-04 Offline Photo Queue"
+      "title": "Round 78 - 2026-08-04 Offline Photo Queue",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "fb6ba4db0426f3ecd02ee0d355a3313f6ed98052",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T20:07:07.780Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T20:07:07.780Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round79-release-drill-and-verification",
@@ -4171,7 +4969,17 @@
       "path": ".codex/artifacts/work/evidence/round79-release-drill-and-verification.md",
       "checksum": "7a6f932e74d5fa53df2967ca67ffe18076d8a50c64ce562bfbed84262013d975",
       "result": "passed",
-      "title": "Round 79 - 2026-08-04 Release Drill and Verification Gates"
+      "title": "Round 79 - 2026-08-04 Release Drill and Verification Gates",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "32e2e04af458e96efd9d997726c47bc8decdbfc5",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T20:23:31.290Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T20:23:31.290Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round8-org-scope-hardening",
@@ -4180,7 +4988,17 @@
       "path": ".codex/artifacts/work/evidence/round8-org-scope-hardening.md",
       "checksum": "0029dd8ad411873762c5da81c1eace55a07c6db2ec5087e4fb8d87e37e549e38",
       "result": "passed",
-      "title": "EWOH Round 8 Evidence - Org Scope Hardening"
+      "title": "EWOH Round 8 Evidence - Org Scope Hardening",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "954c79f51c79befefc99fc059d8fd85dc5aad9a6",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T01:27:07.326Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T01:27:07.326Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round80-playwright-browser-evidence",
@@ -4189,7 +5007,17 @@
       "path": ".codex/artifacts/work/evidence/round80-playwright-browser-evidence.md",
       "checksum": "6551d95f89eaa8606755ea57e7fa4a2f53a6528763d0272801435ebbd0436ef7",
       "result": "unknown",
-      "title": "Round 80 - 2026-08-04 Playwright Browser Evidence"
+      "title": "Round 80 - 2026-08-04 Playwright Browser Evidence",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "6e76d58149866f0afbb88992cb35750c7defbdb2",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T20:12:57.457Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T20:12:57.457Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round81-request-audit-correlation",
@@ -4198,7 +5026,17 @@
       "path": ".codex/artifacts/work/evidence/round81-request-audit-correlation.md",
       "checksum": "8001186ae91342a0cb2c0751fc90983176cd62d043c50ab15936f53f87c33e7d",
       "result": "passed",
-      "title": "Round 81 - 2026-08-04 Request ID and Audit Correlation"
+      "title": "Round 81 - 2026-08-04 Request ID and Audit Correlation",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "265d4e9f5cc778631088f5039a00ae786cce5e17",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T20:16:38.231Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T20:16:38.231Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round82-error-sanitization",
@@ -4207,7 +5045,17 @@
       "path": ".codex/artifacts/work/evidence/round82-error-sanitization.md",
       "checksum": "d0257f2ad09c594a6b9fa788b8a0b3810ddbfd6185497cc80a6c6a3a53aa4548",
       "result": "passed",
-      "title": "Round 82 - 2026-08-04 Error Leak Sanitization"
+      "title": "Round 82 - 2026-08-04 Error Leak Sanitization",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "84b9c22cd5dab288da7fa33dbc369e5fc433a1f3",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T20:20:22.670Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T20:20:22.670Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round83-devices-error-state",
@@ -4216,7 +5064,17 @@
       "path": ".codex/artifacts/work/evidence/round83-devices-error-state.md",
       "checksum": "10acfc44929d6c03757dae589619a7a5b2c9f16837b8355ae1509162da5ec9c7",
       "result": "passed",
-      "title": "Round 83 - 2026-08-04 Devices Error and Update State"
+      "title": "Round 83 - 2026-08-04 Devices Error and Update State",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "3e99429536b93c0868eabe37a11e3bca094250c3",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T20:22:08.888Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T20:22:08.888Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round84-command-map-query-state",
@@ -4225,7 +5083,17 @@
       "path": ".codex/artifacts/work/evidence/round84-command-map-query-state.md",
       "checksum": "69e6e490c6ba6d3459e117357ed3acf5f1d429f4eba033d3de22fb9e6508c48b",
       "result": "passed",
-      "title": "Round 84 - 2026-08-04 Command Map Query Error State"
+      "title": "Round 84 - 2026-08-04 Command Map Query Error State",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "1427ac6f9d6d5cdceb402afcc1978a4c12c56801",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T20:25:45.881Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T20:25:45.881Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round85-rc4-candidate-bundle",
@@ -4234,7 +5102,17 @@
       "path": ".codex/artifacts/work/evidence/round85-rc4-candidate-bundle.md",
       "checksum": "75c7b470d531481fed1d4c529dc4a51e8ed2a8869bed50333309df0a76ed98b5",
       "result": "passed",
-      "title": "Round 85 - 2026-08-04 EWOH 0.6.0-rc4 Candidate Bundle"
+      "title": "Round 85 - 2026-08-04 EWOH 0.6.0-rc4 Candidate Bundle",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "3a56152e95fe0ef321f84bc3a57e481c7d3a802d",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T20:48:40.627Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T20:48:40.627Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round86-authenticated-browser-test",
@@ -4243,7 +5121,17 @@
       "path": ".codex/artifacts/work/evidence/round86-authenticated-browser-test.md",
       "checksum": "9c24f61a721257b4b893591cecb7e805b1ccb8ae0818e7ef3f78201b540a533c",
       "result": "passed",
-      "title": "Round 86 - 2026-08-04 Authenticated Playwright Browser Test"
+      "title": "Round 86 - 2026-08-04 Authenticated Playwright Browser Test",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "a4aa9daf3cb4f2b93752d229dd38469088ed7b84",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T20:50:08.688Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T20:50:08.688Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round87-browser-tests-in-ci",
@@ -4252,7 +5140,17 @@
       "path": ".codex/artifacts/work/evidence/round87-browser-tests-in-ci.md",
       "checksum": "11682ea2cd56e050be2511af6e52504dbb3dbd62b720946ea3f344ba22f38b7e",
       "result": "passed",
-      "title": "Round 87 - 2026-08-04 Browser Tests in CI"
+      "title": "Round 87 - 2026-08-04 Browser Tests in CI",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "ada17b85be3e6172a45b8f2a7535106881ba295d",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T20:43:04.658Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T20:43:04.658Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round88-pilot-readiness-rc4",
@@ -4261,7 +5159,17 @@
       "path": ".codex/artifacts/work/evidence/round88-pilot-readiness-rc4.md",
       "checksum": "c7d03dfc161e280485e4e6294fcffe2a1690b99c5428365b31d63b7c0725cb59",
       "result": "passed",
-      "title": "Round 88 - 2026-08-04 Pilot Readiness Gate (RC4)"
+      "title": "Round 88 - 2026-08-04 Pilot Readiness Gate (RC4)",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "83c3f7b2938519c9feb39e0124abae2b04a796ec",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T20:46:23.462Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T20:46:23.462Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round89-ops-drill-rc4",
@@ -4270,7 +5178,17 @@
       "path": ".codex/artifacts/work/evidence/round89-ops-drill-rc4.md",
       "checksum": "0e8b1b02f4f2bc42ed596233e492cd49cb09d45b101a74e83dd586daa652f227",
       "result": "passed",
-      "title": "Round 89 - 2026-08-04 Standalone Ops Drill (RC4)"
+      "title": "Round 89 - 2026-08-04 Standalone Ops Drill (RC4)",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "3a56152e95fe0ef321f84bc3a57e481c7d3a802d",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T20:48:22.409Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T20:48:22.409Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     },
     {
       "evidenceId": "EVD-round9-observability-deploy-artifacts",
@@ -4279,7 +5197,17 @@
       "path": ".codex/artifacts/work/evidence/round9-observability-deploy-artifacts.md",
       "checksum": "37aad379b4b7cfd6bbb639d7b12e07702891a218605714c94756584b052d8e01",
       "result": "passed",
-      "title": "EWOH Round 9 Evidence - Observability and Deploy Artifacts"
+      "title": "EWOH Round 9 Evidence - Observability and Deploy Artifacts",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "954c79f51c79befefc99fc059d8fd85dc5aad9a6",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-03T01:33:48.440Z",
+      "verifier": "unknown",
+      "expiresAt": "2026-11-01T01:33:48.440Z",
+      "status": "unbound",
+      "staleReason": "evidence file has no machine-readable front matter"
     }
   ],
   "gates": [
@@ -4864,6 +5792,30 @@
       "decision": "Keep `code` as a legacy alias and add `errorCode` to the unified error envelope; all responses must carry `requestId/retryable/recommendedAction`",
       "rationale": "Goal requires the exact field names while existing clients already consume `code`; non-breaking migration wins",
       "reversibility": "Reversible via contract version bump"
+    },
+    {
+      "id": "D-039",
+      "title": "Bind evidence to machine-readable commit/build/env/dependency metadata and mark legacy evidence `unbound` until front matter exists",
+      "date": "2026-08-04",
+      "decision": "Bind evidence to machine-readable commit/build/env/dependency metadata and mark legacy evidence `unbound` until front matter exists",
+      "rationale": "The authoritative plan requires old evidence to be invalid after code/environment changes; unbound evidence must not be treated as valid",
+      "reversibility": "Reversible per evidence file"
+    },
+    {
+      "id": "D-040",
+      "title": "Add `tools/work-console` and graph invariant checks as release gates",
+      "date": "2026-08-04",
+      "decision": "Add `tools/work-console` and graph invariant checks as release gates",
+      "rationale": "Project lead needs a one-command blocker diagnosis; orphan/cycle/unowned graph states must block CI",
+      "reversibility": "Reversible per tool"
+    },
+    {
+      "id": "D-041",
+      "title": "Enforce mobile workbench person/org filtering and `worker` role access as P0",
+      "date": "2026-08-04",
+      "decision": "Enforce mobile workbench person/org filtering and `worker` role access as P0",
+      "rationale": "Audit found the endpoint returned all visible steps and excluded the frontline role; both violate mobile execution and security contracts",
+      "reversibility": "Reversible per controller/service"
     }
   ],
   "resources": [
@@ -4917,5 +5869,6 @@
       "purpose": "missing DB probes use Node `postgres` driver"
     }
   ],
-  "handoffs": []
+  "handoffs": [],
+  "invariants": []
 }

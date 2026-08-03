@@ -83,7 +83,7 @@ export const navGroups: Array<{ label: string; items: NavItem[] }> = [
         to: '/mobile-workbench',
         label: '移动工作台',
         icon: Smartphone,
-        roles: ['global_admin', 'dispatcher', 'workshop_lead', 'device_ops'],
+        roles: ['global_admin', 'dispatcher', 'workshop_lead', 'device_ops', 'worker'],
       },
       {
         to: '/operations',

@@ -58,6 +58,16 @@ export interface WorkEvidence {
   path: string;
   checksum: string;
   result?: string;
+  branch?: string;
+  commitSha?: string;
+  buildVersion?: string;
+  envFingerprint?: string;
+  dependencyVersion?: string;
+  testTime?: string;
+  verifier?: string;
+  expiresAt?: string;
+  status?: string;
+  staleReason?: string;
 }
 
 export interface WorkGate {

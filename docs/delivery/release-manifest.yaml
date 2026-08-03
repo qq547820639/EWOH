@@ -22,6 +22,7 @@ artifacts:
   work_tools:
     - tools/work-indexer/
     - tools/gate-engine/
+    - tools/work-console/
     - tools/resource-registry/
     - tools/handoff-service/
     - tools/git-sync/
@@ -29,8 +30,8 @@ artifacts:
   final6_catalog: catalog/
   contracts: contracts/
 evidence:
-  jest: "76 suites / 362 tests"
-  client_jest: "13 suites / 42 tests"
+  jest: "78 suites / 372 tests"
+  client_jest: "13 suites / 44 tests"
   e2e: "29/29 HTTP + PostgreSQL"
   openapi: "232/232 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/client-jest/repo-facts/openapi/e2e/build/ddl/hygiene)"
@@ -40,9 +41,9 @@ evidence:
   python: "unittest 667 passed; pytest 120 passed; ruff clean"
   perf: "500 req / 50 concurrency on /health/live, 4610 qps, p95 26.83ms"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; 57 tables backup/restore/verify; identity sequence advanced"
-  work_graph: "202 items / 21 edges / 48 actors / 69 evidence / 14 gates / 0 conflicts"
-  git_sync: "offline-first issue/PR plan; 188 items; live creation approval-gated"
-  console_ux: "DAG pan/zoom, node search, gate/evidence filters, evidence content preview, batch gate decisions, handoff state actions, lock countdown, site readiness tab, q/limit/offset API"
+  work_graph: "232 items / 19 edges / 48 actors / 89 evidence / 14 gates / 0 invariant conflicts"
+  git_sync: "offline-first issue/PR plan; 218 items; live creation approval-gated"
+  console_ux: "DAG pan/zoom, node search, gate/evidence filters, evidence content preview, batch gate decisions, handoff state actions, lock countdown, site readiness tab, q/limit/offset API, tools/work-console blocker diagnosis, evidence binding status"
   factory_replication: "replication-report schema + passing/failing fixtures; 20 factory contract checks"
   site_readiness: "site-readiness schema + ready/not-ready fixtures; standalone gate passes ready fixture"
   release_review: "scale-release-review.js packaging gate; 34/34 checks"

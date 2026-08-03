@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { execFileSync } = require('child_process');
 
 const DEFAULT_PATHS = [
   { path: '.codex/artifacts/task-board.md', required: true, owner: 'AG-00', mediaType: 'text/markdown' },
@@ -36,6 +37,170 @@ function findArtifactsDir(cwd) {
 
 function checksum(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+}
+
+function sha256Text(value) {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function runGit(args, root) {
+  try {
+    return execFileSync('git', args, {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .trim()
+      .replace(/\s+$/g, '');
+  } catch {
+    return '';
+  }
+}
+
+function parseYamlFrontMatter(text) {
+  const source = String(text || '');
+  if (!source.startsWith('---\n')) {
+    return { frontMatter: {}, body: source };
+  }
+  const end = source.indexOf('\n---', 4);
+  if (end === -1) {
+    return { frontMatter: {}, body: source };
+  }
+  const block = source.slice(4, end);
+  const body = source.slice(end + 4).replace(/^\n/, '');
+  const frontMatter = {};
+  for (const line of block.split(/\r?\n/)) {
+    const match = line.match(/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
+    if (!match) continue;
+    const key = match[1];
+    let value = match[2].trim().replace(/^["']|["']$/g, '');
+    if (value === 'true' || value === 'false') {
+      value = value === 'true';
+    } else if (value !== '' && !Number.isNaN(Number(value))) {
+      value = Number(value);
+    }
+    frontMatter[key] = value;
+  }
+  return { frontMatter, body };
+}
+
+function currentEnvFingerprint(root) {
+  const lockFile = path.join(root, 'ewoh-spark-app', 'package-lock.json');
+  const envFile = path.join(root, '.codex', 'artifacts', 'inventory', 'environment.md');
+  const parts = [];
+  for (const file of [lockFile, envFile]) {
+    parts.push(
+      fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : `missing:${file}`,
+    );
+  }
+  return sha256Text(parts.join('\n---\n'));
+}
+
+function currentBuildVersion(root) {
+  const changelog = path.join(root, 'CHANGELOG.md');
+  if (!fs.existsSync(changelog)) return 'unknown';
+  const match = fs
+    .readFileSync(changelog, 'utf8')
+    .match(/^## \[([^\]]+)\] - \d{4}-\d{2}-\d{2}/m);
+  return match?.[1] || 'unknown';
+}
+
+function currentDependencyVersion(root) {
+  const lockFile = path.join(root, 'ewoh-spark-app', 'package-lock.json');
+  if (!fs.existsSync(lockFile)) return 'unknown';
+  try {
+    const lock = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+    const rootPackage = lock.packages?.[''] || {};
+    return `${lock.lockfileVersion ?? 'unknown'}:${rootPackage.version ?? 'unknown'}`;
+  } catch {
+    return 'unknown';
+  }
+}
+
+function currentCodeHead(root) {
+  return runGit(
+    [
+      'log',
+      '-1',
+      '--format=%H',
+      '--',
+      'ewoh-spark-app/server',
+      'ewoh-spark-app/client/src',
+      'src/edge_platform',
+      'tools',
+      'scripts',
+      'contracts',
+      'db',
+    ],
+    root,
+  );
+}
+
+function deriveEvidenceBinding(artifactsDir, root, entry, file, sourceText) {
+  const { frontMatter, body } = parseYamlFrontMatter(sourceText);
+  const linked = body.match(/\b(T-\d{3}|G\d{2}|WP-[A-Z-]+\d{3})\b/);
+  const testTime = frontMatter.testTime
+    ? new Date(frontMatter.testTime).toISOString()
+    : fs.statSync(file).mtime.toISOString();
+  const expiresAt = frontMatter.expiresAt
+    ? new Date(frontMatter.expiresAt).toISOString()
+    : new Date(Date.parse(testTime) + 90 * 24 * 60 * 60 * 1000).toISOString();
+  const commitSha = frontMatter.commitSha
+    ? String(frontMatter.commitSha)
+    : runGit(['log', '-1', '--format=%H', '--', path.relative(root, file)], root);
+  const branch = frontMatter.branch
+    ? String(frontMatter.branch)
+    : runGit(['rev-parse', '--abbrev-ref', 'HEAD'], root) || 'unknown';
+  const codeHead = currentCodeHead(root);
+  const envFingerprint = frontMatter.envFingerprint
+    ? String(frontMatter.envFingerprint)
+    : currentEnvFingerprint(root);
+  const buildVersion = frontMatter.buildVersion
+    ? String(frontMatter.buildVersion)
+    : currentBuildVersion(root);
+  const dependencyVersion = frontMatter.dependencyVersion
+    ? String(frontMatter.dependencyVersion)
+    : currentDependencyVersion(root);
+  const verifier = frontMatter.verifier
+    ? String(frontMatter.verifier)
+    : 'unknown';
+  const hasFrontMatter = Object.keys(frontMatter).length > 0;
+  const expired = Date.parse(expiresAt) <= Date.now();
+  const staleByCommit = Boolean(codeHead && commitSha && codeHead !== commitSha);
+  const staleByEnv =
+    Boolean(frontMatter.envFingerprint) &&
+    frontMatter.envFingerprint !== currentEnvFingerprint(root);
+  let status = 'valid';
+  let staleReason = undefined;
+  if (!hasFrontMatter) {
+    status = 'unbound';
+    staleReason = 'evidence file has no machine-readable front matter';
+  } else if (expired) {
+    status = 'expired';
+    staleReason = `evidence expired at ${expiresAt}`;
+  } else if (staleByCommit || staleByEnv) {
+    status = 'stale';
+    staleReason = staleByCommit
+      ? `evidence commit ${commitSha} differs from code HEAD ${codeHead}`
+      : 'environment fingerprint differs from current workspace';
+  }
+  return {
+    frontMatter,
+    body,
+    workItemId: frontMatter.workItemId
+      ? String(frontMatter.workItemId)
+      : linked?.[1] || '',
+    commitSha,
+    branch,
+    buildVersion,
+    envFingerprint,
+    dependencyVersion,
+    testTime,
+    verifier,
+    expiresAt,
+    status,
+    staleReason,
+  };
 }
 
 function mediaType(file) {
@@ -330,7 +495,9 @@ function parseTaskGraph(text) {
         const dependencies = String(row.waits_for || row.depends_on || '')
           .split(',')
           .map((part) => part.trim())
-          .filter(Boolean);
+          .filter(
+            (part) => part && !/^(none|n\/a|-)$/i.test(part),
+          );
         for (const dependency of dependencies) {
           edges.push({
             id: `E-${String(++edgeIndex).padStart(3, '0')}`,
@@ -358,7 +525,9 @@ function parseTaskGraph(text) {
         const dependencies = String(row.depends_on || '')
           .split(',')
           .map((part) => part.trim())
-          .filter(Boolean);
+          .filter(
+            (part) => part && !/^(none|n\/a|-)$/i.test(part),
+          );
         for (const dependency of dependencies) {
           edges.push({
             id: `E-${String(++edgeIndex).padStart(3, '0')}`,
@@ -374,7 +543,7 @@ function parseTaskGraph(text) {
   return { items, edges, criticalPath: extractCriticalPath(text) };
 }
 
-function parseEvidence(artifactsDir) {
+function parseEvidence(artifactsDir, root) {
   const evidenceDir = path.join(artifactsDir, 'work', 'evidence');
   const result = [];
   if (!fs.existsSync(evidenceDir)) {
@@ -384,30 +553,112 @@ function parseEvidence(artifactsDir) {
     if (!entry.endsWith('.md')) continue;
     const file = path.join(evidenceDir, entry);
     const text = fs.readFileSync(file, 'utf8');
-    const titleMatch = text.match(/^#\s+(.+)$/m);
+    const binding = deriveEvidenceBinding(
+      artifactsDir,
+      root || path.resolve(artifactsDir, '..'),
+      entry,
+      file,
+      text,
+    );
+    const titleMatch = binding.body.match(/^#\s+(.+)$/m);
     const title = (titleMatch?.[1] || entry.replace(/\.md$/, '')).trim();
     const kind = /review/i.test(entry)
       ? 'review'
       : /round|e2e|tck|test/i.test(entry)
         ? 'test'
         : 'evidence';
-    const resultValue = /PASSED|passed|PASS|GREEN|green/i.test(text)
+    const resultValue = /PASSED|passed|PASS|GREEN|green/i.test(binding.body)
       ? 'passed'
-      : /FAILED|failed|BLOCKED|blocked/i.test(text)
+      : /FAILED|failed|BLOCKED|blocked/i.test(binding.body)
         ? 'failed'
         : 'unknown';
-    const linked = text.match(/\b(T-\d{3}|G\d{2}|WP-[A-Z-]+\d{3})\b/);
     result.push({
       evidenceId: `EVD-${entry.replace(/\.md$/, '').replace(/[^A-Za-z0-9]+/g, '-')}`,
-      workItemId: linked?.[1] || '',
+      workItemId: binding.workItemId,
       kind,
       path: `.codex/artifacts/work/evidence/${entry}`,
       checksum: checksum(file),
       result: resultValue,
       title,
+      branch: binding.branch,
+      commitSha: binding.commitSha,
+      buildVersion: binding.buildVersion,
+      envFingerprint: binding.envFingerprint,
+      dependencyVersion: binding.dependencyVersion,
+      testTime: binding.testTime,
+      verifier: binding.verifier,
+      expiresAt: binding.expiresAt,
+      status: binding.status,
+      staleReason: binding.staleReason,
     });
   }
   return result;
+}
+
+function validateGraph(graph) {
+  const conflicts = [];
+  const itemIds = new Set((graph.items || []).map((item) => item.id));
+  const evidenceIds = new Set((graph.evidence || []).map((entry) => entry.evidenceId));
+  const nodeIds = new Set([...itemIds, ...evidenceIds]);
+  const itemSeen = new Set();
+  for (const item of graph.items || []) {
+    if (itemSeen.has(item.id)) {
+      conflicts.push(`duplicate item id: ${item.id}`);
+    }
+    itemSeen.add(item.id);
+    if (!item.owner || !String(item.owner).trim()) {
+      conflicts.push(`item without owner: ${item.id}`);
+    }
+    if (!item.status || !String(item.status).trim()) {
+      conflicts.push(`item without status: ${item.id}`);
+    }
+  }
+  const edgeSeen = new Set();
+  for (const edge of graph.edges || []) {
+    if (edgeSeen.has(edge.id)) {
+      conflicts.push(`duplicate edge id: ${edge.id}`);
+    }
+    edgeSeen.add(edge.id);
+    if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to)) {
+      conflicts.push(
+        `orphan edge ${edge.id}: ${edge.from} -> ${edge.to}`,
+      );
+    }
+  }
+  const evidenceSeen = new Set();
+  for (const entry of graph.evidence || []) {
+    if (evidenceSeen.has(entry.evidenceId)) {
+      conflicts.push(`duplicate evidence id: ${entry.evidenceId}`);
+    }
+    evidenceSeen.add(entry.evidenceId);
+  }
+  const blocking = (graph.edges || []).filter((edge) => edge.blocking);
+  const adjacency = new Map();
+  for (const edge of blocking) {
+    const targets = adjacency.get(edge.from) || [];
+    targets.push(edge.to);
+    adjacency.set(edge.from, targets);
+  }
+  const visiting = new Set();
+  const visited = new Set();
+  const hasCycle = (node) => {
+    if (visiting.has(node)) return true;
+    if (visited.has(node)) return false;
+    visiting.add(node);
+    for (const target of adjacency.get(node) || []) {
+      if (hasCycle(target)) return true;
+    }
+    visiting.delete(node);
+    visited.add(node);
+    return false;
+  };
+  for (const node of adjacency.keys()) {
+    if (hasCycle(node)) {
+      conflicts.push(`blocking dependency cycle detected at ${node}`);
+      break;
+    }
+  }
+  return conflicts;
 }
 
 function parseResources(artifactsDir) {
@@ -543,7 +794,7 @@ function indexWorkGraph(artifactsDir, options = {}) {
   };
 
   // Evidence edges from evidence records to their linked work items.
-  const evidence = parseEvidence(artifactsDir);
+  const evidence = parseEvidence(artifactsDir, root);
   for (const entry of evidence) {
     if (entry.workItemId && itemMap.has(entry.workItemId)) {
       addEdge({
@@ -620,6 +871,7 @@ function indexWorkGraph(artifactsDir, options = {}) {
     resources,
     handoffs,
   };
+  graphData.invariants = validateGraph(graphData);
   return graphData;
 }
 
@@ -628,6 +880,7 @@ function parseArgs(argv) {
     root: process.cwd(),
     output: null,
     strict: false,
+    invariants: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -637,6 +890,8 @@ function parseArgs(argv) {
       options.output = argv[++index];
     } else if (argument === '--strict') {
       options.strict = true;
+    } else if (argument === '--invariants') {
+      options.invariants = true;
     } else {
       throw new Error(`Unknown argument: ${argument}`);
     }
@@ -669,6 +924,13 @@ function main() {
   if (options.strict && counts.conflicts.length > 0) {
     process.exitCode = 1;
   }
+  if (options.invariants && graph.invariants.length > 0) {
+    console.log('Invariant violations:');
+    for (const conflict of graph.invariants) {
+      console.log(`  ${conflict}`);
+    }
+    process.exitCode = 1;
+  }
 }
 
 module.exports = {
@@ -685,6 +947,7 @@ module.exports = {
   parseTaskBoard,
   parseTaskGraph,
   rowsToObjects,
+  validateGraph,
 };
 
 if (require.main === module) {

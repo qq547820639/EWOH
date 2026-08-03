@@ -100,6 +100,12 @@
       "items": {
         "$ref": "#/$defs/handoff"
       }
+    },
+    "invariants": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "$defs": {
@@ -216,10 +222,20 @@
         "title": { "type": "string" },
         "kind": { "type": "string", "minLength": 1 },
         "environment": { "type": "string" },
+        "branch": { "type": "string" },
         "commitSha": { "type": "string" },
+        "buildVersion": { "type": "string" },
+        "envFingerprint": { "type": "string" },
+        "dependencyVersion": { "type": "string" },
+        "testTime": { "type": "string" },
         "result": { "type": "string" },
         "expiresAt": { "type": "string" },
         "verifier": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["valid", "stale", "expired", "unbound"]
+        },
+        "staleReason": { "type": "string" },
         "path": { "type": "string", "minLength": 1 },
         "checksum": { "type": "string", "minLength": 1 }
       }

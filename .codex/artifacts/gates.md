@@ -23,3 +23,18 @@
 typecheck, lint, Jest 76/362, client 13/42, repo-facts 33/33, OpenAPI 232/232,
 production standalone build, and DDL hygiene. HTTP+PostgreSQL E2E additionally
 passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
+
+## 2026-08-04 P0 Mobile/Orchestration Gate
+
+- Mobile workbench now filters by `assigned_person_id` and request org with
+  fail-closed behavior; typed scan, attachment persistence, offline queue
+  states, and `worker` role access are covered by unit tests.
+- Evidence files support machine-readable binding; the indexer derives
+  `commitSha/branch/buildVersion/envFingerprint/dependencyVersion/testTime/
+  verifier/expiresAt` and marks evidence `valid/stale/expired/unbound`.
+- `node tools/work-indexer/index.js --root . --invariants` passes 0 conflicts;
+  `node tools/work-console/index.js --root . --strict` passes with 0 blocked
+  and 0 invariant conflicts; G10-G13 still require human approval.
+- Full server Jest: 78 suites / 372 tests; client Jest: 13 suites / 44 tests;
+  typecheck, lint, standalone production build, repo-facts 33/33, OpenAPI
+  232/232, and work graph contract audit 20/20 all pass.

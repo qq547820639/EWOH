@@ -26,6 +26,24 @@ export interface MobileWorkOrderDetail {
   materials: unknown[];
 }
 
+export interface MobileStepScanResult {
+  scanType: 'step';
+  step: MobileWorkbenchStep;
+  workOrder: MobileWorkOrderDetail['workOrder'];
+}
+
+export interface MobileReferenceScanResult {
+  scanType: 'device' | 'material' | 'batch' | 'station' | 'factory';
+  reference: string;
+  recognized: true;
+  context: Record<string, unknown>;
+}
+
+export type MobileScanResult =
+  | MobileWorkOrderDetail
+  | MobileStepScanResult
+  | MobileReferenceScanResult;
+
 export async function getWorkbench(personId: string): Promise<MobileWorkbenchStep[]> {
   const res = await axiosForBackend({
     url: `/api/mobile/workbench?personId=${encodeURIComponent(personId)}`,
@@ -34,11 +52,11 @@ export async function getWorkbench(personId: string): Promise<MobileWorkbenchSte
   return res.data;
 }
 
-export async function scanWorkOrder(orderId: string): Promise<MobileWorkOrderDetail> {
+export async function scanWorkbench(value: string): Promise<MobileScanResult> {
   const res = await axiosForBackend({
     url: '/api/mobile/workbench/scan',
     method: 'POST',
-    data: { orderId },
+    data: { scanValue: value },
   });
   return res.data;
 }

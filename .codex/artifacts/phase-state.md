@@ -74,6 +74,24 @@ Trace: EWOH-2026-08-04-principal-final6
 - Full standalone gate: typecheck, lint, Jest 76 suites / 362 tests, client
   13 suites / 42 tests, repo facts 33/33, OpenAPI 232/232, production build, and
 
+## Latest Round - 2026-08-04 P0 Mobile/Orchestration
+
+- Mobile workbench P0 closed: person/org filtering with fail-closed, typed
+  scan recognition, exception attachment persistence, offline queue states,
+  per-item retry, and `worker` role access.
+- Work Graph evidence binding closed: front matter parsing, derived
+  commit/env/dependency/build metadata, `valid/stale/expired/unbound`
+  invalidation, and `--invariants` graph checks.
+- `tools/work-console` added and wired into `standalone-check.sh` and CI:
+  blockers, missing evidence, unblock owners, affected tasks, and gate
+  approval summary in one command.
+- Task Graph dependency references corrected to real node IDs; 19 orphan
+  edges removed; generated outputs refreshed.
+- Verification: server Jest 78 suites / 372 tests, client 13 suites / 44
+  tests, typecheck/lint/build pass, repo facts 33/33, OpenAPI 232/232,
+  work graph contract audit 20/20, invariants 0 conflicts, work-console
+  strict pass.
+
 ## Current Phase
 
 Final 6.0 work orchestration wave: C7-C9 contracts, file-backed Work Graph

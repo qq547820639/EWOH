@@ -42,6 +42,8 @@
 bash scripts/standalone-check.sh    # 类型/静态检查/Jest/OpenAPI/契约/DDL 计划
 bash scripts/pilot-readiness-check.sh
 node scripts/audit-repo-facts.js --strict
+node tools/work-indexer/index.js --root . --invariants
+node tools/work-console/index.js --root . --output output/work-console.json --strict
 ```
 
 仓库事实源一致性（README 导航、CHANGELOG、发布清单、Task Board、门禁、

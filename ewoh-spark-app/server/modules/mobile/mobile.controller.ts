@@ -12,18 +12,23 @@ import { Roles } from '../shared/roles.decorator';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
 @Controller('api/mobile')
-@Roles('global_admin', 'dispatcher', 'workshop_lead', 'device_ops')
+@Roles('global_admin', 'dispatcher', 'workshop_lead', 'device_ops', 'worker')
 export class MobileController {
   constructor(private readonly mobileService: MobileService) {}
 
   @Get('workbench')
-  workbench(@Query('personId') personId: string) {
-    return this.mobileService.listWorkbench(personId);
+  workbench(
+    @Query('personId') personId: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.mobileService.listWorkbench(personId, request.userContext);
   }
 
   @Post('workbench/scan')
-  scan(@Body() body: { orderId: string }) {
-    return this.mobileService.scanOrder(body.orderId);
+  scan(
+    @Body() body: { scanValue?: string; orderId?: string },
+  ) {
+    return this.mobileService.scan(body.scanValue ?? body.orderId ?? '');
   }
 
   @Get('workbench/orders/:orderId')

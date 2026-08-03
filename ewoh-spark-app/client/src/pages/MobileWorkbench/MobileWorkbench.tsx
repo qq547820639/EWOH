@@ -6,7 +6,7 @@ import {
   getMobileOrder,
   getWorkbench,
   inspectMobileStep,
-  scanWorkOrder,
+  scanWorkbench,
   transitionMobileStep,
   type MobileWorkOrderDetail,
   type MobileWorkbenchStep,
@@ -15,8 +15,10 @@ import { uploadFile } from '../../api/files';
 import { getAuthUser } from '../../lib/auth';
 import {
   appendPendingAction,
+  flushPendingQueue,
   readPendingActions,
-  removePendingAction,
+  type PendingActionStatus,
+  type PendingMobileAction,
 } from '../../lib/offlineQueue';
 import { dataUrlToFile, fileToDataUrl } from '../../lib/attachmentDataUrl';
 import { queryKeys } from '../../hooks/queryKeys';
@@ -28,6 +30,41 @@ import { buildExceptionBody } from './exceptionPayload';
 
 const STEP_ACTIONS = ['start', 'report', 'pause', 'resume', 'review', 'handover'] as const;
 const QUALITY_RESULTS = ['pass', 'fail', 'rework'] as const;
+
+async function syncPendingItem(item: PendingMobileAction): Promise<void> {
+  if (item.type === 'transition') {
+    let body = item.body;
+    if (item.attachment) {
+      const file = dataUrlToFile(
+        item.attachment.dataUrl,
+        item.attachment.name,
+        item.attachment.contentType,
+      );
+      const record = await uploadFile(file, `exception-${item.stepId}`);
+      body = {
+        ...(item.body ?? {}),
+        attachments: [
+          {
+            id: record.id,
+            filename: record.filename,
+            contentType: record.contentType,
+          },
+        ],
+      };
+    }
+    await transitionMobileStep(
+      item.orderId,
+      item.stepId,
+      item.action ?? '',
+      body,
+    );
+    return;
+  }
+  await inspectMobileStep(item.orderId, item.stepId, {
+    result: (item.body?.result as 'pass' | 'fail' | 'rework') ?? 'pass',
+    note: item.body?.note as string | undefined,
+  });
+}
 
 function stepStatusLabel(status: string): string {
   const labels: Record<string, string> = {
@@ -53,9 +90,65 @@ function orderStatusLabel(status: string): string {
   return labels[status] ?? status;
 }
 
+function pendingStatusLabel(status: PendingActionStatus): string {
+  const labels: Record<PendingActionStatus, string> = {
+    local: '本地',
+    queued: '排队',
+    syncing: '同步中',
+    synced: '已同步',
+    failed: '失败',
+    conflict: '冲突',
+  };
+  return labels[status] ?? status;
+}
+
+function pendingStatusVariant(
+  status: PendingActionStatus,
+): 'default' | 'secondary' | 'destructive' | 'outline' {
+  if (status === 'failed' || status === 'conflict') {
+    return 'destructive';
+  }
+  if (status === 'synced') {
+    return 'secondary';
+  }
+  if (status === 'syncing') {
+    return 'default';
+  }
+  return 'outline';
+}
+
+function pendingActionLabel(item: PendingMobileAction): string {
+  if (item.type === 'inspection') {
+    return '质检';
+  }
+  const labels: Record<string, string> = {
+    start: '开工',
+    report: '报工',
+    pause: '暂停',
+    resume: '恢复',
+    review: '审核',
+    handover: '交收',
+  };
+  return labels[item.action ?? ''] ?? item.action ?? '操作';
+}
+
+function scanTypeLabel(scanType: string): string {
+  const labels: Record<string, string> = {
+    device: '设备',
+    material: '物料',
+    batch: '批次',
+    station: '工位',
+    factory: '工厂',
+  };
+  return labels[scanType] ?? scanType;
+}
+
 const MobileWorkbench = (): React.ReactElement => {
   const queryClient = useQueryClient();
   const personId = getAuthUser()?.userId ?? '';
+  const [pendingActions, setPendingActions] = useState<PendingMobileAction[]>(
+    () => readPendingActions(),
+  );
   const [scanInput, setScanInput] = useState('');
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   const [exceptionOpen, setExceptionOpen] = useState<Record<string, boolean>>({});
@@ -72,7 +165,7 @@ const MobileWorkbench = (): React.ReactElement => {
   const [isOnline, setIsOnline] = useState(
     () => (typeof navigator === 'undefined' ? true : navigator.onLine),
   );
-  const [pendingCount, setPendingCount] = useState(() => readPendingActions().length);
+  const pendingCount = pendingActions.length;
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -98,52 +191,24 @@ const MobileWorkbench = (): React.ReactElement => {
       if (queue.length === 0) {
         return;
       }
-      for (const item of queue) {
-        if (cancelled) {
-          return;
-        }
-        try {
-          if (item.type === 'transition') {
-            let body = item.body;
-            if (item.attachment) {
-              const file = dataUrlToFile(
-                item.attachment.dataUrl,
-                item.attachment.name,
-                item.attachment.contentType,
-              );
-              const record = await uploadFile(file, `exception-${item.stepId}`);
-              body = {
-                ...(item.body ?? {}),
-                attachments: [
-                  {
-                    id: record.id,
-                    filename: record.filename,
-                    contentType: record.contentType,
-                  },
-                ],
-              };
-            }
-            await transitionMobileStep(
-              item.orderId,
-              item.stepId,
-              item.action ?? '',
-              body,
-            );
-          } else {
-            await inspectMobileStep(item.orderId, item.stepId, {
-              result: (item.body?.result as 'pass' | 'fail' | 'rework') ?? 'pass',
-              note: item.body?.note as string | undefined,
-            });
-          }
-          removePendingAction(item.id);
-        } catch (error) {
-          toast.error(`待同步操作失败：${item.stepId}`, {
-            description: error instanceof Error ? error.message : undefined,
-          });
-          return;
-        }
+      const result = await flushPendingQueue(syncPendingItem, queue);
+      if (cancelled) {
+        return;
       }
-      setPendingCount(readPendingActions().length);
+      setPendingActions(readPendingActions());
+      if (result.synced.length > 0) {
+        toast.success(`已同步 ${result.synced.length} 项离线操作`);
+      }
+      if (result.conflict.length > 0) {
+        toast.error(`${result.conflict.length} 项操作存在状态冲突`, {
+          description: '请在待同步队列中核对或重试。',
+        });
+      }
+      if (result.failed.length > 0) {
+        toast.error(`${result.failed.length} 项离线操作同步失败`, {
+          description: '失败项不会阻塞队列中的其他操作。',
+        });
+      }
       queryClient.invalidateQueries({
         queryKey: queryKeys.mobileWorkbench(personId),
       });
@@ -167,10 +232,17 @@ const MobileWorkbench = (): React.ReactElement => {
   });
 
   const scanMutation = useMutation({
-    mutationFn: (orderId: string) => scanWorkOrder(orderId),
-    onSuccess: (detail) => {
-      setActiveOrderId(detail.workOrder.scheduleTaskId);
-      toast.success(`已扫码：${detail.workOrder.title}`);
+    mutationFn: (value: string) => scanWorkbench(value),
+    onSuccess: (result) => {
+      if ('scanType' in result && result.scanType === 'step') {
+        setActiveOrderId(result.step.scheduleTaskId);
+        toast.success(`已识别工序：${result.step.stepId}`);
+      } else if ('scanType' in result) {
+        toast.info(`${scanTypeLabel(result.scanType)} ${result.reference} 已识别`);
+      } else {
+        setActiveOrderId(result.workOrder.scheduleTaskId);
+        toast.success(`已扫码：${result.workOrder.title}`);
+      }
       queryClient.invalidateQueries({
         queryKey: queryKeys.mobileWorkbench(personId),
       });
@@ -181,6 +253,33 @@ const MobileWorkbench = (): React.ReactElement => {
       });
     },
   });
+
+  const retryPendingAction = async (id: string) => {
+    const item = pendingActions.find((candidate) => candidate.id === id);
+    if (!item) {
+      return;
+    }
+    if (!isOnline) {
+      toast.error('当前处于离线状态，无法重试');
+      return;
+    }
+    const result = await flushPendingQueue(syncPendingItem, [item]);
+    setPendingActions(readPendingActions());
+    if (result.synced.length > 0) {
+      toast.success(`已重试同步：${item.stepId}`);
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.mobileWorkbench(personId),
+      });
+    } else if (result.conflict.length > 0) {
+      toast.error(`重试仍存在状态冲突：${item.stepId}`);
+    } else {
+      toast.error(`重试失败：${item.stepId}`, {
+        description: readPendingActions().find(
+          (candidate) => candidate.id === id,
+        )?.error?.message,
+      });
+    }
+  };
 
   const transitionMutation = useMutation({
     mutationFn: ({
@@ -280,7 +379,7 @@ const MobileWorkbench = (): React.ReactElement => {
       return;
     }
     appendPendingAction({ type: 'transition', orderId, stepId, action, body });
-    setPendingCount(readPendingActions().length);
+    setPendingActions(readPendingActions());
     toast.info('已加入待同步队列，联网后自动提交');
   };
 
@@ -300,7 +399,7 @@ const MobileWorkbench = (): React.ReactElement => {
       stepId,
       body: { result, note: note ?? null },
     });
-    setPendingCount(readPendingActions().length);
+    setPendingActions(readPendingActions());
     toast.info('质检已加入待同步队列');
   };
 
@@ -330,7 +429,7 @@ const MobileWorkbench = (): React.ReactElement => {
             dataUrl,
           },
         });
-        setPendingCount(readPendingActions().length);
+        setPendingActions(readPendingActions());
         toast.info('异常及照片已加入待同步队列');
         return;
       } catch (error) {
@@ -394,6 +493,57 @@ const MobileWorkbench = (): React.ReactElement => {
         >
           当前处于离线状态，操作会加入待同步队列，联网后自动提交。
         </div>
+      )}
+
+      {pendingActions.length > 0 && (
+        <section
+          aria-label="待同步队列"
+          className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4"
+        >
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-[hsl(220_14%_14%)]">
+              待同步队列
+            </h2>
+            <Badge variant="outline">{pendingCount}</Badge>
+          </div>
+          <ul className="space-y-2">
+            {pendingActions.map((item) => (
+              <li
+                key={item.id}
+                className="flex flex-wrap items-center gap-2 rounded border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_98%)] p-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-[hsl(220_14%_14%)]">
+                    {item.stepId} · {pendingActionLabel(item)}
+                  </p>
+                  {item.error?.message && (
+                    <p className="mt-0.5 truncate text-xs text-red-700">
+                      {item.error.message}
+                    </p>
+                  )}
+                  {item.lastAttemptAt && (
+                    <p className="mt-0.5 text-[10px] text-[hsl(218_10%_42%)]">
+                      最近尝试：{new Date(item.lastAttemptAt).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+                <Badge variant={pendingStatusVariant(item.status)}>
+                  {pendingStatusLabel(item.status)}
+                </Badge>
+                {(item.status === 'failed' || item.status === 'conflict') && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => retryPendingAction(item.id)}
+                  >
+                    <RefreshCw className="size-3" />
+                    重试
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <div className="flex flex-col gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4 sm:flex-row">

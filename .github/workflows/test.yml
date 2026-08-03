@@ -49,6 +49,11 @@ jobs:
       - name: 仓库事实源一致性校验（P0-1）
         run: node scripts/audit-repo-facts.js --strict
 
+      - name: Work Graph 不变量与阻塞诊断（P0-6/P0-7）
+        run: |
+          node tools/work-indexer/index.js --root "$GITHUB_WORKSPACE" --invariants
+          node tools/work-console/index.js --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/output/work-console.json" --strict
+
       - name: NestJS 类型检查
         run: npm run type:check
         working-directory: ewoh-spark-app

@@ -8,11 +8,17 @@ describe('navigation mobile workbench', () => {
         'dispatcher',
         'workshop_lead',
         'device_ops',
+        'worker',
       ]),
     );
     const groups = getVisibleNavGroups(['workshop_lead']);
     const paths = groups.flatMap((group) => group.items.map((item) => item.to));
     expect(paths).toContain('/mobile-workbench');
+    const workerGroups = getVisibleNavGroups(['worker']);
+    const workerPaths = workerGroups.flatMap((group) =>
+      group.items.map((item) => item.to),
+    );
+    expect(workerPaths).toContain('/mobile-workbench');
   });
 
   it('exposes scale operations to platform roles', () => {

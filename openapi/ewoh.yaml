@@ -2588,7 +2588,7 @@ paths:
     post:
       tags:
         - mobile
-      summary: Scan a work order into the mobile workbench
+      summary: Scan a work order, step, device, material, batch, station, or factory reference
       requestBody:
         required: true
         content:
@@ -2596,17 +2596,18 @@ paths:
             schema:
               type: object
               properties:
+                scanValue:
+                  type: string
                 orderId:
                   type: string
-              required:
-                - orderId
       responses:
         '201':
-          description: Successful response
+          description: Work order detail or typed scan result
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MesWorkOrderDetail'
+                type: object
+                additionalProperties: true
         Unauthorized:
           $ref: '#/components/responses/Unauthorized'
         Forbidden:

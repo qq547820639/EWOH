@@ -1,9 +1,12 @@
 import {
   appendPendingAction,
   clearPendingActions,
+  flushPendingQueue,
+  markPendingAction,
   PENDING_ACTIONS_STORAGE_KEY,
   readPendingActions,
   removePendingAction,
+  updatePendingAction,
   type StorageLike,
 } from './offlineQueue';
 
@@ -73,5 +76,88 @@ describe('offline pending action queue', () => {
       ]),
     });
     expect(readPendingActions(invalid)).toEqual([]);
+  });
+
+  it('normalizes legacy payloads to local and updates status in place', () => {
+    const legacy = createStorage({
+      [PENDING_ACTIONS_STORAGE_KEY]: JSON.stringify([
+        { id: 'x', type: 'transition', orderId: 'WO-1', stepId: 'S1' },
+      ]),
+    });
+    expect(readPendingActions(legacy)[0].status).toBe('local');
+
+    const storage = createStorage();
+    const [item] = appendPendingAction(
+      {
+        type: 'transition',
+        orderId: 'WO-1',
+        stepId: 'S1',
+        action: 'start',
+      },
+      storage,
+    );
+    const queued = markPendingAction(item.id, 'queued', undefined, storage);
+    expect(queued[0].status).toBe('queued');
+
+    const patched = updatePendingAction(
+      item.id,
+      { error: { code: 'X', message: 'boom', retryable: true } },
+      storage,
+    );
+    expect(patched[0].error?.message).toBe('boom');
+  });
+
+  it('keeps flushing later items when one conflicts and one fails', async () => {
+    const storage = createStorage();
+    appendPendingAction(
+      {
+        type: 'transition',
+        orderId: 'WO-1',
+        stepId: 'S1',
+        action: 'report',
+        body: { quantity: 1 },
+      },
+      storage,
+    );
+    appendPendingAction(
+      {
+        type: 'transition',
+        orderId: 'WO-1',
+        stepId: 'S2',
+        action: 'report',
+      },
+      storage,
+    );
+    appendPendingAction(
+      {
+        type: 'inspection',
+        orderId: 'WO-1',
+        stepId: 'S3',
+        body: { result: 'pass' },
+      },
+      storage,
+    );
+
+    const syncOne = jest
+      .fn()
+      .mockRejectedValueOnce({
+        response: { status: 409, data: { message: 'STATE_CONFLICT' } },
+      })
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce(undefined);
+
+    const queue = readPendingActions(storage);
+    const summary = await flushPendingQueue(syncOne, queue, storage);
+
+    expect(summary).toEqual({
+      synced: [queue[2].id],
+      conflict: [queue[0].id],
+      failed: [queue[1].id],
+    });
+    const remaining = readPendingActions(storage);
+    expect(remaining).toHaveLength(2);
+    expect(remaining.map((item) => item.status)).toEqual(['conflict', 'failed']);
+    expect(remaining[0].error?.code).toBe('STATE_CONFLICT');
+    expect(syncOne).toHaveBeenCalledTimes(3);
   });
 });

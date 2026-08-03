@@ -75,6 +75,29 @@ export function nextStepStatus(current: string, action: string): string | null {
   }
 }
 
+function sanitizeExceptionAttachments(value: unknown): Record<string, string>[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const allowedKeys = ['id', 'filename', 'contentType', 'url'] as const;
+  return value
+    .filter(
+      (entry): entry is Record<string, unknown> =>
+        !!entry && typeof entry === 'object',
+    )
+    .map((entry) => {
+      const sanitized: Record<string, string> = {};
+      for (const key of allowedKeys) {
+        const field = entry[key];
+        if (typeof field === 'string' && field.trim() !== '') {
+          sanitized[key] = field;
+        }
+      }
+      return sanitized;
+    })
+    .filter((entry) => Object.keys(entry).length > 0);
+}
+
 @Injectable()
 export class MesService {
   constructor(
@@ -149,6 +172,17 @@ export class MesService {
       },
     });
     return this.getWorkOrder(orderId);
+  }
+
+  async getStep(stepId: string) {
+    const [step] = await this.db
+      .select()
+      .from(ewohScheduleTaskStep)
+      .where(eq(ewohScheduleTaskStep.stepId, stepId));
+    if (!step) {
+      throw new NotFoundException(`Step ${stepId} not found`);
+    }
+    return step;
   }
 
   async getWorkOrder(orderId: string) {
@@ -344,6 +378,7 @@ export class MesService {
         note: body?.note ?? body?.reason ?? null,
         reportedAt: new Date().toISOString(),
         operator: actor?.userId ?? body?.operatorId ?? null,
+        attachments: sanitizeExceptionAttachments(body?.attachments),
       };
     }
     if (action === 'resume') {

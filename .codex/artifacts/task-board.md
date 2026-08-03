@@ -560,6 +560,16 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-196 | Pilot readiness rerun (RC4) | AG-51/00 | Done | 7 passed / 3 failed (Docker/Kubectl/Helm absent) / 5 pending external; NOT READY |
 | T-197 | Ops backup/restore drill (RC4) | AG-10/51 | Done | `standalone-ops-check.sh` PASSED; 57 tables backup/restore/verify; identity advanced |
 
+## Wave Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-198 | Mobile workbench person/org filtering + worker role | AG-11/30 | Done | `round90-p0-mobile-orchestration.md`; mobile service unit tests; typecheck/client pass |
+| T-199 | Typed scan recognition for order/step/device/material/batch/station/factory | AG-11/30 | Done | `round90-p0-mobile-orchestration.md`; scan parser tests |
+| T-200 | Exception attachment persistence + offline queue state machine | AG-07/11 | Done | `round90-p0-mobile-orchestration.md`; mes/offlineQueue tests |
+| T-201 | Evidence binding metadata + invalidation + graph invariants | ORCH-01/02 | Done | `round90-p0-mobile-orchestration.md`; work-indexer tests; `--invariants` passed |
+| T-202 | Work Console CLI + standalone-check/CI wiring | ORCH-05/51 | Done | `round90-p0-mobile-orchestration.md`; work-console tests; strict CLI passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

@@ -591,6 +591,42 @@ components:
         - evidenceId
         - path
         - kind
+      properties:
+        evidenceId:
+          type: string
+        workItemId:
+          type: string
+        title:
+          type: string
+        kind:
+          type: string
+        path:
+          type: string
+        checksum:
+          type: string
+        result:
+          type: string
+        branch:
+          type: string
+        commitSha:
+          type: string
+        buildVersion:
+          type: string
+        envFingerprint:
+          type: string
+        dependencyVersion:
+          type: string
+        testTime:
+          type: string
+        verifier:
+          type: string
+        expiresAt:
+          type: string
+        status:
+          type: string
+          enum: [valid, stale, expired, unbound]
+        staleReason:
+          type: string
     EvidenceContent:
       type: object
       additionalProperties: true

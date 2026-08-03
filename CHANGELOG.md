@@ -71,6 +71,21 @@
   本机无 Docker/Kubectl/Helm 失败，5 项等待外部批准与现场输入。
 - 运维备份/恢复门禁重跑：`standalone-ops-check.sh` PASSED，57 表逻辑备份、
   恢复到一次性数据库、行数校验与身份序列推进全部通过。
+- P0 移动工作台硬化：工作台按 `assigned_person_id` + `org_id` 过滤并
+  fail-closed；扫码支持工单/工序/设备/物料/批次/工位/工厂类型识别；
+  异常附件服务端持久化；离线队列增加
+  `local/queued/syncing/synced/failed/conflict` 状态，单项失败不再阻塞后续项；
+  `worker` 角色开放移动工作台。
+- Work Graph 证据绑定与失效：证据 Markdown 支持 front matter
+  （`commitSha/branch/buildVersion/envFingerprint/dependencyVersion/testTime/
+  verifier/expiresAt`），解析器自动推导并输出
+  `valid/stale/expired/unbound` 状态；`--invariants` 检查孤立边、循环依赖、
+  重复 ID 与无 Owner 任务。
+- 新增 `tools/work-console` 一键阻塞诊断 CLI：回答当前卡点、原因、解除人、
+  缺失证据与受影响任务；接入 `standalone-check.sh` 与 CI。
+- 修正 Task Graph 依赖引用为真实节点 ID，消除 19 条孤立边；重新生成
+  `output/work-graph.json`、`output/gate-decisions.json`、
+  `output/git-sync.json` 并新增 `output/work-console.json`。
 
 ## [0.6.0-rc3] - 2026-08-04
 
