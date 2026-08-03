@@ -1529,6 +1529,50 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/policies/examples:
+    get:
+      tags:
+        - policies
+      summary: Read the canonical operator-safety policy example
+      responses:
+        '200':
+          description: Policy example
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyDefinition'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/policies/evaluate:
+    post:
+      tags:
+        - policies
+      summary: Evaluate a policy against a context
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyEvaluateRequest'
+      responses:
+        '201':
+          description: Policy evaluation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyEvaluationResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/templates:
     post:
       tags:
@@ -4929,6 +4973,88 @@ components:
         - eventType
         - message
       additionalProperties: false
+    PolicyRule:
+      type: object
+      properties:
+        field:
+          type: string
+        operator:
+          type: string
+          enum:
+            - eq
+            - neq
+            - gt
+            - gte
+            - lt
+            - lte
+            - in
+            - not_in
+            - exists
+        value: true
+      required:
+        - field
+        - operator
+        - value
+    PolicyDefinition:
+      type: object
+      properties:
+        policyId:
+          type: string
+        version:
+          type: string
+        description:
+          type: string
+        effect:
+          type: string
+          enum:
+            - allow
+            - deny
+            - warn
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyRule'
+          minItems: 1
+      required:
+        - policyId
+        - version
+        - effect
+        - rules
+    PolicyEvaluateRequest:
+      type: object
+      properties:
+        policy:
+          $ref: '#/components/schemas/PolicyDefinition'
+        context:
+          type: object
+          additionalProperties: true
+      required:
+        - policy
+        - context
+    PolicyEvaluationResult:
+      type: object
+      properties:
+        policyId:
+          type: string
+        version:
+          type: string
+        effect:
+          type: string
+        matched:
+          type: boolean
+        decision:
+          type: string
+        reasons:
+          type: array
+          items:
+            type: string
+      required:
+        - policyId
+        - version
+        - effect
+        - matched
+        - decision
+        - reasons
     EventInfo:
       type: object
       properties:

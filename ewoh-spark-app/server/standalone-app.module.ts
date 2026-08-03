@@ -38,6 +38,7 @@ import { ErpModule } from './modules/erp/erp.module';
 import { MobileModule } from './modules/mobile/mobile.module';
 import { ScaleModule } from './modules/scale/scale.module';
 import { EventCatalogModule } from './modules/events/event-catalog.module';
+import { PolicyModule } from './modules/policy/policy.module';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { EventCatalogModule } from './modules/events/event-catalog.module';
     MobileModule,
     ScaleModule,
     EventCatalogModule,
+    PolicyModule,
   ],
   providers: [
     {

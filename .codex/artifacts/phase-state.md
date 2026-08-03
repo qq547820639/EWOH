@@ -70,12 +70,15 @@ production approval gate.
 - Compatibility catalog: `GET /api/scale/compatibility` returns the asset/core
   matrix with semver-like range matching; E2E verifies an incompatible legacy
   connector is flagged.
+- Policy engine: `contracts/policy/policy-schema.json` plus
+  `POST /api/policies/evaluate` provide schema-validated rule evaluation;
+  canonical operator-safety policy is served and exercised in E2E.
 
 ## Active Tasks
 
 - Fleet Ops (upgrade/rollback) and event catalog round closed.
 - Productization kernels remaining: connector SDK/runtime, mapping DSL,
-  partner shadow delivery and Scale Release 1.0.
+  workflow skeletons, partner shadow delivery and Scale Release 1.0.
 - Training/acceptance evidence and production gate preparation.
 - Production DDL/deploy approval gate.
 

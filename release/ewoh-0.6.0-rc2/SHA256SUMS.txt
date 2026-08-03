@@ -2,7 +2,7 @@
 d9d7560e7cf44d4fae1af32d7342d598ee2d42430bb80eaf02034509ee4e065c  ./.github/workflows/security.yml
 e837948cc1f6815a1d29ef788831e7e9da7b614ffbca656e427de5e73c9b8779  ./.github/workflows/standalone.yml
 04119e083d0290c47810d2d70659c39bd710a98359dbbe1f07d4e09d799283b3  ./.github/workflows/test.yml
-5aafff00505cfff3b0824a3ee4c5b4ff277f982f2ae26ca14c4d718cd545c6dc  ./CHANGELOG.md
+6f37d0760194c5c7f2b1c580c4645d98f360159b5b8b8272138b73df67b8f62b  ./CHANGELOG.md
 9b65f03fe4fbf5413248e2ed3b81d7de0d8c9cb890d93621a9d3e6a8f15b87b2  ./Makefile
 5eff92ef060482e7e19977a0a8294ffffe91c8a9b47d437cde70c6f79b85f4c0  ./README.md
 18aed5a0dba2bf9e17396e8d25d95524c8a6cd64d0e57b7768031c0a614f2ab8  ./RELEASE-README.md
@@ -11,6 +11,8 @@ f9c1a56fddd12930b5b1c984fab0ddc8db425c21efffe2d014e463822fd592c4  ./SECURITY.md
 8cee4ddb938a9ab82cab7b612ed6e5d1bbd86073d78a8042df53913b0cb5d1cc  ./contracts/factory/golden-factory.yaml
 3287c3aefe8249634570a23632ebd73d68370cb1969570d6c9ca6821dbcd55b9  ./contracts/mapping/examples/exoskeleton-telemetry.yaml
 dbd50c95c0c11dbe0159aacf8e08ae27ab8596dc70e5298138aec27676f330ae  ./contracts/mapping/mapping-schema.json
+29f94d41c042262fc93626433657c753e84c681a9a6993f1d75087e1699c456f  ./contracts/policy/examples/operator-safety.yaml
+d1c522286657ea10e87b774a64555d738e4139ff582cae4061412220d0e04fb1  ./contracts/policy/policy-schema.json
 d5252904a939ce70577832c3a20fb34638b1d8e705ec205be8e03d5f6c244e11  ./contracts/state-machines/alert.yaml
 22b2d895bfb3236c08e77e32a44dfc57a294481a5f3a32b298e53c0cd2ab4232  ./contracts/state-machines/approval.yaml
 a4086b3d10e77a45d765df87c05aebf0e1181c2e272642775507b181404528bf  ./contracts/state-machines/control.yaml
@@ -140,10 +142,10 @@ cb4944c957e4888c137480614fa6f276afcc54bbd4fc0f5fa4571e411d4f9f7f  ./docs/archite
 3517965f70039dd3c9a8897bb81cf1374351d54790971d6292b5925ce1f272f7  ./docs/architecture/product_definition.md
 e97cc156f3348a1ca926e3dcbd3cfac5a35192f68b93c9585af1ebf9af8de492  ./docs/architecture/product_review_2026-07-31.md
 fa66e2ce1360765d98a85f8ebb7d1efa6b1d4acd8ccee343d1cfea18846ea5af  ./docs/data/multimodal_schema.md
-fa830cc39c95a1f57ddf7a7a9783121aa771b9b2809b51e750c84421710be329  ./docs/delivery/acceptance-evidence.md
+a4999e4d22202d98bc1a7d7f349432e4798ad1e9abd2aefa8a44cecaac92d7e1  ./docs/delivery/acceptance-evidence.md
 d75812a1a317ebf61514bc4bcc14dcf4577a979de182352358fcdb084ffad1c3  ./docs/delivery/deployment-runbook.md
 97e5db9b47056c73ed7e77416c6300f2139c957601f89a7f0a464027ec995483  ./docs/delivery/release-checklist.md
-de7aeac8dbcdffb97c5f85a382675abf51c922a38e6a5a8f0bd1596824bef725  ./docs/delivery/release-manifest.yaml
+69ec2ede745e79d5e14eaefa97b755c2d4d2efe3275ae565604139054c0189aa  ./docs/delivery/release-manifest.yaml
 d429609ca4f89bfad846d2af8551a9ce4a3d8c3449e5fc8c394d1c93272379e6  ./docs/delivery/standalone-product-pack.md
 0a4104abf8bbe2035f4959bc07c2c4289def7d5ad0837d42a438821d32298918  ./docs/delivery/training-plan.md
 4c159e70e257fa9e9028238c0485549153f8177e314e70f0b4474bcedf5bfe70  ./docs/deployment/README.md
@@ -476,8 +478,8 @@ d9033f9155319b36f60ea6de471e567354adb4bcac814f828bf84886b1e6ecbb  ./ewoh-spark-a
 791f15e7125e88d21607f149c5971d359c3ca5e344bef4dfb5e80dec18cca7a1  ./ewoh-spark-app/components.json
 5ce9e18124fc1b36d7cdee6565ed835b25a2b9961e118797dfaeefd4a872b50b  ./ewoh-spark-app/eslint.config.js
 248329f1faf2960b0538283ce882154d18ef61805c7c2d5409513b73a34758ee  ./ewoh-spark-app/nest-cli.json
-940cc54f7e39beb643b0214c3a57bd31bc43785f3cc76b3779b9d0ab100d0728  ./ewoh-spark-app/package-lock.json
-b1f3efcfacc5a64a49d07f0dbdb5eb4de0df40f001b0a9c3f25ea456d2f2f696  ./ewoh-spark-app/package.json
+91f5aa90835b42cf0799ba125a527eaab0c366cd80ab9b15decfcd6e7cad981d  ./ewoh-spark-app/package-lock.json
+935706a2e55c9def7370332948f4953a6255ae07eeb56086f9fa7375e755f335  ./ewoh-spark-app/package.json
 bf6c4ffb1877407a35dd9eeb3ad5a7a709ee4fa02879f2cf9f628b0675a7bb1d  ./ewoh-spark-app/postcss.config.js
 59040112c43d305c3598a52f686bcdeb133a0342b1f4eae80d56e71e78a59f0b  ./ewoh-spark-app/scripts/build.sh
 8b1df986249fc36f5b26f1f4b25e2d524b091b4d80343752e592aeffbf973824  ./ewoh-spark-app/scripts/deepen-schema.sql
@@ -571,6 +573,9 @@ e91d26488ae46bcd8fc23516d9ea3c5523484a88479b40bce0858898fa58ee8f  ./ewoh-spark-a
 7d2ce923d54173d3391a4b1804b53c523d4572246aa4c80d9aa8a05bcceb97c4  ./ewoh-spark-app/server/modules/organization/organization.controller.ts
 891a031bf01a47df3dcb1272f4047da104f3e21f16a2c51635ba080f3ede3a3b  ./ewoh-spark-app/server/modules/organization/organization.module.ts
 9e647c1c08bb7d50500d501c49c80be5fb7b0df1250b1986e229052738ca6990  ./ewoh-spark-app/server/modules/organization/organization.service.ts
+f33ec445671ceb88450491b858398c162da1b36c67c5b7449bf6ca40e5ee4d60  ./ewoh-spark-app/server/modules/policy/policy.controller.ts
+492ca45217205926f707d799c3ba708025fd3d912103c07f15c9a39952400c9f  ./ewoh-spark-app/server/modules/policy/policy.module.ts
+78cc17153b21ed23ef2a1dc47dea1d64898cf032d6ddd21d6cdd776c176a89fd  ./ewoh-spark-app/server/modules/policy/policy.service.ts
 19dccc10d3b76b1a809f0efb388fa02e9dfdf43bb453f925ef70cafbfe8bd581  ./ewoh-spark-app/server/modules/resource/resource.controller.ts
 a6439d7c6737cd9a8477d2fc00876e4bacd0d950bde86150b710ac204f1e7474  ./ewoh-spark-app/server/modules/resource/resource.module.ts
 1df8a85167bcba8773d731ff762b19bb0d9de171ed7edb4ca021c40c53bc6999  ./ewoh-spark-app/server/modules/resource/resource.service.ts
@@ -620,7 +625,7 @@ c01f49d547c0fde34e22c69893e4cbba64d240ba1ec799cc192c57ef6e4f6be9  ./ewoh-spark-a
 6fe2d46a2f164f9c02aff05254b6dffec28bfec41a1e900b364320153634b8c4  ./ewoh-spark-app/server/modules/world/world.controller.ts
 fac0241aec4b0fc472979ff36c932afc2d1c16cb2a0e2094bb86ce61a00d1cca  ./ewoh-spark-app/server/modules/world/world.module.ts
 d9ed63729861f31db414a38078e525b938c6c175c3afe21a9ce4b58d7fa2b6f6  ./ewoh-spark-app/server/modules/world/world.service.ts
-044ad7f9a576112a2c262aeb66256a4ad62c4e1e3453523ee1ef2fec648d4036  ./ewoh-spark-app/server/standalone-app.module.ts
+3b34b229d917374a0959dd09ca90808e790f7af2834cca32dacf6b3b6af41c57  ./ewoh-spark-app/server/standalone-app.module.ts
 da7c775b53ea76b646f2c8a7b0f35c66e7c1fecc4e9989034520ded3fbcb1d63  ./ewoh-spark-app/server/standalone-main.ts
 3063e2c887db0f7c906299405a5e62d080ece12108646f019d7b22bda6e859ab  ./ewoh-spark-app/shared/api.interface.ts
 922ab9dd3bd7f86a61519b5dd9dd31cda3f1b9c606932a33a66963d8ded17696  ./ewoh-spark-app/tailwind.config.ts
@@ -628,7 +633,8 @@ a06693408987823d65c55c71643cc462e303ca746d69548c68e39e8d3baa07e7  ./ewoh-spark-a
 2b361f441eb75846161a1269bd278ef6a26dc34bb07066c97880d11c9a19b0f4  ./ewoh-spark-app/test/contract/golden-factory.spec.ts
 6b502daf543de814a403aba30ab2a6ad1933c16b16c86a9ff245a3a38a5e2e60  ./ewoh-spark-app/test/contract/helm-chart.spec.ts
 953b43c76a80f8901312caa38e3f708a785d0e27eb0e8e1c764f4f5484c86011  ./ewoh-spark-app/test/contract/mapping.spec.ts
-0091cc166174229112059760b1e121442104b5aac3c6f0ae21657307d5cd22b9  ./ewoh-spark-app/test/e2e/ewoh-http.e2e.spec.ts
+9642510daa27e7b040803a1c4838ca85204f9584233637c6d36e09ba875f867e  ./ewoh-spark-app/test/contract/policy.spec.ts
+0f3cfd43eecc8d1baefb6ec2d32f4604fc5e335602f1dedbf1a7b45afbcb6801  ./ewoh-spark-app/test/e2e/ewoh-http.e2e.spec.ts
 e6daef2d6f1fc0c13921378f690d061af3b06b304a2e5284969fffbf903b8b72  ./ewoh-spark-app/test/e2e/jest.config.js
 e833a71c91eeff9fc3927fabfed323fae25cd4919756c5ce573ef6146072245a  ./ewoh-spark-app/test/helpers/e2e-app.ts
 d1a7b84dd4213506f0a45f859ab1bdcc56de1d0115de81c7d4aa2709ec56ac2f  ./ewoh-spark-app/test/helpers/e2e-config.ts
@@ -663,6 +669,7 @@ f5c1e7b92b3c5b4697466e884e1f911d1ed2d2505f8e9c6d3427f4f74bc79772  ./ewoh-spark-a
 5b56f9f9e8bc6ebd6d6aaf60420290ff15929bdb3c3b0068f9000beda558faeb  ./ewoh-spark-app/test/unit/model/model.service.spec.ts
 44961d16be36dc50337f5362cd2c03a44603a7275fa0ec53d0dd149047c4e648  ./ewoh-spark-app/test/unit/oee/oee.service.spec.ts
 0e9e1df864739459028bc0f0769f2c8eb03ca1e3e8b8c1c3c84a99a26469c353  ./ewoh-spark-app/test/unit/organization/organization.service.spec.ts
+72b0cd75a3441e7d4c0a5dafbd14b47d9534d40e1c5b7a0fb5ed3c52b8ec9d9e  ./ewoh-spark-app/test/unit/policy/policy.service.spec.ts
 343b6497d860fadcf333c251560ad790a43761158fcab3b84df14afc2148dc8e  ./ewoh-spark-app/test/unit/resource/resource.service.spec.ts
 8705f8813dbbbd93d012c51f6dd6aabacb6b7bdba53b497e5b42d25c9842cf6e  ./ewoh-spark-app/test/unit/rule-engine/rule-engine.service.spec.ts
 2e92aee9f66a5f00ab2dcefe29f76dbae19481844f45b9899177306dc5a10f68  ./ewoh-spark-app/test/unit/scale/compatibility.spec.ts
@@ -697,8 +704,8 @@ b4c3ce78872131ed1b53f406266ebae6cac6748daa3ef4c9fe2e46c87d42f15e  ./ewoh-spark-a
 beacd667ddba3e98d19488df9554c0ff4521d80b375891f2fa28bca58a1ad172  ./ewoh-spark-app/tsconfig.tsbuildinfo
 95480fe0eb270f23c84a3488501d0fa41d72885fb0f1db9218bf02b3243da08f  ./ewoh-spark-app/vite.config.ts
 f40dc4209d8e2741b56a972c058d2bcc276371c49e089152032de2e415d478cf  ./ewoh-spark-app/vite.standalone.config.ts
-7704062451c8ca5fd48b44f1f63d67607204a1d4ee32c7f2cc8fd91c9dccb12d  ./openapi/ewoh.yaml
-817a530e11174ea5aac538a04276db56c1310d189a0cf33ba8d0a146cd712883  ./openapi/route-manifest.json
+6a13e64ea89f42f80510104fa74acd16cdc34ea58a8ebc5bc408c2a9ff3254f3  ./openapi/ewoh.yaml
+b4c8343918a9dd83aa55a0512f50e5cb7a835b04a7484644795f2d50a6eed0b0  ./openapi/route-manifest.json
 4725d9be64f3a431717c046f5c3b92e19b2e8a285eaef438fdff86a8af0cbd96  ./pyproject.toml
 31046728329b98137a00c36ee883ca8ec9362f471553933c6cfd6592bcacc48f  ./requirements-dev.txt
 d76c874bb49d37e3aa5bfeaa3510dd95d1548a9e46bb907fb30b042a1b75376a  ./run.py
@@ -706,13 +713,14 @@ d76c874bb49d37e3aa5bfeaa3510dd95d1548a9e46bb907fb30b042a1b75376a  ./run.py
 2d3c4f95940ec45135188effbff71f98402fe2080c1e184e985512ca70bf6f56  ./scripts/audit-golden-factory.js
 744330c09b92a830d313a24bd7c8ec4f48aa1b61c102fc61fb2359db487b31e9  ./scripts/audit-mapping-contracts.js
 324f6d7c9b5e26892223013ff9db659b558d7ce90adfe0fc7a96f5fe47c0e555  ./scripts/audit-openapi-routes.js
+832208be0f7d4c1882672059d227123b108bc93b09fe55c84142c67461f8a44a  ./scripts/audit-policy-contracts.js
 dc5494af188f65e2b32144824b6ed8c4f236402e418d39c669ff2612e0eefd02  ./scripts/generate-ddl-package.js
 5d8f1639621419384e50b42e2e47ea4ca1f66e7151ce16415e37163b5d9c501b  ./scripts/generate-standalone-ddl.js
 109ee3ccc3060c198456c5ced7a188f6607ffa01a118fc07eee565b044c3a378  ./scripts/package-release.sh
 ceb79c36f76efdcfadfd9ca0f8487be3d6cc405faa038e1c386d44bd59cf5a21  ./scripts/post-restore-smoke.mjs
 f58fe7af29b2b6be01e3aa9be5ba5f700820749b735c0013a5f9382ebf88b461  ./scripts/postgres-logical-backup.mjs
 468560db4b19f49f658aa6872ca0811ec9eaf08d4989376271869dcd621bac21  ./scripts/release-drill.sh
-d28e28bcd33c0c6e06e7a2de5d6c90181a2a974a09b3d2c62e550f326f8236ef  ./scripts/standalone-check.sh
+a879703b69fc08f796f9d919aec05634064ea17c93a4fefb253e1f93812176c4  ./scripts/standalone-check.sh
 9220d4c0f39c2ef5ebc88ae4b0d89895e314b2b7a1e99258396b55a4fd46404a  ./scripts/standalone-ops-check.sh
 a9ae6f80288ec658929565640c94fb33859be4d802c76c2d02096849a8e3e673  ./scripts/standalone-postgres-check.sh
 68da267adc221c6481179e4d5f3d2b5be04063de6d370f13bdc83b58002a19a6  ./scripts/verify-deploy-artifacts.js

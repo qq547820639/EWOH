@@ -176,6 +176,58 @@ if (!e2eConfig) {
       expect(eventType.body.channel).toBe('telemetry.observed');
     });
 
+    it('evaluates policies and serves the canonical operator-safety example', async () => {
+      const auth = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(auth.status).toBe(201);
+      const token = auth.body.accessToken;
+
+      const example = await apiRequest<{
+        policyId: string;
+        version: string;
+        effect: string;
+        rules: Array<{ field: string; operator: string; value: unknown }>;
+      }>(baseUrl, '/api/policies/examples', {
+        headers: jsonHeaders(token),
+      });
+      expect(example.status).toBe(200);
+      expect(example.body.policyId).toBe('deny-dispatch-high-risk');
+      expect(example.body.effect).toBe('deny');
+
+      const risky = await apiRequest<{
+        decision: string;
+        matched: boolean;
+      }>(baseUrl, '/api/policies/evaluate', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          policy: example.body,
+          context: { plan: { riskLevel: 'critical', requiresApproval: true } },
+        }),
+      });
+      expect(risky.status).toBe(201);
+      expect(risky.body.decision).toBe('deny');
+      expect(risky.body.matched).toBe(true);
+
+      const safe = await apiRequest<{
+        decision: string;
+        matched: boolean;
+      }>(baseUrl, '/api/policies/evaluate', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          policy: example.body,
+          context: { plan: { riskLevel: 'low', requiresApproval: true } },
+        }),
+      });
+      expect(safe.status).toBe(201);
+      expect(safe.body.decision).toBe('allow');
+      expect(safe.body.matched).toBe(false);
+    });
+
     it('lets global_admin read/write system config, read audit, and create control requests', async () => {
       const auth = await login(
         baseUrl,

@@ -97,6 +97,9 @@
 - 兼容目录：`GET /api/scale/compatibility` 返回资产包与核心版本兼容矩阵，
   支持 `>=/<=/>/</=` 与空格 AND 范围；未声明范围的资产标记
   `unconstrained` 兼容。
+- 策略引擎：`contracts/policy/policy-schema.json` 定义策略契约；
+  `POST /api/policies/evaluate` 按 dot-path 规则求值，`GET /api/policies/examples`
+  提供规范示例；`scripts/audit-policy-contracts.js` 纳入一键检查。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

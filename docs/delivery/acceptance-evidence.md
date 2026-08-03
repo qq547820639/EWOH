@@ -7,21 +7,22 @@ Owner: AG-00/AG-41
 
 - Python unittest: 667 passed.
 - Python repo contract tests: 59 passed.
-- NestJS Jest: 246 passed across 58 suites (includes SP-01..SP-08 scenario
+- NestJS Jest: 253 passed across 60 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
 - Client Jest: 20 passed across 6 suites.
-- HTTP + PostgreSQL E2E: 20 passed (auth, RBAC, refresh rotation/logout, org
+- HTTP + PostgreSQL E2E: 21 passed (auth, RBAC, refresh rotation/logout, org
   isolation, control/resource/world persistence, canonical UnifiedExoFrame
   ingestion, gamification allocation persistence, approval persistence,
   system config org scoping, complete MES work order execution, and
   OEE/andon SLA escalation, ERP inbound/outbound/reconcile, and scale
   template publish/install/asset registration, scenario install + fleet
-  upgrade/rollback, the event catalog API, and `/metrics` resource attributes).
+  upgrade/rollback, the event catalog API, `/metrics` resource attributes, and
+  policy evaluation).
 - NestJS type check, lint, and Standalone production build: passed.
 - One-click `scripts/standalone-check.sh`: passed with E2E, OpenAPI strict
   audit, DDL plans, and standalone DDL hygiene.
-- OpenAPI contract: 161 controller operations documented, 0 undocumented,
+- OpenAPI contract: 163 controller operations documented, 0 undocumented,
   0 unimplemented; `openapi/route-manifest.json` generated.
 - Full release drill: `RELEASE DRILL PASSED` against disposable PostgreSQL 17,
   including migration/RLS/audit/rollback/rebuild, 176 Jest tests, 107/107
@@ -97,6 +98,10 @@ Owner: AG-00/AG-41
   ranges with prerelease-aware semver matching; E2E verifies a legacy connector
   with an incompatible range is flagged while conformant packages remain
   compatible.
+- Policy engine: `contracts/policy/policy-schema.json` defines the policy
+  contract; `POST /api/policies/evaluate` validates and evaluates rule sets
+  against contexts; E2E verifies the canonical operator-safety policy denies
+  high-risk dispatch and allows safe contexts.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

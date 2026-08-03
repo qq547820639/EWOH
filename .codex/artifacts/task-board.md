@@ -241,6 +241,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-108 | Asset/core compatibility catalog API + range matcher | PX-11/04 | Done | `round24-compatibility-catalog.md`; E2E incompatible legacy connector verified |
 
+## Wave Final5 - Policy Engine (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-109 | Policy schema + evaluation API + contract audit | PX-06/20 | Done | `round25-policy-engine.md`; E2E risky deny/safe allow passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.
