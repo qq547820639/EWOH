@@ -144,6 +144,14 @@ Trace: EWOH-2026-08-04-principal-final6
 - Full suite after quality wave: server Jest 79/386, client 13/46, OpenAPI
   245/245, work graph 244 nodes / 101 evidence / 0 invariant conflicts.
 
+## Latest Round - 2026-08-04 Slow Query Observability
+
+- `RequestDatabaseContext` applies `EWOH_DB_STATEMENT_TIMEOUT_MS` and records
+  transactions over `EWOH_DB_SLOW_THRESHOLD_MS`.
+- `GET /api/observability/slow-queries` returns bounded slow transaction
+  records with requestId; `/metrics` exposes `ewoh_slow_queries_total`.
+- Real PostgreSQL E2E: 32/32 passed including slow-query API and metric.
+
 ## Current Phase
 
 Final 6.0 work orchestration wave: C7-C9 contracts, file-backed Work Graph

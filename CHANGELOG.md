@@ -100,6 +100,8 @@
   步骤、必需工具/物料；开工与报工前强制签收并记录签名。
 - 质检方案：`/api/mes/quality-schemes` 支持首检/巡检/终检方案注册、发布与
   自动匹配；质检接口强制必检项并校验结果一致性。
+- 慢查询观测：数据库事务支持 `statement_timeout` 与慢事务阈值记录，新增
+  `GET /api/observability/slow-queries` 与 `ewoh_slow_queries_total` 指标。
 
 ## [0.6.0-rc3] - 2026-08-04
 

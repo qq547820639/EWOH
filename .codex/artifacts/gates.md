@@ -78,3 +78,10 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
   and result consistency are implemented and persisted.
 - Real PostgreSQL E2E now 32/32; server unit tests cover stage mismatch,
   missing required checks, result mismatch, and passing checks.
+
+## 2026-08-04 Slow Query Observability Gate
+
+- DB transactions can be bounded by `EWOH_DB_STATEMENT_TIMEOUT_MS` and slow
+  transactions are recorded with requestId and duration.
+- Slow-query API and Prometheus counter are covered by unit tests and real PG
+  E2E.

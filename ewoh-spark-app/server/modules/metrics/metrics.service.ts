@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { SlowQueryService } from '../observability/slow-query.service';
 
 @Injectable()
 export class MetricsService {
@@ -10,6 +11,10 @@ export class MetricsService {
     failed: 0,
     lastOkAt: null as string | null,
   };
+
+  constructor(
+    @Optional() private readonly slowQueryService?: SlowQueryService,
+  ) {}
 
   beginRequest(): void {
     this.activeRequests += 1;
@@ -85,6 +90,9 @@ export class MetricsService {
       '# TYPE ewoh_db_ready_checks_total counter',
       `ewoh_db_ready_checks_total{result="ok"} ${snapshot.dbReady.ok}`,
       `ewoh_db_ready_checks_total{result="failed"} ${snapshot.dbReady.failed}`,
+      '# HELP ewoh_slow_queries_total Slow database transaction count',
+      '# TYPE ewoh_slow_queries_total counter',
+      `ewoh_slow_queries_total ${this.slowQueryService?.count() ?? 0}`,
       '# HELP ewoh_resource_info EWOH resource attributes',
       '# TYPE ewoh_resource_info gauge',
       `ewoh_resource_info{factory_id="${this.escapeLabel(resource.factoryId)}",factory_name="${this.escapeLabel(resource.factoryName)}",upgrade_ring="${this.escapeLabel(resource.upgradeRing)}",release_version="${this.escapeLabel(resource.releaseVersion)}",region="${this.escapeLabel(resource.region)}"} 1`,

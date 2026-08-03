@@ -576,6 +576,7 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-207 | Unified replay lanes, event context, and replay-derived issue creation | AG-14/31 | Done | `round94-world-replay-unified-timeline.md`; unit + E2E 30/30 |
 | T-208 | E-SOP versioning, sign-off, and mandatory tool/material confirmation gates | AG-11/20 | Done | `round95-esop-signoff.md`; unit + E2E 31/31 |
 | T-209 | Quality scheme registry, auto-match, required check items, and result consistency | AG-11/20 | Done | `round96-quality-schemes.md`; unit + E2E 32/32 |
+| T-210 | Slow transaction detection, statement timeout, slow-query API and metric | AG-11/46 | Done | `round97-slow-query-observability.md`; unit + E2E 32/32 |
 
 ## Next Waves
 

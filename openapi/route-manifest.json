@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T22:37:28.008Z",
+  "generatedAt": "2026-08-03T22:45:04.418Z",
   "spec": "openapi/ewoh.yaml",
   "controllerKeys": [
     "DELETE /api/dashboard/devices/{deviceId}/bindings",
@@ -52,6 +52,7 @@
     "GET /api/mobile/workbench/orders/{orderId}",
     "GET /api/models",
     "GET /api/models/{id}",
+    "GET /api/observability/slow-queries",
     "GET /api/observability/traces",
     "GET /api/oee/andons",
     "GET /api/oee/device-status",
@@ -299,6 +300,7 @@
     "GET /api/mobile/workbench/orders/{orderId}",
     "GET /api/models",
     "GET /api/models/{id}",
+    "GET /api/observability/slow-queries",
     "GET /api/observability/traces",
     "GET /api/oee/andons",
     "GET /api/oee/device-status",
@@ -495,9 +497,9 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 245,
-  "specOperations": 245,
-  "documentedControllerOperations": 245,
+  "controllerOperations": 246,
+  "specOperations": 246,
+  "documentedControllerOperations": 246,
   "undocumented": [],
   "unimplemented": []
 }

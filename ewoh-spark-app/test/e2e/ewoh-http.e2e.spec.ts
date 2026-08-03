@@ -81,6 +81,7 @@ if (!e2eConfig) {
         `ewoh_resource_info{factory_id="factory-${runId}",factory_name="E2E Factory",upgrade_ring="shadow",release_version="0.6.0-rc4",region="cn-north-1"} 1`,
       );
       expect(metrics.body).toContain('ewoh_process_uptime_seconds');
+      expect(metrics.body).toContain('ewoh_slow_queries_total');
     });
 
     it('rejects unauthenticated business API calls with 401', async () => {
@@ -804,6 +805,14 @@ if (!e2eConfig) {
             trace.status === 200,
         ),
       ).toBe(true);
+
+      const slowQueries = await apiRequest<unknown[]>(
+        baseUrl,
+        '/api/observability/slow-queries?limit=10',
+        { headers: jsonHeaders(token) },
+      );
+      expect(slowQueries.status).toBe(200);
+      expect(Array.isArray(slowQueries.body)).toBe(true);
 
       const viewerB = await login(
         baseUrl,

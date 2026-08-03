@@ -48,6 +48,7 @@ import { AasModule } from './modules/aas/aas.module';
 import { TracingModule } from './modules/tracing/tracing.module';
 import { TracingInterceptor } from './modules/tracing/tracing.interceptor';
 import { WorkOrchestrationModule } from './modules/work-orchestration/work-orchestration.module';
+import { ObservabilityModule } from './modules/observability/observability.module';
 
 @Module({
   imports: [
@@ -90,6 +91,7 @@ import { WorkOrchestrationModule } from './modules/work-orchestration/work-orche
     AasModule,
     TracingModule,
     WorkOrchestrationModule,
+    ObservabilityModule,
   ],
   providers: [
     {
