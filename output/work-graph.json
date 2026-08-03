@@ -1,6 +1,6 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T20:23:04.443Z",
+  "generatedAt": "2026-08-03T20:23:51.175Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
@@ -2261,7 +2261,7 @@
         "AG-13"
       ],
       "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
-      "evidence": "`RELEASE DRILL PASSED`; perf 4610 QPS p95 26.83ms; security probe OK; bandit unexecuted locally"
+      "evidence": "`RELEASE DRILL PASSED`; perf 4610 QPS p95 26.83ms; security probe OK; bandit 0 medium/high"
     },
     {
       "id": "T-188",
@@ -3275,7 +3275,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "f651ad3fdcf2c4431b315bbab741cf7eee62df9097bc0015f486998554aeb657",
+      "checksum": "c65ec820292f60204d8cfc1a2b7666c2d4d5c265835d1f21a3a44c6c1e360831",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3320,7 +3320,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "736bfb53d867ce8aa629585bd2733af73fc44f745ae3937f33abfdb055d6c1dc",
+      "checksum": "802bae2538c50100edc78d817208aecef3f6c645516a9b011784571a646e08f5",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3329,7 +3329,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "4af2d84b4ae715251c7d82481f54b7a9b9739bf4680493c9b61ded331025c17c",
+      "checksum": "74eb04c99a333222c83052a2a1917abe8d4a251ccec920120a05e670fd9dc39a",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4097,7 +4097,7 @@
       "workItemId": "",
       "kind": "test",
       "path": ".codex/artifacts/work/evidence/round79-release-drill-and-verification.md",
-      "checksum": "09691e73d2384b785eebda53f207717b3e62768624107f09aa062ab4c7acc652",
+      "checksum": "7a6f932e74d5fa53df2967ca67ffe18076d8a50c64ce562bfbed84262013d975",
       "result": "passed",
       "title": "Round 79 - 2026-08-04 Release Drill and Verification Gates"
     },

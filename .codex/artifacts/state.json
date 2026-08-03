@@ -251,7 +251,8 @@
     "playwright_2026_08_04": "Playwright screenshots of Standalone /login at mobile 390x844 and desktop 1440x900 saved under output/playwright/iteration-login-*.png",
     "request_context_correlation_2026_08_04": "AsyncLocalStorage request context carries traceId into audit entries; tracing interceptor + audit service tests; repo facts 33/33; Jest 76/360",
     "error_sanitization_2026_08_04": "HttpException details no longer serialize raw response objects; site readiness returns generic error; exception filter + work orchestration tests; Jest 76/362",
-    "devices_error_state_2026_08_04": "Devices page shows retryable error state and data update time instead of conflating failures with empty results"
+    "devices_error_state_2026_08_04": "Devices page shows retryable error state and data update time instead of conflating failures with empty results",
+    "bandit_2026_08_04": "python3 -m bandit -r src/edge_platform -ll: 0 medium/high issues over 28286 lines"
   },
   "subagent_state": {
     "planned": [

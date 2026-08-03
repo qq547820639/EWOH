@@ -45,10 +45,14 @@ audit: two-entry SHA-256 chain recomputed; cross-org append and direct tampering
 STANDALONE SECURITY VERIFY OK
 ```
 
-### Not executed locally
+### Static security scan
 
-- `bandit -r src/edge_platform -ll` could not run because `bandit` is not
-  installed on this machine; CI (`security.yml`) still covers it.
+```text
+python3 -m bandit -r src/edge_platform -ll
+No issues identified.
+Total lines of code: 28286
+Medium: 0, High: 0
+```
 
 ## Remaining next steps
 
