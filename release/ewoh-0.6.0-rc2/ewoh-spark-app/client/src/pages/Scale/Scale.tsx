@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowUpCircle, Boxes, Factory, GitCompareArrows, Layers3, ListChecks, PackageSearch, Play, RotateCcw } from 'lucide-react';
+import { ArrowUpCircle, Boxes, Factory, GitCompareArrows, Layers3, ListChecks, PackageSearch, Play, RotateCcw, Workflow } from 'lucide-react';
 import {
+  advanceWorkflowInstance,
   fleetRollback,
   fleetUpgrade,
   generateSupportBundle,
   getFleetStatus,
+  getWorkflowExample,
   listFactoryDifferences,
+  listWorkflowInstances,
   getScaleCompatibility,
   listScaleAssets,
   listScaleProfiles,
@@ -14,11 +17,13 @@ import {
   registerFactoryDifference,
   resolveFactoryDifference,
   runScaleOnboarding,
+  startWorkflowInstance,
   type FactoryDifference,
   type FleetRollbackResult,
   type FleetUpgradeResult,
   type OnboardingRunResult,
   type SupportBundleResult,
+  type WorkflowInstance,
 } from '../../api/scale';
 import { queryKeys } from '../../hooks/queryKeys';
 import {
@@ -61,6 +66,8 @@ const Scale = (): React.ReactElement => {
   const [fleetResult, setFleetResult] = useState<
     FleetUpgradeResult | FleetRollbackResult | null
   >(null);
+  const [workflowEntityId, setWorkflowEntityId] = useState('');
+  const [workflowRoles, setWorkflowRoles] = useState('dispatcher');
 
   const query = useQuery<ScaleData>({
     queryKey: queryKeys.scaleDashboard,
@@ -151,6 +158,49 @@ const Scale = (): React.ReactElement => {
     },
   });
 
+  const workflowExampleQuery = useQuery({
+    queryKey: ['workflow-example'],
+    queryFn: getWorkflowExample,
+    staleTime: QUERY_STALE_TIME_MS,
+  });
+
+  const workflowInstancesQuery = useQuery<WorkflowInstance[]>({
+    queryKey: queryKeys.workflowInstances,
+    queryFn: listWorkflowInstances,
+    refetchInterval: ADMIN_REFETCH_INTERVAL_MS,
+    staleTime: QUERY_STALE_TIME_MS,
+  });
+
+  const startWorkflow = useMutation({
+    mutationFn: () => {
+      if (!workflowExampleQuery.data) {
+        throw new Error('workflow example is not loaded');
+      }
+      return startWorkflowInstance(
+        workflowExampleQuery.data,
+        workflowEntityId.trim(),
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workflowInstances });
+      setWorkflowEntityId('');
+    },
+  });
+
+  const advanceWorkflow = useMutation({
+    mutationFn: (key: string) =>
+      advanceWorkflowInstance(
+        key,
+        workflowRoles
+          .split(',')
+          .map((role) => role.trim())
+          .filter(Boolean),
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workflowInstances });
+    },
+  });
+
   const data = query.data;
   const templates = data?.templates ?? [];
   const profiles = data?.profiles ?? [];
@@ -158,6 +208,7 @@ const Scale = (): React.ReactElement => {
   const compatibility = data?.compatibility;
   const differences = differencesQuery.data ?? [];
   const fleetStatus = fleetQuery.data;
+  const workflowInstances = workflowInstancesQuery.data ?? [];
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -369,6 +420,95 @@ const Scale = (): React.ReactElement => {
                         </tr>
                       );
                     })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
+            <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+              <Workflow className="h-4 w-4 text-sky-600" />
+              <h2 className="font-semibold text-[hsl(220_14%_14%)]">Workflow 实例</h2>
+              <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
+                {workflowExampleQuery.data?.workflowId ?? '未加载示例'} ·{' '}
+                {workflowInstances.length} 个实例
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+              <input
+                value={workflowEntityId}
+                onChange={(event) => setWorkflowEntityId(event.target.value)}
+                placeholder="实体 ID"
+                className="h-9 w-52 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+              />
+              <input
+                value={workflowRoles}
+                onChange={(event) => setWorkflowRoles(event.target.value)}
+                placeholder="角色（逗号分隔）"
+                className="h-9 w-56 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+              />
+              <button
+                type="button"
+                disabled={
+                  !workflowEntityId.trim() ||
+                  !workflowExampleQuery.data ||
+                  startWorkflow.isPending
+                }
+                onClick={() => startWorkflow.mutate()}
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-medium text-white disabled:opacity-50"
+              >
+                <Play className="h-4 w-4" />
+                启动实例
+              </button>
+            </div>
+            {startWorkflow.isError && (
+              <div className="border-b border-red-100 bg-red-50 px-5 py-3 text-sm text-red-700">
+                {startWorkflow.error instanceof Error
+                  ? startWorkflow.error.message
+                  : '启动失败'}
+              </div>
+            )}
+            {workflowInstances.length === 0 ? (
+              <div className="p-6 text-sm text-[hsl(218_10%_42%)]">暂无 Workflow 实例。</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[900px] text-left text-sm">
+                  <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+                    <tr>
+                      <th className="px-5 py-3 font-medium">实例键</th>
+                      <th className="px-5 py-3 font-medium">实体</th>
+                      <th className="px-5 py-3 font-medium">当前步骤</th>
+                      <th className="px-5 py-3 font-medium">状态</th>
+                      <th className="px-5 py-3 font-medium">更新时间</th>
+                      <th className="px-5 py-3 font-medium">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+                    {workflowInstances.map((instance) => (
+                      <tr key={instance.key} className="hover:bg-[hsl(220_14%_96%)]">
+                        <td className="px-5 py-3 font-mono text-xs">{instance.key}</td>
+                        <td className="px-5 py-3">{instance.entityId}</td>
+                        <td className="px-5 py-3 font-medium">{instance.currentStep}</td>
+                        <td className="px-5 py-3">{instance.status}</td>
+                        <td className="px-5 py-3 text-xs text-[hsl(218_10%_42%)]">
+                          {formatTime(instance.updatedAt)}
+                        </td>
+                        <td className="px-5 py-3">
+                          <button
+                            type="button"
+                            disabled={
+                              instance.status !== 'active' ||
+                              advanceWorkflow.isPending
+                            }
+                            onClick={() => advanceWorkflow.mutate(instance.key)}
+                            className="rounded-lg border border-[hsl(220_14%_89%)] px-3 py-1.5 text-xs font-medium text-[hsl(220_14%_14%)] disabled:opacity-40"
+                          >
+                            推进
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>

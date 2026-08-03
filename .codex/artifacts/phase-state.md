@@ -126,6 +126,8 @@ production approval gate.
   with one click and shows the result.
 - Fleet UI: `/scale` page shows upgrade ring distribution and supports
   ring-filtered fleet upgrade/rollback actions.
+- Workflow UI: `/scale` page starts, lists, and advances workflow instances
+  with role input.
 
 ## Active Tasks
 

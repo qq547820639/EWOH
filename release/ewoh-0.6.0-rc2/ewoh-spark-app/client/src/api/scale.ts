@@ -105,6 +105,29 @@ export interface FleetRollbackResult {
   skippedProfiles: number;
 }
 
+export interface WorkflowStepDefinition {
+  name: string;
+  action: string;
+}
+
+export interface WorkflowExample {
+  workflowId: string;
+  version: string;
+  start: string;
+  steps: WorkflowStepDefinition[];
+}
+
+export interface WorkflowInstance {
+  key: string;
+  workflowId: string;
+  entityId: string;
+  currentStep: string;
+  status: string;
+  history: Array<{ step: string; action?: string; at: string; actor?: string }>;
+  updatedBy: string | null;
+  updatedAt: string;
+}
+
 export async function listScaleTemplates(): Promise<ScaleTemplate[]> {
   const res = await axiosForBackend({ url: '/api/scale/templates', method: 'GET' });
   return res.data;
@@ -195,6 +218,40 @@ export async function fleetRollback(ring?: string): Promise<FleetRollbackResult>
     url: '/api/scale/fleet/rollback',
     method: 'POST',
     data: ring ? { ring } : {},
+  });
+  return res.data;
+}
+
+export async function getWorkflowExample(): Promise<WorkflowExample> {
+  const res = await axiosForBackend({ url: '/api/workflows/examples', method: 'GET' });
+  return res.data;
+}
+
+export async function listWorkflowInstances(): Promise<WorkflowInstance[]> {
+  const res = await axiosForBackend({ url: '/api/workflows/instances', method: 'GET' });
+  return res.data;
+}
+
+export async function startWorkflowInstance(
+  workflow: WorkflowExample,
+  entityId: string,
+): Promise<WorkflowInstance> {
+  const res = await axiosForBackend({
+    url: '/api/workflows/instances',
+    method: 'POST',
+    data: { workflow, entityId },
+  });
+  return res.data;
+}
+
+export async function advanceWorkflowInstance(
+  key: string,
+  roles: string[],
+): Promise<WorkflowInstance> {
+  const res = await axiosForBackend({
+    url: `/api/workflows/instances/${encodeURIComponent(key)}/advance`,
+    method: 'POST',
+    data: { roles },
   });
   return res.data;
 }

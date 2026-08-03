@@ -391,6 +391,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-133 | Fleet status + ring upgrade/rollback UI on /scale | AG-30/31 | Done | `round49-fleet-ui.md`; client build passed |
 
+## Wave Final5 - Workflow UI (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-134 | Workflow instance start/list/advance UI on /scale | AG-30/31 | Done | `round50-workflow-instances-ui.md`; client build passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

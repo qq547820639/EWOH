@@ -71,6 +71,7 @@ evidence:
   workflow_instances: "stateful workflow instance start/list/advance; persisted workflow.* config; role gating + audit"
   support_bundle_ui: "/scale page one-click support bundle generation; client build passed"
   fleet_ui: "/scale page fleet status + ring upgrade/rollback actions; client build passed"
+  workflow_instances_ui: "/scale page workflow instance start/list/advance UI; client build passed"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

@@ -156,6 +156,7 @@
 - Support Bundle 界面：`/scale` 页面一键生成脱敏诊断包并展示
   bundleId/工厂数/敏感信息状态。
 - Fleet 升级环界面：`/scale` 页面展示环分布，并支持按环升级/回滚操作。
+- Workflow 实例界面：`/scale` 页面支持启动、列表与角色推进 Workflow 实例。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

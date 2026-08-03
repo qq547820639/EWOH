@@ -41,4 +41,5 @@ export const queryKeys = {
   scaleDashboard: ['scale-dashboard'] as const,
   scaleDifferences: ['scale-differences'] as const,
   scaleFleetStatus: ['scale-fleet-status'] as const,
+  workflowInstances: ['workflow-instances'] as const,
 };
