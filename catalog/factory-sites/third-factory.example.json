@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "ewoh:///site-readiness/v1",
+  "factoryName": "Third Factory",
+  "siteContact": "site-owner@example.com",
+  "items": [
+    { "id": "DEV-INV", "label": "设备台账与协议清单", "required": true, "status": "pass", "evidence": "device-inventory.xlsx" },
+    { "id": "ERP-EP", "label": "ERP/MES 接口端点", "required": true, "status": "fail", "evidence": "missing" },
+    { "id": "NET", "label": "网络分段与权限批准", "required": true, "status": "pass", "evidence": "network-approval.pdf" }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ewoh:///artifact-paths/v1",
+  "title": "EWOH Artifact Path Registry",
+  "description": "Schema for the versioned registry of authoritative orchestration artifact paths.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["paths"],
+  "properties": {
+    "paths": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/pathEntry" }
+    }
+  },
+  "$defs": {
+    "pathEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "required", "owner", "mediaType"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "owner": { "type": "string", "minLength": 1 },
+        "mediaType": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

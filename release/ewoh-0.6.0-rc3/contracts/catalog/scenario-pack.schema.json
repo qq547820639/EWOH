@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ewoh:///scenario-pack/v1",
+  "title": "EWOH Scenario Pack",
+  "description": "Scenario pack manifest for catalog/ scenario assets.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "type": "string", "const": "ewoh.io/v1alpha1" },
+    "kind": { "type": "string", "const": "ScenarioPack" },
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "spec": { "$ref": "#/$defs/spec" }
+  },
+  "$defs": {
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requires",
+        "workflows",
+        "policies",
+        "acceptance",
+        "privacy",
+        "degradation"
+      ],
+      "properties": {
+        "requires": { "type": "object" },
+        "workflows": { "type": "array", "items": { "type": "string" } },
+        "policies": { "type": "array", "items": { "type": "string" } },
+        "acceptance": { "type": "string", "minLength": 1 },
+        "privacy": { "type": "string", "minLength": 1 },
+        "degradation": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

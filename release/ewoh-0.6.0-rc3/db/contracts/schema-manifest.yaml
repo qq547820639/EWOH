@@ -1,0 +1,411 @@
+# EWOH managed schema manifest
+version: "1.0"
+generated: "2026-08-03"
+source:
+  data_contract: ".codex/artifacts/contracts/data-contract.md"
+  security_contract: ".codex/artifacts/contracts/security-contract.md"
+managed_package:
+  new_group_count: 36
+  frozen_alter_count: 12
+  managed_count: 48
+  physical_create_count: 38
+  mapped_existing_count_in_group: 1
+notes:
+  - "Authoritative plan table 77 lists 38 logical new names under the label \"36 new tables\"."
+  - "This package resolves the discrepancy by treating ewoh_organization and ewoh_person as capabilities satisfied by existing physical tables, leaving 36 rows in the new/expanded managed group."
+  - "Within that group, ewoh_device_person_binding is satisfied by the existing ewoh_device_binding table, so 35 physical CREATE statements are emitted."
+  - "No frozen capability is silently dropped; the capability map in tmp/ddl/capability-map.csv is the acceptance basis."
+managed_tables:
+  - domain: "Scale"
+    logical_name: "ewoh_asset_package"
+    physical_table: "ewoh_asset_package"
+    business_key_columns: ["org_id","package_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scale.asset"]
+  - domain: "System"
+    logical_name: "ewoh_audit_log"
+    physical_table: "ewoh_audit_log"
+    business_key_columns: ["org_id","audit_seq"]
+    org_id_policy: "special"
+    status: "new"
+    capability_mapping: ["audit.log"]
+  - domain: "Control"
+    logical_name: "ewoh_control_command"
+    physical_table: "ewoh_control_command"
+    business_key_columns: ["org_id","root_command_id","attempt_no","command_key"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["control.command"]
+  - domain: "Control"
+    logical_name: "ewoh_control_request"
+    physical_table: "ewoh_control_request"
+    business_key_columns: ["org_id","request_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["control.request"]
+  - domain: "Control"
+    logical_name: "ewoh_control_result"
+    physical_table: "ewoh_control_result"
+    business_key_columns: ["org_id","result_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["control.result"]
+  - domain: "Device"
+    logical_name: "ewoh_device_person_binding"
+    physical_table: "ewoh_device_binding"
+    business_key_columns: ["org_id","device_id","target_id","binding_type"]
+    org_id_policy: "NOT NULL"
+    status: "mapped-existing"
+    capability_mapping: ["device.person_binding","device.space_binding","device.device_binding"]
+  - domain: "Device"
+    logical_name: "ewoh_device_capability"
+    physical_table: "ewoh_device_capability"
+    business_key_columns: ["org_id","device_id","capability_key"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["device.capability"]
+  - domain: "Event"
+    logical_name: "ewoh_event_action"
+    physical_table: "ewoh_event_action"
+    business_key_columns: ["org_id","action_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["event.action"]
+  - domain: "Event"
+    logical_name: "ewoh_event_rule"
+    physical_table: "ewoh_event_rule"
+    business_key_columns: ["org_id","rule_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["event.rule"]
+  - domain: "Event"
+    logical_name: "ewoh_event_subscription"
+    physical_table: "ewoh_event_subscription"
+    business_key_columns: ["org_id","subscription_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["event.subscription"]
+  - domain: "Scale"
+    logical_name: "ewoh_factory_profile"
+    physical_table: "ewoh_factory_profile"
+    business_key_columns: ["org_id","profile_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scale.profile"]
+  - domain: "Scale"
+    logical_name: "ewoh_factory_template"
+    physical_table: "ewoh_factory_template"
+    business_key_columns: ["org_id","template_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scale.template"]
+  - domain: "System"
+    logical_name: "ewoh_knowledge_base"
+    physical_table: "ewoh_knowledge_base"
+    business_key_columns: ["org_id","base_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["knowledge.base"]
+  - domain: "System"
+    logical_name: "ewoh_knowledge_entry"
+    physical_table: "ewoh_knowledge_entry"
+    business_key_columns: ["org_id","entry_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["knowledge.entry"]
+  - domain: "Model"
+    logical_name: "ewoh_model_asset"
+    physical_table: "ewoh_model_asset"
+    business_key_columns: ["org_id","asset_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["model.asset"]
+  - domain: "Model"
+    logical_name: "ewoh_model_binding"
+    physical_table: "ewoh_model_binding"
+    business_key_columns: ["org_id","model_asset_id","entity_id","binding_type"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["model.binding"]
+  - domain: "System"
+    logical_name: "ewoh_notification"
+    physical_table: "ewoh_notification"
+    business_key_columns: ["org_id","notification_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["notification.registry"]
+  - domain: "Organization"
+    logical_name: "ewoh_person_role"
+    physical_table: "ewoh_person_role"
+    business_key_columns: ["org_id","person_id","role_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["person.role"]
+  - domain: "Organization"
+    logical_name: "ewoh_person_skill"
+    physical_table: "ewoh_person_skill"
+    business_key_columns: ["org_id","person_id","skill_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["person.skill"]
+  - domain: "Resource"
+    logical_name: "ewoh_resource_binding"
+    physical_table: "ewoh_resource_binding"
+    business_key_columns: ["org_id","resource_id","target_id","binding_type"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["resource.binding"]
+  - domain: "Resource"
+    logical_name: "ewoh_resource_preorder"
+    physical_table: "ewoh_resource_preorder"
+    business_key_columns: ["org_id","preorder_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["resource.preorder"]
+  - domain: "Organization"
+    logical_name: "ewoh_role"
+    physical_table: "ewoh_role"
+    business_key_columns: ["org_id","role_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["role.registry"]
+  - domain: "Schedule"
+    logical_name: "ewoh_schedule_assignment"
+    physical_table: "ewoh_schedule_assignment"
+    business_key_columns: ["org_id","assignment_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["schedule.assignment"]
+  - domain: "Schedule"
+    logical_name: "ewoh_schedule_task"
+    physical_table: "ewoh_schedule_task"
+    business_key_columns: ["org_id","schedule_task_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["schedule.task"]
+  - domain: "Schedule"
+    logical_name: "ewoh_schedule_task_step"
+    physical_table: "ewoh_schedule_task_step"
+    business_key_columns: ["org_id","schedule_task_id","step_no"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["schedule.task_step"]
+  - domain: "Organization"
+    logical_name: "ewoh_skill"
+    physical_table: "ewoh_skill"
+    business_key_columns: ["org_id","skill_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["skill.registry"]
+  - domain: "Spatial"
+    logical_name: "ewoh_spatial_hierarchy"
+    physical_table: "ewoh_spatial_hierarchy"
+    business_key_columns: ["org_id","parent_entity_id","child_entity_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["spatial.hierarchy"]
+  - domain: "Spatial"
+    logical_name: "ewoh_spatial_relation"
+    physical_table: "ewoh_spatial_relation"
+    business_key_columns: ["org_id","from_entity_id","to_entity_id","relation_type"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["spatial.relation"]
+  - domain: "System"
+    logical_name: "ewoh_system_config"
+    physical_table: "ewoh_system_config"
+    business_key_columns: ["org_id","config_key"]
+    org_id_policy: "special"
+    status: "new"
+    capability_mapping: ["system.config"]
+  - domain: "Task"
+    logical_name: "ewoh_task_skill_req"
+    physical_table: "ewoh_task_skill_req"
+    business_key_columns: ["org_id","task_step_id","skill_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["task.skill_requirement"]
+  - domain: "Task"
+    logical_name: "ewoh_task_step"
+    physical_table: "ewoh_task_step"
+    business_key_columns: ["org_id","template_id","step_no"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["task.step"]
+  - domain: "Task"
+    logical_name: "ewoh_task_template"
+    physical_table: "ewoh_task_template"
+    business_key_columns: ["org_id","template_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["task.template"]
+  - domain: "Workstation"
+    logical_name: "ewoh_workstation"
+    physical_table: "ewoh_workstation"
+    business_key_columns: ["org_id","workstation_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["workstation.registry"]
+  - domain: "Workstation"
+    logical_name: "ewoh_workstation_device"
+    physical_table: "ewoh_workstation_device"
+    business_key_columns: ["org_id","workstation_id","device_id","binding_type"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["workstation.device"]
+  - domain: "Workstation"
+    logical_name: "ewoh_workstation_person"
+    physical_table: "ewoh_workstation_person"
+    business_key_columns: ["org_id","workstation_id","person_id","assignment_role"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["workstation.person"]
+  - domain: "Workstation"
+    logical_name: "ewoh_workstation_relation"
+    physical_table: "ewoh_workstation_relation"
+    business_key_columns: ["org_id","from_workstation_id","to_workstation_id","relation_type"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["workstation.relation"]
+  - domain: "Workstation"
+    logical_name: "ewoh_workstation_skill"
+    physical_table: "ewoh_workstation_skill"
+    business_key_columns: ["org_id","workstation_id","skill_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["workstation.skill"]
+  - domain: "World"
+    logical_name: "ewoh_world_delta_log"
+    physical_table: "ewoh_world_delta_log"
+    business_key_columns: ["org_id","seq"]
+    org_id_policy: "special"
+    status: "new"
+    capability_mapping: ["world.delta"]
+  - domain: "World"
+    logical_name: "ewoh_world_snapshot"
+    physical_table: "ewoh_world_snapshot"
+    business_key_columns: ["org_id","snapshot_version"]
+    org_id_policy: "special"
+    status: "new"
+    capability_mapping: ["world.snapshot"]
+  - domain: "Schedule"
+    logical_name: "ewoh_scheduler_config"
+    physical_table: "ewoh_scheduler_config"
+    business_key_columns: ["org_id","config_key"]
+    org_id_policy: "NOT NULL"
+    status: "altered"
+    capability_mapping: ["schedule.config"]
+  - domain: "Device"
+    logical_name: "ewoh_environment"
+    physical_table: "ewoh_environment"
+    business_key_columns: ["org_id","sensor_id","ts"]
+    org_id_policy: "NOT NULL"
+    status: "altered"
+    capability_mapping: ["device.environment"]
+  - domain: "Model"
+    logical_name: "ewoh_model_registry"
+    physical_table: "ewoh_model_registry"
+    business_key_columns: ["org_id","model_id"]
+    org_id_policy: "NOT NULL"
+    status: "altered"
+    capability_mapping: ["model.registry"]
+  - domain: "Schedule"
+    logical_name: "ewoh_schedule_audit"
+    physical_table: "ewoh_schedule_audit"
+    business_key_columns: ["org_id","audit_id"]
+    org_id_policy: "NOT NULL"
+    status: "altered"
+    capability_mapping: ["schedule.audit"]
+  - domain: "Schedule"
+    logical_name: "ewoh_schedule_plan"
+    physical_table: "ewoh_schedule_plan"
+    business_key_columns: ["org_id","plan_id"]
+    org_id_policy: "NOT NULL"
+    status: "altered"
+    capability_mapping: ["schedule.plan"]
+  - domain: "Event"
+    logical_name: "ewoh_event_chain"
+    physical_table: "ewoh_event_chain"
+    business_key_columns: ["org_id","event_id","parent_event_id"]
+    org_id_policy: "NOT NULL"
+    status: "altered"
+    capability_mapping: ["event.chain"]
+  - domain: "World"
+    logical_name: "ewoh_world_state"
+    physical_table: "ewoh_world_state"
+    business_key_columns: ["org_id","entity_id","ts"]
+    org_id_policy: "NOT NULL"
+    status: "altered"
+    capability_mapping: ["world.state"]
+  - domain: "Spatial"
+    logical_name: "ewoh_topology"
+    physical_table: "ewoh_topology"
+    business_key_columns: ["org_id","from_entity","to_entity","relation"]
+    org_id_policy: "NOT NULL"
+    status: "altered"
+    capability_mapping: ["spatial.topology"]
+  - domain: "Spatial"
+    logical_name: "ewoh_spatial_entity"
+    physical_table: "ewoh_spatial_entity"
+    business_key_columns: ["org_id","entity_id"]
+    org_id_policy: "NOT NULL"
+    status: "altered"
+    capability_mapping: ["spatial.entity"]
+  - domain: "Device"
+    logical_name: "ewoh_telemetry"
+    physical_table: "ewoh_telemetry"
+    business_key_columns: ["org_id","device_id","ts","record_id"]
+    org_id_policy: "NOT NULL"
+    status: "altered"
+    capability_mapping: ["device.telemetry"]
+  - domain: "Event"
+    logical_name: "ewoh_event"
+    physical_table: "ewoh_event"
+    business_key_columns: ["org_id","event_id"]
+    org_id_policy: "NOT NULL"
+    status: "altered"
+    capability_mapping: ["event.registry"]
+  - domain: "Device"
+    logical_name: "ewoh_device"
+    physical_table: "ewoh_device"
+    business_key_columns: ["org_id","device_id"]
+    org_id_policy: "NOT NULL"
+    status: "altered"
+    capability_mapping: ["device.registry"]
+additional_hardened_existing_tables:
+  - domain: "Organization"
+    logical_name: "ewoh_organization"
+    physical_table: "ewoh_organization"
+    business_key_columns: ["org_id","id"]
+    org_id_policy: "NOT NULL"
+    status: "mapped-existing"
+    capability_mapping: ["org.management"]
+  - domain: "Organization"
+    logical_name: "ewoh_person"
+    physical_table: "ewoh_personnel"
+    business_key_columns: ["org_id","employee_no"]
+    org_id_policy: "NOT NULL"
+    status: "mapped-existing"
+    capability_mapping: ["person.profile"]
+  - domain: "AI"
+    logical_name: "ewoh_ai_suggestion"
+    physical_table: "ewoh_ai_suggestion"
+    business_key_columns: ["org_id","suggestion_id"]
+    org_id_policy: "NOT NULL"
+    status: "mapped-existing"
+    capability_mapping: ["ai.suggestion"]
+  - domain: "Device"
+    logical_name: "ewoh_device_config"
+    physical_table: "ewoh_device_config"
+    business_key_columns: ["org_id","device_id"]
+    org_id_policy: "NOT NULL"
+    status: "mapped-existing"
+    capability_mapping: ["device.configuration"]
+  - domain: "Task"
+    logical_name: "ewoh_production_task"
+    physical_table: "ewoh_production_task"
+    business_key_columns: ["org_id","id"]
+    org_id_policy: "NOT NULL"
+    status: "mapped-existing"
+    capability_mapping: ["task.production_legacy"]

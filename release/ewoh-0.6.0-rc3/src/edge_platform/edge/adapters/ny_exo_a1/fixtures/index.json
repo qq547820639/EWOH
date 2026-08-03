@@ -1,0 +1,170 @@
+{
+  "protocol_version": "NXP1 v1.0",
+  "generated_at": "2026-07-29T19:04:44+0000",
+  "generator": "fixtures_generator.py",
+  "using_real_protocol": false,
+  "frame_format": "NXP1 v1.0: AA55|LEN|TYPE|SEQ(LE)|TS_MS(LE)|PAYLOAD|CRC16/CCITT-FALSE|0D0A",
+  "fixtures": [
+    {
+      "name": "ident_normal",
+      "file": "ident_normal.bin",
+      "frame_type": "0x02 IDENT",
+      "frame_count": 1,
+      "device_id": "EXO-TEST-001",
+      "protocol_version": "NXP1 v1.0",
+      "description": "正常 IDENT 帧：device_id=EXO-TEST-001, fw=1.2.0, hw=2.3, 协议 NXP1 v1.0。",
+      "fields": {
+        "device_id": "EXO-TEST-001",
+        "fw": "1.2.0",
+        "hw": "0x23"
+      },
+      "bytes_len": 32,
+      "crc_ok": true,
+      "wire_device_id_note": "NXP1 IDENT device_id 字段为 8B ASCII，超长 ID 在线协议中截断为前 8 字节"
+    },
+    {
+      "name": "telemetry_normal",
+      "file": "telemetry_normal.bin",
+      "frame_type": "0x10 TELEMETRY",
+      "frame_count": 1,
+      "device_id": "EXO-TEST-001",
+      "protocol_version": "NXP1 v1.0",
+      "description": "正常遥测帧：pitch=32.1°, torque=18.6Nm, battery=82%。",
+      "fields": {
+        "pitch_deg": 32.1,
+        "torque_nm": 18.6,
+        "battery_pct": 82
+      },
+      "bytes_len": 40,
+      "crc_ok": true
+    },
+    {
+      "name": "telemetry_low_battery",
+      "file": "telemetry_low_battery.bin",
+      "frame_type": "0x10 TELEMETRY",
+      "frame_count": 1,
+      "device_id": "EXO-TEST-001",
+      "protocol_version": "NXP1 v1.0",
+      "description": "低电量遥测帧：battery=8%（低于安全阈值），用于低电量规则与安全态测试。",
+      "fields": {
+        "pitch_deg": 30.0,
+        "torque_nm": 12.0,
+        "battery_pct": 8
+      },
+      "bytes_len": 40,
+      "crc_ok": true
+    },
+    {
+      "name": "telemetry_high_torque",
+      "file": "telemetry_high_torque.bin",
+      "frame_type": "0x10 TELEMETRY",
+      "frame_count": 1,
+      "device_id": "EXO-TEST-001",
+      "protocol_version": "NXP1 v1.0",
+      "description": "高力矩遥测帧：torque=45.0Nm（接近 ±100Nm 量程上限），用于高负荷规则测试。",
+      "fields": {
+        "pitch_deg": 25.0,
+        "torque_nm": 45.0,
+        "battery_pct": 70
+      },
+      "bytes_len": 40,
+      "crc_ok": true
+    },
+    {
+      "name": "telemetry_out_of_range",
+      "file": "telemetry_out_of_range.bin",
+      "frame_type": "0x10 TELEMETRY",
+      "frame_count": 1,
+      "device_id": "EXO-TEST-001",
+      "protocol_version": "NXP1 v1.0",
+      "description": "超量程遥测帧：pitch=185.0°（超出 ±180° 量程），帧线协议合法但应被数据质量层判为 invalid。",
+      "fields": {
+        "pitch_deg": 185.0,
+        "torque_nm": 10.0,
+        "battery_pct": 80
+      },
+      "bytes_len": 40,
+      "crc_ok": true
+    },
+    {
+      "name": "telemetry_missing_field",
+      "file": "telemetry_missing_field.bin",
+      "frame_type": "0x10 TELEMETRY",
+      "frame_count": 1,
+      "device_id": "EXO-TEST-001",
+      "protocol_version": "NXP1 v1.0",
+      "description": "字段缺失遥测帧：torque=None（传感器故障），载荷中 torque i16 写入哨兵值 0x7FFF 表示缺失。",
+      "fields": {
+        "pitch_deg": 30.0,
+        "torque_nm": null,
+        "battery_pct": 80,
+        "missing_sentinel": "0x7FFF"
+      },
+      "bytes_len": 40,
+      "crc_ok": true
+    },
+    {
+      "name": "status_normal",
+      "file": "status_normal.bin",
+      "frame_type": "0x20 FAULT",
+      "frame_count": 1,
+      "device_id": "EXO-TEST-001",
+      "protocol_version": "NXP1 v1.0",
+      "description": "正常状态帧：fault_code=0x00（无故障），映射为 NXP1 FAULT(0x20) code=0x00。",
+      "fields": {
+        "fault_code": "0x00"
+      },
+      "bytes_len": 22,
+      "crc_ok": true
+    },
+    {
+      "name": "status_fault",
+      "file": "status_fault.bin",
+      "frame_type": "0x20 FAULT",
+      "frame_count": 1,
+      "device_id": "EXO-TEST-001",
+      "protocol_version": "NXP1 v1.0",
+      "description": "故障码状态帧：fault_code=0x10，映射为 NXP1 FAULT(0x20) code=0x10，用于故障码处理测试。",
+      "fields": {
+        "fault_code": "0x10"
+      },
+      "bytes_len": 22,
+      "crc_ok": true
+    },
+    {
+      "name": "corrupted_frame",
+      "file": "corrupted_frame.bin",
+      "frame_type": "0x10 TELEMETRY",
+      "frame_count": 1,
+      "device_id": "EXO-TEST-001",
+      "protocol_version": "NXP1 v1.0",
+      "description": "CRC 错误帧：在合法遥测帧基础上翻转 PAYLOAD 一字节，CRC 校验失败，应被解码层拒绝。",
+      "fields": {
+        "corrupted": true,
+        "flipped_offset": 16
+      },
+      "bytes_len": 40,
+      "crc_ok": false
+    },
+    {
+      "name": "sequence_gap",
+      "file": "sequence_gap.bin",
+      "frame_type": "0x10 TELEMETRY",
+      "frame_count": 4,
+      "device_id": "EXO-TEST-001",
+      "protocol_version": "NXP1 v1.0",
+      "description": "序号跳变帧序列：seq=100,101,115,116（101→115 跳变），用于序号跳变/丢包检测测试。",
+      "fields": {
+        "seq_list": [
+          100,
+          101,
+          115,
+          116
+        ],
+        "gap": "101->115"
+      },
+      "bytes_len": 160,
+      "crc_ok": true
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{{- if .Values.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "ewoh.fullname" . }}-migrate
+  namespace: {{ .Values.namespace.name }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: "{{ .Values.migration.image.repository }}:{{ .Values.migration.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - sh
+            - -ec
+            - |
+              node db/runner/run_migrations.js --apply-standalone
+              node db/runner/run_migrations.js --verify-standalone
+              node db/runner/run_migrations.js --apply-standalone-users
+              node db/runner/run_migrations.js --apply-standalone-runtime-role
+              node db/runner/run_migrations.js --seed-standalone-admin
+          env:
+            - name: EWOH_ALLOW_DDL
+              value: "1"
+          envFrom:
+            - secretRef:
+                name: {{ .Values.migration.secretName }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+{{- end }}

@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ewoh:///git-sync/v1",
+  "title": "EWOH GitHub Issue/PR Sync Plan",
+  "description": "Offline-first mapping between work graph items and GitHub issue/PR tracking records.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "generatedAt",
+    "itemCount",
+    "trackedCount",
+    "missingCount",
+    "items"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "ewoh:///git-sync/v1"
+    },
+    "generatedAt": { "type": "string" },
+    "repository": { "type": "string" },
+    "branch": { "type": "string" },
+    "headSha": { "type": "string" },
+    "itemCount": { "type": "integer", "minimum": 0 },
+    "trackedCount": { "type": "integer", "minimum": 0 },
+    "missingCount": { "type": "integer", "minimum": 0 },
+    "status": { "type": "string" },
+    "source": { "type": "string" },
+    "items": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workItemId", "title", "missing"],
+      "properties": {
+        "workItemId": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "type": { "type": "string" },
+        "status": { "type": "string" },
+        "owner": { "type": "string" },
+        "evidence": { "type": ["string", "null"] },
+        "wave": { "type": ["string", "null"] },
+        "issueNumber": { "type": ["integer", "null"] },
+        "prNumber": { "type": ["integer", "null"] },
+        "branch": { "type": ["string", "null"] },
+        "commitSha": { "type": ["string", "null"] },
+        "state": { "type": "string" },
+        "missing": { "type": "boolean" }
+      }
+    }
+  }
+}

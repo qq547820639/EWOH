@@ -1,0 +1,48 @@
+# EWOH 受控试点系统 - 打包发布 CI
+# 触发：tag v* （语义化版本标签）
+name: package
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 打包源码 tarball
+        # 纯标准库实现，无 wheel 第三方依赖；仅以 tar 源码包占位发布。
+        # 排除非源码目录与凭证文件。
+        run: |
+          mkdir -p dist
+          VERSION="${GITHUB_REF_NAME#v}"
+          tar --exclude='./dist' \
+              --exclude='./.git' \
+              --exclude='./.venv' \
+              --exclude='./venv' \
+              --exclude='./__pycache__' \
+              --exclude='./.env' \
+              --exclude='./data' \
+              --exclude='./logs' \
+              --exclude='./certs' \
+              -czf "dist/ewoh-${VERSION}.tar.gz" .
+          ls -lh dist/
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ewoh-source-${{ github.ref_name }}
+          path: dist/*.tar.gz
+          retention-days: 30

@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ewoh:///factory-replication/v1",
+  "title": "EWOH Factory Replication Report",
+  "description": "Evidence shape for second/third factory replication acceptance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "factoryName",
+    "profileId",
+    "templateId",
+    "coreFork",
+    "profileReplayPassed",
+    "requirements"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "ewoh:///factory-replication/v1"
+    },
+    "factoryName": { "type": "string", "minLength": 1 },
+    "profileId": { "type": "string", "minLength": 1 },
+    "templateId": { "type": "string", "minLength": 1 },
+    "coreFork": { "type": "boolean" },
+    "profileReplayPassed": { "type": "boolean" },
+    "differencesResolvedRate": { "type": "number", "minimum": 0, "maximum": 1 },
+    "partnerShadow": { "type": "boolean" },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/requirement" }
+    }
+  },
+  "$defs": {
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "satisfiedBy"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "satisfiedBy": {
+          "type": "string",
+          "enum": ["config", "asset", "custom", "not-satisfied"]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,744 @@
+openapi: 3.0.3
+info:
+  title: EWOH Work Orchestration Control Plane API
+  version: 1.0.0
+  description: >-
+    Read and write surface for the file-backed delivery control plane. The
+    repository artifacts under .codex/artifacts remain authoritative; writes
+    append versioned, audited records only when EWOH_WORK_WRITABLE is enabled.
+servers:
+  - url: https://api.ewoh.local
+    description: Production/edge gateway
+  - url: http://127.0.0.1:3000
+    description: Local NestJS dev server
+security:
+  - BearerAuth: []
+tags:
+  - name: work
+paths:
+  /api/work/overview:
+    get:
+      tags:
+        - work
+      summary: Work orchestration overview
+      description: Phase, critical path, counts, gate statuses, and artifact conflicts.
+      responses:
+        '200':
+          description: Overview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkOverview'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/graph:
+    get:
+      tags:
+        - work
+      summary: Canonical work graph
+      description: Versioned graph generated from authoritative repository artifacts.
+      responses:
+        '200':
+          description: Work graph
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkGraph'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/items:
+    get:
+      tags:
+        - work
+      summary: List work items
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: owner
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: wave
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: Work items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkItem'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/evidence:
+    get:
+      tags:
+        - work
+      summary: List evidence records
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: result
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: Evidence records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkEvidence'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/agents:
+    get:
+      tags:
+        - work
+      summary: List orchestration actors
+      responses:
+        '200':
+          description: Actors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkActor'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/evidence/{id}/content:
+    get:
+      tags:
+        - work
+      summary: Preview evidence file content
+      description: Returns a bounded text preview of an evidence artifact.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        '200':
+          description: Evidence content preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceContent'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/gates:
+    get:
+      tags:
+        - work
+      summary: Gate decisions
+      description: Calculated gate statuses with human decisions separated from rule results.
+      responses:
+        '200':
+          description: Gate decisions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkGate'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/risks:
+    get:
+      tags:
+        - work
+      summary: List orchestration risks
+      responses:
+        '200':
+          description: Risks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkRisk'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/gates/batch-decision:
+    post:
+      tags:
+        - work
+      summary: Record gate decisions in batch
+      description: Writes human decisions for multiple gates in one audited file update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchGateDecisionRequest'
+      responses:
+        '200':
+          description: Batch result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/resources:
+    get:
+      tags:
+        - work
+      summary: List orchestration resources and locks
+      responses:
+        '200':
+          description: Resources
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkResource'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/handoffs:
+    get:
+      tags:
+        - work
+      summary: List handoffs
+      responses:
+        '200':
+          description: Handoffs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkHandoff'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - work
+      summary: Create a handoff record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HandoffRequest'
+      responses:
+        '200':
+          description: Created handoff
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkHandoff'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/handoffs/{id}/state:
+    post:
+      tags:
+        - work
+      summary: Transition handoff state
+      description: Accepts, rejects, or closes a handoff record and persists the change to its markdown file.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HandoffStateRequest'
+      responses:
+        '200':
+          description: Updated handoff state
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/catalog:
+    get:
+      tags:
+        - work
+      summary: Final 6 asset catalog
+      description: C8 asset catalog generated from catalog/ manifests.
+      responses:
+        '200':
+          description: Asset catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkCatalog'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/site-readiness:
+    get:
+      tags:
+        - work
+      summary: List factory site-readiness reports
+      description: Evaluates catalog/factory-sites reports with the site readiness rules.
+      responses:
+        '200':
+          description: Site readiness summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SiteReadinessSummary'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/git-sync:
+    get:
+      tags:
+        - work
+      summary: GitHub Issue/PR sync plan
+      description: Offline-first mapping between work graph items and GitHub tracking records.
+      responses:
+        '200':
+          description: Git sync plan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitSyncPlan'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/resources/{id}/lock:
+    post:
+      tags:
+        - work
+      summary: Acquire a resource lock
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceLockRequest'
+      responses:
+        '200':
+          description: Lock record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceLockRecord'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/resources/{id}/release:
+    post:
+      tags:
+        - work
+      summary: Release a resource lock
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Release result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceReleaseResult'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/gates/{id}/decision:
+    post:
+      tags:
+        - work
+      summary: Record a human gate decision
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GateDecisionRequest'
+      responses:
+        '200':
+          description: Recorded decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GateDecisionRecord'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+  responses:
+    Unauthorized:
+      description: Unauthorized
+    Forbidden:
+      description: Forbidden
+    NotFound:
+      description: Not found
+    Conflict:
+      description: Conflict
+    InternalError:
+      description: Internal server error
+  schemas:
+    WorkOverview:
+      type: object
+      additionalProperties: true
+    WorkGraph:
+      type: object
+      additionalProperties: true
+      required:
+        - schema
+        - items
+        - edges
+        - gates
+    WorkItem:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - title
+        - type
+        - status
+        - owner
+    WorkEdge:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - from
+        - to
+        - edgeType
+    WorkActor:
+      type: object
+      additionalProperties: true
+      required:
+        - actorId
+        - name
+        - kind
+        - role
+    WorkEvidence:
+      type: object
+      additionalProperties: true
+      required:
+        - evidenceId
+        - path
+        - kind
+    EvidenceContent:
+      type: object
+      additionalProperties: true
+      required:
+        - evidenceId
+        - path
+        - lines
+        - truncated
+        - content
+    WorkGate:
+      type: object
+      additionalProperties: true
+      required:
+        - gateId
+        - title
+        - calculatedStatus
+    WorkRisk:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - title
+        - severity
+    WorkResource:
+      type: object
+      additionalProperties: true
+      required:
+        - resourceId
+        - name
+        - kind
+        - status
+    WorkHandoff:
+      type: object
+      additionalProperties: true
+      required:
+        - handoffId
+        - fromActor
+        - toActor
+        - status
+    WorkCatalog:
+      type: object
+      additionalProperties: true
+      required:
+        - schemaVersion
+        - catalogId
+        - assets
+    GitSyncPlan:
+      type: object
+      additionalProperties: true
+      required:
+        - schema
+        - itemCount
+        - trackedCount
+        - missingCount
+        - items
+    SiteReadinessSummary:
+      type: object
+      additionalProperties: true
+      required:
+        - sourcePath
+        - ready
+    ResourceLockRequest:
+      type: object
+      additionalProperties: true
+      properties:
+        purpose:
+          type: string
+        expiresAt:
+          type: string
+        confirm:
+          type: boolean
+    ResourceLockRecord:
+      type: object
+      additionalProperties: true
+      required:
+        - resourceId
+        - holder
+        - active
+    ResourceReleaseResult:
+      type: object
+      additionalProperties: true
+      required:
+        - resourceId
+        - released
+    HandoffRequest:
+      type: object
+      additionalProperties: true
+      required:
+        - fromActor
+        - toActor
+        - scope
+    HandoffStateRequest:
+      type: object
+      additionalProperties: true
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - accepted
+            - rejected
+            - closed
+        reason:
+          type: string
+    GateDecisionRequest:
+      type: object
+      additionalProperties: true
+      required:
+        - decision
+      properties:
+        decision:
+          type: string
+          enum:
+            - approved
+            - rejected
+            - conditional
+        conditions:
+          type: array
+          items:
+            type: string
+    BatchGateDecisionRequest:
+      type: object
+      additionalProperties: true
+      required:
+        - gateIds
+        - decision
+      properties:
+        gateIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        decision:
+          type: string
+          enum:
+            - approved
+            - rejected
+            - conditional
+        conditions:
+          type: array
+          items:
+            type: string
+    GateDecisionRecord:
+      type: object
+      additionalProperties: true
+      required:
+        - gateId
+        - decision
+        - approver
+        - decidedAt

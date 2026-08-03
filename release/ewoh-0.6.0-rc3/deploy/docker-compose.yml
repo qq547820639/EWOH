@@ -1,0 +1,137 @@
+# EWOH 受控试点系统 - 服务编排（试点部署）
+#
+# 说明：
+#   - 开发环境推荐以进程方式运行：`PYTHONPATH=src python -m edge_platform.run`（见 Makefile）。
+#   - 本 docker-compose.yml 位于 deploy/，用于受控试点部署，定义四区网络隔离与服务边界。
+#   - 卷挂载路径以仓库根为基准（../ 前缀回到仓库根）；ewoh-api / ewoh-adapter /
+#     ewoh-inference 共用同一镜像（../Dockerfile 占位），通过不同 entrypoint/command 区分职责；
+#     待 Dockerfile 落地后启用 build。
+#   - postgres / redis 仅接入内部网络 ewoh-internal，不对普通用户网开放。
+#   - 环境变量引用 deploy/.env（由 deploy/.env.example 复制生成）。
+
+version: "3.9"
+
+networks:
+  # 内部网络：API / 适配 / 推理 / DB / 缓存 / 日志 互联
+  ewoh-internal:
+    driver: bridge
+  # 边缘外部网络：仅 edge-gateway 接入，对外暴露
+  ewoh-edge:
+    driver: bridge
+
+volumes:
+  ewoh-pgdata:
+    driver: local
+  ewoh-redis-data:
+    driver: local
+
+services:
+  # ---------- 用户接入区：边缘网关（nginx 反向代理，终结 TLS） ----------
+  edge-gateway:
+    image: nginx:alpine
+    container_name: ewoh-edge-gateway
+    restart: unless-stopped
+    ports:
+      - "8443:443"   # 对外仅暴露 TLS 端口；生产须配置正式证书
+    volumes:
+      - ../nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../certs:/etc/nginx/certs:ro
+    networks:
+      - ewoh-edge
+    depends_on:
+      - ewoh-api
+    # 注：nginx.conf 为占位配置，需提供反向代理至 ewoh-api:8765 的 upstream
+
+  # ---------- 平台服务区：API 服务 ----------
+  ewoh-api:
+    build:
+      context: ..
+      dockerfile: Dockerfile   # 占位，待落地
+    image: ewoh-api:0.6.0
+    container_name: ewoh-api
+    restart: unless-stopped
+    command: ["python", "-m", "edge_platform.run", "--host", "0.0.0.0", "--port", "8765"]
+    expose:
+      - "8765"
+    volumes:
+      - ../src/edge_platform:/app/edge_platform:ro
+      - ../data:/app/data
+      - ../logs:/app/logs
+    env_file:
+      - .env
+    networks:
+      - ewoh-internal
+      - ewoh-edge
+    depends_on:
+      - postgres
+      - redis
+
+  # ---------- 采集适配区：适配层（占位，仅运行适配层命令） ----------
+  ewoh-adapter:
+    image: ewoh-api:0.6.0
+    container_name: ewoh-adapter
+    restart: unless-stopped
+    # 占位 entrypoint：未来替换为 `python -m edge_platform.edge.adapter`
+    command: ["python", "-c", "print('EWOH adapter placeholder: 待接入 edge.adapter 模块'); import time; time.sleep(3600)"]
+    volumes:
+      - ../src/edge_platform:/app/edge_platform:ro
+      - ../data:/app/data
+    env_file:
+      - .env
+    networks:
+      - ewoh-internal
+
+  # ---------- 推理服务：推理管线（占位，仅运行推理） ----------
+  ewoh-inference:
+    image: ewoh-api:0.6.0
+    container_name: ewoh-inference
+    restart: unless-stopped
+    # 占位 entrypoint：未来替换为 `python -m edge_platform.inference.pipeline`
+    command: ["python", "-c", "print('EWOH inference placeholder: 待接入 inference.pipeline 模块'); import time; time.sleep(3600)"]
+    volumes:
+      - ../src/edge_platform:/app/edge_platform:ro
+      - ../data:/app/data
+    env_file:
+      - .env
+    networks:
+      - ewoh-internal
+
+  # ---------- 平台服务区：生产数据库（仅内部网络） ----------
+  postgres:
+    image: postgres:16-alpine
+    container_name: ewoh-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${EWOH_DB_NAME:-ewoh}
+      POSTGRES_USER: ${EWOH_DB_USER:-ewoh}
+      POSTGRES_PASSWORD: ${EWOH_DB_PASSWORD:-CHANGE_ME}
+    volumes:
+      - ewoh-pgdata:/var/lib/postgresql/data
+      # schema 初始化（首次启动执行）
+      - ../delivery/02_技术规范/database.sql:/docker-entrypoint-initdb.d/database.sql:ro
+    networks:
+      - ewoh-internal
+    # 不暴露端口到外部网络；仅 ewoh-internal 可达
+
+  # ---------- 缓存/消息占位（仅内部网络） ----------
+  redis:
+    image: redis:7-alpine
+    container_name: ewoh-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - ewoh-redis-data:/data
+    networks:
+      - ewoh-internal
+    # 用于消息/缓存占位，不持久化业务数据
+
+  # ---------- 日志收集占位 ----------
+  ewoh-logs:
+    image: busybox:stable
+    container_name: ewoh-logs
+    restart: unless-stopped
+    command: ["sh", "-c", "tail -F /var/log/ewoh/*.log 2>/dev/null || echo 'EWOH logs placeholder: 待接入日志聚合'"]
+    volumes:
+      - ../logs:/var/log/ewoh:ro
+    networks:
+      - ewoh-internal

@@ -1,0 +1,22 @@
+apiVersion: ewoh.io/v1alpha1
+kind: FactoryProfile
+metadata:
+  profileId: PRF-0001
+  factoryName: demo-factory
+  templateId: ewoh-golden-standard
+  version: 1.0.0
+spec:
+  status: installed
+  upgradeRing: pilot
+  config:
+    timezone: Asia/Shanghai
+    dataRetentionDays: 30
+  compatibleCore: ">=0.6.0-rc2 <1.0.0"
+  scenarioPacks:
+    - mes-execution
+    - oee
+    - andon
+  connectors:
+    - equipment-state
+    - exoskeleton-frame
+  installedAt: "2026-08-04T00:00:00Z"

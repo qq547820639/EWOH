@@ -1,0 +1,35 @@
+apiVersion: ewoh.io/v1alpha1
+kind: ConnectorPackage
+metadata:
+  name: erp-order-delivery
+  version: 1.0.0
+spec:
+  runtime: edge-python
+  protocol: http-rest
+  outputEvents:
+    - OrderReceived
+    - OrderStatusChanged
+    - DeliveryRiskChanged
+  configSchema:
+    type: object
+    required: [baseUrl, orderEndpoint, statusEndpoint]
+    properties:
+      baseUrl:
+        type: string
+      orderEndpoint:
+        type: string
+      statusEndpoint:
+        type: string
+  secrets:
+    - clientSecret
+  permissions:
+    network:
+      - erp-gateway:443
+    api:
+      - POST /api/ingestion/*
+  compatibility:
+    edgeRuntime: ">=1.1.0 <2.0.0"
+    core: ">=0.6.0-rc2 <1.0.0"
+  tck: connector-tck.yaml
+  sbom: sbom.cdx.json
+  rollback: supported

@@ -1,0 +1,64 @@
+{
+  "generatedAt": "2026-08-03T18:01:32.845Z",
+  "resourceCount": 7,
+  "lockedCount": 0,
+  "resources": [
+    {
+      "resourceId": "RES-python",
+      "name": "Python",
+      "kind": "environment",
+      "status": "missing",
+      "purpose": "3.9.6 `python` alias missing; use `python3`",
+      "lock": null
+    },
+    {
+      "resourceId": "RES-node-js",
+      "name": "Node.js",
+      "kind": "environment",
+      "status": "available",
+      "purpose": "26.5.1",
+      "lock": null
+    },
+    {
+      "resourceId": "RES-npm",
+      "name": "npm",
+      "kind": "environment",
+      "status": "available",
+      "purpose": "11.17.0",
+      "lock": null
+    },
+    {
+      "resourceId": "RES-sqlite3",
+      "name": "sqlite3",
+      "kind": "environment",
+      "status": "available",
+      "purpose": "3.54.0",
+      "lock": null
+    },
+    {
+      "resourceId": "RES-git",
+      "name": "git",
+      "kind": "environment",
+      "status": "available",
+      "purpose": "2.54.0 branch `main`, head `33802e3`",
+      "lock": null
+    },
+    {
+      "resourceId": "RES-docker",
+      "name": "docker",
+      "kind": "environment",
+      "status": "missing",
+      "purpose": "missing local docker-compose cannot be exercised",
+      "lock": null
+    },
+    {
+      "resourceId": "RES-psql",
+      "name": "psql",
+      "kind": "environment",
+      "status": "missing",
+      "purpose": "missing DB probes use Node `postgres` driver",
+      "lock": null
+    }
+  ],
+  "locks": []
+}

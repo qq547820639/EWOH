@@ -1,0 +1,56 @@
+apiVersion: ewoh.io/v1alpha1
+kind: FactoryTemplate
+metadata:
+  name: ewoh-golden-standard
+  version: 1.0.0
+spec:
+  compatibleCore: ">=0.6.0-rc2 <1.0.0"
+  modules:
+    - organization
+    - device
+    - spatial
+    - mes-p0
+    - oee
+    - andon
+    - audit
+  defaults:
+    timezone: Asia/Shanghai
+    dataRetentionDays: 30
+    sourceTypePolicy: simulated-first
+  requiredConnectors:
+    - id: identity
+      version: "1.0.0"
+      runtime: edge-python
+      protocol: http-oidc
+      outputEvents: [AuditEntryAppended]
+    - id: equipment-state
+      version: "1.0.0"
+      runtime: edge-python
+      protocol: mqtt
+      outputEvents: [DeviceStateChanged, TelemetryObserved]
+    - id: exoskeleton-frame
+      version: "1.0.0"
+      runtime: edge-python
+      protocol: exo-jsonl
+      outputEvents: [DeviceBirth, TelemetryObserved]
+  scenarioPacks:
+    - id: mes-execution
+      version: "1.0.0"
+      workflows: [work-order, step-report, material, inspection]
+      policies: [operator-safety]
+      acceptance: smoke
+    - id: oee
+      version: "1.0.0"
+      workflows: [device-status, oee-calculation]
+      policies: [downtime-reason]
+      acceptance: smoke
+    - id: andon
+      version: "1.0.0"
+      workflows: [andon-raise, sla-escalation]
+      policies: [sla-escalation]
+      acceptance: smoke
+    - id: safety-monitoring
+      version: "1.0.0"
+      workflows: [posture-monitoring, load-monitoring]
+      policies: [operator-safety]
+      acceptance: smoke

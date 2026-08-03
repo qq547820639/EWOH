@@ -1,0 +1,27 @@
+apiVersion: ewoh.io/v1alpha1
+kind: ScenarioPack
+metadata:
+  name: order-to-delivery
+  version: 1.0.0
+spec:
+  requires:
+    connectors:
+      - erp-order-delivery@1.x
+    mappings:
+      - erp-order-to-ewoh@1.x
+    dataContracts:
+      - EwohWorkOrder@1.x
+    features:
+      - order-projection
+      - delivery-risk
+      - task-progress-writeback
+  workflows:
+    - work-order-import
+    - delivery-forecast
+    - delivery-risk-flag
+    - progress-writeback
+  policies:
+    - order-capture-boundary
+  acceptance: e2e-order-to-delivery
+  privacy: read-only order and delivery projection; no financial ledger replication
+  degradation: stale order projection warning; production actions still require human approval

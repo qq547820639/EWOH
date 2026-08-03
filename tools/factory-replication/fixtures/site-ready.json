@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "ewoh:///site-readiness/v1",
+  "factoryName": "Second Factory",
+  "siteContact": "site-owner@example.com",
+  "items": [
+    { "id": "DEV-INV", "label": "设备台账与协议清单", "required": true, "status": "pass", "evidence": "device-inventory.xlsx" },
+    { "id": "ERP-EP", "label": "ERP/MES 接口端点", "required": true, "status": "pass", "evidence": "erp-endpoint.json" },
+    { "id": "NET", "label": "网络分段与权限批准", "required": true, "status": "pass", "evidence": "network-approval.pdf" },
+    { "id": "TRAIN", "label": "现场培训计划", "required": true, "status": "pass", "evidence": "training-plan.docx" },
+    { "id": "RET", "label": "数据保留与隐私批准", "required": true, "status": "pass", "evidence": "retention-approval.pdf" },
+    { "id": "WIFI", "label": "可选 WiFi 覆盖扩展", "required": false, "status": "na", "evidence": "not-applicable" }
+  ]
+}

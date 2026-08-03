@@ -1,0 +1,6117 @@
+EWOH 工厂具身智能操作系统
+ChatGPT Work 多Agent执行编排方案（规模化复制产品化版）
+从受控试点到多工厂可配置复制：模板中心、连接器平台、规则与流程中心、场景包、部署工厂、兼容认证及伙伴生态的执行总纲
+文档版本：Final 5.0（规模化复制产品化版） 实施状态：0.6.0-rc2受控试点基线已形成，进入“产品化内核建设 + 第二工厂无分叉验证 + 规模复制体系”阶段 研究截止：2026年8月3日 适用范围：ChatGPT Work总控、Codex/代码Agent并行实施、平台产品化、逐厂上线、伙伴交付、运营与持续升级
+
+文档控制
+项目
+内容
+文档名称
+EWOH 工厂具身智能操作系统 ChatGPT Work 多Agent执行编排方案（规模化复制产品化版）
+文档目的
+以当前公开代码仓库0.6.0-rc2为真实实现基线，结合完整产品需求、数据库冻结规范、MES/ERP竞品研究与工业互操作标准，建立可由ChatGPT Work统筹、可由多个代码与验证Agent并行实施的多工厂规模化复制体系。
+产品能力基线
+v4 产品架构及 v4.1 技术勘误中冻结的组织、空间、设备、人员、外骨骼、调度、AI、告警、审批、控制、回放和审计能力。
+物理实施口径
+当前代码基线采用“36张新表 CREATE + 12张既有表 ALTER = 48张受管表”的部署包装；功能能力不得因表名或表数量演进而被删减。
+安全实施基线
+所有最终用户数据访问通过 NestJS；后端使用可信数据库角色；RLS、Service 层 org_id 过滤、审计完整性保护与安全测试共同构成防线。
+冻结规则
+产品愿景、能力范围、核心对象、状态机和安全边界冻结；Agent不得私自改变共享契约。物理DDL、接口和版本仍须通过环境探针、编译、独立验证和端到端场景验收后冻结。
+多Agent执行基线
+采用“总控编排Agent + 契约维护Agent + 领域实施Agent + 独立验证Agent + 集成交付Agent”的分层模型；以任务依赖图和端到端场景包为进度与验收单位。
+最终决策权
+用户/项目Owner保留范围、生产变更、安全例外、上线和最终验收决定权。任何Agent不得自行执行不可逆生产操作或放宽安全边界。
+
+权威口径说明：历史资料中存在“48张新表+3张修改表”和“36张新表+12张既有表改造”两种计数。本文将前者视为完整逻辑能力模型，将后者视为当前代码基线下的物理部署包装。DDL生成前必须输出“逻辑能力—物理表”映射，任何能力不得静默丢失。
+
+版本
+说明
+状态
+v1-v3
+完成产品目标、数字世界、任务调度、AI分级、告警、审批与数据模型逐步补全。
+历史设计输入
+v4/v4.1
+完成产品与架构定版、技术勘误、状态机、隐私、RLS、审计和非功能指标冻结。
+产品能力基线
+DDL补丁系列
+完成主键、约束、游标、物料预占、审计链、控制重试、权限与环境门禁。
+数据库实现基线
+最终执行方案
+采用36新表+12既有表改造作为当前物理包装；在此之上新增模板中心、连接器SDK、规则/流程中心、场景包、部署工厂、兼容认证和伙伴交付体系，以“第二工厂不分叉、第三工厂可配置”为规模化门禁。
+当前实施基线
+
+目录
+附录AA：Final 5.0研究来源与证据边界
+附录Z：单工厂导入、验收与交接检查表
+附录Y：180天任务清单与门禁
+附录X：规模化复制Agent登记册与代码所有权
+附录W：规模化复制资产包与Manifest示例
+规模化复制升级篇：从受控试点到多工厂产品化复制（S1-S29）
+第一篇：最新研究结论与多Agent执行重构
+R1. 升级目标、研究范围与证据边界
+R2. 最新仓库0.6.0-rc2真实基线
+R3. 当前成熟度、差距与下一阶段主线
+R4. 竞品分层与对EWOH的战略意义
+R5. 竞品驱动的功能迭代组合
+R6. 双运行平面与单一事实源架构
+R7. 最新Agent拓扑与代码所有权
+R8. 契约、制品和决策登记体系
+R9. 任务依赖图、并行波次与关键路径
+R10. 领域工作包与独立验证体系
+R11. 端到端场景包与验收证据
+R12. 从RC2到现场试点的90天计划
+R13. 多期产品化路线与Agent编排
+R14. GitHub工程治理与ChatGPT Work运行规则
+R15. 风险、失败恢复与人类批准边界
+R16. 最新正式实施结论
+第二篇：ChatGPT Work 多Agent通用编排基线（A1-A22）
+第三篇：产品全生命周期实施基线（1-29）
+附录A-R：既有需求、状态机、DDL、任务包、提示词和检查表
+附录S：最新Agent登记册与代码所有权矩阵
+附录T：竞品驱动产品Backlog
+附录U：RC2到试点的门禁矩阵
+附录V：研究来源与证据登记册
+
+规模化复制升级篇：从受控试点到多工厂产品化复制（Final 5.0增量权威层）
+本篇回答一个核心问题：如何把当前“可以试点、可以扩展”的平台，升级为“可以在不同工厂快速配置、稳定上线、统一升级并由伙伴交付”的标准化产品。它不否定既有完整产品蓝图，而是把规模化复制所缺少的产品化内核、资产包装、实施工厂、兼容认证和多Agent执行机制补齐。
+S1. 正式结论：规模化复制不是增加更多项目代码，而是建设可版本化的产品资产
+当前仓库已经具有受控试点所需的多组织、RLS、统一采集、OpenAPI、状态机、备份恢复、监控、OEE/安灯和MES P0闭环等基础。仓库变更日志报告0.6.0-rc2已完成106条路由契约、真实HTTP+PostgreSQL E2E、组织隔离、真机帧映射、逻辑备份恢复和62项部署工件检查；这些是规模化的必要基础，但仍不是“任意工厂开箱复制”的充分条件。
+规模化复制的产品定义是：在不建立客户专属长期分支、不修改核心数据契约、不绕过统一升级体系的前提下，使用版本化模板、连接器、映射、规则、场景包和部署Profile，在可预测周期内完成新工厂上线。
+维度
+当前受控试点状态
+规模化目标状态
+Final 5.0门禁
+代码
+通用平台与参考场景已形成
+核心代码单线演进，客户差异全部外置
+禁止客户长期分支；差异必须进入配置或扩展包
+设备接入
+统一帧和少量参考适配器
+连接器SDK、目录、认证、远程升级
+第二种同类设备仅开发连接器，不改业务核心
+业务流程
+MES P0/OEE/安灯等参考闭环
+行业模板+工作中心配置+流程包
+同类工厂80%以上流程由模板初始化
+数字孪生
+参考空间与模型绑定
+建模工具链、语义映射、坐标校准包
+标准现场资料齐全时可重复导入和校准
+部署运维
+Compose/Kubernetes工件与恢复演练
+部署工厂、升级环、Fleet Ops、远程诊断
+批量升级可灰度、可回滚、可审计
+交付
+项目型专家实施
+伙伴可执行的标准交付方法与认证
+非核心研发人员可按Runbook完成上线
+S2. 证据边界与研究依据
+本篇将信息分为三类，避免把仓库自述、外部标准和方案建议混为一谈：
+类别
+内容
+在本文中的用法
+已实现事实
+公开仓库目录、README、CHANGELOG、OpenAPI、状态机、部署和安全文件
+用于判断当前基线；仓库报告的测试通过仍须在目标环境复验
+来源材料
+历次冻结方案、树字MES资料、速达S3000白皮书
+用于保留产品范围并吸收成熟生产执行和企业集成细节
+研究建议
+ISA-95、OPC UA、Sparkplug、AAS、OpenAPI/AsyncAPI/CloudEvents、OTel、OPA、OpenFeature、Helm及多Agent工程实践
+用于设计目标架构；属于拟实施决策，需通过PoC和门禁
+研究限制：试用站点在本研究环境中未能稳定访问，因此不将登录态界面行为视为已验证事实；厂商宣传中的客户数量、ROI和效率提升仅作为价值表达参考。
+S3. 规模化复制成熟度模型
+级别
+名称
+判定特征
+EWOH状态/目标
+M0
+演示原型
+单场景、模拟数据、人工部署、无升级责任
+已越过
+M1
+受控试点
+真实数据可接入，安全边界、审计、测试和恢复具备
+当前主状态
+M2
+可重复交付
+同一团队可在第二工厂重复上线，但仍需较多专家编码
+180天内必须稳定达到
+M3
+配置化产品
+行业模板、连接器目录、规则/场景包和部署Profile驱动上线
+12个月目标
+M4
+生态化规模
+伙伴交付、兼容认证、市场化资产包、统一Fleet运维
+18-24个月目标
+M5
+持续优化网络
+跨厂基准、隐私保护学习、自动推荐模板与参数
+长期目标
+Final 5.0的核心不是直接跳到M4，而是用第二工厂和第三工厂验证M2/M3：第二工厂不得复制代码仓库形成永久分支；第三工厂的同类需求必须主要通过模板和资产包满足。
+S4. 规模化产品目标架构：六个运行平面
+平面
+职责
+主要资产
+部署位置
+产品控制平面
+租户/工厂注册、版本目录、资产包、许可、升级编排、兼容矩阵
+Catalog、Registry、Release、Fleet
+中心或客户总部
+工厂业务平面
+组织、人员、设备、任务、调度、告警、审批、审计、AI建议
+NestJS业务服务、PostgreSQL、React
+工厂本地或区域中心
+边缘数据平面
+协议接入、缓冲、质量、时钟、断点续传、局部推理
+Python edge runtime、Connector Runtime
+设备网/边缘节点
+集成交换平面
+ERP/MES/WMS/HR/身份系统同步与事件交换
+Connector、Mapping、OpenAPI/AsyncAPI
+DMZ/集成区
+数字世界平面
+空间层级、模型、语义绑定、世界快照、轨迹与回放
+Twin Model、Scenario Pack
+业务平面+对象存储
+运营与证据平面
+监控、日志、追踪、备份、支持包、验收证据
+OTel、SLO、Evidence Bundle
+中心+工厂
+强制架构原则：核心业务模型单一事实源；设备与外部系统通过适配层进入；工厂差异不得散落在业务代码中；所有配置、规则、映射、模板和场景包都必须版本化、可审计、可回滚。
+S5. 工业语义基线与标准映射
+为避免每接入一个工厂就重新解释“工厂、产线、工位、设备、人员、工单和物料”，应建立EWOH Canonical Manufacturing Model（CMM）。ISA-95用于企业层与制造运营层的对象和信息交换边界；OPC UA Companion Specifications用于设备域信息模型；Sparkplug用于MQTT命名空间、载荷和会话状态；AAS用于资产数字身份和跨伙伴语义交换。
+标准/规范
+EWOH采用位置
+实施策略
+优先级
+ISA-95/IEC 62264
+组织层级、设备层级、人员/物料/工艺/生产绩效与ERP-MES边界
+建立映射表，不机械复制所有对象
+P0
+OPC UA及Companion Specs
+设备能力、状态、参数、告警和厂商语义
+优先复用行业Companion Spec，缺失时建立EWOH Profile
+P0-P1
+MQTT Sparkplug
+边缘节点、设备出生/死亡证书、指标和会话状态
+新增Sparkplug连接器，保留现有统一帧
+P1
+AAS/IEC 63278
+设备/工具/模型资产包交换和供应商交付
+先支持AASX导入导出和核心子模型映射
+P1
+OpenAPI
+同步HTTP API契约
+继续作为106+路由的机器可读契约
+已采用/持续
+AsyncAPI + CloudEvents
+遥测、告警、状态变化、任务事件和跨系统消息
+建立事件目录、Schema和兼容测试
+P0
+OpenTelemetry
+跨Python/NestJS/React/连接器的指标、日志、追踪
+统一OTLP与工厂/组织资源属性
+P0
+OPA
+安全、部署、包兼容和高风险操作策略即代码
+先用于CI与部署门禁，再评估运行时授权
+P1
+OpenFeature
+按工厂/产线/角色启用功能和渐进发布
+替代散落的功能开关
+P1
+Helm
+Kubernetes可重复安装、升级和回滚
+建立单Chart+Factory Values/Profile
+P0
+S6. 产品资产包装模型
+规模化的交付单位不再是“某客户定制代码”，而是以下十类可签名、可版本化、可依赖解析的资产包：
+资产包
+内容
+示例
+Owner
+Core Platform
+共享数据模型、API、状态机、权限、审计和UI框架
+EWOH Core 1.x
+平台架构Agent
+Edge Runtime
+边缘采集、缓冲、适配器宿主、健康检查
+Edge Runtime 1.x
+边缘平台Agent
+Industry Template
+组织/空间/工艺/角色/看板/规则默认值
+机械加工、装配、注塑
+模板中心Agent
+Connector Package
+设备或业务系统连接器、Schema、测试夹具
+OPC UA、Sparkplug、SAP、用友
+连接器Agent
+Mapping Profile
+外部字段、单位、枚举、主键、增量策略映射
+MES-A订单映射v2
+数据映射Agent
+Workflow Pack
+工单、检验、安灯、审批和控制流程
+首检必需流程
+流程Agent
+Policy Pack
+权限、安全、SLA、数据保留、部署策略
+高风险控制策略
+策略Agent
+Scenario Pack
+数据要求、算法、规则、页面、测试和验收指标
+重物搬运风险、OEE、安灯
+场景包Agent
+Twin Package
+模型、坐标、语义节点、绑定和校准证据
+A厂1号车间
+孪生建模Agent
+Deployment/Acceptance Pack
+Helm values、证书、备份、测试和验收证据
+factory-a-prod
+部署与验证Agent
+所有资产包必须包含：唯一ID、语义版本、兼容范围、依赖、配置Schema、升级脚本、回滚脚本、测试夹具、许可证/来源、SBOM、签名和变更日志。
+S7. 工厂模板中心
+模板中心是规模化复制的第一核心产品。模板采用“全局基线→行业→企业集团→工厂→车间→产线/工作中心”的继承链，子层只保存差异，不复制整套配置。
+模板域
+必须包含
+禁止做法
+组织与权限
+组织层级、角色、技能、岗位、数据范围和审批责任
+把客户姓名或临时人员硬编码进模板
+空间与资产
+厂区/建筑/楼层/车间/产线/工位类型、设备分类和模型占位
+将现场坐标直接写入行业模板
+生产执行
+工单/工序/投料/报工/交收/质量开关和默认状态机
+为每个客户复制一套Service代码
+OEE与安灯
+班次、停机原因、SLA、升级组、通知渠道和指标口径
+不同工厂使用同名但不同定义的指标
+人员与外骨骼
+佩戴要求、技能门槛、风险阈值来源、隐私策略
+将医学判断固化为通用规则
+页面与看板
+菜单、首页、指标、地图图层、移动工作台功能
+客户专属页面长期脱离公共组件库
+数据治理
+采样、质量、保留、脱敏、导出和数据驻留策略
+现场临时修改数据库默认值而不登记
+模板生命周期：Draft→Reviewed→Certified→Published→Deprecated→Retired。模板升级必须提供差异预览、迁移影响、兼容检查和一键回滚。
+S8. 连接器平台与Connector SDK
+连接器平台是规模化复制的第二核心产品。现有统一适配层应升级为标准SDK、运行时和目录，覆盖设备协议与企业系统两大类连接器。
+层次
+职责
+关键要求
+Connector SDK
+统一生命周期、配置、鉴权、健康、重试、指标、Schema和测试接口
+Python/TypeScript双SDK；禁止直接访问业务表
+Connector Runtime
+进程/容器隔离、资源限额、证书、秘密、升级和回滚
+单连接器故障不得拖垮工厂业务平面
+Schema Registry
+输入/输出事件Schema、版本和兼容模式
+向后兼容默认；破坏性变更需新主版本
+Mapping Engine
+字段、单位、枚举、ID、时区、增量和错误映射
+可视化配置+可审计DSL；支持测试样本
+Connector Catalog
+厂商、版本、协议、能力、认证级别和支持责任
+区分官方、伙伴、客户自建
+Conformance Kit
+契约、负载、断网、重连、重复、乱序、时钟和安全测试
+通过后方可标记Certified
+连接器类别
+首批标准化目标
+验收重点
+OT设备
+OPC UA、MQTT/Sparkplug、Modbus TCP、HTTP/Webhook、CSV/文件
+时钟、质量码、断线、重复、乱序、设备身份
+定位与感知
+UWB、BLE、摄像AI结果、环境传感器、外骨骼
+坐标系、置信度、隐私、采样频率
+ERP/MES/WMS
+通用REST/数据库视图/文件交换；速达/树字等按客户授权做Profile
+主数据、订单、BOM/工艺、报工、库存和幂等
+身份与协作
+OIDC/LDAP、企业微信/飞书、邮件/短信
+身份映射、最小权限、通知回执
+S9. 数据映射与主数据治理
+同一字段在不同工厂常有不同名称、单位和口径。必须建立Canonical ID、Reference Data和Mapping Profile，而不是在连接器中写if/else。
+建立全局对象类型与工厂本地ID的双键模型：global_entity_id + source_system/source_id。
+为组织、人员、设备、物料、工艺、工作中心、订单、批次和告警类型建立主数据归属与同步方向。
+所有单位使用统一单位字典；连接器负责转换并保留原始值、原单位和转换版本。
+枚举映射必须显式定义未知值策略：拒绝、隔离、映射到other或触发人工处理。
+增量同步必须定义watermark、幂等键、删除语义、补偿和重放窗口。
+建立Data Contract测试：字段、空值、范围、时区、延迟、完整率、唯一性和引用完整性。
+S10. API与事件契约产品化
+契约
+用途
+规模化要求
+OpenAPI
+同步查询、命令和管理API
+按域拆分、生成SDK、契约测试、弃用窗口、错误码目录
+AsyncAPI
+遥测、任务、告警、审批、状态变化和集成消息
+通道、消息、Schema、重试、顺序和消费者责任机器可读
+CloudEvents
+跨连接器和场景包的事件Envelope
+统一id/source/type/subject/time/datacontenttype和扩展属性
+JSON Schema
+配置、模板、映射、场景包和事件载荷
+CI校验、默认值、兼容策略、生成表单
+每个契约变更由契约Agent评估影响，自动触发依赖Agent回归。破坏性变更必须新主版本并提供至少一个迁移窗口；禁止在客户现场临时修改接口而不回写契约。
+S11. 规则、流程和配置中心
+规模复制必须把“工厂差异”从代码搬到受治理的配置和规则中。推荐建立三类引擎：工作流/状态机、业务规则/策略、功能开关。
+能力
+适用内容
+设计要求
+Workflow/State Machine
+工单、检验、交收、安灯、审批、控制请求
+版本化定义、守卫条件、补偿、超时、人工任务和回放
+Rules/Policy
+技能资格、排他绑定、阈值、SLA、数据保留、安全门禁
+声明式、可测试、可解释；高风险规则需人工批准
+Feature Flags
+按工厂/产线/角色灰度功能、算法和页面
+遵循OpenFeature语义；默认安全关闭；记录评估原因
+Parameter Registry
+采样、班次、OEE、阈值、窗口和模型参数
+类型Schema、范围、来源、有效期、审批和回滚
+配置优先级：平台默认 < 行业模板 < 集团 < 工厂 < 车间 < 工作中心 < 设备。冲突必须可解释，运行时必须能够显示最终有效值及其来源。
+S12. 场景包体系与产品目录
+场景包是客户可理解的购买和验收单位。一个场景包必须同时包含数据要求、连接器依赖、规则/算法、API、页面、看板、测试、培训和业务指标，不能只有一个后端模块。
+优先级
+场景包
+来源与价值
+规模化交付条件
+P0
+人员-外骨骼安全
+EWOH核心差异化
+至少2种设备连接器、风险规则版本化、隐私与现场验收包
+P0
+MES生产执行
+树字MES成熟流程启发
+工单/工序/投料/报工/审核/交收/质量全链模板化
+P0
+OEE设备运营
+MES竞品成熟能力
+状态语义、停机原因、班次和指标口径可配置
+P0
+安灯异常闭环
+现场协同高频需求
+SLA、责任组、升级、通知和地图定位可配置
+P0
+多组织与审计
+平台规模化底座
+组织隔离、管理员边界、审计与导出证据
+P1
+质量追溯
+MES生产落地必需
+检验方案、不良、返工、批次/序列号、人机料法环关联
+P1
+ERP/MES连接
+速达等企业系统启发
+主数据与单据双向、幂等、对账、补偿
+P1
+数字孪生回放
+EWOH差异化
+模型导入、语义绑定、坐标校准、快照和事件定位
+P2
+AI辅助决策
+用户手动触发原则
+数据就绪度、解释、模拟、人工批准和效果回收
+S13. 数字孪生建模工厂
+每个工厂的几何形态不同，但建模过程必须标准化。建立“资料检查→模型转换→语义切分→坐标校准→实体绑定→性能优化→验收”的流水线。
+阶段
+输入
+自动化产物
+验收
+资料检查
+CAD/BIM/点云/图片/测绘、设备清单
+缺失项和质量评分
+达到建模Ready门槛
+模型转换
+原始模型
+glTF/tiles、LOD、材质和节点树
+可加载、尺寸和单位正确
+语义切分
+节点树、空间清单
+site/building/floor/area/line/workstation节点
+与CMM对象类型匹配
+坐标校准
+现场控制点、UWB/摄像坐标
+坐标变换与误差报告
+关键区域误差满足项目指标
+实体绑定
+设备/人员/工位ID
+model_node_id和绑定证据
+抽样与自动校验通过
+性能优化
+模型与目标终端
+LOD/切片/降级Profile
+指挥端和普通浏览器均可用
+验收封装
+全部产物
+Twin Package、截图、测试和版本
+可重装、可升级、可回滚
+S14. 多工厂数据与运行拓扑
+推荐采用“中心控制平面 + 工厂自治运行平面 + 边缘数据平面”的混合模式。每个工厂必须在中心不可用时维持采集、局部告警、任务查看和安全监督；跨厂分析使用经治理的汇总或授权数据。
+数据类别
+默认驻留
+跨厂处理
+断网策略
+高频原始遥测
+工厂本地，短期保留
+仅传汇总/特征或按授权上传
+边缘缓冲+序列校验+限速补传
+业务主数据
+工厂或集团主系统
+按归属同步到其他系统
+版本/水位/冲突策略
+审计与安全证据
+工厂本地+不可变备份
+总部可按权限查询或汇总
+本地持续写入，恢复后上报摘要
+数字孪生模型
+工厂对象存储，可中心登记
+共享模板，不共享敏感现场细节
+本地缓存
+跨厂指标
+中心或集团数据域
+统一口径、匿名/聚合
+延迟容忍，最终一致
+禁止默认汇聚长期精确人员轨迹、生理数据或视频。跨厂数据使用必须有目的、范围、保留期和访问审计。
+S15. 多租户、安全和扩展包供应链
+每个工厂使用独立身份、证书和秘密；边缘节点不得共享静态全局密钥。
+连接器和场景包必须签名，安装时校验签名、SBOM、许可证、漏洞和兼容范围。
+第三方扩展运行在隔离容器/进程中，使用最小网络和数据权限；禁止直接数据库访问。
+远程支持采用临时授权、MFA、工单绑定、命令审计和自动失效，禁止永久后门。
+生产设备实时安全控制继续保留在本地控制器；平台只做监督、建议和受控非实时配置。
+租户隔离必须同时经过RLS/Service过滤、API授权、缓存键、对象存储路径、消息主题和日志脱敏测试。
+S16. 部署工厂、升级环与Fleet Operations
+部署从“手工复制compose文件”升级为可重复发布流水线。Kubernetes场景使用Helm Chart；轻量工厂可保留Compose，但必须由同一Deployment Profile生成。
+能力
+实施内容
+门禁
+Golden Deployment
+单一Chart/模板、环境Schema、依赖和资源Profile
+无手改生产Manifest
+Factory Values
+工厂ID、域名、证书、存储、数据驻留、连接器和功能包
+敏感值进入Secret系统
+Upgrade Rings
+开发→集成→影子→试点→小批→全量
+每环自动回归和健康观察
+Rollback
+应用、Schema、配置、连接器和场景包回滚
+定义RTO/RPO和不可逆迁移审批
+Fleet Registry
+节点、版本、健康、证书、包清单和最后在线时间
+中心可见但不越过现场授权
+Support Bundle
+脱敏日志、指标、配置摘要、版本和诊断结果
+一键生成、可审计下载
+S17. 可观测性、SLO和远程诊断
+采用OpenTelemetry统一Python、NestJS、React、连接器和基础设施的trace/metric/log语义。每条遥测和任务链路应携带org_id、factory_id、connector_id、scenario_pack、release_version等资源属性。
+SLO域
+核心指标
+建议规模化门槛（拟定）
+接入
+连接器在线率、数据延迟、丢失/重复/乱序、质量码
+关键连接器月可用性≥99.5%；异常可定位
+业务
+API可用性、P95时延、任务/告警处理成功率
+核心API≥99.9%；错误预算可追踪
+数据
+完整率、及时率、唯一性、引用一致性、单位转换失败
+数据契约违规自动隔离和告警
+升级
+升级成功、回滚成功、版本漂移、兼容失败
+批量升级成功率≥99%；失败自动停止扩散
+支持
+MTTD、MTTR、远程诊断成功率、重复问题率
+P1事件有Runbook和证据包
+以上数字是产品化建议目标，不代表当前仓库已达到；必须在试点和后续工厂中基于真实负载校准。
+S18. 兼容认证与测试套件
+规模化不能依赖“开发者说能用”，必须建立EWOH Conformance Program。每种资产包都有独立TCK/验证套件。
+验证套件
+覆盖内容
+发布条件
+Core Contract TCK
+数据库、OpenAPI、AsyncAPI、状态机、权限和审计
+所有共享契约通过
+Connector TCK
+配置、Schema、健康、断网、重试、重复、乱序、时钟、安全
+Certified连接器必须100%强制项通过
+Template TCK
+继承、默认值、依赖、初始化、升级和卸载
+不得覆盖工厂显式配置
+Scenario TCK
+数据要求、算法、流程、UI、业务指标和降级
+场景可安装、可演示、可验收、可移除
+Deployment TCK
+安装、升级、备份、恢复、证书、网络和容量
+目标Profile全部通过
+Factory Acceptance Pack
+真实设备/系统/人员/班次/网络故障和连续运行
+客户与交付方共同签署
+S19. 单工厂标准导入方法
+阶段
+目标工期
+主要任务
+出口证据
+F0 资格评估
+2-3天
+范围、网络、安全、设备、系统、数据、模型资料和Owner确认
+Factory Readiness Score
+F1 蓝图与模板选择
+3-5天
+选择行业模板、差异清单、系统边界和验收场景
+Factory Blueprint + Gap Log
+F2 连接与主数据
+5-10天
+连接器配置/开发、映射、主数据导入、数据契约测试
+Connector Evidence + Data Quality
+F3 流程与场景
+5-10天
+工作中心、流程、规则、看板、移动端和场景包配置
+Scenario Dry Run
+F4 孪生与现场校准
+按资料5-15天
+模型导入、坐标、绑定、性能和回放
+Twin Acceptance
+F5 UAT与演练
+5天
+角色测试、异常、断网、备份恢复、回滚和培训
+Go-Live Evidence
+F6 上线与稳定
+10-20天
+灰度、观察、问题闭环和运营移交
+Stabilization Report
+目标并非所有工厂固定30天上线，而是让工期由可测量的现场Ready条件决定。标准资料齐全、使用已有模板和连接器的同类工厂，应逐步达到20个工作日内完成核心场景上线。
+S20. 定制治理：80/20规则与平台缺口回收
+每个工厂需求分为四类：直接配置、现有资产包组合、新增可复用资产、一次性现场工程。原则上前两类应占80%以上；一次性代码必须低于20%，且不能进入客户长期分支。
+分类
+处理方式
+谁批准
+C0 标准配置
+使用模板/参数/映射/功能开关
+工厂交付Agent
+C1 资产组合
+安装已有连接器、场景和Workflow Pack
+产品Owner
+C2 可复用新增
+进入产品Backlog，形成通用资产包和TCK
+架构委员会+产品Owner
+C3 现场一次性
+只允许边缘脚本、模型加工或临时迁移工具，必须有退出计划
+项目Owner+安全负责人
+禁止项
+客户专属核心分支、直接改表、绕过审计/RLS、复制状态机
+不得批准
+S21. 产品包装、伙伴交付与生态
+规模化复制需要把交付责任和产品边界商品化，但本方案不设定具体价格。建议形成：核心平台、边缘运行时、行业模板、连接器包、场景包、孪生建模服务、部署运维服务和高级支持。
+伙伴级别
+可执行范围
+认证要求
+Registered
+销售线索、资料收集、标准演示
+产品与安全基础培训
+Delivery
+模板初始化、连接器配置、主数据、UAT和培训
+标准工厂交付考试+影子项目
+Integration
+开发连接器、Mapping和外部系统接口
+Connector SDK/TCK认证
+Scenario Developer
+开发Workflow/Rule/Scenario/Twin Pack
+场景包规范和安全审查
+Operations
+远程监控、升级、备份恢复和一线支持
+SRE/运维演练和访问治理
+伙伴交付不等于放松质量。伙伴只能使用已签名资产、标准Runbook和自动门禁；核心契约、平台发布和安全例外仍由EWOH产品团队控制。
+S22. 规模化关键指标
+指标组
+指标
+目标方向
+复用
+配置/资产包完成需求比例、连接器复用率、模板复用率、场景包复用率
+持续上升；同类工厂≥80%无需核心编码
+交付
+从Ready到上线周期、现场人天、返工率、阻塞等待
+逐厂下降并可预测
+产品
+客户分支数、核心契约漂移、包兼容失败、升级覆盖率
+客户永久分支=0；漂移=0
+质量
+TCK通过率、缺陷逃逸、跨租户事件、回滚成功率
+强制项100%；严重隔离事件=0
+运营
+版本一致率、连接器在线率、MTTD/MTTR、备份恢复演练
+可集中查看并按SLO治理
+业务
+核心场景采用、告警闭环、任务准时、OEE/安全指标改善
+按工厂基线和双方确认口径评估
+S23. ChatGPT Work与Codex的实际编排模型
+官方资料将ChatGPT Work定位为长时间、多步骤工作和成品交付Agent；Codex面向软件工程并支持多Agent/并行工作流。本文中的“Agent”是逻辑责任角色，实际执行可对应Work任务、Codex任务、独立工作树或人工岗位。不得假设当前界面一定能自动创建无限子Agent；总控必须把任务包、仓库分支、证据和门禁显式登记。
+层级
+Agent/角色
+核心职责
+L0
+W-00 总控实施Agent
+维护唯一基线、任务图、关键路径、批准请求、证据和阶段门禁
+L1
+架构与契约Agent组
+CMM、数据/API/事件/状态机/安全/UI/部署契约和兼容策略
+L2
+产品化平台Agent组
+模板中心、连接器SDK、Mapping、规则流程、场景包、孪生工厂、部署工厂、Fleet Ops
+L3
+领域实现Agent组
+组织、设备、外骨骼、任务、调度、资源、告警、审批、控制、AI、前端和边缘
+L4
+工厂导入Cell
+现场发现、连接、数据、模型、配置、培训、上线和稳定
+L5
+独立验证Agent组
+契约、连接器、隔离、安全、性能、升级、回滚、场景和需求遗漏验证
+S24. 新增规模化Agent编制
+编号
+Agent
+允许修改范围
+主要交付
+PX-01
+规模化产品架构Agent
+docs/productization、架构ADR
+六平面架构、成熟度和边界
+PX-02
+Canonical Model Agent
+contracts/schemas、db映射
+CMM、ISA-95映射和兼容规则
+PX-03
+模板中心Agent
+platform/templates、profiles
+模板Schema、继承、注册和升级
+PX-04
+Connector SDK Agent
+src/edge_platform、sdk/connectors
+SDK、Runtime、样例和TCK
+PX-05
+Mapping/Data Contract Agent
+contracts/mappings、tools/data-quality
+Mapping DSL、Schema、质量门禁
+PX-06
+Workflow/Policy Agent
+contracts/state-machines、policy
+流程包、规则包、OPA/OpenFeature适配
+PX-07
+Scenario Catalog Agent
+packages/scenarios、catalog
+场景Manifest、依赖和安装器
+PX-08
+Twin Factory Agent
+tools/twin、packages/twins
+模型转换、语义、校准和TCK
+PX-09
+Deployment Factory Agent
+deploy/charts、profiles/deploy
+Helm/Compose生成、升级环和回滚
+PX-10
+Fleet Operations Agent
+operations/fleet、observability
+节点注册、版本、健康、支持包
+PX-11
+Conformance Agent
+tools/conformance、tests/tck
+各类TCK、认证结果和兼容矩阵
+PX-12
+Factory Onboarding Agent
+docs/onboarding、factory profiles
+蓝图、差异、计划、证据和交接
+PX-13
+Partner Enablement Agent
+docs/partners、training
+伙伴认证、课程、Runbook和样例项目
+PX-14
+Scale Economics Agent
+docs/value、metrics
+实施人天、复用率、成本和价值指标
+上述目录是建议目标结构。Agent在修改仓库前必须先盘点现有目录和CODEOWNERS，提交ADR后再创建新根目录，避免与现有实现重复。
+S25. 任务依赖图与并行波次
+SSOT/基线冻结   ├─ Canonical Model ─ Schema Registry ─ Template/Mapping Schema   ├─ Connector SDK ─ Connector Runtime ─ Connector TCK   ├─ Workflow/Policy ─ Scenario Pack Runtime ─ Scenario TCK   ├─ Deployment Chart ─ Factory Profile ─ Fleet Upgrade/Rollback   └─ Observability/Security ─ Evidence Pipeline ─ Scale Gate  Golden Factory资产化   → 第二工厂“无核心分叉”验证   → 第三工厂“配置为主”验证   → 伙伴影子交付   → 兼容目录和规模发布 
+波次
+并行工作
+出口
+Wave 0（0-2周）
+仓库盘点、SSOT、ADR、CMM、资产包规范、规模指标和第二工厂候选
+G-S0基线冻结
+Wave 1（2-6周）
+模板内核、Connector SDK、Mapping、AsyncAPI/事件目录、Helm、OTel
+G-S1产品化内核
+Wave 2（6-10周）
+Golden Factory模板化、首批连接器/场景包、TCK、Factory Profile
+G-S2可重复安装
+Wave 3（10-14周）
+第二工厂导入、差异回收、断网/升级/回滚和现场UAT
+G-S3无分叉复制
+Wave 4（14-18周）
+第三工厂/第二行业验证、伙伴影子交付、目录和支持体系
+G-S4配置化复制
+Wave 5（18-26周）
+批量升级、Fleet Ops、认证、商业包装和规模发布
+G-S5规模Ready
+S26. 180天执行计划与里程碑
+周期
+目标
+主要Agent
+关键里程碑
+D0-D30
+冻结规模基线和产品化规范
+W-00、PX-01/02/03/04/11
+M1：资产包/模板/连接器/场景Manifest冻结
+D31-D60
+产品化内核可运行
+PX-03/04/05/06/09/10
+M2：模板安装、连接器宿主、Mapping和Helm PoC通过
+D61-D90
+Golden Factory完全资产化
+领域Agent+PX-07/08/11
+M3：现有试点可由Profile重装并通过TCK
+D91-D120
+第二工厂无核心分叉上线
+PX-12+Factory Cell+验证组
+M4：不建客户分支，核心场景真实运行
+D121-D150
+第三工厂/第二行业配置化验证
+模板/场景/伙伴Agent
+M5：80%需求由配置和资产包满足
+D151-D180
+Fleet、认证和规模发布
+PX-09/10/11/13/14
+M6：Scale Release 1.0与伙伴交付包
+S27. 开工前30天的可直接分配任务
+周
+任务包
+完成定义
+第1周
+PX-01仓库/双运行平面盘点；PX-02 CMM v0.1；PX-11现有测试证据索引；PX-12第二工厂Readiness问卷
+ADR和差距表经总控批准
+第2周
+资产包Manifest、Schema兼容规则、配置继承、Connector SDK RFC、事件目录和版本策略
+机器可读Schema进入仓库并CI校验
+第3周
+Template Registry PoC、样例Connector、Mapping DSL、Helm Chart skeleton、OTel资源属性
+本地可安装并输出证据
+第4周
+Golden Factory Profile、MES/OEE/安灯场景包拆分、Connector TCK首版、升级/回滚演练
+G-S0/G-S1候选评审
+S28. 规模化风险与失败恢复
+风险
+早期信号
+强制响应
+客户分支蔓延
+出现customer-x长期分支或直接改核心表
+停止新需求合并，转为资产包/扩展SDK设计
+模板失控
+同名指标和流程在不同工厂含义不同
+引入语义ID、版本和兼容检查
+连接器质量差
+重复、乱序、断网导致业务脏数据
+隔离运行、DLQ、重放、TCK和数据契约门禁
+跨租户泄露
+缓存/消息/对象存储未带factory/org上下文
+立即停服受影响路径、证据保全、隔离回归
+批量升级故障
+第一环出现错误仍继续扩散
+自动暂停升级、回滚并生成事故包
+伙伴能力不足
+依赖核心研发现场救火
+伙伴认证降级、影子交付和Runbook补齐
+标准过度设计
+大量标准映射无真实场景使用
+按P0/P1渐进采用，每项标准必须有业务用例
+AI Agent并发冲突
+多个Agent修改共享契约或生成重复平台
+CODEOWNERS、任务包范围、契约Owner和独立合并Agent
+S29. Scale Ready正式完成定义
+只有同时满足以下条件，EWOH才可以对外宣称具备可规模化复制能力：
+第二工厂和第三工厂均未建立客户专属长期核心分支；核心代码保持单线升级。
+同类工厂至少80%的需求通过模板、连接器、Mapping、规则/流程和场景包满足。
+核心资产包均有Manifest、Schema、版本、签名、依赖、升级/回滚和TCK。
+新工厂可以通过Factory Profile重复安装，且备份、恢复、升级和回滚自动验证。
+连接器断网、重复、乱序、补传、时钟、权限和数据质量测试通过。
+多组织、多工厂、缓存、消息、对象存储和日志隔离测试全部通过。
+至少一个非核心研发交付Cell或伙伴可依据Runbook完成影子上线。
+Fleet Ops可以识别全部工厂版本、健康、证书、资产包和漂移状态。
+产品复用率、交付周期、升级成功率、事故和业务价值均有可审计指标。
+项目Owner、安全负责人和现场Owner共同批准Scale Release。
+因此，本版的最新实施主线是：先把当前Golden Factory资产化，再用第二工厂验证“不分叉”，用第三工厂验证“配置化”，最后用伙伴影子交付验证“可规模运营”。继续堆叠单厂功能但不建设资产包和复制门禁，不计入规模化进度。
+
+附录W：规模化复制资产包与Manifest示例
+以下示例用于约束Agent生成资产的结构，字段名称可在RFC阶段调整，但不得省略版本、兼容、依赖、测试和回滚信息。
+W.1 Factory Template Manifest（示例）
+apiVersion: ewoh.io/v1alpha1 kind: FactoryTemplate metadata:   name: discrete-machining-standard   version: 1.0.0   owner: PX-03 spec:   compatibleCore: ">=1.0.0 <2.0.0"   inherits: [ewoh-global-base@1.0.0]   modules: [organization, device, mes-p0, oee, andon, audit]   defaultsSchema: schemas/factory-template.schema.json   requiredConnectors: [identity, equipment-state]   scenarioPacks: [mes-execution@1.x, oee@1.x, andon@1.x]   migrations: [migrations/1.0.0-up.sql]   rollback: migrations/1.0.0-down.sql   tests: tests/template-conformance.yaml   signature: cosign://registry.example/ewoh/templates/... 
+W.2 Connector Manifest（示例）
+apiVersion: ewoh.io/v1alpha1 kind: ConnectorPackage metadata:   name: opcua-generic-machinery   version: 1.2.0 spec:   runtime: edge-python   protocol: opcua   inputProfile: opc-ua-machinery   outputEvents: [DeviceBirth, TelemetryObserved, DeviceStateChanged]   configSchema: schemas/config.json   secrets: [clientCertificate, privateKey]   permissions:     network: ["opc.tcp://factory-lan:*" ]     api: ["POST /api/ingestion/*"]   compatibility:     edgeRuntime: ">=1.1.0 <2.0.0"     core: ">=1.0.0 <2.0.0"   tck: tests/connector-tck.yaml   sbom: sbom.cdx.json   rollback: supported 
+W.3 Scenario Pack Manifest（示例）
+apiVersion: ewoh.io/v1alpha1 kind: ScenarioPack metadata:   name: heavy-lifting-safety   version: 1.0.0 spec:   requires:     connectors: [exoskeleton-frame@1.x, personnel-master@1.x]     dataContracts: [UnifiedExoFrame@2.x]     features: [person-map, risk-alert, audit]   workflows: [workflows/risk-response.yaml]   policies: [policies/risk-threshold.rego]   ui: [pages/person-risk, widgets/load-trend]   dashboards: [dashboards/safety-command.yaml]   acceptance: tests/e2e-heavy-lifting.yaml   privacy: privacy/profile.yaml   degradation: "show data-quality warning; never infer medical diagnosis" 
+附录X：规模化复制Agent登记册与代码所有权
+编号
+Agent
+所有权/范围
+禁止或边界
+W-00
+总控实施Agent
+项目级SSOT、任务图、门禁、批准与证据
+只协调；不直接私改共享契约
+C-01
+需求与追踪Agent
+requirements、traceability
+需求ID和验收映射
+C-02
+数据契约Agent
+db、contracts/schemas
+CMM、表/事件Schema和兼容
+C-03
+API/事件契约Agent
+openapi、asyncapi
+同步/异步接口和SDK生成
+C-04
+状态机Agent
+contracts/state-machines
+状态、转换、守卫和模型测试
+C-05
+安全契约Agent
+security、policies
+租户、权限、包签名和安全门禁
+PX-01
+规模化架构Agent
+docs/productization、ADR
+六平面与产品化原则
+PX-03
+模板中心Agent
+templates、profiles
+模板注册、继承和升级
+PX-04
+Connector SDK Agent
+edge adapter、sdk
+SDK、运行时和样例连接器
+PX-05
+Mapping Agent
+mappings、data quality
+映射DSL和数据契约
+PX-06
+Workflow/Policy Agent
+workflow、policy、feature flags
+流程、规则和开关
+PX-07
+Scenario Catalog Agent
+packages/scenarios
+场景包目录和安装器
+PX-08
+Twin Factory Agent
+twin tools/packages
+模型导入、语义和校准
+PX-09
+Deployment Factory Agent
+deploy、charts
+部署Profile、升级和回滚
+PX-10
+Fleet Operations Agent
+operations、observability
+节点、版本、SLO和支持包
+PX-11
+Conformance Agent
+tests/tck、compatibility
+TCK、认证和兼容矩阵
+PX-12
+Factory Onboarding Agent
+onboarding、factory profiles
+逐厂蓝图、差异和证据
+PX-13
+Partner Enablement Agent
+partners、training
+伙伴培训和影子交付
+D-ORG
+组织人员Agent
+organization/person modules
+组织、人员、角色和技能
+D-DEV
+设备外骨骼Agent
+devices/embodiment
+设备、绑定、遥测和风险
+D-TWIN
+空间数字世界Agent
+spatial/world/map
+空间、快照、回放和地图
+D-MES
+MES执行Agent
+task/scheduler/resource/quality
+工单、工序、资源和质量
+D-EVT
+事件告警Agent
+event/notification/approval
+事件、安灯、SLA和审批
+D-CTRL
+控制Agent
+control modules
+请求、审批、指令、回执和审计
+D-AI
+AI决策Agent
+brain/ai/scenario
+手动触发建议、模拟和解释
+D-FE
+前端体验Agent
+client/pages/components
+页面、移动端和指挥地图
+V-DB
+数据库验证Agent
+tests/database
+DDL、迁移、并发和回滚
+V-SEC
+安全隔离Agent
+tests/security
+RLS、API、消息、缓存和包供应链
+V-CON
+连接器验证Agent
+tests/connectors
+协议、故障和TCK
+V-UPG
+升级恢复Agent
+tests/upgrade-dr
+批量升级、备份、恢复和回滚
+V-E2E
+场景验收Agent
+tests/e2e/evidence
+跨模块真实场景和证据包
+附录Y：180天任务清单与规模门禁
+阶段
+任务ID
+任务
+责任结构
+完成定义
+Y0 基线
+Y0-01
+仓库与运行平面盘点
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y0 基线
+Y0-02
+建立规模化ADR索引
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y0 基线
+Y0-03
+冻结CMM v0.1
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y0 基线
+Y0-04
+冻结资产包Manifest v0.1
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y0 基线
+Y0-05
+确定第二/第三工厂候选
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y0 基线
+Y0-06
+建立复用率与交付指标
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y1 内核
+Y1-01
+Template Registry PoC
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y1 内核
+Y1-02
+配置继承与差异预览
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y1 内核
+Y1-03
+Connector SDK与Runtime
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y1 内核
+Y1-04
+Mapping DSL与Schema Registry
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y1 内核
+Y1-05
+AsyncAPI/CloudEvents事件目录
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y1 内核
+Y1-06
+Workflow/Policy/Feature Flag骨架
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y1 内核
+Y1-07
+Helm Chart与Factory Values
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y1 内核
+Y1-08
+OTel统一资源属性
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y2 资产化
+Y2-01
+Golden Factory Profile
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y2 资产化
+Y2-02
+外骨骼连接器包
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y2 资产化
+Y2-03
+OPC UA/Sparkplug样例连接器
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y2 资产化
+Y2-04
+MES P0场景包
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y2 资产化
+Y2-05
+OEE场景包
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y2 资产化
+Y2-06
+安灯场景包
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y2 资产化
+Y2-07
+质量追溯场景包
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y2 资产化
+Y2-08
+ERP/MES通用连接器Profile
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y2 资产化
+Y2-09
+Twin Package流水线
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y3 验证
+Y3-01
+Connector TCK
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y3 验证
+Y3-02
+Template TCK
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y3 验证
+Y3-03
+Scenario TCK
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y3 验证
+Y3-04
+Deployment TCK
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y3 验证
+Y3-05
+跨租户全链测试
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y3 验证
+Y3-06
+断网/乱序/补传测试
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y3 验证
+Y3-07
+升级环与回滚演练
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y3 验证
+Y3-08
+Factory Evidence Bundle
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y4 复制
+Y4-01
+第二工厂F0-F6
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y4 复制
+Y4-02
+差异回收与平台化
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y4 复制
+Y4-03
+第三工厂/第二行业F0-F6
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y4 复制
+Y4-04
+伙伴影子交付
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y4 复制
+Y4-05
+Fleet Registry
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y4 复制
+Y4-06
+Support Bundle
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y4 复制
+Y4-07
+兼容目录发布
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+Y4 复制
+Y4-08
+Scale Release 1.0评审
+实现Agent+独立验证Agent
+证据/测试/ADR齐全
+附录Z：单工厂导入、验收与交接检查表
+域
+检查项
+状态
+治理
+工厂Owner、安全Owner、IT/OT接口人和验收人已确认
+□
+边界
+平台不承担设备实时安全控制，责任边界签署
+□
+网络
+四区/网络流向、DNS、证书、代理、时间同步和出站策略确认
+□
+设备
+设备清单、协议、固件、时钟、采样、质量码和厂商支持确认
+□
+系统
+ERP/MES/WMS/HR/身份系统接口、主数据Owner和同步方向确认
+□
+数据
+样本、单位、枚举、唯一键、历史量、保留、隐私和数据驻留确认
+□
+空间
+模型/图纸/控制点/坐标系/设备点位资料达到Ready门槛
+□
+模板
+行业模板和Factory Profile选择完成，差异登记
+□
+连接器
+全部连接器配置、TCK、健康、断网、补传和安全测试通过
+□
+流程
+工单、检验、交收、安灯、审批和异常恢复演练通过
+□
+权限
+角色、组织范围、RLS/API/缓存/消息/对象存储隔离通过
+□
+审计
+写操作、导出、配置、远程支持和高风险操作可追溯
+□
+孪生
+模型、坐标、绑定、性能、地图点击和回放通过
+□
+部署
+安装、升级、备份、恢复、回滚和证书轮换通过
+□
+可观测
+指标、日志、追踪、告警、SLO和支持包可用
+□
+培训
+管理员、调度、安全、操作员和运维练习通过
+□
+上线
+灰度计划、回滚阈值、值守和沟通机制批准
+□
+交接
+资产包清单、版本、配置、Runbook、证据和未决项移交
+□
+附录AA：Final 5.0研究来源与证据边界
+编号
+来源
+支持的设计
+限制
+AA-01
+EWOH公开仓库README/目录
+当前受控试点定位、目录、部署和安全边界
+公开仓库，研究日访问
+AA-02
+EWOH CHANGELOG 0.6.0-rc1/rc2
+106路由、E2E、RLS、真机接入、备份恢复、MES P0、OEE/安灯等仓库报告
+结果需目标环境复验
+AA-03
+OpenAI：ChatGPT Work and Codex
+Work用于长时间多步骤成品工作；Codex用于软件工程和并行Agent工作流
+实际并发以账户、界面和权限为准
+AA-04
+ISA-95/IEC 62264
+企业与制造控制功能模型、术语和信息交换
+作为语义映射，不机械照搬
+AA-05
+OPC Foundation Companion Specifications
+行业设备信息模型与组合方法
+按设备行业选择采用
+AA-06
+Eclipse Sparkplug 3.0
+MQTT命名空间、载荷和会话状态
+用于可插拔IIoT连接器
+AA-07
+IDTA Asset Administration Shell
+资产数字结构、API和语义模板
+优先做AASX及核心子模型交换
+AA-08
+AsyncAPI与CloudEvents
+消息驱动API契约与通用事件Envelope
+用于事件目录和跨系统互操作
+AA-09
+OpenTelemetry
+厂商中立的trace/metric/log可观测性
+统一多语言和多工厂运营
+AA-10
+Open Policy Agent
+Policy-as-Code和CI/CD门禁
+先用于部署和包验证
+AA-11
+OpenFeature
+厂商中立功能开关API
+用于按工厂/产线灰度
+AA-12
+Helm
+Kubernetes应用的可重复安装、升级和版本化Chart
+与Compose共享Deployment Profile
+AA-13
+树字标品MES方案（用户提供）
+工单、排产、报工、质量、OEE、安灯、ESOP、移动作业和工作中心配置
+厂商宣传指标不作EWOH验收值
+AA-14
+速达S3000产品白皮书（用户提供）
+ERP/进销存/财务/OA/HR/CRM及云本地移动部署与流程控制
+用于集成边界，不建议复制ERP
+研究中使用的外部规范均来自官方组织或项目文档。对仓库、竞品和标准的分析用于指导实施，不代表获得任何第三方认证、兼容标签或商业授权。
+第一篇：最新研究结论与多Agent执行重构
+本表所在旧研究篇保留为Final 4.0实现与竞品研究基线。Final 5.0新增“规模化复制升级篇”作为最新增量权威层；若两者冲突，以Final 5.0的产品化目标、资产包规范、复制门禁和Agent任务图为准。
+R1. 升级目标、研究范围与证据边界
+本次升级不是重新包装旧方案，而是把“完整产品愿景”与“最新版仓库真实状态”合并为同一套可执行任务图。研究同时覆盖代码仓库、CHANGELOG、安全策略、NestJS/React应用、Python边缘平台、共享契约、CI/CD、树字标品MES方案、LightMES公开产品信息和速达S3000白皮书。
+证据层
+来源
+可支持的结论
+使用限制
+E1 实现证据
+GitHub主分支、目录、代码、脚本、测试、工作流
+当前已实现结构、版本、模块、测试入口和部署工件
+未在本环境完整克隆和运行，仓库自述的通过结果须在目标环境复验
+E2 冻结需求
+历次产品方案、DDL勘误、全生命周期方案
+产品边界、状态机、数据规则、安全门禁和长期路线
+历史口径冲突由最新契约和实际代码裁决
+E3 竞品资料
+树字MES方案、官网、App版本记录；速达S3000白皮书
+成熟业务流程、交互细节、集成边界和客户价值表达
+厂商客户数、ROI和效率提升属于宣传数据，不直接作为EWOH验收值
+E4 方案推断
+基于E1-E3的架构与编排分析
+Agent拆分、优先级、关键路径和多期节奏
+属于实施建议，需由真实现场、设备协议和项目Owner批准
+研究限制
+试用链接 sdacloud.cn 在本次抓取环境中未能稳定进入完整登录态，因此不声称完成了全部交互实测。对树字MES的功能判断以用户提供的2025年7月方案、公开官网、App版本记录和可见页面为依据。
+R2. 最新仓库0.6.0-rc2真实基线
+截至研究时点，公开仓库主分支显示20次提交，根目录已形成冻结交付包、Python边缘平台、NestJS/React业务应用、契约、数据库、OpenAPI、部署、安全、发布和测试等多层工程结构。仓库已不再是单一演示原型，而是受控试点候选工程。
+工程区域
+当前事实
+在多Agent体系中的定位
+delivery/
+V1.0冻结交付包，含技术、数据、算法、安全、测试、演示与交付材料，并带SHA256校验
+不可由领域Agent随意改写；由发布与证据Agent维护
+src/edge_platform/
+Python标准库边缘平台，包含采集、适配、推理、感知、空间、世界模型、调度、治理、审计、监控、备份和场景
+边缘运行平面；负责真机数据和低依赖受控试点
+ewoh-spark-app/server/
+NestJS业务平台，已有AI、告警、审批、审计、认证、控制、游戏化、采集、模型、组织、资源、规则、排班、空间、任务和世界模块
+中心业务运行平面；负责组织化业务、权限、持久化和API
+ewoh-spark-app/client/
+React/Vite前端，具备API、组件、页面、类型与3D依赖
+指挥中心、数字世界、业务工作台和移动适配
+contracts/state-machines/
+任务、方案、审批、告警、控制五类YAML状态机
+C3状态机单一事实源
+openapi/与docs/api/
+API契约与106条路由覆盖
+C2接口契约单一事实源，禁止手工前后端漂移
+db/与server/database/
+PostgreSQL迁移、Schema、RLS与验证脚本
+C1数据契约与迁移证据
+.github/workflows/
+package/security/standalone/test四类工作流
+自动门禁执行器
+security/与SECURITY.md
+访问矩阵、安全边界、隐私、保留、密钥与四区部署要求
+C4安全契约与人工审查边界
+0.6.0-rc2变更已经覆盖真机帧协议、机器对机器租户上下文、组织隔离、PostgreSQL逻辑备份恢复、一键恢复演练、Prometheus指标、部署工件62项检查和可执行培训计划；rc1已冻结六类共享契约、补齐106条OpenAPI路由，并增加真实HTTP+PostgreSQL E2E、组织A/B隔离和Playwright回归。
+当前版本定位
+RC2应被视为“受控试点候选版本”，而不是完整生产版。下一阶段的首要任务不是继续堆叠概念模块，而是通过真设备、真人员、真实班次、真实网络故障、真实数据质量和连续运行证明系统。
+R3. 当前成熟度、差距与下一阶段主线
+维度
+当前成熟度
+主要证据
+下一步门禁
+工程基线
+较高
+双运行平面、契约目录、CI、交付包和版本日志已形成
+统一根README、代码所有权和任务追踪
+数据库与租户隔离
+较高但需复验
+RLS、组织上下文、E2E隔离和备份恢复均有实现记录
+目标环境编译、迁移、RLS、连接池GUC和恢复演练
+边缘真机接入
+中高
+统一外骨骼帧、Ingestion映射、X-Org-Id和桥接契约测试
+至少两类设备、断网缓存、时钟漂移和数据质量测试
+生产执行MES能力
+中等
+已有任务、调度、资源、告警、审批、控制模块
+工单-工序-投料-首检-报工-交收-质检-追溯完整闭环
+数字孪生与指挥地图
+中高
+真实快照回放、3D模式着色、WebGL降级、Playwright覆盖
+500实体稳定性、现场坐标标定、事件定位和回放证据
+AI决策
+中等
+建议、方案、规则和游戏化模块已出现
+必须坚持用户主动触发、可解释、可比较、可审批和失效条件
+安全与运维
+中高
+安全边界、四区部署、监控、备份恢复和故障SOP
+现场演练、密钥轮换、最小权限、禁止stub自动回退
+产品化与市场
+中等
+完整愿景和试点切口清晰
+补足移动作业、OEE、安灯、质量、维保和ERP连接器
+下一阶段统一主线
+“现场真实性验证”和“生产执行补强”必须并行：一条线验证外骨骼与世界模型的真实性，另一条线吸收成熟MES的现场细节。两条线最终在任务、人员、设备、空间、风险、告警和审计场景包中汇合。
+R4. 竞品分层与对EWOH的战略意义
+产品/类别
+竞品关系
+重叠能力
+EWOH策略
+树字标品MES / LightMES
+直接功能竞品与预算竞品
+排产、工单、报工、OEE、安灯、品质、维保、追溯、ESOP、移动端和看板
+逐项对标生产执行体验，但用世界模型、外骨骼安全、AI推演和3D回放形成上层差异
+速达S3000 AI PRO
+邻近竞品、替代方案与集成对象
+组织、权限、审批、库存、HR、经营看板、移动端和AI工具
+不复制财务/CRM/电商；建设ERP/OA/HR连接器和单据链
+传统MES/MOM
+直接竞品
+生产执行、质量、设备、追溯、排程
+基础MES闭环必须可用，否则差异化能力无法被客户感知
+APS/QMS/EAM
+单点竞品
+排程、质量、设备维护
+通过模块化能力和开放接口兼容，不强行覆盖所有深度
+数字孪生/工业AI平台
+差异化主战场竞品
+空间世界、实时状态、推演、AI辅助
+强化人员-外骨骼-设备-空间统一世界模型和可审计决策闭环
+树字MES资料显示其核心价值不是抽象技术，而是把设备状态时序、异常升级、精益排产、在线报工、工序交收、质量检验、ESOP、点检保养和移动端协同做成可配置的现场流程。速达S3000则体现企业级单据、审批、权限和跨系统集成的严谨性。二者共同提醒EWOH：差异化上限很高，但基础业务链必须足够顺手。
+R5. 竞品驱动的功能迭代组合
+优先级
+能力包
+具体增量
+不应做的事
+P0
+完整生产执行链
+生产订单/工单、工序、工位任务、投料、开工、暂停、报工、审核、工序交收、首检/巡检/FQC、完工时间线
+不以“已有通用任务表”为由省略现场动作和移动端体验
+P0
+安灯与异常闭环
+异常类型、责任组、接单、响应计时、转派、处理、验证、关闭、SLA升级、多渠道通知和复盘
+不把安灯简化为告警列表
+P0
+OEE与停机时序
+运行/待机/故障/换型/缺料/无人时段、原因树、班次OEE、响应时间和瓶颈识别
+不只展示单个OEE百分比
+P0
+移动作业工作台
+接单、扫码、开工、报工、质检、交收、异常、ESOP、外骨骼确认、负载与休息提示
+不要求一线人员回PC录入
+P0
+质量与追溯
+检验方案、不良代码、返工报废、批次/序列号、人机料法环关联和追溯图
+不将质量数据仅作为附件
+P0
+ERP连接器
+订单/BOM/物料同步、报工/消耗/入库回传、幂等、对账和补偿
+不重做总账、应收应付、电子发票和完整采购销售
+P1
+设备维保与工装模具
+设备档案、点检、保养、维修、备件、模具寿命和工具校验
+不抢占现场真机与核心闭环资源
+P1
+工作中心配置
+按工作中心启用首检、投料、报工审核、扫码、交收、外骨骼要求、风险确认等功能开关
+不为每个行业复制一套代码
+P1
+标准工时与人员效率
+标准工时、技能资格、班次产能、负载公平性和可解释绩效
+不在未经授权时直接构建薪酬核算
+P2
+规模化生态
+多工厂模板、行业包、伙伴接口、插件市场、低代码规则与数据产品
+不提前削弱核心契约和安全门禁
+差异化不变
+EWOH吸收MES能力后仍不是普通MES。其主线必须保持：人员—外骨骼—设备—空间—任务统一世界模型、L0-L4数字孪生、人体负载与安全风险、用户主动触发AI、方案推演与审批、现实状态回放和安全边界内的具身协同。
+R6. 双运行平面与单一事实源架构
+设备控制器/传感器         │ 原始帧、心跳、状态         ▼ Python 边缘运行平面：协议适配 → 质量校验 → 缓存/补偿 → 风险推理 → 世界状态投影         │ 统一事件/遥测/推理结果契约         ▼ NestJS 中心业务平面：组织与权限 → 任务/MES → 资源/审批 → 告警/控制 → 审计/配置         │ OpenAPI + 状态机 + 数据契约         ▼ React/移动端/指挥地图：业务工作台 → L0-L4数字世界 → 回放 → AI建议与人工确认
+事实类型
+唯一权威
+投影/消费者
+禁止事项
+设备原始协议与边缘帧
+src/edge_platform/edge/protocol与设备协议文档
+Ingestion、推理、遥测存储
+NestJS和前端不得各自解释同一原始字段
+组织、人员、任务、审批、资源
+PostgreSQL + NestJS领域服务
+前端、边缘上下文、报表
+Python不得建立独立业务主数据真相
+世界状态与回放
+世界快照/增量日志/轨迹契约
+指挥地图、AI、审计和场景测试
+不得由多个服务静默覆盖同一实体状态
+API
+OpenAPI与共享类型生成物
+前端、测试、外部连接器
+手工复制接口类型和错误码
+状态机
+contracts/state-machines YAML
+后端转换器、UI按钮、模型测试
+直接UPDATE状态绕过转换规则
+安全边界
+SECURITY.md、access-matrix、RLS与审批规则
+所有Agent和CI
+平台实现急停、限扭或实时助力闭环
+验收事实
+自动测试报告、场景证据、恢复演练记录
+发布、交付和项目Owner
+用文档声明代替真实执行结果
+根README当前仍主要描述纯Python平台，而仓库已包含完整NestJS/React应用。总控Agent必须把“仓库导航重写”和“系统上下文图”列为最先完成的文档任务，避免新Agent继续基于过时入口作出错误假设。
+R7. 最新Agent拓扑与代码所有权
+人类Owner/安全责任人         │ 范围、现场、生产、预算和不可逆操作批准         ▼ AG-00 总控编排Agent  ├─ 契约委员会：需求/数据/API/状态机/安全/UI/运行发布  ├─ 边缘工作流：协议/采集/质量/推理/世界投影  ├─ 中心平台工作流：NestJS基础/组织权限/MES/调度/告警/控制/AI  ├─ 体验工作流：前端壳/移动作业/指挥地图/3D/报表  ├─ 集成工作流：ERP/MES/设备/迁移/发布/运维  └─ 独立验证工作流：数据库/安全/契约/状态机/E2E/性能/恢复/需求遗漏
+ID
+Agent
+主要职责
+主要所有权/边界
+AG-00
+总控编排
+任务图、基线、优先级、门禁、冲突和交付总览
+只写计划/决策/注册表；全局只读
+AG-01
+需求与追踪
+需求ID、范围差异、竞品输入、验收语言
+docs/product、requirements、traceability
+AG-02
+仓库架构与SSOT
+根README、系统上下文、技术栈边界、双实现收敛
+README、docs/architecture、ADR
+AG-03
+数据契约
+Schema、DDL、RLS、迁移、保留、审计
+db、server/database、docs/data
+AG-04
+API与状态机契约
+OpenAPI、共享类型、状态机YAML、错误码
+openapi、docs/api、contracts/state-machines、shared
+AG-05
+安全与隐私
+RBAC、RLS、密钥、DPA、控制边界、威胁模型
+security、SECURITY.md、security tests
+AG-06
+Python边缘核心
+协议、适配、缓存、设备质量、断网补偿
+src/edge_platform/edge、collection
+AG-07
+感知与风险推理
+负载、疲劳、风险、置信度、失效条件
+src/edge_platform/perception、inference
+AG-08
+世界模型与空间
+实体投影、快照、增量、轨迹、坐标和回放
+src/edge_platform/world_model、spatial；server/world
+AG-09
+NestJS平台基础
+事务GUC、认证、RBAC、审计、文件、指标、健康
+server/common、database、auth、audit、metrics
+AG-10
+组织人员与外骨骼
+组织树、人员、技能、角色、绑定、隐私视图
+server/modules/organization、设备绑定相关目录
+AG-11
+MES生产执行
+工单、工序、投料、开工、报工、审核、交收、完工
+server/modules/task及新增production-execution
+AG-12
+OEE与安灯
+设备状态时序、停机原因、OEE、异常SLA与升级
+server/modules/alert、ingest、dashboard；对应前端页面
+AG-13
+质量追溯ESOP
+检验方案、首巡终检、不良、返工、批次序列号、作业文件
+新增quality、traceability、esop模块
+AG-14
+设备维保工装
+设备档案、点检、保养、维修、模具工具寿命
+device/model/resource相关模块
+AG-15
+调度资源与游戏化
+计划、资源预占、工作中心配置、能力匹配和游戏世界
+scheduler、resource、gamification、rule-engine
+AG-16
+控制与审批
+控制请求、指令、回执、重试、审批和安全冻结
+control、approval、contracts/control
+AG-17
+AI决策与推演
+手动触发建议、方案版本、对比、解释、采用和复盘
+ai、simulator、scenario、assistant
+AG-18
+ERP/OA/HR集成
+订单/BOM/物料/报工回传、对账、补偿和连接器SDK
+新增integrations；严禁扩展为完整ERP
+AG-19
+前端平台
+路由、导航、API层、设计系统、权限、错误与离线状态
+client/src/app、api、components、types
+AG-20
+移动作业体验
+扫码、接单、开工、报工、质检、安灯、ESOP和外骨骼确认
+client移动页面/PWA或适配层
+AG-21
+指挥地图与3D
+L0-L4、实体点击、热力图、轨迹、调度、回放和降级
+client/pages/CommandMap、DigitalWorld、ui/command_map
+AG-22
+数据指标与报表
+OEE、SLA、产能、风险、质量和价值指标
+metrics、dashboard、报表与导出
+AG-23
+DevOps与发布
+CI、镜像、K8s、Compose、监控、备份恢复、发布清单
+deploy、release、scripts、.github/workflows
+VA-01~08
+独立验证Agent组
+数据库/安全/API/状态机/UI/E2E/性能/恢复/需求遗漏
+只写测试、证据和缺陷，不直接替实现Agent判定通过
+文件所有权硬规则
+当前CODEOWNERS仍使用占位账号。进入正式ChatGPT Work执行前，AG-23必须生成机器可执行的路径Owner矩阵，并由AG-00将每个任务包绑定到允许修改路径。多个Agent需要修改app.module.ts、schema.ts、shared/api.interface.ts或OpenAPI时，只允许通过指定集成Agent合并。
+R8. 契约、制品和决策登记体系
+契约/制品
+权威位置
+Owner
+变更触发
+C1 数据契约
+db/、server/database/schema、docs/data
+AG-03
+字段/索引/保留/RLS变化触发数据库与所有消费者复验
+C2 API契约
+openapi/、docs/api、generated types
+AG-04
+路由/DTO/错误码变化触发前端、集成和E2E复验
+C3 状态机
+contracts/state-machines/*.yaml
+AG-04+领域Owner
+状态/转换变化触发模型测试、按钮权限和迁移检查
+C4 安全契约
+SECURITY.md、security/access-matrix.yaml、RLS
+AG-05
+角色、数据范围、控制能力变化需安全Owner批准
+C5 UI契约
+路由、设计系统、页面信息架构和交互语法
+AG-19/21
+公共组件或导航变化触发UI回归
+C6 运行发布契约
+deploy、release、scripts、workflows、runbook
+AG-23
+环境变量、服务、端口、备份和回滚变化触发部署演练
+ADR决策记录
+docs/architecture/decisions/
+AG-02
+双实现取舍、SSOT、重大技术选型必须记录
+证据包
+release/evidence/<gate>/<run-id>/
+验证Agent
+每次门禁运行生成不可混淆的时间戳证据
+总控Agent应维护制品注册表，至少记录：制品ID、版本、Owner、来源任务、依赖契约、生成命令、校验哈希、最近验证时间、适用环境和弃用状态。任何Agent不得把聊天文本当作唯一交付物。
+R9. 任务依赖图、并行波次与关键路径
+W0 基线盘点/SSOT/仓库导航   ├─ W1 契约与门禁复验（C1-C6、数据库、环境、真机协议）   │    ├─ W2A 真机与世界模型真实性   │    ├─ W2B MES生产执行/OEE/安灯/质量/移动端   │    └─ W2C ERP连接器与数据迁移   ├─ W3 前后端并行实现 + 独立验证   ├─ W4 八类端到端场景集成   ├─ W5 现场部署/故障注入/恢复演练/培训   └─ W6 试点放行 → 多期产品化
+波次
+可并行工作
+进入条件
+退出证据
+W0 真实基线
+仓库盘点、README重写、Agent登记、缺口矩阵、测试入口统一
+代码与资料可访问
+SSOT表、构建基线、真实失败清单
+W1 契约复验
+数据库编译、OpenAPI生成、状态机测试、安全矩阵、UI路由、运行配置
+W0完成
+C1-C6版本标签和G2/G3证据
+W2A 现场真实性
+真机帧、时钟、断网、缓存、质量、坐标标定、风险推理
+协议与安全契约Ready
+设备接入证据、失效测试和世界状态一致性
+W2B 生产执行
+MES链、OEE、安灯、质量、ESOP、移动作业、维保
+数据/API/状态机冻结
+领域API、页面、单测和场景子链
+W2C 集成迁移
+ERP/OA/HR连接器、默认组织回填、对账补偿、历史数据
+连接器契约和测试环境
+迁移报告、幂等与回滚证据
+W3 集成
+前后端契约联调、权限、3D、回放、AI方案和控制审批
+W2各子链达到接口Ready
+集成测试、契约零漂移
+W4 场景验收
+八类端到端场景、性能、安全、故障注入、恢复
+W3通过
+场景证据包和缺陷清零阈值
+W5 现场放行
+部署、监控、培训、值守、回滚、数据处理协议
+Go/No-Go通过
+签署记录、演练录像/日志、上线窗口批准
+关键路径
+当前关键路径不是“再创建更多模块”，而是：SSOT收敛 → 数据库与组织上下文复验 → 真机/世界模型真实性 → MES现场闭环 → 八类场景 → 恢复演练 → 试点放行。前端装饰、二级报表和生态扩展不得占用关键路径Owner。
+R10. 领域工作包与独立验证体系
+工作包
+场景
+核心链路
+实现Agent
+独立验证
+WP-EDGE-01
+真机数据可信链
+设备帧→校验→组织上下文→持久化→质量标签→断网补偿
+AG-06/07/08
+VA-API、VA-SEC、VA-E2E
+WP-MES-01
+生产执行闭环
+工单→工序→投料→开工→首检→报工→审核→交收→完工
+AG-11/13/20
+VA-STATE、VA-E2E、VA-UI
+WP-OEE-01
+设备运营与安灯
+状态时序→停机原因→OEE→异常接单→SLA升级→关闭复盘
+AG-12/14/22
+VA-E2E、VA-PERF、VA-UI
+WP-TWIN-01
+数字世界与回放
+快照→delta→轨迹→L0-L4→实体详情→事件定位→回放
+AG-08/21
+VA-CONTRACT、VA-PERF、VA-UI
+WP-SAFE-01
+人员外骨骼安全
+人员绑定→负载→风险→告警→处置→审计
+AG-07/10/12
+VA-SEC、VA-E2E、需求遗漏
+WP-SCHED-01
+任务调度与资源
+能力匹配→预占→审批→派发→冲突→恢复→完成
+AG-15/16
+VA-DB、VA-STATE、VA-CONCURRENCY
+WP-AI-01
+AI决策闭环
+人工触发→快照→建议→方案→对比→审批→转任务→复盘
+AG-17/15
+VA-STATE、VA-SEC、VA-E2E
+WP-ERP-01
+企业系统集成
+订单/BOM/物料入站→执行→报工/消耗/入库回传→对账补偿
+AG-18/03/11
+VA-CONTRACT、VA-E2E、VA-RECOVERY
+WP-OPS-01
+发布与恢复
+构建→部署→监控→备份→恢复→写入冒烟→回滚
+AG-23
+VA-RECOVERY、VA-SEC、VA-PERF
+每个工作包必须包含：输入契约版本、允许修改路径、禁止修改路径、实现任务、数据迁移、单元测试、集成测试、异常测试、回滚方式、观测指标、验收证据和未解决事项。实现Agent不能自行签署完成，必须由指定验证Agent出具Pass/Fail。
+R11. 端到端场景包与验收证据
+场景包
+端到端链路
+最低证据
+S1 人员外骨骼安全
+人员建档→技能角色→外骨骼绑定→真机负载→风险→地图→告警→处置→审计
+真机帧、绑定唯一性、风险置信度、跨组织拒绝、处置时间线
+S2 MES生产执行
+订单/工单→工序→投料→首检→加工→报工→审核→交收→完工→追溯
+数量守恒、状态机、扫码、质量、不良、人员设备工位关联
+S3 OEE安灯
+设备状态采集→停机→原因→安灯→责任人→升级→关闭→OEE复盘
+状态时序、SLA、通知、响应时长、原因分布和班次OEE
+S4 任务调度
+任务→能力匹配→资源预占→审批→派发→暂停恢复→完成
+并发不超卖、冲突提示、审批证据、状态不可逆规则
+S5 AI辅助决策
+用户点击→冻结快照→建议→多方案→解释→人工批准→正式任务
+无预生成、版本可追溯、失效条件、模拟/正式隔离
+S6 数字孪生回放
+现实数据→世界投影→L0-L4→实体点击→轨迹→事件→时间回放
+坐标准确、delta连续、游标过期、WebGL降级、回放完整
+S7 多组织与安全
+组织A/B→相同业务→跨租户访问→全局管理员→审计
+RLS、GUC事务、机器接入组织头、敏感字段脱敏
+S8 异常与恢复
+断网/设备离线/数据库重启/备份恢复/命令失败/迁移回滚
+数据一致性、恢复时间、重复消息幂等、失联安全态
+S9 ERP集成
+ERP订单/BOM→EWOH执行→消耗/报工/入库→ERP对账
+幂等键、映射、失败重试、补偿、人工对账入口
+S10 交付放行
+构建→镜像→部署→初始化→冒烟→监控→回滚→培训→签署
+版本哈希、配置清单、演练证据、培训考核和Go/No-Go
+场景包是项目完成度的主要度量单位。单个模块、页面、接口或测试文件完成，不代表业务可用。总控Agent必须按场景包展示完成率、阻塞依赖和证据链接。
+R12. 从RC2到现场试点的90天计划
+周期
+目标
+并行Agent群
+关键交付与门禁
+第1-10天
+真实基线与SSOT收敛
+AG-00~05、AG-23
+根README/架构图、构建与测试基线、C1-C6标签、Agent登记册、问题清单；G0-G2
+第11-25天
+环境与现场真实性准备
+AG-03/05/06/07/08/09/23
+数据库与RLS复验、真机协议、组织头、GUC事务、断网缓存、坐标标定方案；G3-G4
+第26-50天
+MES P0并行补强
+AG-11/12/13/15/18/19/20/22
+生产执行、OEE、安灯、质量、移动端、ERP适配骨架；领域门禁
+第51-65天
+跨域集成
+AG-08/10/16/17/21 + 集成Agent
+人员外骨骼、调度、AI、数字世界、回放和控制审批联调；G6-G7
+第66-78天
+场景与非功能验证
+VA-01~08
+十类场景、权限、并发、性能、安全、故障注入、恢复和需求遗漏；G8-G9
+第79-90天
+试点放行准备
+AG-23、交付Agent、人类Owner
+部署、监控、值守、培训、回滚、DPA、Go/No-Go和现场窗口；G10-G11
+90天计划的性质
+这是ChatGPT Work多Agent并行条件下的参考节奏，不是对现场资源和供应商响应时间的承诺。实际日历必须在第1-10天根据设备协议、数据库权限、现场网络和用户可用性重新估算。
+R13. 多期产品化路线与Agent编排
+阶段
+产品目标
+核心能力
+主要Agent群
+阶段完成定义
+Phase A 受控试点
+证明人员外骨骼安全与世界模型真实可用
+真机接入、风险、告警、地图、组织隔离、备份恢复
+边缘/安全/世界/运维/验证
+S1、S6、S7、S8、S10通过
+Phase B 生产执行平台
+补齐成熟MES现场闭环
+工单工序、移动报工、质量追溯、OEE安灯、维保、ERP连接
+MES/OEE/质量/移动/集成
+S2、S3、S9通过，现场班次可运行
+Phase C 智能编排
+实现人机料法环联合调度和AI辅助
+资源预占、轻量推演、多方案、审批、游戏世界、复盘
+调度/AI/数字孪生/控制
+S4、S5通过，建议可解释可采用
+Phase D 多工厂规模化
+从单厂试点扩展到集团平台
+模板、行业包、多租户运营、数据产品、伙伴接口
+平台/数据/DevOps/生态
+多工厂隔离、容量、升级和运营SLA通过
+Phase E 具身终端生态
+外骨骼成为安全增强和具身协同终端
+设备能力协议、任务协同、受控配置、边缘模型和伙伴SDK
+边缘/协议/安全/生态
+不越过本地实时控制边界，形成可认证生态
+Phase F 稳态运营与结项
+价值实现、知识移交和持续迭代
+SLA、收益指标、培训、运维、版本路线和结项
+总控/运维/交付/Owner
+合同验收、遗留清零或签署、运营Owner接管
+R14. GitHub工程治理与ChatGPT Work运行规则
+规则
+执行要求
+Issue作为任务事实源
+每个主要需求创建Issue，包含需求ID、任务包、Owner、依赖、验收和证据链接；禁止只在聊天中存在。
+分支与工作树隔离
+每个实现Agent使用独立分支/工作树；共享文件由集成Agent修改；禁止并发覆盖。
+PR必须可验证
+PR描述必须列出契约版本、变更路径、测试命令、结果、迁移、回滚、风险和截图/日志。
+独立审查
+实现Agent不得批准自己的PR；安全、协议、DDL和状态机变化必须由对应验证Agent和人类Owner审查。
+自动门禁
+合并前运行type-check、unit、E2E、contract、security、migration verify、build和必要的Playwright。
+失败透明
+不得把未执行标成通过；失败日志进入证据包；允许部分完成，但必须声明未完成边界。
+契约漂移检测
+OpenAPI、Schema、状态机和共享类型发生差异时CI失败，要求Owner更新版本和影响矩阵。
+发布可追溯
+发布清单记录commit、镜像摘要、DDL版本、配置、数据迁移、测试证据、已知问题和回滚点。
+仓库当前公开页面显示Issue和PR均为0。多Agent进入持续实施后，应把Issue→任务包→分支/PR→验证证据→门禁结果建立为统一追踪链，避免大量能力以集中提交方式失去来源和复核路径。
+R15. 风险、失败恢复与人类批准边界
+风险
+触发信号
+自动处置
+必须由人类批准
+双实现漂移
+Python、NestJS或前端对同一状态/字段解释不同
+停止合并，契约Agent生成差异，Owner选择SSOT
+改变业务事实源或废弃运行平面
+stub掩盖真实故障
+真实模块导入失败后仍显示模拟数据
+试点配置强制fail-closed并告警
+允许演示环境使用stub
+租户上下文泄漏
+连接池GUC残留、缺少X-Org-Id或跨组织读取
+阻止发布并运行隔离测试
+任何安全例外
+Agent越权修改
+任务外路径变更或共享契约被私改
+撤销变更、重新分配、记录冲突
+扩大Agent所有权
+现场数据失真
+时钟漂移、丢包、重复、位置漂移或质量下降
+标记不可信、停止AI建议、进入降级模式
+继续基于低质量数据做业务决策
+不可逆数据库操作
+DROP、重写历史、生产迁移或权限变更
+默认阻止并生成备份/回滚计划
+生产DDL、删除和不可逆迁移
+设备控制越界
+出现急停、限扭、实时关节/助力闭环符号或接口
+CI阻止、人工安全审查
+仍不得批准平台承担本地实时安全控制
+竞品范围膨胀
+把财务、CRM、电商等纳入核心开发
+退回集成边界，建立连接器任务
+改变产品定位和预算
+需要人类明确批准的操作包括：生产数据库DDL和迁移、不可逆数据修改、生产部署、生产权限变更、付费资源、对外消息、外部系统连接、高风险设备配置和无法安全回滚的操作。普通代码、测试、文档、本地构建和临时环境可由Agent直接推进。
+R16. 最新正式实施结论
+结论
+EWOH已经具备继续开发和进入现场试点准备的工程基础。ChatGPT Work不应再把它视为从零开始的规划项目，而应视为一个0.6.0-rc2受控试点候选工程：以实际代码为基线、以契约和场景为编排核心、以独立验证和真实现场证据决定放行。功能上应保持完整具身智能操作系统愿景，同时优先补足成熟MES的生产执行、OEE、安灯、质量、移动作业和ERP集成细节。
+正式执行顺序：先完成SSOT和环境复验；并行推进真机真实性与MES P0补强；随后进行跨域场景集成、安全性能恢复验证和现场Go/No-Go。第二篇保留多Agent通用制度，第三篇保留产品全生命周期和多期范围，三篇共同构成本项目的完整执行蓝图。
+第二篇：ChatGPT Work 多Agent通用编排基线
+执行结论：本项目不需要因范围大而压缩为传统小型MVP。其领域边界、数据契约、状态机和验收标准清晰，适合由ChatGPT Work统一调度多个专业子Agent并行实施。成功关键由“控制人力规模”转变为“控制契约、依赖、文件冲突、验证独立性和集成节奏”。
+
+A1. 编排目标与实施结论
+
+目标层
+多Agent执行目标
+成功判据
+范围完整性
+保留完整工业操作系统愿景，不以“范围过重”为由静默删减能力。
+需求追踪矩阵无孤立需求；所有能力映射到Agent工作包和验收场景。
+并发效率
+对无依赖或已契约化的工作并行执行。
+关键路径清晰；前后端可基于冻结契约并行；Agent空等显著减少。
+一致性
+所有Agent使用同一术语、表清单、接口、状态机和权限规则。
+共享契约差异检测为零；未经批准的Schema/API变化被门禁阻断。
+质量
+开发Agent与验证Agent职责分离。
+关键交付物由独立Agent复核；所有场景包、权限、并发和回滚测试通过。
+可追溯
+每个需求、决策、代码变更、测试和发布均可回溯。
+任务包、提交、ADR、测试报告和验收记录建立双向链接。
+安全
+Agent自动化不扩大现实控制权限。
+生产DDL、设备控制、密钥、上线与回滚均需Owner授权和审计。
+
+A2. 多Agent实施原则与边界
+原则
+执行解释
+硬约束
+总控不包办
+总控Agent负责任务图、基线、冲突和门禁，不承担所有编码。
+总控不得绕过领域Owner直接修改共享契约。
+契约先行
+数据、API、状态机、安全和UI契约先冻结，再启动大规模并行。
+契约未Ready的任务不得进入In Progress。
+单一事实源
+需求、表清单、OpenAPI、状态机、权限和设计令牌各有唯一权威文件。
+禁止复制后独立维护多个“最新版”。
+最小修改面
+Agent只修改任务包授权路径。
+越界修改必须退回或拆分为新任务。
+测试随交付
+代码、DDL、配置或文档变更必须同时提交相应验证。
+无测试或无验证证据不得进入集成。
+独立验收
+实现者不能单独判定自身任务完成。
+至少一名验证Agent或总控门禁复核。
+场景驱动
+模块完成仅为中间状态，端到端场景闭环才代表可交付。
+核心场景包未通过不得发布。
+人工主权
+Agent可规划、编码、测试和建议，但不可自行批准生产不可逆操作。
+DDL生产执行、设备控制、密钥变更、上线和范围例外需Owner授权。
+
+适用边界：ChatGPT Work负责软件工程和交付编排。现场设备安装、工业安全确认、真实生产切换、供应商商务协调和最终业务签署仍由人类责任人完成。Agent应生成清单、脚本和证据，但不得虚构现场结果。
+
+A3. 总体Agent拓扑与责任层级
+项目Owner / 人类决策层         │  范围、预算、安全例外、生产执行、上线与最终验收         ▼ 总控编排Agent（Program Orchestrator）         ├── 基线与契约层         │     ├── 需求基线Agent         │     ├── 架构与ADR Agent         │     ├── 数据契约Agent         │     ├── API契约Agent         │     ├── 状态机Agent         │     └── 安全权限Agent         ├── 领域实施层         │     ├── DDL/迁移 Agent         │     ├── 后端基础设施 Agent         │     ├── 组织人员 Agent         │     ├── 设备外骨骼 Agent         │     ├── 空间孪生 Agent         │     ├── 任务调度资源 Agent         │     ├── 告警审批控制 Agent         │     ├── AI与数据治理 Agent         │     ├── 前端框架与页面 Agent组         │     └── 集成/DevOps/文档 Agent         ├── 独立验证层         │     ├── 数据库编译与安全 Agent         │     ├── API契约一致性 Agent         │     ├── 状态机模型测试 Agent         │     ├── UI回归与可用性 Agent         │     ├── 性能容量 Agent         │     └── 需求追踪与遗漏检查 Agent         └── 集成交付层               ├── 场景包集成 Agent               ├── 发布与回滚 Agent               └── 验收与移交 Agent
+
+层级
+核心职责
+不可承担的职责
+人类Owner
+批准范围、生产操作、安全例外、预算、供应商、上线和最终验收。
+不得把法律、安全或现场责任完全转移给Agent。
+总控编排Agent
+维护任务图、优先级、依赖、基线、冲突、门禁和交付总览。
+不应长期占用领域文件或代替所有验证。
+契约Agent
+维护唯一权威数据/API/状态机/权限/UI契约和版本变更。
+不得同时作为所有领域实现者。
+领域Agent
+在授权路径内实现功能并提交测试、文档和交接信息。
+不得私改共享契约、跨目录抢占或自行放宽验收。
+验证Agent
+以黑盒/白盒方式独立验证实现、越权、性能、并发和回滚。
+不得只复述实现者结论。
+集成交付Agent
+合并、环境部署、场景串联、发布、回滚和交付打包。
+不得在集成阶段临时改变业务规则。
+
+A4. Agent编制、命名与职责登记册
+ID
+Agent
+责任
+主要所有权
+关键协作
+AG-00
+总控编排Agent
+任务图、优先级、阻塞、门禁、交付总览
+全局读取；仅更新计划/清单/决策索引
+全部Agent
+AG-01
+需求基线Agent
+需求拆解、追踪矩阵、验收语言、范围差异
+requirements/、docs/product/
+AG-00、验证Agent
+AG-02
+架构与ADR Agent
+总体架构、边界、技术决策、跨域约束
+docs/architecture/、adr/
+AG-00、各契约Agent
+AG-03
+数据契约Agent
+表清单、字段、逻辑引用、保留、索引基线
+db/contracts/、schema manifest
+AG-10、AG-41
+AG-04
+API契约Agent
+OpenAPI、DTO、错误码、分页、幂等、Mock
+openapi/、shared/api.interface.ts
+前后端Agent、AG-42
+AG-05
+状态机Agent
+任务/审批/告警/方案/控制状态与转换
+contracts/state-machines/
+流程域Agent、AG-43
+AG-06
+安全权限Agent
+身份、org scope、RLS、审计、密钥、安全门禁
+security/、db/policies/
+AG-10、AG-40、AG-46
+AG-10
+DDL与迁移Agent
+探针、DDL、索引、迁移、回滚、codegen
+db/migrations/、tmp/ddl/
+AG-03、AG-06、AG-40
+AG-11
+后端基础设施Agent
+事务上下文、审计服务、错误、日志、共享库
+server/modules/shared/
+全部后端Agent
+AG-12
+组织人员Agent
+组织、人员、角色、技能、班组、证书
+server/modules/organization/
+AG-03/04/06
+AG-13
+设备外骨骼Agent
+设备、能力、绑定、健康、排他兼容、配置
+server/modules/devices/、embodiment/
+AG-03/04/05/06
+AG-14
+空间孪生Agent
+空间层级、模型绑定、L0-L4、回放、点击详情
+server/modules/spatial/、world/、3D前端
+AG-03/04、AG-20
+AG-15
+工位与模型Agent
+工位、模型资产、重建、语义绑定、验证
+server/modules/workstation/、model/
+AG-14、集成Agent
+AG-16
+任务调度Agent
+任务模板、步骤、排班、派发、执行状态机
+server/modules/task/、scheduler/
+AG-05、AG-17
+AG-17
+资源物料Agent
+人员/设备/空间/工具预占，物料领用消耗
+server/modules/resource/
+AG-03/05/10、AG-43
+AG-18
+告警审批Agent
+告警处置升级、审批委托跳过超时
+server/modules/alert/、approval/
+AG-05/06
+AG-19
+控制Agent
+控制请求、逻辑指令、重试、撤销、回执聚合
+server/modules/control/
+AG-05/06、工业网关
+AG-20
+AI决策Agent
+A1/A2/A3、会话、建议、方案、解释、评估
+server/modules/brain/、ai/
+AG-03/04/05、AG-45
+AG-21
+数据治理Agent
+数据源、质量、配置、保留、脱敏、资产目录
+server/modules/data/、system/
+AG-03/06
+AG-22
+事件与通知Agent
+事件规则、动作、订阅、通知
+server/modules/event-rule/、notification/
+AG-05、AG-18
+AG-30
+前端框架Agent
+路由、导航、API层、QueryKeys、权限、设计系统
+client/src/app、api、components
+所有页面Agent
+AG-31
+指挥与数字世界页面Agent
+CommandMap、L0-L4、实体详情、回放交互
+client/src/pages/CommandMap/
+AG-14/30
+AG-32
+组织设备人员页面Agent
+组织树、人员、设备、外骨骼、工位页面
+对应pages目录
+AG-12/13/15/30
+AG-33
+调度资源控制页面Agent
+Scheduler、Tasks、Resource、Control
+对应pages目录
+AG-16/17/19/30
+AG-34
+告警审计配置页面Agent
+Events、Approval、AuditLog、Settings
+对应pages目录
+AG-18/21/22/30
+AG-35
+AI与数据页面Agent
+AI决策、模型、数据质量、知识与通知
+对应pages目录
+AG-20/21/30
+AG-40
+数据库编译与安全验证Agent
+SQL编译、权限、RLS、越权、迁移回滚
+tests/db/、reports/
+AG-10、AG-06
+AG-41
+需求追踪验证Agent
+需求—任务—代码—测试—验收覆盖
+reports/traceability/
+全部Agent
+AG-42
+API契约验证Agent
+实现与OpenAPI/DTO/错误码一致性
+tests/contract/
+AG-04、前后端
+AG-43
+状态机与并发验证Agent
+模型测试、非法转换、预占并发、幂等
+tests/state/、tests/concurrency/
+AG-05/16/17/19
+AG-44
+UI回归与可用性Agent
+页面渲染、交互、权限、响应式、可用性
+tests/e2e/、visual reports
+AG-30-35
+AG-45
+AI安全与质量验证Agent
+输出格式、解释、不确定性、提示注入、越权
+tests/ai/、evals/
+AG-20、AG-06
+AG-46
+性能与可靠性Agent
+容量、SLO、故障、恢复、资源使用
+tests/perf/、reports/reliability/
+集成版本
+AG-50
+集成与场景包Agent
+跨模块串联、种子数据、环境、场景验收
+integration/、fixtures/
+领域与验证Agent
+AG-51
+DevOps与发布Agent
+CI/CD、环境、监控、备份、发布、回滚
+deploy/、ops/
+AG-40/46/50
+AG-52
+文档培训与移交Agent
+部署、运维、培训、用户手册、交付清单
+docs/delivery/
+全部已验证输出
+
+A5. 单一事实源、共享上下文与制品注册表
+
+制品
+唯一权威位置（建议）
+Owner Agent
+变更门禁
+产品需求基线
+docs/product/requirements-baseline.md
+AG-01
+需求变更单 + AG-00批准
+需求追踪矩阵
+docs/product/traceability.csv
+AG-01/41
+每次集成自动检查
+术语表与对象词典
+docs/product/glossary.md
+AG-01/02
+跨域评审
+总体架构与ADR
+docs/architecture/、adr/
+AG-02
+ADR评审
+物理表清单与字段契约
+db/contracts/schema-manifest.yaml
+AG-03
+AG-10/40双重验证
+OpenAPI与DTO
+openapi/ewoh.yaml、shared/api.interface.ts
+AG-04
+契约测试通过
+状态机
+contracts/state-machines/*.yaml
+AG-05
+模型测试通过
+安全与权限矩阵
+security/access-matrix.yaml
+AG-06
+安全Agent和Owner批准
+UI信息架构与设计令牌
+docs/ui/、client/src/theme/
+AG-30
+UI回归通过
+Agent任务图
+work/graph.yaml
+AG-00
+依赖和门禁校验
+任务包目录
+work/packages/
+AG-00/领域Owner
+Ready门禁
+测试证据
+reports/tests/<build>/
+验证Agent
+不可由实现Agent覆盖
+发布清单与回滚
+deploy/releases/<version>/
+AG-51
+上线门禁
+决策与问题日志
+adr/、work/issues/
+AG-02/00
+状态可追溯
+
+上下文装载原则：Agent不应一次装载全部项目文本。总控根据任务包生成最小上下文包：当前任务、依赖制品、允许路径、相关契约、测试和最近决策。这样既减少上下文噪声，也降低旧版本要求被误用的概率。
+
+A6. 并行开发前必须冻结的六类共享契约
+契约
+内容
+Owner
+消费者
+硬规则
+C1 数据契约
+表/字段/类型/主键/业务ID/org_id/逻辑引用/索引/保留/脱敏
+AG-03
+DDL、所有后端、数据页面
+未经变更单禁止领域Agent增加字段
+C2 API契约
+路径、方法、DTO、分页、错误码、幂等、乐观锁、权限、示例
+AG-04
+前后端、测试、外部集成
+实现偏差由契约测试阻断
+C3 状态机契约
+状态、事件、角色、前置条件、终态、撤销、超时、审计
+AG-05
+任务/审批/告警/方案/控制
+禁止直接UPDATE绕过转换服务
+C4 安全契约
+身份、组织范围、RLS、Service过滤、审计、密钥、生产授权
+AG-06
+全部模块
+禁止任何Agent自行扩大数据库或控制权限
+C5 UI契约
+路由、导航、组件接口、状态颜色、加载/空/错、L0-L4交互
+AG-30
+所有页面Agent
+共享组件只能由Owner维护
+C6 运行与发布契约
+环境、配置、日志、监控、备份、迁移、回滚、SLO
+AG-51/46
+全部服务
+无回滚与监控不得上线
+
+契约变更流程： 提出 Change Request → 影响分析（Agent、表、API、测试、数据迁移、计划） → 契约Owner拟定新版本 → 总控Agent与验证Agent评审 → 人类Owner批准重大范围/安全变化 → 更新契约版本与受影响任务 → 自动触发重新验证 → 合并并关闭变更
+
+A7. 全生命周期与多期Agent编排映射
+阶段
+主导Agent
+并行Agent组
+关键输出
+退出门禁
+Phase 0 启动与确认
+AG-00/01/02
+AG-03/04/05/06/30/51
+项目章程、需求基线、契约v1、任务图、环境计划
+G0-G2
+Phase 1 数字底座
+AG-10/11
+AG-12/13/14/21/30-32/40-44
+DDL、组织空间设备人员、基础数字世界、安全与迁移
+G3-G6
+Phase 2 运营闭环
+AG-16/17/18/19
+AG-22/33/34/43/50
+任务资源告警审批控制回放场景包
+阶段验收
+Phase 3 智能编排
+AG-20/15
+AG-14/19/21/35/45/50
+AI建议方案、真实重建、网关和外部集成
+智能与安全门禁
+Phase 4 规模生态
+AG-02/21/46/51
+各领域Owner、开放接口、Agent治理
+多工厂模板、高可用、数据资产、开放平台
+规模化验收
+Phase 5 稳态结项
+AG-00/51/52
+AG-41/46/50、各领域Owner
+运维移交、培训、收益、资产、结项
+G7
+
+A8. 任务依赖图、关键路径与并行波次
+W0 基线与环境   R需求基线 ─┬─> C1数据契约 ──> DDL/迁移 ──> 后端数据访问              ├─> C2 API契约 ───> 后端API + 前端Mock并行              ├─> C3 状态机 ────> 流程域服务 + 模型测试              ├─> C4 安全契约 ──> RLS/审计 + 越权测试              └─> C5 UI契约 ─────> 前端框架 + 页面骨架  W1 基础设施与领域骨架   DDL + Shared Backend + Frontend Shell + Test Harness  W2 领域并行   组织人员 | 设备外骨骼 | 空间孪生 | 工位模型 | 数据治理  W3 运营闭环并行   任务调度资源 | 告警审批 | 控制 | 事件通知 | 页面组  W4 智能与集成   AI建议方案 | 真实重建 | 工业网关 | MES/WMS/UWB/视频  W5 场景集成与独立验证   四大场景包 + 权限/并发/性能/回滚/安全  W6 试点发布、运行观察、推广与移交
+
+波次
+可以并行的工作
+必须等待的依赖
+波次完成标志
+W0
+需求、架构、数据/API/状态/安全/UI契约、环境探针设计
+现有资料与Owner决策
+六类契约v1和任务图Ready
+W1
+DDL、后端共享基础、前端Shell、Mock、测试框架、CI
+W0契约
+可运行骨架、数据库临时库Ready
+W2
+组织、设备、外骨骼、空间、模型、数据配置
+DDL和共享库
+各域CRUD和独立测试通过
+W3
+任务资源、告警审批、控制、事件、业务页面
+状态机和基础主数据
+运营闭环API和页面可串联
+W4
+AI、重建、外部系统、网关、智能页面
+稳定世界状态和运营数据
+智能增强场景可试点
+W5
+场景包、RLS、并发、性能、UI、安全、回滚
+候选集成版本
+独立验证全部通过
+W6
+迁移、灰度、监控、培训、发布、复盘
+上线门禁
+阶段版本正式验收
+
+关键路径：环境探针 → 数据/安全契约 → DDL与迁移 → 后端共享事务上下文 → 主数据域 → 任务资源状态机 → 场景集成 → 独立验证 → 上线。前端可依赖OpenAPI与Mock提前并行，但最终验收仍受真实API和场景门禁约束。
+
+A9. Agent任务包标准
+
+字段
+必填内容
+示例/规则
+package_id
+唯一编号、版本、父任务和场景包
+WP-DEV-BIND-003 v1.2
+goal
+可验证的业务目标
+实现设备—人员穿戴绑定及排他兼容校验
+inputs
+必须读取的需求、契约、ADR和依赖输出
+schema-manifest、binding API、compatibility matrix
+allowed_paths
+允许修改的文件/目录
+server/modules/devices/**、对应tests/**
+forbidden_paths
+禁止修改的共享契约和其他Agent目录
+db/contracts、openapi主文件、全局状态枚举
+dependencies
+前置任务与版本
+DDL binding表完成；AuditService v1
+implementation
+功能、事务、错误、日志、安全和性能要求
+409冲突、事务内校验、写审计
+tests
+单元、集成、越权、并发和回归用例
+同组重复拒绝；full_body冲突；跨组织拒绝
+outputs
+代码、迁移、文档、测试报告、决策记录
+PR/patch、test evidence、handoff
+acceptance
+可机器验证的完成条件
+全部测试通过；API契约无差异；无越界文件
+rollback
+撤销方法和兼容要求
+关闭新API、回滚变更、保留旧读路径
+handoff
+下游消费者与注意事项
+设备页面Agent、场景包Agent
+
+package_id: WP-DEV-BIND-003 owner_agent: AG-13 validator_agents: [AG-42, AG-43, AG-41] goal: 实现设备人员穿戴绑定、排他组和兼容矩阵 inputs:   - db/contracts/schema-manifest.yaml#device_person_binding   - openapi/ewoh.yaml#/device-bindings   - contracts/state-machines/binding.yaml allowed_paths:   - server/modules/devices/**   - tests/devices/** forbidden_paths:   - db/contracts/**   - openapi/ewoh.yaml must_implement:   - 创建/结束绑定   - 同组唯一   - full_body与upper/lower互斥   - org隔离、事务、审计、409错误 acceptance:   - 单元/集成/并发/越权测试通过   - OpenAPI契约差异为0   - 需求追踪矩阵已更新
+
+A10. 代码所有权、分支、并发修改与合并纪律
+主题
+规则
+自动门禁
+目录所有权
+每个核心目录只有一个Owner Agent；其他Agent通过任务包申请修改。
+CODEOWNERS/manifest校验
+共享文件
+schema、OpenAPI、状态机、路由、QueryKeys等由专门Owner维护。
+越权路径检测
+分支策略
+每个任务包独立短生命周期分支或工作区；禁止长期大分支。
+分支年龄和差异规模告警
+提交粒度
+提交与任务包对应，包含代码、测试和必要文档。
+任务ID和测试证据检查
+契约变更
+先更新契约并版本化，再由受影响Agent同步实现。
+契约差异与受影响任务生成
+合并顺序
+契约/DDL → Shared → Domain → Frontend → Integration。
+依赖图拓扑排序
+冲突处理
+不得由后提交者直接覆盖；由Owner Agent或集成Agent裁决。
+冲突记录与ADR
+生成文件
+schema.ts、客户端代码等由指定codegen任务生成，不人工并行编辑。
+生成一致性检查
+回滚
+每个可部署工作包必须有开关、兼容或回滚说明。
+发布清单检查
+
+高冲突文件
+Owner
+其他Agent协作方式
+db/contracts/schema-manifest.yaml
+AG-03
+提交字段变更请求，不直接改
+openapi/ewoh.yaml
+AG-04
+提交接口提案和DTO示例
+shared/api.interface.ts
+AG-04
+由OpenAPI/codegen统一更新
+contracts/state-machines/*
+AG-05
+流程Agent提交事件/转换提案
+security/access-matrix.yaml
+AG-06
+领域Agent声明权限需求
+client/src/app.tsx、Layout、queryKeys
+AG-30
+页面Agent提交路由/导航注册请求
+schema.ts
+AG-10/codegen
+任何Agent不得手工编辑
+release manifest
+AG-51
+领域Agent提供部署依赖与回滚
+
+A11. Agent工作状态、交接协议与阻塞升级
+状态
+含义
+进入条件
+退出责任
+Proposed
+候选任务
+需求或问题已识别
+AG-00完成筛选
+Refining
+正在补齐任务包
+目标存在但输入/验收不全
+契约Owner补齐
+Ready
+可被Agent领取
+依赖满足、路径和验收明确
+AG-00分配
+Claimed
+已分配未开工
+Agent确认上下文与能力
+执行Agent开始
+In Progress
+正在实施
+工作区建立、无未声明阻塞
+执行Agent提交
+Blocked
+外部依赖阻塞
+缺少决策、契约、环境或权限
+AG-00升级处理
+Review
+实现自检完成
+代码、测试和交接材料齐全
+Owner/契约Agent审查
+Validation
+独立验证中
+Review通过
+验证Agent出具证据
+Integrated
+已合并集成环境
+验证通过且依赖版本一致
+AG-50场景测试
+Done
+场景与追踪闭环
+场景、回归、文档均通过
+AG-00关闭
+Rejected
+实现不符合基线
+越界、测试失败、契约偏差
+退回并记录原因
+
+标准交接包： 1. 完成摘要与任务包ID 2. 修改文件清单 3. 契约版本与假设 4. 测试命令、结果和证据路径 5. 数据迁移/兼容/开关/回滚说明 6. 已知限制与未解决问题 7. 下游Agent必须读取的接口和注意事项 8. 需求追踪矩阵更新位置
+
+阻塞升级时限：涉及共享契约、生产安全、数据库权限、外部系统或不可逆迁移的阻塞应立即升级；普通实现问题可由领域Owner在同一工作波次内解决。总控不得让Agent基于猜测继续制造下游返工。
+
+A12. 领域Agent工作包与交付边界
+工作流
+核心任务包
+主要输入
+主要输出
+独立验证
+需求与架构
+需求原子化、追踪、术语、ADR、能力地图
+全生命周期方案、历史勘误
+需求基线、ADR、影响矩阵
+AG-41
+数据库与安全
+探针、36新+12改造、RLS、审计、迁移、回滚
+C1/C4、现有Schema
+DDL批次、迁移、codegen、报告
+AG-40
+后端基础
+请求级事务、GUC、审计、错误、日志、幂等、状态机库
+C2/C4/C6
+Shared模块与测试工具
+AG-40/42
+组织人员
+组织树、人员、角色、技能、证书、班组
+C1/C2/C4
+API、服务、页面数据
+AG-42/41
+设备外骨骼
+设备档案、搜索配置、绑定、健康、风险、兼容
+C1-C5
+设备/穿戴服务与页面
+AG-43/44
+空间数字孪生
+空间树、模型绑定、L0-L4、世界状态、回放
+模型与世界契约
+3D场景、实体详情、回放
+AG-44/46
+工位模型
+工位、能力、设备/人员/技能关系、重建资产
+空间与模型契约
+工位/模型服务与页面
+AG-42/44
+任务调度资源
+任务、步骤、依赖、排班、预占、领用、执行
+C1-C5
+运营闭环服务和页面
+AG-43/46
+告警审批控制
+告警、升级、审批、控制、指令、回执、撤销
+状态机与安全契约
+高风险闭环
+AG-40/43
+AI决策
+A1/A2/A3、建议、方案、解释、不确定性、反馈
+世界快照、规则、AI契约
+AI中心和评估
+AG-45
+数据治理集成
+数据源、配置、质量、保留、外部系统适配
+数据/安全/运行契约
+适配器、质量与运维
+AG-40/46
+前端与体验
+框架、11中心、设计系统、可视化、权限与状态
+C2/C5、Mock
+页面、组件、E2E
+AG-44
+发布与移交
+环境、CI/CD、监控、备份、切换、培训、文档
+所有已验证输出
+版本包、运行手册、培训
+AG-46/50
+
+A13. 独立验证Agent体系与质量门禁
+验证Agent
+验证对象
+方法
+阻断条件
+数据库编译与安全
+DDL、函数、RLS、权限、迁移、回滚
+临时库真实执行、角色模拟、越权与并发
+编译失败、越权、不可回滚、数据不一致
+API契约一致性
+OpenAPI、DTO、错误码、分页、幂等
+契约测试、Schema diff、Mock与实现对照
+未声明破坏性变化、响应不一致
+状态机与并发
+任务/审批/告警/控制、预占、重试
+模型遍历、属性测试、双事务竞争
+非法转换可达、超卖、终态回退
+UI回归与可用性
+路由、页面、空错态、3D交互、权限
+E2E、视觉快照、键盘/尺寸检查
+页面崩溃、关键路径中断、越权显示
+AI安全与质量
+输出Schema、事实引用、解释、不确定性、注入
+固定评测集、对抗提示、人工抽查
+自动下发、敏感泄露、不可解析结果
+性能与可靠性
+SLO、容量、故障、恢复、资源和日志
+压测、长稳、故障注入、恢复演练
+关键SLO不达标、恢复不可用
+需求追踪与遗漏
+需求—任务—代码—测试—验收
+矩阵双向检查、孤立项扫描
+关键需求无实现或无测试
+
+门禁
+必须通过的证据
+批准者
+Ready门禁
+任务包完整、依赖Ready、契约版本明确、路径无冲突
+AG-00 + 契约Owner
+Review门禁
+实现自检、测试、lint/typecheck、交接包、追踪更新
+领域Owner
+Validation门禁
+独立测试报告、差异为零、无P0/P1缺陷
+验证Agent
+Integration门禁
+依赖版本一致、迁移和种子数据可执行、场景可串联
+AG-50
+Release门禁
+性能/安全/回滚/监控/培训/变更批准
+AG-51 + 人类Owner
+Done门禁
+端到端场景通过、文档归档、价值和验收证据齐全
+AG-00 + 验收Owner
+
+A14. 端到端场景包：项目完成度的主要度量单位
+场景包
+主流程
+参与Agent
+关键验收
+SP-01 人员外骨骼安全
+创建组织/人员→分配技能角色→绑定外骨骼→接收负载→地图显示→风险告警→处置审计
+AG-12/13/14/18/31/32
+跨组织拒绝；排他兼容；风险证据；人员隐私
+SP-02 任务调度运营
+创建任务→匹配人员设备空间工具物料→预占→审批→派发→执行→异常→恢复→完成→回放
+AG-16/17/18/14/33
+不超卖；非法状态拒绝；终态不可取消；回放完整
+SP-03 AI辅助决策
+人工触发→读取世界快照→生成建议→模拟方案→解释风险→人工审核→转正式计划
+AG-20/16/18/35
+无预生成假结果；结构化输出；人工确认；不自动控制
+SP-04 设备控制
+创建请求→风险判断→审批→逻辑指令→网关→回执→失败重试→撤销/超时→审计
+AG-19/18/13/34
+单设备模式；最新尝试聚合；终态不可变；高风险审计
+SP-05 数字世界回放
+快照→增量游标→L0-L4→实体详情→时间轴→历史回放→隐私脱敏
+AG-14/21/31
+游标过期410；人员30天；设备90天；500实体帧率
+SP-06 多组织隔离
+集团/基地/工厂→下级访问→上级配置继承→跨组织拒绝→全局公开配置
+AG-06/10/11/12/40
+RLS与Service双层；NULL全局记录规则；审计隔离
+SP-07 数据源与审计
+配置数据源→加密凭证→同步健康→业务变更→审计脱敏→哈希链校验
+AG-21/06/10/40
+AES-GCM密钥版本；无敏感值；链连续与重算
+SP-08 发布回滚
+迁移演练→灰度→监控→故障→回滚→数据一致性→重新发布
+AG-51/40/46/50
+回滚时间、数据一致、可观测、变更审计
+
+A15. 分期编排计划与Agent并行策略
+期次
+编排重点
+主并行组
+总控关注点
+完成定义
+Phase 0
+把文档转为任务图与契约
+需求/架构/六契约/环境/测试设计
+消除口径冲突、冻结SSOT、设置Owner
+所有高优任务Ready，关键探针方案明确
+Phase 1
+数据库与主数据底座
+DDL+Shared+前端Shell+组织/设备/空间
+关键路径、Schema冲突、GUC/RLS、迁移
+SP-01、SP-05、SP-06基础通过
+Phase 2
+运营业务闭环
+任务资源+告警审批+控制+页面
+状态机一致、事务并发、接口集成
+SP-02、SP-04通过
+Phase 3
+智能与现实集成
+AI+模型重建+网关+外部适配
+AI安全、外部依赖、场景数据质量
+SP-03及真实设备受控试点
+Phase 4
+规模化平台
+高可用+数据资产+多工厂+开放生态
+容量、配置模板、Agent权限、兼容
+复制工厂场景与SLO通过
+Phase 5
+稳态与结项
+可靠性+文档培训+收益+资产
+未结项、知识依赖、运维接管
+SP-08、最终验收和移交完成
+
+A16. ChatGPT Work 开工30天编排建议
+窗口
+总控动作
+并行任务
+输出/门禁
+第1-2天
+建立制品注册表、Agent登记册、仓库路径Owner和任务状态板
+需求差异扫描、现有代码/Schema盘点
+SSOT目录、风险清单、基线缺口
+第3-5天
+冻结C1-C6 v1，生成依赖图
+OpenAPI骨架、状态机YAML、DDL探针、UI路由图
+契约Ready门禁
+第6-8天
+下发W1任务包
+临时库探针、Shared后端、前端Shell、测试框架
+环境决策和可运行骨架
+第9-12天
+拓扑排序W2任务
+组织/设备/空间/数据治理API和页面Mock
+主数据域集成候选
+第13-16天
+启动独立验证
+DDL/RLS/契约/UI骨架验证、迁移演练
+第一轮验证报告
+第17-21天
+修复并完成基础场景
+SP-01、SP-05、SP-06基础串联
+Phase 1 Alpha
+第22-26天
+并行W3骨架
+任务/资源/告警/审批/控制状态机服务
+运营闭环API候选
+第27-30天
+集成复盘和下月计划
+回归、性能基线、文档同步、风险清理
+月度集成版本与下一波任务图
+
+节奏说明：以上是Agent编排节奏，不等同于生产上线工期。ChatGPT Work可并行生成大量代码，但真实环境探针、平台授权、现场接口、数据迁移、用户验收和生产观察仍必须按门禁逐步完成。
+
+A17. 多Agent进度、质量与协同度量
+指标组
+指标
+计算/判定
+用途
+流动效率
+Ready到Done周期、阻塞时间、并行度、返工率
+按任务包与波次统计
+识别关键路径和上下文问题
+契约稳定
+契约变更次数、破坏性变化、差异未关闭数
+Schema/OpenAPI/state diff
+避免并行返工
+质量
+独立验证一次通过率、缺陷逃逸、回归失败率
+验证报告与发布后缺陷
+评价任务包和Agent输出质量
+覆盖
+需求追踪覆盖、API契约覆盖、状态转换覆盖
+矩阵和自动测试
+防止功能遗漏
+协同
+越界修改、文件冲突、重复实现、交接缺失
+仓库与任务日志
+优化Agent所有权
+安全
+越权用例、敏感泄露、审计断链、生产例外
+安全测试与审计
+上线硬门禁
+场景
+场景包完成率、闭环失败点、平均恢复时间
+端到端测试
+衡量真实产品完成度
+运行
+SLO、错误率、性能、资源、恢复和回滚
+可观测与压测
+决定发布与扩容
+
+建议阈值
+目标
+关键契约未批准变更
+0
+共享文件越权修改
+0
+P0/P1开放缺陷
+上线前0
+关键需求无测试
+0
+端到端核心场景包
+当前期全部通过
+回滚方案缺失的可部署任务
+0
+独立验证一次通过率
+持续提升，低于70%需复盘任务包质量
+阻塞超过一个工作波次
+必须升级总控
+
+A18. Agent上下文、提示词、记忆与成本治理
+治理项
+执行规则
+失败风险
+最小上下文包
+只加载任务、直接依赖、契约切片、相关代码和最近ADR。
+上下文过载、旧需求污染、成本增加
+版本声明
+每次任务开头明确使用的需求/Schema/API/状态机版本。
+基于旧版实现
+提示词模板
+按角色固定目标、边界、输出和自检清单；禁止泛化任务。
+Agent自主假设过多
+中间产物
+大规模分析写入文件，不依赖聊天历史。
+信息丢失与不可追溯
+决策记忆
+重要取舍写ADR；临时推理不作为规范。
+同一问题反复讨论
+摘要压缩
+总控定期生成当前状态摘要和下一波上下文包。
+跨波次信息断裂
+成本分级
+简单机械任务由轻量Agent；架构、安全和复杂调试由强推理Agent。
+资源浪费或关键问题处理不足
+失败重试
+重试前读取失败证据并调整任务包，不原样重复。
+循环失败
+
+A19. 多Agent特有风险与恢复机制
+风险
+触发信号
+预防
+恢复
+契约分叉
+不同Agent引用不同字段/状态/接口
+SSOT、版本声明、差异门禁
+暂停受影响任务，契约Owner统一并触发重验证
+文件争用
+多个Agent修改同一共享文件
+目录Owner、任务包路径、拓扑合并
+撤销非Owner修改，由集成Agent重放
+重复实现
+同一功能出现两套Service/组件
+任务图去重、搜索现有能力
+选定权威实现，迁移测试后删除重复
+静默删需求
+实现以简化为由省略能力
+追踪矩阵、场景包
+补充任务并标记遗漏原因
+验证同源偏差
+实现Agent自测后直接完成
+独立验证Agent
+退回Validation并补独立证据
+上下文陈旧
+Agent基于历史文档开发
+版本门禁和上下文包
+重新生成任务上下文并评估返工
+权限扩大
+为测试方便放宽RLS/角色/控制
+安全契约Owner、生产例外审批
+立即阻断、回滚权限、审计影响
+虚构执行结果
+Agent声称现场/生产已验证但无证据
+证据路径和人工签署要求
+状态改为Pending External Verification
+集成雪崩
+大量并行任务同时合并
+小批波次、集成分支、场景冒烟
+回退到最近绿色版本，分批重合并
+无限文档迭代
+每次问题都新增一版规范
+代码与测试优先、ADR替代大文档
+冻结基线，问题直接落任务与测试
+
+A20. 总控Agent运行机制与人机治理
+节奏
+总控Agent动作
+人类Owner动作
+输出
+每个任务分配前
+检查Ready、依赖、路径、契约和验证Agent
+仅处理重大范围/安全例外
+可执行任务包
+每个工作波次
+汇总进度、阻塞、冲突、测试和风险
+确认优先级和外部依赖
+波次状态报告
+每次集成
+执行契约/Schema/API/测试/追踪门禁
+批准重大兼容策略
+绿色集成版本
+阶段门禁
+准备验收证据、未结项和风险
+签署进入下一阶段或整改
+门禁决议
+生产上线
+准备迁移、监控、回滚和授权清单
+明确授权执行和回滚阈值
+发布记录
+项目结项
+汇总资产、价值、文档、遗留和路线图
+最终验收与责任移交
+结项包
+
+决策分层：Agent可自主完成可逆的软件工程任务；涉及范围冻结、生产数据、真实设备控制、安全例外、密钥、合同、采购、用户隐私例外和最终验收时，必须升级人类Owner。
+
+A21. ChatGPT Work 多Agent交付物结构
+交付包
+内容
+完成责任
+编排包
+Agent登记册、任务图、任务包、Owner清单、门禁和度量
+AG-00
+产品契约包
+需求、术语、能力地图、追踪矩阵、验收场景
+AG-01/41
+架构契约包
+架构、ADR、数据/API/状态/安全/UI/运行契约
+AG-02-06/30/51
+数据库包
+探针、DDL、迁移、回滚、codegen、RLS和验证报告
+AG-10/40
+应用代码包
+后端、前端、3D、AI、集成、配置和测试
+领域Agent
+测试证据包
+单元、契约、状态、权限、并发、E2E、性能、安全
+AG-40-46
+场景验收包
+场景数据、步骤、结果、缺陷、签署
+AG-50/41
+发布运维包
+CI/CD、环境、监控、备份、切换、回滚、SLA
+AG-51/46
+文档培训包
+管理员/用户/开发/运维手册、培训和知识库
+AG-52
+结项资产包
+版本、许可证、账号、证书、模型、接口、风险、路线图
+AG-00/51/52
+
+A22. 多Agent执行完成定义与正式开工声明
+层级
+完成定义
+单个任务包Done
+实现、测试、独立验证、交接、追踪和文档全部完成；无越界修改。
+领域Done
+领域任务全部完成，API/数据/状态契约一致，相关页面和回归通过。
+场景包Done
+端到端主流程、异常、权限、并发、审计和回滚均通过。
+阶段Done
+本期所有场景包、SLO、迁移、培训、门禁和验收签署完成。
+项目Done
+多期目标、生产稳定、价值验收、运维接管、资产归档和最终结项完成。
+
+正式判断：EWOH具备采用ChatGPT Work多Agent模式实施的条件。项目不应再以“范围大”为主要风险进行收缩，而应立即把本方案转化为任务图、Agent工作包、共享契约和自动验证流水线，并从环境探针和契约冻结开始执行。
+
+
+附录N：标准任务包模板
+区块
+模板字段
+身份
+package_id、title、version、owner_agent、validator_agents、parent、scenario_package
+目标
+business_goal、user_value、non_goals、definition_of_done
+输入
+requirements、contracts、ADRs、dependencies、sample_data
+边界
+allowed_paths、forbidden_paths、allowed_tools、production_restrictions
+实现
+functional_requirements、transactions、security、audit、performance、compatibility
+验证
+unit_tests、integration_tests、contract_tests、negative_tests、evidence_paths
+交付
+changed_files、migration、rollback、docs、handoff、open_issues
+
+附录O：Agent启动提示词模板
+你是【Agent名称/ID】。 目标：完成任务包【package_id】中定义的可验证结果。 必须先读取：任务包、指定契约版本、依赖输出、最近ADR。 允许修改：仅限 allowed_paths。 禁止修改：forbidden_paths、共享契约、生产环境。 执行顺序： 1. 验证依赖和当前基线； 2. 输出简短实施计划； 3. 在授权范围内实现； 4. 运行任务包规定的测试； 5. 自检契约、安全、组织隔离、审计和回滚； 6. 生成标准交接包。 遇到契约冲突、权限不明、生产不可逆操作或外部证据缺失时，立即标记Blocked，不得猜测。
+
+附录P：标准交接与验证记录
+字段
+填写要求
+任务与版本
+任务包ID、分支/提交、契约版本、构建号
+实现摘要
+完成的能力、关键决策、与原计划差异
+文件清单
+新增/修改/删除文件及Owner
+测试证据
+命令、结果、报告路径、未运行原因
+安全与数据
+org_id、RLS、审计、敏感数据、迁移影响
+兼容与回滚
+向后兼容、Feature Flag、回滚步骤、数据恢复
+未解决项
+限制、风险、外部依赖、建议后续任务
+下游交接
+消费者Agent、接口示例、种子数据、注意事项
+验证结论
+Pass/Conditional/Fail、缺陷和复测结果
+
+附录Q：Agent冲突解决规则
+冲突类型
+优先裁决者
+裁决依据
+处理
+需求冲突
+AG-01 + 人类产品Owner
+已签署需求基线和变更单
+更新追踪并重发任务
+架构冲突
+AG-02
+ADR、NFR、安全与长期成本
+形成ADR并触发影响分析
+数据冲突
+AG-03
+schema manifest、迁移和兼容性
+唯一字段口径
+接口冲突
+AG-04
+OpenAPI版本和消费者影响
+兼容版本或正式破坏性变更
+状态冲突
+AG-05
+状态机不变量和业务规则
+模型测试后裁决
+权限冲突
+AG-06 + 人类安全Owner
+最小权限和安全边界
+默认拒绝，例外需批准
+文件冲突
+目录Owner + AG-50
+所有权、依赖顺序、测试证据
+回退非Owner修改并重放
+计划冲突
+AG-00
+关键路径、价值、风险、资源
+调整波次和优先级
+
+附录R：多Agent开工检查表
+检查域
+必须满足
+产品与范围
+全生命周期方案、需求基线、术语和能力地图已登记
+契约
+C1-C6 Owner明确，版本v1可读取
+任务图
+关键路径、波次、场景包和依赖无环
+Agent
+Agent ID、角色、路径Owner和验证者已配置
+仓库
+分支、CODEOWNERS、生成文件和冲突规则已设置
+环境
+数据库探针、后端角色、前端/测试环境计划明确
+安全
+生产授权、密钥、RLS、审计和外部访问边界明确
+质量
+测试框架、报告位置、门禁和缺陷等级明确
+交付
+文档、迁移、发布、回滚、培训和验收模板就绪
+人类决策
+Owner、重大例外、上线和最终验收责任人明确
+
+
+第三篇：产品全生命周期实施基线
+
+	•	1. 执行摘要与项目结论
+	•	2. 产品定位、目标与边界
+	•	3. 用户、角色与权限
+	•	4. 业务架构与核心对象
+	•	5. 总体技术架构
+	•	6. 十一个产品能力中心
+	•	7. 核心业务流程与状态机
+	•	8. 数字世界与3D数字孪生
+	•	9. AI决策与轻量推演
+	•	10. 设备、人员与外骨骼实施规格
+	•	11. 数据、回放、隐私与审计
+	•	12. 数据库与DDL实施方案
+	•	13. 后端实施方案
+	•	14. 前端实施方案
+	•	15. API与集成规范
+	•	16. 安全与权限实施
+	•	17. 数据迁移与兼容
+	•	18. 项目生命周期、治理与阶段门禁
+	•	19. 多期产品路线图
+	•	20. 各期详细实施方案
+	•	21. 工作分解、计划与里程碑
+	•	22. 组织、资源与采购计划
+	•	23. 质量、测试与验收
+	•	24. 发布、切换、运营与服务管理
+	•	25. 培训、变革与知识转移
+	•	26. 项目完结与交付关闭
+	•	27. 风险、依赖与变更控制
+	•	28. 价值实现与持续演进
+	•	29. 最终交付物与配置管理
+	•	附录A-M
+
+1. 执行摘要与项目结论
+
+
+目标层
+一期结果
+产品层
+11个能力中心、角色化导航、指挥中心与数字世界边界清晰。
+业务层
+组织—空间—设备—人员—外骨骼—任务—告警—审批—控制形成闭环。
+数据层
+org_id 多租户隔离、统一审计列、RLS、增量游标、回放与保留策略落地。
+技术层
+NestJS + Drizzle/PostgreSQL；React + React Query + Zustand；React Three Fiber/Drei/Three.js。
+实施层
+13项环境探针、DDL分批执行、核心基础设施、模块开发、前端重构、8类临时库测试。
+冻结层
+测试全部通过后宣布一期物理 DDL 冻结和产品一期可交付。
+
+开工门禁：开发可以开始，但数据库变更必须先完成环境探针和逻辑能力—物理表映射；DDL不得直接在生产库一次性执行。
+
+2. 产品定位、目标与边界
+2.1 产品定位
+
+	•	组织优先：所有实体、权限、数据和业务流程首先归属组织，再关联空间和资源。
+	•	真实世界持续数据化：摄像头、UWB、外骨骼遥测、设备、环境和任务状态进入统一世界状态。
+	•	数字世界秒级近实时映射：在无 WebSocket/SSE 条件下采用统一快照与增量游标接口。
+	•	游戏化但不娱乐化：提供层级、角色、交互语法、资源编排、推演、回放和双向同步。
+	•	人机协同：AI自动发现异常，但建议和方案必须由人主动触发、编辑、审批和采用。
+	•	安全优先：任何高风险下发、人员撤离和设备控制都有结构化规则、二次确认、审批和审计。
+2.2 一期成功标准
+	•	用户可从 L0 集团/园区逐级下钻到 L4 人员与外骨骼，每层都有真实数据和可交互实体。
+	•	统一世界接口完成 snapshot → cursor → delta → cursor expired → snapshot rebuild 的一致性闭环。
+	•	设备中心支持19维度搜索、12类配置、三类绑定和完整历史审计。
+	•	任务支持多人员、多设备、多步骤、步骤级分配、依赖、资源预占、物料/工具与执行日志。
+	•	AI能力明确分为 A1异常识别、A2建议、A3方案生成；自动审批、自动下发和自动调度不启用。
+	•	告警、审批、控制请求均具备正式状态机、操作记录、超时/重试和审计。
+	•	物理DDL、RLS、权限、审计链和并发预占通过临时库自动化测试。
+2.3 一期范围与暂不开发
+范围
+一期处理
+真实3D场景
+支持程序化几何体、手工上传GLB/GLTF、外部重建任务状态；自动GPU重建作为外部服务集成。
+调度推演
+一期为规则型轻量推演：冲突、时间窗、资源占用、预计完成时间、基础风险。
+现实设备控制
+本系统生成控制请求与指令记录，由工业网关执行；不直接绕过网关控制设备。
+自动调度
+不启用。AI不自动审批、不自动下发、不自动调度。
+完整仿真
+产线节拍、物流路径、离散事件仿真后续接入专用仿真服务。
+外部系统
+MES、ERP、WMS、HR、门禁、UWB、视频平台按接口预留；一期可使用本系统数据或模拟数据。
+移动端
+一期仅支持工业PC和大屏，不支持移动端。
+
+2.4 多期建设目标
+期次
+建设主题
+核心结果
+阶段定位
+准备期（Phase 0）
+项目启动与基线确认
+项目章程、治理机制、需求基线、现状评估、总体架构和分期预算。
+立项与可行性
+一期（Phase 1）
+组织化数字底座
+多租户数据、组织与空间、设备/人员/外骨骼、基础数字世界、DDL和安全门禁。
+MVP与技术底座
+二期（Phase 2）
+生产运营闭环
+任务、排班、资源预占、告警、审批、控制请求、回放和审计闭环。
+可运营版本
+三期（Phase 3）
+智能编排与现实集成
+A2/A3建议和方案、规则推演、真实3D重建、UWB/视频/工业网关/MES/WMS集成。
+智能增强版本
+四期（Phase 4）
+规模化与生态
+多工厂推广、性能容量、数据质量与血缘、插件/Agent、移动场景和开放平台。
+规模化产品
+五期（Phase 5）
+稳态运营与结项
+稳定性提升、收益验证、知识转移、运维接管、合同与资产关闭、后续路线图。
+运营移交与项目关闭
+
+分期原则：各期均须经过需求基线、设计评审、开发完成、系统测试、用户验收、试点上线和阶段复盘。后续期次不得突破安全边界：AI建议与现实控制始终保持人工确认、审批和可追溯。
+
+3. 用户、角色与权限
+角色
+核心职责
+主要页面
+高风险权限
+全局管理者
+组织、空间、系统配置、跨工厂汇总和模型发布。
+指挥中心、组织与空间、模型、数据资产、系统管理
+全局配置、跨组织查询、紧急策略管理
+调度员
+任务编排、资源分配、AI建议/方案、推演、下发与执行跟踪。
+数字世界、生产调度、AI决策、设备、告警
+任务下发、方案提交、控制请求发起
+车间负责人
+本车间资源和任务管理、异常处置和方案审核。
+数字世界、生产调度、人员、告警
+任务审批、异常恢复
+安全管理员
+人员健康与负载、风险告警、紧急跳过审批、事故证据。
+指挥中心、人员与外骨骼、告警、审计
+敏感健康详情、bypassed审批、风险处置
+设备运维
+设备档案、配置、生命周期、绑定、模型和数据接入。
+设备中心、模型管理、数据资产
+设备参数变更、维护状态
+一线执行人
+接收任务、开始/暂停/完成步骤、异常上报。
+个人任务入口、个人风险与告警
+无设备高风险控制权限
+
+3.1 数据范围
+	•	业务数据范围为当前组织及授权下级组织；集团/基地角色可访问授权下属范围。
+	•	配置继承为当前组织 → 最近上级 → 更高上级 → 全局公开配置 → 代码默认值。
+	•	人员精确负载、疲劳、生理数据和定位属于敏感数据，普通角色仅查看高/中/低粗粒度。
+	•	人员详情查询、健康数据查看、控制和审批跳过都写入高风险审计。
+	•	所有外部最终用户通过 NestJS API 访问，不能直接获得数据库连接或执行任意SQL/RPC。
+4. 业务架构与核心对象
+4.1 组织与空间双层结构
+层面
+层级
+说明
+组织层
+group → base → factory
+集团、基地、工厂，决定数据归属、权限和审批链。
+空间层
+site → building → floor → workshop → zone → route / restricted_zone → workstation
+空间实体仅描述场所，不包含人员或设备。一个factory组织可关联一个或多个site。
+
+唯一事实来源：固定设备位置来自设备—空间绑定；移动设备和人员实时位置来自world_state/增量世界状态；设备表和人员表不得再保存第二套实时位置事实。
+
+4.2 核心对象分类
+对象
+权威来源/表族
+关键关系
+组织
+organization
+组织层级、数据范围、配置继承、审批层级。
+空间
+spatial_entity / spatial_relation / hierarchy
+站点、建筑、楼层、车间、区域、路线、工位。
+设备
+device / capability / telemetry
+外骨骼、摄像头、UWB、产线、机器、机器人、传感器。
+人员
+person / skill / role
+人员档案、岗位、技能、资质、班组或角色关系。
+绑定
+device_person / device_space / device_device 或 resource_binding
+记录当前关系和历史，不覆盖原实体。
+任务与计划
+task / schedule_plan / schedule_task / assignment
+从建议与方案转为正式生产任务并跟踪执行。
+资源
+resource_preorder/reservation / material reservation
+人员、设备、空间、工具排他预占；物料数量型预占。
+告警与事件
+event/alert / chain / rule / action
+异常、风险、告警、处置、升级、关闭、复盘。
+AI决策
+AI session/suggestion + schedule_plan
+数据快照、建议、方案、版本、风险、不确定性和采用记录。
+控制
+control_request / command / result
+业务请求、通信尝试、执行回执和状态聚合。
+世界状态
+world_state / snapshot / delta_log / trajectory
+近实时状态、快照、增量、轨迹和回放。
+审计与配置
+audit_log / system_config
+完整性保护、版本化配置、继承与公开范围。
+
+5. 总体技术架构
+浏览器 / 指挥大屏     ↓ HTTPS（只访问 NestJS API） React 前端：React Query + Zustand + R3F/Drei/Three.js     ↓ REST / 短轮询 / 统一游标 NestJS：Controller → Service → 规则/审批/审计/组织上下文     ↓ 同一事务与同一连接 PostgreSQL / Drizzle：org_id + RLS + 审计列 + 状态机约束     ↓ 外部适配 UWB / 外骨骼平台 / 视频平台 / 工业网关 / AI能力 / FileService / 3D重建服务
+
+层
+主要技术
+实施要点
+前端
+React、React Query、Zustand、React Three Fiber、Drei、Three.js
+11个能力中心；3D/2D降级；统一API命名空间；角色化导航。
+后端
+NestJS、Drizzle ORM、CapabilityService、FileService
+模块化Service；组织上下文拦截器；审计服务；状态机和规则引擎。
+数据库
+PostgreSQL、RLS、IDENTITY、jsonb、advisory lock
+36 CREATE +12 ALTER；无物理FK；逻辑引用由Service维护；软删除。
+近实时
+短轮询、快照、增量游标、ETag
+3-5秒更新；后台暂停；抖动与退避；断线补偿；410游标过期重建。
+文件与模型
+FileService/dataloom、GLB/GLTF、Draco
+数据库仅保存downloadURL；LOD0/LOD1分级加载。
+AI
+现有brain_suggestion能力与服务端编排
+A1自动识别；A2/A3人工触发；结构化输出校验；不可直接执行。
+
+6. 十一个产品能力中心
+能力中心
+路由
+可见角色
+一期规格
+指挥中心
+/command-center
+全局管理者、调度员、安全管理员
+KPI、简化3D态势、重大告警、任务概览、人员负荷、快速导航。禁止3D编辑和推演。
+数字世界
+/digital-world
+调度员、车间负责人
+全屏3D、L0-L4、实体详情、框选、热力图、轨迹、调度、推演、回放。
+生产调度中心
+/scheduling
+调度员、车间负责人
+任务看板、资源调配、冲突检查、方案推演、审批、下发、执行跟踪。
+AI决策中心
+/ai-decision
+调度员、全局管理者
+手动触发建议与方案、方案对比、多版本编辑、风险与不确定性、采用记录。
+设备中心
+/devices
+设备运维、调度员
+19维度搜索、12类配置、生命周期/运行/健康状态、绑定和关系视图。
+人员与外骨骼中心
+/personnel
+车间负责人、安全管理员
+档案、技能资质、岗位/班组、外骨骼绑定、负载疲劳、轨迹与任务历史。
+风险与告警中心
+/alerts
+安全管理员、调度员
+风险汇总、告警确认/分派/处置/升级/关闭/重开、SLA、复盘。
+组织与空间中心
+/organization
+全局管理者
+组织树、空间树、实体关系图谱、坐标、模型节点和组织—空间关联。
+模型管理中心
+/model-management
+全局管理者、设备运维
+采集任务、外部重建、语义识别、人工校验、发布、版本和差异。
+数据资产中心
+/data-assets
+全局管理者
+数据源、健康、质量、延迟、目录、只读血缘视图和接入凭证。
+系统管理
+/system
+全局管理者、安全管理员
+用户角色、权限、配置、阈值、规则、通知、审计、接口与三级停止。
+
+6.1 指挥中心
+
+	•	核心指标：设备总数、在线率、活跃告警、执行中任务、风险人员、资源利用率。
+	•	点击简化3D缩略图跳转数字世界对应组织/区域。
+	•	告警和任务摘要支持快速进入详情。
+	•	不提供框选、拖拽、模型编辑和推演。
+6.2 数字世界
+
+	•	四种模式：观察、调度、推演、回放。
+	•	实体点击显示设备/人员/空间/任务详情。
+	•	调度模式支持框选、拖拽、批量分配和规则校验。
+	•	推演结果使用is_simulation/shadow标记，提交后进入审批。
+6.3 生产调度中心
+
+	•	任务按草稿、待确认、待审批、待下发、执行、异常、完成分类。
+	•	支持步骤级人员、设备、空间、物料、工具分配。
+	•	资源分配执行硬约束、软约束和建议约束。
+	•	执行阶段显示接收、开始、暂停、异常、恢复和完成日志。
+6.4 AI决策中心
+
+	•	页面初始化不生成建议或方案。
+	•	用户点击“生成AI建议”触发A2；选择方向后点击“生成调度方案”触发A3。
+	•	输出必须包含问题、数据范围、完整性、依据、建议、风险、不确定性、人工确认和失效条件。
+	•	所有方案可编辑、对比、保存版本和提交审批。
+6.5 设备中心
+
+	•	列表与详情分离，搜索支持分页、组合筛选、空状态和导出。
+	•	配置按12类折叠面板展示，敏感凭证不明文显示。
+	•	设备空间位置只从绑定/世界状态读取。
+	•	worker_name仅兼容保留，新代码禁止读写。
+6.6 人员与外骨骼中心
+
+	•	人员详情包含档案、岗位、技能、资质、当前任务、绑定设备、负载疲劳和告警。
+	•	非安全管理员仅查看粗粒度健康风险。
+	•	绑定记录必须保留开始、结束、原因、操作者和版本。
+	•	全身、上肢、下肢和定位标签按排他矩阵校验。
+6.7 风险与告警中心
+
+	•	告警支持确认、处置、升级、关闭、重开和误报。
+	•	状态与升级等级分离。
+	•	每次操作记录操作者、时间、说明和证据。
+	•	告警可手动触发AI分析，并在复盘中关联任务与控制记录。
+6.8 组织与空间中心
+
+	•	组织层与空间层概念严格分离。
+	•	支持组织—站点—设备—人员—任务关系追溯。
+	•	空间坐标采用米制世界坐标；支持x/y/z、roll/pitch/yaw、边界框和模型节点。
+6.9 模型管理中心
+
+	•	model_asset是3D场景资产唯一权威来源；model_registry仅用于AI/算法模型。
+	•	重建任务为外部异步任务，前端轮询进度。
+	•	模型需经过语义匹配、人工校验和发布后才进入数字世界。
+6.10 数据资产中心
+
+	•	一期数据质量和血缘为只读聚合视图。
+	•	数据源展示健康状态、质量评分、最近同步、延迟和权限。
+	•	auth_config采用AES-256-GCM和版本化密钥环。
+6.11 系统管理
+
+	•	系统配置支持组织继承、版本、唯一生效和全局公开标记。
+	•	审计日志提供查询，不提供直接修改和删除。
+	•	三级停止：调度冻结、指令冻结、现实设备急停标记；Web不直接代替物理急停。
+7. 核心业务流程与状态机
+7.1 端到端决策闭环
+现实数据采集 → 世界状态与异常识别（A1） → 用户主动生成AI建议（A2） → 用户主动生成结构化方案（A3） → 人工编辑与规则型推演 → 审批/紧急跳过（高风险审计） → 转为生产任务或控制请求 → 执行反馈、告警、回放与复盘 → 数据沉淀与规则/模型迭代
+
+7.2 任务状态机
+当前状态
+目标状态
+角色
+前置条件
+draft
+pending_confirm
+创建人
+必填字段完整
+pending_confirm
+pending_approval
+调度员
+规则判断需要审批
+pending_confirm
+pending_dispatch
+调度员
+规则判断无需审批
+pending_approval
+pending_dispatch
+审批人
+审批通过或bypassed
+pending_approval
+draft
+审批人
+驳回并填写原因
+pending_dispatch
+dispatched
+调度员
+资源已预占
+dispatched
+received
+执行人
+接受任务
+received
+executing
+执行人
+开始执行
+executing
+paused
+执行人/调度员
+填写暂停原因
+executing
+exception
+系统/执行人
+异常上报
+paused
+executing
+执行人
+恢复
+exception
+executing
+调度员
+异常解决
+executing
+completed
+执行人
+全部步骤完成
+任一非终态
+cancelled
+有权限角色
+记录取消原因
+
+7.3 审批状态机
+当前
+目标
+条件/说明
+实例 pending
+approved
+全部步骤通过
+实例 pending
+rejected
+任一步骤驳回
+实例 pending
+cancelled
+发起人撤回
+实例 pending
+expired
+超过deadline且未紧急跳过
+实例 pending
+bypassed
+高权限管理员紧急跳过，等同approved但高风险审计
+步骤 pending
+delegated
+委托他人并创建新步骤
+步骤 pending
+skipped
+高权限管理员跳过并记录依据
+步骤 pending
+expired
+步骤超时
+
+7.4 告警状态机
+当前
+目标
+条件/说明
+open
+acknowledged
+确认告警
+acknowledged
+processing
+开始处置
+processing
+closed
+处置完成
+closed
+reopened
+安全管理员重开
+reopened
+acknowledged
+确认重开
+reopened
+processing
+直接处置
+
+7.5 方案状态机
+当前
+目标
+条件/说明
+shadow
+simulating
+发起推演
+simulating
+shadow
+放弃推演
+simulating
+pending_review
+推演完成提交审核
+pending_review
+approved
+审批通过
+pending_review
+shadow
+驳回修改
+approved
+dispatched
+转为生产任务
+approved
+expired
+超过有效期
+任意
+archived
+归档
+
+7.6 控制请求状态机
+当前
+目标
+条件
+created
+pending_approval
+需要审批
+created
+pending_gateway
+无需审批
+pending_approval
+approved
+审批通过
+approved
+pending_gateway
+生成并发送逻辑指令
+pending_gateway
+gateway_received
+所有当前尝试已被网关接收
+gateway_received
+executed
+各逻辑指令最新尝试全部成功
+gateway_received
+partial_success
+最新尝试有成功也有失败
+gateway_received
+failed
+最新尝试全部失败
+pending_gateway/gateway_received
+timeout
+请求业务截止时间到期
+非执行终态
+revoked
+网关确认未执行或审批前撤销
+
+	•	一个控制请求只对应一台设备，但可包含多个command_key。
+	•	每次通信重试创建新的命令尝试记录，使用root_command_id和attempt_no形成逻辑链。
+	•	聚合只读取每个逻辑指令链的最新尝试，旧失败记录不影响当前结果。
+	•	相同idempotency_key重复提交返回原请求，不创建重复请求。
+8. 数字世界与3D数字孪生
+8.1 L0-L4层级
+层级
+视角
+主要内容
+交互
+L0
+集团/园区俯瞰
+跨工厂产能、告警、资源和导航
+选择组织、进入基地/工厂
+L1
+建筑群45度俯视
+建筑、人员设备分布、在线与风险
+点击建筑进入、筛选聚合
+L2
+车间平视
+热力图、区域风险、瓶颈、任务分布
+区域选择、路径与任务查看
+L3
+工位/设备近景
+设备状态、参数、当前任务、资源
+详情、绑定、调度、控制申请
+L4
+人员/外骨骼跟随
+负载、姿态、轨迹、环境和附近设备
+人员详情、任务、告警、绑定历史
+
+8.2 四种操作模式
+模式
+能力
+安全边界
+观察
+下钻、筛选、搜索、热力图、轨迹、历史状态
+只读，不改变现实资源。
+调度
+框选、拖拽、批量分配、优先级、顺序、冲突检查
+硬约束不满足时禁止提交。
+推演
+创建临时分支、改变分配、计算时间/占用/风险、方案对比
+全部标记为模拟，不直接写现实任务。
+回放
+选择时间范围，重建人员/设备/告警/决策变化
+遵守数据保留和人员隐私脱敏。
+
+8.3 交互语法
+操作
+行为
+单击
+打开实体详情侧边栏
+双击
+相机聚焦并下钻一层
+框选
+批量选择人员/设备/空间资源
+拖拽
+在调度或推演模式中临时分配资源
+右键/动作菜单
+创建任务、生成建议、查看历史、发起控制
+时间轴
+回放或选择推演时间
+提交
+模拟方案进入审核，审批后转为现实任务
+
+8.4 技术实现
+	•	渲染：@react-three/fiber v9、@react-three/drei、Three.js、Zustand。
+	•	实体渲染：Instances/InstancedMesh，目标同时渲染不超过500实体；L0/L1聚合、视锥剔除和区域过滤。
+	•	射线检测：Bvh；静态页面frameloop="demand"并在数据更新后invalidate。
+	•	近实时：React Query 3-5秒拉取统一增量接口，写入Zustand；useFrame通过ref更新mesh，避免React重渲染。
+	•	模型：LOD0≤20MB在5秒内可交互，LOD1≤50MB在10秒内后台完成并无缝替换。
+	•	2D降级：WebGL2不支持或GPU tier<1时切换SVG/Canvas地图；用户也可手动切换。
+	•	坐标：统一米制世界坐标；空间实体保存x/y/z、roll/pitch/yaw、bbox_w/h/d、坐标系和原点。
+9. AI决策与轻量推演
+能力等级
+触发方式
+一期能力
+是否直接执行
+A1 异常识别
+系统自动
+发现异常、风险和数据质量问题
+否
+A2 建议
+用户主动点击
+问题摘要、原因分析、风险判断、建议方向
+否
+A3 方案生成
+用户主动点击
+结构化人员/设备/时间/步骤方案，可编辑和对比
+否
+自动审批/调度/控制
+不启用
+仅显示未启用状态
+禁止
+
+	•	AI会话必须冻结数据快照，并记录模型版本、提示词版本、数据时间范围和触发人。
+	•	AI输出结构至少包含：当前问题、使用数据、数据时间范围、完整性、判断依据、建议、影响范围、风险、不确定性、人工确认项、失效条件。
+	•	人员真实姓名和工号不传给模型，使用脱敏ID；服务端对输出JSON进行结构和字段校验。
+	•	AI不可用时返回明确提示并保留全手工业务流程。
+	•	建议与方案分离，一条建议可生成多个方案；方案支持父版本、模拟标记、采用记录和审批关联。
+9.1 一期规则型轻量推演
+计算项
+实现
+人员/设备冲突
+检查同一时间窗口内有效资源预占和任务分配。
+时间窗口冲突
+检查任务步骤计划区间、班次和维护窗口。
+资源占用
+计算人员、设备、空间和工具利用率。
+预计完成时间
+按步骤estimated_minutes、依赖和等待时间计算。
+基础风险
+负载、资质、设备健康、环境和告警规则加权。
+方案对比
+展示完成时间、风险、冲突数、资源利用率和需人工确认项。
+
+10. 设备、人员与外骨骼实施规格
+10.1 设备搜索19维度（实施合并字段）
+序号
+搜索维度
+1
+关键字/名称
+2
+设备业务ID
+3
+设备分类
+4
+型号
+5
+厂商
+6
+序列号
+7
+所属组织
+8
+空间位置
+9
+生命周期状态
+10
+运行状态
+11
+在线/离线状态
+12
+健康状态
+13
+绑定状态
+14
+当前绑定人员
+15
+协议类型
+16
+固件版本
+17
+数据来源
+18
+数据质量等级
+19
+维护状态/下一维护时间
+
+字段映射门禁：上述19项为历次设备需求的合并实施清单。DDL和GET /api/devices查询DTO必须逐项映射到实际字段、jsonb路径或聚合视图，并在接口测试中验证组合筛选。
+
+10.2 设备配置12类
+分类
+字段范围
+1. 基础身份
+名称、业务ID、分类、型号、厂商、序列号
+2. 归属与安装
+org_id、空间绑定、安装日期、负责人
+3. 接入身份
+数据源、接入类型、认证引用
+4. 网络接入
+IP、端口、MAC
+5. 协议
+协议版本、MQTT/HTTP/Modbus/OPC UA
+6. 采集频率
+telemetry_interval_ms、sampling_rate
+7. 上报规则
+频率、条件、批大小
+8. 告警阈值
+温度、电量、负载、故障码规则
+9. 控制权限
+只读、参数调整、急停级别
+10. 固件
+版本、升级地址、升级状态
+11. 维护策略
+周期、上次维护、下次维护
+12. 数据质量
+检查开关、丢包阈值、置信度阈值
+
+10.3 设备绑定与外骨骼兼容
+	•	设备—空间：固定设备同时只能有一个active/installed位置；移动位置进入世界状态。
+	•	设备—人员：一台外骨骼同时只能绑定一人，绑定历史不删除。
+	•	设备—设备：支持网关、子设备、传感模块；Service写入前进行循环检测。
+	•	外骨骼排他组：upper_body、lower_body、full_body、positioning_tag。
+	•	上肢与下肢可共存；full_body不能与上肢或下肢同时绑定；定位标签可与全部共存。
+	•	存在有效绑定时禁止修改device_category或影响排他组的equipmentType，必要时先结束绑定再变更。
+10.4 人员隐私与健康显示
+	•	列表不展示精确健康详情，仅显示风险等级和当前是否需要关注。
+	•	安全管理员可在详情页查看精确负载、疲劳或生理指标，访问写入审计。
+	•	人员精确位置和轨迹保留30天；30-90天仅保留区域级去标识化聚合。
+	•	离职人员状态设为inactive，保留历史，不出现在活跃列表和分配候选中。
+11. 数据、回放、隐私与审计
+11.1 统一世界接口
+首次加载：GET /api/world/snapshot 返回：snapshotVersion + cursor + entities + generatedAt  持续增量：GET /api/world/delta?cursor=...&limit=... 返回：nextCursor + upserts + removals + hasMore + etag  游标过期：HTTP 410 / CURSOR_EXPIRED 客户端重新获取snapshot并重建本地store  回放过期：HTTP 410 / REPLAY_DATA_EXPIRED
+
+	•	world_delta_log使用全局单调seq bigint IDENTITY。
+	•	游标编码为base64(snapshot_version:last_seq)。
+	•	客户端前台3-5秒轮询，后台暂停；错误采用抖动、指数退避和断线补偿。
+	•	50并发用户场景通过合并请求、缓存和统一接口控制服务端QPS。
+11.2 数据保留
+数据
+保留期
+处理
+精细增量日志
+7天
+自动删除
+历史快照
+90天
+>30天的人员坐标脱敏，90天后删除
+人员精确轨迹
+30天
+转为区域级聚合后删除原始记录
+设备轨迹
+90天
+自动删除
+告警记录及证据
+365天
+告警相关轨迹证据随告警封存
+审计日志
+365天热数据
+归档到冷存储，不保存完整人员位置序列
+
+11.3 审计完整性保护
+	•	所有create/update/delete/approve/control及敏感查询写入统一审计日志。
+	•	应用角色不可直接INSERT/UPDATE/DELETE审计表；写入仅通过可信后端调用SECURITY DEFINER函数。
+	•	服务层先按实体Schema深度脱敏；数据库函数对顶层密码、密钥、认证、健康和控制凭证二次脱敏。
+	•	每个组织独立哈希链，使用advisory transaction lock防止并发分叉。
+	•	哈希载荷覆盖prevHash、操作人、组织、操作类型、实体、before/after、原因、IP、requestId、风险标记和UTC时间。
+	•	每日使用完整链LAG校验连续性，并重新计算哈希；异常触发告警并冻结高风险操作。
+	•	一期术语为“完整性保护”，后续HMAC或外部不可变存储后才称真正不可篡改。
+12. 数据库与DDL实施方案
+12.1 最终口径
+层次
+口径
+执行规则
+逻辑能力模型
+覆盖组织、人员、设备、空间、任务、资源、告警、AI、审批、控制、回放、审计和配置。
+每个冻结能力必须映射到物理表或既有表扩展。
+物理部署包装
+36张新表 CREATE +12张既有表 ALTER =48张受管表。
+最终以DDL生成器的冻结清单和映射矩阵为准。
+安全与权限
+org_id、RLS、显式GRANT/REVOKE、Service层过滤。
+authenticated无DML；可信后端角色写入；审计函数权限独立。
+引用完整性
+不创建物理外键。
+Service层事务校验、逻辑引用类型一致、软删除和审计。
+
+DDL生成前必交付：《逻辑能力—物理表映射矩阵》必须逐项覆盖v4.1能力。最新36+12表名与早期48逻辑表名存在差异，未映射项不得以“后续再做”方式静默删除。
+
+12.2 36张新表（当前执行包装）
+域
+新表
+组织域
+ewoh_organization, ewoh_person, ewoh_person_skill, ewoh_skill, ewoh_role, ewoh_person_role
+设备域
+ewoh_device_person_binding, ewoh_device_capability
+空间域
+ewoh_spatial_relation, ewoh_spatial_hierarchy
+模型域
+ewoh_model_asset, ewoh_model_binding
+工位域
+ewoh_workstation, ewoh_workstation_device, ewoh_workstation_person, ewoh_workstation_skill, ewoh_workstation_relation
+任务域
+ewoh_task_template, ewoh_task_step, ewoh_task_skill_req
+排班域
+ewoh_schedule_task, ewoh_schedule_task_step, ewoh_schedule_assignment
+资源域
+ewoh_resource_preorder, ewoh_resource_binding
+控制域
+ewoh_control_request, ewoh_control_command, ewoh_control_result
+事件域
+ewoh_event_rule, ewoh_event_action, ewoh_event_subscription
+世界域
+ewoh_world_snapshot, ewoh_world_delta_log
+系统域
+ewoh_system_config, ewoh_knowledge_base, ewoh_knowledge_entry, ewoh_notification, ewoh_audit_log
+
+12.3 12张既有表改造
+序号
+既有表
+改造
+1
+ewoh_scheduler_config
+增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+2
+ewoh_environment
+增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+3
+ewoh_model_registry
+增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+4
+ewoh_schedule_audit
+增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+5
+ewoh_schedule_plan
+增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+6
+ewoh_event_chain
+增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+7
+ewoh_world_state
+增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+8
+ewoh_topology
+增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+9
+ewoh_spatial_entity
+增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+10
+ewoh_telemetry
+增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+11
+ewoh_event
+增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+12
+ewoh_device
+增加org_id并迁移默认组织；删除旧宽松policy；按需增加业务字段、索引和RLS。
+
+重点表
+字段改造
+ewoh_spatial_entity
+org_id；z；roll/pitch；bbox_d；model_node_id；model_version_id；coordinate_system；coordinate_origin；floor_elevation；unit。采用分字段三维姿态。
+ewoh_device
+org_id；lifecycle_status；runtime_status；health_status；device_category；extra。worker_name仅兼容保留，新代码禁用。
+ewoh_schedule_plan
+org_id；suggestion_id；session_id；version；parent_plan_id；is_simulation；approval_id。
+
+12.4 逻辑能力映射门禁
+冻结能力
+物理映射要求
+组织、人员、技能、角色、班组/班次
+organization/person/skill/role及关系表；若班组和班次未独立建表，必须给出等价物理实现。
+设备三类绑定与外骨骼排他
+device_person_binding、resource_binding、空间关系或既有表；必须满足唯一性和历史。
+任务与步骤级资源
+task_template/step、schedule_task/step/assignment、resource_preorder/binding；必须覆盖任务状态机与执行日志。
+物料与工具
+资源域或新增数量型预占实现；必须支持numeric数量、批次、领用、消耗和释放。
+告警闭环
+event/event_chain/rule/action/subscription或alert表族；必须覆盖确认、处置、升级、关闭、重开、SLA。
+AI建议与方案
+现有brain能力、schedule_plan/audit、knowledge；必须保留会话快照、建议/方案分离和版本。
+审批
+必须有可查询的实例、步骤和操作记录，或明确映射到等价表。
+控制
+control_request/command/result；必须支持多逻辑指令、重试链、幂等和聚合。
+回放
+world_state/snapshot/delta_log，必要时轨迹聚合；必须满足30/90天隐私与回放。
+审计与配置
+audit_log/system_config；完整性保护、版本继承、全局公开规则。
+
+12.5 通用DDL规则
+	•	主表和关系表默认id uuid PRIMARY KEY DEFAULT gen_random_uuid()；轨迹等特殊表可使用复合主键。
+	•	业务ID使用varchar(255) UNIQUE NOT NULL；逻辑引用字段类型必须与被引用字段一致。
+	•	所有受管表包含平台审计列；user_profile构造表达式根据环境探针动态生成。
+	•	数量使用numeric(18,4)，禁止real用于库存、预占、领用和消耗。
+	•	主数据软删除；绑定通过end_time/status结束；任务/审批/告警/控制按生命周期保留；日志按保留策略归档。
+	•	world_delta_log.seq与audit_log.audit_seq使用bigint GENERATED ALWAYS AS IDENTITY。
+	•	所有DDL使用IF EXISTS/IF NOT EXISTS或可重入迁移设计，并提供回滚脚本。
+13. 后端实施方案
+13.1 现有模块基线
+现有模块
+改造
+shared
+新增组织上下文、审计服务、统一错误、分页、幂等和引用校验工具。
+dashboard
+适配组织范围，输出指挥中心KPI和摘要。
+simulator
+模拟组织、人员、绑定、任务、告警、审批、控制和回放。
+spatial
+严格空间实体化，增加3D坐标、层级和模型节点。
+world
+统一snapshot/delta/replay接口。
+scheduler
+接入新任务/资源/计划/审批模型，废弃自动触发AI。
+devices
+适配设备三状态、19维搜索、12类配置和绑定。
+embodiment
+L0-L4聚合、人员外骨骼负载和风险。
+brain
+快照冻结、A1/A2/A3分级、建议与方案分离。
+view
+角色化页面聚合和前端数据接口。
+
+13.2 核心基础设施
+组件
+职责
+关键约束
+OrgContextInterceptor
+从req.userContext解析userId、primaryOrgId、角色和可访问组织，并设置数据库上下文。
+必须使用事务级set_config(..., true)，并保证同一事务/连接内执行全部受RLS保护查询。
+AuditService
+统一调用append_audit_log，执行服务层深度脱敏。
+调用方不传operator；requestId和clientIp自动获取；高风险标记强制。
+OrgScopeService
+解析下级数据范围和上级配置继承。
+递归CTE或5分钟缓存；组织结构变更后清缓存。
+StateMachineGuard
+统一校验任务、审批、告警、方案和控制状态转换。
+非法转换返回409 STATE_NOT_ALLOWED。
+ReferenceIntegrityService
+在无FK条件下校验逻辑引用、软删除和循环关系。
+所有写操作在同一事务中完成。
+IdempotencyService
+保存和查询idempotency_key。
+重复请求返回原响应。
+
+连接池修正：执行方案中曾建议连接级GUC（set_config第三参数false），这会产生连接池租户上下文残留风险。最终实现必须使用事务级GUC（第三参数true），每个请求的受保护数据库操作包裹在同一request-scoped transaction中。
+
+13.3 新增业务模块
+优先级
+模块
+范围
+P0
+organization
+组织、人员、技能、角色及关系CRUD。
+P0
+workstation
+工位、设备、人员、技能和工位关系。
+P0
+task
+任务模板、步骤、技能要求、状态机。
+P0
+resource
+预占、绑定、冲突校验、并发锁和释放。
+P0
+control
+请求、命令、结果、幂等、审批和重试。
+P1
+event-rule
+事件规则、动作和订阅。
+P1
+model
+模型资产、绑定、版本和发布。
+P1
+knowledge
+知识库和知识条目。
+P1
+notification
+通知模板、接收人和发送状态。
+P1
+system
+系统配置、继承、公开范围和阈值规则。
+
+14. 前端实施方案
+14.1 基础设施改造
+	•	client/src/api/index.ts按organization、workstation、task、resource、control、eventRule、model、knowledge、notification、system导出命名空间。
+	•	queryKeys.ts按组织和筛选条件设计稳定查询键，组织切换时统一失效缓存。
+	•	app.tsx新增11个中心路由，首页跳转/command-center。
+	•	Layout.tsx按态势层、管理层、决策层、基建层分组并按角色过滤。
+	•	所有页面实现loading、empty、error、permission denied和stale data状态。
+14.2 新建与重构页面
+页面
+实施组件
+Organization
+组织树、人员表、角色技能、关系追溯、编辑Dialog。
+Scheduler
+任务Kanban、方案列表、确认/拒绝/派发、执行时间线；复用既有scheduler.ts API。
+Workstation
+工位树、设备/人员/技能配置和关系图。
+Resource
+资源预占日历、冲突列表、利用率和释放。
+Control
+控制请求列表、指令链、回执、审批和重试。
+Tasks
+任务模板、步骤设计器、依赖和技能要求。
+AuditLog
+过滤、详情、完整性状态和高风险标识，只读。
+Settings
+组织配置、上级继承、全局公开和版本。
+DigitalWorld
+FactoryScene、ModelLoader、EntityLayer、Heatmap、Trajectory、Camera、LevelSwitcher、SimulationPanel。
+
+既有页面
+处理
+Overview
+并入指挥中心。
+CommandMap
+升级为指挥中心的简化3D态势与数字世界入口。
+Devices/DeviceManagement
+合并为设备中心，适配新状态和绑定。
+Events
+合并到风险与告警中心。
+Workers
+合并到人员与外骨骼中心。
+DataQuality
+合并到数据资产中心。
+EmbodimentOverview
+并入指挥中心具身智能面板。
+Dashboard/Employees
+删除游戏遗留入口。
+
+15. API与集成规范
+15.1 通用契约
+	•	所有写接口要求登录、组织上下文、幂等键、状态版本或乐观锁。
+	•	统一分页：page/pageSize或cursor/limit，响应包含items、total/nextCursor、hasMore。
+	•	统一错误格式：{"code":"ERROR_CODE","message":"人类可读描述","details":{}}。
+	•	时间均使用ISO 8601带时区；服务端存储timestamptz。
+	•	列表接口默认不返回敏感健康数据和明文接入凭证。
+场景
+HTTP
+错误码
+参数校验失败
+400
+INVALID_PARAMS
+无权限
+403
+FORBIDDEN
+资源不存在
+404
+NOT_FOUND
+游标过期
+410
+CURSOR_EXPIRED
+回放过期
+410
+REPLAY_DATA_EXPIRED
+资源冲突
+409
+RESOURCE_RESERVED
+状态转换非法
+409
+STATE_NOT_ALLOWED
+唯一约束冲突
+409
+CONFLICT
+
+15.2 关键接口
+域
+接口族
+说明
+世界
+GET /api/world/snapshot；GET /api/world/delta；GET /api/world/replay
+快照、增量、回放
+组织
+GET/POST/PUT /api/organization；人员/角色/技能子资源
+组织和人员管理
+设备
+GET /api/devices；GET /:id；PUT /:id/config；绑定接口
+19维搜索、配置、绑定
+调度
+任务、计划、资源、派发、执行日志、推演接口
+任务闭环
+AI
+POST /api/ai/suggestions；POST /api/ai/plans；方案对比/采用
+仅人工触发
+告警
+告警列表、详情、确认、处置、升级、关闭、重开
+SLA与复盘
+审批
+创建实例、审批、驳回、委托、跳过、超时
+高风险操作
+控制
+创建请求、审批、发送、撤销、重试、回执
+网关控制闭环
+模型
+采集、重建状态、资产上传、校验、发布
+FileService + 外部服务
+审计
+GET /api/audit
+按实体、操作人和时间查询
+
+15.3 外部系统边界
+数据/能力
+一期来源
+后续集成
+组织/人员
+本系统
+HR/通讯录
+生产任务
+本系统
+MES
+物料库存
+本系统或资源模块
+WMS
+设备档案
+本系统
+设备管理平台
+人员位置
+UWB/模拟器
+UWB API
+外骨骼遥测
+设备平台/模拟器
+MQTT/HTTP
+视频
+仅引用摄像头状态
+视频平台，不存储视频
+控制
+控制请求记录
+工业协议网关
+3D重建
+手工上传/外部任务
+GPU重建服务
+
+16. 安全与权限实施
+16.1 数据库访问模型
+最终用户 / 浏览器     × 不允许数据库直连或任意SQL/RPC     ↓ NestJS API（唯一数据访问通道）     ↓ 可信后端数据库角色 PostgreSQL：显式表权限 + RLS + Service层org_id约束
+
+	•	authenticated角色对业务表不得拥有INSERT/UPDATE/DELETE；若前端无需直接读表，可进一步REVOKE ALL。
+	•	后端运行时角色必须通过临时API端点确认；不能使用可信服务角色时停止DDL执行。
+	•	若service_role具有BYPASSRLS，必须记录RLS不能约束该角色，所有租户隔离由Service和测试保证；优先使用非BYPASS受控角色。
+	•	审计写入函数仅可信后端角色可执行。
+16.2 RLS与组织上下文
+表组
+策略
+44张org_id NOT NULL表
+按current_org_ids或global_admin读取/写入；可信后端写。
+world_snapshot
+组织记录按范围；org_id NULL仅global_admin。
+world_delta_log
+组织记录按范围；org_id NULL仅global_admin。
+system_config
+组织记录按范围；全局记录仅global_admin或is_public=true读取；写入全局必须管理员。
+audit_log
+组织范围只读；普通角色和服务角色无直接写policy。
+
+	•	每个HTTP请求使用request-scoped transaction。
+	•	在事务内依次设置app.user_id、app.current_org_id、app.current_org_ids、app.is_global_admin。
+	•	所有set_config使用参数化SQL，第三参数true（事务级）。
+	•	后台任务、模拟器和消息消费者也必须显式设置服务身份和目标组织。
+16.3 数据源凭证
+	•	AES-256-GCM加密，随机12字节nonce，保存ciphertext、nonce、tag和keyVersion。
+	•	密钥环使用版本化环境变量DATA_SOURCE_CREDENTIALS_KEY_YYYY_Qn。
+	•	每90天轮换；删除旧密钥前确认无数据引用；可后台重加密。
+	•	审计日志永不记录明文凭证、密钥或认证配置。
+17. 数据迁移与兼容
+17.1 迁移原则
+	•	不物理删除旧数据；迁移前备份并保留回滚脚本。
+	•	12张既有表先增加nullable org_id，创建default-org并回填，再按表设NOT NULL。
+	•	删除或替换平台默认宽松policy前先导出策略清单。
+	•	旧API在兼容期保持可用，新API稳定后再下线。
+	•	worker_name、topology、schedule_audit等废弃对象仅停止新代码使用，后续版本再删除。
+17.2 推荐迁移八步
+步骤
+动作
+回滚点
+1
+导出schema、policy、权限和数据备份
+恢复备份
+2
+执行环境探针和逻辑—物理映射校验
+不执行DDL
+3
+创建扩展、函数、基础组织和新表
+删除新对象
+4
+ALTER既有表增加nullable字段和索引
+回滚ALTER
+5
+迁移数据、回填default-org、生成校验报告
+恢复迁移前数据
+6
+创建RLS、GRANT/REVOKE和触发器
+恢复旧策略
+7
+codegen并部署兼容后端/前端
+回滚应用版本
+8
+通过测试后设置NOT NULL和冻结
+按批次回滚
+
+
+18. 项目生命周期、治理与阶段门禁
+
+18.1 全生命周期阶段
+生命周期阶段
+主要活动
+核心输出
+退出条件
+S0 项目启动
+任命Sponsor和项目经理；建立PMO；确认目标、预算区间、试点工厂和决策机制。
+项目章程、干系人清单、沟通计划、初始风险清单。
+立项批准，项目组织到位。
+S1 需求确认
+访谈、现场调研、流程盘点、数据盘点、用户故事和非功能需求确认。
+需求规格、流程图、角色权限矩阵、需求追踪矩阵。
+业务负责人签署需求基线。
+S2 总体与详细设计
+产品原型、业务架构、技术架构、数据模型、接口、安全、迁移与测试设计。
+总体设计、详细设计、原型、DDL方案、API契约、测试策略。
+架构评审和安全评审通过。
+S3 开发与配置
+DDL、后端、前端、3D、集成适配、自动化测试和文档同步。
+可部署版本、代码、迁移脚本、单元/集成测试。
+代码冻结候选，质量门禁达标。
+S4 系统测试与验收
+SIT、性能、安全、RLS、并发、回归、UAT、培训和上线演练。
+测试报告、缺陷关闭单、UAT签署、上线方案。
+P0/P1缺陷关闭，业务和技术批准上线。
+S5 试点上线
+数据迁移、灰度切换、生产验证、现场支持、回滚观察。
+试点运行报告、问题清单、运行基线。
+连续稳定运行并达到试点KPI。
+S6 推广与运营
+多车间/工厂推广、容量治理、运维SLA、版本迭代和收益跟踪。
+推广包、运维手册、监控报表、版本路线图。
+运营组织接管，SLA达标。
+S7 项目完结
+最终验收、资产归档、合同关闭、经验复盘、收益基线和后续计划。
+验收证书、交付清单、知识转移、结项报告。
+结项委员会批准关闭。
+
+18.2 治理组织
+治理层级
+成员建议
+职责
+会议节奏
+项目指导委员会
+业务Sponsor、工厂负责人、信息化负责人、安全负责人、供应商高层
+战略决策、预算、跨部门冲突、重大范围和上线批准。
+月度或重大门禁
+项目管理办公室 PMO
+项目经理、产品经理、技术经理、测试经理、现场经理
+计划、范围、成本、质量、风险、依赖、沟通和交付物管理。
+每周
+产品与业务组
+产品负责人、调度、安全、设备、工艺、班组代表
+需求澄清、原型确认、业务规则、UAT和价值指标。
+每周/专题
+架构与安全委员会
+架构师、DBA、安全、DevOps、集成负责人
+架构、数据、权限、性能、接口和技术债评审。
+双周/门禁
+交付团队
+后端、前端、3D、数据/AI、测试、集成、运维
+设计、开发、测试、部署、缺陷修复和文档。
+每日站会
+变更控制委员会 CCB
+Sponsor授权代表、产品、项目、架构、测试、财务
+评估范围、成本、计划、风险和收益变化。
+按需，最长5个工作日决策
+
+18.3 阶段门禁
+门禁
+批准内容
+必须材料
+未通过处理
+G0 立项门禁
+项目是否启动
+章程、商业目标、预算区间、Sponsor、试点范围。
+补充立项材料或暂停。
+G1 需求门禁
+需求是否形成可验证基线
+需求规格、用户故事、角色、流程、NFR、追踪矩阵。
+冻结新增需求，完成澄清。
+G2 设计门禁
+方案是否可实施且安全
+原型、架构、数据模型、API、安全、迁移、测试设计。
+重大问题返回设计。
+G3 开发就绪门禁
+环境与DDL是否可执行
+13项探针、权限模型、回滚方案、开发计划、接口Mock。
+任何硬门禁失败即停止。
+G4 测试就绪门禁
+版本是否具备系统测试条件
+代码扫描、单元测试、部署记录、测试数据、已知问题。
+不进入SIT。
+G5 上线门禁
+是否具备试点生产条件
+SIT/UAT、性能/安全、迁移演练、回滚、培训、值守。
+延期上线。
+G6 阶段验收门禁
+是否完成本期目标
+验收清单、KPI、缺陷、运行数据、交付物。
+限期整改或部分验收。
+G7 结项门禁
+是否可正式关闭项目
+最终验收、资产和文档、运维接管、合同、复盘。
+保留未结事项并延期关闭。
+
+19. 多期产品路线图
+
+期次
+建议周期
+目标
+门禁
+Phase 0 准备期
+4-6周
+完成项目章程、现状评估、需求基线、试点选择、总体架构、预算与采购计划。
+G0-G2
+Phase 1 基础底座
+16-20周
+完成36新表+12改造、组织与空间、设备/人员/外骨骼、基础数字世界、多租户安全和基础页面。
+G3-G6
+Phase 2 运营闭环
+16-24周
+任务、排班、资源、物料工具、告警、审批、控制、回放和运营看板进入生产试点。
+G2-G6
+Phase 3 智能编排
+20-28周
+A2/A3、规则推演、真实重建、工业网关和MES/WMS/UWB/视频集成。
+G2-G6
+Phase 4 规模生态
+20-32周
+多工厂推广、数据资产、插件/Agent、开放API、移动/边缘场景和高可用。
+G2-G6
+Phase 5 稳态与结项
+8-12周
+稳定性治理、收益验收、运维移交、知识转移、资产归档和结项。
+G6-G7
+
+能力域
+Phase 1
+Phase 2
+Phase 3
+Phase 4
+组织与空间
+组织树、空间树、org_id、基础权限
+跨层级审批与资源范围
+多园区融合与空间自动校准
+集团级治理与标准模板
+数字世界
+L0-L4、程序化模型、GLB、2D降级
+实时任务/告警/资源叠加、回放
+真实重建、语义模型、路径和仿真
+大规模多工厂、边缘渲染、开放SDK
+设备与外骨骼
+档案、19维搜索、12类配置、绑定、负载
+运维闭环、能力匹配、风险处置
+工业网关控制、预测维护、外骨骼策略
+跨厂资产优化、终端应用生态
+任务调度
+计划查看、基础任务和排班接入
+完整任务/资源/审批/执行闭环
+AI方案、规则推演、自动冲突分析
+跨厂协同优化和高级仿真
+AI决策
+A1异常识别、手工触发A2原型
+A2正式建议、结构化解释
+A3方案生成、模型评估与插件
+Agent编排、持续学习与治理
+数据与治理
+数据源、质量摘要、保留、审计
+回放、证据、数据质量运营
+血缘、特征、模型版本、集成治理
+数据产品、开放服务和价值运营
+
+
+20. 各期详细实施方案
+20.1 Phase 0：项目启动与需求设计准备期
+
+维度
+内容
+范围
+覆盖项目章程、干系人、试点工厂、现状代码/数据/设备/网络盘点、需求基线、原型、总体架构、安全分类、采购与主计划。
+主要任务
+• 召开项目启动会，确认Sponsor、项目经理、产品负责人、试点负责人和决策权限。 • 对现有10个后端模块、8个前端页面、12张既有表、外骨骼/UWB/视频/设备接口进行盘点。 • 开展调度、安全、设备、工艺、班组、IT和管理层访谈，形成AS-IS和TO-BE流程。 • 确认组织与空间层级、角色、数据范围、审批链、告警SLA、人员隐私和安全红线。 • 建立需求追踪矩阵、原型、领域模型、逻辑能力—物理表映射和外部接口清单。 • 完成工作量估算、分期预算、采购计划、环境计划、质量计划和沟通计划。
+里程碑
+• M0 项目章程批准 • M1 需求基线签署 • M2 总体架构和分期方案通过
+交付物
+• 项目章程 • 需求规格和用户故事 • 总体方案/原型 • 数据与接口盘点 • 主计划和预算建议 • 风险与依赖清单
+退出标准
+• 关键业务负责人签署需求基线 • 试点现场和数据可用 • 团队和环境到位 • G0-G2全部通过
+重点风险
+• 试点范围不清 • 需求持续扩张 • 外部系统资料不足 • 业务负责人投入不足
+
+20.2 Phase 1：组织化数字底座与MVP
+
+维度
+内容
+范围
+实施36张新表和12张既有表改造、RLS与审计、组织上下文、基础后端和前端、L0-L4数字世界、设备中心、人员与外骨骼中心、基础指挥中心。
+主要任务
+• 执行13项环境探针，形成RLS、service_role、user_profile、函数owner和SHA-256决策。 • 生成并分批执行DDL、回滚脚本、迁移脚本和schema.ts；回填default-org。 • 开发OrgContextInterceptor、AuditService、统一错误、分页、幂等、乐观锁和状态机基础库。 • 开发组织、人员、技能角色、设备绑定、空间关系、模型资产和系统配置接口。 • 改造现有dashboard/devices/spatial/world/embodiment等模块的org_id隔离。 • 交付指挥中心、组织与空间、设备、人员与外骨骼、基础数字世界和系统设置页面。 • 完成数据权限、RLS、审计、性能、迁移和试点演示。
+里程碑
+• M3 环境与DDL门禁通过 • M4 组织/空间/设备/人员API完成 • M5 基础数字世界可演示 • M6 一期试点上线
+交付物
+• DDL六批文件及回滚 • schema.ts • 核心基础设施代码 • 一期后端模块 • 一期前端页面 • 迁移报告 • SIT/UAT报告 • 运维初版
+退出标准
+• 48张受管表和3张重点ALTER执行无误 • 组织隔离和外部访问面测试通过 • 关键页面和API可用 • 试点连续稳定运行不少于2周 • 一期验收清单签署
+重点风险
+• 连接池GUC残留 • service_role BYPASSRLS • 历史数据质量差 • 3D性能不足 • user_profile平台差异
+
+20.3 Phase 2：生产运营闭环
+
+维度
+内容
+范围
+覆盖生产任务、步骤、排班、人员/设备/空间/工具/物料资源、预占、执行日志、告警、审批、控制请求、指令回执、历史回放和运营看板。
+主要任务
+• 完善任务模板、生产任务、步骤依赖、多资源分配和状态转换服务。 • 实现排班计划确认、拒绝、审批、派发、接收、执行、暂停、异常和完成。 • 实现排他资源预占、物料数量预占、并发锁、领用/消耗/释放和资源日历。 • 实现告警确认、处置、升级、关闭、重开和证据封存。 • 实现审批实例/步骤、委托、跳过、超时、bypassed和高风险审计。 • 实现单设备控制请求、多逻辑指令、重试、撤销、超时和状态聚合。 • 将任务、资源、告警和审批叠加到数字世界并提供时间轴回放。
+里程碑
+• M7 任务资源闭环完成 • M8 告警审批控制闭环完成 • M9 试点车间正式运营
+交付物
+• 生产调度中心 • 资源管理 • 控制中心 • 风险告警中心 • 审批服务 • 回放服务 • 运营SOP和培训材料
+退出标准
+• 核心状态机自动测试覆盖 • 并发预占不超卖 • 控制和审批高风险链路可追溯 • 试点业务流程闭环率达到目标 • 关键用户UAT通过
+重点风险
+• 业务状态复杂导致返工 • 现场执行习惯变化 • 资源主数据不准确 • 网关回执不稳定 • 告警过多造成疲劳
+
+20.4 Phase 3：智能编排与现实世界集成
+
+维度
+内容
+范围
+覆盖A1/A2/A3、轻量推演、模型资产版本、摄像头/AI/传感器重建、工业网关、MES/WMS/ERP/HR/UWB/视频等适配。
+主要任务
+• 建立AI会话、快照、建议、方案、版本、风险、不确定性和采用反馈链。 • 实现A1自动异常识别，A2由用户主动触发，A3生成可编辑方案并进入审批。 • 构建规则引擎：硬约束、软约束、建议约束、冲突解释和可行性评分。 • 接入外部3D重建服务，完成采集任务、校准、语义映射、模型验证和发布。 • 接入工业网关和真实设备控制回执，完善安全停机和三级止动策略。 • 按优先级接入UWB、外骨骼平台、视频、MES、WMS、ERP和HR。 • 建立模型评估、提示词版本、输出校验、数据脱敏和AI运行监控。
+里程碑
+• M10 A2建议生产可用 • M11 A3方案与推演试点 • M12 真实3D和工业网关联调 • M13 第三期上线
+交付物
+• AI决策中心 • 规则推演服务 • 模型重建管线 • 集成适配器 • 工业网关控制链 • 模型评估报告 • 集成运行手册
+退出标准
+• AI输出结构化校验通过 • 高风险操作无自动下发 • 重建模型达到加载/精度要求 • 关键外部接口稳定 • 人工采用率和节省时间达到阶段目标
+重点风险
+• 模型幻觉和建议不可解释 • 外部接口变更 • 重建成本和性能 • 工业控制安全 • 数据质量不足
+
+20.5 Phase 4：规模化、多工厂与生态扩展
+
+维度
+内容
+范围
+覆盖多工厂复制、容量和高可用、数据质量/血缘/同步、开放API、插件/Agent、移动或边缘场景、集团经营与跨厂协同。
+主要任务
+• 形成工厂模板、组织/空间/设备/规则/审批配置包和自动化部署包。 • 完成容量扩展、缓存、分区、归档、可观测性、灾备和多区域部署设计。 • 建设数据质量规则、结果、同步运行、Schema字段、数据血缘和数据资产目录。 • 建立开放API、Webhook/消息总线（平台允许时）、插件管理和第三方应用认证。 • 探索Agent编排、跨工厂资源优化、持续学习、知识库和语义搜索。 • 根据场景引入移动端、边缘端或AR辅助，但保持核心控制权限边界。 • 开展多工厂推广、用户运营、版本节奏和收益对标。
+里程碑
+• M14 第二工厂复制成功 • M15 集团级容量和灾备达标 • M16 开放平台与数据资产上线
+交付物
+• 标准化推广包 • 高可用与灾备方案 • 数据资产中心增强 • 开放API/SDK • 插件和Agent治理规范 • 多工厂运营报表
+退出标准
+• 新增工厂复制周期显著缩短 • 容量和可用率达标 • 跨厂权限无越权 • 数据质量可量化 • 开放接口安全审计通过
+重点风险
+• 规模化性能瓶颈 • 配置差异过大 • 跨厂数据合规 • 生态接口滥用 • Agent权限扩大
+
+20.6 Phase 5：稳定运营、价值验收与项目结项
+
+维度
+内容
+范围
+覆盖稳定性治理、SLA、运维接管、培训认证、文档归档、合同资产、收益复盘、未结事项和下一阶段路线图。
+主要任务
+• 完成生产问题收敛、性能调优、告警降噪、备份恢复和灾备演练。 • 将服务台、监控、发布、应急、审计、密钥轮换和数据保留移交运维组织。 • 完成管理员、调度、安全、设备运维、一线人员和开发运维培训与认证。 • 按基线评估任务响应、资源利用、安全事件、设备停机、AI采用和数据质量收益。 • 清点代码、数据库、文档、模型、接口、账号、证书、许可证和采购资产。 • 关闭合同、缺陷、变更、风险和未结事项；形成后续产品Backlog。 • 召开最终验收和结项复盘会议。
+里程碑
+• M17 稳态运行验收 • M18 运维接管签署 • M19 最终验收与结项
+交付物
+• 最终验收报告 • 运维SLA与手册 • 培训和知识库 • 资产/配置清单 • 收益报告 • 结项报告 • 后续路线图
+退出标准
+• 生产稳定期达标 • 运营团队独立处理常见事件 • 所有合同交付物完成 • 重大缺陷关闭或有正式处置计划 • 指导委员会批准结项
+重点风险
+• 知识转移不足 • 隐性运维依赖 • 收益数据缺失 • 长期技术债未处理 • 未结接口责任不清
+
+21. 工作分解、计划与里程碑
+21.1 一级工作分解结构（WBS）
+WBS
+工作包
+1 项目管理
+章程、计划、会议、报告、范围、成本、风险、质量、采购和结项。
+2 产品与业务
+调研、需求、原型、流程、规则、用户故事、验收和价值指标。
+3 架构与数据
+业务/应用/数据/技术/安全架构，DDL、迁移、RLS、审计和数据治理。
+4 后端研发
+核心基础设施、既有模块改造、组织/工位/任务/资源/控制等域模块。
+5 前端与3D
+11中心、导航、状态管理、数字世界、模型加载、回放和交互。
+6 AI与规则
+A1/A2/A3、规则引擎、推演、评估、治理和模型运行监控。
+7 集成与设备
+UWB、外骨骼、视频、MES/WMS/ERP/HR、工业网关和重建服务。
+8 测试与质量
+单元、集成、SIT、UAT、性能、安全、并发、回归、可用性和验收。
+9 发布与运维
+环境、CI/CD、监控、备份、切换、回滚、SLA、服务台和灾备。
+10 变革与培训
+沟通、岗位影响、培训、现场支持、用户运营和知识转移。
+
+21.2 建议总体主计划
+时间窗口（相对）
+主要阶段
+关键里程碑
+并行说明
+第1-2月
+Phase 0
+M0-M2
+采购、环境准备可并行。
+第3-7月
+Phase 1
+M3-M6
+后端基础、数据和前端可按模块并行。
+第8-13月
+Phase 2
+M7-M9
+任务资源与告警控制双流并行。
+第14-20月
+Phase 3
+M10-M13
+AI、3D重建和系统集成并行，但统一门禁。
+第21-28月
+Phase 4
+M14-M16
+多工厂复制与平台能力并行。
+第29-31月
+Phase 5
+M17-M19
+稳定运行、收益验收、移交和结项。
+
+计划说明：上述为中等规模团队的参考计划，不构成合同工期。准备期须结合现场设备数量、接口成熟度、采购周期、数据质量和并行团队数量重新估算，并建立关键路径和缓冲。
+
+21.3 里程碑定义
+编号
+里程碑
+完成定义
+M0
+项目章程批准
+Sponsor和PMO成立，目标、范围、预算区间明确。
+M1
+需求基线签署
+需求、角色、流程、NFR和验收可追踪。
+M2
+总体设计通过
+产品、架构、数据、安全、迁移和测试方案通过。
+M3
+数据库门禁通过
+探针、权限、DDL生成和回滚准备完成。
+M4
+核心API完成
+组织、空间、设备、人员、外骨骼可用。
+M5
+数字世界演示
+L0-L4、实体详情、近实时更新和2D降级。
+M6
+一期试点上线
+基础底座生产验证。
+M7
+任务资源闭环
+任务、步骤、排班、预占和执行。
+M8
+告警审批控制闭环
+风险处置和高风险控制可追溯。
+M9
+运营试点验收
+车间真实运营通过。
+M10
+A2建议上线
+主动触发、解释和反馈闭环。
+M11
+A3方案推演
+可编辑、审批和转任务。
+M12
+真实集成联调
+重建、网关及关键外部系统。
+M13
+第三期上线
+智能编排生产使用。
+M14
+多工厂复制
+第二工厂模板化上线。
+M15
+规模和灾备达标
+容量、可用率、RPO/RTO。
+M16
+开放生态上线
+数据资产、开放API和插件治理。
+M17
+稳态运行验收
+SLA、监控、备份和灾备演练。
+M18
+运维接管
+职责、账号、文档和培训签署。
+M19
+最终验收结项
+价值、资产、合同和复盘关闭。
+
+22. 组织、资源与采购计划
+22.1 参考团队配置
+角色
+准备期
+一期
+二期
+三期
+四期
+五期
+主要职责
+项目/PMO
+2-3
+2-3
+2-3
+2-3
+2-3
+2
+范围、计划、风险、成本、沟通、结项
+产品/业务分析
+3-5
+3-4
+4-6
+4-6
+3-5
+2-3
+需求、流程、原型、验收、价值
+架构/技术负责人
+2-3
+2-3
+2-3
+3-4
+3-4
+2
+架构、评审、技术债、标准
+数据库/数据工程
+1-2
+2-3
+2-3
+3-4
+3-5
+1-2
+DDL、RLS、迁移、质量、性能
+后端研发
+2-3
+5-8
+7-10
+8-12
+8-12
+3-5
+服务、状态机、集成、API
+前端研发
+1-2
+4-6
+5-7
+5-8
+5-8
+2-3
+页面、3D交互、性能、可用性
+3D/图形工程
+0-1
+1-2
+2-3
+3-5
+3-5
+1
+模型、渲染、重建、语义映射
+AI/算法/规则
+0-1
+1-2
+2-3
+4-7
+5-8
+2-3
+异常、建议、推演、评估、Agent
+集成/现场工程
+1-2
+2-3
+3-5
+5-8
+5-8
+2-3
+设备、网关、MES/WMS、现场联调
+测试/质量
+1-2
+3-5
+4-6
+5-7
+5-7
+2-3
+自动化、性能、安全、UAT
+DevOps/安全/运维
+1-2
+2-3
+2-4
+3-5
+4-6
+3-4
+环境、CI/CD、监控、SLA、应急
+培训/变革
+1
+1-2
+2-3
+2-3
+3-4
+2-3
+沟通、培训、现场采用、知识转移
+
+资源说明：表中为建议全职当量范围，实际可通过共享岗位或供应商组合调整。关键岗位必须明确唯一负责人：产品负责人、项目经理、技术负责人、数据负责人、测试负责人和现场负责人。
+
+22.2 RACI关键职责
+事项
+Sponsor
+产品
+项目经理
+架构/研发
+测试
+业务负责人
+运维
+项目章程/预算
+A
+C
+R
+C
+I
+C
+I
+需求基线
+C
+R
+A
+C
+C
+A
+I
+架构与安全
+I
+C
+C
+A/R
+C
+C
+C
+DDL与迁移
+I
+C
+A
+R
+C
+I
+C
+版本发布
+I
+C
+A
+R
+R
+C
+R
+UAT验收
+I
+R
+C
+C
+C
+A/R
+I
+生产上线
+A
+C
+R
+R
+R
+C
+R
+项目结项
+A
+C
+R
+C
+C
+C
+R
+
+22.3 环境与基础设施
+环境
+用途
+最低要求
+控制
+开发环境
+日常开发和单元测试
+独立数据库、Mock设备、对象存储、CI。
+开发数据脱敏，不连接生产设备。
+集成环境
+跨模块和外部接口联调
+完整服务、网关模拟器、消息和文件服务。
+接口版本和测试数据受控。
+测试/临时库
+DDL、SIT、性能、安全、迁移演练
+与生产版本一致的PostgreSQL和部署拓扑。
+可重复初始化、自动清理。
+UAT/试点环境
+业务验收和培训
+接近生产数据规模和现场设备。
+受控账号、审计、发布审批。
+生产环境
+正式运营
+高可用、监控、备份、灾备、密钥服务。
+最小权限、变更窗口、回滚和审计。
+灾备环境
+恢复验证
+满足RPO 1小时、RTO 4小时的资源。
+季度恢复演练。
+
+22.4 采购与外部依赖
+类别
+可能采购/依赖
+前置时间
+验收关注
+现场感知
+摄像头、UWB、环境传感器、外骨骼接口许可
+8-20周
+协议、精度、数据频率、覆盖、维护。
+计算与存储
+GPU/边缘节点、数据库、对象存储、备份
+4-16周
+容量、冗余、扩容、成本。
+工业集成
+网关、PLC/OPC-UA/MQTT适配、设备厂商支持
+8-24周
+安全隔离、命令回执、故障模式。
+软件平台
+3D重建、AI模型服务、监控、安全扫描、密钥服务
+4-12周
+API、SLA、数据权属、退出机制。
+专业服务
+安全测评、渗透测试、现场测绘、培训
+4-10周
+范围、报告、整改和复测。
+
+
+23. 质量、测试与验收
+23.1 质量管理原则
+	•	需求、设计、代码、DDL、测试用例和验收项必须双向可追踪。
+	•	每次提交通过格式、类型、单元测试、静态扫描和敏感信息检查。
+	•	任何状态机、权限、库存、审计和控制链修改必须有自动化回归。
+	•	生产缺陷按P0-P3分级；P0/P1未关闭不得上线。
+	•	后续不以Markdown评审替代真实编译、迁移、性能、安全和现场测试。
+23.2 测试层级
+测试层
+责任
+覆盖内容
+准入/退出
+单元测试
+开发
+规则、状态转换、计算、脱敏、序列化、组件。
+核心服务覆盖率建议≥80%。
+组件/数据库测试
+开发+DBA
+DDL、CHECK、唯一、RLS、函数、触发器、迁移。
+13项探针和数据库门禁通过。
+集成测试
+测试+开发
+模块接口、事务、外部Mock、消息、文件、网关。
+关键链路无阻塞缺陷。
+SIT
+测试团队
+全流程、异常、回滚、权限、并发、兼容。
+P0/P1=0，P2有批准计划。
+性能容量
+性能团队
+API、搜索、遥测、3D、增量、数据库和并发。
+达到NFR目标。
+安全测试
+安全团队
+越权、注入、密钥、审计、RLS、接口和依赖。
+高危/严重问题关闭。
+UAT
+业务用户
+真实角色、流程、报表、可用性、现场操作。
+业务负责人签署。
+试点运行
+项目+运维
+稳定性、设备、数据质量、培训和收益。
+阶段KPI达到。
+
+23.3 数据库与安全强制测试
+类别
+强制场景
+环境探针
+UUID、SHA-256、SECURITY DEFINER、触发器、advisory lock、schema权限、FORCE RLS、IDENTITY、运行角色、owner、user_profile、BYPASSRLS、外部访问面。
+权限
+authenticated无DML；审计写入函数仅可信后端；旧policy清除；表与函数权限显式验证。
+RLS
+同组织、下级组织、跨组织、全局管理员、nullable全局记录、后台任务和连接池复用。
+并发与事务
+资源/物料预占、审计哈希链、控制重试、乐观锁、回滚和死锁。
+审计
+脱敏、UTC哈希、LAG连续性、重算、权限、并发、归档。
+迁移
+default-org回填、NULL清理、索引、数据量、重复执行、回滚、旧API兼容。
+
+23.4 非功能指标
+指标
+阶段目标
+验证条件
+首屏加载
+<3秒
+Chrome 110+、8GB、100Mbps、无缓存
+LOD0可交互
+≤5秒
+≤20MB GLB/Draco
+完整模型
+≤10秒
+≤50MB后台加载
+L0-L4切换
+<1秒
+同页面相机移动
+设备搜索
+P95<500ms
+1万设备、含网络
+实体详情
+P95<200ms
+服务端响应
+3D帧率
+≥30FPS
+500 InstancedMesh
+增量接口
+P95<200ms
+服务端
+API P95/P99
+<500ms/<1000ms
+除AI
+API错误率
+<1%
+50并发/1小时
+AI建议/方案
+<30秒/<60秒
+服务端
+一期可用率
+99.5%
+按月
+规模化可用率
+≥99.9%
+Phase 4目标
+RPO/RTO
+1小时/4小时
+恢复演练
+
+23.5 分期验收规则
+	•	每期验收分为产品功能、数据与安全、性能、文档、培训、运行和价值七类。
+	•	验收以冻结清单和测试证据为准，不以演示截图替代真实数据和现场流程。
+	•	允许“有条件验收”仅限不影响安全和核心流程的P2/P3问题，并须明确责任人和关闭日期。
+	•	任何跨组织越权、高风险控制绕过、库存超卖、审计失效或人员隐私泄露均为验收否决项。
+24. 发布、切换、运营与服务管理
+24.1 发布策略
+	•	采用小批量、可回滚、可观察的版本发布；数据库变更与应用版本绑定。
+	•	DDL按扩展/函数/新表/ALTER/RLS/索引触发器分批执行，每批保留检查点。
+	•	前后端采用功能开关，未完成的模块不进入生产导航。
+	•	高风险控制和AI方案默认关闭，完成审批、网关和现场验证后逐步启用。
+	•	试点优先单工厂/单车间，稳定后按模板推广。
+24.2 上线切换清单
+时间
+活动
+T-10工作日
+冻结上线范围；完成迁移演练、性能、安全和UAT。
+T-5工作日
+确认备份、回滚、账号、密钥、监控、值守和业务通知。
+T-1工作日
+最终数据校验、版本签名、变更单批准、试点设备状态确认。
+T0
+停止相关写入或进入双写窗口；备份；执行DDL/迁移；部署应用；烟雾测试。
+T+1小时
+验证组织权限、核心API、任务、设备、数字世界、审计和告警。
+T+1天
+核对业务数据和性能；处理高优先级问题；决定继续或回滚。
+T+2周
+试点稳定评审；确认进入常态或扩围。
+
+24.3 回滚原则
+	•	任何迁移前必须有可验证备份和恢复时间估算。
+	•	优先采用向后兼容DDL：先加列/表，再部署应用，再清理废弃字段。
+	•	发生跨组织越权、数据损坏、审计中断、高风险错误控制或核心流程不可用时立即回滚。
+	•	控制请求和现实设备操作不能简单数据库回滚，必须执行网关侧安全处置并保留审计。
+	•	回滚后进行数据一致性核查和根因分析，未经批准不得再次上线。
+24.4 运维服务模型
+服务域
+运营要求
+建议指标
+监控
+API、数据库、RLS失败、增量延迟、3D加载、设备在线、AI运行、审计链。
+7×24关键告警
+事件管理
+P0-P3分级、值班、升级、复盘和知识库。
+P0 15分钟响应
+问题管理
+重复故障根因、永久修复、技术债和趋势分析。
+月度问题评审
+变更发布
+标准/普通/紧急变更，审批、窗口、回滚和审计。
+发布成功率≥98%
+备份恢复
+数据库、对象存储、配置、模型和密钥引用。
+RPO/RTO达标
+容量管理
+设备、遥测、用户、模型、存储、API和数据库增长。
+季度容量预测
+安全运营
+密钥轮换、漏洞、账号、权限复核、审计归档和异常访问。
+季度权限复核
+
+25. 培训、变革与知识转移
+25.1 变革影响
+群体
+主要变化
+支持措施
+管理层
+从静态报表转为实时态势和跨组织决策。
+KPI口径、驾驶舱培训、价值复盘。
+调度员
+从人工表格转为任务、资源、AI建议和审批闭环。
+情景演练、沙箱、操作手册、现场陪伴。
+安全人员
+告警、人员负载、审批跳过和事故证据数字化。
+隐私与权限培训、应急演练。
+设备运维
+设备档案、绑定、配置、状态和控制请求统一管理。
+设备接入和变更SOP。
+一线人员
+电子任务、步骤确认、异常上报和外骨骼使用。
+短时岗位培训、图示卡片、班前会。
+IT/运维
+RLS、GUC、审计链、3D资产、AI和工业网关运维。
+深度技术培训、演练和知识库。
+
+25.2 培训计划
+课程
+对象
+形式
+通过标准
+产品与流程概览
+全部关键用户
+讲解+演示
+理解角色和业务闭环。
+组织/空间/设备主数据
+管理员、设备运维
+实操
+能独立维护并通过案例。
+调度与资源闭环
+调度员、车间负责人
+沙箱演练
+完成任务全流程。
+告警/审批/应急
+安全、管理者
+演练
+完成异常和紧急处置。
+数字世界与回放
+管理者、调度、安全
+实操
+能下钻、筛选、回放和取证。
+系统运维
+IT/运维
+技术培训+故障演练
+能部署、监控、备份、恢复。
+开发与扩展
+内部研发
+代码走查+实验
+能新增模块和接口。
+
+25.3 知识转移
+	•	知识资产包括架构、数据字典、API、状态机、部署、监控、测试、故障、设备接入和安全SOP。
+	•	采用“文档 + 录屏 + 实操 + 值班陪跑 + 能力考核”方式，不以文档签收替代实际接管。
+	•	关键岗位至少设置主备两人，避免单点知识风险。
+	•	每次重大版本发布同步更新培训材料、FAQ和运行手册。
+26. 项目完结与交付关闭
+26.1 完结条件
+	•	所有合同范围和批准变更已交付，最终验收证据完整。
+	•	生产系统达到约定稳定期，P0/P1缺陷为零，P2问题有正式关闭计划。
+	•	运维、服务台、安全、备份、密钥和数据责任已完成签署移交。
+	•	代码、数据库、模型、接口、账号、文档、许可证和采购资产已入库。
+	•	收益指标已形成基线和阶段评估，未实现收益有后续责任和计划。
+	•	未结风险、技术债和Backlog已转入正式产品运营治理。
+26.2 最终结项活动
+活动
+输出
+负责人
+最终验收会议
+最终验收签署、遗留问题清单
+Sponsor/业务负责人
+资产与配置审计
+代码、DDL、配置、模型、文档、账号、许可证清单
+项目经理/配置经理
+合同与采购关闭
+付款、质保、服务期限、供应商义务
+采购/财务/项目经理
+运维接管
+SLA、值班、监控、备份、应急和联系人
+运维负责人
+收益与KPI复盘
+基线、实际值、差异和持续改进计划
+产品负责人/业务
+项目复盘
+成功经验、问题、根因和组织改进
+PMO
+文档归档
+最终版本、签署记录、测试证据和会议纪要
+配置经理
+项目关闭批准
+结项报告和关闭决定
+指导委员会
+
+27. 风险、依赖与变更控制
+27.1 重点风险登记册
+ID
+风险
+等级
+应对
+责任人
+R01
+两套48表口径导致需求遗漏
+高
+DDL前能力—物理表映射和自动校验
+架构负责人
+R02
+GUC/连接池造成组织上下文残留
+高
+事务级set_config、同连接、连接池专项测试
+后端/DBA
+R03
+service_role BYPASSRLS削弱租户隔离
+高
+非BYPASS后端角色或Service强制过滤与越权测试
+安全/架构
+R04
+无物理FK形成孤儿数据
+中高
+Service事务校验、定期一致性扫描、软删除
+数据负责人
+R05
+人员隐私和健康数据泄露
+高
+最小权限、粗粒度展示、脱敏、审计和保留期
+安全负责人
+R06
+资源和物料并发超卖
+高
+行锁/advisory lock、CHECK、并发测试
+后端/DBA
+R07
+工业控制误操作
+极高
+单设备请求、审批、网关、撤销确认、三级止动
+安全/设备
+R08
+AI幻觉或不安全建议
+高
+主动触发、结构化验证、解释、人工确认、禁自动下发
+AI负责人
+R09
+3D模型过大和终端性能不足
+中高
+LOD、Instancing、剔除、压缩、2D降级
+3D负责人
+R10
+外部系统/厂商接口延期
+高
+接口Mock、合同SLA、分层适配和降级流程
+集成负责人
+R11
+现场数据质量不足
+中高
+主数据治理、质量评分、责任人和清洗
+业务/数据
+R12
+用户采用率低
+中高
+参与式设计、培训、陪跑、KPI和反馈闭环
+变革负责人
+R13
+多期范围持续膨胀
+高
+CCB、分期基线、价值优先级和容量控制
+项目经理
+R14
+知识与运维单点
+中
+主备人员、演练、录屏、知识库和接管考核
+运维负责人
+
+27.2 变更控制流程
+提出变更 → 记录需求与原因 → 产品/架构/项目影响分析 → 评估范围、工期、成本、质量、安全和收益 → CCB批准 / 拒绝 / 延后 → 更新基线、计划、预算、测试和追踪矩阵 → 实施、验证、发布并关闭变更
+
+	•	紧急安全修复可走紧急变更，但必须事后补齐审批、测试和复盘。
+	•	任何改变AI自动化边界、现实控制权限、人员隐私、保留期或跨组织访问的变更必须由指导委员会和安全负责人批准。
+	•	变更不得通过口头承诺或直接代码修改绕过CCB。
+27.3 外部依赖管理
+依赖
+责任边界
+监控方式
+备选方案
+工业网关
+设备厂商/集成商负责协议和安全执行，本系统负责请求和审计。
+接口SLA、联调计划、回执成功率。
+模拟网关和手工执行。
+3D重建服务
+外部服务负责重建算法，本系统负责任务、资产、校准和发布。
+任务成功率、时长、模型质量。
+手工上传GLB和程序化模型。
+MES/WMS/ERP/HR
+源系统负责数据权威，本系统负责适配和缓存。
+数据新鲜度、错误率、变更通知。
+批量导入或模拟数据。
+UWB/视频/外骨骼
+设备平台负责采集与准确性，本系统负责映射和展示。
+在线率、延迟、丢包和校准。
+人工定位或设备降级。
+AI模型服务
+模型方负责模型SLA，本系统负责治理和安全边界。
+延迟、失败率、质量评分。
+规则引擎和手工流程。
+
+28. 价值实现与持续演进
+28.1 价值指标框架
+价值域
+指标示例
+基线与目标方法
+安全
+高风险暴露时长、告警确认时间、事故复盘完整率、外骨骼超载次数。
+准备期采集基线，各期设定改善目标。
+效率
+排班编制时间、任务派发时间、异常恢复时间、资源冲突次数。
+对比上线前后同类班次。
+设备
+停机时长、故障发现时间、维护响应、在线率和健康率。
+按设备类别和工厂分层。
+人员
+负载均衡、疲劳高风险时长、技能匹配率、培训完成率。
+只使用合规聚合数据。
+数据
+完整性、及时性、准确性、血缘覆盖、数据源健康。
+数据资产中心持续评分。
+AI
+建议触发次数、采用率、节省时间、风险拦截率、方案可行率。
+每条建议保留采用和结果反馈。
+运营
+活跃用户、关键流程线上闭环率、工厂复制周期、SLA。
+按角色/工厂/月度跟踪。
+
+28.2 收益实现机制
+	•	准备期建立可量化基线，不能在上线后倒推。
+	•	每期验收同时评估功能完成和业务价值；功能上线不等于收益实现。
+	•	产品运营每月发布使用和价值报告，指导培训、流程和版本优先级。
+	•	AI建议和方案通过采用/拒绝/结果反馈形成可审计的数据闭环，支撑后续优化。
+	•	数据积累用于发现跨设备、跨人员、跨任务的模式和涌现能力，但必须遵守隐私和安全治理。
+28.3 持续演进路线
+演进方向
+前置条件
+可能能力
+更高精度数字孪生
+真实重建、语义映射、设备标定稳定
+路径、遮挡、工艺和物流仿真。
+智能调度优化
+任务、资源、执行结果和规则数据充分
+多目标优化、跨工厂协同。
+外骨骼具身终端
+设备控制、安全认证和人体工学验证
+任务指引、动作辅助和安全反馈。
+工业Agent
+权限、工具、评估、沙箱和人工审批成熟
+跨系统检索、方案编排和运维助手。
+数据产品与生态
+质量、血缘、开放API和授权成熟
+伙伴应用、行业模型和标准组件。
+
+29. 最终交付物与配置管理
+29.1 全生命周期交付物
+类别
+主要交付物
+项目治理
+项目章程、主计划、预算、周/月报、会议纪要、风险/问题/变更/决策日志、结项报告。
+产品需求
+需求规格、用户故事、原型、角色权限、流程、状态机、追踪矩阵、验收清单。
+架构设计
+业务/应用/数据/技术/安全架构、接口设计、部署拓扑、容量和灾备。
+数据库
+探针、DDL、回滚、迁移、数据字典、逻辑引用矩阵、RLS、审计函数和测试。
+后端
+源代码、模块、API、状态机、规则、集成适配、单元和集成测试。
+前端与3D
+页面、组件、导航、数字世界、模型资产规范、性能和可用性报告。
+AI与数据
+模型/提示词/规则版本、评估、数据源、质量、脱敏和治理报告。
+测试质量
+测试计划、用例、数据、自动化脚本、缺陷、性能、安全、SIT/UAT和试点报告。
+发布运维
+部署、配置、监控、告警、备份、恢复、应急、SLA、发布和回滚手册。
+培训移交
+课程、教材、录屏、FAQ、知识库、考核、账号和资产移交。
+
+29.2 配置与版本管理
+	•	代码、DDL、配置、模型、接口、测试、文档均使用版本号和发布标签。
+	•	每个生产版本必须能追溯到需求、变更、提交、构建、数据库迁移和测试证据。
+	•	配置分为代码默认、全局、上级组织和当前组织，遵循继承优先级。
+	•	敏感配置仅保存密钥引用或AES-GCM密文，禁止进入代码库和普通审计。
+	•	最终交付前进行完整配置项盘点和校验，确保文档与运行版本一致。
+
+附录A：完整需求追踪矩阵
+ID
+需求
+能力中心
+期次
+验收
+FR-01
+组织优先的集团/基地/工厂层级
+组织与空间中心
+P1
+组织树、org_id和权限通过
+FR-02
+site/building/floor/workshop/zone/workstation空间层级
+组织与空间/数字世界
+P1
+层级、关系和坐标可维护
+FR-03
+L0-L4数字孪生逐级下钻
+数字世界
+P1
+每级有真实数据和交互
+FR-04
+点击人员显示档案、负载、安全和外骨骼
+数字世界/人员中心
+P1
+权限与脱敏正确
+FR-05
+设备19维搜索
+设备中心
+P1
+组合筛选P95达标
+FR-06
+设备12类配置与审计
+设备中心
+P1-P2
+配置、版本、权限和审计
+FR-07
+设备-人员/空间/设备三类关系
+设备/组织中心
+P1
+唯一性、历史和循环校验
+FR-08
+外骨骼排他组与兼容矩阵
+人员/设备中心
+P1
+upper/lower/full规则通过
+FR-09
+工厂即机器人视图与指挥大屏
+指挥中心
+P1-P2
+态势、KPI和跳转
+FR-10
+快照、增量游标、过期重建
+数字世界
+P1
+一致性和410错误码
+FR-11
+游戏世界层级、角色、交互、资源和编排
+数字世界
+P1-P3
+四模式和交互语法
+FR-12
+真实场景重建，CAD可选
+模型管理
+P1-P3
+GLB上传到自动重建
+FR-13
+多步骤任务和多资源分配
+任务/调度
+P2
+完整状态机和执行日志
+FR-14
+物料数量预占和工具类型匹配
+资源中心
+P2
+并发不超卖
+FR-15
+告警处置、升级、重开和证据
+风险中心
+P2
+SLA和闭环
+FR-16
+审批、委托、跳过、超时和bypassed
+审批
+P2
+高风险审计
+FR-17
+单设备控制请求、多指令重试和回执
+控制中心
+P2-P3
+终态和超时规则
+FR-18
+AI建议必须人工主动触发
+AI中心
+P1-P3
+页面不预生成
+FR-19
+A1/A2/A3能力分级
+AI中心
+P1-P3
+边界和版本清晰
+FR-20
+规则型轻量推演
+AI/调度
+P2-P3
+冲突、资源、时间和风险
+FR-21
+人员轨迹30天、设备90天、告警证据365天
+数据/隐私
+P1-P2
+清理和脱敏任务
+FR-22
+审计追加写、脱敏和哈希链完整性保护
+系统管理
+P1
+并发链和重算通过
+FR-23
+数据源、质量摘要和配置继承
+数据资产/系统
+P1-P2
+健康、公开和继承
+FR-24
+MES/WMS/ERP/HR/UWB/视频/网关集成
+集成
+P3
+适配器和降级
+FR-25
+多工厂推广、开放API和插件/Agent
+平台生态
+P4
+规模和安全治理
+FR-26
+数据积累和涌现能力
+AI/数据
+P3-P4
+反馈、模式和治理
+FR-27
+运维、培训、价值和结项
+项目治理
+全期
+移交和结项签署
+
+附录B：关键状态机摘要
+对象
+主要状态流
+关键规则
+任务
+draft→pending_confirm→pending_approval/dispatch→dispatched→received→executing→completed
+无需审批可直达dispatch；非终态可取消；completed/cancelled终态。
+审批实例
+pending→approved/rejected/cancelled/expired/bypassed
+bypassed等同批准但强制高风险审计。
+审批步骤
+pending→approved/rejected/delegated/skipped/expired
+委托创建新步骤；跳过记录权限依据。
+告警
+open→acknowledged→processing→closed→reopened
+升级等级独立；reopened可重新确认或处置。
+方案
+shadow→simulating→pending_review→approved→dispatched/expired/archived
+推演与生产隔离，批准后转正式任务。
+控制请求
+created→approval/gateway→received→executed/partial_success/failed/timeout/revoked
+只看每个逻辑指令最新尝试；终态不可被超时覆盖。
+
+附录C：数据保留与隐私
+数据
+保留
+处理
+world delta
+7天
+自动删除
+world snapshot
+90天
+30天后人员坐标脱敏
+人员精确轨迹
+30天
+转区域聚合后删除
+设备轨迹
+90天
+自动删除
+告警及证据
+365天
+按事故封存
+审计日志
+365天在线
+归档冷存储，不含完整位置序列
+AI会话与方案
+按业务策略
+保留版本和采用结果，敏感快照脱敏
+
+附录D：数据库关键约束
+约束域
+规则
+主键与逻辑引用
+所有表id uuid（轨迹复合主键）；14处uuid逻辑引用，其余业务ID为varchar。
+组织隔离
+所有受管表有org_id；44 NOT NULL、3 nullable普通、audit特殊；3张既有表迁移后收紧。
+人员/设备绑定
+人员有效归属唯一；固定设备安装位置唯一；外骨骼排他组唯一并校验跨组兼容。
+库存
+org+material+location+batch唯一；numeric(18,4)；数量CHECK；事务锁。
+配置
+组织/全局版本唯一；同层同键一个active；组织→上级→全局→默认。
+世界增量
+seq bigint identity单调；游标snapshot_version+seq。
+审计
+audit_seq、prev_hash、integrity_hash、advisory lock、UTC载荷和每日重算。
+控制
+request+command_key+attempt唯一；root_command_id；receipt.command_id唯一。
+
+附录E：物料预占与领用规则
+	•	inventory.quantity表示当前账面可用实物库存，领用时扣减。
+	•	创建预占：可预占量=quantity-SUM(有效预占的reserved-issued)。
+	•	从已有预占领用：issue≤本预占未领用量且inventory.quantity≥issue，不重复扣自身预占。
+	•	创建预占锁库存行；领用同时锁库存和预占行。
+	•	pending/partial_consumed占未领用部分；issued/consumed/released不占用。
+附录F：控制指令聚合原则
+	•	一个控制请求仅对应一台设备，但可包含多个command_key。
+	•	每次尝试新建command记录；首次root=id，重试沿用root并递增attempt。
+	•	聚合只读取每个root最新尝试；旧失败不影响最终结果。
+	•	pending/sent/可重试expired为pending_gateway；全部成功/失败分别为executed/failed；混合为partial_success。
+	•	请求截止时间只覆盖pending_gateway/gateway_received为timeout。
+附录G：RACI符号说明
+符号
+含义
+R
+Responsible，实际执行。
+A
+Accountable，最终负责且每项原则上唯一。
+C
+Consulted，参与咨询。
+I
+Informed，需知会。
+
+附录H：开工与阶段门禁检查表
+#
+检查项
+状态
+1
+项目章程、Sponsor、项目经理和试点负责人已确认。
+□
+2
+需求基线和需求追踪矩阵已签署。
+□
+3
+逻辑能力—物理表映射无遗漏。
+□
+4
+NestJS运行时数据库角色已探测。
+□
+5
+外部用户无数据库直连或任意RPC。
+□
+6
+SHA-256、触发器、RLS、IDENTITY和advisory lock可用。
+□
+7
+user_profile构造和读取通过。
+□
+8
+DDL、迁移、回滚和备份准备完成。
+□
+9
+接口Mock和外部依赖责任人明确。
+□
+10
+测试环境和测试数据就绪。
+□
+11
+培训和上线值守计划批准。
+□
+12
+每期验收和价值指标明确。
+□
+
+附录I：分期验收摘要
+期次
+必须验收
+Phase 0
+章程、需求、总体架构、预算、试点和计划。
+Phase 1
+DDL/安全、组织空间、设备人员外骨骼、基础数字世界和试点。
+Phase 2
+任务资源、告警审批控制、回放和运营闭环。
+Phase 3
+AI建议/方案、推演、真实重建、网关和关键集成。
+Phase 4
+多工厂复制、容量灾备、数据资产、开放生态。
+Phase 5
+稳定运行、运维接管、收益、资产、合同和结项。
+
+附录J：当前物理实施口径
+执行口径：一期采用“36张新表CREATE + 12张既有表ALTER = 48张受管表”。早期48张新表设计作为逻辑能力参照；DDL生成前必须确认每项逻辑能力由当前表、既有表或Service聚合承载。
+
+	•	12张既有表全部增加org_id并替换宽松策略；spatial_entity、device、schedule_plan执行详细ALTER。
+	•	36张新表覆盖组织、设备绑定、空间关系、模型、工位、任务、排班、资源、控制、事件、世界状态、系统和审计。
+	•	若物理表命名与逻辑模型不同，以需求追踪矩阵和能力映射为验收基准，不以表数量本身作为功能完成证明。
+附录K：假设、约束与不确定项
+类型
+内容
+处理
+来源约束
+外部系统详细协议、真实设备安全认证和重建服务SLA未在需求材料中完整提供。
+准备期补充调研并形成接口合同。
+计划假设
+周期和FTE为建议估算，不是已批准合同承诺。
+Phase 0完成估算和预算基线。
+平台假设
+miaoda-sql、service_role、user_profile和权限能力需真实探针。
+任何硬探针失败停止DDL。
+数据假设
+既有数据可回填default-org，但质量和重复问题未知。
+迁移前画像、清洗和对账。
+现场假设
+试点具备网络、设备接口、业务负责人和培训窗口。
+纳入试点准入检查。
+
+附录L：术语表
+术语
+定义
+EWOH
+工厂具身智能操作系统。
+具身智能
+人员、设备、外骨骼、任务、环境和数字世界形成可感知、交互和执行的闭环。
+数字世界
+全屏3D/2D双态数字孪生操作界面。
+L0-L4
+从集团/园区到人员与外骨骼的逐级下钻层级。
+A1/A2/A3
+异常识别、建议、方案生成的AI能力等级。
+RLS
+PostgreSQL行级安全。
+GUC
+PostgreSQL会话/事务上下文变量。
+完整性保护
+追加写、限制、脱敏、哈希链和校验，不等同绝对不可篡改。
+逻辑引用
+不建立物理FK时由Service维护的跨表引用。
+轻量推演
+基于规则、时间窗、资源、冲突和风险的方案计算。
+阶段门禁
+进入下一生命周期阶段前必须通过的批准条件。
+稳态运营
+项目交付后按SLA和产品治理持续运行的状态。
+
+附录M：项目结项检查表
+#
+结项检查项
+状态
+1
+最终验收文件已签署。
+□
+2
+生产稳定期和SLA达到约定。
+□
+3
+P0/P1缺陷全部关闭。
+□
+4
+运维、服务台、安全和数据责任已移交。
+□
+5
+代码、DDL、模型、配置、接口和文档已归档。
+□
+6
+账号、证书、密钥、许可证和采购资产已清点。
+□
+7
+培训和知识接管考核通过。
+□
+8
+合同、付款、质保和供应商义务已确认。
+□
+9
+收益评估和后续Backlog已批准。
+□
+10
+未结风险和技术债已转入产品运营。
+□
+11
+项目复盘完成。
+□
+12
+指导委员会批准关闭。
+□
+附录S：最新Agent登记册与代码所有权矩阵
+本附录是R7的展开版。实际执行时应导出为机器可读YAML/JSON，并同步更新CODEOWNERS。
+ID
+Agent
+职责
+代码/制品所有权
+任务包硬要求
+AG-00
+总控编排
+任务图、基线、优先级、门禁、冲突和交付总览
+只写计划/决策/注册表；全局只读
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-01
+需求与追踪
+需求ID、范围差异、竞品输入、验收语言
+docs/product、requirements、traceability
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-02
+仓库架构与SSOT
+根README、系统上下文、技术栈边界、双实现收敛
+README、docs/architecture、ADR
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-03
+数据契约
+Schema、DDL、RLS、迁移、保留、审计
+db、server/database、docs/data
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-04
+API与状态机契约
+OpenAPI、共享类型、状态机YAML、错误码
+openapi、docs/api、contracts/state-machines、shared
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-05
+安全与隐私
+RBAC、RLS、密钥、DPA、控制边界、威胁模型
+security、SECURITY.md、security tests
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-06
+Python边缘核心
+协议、适配、缓存、设备质量、断网补偿
+src/edge_platform/edge、collection
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-07
+感知与风险推理
+负载、疲劳、风险、置信度、失效条件
+src/edge_platform/perception、inference
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-08
+世界模型与空间
+实体投影、快照、增量、轨迹、坐标和回放
+src/edge_platform/world_model、spatial；server/world
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-09
+NestJS平台基础
+事务GUC、认证、RBAC、审计、文件、指标、健康
+server/common、database、auth、audit、metrics
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-10
+组织人员与外骨骼
+组织树、人员、技能、角色、绑定、隐私视图
+server/modules/organization、设备绑定相关目录
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-11
+MES生产执行
+工单、工序、投料、开工、报工、审核、交收、完工
+server/modules/task及新增production-execution
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-12
+OEE与安灯
+设备状态时序、停机原因、OEE、异常SLA与升级
+server/modules/alert、ingest、dashboard；对应前端页面
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-13
+质量追溯ESOP
+检验方案、首巡终检、不良、返工、批次序列号、作业文件
+新增quality、traceability、esop模块
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-14
+设备维保工装
+设备档案、点检、保养、维修、模具工具寿命
+device/model/resource相关模块
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-15
+调度资源与游戏化
+计划、资源预占、工作中心配置、能力匹配和游戏世界
+scheduler、resource、gamification、rule-engine
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-16
+控制与审批
+控制请求、指令、回执、重试、审批和安全冻结
+control、approval、contracts/control
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-17
+AI决策与推演
+手动触发建议、方案版本、对比、解释、采用和复盘
+ai、simulator、scenario、assistant
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-18
+ERP/OA/HR集成
+订单/BOM/物料/报工回传、对账、补偿和连接器SDK
+新增integrations；严禁扩展为完整ERP
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-19
+前端平台
+路由、导航、API层、设计系统、权限、错误与离线状态
+client/src/app、api、components、types
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-20
+移动作业体验
+扫码、接单、开工、报工、质检、安灯、ESOP和外骨骼确认
+client移动页面/PWA或适配层
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-21
+指挥地图与3D
+L0-L4、实体点击、热力图、轨迹、调度、回放和降级
+client/pages/CommandMap、DigitalWorld、ui/command_map
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-22
+数据指标与报表
+OEE、SLA、产能、风险、质量和价值指标
+metrics、dashboard、报表与导出
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+AG-23
+DevOps与发布
+CI、镜像、K8s、Compose、监控、备份恢复、发布清单
+deploy、release、scripts、.github/workflows
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+VA-01~08
+独立验证Agent组
+数据库/安全/API/状态机/UI/E2E/性能/恢复/需求遗漏
+只写测试、证据和缺陷，不直接替实现Agent判定通过
+任务包必须声明契约版本、可改路径、禁止路径、测试、回滚和证据
+附录T：竞品驱动产品Backlog
+Backlog中的需求来自竞品成熟流程与EWOH差异化目标的结合。所有项必须先形成需求ID、数据/API/状态机影响和验收场景，再由总控Agent分配。
+ID
+Backlog
+优先级
+Owner
+验收摘要
+MES-001
+生产订单与工单来源链
+P0
+AG-11/18
+订单来源、版本、优先级、交期、上游/下游单据可追踪
+MES-002
+工序任务与工作中心
+P0
+AG-11/15
+工序、机台/工位、班次、人员、设备、标准工时和状态完整
+MES-003
+投料与批次管理
+P0
+AG-11/13
+扫码投料、数量校验、批次、单位、图片和追溯
+MES-004
+开工/暂停/恢复/报工/审核
+P0
+AG-11/20
+移动端可完成，重复请求幂等，异常可恢复
+MES-005
+工序交收
+P0
+AG-11/13
+交收数量、时间、责任人、差异、不良和上下游状态清楚
+QMS-001
+首检/巡检/FQC
+P0
+AG-13
+方案可配置、项目可多选/免检、图片证据和审批跳转
+ANDON-001
+安灯闭环与升级
+P0
+AG-12
+发起、接单、响应、处理、验证、关闭、超时升级和通知
+OEE-001
+设备状态时序与原因树
+P0
+AG-12/22
+每段状态有来源、开始/结束、原因和责任人
+MOBILE-001
+一线移动工作台
+P0
+AG-20
+扫码、任务、ESOP、质检、异常、外骨骼和个人状态
+TRACE-001
+人机料法环追溯
+P0
+AG-13/08
+按订单/批次/序列号回溯人员、设备、参数、环境、质量和事件
+ERP-001
+ERP标准连接器
+P0
+AG-18
+订单/BOM/物料/报工/消耗/入库双向、幂等和补偿
+EAM-001
+点检保养维修
+P1
+AG-14
+策略、计划、任务、图片、验收、备件和历史
+CFG-001
+工作中心功能开关
+P1
+AG-15
+按工位配置投料、首检、审核、交收、外骨骼和风险确认
+AI-001
+主动触发建议与多方案
+P1
+AG-17
+无预生成、快照冻结、版本、解释、不确定性和人工审批
+TWIN-001
+现场事件空间化
+P1
+AG-08/21
+安灯、质量、停机和任务异常可在地图定位并回放
+附录U：RC2到试点的门禁矩阵
+门禁
+名称
+通过条件
+证据
+G0
+资料/代码/环境可访问
+仓库、数据库、设备协议、试点范围和Owner明确
+访问清单、基线报告
+G1
+SSOT冻结
+根README、架构图、事实源和历史口径冲突处理
+ADR、SSOT矩阵
+G2
+六类契约冻结
+C1-C6有版本、Owner和变更机制
+契约标签、生成物
+G3
+环境与安全探针
+数据库、RLS、GUC、密钥、网络和角色符合要求
+探针日志、安全报告
+G4
+数据与迁移
+DDL编译、迁移、回滚、组织隔离、备份恢复通过
+数据库证据包
+G5
+真机可信链
+至少两类设备帧、质量、断网、时钟和组织上下文通过
+设备接入报告
+G6
+MES P0领域闭环
+生产执行、OEE、安灯、质量、移动和ERP接口达到Ready
+领域测试与演示
+G7
+跨域集成
+人员外骨骼、任务、世界、AI、控制和审计互通
+集成测试报告
+G8
+场景验收
+十类场景包通过，关键缺陷清零
+场景证据包
+G9
+非功能与安全
+性能、并发、故障注入、恢复、渗透和隐私通过
+非功能报告
+G10
+上线准备
+部署、监控、值守、培训、DPA、回滚和窗口准备
+Go/No-Go清单
+G11
+试点放行
+人类Owner签署，生产操作批准
+签署记录
+G12
+多期扩展
+阶段B-E各自场景与价值指标通过
+分期验收报告
+G13
+结项
+交付、知识、运维Owner、遗留和价值评估完成
+结项报告
+附录V：研究来源与证据登记册
+编号
+来源
+地址/文件
+研究日期
+使用范围
+R1
+EWOH GitHub主仓库
+https://github.com/qq547820639/EWOH
+2026-08-03
+目录结构、20 commits、受控试点定位
+R2
+EWOH README.md
+https://github.com/qq547820639/EWOH/blob/main/README.md
+2026-08-03
+冻结delivery、Python边缘平台、部署和安全边界
+R3
+EWOH CHANGELOG.md
+https://github.com/qq547820639/EWOH/blob/main/CHANGELOG.md
+2026-08-03
+0.6.0-rc1/rc2新增、修复、安全与测试声明
+R4
+EWOH SECURITY.md
+https://github.com/qq547820639/EWOH/blob/main/SECURITY.md
+2026-08-03
+实时控制边界、隐私、保留、密钥和四区部署
+R5
+EWOH ewoh-spark-app
+https://github.com/qq547820639/EWOH/tree/main/ewoh-spark-app
+2026-08-03
+NestJS/React结构、模块、依赖和测试入口
+R6
+树字标品MES系统解决方案（用户上传PPTX）
+内部附件：2025-07
+2026-08-03
+排产、报工、安灯、OEE、质量、维保、ESOP、追溯和案例
+R7
+LightMES官网与App版本记录
+https://www.lightmes.cn/；App Store树字MES
+2026-08-03
+公开功能、移动端和近期迭代细节
+R8
+速达S3000 AI PRO白皮书（用户上传DOC）
+内部附件
+2026-08-03
+采购销售库存财务OA HR CRM、审批、集成与部署
+R9
+EWOH历次冻结产品/DDL/全生命周期方案
+会话上传文档与本方案第二、三篇
+2026-08-03
+完整产品能力、数据库规则、多期路线和Agent制度
+证据解释规则：仓库自述“测试通过”仅表示项目记录，不等同于本次文档编制过程已亲自复验。正式放行必须在目标环境重新执行并保存证据。竞品厂商的客户数、ROI、效率提升和回本周期属于宣传口径，仅用于理解价值表达，不作为EWOH商业承诺。
+

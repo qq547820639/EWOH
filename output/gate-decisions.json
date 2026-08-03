@@ -1,0 +1,203 @@
+{
+  "generatedAt": "2026-08-03T18:01:32.791Z",
+  "gateCount": 14,
+  "approvedCount": 0,
+  "requiresApprovalCount": 4,
+  "gates": [
+    {
+      "gateId": "G0",
+      "title": "Environment and materials accessible",
+      "calculatedStatus": "passed",
+      "baseStatus": "passed",
+      "humanDecision": null,
+      "approver": null,
+      "decidedAt": null,
+      "conditions": [
+        "authoritative docs extracted, repo/dependencies readable, capability limits recorded"
+      ],
+      "evidenceCount": 0
+    },
+    {
+      "gateId": "G1",
+      "title": "Requirements and terminology baseline frozen",
+      "calculatedStatus": "passed",
+      "baseStatus": "passed",
+      "humanDecision": null,
+      "approver": null,
+      "decidedAt": null,
+      "conditions": [
+        "Final 5.0/Final 6.0 terminology reconciled",
+        "authoritative plan extracted to `authoritative-plan-final6.txt`"
+      ],
+      "evidenceCount": 0
+    },
+    {
+      "gateId": "G2",
+      "title": "Shared contracts frozen",
+      "calculatedStatus": "passed",
+      "baseStatus": "passed",
+      "humanDecision": null,
+      "approver": null,
+      "decidedAt": null,
+      "conditions": [
+        "C1-C9 v1.x frozen",
+        "strict OpenAPI audit 226/226",
+        "work graph/asset catalog/factory profile audits pass"
+      ],
+      "evidenceCount": 0
+    },
+    {
+      "gateId": "G3",
+      "title": "Environment probes pass",
+      "calculatedStatus": "passed",
+      "baseStatus": "passed",
+      "humanDecision": null,
+      "approver": null,
+      "decidedAt": null,
+      "conditions": [
+        "PostgreSQL 17.10 and runtime role probed",
+        "Docker/Kubernetes tools recorded unavailable"
+      ],
+      "evidenceCount": 0
+    },
+    {
+      "gateId": "G4",
+      "title": "DDL compile/migration tests pass",
+      "calculatedStatus": "passed",
+      "baseStatus": "passed",
+      "humanDecision": null,
+      "approver": null,
+      "decidedAt": null,
+      "conditions": [
+        "real apply/verify/RLS/audit/rollback/rebuild on PostgreSQL 17.10",
+        "unique org-key index verified"
+      ],
+      "evidenceCount": 0
+    },
+    {
+      "gateId": "G5",
+      "title": "Backend infrastructure passes",
+      "calculatedStatus": "passed",
+      "baseStatus": "passed",
+      "humanDecision": null,
+      "approver": null,
+      "decidedAt": null,
+      "conditions": [
+        "request transaction/GUC, auth, errors, health, rate limit tests",
+        "76 Jest tests total"
+      ],
+      "evidenceCount": 0
+    },
+    {
+      "gateId": "G6",
+      "title": "Core domain modules/APIs pass",
+      "calculatedStatus": "passed",
+      "baseStatus": "passed",
+      "humanDecision": null,
+      "approver": null,
+      "decidedAt": null,
+      "conditions": [
+        "226 routes, 0 unimplemented",
+        "work orchestration APIs documented and tested over HTTP"
+      ],
+      "evidenceCount": 0
+    },
+    {
+      "gateId": "G7",
+      "title": "Frontend and command map pass",
+      "calculatedStatus": "in_progress",
+      "baseStatus": "in_progress",
+      "humanDecision": null,
+      "approver": null,
+      "decidedAt": null,
+      "conditions": [
+        "Playwright smoke: login, command center, command map, devices, alerts render with real data",
+        "work console route and layout type-check"
+      ],
+      "evidenceCount": 0
+    },
+    {
+      "gateId": "G8",
+      "title": "Cross-module scenario tests pass",
+      "calculatedStatus": "in_progress",
+      "baseStatus": "in_progress",
+      "humanDecision": null,
+      "approver": null,
+      "decidedAt": null,
+      "conditions": [
+        "SP-01..SP-12 unit suite + HTTP+PostgreSQL E2E",
+        "Final 6 scenario pack and connector audits pass"
+      ],
+      "evidenceCount": 0
+    },
+    {
+      "gateId": "G9",
+      "title": "Security/performance/regression pass",
+      "calculatedStatus": "in_progress",
+      "baseStatus": "in_progress",
+      "humanDecision": null,
+      "approver": null,
+      "decidedAt": null,
+      "conditions": [
+        "security fixes + DB probe pass",
+        "control plane writes gated by `EWOH_WORK_WRITABLE`",
+        "Jest/lint/typecheck/build pass"
+      ],
+      "evidenceCount": 0
+    },
+    {
+      "gateId": "G10",
+      "title": "Release/rollback/ops ready",
+      "calculatedStatus": "requires_approval",
+      "baseStatus": "passed",
+      "humanDecision": null,
+      "approver": null,
+      "decidedAt": null,
+      "conditions": [
+        "`RELEASE DRILL PASSED` on disposable PostgreSQL 17",
+        "GitHub Actions Docker build + PG migration/rollback green",
+        "K8s apply and production observability drill pending"
+      ],
+      "evidenceCount": 0
+    },
+    {
+      "gateId": "G11",
+      "title": "Business acceptance and delivery complete",
+      "calculatedStatus": "requires_approval",
+      "baseStatus": "requires_approval",
+      "humanDecision": null,
+      "approver": null,
+      "decidedAt": null,
+      "conditions": [
+        "acceptance signoff"
+      ],
+      "evidenceCount": 0
+    },
+    {
+      "gateId": "G12",
+      "title": "Follow-on phases accepted",
+      "calculatedStatus": "requires_approval",
+      "baseStatus": "requires_approval",
+      "humanDecision": null,
+      "approver": null,
+      "decidedAt": null,
+      "conditions": [
+        "phase acceptance reports"
+      ],
+      "evidenceCount": 0
+    },
+    {
+      "gateId": "G13",
+      "title": "Final project closeout",
+      "calculatedStatus": "requires_approval",
+      "baseStatus": "requires_approval",
+      "humanDecision": null,
+      "approver": null,
+      "decidedAt": null,
+      "conditions": [
+        "closeout package"
+      ],
+      "evidenceCount": 0
+    }
+  ]
+}

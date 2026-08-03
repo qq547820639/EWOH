@@ -1,0 +1,28 @@
+mappingId: erp-order-to-ewoh
+name: ERP Order to EWOH Work Order
+version: 1.0.0
+source:
+  system: erp
+  schemaRef: erp-order-2.1
+target:
+  system: ewoh
+  schemaRef: ewoh-work-order-1.0
+rules:
+  - from: order_no
+    to: orderNo
+    required: true
+  - from: customer_id
+    to: customerId
+    required: true
+  - from: promise_date
+    to: dueAt
+    transform: iso8601
+  - from: product_code
+    to: productCode
+    required: true
+  - from: quantity
+    to: quantity
+    transform: numeric(18,4)
+  - from: line_status
+    to: status
+    transform: enum-map

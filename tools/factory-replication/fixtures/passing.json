@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "ewoh:///factory-replication/v1",
+  "factoryName": "Second Factory",
+  "profileId": "PRF-SECOND",
+  "templateId": "ewoh-golden-standard",
+  "coreFork": false,
+  "profileReplayPassed": true,
+  "differencesResolvedRate": 0.95,
+  "requirements": [
+    { "id": "R-001", "satisfiedBy": "config" },
+    { "id": "R-002", "satisfiedBy": "config" },
+    { "id": "R-003", "satisfiedBy": "asset" },
+    { "id": "R-004", "satisfiedBy": "config" },
+    { "id": "R-005", "satisfiedBy": "asset" }
+  ]
+}

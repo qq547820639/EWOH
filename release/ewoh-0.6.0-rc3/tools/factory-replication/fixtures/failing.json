@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ewoh:///factory-replication/v1",
+  "factoryName": "Forked Factory",
+  "profileId": "PRF-FORK",
+  "templateId": "custom-template",
+  "coreFork": true,
+  "profileReplayPassed": false,
+  "differencesResolvedRate": 0.5,
+  "requirements": [
+    { "id": "R-001", "satisfiedBy": "custom" },
+    { "id": "R-002", "satisfiedBy": "custom" },
+    { "id": "R-003", "satisfiedBy": "not-satisfied" }
+  ]
+}

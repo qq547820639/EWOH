@@ -1,0 +1,472 @@
+# EWOH 受控试点系统 - OpenAPI 3.0 规范骨架
+# 说明：请求体/响应体以 $ref 占位，待补全至 components/schemas。
+openapi: 3.0.3
+
+info:
+  title: EWOH API
+  version: 0.6.0
+  description: |
+    EWOH 受控试点系统 API：外骨骼人员作业协同与风险分析平台。
+
+    安全边界：本 API 不下发任何急停 / 限扭 / 关节实时控制 / 助力实时闭环 /
+    限速放宽 / 异常退出保护 / 设备失联安全态 / 绕过本地安全检查的调试指令，
+    这些能力保留在设备控制器本地。
+  contact:
+    name: EWOH Team
+
+servers:
+  - url: https://api.ewoh.local
+    description: 试点环境（经 edge-gateway 终结 TLS）
+  - url: http://127.0.0.1:8765
+    description: 开发环境（进程方式）
+
+# 默认安全策略：除显式覆盖（login）外，所有端点均需 BearerAuth
+security:
+  - BearerAuth: []
+
+tags:
+  - name: auth
+  - name: me
+  - name: devices
+  - name: telemetry
+  - name: events
+  - name: tasks
+  - name: query
+  - name: audit
+  - name: models
+  - name: rules
+  - name: scenario
+  - name: system
+
+paths:
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: 登录获取访问令牌
+      security: []   # 登录无需鉴权
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200': { $ref: '#/components/responses/TokenResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/auth/refresh:
+    post:
+      tags: [auth]
+      summary: 刷新访问令牌
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200': { $ref: '#/components/responses/TokenResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/me:
+    get:
+      tags: [me]
+      summary: 当前用户信息
+      responses:
+        '200': { $ref: '#/components/responses/MeResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/devices:
+    get:
+      tags: [devices]
+      summary: 设备列表
+      responses:
+        '200': { $ref: '#/components/responses/DeviceList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/devices/{id}:
+    get:
+      tags: [devices]
+      summary: 设备详情
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200': { $ref: '#/components/responses/DeviceDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/devices/{id}/health:
+    get:
+      tags: [devices]
+      summary: 设备健康状态
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200': { $ref: '#/components/responses/DeviceHealth' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/telemetry/latest:
+    get:
+      tags: [telemetry]
+      summary: 最新遥测
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdQuery'
+      responses:
+        '200': { $ref: '#/components/responses/TelemetryLatest' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/telemetry/series:
+    get:
+      tags: [telemetry]
+      summary: 遥测时序
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdQuery'
+        - $ref: '#/components/parameters/TimeRange'
+      responses:
+        '200': { $ref: '#/components/responses/TelemetrySeries' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/telemetry/export:
+    post:
+      tags: [telemetry]
+      summary: 遥测导出（需导出角色）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportRequest'
+      responses:
+        '200': { $ref: '#/components/responses/ExportResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/events:
+    get:
+      tags: [events]
+      summary: 事件列表
+      parameters:
+        - $ref: '#/components/parameters/TimeRange'
+      responses:
+        '200': { $ref: '#/components/responses/EventList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/events/{id}:
+    get:
+      tags: [events]
+      summary: 事件详情
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200': { $ref: '#/components/responses/EventDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/events/{id}/status:
+    post:
+      tags: [events]
+      summary: 更新事件状态（幂等）
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventStatusUpdate'
+      responses:
+        '200': { $ref: '#/components/responses/EventDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/events/{id}/comment:
+    post:
+      tags: [events]
+      summary: 事件评论
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventComment'
+      responses:
+        '200': { $ref: '#/components/responses/EventDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/tasks/recommend:
+    post:
+      tags: [tasks]
+      summary: 任务推荐
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskRecommendRequest'
+      responses:
+        '200': { $ref: '#/components/responses/TaskRecommendation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/tasks/confirm:
+    post:
+      tags: [tasks]
+      summary: 任务确认（幂等）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskConfirmRequest'
+      responses:
+        '200': { $ref: '#/components/responses/Assignment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/assignments:
+    get:
+      tags: [tasks]
+      summary: 任务分配列表
+      responses:
+        '200': { $ref: '#/components/responses/AssignmentList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/query:
+    post:
+      tags: [query]
+      summary: 综合查询（幂等）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryRequest'
+      responses:
+        '200': { $ref: '#/components/responses/QueryResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/audit:
+    get:
+      tags: [audit]
+      summary: 审计日志查询（需审计角色）
+      parameters:
+        - $ref: '#/components/parameters/TimeRange'
+      responses:
+        '200': { $ref: '#/components/responses/AuditList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/models:
+    get:
+      tags: [models]
+      summary: 模型列表
+      responses:
+        '200': { $ref: '#/components/responses/ModelList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/rules:
+    get:
+      tags: [rules]
+      summary: 规则列表
+      responses:
+        '200': { $ref: '#/components/responses/RuleList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/scenario/evaluate:
+    post:
+      tags: [scenario]
+      summary: 场景评估
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScenarioEvaluateRequest'
+      responses:
+        '200': { $ref: '#/components/responses/ScenarioResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/reset:
+    post:
+      tags: [system]
+      summary: 受控重置（试点，需管理员角色，幂等）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetRequest'
+      responses:
+        '200': { $ref: '#/components/responses/ResetResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 访问令牌（JWT），由 /api/auth/login 或 /api/auth/refresh 获取。
+
+  parameters:
+    DeviceId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: 设备标识
+    DeviceIdQuery:
+      name: device_id
+      in: query
+      required: false
+      schema: { type: string }
+      description: 设备标识（过滤）
+    EventId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: 事件标识
+    TimeRange:
+      name: range
+      in: query
+      required: false
+      schema:
+        type: string
+        example: "2026-07-01T00:00:00Z/2026-07-30T23:59:59Z"
+      description: 时间范围（ISO8601 区间，start/end）
+
+  responses:
+    BadRequest:
+      description: 请求参数错误
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: 未认证或令牌无效
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: 权限不足
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: 触发限流
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InternalError:
+      description: 服务器内部错误
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    # 业务响应占位（待补全 schema）
+    TokenResponse:        { description: 令牌响应,        content: { application/json: { schema: { $ref: '#/components/schemas/Token' } } } }
+    MeResponse:           { description: 当前用户,        content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+    DeviceList:           { description: 设备列表,        content: { application/json: { schema: { $ref: '#/components/schemas/DeviceList' } } } }
+    DeviceDetail:         { description: 设备详情,        content: { application/json: { schema: { $ref: '#/components/schemas/Device' } } } }
+    DeviceHealth:         { description: 设备健康,        content: { application/json: { schema: { $ref: '#/components/schemas/DeviceHealth' } } } }
+    TelemetryLatest:      { description: 最新遥测,        content: { application/json: { schema: { $ref: '#/components/schemas/Telemetry' } } } }
+    TelemetrySeries:      { description: 遥测时序,        content: { application/json: { schema: { $ref: '#/components/schemas/TelemetrySeries' } } } }
+    ExportResult:         { description: 导出结果,        content: { application/json: { schema: { $ref: '#/components/schemas/ExportResult' } } } }
+    EventList:            { description: 事件列表,        content: { application/json: { schema: { $ref: '#/components/schemas/EventList' } } } }
+    EventDetail:          { description: 事件详情,        content: { application/json: { schema: { $ref: '#/components/schemas/Event' } } } }
+    TaskRecommendation:   { description: 任务推荐,        content: { application/json: { schema: { $ref: '#/components/schemas/TaskRecommendation' } } } }
+    Assignment:           { description: 任务分配,        content: { application/json: { schema: { $ref: '#/components/schemas/Assignment' } } } }
+    AssignmentList:       { description: 任务分配列表,    content: { application/json: { schema: { $ref: '#/components/schemas/AssignmentList' } } } }
+    QueryResult:          { description: 查询结果,        content: { application/json: { schema: { $ref: '#/components/schemas/QueryResult' } } } }
+    AuditList:            { description: 审计日志,        content: { application/json: { schema: { $ref: '#/components/schemas/AuditList' } } } }
+    ModelList:            { description: 模型列表,        content: { application/json: { schema: { $ref: '#/components/schemas/ModelList' } } } }
+    RuleList:             { description: 规则列表,        content: { application/json: { schema: { $ref: '#/components/schemas/RuleList' } } } }
+    ScenarioResult:       { description: 场景评估结果,    content: { application/json: { schema: { $ref: '#/components/schemas/ScenarioResult' } } } }
+    ResetResult:          { description: 重置结果,        content: { application/json: { schema: { $ref: '#/components/schemas/ResetResult' } } } }
+
+  schemas:
+    Error:                { type: object, properties: { code: { type: string }, message: { type: string } }, required: [code, message] }
+    # 以下为请求/响应体占位，待按 delivery/02_技术规范/schemas 与 database.sql 补全字段
+    LoginRequest:         { type: object, description: '登录请求（占位）' }
+    RefreshRequest:       { type: object, description: '刷新令牌请求（占位）' }
+    Token:                { type: object, description: '访问令牌（占位）' }
+    User:                 { type: object, description: '用户信息（占位）' }
+    Device:               { type: object, description: '设备（占位）' }
+    DeviceList:           { type: object, description: '设备列表（占位）' }
+    DeviceHealth:         { type: object, description: '设备健康（占位）' }
+    Telemetry:            { type: object, description: '遥测（占位）' }
+    TelemetrySeries:      { type: object, description: '遥测时序（占位）' }
+    ExportRequest:        { type: object, description: '导出请求（占位）' }
+    ExportResult:         { type: object, description: '导出结果（占位）' }
+    Event:                { type: object, description: '事件（占位）' }
+    EventList:            { type: object, description: '事件列表（占位）' }
+    EventStatusUpdate:    { type: object, description: '事件状态更新（占位）' }
+    EventComment:         { type: object, description: '事件评论（占位）' }
+    TaskRecommendRequest: { type: object, description: '任务推荐请求（占位）' }
+    TaskRecommendation:   { type: object, description: '任务推荐结果（占位）' }
+    TaskConfirmRequest:   { type: object, description: '任务确认请求（占位）' }
+    Assignment:           { type: object, description: '任务分配（占位）' }
+    AssignmentList:       { type: object, description: '任务分配列表（占位）' }
+    QueryRequest:         { type: object, description: '查询请求（占位）' }
+    QueryResult:          { type: object, description: '查询结果（占位）' }
+    AuditList:            { type: object, description: '审计日志列表（占位）' }
+    ModelList:            { type: object, description: '模型列表（占位）' }
+    RuleList:             { type: object, description: '规则列表（占位）' }
+    ScenarioEvaluateRequest: { type: object, description: '场景评估请求（占位）' }
+    ScenarioResult:       { type: object, description: '场景评估结果（占位）' }
+    ResetRequest:         { type: object, description: '重置请求（占位）' }
+    ResetResult:          { type: object, description: '重置结果（占位）' }
