@@ -17,10 +17,10 @@ artifacts:
   deploy: deploy/cloud/
   contracts: .codex/artifacts/contracts/
 evidence:
-  jest: "65 suites / 292 tests"
+  jest: "66 suites / 298 tests"
   client_jest: "6 suites / 22 tests"
-  e2e: "25/25 HTTP + PostgreSQL"
-  openapi: "199/199 documented, 0 unimplemented"
+  e2e: "26/26 HTTP + PostgreSQL"
+  openapi: "207/207 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/openapi/e2e/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; logical backup/restore of 54 tables / 25 rows with row-count verify"
@@ -75,6 +75,7 @@ evidence:
   scenario_ui: "/scale asset table scenario pack install/uninstall actions; client build passed"
   operations_capability: "EAM/tooling lifecycle, work center flags, standard hours, personnel efficiency; /api/operations/* 17 routes; org RLS + audit; E2E 24/24"
   sparkplug_openfeature: "Sparkplug B topic/payload/session codec + edge adapter; sparkplug-b manifest; OpenFeature-style flag evaluation with ring/role/org/factory targeting and safe-closed default; E2E 25/25"
+  parameter_registry: "typed parameters with validation/scope/source/validity/approval/version history/rollback; /api/parameters/* 8 routes; org RLS + audit; E2E 26/26"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

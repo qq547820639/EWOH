@@ -42,6 +42,7 @@ import { PolicyModule } from './modules/policy/policy.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { WorkflowModule } from './modules/workflow/workflow.module';
 import { OperationsModule } from './modules/operations/operations.module';
+import { ParametersModule } from './modules/parameters/parameters.module';
 
 @Module({
   imports: [
@@ -80,6 +81,7 @@ import { OperationsModule } from './modules/operations/operations.module';
     OnboardingModule,
     WorkflowModule,
     OperationsModule,
+    ParametersModule,
   ],
   providers: [
     {

@@ -561,6 +561,123 @@ if (!e2eConfig) {
       });
     });
 
+    it('registers, approves, updates, and rolls back typed parameters with audit', async () => {
+      const adminA = await login(
+        baseUrl,
+        fixture!.globalAdminA.username,
+        fixture!.globalAdminA.password,
+      );
+      expect(adminA.status).toBe(201);
+      const token = adminA.body.accessToken;
+      const key = `oee.target.${runId}`;
+
+      const created = await apiRequest<{
+        key: string;
+        status: string;
+        version: number;
+        current: number;
+      }>(baseUrl, '/api/parameters', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          key,
+          name: 'OEE 可用率目标',
+          dataType: 'number',
+          current: 0.85,
+          unit: '%',
+          approvalRequired: true,
+          validation: { min: 0, max: 1 },
+          scope: { factoryId: 'factory-a' },
+        }),
+      });
+      expect(created.status).toBe(201);
+      expect(created.body.status).toBe('pending');
+      expect(created.body.version).toBe(1);
+
+      const approved = await apiRequest<{ status: string }>(
+        baseUrl,
+        `/api/parameters/${encodeURIComponent(key)}/approve`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+        },
+      );
+      expect(approved.status).toBe(201);
+      expect(approved.body.status).toBe('active');
+
+      const updated = await apiRequest<{
+        current: number;
+        version: number;
+        status: string;
+        history: unknown[];
+      }>(baseUrl, `/api/parameters/${encodeURIComponent(key)}`, {
+        method: 'PUT',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({ current: 0.9, note: 'e2e tune' }),
+      });
+      expect(updated.status).toBe(200);
+      expect(updated.body.current).toBe(0.9);
+      expect(updated.body.version).toBe(2);
+      expect(updated.body.status).toBe('pending');
+      expect(updated.body.history).toHaveLength(1);
+
+      await apiRequest(
+        baseUrl,
+        `/api/parameters/${encodeURIComponent(key)}/approve`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+        },
+      );
+      const rolledBack = await apiRequest<{
+        current: number;
+        version: number;
+        status: string;
+      }>(baseUrl, `/api/parameters/${encodeURIComponent(key)}/rollback`, {
+        method: 'POST',
+        headers: jsonHeaders(token),
+      });
+      expect(rolledBack.status).toBe(201);
+      expect(rolledBack.body.current).toBe(0.85);
+      expect(rolledBack.body.version).toBe(3);
+      expect(rolledBack.body.status).toBe('pending');
+
+      const summary = await apiRequest<{
+        totalCount: number;
+        pendingApprovalCount: number;
+      }>(baseUrl, '/api/parameters/summary', {
+        headers: jsonHeaders(token),
+      });
+      expect(summary.status).toBe(200);
+      expect(summary.body.totalCount).toBeGreaterThanOrEqual(1);
+      expect(summary.body.pendingApprovalCount).toBeGreaterThanOrEqual(1);
+
+      const auditRows = await owner!.unsafe<
+        Array<{ action: string; entity_id: string; org_id: string }>
+      >(
+        `select action, entity_id, org_id::text
+         from public.ewoh_audit_log
+         where entity_type = 'parameter' and entity_id = $1
+         order by audit_seq`,
+        [key],
+      );
+      expect(auditRows.length).toBeGreaterThanOrEqual(3);
+      expect(auditRows.every((row) => row.org_id === fixture!.orgA.id)).toBe(true);
+
+      const viewerB = await login(
+        baseUrl,
+        fixture!.viewerB.username,
+        fixture!.viewerB.password,
+      );
+      expect(viewerB.status).toBe(201);
+      const denied = await apiRequest(
+        baseUrl,
+        '/api/parameters',
+        { headers: jsonHeaders(viewerB.body.accessToken) },
+      );
+      expect(denied.status).toBe(403);
+    });
+
     it('rotates refresh tokens and revokes them after reuse/logout', async () => {
       const first = await login(
         baseUrl,

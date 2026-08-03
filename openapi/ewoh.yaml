@@ -34,6 +34,7 @@ tags:
   - name: health
   - name: view
   - name: operations
+  - name: parameters
 paths:
   /api/auth/login:
     post:
@@ -5308,6 +5309,212 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/parameters:
+    get:
+      tags:
+        - parameters
+      summary: List org-scoped parameters
+      responses:
+        '200':
+          description: Parameter list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParameterList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - parameters
+      summary: Register a typed parameter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParameterRegisterRequest'
+      responses:
+        '201':
+          description: Registered parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Parameter'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/parameters/summary:
+    get:
+      tags:
+        - parameters
+      summary: Summarize parameter registry
+      responses:
+        '200':
+          description: Parameter summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParameterSummary'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/parameters/{key}:
+    get:
+      tags:
+        - parameters
+      summary: Get one parameter
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Parameter'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags:
+        - parameters
+      summary: Update a parameter with version history
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParameterUpdateRequest'
+      responses:
+        '200':
+          description: Updated parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Parameter'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/parameters/{key}/approve:
+    post:
+      tags:
+        - parameters
+      summary: Approve a pending parameter
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Approved parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Parameter'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/parameters/{key}/rollback:
+    post:
+      tags:
+        - parameters
+      summary: Roll back a parameter to its previous version
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Rolled-back parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Parameter'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/parameters/{key}/retire:
+    post:
+      tags:
+        - parameters
+      summary: Retire a parameter
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Retired parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Parameter'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
 components:
   securitySchemes:
     BearerAuth:
@@ -9712,6 +9919,157 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/FeatureFlagEvaluation'
+    ParameterRegisterRequest:
+      type: object
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        dataType:
+          type: string
+          enum: [number, integer, string, boolean, json]
+        current:
+          description: Current parameter value
+        unit:
+          type: string
+        source:
+          type: string
+        approvalRequired:
+          type: boolean
+        scope:
+          type: object
+          properties:
+            factoryId:
+              type: string
+            workCenterId:
+              type: string
+            deviceId:
+              type: string
+        effectiveFrom:
+          type: string
+        effectiveUntil:
+          type: string
+        validation:
+          type: object
+          properties:
+            min:
+              type: number
+            max:
+              type: number
+            enum:
+              type: array
+            pattern:
+              type: string
+      required:
+        - key
+        - name
+        - dataType
+        - current
+    ParameterUpdateRequest:
+      type: object
+      properties:
+        current:
+          description: New parameter value
+        note:
+          type: string
+        effectiveUntil:
+          type: string
+        validation:
+          type: object
+          additionalProperties: true
+      required:
+        - current
+    ParameterHistoryEntry:
+      type: object
+      properties:
+        version:
+          type: number
+        value:
+          description: Historical value
+        status:
+          type: string
+        source:
+          type: string
+        updatedBy:
+          type: string
+        updatedAt:
+          type: string
+        note:
+          type: string
+          nullable: true
+    Parameter:
+      type: object
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        dataType:
+          type: string
+        unit:
+          type: string
+          nullable: true
+        current:
+          description: Current value
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParameterHistoryEntry'
+        status:
+          type: string
+        version:
+          type: number
+        source:
+          type: string
+        approvalRequired:
+          type: boolean
+        scope:
+          type: object
+          additionalProperties: true
+        effectiveFrom:
+          type: string
+          nullable: true
+        effectiveUntil:
+          type: string
+          nullable: true
+        validation:
+          type: object
+          additionalProperties: true
+          nullable: true
+        updatedBy:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - key
+        - name
+        - dataType
+        - current
+        - status
+        - version
+    ParameterList:
+      type: array
+      items:
+        $ref: '#/components/schemas/Parameter'
+    ParameterSummary:
+      type: object
+      properties:
+        totalCount:
+          type: number
+        statusCounts:
+          type: object
+          additionalProperties:
+            type: number
+        dataTypeCounts:
+          type: object
+          additionalProperties:
+            type: number
+        expiredCount:
+          type: number
+        pendingApprovalCount:
+          type: number
+      required: []
     HandleEventRequest:
       type: object
       properties:

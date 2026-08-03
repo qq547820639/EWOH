@@ -415,6 +415,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-137 | Sparkplug B connector + OpenFeature flag evaluation | V-CON/06 | Done | `round53-sparkplug-openfeature.md`; pytest 89; Jest 65/292; client 6/22; OpenAPI 199/199; E2E 25/25; connector TCK 17/17 |
 
+## Wave Final5 - Parameter Registry (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-138 | Typed parameter registry with approval/version/rollback | PX-06/21 | Done | `round54-parameter-registry.md`; Jest 66/298; client 6/22; OpenAPI 207/207; E2E 26/26 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

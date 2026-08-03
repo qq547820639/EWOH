@@ -181,6 +181,12 @@
   `reason/variant/targetingApplied` 评估原因。
 - 系统管理页新增功能开关评估器：输入开关键、升级环、工厂 ID 与角色即可
   查看当前上下文下的开启状态与评估原因。
+- 参数注册中心：新增 `/api/parameters/*`（8 条路由）支持
+  `number/integer/string/boolean/json` 类型参数、范围/来源/有效期、
+  数值/枚举/正则校验、审批门禁、版本历史与回滚，记录复用
+  `ewoh_scheduler_config` 并保持 RLS 组织隔离与审计链。
+- 系统管理页新增参数注册中心 UI：登记表单、行内更新、
+  审批/回滚/停用操作与汇总统计均接入真实 API。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

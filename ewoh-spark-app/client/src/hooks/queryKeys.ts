@@ -50,4 +50,6 @@ export const queryKeys = {
   operationsStandardHours: ['operations-standard-hours'] as const,
   operationsEfficiency: ['operations-efficiency'] as const,
   operationsEfficiencySummary: ['operations-efficiency-summary'] as const,
+  parameters: ['parameters'] as const,
+  parameterSummary: ['parameter-summary'] as const,
 };
