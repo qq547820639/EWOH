@@ -475,6 +475,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-147 | Support bundle includes redacted recent traces | PX-10/09 | Done | `round63-support-bundle-traces.md`; E2E 28/28 |
 
+## Wave Final5 - Tracing UI (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-148 | System page request tracing viewer | AG-34/35 | Done | `round64-tracing-ui.md`; client 6/22; build passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

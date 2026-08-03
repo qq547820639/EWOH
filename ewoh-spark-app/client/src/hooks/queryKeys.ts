@@ -54,4 +54,5 @@ export const queryKeys = {
   parameterSummary: ['parameter-summary'] as const,
   aasAssets: ['aas-assets'] as const,
   aasSemantics: (assetId: string) => ['aas-assets', assetId, 'semantics'] as const,
+  traces: ['observability-traces'] as const,
 };

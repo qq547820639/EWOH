@@ -1,6 +1,6 @@
 # EWOH Acceptance Evidence
 
-Status: validated v1.14 (2026-08-03 support bundle trace wave)
+Status: validated v1.15 (2026-08-03 tracing UI wave)
 Owner: AG-00/AG-41
 
 ## Automated Evidence
@@ -225,6 +225,9 @@ Owner: AG-00/AG-41
 - Support bundle tracing: `POST /api/scale/fleet/support-bundle` includes the
   latest 20 redacted request traces and a `traceCount`, so diagnostics carry
   request-level evidence for partner/support workflows.
+- Request tracing UI: the System page shows the latest 50 traces with trace
+  ID, method, path, status, duration, start time and error, refreshed at the
+  operational interval.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

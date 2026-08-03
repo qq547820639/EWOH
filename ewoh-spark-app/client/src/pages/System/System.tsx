@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, CheckCircle2, Database, FlaskConical, Plus, Search, Undo2 } from 'lucide-react';
+import { Ban, CheckCircle2, Database, FlaskConical, Plus, Radar, Search, Undo2 } from 'lucide-react';
 import {
   evaluateFeatureFlags,
   listSystemConfigs,
@@ -18,12 +18,20 @@ import {
   type Parameter,
   type ParameterSummary,
 } from '../../api/parameters';
+import {
+  listRequestTraces,
+  type TraceRecord,
+} from '../../api/tracing';
 import { queryKeys } from '../../hooks/queryKeys';
 import {
   ADMIN_REFETCH_INTERVAL_MS,
+  OPERATIONAL_REFETCH_INTERVAL_MS,
   QUERY_STALE_TIME_MS,
 } from '../../hooks/queryConfig';
 import QueryState from '../../components/QueryState';
+
+const formatTime = (value: string | null | undefined): string =>
+  value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—';
 
 const parseParameterValue = (type: string, raw: string): unknown => {
   if (type === 'number') {
@@ -76,6 +84,12 @@ const System = (): React.ReactElement => {
     queryKey: queryKeys.parameterSummary,
     queryFn: getParameterSummary,
     refetchInterval: ADMIN_REFETCH_INTERVAL_MS,
+    staleTime: QUERY_STALE_TIME_MS,
+  });
+  const tracesQuery = useQuery<TraceRecord[]>({
+    queryKey: queryKeys.traces,
+    queryFn: () => listRequestTraces(50),
+    refetchInterval: OPERATIONAL_REFETCH_INTERVAL_MS,
     staleTime: QUERY_STALE_TIME_MS,
   });
 
@@ -149,6 +163,7 @@ const System = (): React.ReactElement => {
   const rows = query.data ?? [];
   const parameters = parametersQuery.data ?? [];
   const parameterSummary = parameterSummaryQuery.data;
+  const traces = tracesQuery.data ?? [];
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -474,6 +489,71 @@ const System = (): React.ReactElement => {
             </div>
           </QueryState>
         </div>
+      </div>
+
+      <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-[hsl(220_14%_14%)]">
+            <Radar className="h-4 w-4 text-sky-600" />
+            请求追踪
+          </h2>
+          <span className="rounded-full bg-[hsl(220_14%_96%)] px-2 py-1 text-xs text-[hsl(218_10%_42%)]">
+            {traces.length} 条记录
+          </span>
+        </div>
+        <QueryState
+          isLoading={tracesQuery.isLoading}
+          isFetching={tracesQuery.isFetching}
+          isError={tracesQuery.isError}
+          isEmpty={traces.length === 0}
+          onRefresh={() => tracesQuery.refetch()}
+          errorMessage="追踪记录加载失败"
+          emptyMessage="暂无追踪记录"
+        >
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[920px] text-left text-sm">
+              <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Trace ID</th>
+                  <th className="px-3 py-2 font-medium">请求</th>
+                  <th className="px-3 py-2 font-medium">状态</th>
+                  <th className="px-3 py-2 font-medium">耗时</th>
+                  <th className="px-3 py-2 font-medium">开始时间</th>
+                  <th className="px-3 py-2 font-medium">错误</th>
+                </tr>
+              </thead>
+              <tbody>
+                {traces.map((trace) => (
+                  <tr key={trace.traceId} className="border-b border-[hsl(220_14%_96%)] last:border-0">
+                    <td className="break-all px-3 py-2 font-mono text-xs">{trace.traceId}</td>
+                    <td className="px-3 py-2">
+                      <span className="rounded bg-[hsl(220_14%_96%)] px-1.5 py-0.5 font-mono text-xs">
+                        {trace.method}
+                      </span>
+                      <span className="ml-2">{trace.path}</span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={`rounded-full px-2 py-1 text-xs ${
+                          trace.status < 400
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-red-50 text-red-700'
+                        }`}
+                      >
+                        {trace.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">{trace.durationMs} ms</td>
+                    <td className="px-3 py-2 text-xs">{formatTime(trace.startedAt)}</td>
+                    <td className="max-w-[220px] truncate px-3 py-2 text-xs text-red-600">
+                      {trace.error ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </QueryState>
       </div>
 
       <QueryState
