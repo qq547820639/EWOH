@@ -1485,6 +1485,238 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scale/templates:
+    post:
+      tags:
+        - scale
+      summary: Register a factory template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterTemplateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FactoryTemplate'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - scale
+      summary: List factory templates
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FactoryTemplateList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/templates/{id}:
+    get:
+      tags:
+        - scale
+      summary: Factory template detail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FactoryTemplate'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/templates/{id}/state:
+    post:
+      tags:
+        - scale
+      summary: Template lifecycle transition
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: action
+          in: query
+          required: true
+          description: review, certify, publish, deprecate, or retire
+          schema:
+            type: string
+            enum:
+              - review
+              - certify
+              - publish
+              - deprecate
+              - retire
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FactoryTemplate'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/templates/{id}/install:
+    post:
+      tags:
+        - scale
+      summary: Install a published template as a factory profile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstallTemplateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FactoryProfile'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/profiles:
+    get:
+      tags:
+        - scale
+      summary: List factory profiles
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FactoryProfileList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/assets:
+    post:
+      tags:
+        - scale
+      summary: Register an asset package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterAssetPackageRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - scale
+      summary: List asset packages
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackageList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/assets/{id}:
+    get:
+      tags:
+        - scale
+      summary: Asset package detail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/mobile/workbench:
     get:
       tags:
@@ -6413,6 +6645,148 @@ components:
               type: integer
             open:
               type: integer
+    FactoryTemplate:
+      type: object
+      properties:
+        templateId:
+          type: string
+        name:
+          type: string
+        industry:
+          type: string
+          nullable: true
+        version:
+          type: string
+        parentTemplateId:
+          type: string
+          nullable: true
+        inheritanceOrder:
+          type: integer
+        lifecycleStatus:
+          type: string
+          enum:
+            - draft
+            - reviewed
+            - certified
+            - published
+            - deprecated
+            - retired
+        configJson:
+          type: object
+        manifestJson:
+          type: object
+        compatibleCore:
+          type: string
+          nullable: true
+        publishedAt:
+          type: string
+          nullable: true
+    FactoryTemplateList:
+      type: array
+      items:
+        $ref: '#/components/schemas/FactoryTemplate'
+    RegisterTemplateRequest:
+      type: object
+      properties:
+        templateId:
+          type: string
+        name:
+          type: string
+        industry:
+          type: string
+        version:
+          type: string
+        parentTemplateId:
+          type: string
+        inheritanceOrder:
+          type: integer
+        config:
+          type: object
+        manifest:
+          type: object
+        compatibleCore:
+          type: string
+      required:
+        - name
+        - version
+    InstallTemplateRequest:
+      type: object
+      properties:
+        factoryName:
+          type: string
+        config:
+          type: object
+      required:
+        - factoryName
+    FactoryProfile:
+      type: object
+      properties:
+        profileId:
+          type: string
+        factoryName:
+          type: string
+        templateId:
+          type: string
+        configJson:
+          type: object
+        status:
+          type: string
+        installedAt:
+          type: string
+          nullable: true
+    FactoryProfileList:
+      type: array
+      items:
+        $ref: '#/components/schemas/FactoryProfile'
+    AssetPackage:
+      type: object
+      properties:
+        packageId:
+          type: string
+        packageType:
+          type: string
+          enum:
+            - template
+            - connector
+            - scenario
+            - deploy
+        name:
+          type: string
+        version:
+          type: string
+        manifestJson:
+          type: object
+        status:
+          type: string
+        publishedAt:
+          type: string
+          nullable: true
+    AssetPackageList:
+      type: array
+      items:
+        $ref: '#/components/schemas/AssetPackage'
+    RegisterAssetPackageRequest:
+      type: object
+      properties:
+        packageId:
+          type: string
+        packageType:
+          type: string
+          enum:
+            - template
+            - connector
+            - scenario
+            - deploy
+        name:
+          type: string
+        version:
+          type: string
+        manifest:
+          type: object
+      required:
+        - packageType
+        - name
+        - version
     MesTraceGraph:
       type: object
       properties:

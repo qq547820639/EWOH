@@ -87,6 +87,9 @@ const ORG_SCOPED_TABLES = [
   'ewoh_world_delta_log',
   'ewoh_world_snapshot',
   'ewoh_world_state',
+  'ewoh_factory_template',
+  'ewoh_factory_profile',
+  'ewoh_asset_package',
 ];
 
 export async function connectOwner(url: string): Promise<OwnerSql> {

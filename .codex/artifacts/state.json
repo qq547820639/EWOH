@@ -12,12 +12,14 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 4.0 adopted; MES P0, OEE/andon, ERP connector, quality trace, and mobile workbench UI implemented and verified; next is PWA/offline and field gates",
+  "current_status": "Final 5.0 adopted; scale kernel (template/profile/asset registry) implemented; 52 Jest suites / 209 tests; E2E 18/18; OpenAPI 143/143; managed tables 51",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
     ".codex/artifacts/authoritative-plan.txt",
     ".codex/artifacts/authoritative-plan-final4.txt",
+    ".codex/artifacts/authoritative-plan-final5.txt",
+    "delivery/01_开发基线/EWOH_工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案_规模化复制版_Final5.0.docx",
     "delivery/01_开发基线/EWOH_工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案_最新研究升级版_Final4.0.docx",
     ".codex/artifacts/final-implementation-plan.txt",
     "delivery/02_技术规范/database.sql",
@@ -31,9 +33,11 @@
     "D-004 user worktree changes are preserved",
     "D-006 Miaoda is demo-only; production target is standalone cloud deployment with HA and high concurrency",
     "D-007 request-scoped business-table org_id defaults come from app.current_org_id; RLS WITH CHECK remains the cross-org write authority",
-    "D-011 adopt Final 4.0 latest research upgrade as master execution baseline",
+    "D-011 adopt Final 4.0 latest research upgrade as master execution baseline (superseded by D-014)",
     "D-012 next critical path is MES P0 production execution closed loop",
-    "D-013 MES P0 maps to existing schedule_task/schedule_task_step/resource_binding/event tables; 48-table packaging unchanged"
+    "D-013 MES P0 maps to existing schedule_task/schedule_task_step/resource_binding/event tables; 48-table packaging unchanged",
+    "D-014 adopt Final 5.0 scale replication plan as master execution baseline",
+    "D-015 scale layer adds factory_template/factory_profile/asset_package; managed packaging becomes 51"
   ],
   "verification_state": {
     "python_pytest_repo": "53 passed",
@@ -142,6 +146,8 @@
     "trace_mobile": "MesService trace graph + MobileModule workbench API; 51 Jest suites / 203 tests; E2E 17/17; OpenAPI 134/134"
     ,
     "mobile_ui": "React mobile workbench page; client Jest 6 suites / 20 tests; release drill passed"
+    ,
+    "scale_kernel": "ScaleModule template lifecycle/profile install/asset registry; managed tables 51; E2E 18/18; OpenAPI 143/143"
   },
   "subagent_state": {
     "planned": [

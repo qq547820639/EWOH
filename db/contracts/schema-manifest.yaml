@@ -8,7 +8,7 @@ managed_package:
   new_group_count: 36
   frozen_alter_count: 12
   managed_count: 48
-  physical_create_count: 35
+  physical_create_count: 38
   mapped_existing_count_in_group: 1
 notes:
   - "Authoritative plan table 77 lists 38 logical new names under the label \"36 new tables\"."
@@ -16,6 +16,13 @@ notes:
   - "Within that group, ewoh_device_person_binding is satisfied by the existing ewoh_device_binding table, so 35 physical CREATE statements are emitted."
   - "No frozen capability is silently dropped; the capability map in tmp/ddl/capability-map.csv is the acceptance basis."
 managed_tables:
+  - domain: "Scale"
+    logical_name: "ewoh_asset_package"
+    physical_table: "ewoh_asset_package"
+    business_key_columns: ["org_id","package_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scale.asset"]
   - domain: "System"
     logical_name: "ewoh_audit_log"
     physical_table: "ewoh_audit_log"
@@ -79,6 +86,20 @@ managed_tables:
     org_id_policy: "NOT NULL"
     status: "new"
     capability_mapping: ["event.subscription"]
+  - domain: "Scale"
+    logical_name: "ewoh_factory_profile"
+    physical_table: "ewoh_factory_profile"
+    business_key_columns: ["org_id","profile_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scale.profile"]
+  - domain: "Scale"
+    logical_name: "ewoh_factory_template"
+    physical_table: "ewoh_factory_template"
+    business_key_columns: ["org_id","template_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scale.template"]
   - domain: "System"
     logical_name: "ewoh_knowledge_base"
     physical_table: "ewoh_knowledge_base"

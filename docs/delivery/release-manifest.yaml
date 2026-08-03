@@ -4,7 +4,7 @@ status: candidate-for-production (approval-gated)
 bundle:
   path: release/ewoh-0.6.0-rc2
   checksums: release/ewoh-0.6.0-rc2/SHA256SUMS.txt
-  files: 855
+  files: 860
 artifacts:
   api: ewoh-spark-app/dist/server
   client: ewoh-spark-app/dist/client/index.standalone.html
@@ -17,14 +17,14 @@ artifacts:
   deploy: deploy/cloud/
   contracts: .codex/artifacts/contracts/
 evidence:
-  jest: "51 suites / 203 tests"
+  jest: "52 suites / 209 tests"
   client_jest: "6 suites / 20 tests"
-  e2e: "17/17 HTTP + PostgreSQL"
-  openapi: "134/134 documented, 0 unimplemented"
+  e2e: "18/18 HTTP + PostgreSQL"
+  openapi: "143/143 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/openapi/e2e/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; logical backup/restore of 54 tables / 25 rows with row-count verify"
-  db_verify: "48 managed tables / 48 RLS / audit chain / security probe OK incl. org_lookup"
+  db_verify: "51 managed tables / 51 RLS / audit chain / security probe OK incl. org_lookup"
   browser: "Playwright login + command center/map/devices/alerts; no org-scope fallback warnings"
   perf: "1000 req / 50 concurrency, 4943 qps, p95 17.50ms"
   perf_business: "200 req / 25 concurrency on /api/dashboard/overview, 514 qps, p95 60.93ms"
@@ -35,6 +35,7 @@ evidence:
   erp_connector: "idempotent inbound orders, outbound queue with ack, reconcile summary persisted and audited"
   trace_mobile: "quality trace graph and mobile workbench API with MES delegation"
   mobile_ui: "React mobile workbench page with scan/step actions"
+  scale_kernel: "factory template lifecycle, profile install, asset package registry"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

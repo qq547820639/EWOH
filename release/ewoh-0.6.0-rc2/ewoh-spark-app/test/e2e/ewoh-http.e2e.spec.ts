@@ -991,6 +991,139 @@ if (!e2eConfig) {
       expect(workOrderRows[0].org_id).toBe(fixture!.orgA.id);
     });
 
+    it('registers and publishes a factory template, then installs a profile and asset package', async () => {
+      const dispatcher = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcher.status).toBe(201);
+      const token = dispatcher.body.accessToken;
+      const templateId = `TPL-E2E-${runId}`;
+
+      const registered = await apiRequest<{
+        templateId: string;
+        lifecycleStatus: string;
+      }>(baseUrl, '/api/scale/templates', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          templateId,
+          name: 'E2E 离散机加工模板',
+          industry: 'discrete_machining',
+          version: '1.0.0',
+          compatibleCore: '>=0.6.0 <1.0.0',
+          manifest: {
+            modules: ['mes-p0', 'oee', 'andon'],
+            scenarioPacks: ['mes-execution@1.x'],
+          },
+        }),
+      });
+      expect(registered.status).toBe(201);
+      expect(registered.body.lifecycleStatus).toBe('draft');
+
+      for (const action of ['review', 'certify', 'publish']) {
+        const transition = await apiRequest<{ lifecycleStatus: string }>(
+          baseUrl,
+          `/api/scale/templates/${templateId}/state?action=${action}`,
+          {
+            method: 'POST',
+            headers: jsonHeaders(token),
+          },
+        );
+        expect(transition.status).toBe(201);
+        expect(transition.body.lifecycleStatus).not.toBe('draft');
+      }
+
+      const installed = await apiRequest<{
+        profileId: string;
+        factoryName: string;
+        status: string;
+      }>(baseUrl, `/api/scale/templates/${templateId}/install`, {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          factoryName: 'E2E 工厂B',
+          config: { shift: { count: 2 } },
+        }),
+      });
+      expect(installed.status).toBe(201);
+      expect(installed.body.status).toBe('installed');
+
+      const asset = await apiRequest<{ packageId: string; status: string }>(
+        baseUrl,
+        '/api/scale/assets',
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            packageId: `PKG-E2E-${runId}`,
+            packageType: 'scenario',
+            name: 'heavy-lifting-safety',
+            version: '1.0.0',
+            manifest: { requires: { connectors: ['exoskeleton-frame@1.x'] } },
+          }),
+        },
+      );
+      expect(asset.status).toBe(201);
+      expect(asset.body.status).toBe('draft');
+
+      const profiles = await apiRequest<Array<{ profileId: string }>>(
+        baseUrl,
+        '/api/scale/profiles',
+        { headers: jsonHeaders(token) },
+      );
+      expect(profiles.status).toBe(200);
+      expect(
+        profiles.body.some((row) => row.profileId === installed.body.profileId),
+      ).toBe(true);
+
+      const assets = await apiRequest<Array<{ packageId: string }>>(
+        baseUrl,
+        '/api/scale/assets',
+        { headers: jsonHeaders(token) },
+      );
+      expect(assets.status).toBe(200);
+      expect(assets.body.some((row) => row.packageId === asset.body.packageId)).toBe(
+        true,
+      );
+
+      const templateRows = await owner!.unsafe<
+        Array<{ template_id: string; lifecycle_status: string; org_id: string }>
+      >(
+        `select template_id, lifecycle_status, org_id::text
+         from public.ewoh_factory_template
+         where template_id = $1`,
+        [templateId],
+      );
+      expect(templateRows).toHaveLength(1);
+      expect(templateRows[0].lifecycle_status).toBe('published');
+      expect(templateRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const profileRows = await owner!.unsafe<
+        Array<{ profile_id: string; status: string; org_id: string }>
+      >(
+        `select profile_id, status, org_id::text
+         from public.ewoh_factory_profile
+         where profile_id = $1`,
+        [installed.body.profileId],
+      );
+      expect(profileRows).toHaveLength(1);
+      expect(profileRows[0].status).toBe('installed');
+      expect(profileRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const assetRows = await owner!.unsafe<
+        Array<{ package_id: string; org_id: string }>
+      >(
+        `select package_id, org_id::text
+         from public.ewoh_asset_package
+         where package_id = $1`,
+        [asset.body.packageId],
+      );
+      expect(assetRows).toHaveLength(1);
+      expect(assetRows[0].org_id).toBe(fixture!.orgA.id);
+    });
+
     it('persists approval instances, steps, and audit operations', async () => {
       const adminA = await login(
         baseUrl,

@@ -15,6 +15,9 @@ continued multi-phase capability.
   audit chain, and concurrency-safe reservations.
 - Ten end-to-end scenario packages (S1-S10, Final 4.0) pass with independent
   verification.
+- Final 5.0 scale gates: second factory installs without a code fork and third
+  factory is config-driven; template/asset/connector/conformance packages are
+  versioned and auditable.
 - MES P0 production execution chain is real: work order -> steps -> material
   consumption -> inspection -> report -> review -> handover -> completion.
 - Phase gates G0-G13 are evidenced, not asserted.
@@ -37,8 +40,10 @@ continued multi-phase capability.
 - `/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md`
 - `/Users/panhao/Downloads/EWOH工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案.docx`
 - `/Users/panhao/Downloads/EWOH工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案_最新研究升级版.docx`
+- `/Users/panhao/Downloads/EWOH工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案_规模化复制版_Final5.0.docx`
 - `/Users/panhao/Downloads/EWOH工厂具身智能操作系统_最终产品实施方案.docx`
 - `delivery/01_开发基线/EWOH_工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案_最新研究升级版_Final4.0.docx`
+- `delivery/01_开发基线/EWOH_工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案_规模化复制版_Final5.0.docx`
 - `/Volumes/Extra/CodeProj/EWOH/delivery/02_技术规范/architecture.md`
 - `/Volumes/Extra/CodeProj/EWOH/delivery/02_技术规范/database.sql`
 - `/Volumes/Extra/CodeProj/EWOH/docs/architecture/embodied_factory.md`

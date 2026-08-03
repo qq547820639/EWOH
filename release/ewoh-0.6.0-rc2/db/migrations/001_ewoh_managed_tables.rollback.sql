@@ -8,7 +8,7 @@ DECLARE
 BEGIN
   FOR p IN
     SELECT policyname, tablename FROM pg_policies
-    WHERE schemaname = '__EWOH_SCHEMA__' AND tablename = ANY (ARRAY['ewoh_ai_suggestion', 'ewoh_device', 'ewoh_device_binding', 'ewoh_device_config', 'ewoh_environment', 'ewoh_event', 'ewoh_event_chain', 'ewoh_model_registry', 'ewoh_organization', 'ewoh_personnel', 'ewoh_production_task', 'ewoh_schedule_audit', 'ewoh_schedule_plan', 'ewoh_scheduler_config', 'ewoh_spatial_entity', 'ewoh_telemetry', 'ewoh_topology', 'ewoh_world_state', 'ewoh_person_skill', 'ewoh_skill', 'ewoh_role', 'ewoh_person_role', 'ewoh_device_capability', 'ewoh_spatial_relation', 'ewoh_spatial_hierarchy', 'ewoh_model_asset', 'ewoh_model_binding', 'ewoh_workstation', 'ewoh_workstation_device', 'ewoh_workstation_person', 'ewoh_workstation_skill', 'ewoh_workstation_relation', 'ewoh_task_template', 'ewoh_task_step', 'ewoh_task_skill_req', 'ewoh_schedule_task', 'ewoh_schedule_task_step', 'ewoh_schedule_assignment', 'ewoh_resource_preorder', 'ewoh_resource_binding', 'ewoh_control_request', 'ewoh_control_command', 'ewoh_control_result', 'ewoh_event_rule', 'ewoh_event_action', 'ewoh_event_subscription', 'ewoh_world_snapshot', 'ewoh_world_delta_log', 'ewoh_system_config', 'ewoh_knowledge_base', 'ewoh_knowledge_entry', 'ewoh_notification', 'ewoh_audit_log'])
+    WHERE schemaname = '__EWOH_SCHEMA__' AND tablename = ANY (ARRAY['ewoh_ai_suggestion', 'ewoh_device', 'ewoh_device_binding', 'ewoh_device_config', 'ewoh_environment', 'ewoh_event', 'ewoh_event_chain', 'ewoh_model_registry', 'ewoh_organization', 'ewoh_personnel', 'ewoh_production_task', 'ewoh_schedule_audit', 'ewoh_schedule_plan', 'ewoh_scheduler_config', 'ewoh_spatial_entity', 'ewoh_telemetry', 'ewoh_topology', 'ewoh_world_state', 'ewoh_person_skill', 'ewoh_skill', 'ewoh_role', 'ewoh_person_role', 'ewoh_device_capability', 'ewoh_spatial_relation', 'ewoh_spatial_hierarchy', 'ewoh_model_asset', 'ewoh_model_binding', 'ewoh_workstation', 'ewoh_workstation_device', 'ewoh_workstation_person', 'ewoh_workstation_skill', 'ewoh_workstation_relation', 'ewoh_task_template', 'ewoh_task_step', 'ewoh_task_skill_req', 'ewoh_schedule_task', 'ewoh_schedule_task_step', 'ewoh_schedule_assignment', 'ewoh_resource_preorder', 'ewoh_resource_binding', 'ewoh_control_request', 'ewoh_control_command', 'ewoh_control_result', 'ewoh_event_rule', 'ewoh_event_action', 'ewoh_event_subscription', 'ewoh_world_snapshot', 'ewoh_world_delta_log', 'ewoh_system_config', 'ewoh_knowledge_base', 'ewoh_knowledge_entry', 'ewoh_notification', 'ewoh_audit_log', 'ewoh_factory_template', 'ewoh_factory_profile', 'ewoh_asset_package'])
     AND policyname IN ('ewoh_org_select', 'ewoh_service_all', 'ewoh_audit_select')
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I', p.policyname, '__EWOH_SCHEMA__', p.tablename);
@@ -53,6 +53,9 @@ DROP TABLE IF EXISTS __EWOH_SCHEMA__.ewoh_knowledge_base;
 DROP TABLE IF EXISTS __EWOH_SCHEMA__.ewoh_knowledge_entry;
 DROP TABLE IF EXISTS __EWOH_SCHEMA__.ewoh_notification;
 DROP TABLE IF EXISTS __EWOH_SCHEMA__.ewoh_audit_log;
+DROP TABLE IF EXISTS __EWOH_SCHEMA__.ewoh_factory_template;
+DROP TABLE IF EXISTS __EWOH_SCHEMA__.ewoh_factory_profile;
+DROP TABLE IF EXISTS __EWOH_SCHEMA__.ewoh_asset_package;
 
 -- Reverse NOT NULL org_id on existing tables while keeping additive columns for data preservation.
 ALTER TABLE __EWOH_SCHEMA__.ewoh_ai_suggestion ALTER COLUMN org_id DROP DEFAULT;

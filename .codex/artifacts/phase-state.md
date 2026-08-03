@@ -40,6 +40,8 @@ the production approval gate.
   reconciliation summary are implemented and verified.
 - Quality trace graph and mobile workbench API are implemented and verified.
 - Mobile workbench React page is implemented and verified with client tests.
+- Final 5.0 adopted; scale kernel (factory template/profile/asset registry) is
+  implemented and verified with 51 managed tables.
 
 ## Active Tasks
 

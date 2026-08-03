@@ -179,6 +179,13 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-096 | Mobile workbench React page | AG-30/31 | Done | `round14-mobile-workbench-ui.md`; client tests 20/20; release drill passed |
 
+## Wave Final5 - Scale Kernel (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-097 | Final 5.0 baseline adoption | AG-00 | Done | `authoritative-plan-final5.txt`; D-014/D-015 |
+| T-098 | Factory template/profile/asset scale kernel | PX-03 | Done | `round15-final5-scale-kernel.md`; E2E 18/18; managed tables 51 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

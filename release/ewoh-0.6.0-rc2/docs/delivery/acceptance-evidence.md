@@ -7,17 +7,19 @@ Owner: AG-00/AG-41
 
 - Python unittest: 667 passed.
 - Python repo contract tests: 59 passed.
-- NestJS Jest: 203 passed across 51 suites (includes SP-01..SP-08 scenario
+- NestJS Jest: 209 passed across 52 suites (includes SP-01..SP-08 scenario
   suite).
-- HTTP + PostgreSQL E2E: 17 passed (auth, RBAC, refresh rotation/logout, org
+- Client Jest: 20 passed across 6 suites.
+- HTTP + PostgreSQL E2E: 18 passed (auth, RBAC, refresh rotation/logout, org
   isolation, control/resource/world persistence, canonical UnifiedExoFrame
   ingestion, gamification allocation persistence, approval persistence,
   system config org scoping, complete MES work order execution, and
-  OEE/andon SLA escalation, plus ERP inbound/outbound/reconcile).
+  OEE/andon SLA escalation, ERP inbound/outbound/reconcile, and scale
+  template publish/install/asset registration).
 - NestJS type check, lint, and Standalone production build: passed.
 - One-click `scripts/standalone-check.sh`: passed with E2E, OpenAPI strict
   audit, DDL plans, and standalone DDL hygiene.
-- OpenAPI contract: 134 controller operations documented, 0 undocumented,
+- OpenAPI contract: 143 controller operations documented, 0 undocumented,
   0 unimplemented; `openapi/route-manifest.json` generated.
 - Full release drill: `RELEASE DRILL PASSED` against disposable PostgreSQL 17,
   including migration/RLS/audit/rollback/rebuild, 176 Jest tests, 107/107
@@ -45,6 +47,10 @@ Owner: AG-00/AG-41
   step, material, and inspection nodes/links.
 - Mobile workbench API: assigned-step list, order scan, and step transitions
   delegate to the MES state machine.
+- Mobile workbench UI: React page with QR/order scan, assigned-step list, and
+  start/report/review/handover actions wired to the API.
+- Scale kernel: factory template registry with inheritance/lifecycle, factory
+  profile install, and asset package registry; managed tables 51, RLS 51.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

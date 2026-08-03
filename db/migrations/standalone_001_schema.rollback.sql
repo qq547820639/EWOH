@@ -3,6 +3,9 @@
 -- Shared cluster roles (anon, authenticated, service_role) are intentionally retained.
 SELECT set_config('search_path', 'public, pg_temp', false);
 
+DROP TABLE IF EXISTS public.ewoh_asset_package CASCADE;
+DROP TABLE IF EXISTS public.ewoh_factory_profile CASCADE;
+DROP TABLE IF EXISTS public.ewoh_factory_template CASCADE;
 DROP TABLE IF EXISTS public.ewoh_audit_log CASCADE;
 DROP TABLE IF EXISTS public.ewoh_notification CASCADE;
 DROP TABLE IF EXISTS public.ewoh_knowledge_entry CASCADE;

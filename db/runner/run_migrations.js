@@ -178,8 +178,8 @@ function main() {
       console.log(JSON.stringify(rows, null, 2));
       const row = rows[0] || {};
       const expected = {
-        managed_table_count: 48,
-        rls_enabled: 48,
+        managed_table_count: 51,
+        rls_enabled: 51,
         audit_seq_identity: 1,
         world_delta_seq_identity: 1,
         audit_function_count: 1,

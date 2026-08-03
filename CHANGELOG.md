@@ -41,6 +41,12 @@
 - 质量追溯图：工单→工序→投料→质量检验的节点与关系图。
 - 移动工作台 API：按人员列出待办工序、扫码查工单、移动端工序状态流转。
 - 移动工作台前端页面：扫码查单、待办工序列表、开工/报工/审核/交收操作。
+- 采用 Final 5.0 规模化复制版权威基线：
+  `authoritative-plan-final5.txt` 与 `delivery/01_开发基线/...Final5.0.docx`
+  入库，Final 4.0 保留为历史基线。
+- 规模化内核：工厂模板注册/继承/生命周期、模板安装生成工厂 Profile、
+  资产包注册；新增 `ewoh_factory_template` / `ewoh_factory_profile` /
+  `ewoh_asset_package`，受管表 48 → 51。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

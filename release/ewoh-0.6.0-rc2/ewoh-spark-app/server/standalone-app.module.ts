@@ -36,6 +36,7 @@ import { MesModule } from './modules/mes/mes.module';
 import { OeeModule } from './modules/oee/oee.module';
 import { ErpModule } from './modules/erp/erp.module';
 import { MobileModule } from './modules/mobile/mobile.module';
+import { ScaleModule } from './modules/scale/scale.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { MobileModule } from './modules/mobile/mobile.module';
     OeeModule,
     ErpModule,
     MobileModule,
+    ScaleModule,
   ],
   providers: [
     {

@@ -1111,6 +1111,69 @@ CREATE INDEX IF NOT EXISTS idx_ewoh_audit_log_org_seq ON public.ewoh_audit_log (
 CREATE INDEX IF NOT EXISTS idx_ewoh_audit_log_entity ON public.ewoh_audit_log (entity_type, entity_id);
 
 
+CREATE TABLE IF NOT EXISTS public.ewoh_factory_template (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL DEFAULT (nullif(current_setting('app.current_org_id', true), '')::uuid),
+  template_id varchar(255) NOT NULL UNIQUE,
+  name varchar(255) NOT NULL,
+  industry varchar(100),
+  version varchar(50) NOT NULL,
+  parent_template_id varchar(255),
+  inheritance_order integer NOT NULL DEFAULT 0,
+  lifecycle_status varchar(50) NOT NULL DEFAULT 'draft',
+  config_json jsonb NOT NULL DEFAULT '{}',
+  manifest_json jsonb NOT NULL DEFAULT '{}',
+  compatible_core varchar(100),
+  published_at timestamptz,
+  deleted_at timestamptz,
+  _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  _created_by uuid DEFAULT NULL,
+  _updated_by uuid DEFAULT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ewoh_factory_template_lifecycle ON public.ewoh_factory_template (lifecycle_status);
+
+
+CREATE TABLE IF NOT EXISTS public.ewoh_factory_profile (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL DEFAULT (nullif(current_setting('app.current_org_id', true), '')::uuid),
+  profile_id varchar(255) NOT NULL UNIQUE,
+  factory_name varchar(255) NOT NULL,
+  template_id varchar(255) NOT NULL,
+  config_json jsonb NOT NULL DEFAULT '{}',
+  status varchar(50) NOT NULL DEFAULT 'draft',
+  installed_at timestamptz,
+  deleted_at timestamptz,
+  _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  _created_by uuid DEFAULT NULL,
+  _updated_by uuid DEFAULT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ewoh_factory_profile_status ON public.ewoh_factory_profile (status);
+
+
+CREATE TABLE IF NOT EXISTS public.ewoh_asset_package (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL DEFAULT (nullif(current_setting('app.current_org_id', true), '')::uuid),
+  package_id varchar(255) NOT NULL UNIQUE,
+  package_type varchar(50) NOT NULL,
+  name varchar(255) NOT NULL,
+  version varchar(50) NOT NULL,
+  manifest_json jsonb NOT NULL DEFAULT '{}',
+  status varchar(50) NOT NULL DEFAULT 'draft',
+  published_at timestamptz,
+  deleted_at timestamptz,
+  _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  _created_by uuid DEFAULT NULL,
+  _updated_by uuid DEFAULT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ewoh_asset_package_type ON public.ewoh_asset_package (package_type, status);
+
+
 -- 12 frozen ALTERs plus mapped-existing hardening.
 ALTER TABLE public.ewoh_ai_suggestion ADD COLUMN IF NOT EXISTS _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP;
 ALTER TABLE public.ewoh_ai_suggestion ADD COLUMN IF NOT EXISTS _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP;
@@ -1380,6 +1443,9 @@ ALTER TABLE public.ewoh_knowledge_base ALTER COLUMN org_id SET DEFAULT (nullif(c
 ALTER TABLE public.ewoh_knowledge_entry ALTER COLUMN org_id SET DEFAULT (nullif(current_setting('app.current_org_id', true), '')::uuid);
 ALTER TABLE public.ewoh_notification ALTER COLUMN org_id SET DEFAULT (nullif(current_setting('app.current_org_id', true), '')::uuid);
 ALTER TABLE public.ewoh_audit_log ALTER COLUMN org_id SET DEFAULT (nullif(current_setting('app.current_org_id', true), '')::uuid);
+ALTER TABLE public.ewoh_factory_template ALTER COLUMN org_id SET DEFAULT (nullif(current_setting('app.current_org_id', true), '')::uuid);
+ALTER TABLE public.ewoh_factory_profile ALTER COLUMN org_id SET DEFAULT (nullif(current_setting('app.current_org_id', true), '')::uuid);
+ALTER TABLE public.ewoh_asset_package ALTER COLUMN org_id SET DEFAULT (nullif(current_setting('app.current_org_id', true), '')::uuid);
 
 CREATE OR REPLACE FUNCTION public.ewoh_append_audit_log(
   p_org_id uuid,
@@ -1454,7 +1520,7 @@ BEGIN
   FOR p IN
     SELECT policyname, tablename
     FROM pg_policies
-    WHERE schemaname = 'public' AND tablename = ANY (ARRAY['ewoh_ai_suggestion', 'ewoh_device', 'ewoh_device_binding', 'ewoh_device_config', 'ewoh_environment', 'ewoh_event', 'ewoh_event_chain', 'ewoh_model_registry', 'ewoh_organization', 'ewoh_personnel', 'ewoh_production_task', 'ewoh_schedule_audit', 'ewoh_schedule_plan', 'ewoh_scheduler_config', 'ewoh_spatial_entity', 'ewoh_telemetry', 'ewoh_topology', 'ewoh_world_state', 'ewoh_person_skill', 'ewoh_skill', 'ewoh_role', 'ewoh_person_role', 'ewoh_device_capability', 'ewoh_spatial_relation', 'ewoh_spatial_hierarchy', 'ewoh_model_asset', 'ewoh_model_binding', 'ewoh_workstation', 'ewoh_workstation_device', 'ewoh_workstation_person', 'ewoh_workstation_skill', 'ewoh_workstation_relation', 'ewoh_task_template', 'ewoh_task_step', 'ewoh_task_skill_req', 'ewoh_schedule_task', 'ewoh_schedule_task_step', 'ewoh_schedule_assignment', 'ewoh_resource_preorder', 'ewoh_resource_binding', 'ewoh_control_request', 'ewoh_control_command', 'ewoh_control_result', 'ewoh_event_rule', 'ewoh_event_action', 'ewoh_event_subscription', 'ewoh_world_snapshot', 'ewoh_world_delta_log', 'ewoh_system_config', 'ewoh_knowledge_base', 'ewoh_knowledge_entry', 'ewoh_notification', 'ewoh_audit_log'])
+    WHERE schemaname = 'public' AND tablename = ANY (ARRAY['ewoh_ai_suggestion', 'ewoh_device', 'ewoh_device_binding', 'ewoh_device_config', 'ewoh_environment', 'ewoh_event', 'ewoh_event_chain', 'ewoh_model_registry', 'ewoh_organization', 'ewoh_personnel', 'ewoh_production_task', 'ewoh_schedule_audit', 'ewoh_schedule_plan', 'ewoh_scheduler_config', 'ewoh_spatial_entity', 'ewoh_telemetry', 'ewoh_topology', 'ewoh_world_state', 'ewoh_person_skill', 'ewoh_skill', 'ewoh_role', 'ewoh_person_role', 'ewoh_device_capability', 'ewoh_spatial_relation', 'ewoh_spatial_hierarchy', 'ewoh_model_asset', 'ewoh_model_binding', 'ewoh_workstation', 'ewoh_workstation_device', 'ewoh_workstation_person', 'ewoh_workstation_skill', 'ewoh_workstation_relation', 'ewoh_task_template', 'ewoh_task_step', 'ewoh_task_skill_req', 'ewoh_schedule_task', 'ewoh_schedule_task_step', 'ewoh_schedule_assignment', 'ewoh_resource_preorder', 'ewoh_resource_binding', 'ewoh_control_request', 'ewoh_control_command', 'ewoh_control_result', 'ewoh_event_rule', 'ewoh_event_action', 'ewoh_event_subscription', 'ewoh_world_snapshot', 'ewoh_world_delta_log', 'ewoh_system_config', 'ewoh_knowledge_base', 'ewoh_knowledge_entry', 'ewoh_notification', 'ewoh_audit_log', 'ewoh_factory_template', 'ewoh_factory_profile', 'ewoh_asset_package'])
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I', p.policyname, 'public', p.tablename);
   END LOOP;
@@ -1465,7 +1531,7 @@ DO $ewoh_rls_normal$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['ewoh_ai_suggestion', 'ewoh_device', 'ewoh_device_binding', 'ewoh_device_config', 'ewoh_environment', 'ewoh_event', 'ewoh_event_chain', 'ewoh_model_registry', 'ewoh_organization', 'ewoh_personnel', 'ewoh_production_task', 'ewoh_schedule_audit', 'ewoh_schedule_plan', 'ewoh_scheduler_config', 'ewoh_spatial_entity', 'ewoh_telemetry', 'ewoh_topology', 'ewoh_world_state', 'ewoh_person_skill', 'ewoh_skill', 'ewoh_role', 'ewoh_person_role', 'ewoh_device_capability', 'ewoh_spatial_relation', 'ewoh_spatial_hierarchy', 'ewoh_model_asset', 'ewoh_model_binding', 'ewoh_workstation', 'ewoh_workstation_device', 'ewoh_workstation_person', 'ewoh_workstation_skill', 'ewoh_workstation_relation', 'ewoh_task_template', 'ewoh_task_step', 'ewoh_task_skill_req', 'ewoh_schedule_task', 'ewoh_schedule_task_step', 'ewoh_schedule_assignment', 'ewoh_resource_preorder', 'ewoh_resource_binding', 'ewoh_control_request', 'ewoh_control_command', 'ewoh_control_result', 'ewoh_event_rule', 'ewoh_event_action', 'ewoh_event_subscription', 'ewoh_knowledge_base', 'ewoh_knowledge_entry', 'ewoh_notification'] LOOP
+  FOREACH t IN ARRAY ARRAY['ewoh_ai_suggestion', 'ewoh_device', 'ewoh_device_binding', 'ewoh_device_config', 'ewoh_environment', 'ewoh_event', 'ewoh_event_chain', 'ewoh_model_registry', 'ewoh_organization', 'ewoh_personnel', 'ewoh_production_task', 'ewoh_schedule_audit', 'ewoh_schedule_plan', 'ewoh_scheduler_config', 'ewoh_spatial_entity', 'ewoh_telemetry', 'ewoh_topology', 'ewoh_world_state', 'ewoh_person_skill', 'ewoh_skill', 'ewoh_role', 'ewoh_person_role', 'ewoh_device_capability', 'ewoh_spatial_relation', 'ewoh_spatial_hierarchy', 'ewoh_model_asset', 'ewoh_model_binding', 'ewoh_workstation', 'ewoh_workstation_device', 'ewoh_workstation_person', 'ewoh_workstation_skill', 'ewoh_workstation_relation', 'ewoh_task_template', 'ewoh_task_step', 'ewoh_task_skill_req', 'ewoh_schedule_task', 'ewoh_schedule_task_step', 'ewoh_schedule_assignment', 'ewoh_resource_preorder', 'ewoh_resource_binding', 'ewoh_control_request', 'ewoh_control_command', 'ewoh_control_result', 'ewoh_event_rule', 'ewoh_event_action', 'ewoh_event_subscription', 'ewoh_knowledge_base', 'ewoh_knowledge_entry', 'ewoh_notification', 'ewoh_factory_template', 'ewoh_factory_profile', 'ewoh_asset_package'] LOOP
     EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', 'public', t);
     EXECUTE format('DROP POLICY IF EXISTS ewoh_org_select ON %I.%I', 'public', t);
     EXECUTE format('CREATE POLICY ewoh_org_select ON %I.%I FOR SELECT TO %I USING (%I.ewoh_org_visible(org_id))', 'public', t, 'authenticated', 'public');
@@ -1600,6 +1666,12 @@ REVOKE ALL PRIVILEGES ON TABLE public.ewoh_knowledge_entry FROM anon, authentica
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_knowledge_entry TO service_role;
 REVOKE ALL PRIVILEGES ON TABLE public.ewoh_notification FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_notification TO service_role;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_factory_template FROM anon, authenticated, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_factory_template TO service_role;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_factory_profile FROM anon, authenticated, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_factory_profile TO service_role;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_asset_package FROM anon, authenticated, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_asset_package TO service_role;
 REVOKE ALL PRIVILEGES ON TABLE public.ewoh_audit_log FROM anon, authenticated, authenticated, service_role;
 GRANT SELECT ON TABLE public.ewoh_audit_log TO service_role;
 REVOKE ALL PRIVILEGES ON FUNCTION public.ewoh_append_audit_log FROM PUBLIC;

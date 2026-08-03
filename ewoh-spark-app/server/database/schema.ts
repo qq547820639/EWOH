@@ -624,6 +624,63 @@ export const ewohEvent = pgTable("ewoh_event", {
   index("idx_event_source").on(table.sourceType),
 ]);
 
+export const ewohFactoryTemplate = pgTable("ewoh_factory_template", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  templateId: varchar("template_id", { length: 255 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  industry: varchar("industry", { length: 100 }),
+  version: varchar("version", { length: 50 }).notNull(),
+  parentTemplateId: varchar("parent_template_id", { length: 255 }),
+  inheritanceOrder: integer("inheritance_order").notNull().default(0),
+  lifecycleStatus: varchar("lifecycle_status", { length: 50 }).notNull().default('draft'),
+  configJson: jsonb("config_json").notNull().default({}),
+  manifestJson: jsonb("manifest_json").notNull().default({}),
+  compatibleCore: varchar("compatible_core", { length: 100 }),
+  publishedAt: customTimestamptz("published_at", { precision: 3 }),
+  deletedAt: customTimestamptz("deleted_at", { precision: 3 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedBy: uuid("_updated_by"),
+}, (table) => [
+  index("idx_ewoh_factory_template_lifecycle").on(table.lifecycleStatus),
+]);
+
+export const ewohFactoryProfile = pgTable("ewoh_factory_profile", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: varchar("profile_id", { length: 255 }).notNull().unique(),
+  factoryName: varchar("factory_name", { length: 255 }).notNull(),
+  templateId: varchar("template_id", { length: 255 }).notNull(),
+  configJson: jsonb("config_json").notNull().default({}),
+  status: varchar("status", { length: 50 }).notNull().default('draft'),
+  installedAt: customTimestamptz("installed_at", { precision: 3 }),
+  deletedAt: customTimestamptz("deleted_at", { precision: 3 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedBy: uuid("_updated_by"),
+}, (table) => [
+  index("idx_ewoh_factory_profile_status").on(table.status),
+]);
+
+export const ewohAssetPackage = pgTable("ewoh_asset_package", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  packageId: varchar("package_id", { length: 255 }).notNull().unique(),
+  packageType: varchar("package_type", { length: 50 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  version: varchar("version", { length: 50 }).notNull(),
+  manifestJson: jsonb("manifest_json").notNull().default({}),
+  status: varchar("status", { length: 50 }).notNull().default('draft'),
+  publishedAt: customTimestamptz("published_at", { precision: 3 }),
+  deletedAt: customTimestamptz("deleted_at", { precision: 3 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedBy: uuid("_updated_by"),
+}, (table) => [
+  index("idx_ewoh_asset_package_type").on(table.packageType, table.status),
+]);
+
 export const ewohNotification = pgTable("ewoh_notification", {
   id: uuid("id").primaryKey().defaultRandom(),
   notificationId: varchar("notification_id", { length: 255 }).notNull().unique(),
@@ -678,6 +735,9 @@ export const ewohEnvironmentTable = ewohEnvironment;
 export const ewohEventTable = ewohEvent;
 export const ewohEventChainTable = ewohEventChain;
 export const ewohNotificationTable = ewohNotification;
+export const ewohFactoryTemplateTable = ewohFactoryTemplate;
+export const ewohFactoryProfileTable = ewohFactoryProfile;
+export const ewohAssetPackageTable = ewohAssetPackage;
 export const ewohModelRegistryTable = ewohModelRegistry;
 export const ewohOrganizationTable = ewohOrganization;
 export const ewohPersonnelTable = ewohPersonnel;
