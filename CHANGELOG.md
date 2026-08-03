@@ -17,6 +17,10 @@
   在 HTTP 事务内再开根事务连接。
 - 移动工作台：SOP 说明展示、暂停/恢复、异常上报（写 `resultJson.exception`）、
   质检（新 `POST /api/mobile/.../quality`）、离线提示与失败重试入口。
+- 全局 `ValidationPipe`（`APP_PIPE`）注册到 Legacy 与 Standalone 两个启动路径，
+  `class-validator` 错误映射为统一 `fieldErrors` 与 `VALIDATION_ERROR` 422 响应。
+- 指挥地图实体详情：人员档案（组织/岗位/班组/技能/风险/外骨骼）与设备档案
+  （电量/固件/协议/故障/温度/最近通信），并展示关联告警、最近事件与处置入口。
 
 ## [0.6.0-rc3] - 2026-08-04
 

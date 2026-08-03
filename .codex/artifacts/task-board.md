@@ -539,6 +539,8 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-175 | Nested request transaction reuse for scheduler/background GUC | AG-00/04 | Done | `RequestDatabaseContext` active-store reuse; unit test; no nested root transaction |
 | T-176 | Mobile SOP/exception/QC/offline UX | AG-00/07 | Done | MES pause/resume resultJson; mobile quality API; MobileWorkbench SOP/异常/质检/离线/重试; MES+mobile unit tests |
 | T-177 | Independent review and first-round evidence | AG-13/00 | Done | conditional pass 0 critical/0 major; `work/reviews/iteration-review-2026-08-04.md`; `round70-iteration-p0-2026-08-04.md` |
+| T-178 | Global ValidationPipe with structured fieldErrors | AG-00/03 | Done | `server/common/pipes/validation.pipe.ts`; APP_PIPE in both bootstraps; 5 validation-pipe tests; Jest 76/349 |
+| T-179 | Command-map person/device detail enrichment | AG-00/06 | Done | `entityDetailData.ts` + tests; organization/exoskeleton/risk/alerts/events/disposition entry; client 9/33 |
 
 ## Next Waves
 

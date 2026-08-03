@@ -19,13 +19,19 @@ import {
   getEvents,
   handleEvent,
   getEnvironmentSummary,
+  searchDevices,
 } from '../../api/dashboard';
+import { listOrganizations, listPersonnel } from '../../api/organization';
 import type {
   SpatialEntity,
   CurrentWorldState,
   OverviewStats,
   ReplaySnapshot,
   EnvironmentReading,
+  DeviceInfo,
+  EventInfo,
+  OrganizationInfo,
+  PersonnelInfo,
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { queryKeys } from '@client/src/hooks/queryKeys';
@@ -153,6 +159,30 @@ const CommandMap = (): React.ReactElement => {
     queryKey: queryKeys.environmentSummary,
     queryFn: getEnvironmentSummary,
     refetchInterval: 30000,
+    staleTime: QUERY_STALE_TIME_MS,
+  });
+
+  const { data: organizations } = useQuery<OrganizationInfo[]>({
+    queryKey: queryKeys.organizations,
+    queryFn: listOrganizations,
+    staleTime: QUERY_STALE_TIME_MS,
+  });
+
+  const { data: personnel } = useQuery<PersonnelInfo[]>({
+    queryKey: queryKeys.personnel(),
+    queryFn: () => listPersonnel(),
+    staleTime: QUERY_STALE_TIME_MS,
+  });
+
+  const { data: devices } = useQuery<DeviceInfo[]>({
+    queryKey: queryKeys.devices({ pageSize: 200 }),
+    queryFn: () => searchDevices({ pageSize: 200 }),
+    staleTime: QUERY_STALE_TIME_MS,
+  });
+
+  const { data: events } = useQuery<EventInfo[]>({
+    queryKey: queryKeys.events(),
+    queryFn: () => getEvents(200),
     staleTime: QUERY_STALE_TIME_MS,
   });
 
@@ -410,6 +440,14 @@ const CommandMap = (): React.ReactElement => {
           entityId={selectedEntityId}
           entities={entityList}
           worldState={displayWorldState}
+          personnel={personnel ?? []}
+          organizations={organizations ?? []}
+          devices={devices ?? []}
+          events={events ?? []}
+          onOpenDisposition={(eventId) => {
+            setActiveTab('events');
+            setSelectedEventId(eventId);
+          }}
           onClose={() => setSelectedEntityId(null)}
         />
 

@@ -1,8 +1,9 @@
-import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { Module } from '@nestjs/common';
 import { PlatformModule } from '@lark-apaas/fullstack-nestjs-core';
 
 import { GlobalExceptionFilter } from './common/filters/exception.filter';
+import { createEwohValidationPipe } from './common/pipes/validation.pipe';
 import { ViewModule } from './modules/view/view.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { SimulatorModule } from './modules/simulator/simulator.module';
@@ -77,6 +78,10 @@ import { WorkOrchestrationModule } from './modules/work-orchestration/work-orche
     ViewModule,
   ],
   providers: [
+    {
+      provide: APP_PIPE,
+      useValue: createEwohValidationPipe(),
+    },
     {
       provide: APP_FILTER,
       useClass: GlobalExceptionFilter,

@@ -21,8 +21,12 @@ Trace: EWOH-2026-08-04-principal-final6
   exception reporting (`resultJson.exception`), quality inspection via
   `POST /api/mobile/workbench/orders/:orderId/steps/:stepId/quality`, offline
   indication, and inline retry after a failed action.
-- Full standalone gate: typecheck, lint, Jest 75 suites / 344 tests, client
-  8 suites / 30 tests, repo facts 30/30, OpenAPI 232/232, production build, and
+- Global `ValidationPipe` registered in Legacy and Standalone bootstraps;
+  `class-validator` errors now map to `fieldErrors` and `VALIDATION_ERROR`.
+- Command-map entity details now resolve personnel/device archives with
+  organization, exoskeleton, risk, alerts, recent events, and disposition entry.
+- Full standalone gate: typecheck, lint, Jest 76 suites / 349 tests, client
+  9 suites / 33 tests, repo facts 31/31, OpenAPI 232/232, production build, and
   DDL hygiene all PASSED. Independent review: conditional pass with 0 critical
   and 0 major findings. HTTP+PostgreSQL E2E remains skipped locally because
   `EWOH_E2E_RUNTIME_DATABASE_URL` is not set.

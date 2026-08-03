@@ -1,12 +1,12 @@
 {
   "schema": "ewoh:///git-sync/v1",
-  "generatedAt": "2026-08-03T19:35:31.199Z",
+  "generatedAt": "2026-08-03T19:45:17.405Z",
   "repository": "git@github.com:qq547820639/EWOH.git",
   "branch": "codex/ewoh-iteration-2026-08-04",
-  "headSha": "aa522504622713ec235fe2c7207025a81f8e3827",
-  "itemCount": 198,
+  "headSha": "e5f47e75b89ef32b5cef551e05ff4986c275bb96",
+  "itemCount": 200,
   "trackedCount": 0,
-  "missingCount": 198,
+  "missingCount": 200,
   "status": "offline",
   "source": ".codex/artifacts/work/git-sync.json",
   "items": [
@@ -2666,6 +2666,36 @@
       "missing": true
     },
     {
+      "workItemId": "T-178",
+      "title": "Global ValidationPipe with structured fieldErrors",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/03",
+      "evidence": "`server/common/pipes/validation.pipe.ts`; APP_PIPE in both bootstraps; 5 validation-pipe tests; Jest 76/349",
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "issueNumber": null,
+      "prNumber": null,
+      "branch": null,
+      "commitSha": null,
+      "state": "unlinked",
+      "missing": true
+    },
+    {
+      "workItemId": "T-179",
+      "title": "Command-map person/device detail enrichment",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/06",
+      "evidence": "`entityDetailData.ts` + tests; organization/exoskeleton/risk/alerts/events/disposition entry; client 9/33",
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "issueNumber": null,
+      "prNumber": null,
+      "branch": null,
+      "commitSha": null,
+      "state": "unlinked",
+      "missing": true
+    },
+    {
       "workItemId": "W0",
       "title": "docs, repo inventory, C1-C6 v1, environment probes",
       "type": "wave",
@@ -2877,7 +2907,7 @@
     },
     {
       "workItemId": "W7",
-      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline",
+      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline, ValidationPipe, command-map details",
       "type": "wave",
       "status": "Proposed",
       "owner": "AG-00",

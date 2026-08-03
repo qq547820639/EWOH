@@ -278,6 +278,29 @@ function auditRepoFacts(rootDir) {
     `ApiErrorResponse missing: ${missingErrorFields.join(', ')}`,
   );
 
+  const validationPipeFile = readFile(
+    rootDir,
+    'ewoh-spark-app/server/common/pipes/validation.pipe.ts',
+  );
+  const appModule = readFile(rootDir, 'ewoh-spark-app/server/app.module.ts');
+  const standaloneModule = readFile(
+    rootDir,
+    'ewoh-spark-app/server/standalone-app.module.ts',
+  );
+  const validationPipeRegistered = Boolean(
+    validationPipeFile &&
+      appModule?.includes('APP_PIPE') &&
+      appModule?.includes('createEwohValidationPipe') &&
+      standaloneModule?.includes('APP_PIPE') &&
+      standaloneModule?.includes('createEwohValidationPipe'),
+  );
+  check(
+    checks,
+    'validation_pipe_registered',
+    validationPipeRegistered,
+    'ValidationPipe must be registered via APP_PIPE in both AppModule and StandaloneAppModule',
+  );
+
   return checks;
 }
 

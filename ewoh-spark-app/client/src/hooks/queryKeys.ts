@@ -26,6 +26,7 @@ export const queryKeys = {
   personnel: (query?: PersonnelQuery) => ['personnel', query ?? {}] as const,
   alerts: ['alerts'] as const,
   organizationTree: ['organization-tree'] as const,
+  organizations: ['organizations'] as const,
   models: ['models'] as const,
   dataAssets: ['data-assets'] as const,
   systemConfigs: ['system-configs'] as const,

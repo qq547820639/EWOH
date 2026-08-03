@@ -1,12 +1,25 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { X, MapPin } from 'lucide-react';
-import type { SpatialEntity, CurrentWorldState } from '@shared/api.interface';
+import type {
+  CurrentWorldState,
+  DeviceInfo,
+  EventInfo,
+  OrganizationInfo,
+  PersonnelInfo,
+  SpatialEntity,
+} from '@shared/api.interface';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
+import { resolveEntityDetailData } from './entityDetailData';
 
 interface EntityDetailProps {
   entityId: string | null;
   entities: SpatialEntity[];
   worldState: CurrentWorldState | null;
+  personnel?: PersonnelInfo[];
+  organizations?: OrganizationInfo[];
+  devices?: DeviceInfo[];
+  events?: EventInfo[];
+  onOpenDisposition?: (eventId: string) => void;
   onClose?: () => void;
 }
 
@@ -33,10 +46,56 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+function EventList({
+  events,
+  onOpenDisposition,
+}: {
+  events: EventInfo[];
+  onOpenDisposition?: (eventId: string) => void;
+}): React.ReactElement {
+  if (events.length === 0) {
+    return <p className="py-1 text-[11px] text-white/50">无</p>;
+  }
+  return (
+    <div className="space-y-1">
+      {events.map((event) => (
+        <div key={event.eventId} className="rounded bg-white/5 p-2">
+          <div className="flex items-center justify-between gap-1">
+            <span className="truncate text-[11px] text-white/80">{event.title}</span>
+            <span className="shrink-0 text-[10px] text-white/50">{event.severity}</span>
+          </div>
+          <div className="mt-1 flex items-center justify-between gap-1">
+            <span className="truncate text-[10px] text-white/50">
+              {event.status}
+              {event.createdAt
+                ? ` · ${new Date(event.createdAt).toLocaleString('zh-CN', { hour12: false })}`
+                : ''}
+            </span>
+            {onOpenDisposition && (
+              <button
+                type="button"
+                onClick={() => onOpenDisposition(event.eventId)}
+                className="shrink-0 text-[10px] text-[hsl(217_91%_60%)] hover:underline"
+              >
+                处置
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const EntityDetail = ({
   entityId,
   entities,
   worldState,
+  personnel = [],
+  organizations = [],
+  devices = [],
+  events = [],
+  onOpenDisposition,
   onClose,
 }: EntityDetailProps): React.ReactElement => {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -79,6 +138,11 @@ const EntityDetail = ({
   const parent = entity?.parentId
     ? entities.find((e) => e.entityId === entity.parentId)
     : null;
+
+  const detailData = useMemo(
+    () => resolveEntityDetailData(entity, personnel, organizations, devices, events),
+    [entity, personnel, organizations, devices, events],
+  );
 
   const formatTime = (ts: string | null | undefined) =>
     ts ? new Date(ts).toLocaleString('zh-CN', { hour12: false }) : '—';
@@ -139,6 +203,50 @@ const EntityDetail = ({
           </div>
         )}
 
+        {detailData.person && (
+          <div className="mt-3">
+            <div className="text-[10px] text-white/60 uppercase tracking-wide mb-1">
+              人员档案
+            </div>
+            <Row
+              label="组织"
+              value={
+                detailData.person.organization?.name ??
+                detailData.person.personnel?.orgId ??
+                '—'
+              }
+            />
+            <Row label="岗位" value={detailData.person.personnel?.position ?? '—'} />
+            <Row label="班组" value={detailData.person.personnel?.teamName ?? '—'} />
+            <Row
+              label="技能"
+              value={detailData.person.personnel?.skills?.join('、') ?? '—'}
+            />
+            <Row
+              label="风险"
+              value={detailData.person.personnel?.riskLevel ?? '—'}
+            />
+            <Row
+              label="外骨骼"
+              value={personState?.deviceId ?? '未绑定'}
+            />
+            <div className="pt-2 text-[10px] text-white/60 uppercase tracking-wide">
+              告警（{detailData.person.alerts.length}）
+            </div>
+            <EventList
+              events={detailData.person.alerts}
+              onOpenDisposition={onOpenDisposition}
+            />
+            <div className="pt-2 text-[10px] text-white/60 uppercase tracking-wide">
+              最近事件
+            </div>
+            <EventList
+              events={detailData.person.recentEvents}
+              onOpenDisposition={onOpenDisposition}
+            />
+          </div>
+        )}
+
         {deviceState && (
           <div className="mt-3">
             <div className="text-[10px] text-white/60 uppercase tracking-wide mb-1">
@@ -147,6 +255,60 @@ const EntityDetail = ({
             <Row label="设备ID" value={deviceState.deviceId ?? '—'} />
             <Row label="关联人员" value={deviceState.workerId ?? '—'} />
             <Row label="状态" value={deviceState.status || '—'} />
+          </div>
+        )}
+
+        {detailData.device && (
+          <div className="mt-3">
+            <div className="text-[10px] text-white/60 uppercase tracking-wide mb-1">
+              设备档案
+            </div>
+            <Row
+              label="电量"
+              value={
+                detailData.device.device?.batteryPct != null
+                  ? `${detailData.device.device.batteryPct}%`
+                  : '—'
+              }
+            />
+            <Row
+              label="固件"
+              value={detailData.device.device?.firmwareVersion ?? '—'}
+            />
+            <Row
+              label="协议"
+              value={detailData.device.device?.protocolVersion ?? '—'}
+            />
+            <Row
+              label="故障码"
+              value={detailData.device.device?.faultCode ?? '—'}
+            />
+            <Row
+              label="温度"
+              value={
+                detailData.device.device?.temperatureC != null
+                  ? `${detailData.device.device.temperatureC}°C`
+                  : '—'
+              }
+            />
+            <Row
+              label="最近通信"
+              value={formatTime(detailData.device.device?.lastTelemetryAt)}
+            />
+            <div className="pt-2 text-[10px] text-white/60 uppercase tracking-wide">
+              告警（{detailData.device.alerts.length}）
+            </div>
+            <EventList
+              events={detailData.device.alerts}
+              onOpenDisposition={onOpenDisposition}
+            />
+            <div className="pt-2 text-[10px] text-white/60 uppercase tracking-wide">
+              最近事件
+            </div>
+            <EventList
+              events={detailData.device.recentEvents}
+              onOpenDisposition={onOpenDisposition}
+            />
           </div>
         )}
 

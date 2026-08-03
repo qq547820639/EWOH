@@ -1,7 +1,8 @@
-import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { Module } from '@nestjs/common';
 
 import { GlobalExceptionFilter } from './common/filters/exception.filter';
+import { createEwohValidationPipe } from './common/pipes/validation.pipe';
 import { SharedModule } from './modules/shared/shared.module';
 import { OrgContextInterceptor } from './modules/shared/org-context.interceptor';
 import { RolesGuard } from './modules/shared/roles.guard';
@@ -91,6 +92,10 @@ import { WorkOrchestrationModule } from './modules/work-orchestration/work-orche
     WorkOrchestrationModule,
   ],
   providers: [
+    {
+      provide: APP_PIPE,
+      useValue: createEwohValidationPipe(),
+    },
     {
       provide: APP_FILTER,
       useClass: GlobalExceptionFilter,

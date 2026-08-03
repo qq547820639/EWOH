@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented; 2026-08-04 iteration adds repo-facts consistency gate, unified error contract (errorCode/requestId/retryable/recommendedAction), full data-source vocabulary with reusable badge, nested request-transaction reuse, and mobile SOP/exception/QC/offline UX; standalone check PASSED, Jest 75 suites / 344 tests, client 8 suites / 30 tests, OpenAPI 232/232, repo facts 30/30, build PASSED",
+  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented; 2026-08-04 iteration adds repo-facts consistency gate, unified error contract, full data-source vocabulary, nested request-transaction reuse, mobile SOP/exception/QC/offline UX, global ValidationPipe with fieldErrors, and command-map entity details; standalone check PASSED, Jest 76 suites / 349 tests, client 9 suites / 33 tests, OpenAPI 232/232, repo facts 31/31, build PASSED",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
@@ -235,7 +235,9 @@
     "console_ux_deepening": "DAG pan/zoom, node search, gate/evidence filters, evidence content preview, batch gate decisions, handoff state actions, lock countdown, site readiness tab, q/limit/offset API, resource lock expiry",
     "site_readiness_api": "GET /api/work/site-readiness over catalog/factory-sites/*.json; console tab; audit 25 checks",
     "handoff_state_workflow": "POST /api/work/handoffs/:id/state with accepted/rejected/closed transitions persisted to markdown; UI actions added",
-    "iteration_2026_08_04_p0": "repo facts 30/30; unified error response includes errorCode/message/fieldErrors/requestId/retryable/recommendedAction/details; DataSourceType real/controlled_test/simulated/replayed/stale/offline; DataSourceBadge reused in Devices; RequestDatabaseContext reuses active transaction; mobile quality API + SOP/exception/QC/offline UX; Jest 75/344, client 8/30, OpenAPI 232/232, standalone build PASSED; independent review conditional pass 0/0; E2E skipped locally (no runtime DB env)"
+    "iteration_2026_08_04_p0": "repo facts 31/31; unified error response includes errorCode/message/fieldErrors/requestId/retryable/recommendedAction/details; DataSourceType real/controlled_test/simulated/replayed/stale/offline; DataSourceBadge reused in Devices; RequestDatabaseContext reuses active transaction; mobile quality API + SOP/exception/QC/offline UX; Jest 76/349, client 9/33, OpenAPI 232/232, standalone build PASSED; independent review conditional pass 0/0; E2E skipped locally (no runtime DB env)",
+    "iteration_2026_08_04_validation_pipe": "global ValidationPipe via APP_PIPE in AppModule/StandaloneAppModule; class-validator errors map to fieldErrors/VALIDATION_ERROR 422; 5 unit tests including plain-object passthrough and decorated DTO end-to-end; repo-facts includes validation_pipe_registered",
+    "iteration_2026_08_04_command_map_details": "EntityDetail resolves personnel/device archives with organization/exoskeleton/risk/alerts/recent events/disposition; entityDetailData helper + 3 client tests; client 9/33"
   },
   "subagent_state": {
     "planned": [
