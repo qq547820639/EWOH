@@ -174,6 +174,14 @@ Trace: EWOH-2026-08-04-principal-final6
 - Full suite after role workbench wave: server Jest 81/391, client 13/46,
   OpenAPI 247/247, work graph 247 items / 104 evidence / 0 conflicts.
 
+## Latest Round - 2026-08-04 Progressive Lists
+
+- `progressiveSlice/hasMoreItems/nextProgressiveLimit` helper added with unit
+  tests.
+- Role workbench list tables render 50 rows at a time with a “加载更多”
+  button.
+- Client suite: 14 suites / 48 tests.
+
 ## Current Phase
 
 Final 6.0 work orchestration wave: C7-C9 contracts, file-backed Work Graph

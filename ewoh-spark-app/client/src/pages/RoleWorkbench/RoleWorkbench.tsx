@@ -9,6 +9,11 @@ import { getAuthUser } from '../../lib/auth';
 import { queryKeys } from '../../hooks/queryKeys';
 import { Button } from '@client/src/components/ui/button';
 import QueryState from '../../components/QueryState';
+import {
+  hasMoreItems,
+  nextProgressiveLimit,
+  progressiveSlice,
+} from '../../lib/progressiveList';
 
 const ROLES: Array<{ key: RoleWorkbenchRole; label: string }> = [
   { key: 'operator', label: '操作员' },
@@ -30,6 +35,7 @@ function valueLabel(value: unknown): string {
 
 export default function RoleWorkbench(): React.ReactElement {
   const [role, setRole] = useState<RoleWorkbenchRole>('manager');
+  const [limits, setLimits] = useState<Record<string, number>>({});
   const personId = getAuthUser()?.userId ?? undefined;
   const workbenchQuery = useQuery({
     queryKey: queryKeys.roleWorkbench(role),
@@ -52,6 +58,20 @@ export default function RoleWorkbench(): React.ReactElement {
   const arrayEntries = useMemo(
     () => Object.entries(data).filter(([, value]) => Array.isArray(value)),
     [data],
+  );
+  const visibleArrayEntries = useMemo(
+    () =>
+      arrayEntries.map(([key, value]) => {
+        const items = value as unknown[];
+        const limit = limits[key] ?? 50;
+        return {
+          key,
+          total: items.length,
+          items: progressiveSlice(items, limit),
+          hasMore: hasMoreItems(items, limit),
+        };
+      }),
+    [arrayEntries, limits],
   );
 
   return (
@@ -122,7 +142,7 @@ export default function RoleWorkbench(): React.ReactElement {
           ))}
         </div>
 
-        {arrayEntries.map(([key, value]) => (
+        {visibleArrayEntries.map(({ key, total, items, hasMore }) => (
           <section
             key={key}
             className="rounded-lg border border-[hsl(220_14%_89%)] bg-white"
@@ -131,25 +151,25 @@ export default function RoleWorkbench(): React.ReactElement {
               <ClipboardList className="size-4 text-[hsl(221_83%_53%)]" />
               <h2 className="font-semibold text-[hsl(220_14%_14%)]">{key}</h2>
               <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
-                {(value as unknown[]).length} 条
+                {total} 条
               </span>
             </div>
             <div className="overflow-x-auto">
-              {(value as unknown[]).length === 0 ? (
+              {items.length === 0 ? (
                 <p className="px-4 py-3 text-sm text-[hsl(218_10%_42%)]">暂无记录。</p>
               ) : (
                 <table className="w-full text-left text-sm">
                   <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
                     <tr>
-                      {(value as Record<string, unknown>[])[0]
-                        ? Object.keys((value as Record<string, unknown>[])[0]).map(
+                      {items[0]
+                        ? Object.keys((items[0] as Record<string, unknown>)).map(
                             (column) => <th key={column} className="px-4 py-2 font-medium">{column}</th>,
                           )
                         : null}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[hsl(220_14%_89%)]">
-                    {(value as Record<string, unknown>[]).map((row, index) => (
+                    {(items as Record<string, unknown>[]).map((row, index) => (
                       <tr key={index}>
                         {Object.entries(row).map(([column, cell]) => (
                           <td key={column} className="px-4 py-2 text-[hsl(220_14%_14%)]">
@@ -160,6 +180,22 @@ export default function RoleWorkbench(): React.ReactElement {
                     ))}
                   </tbody>
                 </table>
+              )}
+              {hasMore && (
+                <div className="border-t border-[hsl(220_14%_89%)] px-4 py-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setLimits((current) => ({
+                        ...current,
+                        [key]: nextProgressiveLimit(current[key] ?? 50),
+                      }))
+                    }
+                  >
+                    加载更多
+                  </Button>
+                </div>
               )}
             </div>
           </section>

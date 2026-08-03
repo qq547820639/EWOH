@@ -49,3 +49,4 @@
 | D-047 | 2026-08-04 | Add slow database transaction detection with statement timeout, slow-query API, and Prometheus counter | The plan requires slow-query detection and observability evidence | Reversible per module/env |
 | D-048 | 2026-08-04 | Convert client page routes to `React.lazy` and make world/replay requests cancellable | The plan requires frontend lazy loading and cancellable requests | Reversible per route/api |
 | D-049 | 2026-08-04 | Add role workbench aggregation API and page for operator/team lead/quality/equipment/manager | The plan requires role-driven task centers instead of module-menu stacking | Reversible per API/page |
+| D-050 | 2026-08-04 | Add progressive list slicing with load-more for large workbench lists | The plan requires large-list rendering to stay responsive | Reversible per UI |

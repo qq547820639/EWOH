@@ -101,3 +101,9 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
   manager views with real production data.
 - `/role-workbench` page renders role tabs, metrics, and lists.
 - E2E 33/33 and authenticated browser 5/5 passed.
+
+## 2026-08-04 Progressive List Gate
+
+- Progressive list helpers are unit-tested.
+- Role workbench tables slice to 50 and support load-more without replacing
+  the data source.
