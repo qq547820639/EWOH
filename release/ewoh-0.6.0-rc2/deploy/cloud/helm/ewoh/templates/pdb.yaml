@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ewoh.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "ewoh.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "ewoh.selectorLabels" . | nindent 6 }}

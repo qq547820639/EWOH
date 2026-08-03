@@ -61,6 +61,12 @@
   `GET /api/events/catalog/:type` 提供只读 API，独立契约审计接入
   `standalone-check.sh`。
 - Docker 运行时镜像携带 `/app/contracts`，事件目录在生产容器内可读。
+- Helm 部署工厂：新增 `deploy/cloud/helm/ewoh` Chart，包含 Factory Values
+  （工厂 ID/名称/升级环）、迁移 Job Hook、Deployment/Service/Ingress/HPA/PDB/
+  本地 PVC 模板；Chart 不从 values 生成密钥。
+- Helm 静态审计：`scripts/verify-helm-chart.js` 校验 Chart 元数据、values
+  路径、模板清单与全部 `.Values.*` 引用；`npm run verify:helm` 与
+  `test/contract/helm-chart.spec.ts` 纳入常规测试。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 5.0 adopted; scale kernel + connector/scenario catalog + conformance/replay + fleet ops + event catalog implemented; 54 Jest suites / 224 tests; E2E 19/19; OpenAPI 154/154; managed tables 51",
+  "current_status": "Final 5.0 adopted; scale kernel + connector/scenario catalog + conformance/replay + fleet ops + event catalog + Helm deployment factory implemented; 55 Jest suites / 228 tests; E2E 19/19; OpenAPI 154/154; managed tables 51",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
@@ -155,6 +155,8 @@
     ,
     "fleet_ops": "scenario install TCK gate + fleet upgrade/rollback with audit; Jest 54 suites / 224 tests; E2E 19/19; OpenAPI 154/154",
     "event_catalog": "AsyncAPI 2.6 + CloudEvents 1.0 catalog (13 messages/13 channels); GET /api/events/catalog + /:type; contract audit wired into standalone-check; Docker carries /app/contracts"
+    ,
+    "helm_deployment_factory": "Helm chart ewoh 0.1.0 for 0.6.0-rc2 with factory values/upgrade ring, migration hook, HA templates, no generated secrets; verify-helm-chart 123 checks passed"
   },
   "subagent_state": {
     "planned": [

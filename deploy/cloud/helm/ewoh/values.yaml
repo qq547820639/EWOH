@@ -1,0 +1,78 @@
+namespace:
+  create: true
+  name: ewoh
+
+image:
+  repository: ghcr.io/example/ewoh
+  tag: "0.6.0-rc2"
+  pullPolicy: IfNotPresent
+
+replicaCount: 3
+
+service:
+  type: ClusterIP
+  port: 3000
+  targetPort: http
+
+ingress:
+  enabled: true
+  className: nginx
+  host: ewoh.example.com
+  tlsSecretName: ewoh-tls
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 12
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+pdb:
+  minAvailable: 2
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+config:
+  logDir: /app/data/logs
+  corsOrigins: ""
+  trustProxy: "1"
+  bodyLimit: 1mb
+  contractsDir: /app/contracts
+
+secret:
+  create: false
+  name: ewoh-api-secret
+  keys:
+    databaseUrl: DATABASE_URL
+    jwtSecret: JWT_SECRET
+    redisUrl: REDIS_URL
+
+migration:
+  enabled: true
+  secretName: ewoh-migration-secret
+  image:
+    repository: ghcr.io/example/ewoh-migrate
+    tag: "0.6.0-rc2"
+
+storage:
+  driver: local
+  createPvc: true
+  pvcName: ewoh-uploads
+  capacity: 10Gi
+  localPath: /app/data/uploads
+  s3:
+    bucket: ewoh-uploads
+    region: cn-north-1
+    endpoint: ""
+
+factory:
+  id: factory-demo
+  name: Demo Factory
+  upgradeRing: pilot
+  timezone: Asia/Shanghai

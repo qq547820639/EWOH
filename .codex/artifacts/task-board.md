@@ -205,6 +205,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-101 | Scenario install TCK gate + fleet upgrade/rollback | PX-09/07 | Done | `round18-fleet-ops-event-catalog.md`; Jest 54/224; E2E 19/19; OpenAPI 154/154 |
 | T-102 | AsyncAPI/CloudEvents event catalog + API + audit | PX-10/11 | Done | `contracts/events/event-catalog.yaml`; `GET /api/events/catalog`; contract audit 13/13 |
 
+## Wave Final5 - Deployment Factory (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-103 | Helm chart + Factory Values + static chart audit | PX-09/51 | Done | `round19-helm-deployment-factory.md`; chart audit 123 checks; Jest 4/4 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

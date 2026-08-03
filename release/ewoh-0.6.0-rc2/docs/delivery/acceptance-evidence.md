@@ -7,8 +7,8 @@ Owner: AG-00/AG-41
 
 - Python unittest: 667 passed.
 - Python repo contract tests: 59 passed.
-- NestJS Jest: 224 passed across 54 suites (includes SP-01..SP-08 scenario
-  suite).
+- NestJS Jest: 228 passed across 55 suites (includes SP-01..SP-08 scenario
+  suite, event catalog contract, and Helm chart contract).
 - Client Jest: 20 passed across 6 suites.
 - HTTP + PostgreSQL E2E: 19 passed (auth, RBAC, refresh rotation/logout, org
   isolation, control/resource/world persistence, canonical UnifiedExoFrame
@@ -67,6 +67,12 @@ Owner: AG-00/AG-41
   types and 13 channels; `GET /api/events/catalog` and
   `GET /api/events/catalog/:type` are served to authenticated users; a strict
   contract audit is wired into `standalone-check.sh` and Docker runtime images.
+- Helm deployment factory: `deploy/cloud/helm/ewoh` v0.1.0 renders Namespace,
+  ConfigMap, migration Job hook, Deployment, Service, Ingress, HPA, PDB, and
+  local-storage PVC; factory ID/name/upgrade-ring values are carried into the
+  ConfigMap; chart never generates secrets from defaults; static audit
+  `scripts/verify-helm-chart.js` passes 123 checks and is covered by a Jest
+  contract test.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

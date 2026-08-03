@@ -26,6 +26,7 @@
     "test:watch": "jest --watch",
     "test:e2e": "jest --config test/e2e/jest.config.js --runInBand",
     "contract:events": "node ../scripts/audit-event-catalog.js",
+    "verify:helm": "node ../scripts/verify-helm-chart.js",
     "perf:smoke": "node scripts/perf-smoke.js",
     "eslint": "eslint . --quiet",
     "stylelint": "stylelint client/src/**/*.css --quiet",

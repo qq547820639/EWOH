@@ -50,14 +50,17 @@ production approval gate.
   upgrade/rollback endpoints update all org-visible profiles and are audited.
 - AsyncAPI 2.6 + CloudEvents 1.0 event catalog with 13 event types is
   implemented as a contract, an audited API, and a CI-validated artifact.
-- Full Jest regression: 54 suites / 224 tests; HTTP+PostgreSQL E2E 19/19;
+- Full Jest regression: 55 suites / 228 tests; HTTP+PostgreSQL E2E 19/19;
   OpenAPI strict audit 154/154; standalone production build passed.
+- Helm chart deployment factory: `deploy/cloud/helm/ewoh` with Factory
+  Values, migration Job hook, HA templates, and a 123-check static audit;
+  chart contract test added.
 
 ## Active Tasks
 
 - Fleet Ops (upgrade/rollback) and event catalog round closed.
-- Productization kernels: connector SDK/runtime, mapping DSL, Helm/factory
-  values, OTel resource attributes.
+- Productization kernels remaining: connector SDK/runtime, mapping DSL,
+  OTel resource attributes, Golden Factory Profile and scenario packs.
 - Training/acceptance evidence and production gate preparation.
 - Production DDL/deploy approval gate.
 
