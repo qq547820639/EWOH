@@ -30,6 +30,9 @@
 - Scale 幂等守卫：已 installed/uninstalled 的场景包重复安装/卸载直接返回；
   fleet upgrade/rollback 跳过已处于目标状态的 Profile；已 resolved 的工厂
   差异重复解决直接返回。
+- 本地真实 PostgreSQL E2E：HTTP + PostgreSQL 29/29 通过（embedded PG 17，
+  `127.0.0.1:55432`），覆盖鉴权/RBAC、组织隔离、MES/OEE/ERP、Scale、
+  参数、AAS、Work Orchestration 与幂等场景。
 
 ## [0.6.0-rc3] - 2026-08-04
 

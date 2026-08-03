@@ -240,7 +240,8 @@
     "iteration_2026_08_04_command_map_details": "EntityDetail resolves personnel/device archives with organization/exoskeleton/risk/alerts/recent events/disposition; entityDetailData helper + 3 client tests; client 9/33",
     "iteration_2026_08_04_offline_queue": "mobile workbench queues transition/inspection actions in localStorage when offline and flushes on reconnect; offlineQueue helpers + 2 client tests; client 10/35",
     "iteration_2026_08_04_state_guards": "control send/receipt reject terminal requests and duplicate in-flight/terminal attempts while preserving failed retry; handoff transitions open->accepted/rejected->closed enforced; gate decisions idempotent with history file; Jest 76/355",
-    "iteration_2026_08_04_scale_idempotency": "scenario install/uninstall, fleet upgrade/rollback, and difference resolve are idempotent in target states; 4 new scale tests; Jest 76/359"
+    "iteration_2026_08_04_scale_idempotency": "scenario install/uninstall, fleet upgrade/rollback, and difference resolve are idempotent in target states; 4 new scale tests; Jest 76/359",
+    "e2e_2026_08_04_real_pg": "npm run test:e2e 29/29 passed on embedded PostgreSQL 17 (127.0.0.1:55432): auth/RBAC, org isolation, MES/OEE/ERP, parameters, AAS, scale, work orchestration, idempotency"
   },
   "subagent_state": {
     "planned": [

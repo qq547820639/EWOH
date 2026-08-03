@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T19:56:26.982Z",
+  "generatedAt": "2026-08-03T19:57:56.331Z",
   "gateCount": 14,
   "approvedCount": 0,
   "requiresApprovalCount": 4,
@@ -120,13 +120,13 @@
     {
       "gateId": "G8",
       "title": "Cross-module scenario tests pass",
-      "calculatedStatus": "in_progress",
-      "baseStatus": "in_progress",
+      "calculatedStatus": "passed",
+      "baseStatus": "passed",
       "humanDecision": null,
       "approver": null,
       "decidedAt": null,
       "conditions": [
-        "SP-01..SP-12 unit suite + HTTP+PostgreSQL E2E",
+        "SP-01..SP-08 unit suite + HTTP+PostgreSQL E2E 29/29 on embedded PG 17",
         "Final 6 scenario pack and connector audits pass"
       ],
       "evidenceCount": 0

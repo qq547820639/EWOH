@@ -10,7 +10,7 @@
 | G5 | Backend infrastructure passes | Passed for standalone base | request transaction/GUC, auth, errors, health, rate limit tests; Jest 76 suites / 359 tests |
 | G6 | Core domain modules/APIs pass | Passed locally | 232 routes, 0 unimplemented; work orchestration APIs documented and tested over HTTP |
 | G7 | Frontend and command map pass | Validation | Playwright smoke: login, command center, command map, devices, alerts render with real data; client Jest 10 suites / 35 tests; work console route and layout type-check |
-| G8 | Cross-module scenario tests pass | Validation | SP-01..SP-12 unit suite + HTTP+PostgreSQL E2E; Final 6 scenario pack and connector audits pass |
+| G8 | Cross-module scenario tests pass | Passed locally | SP-01..SP-08 unit suite + HTTP+PostgreSQL E2E 29/29 on embedded PG 17; Final 6 scenario pack and connector audits pass |
 | G9 | Security/performance/regression pass | Validation | security fixes + DB probe pass; control plane writes gated by `EWOH_WORK_WRITABLE`; Jest/lint/typecheck/build pass |
 | G10 | Release/rollback/ops ready | Passed locally, production pending | `RELEASE DRILL PASSED` on disposable PostgreSQL 17; GitHub Actions Docker build + PG migration/rollback green; K8s apply and production observability drill pending |
 | G11 | Business acceptance and delivery complete | Pending | acceptance signoff |
@@ -21,5 +21,5 @@
 
 `bash scripts/standalone-check.sh` passed after the P0 hardening iteration:
 typecheck, lint, Jest 76/359, client 10/35, repo-facts 31/31, OpenAPI 232/232,
-production standalone build, and DDL hygiene. HTTP+PostgreSQL E2E is still
-skipped in this local run because `EWOH_E2E_RUNTIME_DATABASE_URL` is unset.
+production standalone build, and DDL hygiene. HTTP+PostgreSQL E2E additionally
+passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).

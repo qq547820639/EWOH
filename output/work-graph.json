@@ -1,29 +1,29 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T19:56:26.935Z",
+  "generatedAt": "2026-08-03T19:57:56.289Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 217,
+    "itemCount": 218,
     "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 74,
+    "evidenceCount": 75,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 36,
     "statusCounts": {
-      "Done": 124,
+      "Done": 125,
       "In Progress": 2,
       "Refining": 9,
-      "Validation": 47,
+      "Validation": 46,
       "Review": 5,
       "Passed for local implementation": 1,
       "Passed": 2,
       "Passed for local standalone scope": 1,
       "Passed for standalone": 1,
       "Passed for standalone base": 1,
-      "Passed locally": 1,
+      "Passed locally": 2,
       "Passed locally, production pending": 1,
       "Pending": 3,
       "Proposed": 19
@@ -2204,6 +2204,18 @@
       "evidence": "scenario install/uninstall idempotent; fleet upgrade/rollback skip target state; difference resolve idempotent; Jest 76/359"
     },
     {
+      "id": "T-183",
+      "title": "Real PostgreSQL HTTP E2E acceptance",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-13/41",
+      "agents": [
+        "AG-13"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`npm run test:e2e` 29/29 on embedded PG 17 (`127.0.0.1:55432`)"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -2271,9 +2283,9 @@
       "id": "G8",
       "title": "Cross-module scenario tests pass",
       "type": "gate",
-      "status": "Validation",
+      "status": "Passed locally",
       "owner": "AG-00",
-      "evidence": "SP-01..SP-12 unit suite + HTTP+PostgreSQL E2E; Final 6 scenario pack and connector audits pass"
+      "evidence": "SP-01..SP-08 unit suite + HTTP+PostgreSQL E2E 29/29 on embedded PG 17; Final 6 scenario pack and connector audits pass"
     },
     {
       "id": "G9",
@@ -2448,7 +2460,7 @@
       "status": "Proposed",
       "owner": "AG-00",
       "wave": "W7",
-      "summary": "standalone-check ALL PASSED; Jest 76/359; client 10/35; OpenAPI 232/232"
+      "summary": "standalone-check ALL PASSED; Jest 76/359; client 10/35; OpenAPI 232/232; real PG E2E 29/29"
     },
     {
       "id": "WP-ENV-001",
@@ -2628,7 +2640,7 @@
       "to": "W7",
       "edgeType": "depends",
       "blocking": true,
-      "evidenceRequirement": "standalone-check ALL PASSED; Jest 76/359; client 10/35; OpenAPI 232/232"
+      "evidenceRequirement": "standalone-check ALL PASSED; Jest 76/359; client 10/35; OpenAPI 232/232; real PG E2E 29/29"
     },
     {
       "id": "E-016",
@@ -3167,7 +3179,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "52ab4f05f045bd46468e14a942482aeb366e93ff2a1dc75401feae760ef55eaf",
+      "checksum": "0bca2bb4268e8ea423bd6164a47fac0ea58e409c06a4ddb5ccc2f5d88bd3789d",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3176,7 +3188,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "b395b4041ceb2ccaa6b180435c8192f032d1de87cddac9acf6299460ca490fbd",
+      "checksum": "fcd9e8e9091120211da1ab3dc40061011edfde75f4eed4699441fd24896a4319",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3212,7 +3224,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "90e032a0bb7b82593f6d67de9ccc520cea08d1374276bf7e3f59fe7ca383eb77",
+      "checksum": "6b9fbb7fc90e8aea07acdb95b04f2ee69cc9e8e765fcc5c950f89f34816f204b",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3221,7 +3233,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "618e5704e92007ec6661c64663cafac845b9e1d76409e927d4ef606a1642042d",
+      "checksum": "bee08248467139aab9ac48edb915964c3018efc51a76b6bf5818d28731d882ad",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3248,7 +3260,7 @@
       "artifactId": "work-task-graph-md",
       "path": "work/task-graph.md",
       "mediaType": "text/markdown",
-      "checksum": "582b81af8327d63c09b7e5a48c8fc8efde222f2ef499af615b0bcc4f1062974c",
+      "checksum": "35f871448e8c656d5a76463df9be95b4aea6b6dd7abfa885771a9d9e202ae81a",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3949,6 +3961,15 @@
       "title": "Round 74 - 2026-08-04 Scale Mutation Idempotency"
     },
     {
+      "evidenceId": "EVD-round75-real-postgres-e2e",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round75-real-postgres-e2e.md",
+      "checksum": "473c7fa5e0d30d08db6c687482f8f68f2b915b2eb46e6d4c66ada46ba9c70157",
+      "result": "passed",
+      "title": "Round 75 - 2026-08-04 Real PostgreSQL HTTP E2E"
+    },
+    {
       "evidenceId": "EVD-round8-org-scope-hardening",
       "workItemId": "",
       "kind": "test",
@@ -4068,10 +4089,10 @@
     {
       "gateId": "G8",
       "title": "Cross-module scenario tests pass",
-      "calculatedStatus": "in_progress",
+      "calculatedStatus": "passed",
       "humanDecision": null,
       "conditions": [
-        "SP-01..SP-12 unit suite + HTTP+PostgreSQL E2E",
+        "SP-01..SP-08 unit suite + HTTP+PostgreSQL E2E 29/29 on embedded PG 17",
         "Final 6 scenario pack and connector audits pass"
       ],
       "approver": null,

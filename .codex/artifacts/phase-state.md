@@ -36,8 +36,8 @@ Trace: EWOH-2026-08-04-principal-final6
 - Full standalone gate: typecheck, lint, Jest 76 suites / 359 tests, client
   10 suites / 35 tests, repo facts 31/31, OpenAPI 232/232, production build, and
   DDL hygiene all PASSED. Independent review: conditional pass with 0 critical
-  and 0 major findings. HTTP+PostgreSQL E2E remains skipped locally because
-  `EWOH_E2E_RUNTIME_DATABASE_URL` is not set.
+  and 0 major findings. HTTP+PostgreSQL E2E passed locally on embedded PG 17:
+  `29/29` across SP-01..SP-08 and work orchestration acceptance.
 
 ## Current Phase
 
