@@ -181,6 +181,8 @@ Trace: EWOH-2026-08-04-principal-final6
 - Role workbench list tables render 50 rows at a time with a “加载更多”
   button.
 - Client suite: 14 suites / 48 tests.
+- Work graph after progressive list wave: 248 items / 105 evidence /
+  0 invariant conflicts.
 
 ## Current Phase
 
