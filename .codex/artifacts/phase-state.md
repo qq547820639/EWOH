@@ -121,6 +121,17 @@ Trace: EWOH-2026-08-04-principal-final6
 - Full suite after replay wave: server Jest 79/380, client 13/46, OpenAPI
   235/235, work graph 242 nodes / 99 evidence / 0 invariant conflicts.
 
+## Latest Round - 2026-08-04 E-SOP Sign-off
+
+- SOP assets registered/published/diffed under `/api/mes/sops` using existing
+  `ewoh_asset_package` storage.
+- Work order steps can bind SOP version, mandatory flag, required tools and
+  materials; start/report enforce sign-off and confirmations.
+- Signatures are persisted in `resultJson.sop.signatures` with actor/tools/
+  materials timestamp.
+- Real PostgreSQL E2E: 31/31 passed including SOP register/publish/diff and
+  sign-off gating.
+
 ## Current Phase
 
 Final 6.0 work orchestration wave: C7-C9 contracts, file-backed Work Graph

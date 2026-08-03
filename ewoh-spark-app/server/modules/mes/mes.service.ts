@@ -10,6 +10,7 @@ import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack
 import { and, desc, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import {
+  ewohAssetPackage,
   ewohEvent,
   ewohResourceBinding,
   ewohScheduleTask,
@@ -26,6 +27,11 @@ export interface MesStepInput {
   spatialEntityId?: string;
   plannedStart?: string;
   plannedEnd?: string;
+  sopId?: string;
+  sopVersion?: string;
+  sopMandatory?: boolean;
+  requiredTools?: string[];
+  requiredMaterials?: string[];
 }
 
 export interface CreateWorkOrderDto {
@@ -113,6 +119,62 @@ function assertWorkerStepAssignment(
   }
 }
 
+function validateSopConfirmation(
+  step: { resultJson?: unknown },
+  action: string,
+  body?: Record<string, unknown>,
+  actor?: OrgContext,
+) {
+  if (action !== 'start' && action !== 'report') {
+    return undefined;
+  }
+  const result = (step.resultJson as Record<string, unknown> | null) ?? {};
+  const sop = (result.sop as Record<string, unknown> | undefined);
+  if (!sop || sop.mandatory === false) {
+    return undefined;
+  }
+  const bodyRecord = body ?? {};
+  if (bodyRecord.sopSigned !== true) {
+    throw new BadRequestException(
+      'SOP_SIGN_REQUIRED: SOP sign-off is required before start/report',
+    );
+  }
+  const requiredTools = Array.isArray(sop.requiredTools)
+    ? (sop.requiredTools as string[])
+    : [];
+  const confirmedTools = Array.isArray(bodyRecord.confirmedTools)
+    ? (bodyRecord.confirmedTools as string[])
+    : [];
+  const missingTools = requiredTools.filter(
+    (tool) => !confirmedTools.includes(tool),
+  );
+  if (missingTools.length > 0) {
+    throw new BadRequestException(
+      `SOP_TOOLS_REQUIRED: missing tool confirmations: ${missingTools.join(', ')}`,
+    );
+  }
+  const requiredMaterials = Array.isArray(sop.requiredMaterials)
+    ? (sop.requiredMaterials as string[])
+    : [];
+  const confirmedMaterials = Array.isArray(bodyRecord.confirmedMaterials)
+    ? (bodyRecord.confirmedMaterials as string[])
+    : [];
+  const missingMaterials = requiredMaterials.filter(
+    (material) => !confirmedMaterials.includes(material),
+  );
+  if (missingMaterials.length > 0) {
+    throw new BadRequestException(
+      `SOP_MATERIALS_REQUIRED: missing material confirmations: ${missingMaterials.join(', ')}`,
+    );
+  }
+  return {
+    signedAt: new Date().toISOString(),
+    signedBy: actor?.userId ?? bodyRecord.operatorId ?? null,
+    tools: confirmedTools,
+    materials: confirmedMaterials,
+  };
+}
+
 @Injectable()
 export class MesService {
   constructor(
@@ -168,6 +230,17 @@ export class MesService {
       assignedDeviceId: step.assignedDeviceId ?? null,
       spatialEntityId: step.spatialEntityId ?? null,
       progress: 0,
+      resultJson: step.sopId
+        ? {
+            sop: {
+              sopId: step.sopId,
+              version: step.sopVersion ?? null,
+              mandatory: step.sopMandatory ?? true,
+              requiredTools: step.requiredTools ?? [],
+              requiredMaterials: step.requiredMaterials ?? [],
+            },
+          }
+        : null,
     }));
     if (steps.length > 0) {
       await this.db.insert(ewohScheduleTaskStep).values(steps);
@@ -356,6 +429,7 @@ export class MesService {
       throw new NotFoundException(`Step ${stepId} not found in work order ${orderId}`);
     }
     assertWorkerStepAssignment(step, actor);
+    const sopSignature = validateSopConfirmation(step, action, body, actor);
     if (action === 'start' && !['released', 'in_progress'].includes(workOrder.workOrder.status)) {
       throw new BadRequestException('Work order must be released or in progress');
     }
@@ -402,6 +476,12 @@ export class MesService {
         note: body?.note ?? null,
         resumedAt: new Date().toISOString(),
         operator: actor?.userId ?? body?.operatorId ?? null,
+      };
+    }
+    if (sopSignature) {
+      resultJson.sop = {
+        ...((resultJson.sop as Record<string, unknown> | null) ?? {}),
+        signatures: sopSignature,
       };
     }
     const [row] = await this.db
@@ -494,6 +574,143 @@ export class MesService {
         ),
       )
       .orderBy(ewohResourceBinding.startTime);
+  }
+
+  async registerSop(
+    body: {
+      sopId?: string;
+      title: string;
+      version: string;
+      steps: Array<{
+        name: string;
+        instruction?: string;
+        mandatory?: boolean;
+        media?: string[];
+        tools?: string[];
+        materials?: string[];
+      }>;
+      effectiveFrom?: string;
+      effectiveTo?: string;
+      checksum?: string;
+    },
+    actor?: OrgContext,
+  ) {
+    if (
+      !body.title?.trim() ||
+      !body.version?.trim() ||
+      !Array.isArray(body.steps) ||
+      body.steps.length === 0
+    ) {
+      throw new BadRequestException(
+        'title, version, and non-empty steps are required',
+      );
+    }
+    const sopId = body.sopId?.trim() || `SOP-${randomUUID().slice(0, 8)}`;
+    const [row] = await this.db
+      .insert(ewohAssetPackage)
+      .values({
+        packageId: sopId,
+        packageType: 'sop',
+        name: body.title.trim(),
+        version: body.version.trim(),
+        manifestJson: {
+          sopSchemaVersion: 'v1',
+          effectiveFrom: body.effectiveFrom ?? null,
+          effectiveTo: body.effectiveTo ?? null,
+          checksum: body.checksum ?? null,
+          steps: body.steps,
+        },
+        status: 'draft',
+      })
+      .returning();
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'mes.sop.register',
+      entityType: 'asset_package',
+      entityId: sopId,
+      before: null,
+      after: { title: row.name, version: row.version, stepCount: body.steps.length },
+    });
+    return row;
+  }
+
+  async listSops() {
+    return this.db
+      .select()
+      .from(ewohAssetPackage)
+      .where(eq(ewohAssetPackage.packageType, 'sop'))
+      .orderBy(desc(ewohAssetPackage.createdAt));
+  }
+
+  async getSop(sopId: string) {
+    const [row] = await this.db
+      .select()
+      .from(ewohAssetPackage)
+      .where(
+        and(
+          eq(ewohAssetPackage.packageId, sopId),
+          eq(ewohAssetPackage.packageType, 'sop'),
+        ),
+      );
+    if (!row) {
+      throw new NotFoundException(`SOP ${sopId} not found`);
+    }
+    return row;
+  }
+
+  async publishSop(sopId: string, actor?: OrgContext) {
+    const sop = await this.getSop(sopId);
+    if (sop.status === 'published') {
+      return sop;
+    }
+    const [updated] = await this.db
+      .update(ewohAssetPackage)
+      .set({ status: 'published', publishedAt: new Date() })
+      .where(eq(ewohAssetPackage.packageId, sopId))
+      .returning();
+    if (!updated) {
+      throw new ConflictException('STATE_CONFLICT');
+    }
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'mes.sop.publish',
+      entityType: 'asset_package',
+      entityId: sopId,
+      before: { status: sop.status },
+      after: { status: updated.status },
+    });
+    return updated;
+  }
+
+  async diffSops(fromId: string, toId: string) {
+    const from = await this.getSop(fromId);
+    const to = await this.getSop(toId);
+    const fromSteps = (
+      (from.manifestJson as { steps?: Array<{ name: string }> } | null)
+        ?.steps ?? []
+    );
+    const toSteps = (
+      (to.manifestJson as { steps?: Array<{ name: string }> } | null)?.steps ?? []
+    );
+    const fromMap = new Map(fromSteps.map((step) => [step.name, step]));
+    const toMap = new Map(toSteps.map((step) => [step.name, step]));
+    return {
+      fromId,
+      toId,
+      added: toSteps
+        .filter((step) => !fromMap.has(step.name))
+        .map((step) => step.name),
+      removed: fromSteps
+        .filter((step) => !toMap.has(step.name))
+        .map((step) => step.name),
+      changed: [...fromMap.keys()].filter(
+        (name) =>
+          toMap.has(name) &&
+          JSON.stringify(fromMap.get(name)) !== JSON.stringify(toMap.get(name)),
+      ),
+    };
   }
 
   async qualityInspection(

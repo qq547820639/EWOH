@@ -64,3 +64,10 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
   to source events via `ewoh_event_chain`.
 - Unit tests added for replay merging, context selection, and replay item
   creation; real PostgreSQL E2E now 30/30.
+
+## 2026-08-04 E-SOP Sign-off Gate
+
+- SOP versioning, publish, diff, mandatory step sign-off, and tool/material
+  confirmation are implemented and persisted without new DB tables.
+- Real PostgreSQL E2E now 31/31; server unit tests cover sign-off rejection
+  and accepted signature persistence.

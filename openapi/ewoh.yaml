@@ -3378,6 +3378,177 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/mes/sops:
+    get:
+      tags:
+        - mes
+      summary: List SOP assets
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AssetPackage'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - mes
+      summary: Register a versioned SOP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - version
+                - steps
+              properties:
+                sopId:
+                  type: string
+                title:
+                  type: string
+                version:
+                  type: string
+                effectiveFrom:
+                  type: string
+                effectiveTo:
+                  type: string
+                checksum:
+                  type: string
+                steps:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - name
+                    properties:
+                      name:
+                        type: string
+                      instruction:
+                        type: string
+                      mandatory:
+                        type: boolean
+                      media:
+                        type: array
+                        items:
+                          type: string
+                      tools:
+                        type: array
+                        items:
+                          type: string
+                      materials:
+                        type: array
+                        items:
+                          type: string
+      responses:
+        '201':
+          description: SOP created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/sops/{id}:
+    get:
+      tags:
+        - mes
+      summary: Get one SOP
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/sops/{id}/publish:
+    post:
+      tags:
+        - mes
+      summary: Publish an SOP
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPackage'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/sops/{id}/diff/{otherId}:
+    get:
+      tags:
+        - mes
+      summary: Diff two SOP versions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: otherId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Version diff
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/tasks/{id}:
     get:
       tags:

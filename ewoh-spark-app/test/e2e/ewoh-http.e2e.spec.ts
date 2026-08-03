@@ -1476,6 +1476,176 @@ if (!e2eConfig) {
       ).toBe(true);
     });
 
+    it('registers SOP versions and enforces sign-off before work execution', async () => {
+      const dispatcher = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcher.status).toBe(201);
+      const token = dispatcher.body.accessToken;
+      const sopId = `SOP-E2E-${runId}`;
+      const sopIdV2 = `SOP-E2E-V2-${runId}`;
+
+      const sop = await apiRequest<{
+        packageId: string;
+        status: string;
+      }>(baseUrl, '/api/mes/sops', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          sopId,
+          title: `上料 SOP ${runId}`,
+          version: '1.0.0',
+          steps: [
+            {
+              name: '准备工具',
+              instruction: '确认扳手与螺栓',
+              mandatory: true,
+              tools: ['扳手'],
+              materials: ['螺栓'],
+            },
+          ],
+        }),
+      });
+      expect(sop.status).toBe(201);
+      expect(sop.body.packageId).toBe(sopId);
+
+      const published = await apiRequest<{ status: string }>(
+        baseUrl,
+        `/api/mes/sops/${sopId}/publish`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+        },
+      );
+      expect(published.status).toBe(201);
+      expect(published.body.status).toBe('published');
+
+      const sopV2 = await apiRequest<{ packageId: string }>(
+        baseUrl,
+        '/api/mes/sops',
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            sopId: sopIdV2,
+            title: `上料 SOP ${runId}`,
+            version: '2.0.0',
+            steps: [
+              {
+                name: '准备工具',
+                instruction: '新增检查',
+                mandatory: true,
+                tools: ['扳手', '扭力扳手'],
+                materials: ['螺栓'],
+              },
+              { name: '移除旧料', instruction: 'x', mandatory: false },
+            ],
+          }),
+        },
+      );
+      expect(sopV2.status).toBe(201);
+
+      const diff = await apiRequest<{
+        added: string[];
+        removed: string[];
+        changed: string[];
+      }>(
+        baseUrl,
+        `/api/mes/sops/${sopId}/diff/${sopIdV2}`,
+        { headers: jsonHeaders(token) },
+      );
+      expect(diff.status).toBe(200);
+      expect(diff.body.added).toEqual(['移除旧料']);
+      expect(diff.body.changed).toEqual(['准备工具']);
+
+      const orderId = `WO-SOP-${runId}`;
+      const created = await apiRequest<{
+        workOrder: { scheduleTaskId: string; status: string };
+        steps: Array<{ stepId: string; status: string }>;
+      }>(baseUrl, '/api/mes/work-orders', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          orderId,
+          title: `SOP 工单 ${runId}`,
+          steps: [
+            {
+              name: '上料',
+              sopId,
+              sopVersion: '1.0.0',
+              sopMandatory: true,
+              requiredTools: ['扳手'],
+              requiredMaterials: ['螺栓'],
+              assignedPersonId: `P-SOP-${runId}`,
+            },
+          ],
+        }),
+      });
+      expect(created.status).toBe(201);
+
+      for (const action of ['release', 'start']) {
+        const state = await apiRequest(
+          baseUrl,
+          `/api/mes/work-orders/${orderId}/state?action=${action}`,
+          {
+            method: 'POST',
+            headers: jsonHeaders(token),
+            body: '{}',
+          },
+        );
+        expect(state.status).toBe(201);
+      }
+      const stepId = created.body.steps[0].stepId;
+
+      const unsigned = await apiRequest(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/steps/${stepId}/state?action=start`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({ quantity: 1 }),
+        },
+      );
+      expect(unsigned.status).toBe(400);
+      expect(JSON.stringify(unsigned.body)).toContain('SOP_SIGN_REQUIRED');
+
+      const signed = await apiRequest<{ status: string }>(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/steps/${stepId}/state?action=start`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            quantity: 1,
+            sopSigned: true,
+            confirmedTools: ['扳手'],
+            confirmedMaterials: ['螺栓'],
+          }),
+        },
+      );
+      expect(signed.status).toBe(201);
+      expect(signed.body.status).toBe('in_progress');
+
+      const reported = await apiRequest<{ status: string }>(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/steps/${stepId}/state?action=report`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            quantity: 1,
+            sopSigned: true,
+            confirmedTools: ['扳手'],
+            confirmedMaterials: ['螺栓'],
+          }),
+        },
+      );
+      expect(reported.status).toBe(201);
+      expect(reported.body.status).toBe('reported');
+    });
+
     it('records device status, calculates OEE, and escalates andon SLA', async () => {
       const dispatcher = await login(
         baseUrl,

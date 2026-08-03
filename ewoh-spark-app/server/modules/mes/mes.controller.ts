@@ -86,4 +86,50 @@ export class MesController {
   ) {
     return this.mesService.qualityInspection(id, body, request.userContext);
   }
+
+  @Get('sops')
+  listSops() {
+    return this.mesService.listSops();
+  }
+
+  @Post('sops')
+  registerSop(
+    @Body() body: {
+      sopId?: string;
+      title: string;
+      version: string;
+      steps: Array<{
+        name: string;
+        instruction?: string;
+        mandatory?: boolean;
+        media?: string[];
+        tools?: string[];
+        materials?: string[];
+      }>;
+      effectiveFrom?: string;
+      effectiveTo?: string;
+      checksum?: string;
+    },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.mesService.registerSop(body, request.userContext);
+  }
+
+  @Get('sops/:id')
+  getSop(@Param('id') id: string) {
+    return this.mesService.getSop(id);
+  }
+
+  @Post('sops/:id/publish')
+  publishSop(
+    @Param('id') id: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.mesService.publishSop(id, request.userContext);
+  }
+
+  @Get('sops/:id/diff/:otherId')
+  diffSops(@Param('id') id: string, @Param('otherId') otherId: string) {
+    return this.mesService.diffSops(id, otherId);
+  }
 }

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T22:23:55.913Z",
+  "generatedAt": "2026-08-03T22:31:40.470Z",
   "spec": "openapi/ewoh.yaml",
   "controllerKeys": [
     "DELETE /api/dashboard/devices/{deviceId}/bindings",
@@ -38,6 +38,9 @@
     "GET /api/gamification/brain/suggestions",
     "GET /api/gamification/role",
     "GET /api/me",
+    "GET /api/mes/sops",
+    "GET /api/mes/sops/{id}",
+    "GET /api/mes/sops/{id}/diff/{otherId}",
     "GET /api/mes/work-orders",
     "GET /api/mes/work-orders/{id}",
     "GET /api/mes/work-orders/{id}/materials",
@@ -161,6 +164,8 @@
     "POST /api/ingest/location",
     "POST /api/ingest/mes",
     "POST /api/ingest/spatial-scan",
+    "POST /api/mes/sops",
+    "POST /api/mes/sops/{id}/publish",
     "POST /api/mes/work-orders",
     "POST /api/mes/work-orders/{id}/inspections",
     "POST /api/mes/work-orders/{id}/materials",
@@ -275,6 +280,9 @@
     "GET /api/gamification/brain/suggestions",
     "GET /api/gamification/role",
     "GET /api/me",
+    "GET /api/mes/sops",
+    "GET /api/mes/sops/{id}",
+    "GET /api/mes/sops/{id}/diff/{otherId}",
     "GET /api/mes/work-orders",
     "GET /api/mes/work-orders/{id}",
     "GET /api/mes/work-orders/{id}/materials",
@@ -398,6 +406,8 @@
     "POST /api/ingest/location",
     "POST /api/ingest/mes",
     "POST /api/ingest/spatial-scan",
+    "POST /api/mes/sops",
+    "POST /api/mes/sops/{id}/publish",
     "POST /api/mes/work-orders",
     "POST /api/mes/work-orders/{id}/inspections",
     "POST /api/mes/work-orders/{id}/materials",
@@ -475,9 +485,9 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 235,
-  "specOperations": 235,
-  "documentedControllerOperations": 235,
+  "controllerOperations": 240,
+  "specOperations": 240,
+  "documentedControllerOperations": 240,
   "undocumented": [],
   "unimplemented": []
 }

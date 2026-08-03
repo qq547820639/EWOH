@@ -65,6 +65,154 @@ describe('MES state machines', () => {
   });
 });
 
+describe('MesService SOP registry and confirmation gating', () => {
+  function createStepTransitionDb(workOrder: unknown, step: unknown) {
+    const { db } = createGetDb([workOrder], [step], []);
+    const updateSet = jest.fn((values: Record<string, unknown>) => ({
+      where: jest.fn(() => ({
+        returning: jest.fn().mockResolvedValue([{ ...(step as object), ...values }]),
+      })),
+    }));
+    return {
+      dbWithUpdate: {
+        ...db,
+        update: jest.fn(() => ({ set: updateSet })),
+      },
+      updateSet,
+    };
+  }
+
+  it('registers a versioned SOP asset with audit', async () => {
+    const row = {
+      packageId: 'SOP-1',
+      packageType: 'sop',
+      name: '上料 SOP',
+      version: '1.0.0',
+      status: 'draft',
+    };
+    const insert = jest.fn((_table: unknown) => ({
+      values: jest.fn(() => ({ returning: jest.fn().mockResolvedValue([row]) })),
+    }));
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new MesService({ insert } as never, audit as never);
+
+    const result = await service.registerSop({
+      title: '上料 SOP',
+      version: '1.0.0',
+      steps: [{ name: '准备工具', mandatory: true, tools: ['扳手'] }],
+    });
+
+    expect(result.packageId).toBe('SOP-1');
+    expect(audit.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'mes.sop.register' }),
+    );
+  });
+
+  it('requires SOP sign-off and tool/material confirmations before start', async () => {
+    const workOrder = {
+      scheduleTaskId: 'WO-1',
+      title: '装配',
+      status: 'in_progress',
+    };
+    const step = {
+      stepId: 'S1',
+      status: 'pending',
+      progress: 0,
+      actualStart: null,
+      actualEnd: null,
+      resultJson: {
+        sop: {
+          sopId: 'SOP-1',
+          version: '1.0.0',
+          mandatory: true,
+          requiredTools: ['扳手'],
+          requiredMaterials: ['螺栓'],
+        },
+      },
+    };
+    const { dbWithUpdate, updateSet } = createStepTransitionDb(workOrder, step);
+    const service = new MesService(
+      dbWithUpdate as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    await expect(
+      service.transitionStep('WO-1', 'S1', 'start', {}),
+    ).rejects.toThrow('SOP_SIGN_REQUIRED');
+
+    await expect(
+      service.transitionStep('WO-1', 'S1', 'start', { sopSigned: true }),
+    ).rejects.toThrow('SOP_TOOLS_REQUIRED');
+
+    const result = await service.transitionStep(
+      'WO-1',
+      'S1',
+      'start',
+      {
+        sopSigned: true,
+        confirmedTools: ['扳手'],
+        confirmedMaterials: ['螺栓'],
+      },
+      { userId: 'worker-1', primaryOrgId: 'org-1' },
+    );
+
+    expect(result.status).toBe('in_progress');
+    const resultJson = updateSet.mock.calls[0][0]
+      .resultJson as Record<string, unknown>;
+    expect(
+      (resultJson.sop as Record<string, unknown>).signatures,
+    ).toEqual(
+      expect.objectContaining({
+        signedBy: 'worker-1',
+        tools: ['扳手'],
+        materials: ['螺栓'],
+      }),
+    );
+  });
+
+  it('computes SOP version differences by step name and content', async () => {
+    const from = {
+      packageId: 'SOP-1',
+      packageType: 'sop',
+      manifestJson: {
+        steps: [
+          { name: '准备', instruction: 'old' },
+          { name: '移除', instruction: 'x' },
+        ],
+      },
+    };
+    const to = {
+      packageId: 'SOP-2',
+      packageType: 'sop',
+      manifestJson: {
+        steps: [
+          { name: '准备', instruction: 'new' },
+          { name: '新增', instruction: 'y' },
+        ],
+      },
+    };
+    const where = jest
+      .fn()
+      .mockResolvedValueOnce([from])
+      .mockResolvedValueOnce([to]);
+    const select = jest.fn(() => ({
+      from: jest.fn(() => ({
+        where,
+      })),
+    }));
+    const service = new MesService(
+      { select } as never,
+      { appendAuditLog: jest.fn() } as never,
+    );
+
+    const diff = await service.diffSops('SOP-1', 'SOP-2');
+
+    expect(diff.added).toEqual(['新增']);
+    expect(diff.removed).toEqual(['移除']);
+    expect(diff.changed).toEqual(['准备']);
+  });
+});
+
 describe('MesService work order creation', () => {
   it('creates a work order and its steps with audit', async () => {
     const scheduleRow = {
@@ -93,7 +241,17 @@ describe('MesService work order creation', () => {
         title: '装配工单',
         productCode: 'P-001',
         orderQty: 10,
-        steps: [{ name: '上料' }, { name: '装配' }],
+        steps: [
+          {
+            name: '上料',
+            sopId: 'SOP-1',
+            sopVersion: '1.0.0',
+            sopMandatory: true,
+            requiredTools: ['扳手'],
+            requiredMaterials: ['螺栓'],
+          },
+          { name: '装配' },
+        ],
       },
       { userId: 'user-1', primaryOrgId: 'org-1' },
     );
@@ -102,6 +260,20 @@ describe('MesService work order creation', () => {
     expect(insert).toHaveBeenCalledTimes(2);
     expect(insertEntries[0].table).toBe(ewohScheduleTask);
     expect(insertEntries[1].table).toBe(ewohScheduleTaskStep);
+    const firstStep = (
+      insertEntries[1].rows as Array<{
+        resultJson: { sop: Record<string, unknown> } | null;
+      }>
+    )[0];
+    expect(firstStep.resultJson?.sop).toEqual(
+      expect.objectContaining({
+        sopId: 'SOP-1',
+        version: '1.0.0',
+        mandatory: true,
+        requiredTools: ['扳手'],
+        requiredMaterials: ['螺栓'],
+      }),
+    );
     expect(audit.appendAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({
         actorId: 'user-1',
