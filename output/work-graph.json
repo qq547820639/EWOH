@@ -1,6 +1,6 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T20:48:58.859Z",
+  "generatedAt": "2026-08-03T20:50:29.089Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
@@ -2345,7 +2345,7 @@
         "AG-13"
       ],
       "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
-      "evidence": "dispatcher login + command center/map/mobile workbench on real PG fixture; `npm run test:browser` 3/3"
+      "evidence": "dispatcher login + command center/map/mobile workbench/alerts on real PG fixture; `npm run test:browser` 4/4"
     },
     {
       "id": "T-195",
@@ -3347,7 +3347,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "ceeeb090b770d42aa87df742e07a1e100674dc6a7dc68da092e5d4f83fc1d6ed",
+      "checksum": "a3333e9bf091fc824ceb94c378550ed625f013eb95a9fa6d3b8129c8cd80c483",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3392,7 +3392,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "471cbc33331d28d4024126388690fdcc756d7fe37552051a8e50b029df375b50",
+      "checksum": "a21a9f9717b3dd7a040d04ff6ff0e0e4f8817055298a78c1915083e408da261b",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3401,7 +3401,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "243937e6a070e50b5fb978228215376df44d04056c31149737ed5096d0576d94",
+      "checksum": "a881f3ecf47bd1fb460ecc69e878d7d6e1dc552b4d83294461708a07cd26ef93",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4241,7 +4241,7 @@
       "workItemId": "",
       "kind": "test",
       "path": ".codex/artifacts/work/evidence/round86-authenticated-browser-test.md",
-      "checksum": "ab9dfe9d795e8de0a0b99cedac5284133cbe2b1ad3ca0098517884e4c19e39ab",
+      "checksum": "9c24f61a721257b4b893591cecb7e805b1ccb8ae0818e7ef3f78201b540a533c",
       "result": "passed",
       "title": "Round 86 - 2026-08-04 Authenticated Playwright Browser Test"
     },

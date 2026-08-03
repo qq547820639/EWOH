@@ -17,11 +17,12 @@ Branch: `codex/ewoh-iteration-2026-08-04`
 ```text
 EWOH_E2E_RUNTIME_DATABASE_URL='postgresql://ewoh_api:...@127.0.0.1:55432/postgres' npm run test:browser
 
-Running 3 tests using 1 worker
+Running 4 tests using 1 worker
 ✓ logs in as dispatcher and renders the command center
 ✓ renders the command map after login
 ✓ renders the mobile workbench after login
-3 passed (4.0s)
+✓ renders the alerts page after login
+4 passed (5.8s)
 ```
 
 Screenshot: `output/playwright/browser-authenticated-command-center.png`

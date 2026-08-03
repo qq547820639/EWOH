@@ -58,8 +58,9 @@
 - 版本同步：Helm appVersion、Compose/K8s 默认值、运行时默认版本与相关测试
   从 `0.6.0-rc3` 提升到 `0.6.0-rc4`。
 - 认证浏览器测试：新增 `npm run test:browser`，用真实 PostgreSQL fixture 启动
-  Standalone，Playwright 完成 dispatcher 登录、指挥中心、指挥地图和移动工作台
-  渲染，截图到 `output/playwright/browser-authenticated-command-center.png`。
+  Standalone，Playwright 完成 dispatcher 登录、指挥中心、指挥地图、移动工作台
+  和风险告警渲染（4/4），截图到
+  `output/playwright/browser-authenticated-command-center.png`。
 - CI 接入：`standalone.yml` 在 E2E 后安装 Playwright Chromium 并运行
   `npm run test:browser`，推送/PR 都会执行认证浏览器流程。
 - 交付文档同步：`acceptance-evidence.md` 与 `release-checklist.md` 记录 RC4

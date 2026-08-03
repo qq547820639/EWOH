@@ -153,4 +153,10 @@ test.describe('authenticated browser flow', () => {
     await expect(page.locator('body')).toContainText('移动工作台');
     await expect(page.locator('input[placeholder*="扫码或输入工单号"]')).toBeVisible();
   });
+
+  test('renders the alerts page after login', async ({ page }) => {
+    await loginAsDispatcher(page, credentials);
+    await page.goto(`${BASE_URL}/alerts`);
+    await expect(page.locator('body')).toContainText('风险与告警');
+  });
 });

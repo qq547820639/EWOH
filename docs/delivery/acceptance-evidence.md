@@ -327,7 +327,7 @@ Owner: AG-00/AG-41
 - `ALL STANDALONE CHECKS PASSED` with a real PostgreSQL 17 environment:
   NestJS Jest 76 suites / 362 tests, client Jest 13 suites / 42 tests,
   repo facts 33/33, OpenAPI 232/232, HTTP + PostgreSQL E2E 29/29, and
-  Playwright authenticated browser flows 3/3.
+  Playwright authenticated browser flows 4/4.
 - `RELEASE DRILL PASSED` on embedded PostgreSQL 17 (apply/verify/RLS/audit/
   rollback/rebuild + standalone gate + E2E).
 - Perf smoke: `GET /health/live` 500 req / 50 concurrency = 4610 QPS,

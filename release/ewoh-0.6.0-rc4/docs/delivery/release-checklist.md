@@ -43,7 +43,7 @@ Owner: AG-00/AG-51
   rebuild, Jest 76/362, client 13/42, OpenAPI 232/232, E2E 29/29,
   Playwright 3/3, release drill PASSED, bandit 0 medium/high.
 - G7: authenticated browser flows for command center, command map, and mobile
-  workbench render against a real PostgreSQL fixture.
+  workbench and alerts render against a real PostgreSQL fixture (4/4).
 - C9 remains Pending: production load/HA verification requires deployment
   approval and external infrastructure.
 

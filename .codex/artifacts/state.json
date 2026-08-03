@@ -255,7 +255,7 @@
     "bandit_2026_08_04": "python3 -m bandit -r src/edge_platform -ll: 0 medium/high issues over 28286 lines",
     "command_map_query_state_2026_08_04": "failed entity/world/overview/environment queries show retryable banner; queryState helpers + 3 client tests; client 13/42",
     "release_rc4_2026_08_04": "release/ewoh-0.6.0-rc4 generated: 1202 files, SHA256SUMS.txt, scale-release-review PASSED; manifest release=0.6.0-rc4",
-    "browser_test_2026_08_04": "npm run test:browser 3/3 passed: dispatcher login + command center/command map/mobile workbench render against real PostgreSQL fixture; screenshot output/playwright/browser-authenticated-command-center.png",
+    "browser_test_2026_08_04": "npm run test:browser 4/4 passed: dispatcher login + command center/command map/mobile workbench/alerts render against real PostgreSQL fixture; screenshot output/playwright/browser-authenticated-command-center.png",
     "browser_test_ci_2026_08_04": "standalone.yml installs Playwright Chromium and runs npm run test:browser after E2E",
     "pilot_readiness_rc4_2026_08_04": "pilot-readiness-check.sh: 7 passed / 3 failed (Docker/Kubectl/Helm absent) / 5 pending external; PILOT READINESS NOT READY",
     "ops_drill_rc4_2026_08_04": "standalone-ops-check.sh PASSED: 57 tables backup/restore/verify; identity sequence advanced"

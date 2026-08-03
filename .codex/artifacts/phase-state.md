@@ -61,9 +61,9 @@ Trace: EWOH-2026-08-04-principal-final6
   queries fail instead of rendering silently empty placeholders.
 - `EWOH 0.6.0-rc4` candidate bundle generated: 1202 files, SHA256SUMS,
   `scale-release-review` PASSED.
-- Authenticated Playwright tests pass 3/3: dispatcher login plus command
-  center, command map, and mobile workbench renders against a real PostgreSQL
-  fixture (`npm run test:browser`).
+- Authenticated Playwright tests pass 4/4: dispatcher login plus command
+  center, command map, mobile workbench, and alerts renders against a real
+  PostgreSQL fixture (`npm run test:browser`).
 - CI runs the Playwright browser suite: `standalone.yml` installs Chromium and
   executes `npm run test:browser` after HTTP+PostgreSQL E2E.
 - Pilot readiness rerun: 7 passed (rc4 bundle, evidence, training, runbook,
