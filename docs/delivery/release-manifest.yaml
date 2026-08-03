@@ -54,6 +54,7 @@ evidence:
   workflow_engine: "workflow schema v1; role-aware advance API; mes-execution example; 16 contract checks"
   feature_flags: "org-scoped feature.* flags in system config; global_admin write; RLS isolation verified"
   edge_backfill: "SequenceBuffer out-of-order/duplicate/gap/backfill; pytest 74 passed"
+  twin_package: "twin manifest/calibration/redaction pipeline; discrete-machining-line + assembly-cell samples; pytest 81 passed"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

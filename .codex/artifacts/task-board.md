@@ -289,6 +289,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-116 | Sequence buffer for out-of-order/duplicate/backfill | V-CON/13 | Done | `round32-edge-backfill.md`; pytest 74 passed |
 
+## Wave Final5 - Twin Package (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-117 | Twin package manifest/calibration pipeline + samples | PX-08/14 | Done | `round33-twin-package.md`; pytest 81 passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

@@ -2,7 +2,7 @@
 d9d7560e7cf44d4fae1af32d7342d598ee2d42430bb80eaf02034509ee4e065c  ./.github/workflows/security.yml
 e837948cc1f6815a1d29ef788831e7e9da7b614ffbca656e427de5e73c9b8779  ./.github/workflows/standalone.yml
 04119e083d0290c47810d2d70659c39bd710a98359dbbe1f07d4e09d799283b3  ./.github/workflows/test.yml
-249c574c0db17eca0d2fa6b457adc3ddcf348c562d1cb8fc95104a0266fbbe50  ./CHANGELOG.md
+025c18c510548e5cb4a05e41f99411c250f9aeb42a5adfcb59a5968cc3f8aaa2  ./CHANGELOG.md
 9b65f03fe4fbf5413248e2ed3b81d7de0d8c9cb890d93621a9d3e6a8f15b87b2  ./Makefile
 5eff92ef060482e7e19977a0a8294ffffe91c8a9b47d437cde70c6f79b85f4c0  ./README.md
 18aed5a0dba2bf9e17396e8d25d95524c8a6cd64d0e57b7768031c0a614f2ab8  ./RELEASE-README.md
@@ -144,10 +144,10 @@ cb4944c957e4888c137480614fa6f276afcc54bbd4fc0f5fa4571e411d4f9f7f  ./docs/archite
 3517965f70039dd3c9a8897bb81cf1374351d54790971d6292b5925ce1f272f7  ./docs/architecture/product_definition.md
 e97cc156f3348a1ca926e3dcbd3cfac5a35192f68b93c9585af1ebf9af8de492  ./docs/architecture/product_review_2026-07-31.md
 fa66e2ce1360765d98a85f8ebb7d1efa6b1d4acd8ccee343d1cfea18846ea5af  ./docs/data/multimodal_schema.md
-e3df8506f28d15056ec9acfa6b2c42978ce1f3020d426c93aa5435c986210b64  ./docs/delivery/acceptance-evidence.md
+6d8130bffdaccd7da6f953df82321bf1fb59a819eace78f673e543fe2e0eea2c  ./docs/delivery/acceptance-evidence.md
 d75812a1a317ebf61514bc4bcc14dcf4577a979de182352358fcdb084ffad1c3  ./docs/delivery/deployment-runbook.md
 97e5db9b47056c73ed7e77416c6300f2139c957601f89a7f0a464027ec995483  ./docs/delivery/release-checklist.md
-1d8cfbcba3bced612c7daadb2edde7fbcf2d5b2e2a62f8a99d3342e4a5642d07  ./docs/delivery/release-manifest.yaml
+1d2a583ed3faebdc773ecec6dc69a02b27aee500500629abb71856f7911d866c  ./docs/delivery/release-manifest.yaml
 d429609ca4f89bfad846d2af8551a9ce4a3d8c3449e5fc8c394d1c93272379e6  ./docs/delivery/standalone-product-pack.md
 0a4104abf8bbe2035f4959bc07c2c4289def7d5ad0837d42a438821d32298918  ./docs/delivery/training-plan.md
 4c159e70e257fa9e9028238c0485549153f8177e314e70f0b4474bcedf5bfe70  ./docs/deployment/README.md
@@ -888,6 +888,10 @@ a70f460b0f8d1b28025d143eb7d4832d7bfdb34731a7a67c5b539e4e8191d96c  ./src/edge_pla
 5923bcaf832edd2b1bc86b7ad94524cc24ab138a2b131b863f4e3a01075a640d  ./src/edge_platform/tests/test_storage_tables.py
 156ff3a98dd2fb16190e076c077b94c0879e85b49214acd5e494fa3a883534fc  ./src/edge_platform/tests/test_sustained_run.py
 3ff58dea9b5d291be5b66691922b532e0977e44601a834b1355b5b7cced75a60  ./src/edge_platform/tests/test_world_model.py
+3a4fdcf563a3e9fcc47876d1238518b924c5a497582eff897a8a332d311763ce  ./src/edge_platform/twin/__init__.py
+c9ae6fe2778cb8179b005450ae4888ba283ffc7cce4cdbec43d8e8d0de80d6f1  ./src/edge_platform/twin/manifests/assembly-cell-1.0.0.json
+200ee0a1780defde55f363c3cd8571aeed8251c326a7b6335e8072ced5e19b8b  ./src/edge_platform/twin/manifests/discrete-machining-line-1.0.0.json
+a991786943ffd8a3b1bf5605b0473efb1b2a1dbee040ab656b70f767165a9068  ./src/edge_platform/twin/package.py
 de3c2636b62c113a235a8eb4848def51f13d503d398b9d0c82a1b14910329025  ./src/edge_platform/world_model/__init__.py
 0192dac35366569e9383ef7a840aea8a92a3db690dfdd4fe2959aed7fa6b1ddd  ./src/edge_platform/world_model/event_graph.py
 e14556ecf38a2b6504203fb6589422b7d5ad59c2fd64864ca915dc28275c2c8f  ./src/edge_platform/world_model/prediction.py
@@ -898,6 +902,7 @@ ed132dcb297a3fcb5bf286b1a4832313d745119e076aa4f3ff13801526b7dbe7  ./tests/test_c
 df509666c1613a9c902d09dfb9e4168174fc9437d17af50a6f7844a89590340c  ./tests/test_edge_backfill.py
 756daf2bcb62e23efe7eb06a6d0dcd64f0896ed5ad427d391f48caa8ac5e0905  ./tests/test_edge_bridge_ingest.py
 2d0e1da8bee641ed7c1cc8d95770d1c1d41efae17e68cb3a14fd7d8718d7547a  ./tests/test_ny_exo_a1_contract.py
+be40795f3aef54bac0cf95c0fb8eef46aec4c85bf080823f0071de5651b68c08  ./tests/test_twin_package.py
 be2b5aaf9c54637219620026a22b159a4bfc88f95d5803c5fb68c19fb7fcd099  ./ui/command_map/admin/admin.css
 8793ce8af26b2f3a85a018894df88a857b13d2f1772c8fabecd2268ddb8164ad  ./ui/command_map/admin/admin.js
 ab018387c6988050335a5dc9d873f45a840a9a21be0b787338e922793f5d1f6c  ./ui/command_map/assets/app.js

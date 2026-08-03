@@ -91,6 +91,8 @@ production approval gate.
   global-admin writes are enforced and cross-org reads are RLS-isolated.
 - Edge resilience: `SequenceBuffer` handles out-of-order, duplicate, stale,
   gap, and backfill cases for connector/edge bridge telemetry.
+- Twin package pipeline: versioned twin manifests validate model format,
+  coordinate system, semantics, calibration readiness, and rollback metadata.
 
 ## Active Tasks
 

@@ -6,7 +6,7 @@ Owner: AG-00/AG-41
 ## Automated Evidence
 
 - Python unittest: 667 passed.
-- Python repo contract tests: 74 passed.
+- Python repo contract tests: 81 passed.
 - NestJS Jest: 268 passed across 63 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
@@ -127,6 +127,9 @@ Owner: AG-00/AG-41
 - Edge backfill: `SequenceBuffer` reorders out-of-order frames, rejects
   duplicates/stale/out-of-window frames, detects gaps, and continues after
   backfill; covered by 5 new Python tests.
+- Twin package pipeline: versioned twin manifests and calibration readiness
+  checks are implemented for digital twin asset packages; covered by 7 new
+  Python tests.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.
