@@ -343,6 +343,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-125 | Scenario TCK runner across golden/policy/workflow/mapping/events | PX-11/07 | Done | `round41-scenario-tck.md`; 5 gates passed |
 
+## Wave Final5 - Third Factory (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-126 | Third factory config-driven install drill | PX-12/04 | Done | `round42-third-factory-drill.md`; E2E config install passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

@@ -151,6 +151,8 @@ Owner: AG-00/AG-41
 - Scenario TCK: `scripts/scenario-tck.js` runs Golden Factory, policy,
   workflow, mapping, and event catalog audits as one scenario gate
   (`npm run scenario:tck`).
+- Third factory drill: E2E installs a third factory from the same published
+  template using config only and verifies the persisted profile row.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

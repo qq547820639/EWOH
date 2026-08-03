@@ -109,6 +109,8 @@ production approval gate.
   manifest/config/health/redaction/sequence checks.
 - Scenario TCK: `scripts/scenario-tck.js` and `npm run scenario:tck` run five
   scenario-related contract audits as one gate.
+- Third factory drill: E2E installs a third factory profile from the same
+  published template using config only, with persisted config and org scope.
 
 ## Active Tasks
 

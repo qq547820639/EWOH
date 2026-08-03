@@ -63,6 +63,7 @@ evidence:
   scenario_uninstall: "POST /api/scale/scenario-packs/:id/uninstall with audit"
   connector_tck: "scripts/connector-tck.py + make connector-tck; 11 checks"
   scenario_tck: "scripts/scenario-tck.js + npm run scenario:tck; 5 gates"
+  third_factory_drill: "E2E third factory config-driven install from same template"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

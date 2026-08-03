@@ -140,6 +140,8 @@
   Manifest/配置/健康/脱敏/乱序补传检查。
 - 场景包 TCK：`scripts/scenario-tck.js` 与 `npm run scenario:tck` 将
   Golden Factory/策略/Workflow/Mapping/事件目录 5 个审计串成场景验收门禁。
+- 第三工厂演练：E2E 从同一已发布模板仅凭配置安装第三个工厂 Profile，
+  验证无代码分叉、配置持久化与组织隔离。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

@@ -1301,6 +1301,41 @@ if (!e2eConfig) {
       expect(secondInstall.body.profileId).not.toBe(installed.body.profileId);
       expect(secondInstall.body.status).toBe('installed');
 
+      const thirdInstall = await apiRequest<{
+        profileId: string;
+        factoryName: string;
+        status: string;
+      }>(baseUrl, `/api/scale/templates/${templateId}/install`, {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          factoryName: 'E2E 配置工厂D',
+          config: { shift: { count: 4 }, upgradeRing: 'small' },
+        }),
+      });
+      expect(thirdInstall.status).toBe(201);
+      expect(thirdInstall.body.profileId).not.toBe(installed.body.profileId);
+      expect(thirdInstall.body.profileId).not.toBe(secondInstall.body.profileId);
+      expect(thirdInstall.body.status).toBe('installed');
+
+      const thirdRows = await owner!.unsafe<
+        Array<{
+          status: string;
+          config_json: { shift?: { count?: number }; upgradeRing?: string };
+          org_id: string;
+        }>
+      >(
+        `select status, config_json, org_id::text
+         from public.ewoh_factory_profile
+         where profile_id = $1`,
+        [thirdInstall.body.profileId],
+      );
+      expect(thirdRows).toHaveLength(1);
+      expect(thirdRows[0].status).toBe('installed');
+      expect(thirdRows[0].config_json.shift?.count).toBe(4);
+      expect(thirdRows[0].config_json.upgradeRing).toBe('small');
+      expect(thirdRows[0].org_id).toBe(fixture!.orgA.id);
+
       const asset = await apiRequest<{ packageId: string; status: string }>(
         baseUrl,
         '/api/scale/assets',
