@@ -35,6 +35,7 @@ tags:
   - name: view
   - name: operations
   - name: parameters
+  - name: aas
 paths:
   /api/auth/login:
     post:
@@ -5515,6 +5516,101 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/aas/assets:
+    get:
+      tags:
+        - aas
+      summary: List org-scoped AAS assets
+      responses:
+        '200':
+          description: AAS asset list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AasAssetList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - aas
+      summary: Import an AAS asset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AasImportRequest'
+      responses:
+        '201':
+          description: Imported AAS asset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AasAsset'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/aas/assets/{assetId}:
+    get:
+      tags:
+        - aas
+      summary: Get one AAS asset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: AAS asset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AasAsset'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/aas/assets/{assetId}/semantics:
+    get:
+      tags:
+        - aas
+      summary: Get twin semantic mapping for an AAS asset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: AAS twin semantics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AasSemantics'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
 components:
   securitySchemes:
     BearerAuth:
@@ -10069,6 +10165,91 @@ components:
           type: number
         pendingApprovalCount:
           type: number
+      required: []
+    AasElement:
+      type: object
+      properties:
+        idShort:
+          type: string
+        value:
+          description: Element value
+        valueType:
+          type: string
+          enum: [string, integer, number, boolean, dateTime, json]
+        unit:
+          type: string
+          nullable: true
+        semanticId:
+          type: string
+          nullable: true
+      required:
+        - idShort
+        - valueType
+    AasSubmodel:
+      type: object
+      properties:
+        id:
+          type: string
+        idShort:
+          type: string
+        elements:
+          type: array
+          items:
+            $ref: '#/components/schemas/AasElement'
+      required:
+        - id
+    AasImportRequest:
+      type: object
+      properties:
+        assetId:
+          type: string
+        idShort:
+          type: string
+        submodels:
+          type: array
+          items:
+            $ref: '#/components/schemas/AasSubmodel'
+      required:
+        - assetId
+    AasAsset:
+      type: object
+      properties:
+        assetId:
+          type: string
+        idShort:
+          type: string
+        submodels:
+          type: array
+          items:
+            $ref: '#/components/schemas/AasSubmodel'
+        importedBy:
+          type: string
+        importedAt:
+          type: string
+      required:
+        - assetId
+        - idShort
+        - submodels
+    AasAssetList:
+      type: array
+      items:
+        $ref: '#/components/schemas/AasAsset'
+    AasSemantics:
+      type: object
+      properties:
+        assetId:
+          type: string
+        idShort:
+          type: string
+        semantics:
+          type: array
+          items:
+            type: string
+        submodels:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
       required: []
     HandleEventRequest:
       type: object

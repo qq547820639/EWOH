@@ -52,4 +52,6 @@ export const queryKeys = {
   operationsEfficiencySummary: ['operations-efficiency-summary'] as const,
   parameters: ['parameters'] as const,
   parameterSummary: ['parameter-summary'] as const,
+  aasAssets: ['aas-assets'] as const,
+  aasSemantics: (assetId: string) => ['aas-assets', assetId, 'semantics'] as const,
 };

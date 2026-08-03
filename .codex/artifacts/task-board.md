@@ -433,6 +433,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-140 | Rego policy-as-code deployment gate + deployment TCK integration | PX-06/51 | Done | `round56-rego-policy-as-code.md`; pytest 107; rego TCK 4/4; deployment TCK 4 gates |
 
+## Wave Final5 - AAS Asset Registry API (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-141 | AAS asset registry API + twin semantics + Data Assets UI | PX-08/21 | Done | `round57-aas-asset-api.md`; Jest 67/302; client 6/22; OpenAPI 211/211; E2E 27/27 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

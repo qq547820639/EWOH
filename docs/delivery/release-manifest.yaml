@@ -17,10 +17,10 @@ artifacts:
   deploy: deploy/cloud/
   contracts: .codex/artifacts/contracts/
 evidence:
-  jest: "66 suites / 298 tests"
+  jest: "67 suites / 302 tests"
   client_jest: "6 suites / 22 tests"
-  e2e: "26/26 HTTP + PostgreSQL"
-  openapi: "207/207 documented, 0 unimplemented"
+  e2e: "27/27 HTTP + PostgreSQL"
+  openapi: "211/211 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/openapi/e2e/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; logical backup/restore of 54 tables / 25 rows with row-count verify"
@@ -78,6 +78,7 @@ evidence:
   parameter_registry: "typed parameters with validation/scope/source/validity/approval/version history/rollback; /api/parameters/* 8 routes; org RLS + audit; E2E 26/26"
   aas_codec: "AAS 3.0 JSON subset + AASX-like package codec; twin submodel mapping; discrete-machining AAS sample; make aas-tck 7/7; pytest 99"
   rego_policy_gate: "dependency-free Rego subset; deploy-gate.rego; make rego-tck 4/4; wired into deployment TCK and standalone-check; pytest 107"
+  aas_asset_api: "org-scoped AAS asset import/list/detail/semantics API; Data Assets UI; audit + RLS; E2E 27/27"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

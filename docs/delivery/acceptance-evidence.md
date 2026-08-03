@@ -1,17 +1,17 @@
 # EWOH Acceptance Evidence
 
-Status: validated v1.7 (2026-08-03 policy-as-code gate wave)
+Status: validated v1.8 (2026-08-03 AAS asset registry wave)
 Owner: AG-00/AG-41
 
 ## Automated Evidence
 
 - Python unittest: 667 passed.
 - Python repo contract tests: 107 passed.
-- NestJS Jest: 298 passed across 66 suites (includes SP-01..SP-08 scenario
+- NestJS Jest: 302 passed across 67 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
 - Client Jest: 22 passed across 6 suites.
-- HTTP + PostgreSQL E2E: 26 passed (auth, RBAC, refresh rotation/logout, org
+- HTTP + PostgreSQL E2E: 27 passed (auth, RBAC, refresh rotation/logout, org
   isolation, control/resource/world persistence, canonical UnifiedExoFrame
   ingestion, gamification allocation persistence, approval persistence,
   system config org scoping, complete MES work order execution, and
@@ -20,11 +20,12 @@ Owner: AG-00/AG-41
   upgrade/rollback, the event catalog API, `/metrics` resource attributes,
   policy evaluation, role-aware workflow advance, feature flag org isolation,
   OpenFeature-style flag targeting, and maintenance/work-center/efficiency
-  org isolation, plus typed parameter approval/update/rollback/audit).
+  org isolation, typed parameter approval/update/rollback/audit, and AAS asset
+  import/detail/twin-semantics/audit).
 - NestJS type check, lint, and Standalone production build: passed.
 - One-click `scripts/standalone-check.sh`: passed with E2E, OpenAPI strict
   audit, DDL plans, and standalone DDL hygiene.
-- OpenAPI contract: 207 controller operations documented, 0 undocumented,
+- OpenAPI contract: 211 controller operations documented, 0 undocumented,
   0 unimplemented; `openapi/route-manifest.json` generated.
 - Full release drill: `RELEASE DRILL PASSED` against disposable PostgreSQL 17,
   including migration/RLS/audit/rollback/rebuild, 176 Jest tests, 107/107
@@ -202,6 +203,9 @@ Owner: AG-00/AG-41
   comparisons, `in`, `not`, and message capture; `contracts/policy/deploy-gate.rego`
   gates deployment on artifacts/checks/contracts and is covered by
   `make rego-tck` (4/4), Deployment TCK, and `standalone-check.sh`.
+- AAS asset registry API: `/api/aas/assets` imports, lists, reads, and maps
+  AAS assets to twin semantics with org RLS and audit; the Data Assets page
+  includes an AAS import form, asset table, and semantic mapping viewer.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

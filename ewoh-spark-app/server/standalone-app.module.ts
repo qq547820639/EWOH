@@ -43,6 +43,7 @@ import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { WorkflowModule } from './modules/workflow/workflow.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { ParametersModule } from './modules/parameters/parameters.module';
+import { AasModule } from './modules/aas/aas.module';
 
 @Module({
   imports: [
@@ -82,6 +83,7 @@ import { ParametersModule } from './modules/parameters/parameters.module';
     WorkflowModule,
     OperationsModule,
     ParametersModule,
+    AasModule,
   ],
   providers: [
     {

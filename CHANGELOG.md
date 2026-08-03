@@ -198,6 +198,11 @@
   部署门禁策略。
 - Rego 部署门禁接入：`make rego-tck`（4 项检查）、`scripts/deployment-tck.js`
   扩展为 4 道门禁，`scripts/standalone-check.sh` 纳入 Rego TCK。
+- AAS 资产注册 API：新增 `/api/aas/assets`（4 条路由）支持 AAS 资产导入、
+  列表、详情与孪生语义映射，记录复用 `ewoh_scheduler_config` 并保持
+  RLS 组织隔离与审计链。
+- 数据资产页新增 AAS 资产壳视图：JSON 导入表单、资产清单与语义映射查看器
+  均接入真实 API。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

@@ -31,6 +31,7 @@ import { WorldCursorModule } from './modules/world-cursor/world-cursor.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { ParametersModule } from './modules/parameters/parameters.module';
+import { AasModule } from './modules/aas/aas.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { ParametersModule } from './modules/parameters/parameters.module';
     AuditModule,
     OperationsModule,
     ParametersModule,
+    AasModule,
     // ====== @route-section: business-modules END ======
 
     // ⚠️ @route-order: last

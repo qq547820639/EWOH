@@ -678,6 +678,102 @@ if (!e2eConfig) {
       expect(denied.status).toBe(403);
     });
 
+    it('imports AAS assets and exposes twin semantic mapping with audit', async () => {
+      const adminA = await login(
+        baseUrl,
+        fixture!.globalAdminA.username,
+        fixture!.globalAdminA.password,
+      );
+      expect(adminA.status).toBe(201);
+      const token = adminA.body.accessToken;
+      const assetId = `urn:ewoh:e2e:${runId}`;
+
+      const imported = await apiRequest<{
+        assetId: string;
+        idShort: string;
+        submodels: Array<{ id: string; idShort: string }>;
+      }>(baseUrl, '/api/aas/assets', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          assetId,
+          idShort: 'E2E 离散机加工线',
+          submodels: [
+            {
+              id: 'urn:ewoh:submodel:operations',
+              idShort: 'operations',
+              elements: [
+                {
+                  idShort: 'oeeAvailabilityTarget',
+                  value: 0.85,
+                  valueType: 'number',
+                  unit: '%',
+                  semanticId: 'ewoh:oee:availability',
+                },
+              ],
+            },
+          ],
+        }),
+      });
+      expect(imported.status).toBe(201);
+      expect(imported.body.assetId).toBe(assetId);
+      expect(imported.body.submodels).toHaveLength(1);
+
+      const list = await apiRequest<Array<{ assetId: string }>>(
+        baseUrl,
+        '/api/aas/assets',
+        { headers: jsonHeaders(token) },
+      );
+      expect(list.status).toBe(200);
+      expect(list.body.some((row) => row.assetId === assetId)).toBe(true);
+
+      const fetched = await apiRequest<{ idShort: string }>(
+        baseUrl,
+        `/api/aas/assets/${encodeURIComponent(assetId)}`,
+        { headers: jsonHeaders(token) },
+      );
+      expect(fetched.status).toBe(200);
+      expect(fetched.body.idShort).toBe('E2E 离散机加工线');
+
+      const semantics = await apiRequest<{
+        semantics: string[];
+        submodels: Array<{ properties: Array<{ name: string }> }>;
+      }>(baseUrl, `/api/aas/assets/${encodeURIComponent(assetId)}/semantics`, {
+        headers: jsonHeaders(token),
+      });
+      expect(semantics.status).toBe(200);
+      expect(semantics.body.semantics).toEqual(['operations']);
+      expect(semantics.body.submodels[0].properties[0].name).toBe(
+        'oeeAvailabilityTarget',
+      );
+
+      const auditRows = await owner!.unsafe<
+        Array<{ action: string; entity_id: string; org_id: string }>
+      >(
+        `select action, entity_id, org_id::text
+         from public.ewoh_audit_log
+         where entity_type = 'aas_asset' and entity_id = $1
+         order by audit_seq`,
+        [assetId],
+      );
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0].action).toBe('aas.asset.import');
+      expect(auditRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const viewerB = await login(
+        baseUrl,
+        fixture!.viewerB.username,
+        fixture!.viewerB.password,
+      );
+      expect(viewerB.status).toBe(201);
+      const denied = await apiRequest(
+        baseUrl,
+        '/api/aas/assets',
+        { headers: jsonHeaders(viewerB.body.accessToken) },
+      );
+      expect(denied.status).toBe(403);
+    });
+
     it('rotates refresh tokens and revokes them after reuse/logout', async () => {
       const first = await login(
         baseUrl,
