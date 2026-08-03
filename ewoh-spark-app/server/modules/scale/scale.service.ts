@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, desc, eq } from 'drizzle-orm';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { load } from 'js-yaml';
 import {
   ewohAssetPackage,
   ewohFactoryProfile,
@@ -31,6 +34,31 @@ export function nextTemplateStatus(current: string, action: string): string | nu
     default:
       return null;
   }
+}
+
+interface GoldenFactorySpec {
+  apiVersion: string;
+  kind: string;
+  metadata: { name: string; version: string };
+  spec: {
+    compatibleCore: string;
+    modules: string[];
+    defaults: Record<string, unknown>;
+    requiredConnectors: Array<{
+      id: string;
+      version: string;
+      runtime: string;
+      protocol: string;
+      outputEvents?: string[];
+    }>;
+    scenarioPacks: Array<{
+      id: string;
+      version: string;
+      workflows: string[];
+      policies: string[];
+      acceptance: string;
+    }>;
+  };
 }
 
 @Injectable()
@@ -495,5 +523,194 @@ export class ScaleService {
       after: { rolledBackProfiles: updated },
     });
     return { rolledBackProfiles: updated };
+  }
+
+  private goldenSpec(): GoldenFactorySpec {
+    const candidates = [
+      resolve(process.cwd(), 'contracts/factory/golden-factory.yaml'),
+      resolve(process.cwd(), '../contracts/factory/golden-factory.yaml'),
+    ];
+    const file = candidates.find((candidate) => existsSync(candidate));
+    if (!file) {
+      throw new BadRequestException('golden factory contract not found');
+    }
+    return load(readFileSync(file, 'utf8')) as GoldenFactorySpec;
+  }
+
+  private async findTemplateByTemplateId(templateId: string) {
+    const [row] = await this.db
+      .select()
+      .from(ewohFactoryTemplate)
+      .where(eq(ewohFactoryTemplate.templateId, templateId));
+    return row;
+  }
+
+  private async findAssetByPackageId(packageId: string) {
+    const [row] = await this.db
+      .select()
+      .from(ewohAssetPackage)
+      .where(eq(ewohAssetPackage.packageId, packageId));
+    return row;
+  }
+
+  private async findProfileByFactoryName(factoryName: string) {
+    const [row] = await this.db
+      .select()
+      .from(ewohFactoryProfile)
+      .where(eq(ewohFactoryProfile.factoryName, factoryName));
+    return row;
+  }
+
+  private async publishAssetPackage(packageId: string) {
+    await this.db
+      .update(ewohAssetPackage)
+      .set({ status: 'published', publishedAt: new Date() })
+      .where(eq(ewohAssetPackage.packageId, packageId));
+  }
+
+  private deterministicId(prefix: string, parts: string[]): string {
+    const token = parts
+      .join(' ')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return `${prefix}-${token}`;
+  }
+
+  async installGoldenFactory(
+    body: { factoryName: string; config?: Record<string, unknown> },
+    actor?: OrgContext,
+  ) {
+    if (!body.factoryName?.trim()) {
+      throw new BadRequestException('factoryName is required');
+    }
+    const spec = this.goldenSpec();
+    const templateId = this.deterministicId('TPL', [
+      spec.metadata.name,
+      spec.metadata.version,
+    ]);
+    const manifest = {
+      modules: spec.spec.modules,
+      scenarioPacks: spec.spec.scenarioPacks.map(
+        (pack) => `${pack.id}@${pack.version}`,
+      ),
+      requiredConnectors: spec.spec.requiredConnectors.map(
+        (connector) => `${connector.id}@${connector.version}`,
+      ),
+      compatibleCore: spec.spec.compatibleCore,
+    };
+
+    let template = await this.findTemplateByTemplateId(templateId);
+    if (!template) {
+      template = await this.registerTemplate(
+        {
+          templateId,
+          name: spec.metadata.name,
+          version: spec.metadata.version,
+          config: spec.spec.defaults,
+          manifest,
+          compatibleCore: spec.spec.compatibleCore,
+        },
+        actor,
+      );
+    }
+    if (template.lifecycleStatus !== 'published') {
+      for (const action of ['review', 'certify', 'publish']) {
+        template = await this.transitionTemplate(
+          templateId,
+          action,
+          actor,
+        );
+      }
+    }
+
+    const connectors: string[] = [];
+    for (const connector of spec.spec.requiredConnectors) {
+      const packageId = this.deterministicId('PKG-CONN', [
+        connector.id,
+        connector.version,
+      ]);
+      const existing = await this.findAssetByPackageId(packageId);
+      if (!existing) {
+        await this.registerConnector(
+          {
+            packageId,
+            name: connector.id,
+            version: connector.version,
+            runtime: connector.runtime,
+            protocol: connector.protocol,
+            outputEvents: connector.outputEvents ?? [],
+          },
+          actor,
+        );
+      }
+      await this.publishAssetPackage(packageId);
+      connectors.push(packageId);
+    }
+
+    const scenarioPacks: string[] = [];
+    for (const pack of spec.spec.scenarioPacks) {
+      const packageId = this.deterministicId('PKG-SCEN', [
+        pack.id,
+        pack.version,
+      ]);
+      const existing = await this.findAssetByPackageId(packageId);
+      if (!existing) {
+        await this.registerScenarioPack(
+          {
+            packageId,
+            name: pack.id,
+            version: pack.version,
+            requires: { core: spec.spec.compatibleCore },
+            workflows: pack.workflows,
+            policies: pack.policies,
+            acceptance: pack.acceptance,
+          },
+          actor,
+        );
+      }
+      await this.installScenarioPack(packageId, actor);
+      scenarioPacks.push(packageId);
+    }
+
+    const existingProfile = await this.findProfileByFactoryName(
+      body.factoryName.trim(),
+    );
+    const profile = existingProfile
+      ? existingProfile
+      : await this.installTemplate(
+          templateId,
+          {
+            factoryName: body.factoryName.trim(),
+            config: { ...spec.spec.defaults, ...(body.config ?? {}) },
+          },
+          actor,
+        );
+
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'scale.golden.install',
+      entityType: 'factory_profile',
+      entityId: profile.profileId,
+      before: null,
+      after: {
+        specVersion: spec.metadata.version,
+        templateId,
+        reused: Boolean(existingProfile),
+        connectors,
+        scenarioPacks,
+      },
+    });
+
+    return {
+      specVersion: spec.metadata.version,
+      templateId,
+      profileId: profile.profileId,
+      factoryName: profile.factoryName,
+      connectors,
+      scenarioPacks,
+      reused: Boolean(existingProfile),
+    };
   }
 }

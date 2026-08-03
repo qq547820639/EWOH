@@ -7,8 +7,8 @@ Owner: AG-00/AG-41
 
 - Python unittest: 667 passed.
 - Python repo contract tests: 59 passed.
-- NestJS Jest: 228 passed across 55 suites (includes SP-01..SP-08 scenario
-  suite, event catalog contract, and Helm chart contract).
+- NestJS Jest: 232 passed across 56 suites (includes SP-01..SP-08 scenario
+  suite and event catalog, Helm chart, and Golden Factory contract tests).
 - Client Jest: 20 passed across 6 suites.
 - HTTP + PostgreSQL E2E: 19 passed (auth, RBAC, refresh rotation/logout, org
   isolation, control/resource/world persistence, canonical UnifiedExoFrame
@@ -73,6 +73,11 @@ Owner: AG-00/AG-41
   ConfigMap; chart never generates secrets from defaults; static audit
   `scripts/verify-helm-chart.js` passes 123 checks and is covered by a Jest
   contract test.
+- Golden Factory Profile: versioned manifest covers 7 modules, 3 required
+  connectors and 4 scenario packs; `POST /api/scale/golden-factory/install`
+  publishes the template, installs TCK-passing scenario packs, and installs or
+  reuses an org-scoped factory profile; E2E verifies idempotent reuse and
+  persisted status; contract audit passes 47 checks.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

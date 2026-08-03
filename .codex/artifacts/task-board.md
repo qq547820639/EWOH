@@ -211,6 +211,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-103 | Helm chart + Factory Values + static chart audit | PX-09/51 | Done | `round19-helm-deployment-factory.md`; chart audit 123 checks; Jest 4/4 |
 
+## Wave Final5 - Golden Factory (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-104 | Golden Factory Profile manifest + install API | PX-07/09 | Done | `round20-golden-factory.md`; audit 47 checks; E2E golden install/reuse passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

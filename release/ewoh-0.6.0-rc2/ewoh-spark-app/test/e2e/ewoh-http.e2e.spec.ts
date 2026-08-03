@@ -1345,6 +1345,79 @@ if (!e2eConfig) {
       );
       expect(scenarioRows).toHaveLength(1);
       expect(scenarioRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const golden = await apiRequest<{
+        specVersion: string;
+        templateId: string;
+        profileId: string;
+        factoryName: string;
+        connectors: string[];
+        scenarioPacks: string[];
+        reused: boolean;
+      }>(baseUrl, '/api/scale/golden-factory/install', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          factoryName: `Golden Factory ${runId}`,
+        }),
+      });
+      expect(golden.status).toBe(201);
+      expect(golden.body.specVersion).toBe('1.0.0');
+      expect(golden.body.connectors).toHaveLength(3);
+      expect(golden.body.scenarioPacks).toHaveLength(4);
+      expect(golden.body.reused).toBe(false);
+
+      const goldenAgain = await apiRequest<{
+        profileId: string;
+        reused: boolean;
+      }>(baseUrl, '/api/scale/golden-factory/install', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          factoryName: `Golden Factory ${runId}`,
+        }),
+      });
+      expect(goldenAgain.status).toBe(201);
+      expect(goldenAgain.body.reused).toBe(true);
+      expect(goldenAgain.body.profileId).toBe(golden.body.profileId);
+
+      const goldenTemplateRows = await owner!.unsafe<
+        Array<{ lifecycle_status: string; org_id: string }>
+      >(
+        `select lifecycle_status, org_id::text
+         from public.ewoh_factory_template
+         where template_id = $1`,
+        [golden.body.templateId],
+      );
+      expect(goldenTemplateRows).toHaveLength(1);
+      expect(goldenTemplateRows[0].lifecycle_status).toBe('published');
+      expect(goldenTemplateRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const goldenProfileRows = await owner!.unsafe<
+        Array<{ status: string; org_id: string }>
+      >(
+        `select status, org_id::text
+         from public.ewoh_factory_profile
+         where profile_id = $1`,
+        [golden.body.profileId],
+      );
+      expect(goldenProfileRows).toHaveLength(1);
+      expect(goldenProfileRows[0].status).toBe('installed');
+      expect(goldenProfileRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const goldenScenarioRows = await owner!.unsafe<
+        Array<{ package_id: string; status: string }>
+      >(
+        `select package_id, status
+         from public.ewoh_asset_package
+         where package_id = any($1::text[])
+         order by package_id`,
+        [golden.body.scenarioPacks],
+      );
+      expect(goldenScenarioRows).toHaveLength(4);
+      expect(
+        goldenScenarioRows.every((row) => row.status === 'installed'),
+      ).toBe(true);
     });
 
     it('persists approval instances, steps, and audit operations', async () => {

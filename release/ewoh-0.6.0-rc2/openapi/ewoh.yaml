@@ -1915,6 +1915,32 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scale/golden-factory/install:
+    post:
+      tags:
+        - scale
+      summary: Install the versioned Golden Factory Profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoldenFactoryInstallRequest'
+      responses:
+        '201':
+          description: Golden factory profile installed or reused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoldenFactoryInstallResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/assets:
     post:
       tags:
@@ -7036,6 +7062,45 @@ components:
       properties:
         rolledBackProfiles:
           type: integer
+    GoldenFactoryInstallRequest:
+      type: object
+      properties:
+        factoryName:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
+      required:
+        - factoryName
+    GoldenFactoryInstallResult:
+      type: object
+      properties:
+        specVersion:
+          type: string
+        templateId:
+          type: string
+        profileId:
+          type: string
+        factoryName:
+          type: string
+        connectors:
+          type: array
+          items:
+            type: string
+        scenarioPacks:
+          type: array
+          items:
+            type: string
+        reused:
+          type: boolean
+      required:
+        - specVersion
+        - templateId
+        - profileId
+        - factoryName
+        - connectors
+        - scenarioPacks
+        - reused
     ConformanceCheck:
       type: object
       properties:

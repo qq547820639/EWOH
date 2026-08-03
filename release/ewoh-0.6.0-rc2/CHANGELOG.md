@@ -67,6 +67,11 @@
 - Helm 静态审计：`scripts/verify-helm-chart.js` 校验 Chart 元数据、values
   路径、模板清单与全部 `.Values.*` 引用；`npm run verify:helm` 与
   `test/contract/helm-chart.spec.ts` 纳入常规测试。
+- Golden Factory Profile：`contracts/factory/golden-factory.yaml` 定义 7 个
+  模块、3 个必需连接器与 4 个场景包；`POST /api/scale/golden-factory/install`
+  一次完成模板发布、连接器发布、场景包 TCK 安装与工厂 Profile 安装/复用。
+- Golden Factory 契约审计：`scripts/audit-golden-factory.js`（47 项检查）、
+  `npm run contract:golden` 与 `test/contract/golden-factory.spec.ts`。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

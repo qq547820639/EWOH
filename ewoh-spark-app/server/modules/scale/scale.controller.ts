@@ -112,6 +112,14 @@ export class ScaleController {
     return this.scaleService.fleetRollback(request.userContext);
   }
 
+  @Post('golden-factory/install')
+  installGoldenFactory(
+    @Body() body: { factoryName: string; config?: Record<string, unknown> },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.scaleService.installGoldenFactory(body, request.userContext);
+  }
+
   @Post('assets')
   registerAssetPackage(
     @Body() body: Record<string, never>,
