@@ -162,6 +162,8 @@ Trace: EWOH-2026-08-04-principal-final6
 - World state and replay requests accept `AbortSignal` through React Query,
   enabling cancellation on unmount/refetch.
 - Authenticated browser flows still pass 4/4.
+- Full suite remains server 80/388, client 13/46, OpenAPI 246/246; work graph
+  246 items / 103 evidence / 0 invariant conflicts.
 
 ## Current Phase
 

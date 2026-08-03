@@ -92,3 +92,5 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
 - `getWorldState`/`getReplay` accept `AbortSignal` and are wired through
   React Query in CommandMap.
 - Browser authenticated flows pass 4/4 after the lazy-loading change.
+- Work graph after frontend wave: 246 items / 33 edges / 103 evidence /
+  0 invariant conflicts.
