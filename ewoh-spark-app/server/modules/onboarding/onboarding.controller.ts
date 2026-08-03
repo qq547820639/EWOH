@@ -20,4 +20,17 @@ export class OnboardingController {
   ) {
     return this.onboardingService.run(body, request.userContext);
   }
+
+  @Get('partner/checklist')
+  partnerChecklist() {
+    return this.onboardingService.partnerChecklist();
+  }
+
+  @Post('partner/shadow-run')
+  partnerShadowRun(
+    @Body() body: { factoryName: string; config?: Record<string, unknown> },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.onboardingService.partnerShadowRun(body, request.userContext);
+  }
 }

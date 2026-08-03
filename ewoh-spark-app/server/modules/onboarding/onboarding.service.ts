@@ -76,6 +76,31 @@ export class OnboardingService {
     };
   }
 
+  partnerChecklist() {
+    return {
+      version: '1.0.0',
+      partner: true,
+      steps: ONBOARDING_STEPS,
+    };
+  }
+
+  async partnerShadowRun(
+    body: {
+      factoryName: string;
+      config?: Record<string, unknown>;
+    },
+    actor?: OrgContext,
+  ) {
+    const result = await this.run(
+      {
+        factoryName: body.factoryName,
+        config: { ...(body.config ?? {}), partnerShadow: true },
+      },
+      actor,
+    );
+    return { ...result, partner: true };
+  }
+
   async run(
     body: {
       factoryName: string;

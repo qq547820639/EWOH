@@ -93,12 +93,14 @@ production approval gate.
   gap, and backfill cases for connector/edge bridge telemetry.
 - Twin package pipeline: versioned twin manifests validate model format,
   coordinate system, semantics, calibration readiness, and rollback metadata.
+- Partner shadow delivery: partner checklist and shadow-run reuse the real
+  F0-F6 onboarding path with `partnerShadow` config and step-level evidence.
 
 ## Active Tasks
 
 - Fleet Ops (upgrade/rollback) and event catalog round closed.
-- Productization kernels remaining: connector SDK/runtime, mapping DSL,
-  partner shadow delivery, production approval gate and final acceptance.
+- Productization kernels remaining: production approval gate, real
+  device/cluster drills, and final acceptance.
 - Training/acceptance evidence and production gate preparation.
 - Production DDL/deploy approval gate.
 

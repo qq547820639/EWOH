@@ -14,6 +14,16 @@ describe('OnboardingService', () => {
     expect(checklist.steps[6].code).toBe('F6');
   });
 
+  it('returns the partner shadow checklist', () => {
+    const service = new OnboardingService(
+      {} as never,
+      { appendAuditLog: jest.fn() } as never,
+    );
+    const checklist = service.partnerChecklist();
+    expect(checklist.partner).toBe(true);
+    expect(checklist.steps).toHaveLength(7);
+  });
+
   it('runs all steps and reports passed', async () => {
     const golden = {
       specVersion: '1.0.0',
@@ -66,5 +76,39 @@ describe('OnboardingService', () => {
     expect(result.steps[0].passed).toBe(true);
     expect(result.steps[1].passed).toBe(false);
     expect(result.steps[1].detail).toContain('template not published');
+  });
+
+  it('marks partner shadow runs with partnerShadow config', async () => {
+    const golden = {
+      specVersion: '1.0.0',
+      templateId: 'TPL-GOLDEN',
+      profileId: 'PRF-PARTNER',
+      factoryName: 'Partner Factory',
+      connectors: ['PKG-CONN-A'],
+      scenarioPacks: ['PKG-SCEN-A'],
+      reused: false,
+    };
+    const scaleService = {
+      installGoldenFactory: jest.fn().mockResolvedValue(golden),
+      runConformance: jest.fn().mockResolvedValue({ passed: true }),
+      generateSupportBundle: jest
+        .fn()
+        .mockResolvedValue({ bundleId: 'SB-PARTNER' }),
+    };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new OnboardingService(scaleService as never, audit as never);
+
+    const result = await service.partnerShadowRun({
+      factoryName: 'Partner Factory',
+    });
+
+    expect(result.partner).toBe(true);
+    expect(result.overall).toBe('passed');
+    expect(scaleService.installGoldenFactory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({ partnerShadow: true }),
+      }),
+      undefined,
+    );
   });
 });

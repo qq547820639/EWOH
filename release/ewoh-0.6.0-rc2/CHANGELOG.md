@@ -122,6 +122,9 @@
   按序列号连续释放帧并拒绝重复/过期/超窗帧；补传后自动续传。
 - 数字孪生资产包：`src/edge_platform/twin/package.py` 提供 Twin Manifest
   校验、标定健康检查与脱敏；新增离散机加工线/装配单元样例资产包。
+- 伙伴影子交付：`GET /api/scale/onboarding/partner/checklist` 与
+  `POST /api/scale/onboarding/partner/shadow-run` 复用真实 F0-F6 上线路径，
+  配置标记 `partnerShadow` 并输出步骤级证据。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

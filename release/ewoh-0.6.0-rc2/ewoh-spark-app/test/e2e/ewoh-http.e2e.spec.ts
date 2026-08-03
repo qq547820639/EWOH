@@ -1869,6 +1869,32 @@ if (!e2eConfig) {
       expect(onboardingProfileRows).toHaveLength(1);
       expect(onboardingProfileRows[0].status).toBe('installed');
       expect(onboardingProfileRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const partnerChecklist = await apiRequest<{
+        partner: boolean;
+        steps: Array<{ code: string }>;
+      }>(baseUrl, '/api/scale/onboarding/partner/checklist', {
+        headers: jsonHeaders(token),
+      });
+      expect(partnerChecklist.status).toBe(200);
+      expect(partnerChecklist.body.partner).toBe(true);
+      expect(partnerChecklist.body.steps).toHaveLength(7);
+
+      const partnerRun = await apiRequest<{
+        overall: string;
+        partner: boolean;
+        steps: Array<{ passed: boolean }>;
+      }>(baseUrl, '/api/scale/onboarding/partner/shadow-run', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          factoryName: `Partner Shadow ${runId}`,
+        }),
+      });
+      expect(partnerRun.status).toBe(201);
+      expect(partnerRun.body.overall).toBe('passed');
+      expect(partnerRun.body.partner).toBe(true);
+      expect(partnerRun.body.steps.every((step) => step.passed)).toBe(true);
     });
 
     it('persists approval instances, steps, and audit operations', async () => {

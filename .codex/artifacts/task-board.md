@@ -295,6 +295,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-117 | Twin package manifest/calibration pipeline + samples | PX-08/14 | Done | `round33-twin-package.md`; pytest 81 passed |
 
+## Wave Final5 - Partner Shadow (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-118 | Partner shadow checklist + shadow-run API | PX-13/12 | Done | `round34-partner-shadow.md`; E2E partner run passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

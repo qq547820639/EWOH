@@ -7,7 +7,7 @@ Owner: AG-00/AG-41
 
 - Python unittest: 667 passed.
 - Python repo contract tests: 81 passed.
-- NestJS Jest: 268 passed across 63 suites (includes SP-01..SP-08 scenario
+- NestJS Jest: 270 passed across 63 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
 - Client Jest: 20 passed across 6 suites.
@@ -23,7 +23,7 @@ Owner: AG-00/AG-41
 - NestJS type check, lint, and Standalone production build: passed.
 - One-click `scripts/standalone-check.sh`: passed with E2E, OpenAPI strict
   audit, DDL plans, and standalone DDL hygiene.
-- OpenAPI contract: 171 controller operations documented, 0 undocumented,
+- OpenAPI contract: 173 controller operations documented, 0 undocumented,
   0 unimplemented; `openapi/route-manifest.json` generated.
 - Full release drill: `RELEASE DRILL PASSED` against disposable PostgreSQL 17,
   including migration/RLS/audit/rollback/rebuild, 176 Jest tests, 107/107
@@ -130,6 +130,9 @@ Owner: AG-00/AG-41
 - Twin package pipeline: versioned twin manifests and calibration readiness
   checks are implemented for digital twin asset packages; covered by 7 new
   Python tests.
+- Partner shadow delivery: `POST /api/scale/onboarding/partner/shadow-run`
+  executes the F0-F6 onboarding path with `partnerShadow: true` and returns
+  step-level evidence; E2E verifies a full partner shadow run.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

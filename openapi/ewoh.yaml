@@ -2203,6 +2203,50 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scale/onboarding/partner/checklist:
+    get:
+      tags:
+        - scale
+      summary: Read the partner shadow delivery checklist
+      responses:
+        '200':
+          description: Partner onboarding checklist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingChecklist'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/onboarding/partner/shadow-run:
+    post:
+      tags:
+        - scale
+      summary: Run partner shadow delivery onboarding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnboardingRunRequest'
+      responses:
+        '201':
+          description: Partner shadow delivery result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerShadowRunResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/fleet/support-bundle:
     post:
       tags:
@@ -7815,6 +7859,13 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OnboardingStepResult'
+    PartnerShadowRunResult:
+      allOf:
+        - $ref: '#/components/schemas/OnboardingRunResult'
+        - type: object
+          properties:
+            partner:
+              type: boolean
     SupportBundleResult:
       type: object
       properties:
