@@ -192,14 +192,14 @@ function main() {
   if (fs.existsSync(orchestrationSpec)) {
     specOperations.push(...extractSpecOperations(orchestrationSpec));
   }
-  const result = auditRoutes(
-    extractControllerOperations(controllerPath),
-    specOperations,
-  );
+  const controllerOperations = extractControllerOperations(controllerPath);
+  const result = auditRoutes(controllerOperations, specOperations);
   if (options.manifest) {
     const manifest = {
       generatedAt: new Date().toISOString(),
       spec: path.relative(root, specPath),
+      controllerKeys: controllerOperations.map(operationKey).sort(),
+      specKeys: specOperations.map(operationKey).sort(),
       ...result,
     };
     const manifestPath = path.resolve(root, options.manifest);

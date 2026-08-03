@@ -529,6 +529,17 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-170 | Factory site readiness control-plane API/UI | ORCH-01/05 | Done | `GET /api/work/site-readiness`, catalog examples, 场地就绪 tab; audit 25 checks; OpenAPI 230/230 |
 | T-171 | Handoff state workflow | ORCH-06/01 | Done | `POST /api/work/handoffs/:id/state`; receive/reject/close UI; Jest 74/332; OpenAPI 231/231 |
 
+## Wave Iteration 2026-08-04 - P0 Hardening (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-172 | Repo facts consistency audit + CI wiring | AG-00/01 | Done | `scripts/audit-repo-facts.js` 30/30; wired into `standalone-check.sh` and `test.yml` |
+| T-173 | Unified error contract: errorCode/requestId/retryable/recommendedAction/details | AG-00/03 | Done | `exception.filter.ts` + `api_response.interface.ts` + OpenAPI `ErrorResponse`; 8 filter tests; Jest 75/344 |
+| T-174 | Data source vocabulary + reusable badge | AG-00/05 | Done | `DataSourceType` six values; `DataSourceBadge`; Devices uses shared component; client 8/30 |
+| T-175 | Nested request transaction reuse for scheduler/background GUC | AG-00/04 | Done | `RequestDatabaseContext` active-store reuse; unit test; no nested root transaction |
+| T-176 | Mobile SOP/exception/QC/offline UX | AG-00/07 | Done | MES pause/resume resultJson; mobile quality API; MobileWorkbench SOP/异常/质检/离线/重试; MES+mobile unit tests |
+| T-177 | Independent review and first-round evidence | AG-13/00 | Done | conditional pass 0 critical/0 major; `work/reviews/iteration-review-2026-08-04.md`; `round70-iteration-p0-2026-08-04.md` |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

@@ -17,7 +17,6 @@ import { queryKeys } from '@client/src/hooks/queryKeys';
 import type { DeviceInfo, DeviceSearchQuery, SpatialEntity } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
-import { Badge } from '@client/src/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -25,10 +24,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@client/src/components/ui/select';
+import { DataSourceBadge } from '@client/src/components/DataSourceBadge';
 import DeviceConfigDrawer from './DeviceConfigDrawer';
 
 type OnlineFilter = 'all' | 'online' | 'offline';
-type SourceFilter = 'all' | 'real' | 'simulated' | 'controlled_test';
+type SourceFilter = 'all' | 'real' | 'simulated' | 'controlled_test' | 'replayed' | 'stale' | 'offline';
 type OrderBy =
   | 'batteryDesc'
   | 'battery'
@@ -37,32 +37,6 @@ type OrderBy =
   | 'deviceIdDesc';
 
 const TABLE_COL_COUNT = 10;
-
-function sourceBadgeClass(source?: string): string {
-  switch (source) {
-    case 'real':
-      return 'bg-blue-100 text-blue-700 border-blue-200';
-    case 'simulated':
-      return 'bg-gray-100 text-gray-600 border-gray-200';
-    case 'controlled_test':
-      return 'bg-yellow-100 text-yellow-700 border-yellow-200';
-    default:
-      return 'bg-gray-100 text-gray-500 border-gray-200';
-  }
-}
-
-function sourceLabel(source?: string): string {
-  switch (source) {
-    case 'real':
-      return '真机';
-    case 'simulated':
-      return '模拟';
-    case 'controlled_test':
-      return '受控测试';
-    default:
-      return source || '—';
-  }
-}
 
 const Devices = (): React.ReactElement => {
   // ===== 搜索参数 =====
@@ -224,6 +198,9 @@ const Devices = (): React.ReactElement => {
                 <SelectItem value="real">真机 (real)</SelectItem>
                 <SelectItem value="simulated">模拟 (simulated)</SelectItem>
                 <SelectItem value="controlled_test">受控测试 (controlled_test)</SelectItem>
+                <SelectItem value="replayed">回放 (replayed)</SelectItem>
+                <SelectItem value="stale">过期 (stale)</SelectItem>
+                <SelectItem value="offline">离线 (offline)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -321,12 +298,7 @@ const Devices = (): React.ReactElement => {
                         {d.deviceModel || '—'}
                       </td>
                       <td className="px-5 py-3">
-                        <Badge
-                          variant="outline"
-                          className={`text-[10px] px-1.5 py-0 ${sourceBadgeClass(d.sourceType)}`}
-                        >
-                          {sourceLabel(d.sourceType)}
-                        </Badge>
+                        <DataSourceBadge source={d.sourceType} />
                       </td>
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-2">

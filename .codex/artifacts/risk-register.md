@@ -1,6 +1,6 @@
 # EWOH Risk Register
 
-Updated: 2026-08-03
+Updated: 2026-08-04
 
 | ID | Risk | Level | Current mitigation | Escalation |
 |----|------|-------|--------------------|------------|
@@ -16,3 +16,6 @@ Updated: 2026-08-03
 | R-010 | ERP/order backlog expands EWOH into accounting or procurement settlement | Medium | Read-only projections, connectors, scenario packs; no financial ledger in EWOH | Blocks product scope |
 | R-011 | Agent over-autonomy in gate approval or shared contract edits | High | Minimum permissions, `EWOH_WORK_WRITABLE` gate, human decisions separated for G10+ | Blocks G9 |
 | R-012 | Evidence expires or becomes invalid after code changes | Medium | Evidence binds commit/environment/checksum; audits fail when required artifacts are missing | Blocks G8/G9 |
+| R-013 | No global ValidationPipe/DTO metadata, so `fieldErrors` is rarely populated | High | Manual controller checks return single-message errors; fieldErrors contract is emitted only when a BusinessException carries it | Blocks P0-5 full closure |
+| R-014 | Command-map person/device details lack organization, exoskeleton, risk, alerts, recent events, and disposition entry | High | EntityDetail shows only a subset; PersonnelInfo/DeviceInfo do not yet carry the required operational fields | Blocks AG-06 scenario D |
+| R-015 | Mobile offline resilience is limited to banner + retry; no local queue or photo attachment upload | Medium | Mutations are disabled offline and retried manually; no PWA cache or pending queue | Blocks full AG-07 scenario C |

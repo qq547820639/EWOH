@@ -30,7 +30,7 @@
 ```
 
 - **设备控制区**：实时安全控制能力保留在设备控制器本地，平台不写入。
-- **采集适配区**：适配层将三类数据源（real/controlled_test/simulated）统一为平台契约。
+- **采集适配区**：适配层将三类数据源（real/controlled_test/simulated/replayed/stale/offline）统一为平台契约。
 - **平台服务区**：API、推理、DB、缓存，仅内部网络可达。
 - **用户接入区**：仅 edge-gateway 对外，终结 TLS。
 

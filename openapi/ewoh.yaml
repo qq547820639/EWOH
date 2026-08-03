@@ -326,7 +326,7 @@ paths:
           name: sourceType
           in: query
           required: false
-          description: simulated, real, or controlled_test
+          description: real, controlled_test, simulated, replayed, stale, or offline
           schema:
             type: string
         - &ref_6
@@ -2660,7 +2660,7 @@ paths:
         - name: action
           in: query
           required: true
-          description: start, report, review, or handover
+          description: start, report, pause, resume, review, or handover
           schema:
             type: string
       requestBody:
@@ -2686,6 +2686,64 @@ paths:
           $ref: '#/components/responses/NotFound'
         Conflict:
           $ref: '#/components/responses/Conflict'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mobile/workbench/orders/{orderId}/steps/{stepId}/quality:
+    post:
+      tags:
+        - mobile
+      summary: Record a mobile quality inspection for a work step
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                result:
+                  type: string
+                  enum: [pass, fail, rework]
+                defectCode:
+                  type: string
+                quantity:
+                  type: integer
+                note:
+                  type: string
+              required:
+                - result
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stepId:
+                    type: string
+                  eventId:
+                    type: string
+                  result:
+                    type: string
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
   /api/oee/device-status:
@@ -6112,19 +6170,49 @@ components:
     ErrorResponse:
       type: object
       properties:
-        code:
-          type: string
-          description: Business or validation error code
-        message:
-          type: string
-          description: Human-readable error message
-        details:
+        error:
           type: object
-          description: Optional structured details
-          additionalProperties: true
+          properties:
+            code:
+              type: string
+              description: Legacy business or validation error code
+            errorCode:
+              type: string
+              description: Unified business or validation error code
+            message:
+              type: string
+              description: Human-readable error message
+            details:
+              type: string
+              description: Optional structured details
+            fieldErrors:
+              type: object
+              description: Field-level validation errors
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+            requestId:
+              type: string
+              description: Request ID used to correlate logs, audit, and support bundles
+            retryable:
+              type: boolean
+              description: Whether the operation can be safely retried
+            recommendedAction:
+              type: string
+              description: Operator-facing recommended next action
+            timestamp:
+              type: number
+              description: Error timestamp in milliseconds
+          required:
+            - code
+            - errorCode
+            - message
+            - requestId
+            - retryable
+            - recommendedAction
       required:
-        - code
-        - message
+        - error
       additionalProperties: false
     CursorPage:
       type: object
@@ -6354,7 +6442,7 @@ components:
           description: Spatial y coordinate in mm
         sourceType:
           type: string
-          description: simulated, real, or controlled_test
+          description: real, controlled_test, simulated, replayed, stale, or offline
         firmwareVersion:
           type: string
           nullable: true
@@ -6427,7 +6515,7 @@ components:
           description: Initial online state
         sourceType:
           type: string
-          description: simulated, real, or controlled_test
+          description: real, controlled_test, simulated, replayed, stale, or offline
         firmwareVersion:
           type: string
           description: Firmware version
@@ -6804,7 +6892,7 @@ components:
           nullable: true
         sourceType:
           type: string
-          description: simulated, real, or controlled_test
+          description: real, controlled_test, simulated, replayed, stale, or offline
         triggerRecordId:
           type: string
           nullable: true
@@ -6871,7 +6959,7 @@ components:
           nullable: true
         sourceType:
           type: string
-          description: simulated, real, or controlled_test
+          description: real, controlled_test, simulated, replayed, stale, or offline
         recordId:
           type: string
           nullable: true
@@ -7181,7 +7269,7 @@ components:
           type: string
         sourceType:
           type: string
-          description: seed, simulated, lidar_scan, etc.
+          description: seed, simulated, lidar_scan, replayed, stale, offline, etc.
         confidence:
           type: number
           description: 0-1
@@ -7609,6 +7697,9 @@ components:
             - simulated
             - real
             - controlled_test
+            - replayed
+            - stale
+            - offline
         record_id:
           type: string
           description: UUID used for idempotency
@@ -7693,6 +7784,9 @@ components:
             - simulated
             - real
             - controlled_test
+            - replayed
+            - stale
+            - offline
         record_id:
           type: string
         data_confidence:
@@ -7757,6 +7851,9 @@ components:
             - simulated
             - real
             - controlled_test
+            - replayed
+            - stale
+            - offline
         record_id:
           type: string
       required:
@@ -7789,6 +7886,9 @@ components:
             - simulated
             - real
             - controlled_test
+            - replayed
+            - stale
+            - offline
         record_id:
           type: string
       required:
@@ -7866,6 +7966,9 @@ components:
             - simulated
             - real
             - controlled_test
+            - replayed
+            - stale
+            - offline
         record_id:
           type: string
       required:
@@ -9605,6 +9708,9 @@ components:
           type: integer
         name:
           type: string
+        instruction:
+          type: string
+          nullable: true
         status:
           type: string
         assignedPersonId:
@@ -9613,6 +9719,9 @@ components:
           type: string
         spatialEntityId:
           type: string
+        progress:
+          type: integer
+          nullable: true
         actualStart:
           type: string
           nullable: true

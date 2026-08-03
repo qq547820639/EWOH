@@ -253,3 +253,94 @@ describe('MesService materials and quality', () => {
     expect(dbWithUpdate.insert).toHaveBeenCalledWith(ewohEvent);
   });
 });
+
+describe('MesService step exception lifecycle', () => {
+  function createStepTransitionDb(workOrder: unknown, step: unknown) {
+    const { db } = createGetDb([workOrder], [step], []);
+    const updateSet = jest.fn((values: Record<string, unknown>) => ({
+      where: jest.fn(() => ({
+        returning: jest.fn().mockResolvedValue([{ ...(step as object), ...values }]),
+      })),
+    }));
+    const dbWithUpdate = {
+      ...db,
+      update: jest.fn(() => ({ set: updateSet })),
+    };
+    return { dbWithUpdate, updateSet };
+  }
+
+  it('stores exception details when a step is paused', async () => {
+    const workOrder = {
+      scheduleTaskId: 'WO-1',
+      title: '装配',
+      status: 'in_progress',
+    };
+    const step = {
+      stepId: 'S1',
+      status: 'in_progress',
+      progress: 10,
+      actualStart: null,
+      actualEnd: null,
+      resultJson: null,
+    };
+    const { dbWithUpdate, updateSet } = createStepTransitionDb(workOrder, step);
+    const service = new MesService(
+      dbWithUpdate as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    await service.transitionStep(
+      'WO-1',
+      'S1',
+      'pause',
+      { code: 'MATERIAL_MISSING', note: '缺料' },
+      { userId: 'worker-1', primaryOrgId: 'org-1' },
+    );
+
+    const resultJson = updateSet.mock.calls[0][0]
+      .resultJson as Record<string, unknown>;
+    expect(resultJson.exception).toEqual(
+      expect.objectContaining({
+        code: 'MATERIAL_MISSING',
+        note: '缺料',
+        operator: 'worker-1',
+      }),
+    );
+  });
+
+  it('records a resume note when a paused step is resumed', async () => {
+    const workOrder = {
+      scheduleTaskId: 'WO-1',
+      title: '装配',
+      status: 'in_progress',
+    };
+    const step = {
+      stepId: 'S1',
+      status: 'paused',
+      progress: 10,
+      actualStart: null,
+      actualEnd: null,
+      resultJson: { exception: { note: '缺料' } },
+    };
+    const { dbWithUpdate, updateSet } = createStepTransitionDb(workOrder, step);
+    const service = new MesService(
+      dbWithUpdate as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    await service.transitionStep(
+      'WO-1',
+      'S1',
+      'resume',
+      { note: '补料完成' },
+      { userId: 'worker-1', primaryOrgId: 'org-1' },
+    );
+
+    const resultJson = updateSet.mock.calls[0][0]
+      .resultJson as Record<string, unknown>;
+    expect(resultJson.resume).toEqual(
+      expect.objectContaining({ note: '补料完成', operator: 'worker-1' }),
+    );
+    expect(resultJson.exception).toEqual({ note: '缺料' });
+  });
+});

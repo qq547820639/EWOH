@@ -338,6 +338,21 @@ export class MesService {
         handedOverAt: new Date().toISOString(),
       };
     }
+    if (action === 'pause') {
+      resultJson.exception = {
+        code: body?.code ?? null,
+        note: body?.note ?? body?.reason ?? null,
+        reportedAt: new Date().toISOString(),
+        operator: actor?.userId ?? body?.operatorId ?? null,
+      };
+    }
+    if (action === 'resume') {
+      resultJson.resume = {
+        note: body?.note ?? null,
+        resumedAt: new Date().toISOString(),
+        operator: actor?.userId ?? body?.operatorId ?? null,
+      };
+    }
     const [row] = await this.db
       .update(ewohScheduleTaskStep)
       .set({

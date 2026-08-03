@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T18:01:32.791Z",
+  "generatedAt": "2026-08-03T19:35:31.035Z",
   "gateCount": 14,
   "approvedCount": 0,
   "requiresApprovalCount": 4,
@@ -41,7 +41,7 @@
       "decidedAt": null,
       "conditions": [
         "C1-C9 v1.x frozen",
-        "strict OpenAPI audit 226/226",
+        "strict OpenAPI audit 232/232",
         "work graph/asset catalog/factory profile audits pass"
       ],
       "evidenceCount": 0
@@ -84,7 +84,7 @@
       "decidedAt": null,
       "conditions": [
         "request transaction/GUC, auth, errors, health, rate limit tests",
-        "76 Jest tests total"
+        "Jest 75 suites / 344 tests"
       ],
       "evidenceCount": 0
     },
@@ -97,7 +97,7 @@
       "approver": null,
       "decidedAt": null,
       "conditions": [
-        "226 routes, 0 unimplemented",
+        "232 routes, 0 unimplemented",
         "work orchestration APIs documented and tested over HTTP"
       ],
       "evidenceCount": 0
@@ -112,6 +112,7 @@
       "decidedAt": null,
       "conditions": [
         "Playwright smoke: login, command center, command map, devices, alerts render with real data",
+        "client Jest 8 suites / 30 tests",
         "work console route and layout type-check"
       ],
       "evidenceCount": 0

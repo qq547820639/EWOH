@@ -47,4 +47,29 @@ export class MobileController {
       request.userContext,
     );
   }
+
+  @Post('workbench/orders/:orderId/steps/:stepId/quality')
+  inspectStep(
+    @Param('orderId') orderId: string,
+    @Param('stepId') stepId: string,
+    @Body() body: {
+      result: 'pass' | 'fail' | 'rework';
+      defectCode?: string;
+      quantity?: number;
+      note?: string;
+    },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.mobileService.inspectStep(
+      orderId,
+      {
+        stepId,
+        result: body.result,
+        defectCode: body.defectCode,
+        quantity: body.quantity,
+        note: body.note,
+      },
+      request.userContext,
+    );
+  }
 }

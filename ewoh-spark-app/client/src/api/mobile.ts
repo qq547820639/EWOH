@@ -5,10 +5,12 @@ export interface MobileWorkbenchStep {
   scheduleTaskId: string;
   stepNo: number;
   name: string;
+  instruction?: string | null;
   status: string;
   assignedPersonId: string | null;
   assignedDeviceId: string | null;
   spatialEntityId: string | null;
+  progress?: number | null;
   actualStart: string | null;
   resultJson: Record<string, unknown> | null;
 }
@@ -57,6 +59,24 @@ export async function transitionMobileStep(
 ): Promise<MobileWorkbenchStep> {
   const res = await axiosForBackend({
     url: `/api/mobile/workbench/orders/${encodeURIComponent(orderId)}/steps/${encodeURIComponent(stepId)}/state?action=${action}`,
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}
+
+export async function inspectMobileStep(
+  orderId: string,
+  stepId: string,
+  body: {
+    result: 'pass' | 'fail' | 'rework';
+    defectCode?: string;
+    quantity?: number;
+    note?: string;
+  },
+): Promise<{ stepId: string; eventId: string; result: string }> {
+  const res = await axiosForBackend({
+    url: `/api/mobile/workbench/orders/${encodeURIComponent(orderId)}/steps/${encodeURIComponent(stepId)}/quality`,
     method: 'POST',
     data: body,
   });

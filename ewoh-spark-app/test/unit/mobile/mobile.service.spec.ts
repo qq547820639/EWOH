@@ -47,4 +47,26 @@ describe('MobileService', () => {
       { userId: 'user-1', primaryOrgId: 'org-1' },
     );
   });
+
+  it('delegates mobile quality inspection to MesService', async () => {
+    const mes = {
+      qualityInspection: jest
+        .fn()
+        .mockResolvedValue({ stepId: 'S1', eventId: 'QI-1', result: 'pass' }),
+    };
+    const service = new MobileService({} as never, mes as never);
+
+    const result = await service.inspectStep(
+      'WO-1',
+      { stepId: 'S1', result: 'pass', note: 'ok' },
+      { userId: 'worker-1', primaryOrgId: 'org-1' },
+    );
+
+    expect(result.eventId).toBe('QI-1');
+    expect(mes.qualityInspection).toHaveBeenCalledWith(
+      'WO-1',
+      { stepId: 'S1', result: 'pass', note: 'ok' },
+      { userId: 'worker-1', primaryOrgId: 'org-1' },
+    );
+  });
 });

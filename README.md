@@ -12,16 +12,39 @@
 
 ## 顶层目录
 
-| 目录/文件              | 说明                                                          |
-|------------------------|---------------------------------------------------------------|
-| `delivery/`            | V1.0 冻结交付包（`00_`~`09_` + 项目执行总控台）              |
-| `src/edge_platform/`   | V0.6 活跃平台代码（采集/推理/适配/服务/API）                  |
-| `docs/`                | 活跃开发文档（API/部署/运维/验收骨架）                        |
-| `deploy/`              | 试点部署编排（`docker-compose.yml` + `.env.example`）         |
-| `Makefile`             | 常用命令入口（run/test/lint/security/format/clean）          |
-| `pyproject.toml`       | 项目元数据与工具配置（src 布局）                              |
-| `SECURITY.md`          | 安全策略与平台安全边界声明                                    |
-| `CHANGELOG.md`         | 变更日志                                                      |
+| 目录/文件                  | 说明                                                          |
+|----------------------------|---------------------------------------------------------------|
+| `delivery/`                | V1.0 冻结交付包（`00_`~`09_` + 项目执行总控台）              |
+| `src/edge_platform/`       | Python 边缘平台（采集/协议适配/推理/边缘自治/API）            |
+| `ewoh-spark-app/`          | NestJS 后端 + React 前端（组织/业务/权限/控制/控制台）        |
+| `contracts/`               | 状态机、事件目录、工厂模板、Schema 与共享契约                 |
+| `openapi/`                 | OpenAPI 契约与路由清单（`ewoh.yaml`、`work-orchestration.yaml`）|
+| `db/`                      | 迁移、回滚、Seed、验证与 Schema 清单                          |
+| `catalog/`                 | 工厂模板、场景包、连接器与字段映射资产目录                    |
+| `release/`                 | RC 发布包（README、变更日志、安全声明与校验和）               |
+| `deploy/`                  | Compose、Kubernetes、Helm 与云部署编排                        |
+| `docs/`                    | 活跃开发文档（API/部署/运维/验收/架构）                       |
+| `tests/`                   | 仓库级契约与验收测试                                          |
+| `scripts/`                 | 门禁、审计、DDL、部署与发布脚本                               |
+| `tools/`                   | Work Graph、门禁引擎、资源注册、工厂复制等治理工具            |
+| `security/`                | 访问矩阵与安全基线                                            |
+| `README.md`                | 本文件（仓库导航）                                            |
+| `CHANGELOG.md`             | 变更日志                                                      |
+| `SECURITY.md`              | 安全策略与平台安全边界声明                                    |
+| `Makefile`                 | 常用命令入口（run/test/lint/security/format/clean）          |
+| `pyproject.toml`           | Python 项目元数据与工具配置（src 布局）                       |
+
+## 一站式质量门禁
+
+```bash
+bash scripts/standalone-check.sh    # 类型/静态检查/Jest/OpenAPI/契约/DDL 计划
+bash scripts/pilot-readiness-check.sh
+node scripts/audit-repo-facts.js --strict
+```
+
+仓库事实源一致性（README 导航、CHANGELOG、发布清单、Task Board、门禁、
+OpenAPI 路由清单、数据来源词汇与错误契约）由
+`scripts/audit-repo-facts.js` 自动校验，发现漂移时门禁失败。
 
 ## 快速开始（开发环境）
 

@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T18:01:32.732Z",
+  "generatedAt": "2026-08-03T19:35:30.989Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 202,
-    "edgeCount": 21,
+    "itemCount": 212,
+    "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 69,
+    "evidenceCount": 70,
     "gateCount": 14,
-    "riskCount": 12,
-    "decisionCount": 35,
+    "riskCount": 15,
+    "decisionCount": 36,
     "statusCounts": {
-      "Done": 110,
+      "Done": 119,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 47,
@@ -26,7 +26,7 @@
       "Passed locally": 1,
       "Passed locally, production pending": 1,
       "Pending": 3,
-      "Proposed": 18
+      "Proposed": 19
     },
     "conflicts": []
   },
@@ -2036,6 +2036,114 @@
       "evidence": "`RELEASE DRILL PASSED`; unittest 667, pytest 120, ruff clean"
     },
     {
+      "id": "T-169",
+      "title": "Work console UX deepening and API filters",
+      "type": "task",
+      "status": "Done",
+      "owner": "ORCH-05/01",
+      "agents": [
+        "ORCH-05"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "DAG pan/zoom, node search, gate/evidence filters, evidence preview, batch gate decisions, lock countdown, `q/limit/offset`; Jest 74/331, client 7/27"
+    },
+    {
+      "id": "T-170",
+      "title": "Factory site readiness control-plane API/UI",
+      "type": "task",
+      "status": "Done",
+      "owner": "ORCH-01/05",
+      "agents": [
+        "ORCH-01"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`GET /api/work/site-readiness`, catalog examples, 场地就绪 tab; audit 25 checks; OpenAPI 230/230"
+    },
+    {
+      "id": "T-171",
+      "title": "Handoff state workflow",
+      "type": "task",
+      "status": "Done",
+      "owner": "ORCH-06/01",
+      "agents": [
+        "ORCH-06"
+      ],
+      "wave": "Final6 - Work Orchestration Control Plane (in progress)",
+      "evidence": "`POST /api/work/handoffs/:id/state`; receive/reject/close UI; Jest 74/332; OpenAPI 231/231"
+    },
+    {
+      "id": "T-172",
+      "title": "Repo facts consistency audit + CI wiring",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/01",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`scripts/audit-repo-facts.js` 30/30; wired into `standalone-check.sh` and `test.yml`"
+    },
+    {
+      "id": "T-173",
+      "title": "Unified error contract: errorCode/requestId/retryable/recommendedAction/details",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/03",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`exception.filter.ts` + `api_response.interface.ts` + OpenAPI `ErrorResponse`; 8 filter tests; Jest 75/344"
+    },
+    {
+      "id": "T-174",
+      "title": "Data source vocabulary + reusable badge",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/05",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`DataSourceType` six values; `DataSourceBadge`; Devices uses shared component; client 8/30"
+    },
+    {
+      "id": "T-175",
+      "title": "Nested request transaction reuse for scheduler/background GUC",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/04",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`RequestDatabaseContext` active-store reuse; unit test; no nested root transaction"
+    },
+    {
+      "id": "T-176",
+      "title": "Mobile SOP/exception/QC/offline UX",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/07",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "MES pause/resume resultJson; mobile quality API; MobileWorkbench SOP/异常/质检/离线/重试; MES+mobile unit tests"
+    },
+    {
+      "id": "T-177",
+      "title": "Independent review and first-round evidence",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-13/00",
+      "agents": [
+        "AG-13"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "conditional pass 0 critical/0 major; `work/reviews/iteration-review-2026-08-04.md`; `round70-iteration-p0-2026-08-04.md`"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -2057,7 +2165,7 @@
       "type": "gate",
       "status": "Passed",
       "owner": "AG-00",
-      "evidence": "C1-C9 v1.x frozen; strict OpenAPI audit 226/226; work graph/asset catalog/factory profile audits pass"
+      "evidence": "C1-C9 v1.x frozen; strict OpenAPI audit 232/232; work graph/asset catalog/factory profile audits pass"
     },
     {
       "id": "G3",
@@ -2081,7 +2189,7 @@
       "type": "gate",
       "status": "Passed for standalone base",
       "owner": "AG-00",
-      "evidence": "request transaction/GUC, auth, errors, health, rate limit tests; 76 Jest tests total"
+      "evidence": "request transaction/GUC, auth, errors, health, rate limit tests; Jest 75 suites / 344 tests"
     },
     {
       "id": "G6",
@@ -2089,7 +2197,7 @@
       "type": "gate",
       "status": "Passed locally",
       "owner": "AG-00",
-      "evidence": "226 routes, 0 unimplemented; work orchestration APIs documented and tested over HTTP"
+      "evidence": "232 routes, 0 unimplemented; work orchestration APIs documented and tested over HTTP"
     },
     {
       "id": "G7",
@@ -2097,7 +2205,7 @@
       "type": "gate",
       "status": "Validation",
       "owner": "AG-00",
-      "evidence": "Playwright smoke: login, command center, command map, devices, alerts render with real data; work console route and layout type-check"
+      "evidence": "Playwright smoke: login, command center, command map, devices, alerts render with real data; client Jest 8 suites / 30 tests; work console route and layout type-check"
     },
     {
       "id": "G8",
@@ -2274,6 +2382,15 @@
       "summary": "G10/G11/G13 evidence"
     },
     {
+      "id": "W7",
+      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline",
+      "type": "wave",
+      "status": "Proposed",
+      "owner": "AG-00",
+      "wave": "W7",
+      "summary": "standalone-check ALL PASSED; Jest 75/344; client 8/30; OpenAPI 232/232"
+    },
+    {
       "id": "WP-ENV-001",
       "title": "WP-ENV-001",
       "type": "package",
@@ -2447,48 +2564,56 @@
     },
     {
       "id": "E-015",
+      "from": "Final 6.0 control plane",
+      "to": "W7",
+      "edgeType": "depends",
+      "blocking": true,
+      "evidenceRequirement": "standalone-check ALL PASSED; Jest 75/344; client 8/30; OpenAPI 232/232"
+    },
+    {
+      "id": "E-016",
       "from": "none",
       "to": "WP-ENV-001",
       "edgeType": "depends",
       "blocking": true
     },
     {
-      "id": "E-016",
+      "id": "E-017",
       "from": "WP-ENV-001 evidence",
       "to": "WP-CONTRACTS-001",
       "edgeType": "depends",
       "blocking": true
     },
     {
-      "id": "E-017",
+      "id": "E-018",
       "from": "WP-CONTRACTS-001 C1/C4",
       "to": "WP-DDL-001",
       "edgeType": "depends",
       "blocking": true
     },
     {
-      "id": "E-018",
+      "id": "E-019",
       "from": "WP-DDL-001",
       "to": "WP-SHARED-001",
       "edgeType": "depends",
       "blocking": true
     },
     {
-      "id": "E-019",
+      "id": "E-020",
       "from": "WP-CONTRACTS-001 C2/C5",
       "to": "WP-FRONTEND-SHELL-001",
       "edgeType": "depends",
       "blocking": true
     },
     {
-      "id": "E-020",
+      "id": "E-021",
       "from": "none",
       "to": "WP-HARNESS-001",
       "edgeType": "depends",
       "blocking": true
     },
     {
-      "id": "E-021",
+      "id": "E-022",
       "from": "G10",
       "to": "EVD-round69-final6-work-orchestration",
       "edgeType": "evidence",
@@ -2982,7 +3107,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "2b768b67a2117b4ac677066fc1103301a67a3be8d820b8a6e9e6680cb213b69d",
+      "checksum": "9e4627085951e255bbc111bd4e6d89d6b4aa27093209addc5f4eaf377c9e78f4",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -2991,7 +3116,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "a24c2855d17167b2a8f2ed99dbf95666dd48d1a3da3a7916e9f1914b4b9737fd",
+      "checksum": "e286b2747f219d3202f66702acd3218f22a9744f25f7bbc318bb1839167fbe8a",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3009,7 +3134,7 @@
       "artifactId": "risk-register-md",
       "path": "risk-register.md",
       "mediaType": "text/markdown",
-      "checksum": "0af904e7446ab0c1e12b37ff6d2c6d841e0c5dabb9adb9101b8001e12edd0558",
+      "checksum": "cba73b57bbd1841a62889155a3c77dff3988c7a132ed954a84e35b34f6e772d1",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3018,7 +3143,7 @@
       "artifactId": "decision-log-md",
       "path": "decision-log.md",
       "mediaType": "text/markdown",
-      "checksum": "b3794ebcb9a893db186b4d7b67c731e9f098c2ae2883f6f800102b9231f7644a",
+      "checksum": "fb2e8ab92bf525a6937049e3430716eadd44192f47e3e46b8f55ce5db712327d",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3027,7 +3152,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "f500b8c16552006b3bc167fab784468ce1b2be9e08ea5485a3f251bcc7bfe949",
+      "checksum": "2fb3b4070adddcd5f00f19e9e0ce2b1d7a26b6e30fd48d357c82d69f378c0d85",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3036,7 +3161,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "547f39a9f47306c1c797e895b0c4b8d29ec175dfa2ca59810a33f5236d548082",
+      "checksum": "29b216c07eaf29071e06d1a98cb8d1a3c5b5919040c5ea570f5f9ed9fce3dcc8",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3063,7 +3188,7 @@
       "artifactId": "work-task-graph-md",
       "path": "work/task-graph.md",
       "mediaType": "text/markdown",
-      "checksum": "38e36f6c7ab4f527204e0ad6b894c5768735a27d98a03e54b219d204f2bf1b88",
+      "checksum": "2d4b57b9b1505475e2d8b52e33e07a885a1b0847bfb1e3914dcc59b4de5bd22c",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3705,7 +3830,7 @@
       "workItemId": "G10",
       "kind": "test",
       "path": ".codex/artifacts/work/evidence/round69-final6-work-orchestration.md",
-      "checksum": "723bfe4655699090ecaa7bbbf9b2900d25ec89f49731dce53b160a333e11c59e",
+      "checksum": "8f079b14a29e9bd4af4aeecd75439cfffa7fa3433a57aaff3900dd129618a8a0",
       "result": "passed",
       "title": "Round 69 - Final 6.0 Work Orchestration Control Plane"
     },
@@ -3717,6 +3842,15 @@
       "checksum": "8724625758d1976e4c3f975101e5525ac436931a75b55199f540f4ca93629061",
       "result": "passed",
       "title": "EWOH Round 7 Evidence - Operations Readiness"
+    },
+    {
+      "evidenceId": "EVD-round70-iteration-p0-2026-08-04",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round70-iteration-p0-2026-08-04.md",
+      "checksum": "f8593aab454a48f76ef66ee85d521441ec9c7612c37e2f6325e54c5f3b1833c0",
+      "result": "passed",
+      "title": "Round 70 - 2026-08-04 P0 Hardening Iteration"
     },
     {
       "evidenceId": "EVD-round8-org-scope-hardening",
@@ -3768,7 +3902,7 @@
       "humanDecision": null,
       "conditions": [
         "C1-C9 v1.x frozen",
-        "strict OpenAPI audit 226/226",
+        "strict OpenAPI audit 232/232",
         "work graph/asset catalog/factory profile audits pass"
       ],
       "approver": null,
@@ -3805,7 +3939,7 @@
       "humanDecision": null,
       "conditions": [
         "request transaction/GUC, auth, errors, health, rate limit tests",
-        "76 Jest tests total"
+        "Jest 75 suites / 344 tests"
       ],
       "approver": null,
       "decidedAt": null
@@ -3816,7 +3950,7 @@
       "calculatedStatus": "passed",
       "humanDecision": null,
       "conditions": [
-        "226 routes, 0 unimplemented",
+        "232 routes, 0 unimplemented",
         "work orchestration APIs documented and tested over HTTP"
       ],
       "approver": null,
@@ -3829,6 +3963,7 @@
       "humanDecision": null,
       "conditions": [
         "Playwright smoke: login, command center, command map, devices, alerts render with real data",
+        "client Jest 8 suites / 30 tests",
         "work console route and layout type-check"
       ],
       "approver": null,
@@ -4000,6 +4135,30 @@
       "title": "Evidence expires or becomes invalid after code changes",
       "severity": "medium",
       "mitigation": "Evidence binds commit/environment/checksum; audits fail when required artifacts are missing",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-013",
+      "title": "No global ValidationPipe/DTO metadata, so `fieldErrors` is rarely populated",
+      "severity": "high",
+      "mitigation": "Manual controller checks return single-message errors; fieldErrors contract is emitted only when a BusinessException carries it",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-014",
+      "title": "Command-map person/device details lack organization, exoskeleton, risk, alerts, recent events, and disposition entry",
+      "severity": "high",
+      "mitigation": "EntityDetail shows only a subset; PersonnelInfo/DeviceInfo do not yet carry the required operational fields",
+      "status": "open",
+      "linkedItems": []
+    },
+    {
+      "id": "R-015",
+      "title": "Mobile offline resilience is limited to banner + retry; no local queue or photo attachment upload",
+      "severity": "medium",
+      "mitigation": "Mutations are disabled offline and retried manually; no PWA cache or pending queue",
       "status": "open",
       "linkedItems": []
     }
@@ -4284,6 +4443,14 @@
       "decision": "Control-plane write APIs are disabled unless `EWOH_WORK_WRITABLE=true`",
       "rationale": "Prevents agent over-autonomy and unintended artifact mutation in read-only/CI environments",
       "reversibility": "Reversible per environment"
+    },
+    {
+      "id": "D-038",
+      "title": "Keep `code` as a legacy alias and add `errorCode` to the unified error envelope; all responses must carry `requestId/retryable/recommendedAction`",
+      "date": "2026-08-04",
+      "decision": "Keep `code` as a legacy alias and add `errorCode` to the unified error envelope; all responses must carry `requestId/retryable/recommendedAction`",
+      "rationale": "Goal requires the exact field names while existing clients already consume `code`; non-breaking migration wins",
+      "reversibility": "Reversible via contract version bump"
     }
   ],
   "resources": [

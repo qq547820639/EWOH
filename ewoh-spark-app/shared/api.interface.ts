@@ -448,8 +448,14 @@ export interface SimulatorStatus {
 
 // ===== Ingestion 真机接入网关 DTO =====
 
-/** 数据来源类型 */
-export type DataSourceType = 'simulated' | 'real' | 'controlled_test';
+/** 数据来源类型（页面与 API 必须明确标注，禁止模拟数据伪装为真实状态） */
+export type DataSourceType =
+  | 'real'
+  | 'controlled_test'
+  | 'simulated'
+  | 'replayed'
+  | 'stale'
+  | 'offline';
 
 /** 数据质量等级 */
 export type DataQuality = 'good' | 'degraded' | 'invalid';

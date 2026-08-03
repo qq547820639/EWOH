@@ -3,6 +3,30 @@
 Updated: 2026-08-04
 Trace: EWOH-2026-08-04-principal-final6
 
+## Latest Round - 2026-08-04 P0 Hardening
+
+- Repo facts gate `scripts/audit-repo-facts.js` added and wired into
+  `standalone-check.sh` / `test.yml`: README navigation, CHANGELOG vs release
+  manifest, Task Board evidence, G0-G13 coverage, phase trace, route manifest
+  freshness, data-source vocabulary, and error contract all pass (30/30).
+- Unified error envelope now carries `errorCode` (with `code` as legacy alias),
+  `message`, `fieldErrors`, `requestId`, `retryable`, `recommendedAction`,
+  `details`, and correlates `requestId` with Tracing `x-trace-id`.
+- Data-source vocabulary extended to `real / controlled_test / simulated /
+  replayed / stale / offline`; OpenAPI enums synced; reusable `DataSourceBadge`
+  wired into the Devices page.
+- `RequestDatabaseContext` reuses an active request transaction for nested
+  `runInTransaction` calls, eliminating the scheduler's nested root transaction.
+- Mobile workbench now shows SOP instruction text, supports pause/resume,
+  exception reporting (`resultJson.exception`), quality inspection via
+  `POST /api/mobile/workbench/orders/:orderId/steps/:stepId/quality`, offline
+  indication, and inline retry after a failed action.
+- Full standalone gate: typecheck, lint, Jest 75 suites / 344 tests, client
+  8 suites / 30 tests, repo facts 30/30, OpenAPI 232/232, production build, and
+  DDL hygiene all PASSED. Independent review: conditional pass with 0 critical
+  and 0 major findings. HTTP+PostgreSQL E2E remains skipped locally because
+  `EWOH_E2E_RUNTIME_DATABASE_URL` is not set.
+
 ## Current Phase
 
 Final 6.0 work orchestration wave: C7-C9 contracts, file-backed Work Graph

@@ -46,4 +46,18 @@ export class MobileService {
   ) {
     return this.mesService.transitionStep(orderId, stepId, action, body, actor);
   }
+
+  async inspectStep(
+    orderId: string,
+    body: {
+      stepId: string;
+      result: 'pass' | 'fail' | 'rework';
+      defectCode?: string;
+      quantity?: number;
+      note?: string;
+    },
+    actor?: OrgContext,
+  ) {
+    return this.mesService.qualityInspection(orderId, body, actor);
+  }
 }

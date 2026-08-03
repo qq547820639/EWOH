@@ -20,7 +20,7 @@
 | 10   | 数据导出权限控制                       | 仅授权角色可用   | 角色矩阵测试       |
 | 11   | 备份恢复成功率                         | 100%             | 恢复演练           |
 | 12   | 高频遥测保留窗口                       | 7-30 天可配      | 配置与过期校验     |
-| 13   | 来源标识准确性（real/controlled_test/simulated） | 100%    | 串源检测           |
+| 13   | 来源标识准确性（real/controlled_test/simulated/replayed/stale/offline） | 100%    | 串源检测           |
 | 14   | 急停等设备控制不被平台下发             | 0 次违规         | grep 守护+人工审查 |
 | 15   | 离线运行能力（无公网依赖）             | 全功能可用       | 断网演练           |
 
@@ -67,7 +67,7 @@
 - 测试层级
 - 执行时间与执行人
 - 环境与配置快照（脱敏）
-- 输入数据来源标识（real/controlled_test/simulated）
+- 输入数据来源标识（real/controlled_test/simulated/replayed/stale/offline）
 - 原始日志/截图/导出文件
 - 测试结果（通过/失败/阻塞）
 - 偏差与免责说明

@@ -3,6 +3,21 @@
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 1.1.0 规范，
 并使用[语义化版本](https://semver.org/lang/zh-CN/) 2.0.0 进行版本管理。
 
+## [Unreleased]
+
+### Added
+- 仓库事实源一致性门禁：`scripts/audit-repo-facts.js` 校验 README 导航、CHANGELOG、
+  发布清单、Task Board、门禁、OpenAPI 路由清单、数据来源词汇与错误契约；
+  已接入 `scripts/standalone-check.sh` 与 `test.yml`（30/30 通过）。
+- 统一错误契约补全：错误响应增加 `errorCode`、`requestId`、`retryable`、
+  `recommendedAction` 与 `details`，`requestId` 与 Tracing 的 `x-trace-id` 关联。
+- 数据来源词汇扩展为 `real / controlled_test / simulated / replayed / stale /
+  offline`，OpenAPI 枚举同步；新增可复用 `DataSourceBadge`，设备页接入。
+- `RequestDatabaseContext.runInTransaction` 复用活动请求事务，避免 Scheduler
+  在 HTTP 事务内再开根事务连接。
+- 移动工作台：SOP 说明展示、暂停/恢复、异常上报（写 `resultJson.exception`）、
+  质检（新 `POST /api/mobile/.../quality`）、离线提示与失败重试入口。
+
 ## [0.6.0-rc3] - 2026-08-04
 
 ### Added
