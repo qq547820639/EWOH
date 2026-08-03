@@ -95,6 +95,8 @@ production approval gate.
   coordinate system, semantics, calibration readiness, and rollback metadata.
 - Partner shadow delivery: partner checklist and shadow-run reuse the real
   F0-F6 onboarding path with `partnerShadow` config and step-level evidence.
+- Deployment TCK: `scripts/deployment-tck.js` runs deploy artifact, Helm, and
+  release review gates as one deployment acceptance command.
 
 ## Active Tasks
 

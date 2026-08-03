@@ -133,6 +133,9 @@ Owner: AG-00/AG-41
 - Partner shadow delivery: `POST /api/scale/onboarding/partner/shadow-run`
   executes the F0-F6 onboarding path with `partnerShadow: true` and returns
   step-level evidence; E2E verifies a full partner shadow run.
+- Deployment TCK: `npm run deployment:tck` runs deploy artifact verification
+  (66 checks), Helm chart audit (125 checks), and Scale Release review
+  (24 checks) as one deployment acceptance gate.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

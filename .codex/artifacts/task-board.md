@@ -301,6 +301,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-118 | Partner shadow checklist + shadow-run API | PX-13/12 | Done | `round34-partner-shadow.md`; E2E partner run passed |
 
+## Wave Final5 - Deployment TCK (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-119 | Deployment TCK gate across deploy/Helm/release checks | PX-09/51 | Done | `round35-deployment-tck.md`; 3 gates passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

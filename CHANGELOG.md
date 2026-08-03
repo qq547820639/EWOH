@@ -125,6 +125,9 @@
 - 伙伴影子交付：`GET /api/scale/onboarding/partner/checklist` 与
   `POST /api/scale/onboarding/partner/shadow-run` 复用真实 F0-F6 上线路径，
   配置标记 `partnerShadow` 并输出步骤级证据。
+- Deployment TCK：`scripts/deployment-tck.js` 将部署工件（66项）、Helm Chart
+  （125项）与 Scale Release 评审（24项）串成统一部署验收门禁；
+  `npm run deployment:tck` 一键执行。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。
