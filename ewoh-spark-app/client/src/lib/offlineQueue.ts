@@ -5,6 +5,11 @@ export interface PendingMobileAction {
   stepId: string;
   action?: string;
   body?: Record<string, unknown>;
+  attachment?: {
+    name: string;
+    contentType: string;
+    dataUrl: string;
+  };
   queuedAt: string;
 }
 

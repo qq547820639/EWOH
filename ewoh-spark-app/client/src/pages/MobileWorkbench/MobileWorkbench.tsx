@@ -18,6 +18,7 @@ import {
   readPendingActions,
   removePendingAction,
 } from '../../lib/offlineQueue';
+import { dataUrlToFile, fileToDataUrl } from '../../lib/attachmentDataUrl';
 import { queryKeys } from '../../hooks/queryKeys';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
@@ -103,7 +104,31 @@ const MobileWorkbench = (): React.ReactElement => {
         }
         try {
           if (item.type === 'transition') {
-            await transitionMobileStep(item.orderId, item.stepId, item.action ?? '', item.body);
+            let body = item.body;
+            if (item.attachment) {
+              const file = dataUrlToFile(
+                item.attachment.dataUrl,
+                item.attachment.name,
+                item.attachment.contentType,
+              );
+              const record = await uploadFile(file, `exception-${item.stepId}`);
+              body = {
+                ...(item.body ?? {}),
+                attachments: [
+                  {
+                    id: record.id,
+                    filename: record.filename,
+                    contentType: record.contentType,
+                  },
+                ],
+              };
+            }
+            await transitionMobileStep(
+              item.orderId,
+              item.stepId,
+              item.action ?? '',
+              body,
+            );
           } else {
             await inspectMobileStep(item.orderId, item.stepId, {
               result: (item.body?.result as 'pass' | 'fail' | 'rework') ?? 'pass',
@@ -287,8 +312,33 @@ const MobileWorkbench = (): React.ReactElement => {
     }
     const file = exceptionFile[stepId] ?? null;
     if (file && !isOnline) {
-      toast.error('照片需在联网状态下上传');
-      return;
+      try {
+        const dataUrl = await fileToDataUrl(file);
+        if (dataUrl.length > 2_500_000) {
+          toast.error('离线照片过大，请压缩后重试（约 2MB 以内）');
+          return;
+        }
+        appendPendingAction({
+          type: 'transition',
+          orderId: activeOrder!.workOrder.scheduleTaskId,
+          stepId,
+          action: 'pause',
+          body: buildExceptionBody(note),
+          attachment: {
+            name: file.name,
+            contentType: file.type || 'image/jpeg',
+            dataUrl,
+          },
+        });
+        setPendingCount(readPendingActions().length);
+        toast.info('异常及照片已加入待同步队列');
+        return;
+      } catch (error) {
+        toast.error('照片读取失败', {
+          description: error instanceof Error ? error.message : undefined,
+        });
+        return;
+      }
     }
     let body = buildExceptionBody(note);
     if (file) {

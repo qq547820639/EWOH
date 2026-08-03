@@ -37,6 +37,8 @@
   `/api/files` 上传并把文件引用写入 `resultJson.exception.attachments`。
 - PWA 可安装基础：`manifest.webmanifest` + 最小 Service Worker + 客户端注册，
   Standalone 页面可安装到移动端/工业平板；repo-facts 增加 PWA 资产门禁。
+- 离线照片队列：离线异常照片以 Data URL 存入待同步队列（约 2MB 上限），
+  恢复联网后先上传 `/api/files`，再把文件引用写入异常附件后提交。
 
 ## [0.6.0-rc3] - 2026-08-04
 

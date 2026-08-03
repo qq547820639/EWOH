@@ -547,6 +547,7 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-183 | Real PostgreSQL HTTP E2E acceptance | AG-13/41 | Done | `npm run test:e2e` 29/29 on embedded PG 17 (`127.0.0.1:55432`) |
 | T-184 | Mobile exception photo attachments | AG-00/07 | Done | `/api/files` upload + `resultJson.exception.attachments`; client 11/37 |
 | T-185 | PWA installability assets | AG-00/07 | Done | manifest + service worker + registration; repo facts 32/32 |
+| T-186 | Offline photo queue | AG-00/07 | Done | data URL queue + flush upload/attach; client 12/39 |
 
 ## Next Waves
 

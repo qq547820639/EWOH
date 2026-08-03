@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T20:04:02.308Z",
+  "generatedAt": "2026-08-03T20:08:01.999Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 220,
+    "itemCount": 221,
     "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 77,
+    "evidenceCount": 78,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 36,
     "statusCounts": {
-      "Done": 127,
+      "Done": 128,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2240,6 +2240,18 @@
       "evidence": "manifest + service worker + registration; repo facts 32/32"
     },
     {
+      "id": "T-186",
+      "title": "Offline photo queue",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/07",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "data URL queue + flush upload/attach; client 12/39"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -2301,7 +2313,7 @@
       "type": "gate",
       "status": "Validation",
       "owner": "AG-00",
-      "evidence": "Playwright smoke: login, command center, command map, devices, alerts render with real data; client Jest 11 suites / 37 tests; PWA manifest/service worker; work console route and layout type-check"
+      "evidence": "Playwright smoke: login, command center, command map, devices, alerts render with real data; client Jest 12 suites / 39 tests; PWA manifest/service worker; work console route and layout type-check"
     },
     {
       "id": "G8",
@@ -2484,7 +2496,7 @@
       "status": "Proposed",
       "owner": "AG-00",
       "wave": "W7",
-      "summary": "standalone-check ALL PASSED; Jest 76/359; client 11/37; OpenAPI 232/232; repo facts 32/32; real PG E2E 29/29"
+      "summary": "standalone-check ALL PASSED; Jest 76/359; client 12/39; OpenAPI 232/232; repo facts 32/32; real PG E2E 29/29"
     },
     {
       "id": "WP-ENV-001",
@@ -2664,7 +2676,7 @@
       "to": "W7",
       "edgeType": "depends",
       "blocking": true,
-      "evidenceRequirement": "standalone-check ALL PASSED; Jest 76/359; client 11/37; OpenAPI 232/232; repo facts 32/32; real PG E2E 29/29"
+      "evidenceRequirement": "standalone-check ALL PASSED; Jest 76/359; client 12/39; OpenAPI 232/232; repo facts 32/32; real PG E2E 29/29"
     },
     {
       "id": "E-016",
@@ -3203,7 +3215,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "1111e3eb0bb584768eecd2724644cc5b53bbe1b4c61af7bfadb358605a38b177",
+      "checksum": "4857a2f9c7f3f3c6b119ca5b155685ac497fbbe87ecc1862ba26e3eb61067e75",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3212,7 +3224,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "2abdff3fd25fd3e5127c702ad71192fa612d804d8033a1ffff952b32336706ad",
+      "checksum": "efcedc640fdc80938d289a2e44d75127773abe5a7987d787531c1da526a34ce3",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3230,7 +3242,7 @@
       "artifactId": "risk-register-md",
       "path": "risk-register.md",
       "mediaType": "text/markdown",
-      "checksum": "bd47b76f4d622999fb406862728c8bd84810ff34069e39d1462d50578d9d1624",
+      "checksum": "4a9f970d23aa0a278aef53c28c9477fae8d633b0004f0b2f96da814bc6a987e4",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3248,7 +3260,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "0d16cdaed888404bc52501d1cae90c90fd2b15158c883d85bd1fcb6482cce752",
+      "checksum": "97bd688d2a9b45ec8af868f7934642ab2fc3f1a58aaa35b3743cd978a488a51e",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3257,7 +3269,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "b29ec1f2542445e8a5750cc07b87655003030c0e53ad2764ef0a21e8e05b48b9",
+      "checksum": "84aef9ea15b82406a554392f38540f363a50291cde18feb0951ca80b77b0ec51",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3284,7 +3296,7 @@
       "artifactId": "work-task-graph-md",
       "path": "work/task-graph.md",
       "mediaType": "text/markdown",
-      "checksum": "13bf26f4df02464f355d868313e1814db988f62a405e22e43fa3915445df1e2f",
+      "checksum": "715182719e126c4bb602be6651bb7bd54e1d6516f0c75f5ba05c63f96bb01855",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4012,6 +4024,15 @@
       "title": "Round 77 - 2026-08-04 PWA Installability Assets"
     },
     {
+      "evidenceId": "EVD-round78-offline-photo-queue",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round78-offline-photo-queue.md",
+      "checksum": "553b193eea8db9e46c61e0cdaea234390d27bdc9a27de1f3d8cda58f5a9dd08c",
+      "result": "passed",
+      "title": "Round 78 - 2026-08-04 Offline Photo Queue"
+    },
+    {
       "evidenceId": "EVD-round8-org-scope-hardening",
       "workItemId": "",
       "kind": "test",
@@ -4122,7 +4143,7 @@
       "humanDecision": null,
       "conditions": [
         "Playwright smoke: login, command center, command map, devices, alerts render with real data",
-        "client Jest 11 suites / 37 tests",
+        "client Jest 12 suites / 39 tests",
         "PWA manifest/service worker",
         "work console route and layout type-check"
       ],
@@ -4316,9 +4337,9 @@
     },
     {
       "id": "R-015",
-      "title": "Offline photo blob queue still missing",
-      "severity": "medium",
-      "mitigation": "Online photo attachments via `/api/files` and PWA shell implemented; offline queue handles text actions; photo blob persistence remains a follow-up",
+      "title": "Offline photo size limit (~2MB) and compression UX",
+      "severity": "low",
+      "mitigation": "Offline photo queue implemented via data URLs and flushed to `/api/files` on reconnect; large photos require compression",
       "status": "open",
       "linkedItems": []
     }

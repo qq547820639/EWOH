@@ -27,6 +27,11 @@ describe('offline pending action queue', () => {
         orderId: 'WO-1',
         stepId: 'S1',
         action: 'start',
+        attachment: {
+          name: 'scratch.jpg',
+          contentType: 'image/jpeg',
+          dataUrl: 'data:image/jpeg;base64,aGVsbG8=',
+        },
       },
       storage,
     );
@@ -42,6 +47,7 @@ describe('offline pending action queue', () => {
       storage,
     );
     expect(readPendingActions(storage)).toHaveLength(2);
+    expect(readPendingActions(storage)[0].attachment?.name).toBe('scratch.jpg');
 
     const afterRemove = removePendingAction(first[0].id, storage);
     expect(afterRemove).toHaveLength(1);
