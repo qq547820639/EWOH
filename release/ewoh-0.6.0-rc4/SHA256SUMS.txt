@@ -24,10 +24,10 @@ ed74d51ced60fa9197fd0d9f44476f8a95b517319e34e4cd1c8e2dea1acd2691  ./.codex/artif
 9d58c98226db7537d55d25b4cb2a6dac14bff6022522e798f8d34b91d56d8479  ./.codex/artifacts/inventory/frontend-nestjs.md
 d736ab8e2c546076bfd78614cdc394ac778f24c0615de7fb3b71328e0fc56275  ./.codex/artifacts/inventory/python-backend.md
 7753254931d692c1f85132f60c9c3972be7007b3e60a7f60e0a9f6b08c488496  ./.codex/artifacts/inventory/ui-devops-inventory.md
-24567953e9232cbf05dc4341537f2954d7111adb42d991cd905276d882a8d323  ./.codex/artifacts/phase-state.md
+dbae811c8f92fc5337398083a2a2ef8c6bc3cbcb4ba96452e84cf48fa596602e  ./.codex/artifacts/phase-state.md
 4a9f970d23aa0a278aef53c28c9477fae8d633b0004f0b2f96da814bc6a987e4  ./.codex/artifacts/risk-register.md
-bc8979c27a8e45d37f88fc9980ff1d31d387d62704a605bd16f12e58b02dbdc7  ./.codex/artifacts/state.json
-c3313458f31a13d0eca85ac320326320b6e26ab9ab53de9464a01da8f16f345d  ./.codex/artifacts/task-board.md
+19f9443e573767d763964edca421f5e81105a3e8a52a30c260712c0f228c4052  ./.codex/artifacts/state.json
+60c7a758281c56997be3a974f51c43e8d62d8fdf4498f1fd3640861ccb862338  ./.codex/artifacts/task-board.md
 491a27946e17c206cfb087518b70f6addb1665eb9fa485b980e042e7df4ff9c8  ./.codex/artifacts/understanding.md
 d54f7e0259ba6e308b73615b37a9db7a5f8034da900cddc8e57e4c350be5c540  ./.codex/artifacts/work/evidence/ddl/README.md
 25c78a5e09a51c209b727fa5eb64aec4e9fb54aeea67a8fed31383f65d52ed85  ./.codex/artifacts/work/evidence/round1.md
@@ -113,7 +113,7 @@ dcbfed15f981d2705daba6364cef0d866bb6c729e295e8cda4e514e28186838c  ./.codex/artif
 d0257f2ad09c594a6b9fa788b8a0b3810ddbfd6185497cc80a6c6a3a53aa4548  ./.codex/artifacts/work/evidence/round82-error-sanitization.md
 10acfc44929d6c03757dae589619a7a5b2c9f16837b8355ae1509162da5ec9c7  ./.codex/artifacts/work/evidence/round83-devices-error-state.md
 69e6e490c6ba6d3459e117357ed3acf5f1d429f4eba033d3de22fb9e6508c48b  ./.codex/artifacts/work/evidence/round84-command-map-query-state.md
-c9c5f3d259f8c84f8e42a2b323206ddc0b64ae55c1073f45b545876ba71da33b  ./.codex/artifacts/work/evidence/round85-rc4-candidate-bundle.md
+b14b34b6262bba3ea9709a3795dd7476ef1c3942e04db51029efc63e60502690  ./.codex/artifacts/work/evidence/round85-rc4-candidate-bundle.md
 596c53c4b1ea7539702e4800173272bcebe3124ef074db534f3505b6f374913e  ./.codex/artifacts/work/evidence/round86-authenticated-browser-test.md
 37aad379b4b7cfd6bbb639d7b12e07702891a218605714c94756584b052d8e01  ./.codex/artifacts/work/evidence/round9-observability-deploy-artifacts.md
 63d975f3ba486e974d43805bb507ffa0a8fb92e1cc8786618a29a74bfeb1bb57  ./.codex/artifacts/work/packages/WP-CONTRACTS-001.md
@@ -303,7 +303,7 @@ fa66e2ce1360765d98a85f8ebb7d1efa6b1d4acd8ccee343d1cfea18846ea5af  ./docs/data/mu
 4d39fadd6c31f84a89526766bb6d1ed78e853ff68eb29e5073bf1fb73ca2181f  ./docs/delivery/acceptance-evidence.md
 d75812a1a317ebf61514bc4bcc14dcf4577a979de182352358fcdb084ffad1c3  ./docs/delivery/deployment-runbook.md
 97e5db9b47056c73ed7e77416c6300f2139c957601f89a7f0a464027ec995483  ./docs/delivery/release-checklist.md
-81694997d5f730d089979c095e1fef4f9969f916aa9c041649901745791accf2  ./docs/delivery/release-manifest.yaml
+832ebc3b1690e730c3cf65e879432ff5370a88baf6537713186958f47077eec6  ./docs/delivery/release-manifest.yaml
 c4d7c48a1b73b4703d8e96632a7d0c219d8fa670a5e16072528d0b14eecea447  ./docs/delivery/standalone-product-pack.md
 0a4104abf8bbe2035f4959bc07c2c4289def7d5ad0837d42a438821d32298918  ./docs/delivery/training-plan.md
 3ea9383939b71473480f0df40a56efe020c28127365d195947438b92cf90e1aa  ./docs/deployment/README.md
@@ -840,7 +840,6 @@ d9ed63729861f31db414a38078e525b938c6c175c3afe21a9ce4b58d7fa2b6f6  ./ewoh-spark-a
 da7c775b53ea76b646f2c8a7b0f35c66e7c1fecc4e9989034520ded3fbcb1d63  ./ewoh-spark-app/server/standalone-main.ts
 9ac54f5dc2f24a3f99f2a18e243d301e8c90ea41d1287a50bc91747cef5c9d9d  ./ewoh-spark-app/shared/api.interface.ts
 922ab9dd3bd7f86a61519b5dd9dd31cda3f1b9c606932a33a66963d8ded17696  ./ewoh-spark-app/tailwind.config.ts
-91d1c43004802cd49950d78eb11c8fa7d05da8ffffe219a8b13b2f561bc00903  ./ewoh-spark-app/test-results/.last-run.json
 432f61da45d1884b6b1b55413fdbe2691b23254afa190dfa0948d414d04004a6  ./ewoh-spark-app/test/browser/authenticated.spec.js
 a06693408987823d65c55c71643cc462e303ca746d69548c68e39e8d3baa07e7  ./ewoh-spark-app/test/contract/event-catalog.spec.ts
 2b361f441eb75846161a1269bd278ef6a26dc34bb07066c97880d11c9a19b0f4  ./ewoh-spark-app/test/contract/golden-factory.spec.ts
@@ -936,9 +935,9 @@ f40dc4209d8e2741b56a972c058d2bcc276371c49e089152032de2e415d478cf  ./ewoh-spark-a
 82d75de6dabb8e0f998120cdcfb1e38c3d9bb8f687bf2ed29606383f2943a933  ./openapi/ewoh.yaml
 66a95e21e6605f76b487e1fcae84fb91938dcb7bb1470efbc483a87b5a28e178  ./openapi/route-manifest.json
 c71d0b9b08d5793ced49eb1a31bd224a54f35aff431698714b4a2b1de17c304e  ./openapi/work-orchestration.yaml
-400bfcb0467494d2a978b82214b1e52420b818a5da83a3bd1ce7301fbb0a8e1a  ./output/gate-decisions.json
-5c18f0c5694912eb01d5e20e954e04bb2e62ebe72497a12f6d484e666bba3ba1  ./output/git-sync.json
-1b67931eb4b89ab7e5c7ad3b44a037cee37f40fd44a7b8634a016000ef280325  ./output/handoffs.json
+9c329413f26a7bce083578058d0578c9e7bef5cbcf4051b08b9d85d69d778e93  ./output/gate-decisions.json
+6c797f149607dfafe7e220bfb877701c60aeb7730982e72711878d8d1761ee45  ./output/git-sync.json
+e18c3cbf8f51eb1ce04545ccb46c84643e1a21cb5fea11109410feb7f8ea403e  ./output/handoffs.json
 55ac8cbb07aa694169322dbc04c3599f815a77fb614e99500ddb043b5ab0f75e  ./output/playwright/browser-authenticated-command-center.png
 712c0dd4a2848194ecea4d5f4ff3a9b8923f6a1419edc75664a6421168da788f  ./output/playwright/iteration-login-desktop-2026-08-04.png
 6862c96110fa2485c16ffadc589ba13b27ccd1820e564fc57dfeb603fffef6ec  ./output/playwright/iteration-login-mobile-2026-08-04.png
@@ -947,8 +946,8 @@ e3fd7b0b0e4930162a9fb3ad4f0ffc81d2d5eb3c14fdf2532c42a35e3b9cf4be  ./output/playw
 eb2b7d5a6ac46a32ff8df8f8b5b549f2439c1f793a0b59b79e8308d708f1c0e5  ./output/playwright/work-orchestration-git-sync.png
 c96c5aefe24a5b3910a0227f8df7b6b70592f8d9e52d6a68d6361a0e6b57454e  ./output/playwright/work-orchestration-ux.png
 d58d89dec2feff0a5a3f37275e2cde15172a1277d998cfd5c550379aa0c504ba  ./output/playwright/work-orchestration.png
-030708e75a18e826c23931f133777c6f4eb1fc564d543c340260b7cf807d7a8b  ./output/resource-registry.json
-3d8dabc7971d0c87a57a8b2e0a3836acd81a4ae8629702eb28e98407a0d2e721  ./output/work-graph.json
+0f30a5f875ec2894fcc9bba69c411d5e9e6551f8d99893ccbe282b40c354e885  ./output/resource-registry.json
+fdc8f0a35938f1d99f2abee2b075ebff1f7f4bf7bcbe1ca5f66546d038426c35  ./output/work-graph.json
 4725d9be64f3a431717c046f5c3b92e19b2e8a285eaef438fdff86a8af0cbd96  ./pyproject.toml
 31046728329b98137a00c36ee883ca8ec9362f471553933c6cfd6592bcacc48f  ./requirements-dev.txt
 d76c874bb49d37e3aa5bfeaa3510dd95d1548a9e46bb907fb30b042a1b75376a  ./run.py
