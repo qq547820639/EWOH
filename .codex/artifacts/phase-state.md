@@ -44,6 +44,10 @@ Trace: EWOH-2026-08-04-principal-final6
   DDL hygiene all PASSED. Independent review: conditional pass with 0 critical
   and 0 major findings. HTTP+PostgreSQL E2E passed locally on embedded PG 17:
   `29/29` across SP-01..SP-08 and work orchestration acceptance.
+- `RELEASE DRILL PASSED` on embedded PG 17 (apply/verify/RLS/audit/rollback/
+  rebuild + standalone gate + E2E); perf smoke `/health/live` 500 req /
+  50 concurrency = 4610 QPS, p95 26.83ms, 0 failures; standalone security probe
+  `STANDALONE SECURITY VERIFY OK`; local bandit remains unexecuted (tool absent).
 
 ## Current Phase
 

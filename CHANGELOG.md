@@ -39,6 +39,9 @@
   Standalone 页面可安装到移动端/工业平板；repo-facts 增加 PWA 资产门禁。
 - 离线照片队列：离线异常照片以 Data URL 存入待同步队列（约 2MB 上限），
   恢复联网后先上传 `/api/files`，再把文件引用写入异常附件后提交。
+- 发布验证证据：`RELEASE DRILL PASSED`（PG apply/verify/RLS/audit/rollback/
+  rebuild + 全门禁 + E2E 29/29）；性能冒烟 4610 QPS / p95 26.83ms；
+  `STANDALONE SECURITY VERIFY OK`。
 
 ## [0.6.0-rc3] - 2026-08-04
 

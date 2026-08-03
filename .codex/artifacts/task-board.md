@@ -548,6 +548,7 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-184 | Mobile exception photo attachments | AG-00/07 | Done | `/api/files` upload + `resultJson.exception.attachments`; client 11/37 |
 | T-185 | PWA installability assets | AG-00/07 | Done | manifest + service worker + registration; repo facts 32/32 |
 | T-186 | Offline photo queue | AG-00/07 | Done | data URL queue + flush upload/attach; client 12/39 |
+| T-187 | Release drill + perf + security verification | AG-13/51 | Done | `RELEASE DRILL PASSED`; perf 4610 QPS p95 26.83ms; security probe OK; bandit unexecuted locally |
 
 ## Next Waves
 

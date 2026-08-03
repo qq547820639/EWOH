@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T20:08:02.051Z",
+  "generatedAt": "2026-08-03T20:11:20.403Z",
   "gateCount": 14,
   "approvedCount": 0,
   "requiresApprovalCount": 4,
@@ -156,7 +156,8 @@
       "approver": null,
       "decidedAt": null,
       "conditions": [
-        "`RELEASE DRILL PASSED` on disposable PostgreSQL 17",
+        "`RELEASE DRILL PASSED` on disposable PostgreSQL 17 (2026-08-04 iteration)",
+        "security probe OK",
         "GitHub Actions Docker build + PG migration/rollback green",
         "K8s apply and production observability drill pending"
       ],

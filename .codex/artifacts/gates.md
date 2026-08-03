@@ -12,7 +12,7 @@
 | G7 | Frontend and command map pass | Validation | Playwright smoke: login, command center, command map, devices, alerts render with real data; client Jest 12 suites / 39 tests; PWA manifest/service worker; work console route and layout type-check |
 | G8 | Cross-module scenario tests pass | Passed locally | SP-01..SP-08 unit suite + HTTP+PostgreSQL E2E 29/29 on embedded PG 17; Final 6 scenario pack and connector audits pass |
 | G9 | Security/performance/regression pass | Validation | security fixes + DB probe pass; control plane writes gated by `EWOH_WORK_WRITABLE`; Jest/lint/typecheck/build pass |
-| G10 | Release/rollback/ops ready | Passed locally, production pending | `RELEASE DRILL PASSED` on disposable PostgreSQL 17; GitHub Actions Docker build + PG migration/rollback green; K8s apply and production observability drill pending |
+| G10 | Release/rollback/ops ready | Passed locally, production pending | `RELEASE DRILL PASSED` on disposable PostgreSQL 17 (2026-08-04 iteration); security probe OK; GitHub Actions Docker build + PG migration/rollback green; K8s apply and production observability drill pending |
 | G11 | Business acceptance and delivery complete | Pending | acceptance signoff |
 | G12 | Follow-on phases accepted | Pending | phase acceptance reports |
 | G13 | Final project closeout | Pending | closeout package |

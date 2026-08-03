@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T20:08:01.999Z",
+  "generatedAt": "2026-08-03T20:11:20.359Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 221,
+    "itemCount": 222,
     "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 78,
+    "evidenceCount": 79,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 36,
     "statusCounts": {
-      "Done": 128,
+      "Done": 129,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2252,6 +2252,18 @@
       "evidence": "data URL queue + flush upload/attach; client 12/39"
     },
     {
+      "id": "T-187",
+      "title": "Release drill + perf + security verification",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-13/51",
+      "agents": [
+        "AG-13"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`RELEASE DRILL PASSED`; perf 4610 QPS p95 26.83ms; security probe OK; bandit unexecuted locally"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -2337,7 +2349,7 @@
       "type": "gate",
       "status": "Passed locally, production pending",
       "owner": "AG-00",
-      "evidence": "`RELEASE DRILL PASSED` on disposable PostgreSQL 17; GitHub Actions Docker build + PG migration/rollback green; K8s apply and production observability drill pending"
+      "evidence": "`RELEASE DRILL PASSED` on disposable PostgreSQL 17 (2026-08-04 iteration); security probe OK; GitHub Actions Docker build + PG migration/rollback green; K8s apply and production observability drill pending"
     },
     {
       "id": "G11",
@@ -3215,7 +3227,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "4857a2f9c7f3f3c6b119ca5b155685ac497fbbe87ecc1862ba26e3eb61067e75",
+      "checksum": "68662549f775e1f1e6c8fe507ff5cd9a09ade9ee897331b798006a93b486546a",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3224,7 +3236,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "efcedc640fdc80938d289a2e44d75127773abe5a7987d787531c1da526a34ce3",
+      "checksum": "a3ad5253ccc22220cd7ce8a3ebcfb63afda6ebd132fb6388620127459eee003d",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3260,7 +3272,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "97bd688d2a9b45ec8af868f7934642ab2fc3f1a58aaa35b3743cd978a488a51e",
+      "checksum": "358a0c9b6546df639c3f827316010fbf4d9a779f6efff4421f10b3b853e34b65",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3269,7 +3281,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "84aef9ea15b82406a554392f38540f363a50291cde18feb0951ca80b77b0ec51",
+      "checksum": "0f4a3e9b942be1c3cbf41f6826c0da3adfabe2d6dc9b5e8b15cd736b6756ea70",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4033,6 +4045,15 @@
       "title": "Round 78 - 2026-08-04 Offline Photo Queue"
     },
     {
+      "evidenceId": "EVD-round79-release-drill-and-verification",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round79-release-drill-and-verification.md",
+      "checksum": "09691e73d2384b785eebda53f207717b3e62768624107f09aa062ab4c7acc652",
+      "result": "passed",
+      "title": "Round 79 - 2026-08-04 Release Drill and Verification Gates"
+    },
+    {
       "evidenceId": "EVD-round8-org-scope-hardening",
       "workItemId": "",
       "kind": "test",
@@ -4181,7 +4202,8 @@
       "calculatedStatus": "passed",
       "humanDecision": null,
       "conditions": [
-        "`RELEASE DRILL PASSED` on disposable PostgreSQL 17",
+        "`RELEASE DRILL PASSED` on disposable PostgreSQL 17 (2026-08-04 iteration)",
+        "security probe OK",
         "GitHub Actions Docker build + PG migration/rollback green",
         "K8s apply and production observability drill pending"
       ],
