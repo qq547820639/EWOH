@@ -10,6 +10,11 @@ SRC = REPO_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from edge_platform.connectors.opcua import (  # noqa: E402
+    OpcUaAdapter,
+    normalize_opcua_datapoint,
+    parse_opcua_node_id,
+)
 from edge_platform.connectors.runtime import (  # noqa: E402
     Connector,
     ConnectorManifest,
@@ -42,6 +47,7 @@ class TestManifestContract(unittest.TestCase):
                 "equipment-state",
                 "erp-mes-profile",
                 "sparkplug-b",
+                "opcua-generic",
             },
         )
 
@@ -292,6 +298,62 @@ class TestSparkplugB(unittest.TestCase):
         self.assertEqual(message["entity_id"], "edge-1")
         self.assertEqual(message["source_type"], "simulated")
         self.assertEqual(message["session_state"]["online"], True)
+        adapter.stop()
+
+
+class TestOpcUa(unittest.TestCase):
+    def test_node_id_parser_supports_numeric_and_string(self):
+        numeric = parse_opcua_node_id("ns=2;i=85")
+        self.assertEqual(numeric.namespace, 2)
+        self.assertEqual(numeric.identifier, "85")
+        string_node = parse_opcua_node_id("ns=3;s=Temperature")
+        self.assertEqual(string_node.identifier_type, "s")
+        self.assertEqual(string_node.identifier, "Temperature")
+
+    def test_normalize_maps_quality_and_entity(self):
+        point = normalize_opcua_datapoint(
+            {
+                "nodeId": "ns=2;i=85",
+                "value": 42.5,
+                "qualityCode": "Good",
+                "unit": "°C",
+            },
+            default_entity_id="CNC-01",
+            default_source_type="real",
+        )
+        self.assertEqual(point["entity_id"], "CNC-01")
+        self.assertEqual(point["quality_status"], "good")
+        self.assertEqual(point["value"], 42.5)
+
+    def test_bad_quality_is_degraded(self):
+        point = normalize_opcua_datapoint(
+            {
+                "nodeId": "ns=1;s=Pressure",
+                "value": 0,
+                "qualityCode": "BadNoCommunication",
+            }
+        )
+        self.assertEqual(point["quality_status"], "degraded")
+
+    def test_adapter_enqueues_normalized_point(self):
+        adapter = OpcUaAdapter(
+            "opc-connector-1",
+            "opc.tcp://factory-lan:4840",
+            source_type="simulated",
+        )
+        adapter.start()
+        adapter._enqueue_raw(
+            {
+                "nodeId": "ns=2;i=85",
+                "value": 100,
+                "qualityCode": "Good",
+                "sourceTimestamp": "2026-08-03T00:00:00Z",
+            }
+        )
+        message = adapter.read_message(timeout=0.1)
+        self.assertIsNotNone(message)
+        self.assertEqual(message["entity_id"], "85")
+        self.assertEqual(message["source_type"], "simulated")
         adapter.stop()
 
 

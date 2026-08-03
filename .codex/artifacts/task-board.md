@@ -439,6 +439,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-141 | AAS asset registry API + twin semantics + Data Assets UI | PX-08/21 | Done | `round57-aas-asset-api.md`; Jest 67/302; client 6/22; OpenAPI 211/211; E2E 27/27 |
 
+## Wave Final5 - OPC UA Connector (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-142 | OPC UA node ID/quality/adapter + connector manifest | V-CON/05 | Done | `round58-opcua-connector.md`; pytest 111; connector TCK 21/21 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

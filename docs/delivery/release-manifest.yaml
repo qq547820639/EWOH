@@ -61,7 +61,7 @@ evidence:
   erp_mes_connector: "erp-mes-profile-1.0.0 manifest; secret-ref config; connector tests 11; pytest 82 passed"
   scale_metrics: "GET /api/scale/metrics counts/published rate/ring distribution/compatibility"
   scenario_uninstall: "POST /api/scale/scenario-packs/:id/uninstall with audit"
-  connector_tck: "scripts/connector-tck.py + make connector-tck; 17 checks"
+  connector_tck: "scripts/connector-tck.py + make connector-tck; 21 checks"
   scenario_tck: "scripts/scenario-tck.js + npm run scenario:tck; 5 gates"
   third_factory_drill: "E2E third factory config-driven install from same template"
   factory_differences: "POST/GET /api/scale/differences; diff.* config keys; audit; org scoped"
@@ -79,6 +79,7 @@ evidence:
   aas_codec: "AAS 3.0 JSON subset + AASX-like package codec; twin submodel mapping; discrete-machining AAS sample; make aas-tck 7/7; pytest 99"
   rego_policy_gate: "dependency-free Rego subset; deploy-gate.rego; make rego-tck 4/4; wired into deployment TCK and standalone-check; pytest 107"
   aas_asset_api: "org-scoped AAS asset import/list/detail/semantics API; Data Assets UI; audit + RLS; E2E 27/27"
+  opcua_connector: "OPC UA node ID parsing/data point normalization/quality mapping/edge adapter; opcua-generic manifest; connector TCK 21/21; pytest 111"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

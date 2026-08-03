@@ -203,6 +203,9 @@
   RLS 组织隔离与审计链。
 - 数据资产页新增 AAS 资产壳视图：JSON 导入表单、资产清单与语义映射查看器
   均接入真实 API。
+- OPC UA 连接器：`src/edge_platform/connectors/opcua.py` 提供节点 ID 解析、
+  数据点规范化、质量码映射与边缘适配器；新增 `opcua-generic-1.0.0`
+  Manifest 并纳入连接器 TCK（21 项检查）。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

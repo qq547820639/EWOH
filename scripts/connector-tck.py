@@ -16,6 +16,10 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from edge_platform.connectors.opcua import (  # noqa: E402
+    normalize_opcua_datapoint,
+    parse_opcua_node_id,
+)
 from edge_platform.connectors.runtime import (  # noqa: E402
     ConnectorManifestError,
     discover_manifests,
@@ -54,6 +58,10 @@ CONFIGS = {
         "groupId": "factory-a",
         "clientId": "edge-1",
     },
+    "opcua-generic": {
+        "endpointUrl": "opc.tcp://factory-lan:4840",
+        "nodeIds": ["ns=2;i=85"],
+    },
 }
 
 checks: list[tuple[str, bool]] = []
@@ -64,7 +72,7 @@ def check(name: str, condition: bool) -> None:
 
 
 manifests = discover_manifests(MANIFEST_DIR)
-check("discover manifests >= 4", len(manifests) >= 4)
+check("discover manifests >= 5", len(manifests) >= 5)
 
 for manifest in manifests:
     config = CONFIGS[manifest.id]
@@ -170,6 +178,29 @@ check(
     session.snapshot()["online"]
     and session.snapshot()["duplicate"]
     and session.snapshot()["births"] == ["edge-1"],
+)
+
+opcua_node = parse_opcua_node_id("ns=2;i=85")
+check(
+    "opcua node id",
+    opcua_node.namespace == 2
+    and opcua_node.identifier_type == "i"
+    and opcua_node.identifier == "85",
+)
+opcua_point = normalize_opcua_datapoint(
+    {
+        "nodeId": "ns=2;i=85",
+        "value": 42.5,
+        "qualityCode": "Good",
+        "sourceTimestamp": "2026-08-03T00:00:00Z",
+    },
+    default_source_type="real",
+)
+check(
+    "opcua canonical point",
+    opcua_point["entity_id"] == "85"
+    and opcua_point["quality_status"] == "good"
+    and opcua_point["value"] == 42.5,
 )
 
 failed = [name for name, ok in checks if not ok]
