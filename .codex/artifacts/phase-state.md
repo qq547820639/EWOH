@@ -34,6 +34,8 @@ the production approval gate.
   perf 514 qps / p95 60.93ms; deploy artifact verifier 62/62.
 - Final 4.0 adopted as master baseline; MES P0 work order/step/material/
   inspection closed loop is implemented and verified end to end.
+- OEE/andon closed loop: device status timeline, OEE calculation, andon state
+  machine, and SLA escalation notification are implemented and verified.
 
 ## Active Tasks
 

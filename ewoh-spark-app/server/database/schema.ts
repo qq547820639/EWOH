@@ -624,6 +624,27 @@ export const ewohEvent = pgTable("ewoh_event", {
   index("idx_event_source").on(table.sourceType),
 ]);
 
+export const ewohNotification = pgTable("ewoh_notification", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  notificationId: varchar("notification_id", { length: 255 }).notNull().unique(),
+  recipientType: varchar("recipient_type", { length: 50 }).notNull(),
+  recipientId: varchar("recipient_id", { length: 255 }).notNull(),
+  channel: varchar("channel", { length: 100 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  body: text("body"),
+  severity: varchar("severity", { length: 50 }).notNull().default('info'),
+  status: varchar("status", { length: 50 }).notNull().default('pending'),
+  scheduledAt: customTimestamptz("scheduled_at", { precision: 3 }),
+  sentAt: customTimestamptz("sent_at", { precision: 3 }),
+  readAt: customTimestamptz("read_at", { precision: 3 }),
+  externalRef: varchar("external_ref", { length: 255 }),
+  errorMessage: text("error_message"),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_ewoh_notification_status").on(table.status),
+]);
+
 export const ewohDevice = pgTable("ewoh_device", {
   id: uuid("id").primaryKey().defaultRandom(),
   deviceId: varchar("device_id", { length: 255 }).notNull().unique(),
@@ -656,6 +677,7 @@ export const ewohDeviceConfigTable = ewohDeviceConfig;
 export const ewohEnvironmentTable = ewohEnvironment;
 export const ewohEventTable = ewohEvent;
 export const ewohEventChainTable = ewohEventChain;
+export const ewohNotificationTable = ewohNotification;
 export const ewohModelRegistryTable = ewohModelRegistry;
 export const ewohOrganizationTable = ewohOrganization;
 export const ewohPersonnelTable = ewohPersonnel;

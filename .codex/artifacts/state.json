@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 4.0 adopted; MES P0 production execution closed loop implemented and E2E verified; next is OEE/andon and ERP connector",
+  "current_status": "Final 4.0 adopted; MES P0 and OEE/andon closed loops implemented and E2E verified; next is quality traceability and ERP connector",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
@@ -136,7 +136,8 @@
     "deploy_artifact_verifier": "scripts/verify-deploy-artifacts.js 62 checks passed for k8s/compose/Dockerfiles"
     ,
     "mes_p0": "MesModule work order/step/material/inspection closed loop; 48 Jest suites / 190 tests; E2E 15/15; OpenAPI 116/116",
-    "final4_baseline": "Final 4.0 adopted; authoritative-plan-final4.txt + delivery docx; D-011/D-012/D-013 recorded"
+    "final4_baseline": "Final 4.0 adopted; authoritative-plan-final4.txt + delivery docx; D-011/D-012/D-013 recorded",
+    "oee_andon": "OeeModule device status/OEE/andon/SLA notification; 49 Jest suites / 196 tests; E2E 16/16; OpenAPI 123/123"
   },
   "subagent_state": {
     "planned": [

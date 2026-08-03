@@ -155,6 +155,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-091 | Final 4.0 baseline adoption | AG-00 | Done | `authoritative-plan-final4.txt`; D-011/D-012/D-013 |
 | T-092 | MES P0 production execution closed loop | AG-11/13/20 | Done | `round10-mes-p0.md`; E2E 15/15; OpenAPI 116/116 |
 
+## Wave Final4 - OEE/Andon (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-093 | OEE/Andon closed loop | AG-12/14/22 | Done | `round11-oee-andon.md`; E2E 16/16; OpenAPI 123/123 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

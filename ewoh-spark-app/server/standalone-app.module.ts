@@ -33,6 +33,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { MetricsInterceptor } from './modules/metrics/metrics.interceptor';
 import { MesModule } from './modules/mes/mes.module';
+import { OeeModule } from './modules/oee/oee.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { MesModule } from './modules/mes/mes.module';
     AuditModule,
     MetricsModule,
     MesModule,
+    OeeModule,
   ],
   providers: [
     {

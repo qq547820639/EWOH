@@ -4,7 +4,7 @@ status: candidate-for-production (approval-gated)
 bundle:
   path: release/ewoh-0.6.0-rc2
   checksums: release/ewoh-0.6.0-rc2/SHA256SUMS.txt
-  files: 840
+  files: 844
 artifacts:
   api: ewoh-spark-app/dist/server
   client: ewoh-spark-app/dist/client/index.standalone.html
@@ -17,9 +17,9 @@ artifacts:
   deploy: deploy/cloud/
   contracts: .codex/artifacts/contracts/
 evidence:
-  jest: "48 suites / 190 tests"
-  e2e: "15/15 HTTP + PostgreSQL"
-  openapi: "116/116 documented, 0 unimplemented"
+  jest: "49 suites / 196 tests"
+  e2e: "16/16 HTTP + PostgreSQL"
+  openapi: "123/123 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/openapi/e2e/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; logical backup/restore of 54 tables / 25 rows with row-count verify"
@@ -30,6 +30,7 @@ evidence:
   metrics: "GET /metrics Prometheus text: HTTP counters, active requests, uptime, db readiness"
   deploy_artifacts: "62 checks passed (k8s, compose, Dockerfiles)"
   mes_p0: "work order -> steps -> material -> inspection -> report -> review -> handover -> completion persisted and audited"
+  oee_andon: "device status timeline, OEE, andon state machine, SLA escalation notification persisted and audited"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

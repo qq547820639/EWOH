@@ -1344,6 +1344,225 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/oee/device-status:
+    post:
+      tags:
+        - oee
+      summary: Record device status with duration and reason
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceStatusRecordRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceStatusEvent'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - oee
+      summary: List device status events
+      parameters:
+        - name: deviceId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: start
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: end
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceStatusList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/oee/calculate:
+    post:
+      tags:
+        - oee
+      summary: Calculate OEE for a device and time window
+      parameters:
+        - name: deviceId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: start
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: end
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: plannedTimeSec
+          in: query
+          required: false
+          schema:
+            type: number
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OeeMetricsResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/oee/andons:
+    post:
+      tags:
+        - oee
+      summary: Open an andon
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenAndonRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AndonEvent'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - oee
+      summary: List andons
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AndonList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/oee/andons/{id}/state:
+    post:
+      tags:
+        - oee
+      summary: Transition andon state
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Andon event id
+          schema:
+            type: string
+        - name: action
+          in: query
+          required: true
+          description: acknowledge, process, close, or reopen
+          schema:
+            type: string
+            enum:
+              - acknowledge
+              - process
+              - close
+              - reopen
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AndonEvent'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/oee/summary:
+    get:
+      tags:
+        - oee
+      summary: OEE and andon summary
+      parameters:
+        - name: deviceId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: start
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: end
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OeeSummary'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/mes/work-orders:
     get:
       tags:
@@ -5635,6 +5854,153 @@ components:
       required:
         - quantity
       additionalProperties: false
+    DeviceStatusEvent:
+      type: object
+      properties:
+        eventId:
+          type: string
+        deviceId:
+          type: string
+        eventCode:
+          type: string
+        eventType:
+          type: string
+        severity:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+        evidenceJson:
+          type: object
+          nullable: true
+    DeviceStatusList:
+      type: array
+      items:
+        $ref: '#/components/schemas/DeviceStatusEvent'
+    DeviceStatusRecordRequest:
+      type: object
+      properties:
+        deviceId:
+          type: string
+        status:
+          type: string
+          enum:
+            - running
+            - idle
+            - fault
+            - changeover
+            - material_missing
+            - unmanned
+        reason:
+          type: string
+        startedAt:
+          type: string
+        endedAt:
+          type: string
+        sourceType:
+          type: string
+        outputQty:
+          type: number
+        idealRatePerSec:
+          type: number
+      required:
+        - deviceId
+        - status
+    OeeMetricsResult:
+      type: object
+      properties:
+        deviceId:
+          type: string
+        start:
+          type: string
+        end:
+          type: string
+        plannedTimeSec:
+          type: number
+        availability:
+          type: number
+        performance:
+          type: number
+        quality:
+          type: number
+        oee:
+          type: number
+        statusDurations:
+          type: object
+        downtimeBreakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              reason:
+                type: string
+              seconds:
+                type: number
+    AndonEvent:
+      type: object
+      properties:
+        eventId:
+          type: string
+        deviceId:
+          type: string
+        eventCode:
+          type: string
+        eventType:
+          type: string
+        severity:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+        evidenceJson:
+          type: object
+          nullable: true
+    AndonList:
+      type: array
+      items:
+        $ref: '#/components/schemas/AndonEvent'
+    OpenAndonRequest:
+      type: object
+      properties:
+        deviceId:
+          type: string
+        title:
+          type: string
+        reason:
+          type: string
+        severity:
+          type: string
+        slaSeconds:
+          type: number
+        assignee:
+          type: string
+      required:
+        - deviceId
+        - title
+    OeeSummary:
+      type: object
+      properties:
+        deviceId:
+          type: string
+        start:
+          type: string
+        end:
+          type: string
+        oee:
+          $ref: '#/components/schemas/OeeMetricsResult'
+        andon:
+          type: object
+          properties:
+            total:
+              type: integer
+            open:
+              type: integer
     MesWorkOrder:
       type: object
       properties:

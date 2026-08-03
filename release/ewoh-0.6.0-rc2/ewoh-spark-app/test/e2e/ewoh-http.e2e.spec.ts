@@ -709,6 +709,121 @@ if (!e2eConfig) {
       expect(eventRows[0].org_id).toBe(fixture!.orgA.id);
     });
 
+    it('records device status, calculates OEE, and escalates andon SLA', async () => {
+      const dispatcher = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcher.status).toBe(201);
+      const token = dispatcher.body.accessToken;
+      const deviceId = `EXO-OEE-${runId}`;
+      const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+      const statuses = [
+        { status: 'running', startedAt: new Date(Date.now() - 200_000).toISOString(), endedAt: new Date(Date.now() - 140_000).toISOString() },
+        { status: 'fault', startedAt: new Date(Date.now() - 140_000).toISOString(), endedAt: new Date(Date.now() - 110_000).toISOString() },
+        { status: 'idle', startedAt: new Date(Date.now() - 110_000).toISOString(), endedAt: new Date(Date.now() - 100_000).toISOString() },
+      ];
+      for (const status of statuses) {
+        const recorded = await apiRequest(
+          baseUrl,
+          '/api/oee/device-status',
+          {
+            method: 'POST',
+            headers: jsonHeaders(token),
+            body: JSON.stringify({ deviceId, ...status }),
+          },
+        );
+        expect(recorded.status).toBe(201);
+      }
+
+      const oee = await apiRequest<{
+        availability: number;
+        oee: number;
+        downtimeBreakdown: Array<{ reason: string; seconds: number }>;
+      }>(
+        baseUrl,
+        `/api/oee/calculate?deviceId=${deviceId}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&plannedTimeSec=100`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+        },
+      );
+      expect(oee.status).toBe(201);
+      expect(oee.body.availability).toBeCloseTo(0.6, 3);
+      expect(oee.body.oee).toBeCloseTo(0.6, 3);
+      expect(oee.body.downtimeBreakdown[0].reason).toBe('fault');
+
+      const andon = await apiRequest<{ eventId: string; status: string }>(
+        baseUrl,
+        '/api/oee/andons',
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            deviceId,
+            title: `安灯测试 ${runId}`,
+            reason: '缺料',
+            slaSeconds: -1,
+            assignee: 'dispatcher',
+          }),
+        },
+      );
+      expect(andon.status).toBe(201);
+      expect(andon.body.status).toBe('open');
+      const andonId = andon.body.eventId;
+
+      const acknowledged = await apiRequest<{ status: string }>(
+        baseUrl,
+        `/api/oee/andons/${andonId}/state?action=acknowledge`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: '{}',
+        },
+      );
+      expect(acknowledged.status).toBe(201);
+      expect(acknowledged.body.status).toBe('acknowledged');
+
+      const notificationRows = await owner!.unsafe<
+        Array<{ notification_id: string; org_id: string; external_ref: string }>
+      >(
+        `select notification_id, org_id::text, external_ref
+         from public.ewoh_notification
+         where external_ref = $1`,
+        [andonId],
+      );
+      expect(notificationRows).toHaveLength(1);
+      expect(notificationRows[0].org_id).toBe(fixture!.orgA.id);
+
+      for (const action of ['process', 'close']) {
+        const transition = await apiRequest(
+          baseUrl,
+          `/api/oee/andons/${andonId}/state?action=${action}`,
+          {
+            method: 'POST',
+            headers: jsonHeaders(token),
+            body: '{}',
+          },
+        );
+        expect(transition.status).toBe(201);
+      }
+
+      const andonRows = await owner!.unsafe<
+        Array<{ event_id: string; status: string; org_id: string }>
+      >(
+        `select event_id, status, org_id::text
+         from public.ewoh_event
+         where event_id = $1`,
+        [andonId],
+      );
+      expect(andonRows).toHaveLength(1);
+      expect(andonRows[0].status).toBe('closed');
+      expect(andonRows[0].org_id).toBe(fixture!.orgA.id);
+    });
+
     it('persists approval instances, steps, and audit operations', async () => {
       const adminA = await login(
         baseUrl,

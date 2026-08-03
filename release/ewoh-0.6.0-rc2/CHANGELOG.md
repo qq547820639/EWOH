@@ -33,6 +33,8 @@
   开工/报工/审核/交收、投料消耗、质量检验与审计，映射到既有
   `ewoh_schedule_task` / `ewoh_schedule_task_step` / `ewoh_resource_binding` /
   `ewoh_event`，48 张受管表包装不变。
+- OEE/安灯闭环：设备状态时序、OEE 计算与停机原因分布、安灯状态机、
+  SLA 升级通知与审计，复用 `ewoh_event` / `ewoh_notification`。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。
