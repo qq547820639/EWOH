@@ -109,5 +109,8 @@ echo "== generate checksums =="
   find . -type f -not -name 'SHA256SUMS.txt' -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS.txt
 )
 
+echo "== scale release review =="
+EWOH_RELEASE_VERSION="$VERSION" node "${ROOT_DIR}/scripts/scale-release-review.js"
+
 echo "Release bundle: ${OUT}"
 du -sh "$OUT"

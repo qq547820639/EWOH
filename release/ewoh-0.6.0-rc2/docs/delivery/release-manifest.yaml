@@ -50,6 +50,7 @@ evidence:
   diff_preview: "template config inheritance/override merge; added/changed/removed diff; read-only API"
   connector_runtime: "edge connector runtime with manifest/config/health/redaction/lifecycle; exoskeleton-frame + equipment-state manifests; pytest 69 passed"
   factory_onboarding: "F0-F6 onboarding checklist + run API with per-step evidence/audit"
+  release_review: "scale-release-review.js packaging gate; 23/23 checks; bundle integrity + contracts + OpenAPI + audits"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

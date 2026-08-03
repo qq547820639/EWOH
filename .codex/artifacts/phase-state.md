@@ -82,12 +82,14 @@ production approval gate.
 - Factory onboarding: `POST /api/scale/onboarding/run` executes the F0-F6
   single-factory import steps with per-step evidence and audit; checklist API
   exposes the machine-readable steps.
+- Scale release review: `scripts/scale-release-review.js` is the packaging
+  gate for release bundles, running contract/deploy/ops checks (23/23 pass).
 
 ## Active Tasks
 
 - Fleet Ops (upgrade/rollback) and event catalog round closed.
 - Productization kernels remaining: connector SDK/runtime, mapping DSL,
-  partner shadow delivery and Scale Release 1.0.
+  partner shadow delivery, production approval gate and final acceptance.
 - Training/acceptance evidence and production gate preparation.
 - Production DDL/deploy approval gate.
 

@@ -265,6 +265,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-112 | F0-F6 factory onboarding checklist + run API | PX-12/07 | Done | `round28-factory-onboarding.md`; E2E onboarding passed |
 
+## Wave Final5 - Scale Release (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-113 | Scale Release review gate + package hook | PX-09/51 | Done | `round29-scale-release-review.md`; review 23/23 passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

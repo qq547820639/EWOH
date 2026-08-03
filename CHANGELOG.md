@@ -109,6 +109,9 @@
 - 工厂上线：`GET /api/scale/onboarding/checklist` 提供 F0-F6 步骤清单，
   `POST /api/scale/onboarding/run` 真实执行模板发布、连接器/场景包安装、
   Profile 安装、TCK 与 Support Bundle，并输出步骤级证据与审计。
+- Scale Release 评审：`scripts/scale-release-review.js` 作为打包门禁，检查
+  发布清单、包完整性、契约/文档/OpenAPI 与全部静态审计；已接入
+  `scripts/package-release.sh` 与 `npm run release:review`。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

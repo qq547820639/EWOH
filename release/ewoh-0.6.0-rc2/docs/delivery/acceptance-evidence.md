@@ -112,6 +112,10 @@ Owner: AG-00/AG-41
 - Factory onboarding: `POST /api/scale/onboarding/run` executes F0-F6 import
   steps with per-step pass/fail/duration evidence, real TCK and profile
   operations, and a support bundle; E2E verifies the installed profile row.
+- Scale release review: `scripts/scale-release-review.js` is wired into
+  `scripts/package-release.sh`; it checks the release manifest, bundle
+  integrity, contracts, docs, OpenAPI manifest, and all static audits before a
+  bundle can be packaged (23/23 checks pass).
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.
