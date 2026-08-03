@@ -701,6 +701,31 @@ export class ScaleService {
     return updated;
   }
 
+  async uninstallScenarioPack(packageId: string, actor?: OrgContext) {
+    const asset = await this.getAssetPackage(packageId);
+    if (asset.packageType !== 'scenario') {
+      throw new BadRequestException('packageType must be scenario');
+    }
+    const [updated] = await this.db
+      .update(ewohAssetPackage)
+      .set({ status: 'uninstalled', publishedAt: null })
+      .where(eq(ewohAssetPackage.packageId, packageId))
+      .returning();
+    if (!updated) {
+      throw new ConflictException('STATE_CONFLICT');
+    }
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'scale.scenario.uninstall',
+      entityType: 'asset_package',
+      entityId: packageId,
+      before: { status: asset.status },
+      after: { status: updated.status },
+    });
+    return updated;
+  }
+
   async fleetUpgrade(
     packageId: string,
     actor?: OrgContext,

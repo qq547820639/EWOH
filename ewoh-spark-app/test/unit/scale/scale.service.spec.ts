@@ -419,6 +419,37 @@ describe('ScaleService templates and assets', () => {
     expect(audit.appendAuditLog).toHaveBeenCalledTimes(1);
   });
 
+  it('uninstalls a scenario pack with audit', async () => {
+    const asset = {
+      packageId: 'PKG-SCEN',
+      packageType: 'scenario',
+      status: 'installed',
+    };
+    const selectWhere = jest.fn().mockResolvedValue([asset]);
+    const updateReturning = jest.fn().mockResolvedValue([
+      { ...asset, status: 'uninstalled' },
+    ]);
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({ where: selectWhere })),
+      })),
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn(() => ({ returning: updateReturning })),
+        })),
+      })),
+    };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.uninstallScenarioPack('PKG-SCEN');
+
+    expect(result.status).toBe('uninstalled');
+    expect(audit.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'scale.scenario.uninstall' }),
+    );
+  });
+
   it('rolls back all factory profiles', async () => {
     const profiles = [{ profileId: 'PRF-1' }, { profileId: 'PRF-2' }];
     const db = {

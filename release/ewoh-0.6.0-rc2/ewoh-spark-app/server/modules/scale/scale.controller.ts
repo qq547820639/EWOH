@@ -125,6 +125,14 @@ export class ScaleController {
     return this.scaleService.installScenarioPack(id, request.userContext);
   }
 
+  @Post('scenario-packs/:id/uninstall')
+  uninstallScenarioPack(
+    @Param('id') id: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.scaleService.uninstallScenarioPack(id, request.userContext);
+  }
+
   @Post('fleet/upgrade')
   fleetUpgrade(
     @Body() body: { packageId: string; ring?: string },

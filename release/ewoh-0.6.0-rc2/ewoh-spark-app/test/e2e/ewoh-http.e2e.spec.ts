@@ -1653,6 +1653,29 @@ if (!e2eConfig) {
       expect(scenarioRows).toHaveLength(1);
       expect(scenarioRows[0].org_id).toBe(fixture!.orgA.id);
 
+      const uninstalled = await apiRequest<{ status: string }>(
+        baseUrl,
+        `/api/scale/scenario-packs/${scenarioPack.body.packageId}/uninstall`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+        },
+      );
+      expect(uninstalled.status).toBe(201);
+      expect(uninstalled.body.status).toBe('uninstalled');
+
+      const uninstalledRows = await owner!.unsafe<
+        Array<{ status: string; org_id: string }>
+      >(
+        `select status, org_id::text
+         from public.ewoh_asset_package
+         where package_id = $1`,
+        [scenarioPack.body.packageId],
+      );
+      expect(uninstalledRows).toHaveLength(1);
+      expect(uninstalledRows[0].status).toBe('uninstalled');
+      expect(uninstalledRows[0].org_id).toBe(fixture!.orgA.id);
+
       const golden = await apiRequest<{
         specVersion: string;
         templateId: string;

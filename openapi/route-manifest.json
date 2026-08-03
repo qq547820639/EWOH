@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-08-03T05:32:51.911Z",
+  "generatedAt": "2026-08-03T05:35:51.801Z",
   "spec": "openapi/ewoh.yaml",
-  "controllerOperations": 174,
-  "specOperations": 174,
-  "documentedControllerOperations": 174,
+  "controllerOperations": 175,
+  "specOperations": 175,
+  "documentedControllerOperations": 175,
   "undocumented": [],
   "unimplemented": []
 }

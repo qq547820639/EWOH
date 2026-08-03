@@ -103,6 +103,8 @@ production approval gate.
   secret-reference config, and runtime test coverage.
 - Scale metrics: `GET /api/scale/metrics` exposes template/profile/asset
   counts, published rate, ring distribution, and compatibility summary.
+- Scenario lifecycle: `POST /api/scale/scenario-packs/:id/uninstall` removes a
+  scenario pack with audit, completing install/demo/accept/remove flow.
 
 ## Active Tasks
 
