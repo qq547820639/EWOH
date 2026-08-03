@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T19:53:00.896Z",
+  "generatedAt": "2026-08-03T19:56:26.935Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 216,
+    "itemCount": 217,
     "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 73,
+    "evidenceCount": 74,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 36,
     "statusCounts": {
-      "Done": 123,
+      "Done": 124,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 47,
@@ -2192,6 +2192,18 @@
       "evidence": "control terminal/in-flight guards; handoff state machine; gate decision idempotency + history; Jest 76/355"
     },
     {
+      "id": "T-182",
+      "title": "Scale mutation idempotency guards",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/09",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "scenario install/uninstall idempotent; fleet upgrade/rollback skip target state; difference resolve idempotent; Jest 76/359"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -2237,7 +2249,7 @@
       "type": "gate",
       "status": "Passed for standalone base",
       "owner": "AG-00",
-      "evidence": "request transaction/GUC, auth, errors, health, rate limit tests; Jest 76 suites / 355 tests"
+      "evidence": "request transaction/GUC, auth, errors, health, rate limit tests; Jest 76 suites / 359 tests"
     },
     {
       "id": "G6",
@@ -2431,12 +2443,12 @@
     },
     {
       "id": "W7",
-      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue, ValidationPipe, command-map details, state guards",
+      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue, ValidationPipe, command-map details, state guards, scale idempotency",
       "type": "wave",
       "status": "Proposed",
       "owner": "AG-00",
       "wave": "W7",
-      "summary": "standalone-check ALL PASSED; Jest 76/355; client 10/35; OpenAPI 232/232"
+      "summary": "standalone-check ALL PASSED; Jest 76/359; client 10/35; OpenAPI 232/232"
     },
     {
       "id": "WP-ENV-001",
@@ -2616,7 +2628,7 @@
       "to": "W7",
       "edgeType": "depends",
       "blocking": true,
-      "evidenceRequirement": "standalone-check ALL PASSED; Jest 76/355; client 10/35; OpenAPI 232/232"
+      "evidenceRequirement": "standalone-check ALL PASSED; Jest 76/359; client 10/35; OpenAPI 232/232"
     },
     {
       "id": "E-016",
@@ -3155,7 +3167,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "f5598e486c22ee92f66f0934e10287f25d374599b03eea4f0e2d2e6e672513c6",
+      "checksum": "52ab4f05f045bd46468e14a942482aeb366e93ff2a1dc75401feae760ef55eaf",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3164,7 +3176,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "3cd69c818e0d060b5c9156f867615e7a583793c62aec3a33dd0d4ce7c66e8b4b",
+      "checksum": "b395b4041ceb2ccaa6b180435c8192f032d1de87cddac9acf6299460ca490fbd",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3200,7 +3212,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "7f8df55849b3b9f4738888ef91d4665d446efbd00e0b7e2b0e897988e0681c19",
+      "checksum": "90e032a0bb7b82593f6d67de9ccc520cea08d1374276bf7e3f59fe7ca383eb77",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3209,7 +3221,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "8f2b761966e341502bd1d8415d71c2406401f292eb88c6b5d602e014ee0e65b4",
+      "checksum": "618e5704e92007ec6661c64663cafac845b9e1d76409e927d4ef606a1642042d",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3236,7 +3248,7 @@
       "artifactId": "work-task-graph-md",
       "path": "work/task-graph.md",
       "mediaType": "text/markdown",
-      "checksum": "a7d02837bdf010ab47500f1987ac3661c48fc17ab97f3d284ea86d8b6b764b39",
+      "checksum": "582b81af8327d63c09b7e5a48c8fc8efde222f2ef499af615b0bcc4f1062974c",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3928,6 +3940,15 @@
       "title": "Round 73 - 2026-08-04 Control and Work Orchestration State Guards"
     },
     {
+      "evidenceId": "EVD-round74-scale-idempotency",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round74-scale-idempotency.md",
+      "checksum": "71c5ea3df44341526945f3b3db90b708fc3c820dba4e97ab1e0f5b04fba86877",
+      "result": "passed",
+      "title": "Round 74 - 2026-08-04 Scale Mutation Idempotency"
+    },
+    {
       "evidenceId": "EVD-round8-org-scope-hardening",
       "workItemId": "",
       "kind": "test",
@@ -4014,7 +4035,7 @@
       "humanDecision": null,
       "conditions": [
         "request transaction/GUC, auth, errors, health, rate limit tests",
-        "Jest 76 suites / 355 tests"
+        "Jest 76 suites / 359 tests"
       ],
       "approver": null,
       "decidedAt": null

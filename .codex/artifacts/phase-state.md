@@ -30,7 +30,10 @@ Trace: EWOH-2026-08-04-principal-final6
 - Control commands now reject terminal-state sends/receipts and duplicate
   in-flight sends; work orchestration handoffs use a strict state machine and
   gate decisions preserve history with idempotent repeats.
-- Full standalone gate: typecheck, lint, Jest 76 suites / 355 tests, client
+- Scale mutations are idempotent for repeated scenario install/uninstall,
+  fleet upgrade/rollback to the same target state, and already-resolved
+  factory differences.
+- Full standalone gate: typecheck, lint, Jest 76 suites / 359 tests, client
   10 suites / 35 tests, repo facts 31/31, OpenAPI 232/232, production build, and
   DDL hygiene all PASSED. Independent review: conditional pass with 0 critical
   and 0 major findings. HTTP+PostgreSQL E2E remains skipped locally because

@@ -672,6 +672,9 @@ export class ScaleService {
     }
     const previousValue =
       (row.configValue as Record<string, unknown> | null) ?? {};
+    if (previousValue.status === 'resolved') {
+      return this.parseDifference(row);
+    }
     const configValue = {
       ...previousValue,
       status: 'resolved',
@@ -791,6 +794,9 @@ export class ScaleService {
     if (asset.packageType !== 'scenario') {
       throw new BadRequestException('packageType must be scenario');
     }
+    if (asset.status === 'installed') {
+      return asset;
+    }
     const conformance = await this.runConformance(packageId, actor);
     if (!conformance.passed) {
       throw new BadRequestException(
@@ -821,6 +827,9 @@ export class ScaleService {
     const asset = await this.getAssetPackage(packageId);
     if (asset.packageType !== 'scenario') {
       throw new BadRequestException('packageType must be scenario');
+    }
+    if (asset.status === 'uninstalled') {
+      return asset;
     }
     const [updated] = await this.db
       .update(ewohAssetPackage)
@@ -862,6 +871,9 @@ export class ScaleService {
       : profiles;
     let updated = 0;
     for (const profile of targets) {
+      if (profile.status === 'upgraded') {
+        continue;
+      }
       await this.db
         .update(ewohFactoryProfile)
         .set({ status: 'upgraded', installedAt: new Date() })
@@ -899,6 +911,9 @@ export class ScaleService {
       : profiles;
     let updated = 0;
     for (const profile of targets) {
+      if (profile.status === 'rolled_back') {
+        continue;
+      }
       await this.db
         .update(ewohFactoryProfile)
         .set({ status: 'rolled_back', installedAt: new Date() })

@@ -27,6 +27,9 @@
   in-flight 尝试时禁止重复发送，终态尝试禁止重复回执；失败后仍允许重试发送。
 - Work Orchestration 交接状态机：open → accepted/rejected → closed，非法跳转
   拒绝；门禁决定重复提交幂等，变更前决定写入 `gate-decision-history.json`。
+- Scale 幂等守卫：已 installed/uninstalled 的场景包重复安装/卸载直接返回；
+  fleet upgrade/rollback 跳过已处于目标状态的 Profile；已 resolved 的工厂
+  差异重复解决直接返回。
 
 ## [0.6.0-rc3] - 2026-08-04
 

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T19:53:00.943Z",
+  "generatedAt": "2026-08-03T19:56:26.982Z",
   "gateCount": 14,
   "approvedCount": 0,
   "requiresApprovalCount": 4,
@@ -84,7 +84,7 @@
       "decidedAt": null,
       "conditions": [
         "request transaction/GUC, auth, errors, health, rate limit tests",
-        "Jest 76 suites / 355 tests"
+        "Jest 76 suites / 359 tests"
       ],
       "evidenceCount": 0
     },

@@ -397,6 +397,29 @@ describe('ScaleService templates and assets', () => {
     );
   });
 
+  it('is idempotent when a scenario pack is already installed', async () => {
+    const asset = {
+      packageId: 'PKG-SCEN',
+      packageType: 'scenario',
+      status: 'installed',
+    };
+    const selectWhere = jest.fn().mockResolvedValue([asset]);
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({ where: selectWhere })),
+      })),
+      update: jest.fn(),
+    };
+    const audit = { appendAuditLog: jest.fn() };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.installScenarioPack('PKG-SCEN');
+
+    expect(result.status).toBe('installed');
+    expect(db.update).not.toHaveBeenCalled();
+    expect(audit.appendAuditLog).not.toHaveBeenCalled();
+  });
+
   it('rejects installing a scenario pack that fails conformance', async () => {
     const asset = {
       packageId: 'PKG-SCEN-BAD',
@@ -449,6 +472,29 @@ describe('ScaleService templates and assets', () => {
     expect(audit.appendAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'scale.scenario.uninstall' }),
     );
+  });
+
+  it('is idempotent when a scenario pack is already uninstalled', async () => {
+    const asset = {
+      packageId: 'PKG-SCEN',
+      packageType: 'scenario',
+      status: 'uninstalled',
+    };
+    const selectWhere = jest.fn().mockResolvedValue([asset]);
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({ where: selectWhere })),
+      })),
+      update: jest.fn(),
+    };
+    const audit = { appendAuditLog: jest.fn() };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.uninstallScenarioPack('PKG-SCEN');
+
+    expect(result.status).toBe('uninstalled');
+    expect(db.update).not.toHaveBeenCalled();
+    expect(audit.appendAuditLog).not.toHaveBeenCalled();
   });
 
   it('rolls back all factory profiles', async () => {
@@ -535,6 +581,47 @@ describe('ScaleService templates and assets', () => {
         }),
       }),
     );
+  });
+
+  it('skips profiles that are already upgraded', async () => {
+    const profiles = [
+      { profileId: 'PRF-1', status: 'upgraded' },
+      { profileId: 'PRF-2', status: 'installed' },
+    ];
+    const asset = {
+      packageId: 'PKG-CONN',
+      packageType: 'connector',
+      version: '1.2.0',
+      manifestJson: {
+        runtime: 'edge-python',
+        protocol: 'opcua',
+        configSchema: {},
+        compatibility: {},
+        outputEvents: ['DeviceStateChanged'],
+      },
+    };
+    const select = jest.fn(() => ({
+      from: jest.fn(() => ({
+        orderBy: jest.fn().mockResolvedValue(profiles),
+        where: jest.fn().mockResolvedValue([asset]),
+      })),
+    }));
+    const updateWhere = jest.fn().mockResolvedValue([]);
+    const db = {
+      select,
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: updateWhere,
+        })),
+      })),
+    };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.fleetUpgrade('PKG-CONN');
+
+    expect(result.updatedProfiles).toBe(1);
+    expect(updateWhere).toHaveBeenCalledTimes(1);
   });
 
   it('rolls back only profiles in the requested ring', async () => {
@@ -901,5 +988,38 @@ describe('ScaleService templates and assets', () => {
     expect(audit.appendAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'scale.difference.resolve' }),
     );
+  });
+
+  it('is idempotent when a factory difference is already resolved', async () => {
+    const row = {
+      configKey: 'diff.FactoryA.weighing',
+      configValue: {
+        factoryName: 'FactoryA',
+        key: 'weighing',
+        category: 'process',
+        value: true,
+        status: 'resolved',
+      },
+      updatedBy: 'user-1',
+      updatedAt: new Date('2026-08-03T00:00:00Z'),
+    };
+    const selectWhere = jest.fn().mockResolvedValue([row]);
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({ where: selectWhere })),
+      })),
+      update: jest.fn(),
+    };
+    const audit = { appendAuditLog: jest.fn() };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.resolveFactoryDifference(
+      'diff.FactoryA.weighing',
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+
+    expect(result.status).toBe('resolved');
+    expect(db.update).not.toHaveBeenCalled();
+    expect(audit.appendAuditLog).not.toHaveBeenCalled();
   });
 });
