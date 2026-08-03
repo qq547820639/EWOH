@@ -148,6 +148,13 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-089 | Prometheus metrics endpoint + business-path perf smoke | AG-11/46 | Done | `round9-observability-deploy-artifacts.md`; `/metrics` 200; overview 514 qps |
 | T-090 | Local deploy artifact verifier | AG-51 | Done | `scripts/verify-deploy-artifacts.js`; 62 checks / 0 failures |
 
+## Wave Final4 - MES P0 (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-091 | Final 4.0 baseline adoption | AG-00 | Done | `authoritative-plan-final4.txt`; D-011/D-012/D-013 |
+| T-092 | MES P0 production execution closed loop | AG-11/13/20 | Done | `round10-mes-p0.md`; E2E 15/15; OpenAPI 116/116 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

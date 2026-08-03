@@ -528,6 +528,187 @@ if (!e2eConfig) {
       expect(auditRows[0].org_id).toBe(fixture!.orgA.id);
     });
 
+    it('executes a complete MES production work order with material and quality trace', async () => {
+      const dispatcher = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(dispatcher.status).toBe(201);
+      const token = dispatcher.body.accessToken;
+      const orderId = `WO-E2E-${runId}`;
+
+      const created = await apiRequest<{
+        workOrder: { scheduleTaskId: string; status: string; source: string };
+        steps: Array<{ stepId: string; status: string }>;
+      }>(baseUrl, '/api/mes/work-orders', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          orderId,
+          title: `E2E 装配工单 ${runId}`,
+          productCode: 'PROD-E2E',
+          orderQty: 10,
+          batchNo: `BATCH-${runId}`,
+          steps: [
+            { name: '上料', assignedDeviceId: 'EXO-001' },
+            { name: '装配', assignedDeviceId: 'EXO-001' },
+          ],
+        }),
+      });
+      expect(created.status).toBe(201);
+      expect(created.body.workOrder.scheduleTaskId).toBe(orderId);
+      expect(created.body.workOrder.status).toBe('draft');
+      expect(created.body.steps).toHaveLength(2);
+
+      for (const action of ['release', 'start']) {
+        const state = await apiRequest(
+          baseUrl,
+          `/api/mes/work-orders/${orderId}/state?action=${action}`,
+          {
+            method: 'POST',
+            headers: jsonHeaders(token),
+            body: '{}',
+          },
+        );
+        expect(state.status).toBe(201);
+      }
+
+      const firstStep = created.body.steps[0];
+      const secondStep = created.body.steps[1];
+      for (const action of ['start', 'report']) {
+        const stepState = await apiRequest(
+          baseUrl,
+          `/api/mes/work-orders/${orderId}/steps/${firstStep.stepId}/state?action=${action}`,
+          {
+            method: 'POST',
+            headers: jsonHeaders(token),
+            body: JSON.stringify({ quantity: 5 }),
+          },
+        );
+        expect(stepState.status).toBe(201);
+      }
+
+      const material = await apiRequest<{ bindingId: string }>(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/materials`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            materialId: 'MAT-E2E',
+            quantity: 2,
+            reason: 'E2E 投料',
+          }),
+        },
+      );
+      expect(material.status).toBe(201);
+      expect(material.body.bindingId).toBeTruthy();
+
+      const inspection = await apiRequest<{ eventId: string; result: string }>(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/inspections`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            stepId: firstStep.stepId,
+            result: 'pass',
+            quantity: 5,
+          }),
+        },
+      );
+      expect(inspection.status).toBe(201);
+      expect(inspection.body.result).toBe('pass');
+      expect(inspection.body.eventId).toBeTruthy();
+
+      for (const action of ['review', 'handover']) {
+        const stepState = await apiRequest(
+          baseUrl,
+          `/api/mes/work-orders/${orderId}/steps/${firstStep.stepId}/state?action=${action}`,
+          {
+            method: 'POST',
+            headers: jsonHeaders(token),
+            body: JSON.stringify({ decision: 'approved', receiver: 'next-station' }),
+          },
+        );
+        expect(stepState.status).toBe(201);
+      }
+      for (const action of ['start', 'report', 'review', 'handover']) {
+        const stepState = await apiRequest(
+          baseUrl,
+          `/api/mes/work-orders/${orderId}/steps/${secondStep.stepId}/state?action=${action}`,
+          {
+            method: 'POST',
+            headers: jsonHeaders(token),
+            body: JSON.stringify({ quantity: 5 }),
+          },
+        );
+        expect(stepState.status).toBe(201);
+      }
+
+      const completed = await apiRequest(
+        baseUrl,
+        `/api/mes/work-orders/${orderId}/state?action=complete`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: '{}',
+        },
+      );
+      expect(completed.status).toBe(201);
+      expect((completed.body as { status: string }).status).toBe('completed');
+
+      const orderRows = await owner!.unsafe<
+        Array<{ schedule_task_id: string; status: string; source: string; org_id: string }>
+      >(
+        `select schedule_task_id, status, source, org_id::text
+         from public.ewoh_schedule_task
+         where schedule_task_id = $1`,
+        [orderId],
+      );
+      expect(orderRows).toHaveLength(1);
+      expect(orderRows[0].status).toBe('completed');
+      expect(orderRows[0].source).toBe('mes');
+      expect(orderRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const stepRows = await owner!.unsafe<
+        Array<{ status: string; org_id: string }>
+      >(
+        `select status, org_id::text
+         from public.ewoh_schedule_task_step
+         where schedule_task_id = $1`,
+        [orderId],
+      );
+      expect(stepRows).toHaveLength(2);
+      expect(stepRows.every((row) => row.status === 'handed_over')).toBe(true);
+      expect(stepRows.every((row) => row.org_id === fixture!.orgA.id)).toBe(true);
+
+      const materialRows = await owner!.unsafe<
+        Array<{ binding_type: string; quantity: string; org_id: string }>
+      >(
+        `select binding_type, quantity::text, org_id::text
+         from public.ewoh_resource_binding
+         where target_id = $1 and binding_type = 'material_consumption'`,
+        [orderId],
+      );
+      expect(materialRows).toHaveLength(1);
+      expect(Number(materialRows[0].quantity)).toBe(2);
+      expect(materialRows[0].org_id).toBe(fixture!.orgA.id);
+
+      const eventRows = await owner!.unsafe<
+        Array<{ event_code: string; org_id: string }>
+      >(
+        `select event_code, org_id::text
+         from public.ewoh_event
+         where event_id = $1`,
+        [inspection.body.eventId],
+      );
+      expect(eventRows).toHaveLength(1);
+      expect(eventRows[0].event_code).toBe('QUALITY_INSPECTION');
+      expect(eventRows[0].org_id).toBe(fixture!.orgA.id);
+    });
+
     it('persists approval instances, steps, and audit operations', async () => {
       const adminA = await login(
         baseUrl,

@@ -26,6 +26,13 @@
   时间、数据库就绪检查计数。
 - 部署工件本地校验：`scripts/verify-deploy-artifacts.js` 检查 Kubernetes、
   docker-compose 与 Dockerfile，共 62 项检查。
+- 采用 Final 4.0 权威基线：`authoritative-plan-final4.txt` 与
+  `delivery/01_开发基线/...最新研究升级版_Final4.0.docx` 入库，Final 3.0 保留
+  为历史基线。
+- MES P0 生产执行闭环：工单创建/释放/开工/完工、工序
+  开工/报工/审核/交收、投料消耗、质量检验与审计，映射到既有
+  `ewoh_schedule_task` / `ewoh_schedule_task_step` / `ewoh_resource_binding` /
+  `ewoh_event`，48 张受管表包装不变。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

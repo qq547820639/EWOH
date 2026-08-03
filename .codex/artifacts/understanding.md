@@ -5,6 +5,13 @@ Trace: EWOH-2026-08-03-principal-001
 
 ## Confirmed Current
 
+- Final 4.0 is the master execution baseline: it names the current public
+  repository `0.6.0-rc2` as the real implementation baseline and puts MES P0,
+  real-device truth, and ten scenario packages on the critical path.
+- MES P0 is mapped to existing physical tables
+  (`ewoh_schedule_task`, `ewoh_schedule_task_step`, `ewoh_resource_binding`,
+  `ewoh_event`) so the frozen 48-table packaging remains unchanged.
+
 - Standalone NestJS uses `ewoh_api`, a non-owner PostgreSQL role without RLS
   bypass, for runtime queries.
 - Protected HTTP requests execute inside one database transaction with
@@ -33,11 +40,13 @@ Trace: EWOH-2026-08-03-principal-001
 - Docker image build and Kubernetes apply in the current environment.
 - Real device/gateway integration, production observability, production
   migration, gray rollout, training, and business signoff.
+- MES P0 production execution, OEE/andon, quality/traceability, mobile
+  workbench, and ERP connector are still the next implementation packages.
 
 ## Source Map
 
 - Goal: `.codex/artifacts/intent-anchor.md`
-- Latest evidence: `.codex/artifacts/work/evidence/round3.md`
+- Latest evidence: `.codex/artifacts/work/evidence/round9-observability-deploy-artifacts.md`
 - Task status: `.codex/artifacts/task-board.md`
 - Database generator: `scripts/generate-ddl-package.js`
 - PostgreSQL gate: `scripts/standalone-postgres-check.sh`
@@ -47,4 +56,6 @@ Trace: EWOH-2026-08-03-principal-001
 
 ## Next Entrypoint
 
-Integrate the active independent reviews into a bounded implementation package.
+Adopt Final 4.0 baseline and implement WP-MES-01 production execution closed
+loop using existing schedule/resource/event tables, then extend to OEE/andon
+and quality traceability.

@@ -1,7 +1,7 @@
 /* eslint-disable */
 /** auto generated, do not edit */
 import { sql } from 'drizzle-orm';
-import { boolean, index, integer, jsonb, pgTable, real, text, uniqueIndex, uuid, varchar, customType } from "drizzle-orm/pg-core"
+import { boolean, index, integer, jsonb, numeric, pgTable, real, text, uniqueIndex, uuid, varchar, customType } from "drizzle-orm/pg-core"
 
 export const customTimestamptz = customType<{
   data: Date;
@@ -179,6 +179,117 @@ export const ewohProductionTask = pgTable("ewoh_production_task", {
   index("idx_ewoh_production_task_assignee").on(table.assigneeId),
   index("idx_ewoh_production_task_type").on(table.taskType),
 ]);
+
+export const ewohScheduleTask = pgTable("ewoh_schedule_task", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  scheduleTaskId: varchar("schedule_task_id", { length: 255 }).notNull().unique(),
+  templateId: varchar("template_id", { length: 255 }),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  status: varchar("status", { length: 50 }).notNull().default('draft'),
+  priority: varchar("priority", { length: 50 }).notNull().default('medium'),
+  source: varchar("source", { length: 50 }).notNull().default('manual'),
+  planStart: customTimestamptz("plan_start", { precision: 3 }),
+  planEnd: customTimestamptz("plan_end", { precision: 3 }),
+  actualStart: customTimestamptz("actual_start", { precision: 3 }),
+  actualEnd: customTimestamptz("actual_end", { precision: 3 }),
+  parentTaskId: varchar("parent_task_id", { length: 255 }),
+  approvalId: varchar("approval_id", { length: 255 }),
+  suggestionId: varchar("suggestion_id", { length: 255 }),
+  sessionId: varchar("session_id", { length: 255 }),
+  isSimulation: boolean("is_simulation").notNull().default(false),
+  progress: integer("progress").notNull().default(0),
+  deletedAt: customTimestamptz("deleted_at", { precision: 3 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedBy: uuid("_updated_by"),
+}, (table) => [
+  index("idx_ewoh_schedule_task_status").on(table.status),
+  index("idx_ewoh_schedule_task_source").on(table.source),
+]);
+
+export const ewohScheduleTaskStep = pgTable("ewoh_schedule_task_step", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  stepId: varchar("step_id", { length: 255 }).notNull().unique(),
+  scheduleTaskId: varchar("schedule_task_id", { length: 255 }).notNull(),
+  stepNo: integer("step_no").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  instruction: text("instruction"),
+  status: varchar("status", { length: 50 }).notNull().default('pending'),
+  plannedStart: customTimestamptz("planned_start", { precision: 3 }),
+  plannedEnd: customTimestamptz("planned_end", { precision: 3 }),
+  actualStart: customTimestamptz("actual_start", { precision: 3 }),
+  actualEnd: customTimestamptz("actual_end", { precision: 3 }),
+  assignedPersonId: varchar("assigned_person_id", { length: 255 }),
+  assignedDeviceId: varchar("assigned_device_id", { length: 255 }),
+  spatialEntityId: varchar("spatial_entity_id", { length: 255 }),
+  progress: integer("progress").notNull().default(0),
+  resultJson: jsonb("result_json"),
+  parentStepId: varchar("parent_step_id", { length: 255 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedBy: uuid("_updated_by"),
+}, (table) => [
+  index("idx_ewoh_schedule_task_step_status").on(table.status),
+]);
+
+export const ewohResourceBinding = pgTable("ewoh_resource_binding", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  bindingId: varchar("binding_id", { length: 255 }).notNull().unique(),
+  bindingType: varchar("binding_type", { length: 100 }).notNull(),
+  resourceType: varchar("resource_type", { length: 100 }).notNull(),
+  resourceId: varchar("resource_id", { length: 255 }).notNull(),
+  targetType: varchar("target_type", { length: 100 }).notNull(),
+  targetId: varchar("target_id", { length: 255 }).notNull(),
+  startTime: customTimestamptz("start_time", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  endTime: customTimestamptz("end_time", { precision: 3 }),
+  reason: text("reason"),
+  status: varchar("status", { length: 50 }).notNull().default('active'),
+  operatorId: varchar("operator_id", { length: 255 }),
+  quantity: numeric("quantity", { precision: 18, scale: 4 }).notNull().default('0'),
+  version: integer("version").notNull().default(1),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedBy: uuid("_updated_by"),
+}, (table) => [
+  index("idx_ewoh_resource_binding_target").on(table.targetId),
+]);
+
+export const ewohTaskTemplate = pgTable("ewoh_task_template", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  templateId: varchar("template_id", { length: 255 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  taskType: varchar("task_type", { length: 100 }).notNull(),
+  description: text("description"),
+  priority: varchar("priority", { length: 50 }).notNull().default('medium'),
+  estimatedDurationSec: integer("estimated_duration_sec"),
+  riskLevel: varchar("risk_level", { length: 50 }).notNull().default('low'),
+  status: varchar("status", { length: 50 }).notNull().default('active'),
+  version: integer("version").notNull().default(1),
+  deletedAt: customTimestamptz("deleted_at", { precision: 3 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedBy: uuid("_updated_by"),
+});
+
+export const ewohTaskStep = pgTable("ewoh_task_step", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  stepId: varchar("step_id", { length: 255 }).notNull().unique(),
+  templateId: varchar("template_id", { length: 255 }).notNull(),
+  stepNo: integer("step_no").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  instruction: text("instruction"),
+  durationSec: integer("duration_sec"),
+  status: varchar("status", { length: 50 }).notNull().default('active'),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedBy: uuid("_updated_by"),
+});
 
 export const ewohDeviceConfig = pgTable("ewoh_device_config", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -549,6 +660,11 @@ export const ewohModelRegistryTable = ewohModelRegistry;
 export const ewohOrganizationTable = ewohOrganization;
 export const ewohPersonnelTable = ewohPersonnel;
 export const ewohProductionTaskTable = ewohProductionTask;
+export const ewohScheduleTaskTable = ewohScheduleTask;
+export const ewohScheduleTaskStepTable = ewohScheduleTaskStep;
+export const ewohResourceBindingTable = ewohResourceBinding;
+export const ewohTaskTemplateTable = ewohTaskTemplate;
+export const ewohTaskStepTable = ewohTaskStep;
 export const ewohScheduleAuditTable = ewohScheduleAudit;
 export const ewohSchedulePlanTable = ewohSchedulePlan;
 export const ewohSchedulerConfigTable = ewohSchedulerConfig;

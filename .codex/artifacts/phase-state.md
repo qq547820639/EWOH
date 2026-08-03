@@ -9,7 +9,8 @@ RC2 hardening + ops readiness + org scope hardening: canonical ingestion, M2M
 org context, gamification persistence, logical backup/restore drill, ops
 runbooks, and warning-free org scope resolution are implemented and validated;
 observability and deploy artifact verification are also complete; next
-workflow is training/acceptance evidence and the production approval gate.
+workflow is OEE/andon, quality traceability, ERP connector, then training and
+the production approval gate.
 
 ## Just Completed
 
@@ -31,10 +32,13 @@ workflow is training/acceptance evidence and the production approval gate.
   browser login resolves scope without fallback warnings.
 - Observability: `GET /metrics` Prometheus output verified; business-path
   perf 514 qps / p95 60.93ms; deploy artifact verifier 62/62.
+- Final 4.0 adopted as master baseline; MES P0 work order/step/material/
+  inspection closed loop is implemented and verified end to end.
 
 ## Active Tasks
 
 - RC2 release drill and bundle regeneration (drill PASSED, bundle exists).
+- OEE/andon (WP-OEE-01) and ERP connector (WP-ERP-01).
 - Training/acceptance evidence and production gate preparation.
 - Production DDL/deploy approval gate.
 
@@ -54,5 +58,6 @@ workflow is training/acceptance evidence and the production approval gate.
 
 ## Next Action
 
-Finalize RC2 bundle with ops evidence, then prepare training/acceptance
-evidence. Production DDL/deploy remain approval-gated.
+Finalize RC2 bundle with Final 4.0 + MES P0 evidence, then implement OEE/andon
+and ERP connector before training/acceptance. Production DDL/deploy remain
+approval-gated.

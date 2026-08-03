@@ -1344,6 +1344,277 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/mes/work-orders:
+    get:
+      tags:
+        - mes
+      summary: List MES work orders
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MesWorkOrderList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - mes
+      summary: Create MES work order with production steps
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMesWorkOrderRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MesWorkOrderDetail'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/work-orders/{id}:
+    get:
+      tags:
+        - mes
+      summary: MES work order detail with steps and materials
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Work order id
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MesWorkOrderDetail'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/work-orders/{id}/state:
+    post:
+      tags:
+        - mes
+      summary: MES work order state transition
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Work order id
+          schema:
+            type: string
+        - name: action
+          in: query
+          required: true
+          description: release, start, complete, or cancel
+          schema:
+            type: string
+            enum:
+              - release
+              - start
+              - complete
+              - cancel
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MesWorkOrder'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/work-orders/{id}/steps/{stepId}/state:
+    post:
+      tags:
+        - mes
+      summary: MES step state transition
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Work order id
+          schema:
+            type: string
+        - name: stepId
+          in: path
+          required: true
+          description: Step id
+          schema:
+            type: string
+        - name: action
+          in: query
+          required: true
+          description: start, report, review, handover, pause, resume, or cancel
+          schema:
+            type: string
+            enum:
+              - start
+              - report
+              - review
+              - handover
+              - pause
+              - resume
+              - cancel
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MesStepTransitionRequest'
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MesStep'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/work-orders/{id}/materials:
+    get:
+      tags:
+        - mes
+      summary: List material consumption for a work order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Work order id
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaterialConsumptionList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - mes
+      summary: Record material consumption for a work order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Work order id
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaterialConsumptionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaterialConsumption'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/work-orders/{id}/inspections:
+    post:
+      tags:
+        - mes
+      summary: Record a quality inspection for a work order step
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Work order id
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QualityInspectionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QualityInspectionResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/tasks/{id}:
     get:
       tags:
@@ -5364,6 +5635,241 @@ components:
       required:
         - quantity
       additionalProperties: false
+    MesWorkOrder:
+      type: object
+      properties:
+        scheduleTaskId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum:
+            - draft
+            - released
+            - in_progress
+            - completed
+            - cancelled
+        priority:
+          type: string
+        source:
+          type: string
+        planStart:
+          type: string
+          nullable: true
+        planEnd:
+          type: string
+          nullable: true
+        actualStart:
+          type: string
+          nullable: true
+        actualEnd:
+          type: string
+          nullable: true
+        progress:
+          type: integer
+        isSimulation:
+          type: boolean
+    MesWorkOrderList:
+      type: array
+      items:
+        $ref: '#/components/schemas/MesWorkOrder'
+    MesStep:
+      type: object
+      properties:
+        stepId:
+          type: string
+        scheduleTaskId:
+          type: string
+        stepNo:
+          type: integer
+        name:
+          type: string
+        instruction:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum:
+            - pending
+            - in_progress
+            - paused
+            - reported
+            - reviewed
+            - handed_over
+            - cancelled
+        actualStart:
+          type: string
+          nullable: true
+        actualEnd:
+          type: string
+          nullable: true
+        assignedPersonId:
+          type: string
+          nullable: true
+        assignedDeviceId:
+          type: string
+          nullable: true
+        spatialEntityId:
+          type: string
+          nullable: true
+        progress:
+          type: integer
+        resultJson:
+          type: object
+          nullable: true
+    MesStepList:
+      type: array
+      items:
+        $ref: '#/components/schemas/MesStep'
+    MesWorkOrderDetail:
+      type: object
+      properties:
+        workOrder:
+          $ref: '#/components/schemas/MesWorkOrder'
+        steps:
+          $ref: '#/components/schemas/MesStepList'
+        materials:
+          $ref: '#/components/schemas/MaterialConsumptionList'
+    MesStepInput:
+      type: object
+      properties:
+        name:
+          type: string
+        instruction:
+          type: string
+        assignedPersonId:
+          type: string
+        assignedDeviceId:
+          type: string
+        spatialEntityId:
+          type: string
+        plannedStart:
+          type: string
+        plannedEnd:
+          type: string
+      required:
+        - name
+    CreateMesWorkOrderRequest:
+      type: object
+      properties:
+        orderId:
+          type: string
+        title:
+          type: string
+        productCode:
+          type: string
+        orderQty:
+          type: number
+        batchNo:
+          type: string
+        priority:
+          type: string
+        planStart:
+          type: string
+        planEnd:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/MesStepInput'
+      required:
+        - title
+        - steps
+    MesStepTransitionRequest:
+      type: object
+      properties:
+        quantity:
+          type: number
+        note:
+          type: string
+        decision:
+          type: string
+        receiver:
+          type: string
+        operatorId:
+          type: string
+        reviewer:
+          type: string
+    MaterialConsumption:
+      type: object
+      properties:
+        bindingId:
+          type: string
+        bindingType:
+          type: string
+        resourceType:
+          type: string
+        resourceId:
+          type: string
+        targetType:
+          type: string
+        targetId:
+          type: string
+        quantity:
+          type: number
+        reason:
+          type: string
+          nullable: true
+        status:
+          type: string
+        operatorId:
+          type: string
+          nullable: true
+        startTime:
+          type: string
+    MaterialConsumptionList:
+      type: array
+      items:
+        $ref: '#/components/schemas/MaterialConsumption'
+    MaterialConsumptionRequest:
+      type: object
+      properties:
+        materialId:
+          type: string
+        quantity:
+          type: number
+        reason:
+          type: string
+        operatorId:
+          type: string
+      required:
+        - materialId
+        - quantity
+    QualityInspectionRequest:
+      type: object
+      properties:
+        stepId:
+          type: string
+        inspectorId:
+          type: string
+        result:
+          type: string
+          enum:
+            - pass
+            - fail
+            - rework
+        defectCode:
+          type: string
+        quantity:
+          type: number
+        note:
+          type: string
+      required:
+        - stepId
+        - result
+    QualityInspectionResult:
+      type: object
+      properties:
+        stepId:
+          type: string
+        eventId:
+          type: string
+        result:
+          type: string
     ProductionTask:
       type: object
       properties:

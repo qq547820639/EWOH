@@ -32,6 +32,7 @@ import { HealthModule } from './modules/health/health.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { MetricsInterceptor } from './modules/metrics/metrics.interceptor';
+import { MesModule } from './modules/mes/mes.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { MetricsInterceptor } from './modules/metrics/metrics.interceptor';
     HealthModule,
     AuditModule,
     MetricsModule,
+    MesModule,
   ],
   providers: [
     {

@@ -12,23 +12,28 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "RC2 hardening + ops/observability/deploy-artifacts: ingestion aligned, backup/restore passed, org lookup without fallback, /metrics live, deploy artifact verifier 62/62; 182 Jest / 14 E2E / 59 pytest / 108 OpenAPI",
+  "current_status": "Final 4.0 adopted; MES P0 production execution closed loop implemented and E2E verified; next is OEE/andon and ERP connector",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
     ".codex/artifacts/authoritative-plan.txt",
+    ".codex/artifacts/authoritative-plan-final4.txt",
+    "delivery/01_开发基线/EWOH_工厂具身智能操作系统_ChatGPT_Work多Agent执行编排方案_最新研究升级版_Final4.0.docx",
     ".codex/artifacts/final-implementation-plan.txt",
     "delivery/02_技术规范/database.sql",
     "delivery/02_技术规范/openapi.yaml",
     "docs/architecture/embodied_factory.md"
   ],
   "decision_log": [
-    "D-001 adopt authoritative-plan Final 3.0 as the master execution baseline",
+    "D-001 adopt authoritative-plan Final 3.0 as the master execution baseline (superseded by D-011)",
     "D-002 physical packaging: 36 new tables + 12 altered tables = 48 managed tables",
     "D-003 all production DB/deploy/credential operations require explicit user approval",
     "D-004 user worktree changes are preserved",
     "D-006 Miaoda is demo-only; production target is standalone cloud deployment with HA and high concurrency",
-    "D-007 request-scoped business-table org_id defaults come from app.current_org_id; RLS WITH CHECK remains the cross-org write authority"
+    "D-007 request-scoped business-table org_id defaults come from app.current_org_id; RLS WITH CHECK remains the cross-org write authority",
+    "D-011 adopt Final 4.0 latest research upgrade as master execution baseline",
+    "D-012 next critical path is MES P0 production execution closed loop",
+    "D-013 MES P0 maps to existing schedule_task/schedule_task_step/resource_binding/event tables; 48-table packaging unchanged"
   ],
   "verification_state": {
     "python_pytest_repo": "53 passed",
@@ -129,6 +134,9 @@
     "metrics_endpoint": "GET /metrics Prometheus text verified; HTTP counters/active/uptime/db-ready; SPA fallback excluded",
     "perf_business_path": "GET /api/dashboard/overview 200 req / 25 concurrency: 514 qps, p95 60.93ms, 0 failures",
     "deploy_artifact_verifier": "scripts/verify-deploy-artifacts.js 62 checks passed for k8s/compose/Dockerfiles"
+    ,
+    "mes_p0": "MesModule work order/step/material/inspection closed loop; 48 Jest suites / 190 tests; E2E 15/15; OpenAPI 116/116",
+    "final4_baseline": "Final 4.0 adopted; authoritative-plan-final4.txt + delivery docx; D-011/D-012/D-013 recorded"
   },
   "subagent_state": {
     "planned": [
