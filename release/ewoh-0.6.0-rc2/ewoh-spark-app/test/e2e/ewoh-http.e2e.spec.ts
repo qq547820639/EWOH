@@ -68,6 +68,21 @@ if (!e2eConfig) {
       expect(ready.body.checks?.database).toBe('ok');
     });
 
+    it('exposes Prometheus metrics with factory resource attributes', async () => {
+      process.env.EWOH_FACTORY_ID = `factory-${runId}`;
+      process.env.EWOH_FACTORY_NAME = 'E2E Factory';
+      process.env.EWOH_FACTORY_UPGRADE_RING = 'shadow';
+      process.env.EWOH_RELEASE_VERSION = '0.6.0-rc2';
+      process.env.EWOH_REGION = 'cn-north-1';
+
+      const metrics = await apiRequest<string>(baseUrl, '/metrics');
+      expect(metrics.status).toBe(200);
+      expect(metrics.body).toContain(
+        `ewoh_resource_info{factory_id="factory-${runId}",factory_name="E2E Factory",upgrade_ring="shadow",release_version="0.6.0-rc2",region="cn-north-1"} 1`,
+      );
+      expect(metrics.body).toContain('ewoh_process_uptime_seconds');
+    });
+
     it('rejects unauthenticated business API calls with 401', async () => {
       for (const path of ['/api/me', '/api/system/config', '/api/audit']) {
         const response = await apiRequest(baseUrl, path);

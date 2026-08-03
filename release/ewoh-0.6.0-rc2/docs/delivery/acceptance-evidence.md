@@ -7,17 +7,17 @@ Owner: AG-00/AG-41
 
 - Python unittest: 667 passed.
 - Python repo contract tests: 59 passed.
-- NestJS Jest: 240 passed across 57 suites (includes SP-01..SP-08 scenario
+- NestJS Jest: 241 passed across 57 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
 - Client Jest: 20 passed across 6 suites.
-- HTTP + PostgreSQL E2E: 19 passed (auth, RBAC, refresh rotation/logout, org
+- HTTP + PostgreSQL E2E: 20 passed (auth, RBAC, refresh rotation/logout, org
   isolation, control/resource/world persistence, canonical UnifiedExoFrame
   ingestion, gamification allocation persistence, approval persistence,
   system config org scoping, complete MES work order execution, and
   OEE/andon SLA escalation, ERP inbound/outbound/reconcile, and scale
   template publish/install/asset registration, scenario install + fleet
-  upgrade/rollback, and the event catalog API).
+  upgrade/rollback, the event catalog API, and `/metrics` resource attributes).
 - NestJS type check, lint, and Standalone production build: passed.
 - One-click `scripts/standalone-check.sh`: passed with E2E, OpenAPI strict
   audit, DDL plans, and standalone DDL hygiene.
@@ -36,7 +36,7 @@ Owner: AG-00/AG-41
 - Prometheus metrics: `GET /metrics` returns text/plain counters for HTTP
   requests, active requests, uptime, and database readiness.
 - Deploy artifact verification: Kubernetes manifests, docker-compose, and
-  Dockerfiles validated locally with 62 checks / 0 failures.
+  Dockerfiles validated locally with 66 checks / 0 failures.
 - MES P0 production execution: work order -> steps -> material consumption ->
   quality inspection -> report -> review -> handover -> completion persisted
   to PostgreSQL with org scoping and audit.
@@ -90,6 +90,9 @@ Owner: AG-00/AG-41
   bundle; `contracts/state-machines/fleet.yaml` freezes ring and status
   transitions; E2E verifies shadow-ring install/upgrade/rollback, fleet status,
   and support bundle generation.
+- OTel resource attributes: `GET /metrics` renders `ewoh_resource_info` with
+  factory id/name, upgrade ring, release version, and region; the env contract
+  is present in standalone, Compose, Kubernetes, and Helm deployment artifacts.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

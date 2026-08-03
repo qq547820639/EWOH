@@ -59,6 +59,11 @@ services:
       PORT: 3000
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
+      EWOH_FACTORY_ID: ${EWOH_FACTORY_ID:-factory-001}
+      EWOH_FACTORY_NAME: ${EWOH_FACTORY_NAME:-Demo Factory}
+      EWOH_FACTORY_UPGRADE_RING: ${EWOH_FACTORY_UPGRADE_RING:-pilot}
+      EWOH_RELEASE_VERSION: ${EWOH_RELEASE_VERSION:-0.6.0-rc2}
+      EWOH_REGION: ${EWOH_REGION:-unknown}
       DATABASE_URL: postgresql://ewoh_api:${EWOH_API_DATABASE_PASSWORD:?EWOH_API_DATABASE_PASSWORD must be set}@postgres:5432/ewoh
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}

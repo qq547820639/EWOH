@@ -75,4 +75,6 @@ factory:
   id: factory-demo
   name: Demo Factory
   upgradeRing: pilot
+  releaseVersion: "0.6.0-rc2"
+  region: unknown
   timezone: Asia/Shanghai

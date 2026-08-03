@@ -89,6 +89,11 @@
   （`includesSecrets: false`）并写审计。
 - 舰队状态机契约：`contracts/state-machines/fleet.yaml` 冻结升级环与
   installed/replayed/upgraded/rolled_back 迁移关系。
+- OTel 资源属性：`/metrics` 输出 `ewoh_resource_info`，携带工厂 ID、名称、
+  升级环、发布版本与区域；环境契约贯通 Standalone、Compose、Kubernetes 与
+  Helm。
+- 部署工件校验升级到 66 项，覆盖 Compose 资源属性环境契约；Helm Chart
+  静态审计 125 项。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

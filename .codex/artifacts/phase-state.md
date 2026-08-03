@@ -64,12 +64,15 @@ production approval gate.
 - Upgrade rings and fleet ops: ring-filtered fleet upgrade/rollback, fleet
   status registry, and redacted support bundle are implemented, audited, and
   covered by unit and E2E tests.
+- OTel resource attributes: `/metrics` exposes factory id/name/upgrade ring/
+  release version/region; the environment contract is wired through standalone
+  env, Compose, Kubernetes, and Helm.
 
 ## Active Tasks
 
 - Fleet Ops (upgrade/rollback) and event catalog round closed.
 - Productization kernels remaining: connector SDK/runtime, mapping DSL,
-  OTel resource attributes, partner shadow delivery and Scale Release 1.0.
+  partner shadow delivery and Scale Release 1.0.
 - Training/acceptance evidence and production gate preparation.
 - Production DDL/deploy approval gate.
 

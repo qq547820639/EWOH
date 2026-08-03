@@ -79,6 +79,16 @@ function validateCompose() {
   const api = compose.services.api;
   check(api.healthcheck?.test?.[0] === 'CMD', 'compose api healthcheck');
   check(api.ports?.[0] === '3000:3000', 'compose api port mapping');
+  check(api.environment?.EWOH_FACTORY_ID !== undefined, 'compose factory id env');
+  check(
+    api.environment?.EWOH_FACTORY_UPGRADE_RING !== undefined,
+    'compose upgrade ring env',
+  );
+  check(
+    api.environment?.EWOH_RELEASE_VERSION !== undefined,
+    'compose release version env',
+  );
+  check(api.environment?.EWOH_REGION !== undefined, 'compose region env');
 }
 
 function validateDockerfiles() {

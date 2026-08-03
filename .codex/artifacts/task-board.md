@@ -229,6 +229,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-106 | Upgrade rings + fleet registry + redacted support bundle | PX-09/10 | Done | `round22-fleet-rings-support.md`; E2E ring staging/status/support bundle passed |
 
+## Wave Final5 - Observability (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-107 | OTel resource attributes across metrics and deployment env | PX-10/51 | Done | `round23-otel-resource-attributes.md`; E2E /metrics 20/20; verifier 66/66 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

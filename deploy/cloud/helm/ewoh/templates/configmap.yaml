@@ -16,6 +16,8 @@ data:
   EWOH_FACTORY_ID: {{ .Values.factory.id | quote }}
   EWOH_FACTORY_NAME: {{ .Values.factory.name | quote }}
   EWOH_FACTORY_UPGRADE_RING: {{ .Values.factory.upgradeRing | quote }}
+  EWOH_RELEASE_VERSION: {{ .Values.factory.releaseVersion | quote }}
+  EWOH_REGION: {{ .Values.factory.region | quote }}
   TZ: {{ .Values.factory.timezone | quote }}
   STORAGE_DRIVER: {{ .Values.storage.driver | quote }}
   STORAGE_LOCAL_PATH: {{ .Values.storage.localPath | quote }}
