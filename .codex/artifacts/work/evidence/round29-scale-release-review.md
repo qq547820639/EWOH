@@ -17,6 +17,6 @@ Scope: Final 5.0 Y4-08 Scale Release 1.0 review gate.
 ## Verification
 
 ```text
-Scale release review: 23/23 passed, overall PASSED
+Scale release review: 24/24 passed, overall PASSED
 release=0.6.0-rc2 status=candidate-for-production (approval-gated)
 ```

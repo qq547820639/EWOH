@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 5.0 adopted; scale kernel + connector/scenario catalog + conformance/replay + fleet ops + event catalog + Helm deployment factory + Golden Factory Profile + Mapping DSL + upgrade rings/fleet registry/support bundle + OTel resource attributes + compatibility catalog + policy engine + template diff preview + connector runtime + factory onboarding + release review implemented; 61 Jest suites / 257 tests; pytest 69 passed; E2E 21/21; OpenAPI 166/166; release review 23/23; managed tables 51",
+  "current_status": "Final 5.0 adopted; scale kernel + connector/scenario catalog + conformance/replay + fleet ops + event catalog + Helm deployment factory + Golden Factory Profile + Mapping DSL + upgrade rings/fleet registry/support bundle + OTel resource attributes + compatibility catalog + policy engine + template diff preview + connector runtime + factory onboarding + release review + workflow engine implemented; 63 Jest suites / 264 tests; pytest 69 passed; E2E 22/22; OpenAPI 168/168; release review 23/23; managed tables 51",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
@@ -176,7 +176,9 @@
     ,
     "factory_onboarding": "F0-F6 checklist + POST /api/scale/onboarding/run with per-step evidence/audit; E2E installed profile verified"
     ,
-    "release_review": "scripts/scale-release-review.js packaging gate; bundle/contract/docs/OpenAPI/audits verified 23/23; wired into package-release"
+    "release_review": "scripts/scale-release-review.js packaging gate; bundle/contract/docs/OpenAPI/audits verified 24/24; wired into package-release"
+    ,
+    "workflow_engine": "workflow-schema.json v1 + mes-execution example; POST /api/workflows/advance role-filtered next steps; audit 16 checks; E2E role gating passed"
   },
   "subagent_state": {
     "planned": [

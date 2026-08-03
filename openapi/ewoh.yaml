@@ -1573,6 +1573,50 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/workflows/examples:
+    get:
+      tags:
+        - workflows
+      summary: Read the canonical MES execution workflow
+      responses:
+        '200':
+          description: Workflow example
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDefinition'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/workflows/advance:
+    post:
+      tags:
+        - workflows
+      summary: Compute role-aware next workflow steps
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowAdvanceRequest'
+      responses:
+        '201':
+          description: Allowed next steps
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowAdvanceResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/templates:
     post:
       tags:
@@ -5133,6 +5177,90 @@ components:
         - matched
         - decision
         - reasons
+    WorkflowStepDefinition:
+      type: object
+      properties:
+        name:
+          type: string
+        action:
+          type: string
+        allowedRoles:
+          type: array
+          items:
+            type: string
+        next:
+          type: array
+          items:
+            type: string
+      required:
+        - name
+        - action
+        - allowedRoles
+        - next
+    WorkflowDefinition:
+      type: object
+      properties:
+        workflowId:
+          type: string
+        version:
+          type: string
+        description:
+          type: string
+        start:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowStepDefinition'
+          minItems: 1
+      required:
+        - workflowId
+        - version
+        - start
+        - steps
+    WorkflowAdvanceRequest:
+      type: object
+      properties:
+        workflow:
+          $ref: '#/components/schemas/WorkflowDefinition'
+        currentStep:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+      required:
+        - workflow
+        - currentStep
+        - roles
+    WorkflowNextStep:
+      type: object
+      properties:
+        name:
+          type: string
+        action:
+          type: string
+    WorkflowAdvanceResult:
+      type: object
+      properties:
+        workflowId:
+          type: string
+        version:
+          type: string
+        currentStep:
+          type: string
+        currentActionAllowed:
+          type: boolean
+        allowedNextSteps:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowNextStep'
+      required:
+        - workflowId
+        - version
+        - currentStep
+        - currentActionAllowed
+        - allowedNextSteps
     EventInfo:
       type: object
       properties:

@@ -109,6 +109,7 @@ const scriptChecks = [
   ['scripts/audit-golden-factory.js', []],
   ['scripts/audit-mapping-contracts.js', []],
   ['scripts/audit-policy-contracts.js', []],
+  ['scripts/audit-workflow-contracts.js', []],
   ['scripts/verify-helm-chart.js', []],
   ['scripts/verify-deploy-artifacts.js', []],
 ];

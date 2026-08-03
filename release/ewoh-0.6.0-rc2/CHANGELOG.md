@@ -112,6 +112,9 @@
 - Scale Release 评审：`scripts/scale-release-review.js` 作为打包门禁，检查
   发布清单、包完整性、契约/文档/OpenAPI 与全部静态审计；已接入
   `scripts/package-release.sh` 与 `npm run release:review`。
+- Workflow 引擎骨架：`contracts/workflow/workflow-schema.json` 定义
+  角色化步骤流转；`POST /api/workflows/advance` 返回当前动作许可与
+  角色过滤后的下一步；`mes-execution` 规范流程示例纳入契约审计。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

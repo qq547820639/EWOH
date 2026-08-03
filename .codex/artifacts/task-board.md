@@ -269,7 +269,13 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
-| T-113 | Scale Release review gate + package hook | PX-09/51 | Done | `round29-scale-release-review.md`; review 23/23 passed |
+| T-113 | Scale Release review gate + package hook | PX-09/51 | Done | `round29-scale-release-review.md`; review 24/24 passed |
+
+## Wave Final5 - Workflow Engine (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-114 | Workflow schema + role-aware advance API + audit | PX-06/16 | Done | `round30-workflow-engine.md`; E2E role gating passed |
 
 ## Next Waves
 

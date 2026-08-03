@@ -39,6 +39,11 @@ Policy contract: `contracts/policy/policy-schema.json` (`ewoh:///policy/v1`).
 It is owned by PX-06/AG-20, validated by `scripts/audit-policy-contracts.js`,
 and consumed by `POST /api/policies/evaluate`.
 
+Workflow contract: `contracts/workflow/workflow-schema.json`
+(`ewoh:///workflow/v1`). It is owned by PX-06, validated by
+`scripts/audit-workflow-contracts.js`, and consumed by
+`POST /api/workflows/advance`.
+
 Freeze scope note: C3-C6 are frozen as contracts for the current real
 implementation. Each document explicitly separates service-enforced behavior
 from pending items; the pending items do not reopen the contract but define

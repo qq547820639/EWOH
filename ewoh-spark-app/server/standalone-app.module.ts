@@ -40,6 +40,7 @@ import { ScaleModule } from './modules/scale/scale.module';
 import { EventCatalogModule } from './modules/events/event-catalog.module';
 import { PolicyModule } from './modules/policy/policy.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
+import { WorkflowModule } from './modules/workflow/workflow.module';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { OnboardingModule } from './modules/onboarding/onboarding.module';
     EventCatalogModule,
     PolicyModule,
     OnboardingModule,
+    WorkflowModule,
   ],
   providers: [
     {

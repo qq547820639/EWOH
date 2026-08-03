@@ -228,6 +228,59 @@ if (!e2eConfig) {
       expect(safe.body.matched).toBe(false);
     });
 
+    it('serves workflow examples and computes role-aware next steps', async () => {
+      const auth = await login(
+        baseUrl,
+        fixture!.dispatcherA.username,
+        fixture!.dispatcherA.password,
+      );
+      expect(auth.status).toBe(201);
+      const token = auth.body.accessToken;
+
+      const example = await apiRequest<{
+        workflowId: string;
+        version: string;
+        steps: Array<{ name: string; action: string }>;
+      }>(baseUrl, '/api/workflows/examples', {
+        headers: jsonHeaders(token),
+      });
+      expect(example.status).toBe(200);
+      expect(example.body.workflowId).toBe('mes-execution');
+      expect(example.body.steps).toHaveLength(8);
+
+      const workerAdvance = await apiRequest<{
+        currentActionAllowed: boolean;
+        allowedNextSteps: Array<{ name: string; action: string }>;
+      }>(baseUrl, '/api/workflows/advance', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          workflow: example.body,
+          currentStep: 'report',
+          roles: ['worker'],
+        }),
+      });
+      expect(workerAdvance.status).toBe(201);
+      expect(workerAdvance.body.currentActionAllowed).toBe(true);
+      expect(workerAdvance.body.allowedNextSteps).toEqual([]);
+
+      const qualityAdvance = await apiRequest<{
+        allowedNextSteps: Array<{ name: string; action: string }>;
+      }>(baseUrl, '/api/workflows/advance', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          workflow: example.body,
+          currentStep: 'report',
+          roles: ['quality'],
+        }),
+      });
+      expect(qualityAdvance.status).toBe(201);
+      expect(qualityAdvance.body.allowedNextSteps).toEqual([
+        { name: 'inspect', action: 'inspect' },
+      ]);
+    });
+
     it('lets global_admin read/write system config, read audit, and create control requests', async () => {
       const auth = await login(
         baseUrl,

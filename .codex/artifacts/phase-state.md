@@ -84,6 +84,9 @@ production approval gate.
   exposes the machine-readable steps.
 - Scale release review: `scripts/scale-release-review.js` is the packaging
   gate for release bundles, running contract/deploy/ops checks (23/23 pass).
+- Workflow engine: versioned workflow contract plus role-aware
+  `POST /api/workflows/advance`; canonical MES execution flow is covered by
+  contract and E2E tests.
 
 ## Active Tasks
 

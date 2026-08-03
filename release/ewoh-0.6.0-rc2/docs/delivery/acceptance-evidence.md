@@ -7,22 +7,22 @@ Owner: AG-00/AG-41
 
 - Python unittest: 667 passed.
 - Python repo contract tests: 69 passed.
-- NestJS Jest: 257 passed across 61 suites (includes SP-01..SP-08 scenario
+- NestJS Jest: 264 passed across 63 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
 - Client Jest: 20 passed across 6 suites.
-- HTTP + PostgreSQL E2E: 21 passed (auth, RBAC, refresh rotation/logout, org
+- HTTP + PostgreSQL E2E: 22 passed (auth, RBAC, refresh rotation/logout, org
   isolation, control/resource/world persistence, canonical UnifiedExoFrame
   ingestion, gamification allocation persistence, approval persistence,
   system config org scoping, complete MES work order execution, and
   OEE/andon SLA escalation, ERP inbound/outbound/reconcile, and scale
   template publish/install/asset registration, scenario install + fleet
-  upgrade/rollback, the event catalog API, `/metrics` resource attributes, and
-  policy evaluation).
+  upgrade/rollback, the event catalog API, `/metrics` resource attributes,
+  policy evaluation, and role-aware workflow advance).
 - NestJS type check, lint, and Standalone production build: passed.
 - One-click `scripts/standalone-check.sh`: passed with E2E, OpenAPI strict
   audit, DDL plans, and standalone DDL hygiene.
-- OpenAPI contract: 166 controller operations documented, 0 undocumented,
+- OpenAPI contract: 168 controller operations documented, 0 undocumented,
   0 unimplemented; `openapi/route-manifest.json` generated.
 - Full release drill: `RELEASE DRILL PASSED` against disposable PostgreSQL 17,
   including migration/RLS/audit/rollback/rebuild, 176 Jest tests, 107/107
@@ -115,7 +115,11 @@ Owner: AG-00/AG-41
 - Scale release review: `scripts/scale-release-review.js` is wired into
   `scripts/package-release.sh`; it checks the release manifest, bundle
   integrity, contracts, docs, OpenAPI manifest, and all static audits before a
-  bundle can be packaged (23/23 checks pass).
+  bundle can be packaged (24/24 checks pass).
+- Workflow engine: `contracts/workflow/workflow-schema.json` and
+  `POST /api/workflows/advance` provide role-filtered workflow progression;
+  the MES execution example is schema-validated and E2E verifies worker vs
+  quality role gating.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

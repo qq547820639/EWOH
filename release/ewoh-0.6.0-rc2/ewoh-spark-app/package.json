@@ -30,6 +30,7 @@
     "contract:golden": "node ../scripts/audit-golden-factory.js",
     "contract:mapping": "node ../scripts/audit-mapping-contracts.js",
     "contract:policy": "node ../scripts/audit-policy-contracts.js",
+    "contract:workflow": "node ../scripts/audit-workflow-contracts.js",
     "release:review": "node ../scripts/scale-release-review.js",
     "perf:smoke": "node scripts/perf-smoke.js",
     "eslint": "eslint . --quiet",
