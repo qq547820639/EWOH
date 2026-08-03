@@ -1,14 +1,14 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T21:43:58.744Z",
+  "generatedAt": "2026-08-03T21:46:50.242Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
     "itemCount": 237,
-    "edgeCount": 19,
+    "edgeCount": 24,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 89,
+    "evidenceCount": 94,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 39,
@@ -2896,6 +2896,41 @@
       "to": "EVD-round69-final6-work-orchestration",
       "edgeType": "evidence",
       "blocking": false
+    },
+    {
+      "id": "E-020",
+      "from": "T-198",
+      "to": "EVD-round90-p0-mobile-orchestration-1",
+      "edgeType": "evidence",
+      "blocking": false
+    },
+    {
+      "id": "E-021",
+      "from": "T-199",
+      "to": "EVD-round90-p0-mobile-orchestration-2",
+      "edgeType": "evidence",
+      "blocking": false
+    },
+    {
+      "id": "E-022",
+      "from": "T-200",
+      "to": "EVD-round90-p0-mobile-orchestration-3",
+      "edgeType": "evidence",
+      "blocking": false
+    },
+    {
+      "id": "E-023",
+      "from": "T-201",
+      "to": "EVD-round90-p0-mobile-orchestration-4",
+      "edgeType": "evidence",
+      "blocking": false
+    },
+    {
+      "id": "E-024",
+      "from": "T-202",
+      "to": "EVD-round90-p0-mobile-orchestration-5",
+      "edgeType": "evidence",
+      "blocking": false
     }
   ],
   "actors": [
@@ -5208,6 +5243,96 @@
       "expiresAt": "2026-11-01T01:33:48.440Z",
       "status": "unbound",
       "staleReason": "evidence file has no machine-readable front matter"
+    },
+    {
+      "evidenceId": "EVD-round90-p0-mobile-orchestration-1",
+      "workItemId": "T-198",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round90-p0-mobile-orchestration.md",
+      "checksum": "454b9cf13d04c8aa4b28b01c39629acfb4205a17f84a3485dd3f7e117d082ba7",
+      "result": "passed",
+      "title": "Round 90 - 2026-08-04 P0 Mobile and Orchestration Hardening",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "db622540292dd06e65f2b3f068cbaf23de9fa649",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-04T06:00:00.000Z",
+      "verifier": "AG-00 local gate",
+      "expiresAt": "2026-11-02T06:00:00.000Z",
+      "status": "valid"
+    },
+    {
+      "evidenceId": "EVD-round90-p0-mobile-orchestration-2",
+      "workItemId": "T-199",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round90-p0-mobile-orchestration.md",
+      "checksum": "454b9cf13d04c8aa4b28b01c39629acfb4205a17f84a3485dd3f7e117d082ba7",
+      "result": "passed",
+      "title": "Round 90 - 2026-08-04 P0 Mobile and Orchestration Hardening",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "db622540292dd06e65f2b3f068cbaf23de9fa649",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-04T06:00:00.000Z",
+      "verifier": "AG-00 local gate",
+      "expiresAt": "2026-11-02T06:00:00.000Z",
+      "status": "valid"
+    },
+    {
+      "evidenceId": "EVD-round90-p0-mobile-orchestration-3",
+      "workItemId": "T-200",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round90-p0-mobile-orchestration.md",
+      "checksum": "454b9cf13d04c8aa4b28b01c39629acfb4205a17f84a3485dd3f7e117d082ba7",
+      "result": "passed",
+      "title": "Round 90 - 2026-08-04 P0 Mobile and Orchestration Hardening",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "db622540292dd06e65f2b3f068cbaf23de9fa649",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-04T06:00:00.000Z",
+      "verifier": "AG-00 local gate",
+      "expiresAt": "2026-11-02T06:00:00.000Z",
+      "status": "valid"
+    },
+    {
+      "evidenceId": "EVD-round90-p0-mobile-orchestration-4",
+      "workItemId": "T-201",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round90-p0-mobile-orchestration.md",
+      "checksum": "454b9cf13d04c8aa4b28b01c39629acfb4205a17f84a3485dd3f7e117d082ba7",
+      "result": "passed",
+      "title": "Round 90 - 2026-08-04 P0 Mobile and Orchestration Hardening",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "db622540292dd06e65f2b3f068cbaf23de9fa649",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-04T06:00:00.000Z",
+      "verifier": "AG-00 local gate",
+      "expiresAt": "2026-11-02T06:00:00.000Z",
+      "status": "valid"
+    },
+    {
+      "evidenceId": "EVD-round90-p0-mobile-orchestration-5",
+      "workItemId": "T-202",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round90-p0-mobile-orchestration.md",
+      "checksum": "454b9cf13d04c8aa4b28b01c39629acfb4205a17f84a3485dd3f7e117d082ba7",
+      "result": "passed",
+      "title": "Round 90 - 2026-08-04 P0 Mobile and Orchestration Hardening",
+      "branch": "codex/ewoh-iteration-2026-08-04",
+      "commitSha": "db622540292dd06e65f2b3f068cbaf23de9fa649",
+      "buildVersion": "0.6.0-rc4",
+      "envFingerprint": "47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49",
+      "dependencyVersion": "3:2.2.5",
+      "testTime": "2026-08-04T06:00:00.000Z",
+      "verifier": "AG-00 local gate",
+      "expiresAt": "2026-11-02T06:00:00.000Z",
+      "status": "valid"
     }
   ],
   "gates": [
