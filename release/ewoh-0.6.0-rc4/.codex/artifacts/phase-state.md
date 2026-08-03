@@ -59,7 +59,7 @@ Trace: EWOH-2026-08-04-principal-final6
   shows the last successful data update time.
 - Command map shows a retryable banner when entity/world/overview/environment
   queries fail instead of rendering silently empty placeholders.
-- `EWOH 0.6.0-rc4` candidate bundle generated: 1200 files, SHA256SUMS,
+- `EWOH 0.6.0-rc4` candidate bundle generated: 1201 files, SHA256SUMS,
   `scale-release-review` PASSED.
 - Authenticated Playwright tests pass 3/3: dispatcher login plus command
   center, command map, and mobile workbench renders against a real PostgreSQL
@@ -69,6 +69,8 @@ Trace: EWOH-2026-08-04-principal-final6
 - Pilot readiness rerun: 7 passed (rc4 bundle, evidence, training, runbook,
   manifest, DB verify, runtime connect), 3 failed (Docker/Kubectl/Helm absent
   locally), 5 pending external approval/signoff; result NOT READY.
+- Standalone ops drill passed on rc4: 57-table logical backup/restore/verify
+  and post-restore identity sequence check (`ALL STANDALONE OPS CHECKS PASSED`).
 - Full standalone gate: typecheck, lint, Jest 76 suites / 362 tests, client
   13 suites / 42 tests, repo facts 33/33, OpenAPI 232/232, production build, and
 

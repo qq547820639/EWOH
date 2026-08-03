@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T20:47:18.166Z",
+  "generatedAt": "2026-08-03T20:48:58.859Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 231,
+    "itemCount": 232,
     "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 88,
+    "evidenceCount": 89,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 36,
     "statusCounts": {
-      "Done": 138,
+      "Done": 139,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2333,7 +2333,7 @@
         "AG-51"
       ],
       "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
-      "evidence": "`release/ewoh-0.6.0-rc4` 1201 files; SHA256SUMS; scale-release-review PASSED"
+      "evidence": "`release/ewoh-0.6.0-rc4` 1202 files; SHA256SUMS; scale-release-review PASSED"
     },
     {
       "id": "T-194",
@@ -2370,6 +2370,18 @@
       ],
       "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
       "evidence": "7 passed / 3 failed (Docker/Kubectl/Helm absent) / 5 pending external; NOT READY"
+    },
+    {
+      "id": "T-197",
+      "title": "Ops backup/restore drill (RC4)",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-10/51",
+      "agents": [
+        "AG-10"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "`standalone-ops-check.sh` PASSED; 57 tables backup/restore/verify; identity advanced"
     },
     {
       "id": "G0",
@@ -3335,7 +3347,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "03ba0d9155630f43e79a7ce5ae0b9c39f9cf926ba886af979da7a8f9fb4e6c60",
+      "checksum": "ceeeb090b770d42aa87df742e07a1e100674dc6a7dc68da092e5d4f83fc1d6ed",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3380,7 +3392,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "da9b266b7dbd240f2cdbd7c660a0bdf7e5472517c59d93144de9e77cb649e859",
+      "checksum": "471cbc33331d28d4024126388690fdcc756d7fe37552051a8e50b029df375b50",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3389,7 +3401,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "0b57fbd6018296b561cbd9182b95860704f912e3789385e847b5f58752d5276c",
+      "checksum": "243937e6a070e50b5fb978228215376df44d04056c31149737ed5096d0576d94",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4220,7 +4232,7 @@
       "workItemId": "",
       "kind": "test",
       "path": ".codex/artifacts/work/evidence/round85-rc4-candidate-bundle.md",
-      "checksum": "59c9629c492ca2c5b2b82efd38022d4d1fd57e0f44e79bda353377675f56c629",
+      "checksum": "75c7b470d531481fed1d4c529dc4a51e8ed2a8869bed50333309df0a76ed98b5",
       "result": "passed",
       "title": "Round 85 - 2026-08-04 EWOH 0.6.0-rc4 Candidate Bundle"
     },
@@ -4250,6 +4262,15 @@
       "checksum": "c7d03dfc161e280485e4e6294fcffe2a1690b99c5428365b31d63b7c0725cb59",
       "result": "passed",
       "title": "Round 88 - 2026-08-04 Pilot Readiness Gate (RC4)"
+    },
+    {
+      "evidenceId": "EVD-round89-ops-drill-rc4",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round89-ops-drill-rc4.md",
+      "checksum": "0e8b1b02f4f2bc42ed596233e492cd49cb09d45b101a74e83dd586daa652f227",
+      "result": "passed",
+      "title": "Round 89 - 2026-08-04 Standalone Ops Drill (RC4)"
     },
     {
       "evidenceId": "EVD-round9-observability-deploy-artifacts",
