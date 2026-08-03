@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T20:11:20.359Z",
+  "generatedAt": "2026-08-03T20:13:02.173Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 222,
+    "itemCount": 223,
     "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 79,
+    "evidenceCount": 80,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 36,
     "statusCounts": {
-      "Done": 129,
+      "Done": 130,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2264,6 +2264,18 @@
       "evidence": "`RELEASE DRILL PASSED`; perf 4610 QPS p95 26.83ms; security probe OK; bandit unexecuted locally"
     },
     {
+      "id": "T-188",
+      "title": "Playwright browser screenshots",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-13/30",
+      "agents": [
+        "AG-13"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "mobile + desktop `/login` screenshots in `output/playwright/`"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -2325,7 +2337,7 @@
       "type": "gate",
       "status": "Validation",
       "owner": "AG-00",
-      "evidence": "Playwright smoke: login, command center, command map, devices, alerts render with real data; client Jest 12 suites / 39 tests; PWA manifest/service worker; work console route and layout type-check"
+      "evidence": "Playwright screenshots: Standalone login mobile/desktop; client Jest 12 suites / 39 tests; PWA manifest/service worker; work console route and layout type-check"
     },
     {
       "id": "G8",
@@ -3227,7 +3239,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "68662549f775e1f1e6c8fe507ff5cd9a09ade9ee897331b798006a93b486546a",
+      "checksum": "516ef3a09ef16ee26055ff41d8de026144345369eebfc1a757b9f22c66341b8e",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3236,7 +3248,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "a3ad5253ccc22220cd7ce8a3ebcfb63afda6ebd132fb6388620127459eee003d",
+      "checksum": "e6fd72828bd054117d2cbfc7c76f9fcf9626146dee24382297eb0111bafacdf4",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3272,7 +3284,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "358a0c9b6546df639c3f827316010fbf4d9a779f6efff4421f10b3b853e34b65",
+      "checksum": "bf9161d8412e57364ee515bfc8c7eaf1d681e3d4ba38cb71c06d953030d97366",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3281,7 +3293,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "0f4a3e9b942be1c3cbf41f6826c0da3adfabe2d6dc9b5e8b15cd736b6756ea70",
+      "checksum": "4cf287c60fd0e306c46276470110209ae75d111d414721cf7460308bad42ccec",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4063,6 +4075,15 @@
       "title": "EWOH Round 8 Evidence - Org Scope Hardening"
     },
     {
+      "evidenceId": "EVD-round80-playwright-browser-evidence",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round80-playwright-browser-evidence.md",
+      "checksum": "6551d95f89eaa8606755ea57e7fa4a2f53a6528763d0272801435ebbd0436ef7",
+      "result": "unknown",
+      "title": "Round 80 - 2026-08-04 Playwright Browser Evidence"
+    },
+    {
       "evidenceId": "EVD-round9-observability-deploy-artifacts",
       "workItemId": "",
       "kind": "test",
@@ -4163,7 +4184,7 @@
       "calculatedStatus": "in_progress",
       "humanDecision": null,
       "conditions": [
-        "Playwright smoke: login, command center, command map, devices, alerts render with real data",
+        "Playwright screenshots: Standalone login mobile/desktop",
         "client Jest 12 suites / 39 tests",
         "PWA manifest/service worker",
         "work console route and layout type-check"

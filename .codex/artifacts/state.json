@@ -247,7 +247,8 @@
     "iteration_2026_08_04_offline_photo_queue": "offline exception photos queued as data URLs (2MB limit) and uploaded/attached on reconnect; attachmentDataUrl helpers + 2 client tests; client 12/39",
     "release_drill_2026_08_04_iteration": "RELEASE DRILL PASSED on embedded PG 17: apply/verify/RLS/audit/rollback/rebuild, security probe OK, Jest 76/359, client 12/39, repo facts 32/32, OpenAPI 232/232, E2E 29/29, build PASSED",
     "perf_smoke_2026_08_04_iteration": "GET /health/live 500 req / 50 concurrency: 4610 qps, p50 4.77ms, p95 26.83ms, 0 failures",
-    "security_probe_2026_08_04_iteration": "STANDALONE SECURITY VERIFY OK: runtime role least-privilege, SECURITY DEFINER lookups, RLS A/B, audit chain tamper detection"
+    "security_probe_2026_08_04_iteration": "STANDALONE SECURITY VERIFY OK: runtime role least-privilege, SECURITY DEFINER lookups, RLS A/B, audit chain tamper detection",
+    "playwright_2026_08_04": "Playwright screenshots of Standalone /login at mobile 390x844 and desktop 1440x900 saved under output/playwright/iteration-login-*.png"
   },
   "subagent_state": {
     "planned": [

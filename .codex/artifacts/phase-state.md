@@ -48,6 +48,8 @@ Trace: EWOH-2026-08-04-principal-final6
   rebuild + standalone gate + E2E); perf smoke `/health/live` 500 req /
   50 concurrency = 4610 QPS, p95 26.83ms, 0 failures; standalone security probe
   `STANDALONE SECURITY VERIFY OK`; local bandit remains unexecuted (tool absent).
+- Playwright browser evidence captured for Standalone `/login` at mobile
+  (390x844) and desktop (1440x900) viewports in `output/playwright/`.
 
 ## Current Phase
 

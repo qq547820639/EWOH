@@ -42,6 +42,8 @@
 - 发布验证证据：`RELEASE DRILL PASSED`（PG apply/verify/RLS/audit/rollback/
   rebuild + 全门禁 + E2E 29/29）；性能冒烟 4610 QPS / p95 26.83ms；
   `STANDALONE SECURITY VERIFY OK`。
+- 浏览器证据：Playwright 对 Standalone `/login` 在移动端（390x844）与桌面端
+  （1440x900）截图，输出到 `output/playwright/iteration-login-*.png`。
 
 ## [0.6.0-rc3] - 2026-08-04
 

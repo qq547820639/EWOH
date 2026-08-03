@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T20:11:20.403Z",
+  "generatedAt": "2026-08-03T20:13:02.218Z",
   "gateCount": 14,
   "approvedCount": 0,
   "requiresApprovalCount": 4,
@@ -111,7 +111,7 @@
       "approver": null,
       "decidedAt": null,
       "conditions": [
-        "Playwright smoke: login, command center, command map, devices, alerts render with real data",
+        "Playwright screenshots: Standalone login mobile/desktop",
         "client Jest 12 suites / 39 tests",
         "PWA manifest/service worker",
         "work console route and layout type-check"
