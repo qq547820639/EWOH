@@ -150,6 +150,9 @@
   `npm run cross-tenant:tck` 把 HTTP+PostgreSQL 组织隔离 E2E 串成门禁。
 - 工厂差异界面：`/scale` 页面新增差异登记表单、状态徽标与逐行解决操作，
   接入真实差异 API。
+- Workflow 实例：`POST/GET /api/workflows/instances` 与
+  `POST /api/workflows/instances/:key/advance` 将实例持久化到
+  `workflow.*` 配置键，角色门禁推进并写审计。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

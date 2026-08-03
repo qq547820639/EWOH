@@ -279,6 +279,47 @@ if (!e2eConfig) {
       expect(qualityAdvance.body.allowedNextSteps).toEqual([
         { name: 'inspect', action: 'inspect' },
       ]);
+
+      const instanceKey = `workflow.mes-execution.T-${runId}`;
+      const startedInstance = await apiRequest<{
+        key: string;
+        currentStep: string;
+        status: string;
+      }>(baseUrl, '/api/workflows/instances', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          workflow: example.body,
+          entityId: `T-${runId}`,
+        }),
+      });
+      expect(startedInstance.status).toBe(201);
+      expect(startedInstance.body.key).toBe(instanceKey);
+      expect(startedInstance.body.currentStep).toBe('create');
+      expect(startedInstance.body.status).toBe('active');
+
+      const advancedInstance = await apiRequest<{
+        currentStep: string;
+      }>(baseUrl, `/api/workflows/instances/${encodeURIComponent(instanceKey)}/advance`, {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          roles: ['dispatcher'],
+          toStep: 'release',
+        }),
+      });
+      expect(advancedInstance.status).toBe(201);
+      expect(advancedInstance.body.currentStep).toBe('release');
+
+      const instances = await apiRequest<Array<{ key: string }>>(
+        baseUrl,
+        '/api/workflows/instances',
+        { headers: jsonHeaders(token) },
+      );
+      expect(instances.status).toBe(200);
+      expect(
+        instances.body.some((row) => row.key === instanceKey),
+      ).toBe(true);
     });
 
     it('lets global_admin read/write system config, read audit, and create control requests', async () => {

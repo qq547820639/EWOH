@@ -17,10 +17,10 @@ artifacts:
   deploy: deploy/cloud/
   contracts: .codex/artifacts/contracts/
 evidence:
-  jest: "63 suites / 275 tests"
+  jest: "64 suites / 278 tests"
   client_jest: "6 suites / 21 tests"
   e2e: "23/23 HTTP + PostgreSQL"
-  openapi: "178/178 documented, 0 unimplemented"
+  openapi: "181/181 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/openapi/e2e/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; logical backup/restore of 54 tables / 25 rows with row-count verify"
@@ -68,6 +68,7 @@ evidence:
   difference_resolve: "POST /api/scale/differences/:key/resolve; resolved status + audit"
   cross_tenant_tck: "scripts/cross-tenant-tck.sh; HTTP+PostgreSQL org isolation E2E 23/23"
   differences_ui: "/scale page difference register/list/resolve UI; client build passed"
+  workflow_instances: "stateful workflow instance start/list/advance; persisted workflow.* config; role gating + audit"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

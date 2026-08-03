@@ -119,6 +119,9 @@ production approval gate.
   org-isolation E2E suite as one gate.
 - Factory differences UI: `/scale` page registers, lists, and resolves
   factory differences through the real API.
+- Workflow instances: `POST/GET /api/workflows/instances` and
+  `POST .../:key/advance` persist org-scoped workflow state with role gating
+  and audit.
 
 ## Active Tasks
 

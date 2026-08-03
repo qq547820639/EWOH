@@ -373,6 +373,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-130 | Factory differences register/resolve UI on /scale | AG-30/31 | Done | `round46-differences-ui.md`; client build passed |
 
+## Wave Final5 - Workflow Instances (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-131 | Stateful workflow instance start/list/advance API | PX-06/16 | Done | `round47-workflow-instances.md`; E2E lifecycle passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

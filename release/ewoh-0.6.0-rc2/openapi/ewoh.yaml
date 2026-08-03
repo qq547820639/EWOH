@@ -1617,6 +1617,83 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/workflows/instances:
+    get:
+      tags:
+        - workflows
+      summary: List workflow instances
+      responses:
+        '200':
+          description: Workflow instance list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowInstanceList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - workflows
+      summary: Start a workflow instance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowStartInstanceRequest'
+      responses:
+        '201':
+          description: Workflow instance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowInstance'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/workflows/instances/{key}/advance:
+    post:
+      tags:
+        - workflows
+      summary: Advance a workflow instance
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowAdvanceInstanceRequest'
+      responses:
+        '201':
+          description: Advanced workflow instance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowInstance'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/templates:
     post:
       tags:
@@ -5501,6 +5578,64 @@ components:
         - currentStep
         - currentActionAllowed
         - allowedNextSteps
+    WorkflowStartInstanceRequest:
+      type: object
+      properties:
+        workflow:
+          $ref: '#/components/schemas/WorkflowDefinition'
+        entityId:
+          type: string
+      required:
+        - workflow
+        - entityId
+    WorkflowHistoryEntry:
+      type: object
+      properties:
+        step:
+          type: string
+        action:
+          type: string
+        at:
+          type: string
+        actor:
+          type: string
+    WorkflowInstance:
+      type: object
+      properties:
+        key:
+          type: string
+        workflowId:
+          type: string
+        entityId:
+          type: string
+        currentStep:
+          type: string
+        status:
+          type: string
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowHistoryEntry'
+        updatedBy:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+    WorkflowInstanceList:
+      type: array
+      items:
+        $ref: '#/components/schemas/WorkflowInstance'
+    WorkflowAdvanceInstanceRequest:
+      type: object
+      properties:
+        roles:
+          type: array
+          items:
+            type: string
+        toStep:
+          type: string
+      required:
+        - roles
     EventInfo:
       type: object
       properties:
