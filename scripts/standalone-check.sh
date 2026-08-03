@@ -23,6 +23,7 @@ node scripts/audit-policy-contracts.js
 node scripts/audit-workflow-contracts.js
 node scripts/verify-helm-chart.js
 node scripts/verify-deploy-artifacts.js
+python3 scripts/rego-tck.py
 
 echo "== e2e (requires runtime DB env) =="
 if [[ -n "${EWOH_E2E_RUNTIME_DATABASE_URL:-}" ]]; then

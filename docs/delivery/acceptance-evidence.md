@@ -1,12 +1,12 @@
 # EWOH Acceptance Evidence
 
-Status: validated v1.6 (2026-08-03 AAS asset exchange wave)
+Status: validated v1.7 (2026-08-03 policy-as-code gate wave)
 Owner: AG-00/AG-41
 
 ## Automated Evidence
 
 - Python unittest: 667 passed.
-- Python repo contract tests: 99 passed.
+- Python repo contract tests: 107 passed.
 - NestJS Jest: 298 passed across 66 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
@@ -135,8 +135,9 @@ Owner: AG-00/AG-41
   executes the F0-F6 onboarding path with `partnerShadow: true` and returns
   step-level evidence; E2E verifies a full partner shadow run.
 - Deployment TCK: `npm run deployment:tck` runs deploy artifact verification
-  (66 checks), Helm chart audit (125 checks), and Scale Release review
-  (24 checks) as one deployment acceptance gate.
+  (66 checks), Helm chart audit (125 checks), Scale Release review
+  (24 checks), and the Rego deployment policy gate as one acceptance gate
+  (4 gates passed).
 - Scale operations UI: the `/scale` page renders templates, profiles, assets,
   compatibility, and an F0-F6 onboarding runner against real APIs; client
   tests and the standalone production build pass.
@@ -196,6 +197,11 @@ Owner: AG-00/AG-41
   AASX-like package import/export, and bidirectional twin submodel mapping;
   the discrete machining AAS sample is covered by `make aas-tck` (7/7 checks)
   and 10 Python contract tests.
+- Rego policy-as-code deployment gate: a dependency-free Rego subset supports
+  `package` / `default allow` / `allow` / `deny[msg]` with input path access,
+  comparisons, `in`, `not`, and message capture; `contracts/policy/deploy-gate.rego`
+  gates deployment on artifacts/checks/contracts and is covered by
+  `make rego-tck` (4/4), Deployment TCK, and `standalone-check.sh`.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

@@ -427,6 +427,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-139 | AAS/IEC 63278 JSON + AASX codec and twin submodel mapping | PX-08/14 | Done | `round55-aas-codec.md`; pytest 99; AAS TCK 7/7 |
 
+## Wave Final5 - OPA Policy-as-Code (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-140 | Rego policy-as-code deployment gate + deployment TCK integration | PX-06/51 | Done | `round56-rego-policy-as-code.md`; pytest 107; rego TCK 4/4; deployment TCK 4 gates |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

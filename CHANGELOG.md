@@ -192,6 +192,12 @@
   与敏感值脱敏；提供离散机加工线 AAS 示例。
 - AAS TCK：`scripts/aas-tck.py` 与 `make aas-tck` 执行 7 项检查，覆盖
   样例解析、JSON 往返、孪生映射、AASX 往返与脱敏。
+- OPA 风格策略即代码：新增 `src/edge_platform/policy/rego.py`，纯标准库实现
+  Rego 子集解释器（package/default/allow/deny[msg]、input 路径、比较、
+  `in`/`not` 与消息捕获），并新增 `contracts/policy/deploy-gate.rego`
+  部署门禁策略。
+- Rego 部署门禁接入：`make rego-tck`（4 项检查）、`scripts/deployment-tck.js`
+  扩展为 4 道门禁，`scripts/standalone-check.sh` 纳入 Rego TCK。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

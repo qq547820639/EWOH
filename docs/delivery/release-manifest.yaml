@@ -56,7 +56,7 @@ evidence:
   edge_backfill: "SequenceBuffer out-of-order/duplicate/gap/backfill; pytest 74 passed"
   twin_package: "twin manifest/calibration/redaction pipeline; discrete-machining-line + assembly-cell samples; pytest 81 passed"
   partner_shadow: "partner checklist + shadow-run on F0-F6 onboarding; partnerShadow config; E2E passed"
-  deployment_tck: "deployment-tck.js one-command gate: deploy artifacts 66 + Helm 125 + release review 24"
+  deployment_tck: "deployment-tck.js one-command gate: deploy artifacts 66 + Helm 125 + release review 24 + Rego policy gate; 4 gates passed"
   scale_ui: "/scale page wired to templates/profiles/assets/compatibility/onboarding APIs"
   erp_mes_connector: "erp-mes-profile-1.0.0 manifest; secret-ref config; connector tests 11; pytest 82 passed"
   scale_metrics: "GET /api/scale/metrics counts/published rate/ring distribution/compatibility"
@@ -77,6 +77,7 @@ evidence:
   sparkplug_openfeature: "Sparkplug B topic/payload/session codec + edge adapter; sparkplug-b manifest; OpenFeature-style flag evaluation with ring/role/org/factory targeting and safe-closed default; E2E 25/25"
   parameter_registry: "typed parameters with validation/scope/source/validity/approval/version history/rollback; /api/parameters/* 8 routes; org RLS + audit; E2E 26/26"
   aas_codec: "AAS 3.0 JSON subset + AASX-like package codec; twin submodel mapping; discrete-machining AAS sample; make aas-tck 7/7; pytest 99"
+  rego_policy_gate: "dependency-free Rego subset; deploy-gate.rego; make rego-tck 4/4; wired into deployment TCK and standalone-check; pytest 107"
   github_actions:
     branch: codex/rc1-ci-full
     commits:
