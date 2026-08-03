@@ -2245,6 +2245,33 @@ if (!e2eConfig) {
       expect(mappingDetail.status).toBe(200);
       expect(mappingDetail.body.packageId).toBe(mapping.body.packageId);
 
+      const mappingDryRun = await apiRequest<{
+        passed: boolean;
+        mapped: Record<string, unknown>;
+        errors: unknown[];
+      }>(
+        baseUrl,
+        `/api/scale/mappings/${mapping.body.packageId}/dry-run`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({
+            sample: {
+              entity_id: 'EXO-E2E',
+              load: { total_kg: 12.5 },
+            },
+          }),
+        },
+      );
+      expect(mappingDryRun.status).toBe(201);
+      expect(mappingDryRun.body.passed).toBe(true);
+      expect(mappingDryRun.body.mapped.entityId).toBe('EXO-E2E');
+      expect(
+        (mappingDryRun.body.mapped.payload as { load: { totalKg: number } })
+          .load.totalKg,
+      ).toBe(12.5);
+      expect(mappingDryRun.body.errors).toEqual([]);
+
       const mappingConformance = await apiRequest<{ passed: boolean }>(
         baseUrl,
         `/api/scale/assets/${mapping.body.packageId}/conformance`,
@@ -2331,6 +2358,28 @@ if (!e2eConfig) {
         headers: jsonHeaders(token),
         body: JSON.stringify({
           factoryName: `Onboarding Factory ${runId}`,
+          config: {
+            siteReadiness: {
+              factoryName: `Onboarding Factory ${runId}`,
+              siteContact: 'site@example.com',
+              items: [
+                {
+                  id: 'DEV-INV',
+                  label: '设备台账',
+                  required: true,
+                  status: 'pass',
+                  evidence: 'device-inventory.xlsx',
+                },
+                {
+                  id: 'ERP-EP',
+                  label: 'ERP 端点',
+                  required: true,
+                  status: 'pass',
+                  evidence: 'erp-endpoint.json',
+                },
+              ],
+            },
+          },
         }),
       });
       expect(onboarding.status).toBe(201);
@@ -2370,6 +2419,21 @@ if (!e2eConfig) {
         headers: jsonHeaders(token),
         body: JSON.stringify({
           factoryName: `Partner Shadow ${runId}`,
+          config: {
+            siteReadiness: {
+              factoryName: `Partner Shadow ${runId}`,
+              siteContact: 'site@example.com',
+              items: [
+                {
+                  id: 'DEV-INV',
+                  label: '设备台账',
+                  required: true,
+                  status: 'pass',
+                  evidence: 'device-inventory.xlsx',
+                },
+              ],
+            },
+          },
         }),
       });
       expect(partnerRun.status).toBe(201);

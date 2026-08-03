@@ -570,6 +570,9 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-201 | Evidence binding metadata + invalidation + graph invariants | ORCH-01/02 | Done | `round90-p0-mobile-orchestration.md`; work-indexer tests; `--invariants` passed |
 | T-202 | Work Console CLI + standalone-check/CI wiring | ORCH-05/51 | Done | `round90-p0-mobile-orchestration.md`; work-console tests; strict CLI passed |
 | T-203 | Independent review fixes: worker write guard, conflict discard, CI strict, scan body guard | AG-00/11/30 | Done | `round91-review-fixes.md`; server 78/375; client 13/46 |
+| T-204 | Onboarding F0-F3 real execution: site readiness, connector publish, scenario install | PX-03/07/51 | Done | `round93-onboarding-mapping-real-gate.md`; unit + E2E 29/29 |
+| T-205 | Mapping dry-run/preflight API with localized source/target errors | PX-05/04 | Done | `round93-onboarding-mapping-real-gate.md`; unit + E2E 29/29 |
+| T-206 | Real PostgreSQL E2E + authenticated browser validation | AG-41/13 | Done | `round92-real-pg-e2e-browser.md`; E2E 29/29; browser 4/4 |
 
 ## Next Waves
 

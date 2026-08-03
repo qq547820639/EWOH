@@ -237,6 +237,98 @@ describe('ScaleService templates and assets', () => {
     ).toBe('v1');
   });
 
+  it('dry-runs mapping rules against a sample payload', async () => {
+    const mappingRow = {
+      packageId: 'PKG-MAP',
+      packageType: 'mapping',
+      name: 'erp-order-to-ewoh',
+      manifestJson: {
+        mappingSchemaVersion: 'v1',
+        source: { system: 'erp', schemaRef: 'ewoh:///schemas/erp-order/v1' },
+        target: { system: 'ewoh', schemaRef: 'ewoh:///schemas/order/v1' },
+        rules: [
+          { from: 'order.id', to: 'orderId', required: true },
+          { from: 'note', to: 'note', transform: 'trim' },
+          { from: 'qty', to: 'quantity', transform: 'number' },
+        ],
+      },
+    };
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue([mappingRow]),
+        })),
+      })),
+    };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.dryRunMapping(
+      'PKG-MAP',
+      { order: { id: 'O-1' }, note: '  ready  ', qty: '3' },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+
+    expect(result.passed).toBe(true);
+    expect(result.mapped).toEqual({
+      orderId: 'O-1',
+      note: 'ready',
+      quantity: 3,
+    });
+    expect(audit.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'scale.mapping.dry_run' }),
+    );
+  });
+
+  it('localizes required and transform errors to source/target fields', async () => {
+    const mappingRow = {
+      packageId: 'PKG-MAP-BAD',
+      packageType: 'mapping',
+      name: 'bad-mapping',
+      manifestJson: {
+        mappingSchemaVersion: 'v1',
+        source: { system: 'erp', schemaRef: 'ewoh:///schemas/erp-order/v1' },
+        target: { system: 'ewoh', schemaRef: 'ewoh:///schemas/order/v1' },
+        rules: [
+          { from: 'order.id', to: 'orderId', required: true },
+          { from: 'qty', to: 'quantity', transform: 'number' },
+        ],
+      },
+    };
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue([mappingRow]),
+        })),
+      })),
+    };
+    const service = new ScaleService(
+      db as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    const result = await service.dryRunMapping(
+      'PKG-MAP-BAD',
+      { qty: 'not-a-number' },
+    );
+
+    expect(result.passed).toBe(false);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'REQUIRED_FIELD_MISSING',
+          sourceField: 'order.id',
+          targetField: 'orderId',
+        }),
+        expect.objectContaining({
+          code: 'TRANSFORM_ERROR',
+          sourceField: 'qty',
+          targetField: 'quantity',
+        }),
+      ]),
+    );
+  });
+
   it('replays a factory profile by merging template config with profile overrides', async () => {
     const profile = {
       profileId: 'PRF-1',

@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T22:04:48.443Z",
+  "generatedAt": "2026-08-03T22:14:24.754Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 238,
+    "itemCount": 241,
     "edgeCount": 25,
     "actorCount": 48,
     "artifactCount": 15,
     "evidenceCount": 95,
     "gateCount": 14,
     "riskCount": 15,
-    "decisionCount": 39,
+    "decisionCount": 41,
     "statusCounts": {
-      "Done": 145,
+      "Done": 148,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2456,6 +2456,42 @@
       "evidence": "`round91-review-fixes.md`; server 78/375; client 13/46"
     },
     {
+      "id": "T-204",
+      "title": "Onboarding F0-F3 real execution: site readiness, connector publish, scenario install",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-03/07/51",
+      "agents": [
+        "PX-03"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)",
+      "evidence": "`round93-onboarding-mapping-real-gate.md`; unit + E2E 29/29"
+    },
+    {
+      "id": "T-205",
+      "title": "Mapping dry-run/preflight API with localized source/target errors",
+      "type": "task",
+      "status": "Done",
+      "owner": "PX-05/04",
+      "agents": [
+        "PX-05"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)",
+      "evidence": "`round93-onboarding-mapping-real-gate.md`; unit + E2E 29/29"
+    },
+    {
+      "id": "T-206",
+      "title": "Real PostgreSQL E2E + authenticated browser validation",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-41/13",
+      "agents": [
+        "AG-41"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)",
+      "evidence": "`round92-real-pg-e2e-browser.md`; E2E 29/29; browser 4/4"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -3439,7 +3475,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "29ac33112322f9caeb0dffab989fbb4b72ec49e71da2e33633eb6b3c127f9f3f",
+      "checksum": "a93afa01931158d4c7a9975822c487e551abed35e898b51ced251034558ed391",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3448,7 +3484,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "a272afdf5431717a86016594da409819bb221dac46eaa0d60bfb21fb10b9171a",
+      "checksum": "8e09b0989bdeeb97078f62ab61375fc7be0b6c8c0761393010bf4ddc776868fe",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3475,7 +3511,7 @@
       "artifactId": "decision-log-md",
       "path": "decision-log.md",
       "mediaType": "text/markdown",
-      "checksum": "5f20e81f90fb8a49a50b7e579efeb1068a28ce4fd232e25fe8af1b8b6db68ce4",
+      "checksum": "9d5b8cd192cd54f744360dd14fd2558acd1cdca085e1fe050c1bd28b3c67eb41",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3484,7 +3520,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "8019ed2b7fddaad8f34345701baf5dace04b0c84ac127de5fee0f13a9f8fb208",
+      "checksum": "9a642a90e645bce5cb6abd56b2234d045bf8a117d184e8c0bcd1f03e792203d4",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -5983,6 +6019,22 @@
       "decision": "Enforce mobile workbench person/org filtering and `worker` role access as P0",
       "rationale": "Audit found the endpoint returned all visible steps and excluded the frontline role; both violate mobile execution and security contracts",
       "reversibility": "Reversible per controller/service"
+    },
+    {
+      "id": "D-042",
+      "title": "Make onboarding F0-F3 real execution: validate site readiness, publish connectors, install scenario packs",
+      "date": "2026-08-04",
+      "decision": "Make onboarding F0-F3 real execution: validate site readiness, publish connectors, install scenario packs",
+      "rationale": "Audit found F2/F3 only counted golden assets without independent operations",
+      "reversibility": "Reversible per onboarding step"
+    },
+    {
+      "id": "D-043",
+      "title": "Add mapping dry-run/preflight API that maps sample payloads and localizes required/transform errors to source and target fields",
+      "date": "2026-08-04",
+      "decision": "Add mapping dry-run/preflight API that maps sample payloads and localizes required/transform errors to source and target fields",
+      "rationale": "Factory implementation needs pre-import validation without touching production data",
+      "reversibility": "Reversible per API"
     }
   ],
   "resources": [

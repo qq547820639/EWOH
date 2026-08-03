@@ -30,24 +30,24 @@ artifacts:
   final6_catalog: catalog/
   contracts: contracts/
 evidence:
-  jest: "78 suites / 375 tests"
+  jest: "78 suites / 377 tests"
   client_jest: "13 suites / 46 tests"
-  e2e: "29/29 HTTP + PostgreSQL"
-  openapi: "232/232 documented, 0 unimplemented"
-  standalone_check: "passed (typecheck/lint/jest/client-jest/repo-facts/openapi/e2e/build/ddl/hygiene)"
+  e2e: "29/29 HTTP + PostgreSQL (onboarding/mapping real paths included)"
+  openapi: "233/233 documented, 0 unimplemented"
+  standalone_check: "passed (typecheck/lint/jest/client-jest/repo-facts/openapi/e2e/browser/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   postgres_gate: "standalone-postgres-check PASSED; 51 managed tables / 51 RLS / audit chain / rollback to 0 objects / rebuild"
   gate_sweep: "scenario 8 gates; connector 32; AAS 7; Rego 4; deployment 4; cross-tenant E2E 29/29"
   python: "unittest 667 passed; pytest 120 passed; ruff clean"
   perf: "500 req / 50 concurrency on /health/live, 4610 qps, p95 26.83ms"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; 57 tables backup/restore/verify; identity sequence advanced"
-  work_graph: "238 items / 25 edges / 48 actors / 95 evidence / 14 gates / 0 invariant conflicts"
-  git_sync: "offline-first issue/PR plan; 224 items; live creation approval-gated"
+  work_graph: "241 items / 25 edges / 48 actors / 95 evidence / 14 gates / 0 invariant conflicts"
+  git_sync: "offline-first issue/PR plan; 227 items; live creation approval-gated"
   console_ux: "DAG pan/zoom, node search, gate/evidence filters, evidence content preview, batch gate decisions, handoff state actions, lock countdown, site readiness tab, q/limit/offset API, tools/work-console blocker diagnosis, evidence binding status"
   factory_replication: "replication-report schema + passing/failing fixtures; 20 factory contract checks"
   site_readiness: "site-readiness schema + ready/not-ready fixtures; standalone gate passes ready fixture"
   release_review: "scale-release-review.js packaging gate; 34/34 checks"
-  browser: "Playwright command center/map/devices/alerts + /work-orchestration DAG/gates/Git Sync"
+  browser: "Playwright command center/map/mobile workbench/alerts + /work-orchestration DAG/gates/Git Sync; 4/4 passed on real PG"
   pilot_readiness: "Go/No-Go blockers documented; production approval/factory/device/training/signoff pending"
 gates:
   G0: passed

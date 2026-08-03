@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T19:33:13.425Z",
+  "generatedAt": "2026-08-03T22:12:19.051Z",
   "spec": "openapi/ewoh.yaml",
   "controllerKeys": [
     "DELETE /api/dashboard/devices/{deviceId}/bindings",
@@ -203,6 +203,7 @@
     "POST /api/scale/fleet/upgrade",
     "POST /api/scale/golden-factory/install",
     "POST /api/scale/mappings",
+    "POST /api/scale/mappings/{id}/dry-run",
     "POST /api/scale/onboarding/partner/shadow-run",
     "POST /api/scale/onboarding/run",
     "POST /api/scale/profiles/{id}/replay",
@@ -437,6 +438,7 @@
     "POST /api/scale/fleet/upgrade",
     "POST /api/scale/golden-factory/install",
     "POST /api/scale/mappings",
+    "POST /api/scale/mappings/{id}/dry-run",
     "POST /api/scale/onboarding/partner/shadow-run",
     "POST /api/scale/onboarding/run",
     "POST /api/scale/profiles/{id}/replay",
@@ -469,9 +471,9 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 232,
-  "specOperations": 232,
-  "documentedControllerOperations": 232,
+  "controllerOperations": 233,
+  "specOperations": 233,
+  "documentedControllerOperations": 233,
   "undocumented": [],
   "unimplemented": []
 }

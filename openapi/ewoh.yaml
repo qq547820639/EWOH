@@ -2052,6 +2052,47 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scale/mappings/{id}/dry-run:
+    post:
+      tags:
+        - scale
+      summary: Dry-run mapping rules against a sample payload
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - sample
+              properties:
+                sample:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '201':
+          description: Mapping dry-run result with localized field errors
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/profiles/{id}/replay:
     post:
       tags:

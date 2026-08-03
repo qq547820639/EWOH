@@ -35,12 +35,24 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
 - `node tools/work-indexer/index.js --root . --invariants` passes 0 conflicts;
   `node tools/work-console/index.js --root . --strict` passes with 0 blocked
   and 0 invariant conflicts; G10-G13 still require human approval.
-- Full server Jest: 78 suites / 375 tests; client Jest: 13 suites / 46 tests;
+- Full server Jest: 78 suites / 377 tests; client Jest: 13 suites / 46 tests;
   typecheck, lint, standalone production build, repo-facts 33/33, OpenAPI
-  232/232, and work graph contract audit 20/20 all pass.
+  233/233, and work graph contract audit 20/20 all pass.
 - Independent review found 1 major (worker write-path assignment bypass) and
   7 minors; the major is fixed with `WORKER_STEP_ASSIGNMENT_REQUIRED` guards,
   offline conflict items can be discarded, CI now runs work-indexer with
   `--strict --invariants`, and scan handles a missing body without 500.
 - Review fixes are recorded in `round91-review-fixes.md` with server 78/375,
   client 13/46, invariants 0 conflicts, and work-console strict pass.
+
+## 2026-08-04 Onboarding/Mapping Real Gate
+
+- `OnboardingService.run` F0 requires validated site readiness evidence; F2
+  publishes connectors; F3 installs scenario packs with idempotent DB/audit.
+- `POST /api/scale/mappings/:id/dry-run` maps sample JSON and returns
+  `REQUIRED_FIELD_MISSING` / `TRANSFORM_ERROR` with source/target field paths.
+- Real PostgreSQL E2E: 29/29 passed with the new onboarding and mapping paths;
+  authenticated Playwright: 4/4 passed.
+- Full one-click gate with runtime database: `ALL STANDALONE CHECKS PASSED`
+  including E2E 29/29 and browser 4/4; server 78/377, client 13/46,
+  OpenAPI 233/233.

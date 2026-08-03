@@ -97,6 +97,17 @@ Trace: EWOH-2026-08-04-principal-final6
 - Round 91 evidence binds the review fixes to `fac2e6f`; work graph now has
   238 items / 25 edges / 95 evidence with 0 invariant conflicts.
 
+## Latest Round - 2026-08-04 Onboarding/Mapping Real Gate
+
+- Onboarding F0 now validates site readiness evidence before profile work;
+  F2 publishes/verifies connectors; F3 installs/verifies scenario packs.
+- Mapping dry-run API `POST /api/scale/mappings/:id/dry-run` applies rules to
+  a sample payload and returns localized required/transform errors.
+- Real PostgreSQL E2E passed 29/29 including the new onboarding and mapping
+  paths; authenticated browser flow passed 4/4.
+- Full gate with runtime DB: server Jest 78/377, client 13/46, OpenAPI 233/233,
+  repo facts 33/33, work graph 241 nodes / 0 invariant conflicts, build passed.
+
 ## Current Phase
 
 Final 6.0 work orchestration wave: C7-C9 contracts, file-backed Work Graph

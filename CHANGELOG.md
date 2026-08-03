@@ -89,6 +89,11 @@
 - 独立审查修复：worker 只能操作 `assigned_person_id` 归属自己的工序；
   离线冲突项提供丢弃入口且不再自动重放；CI 使用
   `work-indexer --strict --invariants`；扫码空请求体返回 400 而非 500。
+- Onboarding F0-F3 真执行：F0 校验场地就绪证据，F2 发布并核验连接器，
+  F3 安装并核验场景包，均写审计。
+- 映射 Dry Run：`POST /api/scale/mappings/:id/dry-run` 对样本载荷执行规则，
+  返回 `REQUIRED_FIELD_MISSING`/`TRANSFORM_ERROR` 并定位源字段与目标字段。
+- 真实数据库验证：HTTP+PostgreSQL E2E 29/29 通过，认证浏览器流程 4/4 通过。
 
 ## [0.6.0-rc3] - 2026-08-04
 
