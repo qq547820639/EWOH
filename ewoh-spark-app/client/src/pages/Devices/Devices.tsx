@@ -63,7 +63,13 @@ const Devices = (): React.ReactElement => {
     return q;
   }, [keyword, onlineFilter, batteryMin, batteryMax, sourceFilter, orderby]);
 
-  const { data: devices, isLoading } = useQuery<DeviceInfo[]>({
+  const {
+    data: devices,
+    isLoading,
+    isError,
+    dataUpdatedAt,
+    refetch,
+  } = useQuery<DeviceInfo[]>({
     queryKey: queryKeys.devices(searchQuery),
     queryFn: () => searchDevices(searchQuery),
     refetchInterval: 30000,
@@ -124,6 +130,11 @@ const Devices = (): React.ReactElement => {
           <p className="text-sm text-[hsl(218_10%_42%)] mt-1">
             外骨骼设备状态、电量与在线情况
           </p>
+          {dataUpdatedAt > 0 && (
+            <p className="mt-1 text-xs text-[hsl(218_10%_50%)]">
+              更新于 {new Date(dataUpdatedAt).toLocaleTimeString('zh-CN', { hour12: false })}
+            </p>
+          )}
         </div>
         <Button onClick={handleCreate}>
           <Plus className="w-4 h-4" />
@@ -276,6 +287,23 @@ const Devices = (): React.ReactElement => {
                     className="px-5 py-8 text-center text-sm text-[hsl(218_10%_42%)]"
                   >
                     加载中...
+                  </td>
+                </tr>
+              ) : isError ? (
+                <tr>
+                  <td
+                    colSpan={TABLE_COL_COUNT}
+                    className="px-5 py-8 text-center text-sm text-red-600"
+                  >
+                    设备数据加载失败
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="ml-2"
+                      onClick={() => refetch()}
+                    >
+                      重试
+                    </Button>
                   </td>
                 </tr>
               ) : devices && devices.length > 0 ? (

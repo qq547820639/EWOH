@@ -54,6 +54,8 @@ Trace: EWOH-2026-08-04-principal-final6
   AsyncLocalStorage from the tracing interceptor into audit entries.
 - HttpException details are sanitized and site-readiness parse failures return
   generic errors instead of raw exception text.
+- Devices page distinguishes loading, error (with retry), and empty states and
+  shows the last successful data update time.
 - Full standalone gate: typecheck, lint, Jest 76 suites / 362 tests, client
   12 suites / 39 tests, repo facts 33/33, OpenAPI 232/232, production build, and
 

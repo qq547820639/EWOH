@@ -250,7 +250,8 @@
     "security_probe_2026_08_04_iteration": "STANDALONE SECURITY VERIFY OK: runtime role least-privilege, SECURITY DEFINER lookups, RLS A/B, audit chain tamper detection",
     "playwright_2026_08_04": "Playwright screenshots of Standalone /login at mobile 390x844 and desktop 1440x900 saved under output/playwright/iteration-login-*.png",
     "request_context_correlation_2026_08_04": "AsyncLocalStorage request context carries traceId into audit entries; tracing interceptor + audit service tests; repo facts 33/33; Jest 76/360",
-    "error_sanitization_2026_08_04": "HttpException details no longer serialize raw response objects; site readiness returns generic error; exception filter + work orchestration tests; Jest 76/362"
+    "error_sanitization_2026_08_04": "HttpException details no longer serialize raw response objects; site readiness returns generic error; exception filter + work orchestration tests; Jest 76/362",
+    "devices_error_state_2026_08_04": "Devices page shows retryable error state and data update time instead of conflating failures with empty results"
   },
   "subagent_state": {
     "planned": [

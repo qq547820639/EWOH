@@ -1,19 +1,19 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T20:21:18.285Z",
+  "generatedAt": "2026-08-03T20:23:04.443Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
-    "itemCount": 225,
+    "itemCount": 226,
     "edgeCount": 22,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 82,
+    "evidenceCount": 83,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 36,
     "statusCounts": {
-      "Done": 132,
+      "Done": 133,
       "In Progress": 2,
       "Refining": 9,
       "Validation": 46,
@@ -2300,6 +2300,18 @@
       "evidence": "HttpException details sanitized; site readiness generic error; Jest 76/362"
     },
     {
+      "id": "T-191",
+      "title": "Devices page error/update state",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/05",
+      "agents": [
+        "AG-00"
+      ],
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "evidence": "isError + retry + updatedAt display in device list"
+    },
+    {
       "id": "G0",
       "title": "Environment and materials accessible",
       "type": "gate",
@@ -3263,7 +3275,7 @@
       "artifactId": "task-board-md",
       "path": "task-board.md",
       "mediaType": "text/markdown",
-      "checksum": "9d1b4ecf26e6696707d026a8332e40f9eab3a8407cf7fd42a659a3e0d1a3aaca",
+      "checksum": "f651ad3fdcf2c4431b315bbab741cf7eee62df9097bc0015f486998554aeb657",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3308,7 +3320,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "da05fd261660e68540e8f6bdef95d8be1a4d7854b7577f31c13236c044b02a2a",
+      "checksum": "736bfb53d867ce8aa629585bd2733af73fc44f745ae3937f33abfdb055d6c1dc",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3317,7 +3329,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "41588201995e030c7be169b611e32a241b721e16d2c7ef1b5ca03517af4dae92",
+      "checksum": "4af2d84b4ae715251c7d82481f54b7a9b9739bf4680493c9b61ded331025c17c",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4124,6 +4136,15 @@
       "checksum": "d0257f2ad09c594a6b9fa788b8a0b3810ddbfd6185497cc80a6c6a3a53aa4548",
       "result": "passed",
       "title": "Round 82 - 2026-08-04 Error Leak Sanitization"
+    },
+    {
+      "evidenceId": "EVD-round83-devices-error-state",
+      "workItemId": "",
+      "kind": "test",
+      "path": ".codex/artifacts/work/evidence/round83-devices-error-state.md",
+      "checksum": "10acfc44929d6c03757dae589619a7a5b2c9f16837b8355ae1509162da5ec9c7",
+      "result": "passed",
+      "title": "Round 83 - 2026-08-04 Devices Error and Update State"
     },
     {
       "evidenceId": "EVD-round9-observability-deploy-artifacts",
