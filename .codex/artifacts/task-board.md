@@ -349,6 +349,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-126 | Third factory config-driven install drill | PX-12/04 | Done | `round42-third-factory-drill.md`; E2E config install passed |
 
+## Wave Final5 - Difference Recycling (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-127 | Factory difference register/list API + audit | PX-05/12 | Done | `round43-factory-differences.md`; E2E difference registry passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

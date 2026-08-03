@@ -2207,6 +2207,49 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scale/differences:
+    get:
+      tags:
+        - scale
+      summary: List registered factory differences
+      responses:
+        '200':
+          description: Factory difference list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FactoryDifferenceList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - scale
+      summary: Register a factory difference for recycling
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterFactoryDifferenceRequest'
+      responses:
+        '201':
+          description: Registered difference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FactoryDifference'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/onboarding/checklist:
     get:
       tags:
@@ -7870,6 +7913,42 @@ components:
               type: integer
             incompatibleCount:
               type: integer
+    RegisterFactoryDifferenceRequest:
+      type: object
+      properties:
+        factoryName:
+          type: string
+        key:
+          type: string
+        category:
+          type: string
+        value:
+          nullable: true
+      required:
+        - factoryName
+        - key
+    FactoryDifference:
+      type: object
+      properties:
+        key:
+          type: string
+        factoryName:
+          type: string
+        category:
+          type: string
+        value:
+          nullable: true
+        status:
+          type: string
+        updatedBy:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+    FactoryDifferenceList:
+      type: array
+      items:
+        $ref: '#/components/schemas/FactoryDifference'
     OnboardingStepDefinition:
       type: object
       properties:

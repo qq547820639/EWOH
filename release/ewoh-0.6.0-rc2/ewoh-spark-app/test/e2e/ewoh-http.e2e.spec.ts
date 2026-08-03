@@ -1969,6 +1969,37 @@ if (!e2eConfig) {
       expect(scaleMetrics.body.assetPackageCount).toBeGreaterThanOrEqual(3);
       expect(scaleMetrics.body.publishedRate).toBeGreaterThan(0);
       expect(scaleMetrics.body.ringCounts).toBeDefined();
+
+      const difference = await apiRequest<{
+        key: string;
+        factoryName: string;
+        status: string;
+        updatedBy: string | null;
+      }>(baseUrl, '/api/scale/differences', {
+        method: 'POST',
+        headers: jsonHeaders(token),
+        body: JSON.stringify({
+          factoryName: `Factory D ${runId}`,
+          key: 'weighing',
+          category: 'process',
+          value: true,
+        }),
+      });
+      expect(difference.status).toBe(201);
+      expect(difference.body.status).toBe('open');
+      expect(difference.body.factoryName).toBe(`Factory D ${runId}`);
+
+      const differences = await apiRequest<
+        Array<{ key: string; factoryName: string; status: string }>
+      >(baseUrl, '/api/scale/differences', {
+        headers: jsonHeaders(token),
+      });
+      expect(differences.status).toBe(200);
+      expect(
+        differences.body.some(
+          (row) => row.key === difference.body.key && row.status === 'open',
+        ),
+      ).toBe(true);
     });
 
     it('persists approval instances, steps, and audit operations', async () => {

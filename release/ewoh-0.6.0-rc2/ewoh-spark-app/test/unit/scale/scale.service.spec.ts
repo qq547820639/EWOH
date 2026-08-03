@@ -6,6 +6,7 @@ import {
   ewohAssetPackage,
   ewohFactoryProfile,
   ewohFactoryTemplate,
+  ewohSchedulerConfig,
 } from '@server/database/schema';
 
 describe('template lifecycle', () => {
@@ -781,5 +782,80 @@ describe('ScaleService templates and assets', () => {
     expect(result.publishedRate).toBeCloseTo(0.667, 3);
     expect(result.ringCounts).toEqual({ pilot: 1, shadow: 1 });
     expect(result.compatibility.compatibleCount).toBe(3);
+  });
+
+  it('registers a factory difference with audit', async () => {
+    const row = {
+      configKey: 'diff.FactoryA.weighing',
+      configValue: {
+        factoryName: 'FactoryA',
+        key: 'weighing',
+        category: 'process',
+        value: true,
+        status: 'open',
+      },
+      updatedBy: 'user-1',
+      updatedAt: new Date('2026-08-03T00:00:00Z'),
+    };
+    const returning = jest.fn().mockResolvedValue([row]);
+    const onConflictDoUpdate = jest.fn().mockReturnValue({ returning });
+    const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
+    const insert = jest.fn().mockReturnValue({ values });
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new ScaleService({ insert } as never, audit as never);
+
+    const result = await service.registerFactoryDifference(
+      {
+        factoryName: 'FactoryA',
+        key: 'weighing',
+        category: 'process',
+        value: true,
+      },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+
+    expect(result.factoryName).toBe('FactoryA');
+    expect(result.status).toBe('open');
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({ configKey: 'diff.FactoryA.weighing' }),
+    );
+    expect(audit.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'scale.difference.register' }),
+    );
+  });
+
+  it('lists factory differences from the config store', async () => {
+    const rows = [
+      {
+        configKey: 'diff.FactoryA.weighing',
+        configValue: {
+          factoryName: 'FactoryA',
+          key: 'weighing',
+          category: 'process',
+          value: true,
+          status: 'open',
+        },
+        updatedBy: 'user-1',
+        updatedAt: new Date('2026-08-03T00:00:00Z'),
+      },
+    ];
+    const select = jest.fn(() => ({
+      from: jest.fn((table: unknown) => ({
+        where: jest.fn(() => ({
+          orderBy: jest.fn().mockResolvedValue(
+            table === ewohSchedulerConfig ? rows : [],
+          ),
+        })),
+      })),
+    }));
+    const service = new ScaleService(
+      { select } as never,
+      { appendAuditLog: jest.fn() } as never,
+    );
+
+    const result = await service.listFactoryDifferences();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].factoryName).toBe('FactoryA');
   });
 });

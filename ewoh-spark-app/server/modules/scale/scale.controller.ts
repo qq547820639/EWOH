@@ -171,6 +171,22 @@ export class ScaleController {
     return this.scaleService.scaleMetrics();
   }
 
+  @Post('differences')
+  registerFactoryDifference(
+    @Body() body: Record<string, never>,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.scaleService.registerFactoryDifference(
+      body as never,
+      request.userContext,
+    );
+  }
+
+  @Get('differences')
+  listFactoryDifferences() {
+    return this.scaleService.listFactoryDifferences();
+  }
+
   @Post('fleet/support-bundle')
   generateSupportBundle(@Req() request: { userContext?: OrgContext }) {
     return this.scaleService.generateSupportBundle(request.userContext);

@@ -4,9 +4,10 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, like } from 'drizzle-orm';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -16,6 +17,7 @@ import {
   ewohAssetPackage,
   ewohFactoryProfile,
   ewohFactoryTemplate,
+  ewohSchedulerConfig,
 } from '@server/database/schema';
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -575,6 +577,83 @@ export class ScaleService {
         incompatibleCount: compatibility.incompatibleCount,
       },
     };
+  }
+
+  private parseDifference(row: {
+    configKey: string;
+    configValue: unknown;
+    updatedBy: string | null;
+    updatedAt: Date;
+  }) {
+    const value = (row.configValue as Record<string, unknown> | null) ?? {};
+    return {
+      key: row.configKey,
+      factoryName: value.factoryName ?? '',
+      category: value.category ?? 'general',
+      value: value.value ?? null,
+      status: value.status ?? 'open',
+      updatedBy: row.updatedBy,
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  }
+
+  async registerFactoryDifference(
+    body: {
+      factoryName: string;
+      key: string;
+      category?: string;
+      value?: unknown;
+    },
+    actor?: OrgContext,
+  ) {
+    if (!body.factoryName?.trim() || !body.key?.trim()) {
+      throw new BadRequestException('factoryName and key are required');
+    }
+    if (!actor?.userId?.trim()) {
+      throw new UnauthorizedException('Authenticated user context is required');
+    }
+    const configKey = `diff.${body.factoryName.trim()}.${body.key.trim()}`;
+    const configValue = {
+      factoryName: body.factoryName.trim(),
+      key: body.key.trim(),
+      category: body.category?.trim() || 'general',
+      value: body.value ?? null,
+      status: 'open',
+    };
+    const [row] = await this.db
+      .insert(ewohSchedulerConfig)
+      .values({
+        configKey,
+        configValue,
+        updatedBy: actor.userId.trim(),
+      })
+      .onConflictDoUpdate({
+        target: [ewohSchedulerConfig.orgId, ewohSchedulerConfig.configKey],
+        set: {
+          configValue,
+          updatedBy: actor.userId.trim(),
+        },
+      })
+      .returning();
+    await this.auditService.appendAuditLog({
+      actorId: actor.userId,
+      orgId: actor.primaryOrgId ?? '',
+      action: 'scale.difference.register',
+      entityType: 'factory_difference',
+      entityId: configKey,
+      before: null,
+      after: { factoryName: body.factoryName, key: body.key, category: body.category },
+    });
+    return this.parseDifference(row);
+  }
+
+  async listFactoryDifferences() {
+    const rows = await this.db
+      .select()
+      .from(ewohSchedulerConfig)
+      .where(like(ewohSchedulerConfig.configKey, 'diff.%'))
+      .orderBy(desc(ewohSchedulerConfig.updatedAt));
+    return rows.map((row) => this.parseDifference(row));
   }
 
   async listAssetPackages() {

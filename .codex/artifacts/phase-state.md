@@ -111,6 +111,8 @@ production approval gate.
   scenario-related contract audits as one gate.
 - Third factory drill: E2E installs a third factory profile from the same
   published template using config only, with persisted config and org scope.
+- Factory differences: `POST/GET /api/scale/differences` registers and lists
+  org-scoped factory differences for recycling/platformization.
 
 ## Active Tasks
 
