@@ -12,6 +12,12 @@ SRC = REPO_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from edge_platform.connectors.csvfile import (  # noqa: E402
+    CsvFileAdapter,
+    CsvFileError,
+    CsvMapping,
+    parse_csv_rows,
+)
 from edge_platform.connectors.modbus import (  # noqa: E402
     ModbusAdapter,
     ModbusError,
@@ -63,6 +69,7 @@ class TestManifestContract(unittest.TestCase):
                 "opcua-generic",
                 "modbus-tcp-generic",
                 "http-webhook-generic",
+                "csv-file-generic",
             },
         )
 
@@ -452,6 +459,41 @@ class TestWebhook(unittest.TestCase):
         self.assertIsNotNone(message)
         self.assertEqual(message["entity_id"], "CNC-01")
         self.assertEqual(message["source_type"], "simulated")
+        adapter.stop()
+
+
+class TestCsvFile(unittest.TestCase):
+    def test_parse_rows_with_mapping(self):
+        rows = parse_csv_rows(
+            "device_id,value,unit\nCNC-01,12.5,mm\nCNC-02,20,mm\n",
+            CsvMapping(entity_id="device_id", value="value", unit="unit"),
+            default_source_type="real",
+        )
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["value"], 12.5)
+        self.assertEqual(rows[0]["unit"], "mm")
+        self.assertEqual(rows[1]["entity_id"], "CNC-02")
+
+    def test_empty_csv_is_rejected(self):
+        with self.assertRaises(CsvFileError):
+            parse_csv_rows(
+                "device_id,value\n",
+                CsvMapping(entity_id="device_id", value="value"),
+            )
+
+    def test_adapter_enqueues_rows(self):
+        adapter = CsvFileAdapter(
+            "csv-1",
+            CsvMapping(entity_id="device_id", value="value"),
+            source_type="simulated",
+        )
+        adapter.start()
+        adapter._enqueue_csv("device_id,value\nCNC-01,1\nCNC-02,2\n")
+        first = adapter.read_message(timeout=0.1)
+        second = adapter.read_message(timeout=0.1)
+        self.assertEqual(first["entity_id"], "CNC-01")
+        self.assertEqual(second["entity_id"], "CNC-02")
+        self.assertEqual(first["source_type"], "simulated")
         adapter.stop()
 
 

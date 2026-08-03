@@ -457,6 +457,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-144 | HTTP/Webhook payload/signature/adapter + connector manifest | V-CON/05 | Done | `round60-webhook-connector.md`; pytest 117; connector TCK 29/29 |
 
+## Wave Final5 - CSV/File Connector (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-145 | CSV/File header mapping/row normalization/adapter + connector manifest | V-CON/05 | Done | `round61-csv-file-connector.md`; pytest 120; connector TCK 32/32 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

@@ -1,12 +1,12 @@
 # EWOH Acceptance Evidence
 
-Status: validated v1.11 (2026-08-03 HTTP/Webhook connector wave)
+Status: validated v1.12 (2026-08-03 CSV/File connector wave)
 Owner: AG-00/AG-41
 
 ## Automated Evidence
 
 - Python unittest: 667 passed.
-- Python repo contract tests: 117 passed.
+- Python repo contract tests: 120 passed.
 - NestJS Jest: 302 passed across 67 suites (includes SP-01..SP-08 scenario
   suite and event catalog, Helm chart, Golden Factory, and Mapping DSL
   contract tests).
@@ -215,6 +215,9 @@ Owner: AG-00/AG-41
 - HTTP/Webhook connector: canonical payload normalization, constant-time HMAC
   signature verification, edge adapter, and `http-webhook-generic-1.0.0`
   manifest; connector TCK is 29/29.
+- CSV/File connector: header-mapped row parsing, numeric/string value
+  inference, batch ingestion, edge adapter, and `csv-file-generic-1.0.0`
+  manifest; connector TCK is 32/32.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

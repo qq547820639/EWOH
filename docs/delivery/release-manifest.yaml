@@ -61,7 +61,7 @@ evidence:
   erp_mes_connector: "erp-mes-profile-1.0.0 manifest; secret-ref config; connector tests 11; pytest 82 passed"
   scale_metrics: "GET /api/scale/metrics counts/published rate/ring distribution/compatibility"
   scenario_uninstall: "POST /api/scale/scenario-packs/:id/uninstall with audit"
-  connector_tck: "scripts/connector-tck.py + make connector-tck; 29 checks"
+  connector_tck: "scripts/connector-tck.py + make connector-tck; 32 checks"
   scenario_tck: "scripts/scenario-tck.js + npm run scenario:tck; 5 gates"
   third_factory_drill: "E2E third factory config-driven install from same template"
   factory_differences: "POST/GET /api/scale/differences; diff.* config keys; audit; org scoped"
@@ -82,6 +82,7 @@ evidence:
   opcua_connector: "OPC UA node ID parsing/data point normalization/quality mapping/edge adapter; opcua-generic manifest; connector TCK 21/21; pytest 111"
   modbus_connector: "Modbus TCP register validation/scaling/normalization/edge adapter; modbus-tcp-generic manifest; connector TCK 25/25; pytest 114"
   webhook_connector: "HTTP/Webhook payload normalization/HMAC signature verification/edge adapter; http-webhook-generic manifest; connector TCK 29/29; pytest 117"
+  csv_file_connector: "CSV/File header mapping/row normalization/batch ingestion/edge adapter; csv-file-generic manifest; connector TCK 32/32; pytest 120"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

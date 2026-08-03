@@ -18,6 +18,10 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from edge_platform.connectors.csvfile import (  # noqa: E402
+    CsvMapping,
+    parse_csv_rows,
+)
 from edge_platform.connectors.modbus import (  # noqa: E402
     normalize_modbus_datapoint,
     parse_modbus_register,
@@ -82,6 +86,11 @@ CONFIGS = {
         "endpointPath": "/webhook/ewoh",
         "signatureHeader": "x-ewoh-signature",
     },
+    "csv-file-generic": {
+        "filePattern": "/tmp/ewoh/input/*.csv",
+        "entityIdColumn": "device_id",
+        "valueColumn": "value",
+    },
 }
 
 checks: list[tuple[str, bool]] = []
@@ -92,7 +101,7 @@ def check(name: str, condition: bool) -> None:
 
 
 manifests = discover_manifests(MANIFEST_DIR)
-check("discover manifests >= 7", len(manifests) >= 7)
+check("discover manifests >= 8", len(manifests) >= 8)
 
 for manifest in manifests:
     config = CONFIGS[manifest.id]
@@ -267,6 +276,19 @@ check(
     "webhook canonical point",
     webhook_point["entity_id"] == "CNC-01"
     and webhook_point["protocol_version"] == "HTTP-Webhook",
+)
+
+csv_rows = parse_csv_rows(
+    "device_id,value,unit\nCNC-01,12.5,mm\nCNC-02,20,mm\n",
+    CsvMapping(entity_id="device_id", value="value", unit="unit"),
+    default_source_type="real",
+)
+check(
+    "csv rows",
+    len(csv_rows) == 2
+    and csv_rows[0]["value"] == 12.5
+    and csv_rows[1]["entity_id"] == "CNC-02"
+    and csv_rows[0]["protocol_version"] == "CSV-File",
 )
 
 failed = [name for name, ok in checks if not ok]
