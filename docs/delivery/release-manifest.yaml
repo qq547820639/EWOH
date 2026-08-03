@@ -70,6 +70,7 @@ evidence:
   differences_ui: "/scale page difference register/list/resolve UI; client build passed"
   workflow_instances: "stateful workflow instance start/list/advance; persisted workflow.* config; role gating + audit"
   support_bundle_ui: "/scale page one-click support bundle generation; client build passed"
+  fleet_ui: "/scale page fleet status + ring upgrade/rollback actions; client build passed"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

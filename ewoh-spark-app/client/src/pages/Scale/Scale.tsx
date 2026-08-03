@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Boxes, Factory, GitCompareArrows, Layers3, ListChecks, PackageSearch, Play } from 'lucide-react';
+import { ArrowUpCircle, Boxes, Factory, GitCompareArrows, Layers3, ListChecks, PackageSearch, Play, RotateCcw } from 'lucide-react';
 import {
+  fleetRollback,
+  fleetUpgrade,
   generateSupportBundle,
+  getFleetStatus,
   listFactoryDifferences,
   getScaleCompatibility,
   listScaleAssets,
@@ -12,6 +15,8 @@ import {
   resolveFactoryDifference,
   runScaleOnboarding,
   type FactoryDifference,
+  type FleetRollbackResult,
+  type FleetUpgradeResult,
   type OnboardingRunResult,
   type SupportBundleResult,
 } from '../../api/scale';
@@ -51,6 +56,11 @@ const Scale = (): React.ReactElement => {
   const [supportBundle, setSupportBundle] = useState<SupportBundleResult | null>(
     null,
   );
+  const [fleetPackageId, setFleetPackageId] = useState('');
+  const [fleetRing, setFleetRing] = useState('');
+  const [fleetResult, setFleetResult] = useState<
+    FleetUpgradeResult | FleetRollbackResult | null
+  >(null);
 
   const query = useQuery<ScaleData>({
     queryKey: queryKeys.scaleDashboard,
@@ -115,12 +125,39 @@ const Scale = (): React.ReactElement => {
     onSuccess: setSupportBundle,
   });
 
+  const fleetQuery = useQuery({
+    queryKey: queryKeys.scaleFleetStatus,
+    queryFn: getFleetStatus,
+    refetchInterval: ADMIN_REFETCH_INTERVAL_MS,
+    staleTime: QUERY_STALE_TIME_MS,
+  });
+
+  const upgradeFleet = useMutation({
+    mutationFn: () => fleetUpgrade(fleetPackageId.trim(), fleetRing || undefined),
+    onSuccess: (result) => {
+      setFleetResult(result);
+      queryClient.invalidateQueries({ queryKey: queryKeys.scaleFleetStatus });
+      queryClient.invalidateQueries({ queryKey: queryKeys.scaleDashboard });
+      setFleetPackageId('');
+    },
+  });
+
+  const rollbackFleet = useMutation({
+    mutationFn: () => fleetRollback(fleetRing || undefined),
+    onSuccess: (result) => {
+      setFleetResult(result);
+      queryClient.invalidateQueries({ queryKey: queryKeys.scaleFleetStatus });
+      queryClient.invalidateQueries({ queryKey: queryKeys.scaleDashboard });
+    },
+  });
+
   const data = query.data;
   const templates = data?.templates ?? [];
   const profiles = data?.profiles ?? [];
   const assets = data?.assets ?? [];
   const compatibility = data?.compatibility;
   const differences = differencesQuery.data ?? [];
+  const fleetStatus = fleetQuery.data;
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -334,6 +371,87 @@ const Scale = (): React.ReactElement => {
                     })}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
+            <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+              <ArrowUpCircle className="h-4 w-4 text-blue-600" />
+              <h2 className="font-semibold text-[hsl(220_14%_14%)]">Fleet 升级环</h2>
+              <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
+                工厂 {fleetStatus?.factoryCount ?? 0} · 环分布{' '}
+                {Object.entries(fleetStatus?.ringCounts ?? {})
+                  .map(([ring, count]) => `${ring}:${count}`)
+                  .join(' / ')}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+              <input
+                value={fleetPackageId}
+                onChange={(event) => setFleetPackageId(event.target.value)}
+                placeholder="资产包 ID"
+                className="h-9 w-56 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+              />
+              <select
+                value={fleetRing}
+                onChange={(event) => setFleetRing(event.target.value)}
+                className="h-9 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+              >
+                <option value="">全部环</option>
+                {['dev', 'integration', 'shadow', 'pilot', 'small', 'full'].map(
+                  (ring) => (
+                    <option key={ring} value={ring}>
+                      {ring}
+                    </option>
+                  ),
+                )}
+              </select>
+              <button
+                type="button"
+                disabled={!fleetPackageId.trim() || upgradeFleet.isPending}
+                onClick={() => upgradeFleet.mutate()}
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white disabled:opacity-50"
+              >
+                <ArrowUpCircle className="h-4 w-4" />
+                升级
+              </button>
+              <button
+                type="button"
+                disabled={rollbackFleet.isPending}
+                onClick={() => rollbackFleet.mutate()}
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-[hsl(220_14%_89%)] px-4 text-sm font-medium text-[hsl(220_14%_14%)] disabled:opacity-50"
+              >
+                <RotateCcw className="h-4 w-4" />
+                回滚
+              </button>
+            </div>
+            {(upgradeFleet.isError || rollbackFleet.isError) && (
+              <div className="border-b border-red-100 bg-red-50 px-5 py-3 text-sm text-red-700">
+                {(upgradeFleet.error ?? rollbackFleet.error) instanceof Error
+                  ? (upgradeFleet.error ?? rollbackFleet.error)?.message
+                  : 'Fleet 操作失败'}
+              </div>
+            )}
+            {fleetResult && (
+              <div className="border-b border-[hsl(220_14%_89%)] px-5 py-3 text-sm text-[hsl(220_14%_14%)]">
+                {fleetResult && 'updatedProfiles' in fleetResult
+                  ? `升级 ${fleetResult.targetRing}：更新 ${fleetResult.updatedProfiles}，跳过 ${fleetResult.skippedProfiles}`
+                  : fleetResult && 'rolledBackProfiles' in fleetResult
+                    ? `回滚 ${fleetResult.targetRing}：回滚 ${fleetResult.rolledBackProfiles}，跳过 ${fleetResult.skippedProfiles}`
+                    : ''}
+              </div>
+            )}
+            {fleetStatus && fleetStatus.profiles.length > 0 && (
+              <div className="flex flex-wrap gap-2 px-5 py-4">
+                {fleetStatus.profiles.map((profile) => (
+                  <span
+                    key={profile.profileId}
+                    className="rounded-md bg-[hsl(220_14%_96%)] px-3 py-1.5 text-xs text-[hsl(220_14%_14%)]"
+                  >
+                    {profile.factoryName} · {profile.upgradeRing} · {profile.status}
+                  </span>
+                ))}
               </div>
             )}
           </section>

@@ -385,6 +385,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-132 | One-click support bundle generation UI on /scale | AG-30/31 | Done | `round48-support-bundle-ui.md`; client build passed |
 
+## Wave Final5 - Fleet UI (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-133 | Fleet status + ring upgrade/rollback UI on /scale | AG-30/31 | Done | `round49-fleet-ui.md`; client build passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

@@ -166,6 +166,8 @@ Owner: AG-00/AG-41
   start/advance/list.
 - Support bundle UI: the `/scale` page generates redacted fleet diagnostic
   bundles with one click and shows the result.
+- Fleet UI: the `/scale` page shows upgrade ring distribution and supports
+  ring-filtered fleet upgrade/rollback through real APIs.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

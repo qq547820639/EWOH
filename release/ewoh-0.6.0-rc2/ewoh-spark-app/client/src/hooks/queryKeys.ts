@@ -40,4 +40,5 @@ export const queryKeys = {
   scaleCompatibility: ['scale-compatibility'] as const,
   scaleDashboard: ['scale-dashboard'] as const,
   scaleDifferences: ['scale-differences'] as const,
+  scaleFleetStatus: ['scale-fleet-status'] as const,
 };

@@ -124,6 +124,8 @@ production approval gate.
   and audit.
 - Support bundle UI: `/scale` page generates redacted fleet diagnostic bundles
   with one click and shows the result.
+- Fleet UI: `/scale` page shows upgrade ring distribution and supports
+  ring-filtered fleet upgrade/rollback actions.
 
 ## Active Tasks
 

@@ -76,6 +76,35 @@ export interface SupportBundleResult {
   includesSecrets: boolean;
 }
 
+export interface FleetStatusProfile {
+  profileId: string;
+  factoryName: string;
+  status: string;
+  upgradeRing: string;
+}
+
+export interface FleetStatus {
+  factoryCount: number;
+  templateCount: number;
+  assetPackageCount: number;
+  statusCounts: Record<string, number>;
+  ringCounts: Record<string, number>;
+  profiles: FleetStatusProfile[];
+}
+
+export interface FleetUpgradeResult {
+  packageId: string;
+  targetRing: string;
+  updatedProfiles: number;
+  skippedProfiles: number;
+}
+
+export interface FleetRollbackResult {
+  targetRing: string;
+  rolledBackProfiles: number;
+  skippedProfiles: number;
+}
+
 export async function listScaleTemplates(): Promise<ScaleTemplate[]> {
   const res = await axiosForBackend({ url: '/api/scale/templates', method: 'GET' });
   return res.data;
@@ -140,6 +169,32 @@ export async function generateSupportBundle(): Promise<SupportBundleResult> {
   const res = await axiosForBackend({
     url: '/api/scale/fleet/support-bundle',
     method: 'POST',
+  });
+  return res.data;
+}
+
+export async function getFleetStatus(): Promise<FleetStatus> {
+  const res = await axiosForBackend({ url: '/api/scale/fleet/status', method: 'GET' });
+  return res.data;
+}
+
+export async function fleetUpgrade(
+  packageId: string,
+  ring?: string,
+): Promise<FleetUpgradeResult> {
+  const res = await axiosForBackend({
+    url: '/api/scale/fleet/upgrade',
+    method: 'POST',
+    data: ring ? { packageId, ring } : { packageId },
+  });
+  return res.data;
+}
+
+export async function fleetRollback(ring?: string): Promise<FleetRollbackResult> {
+  const res = await axiosForBackend({
+    url: '/api/scale/fleet/rollback',
+    method: 'POST',
+    data: ring ? { ring } : {},
   });
   return res.data;
 }
