@@ -2000,6 +2000,18 @@ if (!e2eConfig) {
           (row) => row.key === difference.body.key && row.status === 'open',
         ),
       ).toBe(true);
+
+      const resolved = await apiRequest<{ status: string; key: string }>(
+        baseUrl,
+        `/api/scale/differences/${encodeURIComponent(difference.body.key)}/resolve`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+        },
+      );
+      expect(resolved.status).toBe(201);
+      expect(resolved.body.key).toBe(difference.body.key);
+      expect(resolved.body.status).toBe('resolved');
     });
 
     it('persists approval instances, steps, and audit operations', async () => {

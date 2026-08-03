@@ -355,6 +355,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-127 | Factory difference register/list API + audit | PX-05/12 | Done | `round43-factory-differences.md`; E2E difference registry passed |
 
+## Wave Final5 - Difference Resolve (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-128 | Factory difference resolve API + audit | PX-05/12 | Done | `round44-difference-resolve.md`; E2E resolve passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

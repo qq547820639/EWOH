@@ -17,10 +17,10 @@ artifacts:
   deploy: deploy/cloud/
   contracts: .codex/artifacts/contracts/
 evidence:
-  jest: "63 suites / 274 tests"
+  jest: "63 suites / 275 tests"
   client_jest: "6 suites / 21 tests"
   e2e: "23/23 HTTP + PostgreSQL"
-  openapi: "177/177 documented, 0 unimplemented"
+  openapi: "178/178 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/openapi/e2e/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; logical backup/restore of 54 tables / 25 rows with row-count verify"
@@ -65,6 +65,7 @@ evidence:
   scenario_tck: "scripts/scenario-tck.js + npm run scenario:tck; 5 gates"
   third_factory_drill: "E2E third factory config-driven install from same template"
   factory_differences: "POST/GET /api/scale/differences; diff.* config keys; audit; org scoped"
+  difference_resolve: "POST /api/scale/differences/:key/resolve; resolved status + audit"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

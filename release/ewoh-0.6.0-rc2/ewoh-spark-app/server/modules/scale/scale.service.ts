@@ -656,6 +656,40 @@ export class ScaleService {
     return rows.map((row) => this.parseDifference(row));
   }
 
+  async resolveFactoryDifference(configKey: string, actor?: OrgContext) {
+    if (!actor?.userId?.trim()) {
+      throw new UnauthorizedException('Authenticated user context is required');
+    }
+    const [row] = await this.db
+      .select()
+      .from(ewohSchedulerConfig)
+      .where(eq(ewohSchedulerConfig.configKey, configKey));
+    if (!row) {
+      throw new NotFoundException(`Factory difference ${configKey} not found`);
+    }
+    const previousValue =
+      (row.configValue as Record<string, unknown> | null) ?? {};
+    const configValue = {
+      ...previousValue,
+      status: 'resolved',
+    };
+    const [updated] = await this.db
+      .update(ewohSchedulerConfig)
+      .set({ configValue, updatedBy: actor.userId.trim() })
+      .where(eq(ewohSchedulerConfig.configKey, configKey))
+      .returning();
+    await this.auditService.appendAuditLog({
+      actorId: actor.userId,
+      orgId: actor.primaryOrgId ?? '',
+      action: 'scale.difference.resolve',
+      entityType: 'factory_difference',
+      entityId: configKey,
+      before: { status: previousValue.status ?? 'open' },
+      after: { status: 'resolved' },
+    });
+    return this.parseDifference(updated);
+  }
+
   async listAssetPackages() {
     return this.db
       .select()

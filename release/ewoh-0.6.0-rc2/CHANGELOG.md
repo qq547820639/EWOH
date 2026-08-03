@@ -144,6 +144,8 @@
   验证无代码分叉、配置持久化与组织隔离。
 - 工厂差异回收：`POST/GET /api/scale/differences` 将工厂差异登记为
   `diff.*` 配置项并写审计，支持后续平台化回收。
+- 差异解决：`POST /api/scale/differences/:key/resolve` 将已回收差异标记为
+  `resolved` 并写审计。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

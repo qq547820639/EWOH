@@ -113,6 +113,8 @@ production approval gate.
   published template using config only, with persisted config and org scope.
 - Factory differences: `POST/GET /api/scale/differences` registers and lists
   org-scoped factory differences for recycling/platformization.
+- Difference resolution: `POST /api/scale/differences/:key/resolve` marks
+  recycled differences as resolved with audit.
 
 ## Active Tasks
 

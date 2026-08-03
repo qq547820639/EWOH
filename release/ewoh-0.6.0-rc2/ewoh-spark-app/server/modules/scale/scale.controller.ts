@@ -187,6 +187,17 @@ export class ScaleController {
     return this.scaleService.listFactoryDifferences();
   }
 
+  @Post('differences/:key/resolve')
+  resolveFactoryDifference(
+    @Param('key') key: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.scaleService.resolveFactoryDifference(
+      key,
+      request.userContext,
+    );
+  }
+
   @Post('fleet/support-bundle')
   generateSupportBundle(@Req() request: { userContext?: OrgContext }) {
     return this.scaleService.generateSupportBundle(request.userContext);

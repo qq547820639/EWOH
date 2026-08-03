@@ -858,4 +858,48 @@ describe('ScaleService templates and assets', () => {
     expect(result).toHaveLength(1);
     expect(result[0].factoryName).toBe('FactoryA');
   });
+
+  it('resolves a factory difference with audit', async () => {
+    const row = {
+      configKey: 'diff.FactoryA.weighing',
+      configValue: {
+        factoryName: 'FactoryA',
+        key: 'weighing',
+        category: 'process',
+        value: true,
+        status: 'open',
+      },
+      updatedBy: 'user-1',
+      updatedAt: new Date('2026-08-03T00:00:00Z'),
+    };
+    const selectWhere = jest.fn().mockResolvedValue([row]);
+    const updateReturning = jest.fn().mockResolvedValue([
+      {
+        ...row,
+        configValue: { ...row.configValue, status: 'resolved' },
+      },
+    ]);
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({ where: selectWhere })),
+      })),
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn(() => ({ returning: updateReturning })),
+        })),
+      })),
+    };
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new ScaleService(db as never, audit as never);
+
+    const result = await service.resolveFactoryDifference(
+      'diff.FactoryA.weighing',
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+
+    expect(result.status).toBe('resolved');
+    expect(audit.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'scale.difference.resolve' }),
+    );
+  });
 });
