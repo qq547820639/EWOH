@@ -499,6 +499,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-151 | Pilot readiness Go/No-Go blocker gate | AG-51/00 | Done | `round67-pilot-readiness-blockers.md`; blockers documented |
 
+## Wave Final5 - Release Bundle Re-roll with Pilot Gate (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-152 | Rebuild RC2 bundle with pilot readiness gate | AG-51 | Done | `round68-release-bundle-includes-pilot-gate.md`; 1316 files; review 24/24 |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

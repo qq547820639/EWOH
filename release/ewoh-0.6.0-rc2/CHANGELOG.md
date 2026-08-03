@@ -225,6 +225,13 @@
 - RC2 发布包重新构建：`scripts/package-release.sh` 重新生成
   `release/ewoh-0.6.0-rc2`（1315 文件）与 `SHA256SUMS.txt`，Scale Release
   Review 24/24 通过。
+- 最终门禁扫描：逻辑备份/恢复、场景 TCK、部署 TCK、AAS TCK、Rego TCK、
+  连接器 TCK 与跨租户 E2E 全部通过，作为本轮交付证据。
+- Pilot 就绪检查：`scripts/pilot-readiness-check.sh` 与 `make pilot-readiness`
+  提供可执行 Go/No-Go 门禁，明确列出容器工具、数据库、试点工厂、生产批准、
+  培训、验收签署与真机配置等未决阻塞项。
+- RC2 发布包再次更新：将 Pilot 就绪门禁与最新证据纳入
+  `release/ewoh-0.6.0-rc2`（1316 文件），校验和重新生成。
 
 ### Changed
 - `ewoh_telemetry.assist_level` 由 `varchar(50)` 改为 `real`，与规范数值口径一致。

@@ -4,7 +4,7 @@ status: candidate-for-production (approval-gated)
 bundle:
   path: release/ewoh-0.6.0-rc2
   checksums: release/ewoh-0.6.0-rc2/SHA256SUMS.txt
-  files: 1315
+  files: 1316
 artifacts:
   api: ewoh-spark-app/dist/server
   client: ewoh-spark-app/dist/client/index.standalone.html
@@ -89,6 +89,7 @@ evidence:
   release_bundle_rerolled: "RC2 bundle rebuilt with all new capabilities; 1315 files; SHA256SUMS regenerated; review 24/24"
   final_gate_sweep: "ops backup/restore PASSED; scenario 5 gates; deployment 4 gates; AAS 7/7; Rego 4/4; connector 32/32; cross-tenant E2E 28/28"
   pilot_readiness_gate: "scripts/pilot-readiness-check.sh; Go/No-Go blockers documented"
+  release_bundle_pilot_gate: "RC2 bundle re-rolled to 1316 files including pilot gate; SHA256SUMS regenerated; review 24/24"
   github_actions:
     branch: codex/rc1-ci-full
     commits:

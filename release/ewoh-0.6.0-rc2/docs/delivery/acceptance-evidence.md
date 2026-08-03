@@ -1,6 +1,6 @@
 # EWOH Acceptance Evidence
 
-Status: validated v1.16 (2026-08-03 RC2 bundle reroll wave)
+Status: validated v1.19 (2026-08-03 bundle pilot gate wave)
 Owner: AG-00/AG-41
 
 ## Automated Evidence
@@ -229,8 +229,17 @@ Owner: AG-00/AG-41
   ID, method, path, status, duration, start time and error, refreshed at the
   operational interval.
 - RC2 release bundle reroll: `release/ewoh-0.6.0-rc2` rebuilt with all new
-  capabilities, 1315 files, regenerated `SHA256SUMS.txt`, and Scale Release
-  Review 24/24 passed.
+  capabilities (now 1316 files including the pilot readiness gate),
+  regenerated `SHA256SUMS.txt`, and Scale Release Review 24/24 passed.
+- Final one-click gate sweep: ops logical backup/restore, scenario TCK,
+  deployment TCK, AAS TCK, Rego TCK, connector TCK, and cross-tenant E2E all
+  passed after the latest implementation waves.
+- Pilot readiness gate: `scripts/pilot-readiness-check.sh` / `make pilot-readiness`
+  provides an executable Go/No-Go blocker list; current local run honestly
+  reports container tooling, DB env, pilot factory, production approval,
+  training, signoff and real-device config as pending/blocked.
+- RC2 bundle re-roll: release package now includes the pilot readiness gate
+  and is 1316 files with regenerated checksums; Scale Release Review 24/24.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.

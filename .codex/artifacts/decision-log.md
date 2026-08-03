@@ -31,3 +31,4 @@
 | D-029 | 2026-08-03 | Reroll RC2 release bundle so new capabilities and checksums are in the deliverable | Deliverable must match current source, not an older snapshot | Rebuild is reversible |
 | D-030 | 2026-08-03 | Run final one-click gate sweep as delivery evidence | Independent gates must be re-run after implementation waves, not assumed | Reversible re-run |
 | D-031 | 2026-08-03 | Add executable Pilot Go/No-Go readiness gate with explicit blockers | Local green must not be reported as production-ready; approvals/external state remain pending | Reversible per-script |
+| D-032 | 2026-08-03 | Rebuild RC2 bundle to include pilot readiness gate and updated evidence | Deliverable must include the latest delivery gate | Rebuild is reversible |

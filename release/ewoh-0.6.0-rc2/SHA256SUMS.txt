@@ -2,8 +2,8 @@
 d9d7560e7cf44d4fae1af32d7342d598ee2d42430bb80eaf02034509ee4e065c  ./.github/workflows/security.yml
 e837948cc1f6815a1d29ef788831e7e9da7b614ffbca656e427de5e73c9b8779  ./.github/workflows/standalone.yml
 04119e083d0290c47810d2d70659c39bd710a98359dbbe1f07d4e09d799283b3  ./.github/workflows/test.yml
-6f79f59d324d8832ed014d763fa866f3f9682b4d0bf44af05685b6cbaea51f73  ./CHANGELOG.md
-38dd0178f20a52357eeae8f942413c0f0b77f3cbafa744dc9a995023e9e2d89d  ./Makefile
+c1cd2c0a3b7421c853b5e4e819975bf5065f2fd3bcf8484acb58424985c83616  ./CHANGELOG.md
+712ad74bca7fd2d09f12a2ad2eca55371d68f0ae31ca47174c4dc0ca4f10651f  ./Makefile
 5eff92ef060482e7e19977a0a8294ffffe91c8a9b47d437cde70c6f79b85f4c0  ./README.md
 18aed5a0dba2bf9e17396e8d25d95524c8a6cd64d0e57b7768031c0a614f2ab8  ./RELEASE-README.md
 f9c1a56fddd12930b5b1c984fab0ddc8db425c21efffe2d014e463822fd592c4  ./SECURITY.md
@@ -145,10 +145,10 @@ cb4944c957e4888c137480614fa6f276afcc54bbd4fc0f5fa4571e411d4f9f7f  ./docs/archite
 3517965f70039dd3c9a8897bb81cf1374351d54790971d6292b5925ce1f272f7  ./docs/architecture/product_definition.md
 e97cc156f3348a1ca926e3dcbd3cfac5a35192f68b93c9585af1ebf9af8de492  ./docs/architecture/product_review_2026-07-31.md
 fa66e2ce1360765d98a85f8ebb7d1efa6b1d4acd8ccee343d1cfea18846ea5af  ./docs/data/multimodal_schema.md
-23fe815ec2a785f0e1e3a805a24195222f638e5d7cf1ddd951bbcb9afff05476  ./docs/delivery/acceptance-evidence.md
+4d39fadd6c31f84a89526766bb6d1ed78e853ff68eb29e5073bf1fb73ca2181f  ./docs/delivery/acceptance-evidence.md
 d75812a1a317ebf61514bc4bcc14dcf4577a979de182352358fcdb084ffad1c3  ./docs/delivery/deployment-runbook.md
 97e5db9b47056c73ed7e77416c6300f2139c957601f89a7f0a464027ec995483  ./docs/delivery/release-checklist.md
-333c444fa4b9ce6eff26721bf443d250892bc5695f8d00b9220239efe384b2e7  ./docs/delivery/release-manifest.yaml
+b35433033a4828ca750c1e6fa9696e0dcb3ffc725560b3abc0e11ffab077b9da  ./docs/delivery/release-manifest.yaml
 d429609ca4f89bfad846d2af8551a9ce4a3d8c3449e5fc8c394d1c93272379e6  ./docs/delivery/standalone-product-pack.md
 0a4104abf8bbe2035f4959bc07c2c4289def7d5ad0837d42a438821d32298918  ./docs/delivery/training-plan.md
 4c159e70e257fa9e9028238c0485549153f8177e314e70f0b4474bcedf5bfe70  ./docs/deployment/README.md
@@ -761,6 +761,7 @@ da442e478e9d0364d9497523867174e73ea6dca3a9619a9bd1169e007222c4d2  ./scripts/aas-
 dc5494af188f65e2b32144824b6ed8c4f236402e418d39c669ff2612e0eefd02  ./scripts/generate-ddl-package.js
 5d8f1639621419384e50b42e2e47ea4ca1f66e7151ce16415e37163b5d9c501b  ./scripts/generate-standalone-ddl.js
 502f48d22c453949332ed5cbdfaefaa0570666daa4bd5324517bdc0aca969b98  ./scripts/package-release.sh
+e19990da317b72cda26cd4f8d4e4791cd1ca4cc0551655ffa293499140452f8f  ./scripts/pilot-readiness-check.sh
 ceb79c36f76efdcfadfd9ca0f8487be3d6cc405faa038e1c386d44bd59cf5a21  ./scripts/post-restore-smoke.mjs
 f58fe7af29b2b6be01e3aa9be5ba5f700820749b735c0013a5f9382ebf88b461  ./scripts/postgres-logical-backup.mjs
 a83066d764f78e88127838339e165d62e4724ee5c2a77de817013b4688256e8f  ./scripts/rego-tck.py
