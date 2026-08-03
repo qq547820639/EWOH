@@ -8,6 +8,7 @@ import {
   generateSupportBundle,
   getFleetStatus,
   getWorkflowExample,
+  installScenarioPack,
   listFactoryDifferences,
   listWorkflowInstances,
   getScaleCompatibility,
@@ -18,6 +19,7 @@ import {
   resolveFactoryDifference,
   runScaleOnboarding,
   startWorkflowInstance,
+  uninstallScenarioPack,
   type FactoryDifference,
   type FleetRollbackResult,
   type FleetUpgradeResult,
@@ -201,6 +203,22 @@ const Scale = (): React.ReactElement => {
     },
   });
 
+  const installScenario = useMutation({
+    mutationFn: installScenarioPack,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.scaleDashboard });
+      queryClient.invalidateQueries({ queryKey: queryKeys.scaleAssets });
+    },
+  });
+
+  const uninstallScenario = useMutation({
+    mutationFn: uninstallScenarioPack,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.scaleDashboard });
+      queryClient.invalidateQueries({ queryKey: queryKeys.scaleAssets });
+    },
+  });
+
   const data = query.data;
   const templates = data?.templates ?? [];
   const profiles = data?.profiles ?? [];
@@ -380,6 +398,7 @@ const Scale = (): React.ReactElement => {
                       <th className="px-5 py-3 font-medium">版本</th>
                       <th className="px-5 py-3 font-medium">状态</th>
                       <th className="px-5 py-3 font-medium">兼容</th>
+                      <th className="px-5 py-3 font-medium">操作</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[hsl(220_14%_89%)]">
@@ -415,6 +434,38 @@ const Scale = (): React.ReactElement => {
                               </span>
                             ) : (
                               '—'
+                            )}
+                          </td>
+                          <td className="px-5 py-3">
+                            {asset.packageType === 'scenario' && (
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  disabled={
+                                    asset.status === 'installed' ||
+                                    installScenario.isPending
+                                  }
+                                  onClick={() =>
+                                    installScenario.mutate(asset.packageId)
+                                  }
+                                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
+                                >
+                                  安装
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={
+                                    asset.status !== 'installed' ||
+                                    uninstallScenario.isPending
+                                  }
+                                  onClick={() =>
+                                    uninstallScenario.mutate(asset.packageId)
+                                  }
+                                  className="rounded-lg border border-[hsl(220_14%_89%)] px-3 py-1.5 text-xs font-medium text-[hsl(220_14%_14%)] disabled:opacity-40"
+                                >
+                                  卸载
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>

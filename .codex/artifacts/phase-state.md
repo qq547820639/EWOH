@@ -128,6 +128,8 @@ production approval gate.
   ring-filtered fleet upgrade/rollback actions.
 - Workflow UI: `/scale` page starts, lists, and advances workflow instances
   with role input.
+- Scenario UI: `/scale` asset table supports scenario pack install/uninstall
+  actions.
 
 ## Active Tasks
 

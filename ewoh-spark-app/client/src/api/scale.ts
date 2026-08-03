@@ -148,6 +148,26 @@ export async function getScaleCompatibility(): Promise<ScaleCompatibility> {
   return res.data;
 }
 
+export async function installScenarioPack(
+  packageId: string,
+): Promise<ScaleAsset> {
+  const res = await axiosForBackend({
+    url: `/api/scale/scenario-packs/${encodeURIComponent(packageId)}/install`,
+    method: 'POST',
+  });
+  return res.data;
+}
+
+export async function uninstallScenarioPack(
+  packageId: string,
+): Promise<ScaleAsset> {
+  const res = await axiosForBackend({
+    url: `/api/scale/scenario-packs/${encodeURIComponent(packageId)}/uninstall`,
+    method: 'POST',
+  });
+  return res.data;
+}
+
 export async function runScaleOnboarding(
   factoryName: string,
 ): Promise<OnboardingRunResult> {

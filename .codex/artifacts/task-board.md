@@ -397,6 +397,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 |----|------|-------|--------|----------|
 | T-134 | Workflow instance start/list/advance UI on /scale | AG-30/31 | Done | `round50-workflow-instances-ui.md`; client build passed |
 
+## Wave Final5 - Scenario UI (in progress)
+
+| ID | Task | Owner | Status | Evidence |
+|----|------|-------|--------|----------|
+| T-135 | Scenario pack install/uninstall UI on /scale | AG-30/31 | Done | `round51-scenario-ui.md`; client build passed |
+
 ## Next Waves
 
 - W1: DDL/migrations, shared backend, frontend shell, test harness, CI.

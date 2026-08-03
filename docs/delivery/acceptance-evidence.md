@@ -170,6 +170,8 @@ Owner: AG-00/AG-41
   ring-filtered fleet upgrade/rollback through real APIs.
 - Workflow UI: the `/scale` page starts, lists, and advances workflow instances
   through real APIs.
+- Scenario UI: the `/scale` asset table provides scenario pack install and
+  uninstall actions through real APIs.
 - Browser regression: Playwright verified login, command center, command map,
   devices, and alerts pages with real data; the RC2 run also confirmed org
   scope resolves without fallback warnings.
