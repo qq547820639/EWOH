@@ -33,6 +33,8 @@
 - 本地真实 PostgreSQL E2E：HTTP + PostgreSQL 29/29 通过（embedded PG 17，
   `127.0.0.1:55432`），覆盖鉴权/RBAC、组织隔离、MES/OEE/ERP、Scale、
   参数、AAS、Work Orchestration 与幂等场景。
+- 移动异常照片附件：异常上报表单支持选择 JPG/PNG/WebP 照片，先经
+  `/api/files` 上传并把文件引用写入 `resultJson.exception.attachments`。
 
 ## [0.6.0-rc3] - 2026-08-04
 

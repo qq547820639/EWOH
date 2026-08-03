@@ -27,6 +27,8 @@ Trace: EWOH-2026-08-04-principal-final6
   organization, exoskeleton, risk, alerts, recent events, and disposition entry.
 - Mobile workbench now queues offline actions in `localStorage` and flushes them
   in order when connectivity returns; pending count is shown in the header.
+- Mobile exception reports support photo attachments uploaded through
+  `/api/files`; the file reference is stored in `resultJson.exception.attachments`.
 - Control commands now reject terminal-state sends/receipts and duplicate
   in-flight sends; work orchestration handoffs use a strict state machine and
   gate decisions preserve history with idempotent repeats.
@@ -34,7 +36,7 @@ Trace: EWOH-2026-08-04-principal-final6
   fleet upgrade/rollback to the same target state, and already-resolved
   factory differences.
 - Full standalone gate: typecheck, lint, Jest 76 suites / 359 tests, client
-  10 suites / 35 tests, repo facts 31/31, OpenAPI 232/232, production build, and
+  11 suites / 37 tests, repo facts 31/31, OpenAPI 232/232, production build, and
   DDL hygiene all PASSED. Independent review: conditional pass with 0 critical
   and 0 major findings. HTTP+PostgreSQL E2E passed locally on embedded PG 17:
   `29/29` across SP-01..SP-08 and work orchestration acceptance.

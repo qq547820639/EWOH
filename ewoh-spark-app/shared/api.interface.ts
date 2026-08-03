@@ -159,6 +159,18 @@ export interface EventStats {
   trend: { time: string; count: number }[];
 }
 
+/** 文件服务记录（`/api/files`） */
+export interface FileRecord {
+  id: string;
+  orgId: string;
+  uploadedBy: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  note?: string;
+  createdAt: string;
+}
+
 export interface WorkerLoad {
   deviceId: string;
   workerName: string;

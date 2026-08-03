@@ -545,6 +545,7 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-181 | Control/work orchestration state guards | AG-00/03/04 | Done | control terminal/in-flight guards; handoff state machine; gate decision idempotency + history; Jest 76/355 |
 | T-182 | Scale mutation idempotency guards | AG-00/09 | Done | scenario install/uninstall idempotent; fleet upgrade/rollback skip target state; difference resolve idempotent; Jest 76/359 |
 | T-183 | Real PostgreSQL HTTP E2E acceptance | AG-13/41 | Done | `npm run test:e2e` 29/29 on embedded PG 17 (`127.0.0.1:55432`) |
+| T-184 | Mobile exception photo attachments | AG-00/07 | Done | `/api/files` upload + `resultJson.exception.attachments`; client 11/37 |
 
 ## Next Waves
 

@@ -1,12 +1,12 @@
 {
   "schema": "ewoh:///git-sync/v1",
-  "generatedAt": "2026-08-03T19:57:56.496Z",
+  "generatedAt": "2026-08-03T20:01:01.528Z",
   "repository": "git@github.com:qq547820639/EWOH.git",
   "branch": "codex/ewoh-iteration-2026-08-04",
-  "headSha": "3dbbefaa1827ccf8f72ec53afb9da0c0559980b6",
-  "itemCount": 204,
+  "headSha": "ca471576f74788560a3d513b822cc7fcf640f0c4",
+  "itemCount": 205,
   "trackedCount": 0,
-  "missingCount": 204,
+  "missingCount": 205,
   "status": "offline",
   "source": ".codex/artifacts/work/git-sync.json",
   "items": [
@@ -2756,6 +2756,21 @@
       "missing": true
     },
     {
+      "workItemId": "T-184",
+      "title": "Mobile exception photo attachments",
+      "type": "task",
+      "status": "Done",
+      "owner": "AG-00/07",
+      "evidence": "`/api/files` upload + `resultJson.exception.attachments`; client 11/37",
+      "wave": "Iteration 2026-08-04 - P0 Hardening (in progress)",
+      "issueNumber": null,
+      "prNumber": null,
+      "branch": null,
+      "commitSha": null,
+      "state": "unlinked",
+      "missing": true
+    },
+    {
       "workItemId": "W0",
       "title": "docs, repo inventory, C1-C6 v1, environment probes",
       "type": "wave",
@@ -2967,7 +2982,7 @@
     },
     {
       "workItemId": "W7",
-      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue, ValidationPipe, command-map details, state guards, scale idempotency",
+      "title": "P0 hardening: repo-facts gate, unified error contract, data-source vocabulary, transaction reuse, mobile SOP/exception/QC/offline queue/photo, ValidationPipe, command-map details, state guards, scale idempotency",
       "type": "wave",
       "status": "Proposed",
       "owner": "AG-00",

@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented; 2026-08-04 iteration adds repo-facts consistency gate, unified error contract, full data-source vocabulary, nested request-transaction reuse, mobile SOP/exception/QC/offline queue, global ValidationPipe with fieldErrors, command-map entity details, state guards, and scale idempotency; standalone check PASSED, Jest 76 suites / 359 tests, client 10 suites / 35 tests, OpenAPI 232/232, repo facts 31/31, build PASSED",
+  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented; 2026-08-04 iteration adds repo-facts consistency gate, unified error contract, full data-source vocabulary, nested request-transaction reuse, mobile SOP/exception/QC/offline queue/photo attachments, global ValidationPipe with fieldErrors, command-map entity details, state guards, and scale idempotency; standalone check PASSED, Jest 76 suites / 359 tests, client 11 suites / 37 tests, OpenAPI 232/232, repo facts 31/31, real PG E2E 29/29, build PASSED",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
@@ -241,7 +241,8 @@
     "iteration_2026_08_04_offline_queue": "mobile workbench queues transition/inspection actions in localStorage when offline and flushes on reconnect; offlineQueue helpers + 2 client tests; client 10/35",
     "iteration_2026_08_04_state_guards": "control send/receipt reject terminal requests and duplicate in-flight/terminal attempts while preserving failed retry; handoff transitions open->accepted/rejected->closed enforced; gate decisions idempotent with history file; Jest 76/355",
     "iteration_2026_08_04_scale_idempotency": "scenario install/uninstall, fleet upgrade/rollback, and difference resolve are idempotent in target states; 4 new scale tests; Jest 76/359",
-    "e2e_2026_08_04_real_pg": "npm run test:e2e 29/29 passed on embedded PostgreSQL 17 (127.0.0.1:55432): auth/RBAC, org isolation, MES/OEE/ERP, parameters, AAS, scale, work orchestration, idempotency"
+    "e2e_2026_08_04_real_pg": "npm run test:e2e 29/29 passed on embedded PostgreSQL 17 (127.0.0.1:55432): auth/RBAC, org isolation, MES/OEE/ERP, parameters, AAS, scale, work orchestration, idempotency",
+    "iteration_2026_08_04_photo_attachments": "mobile exception report uploads JPG/PNG/WebP through /api/files and stores attachment refs in resultJson.exception.attachments; exceptionPayload helper + 2 client tests; client 11/37"
   },
   "subagent_state": {
     "planned": [

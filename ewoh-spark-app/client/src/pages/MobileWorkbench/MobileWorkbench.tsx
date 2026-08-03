@@ -11,6 +11,7 @@ import {
   type MobileWorkOrderDetail,
   type MobileWorkbenchStep,
 } from '../../api/mobile';
+import { uploadFile } from '../../api/files';
 import { getAuthUser } from '../../lib/auth';
 import {
   appendPendingAction,
@@ -22,6 +23,7 @@ import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
 import { Input } from '@client/src/components/ui/input';
 import QueryState from '../../components/QueryState';
+import { buildExceptionBody } from './exceptionPayload';
 
 const STEP_ACTIONS = ['start', 'report', 'pause', 'resume', 'review', 'handover'] as const;
 const QUALITY_RESULTS = ['pass', 'fail', 'rework'] as const;
@@ -57,6 +59,7 @@ const MobileWorkbench = (): React.ReactElement => {
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   const [exceptionOpen, setExceptionOpen] = useState<Record<string, boolean>>({});
   const [exceptionNote, setExceptionNote] = useState<Record<string, string>>({});
+  const [exceptionFile, setExceptionFile] = useState<Record<string, File | null>>({});
   const [qcOpen, setQcOpen] = useState<Record<string, boolean>>({});
   const [qcResult, setQcResult] = useState<
     Record<string, 'pass' | 'fail' | 'rework' | undefined>
@@ -276,16 +279,34 @@ const MobileWorkbench = (): React.ReactElement => {
     toast.info('质检已加入待同步队列');
   };
 
-  const handleException = (stepId: string) => {
+  const handleException = async (stepId: string) => {
     const note = exceptionNote[stepId]?.trim();
     if (!note) {
       toast.error('请填写异常说明');
       return;
     }
-    submitTransition(activeOrder!.workOrder.scheduleTaskId, stepId, 'pause', {
-      code: 'MOBILE_EXCEPTION',
-      note,
-    });
+    const file = exceptionFile[stepId] ?? null;
+    if (file && !isOnline) {
+      toast.error('照片需在联网状态下上传');
+      return;
+    }
+    let body = buildExceptionBody(note);
+    if (file) {
+      try {
+        const record = await uploadFile(file, `exception-${stepId}`);
+        body = buildExceptionBody(note, {
+          id: record.id,
+          filename: record.filename,
+          contentType: record.contentType,
+        });
+      } catch (error) {
+        toast.error('照片上传失败', {
+          description: error instanceof Error ? error.message : undefined,
+        });
+        return;
+      }
+    }
+    submitTransition(activeOrder!.workOrder.scheduleTaskId, stepId, 'pause', body);
   };
 
   const handleInspect = (stepId: string) => {
@@ -434,11 +455,15 @@ const MobileWorkbench = (): React.ReactElement => {
                     error={stepError}
                     exceptionOpen={Boolean(exceptionOpen[step.stepId])}
                     exceptionNote={exceptionNote[step.stepId] ?? ''}
+                    exceptionFile={exceptionFile[step.stepId] ?? null}
                     qcOpen={Boolean(qcOpen[step.stepId])}
                     qcResult={qcResult[step.stepId]}
                     qcNote={qcNote[step.stepId] ?? ''}
                     onExceptionNoteChange={(value) =>
                       setExceptionNote((current) => ({ ...current, [step.stepId]: value }))
+                    }
+                    onExceptionFileChange={(file) =>
+                      setExceptionFile((current) => ({ ...current, [step.stepId]: file }))
                     }
                     onExceptionOpenChange={(open) =>
                       setExceptionOpen((current) => ({ ...current, [step.stepId]: open }))
@@ -509,10 +534,12 @@ function StepCard({
   error,
   exceptionOpen,
   exceptionNote,
+  exceptionFile,
   qcOpen,
   qcResult,
   qcNote,
   onExceptionNoteChange,
+  onExceptionFileChange,
   onExceptionOpenChange,
   onQcOpenChange,
   onQcResultChange,
@@ -527,10 +554,12 @@ function StepCard({
   error: Error | null;
   exceptionOpen: boolean;
   exceptionNote: string;
+  exceptionFile: File | null;
   qcOpen: boolean;
   qcResult: 'pass' | 'fail' | 'rework' | undefined;
   qcNote: string;
   onExceptionNoteChange: (value: string) => void;
+  onExceptionFileChange: (file: File | null) => void;
   onExceptionOpenChange: (open: boolean) => void;
   onQcOpenChange: (open: boolean) => void;
   onQcResultChange: (value: 'pass' | 'fail' | 'rework') => void;
@@ -638,6 +667,18 @@ function StepCard({
             aria-label="异常说明"
             className="h-8 min-w-0 flex-1"
           />
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(event) => onExceptionFileChange(event.target.files?.[0] ?? null)}
+            className="h-8 text-xs"
+            aria-label="异常照片"
+          />
+          {exceptionFile && (
+            <span className="max-w-[140px] truncate text-[10px] text-[hsl(218_10%_42%)]">
+              {exceptionFile.name}
+            </span>
+          )}
           <Button size="sm" onClick={onSubmitException} disabled={pending}>
             提交异常
           </Button>
