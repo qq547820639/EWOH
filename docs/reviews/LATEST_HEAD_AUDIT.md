@@ -317,3 +317,61 @@ Phase 3 用户体验统一深化完成：G4 离线冲突闭环闭合（实现 + 
 ### 15.5 结论
 
 Phase 4 连接器契约深化完成：统一契约 schema + ERP/MRP/WMS 清单对齐 + connector-tck 扩展（119 项）+ scenario-tck 8 门禁通过 + make test 667 通过。未改冻结状态机/安全边界/共享事件契约；未引入新第三方依赖（PyYAML 已在环境，dev-only）。真实 ERP/MRP/WMS 联调属外部验证，本环境不可用，未伪造结果。证据文件 `.codex/artifacts/work/evidence/round108-connector-scenario-deepening.md`。
+
+## 16. Phase 5 生产工程验证（生产工程深化）
+
+> 依据 Phase 5（部署工件一致性、SBOM 与供应链安全、生产 SLO/错误预算、Runbook 补齐、
+> 密钥/审计/脱敏核对、外部验证项登记）。本机无 PostgreSQL/Docker/kubectl/Helm/真机，
+> 依赖真实环境的项标记为 `Blocked by External Validation`，未伪造结果。
+
+### 16.1 实际运行命令与结果
+
+| # | 命令 | 结果 |
+|---|---|---|
+| 1 | `node scripts/verify-deploy-artifacts.js` | **PASS**（66/66） |
+| 2 | `node scripts/verify-helm-chart.js` | **PASS**（128 checks，Helm ewoh 0.1.0 / app 0.6.0-rc4） |
+| 3 | `node scripts/deployment-tck.js` | **PASS**（34/34 + REGO TCK 4 + DEPLOYMENT TCK 4 gates） |
+| 4 | `make test`（Python） | **PASS**（667 tests OK） |
+| 5 | `node scripts/generate-sbom.js` | **PASS**（mode=npm-sbom，top=ewoh-spark-app@2.2.5，components=235） |
+
+### 16.2 新增/修改交付物
+
+- `scripts/generate-sbom.js`（新增）：Node 内置调用 `npm sbom` 生成 CycloneDX 1.5 SBOM，
+  不可用时降级为 lockfile 派生摘要并标记；无第三方依赖。
+- `release/ewoh-spark-sbom.cyclonedx.json`（新增）：生成的 SBOM 产物（235 运行时组件）。
+- `docs/delivery/supply-chain-security.md`（新增）：依赖扫描、镜像签名、SBOM 校验流程。
+- `docs/delivery/slo-error-budget.md`（新增）：核心 API 可用性 99.9%、P95≤800ms/P99≤2000ms、
+  错误率≤0.5%、容量基线、告警降噪规则。
+- `docs/delivery/deployment-runbook.md`（v1.1→v1.2）：补充 DB 备份/恢复、边缘断网/重连/重放/远程升级、
+  批量升级/灰度/暂停/回滚、可验证回滚点。
+- `docs/reviews/LATEST_HEAD_AUDIT.md`（本小节）、`.codex/artifacts/work/evidence/round109-production-engineering.md`（证据）。
+
+### 16.3 密钥/审计/脱敏核对结论
+
+- `.env.example`（`deploy/.env.example`、`deploy/cloud/.env.compose.example`、
+  `ewoh-spark-app/.env.standalone.example`）与 `deploy/cloud/k8s/secret.example.yaml`：
+  敏感值均为占位符（`CHANGE_ME`/`REPLACE_WITH`/空），**无真实密钥**。
+- 审计与脱敏实现复用：`server/modules/shared/audit.service.ts`（`redact()` 深度脱敏）、
+  `server/modules/system/system.service.ts`（`maskSensitiveConfig()`）、
+  `src/edge_platform/server.py`（`/api/security/policy` 对 `tls_cert/tls_key/jwt_secret/oidc_client_id` 脱敏）。
+- 结论：密钥未泄漏、审计脱敏已存在并复用，无新增缺口。
+
+### 16.4 外部验证项（Blocked by External Validation）
+
+| 验证项 | 所需输入 | 状态 |
+|---|---|---|
+| 真实 DB 迁移/回滚/备份恢复 | 真实 PostgreSQL 17（owner + ewoh_api 角色） | Blocked |
+| Docker/K8s/Helm 部署 | Docker、kubectl、Helm、registry | Blocked |
+| 边缘断网重连重放 | 真机/边缘设备 + 平台 | Blocked |
+| 长稳大数据测试 | 真实 PG + 高负载 | Blocked |
+| 批量升级灰度回滚 | 生产试点工厂 + 真机 | Blocked |
+| `npm audit` 联网完整扫描 | 联网 registry | Blocked |
+| 镜像签名/校验 | cosign/notation + registry + 密钥 | Blocked |
+| 容量压测校准 | 压测环境（k6/ab） | Blocked |
+
+### 16.5 结论
+
+Phase 5 生产工程深化完成：部署工件验证脚本全部通过（无需修复）；SBOM 生成与供应链安全文档落地；
+SLO/错误预算文档、Runbook 关键章节补齐；密钥/审计/脱敏核对通过；依赖真实环境的验证项如实登记为
+Blocked by External Validation。未扩围业务、未改冻结契约、未引入新第三方依赖。证据文件
+`.codex/artifacts/work/evidence/round109-production-engineering.md`。
