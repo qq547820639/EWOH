@@ -22,14 +22,14 @@
 - [x] Task W1.8: 输出 W1 波次报告（发现问题/改动/未完成项/测试命令与结果/关键 Diff/风险与 Gate 变化/下一波次依赖/commit SHA）
 
 ## W2：视觉资源链修复与产品级设计系统
-- [ ] Task W2.1: 诊断并修复视觉资源链根因（Tailwind/CSS 是否加载、静态资源路径/base URL/Content-Type/缓存/CSP、截图时机、被 tree-shaking 删除的 class、测试忽略资源加载失败）
-- [ ] Task W2.2: 建立视觉质量门禁（页面 stylesheet 数量、关键组件 computed style；资源 404、console error、未处理异常导致测试失败）
-- [ ] Task W2.3: 建立统一 design token（spacing/typography/radius/elevation/status/focus/motion）
-- [ ] Task W2.4: 建立统一组件（AppShell/Sidebar/Topbar/Button/Input/Select/Table/Card/Badge/Tabs/Drawer/Dialog/Toast/Skeleton/EmptyState/ErrorState/PermissionState/OfflineState）
-- [ ] Task W2.5: 对 390x844/768x1024/1440x900 视口运行视觉回归；对登录页/指挥中心/因果控制台/Git 同步/移动工作台/站点准备页生成基准截图
-- [ ] Task W2.6: 引入 axe 无障碍检查，阻断 serious/critical；键盘焦点清晰；状态不只靠颜色表达；表单错误在字段附近且有可执行恢复建议
-- [ ] Task W2.7: 所有页面实现 loading/empty/error/offline/permission-denied 状态
-- [ ] Task W2.8: 输出 W2 波次报告（前后截图、关键 Diff、测试命令与结果、Gate 变化）
+- [x] Task W2.1: 诊断并修复视觉资源链根因（Tailwind/CSS 是否加载、静态资源路径/base URL/Content-Type/缓存/CSP、截图时机、被 tree-shaking 删除的 class、测试忽略资源加载失败）
+- [x] Task W2.2: 建立视觉质量门禁（页面 stylesheet 数量、关键组件 computed style；资源 404、console error、未处理异常导致测试失败）
+- [x] Task W2.3: 建立统一 design token（spacing/typography/radius/elevation/status/focus/motion）
+- [x] Task W2.4: 建立统一组件（AppShell/Sidebar/Topbar/Button/Input/Select/Table/Card/Badge/Tabs/Drawer/Dialog/Toast/Skeleton/EmptyState/ErrorState/PermissionState/OfflineState）
+- [x] Task W2.5: 对 390x844/768x1024/1440x900 视口运行视觉回归；对登录页/指挥中心/因果控制台/Git 同步/移动工作台/站点准备页生成基准截图
+- [x] Task W2.6: 引入 axe 无障碍检查，阻断 serious/critical；键盘焦点清晰；状态不只靠颜色表达；表单错误在字段附近且有可执行恢复建议
+- [x] Task W2.7: 所有页面实现 loading/empty/error/offline/permission-denied 状态
+- [x] Task W2.8: 输出 W2 波次报告（前后截图、关键 Diff、测试命令与结果、Gate 变化）
 
 ## W3：因果执行控制台 UX 深化
 - [ ] Task W3.1: 默认首页优先回答当前 Gate/阻塞任务/最长等待/过期证据/待人类决策风险/下一最优行动/过载项

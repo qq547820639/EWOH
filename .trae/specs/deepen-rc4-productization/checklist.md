@@ -10,13 +10,13 @@
 - [ ] 每项自动修复输出可审查 Diff，未静默覆盖源文件
 
 ## W2：视觉资源链修复与产品级设计系统
-- [ ] 视觉资源链根因已诊断修复（Tailwind/CSS、静态资源路径、CSP、截图时机、tree-shaking）
-- [ ] 视觉质量门禁已建立（资源 404/console error/未处理异常阻断测试）
-- [ ] 统一 design token（spacing/typography/radius/elevation/status/focus/motion）已建立
-- [ ] 统一组件（AppShell/Sidebar/Topbar/Button/Input/Select/Table/Card/Badge/Tabs/Drawer/Dialog/Toast/Skeleton/EmptyState/ErrorState/PermissionState/OfflineState）已实现
-- [ ] 多视口视觉回归已运行；关键页面基准截图已生成
-- [ ] axe 无障碍检查已引入，无 serious/critical 问题；键盘焦点清晰；状态不只用颜色表达；表单错误在字段附近
-- [ ] 所有页面已实现 loading/empty/error/offline/permission-denied 状态
+- [x] 视觉资源链根因已诊断修复（Tailwind/CSS、静态资源路径、CSP、截图时机、tree-shaking）
+- [x] 视觉质量门禁已建立（资源 404/console error/未处理异常阻断测试）
+- [x] 统一 design token（spacing/typography/radius/elevation/status/focus/motion）已建立
+- [x] 统一组件（AppShell/Sidebar/Topbar/Button/Input/Select/Table/Card/Badge/Tabs/Drawer/Dialog/Toast/Skeleton/EmptyState/ErrorState/PermissionState/OfflineState）已实现
+- [x] 多视口视觉回归已运行；关键页面基准截图已生成
+- [x] axe 无障碍检查已引入，无 serious/critical 问题；键盘焦点清晰；状态不只用颜色表达；表单错误在字段附近
+- [x] 所有页面已实现 loading/empty/error/offline/permission-denied 状态
 
 ## W3：因果执行控制台 UX 深化
 - [ ] 默认首页已回答当前 Gate/阻塞任务/最长等待/过期证据/待人类决策风险/下一最优行动/过载项
