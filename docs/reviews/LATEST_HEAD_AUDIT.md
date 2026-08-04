@@ -505,3 +505,93 @@ Evidence 未绑定当前 HEAD SHA（210 条缺证据）、外部验证项全部�
 
 *审计人：Phase 6 独立验证 Agent*
 *审计时间：2026-08-04*
+
+---
+
+## 18. 当前 HEAD 复核（HEAD `2fe1770`，分支 `main`）
+
+> 依据主仓库 `/spec` 指令对最新 HEAD 重新执行独立完成度审计。本小节为对
+> `docs/reviews/LATEST_HEAD_AUDIT.md` 的增量复核：更新执行环境指纹、重跑可执行验证、
+> 修正 C1 51 表口径判定，并复核其余缺口。
+
+### 18.1 执行环境指纹（当前 HEAD）
+
+| 项 | 值 |
+|---|---|
+| 仓库地址 | `git@github.com:qq547820639/EWOH.git` |
+| 当前分支 | `main` |
+| HEAD commit SHA | `2fe1770615535c752058ac02dc48e43617d362a8` |
+| 检查时间 | `2026-08-04 13:22 CST`（Asia/Shanghai） |
+| 操作系统 | macOS 27.0（Darwin 27.0.0，Build 26A5388g） |
+| Node / npm | v26.5.1 / 11.17.0 |
+| Python | 3.9.6 |
+| Docker / psql | **不可用**（无 `docker`、无 `psql`/服务端） |
+| 可用环境 | 本地 Node 全量静态门禁、Python unittest/TCK、Standalone 构建 |
+| 不可用环境 | 真实 PostgreSQL、容器/K8s/Helm、真实设备、飞书/移动端运行时、Playwright 浏览器 |
+
+> 环境限制与首次审计一致：**本机无法运行真实 PostgreSQL E2E、认证浏览器流程、容器/编排部署与真机验证**，均如实标记 `Blocked by External Validation`。
+
+### 18.2 重跑的可执行验证（HEAD `2fe1770`）
+
+| # | 命令 | 结果 |
+|---|---|---|
+| 1 | `cd ewoh-spark-app && npm run type:check` | **PASS**（server+client tsc 0 错误） |
+| 2 | `cd ewoh-spark-app && npm run lint` | **PASS**（eslint + stylelint） |
+| 3 | `cd ewoh-spark-app && npm test -- --runInBand` | **PASS**（82 套件 / 409 测试） |
+| 4 | `cd ewoh-spark-app && npm run test:client` | **PASS**（34 套件 / 176 测试） |
+| 5 | `node scripts/audit-repo-facts.js --strict` | **PASS**（33/33） |
+| 6 | `node tools/work-indexer/index.js --root . --strict --invariants` | **PASS**（252 items / 58 edges / 48 actors / 128 evidence / 14 gates / 0 conflicts） |
+| 7 | `node tools/work-console/index.js --root . --strict` | **PASS**（0 blocked / 196 missing evidence / 4 gates need approval / 0 invariant conflicts） |
+| 8 | `node scripts/audit-openapi-routes.js --strict` | **PASS**（controller 253 / spec 253 / 0 未登记 / 0 未实现） |
+| 9 | `node scripts/reconcile-authoritative-artifacts.js --strict` | **4/6 PASS**（见 18.3） |
+| 10 | `make test`（Python） | **PASS**（667 tests OK） |
+| 11 | `make connector-tck` | **PASS**（119 checks） |
+| 12 | `node scripts/scenario-tck.js` | **PASS**（8 gates） |
+
+### 18.3 C1 51 表口径修正（reconcile 工具缺陷修复）
+
+上一轮审计的 **C1 冲突（51 表口径无单一出处）经复核为验证工具缺陷，非权威源冲突**：
+
+- `managed_tables` 清单实际恰好 **51 条**，与 CHANGELOG（48→51）、state.json、release-manifest 声称的 **51 受管表完全一致**。
+- `additional_hardened_existing_tables`（`ewoh_organization`、`ewoh_personnel`、`ewoh_ai_suggestion`、`ewoh_device_config`、`ewoh_production_task` 共 5 张）是**既有已加固表**（RLS/org_id 加固），**不属于**受管 51 表口径，不应计入。
+- 原 `scripts/reconcile-authoritative-artifacts.js` 将 `managedCount + additionalCount`（51+5=56）与声称的 51 比较，误报 C1 冲突。已修正为 `totalComputed = managedCount`（51），并同步更新详细说明与单元测试。
+- 修复后：`db_table_footprint_reconcile` **PASS**（computed=51，claimed changelog=51/state=51/release=51）；reconcile 单测 5/5 通过。
+
+**修复文件**：`scripts/reconcile-authoritative-artifacts.js`、`ewoh-spark-app/test/unit/reconcile-authoritative-artifacts.spec.ts`。
+
+### 18.4 复核后 reconcile 检查项（4/6 PASS）
+
+| 检查项 | 结果 | 说明 |
+|---|---|---|
+| `version_changelog_vs_release_manifest` | **PASS** | CHANGELOG 0.6.0-rc4 == release-manifest |
+| `trace_id_in_phase_state` | **PASS** | state.json.trace_id 在 phase-state.md 中被引用 |
+| `db_table_footprint_reconcile` | **PASS**（已修正） | 51 受管表口径与 CHANGELOG/state/release-manifest 一致 |
+| `route_manifest_consistent_with_live_scan` | **PASS** | 253/253 |
+| `evidence_structure_complete` | **FAIL** | 128 条证据中 87 条缺 `workItemId`（历史 round 级记录，无单任务映射） |
+| `open_tasks_have_evidence_or_blocked` | **FAIL** | 58 个打开/进行中任务缺证据且未标记 Blocked |
+
+> 剩余 2 项 FAIL 均为**真实缺口**：历史 round 级证据文件未绑定单一 `workItemId`，且 58 个打开任务缺证据。二者属既有证据体系缺口，需真实环境验证或人工映射，本审计**未伪造 workItemId 映射**，如实登记。
+
+### 18.5 复核结论（维持最终结论 **A**）
+
+复核对结论无实质改变，仍为：
+
+> **A. 核心实现完成，但仍不具备生产和规模复制条件。**
+
+证据（当前 HEAD `2fe1770`）：
+1. `pilot-readiness-check.sh` 仍为 **NOT READY**（docker/kubectl/helm 缺失 + 7 项待批准）。
+2. 本机无真实 PostgreSQL / Docker / kubectl / Helm / 真机，真实 E2E、浏览器、容器部署、真机验证全部 Blocked。
+3. **Gate 未全绿**：G10-G13 需人类批准且未授予；`work-console` 显示 4 个门禁待人工批准。
+4. **Evidence 缺口仍存在**：196 条任务缺证据；87 条证据缺 `workItemId`；证据绑定旧 SHA，未绑定当前 HEAD `2fe1770`。
+5. 外部验证项（真实 DB 迁移/回滚、容器部署、长稳、真机、镜像签名、容量压测）全部未解阻。
+
+**B–E 明确排除**：Pilot 门禁 NOT READY（排除 B）；工厂复制依赖真实数据与现场验证（排除 C）；依赖真实 PG E2E + 真实工厂配置（排除 D）；生产 SLO、外部验证、G10+ 批准均未解阻（排除 E）。
+
+### 18.6 本轮改动
+
+- 修复 `scripts/reconcile-authoritative-artifacts.js` 的 51 表口径误报（工具缺陷，非权威源冲突）。
+- 同步更新 `ewoh-spark-app/test/unit/reconcile-authoritative-artifacts.spec.ts` 断言。
+- 更新本审计报告（本节）。未修改任何冻结契约/状态机/安全边界/权威源文件。
+
+*审计人：EWOH 总控工程 Agent（独立复核，非实现自签）*
+*复核时间：2026-08-04*

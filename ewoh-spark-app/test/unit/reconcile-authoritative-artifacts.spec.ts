@@ -31,16 +31,15 @@ describe('reconcile-authoritative-artifacts', () => {
     expect(check.ok).toBe(true);
   });
 
-  it('truthfully reports the C1 51-table footprint conflict (computed vs claimed) without auto-fixing', () => {
+  it('computes the 51-table managed footprint consistently with CHANGELOG/state/release-manifest', () => {
     const report = reconcile(REPO_ROOT);
     const check = report.checks.find((entry) => entry.name === 'db_table_footprint_reconcile');
     expect(check).toBeDefined();
-    // 已知 C1 冲突：51 表口径无单一出处，reconcile 必须如实报告 computed vs claimed。
-    expect(check.ok).toBe(false);
-    const conflict = report.conflicts.find((entry) => entry.name === 'db_table_footprint_reconcile');
-    expect(conflict).toBeDefined();
-    expect(conflict.detail).toMatch(/computed/);
-    expect(conflict.detail).toMatch(/claimed/);
+    // 受管表口径：managed_tables list 共 51 表，与 CHANGELOG(48→51)/state.json/release-manifest 声称一致。
+    // additional_hardened_existing_tables（如 ewoh_organization/ewoh_personnel）是既有已加固表，不计入受管 51 表口径。
+    expect(check.ok).toBe(true);
+    expect(check.detail).toMatch(/computed=51/);
+    expect(check.detail).toMatch(/claimed: changelog=51/);
   });
 
   it('never silently rewrites authoritative sources (read-only reconcile)', () => {

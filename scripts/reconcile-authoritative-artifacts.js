@@ -210,7 +210,12 @@ function reconcile(rootDir) {
   const schemaNew = schemaStatusCounts.new || 0;
   const schemaAltered = schemaStatusCounts.altered || 0;
   const schemaMappedExisting = schemaStatusCounts['mapped-existing'] || 0;
-  const totalComputed = managedCount + additionalCount;
+  // Canonical "managed tables" footprint = managed_tables only. The
+  // additional_hardened_existing_tables are EXISTING tables hardened with
+  // RLS/org_id (e.g. ewoh_organization, ewoh_personnel), NOT part of the
+  // managed 51-table footprint, so they must not be added to the count.
+  const totalComputed = managedCount;
+  const additionalCountDetail = additionalCount > 0 ? `; additional_hardened ${additionalCount} (separate, not counted)` : '';
 
   const changelogClaimed = changelog?.match(/(\d+)\s*→\s*(\d+)/);
   const changelogTo = changelogClaimed?.[2];
@@ -237,7 +242,7 @@ function reconcile(rootDir) {
     ok: dbConsistent,
     detail:
       `computed=${totalComputed} (managed ${managedCount}=new ${schemaNew}+altered ${schemaAltered}+` +
-      `mapped-existing ${schemaMappedExisting}; additional_hardened ${additionalCount}); ` +
+      `mapped-existing ${schemaMappedExisting}${additionalCountDetail}); ` +
       `claimed: changelog=${changelogTo ?? 'n/a'} (48->51), state.json=${stateClaimed ?? 'n/a'}, ` +
       `release-manifest=${releaseClaimed ?? 'n/a'}`,
   });
@@ -246,8 +251,8 @@ function reconcile(rootDir) {
       name: 'db_table_footprint_reconcile',
       detail:
         `C1 table-count reconcile mismatch: schema-manifest computes ${totalComputed} managed tables ` +
-        `(managed ${managedCount} + additional_hardened ${additionalCount}), but CHANGELOG/state.json/` +
-        `release-manifest claim 51. computed=${totalComputed} claimed(changelog=${changelogTo ?? 'n/a'}, ` +
+        `(managed ${managedCount}${additionalCountDetail}), but CHANGELOG/state.json/` +
+        `release-manifest claim ${changelogTo ?? 'n/a'}. computed=${totalComputed} claimed(changelog=${changelogTo ?? 'n/a'}, ` +
         `state=${stateClaimed ?? 'n/a'}, release=${releaseClaimed ?? 'n/a'}).`,
     });
     recommendations.push(
