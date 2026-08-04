@@ -1,13 +1,13 @@
 # Checklist
 ## W1：只读审计与事实一致性
-- [ ] 《RC4 权威事实差异报告》`docs/reviews/RC4_AUTHORITATIVE_FACTS_GAP.md` 已产出，且大规模改码前完成只读审计
-- [ ] README/CHANGELOG/release-manifest/state/task-board/phase-state/gates 版本一致性检查完成
-- [ ] OpenAPI 路由数/数据库表数/Work Graph 节点数/场景包清单一致性检查完成
-- [ ] 每份证据完整性检查（commitSha/branch/command/suite/environment/startedAt/completedAt/result/artifactChecksum/verifier/expiresAt）完成
-- [ ] repository-facts schema 已建立；事实采集与一致性 CLI 已实现；冲突返回非零退出码
-- [ ] rc3/rc4 CHANGELOG 与 release notes 已补齐；测试证据统计口径已统一
-- [ ] task-board/phase-state/gates/Next Waves 陈旧状态已清理；检查已接入 CI 与 release gate
-- [ ] 每项自动修复输出可审查 Diff，未静默覆盖源文件
+- [x] 《RC4 权威事实差异报告》`docs/reviews/RC4_AUTHORITATIVE_FACTS_GAP.md` 已产出，且大规模改码前完成只读审计
+- [x] README/CHANGELOG/release-manifest/state/task-board/phase-state/gates 版本一致性检查完成
+- [x] OpenAPI 路由数/数据库表数/Work Graph 节点数/场景包清单一致性检查完成
+- [x] 每份证据完整性检查（commitSha/branch/command/suite/environment/startedAt/completedAt/result/artifactChecksum/verifier/expiresAt）完成
+- [x] repository-facts schema 已建立；事实采集与一致性 CLI 已实现；冲突返回非零退出码
+- [x] rc3/rc4 CHANGELOG 与 release notes 已补齐；测试证据统计口径已统一
+- [x] task-board/phase-state/gates/Next Waves 陈旧状态已清理；检查已接入 CI 与 release gate
+- [x] 每项自动修复输出可审查 Diff，未静默覆盖源文件
 
 ## W2：视觉资源链修复与产品级设计系统
 - [x] 视觉资源链根因已诊断修复（Tailwind/CSS、静态资源路径、CSP、截图时机、tree-shaking）
@@ -19,12 +19,12 @@
 - [x] 所有页面已实现 loading/empty/error/offline/permission-denied 状态
 
 ## W3：因果执行控制台 UX 深化
-- [ ] 默认首页已回答当前 Gate/阻塞任务/最长等待/过期证据/待人类决策风险/下一最优行动/过载项
-- [ ] 响应式侧边导航 + 命令面板；全局搜索、保存视图、最近访问、URL 深链接；预设视图实现
-- [ ] DAG 平移缩放/聚焦关键路径/阶段折叠/渐进加载/节点搜索/上下游追踪/异常回流高亮/布局保存
-- [ ] 图节点可访问列表替代视图；证据抽屉（commit/PR/测试命令/环境/日志/截图/校验和/验证人/有效期）
-- [ ] 批量 Gate 操作先显示影响范围；高风险操作支持条件批准/驳回/撤销/回滚点
-- [ ] Agent 页/资源页实现；键盘快捷键（不绕过审批）；性能基准建立
+- [x] 默认首页已回答当前 Gate/阻塞任务/最长等待/过期证据/待人类决策风险/下一最优行动/过载项
+- [x] 响应式侧边导航 + 命令面板；全局搜索、保存视图、最近访问、URL 深链接；预设视图实现
+- [x] DAG 平移缩放/聚焦关键路径/阶段折叠/渐进加载/节点搜索/上下游追踪/异常回流高亮/布局保存
+- [x] 图节点可访问列表替代视图；证据抽屉（commit/PR/测试命令/环境/日志/截图/校验和/验证人/有效期）
+- [x] 批量 Gate 操作先显示影响范围；高风险操作支持条件批准/驳回/撤销/回滚点
+- [x] Agent 页/资源页实现；键盘快捷键（不绕过审批）；性能基准建立
 
 ## W4：真实 GitHub Issue/PR/CI 同步闭环
 - [ ] 权限探测/dry-run/人类批准后 apply；WorkItem↔Issue 稳定映射；完整追踪链
