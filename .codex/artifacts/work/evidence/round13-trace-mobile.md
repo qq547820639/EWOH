@@ -1,17 +1,3 @@
----
-workItemIds: [T-121, T-122, T-123, T-124, T-125, T-126, T-127, T-128, T-129, T-130]
-kind: test
-result: passed
-commitSha: dee6503effd7c4cea76dbb1d7ce30054d366f0cb
-branch: main
-buildVersion: 0.6.0-rc4
-envFingerprint: 5fe7c6feb11e2726634abc7e27cd90a86f694b21422960b4c3d7f6c71d1facce
-dependencyVersion: 3:2.2.5
-producedAt: 2026-08-04T05:35:50.594Z
-expiresAt: 2026-11-02T05:35:50.594Z
-verifier: "EWOH independent verification agent"
----
-
 # EWOH Round 13 Evidence - Quality Trace and Mobile Workbench API
 
 Date: 2026-08-03
