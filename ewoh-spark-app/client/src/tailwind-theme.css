@@ -86,6 +86,26 @@
   --shadow-2xl: 0px 2px 12px 0px hsl(0 0% 0% / 0.05);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
+
+  /* Motion: transition durations */
+  --motion-duration-fast: 120ms;
+  --motion-duration-base: 200ms;
+  --motion-duration-slow: 300ms;
+  --motion-duration-slower: 500ms;
+
+  /* Motion: easing curves */
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --motion-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --motion-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /*
+   * Typography 字号阶梯统一来源：
+   * 推荐直接使用 Tailwind v4 内置 text-{size} 工具类（text-xs / text-sm /
+   * text-base / text-lg / text-xl / text-2xl …），其字号阶梯与 rem 基准由
+   * Tailwind v4 默认主题提供，无需在此重复定义 token。如需自定义字号，再在
+   * @theme inline 中新增 --text-* 映射。
+   */
 }
 
 @theme inline {
@@ -145,6 +165,17 @@
   --shadow-lg: var(--shadow-lg);
   --shadow-xl: var(--shadow-xl);
   --shadow-2xl: var(--shadow-2xl);
+
+  /* Motion: map to Tailwind duration-* / ease-* utilities */
+  --duration-fast: var(--motion-duration-fast);
+  --duration-base: var(--motion-duration-base);
+  --duration-slow: var(--motion-duration-slow);
+  --duration-slower: var(--motion-duration-slower);
+
+  --ease-standard: var(--motion-ease-standard);
+  --ease-in: var(--motion-ease-in);
+  --ease-out: var(--motion-ease-out);
+  --ease-emphasized: var(--motion-ease-emphasized);
 }
 
 /**

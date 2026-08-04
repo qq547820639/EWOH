@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@client/src/components/ui/alert';
 import { Badge } from '@client/src/components/ui/badge';
+import PermissionState from '@client/src/components/PermissionState';
 import {
   Empty,
   EmptyDescription,
@@ -53,17 +54,6 @@ function ErrorState() {
       <CircleAlert className="size-4" />
       <AlertTitle>数据加载失败</AlertTitle>
       <AlertDescription>接口不可用或返回异常，请检查服务状态后重试。</AlertDescription>
-    </Alert>
-  );
-}
-
-function PermissionState({ roles }: { roles: EwohRole[] }) {
-  const roleLabels = roles.map((role) => EWOH_ROLE_LABELS[role]).join('、');
-  return (
-    <Alert>
-      <LockKeyhole className="size-4" />
-      <AlertTitle>当前账号无权访问</AlertTitle>
-      <AlertDescription>此中心仅对以下角色可见：{roleLabels}。</AlertDescription>
     </Alert>
   );
 }
