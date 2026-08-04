@@ -1,0 +1,172 @@
+# EWOH 当前 HEAD 独立完成度审计报告
+
+> 独立完成度审计（只读）。本报告不把任务板 Done 视为完成，以当前 HEAD 实际代码、可执行测试、
+> OpenAPI、数据库生成器、部署工件与运行证据为唯一判断基础。
+> 审计期间未修改任何受审计代码；仅新增本报告与审计日志。
+
+## 1. 执行环境指纹
+
+| 项 | 值 |
+|---|---|
+| 仓库地址 | `git@github.com:qq547820639/EWOH.git` |
+| 当前分支 | `codex/ewoh-iteration-2026-08-04` |
+| HEAD commit SHA | `e432f361e6788c10cc510419feeef7472302f869` |
+| 检查时间 | `2026-08-04 11:26 CST`（本地）+ `2026-08-04T03:37Z`（pilot 检查） |
+| 操作系统 | macOS 27.0（Darwin 27.0.0，arm64） |
+| Node / npm | v26.5.1 / 11.17.0 |
+| Python | 3.9.6 |
+| Git | 2.54.0 |
+| PostgreSQL | **不可用**（无 `psql`、无服务端） |
+| Docker / Compose | **不可用** |
+| kubectl / Helm | **不可用** |
+| 可用环境 | 本地 Node 全量静态门禁、Python unittest/TCK、Standalone 构建 |
+| 不可用环境 | 真实 PostgreSQL、容器/K8s/Helm 部署、真实设备、飞书/移动端运行时、Playwright 浏览器 |
+
+> 环境限制结论：**本机无法运行真实 PostgreSQL E2E、认证浏览器流程、容器/编排部署与真机验证。**
+> 这些项在报告中的判定为 `Blocked by External Validation`（环境缺失），未伪造任何结果。
+
+## 2. 实际运行过的命令与结果
+
+| # | 命令 | 结果 |
+|---|---|---|
+| 1 | `npm ci`（ewoh-spark-app） | PASS（2049 包） |
+| 2 | `npm run type:check` | PASS（server+client tsc 0 错误） |
+| 3 | `npm run lint`（eslint + stylelint） | PASS |
+| 4 | `npm test -- --runInBand` | PASS（81 套件 / 394 测试） |
+| 5 | `npm run test:client` | PASS（34 套件 / 176 测试） |
+| 6 | `npm run build:prod:standalone` | PASS（构建成功） |
+| 7 | `bash scripts/standalone-check.sh` | PASS（**E2E/浏览器因无 PG 跳过**） |
+| 8 | `node scripts/audit-repo-facts.js --strict` | PASS（33/33） |
+| 9 | `node tools/work-indexer/index.js --root . --invariants` | PASS（252 项/39 边/48 actor/109 证据/14 gate/0 冲突） |
+| 10 | `node tools/work-console/index.js --root . --strict` | PASS（0 阻塞 / **210 缺证据** / 4 门禁待批） |
+| 11 | `make test`（Python unittest） | PASS（667 测试） |
+| 12 | `make connector-tck` | PASS（32 项） |
+| 13 | `make aas-tck` | PASS（7 项） |
+| 14 | `make rego-tck` | PASS（4 项） |
+| 15 | `bash scripts/pilot-readiness-check.sh` | **NOT READY**（5 通过 / 3 失败 / 7 待批准） |
+| 16 | `db/runner/run_migrations.js --plan *`（DDL 计划） | PASS（生成各迁移计划） |
+
+### 跳过项（环境不可用，未伪造）
+- `npm run test:e2e`（需 `EWOH_E2E_RUNTIME_DATABASE_URL`，即真实 PostgreSQL）
+- `npm run test:browser`（Playwright，依赖真实 PG fixture）
+- Docker Compose / K8s / Helm 部署与验证
+- 真实数据库升级/回滚/备份/恢复执行（仅生成 DDL 计划，未连库执行）
+- 飞书 / 移动工作台真实运行时流程
+
+## 3. 代码证据路径
+
+| 能力 | 代码路径 |
+|---|---|
+| 因果执行控制台（只读） | `tools/work-console/`、`tools/work-indexer/`、`tools/gate-engine/`、`ewoh-spark-app/server/modules/work-orchestration/`、`ewoh-spark-app/client/src/pages/WorkOrchestration/` |
+| 资源/权限/Handoff | `tools/resource-registry/`、`tools/handoff-service/`、`scripts/audit-*.js` |
+| GitHub 同步 | `tools/git-sync/` |
+| 工厂复制/场地就绪 | `tools/factory-replication/`、`contracts/factory/`、`catalog/factory-sites/` |
+| 边缘平台 | `src/edge_platform/`（connectors/edge/world_model/spatial/scenario/backup） |
+| 连接器 | `src/edge_platform/connectors/`（modbus/opcua/sparkplug/webhook/csvfile）、`catalog/connectors/` |
+| 场景包/映射 | `catalog/`、`contracts/mapping/`、`contracts/workflow/` |
+| 数据库 | `db/migrations/`、`db/contracts/schema-manifest.yaml`、`db/runner/run_migrations.js`、`ewoh-spark-app/server/database/schema.ts` |
+| OpenAPI | `openapi/ewoh.yaml`、`openapi/work-orchestration.yaml`、`openapi/route-manifest.json` |
+
+## 4. 测试证据路径
+
+| 层 | 路径 | 结果 |
+|---|---|---|
+| 后端单元/契约 | `ewoh-spark-app/test/` | 81 套件 / 394 通过 |
+| 前端单元 | `ewoh-spark-app/client/src/**/*.test.ts` | 34 套件 / 176 通过 |
+| 边缘单元 | `src/edge_platform/tests/`、`tests/` | 667 通过 |
+| 连接器/AAS/Rego TCK | `scripts/connector-tck.py`、`aas-tck.py`、`rego-tck.py` | 32/7/4 通过 |
+| 仓库事实/Work Graph/控制台 | `scripts/audit-repo-facts.js`、`tools/work-indexer`、`work-console` | 33/33、0 冲突、0 阻塞 |
+| 部署工件 | `scripts/verify-deploy-artifacts.js`、`verify-helm-chart.js` | 包含在 standalone-check 中通过 |
+| E2E/浏览器 | `ewoh-spark-app/test/e2e/`、`test/browser/` | **未运行（需 PG）** |
+
+## 5. 当前 Gate 状态
+
+- `.codex/artifacts/gates.md`：G0-G10 已通过；G11-G13 待人工批准。
+- `tools/work-console`：**4 个门禁需人工批准**；0 个阻塞节点。
+- `pilot-readiness-check.sh`：**PILOT READINESS = NOT READY**
+  - 通过 5：release 校验和 / acceptance evidence / training plan / deployment runbook / release manifest
+  - 失败 3：docker / kubectl / helm（本机缺失）
+  - 待批准 7：database verify / runtime database / pilot factory / production approval / training completed / acceptance signoff / real device config
+- 结论：**当前 Gate 状态不允许进入生产试点**；G10+ 需人类批准，本审计未代批。
+
+## 6. 权威制品冲突（关键）
+
+| # | 冲突 | 证据 |
+|---|---|---|
+| C1 | **51 表口径不一致** | CHANGELOG 声称"受管表 48→51"；`schema-manifest.yaml` 声明 `managed_count:48`、`new_group_count:36`、`physical_create_count:38`、`mapped_existing_count_in_group:1`；`001_ewoh_managed_tables.sql` 含 **56 条 CREATE TABLE**；`schema.ts` 引用约 70 个 `ewoh_*` 表名（含索引）。**51 这个数字在权威源中无单一出处**。 |
+| C2 | **CHANGELOG 测试数字漂移** | CHANGELOG rc4 尾行声称 `server 81/391、client 15/50`；实际 HEAD 为 `server 81/394、client 34/176`。差异属自报过期，未随 HEAD 更新。 |
+| C3 | **E2E 通过数不一致** | CHANGELOG 多处声称 `29/29` 与 `33/33` 并存；本环境未运行 E2E，无法独立复核，标记为未验证。 |
+| C4 | **逻辑 vs 物理表口径** | manifest 用 `logical_name`（如 `ewoh_person`→物理 `ewoh_personnel`、`ewoh_device_person_binding`→`ewoh_device_binding`）映射，权威"表数"需明确是逻辑口径还是物理口径。 |
+
+## 7. 未完成任务 / 缺口（不依赖环境的实测缺口）
+
+| # | 缺口 | 证据 |
+|---|---|---|
+| G1 | **4 个门禁缺人工批准**（G11-G13 等） | `work-console` 输出 |
+| G2 | **210 条任务缺证据**（仅 T-198..T-217 有 1 条，其余 0 条） | `work-console` 输出 |
+| G3 | **Gate 无撤销/回滚 API** | `GatesPanel.tsx` L236/238/247/249/284/301 均为 TODO（"需后端提供 gate 撤销/回滚 API"） |
+| G4 | **离线冲突无强制解析端点** | `offlineConflict.ts` L38、`useOfflineWorkbench.ts` L429 TODO（409 无 `serverValue`、需 idempotent force-resolution 端点） |
+| G5 | **OIDC 后端为 stub** | `src/edge_platform/auth/identity.py` L9/L103/L111（"未实现完整 OIDC 授权码/PKCE"） |
+| G6 | **跨工厂调度为 STUB** | `src/edge_platform/spatial/multi_factory.py` L38/L419/L447（`CROSS_FACTORY_STUB`，V2.0 未实现） |
+| G7 | **Site Readiness 真实环境探测为前端 TODO** | `siteReadinessProbe.ts`/`SiteReadinessWizard.tsx` L419（Docker/K8s/Helm/真实设备探测需后端接口） |
+| G8 | **GitHub 真实同步未启用** | `tools/git-sync/` 生成计划，真实创建需人工批准并显式启用（CHANGELOG 自述） |
+| G9 | **调试残留文件未排除** | `ewoh-spark-app/test/browser/_dbgws.spec.js`（untracked，命名 `_dbgws` 疑似调试残留） |
+
+> 未发现：生产路径硬编码租户/设备 UUID（72 处命中多为 `factory-lan`/`--org-id`/示例 AAS/`OrgContextInterceptor` 导入/`catalog/factory-sites` 路径，属误报）；前端 mock/假数据（0 命中）；空 catch（0 命中）。
+
+## 8. T101-T114 逐项判定
+
+| 任务 | 判定 | 依据 |
+|---|---|---|
+| T101 权威制品与 51 表口径对账 | **Partial** | `audit-repo-facts` 33/33 通过，但 51 表口径存在 C1 冲突 |
+| T102 Work Graph Schema 与索引器 | **Verified Complete** | `work-graph.schema.json` + `work-indexer` 252 项/0 冲突，`--invariants` 通过 |
+| T103 只读因果执行控制台 | **Verified Complete** | `work-console` 运行 0 阻塞；`/api/work/*` 只读路由存在 |
+| T104 Evidence 与 Gate Engine | **Implemented but Unverified** | `gate-engine` 运行；但 210 条缺证据、4 门禁待批，覆盖率不足 |
+| T105 资源、权限和 Handoff 服务 | **Verified Complete** | `resource-registry`/`handoff-service` 落盘并接入门禁 |
+| T106 GitHub Issue、PR、CI 同步 | **Implemented but Unverified** | `git-sync` 生成计划；真实创建需人工批准+外部 OAuth，未验证 |
+| T107 Order-to-Delivery 场景包 | **Partial** | 目录 Manifest 存在；无真实集成 E2E 证据 |
+| T108 移动 E-SOP 场景包 | **Partial** | 移动 API/页面存在；缺真实设备 E2E 与离线冲突强制解析（G4） |
+| T109 质量追溯场景包 | **Partial** | 质检方案/追溯图存在；无独立 E2E 证据 |
+| T110 ERP/MRP/库存连接器包 | **Partial** | `catalog/connectors/erp` Manifest 存在；无真实 ERP 联调证据 |
+| T111 第二真实工厂无分叉复制 | **Implemented but Unverified** | `factory-replication` 工具存在；真实第二工厂需现场数据（阻塞） |
+| T112 第三真实工厂配置化复制 | **Blocked by External Validation** | 依赖真实 PG E2E + 真实工厂配置，本环境不可用 |
+| T113 伙伴交付与认证工具 | **Implemented but Unverified** | `partner/shadow-run` 存在；需真实伙伴环境验证 |
+| T114 生产 SLO 与最终验收工具链 | **Blocked by External Validation** | `pilot-readiness-check` = NOT READY（docker/kubectl/helm 缺失 + 7 项待批准） |
+
+## 9. 风险
+
+### 高
+- **R1 生产试点被 3 项环境缺失 + 7 项待批准阻塞**：`pilot-readiness` NOT READY，无真实 DB/容器/设备/签署，无法进入生产。
+- **R2 51 表口径权威冲突**：文档、manifest、迁移、schema 四处数字不一致，直接威胁"受管表对账"验收可信度。
+
+### 中
+- **R3 Evidence 缺口**：210 任务缺证据、4 门禁待批，完成定义（Done 需绑定 HEAD SHA + 环境指纹 + 独立验证）多数未满足。
+- **R4 关键交互缺口**：Gate 撤销/回滚、离线冲突强制解析、Site Readiness 真实探测均为 TODO；移动 E-SOP 冲突处理未闭环。
+- **R5 自报数字漂移**：CHANGELOG 测试/E2E 数字与 HEAD 不一致，权威事实源需机器可验证。
+
+### 低
+- **R6 部分能力为 stub**：OIDC、跨工厂调度（V2.0 明确 STUB）。
+- **R7 调试残留文件**：`_dbgws.spec.js` 未排除。
+
+## 10. 建议实施顺序
+
+按依赖与风险优先级：
+
+1. **P0 - 权威口径收敛**：修复 51 表口径（C1），统一 manifest / migration / schema / CHANGELOG 数字，纳入 `audit-repo-facts` 机器校验（对应 Phase 1 权威制品一致性）。
+2. **P0 - Evidence 补齐**：为 210 个缺证据任务登记 Evidence（workItemId/commitSha/environment/…/verifier），补 4 个门禁的人工批准流程（Phase 1）。
+3. **P1 - 关键交互闭环**：实现 Gate 撤销/回滚 API、离线冲突 idempotent force-resolution、Site Readiness 真实探测后端接口（Phase 2/3 UX 深化）。
+4. **P1 - 连接器与场景包 TCK**：为 ERP/MRP/WMS/Order-to-Delivery/质量追溯补齐 Connector TCK 与场景 E2E 证据（Phase 4）。
+5. **P2 - 生产工程证据**：在具备 PG/容器的环境重跑真实 E2E、浏览器、DB 迁移/回滚/备份恢复，绑定 HEAD SHA 与环境指纹（Phase 5）。
+6. **P2 - 外部验证解阻**：提供 docker/kubectl/helm、真实 PostgreSQL、真实试点工厂、生产批准、培训签署、验收签署与真机配置，滚动 `pilot-readiness-check` 至 READY（Phase 6）。
+
+## 11. 当前完成度结论（暂定，最终结论见 Phase 6）
+
+本阶段为只读审计，**不输出最终 A-E 结论**。基于当前证据，完成度倾向为：
+
+> **核心实现完成度高，但验证环境缺失（无 PostgreSQL/容器/真机），且 Pilot 门禁 NOT READY —— 尚不具备生产与规模复制条件。**
+
+该方向对应 **A（核心实现完成，但仍不具备生产和规模复制条件）**，将在 Phase 6 由独立验证 Agent 复核后给出最终结论（A-E 五档选一，附证据）。
+
+---
+*审计人：EWOH 总控工程 Agent（独立审计，非实现自签）*
+*审计时间：2026-08-04*
