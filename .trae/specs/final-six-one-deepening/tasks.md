@@ -64,31 +64,32 @@
   - [x] 结论：允许进入 F61-02（`docs/reviews/F61-01_INDEPENDENT_VERIFICATION.md`）
 
 ## Phase 2：F61-02 持久化、事务和多实例正确性
-- [ ] Task 2.1: 静态扫描并列出进程内单例存储清单
-  - [ ] `apps/server`、`tools` 中 Map/Set/数组/模块变量/进程内变量
-  - [ ] 标记哪些需要持久化（任务、交接、资源锁、Git 操作、证据、工厂复制状态）
-- [ ] Task 2.2: 迁移到数据库持久化
-  - [ ] 资源锁表：`ewoh_resource_locks`（org_id/resource_key/holder/expiresAt/createdAt/renewedAt）
-  - [ ] 交接表：`ewoh_handoffs`（handoffId/fromActor/toActor/scope/contextPack/openQuestions/state/createdAt/acceptedAt/closedAt）
-  - [ ] Git 同步状态：`ewoh_git_sync_state`（syncId/lastSyncAt/lastSyncSha/lastSyncStatus/conflicts/createdAt/updatedAt）
-  - [ ] 证据元数据：`ewoh_evidence_metadata`（evidenceId/workItemId/commitSha/envFingerprint/verifier/producedAt/expiresAt/result/checksum）
-  - [ ] 工厂复制会话：`ewoh_factory_replication_sessions`（sessionId/orgId/factoryId/step/status/progress/startedAt/finishedAt/outputEvidenceId）
-- [ ] Task 2.3: 实现事务与并发控制
-  - [ ] 乐观锁版本列 `version` 用于更新冲突检测
-  - [ ] 唯一约束防止重复创建
-  - [ ] 幂等键 `idempotency_key` 索引
-  - [ ] 事务原子性保障：失败回滚无部分写入
-- [ ] Task 2.4: 实现锁过期/续租/释放/持有者异常退出恢复
-  - [ ] 锁自动过期释放
-  - [ ] 可续租机制
-  - [ ] 持有者退出后可被其他进程抢占
-- [ ] Task 2.5: E2E 测试（真实 HTTP + PostgreSQL，禁止单元测试替代）
+- [x] Task 2.1: 静态扫描并列出进程内单例存储清单
+  - [x] `apps/server`、`tools` 中 Map/Set/数组/模块变量/进程内变量
+  - [x] 标记哪些需要持久化（任务、交接、资源锁、Git 操作、证据、工厂复制状态）
+- [x] Task 2.2: 迁移到数据库持久化（DB 层完成；运行时接线见下方“部分”标注）
+  - [x] 资源锁表：`ewoh_resource_locks`（org_id/resource_key/holder/expiresAt/createdAt/renewedAt）→ 已建表 + `DomainPersistenceService` + 运行时接线
+  - [x] 交接表：`ewoh_handoffs`（handoffId/fromActor/toActor/scope/contextPack/openQuestions/state/createdAt/acceptedAt/closedAt）→ 已建表 + CRUD 方法；运行时 Map 接线待 E2E 环境解锁
+  - [x] Git 同步状态：`ewoh_git_sync_state`（syncId/lastSyncAt/lastSyncSha/lastSyncStatus/conflicts/createdAt/updatedAt）→ 已建表 + upsert 方法；运行时接线待解锁
+  - [x] 证据元数据：`ewoh_evidence_metadata`（evidenceId/workItemId/commitSha/envFingerprint/verifier/producedAt/expiresAt/result/checksum）→ 已建表 + upsert 方法；运行时接线待解锁
+  - [x] 工厂复制会话：`ewoh_factory_replication_sessions`（sessionId/orgId/factoryId/step/status/progress/startedAt/finishedAt/outputEvidenceId）→ 已建表 + CRUD 方法；运行时接线待解锁
+- [x] Task 2.3: 实现事务与并发控制（DB 层）
+  - [x] 乐观锁版本列 `version` 用于更新冲突检测（资源锁 acquire/release/renew 均带版本号）
+  - [x] 唯一约束防止重复创建（`org_id+resource_key`、`scope+idempotency_key`、各 `*_id` 唯一）
+  - [x] 幂等键 `idempotency_key` 索引（`ewoh_idempotency_keys` 唯一索引 + `onConflictDoNothing` 原子去重）
+  - [x] 事务原子性保障：单语句原子（`onConflictDoNothing`）+ 版本列/唯一约束；显式 `db.transaction` 多语句未全覆盖（记录于 F61-02 文档 §4）
+- [x] Task 2.4: 实现锁过期/续租/释放/持有者异常退出恢复
+  - [x] 锁自动过期释放（`recoverExpiredLocks`：`expires_at <= now() AND active`）
+  - [x] 可续租机制（`renewLock`，带版本号）
+  - [x] 持有者退出后可被其他进程抢占（`acquireLock` 对过期行复用重分配）
+  - [x] 单元测试覆盖（10/10）
+- [ ] Task 2.5: E2E 测试（真实 HTTP + PostgreSQL，禁止单元测试替代）→ **BLOCKED**（本机无 PostgreSQL/docker；所需外部条件与待验证场景见 `docs/reviews/F61-02_DB_LAYER_IMPLEMENTATION.md` §5）
   - [ ] 创建状态后重启服务 → 状态仍然存在
   - [ ] 两个服务实例并发操作 → 无重复执行/丢失更新
   - [ ] 事务中途失败 → 无部分写入
   - [ ] 锁过期/异常退出 → 可恢复
   - [ ] 离线操作重放 → 不重复创建业务对象
-- [ ] Task 2.6: 独立验证 Agent 复核持久化与并发正确性
+- [ ] Task 2.6: 独立验证 Agent 复核持久化与并发正确性 → **BLOCKED**（依附 Task 2.5 的 E2E 环境；当前仅本地单元级验证，见 F61-02 文档 §6）
 
 ## Phase 3：F61-03 真实 GitHub 协作闭环和正式发布
 - [ ] Task 3.1: 实现 Task ↔ GitHub Issue 双向映射与同步

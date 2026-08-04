@@ -1,4 +1,6 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+
+export const IDEMPOTENCY_STORE = Symbol('IDEMPOTENCY_STORE');
 
 export interface IdempotencyRecord<T = unknown> {
   key: string;
@@ -36,7 +38,8 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
 @Injectable()
 export class IdempotencyService {
   constructor(
-    @Optional() private readonly idempotencyStore: IdempotencyStore = new InMemoryIdempotencyStore(),
+    @Optional() @Inject(IDEMPOTENCY_STORE)
+    private readonly idempotencyStore: IdempotencyStore = new InMemoryIdempotencyStore(),
   ) {}
 
   async lookup<T>(key: string): Promise<T | undefined> {

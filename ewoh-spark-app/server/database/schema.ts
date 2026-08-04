@@ -726,6 +726,113 @@ export const ewohDevice = pgTable("ewoh_device", {
   index("idx_ewoh_device_online").on(table.online),
 ]);
 
+// --- F61-02 domain persistence tables (manually maintained, NOT synced from platform) ---
+
+export const ewohResourceLocks = pgTable("ewoh_resource_locks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: varchar("org_id", { length: 255 }).notNull(),
+  resourceKey: varchar("resource_key", { length: 255 }).notNull(),
+  resourceId: varchar("resource_id", { length: 255 }).notNull(),
+  holder: varchar("holder", { length: 255 }).notNull(),
+  purpose: text("purpose"),
+  acquiredAt: customTimestamptz("acquired_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  expiresAt: customTimestamptz("expires_at", { precision: 3 }),
+  renewedAt: customTimestamptz("renewed_at", { precision: 3 }),
+  active: boolean("active").notNull().default(true),
+  version: integer("version").notNull().default(1),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uq_ewoh_resource_locks_org_key").on(table.orgId, table.resourceKey),
+  index("idx_ewoh_resource_locks_holder").on(table.holder),
+  index("idx_ewoh_resource_locks_active").on(table.active),
+]);
+
+export const ewohHandoffs = pgTable("ewoh_handoffs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  handoffId: varchar("handoff_id", { length: 255 }).notNull().unique(),
+  fromActor: varchar("from_actor", { length: 255 }).notNull(),
+  toActor: varchar("to_actor", { length: 255 }).notNull(),
+  scope: varchar("scope", { length: 500 }).notNull(),
+  contextPack: text("context_pack"),
+  acceptance: text("acceptance"),
+  /**
+   * @type { string[] }
+   */
+  openQuestions: jsonb("open_questions"),
+  state: varchar("state", { length: 50 }).notNull().default('open'),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  acceptedAt: customTimestamptz("accepted_at", { precision: 3 }),
+  closedAt: customTimestamptz("closed_at", { precision: 3 }),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_ewoh_handoffs_state").on(table.state),
+  index("idx_ewoh_handoffs_to_actor").on(table.toActor),
+]);
+
+export const ewohGitSyncState = pgTable("ewoh_git_sync_state", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  syncId: varchar("sync_id", { length: 255 }).notNull().unique(),
+  lastSyncAt: customTimestamptz("last_sync_at", { precision: 3 }),
+  lastSyncSha: varchar("last_sync_sha", { length: 64 }),
+  lastSyncStatus: varchar("last_sync_status", { length: 50 }),
+  /**
+   * @type { unknown }
+   */
+  conflicts: jsonb("conflicts"),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const ewohEvidenceMetadata = pgTable("ewoh_evidence_metadata", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  evidenceId: varchar("evidence_id", { length: 255 }).notNull().unique(),
+  workItemId: varchar("work_item_id", { length: 255 }),
+  commitSha: varchar("commit_sha", { length: 64 }),
+  envFingerprint: varchar("env_fingerprint", { length: 255 }),
+  verifier: varchar("verifier", { length: 255 }),
+  producedAt: customTimestamptz("produced_at", { precision: 3 }),
+  expiresAt: customTimestamptz("expires_at", { precision: 3 }),
+  result: varchar("result", { length: 50 }),
+  checksum: varchar("checksum", { length: 128 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_ewoh_evidence_metadata_work_item").on(table.workItemId),
+]);
+
+export const ewohFactoryReplicationSessions = pgTable("ewoh_factory_replication_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sessionId: varchar("session_id", { length: 255 }).notNull().unique(),
+  orgId: varchar("org_id", { length: 255 }),
+  factoryId: varchar("factory_id", { length: 255 }).notNull(),
+  step: varchar("step", { length: 100 }),
+  status: varchar("status", { length: 50 }).notNull().default('running'),
+  progress: integer("progress").notNull().default(0),
+  startedAt: customTimestamptz("started_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  finishedAt: customTimestamptz("finished_at", { precision: 3 }),
+  outputEvidenceId: varchar("output_evidence_id", { length: 255 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_ewoh_factory_replication_sessions_factory").on(table.factoryId),
+  index("idx_ewoh_factory_replication_sessions_status").on(table.status),
+]);
+
+export const ewohIdempotencyKeys = pgTable("ewoh_idempotency_keys", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  idempotencyKey: varchar("idempotency_key", { length: 500 }).notNull(),
+  scope: varchar("scope", { length: 100 }).notNull().default('default'),
+  /**
+   * @type { unknown }
+   */
+  response: jsonb("response"),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uq_ewoh_idempotency_keys_scope_key").on(table.scope, table.idempotencyKey),
+]);
+
 // table aliases
 export const ewohAiSuggestionTable = ewohAiSuggestion;
 export const ewohDeviceTable = ewohDevice;

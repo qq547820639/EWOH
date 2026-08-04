@@ -131,7 +131,16 @@ export class WorkOrchestrationController {
     @Body() body: { purpose?: string; expiresAt?: string; confirm?: boolean },
     @Req() request: { userContext?: OrgContext },
   ) {
-    return this.workService.acquireResource(id, body, request.userContext);
+    return this.workService.acquireResourceDurable(id, body, request.userContext);
+  }
+
+  @Post('resources/:id/renew')
+  renewResource(
+    @Param('id') id: string,
+    @Body() body: { expiresAt?: string },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.workService.renewResourceLock(id, body, request.userContext);
   }
 
   @Post('resources/:id/release')
@@ -139,7 +148,14 @@ export class WorkOrchestrationController {
     @Param('id') id: string,
     @Req() request: { userContext?: OrgContext },
   ) {
-    return this.workService.releaseResource(id, request.userContext);
+    return this.workService.releaseResourceDurable(id, request.userContext);
+  }
+
+  @Post('resources/recover-expired')
+  recoverExpired(@Req() request: { userContext?: OrgContext }) {
+    return this.workService.recoverExpiredLocks(
+      request.userContext?.primaryOrgId ?? 'default',
+    );
   }
 
   @Post('handoffs')

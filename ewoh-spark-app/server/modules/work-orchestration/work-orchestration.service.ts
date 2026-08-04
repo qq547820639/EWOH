@@ -3,12 +3,14 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { load } from 'js-yaml';
+import { DomainPersistenceService } from './domain-persistence.service';
 
 const HANDOFF_TRANSITIONS: Record<string, string[]> = {
   open: ['accepted', 'rejected'],
@@ -192,6 +194,10 @@ export class WorkOrchestrationService {
   private gitSyncModule: GitSyncModule | null = null;
   private siteReadinessModule: SiteReadinessModule | null = null;
   private readonly locks = new Map<string, ResourceLockRecord>();
+
+  constructor(
+    @Optional() private readonly domainPersistence?: DomainPersistenceService,
+  ) {}
 
   getGraph(): WorkGraph {
     return this.indexer().indexWorkGraph(this.artifactsDir(), {
@@ -521,6 +527,116 @@ export class WorkOrchestrationService {
     this.locks.delete(resourceId);
     this.deleteLockFile(resourceId);
     return { resourceId, released: true, holder: existing.holder };
+  }
+
+  /**
+   * Durable (DB-backed) resource lock acquisition. When no DB persistence is
+   * available, falls back to the legacy sync file/in-memory path.
+   */
+  async acquireResourceDurable(
+    resourceId: string,
+    body: { purpose?: string; expiresAt?: string; confirm?: boolean },
+    actor: { userId: string; primaryOrgId: string } | undefined,
+  ) {
+    if (!this.domainPersistence) {
+      return this.acquireResource(resourceId, body, actor);
+    }
+    const resource = this.getResources().find((entry) => entry.resourceId === resourceId);
+    if (!resource) {
+      throw new NotFoundException(`Resource ${resourceId} not found`);
+    }
+    this.assertWritable();
+    if (/device|production|environment/i.test(resource.kind) && body.confirm !== true) {
+      throw new BadRequestException('double confirmation required for this resource kind');
+    }
+    const orgId = actor?.primaryOrgId ?? 'default';
+    const record = await this.domainPersistence.acquireLock({
+      orgId,
+      resourceKey: resourceId,
+      resourceId,
+      holder: actor?.userId ?? 'anonymous',
+      purpose: body.purpose,
+      expiresAt: body.expiresAt,
+    });
+    return {
+      resourceId: record.resourceId,
+      holder: record.holder,
+      purpose: record.purpose,
+      acquiredAt: record.acquiredAt,
+      expiresAt: record.expiresAt,
+      active: record.active,
+      version: record.version,
+      persisted: 'postgres',
+    };
+  }
+
+  /**
+   * Durable (DB-backed) resource lock release. Falls back to the legacy path
+   * when no DB persistence is available.
+   */
+  async releaseResourceDurable(
+    resourceId: string,
+    actor: { userId: string; primaryOrgId: string; isGlobalAdmin?: boolean } | undefined,
+  ) {
+    if (!this.domainPersistence) {
+      return this.releaseResource(resourceId, actor);
+    }
+    const orgId = actor?.primaryOrgId ?? 'default';
+    const result = await this.domainPersistence.releaseLock({
+      orgId,
+      resourceKey: resourceId,
+      holder: actor?.userId ?? 'anonymous',
+      isGlobalAdmin: actor?.isGlobalAdmin,
+    });
+    if (!result.released) {
+      throw new NotFoundException(`Resource ${resourceId} is not locked`);
+    }
+    return { resourceId, released: true, holder: result.holder, persisted: 'postgres' };
+  }
+
+  /**
+   * Renew (extend the lease of) a resource lock held by the current actor.
+   * Returns null when the lock is absent / not held by the actor / already expired.
+   */
+  async renewResourceLock(
+    resourceId: string,
+    body: { expiresAt?: string },
+    actor: { userId: string; primaryOrgId: string } | undefined,
+  ) {
+    if (!this.domainPersistence) {
+      throw new BadRequestException('renew requires DB persistence (DomainPersistenceService)');
+    }
+    const orgId = actor?.primaryOrgId ?? 'default';
+    const updated = await this.domainPersistence.renewLock({
+      orgId,
+      resourceKey: resourceId,
+      holder: actor?.userId ?? 'anonymous',
+      expiresAt: body.expiresAt,
+    });
+    if (!updated) {
+      throw new NotFoundException(`Resource ${resourceId} is not locked by this actor`);
+    }
+    return {
+      resourceId: updated.resourceId,
+      holder: updated.holder,
+      acquiredAt: updated.acquiredAt,
+      renewedAt: updated.renewedAt,
+      expiresAt: updated.expiresAt,
+      active: updated.active,
+      version: updated.version,
+      persisted: 'postgres',
+    };
+  }
+
+  /**
+   * Recover locks whose holder crashed / lease expired. Returns the recovered count.
+   */
+  async recoverExpiredLocks(orgId = 'default'): Promise<{ recovered: number }> {
+    if (!this.domainPersistence) {
+      return { recovered: 0 };
+    }
+    const recovered = await this.domainPersistence.recoverExpiredLocks(orgId);
+    return { recovered };
   }
 
   createHandoff(

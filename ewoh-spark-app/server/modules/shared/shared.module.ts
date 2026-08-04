@@ -1,7 +1,8 @@
 import { Global, Module } from '@nestjs/common';
 import { AuditService } from './audit.service';
 import { DatabaseAuditSink } from './database-audit-sink';
-import { IdempotencyService } from './idempotency.service';
+import { DbIdempotencyStore } from './db-idempotency.store';
+import { IdempotencyService, IDEMPOTENCY_STORE } from './idempotency.service';
 import { OrgContextInterceptor } from './org-context.interceptor';
 import { OrgScopeService } from './org-scope.service';
 import { StateMachineGuard } from './state-machine.guard';
@@ -17,6 +18,8 @@ import { SlowQueryService } from '../observability/slow-query.service';
     DatabaseAuditSink,
     AuditService,
     IdempotencyService,
+    DbIdempotencyStore,
+    { provide: IDEMPOTENCY_STORE, useClass: DbIdempotencyStore },
     OrgContextInterceptor,
     OrgScopeService,
     StateMachineGuard,
