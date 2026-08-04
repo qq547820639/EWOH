@@ -4,7 +4,8 @@
 
 - 验证时间：2026-08-04（Asia/Shanghai）
 - 验证 Agent：EWOH F61-01 独立复核 Agent（只读，不修改任何源码 / 权威制品 / schema / 夹具 / 测试）
-- 基线 HEAD：`6e6a67f0c3e6bbe74082ba960267d070722b59c7`（工作树含未提交的 F61-01 实现，以工作树当前内容为准；`git rev-parse HEAD` 实测一致）
+- 验证基线 HEAD：`6e6a67f0c3e6bbe74082ba960267d070722b59c7`（工作树含未提交的 F61-01 实现，以工作树当前内容为准；`git rev-parse HEAD` 实测一致）
+- 提交闭环 HEAD：`41b2ac6b25b7b8bd0a96150efa6ec0ef9e7a26a1`（F61-01 已提交并推送 origin/main，`git fetch origin && git rev-parse HEAD == git rev-parse origin/main` 实测一致，工作树干净；本证据结论已由该提交固化为远程 main 事实）
 - 任务范围：复核 F61-01「单一事实源语义一致性」的规则注册、schema、strict 模式、13 个漂移夹具真实覆盖、上一轮缺陷修复（R-a/R-b/R1/R-c/R2）、9 类真实仓库冲突、--fix 边界
 
 ---
@@ -30,7 +31,7 @@
 | # | 命令 | 真实退出码 | 关键输出 |
 |---|------|:---:|----------|
 | 1 | `node tools/semantic-rules/index.js --root . --strict` | **0** | `Semantic rules: 0 findings (0 errors / 0 warnings) across 14 rules` |
-| 2 | `node tools/semantic-rules/index.js --root . --check --json` | **0** | `gitHead=6e6a67f0…, summary{total:0,errors:0,warnings:0,pass:true,rulesRun:14}, findings:[]` |
+| 2 | `node tools/semantic-rules/index.js --root . --check --json` | **0** | `gitHead=6e6a67f0…, summary{total:0,errors:0,warnings:0,pass:true,rulesRun:14}, findings:[]`（提交闭环后于 `41b2ac6…` 复跑：`Semantic rules: 0 findings across 14 rules`） |
 | 3 | `node tools/semantic-rules/run-fixtures.js` | **0** | `13/13 PASSED`（每个夹具 drift strict exit=1） |
 | 4 | `node scripts/audit-repo-facts.js --strict` | **0** | `REPO FACTS AUDIT: 39/39 passed` |
 | 5 | `node tools/work-indexer/index.js --root . --strict --invariants` | **0** | `252 items / 209 edges / 48 actors / 191 evidence / 14 gates / 0 conflicts` |
