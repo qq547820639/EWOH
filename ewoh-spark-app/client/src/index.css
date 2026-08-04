@@ -1,9 +1,16 @@
+@import "tailwindcss";
 @import "tw-animate-css";
 @import "./tailwind-theme.css";
 @import "./typography.css";
 
+/*
+  Tailwind v4 内容扫描源：显式声明所有需要扫描的文件，确保所有 utilities 被生成。
+  In Tailwind v4, @config cannot load external .ts files during postcss processing,
+  so we handle content entirely via @source directives in this file.
+*/
+@source "./**/*.{ts,tsx,js,jsx,css}";
+@source "../public/**/*.{html,js}";
 @source "../../node_modules/streamdown/dist/*.js";
-@config "../../tailwind.config.ts";
 
 /* 统一键盘焦点指示：所有 focus-visible 元素使用 2px 高对比 outline */
 *:focus-visible {
