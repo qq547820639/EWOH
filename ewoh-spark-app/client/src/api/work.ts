@@ -300,6 +300,24 @@ export async function getWorkGitSync(): Promise<GitSyncPlan> {
   return res.data;
 }
 
+/**
+ * 将离线 Git 同步计划应用到 GitHub（服务端已做审批门禁）。
+ * 调用方需先行获得审批；高风险写操作（创建/合并/关闭 PR）未经批准不得调用。
+ */
+export async function applyWorkGitSync(body: {
+  idempotencyKey: string;
+  approved: boolean;
+  reason?: string;
+  actor?: string;
+}): Promise<{ created: Array<{ workItemId: string; issueNumber: number }> }> {
+  const res = await axiosForBackend({
+    url: '/api/work/git-sync/apply',
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}
+
 export async function getWorkEvidenceContent(
   evidenceId: string,
   limit = 200,

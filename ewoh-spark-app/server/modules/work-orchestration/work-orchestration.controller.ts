@@ -103,8 +103,16 @@ export class WorkOrchestrationController {
   }
 
   @Post('git-sync/apply')
-  applyGitSync() {
-    return this.workService.applyGitSync();
+  applyGitSync(
+    @Body()
+    body: {
+      idempotencyKey?: string;
+      approved?: boolean;
+      reason?: string;
+      actor?: string;
+    },
+  ) {
+    return this.workService.applyGitSync(body);
   }
 
   @Get('site-readiness')

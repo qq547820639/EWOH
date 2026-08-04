@@ -29,6 +29,12 @@ export const UI_ARIA_LABELS = {
   collapsePlan: '收起方案详情',
   editProcess: '编辑工序',
   deleteProcess: '删除工序',
+  graphTextView: '切换到文本视图',
+  graphGraphView: '切换到图形视图',
+  graphSummary: '交付因果图（文本替代）',
+  graphCriticalPath: '关键路径',
+  searchPersonnel: '搜索人员',
+  batteryChart: '设备电量分布图',
 } as const;
 
 export function eventAccessibleLabel(title: string, severity: string): string {

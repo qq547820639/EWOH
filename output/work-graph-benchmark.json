@@ -1,0 +1,63 @@
+{
+  "generatedAt": "2026-08-03T23:50:12.212Z",
+  "environment": {
+    "node": "v26.5.1",
+    "platform": "darwin"
+  },
+  "threshold": {
+    "windowThreshold": 300
+  },
+  "results": [
+    {
+      "nodes": 500,
+      "edges": 499,
+      "runs": 7,
+      "medianMs": 1.005334,
+      "minMs": 0.844083,
+      "maxMs": 2.271167,
+      "samplesMs": [
+        0.844,
+        0.85,
+        0.918,
+        1.005,
+        1.324,
+        2.036,
+        2.271
+      ]
+    },
+    {
+      "nodes": 1000,
+      "edges": 999,
+      "runs": 7,
+      "medianMs": 6.338375,
+      "minMs": 6.178792,
+      "maxMs": 8.070708,
+      "samplesMs": [
+        6.179,
+        6.206,
+        6.315,
+        6.338,
+        6.397,
+        6.593,
+        8.071
+      ]
+    },
+    {
+      "nodes": 2000,
+      "edges": 1999,
+      "runs": 7,
+      "medianMs": 3.2075,
+      "minMs": 2.925667,
+      "maxMs": 4.549791,
+      "samplesMs": [
+        2.926,
+        2.979,
+        2.989,
+        3.208,
+        3.214,
+        3.26,
+        4.55
+      ]
+    }
+  ]
+}

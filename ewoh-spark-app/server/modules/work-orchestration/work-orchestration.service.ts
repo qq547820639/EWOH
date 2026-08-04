@@ -347,9 +347,26 @@ export class WorkOrchestrationService {
     );
   }
 
-  applyGitSync() {
+  applyGitSync(body: {
+    idempotencyKey?: string;
+    approved?: boolean;
+    reason?: string;
+    actor?: string;
+  }) {
     if (!this.isWritable()) {
       throw new BadRequestException('EWOH_WORK_WRITABLE is not enabled');
+    }
+    if (body.approved !== true) {
+      throw new BadRequestException(
+        'git-sync apply requires approved=true (approval gate)',
+      );
+    }
+    if (!body.idempotencyKey || typeof body.idempotencyKey !== 'string') {
+      throw new BadRequestException('idempotencyKey is required for git-sync apply');
+    }
+    const prior = this.loadGitSyncApply(body.idempotencyKey);
+    if (prior) {
+      return prior.result;
     }
     const graph = this.getGraph();
     const registry = this.loadGitSyncRegistry();
@@ -359,22 +376,27 @@ export class WorkOrchestrationService {
       registry,
       sync.gitInfo(this.repoRoot()),
     );
+    let result: Record<string, unknown>;
     try {
-      const result = sync.liveApply(
+      result = sync.liveApply(
         plan,
         join(this.artifactsDir(), 'work', 'git-sync.json'),
         this.repoRoot(),
       );
-      return {
-        status: 'live',
-        appliedAt: new Date().toISOString(),
-        ...result,
-      };
     } catch (error) {
       throw new BadRequestException(
         error instanceof Error ? error.message : 'live GitHub sync failed',
       );
     }
+    const response = {
+      status: 'live',
+      appliedAt: new Date().toISOString(),
+      actor: body.actor ?? 'anonymous',
+      reason: body.reason ?? '',
+      ...result,
+    };
+    this.recordGitSyncApply({ idempotencyKey: body.idempotencyKey, result: response });
+    return response;
   }
 
   getSiteReadiness() {
@@ -742,6 +764,40 @@ export class WorkOrchestrationService {
     } catch {
       return [];
     }
+  }
+
+  private loadGitSyncApply(idempotencyKey: string): { result: Record<string, unknown> } | null {
+    const file = join(this.artifactsDir(), 'work', 'git-sync-apply.json');
+    if (!existsSync(file)) return null;
+    try {
+      const parsed = JSON.parse(
+        readFileSync(file, 'utf8'),
+      ) as Array<{ idempotencyKey: string; result: Record<string, unknown> }>;
+      if (!Array.isArray(parsed)) return null;
+      return parsed.find((entry) => entry.idempotencyKey === idempotencyKey) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private recordGitSyncApply(record: {
+    idempotencyKey: string;
+    result: Record<string, unknown>;
+  }) {
+    const dir = join(this.artifactsDir(), 'work');
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, 'git-sync-apply.json');
+    let records: Array<{ idempotencyKey: string; result: Record<string, unknown> }> = [];
+    if (existsSync(file)) {
+      try {
+        const parsed = JSON.parse(readFileSync(file, 'utf8'));
+        if (Array.isArray(parsed)) records = parsed;
+      } catch {
+        records = [];
+      }
+    }
+    records.push(record);
+    writeFileSync(file, `${JSON.stringify(records, null, 2)}\n`, 'utf8');
   }
 
   private loadLockFile(resourceId: string): ResourceLockRecord | null {

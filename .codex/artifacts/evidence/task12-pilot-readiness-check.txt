@@ -1,0 +1,35 @@
+bash: no job control in this shell
+== EWOH Pilot Readiness Check ==
+Date: 2026-08-04T02:45:19Z
+
+release checksums            PASS     release/ewoh-0.6.0-rc4/SHA256SUMS.txt
+acceptance evidence          PASS     docs/delivery/acceptance-evidence.md
+training plan                PASS     docs/delivery/training-plan.md
+deployment runbook           PASS     docs/delivery/deployment-runbook.md
+release manifest             PASS     docs/delivery/release-manifest.yaml
+docker                       FAIL     docker not available on this machine
+kubectl                      FAIL     kubectl not available on this machine
+helm                         FAIL     helm not available on this machine
+database verify              PENDING  EWOH_DATABASE_URL not set
+runtime database             PENDING  EWOH_RUNTIME_DATABASE_URL not set
+pilot factory                PENDING  EWOH_PILOT_FACTORY_NAME not set
+production approval          PENDING  EWOH_PRODUCTION_APPROVAL != approved
+training completed           PENDING  EWOH_TRAINING_COMPLETED != true
+acceptance signoff           PENDING  EWOH_ACCEPTANCE_SIGNOFF != signed
+real device config           PENDING  EWOH_REAL_DEVICE_CONFIG not provided
+
+Result: passed=5 failed=3 pending=7
+
+Go/No-Go blockers:
+  - docker: docker not available on this machine
+  - kubectl: kubectl not available on this machine
+  - helm: helm not available on this machine
+  - database verify: EWOH_DATABASE_URL not set
+  - runtime database: EWOH_RUNTIME_DATABASE_URL not set
+  - pilot factory: EWOH_PILOT_FACTORY_NAME not set
+  - production approval: EWOH_PRODUCTION_APPROVAL != approved
+  - training completed: EWOH_TRAINING_COMPLETED != true
+  - acceptance signoff: EWOH_ACCEPTANCE_SIGNOFF != signed
+  - real device config: EWOH_REAL_DEVICE_CONFIG not provided
+
+PILOT READINESS: NOT READY

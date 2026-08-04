@@ -183,6 +183,24 @@ Current behavior: `status -> handled` unconditionally, records
 `evidenceJson`. Pending: no source-state guard (open/handled can both be
 re-handled), no conditional update, and no audit-chain entry.
 
+## Git Sync Apply (approval gate)
+
+Service: `server/modules/work-orchestration/work-orchestration.service.ts`.
+Endpoint: `POST /api/work/git-sync/apply`. File-backed apply record persisted to
+`.codex/artifacts/work/git-sync-apply.json` (audit + idempotency).
+
+| Condition | Behavior |
+|-----------|----------|
+| `EWOH_WORK_WRITABLE` disabled | 400 `EWOH_WORK_WRITABLE is not enabled` |
+| `approved !== true` | 400 `git-sync apply requires approved=true (approval gate)` |
+| missing/non-string `idempotencyKey` | 400 `idempotencyKey is required for git-sync apply` |
+| repeated `idempotencyKey` | returns recorded result (idempotent, no re-apply) |
+| live GitHub env missing | 400 from `liveApply` (EWOH_GIT_SYNC_ENABLED/GITHUB_TOKEN/EWOH_GIT_SYNC_APPROVED) |
+
+The apply record captures `idempotencyKey`, `status: live`, `appliedAt`,
+`actor`, `reason`, and the created issue numbers, giving an auditable chain of
+custody for the high-risk Git mutation.
+
 ## Service-Enforced vs Pending
 
 | Domain | Enforced today | Pending |

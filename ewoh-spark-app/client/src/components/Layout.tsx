@@ -5,12 +5,23 @@ import { EWOH_ROLE_LABELS } from '@client/src/types/ewoh';
 import { getVisibleNavGroups } from '../lib/navigation';
 import { getAuthUser, revokeSession } from '../lib/auth';
 import { UI_ARIA_LABELS } from '../lib/a11y';
+import AppBreadcrumb from './app-shell/AppBreadcrumb';
+import ContextBar from './app-shell/ContextBar';
+import FavoriteViewsMenu from './app-shell/FavoriteViewsMenu';
+import GlobalSearchCommand from './app-shell/GlobalSearchCommand';
+import OnlineStatusBadge from './app-shell/OnlineStatusBadge';
+import PendingInbox from './app-shell/PendingInbox';
+import RecentAccessMenu from './app-shell/RecentAccessMenu';
+import { useOfflineSnapshot } from './app-shell/useOfflineSnapshot';
+import { prefetchRoute } from '../lib/routePrefetch';
 
 const Layout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const user = getAuthUser();
   const navGroups = getVisibleNavGroups(user?.roles ?? []);
+  const offlineSnapshot = useOfflineSnapshot();
+  const pendingCount = offlineSnapshot?.pendingCount ?? 0;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -91,6 +102,8 @@ const Layout = () => {
                         to={item.to}
                         title={roleText}
                         data-roles={item.roles.join(',')}
+                        onMouseEnter={() => prefetchRoute(item.to)}
+                        onFocus={() => prefetchRoute(item.to)}
                         onClick={() => setSidebarOpen(false)}
                       >
                         {({ isActive }) => (
@@ -166,26 +179,32 @@ const Layout = () => {
         tabIndex={-1}
         className="flex min-w-0 flex-1 flex-col overflow-auto outline-none"
       >
-        <div className="flex h-12 shrink-0 items-center gap-3 border-b border-[hsl(220_14%_89%)] bg-white px-4 lg:hidden">
+        <div className="flex h-12 shrink-0 items-center gap-3 border-b border-[hsl(220_14%_89%)] bg-white px-4">
           <button
             ref={menuButtonRef}
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)] lg:hidden"
             aria-label={UI_ARIA_LABELS.openNavigation}
           >
             <Menu className="h-4 w-4" />
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 lg:hidden">
             <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[hsl(221_83%_53%)] text-[10px] font-bold text-white">
               E
             </div>
             <span className="text-sm font-semibold text-[hsl(220_14%_14%)]">EWOH</span>
           </div>
-          <span className="ml-auto truncate text-xs text-[hsl(218_10%_42%)]">
-            {user?.username ?? '未登录'}
-          </span>
+          <AppBreadcrumb pathname={location.pathname} />
+          <div className="ml-auto flex items-center gap-1.5">
+            <GlobalSearchCommand navGroups={navGroups} />
+            <RecentAccessMenu pathname={location.pathname} />
+            <FavoriteViewsMenu pathname={location.pathname} />
+            <PendingInbox pendingCount={pendingCount} />
+            <OnlineStatusBadge snapshot={offlineSnapshot} />
+          </div>
         </div>
+        <ContextBar />
         <Outlet />
       </main>
     </div>

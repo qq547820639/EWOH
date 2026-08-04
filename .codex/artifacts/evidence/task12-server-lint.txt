@@ -1,0 +1,7 @@
+
+/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/client/src/pages/WorkOrchestration/GitSyncPanel.tsx
+  446:33  error  Irregular whitespace not allowed  no-irregular-whitespace
+  446:35  error  Irregular whitespace not allowed  no-irregular-whitespace
+
+✖ 2 problems (2 errors, 0 warnings)
+
