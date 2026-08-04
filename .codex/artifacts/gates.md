@@ -17,7 +17,7 @@
 | G12 | Follow-on phases accepted | Pending | phase acceptance reports |
 | G13 | Final project closeout | Pending | closeout package |
 
-## 当前权威状态（2026-08-05 HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58）
+## 当前权威状态（2026-08-05 HEAD 79465703b8fafcfdd3adaf0408eb15ab881dfa4f）
 
 以下为本仓库的单一、权威当前状态，来自 `CHANGELOG` rc4、`release-manifest` 与 `audit-repo-facts` 的一致聚合。**以下所有历史 `## 2026-08-04 ...` Gate 小节均为历史快照（非权威），权威计数一律以本节为准。**
 
