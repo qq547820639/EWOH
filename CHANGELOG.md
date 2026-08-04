@@ -113,7 +113,7 @@
 - 事件中心新增“回放上下文”：展示事发前/事发时/处置后的快照摘要。
 - 编排控制台新增受写回与人工批准保护的 `POST /api/work/git-sync/apply`。
 - 最终全量门禁重跑：`ALL STANDALONE CHECKS PASSED`（真实 PG E2E 33/33、
-  浏览器 5/5、server 81/391、client 15/50、OpenAPI 248/248）。
+  浏览器 5/5、server 81/391、client 15/50、OpenAPI 253/253）。
 
 ## [0.6.0-rc3] - 2026-08-04
 

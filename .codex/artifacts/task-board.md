@@ -3,21 +3,21 @@
 Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 -> Review -> Validation -> Integrated -> Done | Rejected.
 
-## Wave W0 - Baseline, Contracts, Probes (current)
+## Wave W0 - Baseline, Contracts, Probes (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-001 | Read authoritative docs | AG-00 | Done | `.codex/artifacts/authoritative-plan.txt`, `final-implementation-plan.txt` |
-| T-002 | Repo/module/table inventory | AG-00 + explorers | In Progress | `inventory/*.md` |
-| T-003 | Environment probes | AG-10 | In Progress | `inventory/environment.md` |
-| T-004 | C1 data contract | AG-03 | Refining | `contracts/data-contract.md` |
-| T-005 | C2 API contract | AG-04 | Refining | `contracts/api-contract.md` |
-| T-006 | C3 state machines | AG-05 | Refining | `contracts/state-machines.md` |
-| T-007 | C4 security contract | AG-06 | Refining | `contracts/security-contract.md` |
-| T-008 | C5 UI contract | AG-30 | Refining | `contracts/ui-contract.md` |
-| T-009 | C6 DevOps contract | AG-51 | Refining | `contracts/devops-contract.md` |
-| T-010 | Requirements traceability | AG-01/41 | Refining | `contracts/requirements-trace.md` |
-| T-011 | Logical capability -> physical table map | AG-03/10 | Refining | `contracts/data-contract.md` |
+| T-002 | Repo/module/table inventory | AG-00 + explorers | Done | `inventory/*.md` |
+| T-003 | Environment probes | AG-10 | Done | `inventory/environment.md` |
+| T-004 | C1 data contract | AG-03 | Done | `contracts/data-contract.md` |
+| T-005 | C2 API contract | AG-04 | Done | `contracts/api-contract.md` |
+| T-006 | C3 state machines | AG-05 | Done | `contracts/state-machines.md` |
+| T-007 | C4 security contract | AG-06 | Done | `contracts/security-contract.md` |
+| T-008 | C5 UI contract | AG-30 | Done | `contracts/ui-contract.md` |
+| T-009 | C6 DevOps contract | AG-51 | Done | `contracts/devops-contract.md` |
+| T-010 | Requirements traceability | AG-01/41 | Done | `contracts/requirements-trace.md` |
+| T-011 | Logical capability -> physical table map | AG-03/10 | Done | `contracts/data-contract.md` |
 | T-012 | Baseline test harness fix | AG-10/51 | Validation | `inventory/environment.md`, Makefile, package.json, test.yml |
 | T-013 | DDL/migration package generation | AG-10 | Validation | `db/`, `tmp/ddl/`, runner plan mode OK; live DDL pending |
 | T-014 | Backend shared infrastructure | AG-11 | Validation | 7 Jest suites / 18 tests pass; type check pass |
@@ -117,395 +117,395 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-083 | E2E scheduler idempotency case | AG-16/41 | Done | duplicate-key reuse verified; E2E 12/12 |
 | T-084 | Environment mode real data | AG-14/30/31 | Done | `/api/dashboard/environment/summary`; live HTTP smoke; OpenAPI 107/107 |
 
-## Wave RC2 - Ingestion Protocol Alignment (in progress)
+## Wave RC2 - Ingestion Protocol Alignment (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-085 | Canonical UnifiedExoFrame ingestion + M2M org context | AG-11/14/50 | Done | `round6-ingestion-protocol.md`; 44 Jest suites / 176 tests; E2E 14/14; pytest 59 |
 
-## Wave RC2 - Operations Readiness (in progress)
+## Wave RC2 - Operations Readiness (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-086 | PostgreSQL logical backup/restore drill + ops runbooks | AG-51/10 | Done | `round7-ops-readiness.md`; `standalone-ops-check.sh` PASSED; perf smoke 4943 qps |
 
-## Wave RC2 - Org Scope Hardening (in progress)
+## Wave RC2 - Org Scope Hardening (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-087 | SECURITY DEFINER org lookup + security probe fixture isolation | AG-06/11 | Done | `round8-org-scope-hardening.md`; release drill PASSED; browser login no fallback |
 
-## Wave RC2 - Training Materials (in progress)
+## Wave RC2 - Training Materials (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-088 | Training plan executable v1.1 | AG-52 | Done | `docs/delivery/training-plan.md`; session model, hands-on exercises, verification |
 
-## Wave RC2 - Observability and Deploy Artifacts (in progress)
+## Wave RC2 - Observability and Deploy Artifacts (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-089 | Prometheus metrics endpoint + business-path perf smoke | AG-11/46 | Done | `round9-observability-deploy-artifacts.md`; `/metrics` 200; overview 514 qps |
 | T-090 | Local deploy artifact verifier | AG-51 | Done | `scripts/verify-deploy-artifacts.js`; 62 checks / 0 failures |
 
-## Wave Final4 - MES P0 (in progress)
+## Wave Final4 - MES P0 (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-091 | Final 4.0 baseline adoption | AG-00 | Done | `authoritative-plan-final4.txt`; D-011/D-012/D-013 |
 | T-092 | MES P0 production execution closed loop | AG-11/13/20 | Done | `round10-mes-p0.md`; E2E 15/15; OpenAPI 116/116 |
 
-## Wave Final4 - OEE/Andon (in progress)
+## Wave Final4 - OEE/Andon (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-093 | OEE/Andon closed loop | AG-12/14/22 | Done | `round11-oee-andon.md`; E2E 16/16; OpenAPI 123/123 |
 
-## Wave Final4 - ERP Connector (in progress)
+## Wave Final4 - ERP Connector (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-094 | ERP connector skeleton | AG-18/03/11 | Done | `round12-erp-connector.md`; E2E 17/17; OpenAPI 129/129 |
 
-## Wave Final4 - Trace/Mobile (in progress)
+## Wave Final4 - Trace/Mobile (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-095 | Quality trace graph + mobile workbench API | AG-11/13/21 | Done | `round13-trace-mobile.md`; E2E 17/17; OpenAPI 134/134 |
 
-## Wave Final4 - Mobile UI (in progress)
+## Wave Final4 - Mobile UI (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-096 | Mobile workbench React page | AG-30/31 | Done | `round14-mobile-workbench-ui.md`; client tests 20/20; release drill passed |
 
-## Wave Final5 - Scale Kernel (in progress)
+## Wave Final5 - Scale Kernel (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-097 | Final 5.0 baseline adoption | AG-00 | Done | `authoritative-plan-final5.txt`; D-014/D-015 |
 | T-098 | Factory template/profile/asset scale kernel | PX-03 | Done | `round15-final5-scale-kernel.md`; E2E 18/18; managed tables 51 |
 
-## Wave Final5 - Connector/Scenario Catalog (in progress)
+## Wave Final5 - Connector/Scenario Catalog (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-099 | Connector + scenario pack catalog and second-factory drill | PX-04/07 | Done | `round16-connector-scenario.md`; OpenAPI 147/147; E2E 18/18 |
 
-## Wave Final5 - Conformance/Replay (in progress)
+## Wave Final5 - Conformance/Replay (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-100 | Asset conformance TCK + factory profile replay | PX-11/09 | Done | `round17-conformance-replay.md`; OpenAPI 149/149; E2E 18/18 |
 
-## Wave Final5 - Fleet Ops + Event Catalog (in progress)
+## Wave Final5 - Fleet Ops + Event Catalog (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-101 | Scenario install TCK gate + fleet upgrade/rollback | PX-09/07 | Done | `round18-fleet-ops-event-catalog.md`; Jest 54/224; E2E 19/19; OpenAPI 154/154 |
 | T-102 | AsyncAPI/CloudEvents event catalog + API + audit | PX-10/11 | Done | `contracts/events/event-catalog.yaml`; `GET /api/events/catalog`; contract audit 13/13 |
 
-## Wave Final5 - Deployment Factory (in progress)
+## Wave Final5 - Deployment Factory (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-103 | Helm chart + Factory Values + static chart audit | PX-09/51 | Done | `round19-helm-deployment-factory.md`; chart audit 123 checks; Jest 4/4 |
 
-## Wave Final5 - Golden Factory (in progress)
+## Wave Final5 - Golden Factory (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-104 | Golden Factory Profile manifest + install API | PX-07/09 | Done | `round20-golden-factory.md`; audit 47 checks; E2E golden install/reuse passed |
 
-## Wave Final5 - Mapping DSL (in progress)
+## Wave Final5 - Mapping DSL (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-105 | Mapping DSL schema + example + registry API + TCK | PX-05/04 | Done | `round21-mapping-dsl.md`; audit 10 checks; E2E mapping register/conformance passed |
 
-## Wave Final5 - Fleet Ops Rings (in progress)
+## Wave Final5 - Fleet Ops Rings (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-106 | Upgrade rings + fleet registry + redacted support bundle | PX-09/10 | Done | `round22-fleet-rings-support.md`; E2E ring staging/status/support bundle passed |
 
-## Wave Final5 - Observability (in progress)
+## Wave Final5 - Observability (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-107 | OTel resource attributes across metrics and deployment env | PX-10/51 | Done | `round23-otel-resource-attributes.md`; E2E /metrics 20/20; verifier 66/66 |
 
-## Wave Final5 - Compatibility Catalog (in progress)
+## Wave Final5 - Compatibility Catalog (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-108 | Asset/core compatibility catalog API + range matcher | PX-11/04 | Done | `round24-compatibility-catalog.md`; E2E incompatible legacy connector verified |
 
-## Wave Final5 - Policy Engine (in progress)
+## Wave Final5 - Policy Engine (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-109 | Policy schema + evaluation API + contract audit | PX-06/20 | Done | `round25-policy-engine.md`; E2E risky deny/safe allow passed |
 
-## Wave Final5 - Config Inheritance (in progress)
+## Wave Final5 - Config Inheritance (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-110 | Template config inheritance diff preview API | PX-03/05 | Done | `round26-diff-preview.md`; E2E preview passed |
 
-## Wave Final5 - Connector Runtime (in progress)
+## Wave Final5 - Connector Runtime (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-111 | Connector runtime + exoskeleton/equipment-state manifests | PX-04/13 | Done | `round27-connector-runtime.md`; pytest 69 passed |
 
-## Wave Final5 - Factory Onboarding (in progress)
+## Wave Final5 - Factory Onboarding (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-112 | F0-F6 factory onboarding checklist + run API | PX-12/07 | Done | `round28-factory-onboarding.md`; E2E onboarding passed |
 
-## Wave Final5 - Scale Release (in progress)
+## Wave Final5 - Scale Release (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-113 | Scale Release review gate + package hook | PX-09/51 | Done | `round29-scale-release-review.md`; review 24/24 passed |
 
-## Wave Final5 - Workflow Engine (in progress)
+## Wave Final5 - Workflow Engine (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-114 | Workflow schema + role-aware advance API + audit | PX-06/16 | Done | `round30-workflow-engine.md`; E2E role gating passed |
 
-## Wave Final5 - Feature Flags (in progress)
+## Wave Final5 - Feature Flags (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-115 | Org-scoped feature flag API on system config store | PX-06/21 | Done | `round31-feature-flags.md`; E2E org isolation passed |
 
-## Wave Final5 - Edge Resilience (in progress)
+## Wave Final5 - Edge Resilience (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-116 | Sequence buffer for out-of-order/duplicate/backfill | V-CON/13 | Done | `round32-edge-backfill.md`; pytest 74 passed |
 
-## Wave Final5 - Twin Package (in progress)
+## Wave Final5 - Twin Package (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-117 | Twin package manifest/calibration pipeline + samples | PX-08/14 | Done | `round33-twin-package.md`; pytest 81 passed |
 
-## Wave Final5 - Partner Shadow (in progress)
+## Wave Final5 - Partner Shadow (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-118 | Partner shadow checklist + shadow-run API | PX-13/12 | Done | `round34-partner-shadow.md`; E2E partner run passed |
 
-## Wave Final5 - Deployment TCK (in progress)
+## Wave Final5 - Deployment TCK (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-119 | Deployment TCK gate across deploy/Helm/release checks | PX-09/51 | Done | `round35-deployment-tck.md`; 3 gates passed |
 
-## Wave Final5 - Scale UI (in progress)
+## Wave Final5 - Scale UI (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-120 | Scale operations page wired to real scale APIs | AG-30/31 | Done | `round36-scale-ui.md`; client Jest 6/21; build passed |
 
-## Wave Final5 - Connector Profile (in progress)
+## Wave Final5 - Connector Profile (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-121 | ERP/MES connector profile manifest + runtime tests | PX-04/18 | Done | `round37-erp-mes-connector.md`; pytest 82 passed |
 
-## Wave Final5 - Scale Metrics (in progress)
+## Wave Final5 - Scale Metrics (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-122 | Scale productization metrics API | PX-13/10 | Done | `round38-scale-metrics.md`; E2E metrics passed |
 
-## Wave Final5 - Scenario Lifecycle (in progress)
+## Wave Final5 - Scenario Lifecycle (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-123 | Scenario pack uninstall API + audit | PX-07/18 | Done | `round39-scenario-uninstall.md`; E2E uninstall passed |
 
-## Wave Final5 - Connector TCK (in progress)
+## Wave Final5 - Connector TCK (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-124 | Connector TCK runner + make entry | V-CON/11 | Done | `round40-connector-tck.md`; 11 checks passed |
 
-## Wave Final5 - Scenario TCK (in progress)
+## Wave Final5 - Scenario TCK (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-125 | Scenario TCK runner across golden/policy/workflow/mapping/events | PX-11/07 | Done | `round41-scenario-tck.md`; 5 gates passed |
 
-## Wave Final5 - Third Factory (in progress)
+## Wave Final5 - Third Factory (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-126 | Third factory config-driven install drill | PX-12/04 | Done | `round42-third-factory-drill.md`; E2E config install passed |
 
-## Wave Final5 - Difference Recycling (in progress)
+## Wave Final5 - Difference Recycling (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-127 | Factory difference register/list API + audit | PX-05/12 | Done | `round43-factory-differences.md`; E2E difference registry passed |
 
-## Wave Final5 - Difference Resolve (in progress)
+## Wave Final5 - Difference Resolve (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-128 | Factory difference resolve API + audit | PX-05/12 | Done | `round44-difference-resolve.md`; E2E resolve passed |
 
-## Wave Final5 - Cross-Tenant TCK (in progress)
+## Wave Final5 - Cross-Tenant TCK (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-129 | Cross-tenant full-chain TCK gate | V-SEC/41 | Done | `round45-cross-tenant-tck.md`; E2E 23/23 passed |
 
-## Wave Final5 - Differences UI (in progress)
+## Wave Final5 - Differences UI (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-130 | Factory differences register/resolve UI on /scale | AG-30/31 | Done | `round46-differences-ui.md`; client build passed |
 
-## Wave Final5 - Workflow Instances (in progress)
+## Wave Final5 - Workflow Instances (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-131 | Stateful workflow instance start/list/advance API | PX-06/16 | Done | `round47-workflow-instances.md`; E2E lifecycle passed |
 
-## Wave Final5 - Support Bundle UI (in progress)
+## Wave Final5 - Support Bundle UI (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-132 | One-click support bundle generation UI on /scale | AG-30/31 | Done | `round48-support-bundle-ui.md`; client build passed |
 
-## Wave Final5 - Fleet UI (in progress)
+## Wave Final5 - Fleet UI (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-133 | Fleet status + ring upgrade/rollback UI on /scale | AG-30/31 | Done | `round49-fleet-ui.md`; client build passed |
 
-## Wave Final5 - Workflow UI (in progress)
+## Wave Final5 - Workflow UI (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-134 | Workflow instance start/list/advance UI on /scale | AG-30/31 | Done | `round50-workflow-instances-ui.md`; client build passed |
 
-## Wave Final5 - Scenario UI (in progress)
+## Wave Final5 - Scenario UI (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-135 | Scenario pack install/uninstall UI on /scale | AG-30/31 | Done | `round51-scenario-ui.md`; client build passed |
 
-## Wave Final5 - Operations Capability (in progress)
+## Wave Final5 - Operations Capability (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-136 | EAM/tooling + work-center config + standard hours/efficiency | PX-14/15 | Done | `round52-operations-capability.md`; Jest 65/291; client 6/22; OpenAPI 198/198; E2E 24/24; standalone check PASSED |
 
-## Wave Final5 - Standard Protocol & Flag SDK (in progress)
+## Wave Final5 - Standard Protocol & Flag SDK (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-137 | Sparkplug B connector + OpenFeature flag evaluation | V-CON/06 | Done | `round53-sparkplug-openfeature.md`; pytest 89; Jest 65/292; client 6/22; OpenAPI 199/199; E2E 25/25; connector TCK 17/17 |
 
-## Wave Final5 - Parameter Registry (in progress)
+## Wave Final5 - Parameter Registry (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-138 | Typed parameter registry with approval/version/rollback | PX-06/21 | Done | `round54-parameter-registry.md`; Jest 66/298; client 6/22; OpenAPI 207/207; E2E 26/26 |
 
-## Wave Final5 - AAS Asset Exchange (in progress)
+## Wave Final5 - AAS Asset Exchange (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-139 | AAS/IEC 63278 JSON + AASX codec and twin submodel mapping | PX-08/14 | Done | `round55-aas-codec.md`; pytest 99; AAS TCK 7/7 |
 
-## Wave Final5 - OPA Policy-as-Code (in progress)
+## Wave Final5 - OPA Policy-as-Code (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-140 | Rego policy-as-code deployment gate + deployment TCK integration | PX-06/51 | Done | `round56-rego-policy-as-code.md`; pytest 107; rego TCK 4/4; deployment TCK 4 gates |
 
-## Wave Final5 - AAS Asset Registry API (in progress)
+## Wave Final5 - AAS Asset Registry API (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-141 | AAS asset registry API + twin semantics + Data Assets UI | PX-08/21 | Done | `round57-aas-asset-api.md`; Jest 67/302; client 6/22; OpenAPI 211/211; E2E 27/27 |
 
-## Wave Final5 - OPC UA Connector (in progress)
+## Wave Final5 - OPC UA Connector (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-142 | OPC UA node ID/quality/adapter + connector manifest | V-CON/05 | Done | `round58-opcua-connector.md`; pytest 111; connector TCK 21/21 |
 
-## Wave Final5 - Modbus TCP Connector (in progress)
+## Wave Final5 - Modbus TCP Connector (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-143 | Modbus TCP register/scaling/adapter + connector manifest | V-CON/05 | Done | `round59-modbus-connector.md`; pytest 114; connector TCK 25/25 |
 
-## Wave Final5 - HTTP/Webhook Connector (in progress)
+## Wave Final5 - HTTP/Webhook Connector (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-144 | HTTP/Webhook payload/signature/adapter + connector manifest | V-CON/05 | Done | `round60-webhook-connector.md`; pytest 117; connector TCK 29/29 |
 
-## Wave Final5 - CSV/File Connector (in progress)
+## Wave Final5 - CSV/File Connector (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-145 | CSV/File header mapping/row normalization/adapter + connector manifest | V-CON/05 | Done | `round61-csv-file-connector.md`; pytest 120; connector TCK 32/32 |
 
-## Wave Final5 - Observability Traces (in progress)
+## Wave Final5 - Observability Traces (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-146 | OTel-style request tracing interceptor/service/API | PX-10/46 | Done | `round62-otel-request-tracing.md`; Jest 69/306; OpenAPI 212/212; E2E 28/28 |
 
-## Wave Final5 - Support Bundle Trace Inclusion (in progress)
+## Wave Final5 - Support Bundle Trace Inclusion (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-147 | Support bundle includes redacted recent traces | PX-10/09 | Done | `round63-support-bundle-traces.md`; E2E 28/28 |
 
-## Wave Final5 - Tracing UI (in progress)
+## Wave Final5 - Tracing UI (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-148 | System page request tracing viewer | AG-34/35 | Done | `round64-tracing-ui.md`; client 6/22; build passed |
 
-## Wave Final5 - RC2 Release Bundle (in progress)
+## Wave Final5 - RC2 Release Bundle (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-149 | Regenerate RC2 release bundle with all new capabilities | AG-51 | Done | `round65-release-bundle-rerolled.md`; 1315 files; review 24/24 |
 
-## Wave Final5 - Final Gate Sweep (in progress)
+## Wave Final5 - Final Gate Sweep (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-150 | Final one-click gate sweep (ops/scenario/deploy/AAS/Rego/connector/cross-tenant) | AG-00/51 | Done | `round66-final-gate-sweep.md`; all gates passed |
 
-## Wave Final5 - Pilot Readiness Gate (in progress)
+## Wave Final5 - Pilot Readiness Gate (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-151 | Pilot readiness Go/No-Go blocker gate | AG-51/00 | Done | `round67-pilot-readiness-blockers.md`; blockers documented |
 
-## Wave Final5 - Release Bundle Re-roll with Pilot Gate (in progress)
+## Wave Final5 - Release Bundle Re-roll with Pilot Gate (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-152 | Rebuild RC2 bundle with pilot readiness gate | AG-51 | Done | `round68-release-bundle-includes-pilot-gate.md`; 1316 files; review 24/24 |
 
-## Wave Final6 - Work Orchestration Control Plane (in progress)
+## Wave Final6 - Work Orchestration Control Plane (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
@@ -529,7 +529,7 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-170 | Factory site readiness control-plane API/UI | ORCH-01/05 | Done | `GET /api/work/site-readiness`, catalog examples, 场地就绪 tab; audit 25 checks; OpenAPI 230/230 |
 | T-171 | Handoff state workflow | ORCH-06/01 | Done | `POST /api/work/handoffs/:id/state`; receive/reject/close UI; Jest 74/332; OpenAPI 231/231 |
 
-## Wave Iteration 2026-08-04 - P0 Hardening (in progress)
+## Wave Iteration 2026-08-04 - P0 Hardening (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
@@ -560,7 +560,7 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-196 | Pilot readiness rerun (RC4) | AG-51/00 | Done | 7 passed / 3 failed (Docker/Kubectl/Helm absent) / 5 pending external; NOT READY |
 | T-197 | Ops backup/restore drill (RC4) | AG-10/51 | Done | `standalone-ops-check.sh` PASSED; 57 tables backup/restore/verify; identity advanced |
 
-## Wave Iteration 2026-08-04 - P0 Mobile/Orchestration (in progress)
+## Wave Iteration 2026-08-04 - P0 Mobile/Orchestration (done)
 
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|

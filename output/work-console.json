@@ -1,20 +1,18 @@
 {
-  "generatedAt": "2026-08-04T03:35:59.646Z",
+  "generatedAt": "2026-08-04T18:45:44.755Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "counts": {
     "itemCount": 252,
-    "edgeCount": 39,
+    "edgeCount": 209,
     "actorCount": 48,
     "artifactCount": 15,
-    "evidenceCount": 109,
+    "evidenceCount": 191,
     "gateCount": 14,
     "riskCount": 15,
     "decisionCount": 52,
     "statusCounts": {
-      "Done": 159,
-      "In Progress": 2,
-      "Refining": 9,
+      "Done": 169,
       "Validation": 46,
       "Review": 5,
       "Passed for local implementation": 1,
@@ -25,7 +23,8 @@
       "Passed locally": 2,
       "Passed locally, production pending": 1,
       "Pending": 3,
-      "Proposed": 19
+      "Proposed": 19,
+      "Refining": 1
     },
     "conflicts": []
   },
@@ -39,321 +38,501 @@
       "id": "T-001",
       "title": "Read authoritative docs",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round1-1"
+      ]
+    },
+    {
+      "id": "T-002",
+      "title": "Repo/module/table inventory",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round1-2"
+      ]
+    },
+    {
+      "id": "T-003",
+      "title": "Environment probes",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round1-3"
+      ]
+    },
+    {
+      "id": "T-004",
+      "title": "C1 data contract",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round1-4"
+      ]
+    },
+    {
+      "id": "T-005",
+      "title": "C2 API contract",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round1-5"
+      ]
+    },
+    {
+      "id": "T-006",
+      "title": "C3 state machines",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round1-6"
+      ]
+    },
+    {
+      "id": "T-007",
+      "title": "C4 security contract",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round1-7"
+      ]
+    },
+    {
+      "id": "T-008",
+      "title": "C5 UI contract",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round1-8"
+      ]
+    },
+    {
+      "id": "T-009",
+      "title": "C6 DevOps contract",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round1-9"
+      ]
+    },
+    {
+      "id": "T-010",
+      "title": "Requirements traceability",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round1-10"
+      ]
+    },
+    {
+      "id": "T-011",
+      "title": "Logical capability -> physical table map",
+      "status": "Done",
+      "evidenceCount": 1,
+      "missing": true,
+      "staleEvidence": [
+        "EVD-round2-1"
+      ]
     },
     {
       "id": "T-012",
       "title": "Baseline test harness fix",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round2-2"
+      ]
     },
     {
       "id": "T-013",
       "title": "DDL/migration package generation",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round2-3"
+      ]
     },
     {
       "id": "T-014",
       "title": "Backend shared infrastructure",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round2-4"
+      ]
     },
     {
       "id": "T-015",
       "title": "Frontend 11-center shell",
       "status": "Review",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round2-5"
+      ]
     },
     {
       "id": "T-016",
       "title": "Drizzle schema codegen sync to live DB (18 tables)",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round2-6"
+      ]
     },
     {
       "id": "T-017",
       "title": "Organization/personnel backend module",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round2-7"
+      ]
     },
     {
       "id": "T-018",
       "title": "Command center + personnel real-data pages",
       "status": "Review",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round2-8"
+      ]
     },
     {
       "id": "T-019",
       "title": "Device search extension (available fields + pagination + binding filter)",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round2-9"
+      ]
     },
     {
       "id": "T-020",
       "title": "Model registry management module",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round2-10"
+      ]
     },
     {
       "id": "T-021",
       "title": "Role guard + sensitive personnel endpoint",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round3-1"
+      ]
     },
     {
       "id": "T-022",
       "title": "System config module with credential masking",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round3-2"
+      ]
     },
     {
       "id": "T-023",
       "title": "Task state machine service",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round3-3"
+      ]
     },
     {
       "id": "T-024",
       "title": "Alert state machine service",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round3-4"
+      ]
     },
     {
       "id": "T-025",
       "title": "Control request aggregation service",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round3-5"
+      ]
     },
     {
       "id": "T-026",
       "title": "Approval instance/step service",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round3-6"
+      ]
     },
     {
       "id": "T-027",
       "title": "Resource preorder/issue/release",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round3-7"
+      ]
     },
     {
       "id": "T-028",
       "title": "AI manual suggestion/plan service",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round3-8"
+      ]
     },
     {
       "id": "T-029",
       "title": "World snapshot/delta cursor protocol",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round3-9"
+      ]
     },
     {
       "id": "T-030",
       "title": "Scheduling/Alerts/AI/Model/System real pages",
       "status": "Review",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round3-10"
+      ]
     },
     {
       "id": "T-031",
       "title": "Audit hash chain service",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round4-1"
+      ]
     },
     {
       "id": "T-032",
       "title": "SP-01..SP-08 scenario smoke suite",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round4-2"
+      ]
     },
     {
       "id": "T-033",
       "title": "DigitalWorld/Organization/DataAssets real pages",
       "status": "Review",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round4-3"
+      ]
     },
     {
       "id": "T-034",
       "title": "Delivery docs: runbook/release/acceptance/training",
       "status": "Review",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round4-4"
+      ]
     },
     {
       "id": "T-035",
       "title": "Demo seed SQL + runner --seed",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round4-5"
+      ]
     },
     {
       "id": "T-036",
       "title": "Command Map L3/L4 views",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round4-6"
+      ]
     },
     {
       "id": "T-037",
       "title": "Standalone NestJS bootstrap without Miaoda PlatformModule",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round4-7"
+      ]
     },
     {
       "id": "T-038",
       "title": "Standard env contract + Docker Compose",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round4-8"
+      ]
     },
     {
       "id": "T-039",
       "title": "Client HTTP layer without Miaoda toolkit",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round4-9"
+      ]
     },
     {
       "id": "T-040",
       "title": "JWT auth for standalone",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round4-10"
+      ]
     },
     {
       "id": "T-041",
       "title": "Standalone login page + token storage",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round5-1"
+      ]
     },
     {
       "id": "T-042",
       "title": "Kubernetes/HA manifests",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round5-2"
+      ]
     },
     {
       "id": "T-043",
       "title": "Redis service + rate limit guard",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round5-3"
+      ]
     },
     {
       "id": "T-044",
       "title": "ewoh_user migration + seed",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round5-4"
+      ]
     },
     {
       "id": "T-045",
       "title": "DB-backed auth with bcrypt",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round5-5"
+      ]
     },
     {
       "id": "T-046",
       "title": "Standalone CI/CD workflow",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round5-6"
+      ]
     },
     {
       "id": "T-047",
       "title": "Concurrency smoke script + evidence",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round5-7"
+      ]
     },
     {
       "id": "T-048",
       "title": "Standalone standard DDL variant",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round5-8"
+      ]
     },
     {
       "id": "T-049",
       "title": "One-click standalone check script",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round5-9"
+      ]
     },
     {
       "id": "T-050",
       "title": "File service (upload/download/delete)",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round5-10"
+      ]
     },
     {
       "id": "T-051",
@@ -391,9 +570,11 @@
       "id": "T-055",
       "title": "HTTP multi-organization authorization acceptance",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round8-org-scope-hardening-1"
+      ]
     },
     {
       "id": "T-056",
@@ -407,9 +588,11 @@
       "id": "T-057",
       "title": "DB-backed audit chain sink + read-only audit API",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round8-org-scope-hardening-2"
+      ]
     },
     {
       "id": "T-058",
@@ -431,9 +614,11 @@
       "id": "T-060",
       "title": "Runtime context/state machines: legacy auth fail-fast, simulator GUC, conditional transitions, audit wiring",
       "status": "Validation",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round6-ingestion-protocol-1"
+      ]
     },
     {
       "id": "T-061",
@@ -623,593 +808,759 @@
       "id": "T-084",
       "title": "Environment mode real data",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round6-ingestion-protocol-2"
+      ]
     },
     {
       "id": "T-085",
       "title": "Canonical UnifiedExoFrame ingestion + M2M org context",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round6-ingestion-protocol-3"
+      ]
     },
     {
       "id": "T-086",
       "title": "PostgreSQL logical backup/restore drill + ops runbooks",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round7-ops-readiness-1"
+      ]
     },
     {
       "id": "T-087",
       "title": "SECURITY DEFINER org lookup + security probe fixture isolation",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round8-org-scope-hardening-3"
+      ]
     },
     {
       "id": "T-088",
       "title": "Training plan executable v1.1",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round7-ops-readiness-2"
+      ]
     },
     {
       "id": "T-089",
       "title": "Prometheus metrics endpoint + business-path perf smoke",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round9-observability-deploy-artifacts-1"
+      ]
     },
     {
       "id": "T-090",
       "title": "Local deploy artifact verifier",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round9-observability-deploy-artifacts-2"
+      ]
     },
     {
       "id": "T-091",
       "title": "Final 4.0 baseline adoption",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round10-mes-p0-1"
+      ]
     },
     {
       "id": "T-092",
       "title": "MES P0 production execution closed loop",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round10-mes-p0-2"
+      ]
     },
     {
       "id": "T-093",
       "title": "OEE/Andon closed loop",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round11-oee-andon"
+      ]
     },
     {
       "id": "T-094",
       "title": "ERP connector skeleton",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round12-erp-connector"
+      ]
     },
     {
       "id": "T-095",
       "title": "Quality trace graph + mobile workbench API",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round13-trace-mobile"
+      ]
     },
     {
       "id": "T-096",
       "title": "Mobile workbench React page",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round14-mobile-workbench-ui"
+      ]
     },
     {
       "id": "T-097",
       "title": "Final 5.0 baseline adoption",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round15-final5-scale-kernel-1"
+      ]
     },
     {
       "id": "T-098",
       "title": "Factory template/profile/asset scale kernel",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round15-final5-scale-kernel-2"
+      ]
     },
     {
       "id": "T-099",
       "title": "Connector + scenario pack catalog and second-factory drill",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round16-connector-scenario"
+      ]
     },
     {
       "id": "T-100",
       "title": "Asset conformance TCK + factory profile replay",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round17-conformance-replay"
+      ]
     },
     {
       "id": "T-101",
       "title": "Scenario install TCK gate + fleet upgrade/rollback",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 2,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round105-authoritative-reconcile",
+        "EVD-round110-independent-verification-1"
+      ]
     },
     {
       "id": "T-102",
       "title": "AsyncAPI/CloudEvents event catalog + API + audit",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 2,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round110-independent-verification-2",
+        "EVD-round18-fleet-ops-event-catalog"
+      ]
     },
     {
       "id": "T-103",
       "title": "Helm chart + Factory Values + static chart audit",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 3,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round106-causal-console-gate-revoke",
+        "EVD-round110-independent-verification-3",
+        "EVD-round19-helm-deployment-factory"
+      ]
     },
     {
       "id": "T-104",
       "title": "Golden Factory Profile manifest + install API",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 2,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round110-independent-verification-4",
+        "EVD-round20-golden-factory"
+      ]
     },
     {
       "id": "T-105",
       "title": "Mapping DSL schema + example + registry API + TCK",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 2,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round110-independent-verification-5",
+        "EVD-round21-mapping-dsl"
+      ]
     },
     {
       "id": "T-106",
       "title": "Upgrade rings + fleet registry + redacted support bundle",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 2,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round110-independent-verification-6",
+        "EVD-round22-fleet-rings-support"
+      ]
     },
     {
       "id": "T-107",
       "title": "OTel resource attributes across metrics and deployment env",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 2,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round110-independent-verification-7",
+        "EVD-round23-otel-resource-attributes"
+      ]
     },
     {
       "id": "T-108",
       "title": "Asset/core compatibility catalog API + range matcher",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 3,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round107-g4-offline-conflict-force-resolve",
+        "EVD-round110-independent-verification-8",
+        "EVD-round24-compatibility-catalog"
+      ]
     },
     {
       "id": "T-109",
       "title": "Policy schema + evaluation API + contract audit",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 2,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round110-independent-verification-9",
+        "EVD-round25-policy-engine"
+      ]
     },
     {
       "id": "T-110",
       "title": "Template config inheritance diff preview API",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 3,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round108-connector-scenario-deepening",
+        "EVD-round110-independent-verification-10",
+        "EVD-round26-diff-preview"
+      ]
     },
     {
       "id": "T-111",
       "title": "Connector runtime + exoskeleton/equipment-state manifests",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 2,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round110-independent-verification-11",
+        "EVD-round27-connector-runtime"
+      ]
     },
     {
       "id": "T-112",
       "title": "F0-F6 factory onboarding checklist + run API",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 2,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round110-independent-verification-12",
+        "EVD-round28-factory-onboarding"
+      ]
     },
     {
       "id": "T-113",
       "title": "Scale Release review gate + package hook",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 2,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round110-independent-verification-13",
+        "EVD-round29-scale-release-review"
+      ]
     },
     {
       "id": "T-114",
       "title": "Workflow schema + role-aware advance API + audit",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 3,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round109-production-engineering",
+        "EVD-round110-independent-verification-14",
+        "EVD-round30-workflow-engine"
+      ]
     },
     {
       "id": "T-115",
       "title": "Org-scoped feature flag API on system config store",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round31-feature-flags"
+      ]
     },
     {
       "id": "T-116",
       "title": "Sequence buffer for out-of-order/duplicate/backfill",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round32-edge-backfill"
+      ]
     },
     {
       "id": "T-117",
       "title": "Twin package manifest/calibration pipeline + samples",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round33-twin-package"
+      ]
     },
     {
       "id": "T-118",
       "title": "Partner shadow checklist + shadow-run API",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round34-partner-shadow"
+      ]
     },
     {
       "id": "T-119",
       "title": "Deployment TCK gate across deploy/Helm/release checks",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round35-deployment-tck"
+      ]
     },
     {
       "id": "T-120",
       "title": "Scale operations page wired to real scale APIs",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round36-scale-ui"
+      ]
     },
     {
       "id": "T-121",
       "title": "ERP/MES connector profile manifest + runtime tests",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round37-erp-mes-connector"
+      ]
     },
     {
       "id": "T-122",
       "title": "Scale productization metrics API",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round38-scale-metrics"
+      ]
     },
     {
       "id": "T-123",
       "title": "Scenario pack uninstall API + audit",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round39-scenario-uninstall"
+      ]
     },
     {
       "id": "T-124",
       "title": "Connector TCK runner + make entry",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round40-connector-tck"
+      ]
     },
     {
       "id": "T-125",
       "title": "Scenario TCK runner across golden/policy/workflow/mapping/events",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round41-scenario-tck"
+      ]
     },
     {
       "id": "T-126",
       "title": "Third factory config-driven install drill",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round42-third-factory-drill"
+      ]
     },
     {
       "id": "T-127",
       "title": "Factory difference register/list API + audit",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round43-factory-differences"
+      ]
     },
     {
       "id": "T-128",
       "title": "Factory difference resolve API + audit",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round44-difference-resolve"
+      ]
     },
     {
       "id": "T-129",
       "title": "Cross-tenant full-chain TCK gate",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round45-cross-tenant-tck"
+      ]
     },
     {
       "id": "T-130",
       "title": "Factory differences register/resolve UI on /scale",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round46-differences-ui"
+      ]
     },
     {
       "id": "T-131",
       "title": "Stateful workflow instance start/list/advance API",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round47-workflow-instances"
+      ]
     },
     {
       "id": "T-132",
       "title": "One-click support bundle generation UI on /scale",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round48-support-bundle-ui"
+      ]
     },
     {
       "id": "T-133",
       "title": "Fleet status + ring upgrade/rollback UI on /scale",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round49-fleet-ui"
+      ]
     },
     {
       "id": "T-134",
       "title": "Workflow instance start/list/advance UI on /scale",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round50-workflow-instances-ui"
+      ]
     },
     {
       "id": "T-135",
       "title": "Scenario pack install/uninstall UI on /scale",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round51-scenario-ui"
+      ]
     },
     {
       "id": "T-136",
       "title": "EAM/tooling + work-center config + standard hours/efficiency",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round52-operations-capability"
+      ]
     },
     {
       "id": "T-137",
       "title": "Sparkplug B connector + OpenFeature flag evaluation",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round53-sparkplug-openfeature"
+      ]
     },
     {
       "id": "T-138",
       "title": "Typed parameter registry with approval/version/rollback",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round54-parameter-registry"
+      ]
     },
     {
       "id": "T-139",
       "title": "AAS/IEC 63278 JSON + AASX codec and twin submodel mapping",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round55-aas-codec"
+      ]
     },
     {
       "id": "T-140",
       "title": "Rego policy-as-code deployment gate + deployment TCK integration",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round56-rego-policy-as-code"
+      ]
     },
     {
       "id": "T-141",
       "title": "AAS asset registry API + twin semantics + Data Assets UI",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round57-aas-asset-api"
+      ]
     },
     {
       "id": "T-142",
       "title": "OPC UA node ID/quality/adapter + connector manifest",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round58-opcua-connector"
+      ]
     },
     {
       "id": "T-143",
       "title": "Modbus TCP register/scaling/adapter + connector manifest",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round59-modbus-connector"
+      ]
     },
     {
       "id": "T-144",
       "title": "HTTP/Webhook payload/signature/adapter + connector manifest",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round60-webhook-connector"
+      ]
     },
     {
       "id": "T-145",
       "title": "CSV/File header mapping/row normalization/adapter + connector manifest",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round61-csv-file-connector"
+      ]
     },
     {
       "id": "T-146",
       "title": "OTel-style request tracing interceptor/service/API",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round62-otel-request-tracing"
+      ]
     },
     {
       "id": "T-147",
       "title": "Support bundle includes redacted recent traces",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round63-support-bundle-traces"
+      ]
     },
     {
       "id": "T-148",
       "title": "System page request tracing viewer",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round64-tracing-ui"
+      ]
     },
     {
       "id": "T-149",
       "title": "Regenerate RC2 release bundle with all new capabilities",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round65-release-bundle-rerolled"
+      ]
     },
     {
       "id": "T-150",
       "title": "Final one-click gate sweep (ops/scenario/deploy/AAS/Rego/connector/cross-tenant)",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round66-final-gate-sweep"
+      ]
     },
     {
       "id": "T-151",
       "title": "Pilot readiness Go/No-Go blocker gate",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round67-pilot-readiness-blockers"
+      ]
     },
     {
       "id": "T-152",
       "title": "Rebuild RC2 bundle with pilot readiness gate",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round68-release-bundle-includes-pilot-gate"
+      ]
     },
     {
       "id": "T-153",
       "title": "Final 6.0 baseline adoption and authoritative plan extraction",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round69-final6-work-orchestration-1"
+      ]
     },
     {
       "id": "T-154",
       "title": "C7 Work Graph / C8 Asset Catalog / C9 Factory Profile contracts + audits",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round69-final6-work-orchestration-2"
+      ]
     },
     {
       "id": "T-155",
       "title": "Work Graph indexer, gate engine, resource registry, handoff CLI",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round69-final6-work-orchestration-3"
+      ]
     },
     {
       "id": "T-156",
       "title": "Work orchestration NestJS APIs + OpenAPI",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round69-final6-work-orchestration-4"
+      ]
     },
     {
       "id": "T-157",
       "title": "Work orchestration control plane UI",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round69-final6-work-orchestration-5"
+      ]
     },
     {
       "id": "T-158",
@@ -1375,169 +1726,211 @@
       "id": "T-178",
       "title": "Global ValidationPipe with structured fieldErrors",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round71-validation-and-command-map-1"
+      ]
     },
     {
       "id": "T-179",
       "title": "Command-map person/device detail enrichment",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round71-validation-and-command-map-2"
+      ]
     },
     {
       "id": "T-180",
       "title": "Mobile offline pending-action queue",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round72-mobile-offline-queue"
+      ]
     },
     {
       "id": "T-181",
       "title": "Control/work orchestration state guards",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round73-state-guards"
+      ]
     },
     {
       "id": "T-182",
       "title": "Scale mutation idempotency guards",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round74-scale-idempotency"
+      ]
     },
     {
       "id": "T-183",
       "title": "Real PostgreSQL HTTP E2E acceptance",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round75-real-postgres-e2e"
+      ]
     },
     {
       "id": "T-184",
       "title": "Mobile exception photo attachments",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round76-mobile-photo-attachments"
+      ]
     },
     {
       "id": "T-185",
       "title": "PWA installability assets",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round77-pwa-installability"
+      ]
     },
     {
       "id": "T-186",
       "title": "Offline photo queue",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round78-offline-photo-queue"
+      ]
     },
     {
       "id": "T-187",
       "title": "Release drill + perf + security verification",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round79-release-drill-and-verification"
+      ]
     },
     {
       "id": "T-188",
       "title": "Playwright browser screenshots",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round80-playwright-browser-evidence-1"
+      ]
     },
     {
       "id": "T-189",
       "title": "Request ID audit correlation",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round81-request-audit-correlation"
+      ]
     },
     {
       "id": "T-190",
       "title": "Error leak sanitization",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round82-error-sanitization"
+      ]
     },
     {
       "id": "T-191",
       "title": "Devices page error/update state",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round83-devices-error-state"
+      ]
     },
     {
       "id": "T-192",
       "title": "Command map query error banner",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round84-command-map-query-state"
+      ]
     },
     {
       "id": "T-193",
       "title": "EWOH 0.6.0-rc4 candidate bundle",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round85-rc4-candidate-bundle"
+      ]
     },
     {
       "id": "T-194",
       "title": "Authenticated Playwright browser tests",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 2,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round80-playwright-browser-evidence-2",
+        "EVD-round86-authenticated-browser-test"
+      ]
     },
     {
       "id": "T-195",
       "title": "Browser tests in CI",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round87-browser-tests-in-ci"
+      ]
     },
     {
       "id": "T-196",
       "title": "Pilot readiness rerun (RC4)",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round88-pilot-readiness-rc4"
+      ]
     },
     {
       "id": "T-197",
       "title": "Ops backup/restore drill (RC4)",
       "status": "Done",
-      "evidenceCount": 0,
+      "evidenceCount": 1,
       "missing": true,
-      "staleEvidence": []
+      "staleEvidence": [
+        "EVD-round89-ops-drill-rc4"
+      ]
     },
     {
       "id": "T-198",
       "title": "Mobile workbench person/org filtering + worker role",
       "status": "Done",
-      "evidenceCount": 1,
+      "evidenceCount": 2,
       "missing": true,
       "staleEvidence": [
+        "EVD-round70-iteration-p0-2026-08-04-1",
         "EVD-round90-p0-mobile-orchestration-1"
       ]
     },
@@ -1545,9 +1938,10 @@
       "id": "T-199",
       "title": "Typed scan recognition for order/step/device/material/batch/station/factory",
       "status": "Done",
-      "evidenceCount": 1,
+      "evidenceCount": 2,
       "missing": true,
       "staleEvidence": [
+        "EVD-round70-iteration-p0-2026-08-04-2",
         "EVD-round90-p0-mobile-orchestration-2"
       ]
     },
@@ -1555,9 +1949,10 @@
       "id": "T-200",
       "title": "Exception attachment persistence + offline queue state machine",
       "status": "Done",
-      "evidenceCount": 1,
+      "evidenceCount": 2,
       "missing": true,
       "staleEvidence": [
+        "EVD-round70-iteration-p0-2026-08-04-3",
         "EVD-round90-p0-mobile-orchestration-3"
       ]
     },
@@ -1565,9 +1960,10 @@
       "id": "T-201",
       "title": "Evidence binding metadata + invalidation + graph invariants",
       "status": "Done",
-      "evidenceCount": 1,
+      "evidenceCount": 2,
       "missing": true,
       "staleEvidence": [
+        "EVD-round70-iteration-p0-2026-08-04-4",
         "EVD-round90-p0-mobile-orchestration-4"
       ]
     },
@@ -1575,9 +1971,10 @@
       "id": "T-202",
       "title": "Work Console CLI + standalone-check/CI wiring",
       "status": "Done",
-      "evidenceCount": 1,
+      "evidenceCount": 2,
       "missing": true,
       "staleEvidence": [
+        "EVD-round70-iteration-p0-2026-08-04-5",
         "EVD-round90-p0-mobile-orchestration-5"
       ]
     },
@@ -1799,7 +2196,7 @@
     "whereBlocked": "当前没有状态为 blocked 的任务节点",
     "whyBlocked": "无阻塞节点",
     "whoCanUnblock": "无阻塞节点",
-    "missingEvidence": "T-001（现有 0 条，过期/失效 0 条）；T-012（现有 0 条，过期/失效 0 条）；T-013（现有 0 条，过期/失效 0 条）；T-014（现有 0 条，过期/失效 0 条）；T-015（现有 0 条，过期/失效 0 条）；T-016（现有 0 条，过期/失效 0 条）；T-017（现有 0 条，过期/失效 0 条）；T-018（现有 0 条，过期/失效 0 条）；T-019（现有 0 条，过期/失效 0 条）；T-020（现有 0 条，过期/失效 0 条）；T-021（现有 0 条，过期/失效 0 条）；T-022（现有 0 条，过期/失效 0 条）；T-023（现有 0 条，过期/失效 0 条）；T-024（现有 0 条，过期/失效 0 条）；T-025（现有 0 条，过期/失效 0 条）；T-026（现有 0 条，过期/失效 0 条）；T-027（现有 0 条，过期/失效 0 条）；T-028（现有 0 条，过期/失效 0 条）；T-029（现有 0 条，过期/失效 0 条）；T-030（现有 0 条，过期/失效 0 条）；T-031（现有 0 条，过期/失效 0 条）；T-032（现有 0 条，过期/失效 0 条）；T-033（现有 0 条，过期/失效 0 条）；T-034（现有 0 条，过期/失效 0 条）；T-035（现有 0 条，过期/失效 0 条）；T-036（现有 0 条，过期/失效 0 条）；T-037（现有 0 条，过期/失效 0 条）；T-038（现有 0 条，过期/失效 0 条）；T-039（现有 0 条，过期/失效 0 条）；T-040（现有 0 条，过期/失效 0 条）；T-041（现有 0 条，过期/失效 0 条）；T-042（现有 0 条，过期/失效 0 条）；T-043（现有 0 条，过期/失效 0 条）；T-044（现有 0 条，过期/失效 0 条）；T-045（现有 0 条，过期/失效 0 条）；T-046（现有 0 条，过期/失效 0 条）；T-047（现有 0 条，过期/失效 0 条）；T-048（现有 0 条，过期/失效 0 条）；T-049（现有 0 条，过期/失效 0 条）；T-050（现有 0 条，过期/失效 0 条）；T-051（现有 0 条，过期/失效 0 条）；T-052（现有 0 条，过期/失效 0 条）；T-053（现有 0 条，过期/失效 0 条）；T-054（现有 0 条，过期/失效 0 条）；T-055（现有 0 条，过期/失效 0 条）；T-056（现有 0 条，过期/失效 0 条）；T-057（现有 0 条，过期/失效 0 条）；T-058（现有 0 条，过期/失效 0 条）；T-059（现有 0 条，过期/失效 0 条）；T-060（现有 0 条，过期/失效 0 条）；T-061（现有 0 条，过期/失效 0 条）；T-062（现有 0 条，过期/失效 0 条）；T-063（现有 0 条，过期/失效 0 条）；T-064（现有 0 条，过期/失效 0 条）；T-065（现有 0 条，过期/失效 0 条）；T-066（现有 0 条，过期/失效 0 条）；T-067（现有 0 条，过期/失效 0 条）；T-068（现有 0 条，过期/失效 0 条）；T-069（现有 0 条，过期/失效 0 条）；T-070（现有 0 条，过期/失效 0 条）；T-071（现有 0 条，过期/失效 0 条）；T-072（现有 0 条，过期/失效 0 条）；T-073（现有 0 条，过期/失效 0 条）；T-074（现有 0 条，过期/失效 0 条）；T-075（现有 0 条，过期/失效 0 条）；T-076（现有 0 条，过期/失效 0 条）；T-077（现有 0 条，过期/失效 0 条）；T-078（现有 0 条，过期/失效 0 条）；T-079（现有 0 条，过期/失效 0 条）；T-080（现有 0 条，过期/失效 0 条）；T-081（现有 0 条，过期/失效 0 条）；T-082（现有 0 条，过期/失效 0 条）；T-083（现有 0 条，过期/失效 0 条）；T-084（现有 0 条，过期/失效 0 条）；T-085（现有 0 条，过期/失效 0 条）；T-086（现有 0 条，过期/失效 0 条）；T-087（现有 0 条，过期/失效 0 条）；T-088（现有 0 条，过期/失效 0 条）；T-089（现有 0 条，过期/失效 0 条）；T-090（现有 0 条，过期/失效 0 条）；T-091（现有 0 条，过期/失效 0 条）；T-092（现有 0 条，过期/失效 0 条）；T-093（现有 0 条，过期/失效 0 条）；T-094（现有 0 条，过期/失效 0 条）；T-095（现有 0 条，过期/失效 0 条）；T-096（现有 0 条，过期/失效 0 条）；T-097（现有 0 条，过期/失效 0 条）；T-098（现有 0 条，过期/失效 0 条）；T-099（现有 0 条，过期/失效 0 条）；T-100（现有 0 条，过期/失效 0 条）；T-101（现有 0 条，过期/失效 0 条）；T-102（现有 0 条，过期/失效 0 条）；T-103（现有 0 条，过期/失效 0 条）；T-104（现有 0 条，过期/失效 0 条）；T-105（现有 0 条，过期/失效 0 条）；T-106（现有 0 条，过期/失效 0 条）；T-107（现有 0 条，过期/失效 0 条）；T-108（现有 0 条，过期/失效 0 条）；T-109（现有 0 条，过期/失效 0 条）；T-110（现有 0 条，过期/失效 0 条）；T-111（现有 0 条，过期/失效 0 条）；T-112（现有 0 条，过期/失效 0 条）；T-113（现有 0 条，过期/失效 0 条）；T-114（现有 0 条，过期/失效 0 条）；T-115（现有 0 条，过期/失效 0 条）；T-116（现有 0 条，过期/失效 0 条）；T-117（现有 0 条，过期/失效 0 条）；T-118（现有 0 条，过期/失效 0 条）；T-119（现有 0 条，过期/失效 0 条）；T-120（现有 0 条，过期/失效 0 条）；T-121（现有 0 条，过期/失效 0 条）；T-122（现有 0 条，过期/失效 0 条）；T-123（现有 0 条，过期/失效 0 条）；T-124（现有 0 条，过期/失效 0 条）；T-125（现有 0 条，过期/失效 0 条）；T-126（现有 0 条，过期/失效 0 条）；T-127（现有 0 条，过期/失效 0 条）；T-128（现有 0 条，过期/失效 0 条）；T-129（现有 0 条，过期/失效 0 条）；T-130（现有 0 条，过期/失效 0 条）；T-131（现有 0 条，过期/失效 0 条）；T-132（现有 0 条，过期/失效 0 条）；T-133（现有 0 条，过期/失效 0 条）；T-134（现有 0 条，过期/失效 0 条）；T-135（现有 0 条，过期/失效 0 条）；T-136（现有 0 条，过期/失效 0 条）；T-137（现有 0 条，过期/失效 0 条）；T-138（现有 0 条，过期/失效 0 条）；T-139（现有 0 条，过期/失效 0 条）；T-140（现有 0 条，过期/失效 0 条）；T-141（现有 0 条，过期/失效 0 条）；T-142（现有 0 条，过期/失效 0 条）；T-143（现有 0 条，过期/失效 0 条）；T-144（现有 0 条，过期/失效 0 条）；T-145（现有 0 条，过期/失效 0 条）；T-146（现有 0 条，过期/失效 0 条）；T-147（现有 0 条，过期/失效 0 条）；T-148（现有 0 条，过期/失效 0 条）；T-149（现有 0 条，过期/失效 0 条）；T-150（现有 0 条，过期/失效 0 条）；T-151（现有 0 条，过期/失效 0 条）；T-152（现有 0 条，过期/失效 0 条）；T-153（现有 0 条，过期/失效 0 条）；T-154（现有 0 条，过期/失效 0 条）；T-155（现有 0 条，过期/失效 0 条）；T-156（现有 0 条，过期/失效 0 条）；T-157（现有 0 条，过期/失效 0 条）；T-158（现有 0 条，过期/失效 0 条）；T-159（现有 0 条，过期/失效 0 条）；T-160（现有 0 条，过期/失效 0 条）；T-161（现有 0 条，过期/失效 0 条）；T-162（现有 0 条，过期/失效 0 条）；T-163（现有 0 条，过期/失效 0 条）；T-164（现有 0 条，过期/失效 0 条）；T-165（现有 0 条，过期/失效 0 条）；T-166（现有 0 条，过期/失效 0 条）；T-167（现有 0 条，过期/失效 0 条）；T-168（现有 0 条，过期/失效 0 条）；T-169（现有 0 条，过期/失效 0 条）；T-170（现有 0 条，过期/失效 0 条）；T-171（现有 0 条，过期/失效 0 条）；T-172（现有 0 条，过期/失效 0 条）；T-173（现有 0 条，过期/失效 0 条）；T-174（现有 0 条，过期/失效 0 条）；T-175（现有 0 条，过期/失效 0 条）；T-176（现有 0 条，过期/失效 0 条）；T-177（现有 0 条，过期/失效 0 条）；T-178（现有 0 条，过期/失效 0 条）；T-179（现有 0 条，过期/失效 0 条）；T-180（现有 0 条，过期/失效 0 条）；T-181（现有 0 条，过期/失效 0 条）；T-182（现有 0 条，过期/失效 0 条）；T-183（现有 0 条，过期/失效 0 条）；T-184（现有 0 条，过期/失效 0 条）；T-185（现有 0 条，过期/失效 0 条）；T-186（现有 0 条，过期/失效 0 条）；T-187（现有 0 条，过期/失效 0 条）；T-188（现有 0 条，过期/失效 0 条）；T-189（现有 0 条，过期/失效 0 条）；T-190（现有 0 条，过期/失效 0 条）；T-191（现有 0 条，过期/失效 0 条）；T-192（现有 0 条，过期/失效 0 条）；T-193（现有 0 条，过期/失效 0 条）；T-194（现有 0 条，过期/失效 0 条）；T-195（现有 0 条，过期/失效 0 条）；T-196（现有 0 条，过期/失效 0 条）；T-197（现有 0 条，过期/失效 0 条）；T-198（现有 1 条，过期/失效 1 条）；T-199（现有 1 条，过期/失效 1 条）；T-200（现有 1 条，过期/失效 1 条）；T-201（现有 1 条，过期/失效 1 条）；T-202（现有 1 条，过期/失效 1 条）；T-203（现有 1 条，过期/失效 1 条）；T-204（现有 1 条，过期/失效 1 条）；T-205（现有 1 条，过期/失效 1 条）；T-206（现有 1 条，过期/失效 1 条）；T-207（现有 1 条，过期/失效 1 条）；T-208（现有 1 条，过期/失效 1 条）；T-209（现有 1 条，过期/失效 1 条）；T-210（现有 1 条，过期/失效 1 条）；T-211（现有 1 条，过期/失效 1 条）；T-212（现有 1 条，过期/失效 1 条）；T-213（现有 1 条，过期/失效 1 条）；T-214（现有 1 条，过期/失效 1 条）；T-215（现有 1 条，过期/失效 1 条）；T-216（现有 1 条，过期/失效 1 条）；T-217（现有 1 条，过期/失效 1 条）；G7（现有 0 条，过期/失效 0 条）；G9（现有 0 条，过期/失效 0 条）；WP-ENV-001（现有 0 条，过期/失效 0 条）",
+    "missingEvidence": "T-001（现有 1 条，过期/失效 1 条）；T-002（现有 1 条，过期/失效 1 条）；T-003（现有 1 条，过期/失效 1 条）；T-004（现有 1 条，过期/失效 1 条）；T-005（现有 1 条，过期/失效 1 条）；T-006（现有 1 条，过期/失效 1 条）；T-007（现有 1 条，过期/失效 1 条）；T-008（现有 1 条，过期/失效 1 条）；T-009（现有 1 条，过期/失效 1 条）；T-010（现有 1 条，过期/失效 1 条）；T-011（现有 1 条，过期/失效 1 条）；T-012（现有 1 条，过期/失效 1 条）；T-013（现有 1 条，过期/失效 1 条）；T-014（现有 1 条，过期/失效 1 条）；T-015（现有 1 条，过期/失效 1 条）；T-016（现有 1 条，过期/失效 1 条）；T-017（现有 1 条，过期/失效 1 条）；T-018（现有 1 条，过期/失效 1 条）；T-019（现有 1 条，过期/失效 1 条）；T-020（现有 1 条，过期/失效 1 条）；T-021（现有 1 条，过期/失效 1 条）；T-022（现有 1 条，过期/失效 1 条）；T-023（现有 1 条，过期/失效 1 条）；T-024（现有 1 条，过期/失效 1 条）；T-025（现有 1 条，过期/失效 1 条）；T-026（现有 1 条，过期/失效 1 条）；T-027（现有 1 条，过期/失效 1 条）；T-028（现有 1 条，过期/失效 1 条）；T-029（现有 1 条，过期/失效 1 条）；T-030（现有 1 条，过期/失效 1 条）；T-031（现有 1 条，过期/失效 1 条）；T-032（现有 1 条，过期/失效 1 条）；T-033（现有 1 条，过期/失效 1 条）；T-034（现有 1 条，过期/失效 1 条）；T-035（现有 1 条，过期/失效 1 条）；T-036（现有 1 条，过期/失效 1 条）；T-037（现有 1 条，过期/失效 1 条）；T-038（现有 1 条，过期/失效 1 条）；T-039（现有 1 条，过期/失效 1 条）；T-040（现有 1 条，过期/失效 1 条）；T-041（现有 1 条，过期/失效 1 条）；T-042（现有 1 条，过期/失效 1 条）；T-043（现有 1 条，过期/失效 1 条）；T-044（现有 1 条，过期/失效 1 条）；T-045（现有 1 条，过期/失效 1 条）；T-046（现有 1 条，过期/失效 1 条）；T-047（现有 1 条，过期/失效 1 条）；T-048（现有 1 条，过期/失效 1 条）；T-049（现有 1 条，过期/失效 1 条）；T-050（现有 1 条，过期/失效 1 条）；T-051（现有 0 条，过期/失效 0 条）；T-052（现有 0 条，过期/失效 0 条）；T-053（现有 0 条，过期/失效 0 条）；T-054（现有 0 条，过期/失效 0 条）；T-055（现有 1 条，过期/失效 1 条）；T-056（现有 0 条，过期/失效 0 条）；T-057（现有 1 条，过期/失效 1 条）；T-058（现有 0 条，过期/失效 0 条）；T-059（现有 0 条，过期/失效 0 条）；T-060（现有 1 条，过期/失效 1 条）；T-061（现有 0 条，过期/失效 0 条）；T-062（现有 0 条，过期/失效 0 条）；T-063（现有 0 条，过期/失效 0 条）；T-064（现有 0 条，过期/失效 0 条）；T-065（现有 0 条，过期/失效 0 条）；T-066（现有 0 条，过期/失效 0 条）；T-067（现有 0 条，过期/失效 0 条）；T-068（现有 0 条，过期/失效 0 条）；T-069（现有 0 条，过期/失效 0 条）；T-070（现有 0 条，过期/失效 0 条）；T-071（现有 0 条，过期/失效 0 条）；T-072（现有 0 条，过期/失效 0 条）；T-073（现有 0 条，过期/失效 0 条）；T-074（现有 0 条，过期/失效 0 条）；T-075（现有 0 条，过期/失效 0 条）；T-076（现有 0 条，过期/失效 0 条）；T-077（现有 0 条，过期/失效 0 条）；T-078（现有 0 条，过期/失效 0 条）；T-079（现有 0 条，过期/失效 0 条）；T-080（现有 0 条，过期/失效 0 条）；T-081（现有 0 条，过期/失效 0 条）；T-082（现有 0 条，过期/失效 0 条）；T-083（现有 0 条，过期/失效 0 条）；T-084（现有 1 条，过期/失效 1 条）；T-085（现有 1 条，过期/失效 1 条）；T-086（现有 1 条，过期/失效 1 条）；T-087（现有 1 条，过期/失效 1 条）；T-088（现有 1 条，过期/失效 1 条）；T-089（现有 1 条，过期/失效 1 条）；T-090（现有 1 条，过期/失效 1 条）；T-091（现有 1 条，过期/失效 1 条）；T-092（现有 1 条，过期/失效 1 条）；T-093（现有 1 条，过期/失效 1 条）；T-094（现有 1 条，过期/失效 1 条）；T-095（现有 1 条，过期/失效 1 条）；T-096（现有 1 条，过期/失效 1 条）；T-097（现有 1 条，过期/失效 1 条）；T-098（现有 1 条，过期/失效 1 条）；T-099（现有 1 条，过期/失效 1 条）；T-100（现有 1 条，过期/失效 1 条）；T-101（现有 2 条，过期/失效 2 条）；T-102（现有 2 条，过期/失效 2 条）；T-103（现有 3 条，过期/失效 3 条）；T-104（现有 2 条，过期/失效 2 条）；T-105（现有 2 条，过期/失效 2 条）；T-106（现有 2 条，过期/失效 2 条）；T-107（现有 2 条，过期/失效 2 条）；T-108（现有 3 条，过期/失效 3 条）；T-109（现有 2 条，过期/失效 2 条）；T-110（现有 3 条，过期/失效 3 条）；T-111（现有 2 条，过期/失效 2 条）；T-112（现有 2 条，过期/失效 2 条）；T-113（现有 2 条，过期/失效 2 条）；T-114（现有 3 条，过期/失效 3 条）；T-115（现有 1 条，过期/失效 1 条）；T-116（现有 1 条，过期/失效 1 条）；T-117（现有 1 条，过期/失效 1 条）；T-118（现有 1 条，过期/失效 1 条）；T-119（现有 1 条，过期/失效 1 条）；T-120（现有 1 条，过期/失效 1 条）；T-121（现有 1 条，过期/失效 1 条）；T-122（现有 1 条，过期/失效 1 条）；T-123（现有 1 条，过期/失效 1 条）；T-124（现有 1 条，过期/失效 1 条）；T-125（现有 1 条，过期/失效 1 条）；T-126（现有 1 条，过期/失效 1 条）；T-127（现有 1 条，过期/失效 1 条）；T-128（现有 1 条，过期/失效 1 条）；T-129（现有 1 条，过期/失效 1 条）；T-130（现有 1 条，过期/失效 1 条）；T-131（现有 1 条，过期/失效 1 条）；T-132（现有 1 条，过期/失效 1 条）；T-133（现有 1 条，过期/失效 1 条）；T-134（现有 1 条，过期/失效 1 条）；T-135（现有 1 条，过期/失效 1 条）；T-136（现有 1 条，过期/失效 1 条）；T-137（现有 1 条，过期/失效 1 条）；T-138（现有 1 条，过期/失效 1 条）；T-139（现有 1 条，过期/失效 1 条）；T-140（现有 1 条，过期/失效 1 条）；T-141（现有 1 条，过期/失效 1 条）；T-142（现有 1 条，过期/失效 1 条）；T-143（现有 1 条，过期/失效 1 条）；T-144（现有 1 条，过期/失效 1 条）；T-145（现有 1 条，过期/失效 1 条）；T-146（现有 1 条，过期/失效 1 条）；T-147（现有 1 条，过期/失效 1 条）；T-148（现有 1 条，过期/失效 1 条）；T-149（现有 1 条，过期/失效 1 条）；T-150（现有 1 条，过期/失效 1 条）；T-151（现有 1 条，过期/失效 1 条）；T-152（现有 1 条，过期/失效 1 条）；T-153（现有 1 条，过期/失效 1 条）；T-154（现有 1 条，过期/失效 1 条）；T-155（现有 1 条，过期/失效 1 条）；T-156（现有 1 条，过期/失效 1 条）；T-157（现有 1 条，过期/失效 1 条）；T-158（现有 0 条，过期/失效 0 条）；T-159（现有 0 条，过期/失效 0 条）；T-160（现有 0 条，过期/失效 0 条）；T-161（现有 0 条，过期/失效 0 条）；T-162（现有 0 条，过期/失效 0 条）；T-163（现有 0 条，过期/失效 0 条）；T-164（现有 0 条，过期/失效 0 条）；T-165（现有 0 条，过期/失效 0 条）；T-166（现有 0 条，过期/失效 0 条）；T-167（现有 0 条，过期/失效 0 条）；T-168（现有 0 条，过期/失效 0 条）；T-169（现有 0 条，过期/失效 0 条）；T-170（现有 0 条，过期/失效 0 条）；T-171（现有 0 条，过期/失效 0 条）；T-172（现有 0 条，过期/失效 0 条）；T-173（现有 0 条，过期/失效 0 条）；T-174（现有 0 条，过期/失效 0 条）；T-175（现有 0 条，过期/失效 0 条）；T-176（现有 0 条，过期/失效 0 条）；T-177（现有 0 条，过期/失效 0 条）；T-178（现有 1 条，过期/失效 1 条）；T-179（现有 1 条，过期/失效 1 条）；T-180（现有 1 条，过期/失效 1 条）；T-181（现有 1 条，过期/失效 1 条）；T-182（现有 1 条，过期/失效 1 条）；T-183（现有 1 条，过期/失效 1 条）；T-184（现有 1 条，过期/失效 1 条）；T-185（现有 1 条，过期/失效 1 条）；T-186（现有 1 条，过期/失效 1 条）；T-187（现有 1 条，过期/失效 1 条）；T-188（现有 1 条，过期/失效 1 条）；T-189（现有 1 条，过期/失效 1 条）；T-190（现有 1 条，过期/失效 1 条）；T-191（现有 1 条，过期/失效 1 条）；T-192（现有 1 条，过期/失效 1 条）；T-193（现有 1 条，过期/失效 1 条）；T-194（现有 2 条，过期/失效 2 条）；T-195（现有 1 条，过期/失效 1 条）；T-196（现有 1 条，过期/失效 1 条）；T-197（现有 1 条，过期/失效 1 条）；T-198（现有 2 条，过期/失效 2 条）；T-199（现有 2 条，过期/失效 2 条）；T-200（现有 2 条，过期/失效 2 条）；T-201（现有 2 条，过期/失效 2 条）；T-202（现有 2 条，过期/失效 2 条）；T-203（现有 1 条，过期/失效 1 条）；T-204（现有 1 条，过期/失效 1 条）；T-205（现有 1 条，过期/失效 1 条）；T-206（现有 1 条，过期/失效 1 条）；T-207（现有 1 条，过期/失效 1 条）；T-208（现有 1 条，过期/失效 1 条）；T-209（现有 1 条，过期/失效 1 条）；T-210（现有 1 条，过期/失效 1 条）；T-211（现有 1 条，过期/失效 1 条）；T-212（现有 1 条，过期/失效 1 条）；T-213（现有 1 条，过期/失效 1 条）；T-214（现有 1 条，过期/失效 1 条）；T-215（现有 1 条，过期/失效 1 条）；T-216（现有 1 条，过期/失效 1 条）；T-217（现有 1 条，过期/失效 1 条）；G7（现有 0 条，过期/失效 0 条）；G9（现有 0 条，过期/失效 0 条）；WP-ENV-001（现有 0 条，过期/失效 0 条）",
     "affectedTasks": "无受影响任务"
   },
   "invariantConflicts": [],

@@ -1,0 +1,76 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///artifact/evidence/v1",
+  "title": "EWOH Evidence",
+  "description": "Evidence front-matter fields describing test/verification evidence. Object containing an evidence array.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "evidence"
+  ],
+  "properties": {
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "evidenceId",
+          "workItemId",
+          "commitSha",
+          "environment",
+          "verifier",
+          "producedAt",
+          "expiresAt"
+        ],
+        "properties": {
+          "evidenceId": {
+            "type": "string"
+          },
+          "workItemId": {
+            "type": "string"
+          },
+          "commitSha": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "envFingerprint": {
+            "type": "string"
+          },
+          "verifier": {
+            "type": "string"
+          },
+          "producedAt": {
+            "type": "string"
+          },
+          "testTime": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "buildVersion": {
+            "type": "string"
+          },
+          "dependencyVersion": {
+            "type": "string"
+          },
+          "staleReason": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "verification_state": {
+    "final_authoritative": {
+      "pilotReadiness": "ready",
+      "envFingerprint": "db+docker"
+    }
+  }
+}

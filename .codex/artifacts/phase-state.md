@@ -3,18 +3,18 @@
 Updated: 2026-08-04
 Trace: EWOH-2026-08-04-principal-final6
 
-## 当前权威状态（2026-08-04 HEAD 9fe8a8f）
+## 当前权威状态（2026-08-04 HEAD 6e6a67f0c3e6bbe74082ba960267d070722b59c7）
 
 以下为本仓库的单一、权威当前状态，来自 `CHANGELOG` rc4、`release-manifest` 与 `audit-repo-facts` 的一致聚合。**以下所有 `## Latest Round - ...` 小节均为历史快照（非权威），权威计数一律以本节为准。**
 
 - server Jest：`81 suites / 391 tests`
 - client Jest：`15 suites / 50 tests`
-- OpenAPI：`248/248`
+- OpenAPI：`253/253`
 - E2E：`33/33`
 - browser：`5/5`
 - repo-facts：`38/38`
 - work graph：`252 items / 209 edges / 48 actors / 191 evidence / 14 gates / 0 conflicts`
-- DB：`51 managed tables / 57 physical tables`
+- DB：`48 managed tables（来自 db/contracts/schema-manifest.yaml 的生成式 managed_count；51 managed / 57 physical 为未独立验证的自报，未采纳）`
 - Pilot readiness：`NOT READY（7 passed / 3 failed / 5 pending）`
 - Gate：G0-G6 已通过，G7-G9 为 validation，G10 passed-locally / production-pending，G11-G13 pending
 
@@ -296,7 +296,7 @@ factory replication drills, partner shadow delivery, and production SLO/approval
 - Quality trace graph and mobile workbench API are implemented and verified.
 - Mobile workbench React page is implemented and verified with client tests.
 - Final 5.0 adopted; scale kernel (factory template/profile/asset registry) is
-  implemented and verified with 51 managed tables.
+  implemented and verified with 51 managed-table entries.
 - Connector and scenario pack catalog are implemented and verified; a
   published template installs multiple factory profiles without a code fork.
 - Asset conformance TCK and factory profile replay are implemented and

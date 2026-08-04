@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///artifact/task-board/v1",
+  "title": "EWOH Task Board",
+  "description": "Parsed task-board entries from .codex/artifacts/task-board.md. Top-level object containing a waves array of work items.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "waves"
+  ],
+  "properties": {
+    "waves": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "status",
+          "tasks"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "owner",
+                "status",
+                "evidence"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^T-\\d{3}$"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "owner": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "Proposed",
+                    "Refining",
+                    "Ready",
+                    "Claimed",
+                    "In Progress",
+                    "Blocked",
+                    "Review",
+                    "Validation",
+                    "Integrated",
+                    "Done",
+                    "Rejected"
+                  ]
+                },
+                "evidence": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

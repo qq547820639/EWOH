@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented; 2026-08-04 iterations add mobile P0, evidence/gate hardening, onboarding F0-F3 real execution, mapping dry-run, unified world replay, E-SOP, quality schemes, slow-query observability, frontend lazy loading, MES role workbench, progressive lists, replay context UI, git sync apply gate, final standalone gate, pilot readiness rerun, and real-PG validation; ALL STANDALONE CHECKS PASSED with E2E 33/33 + browser 5/5, server Jest 81 suites / 391 tests, client 15 suites / 50 tests, OpenAPI 248/248, repo facts 33/33, work graph 252/109/0 conflicts, build PASSED; PILOT READINESS NOT READY (7/3/5)",
+  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented; 2026-08-04 iterations add mobile P0, evidence/gate hardening, onboarding F0-F3 real execution, mapping dry-run, unified world replay, E-SOP, quality schemes, slow-query observability, frontend lazy loading, MES role workbench, progressive lists, replay context UI, git sync apply gate, final standalone gate, pilot readiness rerun, and real-PG validation; ALL STANDALONE CHECKS PASSED with E2E 33/33 + browser 5/5, server Jest 81 suites / 391 tests, client 15 suites / 50 tests, OpenAPI 253/253, repo facts 33/33, work graph 252/109/0 conflicts, build PASSED; PILOT READINESS NOT READY (7/3/5)",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
@@ -220,7 +220,7 @@
     "final6_scenario_tck": "8 gates passed",
     "final6_openapi": "231/231 controller operations documented",
     "git_sync_plan": "offline-first issue/PR plan; 188 items, 0 tracked, 188 pending by design; live creation approval-gated",
-    "postgres_ddl_rls_gate": "standalone-postgres-check PASSED: 51 managed tables, RLS, audit chain, destructive rollback to 0 objects, rebuild passed",
+    "postgres_ddl_rls_gate": "standalone-postgres-check PASSED: 51 managed tables（unverified）, RLS, audit chain, destructive rollback to 0 objects, rebuild passed",
     "local_gate_sweep": "scenario 8 gates, connector 32, AAS 7, Rego 4, deployment 4, cross-tenant E2E 29/29 all passed",
     "perf_smoke_2026_08_04": "/health/live 1000 req / 50 concurrency: 1368 QPS, p50 24.08ms, p95 74.80ms, 0 failures",
     "ops_backup_restore_2026_08_04": "57 tables exported/restored/verified; identity sequence advanced; standalone-ops-check PASSED",
@@ -262,12 +262,13 @@
     "final_authoritative": {
       "serverJest": "81 suites / 391 tests",
       "clientJest": "15 suites / 50 tests",
-      "openapi": "248/248",
+      "openapi": "253/253",
       "e2e": "33/33",
       "browser": "5/5",
       "repoFacts": "38/38",
-      "workGraph": "252 items / 209 edges / 48 actors / 191 evidence / 14 gates / 0 conflicts",
-      "pilotReadiness": "NOT READY"
+      "workGraph": "252 items / 209 edges / 48 actors / 191 evidence / 14 gates / 0 conflicts / 220 missing evidence / 4 gates need approval",
+      "pilotReadiness": "NOT READY (env-fingerprint: no-runtime-env)",
+      "pilotEnvironmentFingerprint": "no-runtime-env"
     }
   },
   "subagent_state": {
@@ -347,10 +348,8 @@
       }
     ],
     "planned_next": [
-      "close C2 route DTO docs for 70 operations",
       "approval physical persistence mapping",
-      "production DDL/deploy approval gate",
-      "frontend browser-level UI regression"
+      "production DDL/deploy approval gate"
     ]
   },
   "next_entrypoint": "docs/delivery/acceptance-evidence.md"

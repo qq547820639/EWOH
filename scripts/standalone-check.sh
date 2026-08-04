@@ -25,6 +25,8 @@ node tools/work-indexer/index.js --root "$ROOT_DIR" --output output/work-graph.j
 node tools/work-indexer/index.js --root "$ROOT_DIR" --invariants
 node tools/gate-engine/index.js --root "$ROOT_DIR" --output output/gate-decisions.json
 node tools/work-console/index.js --root "$ROOT_DIR" --output output/work-console.json --strict
+node tools/semantic-rules/index.js --root "$ROOT_DIR" --strict
+node tools/semantic-rules/run-fixtures.js
 node tools/resource-registry/index.js --root "$ROOT_DIR" --output output/resource-registry.json
 node tools/handoff-service/index.js --root "$ROOT_DIR" --output output/handoffs.json
 node tools/git-sync/index.js --root "$ROOT_DIR" --output output/git-sync.json

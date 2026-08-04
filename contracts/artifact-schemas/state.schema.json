@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///artifact/state/v1",
+  "title": "EWOH Run State",
+  "description": "Authoritative run-state artifact persisted at .codex/artifacts/state.json. Binds execution status, verification state, and subagent state to a git HEAD and environment via head_sha/env_fingerprint.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "trace_id",
+    "current_status",
+    "verification_state",
+    "subagent_state"
+  ],
+  "properties": {
+    "trace_id": {
+      "type": "string"
+    },
+    "current_status": {
+      "type": "string"
+    },
+    "head_sha": {
+      "type": "string",
+      "description": "Git commit SHA the state was recorded against."
+    },
+    "env_fingerprint": {
+      "type": "string",
+      "description": "Fingerprint of the environment the state was produced in."
+    },
+    "verification_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "final_authoritative"
+      ],
+      "properties": {
+        "final_authoritative": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "serverJest",
+            "clientJest",
+            "openapi",
+            "e2e",
+            "browser",
+            "repoFacts",
+            "workGraph",
+            "pilotReadiness"
+          ],
+          "properties": {
+            "serverJest": {
+              "type": "object"
+            },
+            "clientJest": {
+              "type": "object"
+            },
+            "openapi": {
+              "type": "object"
+            },
+            "e2e": {
+              "type": "object"
+            },
+            "browser": {
+              "type": "object"
+            },
+            "repoFacts": {
+              "type": "object"
+            },
+            "workGraph": {
+              "type": "object"
+            },
+            "pilotReadiness": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "subagent_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planned_next"
+      ],
+      "properties": {
+        "planned_next": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "planned": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

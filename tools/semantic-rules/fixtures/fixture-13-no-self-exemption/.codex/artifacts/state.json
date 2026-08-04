@@ -1,0 +1,9 @@
+{
+  "version": "1.0.0",
+  "final_authoritative": {
+    "serverJest": "81 suites/391 tests",
+    "clientJest": "15 suites/50 tests",
+    "e2e": "33/33",
+    "browser": "5/5"
+  }
+}

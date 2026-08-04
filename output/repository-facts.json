@@ -1,7 +1,7 @@
 {
   "schema": "ewoh:///repository-facts/v1",
-  "generatedAt": "2026-08-04T10:55:21.865Z",
-  "head": "9fe8a8f9881d08026cd70d4d32b41ddddccf530a",
+  "generatedAt": "2026-08-04T18:45:33.614Z",
+  "head": "6e6a67f0c3e6bbe74082ba960267d070722b59c7",
   "branch": "main",
   "version": "0.6.0-rc4",
   "testCounts": {

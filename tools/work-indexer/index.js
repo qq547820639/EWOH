@@ -948,6 +948,26 @@ function main() {
     }
     process.exitCode = 1;
   }
+  // F61-01: strict mode also fails on any unexempted single-source-of-truth
+  // semantic conflict (e.g. stale HEAD, task/section status drift, gate-vs-
+  // release readiness, evidence staleness, count drift).
+  if (options.strict) {
+    const semanticRules = require('../semantic-rules/lib/engine');
+    const semanticCtx = semanticRules.buildContext(options.root);
+    const semanticResult = semanticRules.runRules(semanticCtx, { strict: true });
+    const unexempted = semanticResult.findings.filter(
+      (f) => !(semanticCtx.exemptions || []).includes(f.ruleId),
+    );
+    if (unexempted.length > 0) {
+      console.log(`Semantic conflicts: ${unexempted.length}`);
+      for (const finding of unexempted) {
+        console.log(
+          `  [${finding.severity}] ${finding.ruleId}: ${finding.message}${finding.path ? ` (${finding.path})` : ''}`,
+        );
+      }
+      process.exitCode = 1;
+    }
+  }
 }
 
 module.exports = {

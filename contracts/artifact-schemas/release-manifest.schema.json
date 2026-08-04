@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///artifact/release-manifest/v1",
+  "title": "EWOH Release Manifest",
+  "description": "Release manifest for docs/delivery/release-manifest.yaml and release/*. Records the generation command (env.command) and environment fingerprint (env.fingerprint) to support the 'generated counts' semantic rule.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "release",
+    "generatedAt",
+    "generatedBy",
+    "env",
+    "bundle",
+    "evidence"
+  ],
+  "properties": {
+    "release": {
+      "type": "string"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "generatedBy": {
+      "type": "string"
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "fingerprint"
+      ],
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        }
+      }
+    },
+    "bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checksums"
+      ],
+      "properties": {
+        "checksums": {
+          "type": "string"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object"
+    }
+  }
+}

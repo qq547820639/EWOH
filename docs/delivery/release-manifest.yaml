@@ -33,7 +33,7 @@ evidence:
   jest: "81 suites / 391 tests"
   client_jest: "15 suites / 50 tests"
   e2e: "33/33 HTTP + PostgreSQL (onboarding/mapping/replay/SOP/quality/slow-query/role-workbench paths included)"
-  openapi: "248/248 documented, 0 unimplemented"
+  openapi: "253/253 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/client-jest/repo-facts/openapi/e2e/browser/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   postgres_gate: "standalone-postgres-check PASSED; 51 managed tables / 51 RLS / audit chain / rollback to 0 objects / rebuild"

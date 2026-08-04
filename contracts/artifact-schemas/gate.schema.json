@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///artifact/gate/v1",
+  "title": "EWOH Gates",
+  "description": "Parsed gate entries from .codex/artifacts/gates.md. Object containing a gates array of release readiness gates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "gates"
+  ],
+  "properties": {
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "status",
+          "evidence",
+          "calculatedStatus"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^G\\d{1,2}$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "object"
+          },
+          "calculatedStatus": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "in_progress",
+              "requires_approval",
+              "pending",
+              "blocked",
+              "approved",
+              "rejected",
+              "conditional"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

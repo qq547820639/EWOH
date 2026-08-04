@@ -9,6 +9,7 @@ const root = path.resolve(__dirname, '..');
 const requireFromApp = createRequire(path.join(root, 'ewoh-spark-app', 'package.json'));
 const yaml = requireFromApp('js-yaml');
 const routeAudit = require('./audit-openapi-routes');
+const semanticRules = require('../tools/semantic-rules/lib/engine');
 
 const REQUIRED_NAVIGATION = [
   'src/edge_platform',
@@ -429,6 +430,25 @@ function auditRepoFacts(rootDir) {
     'repository_facts_evidence_commit_sha',
     evidenceStats.missingCommitSha === 0,
     `evidence missing commitSha: ${evidenceStats.missingCommitSha} entries`,
+  );
+
+  // ---- F61-01 semantic consistency: run the single-source-of-truth engine ----
+  // Any unexempted semantic conflict (error or warning) fails the audit.
+  const semanticCtx = semanticRules.buildContext(rootDir);
+  const semanticResult = semanticRules.runRules(semanticCtx, { strict: true });
+  const unexemptedFindings = semanticResult.findings.filter(
+    (f) => !(semanticCtx.exemptions || []).includes(f.ruleId),
+  );
+  const semanticDetail = unexemptedFindings.length
+    ? `${unexemptedFindings.length} unexempted conflicts: ${unexemptedFindings
+        .map((f) => `${f.ruleId}(${f.severity})`)
+        .join(', ')}`
+    : 'no unexempted semantic conflicts';
+  check(
+    checks,
+    'repository_semantic_consistency',
+    unexemptedFindings.length === 0,
+    semanticDetail,
   );
 
   return checks;

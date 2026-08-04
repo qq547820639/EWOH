@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///artifact/decision/v1",
+  "title": "EWOH Decision Log",
+  "description": "Parsed decision-log entries from .codex/artifacts/decision-log.md. Object containing a decisions array.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decisions"
+  ],
+  "properties": {
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "date",
+          "decision",
+          "rationale",
+          "reversibility"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^D-\\d{3}$"
+          },
+          "date": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "reversibility": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
