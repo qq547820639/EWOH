@@ -282,3 +282,38 @@ Phase 2 因果控制台契约闭合完成：实现 + 单元测试通过 + 前端
 
 Phase 3 用户体验统一深化完成：G4 离线冲突闭环闭合（实现 + 单测 + 前端接线 + OpenAPI + route-manifest）、九态抽查补齐 Devices 过期态、UX_DEEPENING_BACKLOG 产出 13 项。
 未改冻结状态机/安全边界/共享契约；未引入新第三方依赖。真实 PG/浏览器 E2E 依赖外部环境（本机不可用），未伪造结果。
+
+## 15. Phase 4 连接器与场景包验证（统一连接器质量属性契约）
+
+> 依据 Phase 4（T110 连接器深化）为 ERP/MRP/WMS 连接器建立统一质量属性契约并扩展连接器 TCK。以下为实际运行命令与结果（本机，无 PG/浏览器/真实 ERP/MRP/WMS 环境）。
+
+### 15.1 实际运行命令与结果
+
+| # | 命令 | 结果 |
+|---|---|---|
+| 1 | `make connector-tck` | **PASS**（**119 项**，原 32 项 + 新增 87 项质量属性校验） |
+| 2 | `node scripts/scenario-tck.js` | **PASS**（8 门禁；asset-catalog 4 场景/4 连接器/2 映射/38 项） |
+| 3 | `make test` | **PASS**（667 测试 OK） |
+
+### 15.2 统一连接器质量属性契约（Canonical Connector Contract）
+
+- 新增共享 schema `catalog/connectors/connector-contract.schema.json`（JSON Schema draft-07，`$id: ewoh:///connector-contract/v1`），定义 10 项统一质量属性：**canonicalModel、mappingTemplate、cursor、idempotency、replay、compensation、deadLetter、rateLimit、dataQuality、observability**。
+- 升级 `catalog/connectors/erp/erp-inventory.yaml`、`erp-order-delivery.yaml`：新增 `spec.connectorContract`（含 cursor 字段、idempotencyKey、DLQ 主题、限流阈值、数据质量规则、可观测性指标）。
+- 新增 `catalog/connectors/mrp/mrp-material-planning.yaml`、`catalog/connectors/wms/wms-inventory.yaml`，结构对齐统一契约。
+- `contracts/catalog/connector-package.schema.json`：`spec` 允许可选 `connectorContract`（object），结构由共享 schema 校验。
+- 已确认仓库无既有 MRP/WMS catalog，未重复；`catalog/connectors/` 现共 4 个清单。
+
+### 15.3 连接器 TCK 新增校验（32→119 项）
+
+- schema 本体：`$id`、draft-07、任务要求的 8 项必填属性（canonicalModel/cursor/idempotency/replay/deadLetter/rateLimit/dataQuality/observability）齐备。
+- 每个 ERP/MRP/WMS 清单：`connectorContract.schemaRef` 指向共享 schema；8 项质量属性存在；结构抽查（canonicalModel.schemaRef、cursor.field、idempotency.keyField、replay.supported、deadLetter.topic、rateLimit.requestsPerSecond、dataQuality.schemaValidation、observability.metrics、mappingTemplate.templateRef、compensation.supported）。
+- PyYAML 缺失时显式标记 blocked（`contract yaml parser available = False`），不静默跳过。
+
+### 15.4 核心中立性抽查
+
+- 连接器运行时（`src/edge_platform/connectors/`）与新增 catalog 未引入客户名称/客户专属字段判断/长期客户分支（grep 捷顺/jieshun/customer_specific/customerName 等 0 命中）。
+- 核心服务代码未改动（仅新增 catalog 契约文件、扩展 TCK 脚本、connector-package schema 增加可选 `spec.connectorContract`）。
+
+### 15.5 结论
+
+Phase 4 连接器契约深化完成：统一契约 schema + ERP/MRP/WMS 清单对齐 + connector-tck 扩展（119 项）+ scenario-tck 8 门禁通过 + make test 667 通过。未改冻结状态机/安全边界/共享事件契约；未引入新第三方依赖（PyYAML 已在环境，dev-only）。真实 ERP/MRP/WMS 联调属外部验证，本环境不可用，未伪造结果。证据文件 `.codex/artifacts/work/evidence/round108-connector-scenario-deepening.md`。

@@ -45,7 +45,11 @@
         "compatibility": { "type": "object" },
         "tck": { "type": "string", "minLength": 1 },
         "sbom": { "type": "string" },
-        "rollback": { "type": "string" }
+        "rollback": { "type": "string" },
+        "connectorContract": {
+          "type": "object",
+          "description": "Unified quality-attribute contract (canonicalModel/cursor/idempotency/replay/compensation/deadLetter/rateLimit/dataQuality/observability). Structure validated against catalog/connectors/connector-contract.schema.json."
+        }
       }
     }
   }

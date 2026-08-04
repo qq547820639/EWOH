@@ -9,9 +9,15 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import struct
 import sys
 from pathlib import Path
+
+try:
+    import yaml  # PyYAML (dev-only, already present in environment)
+except ImportError:  # pragma: no cover - guarded for pure-stdlib environments
+    yaml = None
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
@@ -290,6 +296,102 @@ check(
     and csv_rows[1]["entity_id"] == "CNC-02"
     and csv_rows[0]["protocol_version"] == "CSV-File",
 )
+
+# --- Phase 4: Unified Connector Quality Contract (ERP/MRP/WMS) ---
+CATALOG_CONNECTOR_DIR = ROOT / "catalog" / "connectors"
+CONTRACT_SCHEMA_PATH = CATALOG_CONNECTOR_DIR / "connector-contract.schema.json"
+
+# Quality attributes every ERP/MRP/WMS catalog manifest must declare.
+CONTRACT_REQUIRED_FIELDS = (
+    "canonicalModel",
+    "cursor",
+    "idempotency",
+    "replay",
+    "deadLetter",
+    "rateLimit",
+    "dataQuality",
+    "observability",
+)
+
+
+def _catalog_connector_manifests(prefix: str | None = None) -> list[Path]:
+    """Recursively list catalog connector manifests (optionally filtered by a directory component)."""
+    if not CATALOG_CONNECTOR_DIR.is_dir():
+        return []
+    paths = sorted(CATALOG_CONNECTOR_DIR.rglob("*.yaml"))
+    if prefix:
+        paths = [p for p in paths if p.parent.name == prefix]
+    return paths
+
+
+if yaml is not None:
+    contract_schema = json.loads(CONTRACT_SCHEMA_PATH.read_text(encoding="utf-8"))
+    check(
+        "contract schema $id",
+        contract_schema.get("$id") == "ewoh:///connector-contract/v1",
+    )
+    check(
+        "contract schema draft-07",
+        contract_schema.get("$schema") == "http://json-schema.org/draft-07/schema",
+    )
+    for field in CONTRACT_REQUIRED_FIELDS:
+        check(
+            f"contract schema requires {field}",
+            field in contract_schema.get("required", []),
+        )
+
+    catalog_manifests = _catalog_connector_manifests()
+    check("catalog connector manifests found (erp/mrp/wms)", len(catalog_manifests) >= 3)
+    for path in catalog_manifests:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        name = data.get("metadata", {}).get("name", path.name)
+        contract = data.get("spec", {}).get("connectorContract", {})
+        check(f"contract {name} schemaRef", contract.get("schemaRef") == contract_schema["$id"])
+        for field in CONTRACT_REQUIRED_FIELDS:
+            check(f"contract {name}.{field} present", isinstance(contract.get(field), dict))
+        # Structural spot checks mirroring the shared schema.
+        check(
+            f"contract {name}.canonicalModel.schemaRef",
+            isinstance(contract.get("canonicalModel", {}).get("schemaRef"), str),
+        )
+        check(
+            f"contract {name}.cursor.field",
+            isinstance(contract.get("cursor", {}).get("field"), str),
+        )
+        check(
+            f"contract {name}.idempotency.keyField",
+            isinstance(contract.get("idempotency", {}).get("keyField"), str),
+        )
+        check(
+            f"contract {name}.replay.supported",
+            isinstance(contract.get("replay", {}).get("supported"), bool),
+        )
+        check(
+            f"contract {name}.deadLetter.topic",
+            isinstance(contract.get("deadLetter", {}).get("topic"), str),
+        )
+        check(
+            f"contract {name}.rateLimit.requestsPerSecond",
+            isinstance(contract.get("rateLimit", {}).get("requestsPerSecond"), int),
+        )
+        check(
+            f"contract {name}.dataQuality.schemaValidation",
+            isinstance(contract.get("dataQuality", {}).get("schemaValidation"), bool),
+        )
+        check(
+            f"contract {name}.observability.metrics",
+            isinstance(contract.get("observability", {}).get("metrics"), list),
+        )
+        check(
+            f"contract {name}.mappingTemplate.templateRef",
+            isinstance(contract.get("mappingTemplate", {}).get("templateRef"), str),
+        )
+        check(
+            f"contract {name}.compensation.supported",
+            isinstance(contract.get("compensation", {}).get("supported"), bool),
+        )
+else:
+    check("contract yaml parser available", False)  # blocked: PyYAML missing
 
 failed = [name for name, ok in checks if not ok]
 if failed:

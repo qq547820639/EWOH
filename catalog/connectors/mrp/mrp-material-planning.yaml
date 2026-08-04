@@ -1,30 +1,30 @@
 apiVersion: ewoh.io/v1alpha1
 kind: ConnectorPackage
 metadata:
-  name: erp-order-delivery
+  name: mrp-material-planning
   version: 1.0.0
 spec:
   runtime: edge-python
   protocol: http-rest
   outputEvents:
-    - OrderReceived
-    - OrderStatusChanged
-    - DeliveryRiskChanged
+    - MaterialPlanChanged
+    - RequirementCreated
+    - MaterialShortageObserved
   configSchema:
     type: object
-    required: [baseUrl, orderEndpoint, statusEndpoint]
+    required: [baseUrl, planEndpoint, requirementEndpoint]
     properties:
       baseUrl:
         type: string
-      orderEndpoint:
+      planEndpoint:
         type: string
-      statusEndpoint:
+      requirementEndpoint:
         type: string
   secrets:
     - clientSecret
   permissions:
     network:
-      - erp-gateway:443
+      - mrp-gateway:443
     api:
       - POST /api/ingestion/*
   compatibility:
@@ -37,48 +37,48 @@ spec:
     schemaRef: ewoh:///connector-contract/v1
     canonicalModel:
       schemaRef: ewoh:///events/event-catalog.yaml
-      entityType: WorkOrder
+      entityType: MaterialPlan
       version: 1.0.0
     mappingTemplate:
       templateRef: catalog/mappings/erp-order-to-ewoh.yaml
       direction: source-to-ewoh
     cursor:
-      field: updatedAt
-      type: timestamp
+      field: planSeq
+      type: incrementing-id
       mode: incremental
     idempotency:
-      keyField: orderId
+      keyField: requirementId
       ttlSeconds: 86400
     replay:
       supported: true
-      window: 30d
+      window: 90d
       mode: cursor-replay
     compensation:
       supported: true
       strategy: correction-event
     deadLetter:
       enabled: true
-      topic: ewoh.erp.order.dlq
+      topic: ewoh.mrp.plan.dlq
       retryPolicy:
-        maxRetries: 3
-        backoffSeconds: 30
+        maxRetries: 5
+        backoffSeconds: 60
     rateLimit:
       enabled: true
-      requestsPerSecond: 20
-      burst: 40
+      requestsPerSecond: 10
+      burst: 20
     dataQuality:
       validateRequired: true
       schemaValidation: true
       rejectOnInvalid: true
       rules:
-        - field: orderNo
+        - field: materialCode
           rule: non-empty
-        - field: quantity
+        - field: requirementQty
           rule: "> 0"
     observability:
       metrics:
         - ewoh_connector_ingest_total
-        - ewoh_connector_order_status_total
+        - ewoh_connector_requirement_total
         - ewoh_connector_dlq_total
       healthEndpoint: /healthz
       trace:

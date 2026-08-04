@@ -33,3 +33,54 @@ spec:
   tck: connector-tck.yaml
   sbom: sbom.cdx.json
   rollback: supported
+  connectorContract:
+    schemaRef: ewoh:///connector-contract/v1
+    canonicalModel:
+      schemaRef: ewoh:///events/event-catalog.yaml
+      entityType: StockBalance
+      version: 1.0.0
+    mappingTemplate:
+      templateRef: catalog/mappings/erp-order-to-ewoh.yaml
+      direction: source-to-ewoh
+    cursor:
+      field: updatedAt
+      type: timestamp
+      mode: incremental
+    idempotency:
+      keyField: messageId
+      ttlSeconds: 86400
+    replay:
+      supported: true
+      window: 30d
+      mode: cursor-replay
+    compensation:
+      supported: true
+      strategy: correction-event
+    deadLetter:
+      enabled: true
+      topic: ewoh.erp.inventory.dlq
+      retryPolicy:
+        maxRetries: 3
+        backoffSeconds: 30
+    rateLimit:
+      enabled: true
+      requestsPerSecond: 20
+      burst: 40
+    dataQuality:
+      validateRequired: true
+      schemaValidation: true
+      rejectOnInvalid: true
+      rules:
+        - field: sku
+          rule: non-empty
+        - field: quantity
+          rule: ">= 0"
+    observability:
+      metrics:
+        - ewoh_connector_ingest_total
+        - ewoh_connector_ingest_latency_seconds
+        - ewoh_connector_dlq_total
+      healthEndpoint: /healthz
+      trace:
+        enabled: true
+        correlationIdField: traceId

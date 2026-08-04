@@ -1,30 +1,30 @@
 apiVersion: ewoh.io/v1alpha1
 kind: ConnectorPackage
 metadata:
-  name: erp-order-delivery
+  name: wms-inventory
   version: 1.0.0
 spec:
   runtime: edge-python
   protocol: http-rest
   outputEvents:
-    - OrderReceived
-    - OrderStatusChanged
-    - DeliveryRiskChanged
+    - StockBalanceChanged
+    - InventorySnapshotTaken
+    - MaterialShortageObserved
   configSchema:
     type: object
-    required: [baseUrl, orderEndpoint, statusEndpoint]
+    required: [baseUrl, inventoryEndpoint, snapshotEndpoint]
     properties:
       baseUrl:
         type: string
-      orderEndpoint:
+      inventoryEndpoint:
         type: string
-      statusEndpoint:
+      snapshotEndpoint:
         type: string
   secrets:
     - clientSecret
   permissions:
     network:
-      - erp-gateway:443
+      - wms-gateway:443
     api:
       - POST /api/ingestion/*
   compatibility:
@@ -37,7 +37,7 @@ spec:
     schemaRef: ewoh:///connector-contract/v1
     canonicalModel:
       schemaRef: ewoh:///events/event-catalog.yaml
-      entityType: WorkOrder
+      entityType: StockBalance
       version: 1.0.0
     mappingTemplate:
       templateRef: catalog/mappings/erp-order-to-ewoh.yaml
@@ -45,40 +45,42 @@ spec:
     cursor:
       field: updatedAt
       type: timestamp
-      mode: incremental
+      mode: both
     idempotency:
-      keyField: orderId
-      ttlSeconds: 86400
+      keyField: messageId
+      ttlSeconds: 172800
     replay:
       supported: true
       window: 30d
-      mode: cursor-replay
+      mode: full-resync
     compensation:
       supported: true
-      strategy: correction-event
+      strategy: reverse-api
     deadLetter:
       enabled: true
-      topic: ewoh.erp.order.dlq
+      topic: ewoh.wms.inventory.dlq
       retryPolicy:
         maxRetries: 3
         backoffSeconds: 30
     rateLimit:
       enabled: true
-      requestsPerSecond: 20
-      burst: 40
+      requestsPerSecond: 15
+      burst: 30
     dataQuality:
       validateRequired: true
       schemaValidation: true
       rejectOnInvalid: true
       rules:
-        - field: orderNo
+        - field: sku
+          rule: non-empty
+        - field: location
           rule: non-empty
         - field: quantity
-          rule: "> 0"
+          rule: ">= 0"
     observability:
       metrics:
         - ewoh_connector_ingest_total
-        - ewoh_connector_order_status_total
+        - ewoh_connector_snapshot_total
         - ewoh_connector_dlq_total
       healthEndpoint: /healthz
       trace:
