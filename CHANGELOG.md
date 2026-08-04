@@ -3,6 +3,36 @@
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 1.1.0 规范，
 并使用[语义化版本](https://semver.org/lang/zh-CN/) 2.0.0 进行版本管理。
 
+## [Unreleased]
+
+### Added
+- F61-01 单一事实源语义一致性：7 个版本化 JSON Schema、14 条跨文件语义规则、
+  13 类漂移夹具检测；`audit-repo-facts.js --strict` 任一未豁免冲突即非零退出。
+- F61-02 领域状态持久化（Code Complete / Runtime Verification Blocked）：
+  6 张领域表 `ewoh_resource_locks` / `ewoh_handoffs` / `ewoh_git_sync_state` /
+  `ewoh_evidence_metadata` / `ewoh_factory_replication_sessions` /
+  `ewoh_idempotency_keys` 迁移（`standalone_004_ewoh_domain.sql`）与可逆回滚脚本；
+  乐观锁 `version` CAS 列用于资源锁（holder+version 校验），其余事实由唯一约束/
+  幂等键保证多实例安全；时间戳命名与 Drizzle Schema 对齐。
+- `DomainPersistenceService` 作为持久化事实源，替换进程内 Map 单例；六类领域事实
+  读路径以数据库为准，旧 Map/数组/JSON 仅作缓存或灾备副本。
+- 事务边界：获取锁+审计、交接+责任转移、接受交接+状态更新、git-sync+证据、
+  复制步骤推进+输出证据、幂等键+业务对象创建均置于显式 `db.transaction`，中途
+  失败无部分写入。
+- 多实例正确性：DB 时间 `now()`、唯一约束竞争锁、版本 CAS、过期锁安全接管、
+  非持有者拒绝续租/释放、并发冲突返回明确错误。
+- 代码层测试：`domain-persistence.service.spec.ts` 29/29 通过；真实 HTTP +
+  PostgreSQL E2E 代码完整且标记 `BLOCKED_BY_ENVIRONMENT`（不伪造、不静默跳过）。
+- CI 环境验证入口：GitHub Actions `standalone.yml` 提供 PostgreSQL Service Container，
+  应用/验证/回滚/重放迁移、双实例并发（`scripts/verify-domain-concurrency.js`）、
+  真实 HTTP E2E，并保存证据 artifact `f61-02-ci-evidence-<sha>`。
+
+### Notes
+- **F61-02 最终状态：`F61-02 Code Complete / Runtime Verification Blocked`**。真实
+  HTTP + PostgreSQL E2E 因本地无 PostgreSQL / docker 暂阻塞，运行时门禁已移至 CI
+  （`EWOH_E2E_RUNTIME_DATABASE_URL`）。在真实 E2E 解锁通过前不宣称 Production /
+  Scale Ready，不启动 F61-03。
+
 ## [0.6.0-rc4] - 2026-08-04
 
 ### Added

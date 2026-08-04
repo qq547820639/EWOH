@@ -64,7 +64,8 @@
 #### 子需求：完整数据库制品（6 张领域表）
 领域表 `ewoh_resource_locks` / `ewoh_handoffs` / `ewoh_git_sync_state` / `ewoh_evidence_metadata` / `ewoh_factory_replication_sessions` / `ewoh_idempotency_keys` SHALL 具备并相互一致：
 - 建表 SQL（独立可执行，`db/migrations/*.sql`）；**不得只改自动生成的 `schema.ts`**，否则重新生成 Schema 会丢失实现；
-- 索引、唯一约束、外键、乐观锁版本列；
+- 索引、唯一约束、外键；乐观锁 `version` CAS 列仅用于资源锁（lease 续租/释放需校验 holder+version），其余领域事实由唯一约束/幂等键保证多实例安全；
+- 时间戳列命名与 Drizzle Schema 一致（资源锁/证据/复制会话/幂等键用 `_created_at`/`_updated_at`，交接/同步状态用 `created_at`/`_updated_at`）；
 - 升级迁移脚本（re-entrant，重复执行安全）；
 - 可逆回滚脚本（`.rollback.sql`）；
 - Drizzle Schema（`server/database/schema.ts` 与 SQL 一致）；

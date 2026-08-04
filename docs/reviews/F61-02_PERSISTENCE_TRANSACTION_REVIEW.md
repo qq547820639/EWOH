@@ -93,6 +93,8 @@ return this.db.transaction(async (tx) => {
 - **锁过期 / 持有者恢复**：`recoverExpiredLocks` 用 `expires_at <= now()` 批量置非活跃；`acquireLockOn` 复用过期/陈旧行并按版本号重分配；`isExpired` 兜底。
 - **反模式覆盖**：明示「in-process Maps must not replace DB」；复合写不依赖应用时钟；`isExpired` 兼容 `Date`/字符串。
 
+> **版本列声明澄清（独立复核建议二）**：乐观锁 `version` CAS 列**仅用于资源锁**（`renewLock`/`releaseLock` 需要 holder+version 校验与并发改写拦截）；其余领域事实（交接 / Git 同步 / 证据 / 复制会话 / 幂等键）由唯一约束（`handoff_id`/`sync_id`/`evidence_id`/`session_id`、`scope+idempotency_key`）保证多实例安全，不设 `version` 列。时间戳列命名与 schema 一致：资源锁/证据/复制会话/幂等键用 `_created_at`/`_updated_at`，交接/同步状态用 `created_at`/`_updated_at`。spec（Task 2.2 / 子需求 2.A）与 DDL 口径已对齐。
+
 ---
 
 ## 5. CI 入口

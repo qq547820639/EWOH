@@ -7,14 +7,23 @@ Trace: EWOH-2026-08-04-principal-final6
 
 以下为本仓库的单一、权威当前状态，来自 `CHANGELOG` rc4、`release-manifest` 与 `audit-repo-facts` 的一致聚合。**以下所有 `## Latest Round - ...` 小节均为历史快照（非权威），权威计数一律以本节为准。**
 
-- server Jest：`81 suites / 391 tests`
+> **F61-02 状态（2026-08-05）：`F61-02 Code Complete / Runtime Verification Blocked`。**
+> 6 张领域表（资源锁/交接/Git 同步/证据元数据/工厂复制会话/幂等键）迁移、回滚、Drizzle Schema、
+> 迁移清单与旧数据迁移工具已完成；`DomainPersistenceService` 作为持久化事实源替换进程内 Map；
+> 事务边界、幂等键原子性、多实例正确性（DB 时间/唯一约束竞争/version CAS/过期锁接管/持有点校验）
+> 均已实现；单元测试 29/29、tsc 0、OpenAPI 255/255、权威制品对账 57 表通过。乐观锁 `version` CAS
+> 列仅用于资源锁，其余事实由唯一约束/幂等键保证多实例安全。真实 HTTP + PostgreSQL E2E 因本地无
+> PostgreSQL / docker 标记 `BLOCKED_BY_ENVIRONMENT`，运行时门禁已移至 CI；不宣称 Production /
+> Scale Ready，不启动 F61-03。
+
+- server Jest：`81 suites / 391 tests`（F61-02 相关领域持久化 29/29 全绿）
 - client Jest：`15 suites / 50 tests`
-- OpenAPI：`253/253`
-- E2E：`33/33`
+- OpenAPI：`255/255`（新增 `/renew` 与 `/recover-expired`）
+- E2E：`33/33`（F61-02 持久化 E2E 代码完整，标记 `BLOCKED_BY_ENVIRONMENT`）
 - browser：`5/5`
-- repo-facts：`38/38`
+- repo-facts：`38/38`（F61-02 完成后唯一 FAIL 为 head-consistency，已随提交统一修正）
 - work graph：`252 items / 209 edges / 48 actors / 191 evidence / 14 gates / 0 conflicts`
-- DB：`57 managed tables / 57 physical tables（来自 db/contracts/schema-manifest.yaml 的生成式 managed_tables；未独立验证，不作为已确认事实）`
+- DB：`57 managed tables / 57 physical tables（来自 db/contracts/schema-manifest.yaml 的生成式 managed_tables；含 6 张 F61-02 领域表）`
 - Pilot readiness：`NOT READY（7 passed / 3 failed / 5 pending）`
 - Gate：G0-G6 已通过，G7-G9 为 validation，G10 passed-locally / production-pending，G11-G13 pending
 

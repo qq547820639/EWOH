@@ -73,7 +73,8 @@
 ### 2.A 完整数据库制品
 - [x] Task 2.2: 补齐 6 张领域表的迁移 SQL（`db/migrations/*.sql`，独立可执行，re-entrant）
   - [x] `db/migrations/standalone_004_ewoh_domain.sql`（或等价增量迁移）：`ewoh_resource_locks` / `ewoh_handoffs` / `ewoh_git_sync_state` / `ewoh_evidence_metadata` / `ewoh_factory_replication_sessions` / `ewoh_idempotency_keys`
-  - [x] 每表：主键、业务唯一约束、外键（如适用）、乐观锁 `version` 列、`_created_at`/`_updated_at`
+  - [x] 每表：主键、业务唯一约束、外键（如适用）；乐观锁 `version` CAS 列仅用于资源锁（续租/释放 holder+version 校验），其余事实由唯一约束/幂等键保证多实例安全
+  - [x] 时间戳列命名与 schema 一致（资源锁/证据/复制会话/幂等键：`_created_at`/`_updated_at`；交接/同步状态：`created_at`/`_updated_at`）
   - [x] 索引（holder/active/state/to_actor/work_item/factory/status/scope）
   - [x] 与 `server/database/schema.ts` 现有 F61-02 表定义一致
 - [x] Task 2.3: 可逆回滚脚本
@@ -142,13 +143,15 @@
   - [x] 保存测试日志/数据库版本/提交 SHA 为 artifact（`f61-02-ci-evidence`）
 
 ### 2.G 收口与独立审查
-- [ ] Task 2.19: Spec/Tasks/Checklist/风险/证据同步 + 最终报告
-  - [ ] 更新 `docs/reviews/F61-02_*` 证据与诚实边界
-  - [ ] 更新 `CHANGELOG.md` / `.codex/artifacts/phase-state.md` / 风险登记
-  - [ ] 明确结论 **`F61-02 Code Complete / Runtime Verification Blocked`**
-- [ ] Task 2.20: 独立代码审查（不依赖 E2E 环境的静态/契约层复核）
-  - [ ] 独立 Agent 复核迁移/事务/多实例正确性；修复后复验
-  - [ ] 提交并推送 main（`LOCAL_HEAD == ORIGIN_MAIN`）
+- [x] Task 2.19: Spec/Tasks/Checklist/风险/证据同步 + 最终报告
+  - [x] 更新 `docs/reviews/F61-02_*` 证据与诚实边界
+  - [x] 解决独立复核发现的 version 列声明不一致（采纳建议二：version CAS 仅用于资源锁，其余事实由唯一约束保证多实例安全；时间戳命名与 schema 对齐）
+  - [x] 更新 `CHANGELOG.md` / `.codex/artifacts/phase-state.md` / 风险登记
+  - [x] 明确结论 **`F61-02 Code Complete / Runtime Verification Blocked`**
+- [x] Task 2.20: 独立代码审查（不依赖 E2E 环境的静态/契约层复核）
+  - [x] 独立 Agent 复核迁移/事务/多实例正确性；复核发现项已闭环（`F61-02_INDEPENDENT_VERIFICATION.md` §7）
+  - [x] 复验通过：tsc 0、单元测试 29/29、OpenAPI 255/255、权威制品对账 57 表
+  - [x] 提交并推送 main（`LOCAL_HEAD == ORIGIN_MAIN`）
 
 ## Phase 3：F61-03 真实 GitHub 协作闭环和正式发布
 - [ ] Task 3.1: 实现 Task ↔ GitHub Issue 双向映射与同步

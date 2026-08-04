@@ -21,7 +21,7 @@
 - [x] 进程内单例存储清单已产出
 ### 2.A 完整数据库制品
 - [x] 6 张领域表的迁移 SQL 已补齐（独立可执行、re-entrant、与 Drizzle Schema 一致）
-- [x] 索引/唯一约束/外键/乐观锁版本列已实现
+- [x] 索引/唯一约束/外键已实现；乐观锁 `version` CAS 列用于资源锁，其余事实由唯一约束/幂等键保证多实例安全（声明与 DDL 一致）
 - [x] 可逆回滚脚本已提供（`DROP IF EXISTS` 守护）
 - [x] 迁移计划已接线（`run_migrations.js` FILES + 命令 + verify）
 - [x] 数据库清单与迁移顺序已同步（`schema-manifest.yaml`）
@@ -42,8 +42,9 @@
 ### 2.F CI 环境验证入口
 - [x] GitHub Actions PostgreSQL Service Container 工作流完整（迁移/E2E/双实例并发/升级回滚/日志 artifact）
 ### 2.G 收口与独立审查
-- [ ] Spec/Tasks/Checklist/风险/证据已同步；最终报告明确 `F61-02 Code Complete / Runtime Verification Blocked`
-- [ ] 独立代码审查通过并推送 main
+- [x] Spec/Tasks/Checklist/风险/证据已同步；最终报告明确 `F61-02 Code Complete / Runtime Verification Blocked`
+- [x] version 列声明不一致已闭环（version CAS 仅用于资源锁；其余事实由唯一约束/幂等键保证多实例安全；时间戳命名与 schema 对齐）
+- [x] 独立代码审查通过（tsc 0 / 单元测试 29/29 / OpenAPI 255/255 / 权威制品 57 表），已推送 main
 
 ## Phase 3：F61-03 真实 GitHub 协作闭环和正式发布
 - [ ] Task ↔ Issue 双向同步已实现（含 dry-run/幂等/重试/限流）

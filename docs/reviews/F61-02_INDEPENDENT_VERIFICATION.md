@@ -92,3 +92,15 @@
 - **静态 / 契约层复核通过**：类型检查 0、单元测试 29/29、OpenAPI 对账 255/255、权威制品对账 57 表一致。
 - **真实 E2E 因环境阻塞**：不宣称 Production / Scale Ready。
 - **最终状态：F61-02 Code Complete / Runtime Verification Blocked**；**不启动 F61-03**。
+
+---
+
+## 7. 复核发现项闭环（version 列声明不一致）
+
+初轮复核发现 spec/Task 2.2 声明「每表含乐观锁 `version` 列」，但 DDL 中仅 `ewoh_resource_locks` 设 `version` 列，且 `created_at` 命名在交接/同步状态为 `created_at`、其余为 `_created_at`。经复核采纳建议二（运行时设计本就如此，体积更小）：
+
+- **版本列**：仅资源锁需要 holder+version 校验（续租/释放/并发改写拦截），其余事实由唯一约束（`handoff_id`/`sync_id`/`evidence_id`/`session_id`、`scope+idempotency_key`）保证多实例安全，不设 `version` 列。
+- **时间戳命名**：与 schema 一致（资源锁/证据/复制会话/幂等键 `_created_at`/`_updated_at`；交接/同步状态 `created_at`/`_updated_at`）。
+- **口径已对齐**：spec.md（子需求 2.A）、tasks.md（Task 2.2）、checklist.md（2.A）、`F61-02_PERSISTENCE_TRANSACTION_REVIEW.md` 均已同步为上述口径，与 DDL 无冲突。
+
+此澄清不改变任何运行时行为（持久化/事务/多实例正确性实现已通过静态与契约复核），仅统一 spec/文档声明与 DDL。**结论不变：F61-02 Code Complete / Runtime Verification Blocked。**
