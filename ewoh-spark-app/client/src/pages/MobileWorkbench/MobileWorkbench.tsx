@@ -551,7 +551,7 @@ const MobileWorkbench = (): React.ReactElement => {
       >
         <span
           className={`inline-flex items-center gap-1.5 font-medium ${
-            isOnline ? 'text-emerald-600' : 'text-amber-600'
+            isOnline ? 'text-emerald-700' : 'text-amber-600'
           }`}
         >
           {isOnline ? <Wifi className="size-4" /> : <WifiOff className="size-4" />}

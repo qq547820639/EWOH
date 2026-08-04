@@ -124,8 +124,9 @@ const Layout = () => {
                                   isMap
                                     ? 'text-white/80'
                                     : isActive
-                                      ? 'text-white/75'
-                                      : 'text-[hsl(218_10%_42%)]'
+                                    // 蓝底(hsl(221 83% 53%))上 text-white/75 对比度仅 3.61:1，不达 WCAG AA(4.5:1)
+                                    ? 'text-white'
+                                    : 'text-[hsl(218_10%_42%)]'
                                 }`}
                               >
                                 {roleText}

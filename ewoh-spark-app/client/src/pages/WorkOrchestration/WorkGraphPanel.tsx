@@ -527,7 +527,9 @@ const WorkGraphPanel = (): React.ReactElement => {
         <div className="grid" style={{ gridTemplateColumns: `${sidebarWidth}px 6px 1fr` }}>
           <div
             className="max-h-[560px] overflow-y-auto border-r border-[hsl(220_14%_89%)] p-3"
-            role="listbox"
+            // 空状态无 option 子节点，axe 会报 aria-required-children(critical)；
+            // 仅在有节点时才声明 listbox 语义，空状态降级为普通 div。
+            role={layout.nodes.length > 0 ? 'listbox' : undefined}
             aria-label="节点列表"
             tabIndex={0}
             onKeyDown={handleListKeyDown}
