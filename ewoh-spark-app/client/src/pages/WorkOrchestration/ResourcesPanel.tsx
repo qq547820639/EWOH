@@ -201,10 +201,14 @@ const ResourcesPanel = ({ writable }: { writable: boolean }): React.ReactElement
       <WriteConfirmDialog
         open={Boolean(pendingRelease)}
         title="确认释放锁"
-        description={pendingRelease ? `将释放资源 ${pendingRelease} 的锁。` : ''}
+        description={
+          pendingRelease
+            ? `将释放资源 ${pendingRelease} 的锁。此操作仅写入锁元数据，不影响资源本体数据，可安全执行。`
+            : ''
+        }
         actionLabel="确认释放"
         tone="danger"
-        rollbackPoint="释放后需重新走加锁流程以恢复占用。"
+        rollbackPoint="释放属安全写操作：仅记录操作者/来源/时间元数据，不改动资源本体；如需恢复占用，重新走加锁流程即可回滚。"
         onCancel={() => setPendingRelease(null)}
         onConfirm={() => {
           if (pendingRelease) releaseMutation.mutate(pendingRelease);

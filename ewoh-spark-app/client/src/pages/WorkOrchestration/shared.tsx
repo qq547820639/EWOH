@@ -113,14 +113,31 @@ export const StatusBadge = ({ status }: { status: string }): React.ReactElement 
 export const EvidenceRow = ({
   entry,
   onPreview,
+  onSelect,
 }: {
   entry: WorkEvidence;
   onPreview?: (entry: WorkEvidence) => void;
+  onSelect?: (entry: WorkEvidence) => void;
 }): React.ReactElement => {
   const expired = Boolean(entry.expiresAt && Date.parse(entry.expiresAt) <= Date.now());
   return (
     <div
+      role={onSelect ? 'button' : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      onClick={onSelect ? () => onSelect(entry) : undefined}
+      onKeyDown={
+        onSelect
+          ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onSelect(entry);
+              }
+            }
+          : undefined
+      }
       className={`rounded-lg border px-4 py-3 ${
+        onSelect ? 'cursor-pointer transition-colors hover:border-blue-400 hover:bg-white' : ''
+      } ${
         expired
           ? 'border-red-300 bg-red-50'
           : 'border-[hsl(220_14%_89%)] bg-[hsl(220_14%_96%)]'
@@ -137,10 +154,26 @@ export const EvidenceRow = ({
         {onPreview && (
           <button
             type="button"
-            onClick={() => onPreview(entry)}
+            onClick={(event) => {
+              event.stopPropagation();
+              onPreview(entry);
+            }}
             className="rounded-md border border-[hsl(220_14%_89%)] bg-white px-2 py-1 text-xs font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
           >
             预览
+          </button>
+        )}
+        {onSelect && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelect(entry);
+            }}
+            aria-label={`查看证据 ${entry.title || entry.evidenceId} 元数据`}
+            className="rounded-md border border-[hsl(220_14%_89%)] bg-white px-2 py-1 text-xs font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+          >
+            详情
           </button>
         )}
       </div>

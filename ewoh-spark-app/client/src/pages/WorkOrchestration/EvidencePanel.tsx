@@ -12,6 +12,7 @@ import {
   PROGRESSIVE_STEP,
 } from '../../lib/progressiveList';
 import { EvidenceRow, useUrlParam } from './shared';
+import EvidenceDrawer from './EvidenceDrawer';
 
 const EvidencePanel = (): React.ReactElement => {
   const [kind, setKind] = useUrlParam('evidenceKind');
@@ -20,6 +21,7 @@ const EvidencePanel = (): React.ReactElement => {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
   const [visibleLimit, setVisibleLimit] = useState(PROGRESSIVE_STEP);
+  const [selected, setSelected] = useState<WorkEvidence | null>(null);
 
   const evidenceQuery = useQuery({
     queryKey: queryKeys.workEvidence(),
@@ -109,7 +111,12 @@ const EvidencePanel = (): React.ReactElement => {
             </p>
           ) : (
             visibleItems.map((entry) => (
-              <EvidenceRow key={entry.evidenceId} entry={entry} onPreview={loadPreview} />
+              <EvidenceRow
+                key={entry.evidenceId}
+                entry={entry}
+                onPreview={loadPreview}
+                onSelect={setSelected}
+              />
             ))
           )}
         </div>
@@ -161,6 +168,11 @@ const EvidencePanel = (): React.ReactElement => {
           </div>
         )}
       </section>
+      <EvidenceDrawer
+        open={Boolean(selected)}
+        entry={selected}
+        onClose={() => setSelected(null)}
+      />
     </QueryState>
   );
 };

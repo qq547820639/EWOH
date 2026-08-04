@@ -1,12 +1,40 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { TransformComponent, TransformWrapper, useTransformContext } from 'react-zoom-pan-pinch';
-import { FileText, GitBranch, Save, RotateCcw } from 'lucide-react';
+import {
+  TransformComponent,
+  TransformWrapper,
+  useTransformContext,
+  type ReactZoomPanPinchRef,
+} from 'react-zoom-pan-pinch';
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  FileText,
+  Focus,
+  GitBranch,
+  Layers,
+  RotateCcw,
+  Save,
+} from 'lucide-react';
 import QueryState from '../../components/QueryState';
 import { queryKeys } from '../../hooks/queryKeys';
 import { ADMIN_REFETCH_INTERVAL_MS, QUERY_STALE_TIME_MS } from '../../hooks/queryConfig';
 import { getWorkGraph, getWorkOverview, getWorkBlockedReason, listWorkEvidence, type WorkOverview } from '../../api/work';
-import { buildGraphLayout, filterGraphItems, statusTone, type WorkGraphScope } from './graphLayout';
+import {
+  applyStageCollapse,
+  buildGraphLayout,
+  exceptionBackflowNodes,
+  filterGraphItems,
+  filterItemsByScope,
+  groupStagesByWave,
+  isStageSummaryNode,
+  STAGE_THRESHOLD,
+  statusTone,
+  traceDownstream,
+  traceUpstream,
+  type WorkGraphScope,
+} from './graphLayout';
 import { buildGraphTextAlt, graphTextToPlainText } from './graphText';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
 import {
@@ -35,6 +63,8 @@ interface SavedView {
   time?: string;
   node?: string;
   sidebarWidth?: number;
+  stageCollapsed?: boolean;
+  transform?: { scale: number; x: number; y: number };
 }
 
 const SCOPE_OPTIONS: Array<{ value: WorkGraphScope; label: string }> = [
@@ -66,12 +96,18 @@ const GraphCanvas = ({
   size,
   selectedNodeId,
   criticalNodeIds,
+  upstreamIds,
+  downstreamIds,
+  exceptionIds,
   onSelect,
 }: {
   layout: ReturnType<typeof buildGraphLayout>;
   size: { width: number; height: number };
   selectedNodeId: string | null;
   criticalNodeIds: Set<string>;
+  upstreamIds: Set<string>;
+  downstreamIds: Set<string>;
+  exceptionIds: Set<string>;
   onSelect: (id: string) => void;
 }): React.ReactElement => {
   const { state } = useTransformContext();
@@ -153,6 +189,34 @@ const GraphCanvas = ({
         const tone = statusTone(node.status);
         const isSelected = selectedNodeId === node.id;
         const isCritical = criticalNodeIds.has(node.id);
+        const isException = exceptionIds.has(node.id);
+        const isUpstream = upstreamIds.has(node.id);
+        const isDownstream = downstreamIds.has(node.id);
+        const isHighlighted = isSelected || isCritical || isException || isUpstream || isDownstream;
+        const hasHighlight =
+          upstreamIds.size > 0 || downstreamIds.size > 0 || exceptionIds.size > 0;
+        const dimmed = hasHighlight && !isHighlighted;
+        const stroke = isSelected
+          ? '#2563eb'
+          : isException
+            ? '#dc2626'
+            : isCritical
+              ? '#f59e0b'
+              : isUpstream
+                ? '#0ea5e9'
+                : isDownstream
+                  ? '#8b5cf6'
+                  : statusTone(node.status) === 'red'
+                    ? '#dc2626'
+                    : '#cbd5e1';
+        const strokeWidth = isSelected || isCritical || isException || isUpstream || isDownstream ? 2.5 : 1;
+        const fill = isException
+          ? '#fef2f2'
+          : isUpstream
+            ? '#f0f9ff'
+            : isDownstream
+              ? '#f5f3ff'
+              : '#ffffff';
         return (
           <g
             key={node.id}
@@ -160,6 +224,7 @@ const GraphCanvas = ({
             className="cursor-pointer"
             role="button"
             tabIndex={-1}
+            opacity={dimmed ? 0.35 : 1}
           >
             <rect
               x={node.x}
@@ -167,17 +232,9 @@ const GraphCanvas = ({
               width={node.width}
               height={node.height}
               rx={6}
-              fill="#ffffff"
-              stroke={
-                isSelected
-                  ? '#2563eb'
-                  : isCritical
-                    ? '#f59e0b'
-                    : statusTone(node.status) === 'red'
-                      ? '#dc2626'
-                      : '#cbd5e1'
-              }
-              strokeWidth={isSelected || isCritical ? 2.5 : 1}
+              fill={fill}
+              stroke={stroke}
+              strokeWidth={strokeWidth}
             />
             <text x={node.x + 12} y={node.y + 22} fontSize="12" fontWeight={isCritical ? 800 : 700} fill="#1e293b">
               {node.id}
@@ -221,6 +278,15 @@ const WorkGraphPanel = (): React.ReactElement => {
   const [dragging, setDragging] = useState(false);
   const [textView, setTextView] = useState(false);
   const [nodeListLimit, setNodeListLimit] = useState(PROGRESSIVE_STEP);
+  const [stageCollapsed, setStageCollapsed] = useState(false);
+  const [tracking, setTracking] = useState<'upstream' | 'downstream' | null>(null);
+  const [exceptionBackflow, setExceptionBackflow] = useState(false);
+  const [pendingTransform, setPendingTransform] = useState<{
+    scale: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const transformRef = useRef<ReactZoomPanPinchRef | null>(null);
   const { ref: viewportRef, size: viewportSize } = useElementSize<HTMLDivElement>();
 
   const graphQuery = useQuery({
@@ -243,7 +309,7 @@ const WorkGraphPanel = (): React.ReactElement => {
   const blockedReasonQuery = useQuery({
     queryKey: queryKeys.workBlockedReason(selectedNodeId ?? ''),
     queryFn: () => getWorkBlockedReason(selectedNodeId ?? ''),
-    enabled: Boolean(selectedNodeId),
+    enabled: Boolean(selectedNodeId) && !isStageSummaryNode(selectedNodeId),
     staleTime: QUERY_STALE_TIME_MS,
   });
 
@@ -254,10 +320,38 @@ const WorkGraphPanel = (): React.ReactElement => {
     () => filterGraphItems(graph?.items ?? [], nodeQuery),
     [graph, nodeQuery],
   );
-  const layout = useMemo(
+  const layout = useMemo(() => {
+    const scopeItems = filterItemsByScope(
+      visibleGraphItems,
+      nodeQuery.trim() ? 'all' : scopeValue,
+    );
+    const collapsedItems = stageCollapsed
+      ? applyStageCollapse(
+          scopeItems,
+          new Set(groupStagesByWave(scopeItems, STAGE_THRESHOLD).map((stage) => stage.key)),
+          STAGE_THRESHOLD,
+        ).items
+      : scopeItems;
+    return buildGraphLayout(collapsedItems, graph?.edges ?? [], 'all');
+  }, [visibleGraphItems, graph?.edges, scopeValue, nodeQuery, stageCollapsed]);
+  const upstreamIds = useMemo(
     () =>
-      buildGraphLayout(visibleGraphItems, graph?.edges ?? [], nodeQuery.trim() ? 'all' : scopeValue),
-    [visibleGraphItems, graph?.edges, scopeValue, nodeQuery],
+      tracking === 'upstream' && selectedNodeId
+        ? traceUpstream(layout.edges, selectedNodeId)
+        : new Set<string>(),
+    [tracking, selectedNodeId, layout.edges],
+  );
+  const downstreamIds = useMemo(
+    () =>
+      tracking === 'downstream' && selectedNodeId
+        ? traceDownstream(layout.edges, selectedNodeId)
+        : new Set<string>(),
+    [tracking, selectedNodeId, layout.edges],
+  );
+  const exceptionIds = useMemo(
+    () =>
+      exceptionBackflow ? exceptionBackflowNodes(layout.nodes, layout.edges) : new Set<string>(),
+    [exceptionBackflow, layout.nodes, layout.edges],
   );
   // 节点数变化时重置侧边栏渐进式加载步长。
   useEffect(() => {
@@ -314,26 +408,18 @@ const WorkGraphPanel = (): React.ReactElement => {
     }
   };
 
-  const handleCanvasKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
-      event.preventDefault();
-      moveSelection(1);
-    } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
-      event.preventDefault();
-      moveSelection(-1);
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      setSelectedNodeId('');
-    }
-  };
-
   const saveView = () => {
+    const transformState = transformRef.current?.state;
     const view: SavedView = {
       q: nodeQuery || undefined,
       scope: scopeValue,
       time: timeRange || undefined,
       node: selectedNodeId || undefined,
       sidebarWidth,
+      stageCollapsed: stageCollapsed || undefined,
+      transform: transformState
+        ? { scale: transformState.scale, x: transformState.positionX, y: transformState.positionY }
+        : undefined,
     };
     localStorage.setItem(VIEW_KEY, JSON.stringify(view));
   };
@@ -348,9 +434,47 @@ const WorkGraphPanel = (): React.ReactElement => {
       if (view.time) setTimeRange(view.time);
       if (view.node) setSelectedNodeId(view.node);
       if (view.sidebarWidth) setSidebarWidth(view.sidebarWidth);
+      if (view.stageCollapsed) setStageCollapsed(true);
+      if (view.transform) setPendingTransform(view.transform);
     } catch {
       // 忽略损坏的本地视图。
     }
+  };
+
+  // 布局就绪且画布挂载后，应用恢复的平移/缩放状态。
+  useEffect(() => {
+    if (pendingTransform && transformRef.current && !textView) {
+      transformRef.current.setTransform(
+        pendingTransform.x,
+        pendingTransform.y,
+        pendingTransform.scale,
+        0,
+      );
+      setPendingTransform(null);
+    }
+  }, [pendingTransform, textView, layout]);
+
+  const focusCritical = () => {
+    const ids = criticalNodeIds;
+    const nodes = layout.nodes.filter((node) => ids.has(node.id));
+    if (nodes.length === 0) return;
+    const minX = Math.min(...nodes.map((node) => node.x));
+    const maxX = Math.max(...nodes.map((node) => node.x + node.width));
+    const minY = Math.min(...nodes.map((node) => node.y));
+    const maxY = Math.max(...nodes.map((node) => node.y + node.height));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const vw = viewportSize.width;
+    const vh = viewportSize.height;
+    const targetScale = Math.min(1, Math.max(0.35, (vw / Math.max(1, maxX - minX)) * 0.8));
+    const control = transformRef.current;
+    if (!control) return;
+    control.setTransform(vw / 2 - cx * targetScale, vh / 2 - cy * targetScale, targetScale, 200);
+  };
+
+  const toggleTracking = (dir: 'upstream' | 'downstream') => {
+    if (!selectedNodeId) return;
+    setTracking((current) => (current === dir ? null : dir));
   };
 
   const startDrag = (event: React.MouseEvent) => {
@@ -367,6 +491,20 @@ const WorkGraphPanel = (): React.ReactElement => {
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+  };
+
+  const handleCanvasKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      moveSelection(1);
+    } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+      event.preventDefault();
+      moveSelection(-1);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      setSelectedNodeId('');
+      setTracking(null);
+    }
   };
 
   return (
@@ -450,6 +588,43 @@ const WorkGraphPanel = (): React.ReactElement => {
             >
               <RotateCcw className="h-3.5 w-3.5" />
               恢复
+            </button>
+            <button
+              type="button"
+              onClick={() => setStageCollapsed((value) => !value)}
+              aria-pressed={stageCollapsed}
+              title="按波次/阈值阶段折叠，折叠后每阶段只显示一个汇总节点"
+              className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium ${
+                stageCollapsed
+                  ? 'border-blue-300 bg-blue-50 text-blue-700'
+                  : 'border-[hsl(220_14%_89%)] text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]'
+              }`}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              {stageCollapsed ? '阶段已折叠' : '阶段折叠'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setExceptionBackflow((value) => !value)}
+              aria-pressed={exceptionBackflow}
+              title="把阻塞边与红色异常路径用醒目颜色标出"
+              className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium ${
+                exceptionBackflow
+                  ? 'border-red-300 bg-red-50 text-red-700'
+                  : 'border-[hsl(220_14%_89%)] text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]'
+              }`}
+            >
+              <AlertTriangle className="h-3.5 w-3.5" />
+              异常回流
+            </button>
+            <button
+              type="button"
+              onClick={focusCritical}
+              title="平移/缩放定位到关键路径节点"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-xs font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+            >
+              <Focus className="h-3.5 w-3.5" />
+              聚焦关键路径
             </button>
             {layout.nodes.length > WINDOW_THRESHOLD && (
               <span className="text-xs text-[hsl(218_10%_42%)]">
@@ -597,6 +772,7 @@ const WorkGraphPanel = (): React.ReactElement => {
             aria-label="因果图画布"
           >
             <TransformWrapper
+              ref={transformRef}
               initialScale={0.85}
               minScale={0.35}
               maxScale={2.5}
@@ -609,6 +785,9 @@ const WorkGraphPanel = (): React.ReactElement => {
                   size={viewportSize}
                   selectedNodeId={selectedNodeId}
                   criticalNodeIds={criticalNodeIds}
+                  upstreamIds={upstreamIds}
+                  downstreamIds={downstreamIds}
+                  exceptionIds={exceptionIds}
                   onSelect={setSelectedNodeId}
                 />
               </TransformComponent>
@@ -631,7 +810,50 @@ const WorkGraphPanel = (): React.ReactElement => {
                 Owner {selectedNode.owner}
               </span>
             </div>
-            {selectedNodeId && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => toggleTracking('upstream')}
+                aria-pressed={tracking === 'upstream'}
+                className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium ${
+                  tracking === 'upstream'
+                    ? 'border-sky-300 bg-sky-50 text-sky-700'
+                    : 'border-[hsl(220_14%_89%)] text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]'
+                }`}
+              >
+                <ArrowUp className="h-3.5 w-3.5" />
+                追踪上游
+                {upstreamIds.size > 0 && (
+                  <span className="rounded bg-sky-100 px-1.5 text-[10px] font-semibold text-sky-700">
+                    {upstreamIds.size}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleTracking('downstream')}
+                aria-pressed={tracking === 'downstream'}
+                className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium ${
+                  tracking === 'downstream'
+                    ? 'border-violet-300 bg-violet-50 text-violet-700'
+                    : 'border-[hsl(220_14%_89%)] text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]'
+                }`}
+              >
+                <ArrowDown className="h-3.5 w-3.5" />
+                追踪下游
+                {downstreamIds.size > 0 && (
+                  <span className="rounded bg-violet-100 px-1.5 text-[10px] font-semibold text-violet-700">
+                    {downstreamIds.size}
+                  </span>
+                )}
+              </button>
+              {(tracking === 'upstream' || tracking === 'downstream') && (
+                <span className="text-xs text-[hsl(218_10%_42%)]">
+                  受影响的节点数：{upstreamIds.size + downstreamIds.size}
+                </span>
+              )}
+            </div>
+            {selectedNodeId && !isStageSummaryNode(selectedNodeId) && (
               <div
                 className={`mt-3 rounded-lg border px-4 py-3 text-sm ${
                   blockedReasonQuery.data?.blocked

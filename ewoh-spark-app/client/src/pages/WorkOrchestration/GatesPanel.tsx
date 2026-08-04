@@ -15,6 +15,11 @@ import {
   type GateHistoryEntry,
 } from '../../api/work';
 import { StatusBadge, useUrlParam, WriteConfirmDialog } from './shared';
+import { BatchGatePreviewDialog } from './GateBatchPreviewDialog';
+import {
+  computeDownstreamCounts,
+  deriveGateBatchPreview,
+} from './gateBatchModel';
 
 type Decision = 'approved' | 'rejected' | 'conditional';
 
@@ -176,33 +181,25 @@ const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => 
   );
 
   // 基于图 edges 反向传播计算某门禁决定将影响的下游节点数量。
-  const downstreamCount = useMemo(() => {
+  const downstreamCounts = useMemo(() => {
     const items = graphQuery.data?.items ?? [];
     const edges = graphQuery.data?.edges ?? [];
-    const adjacency = new Map<string, string[]>();
-    for (const edge of edges) {
-      const list = adjacency.get(edge.from) ?? [];
-      list.push(edge.to);
-      adjacency.set(edge.from, list);
-    }
-    const idSet = new Set(items.map((item) => item.id));
-    const count = (gateId: string): number => {
-      const seen = new Set<string>();
-      const queue = [gateId];
-      while (queue.length > 0) {
-        const id = queue.shift();
-        if (!id) continue;
-        for (const target of adjacency.get(id) ?? []) {
-          if (!seen.has(target)) {
-            seen.add(target);
-            queue.push(target);
-          }
-        }
-      }
-      return [...seen].filter((id) => idSet.has(id)).length;
-    };
-    return count;
+    return computeDownstreamCounts(edges, new Set(items.map((item) => item.id)));
   }, [graphQuery.data]);
+
+  // 批量预览：结合 graph 的项目/证据/边，推导每个门禁的影响范围、缺失证据与可执行性。
+  const batchPreview = useMemo(() => {
+    if (!graphQuery.data) {
+      return {
+        rows: [],
+        executableCount: 0,
+        nonExecutableCount: 0,
+        missingEvidenceCount: 0,
+        affectedDownstreamTotal: 0,
+      };
+    }
+    return deriveGateBatchPreview(graphQuery.data, filteredGates);
+  }, [graphQuery.data, filteredGates]);
 
   const confirmDecision = (gateId: string, decision: Decision, reason: string) => {
     setPendingConfirm(null);
@@ -213,7 +210,14 @@ const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => 
 
   const confirmBatch = () => {
     setBatchPending(false);
-    batchDecisionMutation.mutate(filteredGates.map((gate) => gate.gateId));
+    const executable = batchPreview.rows
+      .filter((row) => row.executable)
+      .map((row) => row.gateId);
+    if (executable.length === 0) {
+      toast.error('没有可执行的门禁，已跳过批量记录');
+      return;
+    }
+    batchDecisionMutation.mutate(executable);
   };
 
   return (
@@ -286,7 +290,7 @@ const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => 
             <tbody className="divide-y divide-[hsl(220_14%_89%)]">
               {filteredGates.map((gate) => {
                 const chosen = (decisionMap[gate.gateId] ?? 'approved') as Decision;
-                const impact = downstreamCount(gate.gateId);
+                const impact = downstreamCounts.get(gate.gateId) ?? 0;
                 return (
                   <tr key={gate.gateId} className="hover:bg-[hsl(220_14%_96%)]">
                     <td className="px-5 py-3">
@@ -399,16 +403,11 @@ const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => 
         }}
       />
 
-      {/* 批量记录确认 */}
-      <WriteConfirmDialog
+      {/* 批量记录预览：展示影响范围、缺失证据与不可执行原因，仅对可执行门禁生效 */}
+      <BatchGatePreviewDialog
         open={batchPending}
-        title="批量记录门禁决定"
-        description={`将批量对 ${filteredGates.length} 个门禁执行「${
-          batchDecision === 'approved' ? '批准' : batchDecision === 'rejected' ? '驳回' : '条件批准'
-        }」。`}
-        actionLabel="批量确认"
-        tone="success"
-        rollbackPoint="批量记录后可通过各门禁「撤销」按钮单独回滚。"
+        rows={batchPreview.rows}
+        decision={batchDecision}
         onCancel={() => setBatchPending(false)}
         onConfirm={confirmBatch}
       />
