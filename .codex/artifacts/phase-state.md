@@ -3,6 +3,23 @@
 Updated: 2026-08-04
 Trace: EWOH-2026-08-04-principal-final6
 
+## Latest Round - 2026-08-04 Task 11 Contract & Migration收口
+
+- `POST /api/work/git-sync/apply` contract closed: OpenAPI `GitSyncApplyRequest`
+  (`idempotencyKey`/`approved` required, `reason`/`actor` optional) added and
+  matched by the controller/service; server enforces `approved=true` approval
+  gate, requires `idempotencyKey`, and records an idempotent audit trail to
+  `.codex/artifacts/work/git-sync-apply.json` (repeated key returns the
+  original result).
+- State machine contract extended with the Git Sync apply approval gate;
+  error contract verified for the new approval/idempotency rejection paths.
+- No DB structure changes: work orchestration is entirely file-backed
+  (`.codex/artifacts/work/*`), so no migration/rollback scripts are required.
+- Verification: server Jest 81 suites / 394 tests, client Jest 34 suites /
+  176 tests, OpenAPI strict route audit 248/248, repo facts 33/33, and all
+  work-graph/event/golden-factory/mapping/policy/workflow/asset-catalog/
+  factory-profile contract audits pass.
+
 ## Latest Round - 2026-08-04 P0 Hardening
 
 - Repo facts gate `scripts/audit-repo-facts.js` added and wired into

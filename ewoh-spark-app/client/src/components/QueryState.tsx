@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Inbox, Loader2, RefreshCw, TriangleAlert } from 'lucide-react';
 import { Button } from '@client/src/components/ui/button';
+import ErrorState from '@client/src/components/ErrorState';
 
 interface QueryStateProps {
   isLoading: boolean;
@@ -10,6 +11,10 @@ interface QueryStateProps {
   isEmpty?: boolean;
   onRefresh?: () => void;
   errorMessage?: string;
+  error?: unknown;
+  onBack?: () => void;
+  onSaveDraft?: () => void;
+  backHref?: string;
   emptyMessage?: string;
   loadingMessage?: string;
   updatedAt?: number;
@@ -24,6 +29,10 @@ const QueryState = ({
   isEmpty = false,
   onRefresh,
   errorMessage = '数据加载失败，请稍后重试。',
+  error,
+  onBack,
+  onSaveDraft,
+  backHref,
   emptyMessage = '暂无数据。',
   loadingMessage = '正在加载数据',
   updatedAt,
@@ -45,28 +54,14 @@ const QueryState = ({
 
   if (isError) {
     return (
-      <div
-        className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 sm:flex-row sm:items-center sm:justify-between"
-        role="status"
-        aria-live="polite"
-      >
-        <div className="flex items-start gap-2">
-          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-          <span>{errorMessage}</span>
-        </div>
-        {onRefresh && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={onRefresh}
-            className="self-start border-red-200 bg-white text-red-700 sm:self-auto"
-          >
-            <RefreshCw className="size-3.5" />
-            重试
-          </Button>
-        )}
-      </div>
+      <ErrorState
+        error={error}
+        errorMessage={errorMessage}
+        onRetry={onRefresh}
+        onBack={onBack}
+        onSaveDraft={onSaveDraft}
+        backHref={backHref}
+      />
     );
   }
 

@@ -1,0 +1,1 @@
+Work graph index: 252 items | 39 edges | 48 actors | 109 evidence | 14 gates | 0 conflicts

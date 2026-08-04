@@ -1,0 +1,58 @@
+{
+  "generatedAt": "2026-08-04T02:48:58.277Z",
+  "environment": {
+    "node": "v26.5.1",
+    "platform": "darwin"
+  },
+  "results": {
+    "graphLayout": {
+      "graph-500": {
+        "nodes": 500,
+        "edges": 499,
+        "runs": 7,
+        "medianMs": 0.905,
+        "minMs": 0.722,
+        "maxMs": 3.397
+      },
+      "graph-1000": {
+        "nodes": 1000,
+        "edges": 999,
+        "runs": 7,
+        "medianMs": 1.641,
+        "minMs": 1.216,
+        "maxMs": 2.136
+      },
+      "graph-2000": {
+        "nodes": 2000,
+        "edges": 1999,
+        "runs": 7,
+        "medianMs": 4.592,
+        "minMs": 3.987,
+        "maxMs": 4.769
+      },
+      "graph-3000": {
+        "nodes": 3000,
+        "edges": 2999,
+        "runs": 7,
+        "medianMs": 8.034,
+        "minMs": 7.897,
+        "maxMs": 9.909
+      }
+    },
+    "progressiveList": {
+      "arraySize": 100000,
+      "slicePerCall": 50,
+      "runs": 200,
+      "medianMs": 0,
+      "minMs": 0,
+      "maxMs": 0.048
+    },
+    "offlineQueue": {
+      "queueCount": 100,
+      "runs": 5,
+      "medianMs": 18.568,
+      "minMs": 18.44,
+      "maxMs": 21.37
+    }
+  }
+}

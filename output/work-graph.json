@@ -1,6 +1,6 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-03T23:19:05.199Z",
+  "generatedAt": "2026-08-04T02:50:50.092Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
@@ -3714,7 +3714,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "f6a98133fb53b3dc6425a1c97b81dd862658934d54dfb99af7f7f0afbd673275",
+      "checksum": "be4a9bd89b416a017288c0206aacac6ff4e7ac0f4e7addf200e8e31704192dc5",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3750,7 +3750,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "21b07e62a1b81a7ff67b4981a6c19d3e75cb242e24891cfa5612f3bc5dc1e29f",
+      "checksum": "83e022b707264d308da98110bbb3f16cc23039d28389887028b54e945677dcb0",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -3759,7 +3759,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "5f13ee0eb9584dc40a502e04aede61d20fdf2890b8aff6448a0f674b96298789",
+      "checksum": "5c94bd54ae8e761281d4916e1e26d5ac6251ed841e232e2e5f865d0731c0590b",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"

@@ -1,0 +1,40 @@
+ts-jest[config] (WARN) [94mmessage[0m[90m TS151001: [0mIf you have issues related to imports, you should consider setting `esModuleInterop` to `true` in your TypeScript configuration file (usually `tsconfig.json`). See https://blogs.msdn.microsoft.com/typescript/2018/01/31/announcing-typescript-2-7/#easier-ecmascript-module-interoperability for more information.
+PASS client/src/lib/offlineDb.test.ts
+PASS client/src/lib/appContext.test.ts
+PASS client/src/components/dataSourceBadge.test.ts
+PASS client/src/pages/CommandMap/entityDetailData.test.ts
+PASS client/src/lib/navigation.test.ts
+PASS client/src/lib/i18n.test.ts
+PASS client/src/lib/gitSync.test.ts
+PASS client/src/lib/siteReadinessExport.test.ts
+PASS client/src/lib/offlineQueue.test.ts
+PASS client/src/lib/errorContract.test.ts
+PASS client/src/lib/a11yAudit.test.ts
+PASS client/src/hooks/queryKeys.test.ts
+PASS client/src/pages/WorkOrchestration/graphText.test.ts
+PASS client/src/pages/CommandMap/replayContext.test.ts
+PASS client/src/pages/CommandMap/replay.test.ts
+PASS client/src/lib/siteReadinessProbe.test.ts
+PASS client/src/lib/scanner.test.ts
+PASS client/src/lib/perfBudget.test.ts
+PASS client/src/lib/offlineStatus.test.ts
+PASS client/src/lib/draftStore.test.ts
+PASS client/src/pages/WorkOrchestration/graphLayout.test.ts
+PASS client/src/pages/MobileWorkbench/exceptionPayload.test.ts
+PASS client/src/pages/CommandMap/queryState.test.ts
+PASS client/src/pages/CommandMap/labels.test.ts
+PASS client/src/pages/CommandMap/l3l4.test.ts
+PASS client/src/lib/virtualList.test.ts
+PASS client/src/lib/siteReadinessFlow.test.ts
+PASS client/src/lib/siteReadinessTasks.test.ts
+PASS client/src/lib/siteReadinessMapping.test.ts
+PASS client/src/lib/progressiveList.test.ts
+PASS client/src/lib/attachmentCompression.test.ts
+PASS client/src/lib/a11y.test.ts
+PASS client/src/lib/offlineConflict.test.ts
+PASS client/src/lib/attachmentDataUrl.test.ts
+
+Test Suites: 34 passed, 34 total
+Tests:       176 passed, 176 total
+Snapshots:   0 total
+Time:        5.157 s

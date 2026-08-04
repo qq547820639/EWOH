@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T23:19:24.939Z",
+  "generatedAt": "2026-08-04T02:51:08.672Z",
   "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "counts": {

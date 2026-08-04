@@ -329,6 +329,42 @@ describe('WorkOrchestrationService', () => {
     ).toThrow('EWOH_WORK_WRITABLE');
   });
 
+  it('requires approved=true before applying the git sync plan', () => {
+    process.env.EWOH_WORK_WRITABLE = 'true';
+    expect(() =>
+      service.applyGitSync({ idempotencyKey: 'k-1', approved: false }),
+    ).toThrow('approved=true');
+  });
+
+  it('requires an idempotencyKey for git sync apply', () => {
+    process.env.EWOH_WORK_WRITABLE = 'true';
+    expect(() => service.applyGitSync({ approved: true })).toThrow(
+      'idempotencyKey',
+    );
+  });
+
+  it('returns the recorded result for a repeated idempotency key', () => {
+    process.env.EWOH_WORK_WRITABLE = 'true';
+    const workDir = join(process.env.EWOH_WORK_ARTIFACTS_DIR!, 'work');
+    mkdirSync(workDir, { recursive: true });
+    writeFileSync(
+      join(workDir, 'git-sync-apply.json'),
+      JSON.stringify([
+        {
+          idempotencyKey: 'k-dup',
+          result: { status: 'live', appliedAt: '2026-01-01T00:00:00.000Z', created: [] },
+        },
+      ]),
+      'utf8',
+    );
+    const result = service.applyGitSync({
+      idempotencyKey: 'k-dup',
+      approved: true,
+    }) as { status: string; appliedAt: string };
+    expect(result.status).toBe('live');
+    expect(result.appliedAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
   it('sanitizes invalid site readiness report errors', () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'ewoh-repo-'));
     const artifacts = join(repoRoot, 'artifacts');

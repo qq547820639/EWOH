@@ -1,0 +1,42 @@
+Listing tests:
+  _dbgws.spec.js:11:1 › debug weak
+  authenticated.spec.js:133:3 › authenticated browser flow › logs in as dispatcher and renders the command center
+  authenticated.spec.js:143:3 › authenticated browser flow › renders the command map after login
+  authenticated.spec.js:150:3 › authenticated browser flow › renders the mobile workbench after login
+  authenticated.spec.js:157:3 › authenticated browser flow › renders the alerts page after login
+  authenticated.spec.js:163:3 › authenticated browser flow › renders the role workbench after login
+  ux009-a11y.spec.js:49:5 › UX-009/A11y › 核心页面在「desktop」视口下通过无障碍语义检查
+  ux009-a11y.spec.js:49:5 › UX-009/A11y › 核心页面在「tablet」视口下通过无障碍语义检查
+  ux009-a11y.spec.js:49:5 › UX-009/A11y › 核心页面在「mobile」视口下通过无障碍语义检查
+  ux009-a11y.spec.js:61:3 › UX-009/A11y › 移动工作台在手机视口下通过无障碍语义检查
+  ux009-auth.spec.js:34:3 › UX-009/Auth › 未登录访问受保护路由会重定向到登录页
+  ux009-auth.spec.js:40:3 › UX-009/Auth › 登录成功（计划员）进入指挥中心，掷出用户可见的指挥中心标题
+  ux009-auth.spec.js:68:3 › UX-009/Auth › 登录失败展示错误提示，绝不跳转
+  ux009-auth.spec.js:80:3 › UX-009/Auth › 角色矩阵：操作员(worker)可访问移动工作台，但访问组织/指挥中心被拒（403）
+  ux009-auth.spec.js:98:3 › UX-009/Auth › 角色矩阵：厂长(workshop_lead)可访问数字世界/排产，但组织/执行控制台被拒
+  ux009-auth.spec.js:113:3 › UX-009/Auth › 角色矩阵：项目Owner(global_admin)可访问所有中心（含执行控制台）
+  ux009-auth.spec.js:131:3 › UX-009/Auth › 会话过期：受保护接口返回 401 且刷新失败后，重定向回登录页
+  ux009-mobile.spec.js:84:3 › UX-009/Mobile › 扫码：输入工单号并扫码，加载出订单与最终用户可见的工序卡片
+  ux009-mobile.spec.js:104:3 › UX-009/Mobile › E-SOP 签收：工序卡片可见 SOP 说明文案，扫码后加载工序并显示 E-SOP 指令
+  ux009-mobile.spec.js:120:3 › UX-009/Mobile › 扫码后开工：对 pending 工序执行「开工」，状态流转为进行中（用户可见）
+  ux009-mobile.spec.js:142:3 › UX-009/Mobile › 质量处置：质检不合格提交，展示质检结果与反馈
+  ux009-mobile.spec.js:173:3 › UX-009/Mobile › 照片上传：异常上报携带照片，提交后在线上传并展示异常记录
+  ux009-network.spec.js:67:3 › UX-009/Network › 正常网络：指挥中心渲染出 mock 数据可见状态
+  ux009-network.spec.js:76:3 › UX-009/Network › 弱网：注入延迟后仍能渲染出最终用户可见的指挥中心
+  ux009-network.spec.js:84:3 › UX-009/Network › 完全离线：移动工作台展示离线状态横幅与离线提示
+  ux009-network.spec.js:94:3 › UX-009/Network › 离线重启恢复：重启后从 IndexedDB 恢复待同步队列并自动同步成功
+  ux009-network.spec.js:144:3 › UX-009/Network › 数据冲突：服务端返回 409 时队列项进入冲突态并展示本地/服务端差异
+  ux009-visual.spec.js:72:3 › UX-009/Visual › 登录页视觉基线
+  ux009-visual.spec.js:79:3 › UX-009/Visual › 指挥中心视觉基线
+  ux009-visual.spec.js:87:3 › UX-009/Visual › 移动工作台视觉基线
+  ux009-visual.spec.js:95:3 › UX-009/Visual › 执行控制台视觉基线
+  ux009-work-orchestration.spec.js:84:3 › UX-009/WorkOrchestration › Gate 批准：门禁面板展示规则状态与影响预览，批准后回显人工决定
+  ux009-work-orchestration.spec.js:107:3 › UX-009/WorkOrchestration › Gate 条件批准：选择条件批准并提交，回显用户可见决定
+  ux009-work-orchestration.spec.js:127:3 › UX-009/WorkOrchestration › Gate 驳回：选择驳回并提交，回显用户可见决定
+  ux009-work-orchestration.spec.js:145:3 › UX-009/WorkOrchestration › Gate 撤销：点击撤销展示「待后端支持」用户可见提示（后端 TODO）
+  ux009-work-orchestration.spec.js:156:3 › UX-009/WorkOrchestration › Handoff 创建：填写交接并登记，确认后回显用户可见的交接提示
+  ux009-work-orchestration.spec.js:181:3 › UX-009/WorkOrchestration › Handoff 接收：未决项展示「接收」动作，接收后回显用户可见状态
+  ux009-work-orchestration.spec.js:208:3 › UX-009/WorkOrchestration › Git Sync：Dry Run 变更预览与统一时间线渲染，批准后应用同步计划
+  ux009-work-orchestration.spec.js:254:3 › UX-009/WorkOrchestration › Git Sync：冲突检测展示本地/服务端差异（用户可见）
+  ux009-work-orchestration.spec.js:290:3 › UX-009/WorkOrchestration › Site Readiness：向导展示 F0-F6 阶段与场地就绪检查项
+Total: 40 tests in 8 files

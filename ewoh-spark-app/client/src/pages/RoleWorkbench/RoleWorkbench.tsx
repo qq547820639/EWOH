@@ -1,6 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ClipboardList, RefreshCw, Users } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ClipboardList,
+  Download,
+  Eye,
+  EyeOff,
+  RefreshCw,
+  Save,
+  Users,
+} from 'lucide-react';
 import {
   getRoleWorkbench,
   type RoleWorkbenchRole,
@@ -14,6 +26,12 @@ import {
   nextProgressiveLimit,
   progressiveSlice,
 } from '../../lib/progressiveList';
+import {
+  formatValue,
+  getRoleSchema,
+  type ColumnDefinition,
+  type ListDefinition,
+} from './roleSchema';
 
 const ROLES: Array<{ key: RoleWorkbenchRole; label: string }> = [
   { key: 'operator', label: '操作员' },
@@ -23,19 +41,286 @@ const ROLES: Array<{ key: RoleWorkbenchRole; label: string }> = [
   { key: 'manager', label: '管理者' },
 ];
 
-function valueLabel(value: unknown): string {
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
+interface SortState {
+  key: string;
+  dir: 'asc' | 'desc';
+}
+
+interface SavedView {
+  filter?: string;
+  sortKey?: string;
+  sortDir?: 'asc' | 'desc';
+  limit?: number;
+}
+
+function viewKey(role: RoleWorkbenchRole, listKey: string): string {
+  return `ewoh.roleWorkbench.view.${role}.${listKey}`;
+}
+
+function loadView(role: RoleWorkbenchRole, listKey: string): SavedView | null {
+  try {
+    const raw = localStorage.getItem(viewKey(role, listKey));
+    if (!raw) return null;
+    return JSON.parse(raw) as SavedView;
+  } catch {
+    return null;
   }
-  if (value === null || value === undefined) {
-    return '—';
+}
+
+function canEnableDebug(): boolean {
+  try {
+    const flag = localStorage.getItem('ewoh.debug');
+    if (flag === '1' || flag === 'true') return true;
+  } catch {
+    // ignore
   }
-  return String(value);
+  const roles = getAuthUser()?.roles ?? [];
+  return roles.some((role) =>
+    role.toLowerCase().includes('admin') || role.toLowerCase().includes('developer'),
+  );
+}
+
+function sortRows(
+  rows: Array<Record<string, unknown>>,
+  column: ColumnDefinition,
+  dir: 'asc' | 'desc',
+): Array<Record<string, unknown>> {
+  const copy = [...rows];
+  copy.sort((a, b) => {
+    const av = a[column.key];
+    const bv = b[column.key];
+    let cmp = 0;
+    if (av === bv) cmp = 0;
+    else if (av === null || av === undefined) cmp = 1;
+    else if (bv === null || bv === undefined) cmp = -1;
+    else if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv;
+    else cmp = String(av).localeCompare(String(bv), 'zh-CN');
+    return dir === 'asc' ? cmp : -cmp;
+  });
+  return copy;
+}
+
+function filterRows(
+  rows: Array<Record<string, unknown>>,
+  columns: ColumnDefinition[],
+  filter: string,
+): Array<Record<string, unknown>> {
+  const q = filter.trim().toLowerCase();
+  if (!q) return rows;
+  return rows.filter((row) =>
+    columns.some((column) =>
+      String(row[column.key] ?? '').toLowerCase().includes(q),
+    ),
+  );
+}
+
+function exportCsv(list: ListDefinition, rows: Array<Record<string, unknown>>): void {
+  const header = list.columns.map((column) => column.label).join(',');
+  const body = rows
+    .map((row) =>
+      list.columns
+        .map((column) => {
+          const text = formatValue(column.format, row[column.key]);
+          return `"${String(text).replace(/"/g, '""')}"`;
+        })
+        .join(','),
+    )
+    .join('\n');
+  const blob = new Blob([`\uFEFF${header}\n${body}`], {
+    type: 'text/csv;charset=utf-8;',
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${list.label}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function renderCell(
+  column: ColumnDefinition,
+  row: Record<string, unknown>,
+): React.ReactNode {
+  const raw = row[column.key];
+  const rawText = formatValue(column.format, raw);
+  const text = column.enumMap ? (column.enumMap[String(raw)] ?? rawText) : rawText;
+
+  if (column.link) {
+    const href = column.link.valueKey
+      ? `${column.link.to}/${encodeURIComponent(
+          String(row[column.link.valueKey] ?? ''),
+        )}`
+      : column.link.to;
+    return (
+      <Link
+        to={href}
+        className="text-[hsl(221_83%_53%)] hover:underline"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {text}
+      </Link>
+    );
+  }
+  return <span>{text}</span>;
+}
+
+interface WorkbenchListProps {
+  list: ListDefinition;
+  rows: Array<Record<string, unknown>>;
+  listError: boolean;
+  filter: string;
+  sort?: SortState;
+  limit: number;
+  onFilter: (value: string) => void;
+  onToggleSort: (columnKey: string) => void;
+  onLoadMore: () => void;
+  onSaveView: () => void;
+  onExport: () => void;
+}
+
+function WorkbenchList({
+  list,
+  rows,
+  listError,
+  filter,
+  sort,
+  limit,
+  onFilter,
+  onToggleSort,
+  onLoadMore,
+  onSaveView,
+  onExport,
+}: WorkbenchListProps): React.ReactElement {
+  const navigate = useNavigate();
+
+  const filtered = useMemo(
+    () => filterRows(rows, list.columns, filter),
+    [rows, list.columns, filter],
+  );
+  const sorted = useMemo(
+    () =>
+      sort
+        ? sortRows(
+            filtered,
+            list.columns.find((column) => column.key === sort.key) ??
+              list.columns[0],
+            sort.dir,
+          )
+        : filtered,
+    [filtered, sort, list.columns],
+  );
+  const visible = progressiveSlice(sorted, limit);
+  const hasMore = hasMoreItems(sorted, limit);
+
+  return (
+    <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[hsl(220_14%_89%)] px-4 py-3">
+        <ClipboardList className="size-4 text-[hsl(221_83%_53%)]" />
+        <h2 className="font-semibold text-[hsl(220_14%_14%)]">{list.label}</h2>
+        <span className="text-xs text-[hsl(218_10%_42%)]">{sorted.length} 条</span>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            value={filter}
+            onChange={(event) => onFilter(event.target.value)}
+            placeholder="筛选…"
+            aria-label={`筛选${list.label}`}
+            className="h-8 w-40 rounded-md border border-[hsl(220_14%_89%)] px-2 text-xs text-[hsl(220_14%_14%)] outline-none focus:border-[hsl(221_83%_53%)]"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1.5 text-xs"
+            onClick={onSaveView}
+          >
+            <Save className="size-3" />
+            保存视图
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1.5 text-xs"
+            onClick={onExport}
+          >
+            <Download className="size-3" />
+            导出
+          </Button>
+        </div>
+      </div>
+
+      {listError ? (
+        <div className="px-4 py-3 text-sm text-red-600">
+          该列表数据加载失败，请稍后重试。
+        </div>
+      ) : visible.length === 0 ? (
+        <p className="px-4 py-3 text-sm text-[hsl(218_10%_42%)]">{list.emptyText}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+              <tr>
+                {list.columns.map((column) => (
+                  <th key={column.key} className="px-4 py-2 font-medium">
+                    <button
+                      type="button"
+                      onClick={() => onToggleSort(column.key)}
+                      className="inline-flex items-center gap-1 hover:text-[hsl(220_14%_14%)]"
+                    >
+                      {column.label}
+                      {sort?.key === column.key ? (
+                        sort.dir === 'asc' ? (
+                          <ArrowUp className="size-3" />
+                        ) : (
+                          <ArrowDown className="size-3" />
+                        )
+                      ) : (
+                        <ArrowUpDown className="size-3 opacity-40" />
+                      )}
+                    </button>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+              {visible.map((row, index) => (
+                <tr
+                  key={index}
+                  onClick={list.rowTo ? () => navigate(list.rowTo ?? '') : undefined}
+                  className={
+                    list.rowTo ? 'cursor-pointer hover:bg-[hsl(220_14%_96%)]' : undefined
+                  }
+                >
+                  {list.columns.map((column) => (
+                    <td key={column.key} className="px-4 py-2 text-[hsl(220_14%_14%)]">
+                      {renderCell(column, row)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {hasMore && (
+        <div className="border-t border-[hsl(220_14%_89%)] px-4 py-2">
+          <Button size="sm" variant="outline" onClick={onLoadMore}>
+            加载更多
+          </Button>
+        </div>
+      )}
+    </section>
+  );
 }
 
 export default function RoleWorkbench(): React.ReactElement {
   const [role, setRole] = useState<RoleWorkbenchRole>('manager');
   const [limits, setLimits] = useState<Record<string, number>>({});
+  const [sortState, setSortState] = useState<Record<string, SortState>>({});
+  const [filterState, setFilterState] = useState<Record<string, string>>({});
+  const [debugMode, setDebugMode] = useState(false);
+  const navigate = useNavigate();
+
   const personId = getAuthUser()?.userId ?? undefined;
   const workbenchQuery = useQuery({
     queryKey: queryKeys.roleWorkbench(role),
@@ -43,36 +328,69 @@ export default function RoleWorkbench(): React.ReactElement {
     staleTime: 30_000,
   });
 
+  const schema = getRoleSchema(role);
   const data = workbenchQuery.data?.data ?? {};
-  const scalarEntries = useMemo(
+  const generatedAt = workbenchQuery.data?.generatedAt;
+
+  // 加载该角色已保存的视图（筛选/排序/加载更多）。
+  useEffect(() => {
+    const filter: Record<string, string> = {};
+    const sort: Record<string, SortState> = {};
+    const lim: Record<string, number> = {};
+    for (const list of schema.lists) {
+      const saved = loadView(role, list.key);
+      if (saved) {
+        if (saved.filter) filter[list.key] = saved.filter;
+        if (saved.sortKey) {
+          sort[list.key] = { key: saved.sortKey, dir: saved.sortDir ?? 'asc' };
+        }
+        if (saved.limit) lim[list.key] = saved.limit;
+      }
+    }
+    setFilterState(filter);
+    setSortState(sort);
+    setLimits(lim);
+  }, [role, schema]);
+
+  const saveView = useCallback(() => {
+    for (const list of schema.lists) {
+      localStorage.setItem(
+        viewKey(role, list.key),
+        JSON.stringify({
+          filter: filterState[list.key] ?? '',
+          sortKey: sortState[list.key]?.key,
+          sortDir: sortState[list.key]?.dir,
+          limit: limits[list.key] ?? 50,
+        }),
+      );
+    }
+  }, [schema, role, filterState, sortState, limits]);
+
+  const toggleSort = useCallback(
+    (listKey: string, columnKey: string) => {
+      setSortState((current) => {
+        const existing = current[listKey];
+        const next: SortState =
+          existing && existing.key === columnKey
+            ? { key: columnKey, dir: existing.dir === 'asc' ? 'desc' : 'asc' }
+            : { key: columnKey, dir: 'asc' };
+        return { ...current, [listKey]: next };
+      });
+    },
+    [],
+  );
+
+  const setFilter = useCallback((listKey: string, value: string) => {
+    setFilterState((current) => ({ ...current, [listKey]: value }));
+  }, []);
+
+  const kpiCards = useMemo(
     () =>
-      Object.entries(data).filter(
-        ([, value]) =>
-          typeof value === 'number' ||
-          typeof value === 'boolean' ||
-          value === null ||
-          value === undefined,
-      ),
-    [data],
+      schema.kpis.filter((kpi) => data[kpi.key] !== undefined),
+    [schema, data],
   );
-  const arrayEntries = useMemo(
-    () => Object.entries(data).filter(([, value]) => Array.isArray(value)),
-    [data],
-  );
-  const visibleArrayEntries = useMemo(
-    () =>
-      arrayEntries.map(([key, value]) => {
-        const items = value as unknown[];
-        const limit = limits[key] ?? 50;
-        return {
-          key,
-          total: items.length,
-          items: progressiveSlice(items, limit),
-          hasMore: hasMoreItems(items, limit),
-        };
-      }),
-    [arrayEntries, limits],
-  );
+
+  const canDebug = useMemo(() => canEnableDebug(), []);
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
@@ -80,18 +398,30 @@ export default function RoleWorkbench(): React.ReactElement {
         <div>
           <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">角色任务工作台</h1>
           <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">
-            按角色聚合任务、质量、设备与交付风险。
+            {schema.description}
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => workbenchQuery.refetch()}
-          disabled={workbenchQuery.isFetching}
-        >
-          <RefreshCw className="size-3" />
-          刷新
-        </Button>
+        <div className="flex items-center gap-2">
+          {canDebug && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDebugMode((value) => !value)}
+            >
+              {debugMode ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+              {debugMode ? '关闭诊断' : '诊断'}
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => workbenchQuery.refetch()}
+            disabled={workbenchQuery.isFetching}
+          >
+            <RefreshCw className="size-3" />
+            刷新
+          </Button>
+        </div>
       </header>
 
       <div className="flex flex-wrap gap-1 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-1">
@@ -113,93 +443,117 @@ export default function RoleWorkbench(): React.ReactElement {
         ))}
       </div>
 
+      {schema.quickActions.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-[hsl(218_10%_42%)]">快捷跳转：</span>
+          {schema.quickActions.map((action) => (
+            <Button
+              key={action.to}
+              asChild
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+            >
+              <Link to={action.to}>{action.label}</Link>
+            </Button>
+          ))}
+        </div>
+      )}
+
       <QueryState
         isLoading={workbenchQuery.isLoading}
         isFetching={workbenchQuery.isFetching}
         isError={workbenchQuery.isError}
-        isEmpty={scalarEntries.length === 0 && arrayEntries.length === 0}
+        isEmpty={kpiCards.length === 0 && schema.lists.length === 0}
         onRefresh={() => workbenchQuery.refetch()}
+        error={workbenchQuery.error}
         errorMessage={
           workbenchQuery.error instanceof Error
             ? workbenchQuery.error.message
             : '加载失败'
         }
+        backHref="/command-center"
         loadingMessage="正在加载工作台"
         emptyMessage="当前角色暂无聚合数据。"
         updatedAt={workbenchQuery.dataUpdatedAt}
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {scalarEntries.map(([key, value]) => (
+          {kpiCards.map((kpi) => (
             <div
-              key={key}
+              key={kpi.key}
               className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4"
             >
-              <p className="text-xs text-[hsl(218_10%_42%)]">{key}</p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-[hsl(218_10%_42%)]">{kpi.label}</p>
+                {kpi.unit && (
+                  <span className="text-xs text-[hsl(218_10%_42%)]">{kpi.unit}</span>
+                )}
+              </div>
               <p className="mt-1 text-2xl font-semibold text-[hsl(220_14%_14%)]">
-                {valueLabel(value)}
+                {formatValue(kpi.format, data[kpi.key])}
+              </p>
+              <p className="mt-2 text-xs text-[hsl(218_10%_42%)]">
+                来源：{kpi.source}
+              </p>
+              <p className="mt-0.5 text-xs text-[hsl(218_10%_42%)]">
+                更新：{kpi.refreshHint}
+                {generatedAt
+                  ? ` · ${new Date(generatedAt).toLocaleTimeString('zh-CN', {
+                      hour12: false,
+                    })}`
+                  : ''}
               </p>
             </div>
           ))}
         </div>
 
-        {visibleArrayEntries.map(({ key, total, items, hasMore }) => (
-          <section
-            key={key}
-            className="rounded-lg border border-[hsl(220_14%_89%)] bg-white"
-          >
-            <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-4 py-3">
-              <ClipboardList className="size-4 text-[hsl(221_83%_53%)]" />
-              <h2 className="font-semibold text-[hsl(220_14%_14%)]">{key}</h2>
-              <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
-                {total} 条
-              </span>
-            </div>
-            <div className="overflow-x-auto">
-              {items.length === 0 ? (
-                <p className="px-4 py-3 text-sm text-[hsl(218_10%_42%)]">暂无记录。</p>
-              ) : (
-                <table className="w-full text-left text-sm">
-                  <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
-                    <tr>
-                      {items[0]
-                        ? Object.keys((items[0] as Record<string, unknown>)).map(
-                            (column) => <th key={column} className="px-4 py-2 font-medium">{column}</th>,
-                          )
-                        : null}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[hsl(220_14%_89%)]">
-                    {(items as Record<string, unknown>[]).map((row, index) => (
-                      <tr key={index}>
-                        {Object.entries(row).map(([column, cell]) => (
-                          <td key={column} className="px-4 py-2 text-[hsl(220_14%_14%)]">
-                            {typeof cell === 'object' ? JSON.stringify(cell) : valueLabel(cell)}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              {hasMore && (
-                <div className="border-t border-[hsl(220_14%_89%)] px-4 py-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      setLimits((current) => ({
-                        ...current,
-                        [key]: nextProgressiveLimit(current[key] ?? 50),
-                      }))
-                    }
-                  >
-                    加载更多
-                  </Button>
-                </div>
-              )}
-            </div>
+        {schema.lists.map((list) => {
+          const raw = data[list.key];
+          let rows: Array<Record<string, unknown>> = [];
+          let listError = false;
+          if (raw === undefined || raw === null) {
+            listError = true;
+          } else if (list.transform) {
+            rows = list.transform(raw);
+          } else if (Array.isArray(raw)) {
+            rows = raw as Array<Record<string, unknown>>;
+          } else {
+            listError = true;
+          }
+
+          return (
+            <WorkbenchList
+              key={list.key}
+              list={list}
+              rows={rows}
+              listError={listError}
+              filter={filterState[list.key] ?? ''}
+              sort={sortState[list.key]}
+              limit={limits[list.key] ?? 50}
+              onFilter={(value) => setFilter(list.key, value)}
+              onToggleSort={(columnKey) => toggleSort(list.key, columnKey)}
+              onLoadMore={() =>
+                setLimits((current) => ({
+                  ...current,
+                  [list.key]: nextProgressiveLimit(current[list.key] ?? 50),
+                }))
+              }
+              onSaveView={() => saveView()}
+              onExport={() => exportCsv(list, rows)}
+            />
+          );
+        })}
+
+        {debugMode && canDebug && (
+          <section className="rounded-lg border border-dashed border-[hsl(220_14%_89%)] bg-slate-50 p-4">
+            <h2 className="mb-2 text-sm font-semibold text-[hsl(220_14%_14%)]">
+              原始诊断数据（仅管理员 / 开发者可见）
+            </h2>
+            <pre className="overflow-x-auto text-xs text-[hsl(218_10%_42%)]">
+              {JSON.stringify(data, null, 2)}
+            </pre>
           </section>
-        ))}
+        )}
       </QueryState>
     </div>
   );

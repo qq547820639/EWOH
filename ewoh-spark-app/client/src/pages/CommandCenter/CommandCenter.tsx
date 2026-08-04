@@ -56,7 +56,9 @@ const CommandCenter = (): React.ReactElement => {
         isStale={query.isStale}
         isEmpty={!data}
         onRefresh={() => query.refetch()}
+        error={query.error}
         errorMessage={query.error instanceof Error ? query.error.message : '数据加载失败'}
+        backHref="/command-center"
         loadingMessage="正在加载指挥中心数据"
         updatedAt={query.dataUpdatedAt}
       >

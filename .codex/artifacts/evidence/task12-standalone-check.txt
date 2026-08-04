@@ -1,0 +1,53 @@
+bash: no job control in this shell
+== type:check ==
+
+> fullstack-nestjs-template@2.2.5 type:check
+> concurrently -n "server,client" -c "blue,green" "npm run type:check:server" "npm run type:check:client"
+
+[server] 
+[server] > fullstack-nestjs-template@2.2.5 type:check:server
+[server] > tsc --noEmit --project tsconfig.node.json
+[server] 
+[client] 
+[client] > fullstack-nestjs-template@2.2.5 type:check:client
+[client] > tsc --noEmit --project tsconfig.app.json
+[client] 
+[server] npm run type:check:server exited with code 0
+[client] npm run type:check:client exited with code 0
+== lint ==
+
+> fullstack-nestjs-template@2.2.5 lint
+> node ./scripts/lint.js
+
+[2] 
+[2] > fullstack-nestjs-template@2.2.5 stylelint
+[2] > stylelint client/src/**/*.css --quiet
+[2] 
+[0] 
+[0] > fullstack-nestjs-template@2.2.5 eslint
+[0] > eslint . --quiet
+[0] 
+[1] 
+[1] > fullstack-nestjs-template@2.2.5 type:check
+[1] > concurrently -n "server,client" -c "blue,green" "npm run type:check:server" "npm run type:check:client"
+[1] 
+[1] [client] 
+[1] [client] > fullstack-nestjs-template@2.2.5 type:check:client
+[1] [client] > tsc --noEmit --project tsconfig.app.json
+[1] [client] 
+[1] [server] 
+[1] [server] > fullstack-nestjs-template@2.2.5 type:check:server
+[1] [server] > tsc --noEmit --project tsconfig.node.json
+[1] [server] 
+[2] npm run stylelint exited with code 0
+[1] [server] npm run type:check:server exited with code 0
+[1] [client] npm run type:check:client exited with code 0
+[1] npm run type:check exited with code 0
+[0] 
+[0] /Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/client/src/pages/WorkOrchestration/GitSyncPanel.tsx
+[0]   446:33  error  Irregular whitespace not allowed  no-irregular-whitespace
+[0]   446:35  error  Irregular whitespace not allowed  no-irregular-whitespace
+[0] 
+[0] ✖ 2 problems (2 errors, 0 warnings)
+[0] 
+[0] npm run eslint exited with code 1

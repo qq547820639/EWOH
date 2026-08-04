@@ -444,6 +444,18 @@ paths:
       tags:
         - work
       summary: Apply offline GitHub Issue/PR sync plan (approval-gated)
+      description: >-
+        Applies the offline Git sync plan to GitHub. Requires preceding human
+        approval (`approved=true`) and an idempotency key; repeated submission
+        with the same key returns the original result. Live GitHub mutation
+        additionally requires EWOH_GIT_SYNC_ENABLED/GITHUB_TOKEN/
+        EWOH_GIT_SYNC_APPROVED on the server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitSyncApplyRequest'
       responses:
         '201':
           description: Live sync result
@@ -458,6 +470,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         Forbidden:
           $ref: '#/components/responses/Forbidden'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
         InternalError:
           $ref: '#/components/responses/InternalError'
   /api/work/resources/{id}/lock:
@@ -703,6 +717,26 @@ components:
         - trackedCount
         - missingCount
         - items
+    GitSyncApplyRequest:
+      type: object
+      additionalProperties: true
+      required:
+        - idempotencyKey
+        - approved
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 1
+          description: Client-generated key; repeated submission returns the original result.
+        approved:
+          type: boolean
+          description: Human approval gate; must be true to mutate GitHub.
+        reason:
+          type: string
+          description: Optional justification recorded in the audit trail.
+        actor:
+          type: string
+          description: Optional acting user identity recorded in the audit trail.
     SiteReadinessSummary:
       type: object
       additionalProperties: true

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, QrCode, RefreshCw } from 'lucide-react';
+import { Camera, Loader2, QrCode, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   getMobileOrder,
@@ -8,20 +8,20 @@ import {
   inspectMobileStep,
   scanWorkbench,
   transitionMobileStep,
-  type MobileWorkOrderDetail,
   type MobileWorkbenchStep,
 } from '../../api/mobile';
 import { uploadFile } from '../../api/files';
 import { getAuthUser } from '../../lib/auth';
+import { useOfflineWorkbench } from './useOfflineWorkbench';
+import { buildConflictModel } from '../../lib/offlineConflict';
+import { formatLastSync } from '../../lib/offlineStatus';
 import {
-  appendPendingAction,
-  flushPendingQueue,
-  readPendingActions,
-  removePendingAction,
-  type PendingActionStatus,
-  type PendingMobileAction,
-} from '../../lib/offlineQueue';
-import { dataUrlToFile, fileToDataUrl } from '../../lib/attachmentDataUrl';
+  createScannerListener,
+  detectBarcodeFromFile,
+  playScanFeedback,
+  supportsCameraCapture,
+} from '../../lib/scanner';
+import type { StoredPendingAction } from '../../lib/offlineDb';
 import { queryKeys } from '../../hooks/queryKeys';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
@@ -32,50 +32,15 @@ import { buildExceptionBody } from './exceptionPayload';
 const STEP_ACTIONS = ['start', 'report', 'pause', 'resume', 'review', 'handover'] as const;
 const QUALITY_RESULTS = ['pass', 'fail', 'rework'] as const;
 
-async function syncPendingItem(item: PendingMobileAction): Promise<void> {
-  if (item.type === 'transition') {
-    let body = item.body;
-    if (item.attachment) {
-      const file = dataUrlToFile(
-        item.attachment.dataUrl,
-        item.attachment.name,
-        item.attachment.contentType,
-      );
-      const record = await uploadFile(file, `exception-${item.stepId}`);
-      body = {
-        ...(item.body ?? {}),
-        attachments: [
-          {
-            id: record.id,
-            filename: record.filename,
-            contentType: record.contentType,
-          },
-        ],
-      };
-    }
-    await transitionMobileStep(
-      item.orderId,
-      item.stepId,
-      item.action ?? '',
-      body,
-    );
-    return;
-  }
-  await inspectMobileStep(item.orderId, item.stepId, {
-    result: (item.body?.result as 'pass' | 'fail' | 'rework') ?? 'pass',
-    note: item.body?.note as string | undefined,
-  });
-}
-
 function stepStatusLabel(status: string): string {
   const labels: Record<string, string> = {
     pending: '待开工',
     in_progress: '进行中',
-    paused: '已暂停',
-    reported: '已报工',
-    reviewed: '已审核',
-    handed_over: '已交收',
-    cancelled: '已取消',
+    paused: '暂停',
+    reported: '报工',
+    reviewed: '审核',
+    handed_over: '交收',
+    cancelled: '取消',
   };
   return labels[status] ?? status;
 }
@@ -91,8 +56,8 @@ function orderStatusLabel(status: string): string {
   return labels[status] ?? status;
 }
 
-function pendingStatusLabel(status: PendingActionStatus): string {
-  const labels: Record<PendingActionStatus, string> = {
+function pendingStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
     local: '本地',
     queued: '排队',
     syncing: '同步中',
@@ -104,7 +69,7 @@ function pendingStatusLabel(status: PendingActionStatus): string {
 }
 
 function pendingStatusVariant(
-  status: PendingActionStatus,
+  status: string,
 ): 'default' | 'secondary' | 'destructive' | 'outline' {
   if (status === 'failed' || status === 'conflict') {
     return 'destructive';
@@ -118,7 +83,7 @@ function pendingStatusVariant(
   return 'outline';
 }
 
-function pendingActionLabel(item: PendingMobileAction): string {
+function pendingActionLabel(item: StoredPendingAction): string {
   if (item.type === 'inspection') {
     return '质检';
   }
@@ -144,12 +109,75 @@ function scanTypeLabel(scanType: string): string {
   return labels[scanType] ?? scanType;
 }
 
+function ConflictResolution({
+  item,
+  onResolve,
+}: {
+  item: StoredPendingAction;
+  onResolve: (choice: 'local' | 'server' | 'manual') => void;
+}): React.ReactElement {
+  const localValue = item.body;
+  const serverValue = item.conflict?.serverValue;
+  const model = buildConflictModel(localValue, serverValue);
+  return (
+    <div className="mt-2 w-full rounded bg-white p-2 text-xs">
+      <p className="font-medium text-[hsl(220_14%_14%)]">状态冲突 — 请选择处理方式</p>
+      <div className="mt-1 grid grid-cols-2 gap-2">
+        <div>
+          <p className="text-[hsl(218_10%_42%)]">本地值</p>
+          <pre className="mt-0.5 max-h-24 overflow-auto rounded bg-[hsl(220_14%_96%)] p-1 font-mono text-[10px] text-[hsl(220_14%_14%)]">
+            {JSON.stringify(localValue ?? null, null, 2) || '—'}
+          </pre>
+        </div>
+        <div>
+          <p className="text-[hsl(218_10%_42%)]">服务端值</p>
+          {serverValue === undefined ? (
+            <p className="mt-0.5 rounded bg-[hsl(220_14%_96%)] p-1 text-amber-700">
+              服务端未返回当前值
+            </p>
+          ) : (
+            <pre className="mt-0.5 max-h-24 overflow-auto rounded bg-[hsl(220_14%_96%)] p-1 font-mono text-[10px] text-[hsl(220_14%_14%)]">
+              {JSON.stringify(serverValue, null, 2) || '—'}
+            </pre>
+          )}
+        </div>
+      </div>
+      {model.diff.length > 0 && (
+        <div className="mt-1">
+          <p className="text-[hsl(218_10%_42%)]">差异</p>
+          <ul className="mt-0.5 space-y-0.5">
+            {model.diff.map((diff, index) => (
+              <li
+                key={index}
+                className="rounded bg-[hsl(220_14%_96%)] px-1 py-0.5 font-mono text-[10px]"
+              >
+                {diff.path || '—'}：{JSON.stringify(diff.local)} → {JSON.stringify(diff.server)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p className="mt-1 text-[hsl(218_10%_42%)]">
+        推荐：{model.recommended === 'server' ? '采用服务端' : '采用本地'}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-1">
+        <Button size="sm" variant="outline" onClick={() => onResolve('local')}>
+          采用本地
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => onResolve('server')}>
+          采用服务端
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => onResolve('manual')}>
+          手动编辑
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 const MobileWorkbench = (): React.ReactElement => {
   const queryClient = useQueryClient();
   const personId = getAuthUser()?.userId ?? '';
-  const [pendingActions, setPendingActions] = useState<PendingMobileAction[]>(
-    () => readPendingActions(),
-  );
   const [scanInput, setScanInput] = useState('');
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   const [exceptionOpen, setExceptionOpen] = useState<Record<string, boolean>>({});
@@ -163,62 +191,30 @@ const MobileWorkbench = (): React.ReactElement => {
   const [failedMutation, setFailedMutation] = useState<
     Record<string, { kind: 'transition' | 'inspection'; variables: unknown } | undefined>
   >({});
-  const [isOnline, setIsOnline] = useState(
-    () => (typeof navigator === 'undefined' ? true : navigator.onLine),
-  );
-  const pendingCount = pendingActions.length;
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return undefined;
-    }
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
+  const onSynced = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.mobileWorkbench(personId),
+    });
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.mobileOrder(activeOrderId ?? ''),
+    });
+  }, [queryClient, personId, activeOrderId]);
 
-  useEffect(() => {
-    if (!isOnline) {
-      return undefined;
-    }
-    let cancelled = false;
-    const flushPending = async () => {
-      const queue = readPendingActions();
-      if (queue.length === 0) {
-        return;
-      }
-      const result = await flushPendingQueue(syncPendingItem, queue);
-      if (cancelled) {
-        return;
-      }
-      setPendingActions(readPendingActions());
-      if (result.synced.length > 0) {
-        toast.success(`已同步 ${result.synced.length} 项离线操作`);
-      }
-      if (result.conflict.length > 0) {
-        toast.error(`${result.conflict.length} 项操作存在状态冲突`, {
-          description: '请在待同步队列中核对或重试。',
-        });
-      }
-      if (result.failed.length > 0) {
-        toast.error(`${result.failed.length} 项离线操作同步失败`, {
-          description: '失败项不会阻塞队列中的其他操作。',
-        });
-      }
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.mobileWorkbench(personId),
-      });
-    };
-    flushPending();
-    return () => {
-      cancelled = true;
-    };
-  }, [isOnline, personId, queryClient]);
+  const {
+    ready,
+    isOnline,
+    syncing,
+    pendingActions,
+    pendingCount,
+    lastSyncAt,
+    drafts,
+    queueTransition,
+    queueInspection,
+    retryPending,
+    discardPending,
+    resolveConflict,
+  } = useOfflineWorkbench(personId, { onSynced });
 
   const workbenchQuery = useQuery({
     queryKey: queryKeys.mobileWorkbench(personId),
@@ -249,49 +245,12 @@ const MobileWorkbench = (): React.ReactElement => {
       });
     },
     onError: (err) => {
+      playScanFeedback('fail');
       toast.error('扫码失败', {
         description: err instanceof Error ? err.message : undefined,
       });
     },
   });
-
-  const retryPendingAction = async (id: string) => {
-    const item = pendingActions.find((candidate) => candidate.id === id);
-    if (!item) {
-      return;
-    }
-    if (!isOnline) {
-      toast.error('当前处于离线状态，无法重试');
-      return;
-    }
-    const result = await flushPendingQueue(
-      syncPendingItem,
-      [item],
-      undefined,
-      { includeManual: true },
-    );
-    setPendingActions(readPendingActions());
-    if (result.synced.length > 0) {
-      toast.success(`已重试同步：${item.stepId}`);
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.mobileWorkbench(personId),
-      });
-    } else if (result.conflict.length > 0) {
-      toast.error(`重试仍存在状态冲突：${item.stepId}`);
-    } else {
-      toast.error(`重试失败：${item.stepId}`, {
-        description: readPendingActions().find(
-          (candidate) => candidate.id === id,
-        )?.error?.message,
-      });
-    }
-  };
-
-  const discardPendingAction = (id: string) => {
-    removePendingAction(id);
-    setPendingActions(readPendingActions());
-    toast.info('已丢弃冲突项，请核对现场实际状态');
-  };
 
   const transitionMutation = useMutation({
     mutationFn: ({
@@ -371,13 +330,113 @@ const MobileWorkbench = (): React.ReactElement => {
     [activeOrder],
   );
 
-  const handleScan = () => {
-    const orderId = scanInput.trim();
-    if (!orderId) {
-      toast.error('请输入或扫码工单号');
+  // ---- Draft auto-save (steps 5) ----
+  const saveDraft = useCallback(
+    (stepId: string, field: string, value: unknown) => {
+      const orderId = activeOrder?.workOrder.scheduleTaskId;
+      if (!orderId || !drafts) {
+        return;
+      }
+      void drafts.save({ orderId, stepId, field }, value);
+    },
+    [activeOrder, drafts],
+  );
+
+  const restoredStepsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!drafts || !activeOrder) {
+      return undefined;
+    }
+    const orderId = activeOrder.workOrder.scheduleTaskId;
+    let cancelled = false;
+    const restore = async () => {
+      for (const step of activeOrder.steps) {
+        if (restoredStepsRef.current.has(step.stepId)) {
+          continue;
+        }
+        const [note, noteVal, resultVal] = await Promise.all([
+          drafts.get({ orderId, stepId: step.stepId, field: 'exceptionNote' }),
+          drafts.get({ orderId, stepId: step.stepId, field: 'qcNote' }),
+          drafts.get({ orderId, stepId: step.stepId, field: 'qcResult' }),
+        ]);
+        if (cancelled) {
+          return;
+        }
+        restoredStepsRef.current.add(step.stepId);
+        if (typeof note === 'string' && note) {
+          setExceptionNote((current) => ({ ...current, [step.stepId]: note }));
+        }
+        if (typeof noteVal === 'string' && noteVal) {
+          setQcNote((current) => ({ ...current, [step.stepId]: noteVal }));
+        }
+        if (resultVal === 'pass' || resultVal === 'fail' || resultVal === 'rework') {
+          setQcResult((current) => ({ ...current, [step.stepId]: resultVal }));
+        }
+      }
+    };
+    void restore();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOrder, drafts]);
+
+  // ---- Scanner (steps 7) ----
+  const lastScanRef = useRef<{ value: string; at: number }>({ value: '', at: 0 });
+  const handleScan = useCallback(
+    (raw?: string) => {
+      const value = (raw ?? scanInput).trim();
+      if (!value) {
+        toast.error('请输入或扫码工单号');
+        return;
+      }
+      const now = Date.now();
+      const kind =
+        lastScanRef.current.value === value && now - lastScanRef.current.at < 1500
+          ? 'duplicate'
+          : 'success';
+      lastScanRef.current = { value, at: now };
+      playScanFeedback(kind);
+      setScanInput(value);
+      scanMutation.mutate(value);
+    },
+    [scanInput, scanMutation],
+  );
+
+  const handleScanRef = useRef<(value: string) => void>(() => {});
+  handleScanRef.current = handleScan;
+
+  useEffect(() => {
+    const listener = createScannerListener({
+      onScan: (value) => handleScanRef.current(value),
+      onError: (message) => toast.error(message),
+    });
+    const onKeyDown = (event: KeyboardEvent) => listener.handleKeyDown(event);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const handleCameraCapture = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) {
       return;
     }
-    scanMutation.mutate(orderId);
+    try {
+      const value = await detectBarcodeFromFile(file);
+      if (value) {
+        playScanFeedback('success');
+        handleScan(value);
+      } else {
+        playScanFeedback('fail');
+        toast.error('未识别到条码，请尝试手动输入或使用扫码枪');
+      }
+    } catch (error) {
+      playScanFeedback('fail');
+      toast.error('条码识别不可用', {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    }
   };
 
   const submitTransition = (
@@ -390,8 +449,7 @@ const MobileWorkbench = (): React.ReactElement => {
       transitionMutation.mutate({ orderId, stepId, action, body });
       return;
     }
-    appendPendingAction({ type: 'transition', orderId, stepId, action, body });
-    setPendingActions(readPendingActions());
+    void queueTransition({ orderId, stepId, action, body });
     toast.info('已加入待同步队列，联网后自动提交');
   };
 
@@ -405,13 +463,7 @@ const MobileWorkbench = (): React.ReactElement => {
       inspectMutation.mutate({ orderId, stepId, result, note });
       return;
     }
-    appendPendingAction({
-      type: 'inspection',
-      orderId,
-      stepId,
-      body: { result, note: note ?? null },
-    });
-    setPendingActions(readPendingActions());
+    void queueInspection({ orderId, stepId, result, note });
     toast.info('质检已加入待同步队列');
   };
 
@@ -422,34 +474,31 @@ const MobileWorkbench = (): React.ReactElement => {
       return;
     }
     const file = exceptionFile[stepId] ?? null;
-    if (file && !isOnline) {
+    const orderId = activeOrder!.workOrder.scheduleTaskId;
+    if (!isOnline) {
       try {
-        const dataUrl = await fileToDataUrl(file);
-        if (dataUrl.length > 2_500_000) {
-          toast.error('离线照片过大，请压缩后重试（约 2MB 以内）');
-          return;
-        }
-        appendPendingAction({
-          type: 'transition',
-          orderId: activeOrder!.workOrder.scheduleTaskId,
+        await queueTransition({
+          orderId,
           stepId,
           action: 'pause',
           body: buildExceptionBody(note),
-          attachment: {
-            name: file.name,
-            contentType: file.type || 'image/jpeg',
-            dataUrl,
-          },
+          ...(file
+            ? {
+                attachment: {
+                  name: file.name,
+                  contentType: file.type || 'image/jpeg',
+                  data: file,
+                },
+              }
+            : {}),
         });
-        setPendingActions(readPendingActions());
-        toast.info('异常及照片已加入待同步队列');
-        return;
+        toast.info(file ? '异常及照片已加入待同步队列' : '异常已加入待同步队列');
       } catch (error) {
-        toast.error('照片读取失败', {
+        toast.error('离线照片处理失败', {
           description: error instanceof Error ? error.message : undefined,
         });
-        return;
       }
+      return;
     }
     let body = buildExceptionBody(note);
     if (file) {
@@ -467,7 +516,7 @@ const MobileWorkbench = (): React.ReactElement => {
         return;
       }
     }
-    submitTransition(activeOrder!.workOrder.scheduleTaskId, stepId, 'pause', body);
+    submitTransition(orderId, stepId, 'pause', body);
   };
 
   const handleInspect = (stepId: string) => {
@@ -492,11 +541,33 @@ const MobileWorkbench = (): React.ReactElement => {
           <p className="text-sm text-[hsl(218_10%_42%)]">
             扫码查单、待办工序与移动端开工/报工/审核/交收。
           </p>
-          {pendingCount > 0 && (
-            <Badge variant="outline">待同步 {pendingCount}</Badge>
-          )}
         </div>
       </header>
+
+      {/* Offline status center (step 6) */}
+      <div
+        role="status"
+        className="flex flex-wrap items-center gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-3 py-2 text-sm"
+      >
+        <span
+          className={`inline-flex items-center gap-1.5 font-medium ${
+            isOnline ? 'text-emerald-600' : 'text-amber-600'
+          }`}
+        >
+          {isOnline ? <Wifi className="size-4" /> : <WifiOff className="size-4" />}
+          {isOnline ? '在线' : '离线'}
+        </span>
+        <Badge variant="outline">待同步 {pendingCount}</Badge>
+        <span className="text-xs text-[hsl(218_10%_42%)]">
+          最后同步：{formatLastSync(lastSyncAt)}
+        </span>
+        {syncing && (
+          <span className="inline-flex items-center gap-1 text-xs text-[hsl(218_10%_42%)]">
+            <Loader2 className="size-3 animate-spin" />
+            同步中
+          </span>
+        )}
+      </div>
 
       {!isOnline && (
         <div
@@ -522,7 +593,7 @@ const MobileWorkbench = (): React.ReactElement => {
             {pendingActions.map((item) => (
               <li
                 key={item.id}
-                className="flex flex-wrap items-center gap-2 rounded border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_98%)] p-2"
+                className="flex flex-wrap items-start gap-2 rounded border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_98%)] p-2"
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-[hsl(220_14%_14%)]">
@@ -546,7 +617,7 @@ const MobileWorkbench = (): React.ReactElement => {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => retryPendingAction(item.id)}
+                    onClick={() => retryPending(item.id)}
                   >
                     <RefreshCw className="size-3" />
                     重试
@@ -556,10 +627,18 @@ const MobileWorkbench = (): React.ReactElement => {
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => discardPendingAction(item.id)}
+                    onClick={() => discardPending(item.id)}
                   >
                     丢弃
                   </Button>
+                )}
+                {item.status === 'conflict' && (
+                  <div className="w-full">
+                    <ConflictResolution
+                      item={item}
+                      onResolve={(choice) => resolveConflict(item.id, choice)}
+                    />
+                  </div>
                 )}
               </li>
             ))}
@@ -577,14 +656,14 @@ const MobileWorkbench = (): React.ReactElement => {
               if (event.key === 'Enter') handleScan();
             }}
             placeholder="扫码或输入工单号"
-            className="pl-9"
+            className="min-h-12 pl-9"
             aria-label="扫码或输入工单号"
           />
         </div>
         <Button
-          onClick={handleScan}
+          onClick={() => handleScan()}
           disabled={scanMutation.isPending}
-          className="sm:w-28"
+          className="min-h-12 sm:w-28"
         >
           {scanMutation.isPending ? (
             <Loader2 className="size-4 animate-spin" />
@@ -593,6 +672,28 @@ const MobileWorkbench = (): React.ReactElement => {
           )}
           扫码
         </Button>
+        {supportsCameraCapture() && (
+          <>
+            <Button
+              variant="outline"
+              onClick={() => cameraInputRef.current?.click()}
+              className="min-h-12 sm:w-28"
+              aria-label="相机扫码"
+            >
+              <Camera className="size-4" />
+              相机
+            </Button>
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={handleCameraCapture}
+              aria-label="相机扫码上传"
+            />
+          </>
+        )}
       </div>
 
       <section aria-label="我的待办工序">
@@ -614,11 +715,13 @@ const MobileWorkbench = (): React.ReactElement => {
           isError={workbenchQuery.isError}
           isEmpty={!workbenchQuery.data || workbenchQuery.data.length === 0}
           onRefresh={() => workbenchQuery.refetch()}
+          error={workbenchQuery.error}
           errorMessage={
             workbenchQuery.error instanceof Error
               ? workbenchQuery.error.message
               : '加载失败'
           }
+          backHref="/command-center"
           loadingMessage="正在加载待办工序"
           emptyMessage="当前无待办工序。"
           updatedAt={workbenchQuery.dataUpdatedAt}
@@ -629,7 +732,7 @@ const MobileWorkbench = (): React.ReactElement => {
                 key={step.stepId}
                 type="button"
                 onClick={() => setActiveOrderId(step.scheduleTaskId)}
-                className="flex w-full items-center justify-between gap-3 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-3 text-left hover:border-[hsl(221_83%_53%)]"
+                className="flex min-h-14 w-full items-center justify-between gap-3 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-3 text-left hover:border-[hsl(221_83%_53%)]"
               >
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-[hsl(220_14%_14%)]">
@@ -660,7 +763,7 @@ const MobileWorkbench = (): React.ReactElement => {
               </div>
               <Badge>{orderStatusLabel(activeOrder.workOrder.status)}</Badge>
             </div>
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
               {actionableSteps.map((step) => {
                 const failed = failedMutation[step.stepId];
                 const stepError = failed
@@ -680,9 +783,10 @@ const MobileWorkbench = (): React.ReactElement => {
                     qcOpen={Boolean(qcOpen[step.stepId])}
                     qcResult={qcResult[step.stepId]}
                     qcNote={qcNote[step.stepId] ?? ''}
-                    onExceptionNoteChange={(value) =>
-                      setExceptionNote((current) => ({ ...current, [step.stepId]: value }))
-                    }
+                    onExceptionNoteChange={(value) => {
+                      setExceptionNote((current) => ({ ...current, [step.stepId]: value }));
+                      saveDraft(step.stepId, 'exceptionNote', value);
+                    }}
                     onExceptionFileChange={(file) =>
                       setExceptionFile((current) => ({ ...current, [step.stepId]: file }))
                     }
@@ -692,12 +796,14 @@ const MobileWorkbench = (): React.ReactElement => {
                     onQcOpenChange={(open) =>
                       setQcOpen((current) => ({ ...current, [step.stepId]: open }))
                     }
-                    onQcResultChange={(value) =>
-                      setQcResult((current) => ({ ...current, [step.stepId]: value }))
-                    }
-                    onQcNoteChange={(value) =>
-                      setQcNote((current) => ({ ...current, [step.stepId]: value }))
-                    }
+                    onQcResultChange={(value) => {
+                      setQcResult((current) => ({ ...current, [step.stepId]: value }));
+                      saveDraft(step.stepId, 'qcResult', value);
+                    }}
+                    onQcNoteChange={(value) => {
+                      setQcNote((current) => ({ ...current, [step.stepId]: value }));
+                      saveDraft(step.stepId, 'qcNote', value);
+                    }}
                     onSubmitException={() => handleException(step.stepId)}
                     onSubmitInspection={() => handleInspect(step.stepId)}
                     onRetry={() => {
@@ -737,13 +843,18 @@ const MobileWorkbench = (): React.ReactElement => {
                 );
               })}
               {actionableSteps.length === 0 && (
-                <p className="rounded-lg bg-[hsl(220_14%_96%)] p-3 text-sm text-[hsl(218_10%_42%)]">
+                <p className="rounded-lg bg-[hsl(220_14%_96%)] p-3 text-sm text-[hsl(218_10%_42%)] md:col-span-2">
                   该工单所有工序已交收。
                 </p>
               )}
             </div>
           </div>
         </section>
+      )}
+      {!ready && (
+        <p className="text-center text-xs text-[hsl(218_10%_42%)]">
+          正在加载离线存储…
+        </p>
       )}
     </div>
   );
@@ -843,6 +954,7 @@ function StepCard({
             variant="outline"
             disabled={!actionMeta[action].canRun || pending}
             onClick={() => onAction(action)}
+            className="min-h-12 px-4 text-sm"
           >
             {actionMeta[action].label}
             {pending && <Loader2 className="ml-1 size-3 animate-spin" />}
@@ -854,6 +966,7 @@ function StepCard({
           variant="outline"
           disabled={pending}
           onClick={() => onExceptionOpenChange(!exceptionOpen)}
+          className="min-h-12 px-4 text-sm"
         >
           异常上报
         </Button>
@@ -864,6 +977,7 @@ function StepCard({
             pending || !['in_progress', 'reported', 'reviewed'].includes(step.status)
           }
           onClick={() => onQcOpenChange(!qcOpen)}
+          className="min-h-12 px-4 text-sm"
         >
           质检
         </Button>
@@ -886,13 +1000,13 @@ function StepCard({
             onChange={(event) => onExceptionNoteChange(event.target.value)}
             placeholder="异常说明"
             aria-label="异常说明"
-            className="h-8 min-w-0 flex-1"
+            className="min-h-12 min-w-0 flex-1"
           />
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp"
             onChange={(event) => onExceptionFileChange(event.target.files?.[0] ?? null)}
-            className="h-8 text-xs"
+            className="min-h-12 text-xs"
             aria-label="异常照片"
           />
           {exceptionFile && (
@@ -900,7 +1014,7 @@ function StepCard({
               {exceptionFile.name}
             </span>
           )}
-          <Button size="sm" onClick={onSubmitException} disabled={pending}>
+          <Button size="sm" onClick={onSubmitException} disabled={pending} className="min-h-12">
             提交异常
           </Button>
         </div>
@@ -920,7 +1034,7 @@ function StepCard({
                   : (event.target.value as 'pass' | 'fail' | 'rework'),
               )
             }
-            className="h-8 rounded border border-[hsl(220_14%_89%)] bg-white px-2 text-xs"
+            className="min-h-12 rounded border border-[hsl(220_14%_89%)] bg-white px-2 text-xs"
           >
             {QUALITY_RESULTS.map((result) => (
               <option key={result} value={result}>
@@ -933,12 +1047,13 @@ function StepCard({
             onChange={(event) => onQcNoteChange(event.target.value)}
             placeholder="质检备注"
             aria-label="质检备注"
-            className="h-8 min-w-0 flex-1"
+            className="min-h-12 min-w-0 flex-1"
           />
           <Button
             size="sm"
             onClick={onSubmitInspection}
             disabled={!qcResult || pending}
+            className="min-h-12"
           >
             提交质检
           </Button>

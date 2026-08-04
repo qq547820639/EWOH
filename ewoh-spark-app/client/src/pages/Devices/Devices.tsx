@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from '@client/src/components/ui/select';
 import { DataSourceBadge } from '@client/src/components/DataSourceBadge';
+import ErrorState from '@client/src/components/ErrorState';
 import DeviceConfigDrawer from './DeviceConfigDrawer';
 
 type OnlineFilter = 'all' | 'online' | 'offline';
@@ -67,6 +68,7 @@ const Devices = (): React.ReactElement => {
     data: devices,
     isLoading,
     isError,
+    error,
     dataUpdatedAt,
     refetch,
   } = useQuery<DeviceInfo[]>({
@@ -238,19 +240,45 @@ const Devices = (): React.ReactElement => {
       <div className="bg-white rounded-xl border border-[hsl(220_14%_89%)] p-5">
         <h2 className="font-semibold text-[hsl(220_14%_14%)] mb-4">设备电量分布</h2>
         {batteryData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={batteryData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} />
-              <Tooltip />
-              <Bar dataKey="battery" name="电量(%)" radius={[4, 4, 0, 0]}>
-                {batteryData.map((entry, index) => (
-                  <Cell key={index} fill={batteryColor(entry.battery)} />
+          <>
+            <div
+              role="img"
+              aria-label="设备电量分布图（柱状图，按设备聚合）"
+            >
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={batteryData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Bar dataKey="battery" name="电量(%)" radius={[4, 4, 0, 0]}>
+                    {batteryData.map((entry, index) => (
+                      <Cell key={index} fill={batteryColor(entry.battery)} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <table className="sr-only">
+              <caption>设备电量分布（文本替代）</caption>
+              <thead>
+                <tr>
+                  <th scope="col">设备</th>
+                  <th scope="col">电量(%)</th>
+                  <th scope="col">在线</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batteryData.map((entry) => (
+                  <tr key={entry.name}>
+                    <td>{entry.name}</td>
+                    <td>{entry.battery}</td>
+                    <td>{entry.online ? '在线' : '离线'}</td>
+                  </tr>
                 ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+              </tbody>
+            </table>
+          </>
         ) : (
           <div className="h-[240px] flex items-center justify-center text-sm text-[hsl(218_10%_42%)]">
             暂无数据
@@ -291,19 +319,13 @@ const Devices = (): React.ReactElement => {
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td
-                    colSpan={TABLE_COL_COUNT}
-                    className="px-5 py-8 text-center text-sm text-red-600"
-                  >
-                    设备数据加载失败
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="ml-2"
-                      onClick={() => refetch()}
-                    >
-                      重试
-                    </Button>
+                  <td colSpan={TABLE_COL_COUNT} className="px-5 py-8">
+                    <ErrorState
+                      error={error}
+                      errorMessage="设备数据加载失败"
+                      onRetry={() => refetch()}
+                      backHref="/command-center"
+                    />
                   </td>
                 </tr>
               ) : devices && devices.length > 0 ? (

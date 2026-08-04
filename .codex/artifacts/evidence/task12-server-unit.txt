@@ -1,0 +1,191 @@
+PASS test/unit/work-orchestration/work-orchestration.service.spec.ts
+PASS test/unit/operations/role-workbench.service.spec.ts
+PASS test/scenarios/scenario-packages.spec.ts
+PASS test/unit/shared/app.module.spec.ts
+PASS test/unit/shared/main-bootstrap.spec.ts
+PASS test/unit/shared/standalone-main.spec.ts
+[31m[Nest] 85859  - [39m08/04/2026, 10:48:14 AM [31m  ERROR[39m [38;5;3m[ControlService] [39m[31mread control request failed[39m
+[31m[Nest] 85859  - [39m08/04/2026, 10:48:14 AM [31m  ERROR[39m [38;5;3m[ControlService] [39m[31mError: connection refused[39m
+PASS test/unit/control/control.service.spec.ts
+PASS test/unit/shared/database-audit-sink.spec.ts
+[33m[Nest] 85859  - [39m08/04/2026, 10:48:14 AM [33m   WARN[39m [38;5;3m[DatabaseAuditSink] [39m[33mDatabase audit sink has no database; entry not persisted[39m
+PASS test/unit/operations/operations.service.spec.ts
+PASS test/unit/workflow/workflow-instance.service.spec.ts
+PASS test/unit/audit/audit-query.service.spec.ts
+PASS test/unit/oee/oee.service.spec.ts
+PASS test/unit/auth/auth.service.spec.ts
+PASS test/unit/mes/mes.service.spec.ts
+PASS test/unit/world-cursor/world-cursor.controller.spec.ts
+PASS test/unit/shared/audit.service.spec.ts
+[32m[Nest] 85859  - [39m08/04/2026, 10:48:17 AM [32m    LOG[39m [38;5;3m[AuditService] [39m[32mAUDIT {"actorId":"user-1","orgId":"org-root","action":"device.update","entityType":"device","entityId":"dev-1","after":{"username":"alice","password":"[REDACTED]","apiKey":"[REDACTED]","authConfig":{"issuer":"https://auth.example","clientSecret":"[REDACTED]"},"health":{"controlCredential":"[REDACTED]","healthToken":"[REDACTED]"},"nested":{"privateKey":"[REDACTED]","keyVersion":3},"connection":"[REDACTED]","ok":true},"occurredAt":"2026-08-04T02:48:17.218Z"}[39m
+[32m[Nest] 85859  - [39m08/04/2026, 10:48:17 AM [32m    LOG[39m [38;5;3m[AuditService] [39m[32mAUDIT {"actorId":"user-1","orgId":"org-1","action":"device.update","entityType":"device","entityId":"dev-1","requestId":"req-123","occurredAt":"2026-08-04T02:48:17.220Z"}[39m
+PASS test/unit/approval/approval.service.spec.ts
+PASS test/unit/parameters/parameters.service.spec.ts
+PASS test/unit/gamification/gamification.service.spec.ts
+[32m[Nest] 85859  - [39m08/04/2026, 10:48:18 AM [32m    LOG[39m [38;5;3m[GamificationService] [39m[32mdispatchPlan planId=P-1 dispatched auditId=AUDIT-1[39m
+[33m[Nest] 85859  - [39m08/04/2026, 10:48:18 AM [33m   WARN[39m [38;5;3m[GamificationService] [39m[33mdispatchPlan planId=P-1 conflict: 1 issues[39m
+[32m[Nest] 85859  - [39m08/04/2026, 10:48:18 AM [32m    LOG[39m [38;5;3m[GamificationService] [39m[32msendExoFeedback deviceId=EXO-1 type=voice priority=high delivered[39m
+PASS test/unit/dashboard/device-search.spec.ts
+PASS test/unit/world/world.service.spec.ts
+PASS test/unit/dashboard/dashboard.controller.spec.ts
+PASS test/unit/scale/scale.service.spec.ts
+PASS test/unit/organization/organization.service.spec.ts
+PASS test/unit/erp/erp.service.spec.ts
+PASS test/unit/auth/access-token.guard.spec.ts
+[31m[Nest] 85859  - [39m08/04/2026, 10:48:21 AM [31m  ERROR[39m [38;5;3m[ResourceService] [39m[31mread resource preorder failed[39m
+[31m[Nest] 85859  - [39m08/04/2026, 10:48:21 AM [31m  ERROR[39m [38;5;3m[ResourceService] [39m[31mError: connection refused[39m
+[33m[Nest] 85859  - [39m08/04/2026, 10:48:20 AM [33m   WARN[39m [38;5;3m[AccessTokenGuard] [39m[33mOrg scope resolution failed for org-a; falling back to primary org[39m
+[33m[Nest] 85859  - [39m08/04/2026, 10:48:20 AM [33m   WARN[39m [38;5;3m[AccessTokenGuard] [39m[33mError: db unavailable
+    at Object.<anonymous> (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/test/unit/auth/access-token.guard.spec.ts:117:52)
+    at Promise.then.completed (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/utils.js:298:28)
+    at new Promise (<anonymous>)
+    at callAsyncCircusFn (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/utils.js:231:10)
+    at _callCircusTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:316:40)
+    at _runTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:252:3)
+    at _runTestsForDescribeBlock (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:126:9)
+    at _runTestsForDescribeBlock (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:121:9)
+    at run (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:71:3)
+    at runAndTransformResultsToJestFormat (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+    at jestAdapter (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+    at runTestInternal (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-runner/build/runTest.js:367:16)
+    at runTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-runner/build/runTest.js:444:34)[39m
+PASS test/unit/resource/resource.service.spec.ts
+[31m[Nest] 85859  - [39m08/04/2026, 10:48:21 AM [31m  ERROR[39m [38;5;3m[SchedulerService] [39m[31mupdateWeights 失败[39m
+[31m[Nest] 85859  - [39m08/04/2026, 10:48:21 AM [31m  ERROR[39m [38;5;3m[SchedulerService] [39m[31mError: audit store down[39m
+PASS test/unit/scheduler/scheduler.service.spec.ts
+PASS test/unit/onboarding/onboarding.service.spec.ts
+PASS test/unit/system/system.service.spec.ts
+[31m[Nest] 85859  - [39m08/04/2026, 10:48:22 AM [31m  ERROR[39m [38;5;3m[SimulatorService] [39m[31mmainTick 失败[39m
+[31m[Nest] 85859  - [39m08/04/2026, 10:48:22 AM [31m  ERROR[39m [38;5;3m[SimulatorService] [39m[31mError: EWOH_SIMULATOR_ORG_ID is not configured; simulator DB round skipped[39m
+PASS test/unit/simulator/simulator.service.spec.ts
+[32m[Nest] 85859  - [39m08/04/2026, 10:48:22 AM [32m    LOG[39m [38;5;3m[SimulatorService] [39m[32m初始化完成：0 台设备，0 名人员，0 个区域[39m
+PASS test/unit/world-cursor/world-cursor.service.spec.ts
+PASS test/unit/mobile/mobile.service.spec.ts
+PASS test/unit/model/model.service.spec.ts
+PASS test/unit/ingest/ingest.service.spec.ts
+PASS test/unit/alert/alert.service.spec.ts
+PASS test/unit/dashboard/device-contract.spec.ts
+PASS test/unit/shared/org-scope.service.spec.ts
+PASS test/unit/rule-engine/rule-engine.service.spec.ts
+PASS test/unit/task/task.service.spec.ts
+PASS test/unit/health/health.controller.spec.ts
+PASS test/unit/aas/aas.service.spec.ts
+PASS test/unit/ai/ai.service.spec.ts
+PASS test/unit/repo-facts.spec.ts
+PASS test/unit/shared/validation-pipe.spec.ts
+PASS test/unit/policy/policy.service.spec.ts
+PASS test/unit/workflow/workflow.service.spec.ts
+PASS test/unit/files/file.service.spec.ts
+PASS test/unit/work-orchestration/work-indexer.spec.ts
+PASS test/unit/shared/rate-limit.guard.spec.ts
+PASS test/unit/shared/org-context.interceptor.spec.ts
+PASS test/unit/shared/state-machine.guard.spec.ts
+PASS test/unit/shared/roles.guard.spec.ts
+PASS test/unit/shared/request-database-context.spec.ts
+PASS test/unit/events/event-catalog.service.spec.ts
+[31m[Nest] 85859  - [39m08/04/2026, 10:48:27 AM [31m  ERROR[39m [38;5;3m[GlobalExceptionFilter] [39m[31mUnhandled request error[39m
+Error: database password leaked
+    at Object.<anonymous> (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/test/unit/shared/exception.filter.spec.ts:31:39)
+    at Promise.then.completed (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/utils.js:298:28)
+    at new Promise (<anonymous>)
+    at callAsyncCircusFn (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/utils.js:231:10)
+    at _callCircusTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:316:40)
+    at _runTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:252:3)
+    at _runTestsForDescribeBlock (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:126:9)
+    at _runTestsForDescribeBlock (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:121:9)
+    at run (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:71:3)
+    at runAndTransformResultsToJestFormat (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+    at jestAdapter (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+    at runTestInternal (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-runner/build/runTest.js:367:16)
+    at runTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-runner/build/runTest.js:444:34)
+[31m[Nest] 85859  - [39m08/04/2026, 10:48:27 AM [31m  ERROR[39m [38;5;3m[GlobalExceptionFilter] [39m[31mUnhandled request error[39m
+Error: debug me
+    at Object.<anonymous> (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/test/unit/shared/exception.filter.spec.ts:43:39)
+    at Promise.then.completed (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/utils.js:298:28)
+    at new Promise (<anonymous>)
+    at callAsyncCircusFn (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/utils.js:231:10)
+    at _callCircusTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:316:40)
+    at _runTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:252:3)
+    at _runTestsForDescribeBlock (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:126:9)
+    at _runTestsForDescribeBlock (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:121:9)
+    at run (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:71:3)
+    at runAndTransformResultsToJestFormat (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+    at jestAdapter (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+    at runTestInternal (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-runner/build/runTest.js:367:16)
+    at runTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-runner/build/runTest.js:444:34)
+[31m[Nest] 85859  - [39m08/04/2026, 10:48:27 AM [31m  ERROR[39m [38;5;3m[GlobalExceptionFilter] [39m[31mUnhandled request error[39m
+Error: boom
+    at Object.<anonymous> (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/test/unit/shared/exception.filter.spec.ts:85:39)
+    at Promise.then.completed (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/utils.js:298:28)
+    at new Promise (<anonymous>)
+    at callAsyncCircusFn (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/utils.js:231:10)
+    at _callCircusTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:316:40)
+    at _runTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:252:3)
+    at _runTestsForDescribeBlock (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:126:9)
+    at _runTestsForDescribeBlock (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:121:9)
+    at run (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:71:3)
+    at runAndTransformResultsToJestFormat (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+    at jestAdapter (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+    at runTestInternal (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-runner/build/runTest.js:367:16)
+    at runTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-runner/build/runTest.js:444:34)
+[31m[Nest] 85859  - [39m08/04/2026, 10:48:27 AM [31m  ERROR[39m [38;5;3m[GlobalExceptionFilter] [39m[31mUnhandled request error[39m
+Error: boom
+    at Object.<anonymous> (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/test/unit/shared/exception.filter.spec.ts:97:39)
+    at Promise.then.completed (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/utils.js:298:28)
+    at new Promise (<anonymous>)
+    at callAsyncCircusFn (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/utils.js:231:10)
+    at _callCircusTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:316:40)
+    at _runTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:252:3)
+    at _runTestsForDescribeBlock (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:126:9)
+    at _runTestsForDescribeBlock (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:121:9)
+    at run (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:71:3)
+    at runAndTransformResultsToJestFormat (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+    at jestAdapter (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+    at runTestInternal (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-runner/build/runTest.js:367:16)
+    at runTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-runner/build/runTest.js:444:34)
+[31m[Nest] 85859  - [39m08/04/2026, 10:48:27 AM [31m  ERROR[39m [38;5;3m[GlobalExceptionFilter] [39m[31mUnhandled request error[39m
+Error: boom
+    at Object.<anonymous> (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/test/unit/shared/exception.filter.spec.ts:122:39)
+    at Promise.then.completed (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/utils.js:298:28)
+    at new Promise (<anonymous>)
+    at callAsyncCircusFn (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/utils.js:231:10)
+    at _callCircusTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:316:40)
+    at _runTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:252:3)
+    at _runTestsForDescribeBlock (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:126:9)
+    at _runTestsForDescribeBlock (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:121:9)
+    at run (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/run.js:71:3)
+    at runAndTransformResultsToJestFormat (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+    at jestAdapter (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+    at runTestInternal (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-runner/build/runTest.js:367:16)
+    at runTest (/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/node_modules/jest-runner/build/runTest.js:444:34)
+PASS test/unit/shared/exception.filter.spec.ts
+PASS test/unit/work-orchestration/git-sync.spec.ts
+PASS test/unit/ingest/ingest.guard.spec.ts
+PASS test/unit/files/s3-storage.driver.spec.ts
+PASS test/unit/metrics/metrics.interceptor.spec.ts
+PASS test/unit/tracing/tracing.interceptor.spec.ts
+PASS test/unit/shared/idempotency.service.spec.ts
+PASS test/unit/metrics/metrics.controller.spec.ts
+PASS test/unit/observability/slow-query.service.spec.ts
+PASS test/unit/shared/pagination-errors.spec.ts
+PASS test/unit/metrics/metrics.service.spec.ts
+PASS test/unit/shared/audit-chain.service.spec.ts
+PASS test/unit/tracing/tracing.service.spec.ts
+PASS test/contract/mapping.spec.ts
+PASS test/contract/workflow.spec.ts
+PASS test/contract/policy.spec.ts
+PASS test/contract/event-catalog.spec.ts
+PASS test/contract/helm-chart.spec.ts
+PASS test/unit/work-orchestration/work-console.spec.ts
+PASS test/unit/work-orchestration/graph-layout.spec.ts
+PASS test/contract/golden-factory.spec.ts
+PASS test/unit/work-orchestration/site-readiness.spec.ts
+PASS test/unit/work-orchestration/factory-replication.spec.ts
+PASS test/unit/scale/compatibility.spec.ts
+PASS test/unit/harness.spec.ts
+PASS test/unit/shared/uuid.spec.ts
+
+Test Suites: 81 passed, 81 total
+Tests:       394 passed, 394 total
+Snapshots:   0 total
+Time:        23.885 s

@@ -49,6 +49,7 @@ const Personnel = (): React.ReactElement => {
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
             placeholder="搜索姓名 / 工号 / 岗位"
+            aria-label="搜索人员"
             className="h-9 w-full rounded-lg border border-[hsl(220_14%_89%)] bg-white pl-9 pr-3 text-sm outline-none focus:border-[hsl(221_83%_53%)]"
           />
         </div>
