@@ -100,3 +100,37 @@ export async function inspectMobileStep(
   });
   return res.data;
 }
+
+export interface ForceResolveStepResult {
+  stepId: string;
+  resolution: 'local' | 'server';
+  applied: boolean;
+  serverValue: unknown;
+  note?: string;
+  resolvedAt: string;
+}
+
+/**
+ * Idempotently resolves an offline step state conflict. `resolution: 'local'`
+ * re-applies the local action through the authoritative state machine (never
+ * bypasses it); `resolution: 'server'` keeps the current server state. The
+ * backend records the decision and returns the recorded result for repeated
+ * calls with the same `idempotencyKey`.
+ */
+export async function forceResolveMobileStep(
+  orderId: string,
+  stepId: string,
+  body: {
+    resolution: 'local' | 'server';
+    idempotencyKey?: string;
+    action?: string;
+    payload?: Record<string, unknown>;
+  },
+): Promise<ForceResolveStepResult> {
+  const res = await axiosForBackend({
+    url: `/api/mobile/workbench/orders/${encodeURIComponent(orderId)}/steps/${encodeURIComponent(stepId)}/force-resolve`,
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}

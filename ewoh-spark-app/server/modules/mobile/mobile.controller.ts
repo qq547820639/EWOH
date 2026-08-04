@@ -53,6 +53,26 @@ export class MobileController {
     );
   }
 
+  @Post('workbench/orders/:orderId/steps/:stepId/force-resolve')
+  forceResolveStep(
+    @Param('orderId') orderId: string,
+    @Param('stepId') stepId: string,
+    @Body() body: {
+      resolution: 'local' | 'server';
+      idempotencyKey?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+    },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.mobileService.forceResolveStep(
+      orderId,
+      stepId,
+      body,
+      request.userContext,
+    );
+  }
+
   @Post('workbench/orders/:orderId/steps/:stepId/quality')
   inspectStep(
     @Param('orderId') orderId: string,

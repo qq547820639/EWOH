@@ -57,6 +57,21 @@ export class MesController {
     return this.mesService.transitionStep(id, stepId, action, body, request.userContext);
   }
 
+  @Post('work-orders/:id/steps/:stepId/force-resolve')
+  forceResolveStep(
+    @Param('id') id: string,
+    @Param('stepId') stepId: string,
+    @Body() body: {
+      resolution: 'local' | 'server';
+      idempotencyKey?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+    },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.mesService.forceResolveStep(id, stepId, body, request.userContext);
+  }
+
   @Post('work-orders/:id/materials')
   consumeMaterial(
     @Param('id') id: string,

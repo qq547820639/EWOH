@@ -124,6 +124,20 @@ export class MobileService {
     return this.mesService.transitionStep(orderId, stepId, action, body, actor);
   }
 
+  async forceResolveStep(
+    orderId: string,
+    stepId: string,
+    body: {
+      resolution: 'local' | 'server';
+      idempotencyKey?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+    },
+    actor?: OrgContext,
+  ) {
+    return this.mesService.forceResolveStep(orderId, stepId, body, actor);
+  }
+
   async inspectStep(
     orderId: string,
     body: {

@@ -21,7 +21,7 @@ import {
 } from '../../lib/attachmentCompression';
 import { createDraftStore, type DraftStore } from '../../lib/draftStore';
 import { uploadFile } from '../../api/files';
-import { inspectMobileStep, transitionMobileStep } from '../../api/mobile';
+import { forceResolveMobileStep, inspectMobileStep, transitionMobileStep } from '../../api/mobile';
 import { getAuthUser } from '../../lib/auth';
 
 export interface QueueAttachment {
@@ -424,11 +424,10 @@ export function useOfflineWorkbench(
 
   /**
    * Resolves a conflict item. The backend state machine is authoritative and is
-   * never bypassed here — all choices remove the queued action so it is not
+   * never bypassed here — the idempotent force-resolve endpoint records the
+   * decision and (for "local") re-applies the local action through the normal
+   * transition path. All choices remove the queued action so it is not
    * re-delivered, and the decision is recorded in the audit log.
-   * TODO: backend — add an idempotent/force-resolution endpoint so "采用本地" can
-   * actually re-apply the local value to the server; until then the server state
-   * stands and the local action is dropped.
    */
   const resolveConflict = useCallback(
     async (id: string, choice: 'local' | 'server' | 'manual') => {
@@ -437,6 +436,33 @@ export function useOfflineWorkbench(
         return;
       }
       const item = (await db.pendingActions.getAll()).find((c) => c.id === id);
+      if (choice === 'local' || choice === 'server') {
+        if (!isOnline) {
+          toast.error('当前处于离线状态，无法提交冲突解析，请恢复网络后重试');
+        } else if (item?.orderId && item?.stepId) {
+          try {
+            const result = await forceResolveMobileStep(
+              item.orderId,
+              item.stepId,
+              {
+                resolution: choice,
+                idempotencyKey: item.idempotencyKey,
+                action: choice === 'local' ? item.action : undefined,
+                payload: choice === 'local' ? item.body : undefined,
+              },
+            );
+            if (choice === 'local' && !result.applied) {
+              toast.error('本地变更仍无法应用，已保留服务端状态', {
+                description: result.note ?? '请核对现场实际状态后手动处理',
+              });
+            }
+          } catch (error) {
+            toast.error('冲突解析失败，请重试', {
+              description: error instanceof Error ? error.message : undefined,
+            });
+          }
+        }
+      }
       await db.pendingActions.delete(id);
       if (item?.attachmentId) {
         await db.attachments.delete(item.attachmentId);
@@ -457,7 +483,7 @@ export function useOfflineWorkbench(
             : '已进入手动编辑';
       toast.info(`${label}：${item?.stepId ?? ''}`);
     },
-    [personId, recordAudit, refreshPending],
+    [personId, recordAudit, refreshPending, isOnline],
   );
 
   return {

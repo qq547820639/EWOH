@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from 'recharts';
-import { Plus, Pencil, Link2 } from 'lucide-react';
+import { Plus, Pencil, Link2, TriangleAlert } from 'lucide-react';
 import { searchDevices } from '@client/src/api/dashboard';
 import { getEntities } from '@client/src/api/spatial';
 import { queryKeys } from '@client/src/hooks/queryKeys';
@@ -67,6 +67,7 @@ const Devices = (): React.ReactElement => {
   const {
     data: devices,
     isLoading,
+    isFetching,
     isError,
     error,
     dataUpdatedAt,
@@ -76,6 +77,9 @@ const Devices = (): React.ReactElement => {
     queryFn: () => searchDevices(searchQuery),
     refetchInterval: 30000,
   });
+
+  // 数据过期（stale）判定：超过 2 个刷新周期未成功更新即视为过期数据
+  const isStale = dataUpdatedAt > 0 && Date.now() - dataUpdatedAt > 60000;
 
   // 拉取全部空间实体，用于 parentId -> 名称映射
   const { data: entities } = useQuery<SpatialEntity[]>({
@@ -134,7 +138,16 @@ const Devices = (): React.ReactElement => {
           </p>
           {dataUpdatedAt > 0 && (
             <p className="mt-1 text-xs text-[hsl(218_10%_50%)]">
-              更新于 {new Date(dataUpdatedAt).toLocaleTimeString('zh-CN', { hour12: false })}
+              {isStale ? (
+                <span className="inline-flex items-center gap-1 text-amber-600">
+                  <TriangleAlert className="h-3 w-3" />
+                  数据已过期，暂未获取到最新设备状态
+                </span>
+              ) : isFetching ? (
+                '正在刷新…'
+              ) : (
+                `更新于 ${new Date(dataUpdatedAt).toLocaleTimeString('zh-CN', { hour12: false })}`
+              )}
             </p>
           )}
         </div>

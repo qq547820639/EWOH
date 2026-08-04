@@ -33,10 +33,10 @@ export interface ConflictErrorPayload {
 
 /**
  * Extracts the server value (and any locally-known value) from a conflict error.
- * The backend currently returns only a `STATE_CONFLICT` message; `serverValue`
- * parsing is best-effort and graceful when the field is absent.
- * TODO: backend — include `serverValue` (current server state) in 409 responses
- * so the client can render a precise local-vs-server diff.
+ * The backend `mes` step transition endpoints now return `serverValue` (the
+ * current server step state) in 409 responses, so the client can render a
+ * precise local-vs-server diff. Parsing remains best-effort and graceful when
+ * the field is absent.
  */
 export function parseConflictPayload(
   error: unknown,

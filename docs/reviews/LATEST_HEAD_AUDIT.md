@@ -105,7 +105,7 @@
 | G1 | **4 个门禁缺人工批准**（G11-G13 等） | `work-console` 输出 |
 | G2 | **210 条任务缺证据**（仅 T-198..T-217 有 1 条，其余 0 条） | `work-console` 输出 |
 | G3 | **Gate 无撤销/回滚 API** | `GatesPanel.tsx` L236/238/247/249/284/301 均为 TODO（"需后端提供 gate 撤销/回滚 API"） |
-| G4 | **离线冲突无强制解析端点** | `offlineConflict.ts` L38、`useOfflineWorkbench.ts` L429 TODO（409 无 `serverValue`、需 idempotent force-resolution 端点） |
+| G4 | **离线冲突无强制解析端点**（**已闭合**，见 14.2） | `offlineConflict.ts` L38、`useOfflineWorkbench.ts` L429 TODO 原为（409 无 `serverValue`、需 idempotent force-resolution 端点）；Phase 3 已实现 `serverValue` + 幂等 force-resolve 端点并接线前端 |
 | G5 | **OIDC 后端为 stub** | `src/edge_platform/auth/identity.py` L9/L103/L111（"未实现完整 OIDC 授权码/PKCE"） |
 | G6 | **跨工厂调度为 STUB** | `src/edge_platform/spatial/multi_factory.py` L38/L419/L447（`CROSS_FACTORY_STUB`，V2.0 未实现） |
 | G7 | **Site Readiness 真实环境探测为前端 TODO** | `siteReadinessProbe.ts`/`SiteReadinessWizard.tsx` L419（Docker/K8s/Helm/真实设备探测需后端接口） |
@@ -243,3 +243,42 @@ Phase 1 对账 CLI 交付完成：实现 + 单元测试（5/5）通过 + pre-com
 Phase 2 因果控制台契约闭合完成：实现 + 单元测试通过 + 前端接线 + OpenAPI 契约登记 + route-manifest 更新。
 撤销/历史沿用 `gate-decisions.json` / `gate-decision-history.json` 落盘，未引入新依赖，未改冻结状态机/安全边界/共享契约。
 真实 PG/浏览器 E2E 依赖外部环境（本机不可用），未伪造结果。证据文件 `.codex/artifacts/work/evidence/round106-causal-console-gate-revoke.md`。
+
+## 14. Phase 3 用户体验统一验证（G4 离线冲突闭环 + 九态抽查 + UX Backlog）
+
+> 依据 Phase 3（G4 契约闭合、UX_DEEPENING_BACKLOG、九态错误体验抽查）实现与验证。以下为实际运行命令与结果（本机，无 PG/浏览器）。
+
+### 14.1 实际运行命令与结果
+
+| # | 命令 | 结果 |
+|---|---|---|
+| 1 | `npx jest test/unit/mes/mes.service.spec.ts --runInBand` | **PASS**（22/22，含 4 个新增 force-resolve 用例） |
+| 2 | `npm run type:check:server` | **PASS**（tsc 0 错误） |
+| 3 | `npm run type:check:client` | **PASS**（tsc 0 错误） |
+| 4 | `npm run lint` | **PASS**（eslint + stylelint + type:check） |
+| 5 | `node scripts/audit-openapi-routes.js --strict` | **PASS**（controller 253 / spec 253 / 0 未登记 / 0 未实现） |
+
+### 14.2 G4 离线冲突闭环（闭合 G4）
+
+- 后端步骤迁移 409 冲突响应新增 `serverValue`（当前服务端步骤状态）。
+- `POST /api/mes/work-orders/{id}/steps/{stepId}/force-resolve`：幂等强制解析。`resolution:'server'` 保留服务端状态；`resolution:'local'` 经合法状态机重新应用本地动作，绝不绕过状态机；仍冲突则 `applied=false`+`LOCAL_CONFLICT_PERSISTS`。
+- `POST /api/mobile/workbench/orders/{orderId}/steps/{stepId}/force-resolve`：移动端委托。
+- 复用 `IdempotencyService`，同 `idempotencyKey` 重复调用返回记录结果。
+- 前端 `offlineConflict.ts` 消费 `serverValue`（`parseConflictPayload`）渲染本地 vs 服务端差异；`useOfflineWorkbench.ts` `resolveConflict` 实际调用 `forceResolveMobileStep`，离线时提示"无法提交冲突解析，请恢复网络后重试"，本地仍无法应用时明确提示"已保留服务端状态"。
+- **禁止静默覆盖**：所有冲突解决显式选择（本地/服务端/手动），全程审计。
+- OpenAPI 契约登记 2 条 force-resolve 路由 + `MesForceResolveRequest/MesForceResolveResult` schema；route-manifest 更新至 253 ops。
+
+### 14.3 九态错误体验抽查（最小 UI 处理）
+
+- 抽查 `Devices`、`WorkOrchestration`（含 10 个子面板）、`RoleWorkbench` 三页：Loading/Empty/Error(Failure/Denied/Offline/Validation)/Success 均通过 `QueryState`/`ErrorState` 覆盖；Conflict 由 `WorkOrchestration` 冲突横幅与 `MobileWorkbench` 冲突解析覆盖；Partial 由分面板独立 `QueryState` 覆盖。
+- 本轮为 `Devices` 页补充 **Expired/Stale** 态：超过 2 个刷新周期（60s）未成功更新时显示"数据已过期，暂未获取到最新设备状态"，并区分"正在刷新"。
+
+### 14.4 产物
+
+- 新增 `docs/product/UX_DEEPENING_BACKLOG.md`：覆盖第四阶段 3.1–3.13 共 13 项，每项含角色/问题/当前行为/目标行为/页面/API 或状态机依赖/优先级/验收/Playwright 场景/截图状态。
+- 证据文件 `.codex/artifacts/work/evidence/round107-g4-offline-conflict-force-resolve.md`。
+
+### 14.5 结论
+
+Phase 3 用户体验统一深化完成：G4 离线冲突闭环闭合（实现 + 单测 + 前端接线 + OpenAPI + route-manifest）、九态抽查补齐 Devices 过期态、UX_DEEPENING_BACKLOG 产出 13 项。
+未改冻结状态机/安全边界/共享契约；未引入新第三方依赖。真实 PG/浏览器 E2E 依赖外部环境（本机不可用），未伪造结果。

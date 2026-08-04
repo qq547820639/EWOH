@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-04T04:18:45.750Z",
+  "generatedAt": "2026-08-04T04:41:49.892Z",
   "spec": "openapi/ewoh.yaml",
   "controllerKeys": [
     "DELETE /api/dashboard/devices/{deviceId}/bindings",
@@ -179,7 +179,9 @@
     "POST /api/mes/work-orders/{id}/inspections",
     "POST /api/mes/work-orders/{id}/materials",
     "POST /api/mes/work-orders/{id}/state",
+    "POST /api/mes/work-orders/{id}/steps/{stepId}/force-resolve",
     "POST /api/mes/work-orders/{id}/steps/{stepId}/state",
+    "POST /api/mobile/workbench/orders/{orderId}/steps/{stepId}/force-resolve",
     "POST /api/mobile/workbench/orders/{orderId}/steps/{stepId}/quality",
     "POST /api/mobile/workbench/orders/{orderId}/steps/{stepId}/state",
     "POST /api/mobile/workbench/scan",
@@ -432,7 +434,9 @@
     "POST /api/mes/work-orders/{id}/inspections",
     "POST /api/mes/work-orders/{id}/materials",
     "POST /api/mes/work-orders/{id}/state",
+    "POST /api/mes/work-orders/{id}/steps/{stepId}/force-resolve",
     "POST /api/mes/work-orders/{id}/steps/{stepId}/state",
+    "POST /api/mobile/workbench/orders/{orderId}/steps/{stepId}/force-resolve",
     "POST /api/mobile/workbench/orders/{orderId}/steps/{stepId}/quality",
     "POST /api/mobile/workbench/orders/{orderId}/steps/{stepId}/state",
     "POST /api/mobile/workbench/scan",
@@ -507,9 +511,9 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 251,
-  "specOperations": 251,
-  "documentedControllerOperations": 251,
+  "controllerOperations": 253,
+  "specOperations": 253,
+  "documentedControllerOperations": 253,
   "undocumented": [],
   "unimplemented": []
 }

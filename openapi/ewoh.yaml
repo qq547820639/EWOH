@@ -2803,6 +2803,50 @@ paths:
           $ref: '#/components/responses/Conflict'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/mobile/workbench/orders/{orderId}/steps/{stepId}/force-resolve:
+    post:
+      tags:
+        - mobile
+      summary: Idempotently resolve an offline mobile step state conflict
+      description: >
+        Records an offline conflict resolution. `resolution: 'server'` keeps the
+        current server state; `resolution: 'local'` re-applies the local action
+        through the authoritative state machine (never bypasses it). Repeated
+        calls with the same `idempotencyKey` return the recorded result.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MesForceResolveRequest'
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MesForceResolveResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/mobile/workbench/orders/{orderId}/steps/{stepId}/quality:
     post:
       tags:
@@ -3280,6 +3324,52 @@ paths:
           $ref: '#/components/responses/NotFound'
         Conflict:
           $ref: '#/components/responses/Conflict'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/mes/work-orders/{id}/steps/{stepId}/force-resolve:
+    post:
+      tags:
+        - mes
+      summary: Idempotently resolve an offline step state conflict
+      description: >
+        Records an offline conflict resolution. `resolution: 'server'` keeps the
+        current server state; `resolution: 'local'` re-applies the local action
+        through the authoritative state machine (never bypasses it). Repeated
+        calls with the same `idempotencyKey` return the recorded result.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Work order id
+          schema:
+            type: string
+        - name: stepId
+          in: path
+          required: true
+          description: Step id
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MesForceResolveRequest'
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MesForceResolveResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
   /api/mes/work-orders/{id}/materials:
@@ -10415,6 +10505,40 @@ components:
         operatorId:
           type: string
         reviewer:
+          type: string
+    MesForceResolveRequest:
+      type: object
+      properties:
+        resolution:
+          type: string
+          enum:
+            - local
+            - server
+        idempotencyKey:
+          type: string
+        action:
+          type: string
+        payload:
+          type: object
+      required:
+        - resolution
+    MesForceResolveResult:
+      type: object
+      properties:
+        stepId:
+          type: string
+        resolution:
+          type: string
+          enum:
+            - local
+            - server
+        applied:
+          type: boolean
+        serverValue:
+          type: object
+        note:
+          type: string
+        resolvedAt:
           type: string
     MaterialConsumption:
       type: object

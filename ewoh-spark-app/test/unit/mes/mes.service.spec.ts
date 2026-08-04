@@ -794,3 +794,150 @@ describe('MesService step exception lifecycle', () => {
     expect(result.status).toBe('reported');
   });
 });
+
+describe('MesService force-resolve (offline conflict closure)', () => {
+  function stepTransitionDb(workOrder: unknown, step: unknown, returning: unknown[]) {
+    const { db } = createGetDb([workOrder], [step], []);
+    const updateSet = jest.fn((values: Record<string, unknown>) => ({
+      where: jest.fn(() => ({
+        returning: jest.fn().mockResolvedValue(returning),
+      })),
+    }));
+    return {
+      dbWithUpdate: {
+        ...db,
+        update: jest.fn(() => ({ set: updateSet })),
+      },
+      updateSet,
+    };
+  }
+
+  it('keeps server state for resolution=server and is idempotent', async () => {
+    const workOrder = {
+      scheduleTaskId: 'WO-1',
+      title: '装配',
+      status: 'in_progress',
+    };
+    const step = {
+      stepId: 'S1',
+      status: 'reviewed',
+      progress: 90,
+      actualStart: null,
+      actualEnd: null,
+      resultJson: null,
+    };
+    const { db } = createGetDb([workOrder], [step], []);
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new MesService(db as never, audit as never);
+
+    const result = await service.forceResolveStep(
+      'WO-1',
+      'S1',
+      { resolution: 'server', idempotencyKey: 'fk-1' },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+
+    expect(result.resolution).toBe('server');
+    expect(result.applied).toBe(false);
+    expect(result.serverValue).toEqual(step);
+    expect(audit.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'mes.step.force_resolve.server' }),
+    );
+
+    const again = await service.forceResolveStep(
+      'WO-1',
+      'S1',
+      { resolution: 'server', idempotencyKey: 'fk-1' },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+    expect(again).toEqual(result);
+  });
+
+  it('re-applies a local action through the state machine when it succeeds', async () => {
+    const workOrder = {
+      scheduleTaskId: 'WO-1',
+      title: '装配',
+      status: 'in_progress',
+    };
+    const step = {
+      stepId: 'S1',
+      status: 'in_progress',
+      progress: 10,
+      actualStart: null,
+      actualEnd: null,
+      resultJson: null,
+    };
+    const { dbWithUpdate } = stepTransitionDb(workOrder, step, [
+      { ...step, status: 'reported' },
+    ]);
+    const service = new MesService(
+      dbWithUpdate as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    const result = await service.forceResolveStep(
+      'WO-1',
+      'S1',
+      {
+        resolution: 'local',
+        idempotencyKey: 'fk-2',
+        action: 'report',
+        payload: { quantity: 3 },
+      },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+
+    expect(result.resolution).toBe('local');
+    expect(result.applied).toBe(true);
+    expect((result.serverValue as { status: string }).status).toBe('reported');
+  });
+
+  it('reports LOCAL_CONFLICT_PERSISTS when local re-apply still conflicts', async () => {
+    const workOrder = {
+      scheduleTaskId: 'WO-1',
+      title: '装配',
+      status: 'in_progress',
+    };
+    const step = {
+      stepId: 'S1',
+      status: 'in_progress',
+      progress: 10,
+      actualStart: null,
+      actualEnd: null,
+      resultJson: null,
+    };
+    const { dbWithUpdate } = stepTransitionDb(workOrder, step, []);
+    const service = new MesService(
+      dbWithUpdate as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    const result = await service.forceResolveStep(
+      'WO-1',
+      'S1',
+      {
+        resolution: 'local',
+        idempotencyKey: 'fk-3',
+        action: 'report',
+        payload: { quantity: 3 },
+      },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+
+    expect(result.applied).toBe(false);
+    expect(result.note).toBe('LOCAL_CONFLICT_PERSISTS');
+    expect(result.serverValue).toEqual(step);
+  });
+
+  it('rejects an invalid resolution', async () => {
+    const service = new MesService(
+      {} as never,
+      { appendAuditLog: jest.fn() } as never,
+    );
+    await expect(
+      service.forceResolveStep('WO-1', 'S1', {
+        resolution: 'override' as 'local',
+      }),
+    ).rejects.toThrow('resolution must be local or server');
+  });
+});

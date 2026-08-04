@@ -5,6 +5,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, desc, eq } from 'drizzle-orm';
@@ -17,6 +18,7 @@ import {
   ewohScheduleTaskStep,
 } from '@server/database/schema';
 import { AuditService } from '../shared/audit.service';
+import { IdempotencyService } from '../shared/idempotency.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
 export interface MesStepInput {
@@ -44,6 +46,15 @@ export interface CreateWorkOrderDto {
   planStart?: string;
   planEnd?: string;
   steps: MesStepInput[];
+}
+
+export interface ForceResolveResult {
+  stepId: string;
+  resolution: 'local' | 'server';
+  applied: boolean;
+  serverValue: unknown;
+  note?: string;
+  resolvedAt: string;
 }
 
 export function nextWorkOrderStatus(current: string, action: string): string | null {
@@ -180,6 +191,8 @@ export class MesService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly auditService: AuditService,
+    @Optional()
+    private readonly idempotencyService: IdempotencyService = new IdempotencyService(),
   ) {}
 
   async listWorkOrders() {
@@ -503,7 +516,10 @@ export class MesService {
       )
       .returning();
     if (!row) {
-      throw new ConflictException('STATE_CONFLICT');
+      throw new ConflictException({
+        message: 'STATE_CONFLICT',
+        serverValue: step,
+      });
     }
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
@@ -515,6 +531,97 @@ export class MesService {
       after: { status: row.status },
     });
     return row;
+  }
+
+  /**
+   * Idempotently resolves a step state conflict. The state machine is
+   * authoritative and is never bypassed here:
+   *  - `resolution: 'server'` keeps the current server state (records the
+   *    decision, no mutation).
+   *  - `resolution: 'local'` re-applies the caller's local action through the
+   *    normal transition path; if the transition is still not allowed the
+   *    server state stands and `applied` is `false` so the caller is never
+   *    silently overwritten.
+   * Repeated calls with the same `idempotencyKey` return the recorded result.
+   */
+  async forceResolveStep(
+    orderId: string,
+    stepId: string,
+    body: {
+      resolution: 'local' | 'server';
+      idempotencyKey?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+    },
+    actor?: OrgContext,
+  ): Promise<ForceResolveResult> {
+    const resolution = body?.resolution;
+    if (resolution !== 'local' && resolution !== 'server') {
+      throw new BadRequestException('resolution must be local or server');
+    }
+    const idempotencyKey =
+      body?.idempotencyKey?.trim() ||
+      `force-resolve:${orderId}:${stepId}:${resolution}`;
+    const recorded = await this.idempotencyService.lookup<ForceResolveResult>(
+      idempotencyKey,
+    );
+    if (recorded) {
+      return recorded;
+    }
+    const workOrder = await this.getWorkOrder(orderId);
+    const step = workOrder.steps.find((candidate) => candidate.stepId === stepId);
+    if (!step) {
+      throw new NotFoundException(`Step ${stepId} not found in work order ${orderId}`);
+    }
+    const resolvedAt = new Date().toISOString();
+    let applied = false;
+    let serverValue: unknown = step;
+    let note: string | undefined;
+
+    if (resolution === 'local' && body?.action) {
+      try {
+        const updated = await this.transitionStep(
+          orderId,
+          stepId,
+          body.action,
+          body.payload,
+          actor,
+        );
+        applied = true;
+        serverValue = updated;
+      } catch (error) {
+        if (error instanceof ConflictException) {
+          note = 'LOCAL_CONFLICT_PERSISTS';
+        } else {
+          note = error instanceof Error ? error.message : 'LOCAL_APPLY_FAILED';
+        }
+      }
+    }
+
+    const result: ForceResolveResult = {
+      stepId,
+      resolution,
+      applied,
+      serverValue,
+      note,
+      resolvedAt,
+    };
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: `mes.step.force_resolve.${resolution}`,
+      entityType: 'schedule_task_step',
+      entityId: stepId,
+      before: { status: step.status },
+      after: {
+        status: applied
+          ? (serverValue as { status?: string }).status ?? undefined
+          : step.status,
+      },
+      metadata: { orderId, idempotencyKey, applied, note },
+    });
+    await this.idempotencyService.store(idempotencyKey, result);
+    return result;
   }
 
   async consumeMaterial(
