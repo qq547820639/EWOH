@@ -14,7 +14,7 @@ Trace: EWOH-2026-08-04-principal-final6
 - browser：`5/5`
 - repo-facts：`38/38`
 - work graph：`252 items / 209 edges / 48 actors / 191 evidence / 14 gates / 0 conflicts`
-- DB：`48 managed tables（来自 db/contracts/schema-manifest.yaml 的生成式 managed_count；51 managed / 57 physical 为未独立验证的自报，未采纳）`
+- DB：`57 managed tables / 57 physical tables（来自 db/contracts/schema-manifest.yaml 的生成式 managed_tables；未独立验证，不作为已确认事实）`
 - Pilot readiness：`NOT READY（7 passed / 3 failed / 5 pending）`
 - Gate：G0-G6 已通过，G7-G9 为 validation，G10 passed-locally / production-pending，G11-G13 pending
 

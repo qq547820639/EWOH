@@ -345,19 +345,66 @@ export class WorkOrchestrationService {
     });
   }
 
+  /**
+   * Durable (DB-backed) resource list, reading lock state from the database so the
+   * in-process Map / lock files are not the source of truth (2.B / 2.D). Falls back
+   * to the legacy file/in-memory path when no DB persistence is available.
+   */
+  async getResourcesDurable(
+    actor: { userId?: string; primaryOrgId?: string } | undefined,
+  ) {
+    if (!this.domainPersistence) return this.getResources();
+    const graph = this.getGraph();
+    const orgId = actor?.primaryOrgId ?? 'default';
+    await this.domainPersistence.recoverExpiredLocks(orgId);
+    const locks = await this.domainPersistence.listActiveLocks(orgId);
+    const lockById = new Map(locks.map((lock) => [lock.resourceId, lock]));
+    return graph.resources.map((resource) => {
+      const lock = lockById.get(resource.resourceId);
+      return {
+        ...resource,
+        lock: lock?.active
+          ? {
+              holder: lock.holder,
+              purpose: lock.purpose,
+              acquiredAt: lock.acquiredAt,
+              expiresAt: lock.expiresAt,
+            }
+          : null,
+      };
+    });
+  }
+
   getHandoffs() {
     return this.getGraph().handoffs;
   }
 
-  getGitSyncStatus() {
+  async getGitSyncStatus() {
     const graph = this.getGraph();
     const registry = this.loadGitSyncRegistry();
     const sync = this.gitSync();
-    return sync.buildGitSyncPlan(
+    const plan = sync.buildGitSyncPlan(
       graph.items,
       registry,
       sync.gitInfo(this.repoRoot()),
     );
+    // 2.B: when the durable store is available, surface the persisted git-sync
+    // state (last sync sha / status / time) as the fact source instead of only the
+    // in-process recomputed plan. Without DB access we fall back to plan-only.
+    if (this.domainPersistence) {
+      const persisted = await this.domainPersistence.getGitSyncState('git-sync');
+      if (persisted) {
+        return {
+          ...plan,
+          persistedState: {
+            lastSyncSha: persisted.lastSyncSha,
+            lastSyncStatus: persisted.lastSyncStatus,
+            lastSyncAt: persisted.lastSyncAt,
+          },
+        };
+      }
+    }
+    return plan;
   }
 
   applyGitSync(body: {
@@ -410,6 +457,82 @@ export class WorkOrchestrationService {
     };
     this.recordGitSyncApply({ idempotencyKey: body.idempotencyKey, result: response });
     return response;
+  }
+
+  /**
+   * Durable (DB-backed) git-sync apply. Writes the git-sync state and produced
+   * evidence into the database, and uses the (scope, idempotencyKey) transaction so
+   * a replay returns the single recorded result rather than re-applying (2.B / 2.C /
+   * 2.D). Falls back to the legacy file path when no DB persistence is available.
+   */
+  async applyGitSyncDurable(body: {
+    idempotencyKey?: string;
+    approved?: boolean;
+    reason?: string;
+    actor?: string;
+  }) {
+    if (!this.domainPersistence) return this.applyGitSync(body);
+    if (!this.isWritable()) {
+      throw new BadRequestException('EWOH_WORK_WRITABLE is not enabled');
+    }
+    if (body.approved !== true) {
+      throw new BadRequestException(
+        'git-sync apply requires approved=true (approval gate)',
+      );
+    }
+    if (!body.idempotencyKey || typeof body.idempotencyKey !== 'string') {
+      throw new BadRequestException('idempotencyKey is required for git-sync apply');
+    }
+    const { created, result } = await this.domainPersistence.setIdempotencyAndCreate(
+      'git-sync-apply',
+      body.idempotencyKey,
+      async () => {
+        const graph = this.getGraph();
+        const registry = this.loadGitSyncRegistry();
+        const sync = this.gitSync();
+        const plan = sync.buildGitSyncPlan(
+          graph.items,
+          registry,
+          sync.gitInfo(this.repoRoot()),
+        );
+        let applied: Record<string, unknown>;
+        try {
+          applied = sync.liveApply(
+            plan,
+            join(this.artifactsDir(), 'work', 'git-sync.json'),
+            this.repoRoot(),
+          );
+        } catch (error) {
+          throw new BadRequestException(
+            error instanceof Error ? error.message : 'live GitHub sync failed',
+          );
+        }
+        const response = {
+          status: 'live',
+          appliedAt: new Date().toISOString(),
+          actor: body.actor ?? 'anonymous',
+          reason: body.reason ?? '',
+          ...applied,
+        };
+        await this.domainPersistence!.updateGitSyncWithEvidence(
+          {
+            syncId: 'git-sync',
+            lastSyncSha: applied.headSha as string | undefined,
+            lastSyncStatus: 'live',
+            lastSyncAt: new Date().toISOString(),
+          },
+          {
+            evidenceId: `EVD-git-sync-${body.idempotencyKey}`,
+            workItemId: 'git-sync',
+            commitSha: applied.headSha as string | undefined,
+            verifier: body.actor ?? 'anonymous',
+            result: 'git_sync_applied',
+          },
+        );
+        return response;
+      },
+    );
+    return created ? result : result;
   }
 
   getSiteReadiness() {
@@ -732,6 +855,182 @@ export class WorkOrchestrationService {
       updatedBy,
       updatedAt,
     };
+  }
+
+  /**
+   * Durable (DB-backed) handoff creation. Persists the handoff into `ewoh_handoffs`
+   * and registers the responsibility-transfer evidence atomically (2.B / 2.C). Falls
+   * back to the legacy markdown path when no DB persistence is available.
+   */
+  async createHandoffDurable(
+    body: {
+      fromActor: string;
+      toActor: string;
+      scope: string;
+      contextPack?: string;
+      openQuestions?: string[];
+      acceptance?: string;
+    },
+    actor: { userId: string; primaryOrgId: string } | undefined,
+  ) {
+    if (!this.domainPersistence) return this.createHandoff(body, actor);
+    if (!body.fromActor?.trim() || !body.toActor?.trim() || !body.scope?.trim()) {
+      throw new BadRequestException('fromActor, toActor, and scope are required');
+    }
+    this.assertWritable();
+    const id = `HO-${Date.now()}-${randomUUID().slice(0, 8)}`;
+    const record = await this.domainPersistence.createHandoffWithTransfer(
+      {
+        handoffId: id,
+        fromActor: body.fromActor,
+        toActor: body.toActor,
+        scope: body.scope,
+        contextPack: body.contextPack,
+        openQuestions: body.openQuestions ?? [],
+        acceptance: body.acceptance,
+      },
+      {
+        evidenceId: `EVD-${id}`,
+        workItemId: body.scope,
+        verifier: actor?.userId ?? 'anonymous',
+        result: 'handoff_created',
+      },
+    );
+    return {
+      handoffId: record.handoffId,
+      fromActor: record.fromActor,
+      toActor: record.toActor,
+      scope: record.scope,
+      contextPack: record.contextPack,
+      openQuestions: record.openQuestions ?? [],
+      acceptance: record.acceptance,
+      status: record.state,
+      createdAt: record.createdAt,
+      persisted: 'postgres',
+    };
+  }
+
+  /**
+   * Durable (DB-backed) handoff state transition. Validates against the DB record and
+   * accepts within a transaction (2.B / 2.C). Falls back to the legacy markdown path
+   * when no DB persistence is available.
+   */
+  async updateHandoffStatusDurable(
+    handoffId: string,
+    body: { status: 'accepted' | 'rejected' | 'closed'; reason?: string },
+    actor: { userId: string; primaryOrgId: string } | undefined,
+  ) {
+    if (!this.domainPersistence) return this.updateHandoffStatus(handoffId, body, actor);
+    if (!/^HO-[A-Za-z0-9-]+$/.test(handoffId)) {
+      throw new NotFoundException(`Handoff ${handoffId} not found`);
+    }
+    if (!['accepted', 'rejected', 'closed'].includes(body.status)) {
+      throw new BadRequestException('status must be accepted, rejected, or closed');
+    }
+    const current = await this.domainPersistence.getHandoff(handoffId);
+    if (!current) {
+      throw new NotFoundException(`Handoff ${handoffId} not found`);
+    }
+    if (!HANDOFF_TRANSITIONS[current.state]?.includes(body.status)) {
+      throw new BadRequestException(
+        `Handoff transition ${current.state} -> ${body.status} not allowed`,
+      );
+    }
+    this.assertWritable();
+    if (body.status === 'accepted') {
+      await this.domainPersistence.acceptHandoffWithTaskUpdate(handoffId, {
+        evidenceId: `EVD-${handoffId}`,
+        workItemId: current.scope,
+        verifier: actor?.userId ?? 'anonymous',
+        result: 'handoff_accepted',
+      });
+    } else {
+      await this.domainPersistence.updateHandoffStatus(handoffId, body.status);
+    }
+    return {
+      handoffId,
+      status: body.status,
+      reason: body.reason ?? '',
+      updatedBy: actor?.userId ?? 'anonymous',
+      updatedAt: new Date().toISOString(),
+      persisted: 'postgres',
+    };
+  }
+
+  /**
+   * Durable evidence registration (2.B). Persists evidence metadata into the database.
+   */
+  async registerEvidenceDurable(evidence: {
+    evidenceId: string;
+    workItemId?: string;
+    commitSha?: string;
+    envFingerprint?: string;
+    verifier?: string;
+    producedAt?: string;
+    expiresAt?: string;
+    result?: string;
+    checksum?: string;
+  }) {
+    if (!this.domainPersistence) {
+      throw new BadRequestException('evidence registration requires DB persistence');
+    }
+    await this.domainPersistence.upsertEvidenceMetadata(evidence);
+    return { evidenceId: evidence.evidenceId, persisted: 'postgres' };
+  }
+
+  /**
+   * Durable factory-replication session creation (2.B).
+   */
+  async createReplicationSessionDurable(input: {
+    sessionId: string;
+    orgId?: string;
+    factoryId: string;
+    step?: string;
+  }) {
+    if (!this.domainPersistence) {
+      throw new BadRequestException('replication session requires DB persistence');
+    }
+    const session = await this.domainPersistence.createReplicationSession(input);
+    return { ...session, persisted: 'postgres' };
+  }
+
+  /**
+   * Durable factory-replication step advance, generating the output evidence
+   * atomically (2.B / 2.C).
+   */
+  async advanceReplicationDurable(
+    sessionId: string,
+    patch: {
+      step?: string;
+      status?: string;
+      progress?: number;
+      finishedAt?: string;
+      outputEvidenceId?: string;
+    },
+    evidence: {
+      evidenceId: string;
+      workItemId?: string;
+      commitSha?: string;
+      envFingerprint?: string;
+      verifier?: string;
+      producedAt?: string;
+      expiresAt?: string;
+      result?: string;
+      checksum?: string;
+    },
+  ) {
+    if (!this.domainPersistence) {
+      throw new BadRequestException('replication advance requires DB persistence');
+    }
+    const session = await this.domainPersistence.advanceReplicationWithEvidence(
+      sessionId,
+      patch,
+      evidence,
+    );
+    if (!session) {
+      throw new NotFoundException(`Replication session ${sessionId} not found`);
+    }
+    return { ...session, persisted: 'postgres' };
   }
 
   recordGateDecision(

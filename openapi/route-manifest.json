@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-04T04:41:49.892Z",
+  "generatedAt": "2026-08-04T22:05:52.554Z",
   "spec": "openapi/ewoh.yaml",
   "controllerKeys": [
     "DELETE /api/dashboard/devices/{deviceId}/bindings",
@@ -245,8 +245,10 @@
     "POST /api/work/git-sync/apply",
     "POST /api/work/handoffs",
     "POST /api/work/handoffs/{id}/state",
+    "POST /api/work/resources/recover-expired",
     "POST /api/work/resources/{id}/lock",
     "POST /api/work/resources/{id}/release",
+    "POST /api/work/resources/{id}/renew",
     "POST /api/workflows/advance",
     "POST /api/workflows/instances",
     "POST /api/workflows/instances/{key}/advance",
@@ -500,8 +502,10 @@
     "POST /api/work/git-sync/apply",
     "POST /api/work/handoffs",
     "POST /api/work/handoffs/{id}/state",
+    "POST /api/work/resources/recover-expired",
     "POST /api/work/resources/{id}/lock",
     "POST /api/work/resources/{id}/release",
+    "POST /api/work/resources/{id}/renew",
     "POST /api/workflows/advance",
     "POST /api/workflows/instances",
     "POST /api/workflows/instances/{key}/advance",
@@ -511,9 +515,9 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 253,
-  "specOperations": 253,
-  "documentedControllerOperations": 253,
+  "controllerOperations": 255,
+  "specOperations": 255,
+  "documentedControllerOperations": 255,
   "undocumented": [],
   "unimplemented": []
 }

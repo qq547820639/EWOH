@@ -36,7 +36,7 @@ evidence:
   openapi: "253/253 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/client-jest/repo-facts/openapi/e2e/browser/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
-  postgres_gate: "standalone-postgres-check PASSED; 51 managed tables / 51 RLS / audit chain / rollback to 0 objects / rebuild"
+  postgres_gate: "standalone-postgres-check PASSED; 57 managed tables / 57 RLS / audit chain / rollback to 0 objects / rebuild"
   gate_sweep: "scenario 8 gates; connector 32; AAS 7; Rego 4; deployment 4; cross-tenant E2E 29/29"
   python: "unittest 667 passed; pytest 120 passed; ruff clean"
   perf: "500 req / 50 concurrency on /health/live, 4610 qps, p95 26.83ms"

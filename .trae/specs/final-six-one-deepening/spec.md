@@ -59,9 +59,62 @@
 ### Requirement: 持久化/事务/多实例正确性（F61-02）
 领域事实（任务、交接、资源锁、Git 操作、证据、工厂复制状态）SHALL 迁移到可靠存储，提供乐观锁、唯一约束或幂等键、事务原子性、锁的过期/续租/释放/断链恢复、离线重放不重复创建。
 
-#### Scenario: 服务重启与并发
-- **WHEN** 创建状态后重启服务、两个实例并发写同一对象、事务中途失败、锁持有者异常退出、离线操作重放
-- **THEN** 状态持久存在、无重复执行/丢失更新、无部分写入、锁可恢复、不重复创建业务对象；以真实 HTTP + PostgreSQL E2E 验证，不以单元测试替代。
+完成标准按用户 2026-08-05 口径，最终状态明确为 **`F61-02 Code Complete / Runtime Verification Blocked`**（而非 `F61-02 Done`）。本地缺少 PostgreSQL/Docker/测试环境不作为代码开发阻塞；真实 E2E 交给 CI（`EWOH_E2E_RUNTIME_DATABASE_URL`）。代码层全部闭环前不启动 F61-03。
+
+#### 子需求：完整数据库制品（6 张领域表）
+领域表 `ewoh_resource_locks` / `ewoh_handoffs` / `ewoh_git_sync_state` / `ewoh_evidence_metadata` / `ewoh_factory_replication_sessions` / `ewoh_idempotency_keys` SHALL 具备并相互一致：
+- 建表 SQL（独立可执行，`db/migrations/*.sql`）；**不得只改自动生成的 `schema.ts`**，否则重新生成 Schema 会丢失实现；
+- 索引、唯一约束、外键、乐观锁版本列；
+- 升级迁移脚本（re-entrant，重复执行安全）；
+- 可逆回滚脚本（`.rollback.sql`）；
+- Drizzle Schema（`server/database/schema.ts` 与 SQL 一致）；
+- 数据库清单与迁移顺序（`db/contracts/schema-manifest.yaml` 与 `db/runner/run_migrations.js` 的 `FILES` 计划）；
+- 旧文件/内存数据迁移工具；
+- 重复执行安全性检查（`CREATE IF NOT EXISTS` / `IF EXISTS` / `ON CONFLICT`）。
+
+#### 子需求：运行时服务切换
+下列真实业务路径 SHALL 使用数据库，旧 Map/数组/模块变量/JSON 文件仅作缓存、导入来源或灾难恢复副本，不得作为领域事实源：
+- 资源锁：获取、续租、释放、过期回收、持有者异常退出恢复；
+- 交接：创建、接受、关闭、未确认阻断；
+- Git 同步：同步游标、提交 SHA、冲突和失败补偿；
+- Evidence：登记、更新、失效、校验和及验证者；
+- 工厂复制：会话创建、步骤推进、进度、结束及输出证据；
+- 幂等操作：离线重放、重复请求、连接器回调和 Git 操作。
+
+#### 子需求：事务边界
+以下复合操作 SHALL 进入显式事务，中途失败不得出现部分写入（锁存在但审计缺失、交接已接受但任务 Owner 未更新、同步状态推进但证据未保存、幂等键存在但业务对象未创建、复制进度更新但输出证据不存在）：
+- 获取资源锁并登记审计事件；
+- 创建交接并转移任务责任；
+- 接受交接并更新原任务状态；
+- Git 同步状态更新并登记证据；
+- 工厂复制步骤推进并生成 Evidence；
+- 幂等键登记与业务对象创建；
+- 失败补偿及状态回滚。
+
+#### 子需求：多实例正确性
+代码 SHALL 从设计上支持两个以上实例并行运行：
+- 不依赖进程内 Map 判断锁是否存在；用数据库唯一约束竞争锁；
+- 用 `version` 或条件更新实现 CAS；
+- 时间判断使用数据库时间，避免实例时钟漂移；
+- 续租必须验证 holder 和 version；释放必须验证 holder；
+- 过期锁可由其他实例安全接管；
+- 重复请求只能产生一个业务结果；
+- 并发更新冲突返回明确错误，不静默覆盖。
+
+#### 子需求：代码层测试（两层）
+- 无 PostgreSQL 环境可运行的单元 / 契约 / 存储适配器测试（状态重启持久、双实例并发生成唯一 lock、过期锁恢复、非持有者不能续租/释放、乐观锁版本冲突、唯一约束冲突、事务失败无部分写入、同一幂等键只生成一个对象、离线重放不重复创建、交接/Git/Evidence/复制会话持久化恢复）；
+- 真实 HTTP + PostgreSQL E2E 测试代码：完整写完，但当前标记 `BLOCKED_BY_ENVIRONMENT`，不得伪造通过、不得静默跳过后声称完成。
+
+#### 子需求：CI 环境验证入口
+仓库 SHALL 提供 GitHub Actions（或等价 CI）以启动 PostgreSQL Service Container、应用迁移、运行真实 HTTP E2E、运行双实例并发测试、运行升级与回滚、保存测试日志/数据库版本/提交 SHA。`EWOH_E2E_RUNTIME_DATABASE_URL` 作为 CI 条件，而非要求本地安装。
+
+#### Scenario: 服务重启与并发（CI 门禁）
+- **WHEN** 创建状态后重启服务、两个实例并发写同一对象、事务中途失败、锁持有者异常退出、离线操作重放（在 CI 的 PostgreSQL Service Container 中执行）
+- **THEN** 状态持久存在、无重复执行/丢失更新、无部分写入、锁可恢复、不重复创建业务对象；以真实 HTTP + PostgreSQL E2E 验证，不以单元测试替代。本地无环境时，E2E 代码完整但标记 `BLOCKED_BY_ENVIRONMENT`。
+
+#### Scenario: 完成判定
+- **WHEN** 如下条件全部满足：全部表/迁移/回滚/Schema 完成、六类领域事实均用数据库、进程内状态不再作为事实源、事务/幂等/乐观锁/租约全部实现、无环境测试全部通过、PostgreSQL E2E 代码完整、CI PostgreSQL 验证工作流完整、Spec/Tasks/Checklist/风险/证据同步、独立代码审查通过
+- **THEN** 状态明确为 **`F61-02 Code Complete / Runtime Verification Blocked`**；在代码层全部闭环前不启动 F61-03。
 
 ### Requirement: 真实 GitHub 协作闭环与正式发布（F61-03）
 Task/Work Package 与 GitHub Issue、分支、PR、CI、Review、Gate、Release 双向同步；支持 dry-run、幂等键、重试、指数退避、速率限制、权限最小化、冲突对账与审计；远程不可用时保留离线文件模式，恢复后安全补同步。SHALL 创建正式语义化 Tag 与 GitHub Release，包含不可变构建物、SHA256、SBOM、依赖/许可证清单、构建来源与提交 SHA、迁移/回滚说明、已知风险、门禁证据链接。不得自动合并高风险 PR。

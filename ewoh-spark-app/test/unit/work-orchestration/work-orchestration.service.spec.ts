@@ -123,8 +123,8 @@ describe('WorkOrchestrationService', () => {
     expect(overview.writable).toBe(false);
   });
 
-  it('returns an offline GitHub sync plan derived from graph items', () => {
-    const plan = service.getGitSyncStatus() as {
+  it('returns an offline GitHub sync plan derived from graph items', async () => {
+    const plan = (await service.getGitSyncStatus()) as {
       schema: string;
       itemCount: number;
       missingCount: number;
@@ -458,5 +458,252 @@ describe('WorkOrchestrationService', () => {
     expect(result).toHaveLength(1);
     expect(result[0].ready).toBe(false);
     expect(result[0].error).toBe('Invalid site readiness report');
+  });
+});
+
+describe('WorkOrchestrationService durable (DB-backed) paths', () => {
+  let artifactsDir: string;
+
+  function fakePersistence(overrides: Record<string, unknown> = {}) {
+    return {
+      recoverExpiredLocks: jest.fn().mockResolvedValue(0),
+      listActiveLocks: jest.fn().mockResolvedValue([]),
+      acquireLock: jest.fn().mockResolvedValue({
+        resourceId: 'res-1',
+        holder: 'user-1',
+        purpose: undefined,
+        acquiredAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: undefined,
+        active: true,
+        version: 1,
+      }),
+      releaseLock: jest.fn().mockResolvedValue({ released: true, holder: 'user-1' }),
+      renewLock: jest.fn().mockResolvedValue({
+        resourceId: 'res-1',
+        holder: 'user-1',
+        acquiredAt: '2026-01-01T00:00:00.000Z',
+        renewedAt: '2026-01-01T00:00:00.000Z',
+        active: true,
+        version: 2,
+      }),
+      createHandoffWithTransfer: jest.fn().mockImplementation(async (record) => ({
+        handoffId: record.handoffId,
+        fromActor: record.fromActor,
+        toActor: record.toActor,
+        scope: record.scope,
+        contextPack: record.contextPack,
+        openQuestions: record.openQuestions ?? [],
+        acceptance: record.acceptance,
+        state: 'open',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      })),
+      getHandoff: jest.fn().mockResolvedValue({
+        handoffId: 'HO-1',
+        scope: 'scope-x',
+        state: 'open',
+      }),
+      acceptHandoffWithTaskUpdate: jest
+        .fn()
+        .mockResolvedValue({ handoffId: 'HO-1', state: 'accepted' }),
+      updateHandoffStatus: jest.fn().mockResolvedValue({ handoffId: 'HO-1', state: 'closed' }),
+      setIdempotencyAndCreate: jest.fn().mockImplementation(async (_s, _k, creator) => ({
+        created: true,
+        result: await creator(),
+      })),
+      updateGitSyncWithEvidence: jest.fn().mockResolvedValue(undefined),
+      upsertEvidenceMetadata: jest.fn().mockResolvedValue(undefined),
+      createReplicationSession: jest.fn().mockResolvedValue({
+        sessionId: 'RS-1',
+        factoryId: 'factory-1',
+        status: 'running',
+        progress: 0,
+      }),
+      advanceReplicationWithEvidence: jest.fn().mockResolvedValue({
+        sessionId: 'RS-1',
+        factoryId: 'factory-1',
+        step: 'install',
+        status: 'running',
+        progress: 50,
+      }),
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    artifactsDir = mkdtempSync(join(tmpdir(), 'ewoh-work-'));
+    const files: Record<string, string> = {
+      'task-board.md': TASK_BOARD,
+      'gates.md': GATES,
+      'agent-registry.md': AGENTS,
+      'risk-register.md': RISKS,
+      'decision-log.md': DECISIONS,
+      'phase-state.md': PHASE,
+      'state.json': '{"status":"active"}',
+      'intent-anchor.md': '# Intent\n',
+      'understanding.md': '# Understanding\n',
+      'work/task-graph.md': TASK_GRAPH,
+      'authoritative-plan-final6.txt': 'Final 6.0\n',
+      'work/evidence/round1.md': '# Round 1\nPASSED\nT-001\n',
+      'inventory/environment.md':
+        '# Environment\n\n| Tool | Version | Notes |\n|------|---------|-------|\n| Node.js | 22 | available |\n',
+    };
+    for (const [relative, content] of Object.entries(files)) {
+      const file = join(artifactsDir, relative);
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, content, 'utf8');
+    }
+    process.env.EWOH_WORK_ARTIFACTS_DIR = artifactsDir;
+    process.env.EWOH_WORK_WRITABLE = 'true';
+  });
+
+  afterEach(() => {
+    delete process.env.EWOH_WORK_ARTIFACTS_DIR;
+    delete process.env.EWOH_WORK_WRITABLE;
+  });
+
+  it('getResourcesDurable reads lock state from the database rather than the in-memory Map', async () => {
+    const persistence = fakePersistence({
+      listActiveLocks: jest.fn().mockResolvedValue([
+        {
+          resourceId: 'RES-node-js',
+          holder: 'user-9',
+          purpose: 'install',
+          acquiredAt: '2026-01-01T00:00:00.000Z',
+          expiresAt: undefined,
+          active: true,
+        },
+      ]),
+    });
+    const service = new WorkOrchestrationService(persistence as never);
+    const resources = await service.getResourcesDurable({ userId: 'u1', primaryOrgId: 'org-1' });
+    expect(persistence.recoverExpiredLocks).toHaveBeenCalledWith('org-1');
+    expect(persistence.listActiveLocks).toHaveBeenCalledWith('org-1');
+    const locked = resources.find((entry: { resourceId: string }) => entry.resourceId === 'RES-node-js');
+    expect(locked?.lock).toEqual({
+      holder: 'user-9',
+      purpose: 'install',
+      acquiredAt: '2026-01-01T00:00:00.000Z',
+      expiresAt: undefined,
+    });
+  });
+
+  it('createHandoffDurable persists the handoff via DomainPersistenceService', async () => {
+    const persistence = fakePersistence();
+    const service = new WorkOrchestrationService(persistence as never);
+    const handoff = await service.createHandoffDurable(
+      { fromActor: 'AG-11', toActor: 'ORCH-05', scope: 'scope-x', acceptance: 'tests pass' },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+    expect(persistence.createHandoffWithTransfer).toHaveBeenCalled();
+    expect(handoff.status).toBe('open');
+    expect((handoff as { persisted?: string }).persisted).toBe('postgres');
+  });
+
+  it('updateHandoffStatusDurable accepts a handoff within a transaction', async () => {
+    const persistence = fakePersistence();
+    const service = new WorkOrchestrationService(persistence as never);
+    const updated = await service.updateHandoffStatusDurable(
+      'HO-1',
+      { status: 'accepted', reason: 'verified' },
+      { userId: 'user-2', primaryOrgId: 'org-1' },
+    );
+    expect(persistence.getHandoff).toHaveBeenCalledWith('HO-1');
+    expect(persistence.acceptHandoffWithTaskUpdate).toHaveBeenCalledWith(
+      'HO-1',
+      expect.objectContaining({ result: 'handoff_accepted' }),
+    );
+    expect(updated.status).toBe('accepted');
+  });
+
+  it('updateHandoffStatusDurable rejects an illegal transition before touching the DB', async () => {
+    const persistence = fakePersistence({
+      getHandoff: jest.fn().mockResolvedValue({ handoffId: 'HO-1', scope: 'x', state: 'open' }),
+    });
+    const service = new WorkOrchestrationService(persistence as never);
+    await expect(
+      service.updateHandoffStatusDurable(
+        'HO-1',
+        { status: 'closed' },
+        { userId: 'user-1', primaryOrgId: 'org-1' },
+      ),
+    ).rejects.toThrow(/not allowed/);
+    expect(persistence.acceptHandoffWithTaskUpdate).not.toHaveBeenCalled();
+  });
+
+  it('acquireResourceDurable competes for the lock via the database unique constraint', async () => {
+    const persistence = fakePersistence();
+    const service = new WorkOrchestrationService(persistence as never);
+    const resourceId = service.getResources()[0].resourceId;
+    const lock = await service.acquireResourceDurable(
+      resourceId,
+      { purpose: 'install', confirm: true },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+    expect(persistence.acquireLock).toHaveBeenCalledWith(
+      expect.objectContaining({ holder: 'user-1', orgId: 'org-1' }),
+    );
+    expect((lock as { persisted?: string }).persisted).toBe('postgres');
+  });
+
+  it('releaseResourceDurable releases the lock holder via the database', async () => {
+    const persistence = fakePersistence();
+    const service = new WorkOrchestrationService(persistence as never);
+    const resourceId = service.getResources()[0].resourceId;
+    const result = await service.releaseResourceDurable(resourceId, {
+      userId: 'user-1',
+      primaryOrgId: 'org-1',
+    });
+    expect(persistence.releaseLock).toHaveBeenCalledWith(
+      expect.objectContaining({ holder: 'user-1', orgId: 'org-1' }),
+    );
+    expect(result.released).toBe(true);
+  });
+
+  it('registerEvidenceDurable persists evidence metadata into the database', async () => {
+    const persistence = fakePersistence();
+    const service = new WorkOrchestrationService(persistence as never);
+    const result = await service.registerEvidenceDurable({
+      evidenceId: 'EVD-1',
+      workItemId: 'T-001',
+      verifier: 'user-1',
+      result: 'passed',
+    });
+    expect(persistence.upsertEvidenceMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({ evidenceId: 'EVD-1' }),
+    );
+    expect(result.persisted).toBe('postgres');
+  });
+
+  it('advanceReplicationDurable advances the step and emits output evidence atomically', async () => {
+    const persistence = fakePersistence();
+    const service = new WorkOrchestrationService(persistence as never);
+    const session = await service.advanceReplicationDurable(
+      'RS-1',
+      { step: 'install', progress: 50 },
+      { evidenceId: 'EVD-RS-1', workItemId: 'RS-1', verifier: 'user-1', result: 'step_advanced' },
+    );
+    expect(persistence.advanceReplicationWithEvidence).toHaveBeenCalledWith(
+      'RS-1',
+      expect.objectContaining({ step: 'install' }),
+      expect.objectContaining({ evidenceId: 'EVD-RS-1' }),
+    );
+    expect(session.persisted).toBe('postgres');
+  });
+
+  it('durable lock methods fall back to the legacy file path when DB persistence is absent', async () => {
+    const service = new WorkOrchestrationService();
+    const resource = service.getResources()[0];
+    const lock = await service.acquireResourceDurable(
+      resource.resourceId,
+      { purpose: 'test', confirm: true },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+    expect(lock.active).toBe(true);
+    const released = await service.releaseResourceDurable(resource.resourceId, {
+      userId: 'user-1',
+      primaryOrgId: 'org-1',
+      isGlobalAdmin: true,
+    });
+    expect(released.released).toBe(true);
   });
 });

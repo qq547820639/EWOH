@@ -17,14 +17,33 @@
 - [x] 真实仓库零未豁免冲突
 - [x] 独立验证 Agent 已复核（R-a/R-b/R1/R-c/R2 全修复，允许进入 F61-02）
 
-## Phase 2：F61-02 持久化、事务和多实例正确性
-- [ ] 进程内单例存储清单已产出
-- [ ] 领域状态已迁移到数据库（资源锁/交接/Git 同步/证据元数据/工厂复制会话）
-- [ ] 乐观锁/唯一约束/幂等键已实现
-- [ ] 事务原子性已保障
-- [ ] 锁过期/续租/释放/断链恢复已实现
-- [ ] 真实 HTTP + PostgreSQL E2E 已覆盖重启持久性/并发/事务/锁恢复/离线重放
-- [ ] 独立验证 Agent 已复核
+## Phase 2：F61-02 持久化、事务和多实例正确性（目标：`F61-02 Code Complete / Runtime Verification Blocked`）
+- [x] 进程内单例存储清单已产出
+### 2.A 完整数据库制品
+- [x] 6 张领域表的迁移 SQL 已补齐（独立可执行、re-entrant、与 Drizzle Schema 一致）
+- [x] 索引/唯一约束/外键/乐观锁版本列已实现
+- [x] 可逆回滚脚本已提供（`DROP IF EXISTS` 守护）
+- [x] 迁移计划已接线（`run_migrations.js` FILES + 命令 + verify）
+- [x] 数据库清单与迁移顺序已同步（`schema-manifest.yaml`）
+- [x] 旧文件/内存数据迁移工具已提供（幂等/dry-run）
+- [x] 重复执行安全性检查通过
+### 2.B 运行时服务切换
+- [x] 六类领域事实均使用数据库（资源锁/交接/Git 同步/Evidence/工厂复制/幂等）
+- [x] 进程内 Map/数组/JSON 不再作为领域事实源（仅缓存/导入/灾备副本）
+### 2.C 事务边界
+- [x] 复合操作进入显式事务，中途失败无部分写入（5 类反模式被测试覆盖）
+### 2.D 多实例正确性
+- [x] 不依赖进程内 Map；DB 唯一约束竞争锁；version CAS；DB 时间
+- [x] 续租验证 holder+version；释放验证 holder；过期锁可安全接管
+- [x] 重复请求单一业务结果；并发冲突返回明确错误
+### 2.E 代码层测试
+- [x] 无环境单元/契约/存储适配器测试全部通过（`domain-persistence.service.spec.ts` 29 项全绿，含 StatefulDb 无 PostgreSQL 场景 1/2/5/6/7/8/9/10）
+- [x] 真实 HTTP + PostgreSQL E2E 测试代码完整且标记 `BLOCKED_BY_ENVIRONMENT`（`f61-02-persistence.e2e.spec.ts`，不伪造、不静默跳过）
+### 2.F CI 环境验证入口
+- [x] GitHub Actions PostgreSQL Service Container 工作流完整（迁移/E2E/双实例并发/升级回滚/日志 artifact）
+### 2.G 收口与独立审查
+- [ ] Spec/Tasks/Checklist/风险/证据已同步；最终报告明确 `F61-02 Code Complete / Runtime Verification Blocked`
+- [ ] 独立代码审查通过并推送 main
 
 ## Phase 3：F61-03 真实 GitHub 协作闭环和正式发布
 - [ ] Task ↔ Issue 双向同步已实现（含 dry-run/幂等/重试/限流）

@@ -74,6 +74,9 @@ jobs:
           node db/runner/run_migrations.js --plan standalone > /tmp/standalone.sql
           node db/runner/run_migrations.js --plan standalone_rollback > /tmp/standalone_rollback.sql
           node db/runner/run_migrations.js --plan standalone_verify > /tmp/standalone_verify.sql
+          node db/runner/run_migrations.js --plan standalone_domain > /tmp/standalone_domain.sql
+          node db/runner/run_migrations.js --plan standalone_domain_rollback > /tmp/standalone_domain_rollback.sql
+          node db/runner/run_migrations.js --plan standalone_domain_verify > /tmp/standalone_domain_verify.sql
           node db/runner/run_migrations.js --plan standalone_seed > /tmp/standalone_seed.sql
           node db/runner/run_migrations.js --plan standalone_users > /tmp/standalone_users.sql
           node db/runner/run_migrations.js --plan standalone_users_rollback > /tmp/standalone_users_rollback.sql
@@ -95,7 +98,38 @@ jobs:
           echo "EWOH_RUNTIME_DATABASE_URL=postgresql://ewoh_api:${runtime_password}@127.0.0.1:5432/ewoh" >> "$GITHUB_ENV"
           bash scripts/standalone-postgres-check.sh
 
+      - name: F61-02 domain migrations (apply, verify, rollback, re-apply)
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+        run: |
+          # Upgrade path: apply the 6 domain tables and verify their presence.
+          node db/runner/run_migrations.js --apply-standalone-domain
+          node db/runner/run_migrations.js --verify-standalone-domain
+          # Rollback then re-apply to prove the migration is reversible + re-entrant.
+          node db/runner/run_migrations.js --rollback-standalone-domain
+          node db/runner/run_migrations.js --apply-standalone-domain
+          # Re-applying the same migration again must be a no-op (re-entrant safety).
+          node db/runner/run_migrations.js --apply-standalone-domain
+          node db/runner/run_migrations.js --verify-standalone-domain
+          node scripts/migrate-domain-state.js --dry-run
+
+      - name: F61-02 dual-instance concurrency & upgrade/rollback verification
+        # 2.D/2.F: two independent connections (two instances) race on the domain
+        # primitives (unique-constraint lock race, optimistic version CAS, holder
+        # checks, expired-lock takeover, re-entrant safety). Requires a real PG.
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+        run: |
+          node db/runner/run_migrations.js --verify-standalone-domain
+          node scripts/verify-domain-concurrency.js
+
       - name: E2E HTTP + PostgreSQL
+        # F61-02 领域表的持久化/幂等/多实例/事务一致性由 test:e2e 覆盖。CI 在此提供
+        # PostgreSQL Service Container，并通过 EWOH_E2E_RUNTIME_DATABASE_URL 使
+        # f61-02-persistence.e2e.spec.ts 真实执行；无该环境时该套件以
+        # BLOCKED_BY_ENVIRONMENT 显式失败，绝不伪造通过或静默跳过。
         working-directory: ewoh-spark-app
         env:
           EWOH_E2E_OWNER_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
@@ -117,3 +151,32 @@ jobs:
         run: |
           docker build -f deploy/cloud/Dockerfile.api -t ewoh-api:ci .
           docker build -f deploy/cloud/Dockerfile.migrate -t ewoh-migrate:ci .
+
+      - name: Collect F61-02 CI evidence
+        if: always()
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/fs_logs"
+          pg_container="$(docker ps -q --filter 'publish=5432' | head -n1)"
+          {
+            echo "commit_sha=$GITHUB_SHA"
+            echo "ref=$GITHUB_REF_NAME"
+            if [ -n "$pg_container" ]; then
+              echo "--- postgres version() ---"
+              docker exec "$pg_container" psql -U postgres -d ewoh -tAc 'select version();'
+              echo "--- ewoh_% public table count ---"
+              docker exec "$pg_container" psql -U postgres -d ewoh -tAc \
+                "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname like 'ewoh_%' and c.relkind in ('r','p');"
+              echo "--- ewoh_% public tables ---"
+              docker exec "$pg_container" psql -U postgres -d ewoh -tAc \
+                "select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname like 'ewoh_%' and c.relkind in ('r','p') order by c.relname;"
+            fi
+          } > "$GITHUB_WORKSPACE/fs_logs/f61-02-ci-evidence.txt" 2>&1 || true
+          cat "$GITHUB_WORKSPACE/fs_logs/f61-02-ci-evidence.txt"
+
+      - name: Upload F61-02 CI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: f61-02-ci-evidence-${{ github.sha }}
+          path: fs_logs/f61-02-ci-evidence.txt
+          retention-days: 30

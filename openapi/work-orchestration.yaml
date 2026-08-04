@@ -508,6 +508,46 @@ paths:
           $ref: '#/components/responses/Conflict'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/work/resources/{id}/renew:
+    post:
+      tags:
+        - work
+      summary: Renew a resource lock
+      description: >-
+        Extends the lease on an active resource lock held by the current holder.
+        Returns the updated lock record with a bumped version (optimistic lock).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expiresAt:
+                  type: string
+                  format: date-time
+                  description: New expiry for the lock lease
+      responses:
+        '200':
+          description: Updated lock record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceLockRecord'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/work/resources/{id}/release:
     post:
       tags:
@@ -526,6 +566,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ResourceReleaseResult'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/resources/recover-expired:
+    post:
+      tags:
+        - work
+      summary: Recover expired resource locks
+      description: >-
+        Releases all active resource locks whose lease has expired (e.g. a holder
+        crashed without releasing). Returns the number of locks recovered.
+      responses:
+        '200':
+          description: Number of expired locks recovered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recovered:
+                    type: integer
+                    description: Count of expired locks released
         Unauthorized:
           $ref: '#/components/responses/Unauthorized'
         Forbidden:

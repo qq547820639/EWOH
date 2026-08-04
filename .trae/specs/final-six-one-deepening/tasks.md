@@ -64,32 +64,91 @@
   - [x] 结论：允许进入 F61-02（`docs/reviews/F61-01_INDEPENDENT_VERIFICATION.md`）
 
 ## Phase 2：F61-02 持久化、事务和多实例正确性
+> 完成标准（用户 2026-08-05）：最终状态为 **`F61-02 Code Complete / Runtime Verification Blocked`**。代码层全部闭环前不启动 F61-03。
+
 - [x] Task 2.1: 静态扫描并列出进程内单例存储清单
   - [x] `apps/server`、`tools` 中 Map/Set/数组/模块变量/进程内变量
   - [x] 标记哪些需要持久化（任务、交接、资源锁、Git 操作、证据、工厂复制状态）
-- [x] Task 2.2: 迁移到数据库持久化（DB 层完成；运行时接线见下方“部分”标注）
-  - [x] 资源锁表：`ewoh_resource_locks`（org_id/resource_key/holder/expiresAt/createdAt/renewedAt）→ 已建表 + `DomainPersistenceService` + 运行时接线
-  - [x] 交接表：`ewoh_handoffs`（handoffId/fromActor/toActor/scope/contextPack/openQuestions/state/createdAt/acceptedAt/closedAt）→ 已建表 + CRUD 方法；运行时 Map 接线待 E2E 环境解锁
-  - [x] Git 同步状态：`ewoh_git_sync_state`（syncId/lastSyncAt/lastSyncSha/lastSyncStatus/conflicts/createdAt/updatedAt）→ 已建表 + upsert 方法；运行时接线待解锁
-  - [x] 证据元数据：`ewoh_evidence_metadata`（evidenceId/workItemId/commitSha/envFingerprint/verifier/producedAt/expiresAt/result/checksum）→ 已建表 + upsert 方法；运行时接线待解锁
-  - [x] 工厂复制会话：`ewoh_factory_replication_sessions`（sessionId/orgId/factoryId/step/status/progress/startedAt/finishedAt/outputEvidenceId）→ 已建表 + CRUD 方法；运行时接线待解锁
-- [x] Task 2.3: 实现事务与并发控制（DB 层）
-  - [x] 乐观锁版本列 `version` 用于更新冲突检测（资源锁 acquire/release/renew 均带版本号）
-  - [x] 唯一约束防止重复创建（`org_id+resource_key`、`scope+idempotency_key`、各 `*_id` 唯一）
-  - [x] 幂等键 `idempotency_key` 索引（`ewoh_idempotency_keys` 唯一索引 + `onConflictDoNothing` 原子去重）
-  - [x] 事务原子性保障：单语句原子（`onConflictDoNothing`）+ 版本列/唯一约束；显式 `db.transaction` 多语句未全覆盖（记录于 F61-02 文档 §4）
-- [x] Task 2.4: 实现锁过期/续租/释放/持有者异常退出恢复
-  - [x] 锁自动过期释放（`recoverExpiredLocks`：`expires_at <= now() AND active`）
-  - [x] 可续租机制（`renewLock`，带版本号）
-  - [x] 持有者退出后可被其他进程抢占（`acquireLock` 对过期行复用重分配）
-  - [x] 单元测试覆盖（10/10）
-- [ ] Task 2.5: E2E 测试（真实 HTTP + PostgreSQL，禁止单元测试替代）→ **BLOCKED**（本机无 PostgreSQL/docker；所需外部条件与待验证场景见 `docs/reviews/F61-02_DB_LAYER_IMPLEMENTATION.md` §5）
-  - [ ] 创建状态后重启服务 → 状态仍然存在
-  - [ ] 两个服务实例并发操作 → 无重复执行/丢失更新
-  - [ ] 事务中途失败 → 无部分写入
-  - [ ] 锁过期/异常退出 → 可恢复
-  - [ ] 离线操作重放 → 不重复创建业务对象
-- [ ] Task 2.6: 独立验证 Agent 复核持久化与并发正确性 → **BLOCKED**（依附 Task 2.5 的 E2E 环境；当前仅本地单元级验证，见 F61-02 文档 §6）
+
+### 2.A 完整数据库制品
+- [x] Task 2.2: 补齐 6 张领域表的迁移 SQL（`db/migrations/*.sql`，独立可执行，re-entrant）
+  - [x] `db/migrations/standalone_004_ewoh_domain.sql`（或等价增量迁移）：`ewoh_resource_locks` / `ewoh_handoffs` / `ewoh_git_sync_state` / `ewoh_evidence_metadata` / `ewoh_factory_replication_sessions` / `ewoh_idempotency_keys`
+  - [x] 每表：主键、业务唯一约束、外键（如适用）、乐观锁 `version` 列、`_created_at`/`_updated_at`
+  - [x] 索引（holder/active/state/to_actor/work_item/factory/status/scope）
+  - [x] 与 `server/database/schema.ts` 现有 F61-02 表定义一致
+- [x] Task 2.3: 可逆回滚脚本
+  - [x] `db/migrations/standalone_004_ewoh_domain.rollback.sql`：`DROP TABLE IF EXISTS` 逆序 + `IF EXISTS` 守护
+- [x] Task 2.4: 迁移计划接线（`db/runner/run_migrations.js`）
+  - [x] 在 `FILES` 增加 `standalone_domain` / `standalone_domain_rollback` 项
+  - [x] 增加 `--apply-standalone-domain` / `--rollback-standalone-domain` / `--plan-standalone-domain` 命令
+  - [x] 增加 verify 查询（`db/verify/standalone_004_verify.sql`）校验 6 表存在
+- [x] Task 2.5: 数据库清单与迁移顺序同步（`db/contracts/schema-manifest.yaml`）
+  - [x] 6 张领域表加入 `managed_tables`（domain/org_id_policy/status/capability_mapping）
+  - [x] 更新 `managed_count` / `physical_create_count` 等汇总
+- [x] Task 2.6: 旧文件/内存数据迁移工具
+  - [x] `scripts/migrate-domain-state.js`（或等价）：从 `.codex/artifacts/work/*`、内存导出、JSON 快照导入 6 表
+  - [x] 幂等/去重（`ON CONFLICT`），dry-run 模式
+- [x] Task 2.7: 重复执行安全性检查
+  - [x] 迁移/回滚脚本二次执行不报错、不损坏数据（`CREATE IF NOT EXISTS` / `DROP IF EXISTS` / `ON CONFLICT`）
+  - [x] 契约测试验证（`test/contract/*` 或 `scripts/` 新增）
+
+### 2.B 运行时服务切换
+- [x] Task 2.8: 资源锁运行时完整切换（获取/续租/释放/过期回收/持有者异常恢复）
+  - [x] `WorkOrchestrationService` 资源锁路径全部走 `DomainPersistenceService`（DB 唯一约束竞争、版本 CAS、DB 时间）
+  - [x] 移除进程内 `locks` Map 作为事实源（仅保留缓存/降级回退）
+- [x] Task 2.9: 交接运行时切换（创建/接受/关闭/未确认阻断）
+  - [x] `handoff-service` 或 `WorkOrchestrationService.createHandoff` 走 `ewoh_handoffs` 持久化
+  - [x] 未确认交接阻断原任务关闭
+- [x] Task 2.10: Git 同步运行时切换（游标/提交 SHA/冲突/失败补偿）
+  - [x] `git-sync` 状态写入 `ewoh_git_sync_state`
+- [x] Task 2.11: Evidence 运行时切换（登记/更新/失效/校验和/验证者）
+  - [x] 证据元数据写入 `ewoh_evidence_metadata`
+- [x] Task 2.12: 工厂复制会话运行时切换（创建/步骤推进/进度/结束/输出证据）
+  - [x] 会话状态写入 `ewoh_factory_replication_sessions`
+- [x] Task 2.13: 幂等操作运行时切换（离线重放/重复请求/连接器回调/Git 操作）
+  - [x] `DbIdempotencyStore` 全面生效；`InMemoryIdempotencyStore` 仅作回退
+
+### 2.C 事务边界
+- [x] Task 2.14: 复合操作进入显式事务（`db.transaction`）
+  - [x] 获取锁 + 登记审计；创建交接 + 转移责任；接受交接 + 更新原任务状态
+  - [x] Git 同步状态更新 + 登记证据；复制步骤推进 + 生成 Evidence
+  - [x] 幂等键登记 + 业务对象创建；失败补偿 + 状态回滚
+  - [x] 中途失败无部分写入（锁存在但审计缺失等 5 类反模式被测试覆盖）
+
+### 2.D 多实例正确性
+- [x] Task 2.15: 多实例并发设计落地
+  - [x] 不依赖进程内 Map；DB 唯一约束竞争锁；`version`/条件更新 CAS
+  - [x] 时间判断用 DB 时间（`now()`），非应用时钟
+  - [x] 续租验证 holder+version；释放验证 holder；过期锁可安全接管
+  - [x] 重复请求单一业务结果；并发冲突返回明确错误
+
+### 2.E 代码层测试
+- [x] Task 2.16: 无环境单元/契约/存储适配器测试
+  - [x] 状态重启持久、双实例并发生成唯一 lock、过期锁恢复、非持有者不能续租/释放
+  - [x] 乐观锁版本冲突、唯一约束冲突、事务失败无部分写入
+  - [x] 同一幂等键只生成一个对象、离线重放不重复创建
+  - [x] 交接/Git/Evidence/复制会话持久化恢复
+- [x] Task 2.17: 真实 HTTP + PostgreSQL E2E 测试代码（标记 `BLOCKED_BY_ENVIRONMENT`）
+  - [x] 新增 `test/e2e/f61-02-persistence.e2e.spec.ts`：重启持久性/双实例并发/事务中途失败/锁恢复/离线重放
+  - [x] 标记 `BLOCKED_BY_ENVIRONMENT`，不伪造通过、不静默跳过
+
+### 2.F CI 环境验证入口
+- [x] Task 2.18: GitHub Actions PostgreSQL 验证工作流
+  - [x] `.github/workflows/` PostgreSQL Service Container job（`standalone.yml` `postgres:17-alpine` + health check）
+  - [x] 应用迁移（`run_migrations.js --apply-standalone --apply-standalone-domain`）
+  - [x] 升级/回滚/重放验证（apply→verify→rollback→re-apply→re-apply→verify + `migrate-domain-state.js --dry-run`）
+  - [x] 双实例并发测试（`scripts/verify-domain-concurrency.js`：唯一约束竞争/版本 CAS/holder 校验/过期锁接管/重入安全）
+  - [x] 运行真实 HTTP E2E（`test:e2e`，经 `EWOH_E2E_RUNTIME_DATABASE_URL` 绑定 Service Container）
+  - [x] 保存测试日志/数据库版本/提交 SHA 为 artifact（`f61-02-ci-evidence`）
+
+### 2.G 收口与独立审查
+- [ ] Task 2.19: Spec/Tasks/Checklist/风险/证据同步 + 最终报告
+  - [ ] 更新 `docs/reviews/F61-02_*` 证据与诚实边界
+  - [ ] 更新 `CHANGELOG.md` / `.codex/artifacts/phase-state.md` / 风险登记
+  - [ ] 明确结论 **`F61-02 Code Complete / Runtime Verification Blocked`**
+- [ ] Task 2.20: 独立代码审查（不依赖 E2E 环境的静态/契约层复核）
+  - [ ] 独立 Agent 复核迁移/事务/多实例正确性；修复后复验
+  - [ ] 提交并推送 main（`LOCAL_HEAD == ORIGIN_MAIN`）
 
 ## Phase 3：F61-03 真实 GitHub 协作闭环和正式发布
 - [ ] Task 3.1: 实现 Task ↔ GitHub Issue 双向映射与同步

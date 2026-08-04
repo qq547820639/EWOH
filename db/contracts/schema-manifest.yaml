@@ -7,14 +7,15 @@ source:
 managed_package:
   new_group_count: 36
   frozen_alter_count: 12
-  managed_count: 48
-  physical_create_count: 38
+  managed_count: 57
+  physical_create_count: 44
   mapped_existing_count_in_group: 1
 notes:
   - "Authoritative plan table 77 lists 38 logical new names under the label \"36 new tables\"."
   - "This package resolves the discrepancy by treating ewoh_organization and ewoh_person as capabilities satisfied by existing physical tables, leaving 36 rows in the new/expanded managed group."
   - "Within that group, ewoh_device_person_binding is satisfied by the existing ewoh_device_binding table, so 35 physical CREATE statements are emitted."
   - "No frozen capability is silently dropped; the capability map in tmp/ddl/capability-map.csv is the acceptance basis."
+  - "F61-02 (2.A): 6 domain persistence tables (ewoh_resource_locks, ewoh_handoffs, ewoh_git_sync_state, ewoh_evidence_metadata, ewoh_factory_replication_sessions, ewoh_idempotency_keys) added as managed tables via standalone_004_ewoh_domain.sql. managed_count 48->54, physical_create_count 38->44."
 managed_tables:
   - domain: "Scale"
     logical_name: "ewoh_asset_package"
@@ -373,6 +374,48 @@ managed_tables:
     org_id_policy: "NOT NULL"
     status: "altered"
     capability_mapping: ["device.registry"]
+  - domain: "Domain"
+    logical_name: "ewoh_resource_locks"
+    physical_table: "ewoh_resource_locks"
+    business_key_columns: ["org_id","resource_key"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["domain.lock"]
+  - domain: "Domain"
+    logical_name: "ewoh_handoffs"
+    physical_table: "ewoh_handoffs"
+    business_key_columns: ["handoff_id"]
+    org_id_policy: "special"
+    status: "new"
+    capability_mapping: ["domain.handoff"]
+  - domain: "Domain"
+    logical_name: "ewoh_git_sync_state"
+    physical_table: "ewoh_git_sync_state"
+    business_key_columns: ["sync_id"]
+    org_id_policy: "special"
+    status: "new"
+    capability_mapping: ["domain.git_sync"]
+  - domain: "Domain"
+    logical_name: "ewoh_evidence_metadata"
+    physical_table: "ewoh_evidence_metadata"
+    business_key_columns: ["evidence_id"]
+    org_id_policy: "special"
+    status: "new"
+    capability_mapping: ["domain.evidence"]
+  - domain: "Domain"
+    logical_name: "ewoh_factory_replication_sessions"
+    physical_table: "ewoh_factory_replication_sessions"
+    business_key_columns: ["session_id"]
+    org_id_policy: "special"
+    status: "new"
+    capability_mapping: ["domain.factory_replication"]
+  - domain: "Domain"
+    logical_name: "ewoh_idempotency_keys"
+    physical_table: "ewoh_idempotency_keys"
+    business_key_columns: ["scope","idempotency_key"]
+    org_id_policy: "special"
+    status: "new"
+    capability_mapping: ["domain.idempotency"]
 additional_hardened_existing_tables:
   - domain: "Organization"
     logical_name: "ewoh_organization"

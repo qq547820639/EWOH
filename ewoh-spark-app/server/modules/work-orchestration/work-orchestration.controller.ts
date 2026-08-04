@@ -88,8 +88,8 @@ export class WorkOrchestrationController {
   }
 
   @Get('resources')
-  getResources() {
-    return this.workService.getResources();
+  getResources(@Req() request: { userContext?: OrgContext }) {
+    return this.workService.getResourcesDurable(request.userContext);
   }
 
   @Get('handoffs')
@@ -112,7 +112,7 @@ export class WorkOrchestrationController {
       actor?: string;
     },
   ) {
-    return this.workService.applyGitSync(body);
+    return this.workService.applyGitSyncDurable(body);
   }
 
   @Get('site-readiness')
@@ -171,7 +171,7 @@ export class WorkOrchestrationController {
     },
     @Req() request: { userContext?: OrgContext },
   ) {
-    return this.workService.createHandoff(body, request.userContext);
+    return this.workService.createHandoffDurable(body, request.userContext);
   }
 
   @Post('handoffs/:id/state')
@@ -180,7 +180,7 @@ export class WorkOrchestrationController {
     @Body() body: { status: 'accepted' | 'rejected' | 'closed'; reason?: string },
     @Req() request: { userContext?: OrgContext },
   ) {
-    return this.workService.updateHandoffStatus(id, body, request.userContext);
+    return this.workService.updateHandoffStatusDurable(id, body, request.userContext);
   }
 
   @Post('gates/:id/decision')
