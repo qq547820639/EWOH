@@ -375,3 +375,133 @@ Phase 5 生产工程深化完成：部署工件验证脚本全部通过（无需
 SLO/错误预算文档、Runbook 关键章节补齐；密钥/审计/脱敏核对通过；依赖真实环境的验证项如实登记为
 Blocked by External Validation。未扩围业务、未改冻结契约、未引入新第三方依赖。证据文件
 `.codex/artifacts/work/evidence/round109-production-engineering.md`。
+
+## 17. Phase 6 独立验证与最终结论
+
+> 独立验证 Agent（只读 + 运行验证脚本）。本机无 PostgreSQL/Docker/kubectl/Helm/真机，
+> 依赖真实环境的项如实标记 `Blocked by External Validation`，未伪造任何结果。
+> 审计期间未修改任何受审计业务代码；仅新增本小节与证据文件
+> `.codex/artifacts/work/evidence/round110-independent-verification.md`。
+
+### 17.1 执行环境指纹
+
+| 项 | 值 |
+|---|---|
+| git 分支 | `main` |
+| HEAD commit SHA | `984ff8c28c08e62cdd9a688ab7cc57512500b8f6` |
+| envFingerprint | `47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49` |
+| buildVersion | `0.6.0-rc4` |
+| dependencyVersion | `3:2.2.5` |
+| 时间 | 2026-08-04（本地 Asia/Shanghai） |
+| 可用环境 | Node 全量静态门禁、Python unittest/TCK、Standalone 构建 |
+
+### 17.2 实际运行命令与结果表
+
+| # | 命令 | 结果 | 说明 |
+|---|---|---|---|
+| 1 | `node scripts/reconcile-authoritative-artifacts.js --strict --json` | **FAIL（exit=1）** | passed=3 failed=3 total=6；conflictCount=146；evidenceCount=114；openTaskCount=58。**C1 表口径 + Evidence 结构缺口 + 打开任务缺证据均如实 FAIL**（设计如此，非故障） |
+| 2 | `node tools/work-indexer/index.js --root "$PWD" --strict --invariants` | **PASS（exit=0）** | 252 items / 44 edges / 48 actors / 114 evidence / 14 gates / 0 conflicts |
+| 3 | `node tools/work-console/index.js --root "$PWD" --output /tmp/wc.json --strict` | **PASS（exit=0）** | 0 blocked / **210 missing evidence** / **4 gates need approval** / 0 invariant conflicts |
+| 4 | `node scripts/audit-repo-facts.js --strict` | **PASS（exit=0）** | 33/33 |
+| 5 | `node scripts/audit-openapi-routes.js --strict` | **PASS（exit=0）** | controller 253 / spec 253 / 0 未登记 / 0 未实现 |
+| 6 | `make connector-tck` | **PASS** | CONNECTOR TCK PASSED（119 checks） |
+| 7 | `make scenario-tck` | **无此 target** | Makefile 无 `scenario-tck` target（如实记录）；改用 `node scripts/scenario-tck.js` |
+| 8 | `node scripts/scenario-tck.js` | **PASS** | SCENARIO TCK PASSED（8 gates） |
+| 9 | `make test` | **PASS** | Ran 667 tests ... OK |
+| 10 | `cd ewoh-spark-app && npm run type:check` | **PASS（exit=0）** | tsc 0 错误 |
+| 11 | `cd ewoh-spark-app && npm run lint` | **PASS（exit=0）** | eslint + stylelint |
+| 12 | `cd ewoh-spark-app && npm test -- --runInBand` | **PASS（exit=0）** | 82 suites / 409 tests |
+| 13 | `bash scripts/pilot-readiness-check.sh` | **NOT READY（exit=1）** | passed=5 failed=3 pending=7（docker/kubectl/helm 缺失 + 7 项待批准） |
+
+### 17.3 Done 定义核对表（12 条，针对 Phase 1-5 任务）
+
+| # | Done 定义项 | 判定 | 证据 |
+|---|---|---|---|
+| 1 | 代码实现 | ✅ 满足 | Phase 1 reconcile CLI 接入 pre-commit/CI；Phase 2 revoke/history/blocked-reason；Phase 3 force-resolve；Phase 4 connector-contract/catalog/TCK；Phase 5 SBOM/SLO/Runbook |
+| 2 | 编译/Lint/类型 | ✅ 满足 | type:check / lint 均 exit 0 |
+| 3 | 单元测试 | ✅ 满足 | Jest 82/409、Python 667、reconcile 单测、connector-tck 119 |
+| 4 | 集成/E2E | ⚠️ Blocked by External Validation | 本机无真实 PostgreSQL；Phase 1-5 改动无本机 E2E 证据（既往自报 E2E 33/33 于 embedded PG，本机不可复验） |
+| 5 | UI Playwright | ⚠️ Blocked by External Validation | 本机无浏览器与 PG fixture；Phase 2/3 前端改动未跑 Playwright |
+| 6 | 安全边界 | ✅ 满足（静态） | 未改安全边界；Phase 5 密钥/审计/脱敏核对通过；RBAC 守卫/脱敏测试存在 |
+| 7 | OpenAPI/DB/共享契约无未批准差异 | ⚠️ 部分满足 | OpenAPI 253/253 PASS；但 **C1 51 表 DB 口径冲突 reconcile FAIL**，属未批准差异 |
+| 8 | 文档/Runbook | ✅ 满足 | Runbook v1.2、SLO/error-budget、supply-chain-security、acceptance-evidence、training-plan 齐备 |
+| 9 | Evidence 绑定 HEAD SHA+环境指纹 | ❌ 不满足 | Phase 1-5 证据绑定旧 SHA（3eaf126/4e06e0a/fafd4e5/9850f6c/2038838），**均非当前 HEAD 984ff8c**；work-console 显示 **210 missing evidence**、T-101..T-217 证据标记过期/失效 |
+| 10 | 独立验证 | ⚠️ 部分 | 本 Phase 6 为独立验证；既往证据 verifier 字段自证"独立验证 Agent"，但由同一迭代链执行 |
+| 11 | 回滚方案 | ✅ 满足 | Phase 2 gate revoke/rollback API；Runbook 可验证回滚点 |
+| 12 | Gate 计算（G10+ 人类批准） | ❌ 不满足/受阻塞 | G10-G13 需人类批准未授予；work-console 4 门禁待批；pilot NOT READY |
+
+### 17.4 最终结论（A-E 五档选一）
+
+> ## 结论：**A. 核心实现完成，但仍不具备生产和规模复制条件**
+
+**证据（全部真实可执行）：**
+1. `pilot-readiness-check.sh` 返回 **NOT READY**（5 通过 / 3 失败 / 7 待批准），exit=1。
+2. 本机 **无真实 PostgreSQL / Docker / kubectl / Helm / 真机**，真实 E2E、浏览器、容器部署、真机验证全部 Blocked。
+3. **Gate 未全绿**：G10-G13 需人类批准且未授予；`work-console` 显示 4 个门禁待人工批准。
+4. **Evidence 未绑定当前 HEAD SHA**：Phase 1-5 证据全部绑定旧 SHA，且 210 条任务缺证据；`reconcile` 报告 evidenceCount 字段缺失（87 条缺 workItemId）+ C1 表口径冲突。
+5. 外部验证项（真实 DB 迁移/回滚、容器部署、长稳、真机、镜像签名、容量压测）全部未解阻。
+
+**明确排除 B-E 的判定：**
+- 不满足 **B（受控试点）**：Pilot 门禁 NOT READY、无真实 DB/容器/签署。
+- 不满足 **C（第二工厂无分叉复制）**：工厂复制依赖真实数据与现场验证，本环境不可用。
+- 不满足 **D（第三工厂配置化复制）**：依赖真实 PG E2E + 真实工厂配置。
+- 不满足 **E（伙伴交付/Scale Ready 1.0）**：生产 SLO、外部验证、G10+ 批准均未解阻。
+
+### 17.5 已验证完成 / 部分完成 / 未完成
+
+**已完成（本机可执行项，全部真实通过）：**
+- 静态门禁：reconcile CLI（运行并如实报告 FAIL）、work-indexer（0 冲突）、work-console（0 阻塞）、audit-repo-facts（33/33）、audit-openapi-routes（253/253）。
+- 测试：connector-tck 119、scenario-tck 8 gates、make test 667、spark-app type:check/lint/test 82/409。
+
+**部分完成：**
+- Evidence 绑定（部分文件含 front-matter，但绑定旧 SHA 且 210 条缺证据）。
+- OpenAPI 契约一致（253/253），但 DB 表口径（C1）存在未批准差异。
+
+**未完成 / 受外部环境阻塞：**
+- 真实 PostgreSQL E2E、Playwright 浏览器、Docker/K8s/Helm 部署、真机/边缘验证、长稳/容量压测、镜像签名、`npm audit` 联网完整扫描、G10+ 人类批准、生产试点工厂、培训/验收签署、真机设备配置。
+
+### 17.6 实施过的提交与 PR 清单（`git log --oneline -20`）
+
+```
+984ff8c feat(phase5): 生产工程深化 - SBOM/SLO/错误预算/Runbook/供应链安全
+2038838 feat(phase4): 统一连接器质量契约 + ERP/MRP/WMS 清单与 TCK 深化
+9850f6c feat(phase3): 用户体验统一 + 离线冲突强制解析闭环
+fafd4e5 feat(phase2): 因果执行控制台 Gate 撤销/回滚 + 历史 + 阻塞解释
+4e06e0a feat(phase1): 权威制品一致性对账 CLI + pre-commit/CI 接入
+3eaf126 docs(reviews): 提交 LATEST_HEAD_AUDIT 独立完成度审计报告
+7af244c Merge pull request #6 from qq547820639/codex/ewoh-iteration-2026-08-04
+e432f36 feat: productize UX + pilot readiness (UX-001..010, contract收口, 独立验证)
+e2e9dc1 docs: rc4 code/UX productization gap audit + spec
+58753c9 Merge pull request #5 from qq547820639/codex/ewoh-iteration-2026-08-04
+0a0b919 chore: add project Codex config
+e042006 docs: EWOH round104 final standalone gate evidence
+fe38077 docs: EWOH round103 git sync apply gate evidence
+3013633 feat: EWOH approval-gated git sync apply API
+bf16218 docs: EWOH round102 replay context UI evidence
+4406f21 feat: EWOH event replay context UI
+0c60537 docs: EWOH round101 pilot readiness rerun evidence
+dc12a25 docs: EWOH round100 progressive lists evidence
+93b605d feat: EWOH progressive list rendering
+bfa7761 docs: EWOH round99 role workbench evidence
+```
+
+### 17.7 Gate 状态
+
+- G0-G9 本地通过（work-indexer 14 gates / 0 conflicts；work-console 0 阻塞）。
+- G10 本地通过、**生产待批**；G11-G13 **Pending**（需人类批准）。
+- `work-console`：**4 个门禁需人工批准**；`pilot-readiness-check`：**NOT READY**。
+- **G10+ 人类批准未授予**，本审计未代批。
+
+### 17.8 是否具备生产与真实多工厂复制条件
+
+**不具备。** 依据：Pilot 门禁 NOT READY、无真实 DB/容器/真机、Gate 未全绿（G10+ 待批）、
+Evidence 未绑定当前 HEAD SHA（210 条缺证据）、外部验证项全部阻塞。核心实现已完成并通过本机
+静态与单元门禁，但生产部署与真实多工厂复制需要真实环境验证与人类批准解阻后才能评估。
+
+### 17.9 证据文件
+
+- 独立验证证据：`.codex/artifacts/work/evidence/round110-independent-verification.md`
+  （front-matter 绑定 HEAD `984ff8c`、envFingerprint `47822008...`、verifier=独立验证 Agent）。
+
+*审计人：Phase 6 独立验证 Agent*
+*审计时间：2026-08-04*
