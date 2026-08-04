@@ -8,6 +8,11 @@ buildVersion: 0.6.0-rc4
 envFingerprint: 5fe7c6feb11e2726634abc7e27cd90a86f694b21422960b4c3d7f6c71d1facce
 dependencyVersion: 3:2.2.5
 producedAt: 2026-08-04T05:35:50.594Z
+command: "npm run test:e2e"
+suite: http-e2e
+startedAt: 2026-08-04T05:35:50.594Z
+completedAt: 2026-08-04T05:35:50.594Z
+artifactChecksum: aad03514bdb0339e07f5c2adce774fce594002a06e18d16805ce44f7efdc072a
 expiresAt: 2026-11-02T05:35:50.594Z
 verifier: "EWOH independent verification agent"
 ---

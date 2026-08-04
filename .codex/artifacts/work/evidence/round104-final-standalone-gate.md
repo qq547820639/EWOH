@@ -8,6 +8,11 @@ buildVersion: 0.6.0-rc4
 envFingerprint: 47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49
 dependencyVersion: 3:2.2.5
 testTime: 2026-08-04T19:00:00.000Z
+command: "scripts/standalone-check.sh"
+suite: browser-playwright
+startedAt: 2026-08-04T19:00:00.000Z
+completedAt: 2026-08-04T19:00:00.000Z
+artifactChecksum: f557ccfc57db14758c807c6262df4f122ed33c05e458098e8f57261c41739e6b
 verifier: AG-00 local gate
 expiresAt: 2026-11-02T19:00:00.000Z
 ---

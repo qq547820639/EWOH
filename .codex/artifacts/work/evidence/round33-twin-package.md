@@ -8,6 +8,11 @@ buildVersion: 0.6.0-rc4
 envFingerprint: 5fe7c6feb11e2726634abc7e27cd90a86f694b21422960b4c3d7f6c71d1facce
 dependencyVersion: 3:2.2.5
 producedAt: 2026-08-04T05:35:50.594Z
+command: "python3 -m pytest"
+suite: python-edge
+startedAt: 2026-08-04T05:35:50.594Z
+completedAt: 2026-08-04T05:35:50.594Z
+artifactChecksum: 3cd5027a91288c09b2b91bf685a5d51e85b405b3a49e1a63d5a430fdc90744ed
 expiresAt: 2026-11-02T05:35:50.594Z
 verifier: "EWOH independent verification agent"
 ---

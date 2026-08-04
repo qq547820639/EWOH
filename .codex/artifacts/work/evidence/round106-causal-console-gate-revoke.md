@@ -8,6 +8,11 @@ buildVersion: 0.6.0-rc4
 envFingerprint: ed991c0a0b9c0561d3add5558435d908cdb800019e637390ceefd3a3ecfbba65
 dependencyVersion: 3:2.2.5
 testTime: 2026-08-04T04:00:00.000Z
+command: "npm test -- --runInBand"
+suite: server-jest
+startedAt: 2026-08-04T04:00:00.000Z
+completedAt: 2026-08-04T04:00:00.000Z
+artifactChecksum: 471beb2b2eef630051ca40c17dd9340a856d91027970acb18d40893694f01026
 verifier: 独立验证 Agent
 expiresAt: 2026-11-01T04:00:00.000Z
 ---

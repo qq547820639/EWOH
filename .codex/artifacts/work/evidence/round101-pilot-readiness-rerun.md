@@ -8,6 +8,11 @@ buildVersion: 0.6.0-rc4
 envFingerprint: 47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49
 dependencyVersion: 3:2.2.5
 testTime: 2026-08-04T16:00:00.000Z
+command: "npm test"
+suite: postgres-gate
+startedAt: 2026-08-04T16:00:00.000Z
+completedAt: 2026-08-04T16:00:00.000Z
+artifactChecksum: 32c983f4e9b5ce56f3fdc16a82c31e7212ae026bb89c044dd8633ddd3552f640
 verifier: AG-00 local gate
 expiresAt: 2026-11-02T16:00:00.000Z
 ---

@@ -8,6 +8,11 @@ buildVersion: 0.6.0-rc4
 envFingerprint: 5536cd5de357143d66490f2976de80518380d679bf8d0d2b2ca163732179af77
 dependencyVersion: 3:2.2.5
 testTime: 2026-08-04T19:30:00.000Z
+command: "node scripts/reconcile-authoritative-artifacts.js"
+suite: server-jest
+startedAt: 2026-08-04T19:30:00.000Z
+completedAt: 2026-08-04T19:30:00.000Z
+artifactChecksum: ce2546d922679b1640239036cee7b29d1d8514d29adeb418804758e45e3874cb
 verifier: independent verification agent
 expiresAt: 2026-11-02T19:30:00.000Z
 ---

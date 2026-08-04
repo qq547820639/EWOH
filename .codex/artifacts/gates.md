@@ -4,10 +4,10 @@
 |------|---------|----------------|-------------------|
 | G0 | Environment and materials accessible | Passed for local implementation | authoritative docs extracted, repo/dependencies readable, capability limits recorded |
 | G1 | Requirements and terminology baseline frozen | Passed | Final 5.0/Final 6.0 terminology reconciled; authoritative plan extracted to `authoritative-plan-final6.txt` |
-| G2 | Shared contracts frozen | Passed | C1-C9 v1.x frozen; strict OpenAPI audit 232/232; work graph/asset catalog/factory profile audits pass |
+| G2 | Shared contracts frozen | Passed | C1-C9 v1.x frozen; strict OpenAPI audit 248/248; work graph/asset catalog/factory profile audits pass |
 | G3 | Environment probes pass | Passed for local standalone scope | PostgreSQL 17.10 and runtime role probed; Docker/Kubernetes tools recorded unavailable |
 | G4 | DDL compile/migration tests pass | Passed for standalone | real apply/verify/RLS/audit/rollback/rebuild on PostgreSQL 17.10; unique org-key index verified |
-| G5 | Backend infrastructure passes | Passed for standalone base | request transaction/GUC, auth, errors, health, rate limit tests; Jest 76 suites / 362 tests |
+| G5 | Backend infrastructure passes | Passed for standalone base | request transaction/GUC, auth, errors, health, rate limit tests; Jest 81 suites / 391 tests |
 | G6 | Core domain modules/APIs pass | Passed locally | 232 routes, 0 unimplemented; work orchestration APIs documented and tested over HTTP |
 | G7 | Frontend and command map pass | Validation | Playwright authenticated flow: dispatcher login + command center render on real PG; client Jest 13 suites / 42 tests; PWA manifest/service worker; work console route and layout type-check |
 | G8 | Cross-module scenario tests pass | Passed locally | SP-01..SP-08 unit suite + HTTP+PostgreSQL E2E 29/29 on embedded PG 17; Final 6 scenario pack and connector audits pass |
@@ -17,7 +17,22 @@
 | G12 | Follow-on phases accepted | Pending | phase acceptance reports |
 | G13 | Final project closeout | Pending | closeout package |
 
-## 2026-08-04 P0 Hardening Gate
+## 当前权威状态（2026-08-04 HEAD 9fe8a8f）
+
+以下为本仓库的单一、权威当前状态，来自 `CHANGELOG` rc4、`release-manifest` 与 `audit-repo-facts` 的一致聚合。**以下所有历史 `## 2026-08-04 ...` Gate 小节均为历史快照（非权威），权威计数一律以本节为准。**
+
+- server Jest：`81 suites / 391 tests`
+- client Jest：`15 suites / 50 tests`
+- OpenAPI：`248/248`
+- E2E：`33/33`
+- browser：`5/5`
+- repo-facts：`38/38`
+- work graph：`252 items / 209 edges / 48 actors / 191 evidence / 14 gates / 0 conflicts`
+- DB：`51 managed tables / 57 physical tables`
+- Pilot readiness：`NOT READY（7 passed / 3 failed / 5 pending）`
+- Gate：G0-G6 已通过，G7-G9 为 validation，G10 passed-locally / production-pending，G11-G13 pending
+
+## 历史快照（非权威）: 2026-08-04 P0 Hardening Gate
 
 `bash scripts/standalone-check.sh` passed after the P0 hardening iteration:
 typecheck, lint, Jest 76/362, client 13/42, repo-facts 33/33, OpenAPI 232/232,
@@ -45,7 +60,7 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
 - Review fixes are recorded in `round91-review-fixes.md` with server 78/375,
   client 13/46, invariants 0 conflicts, and work-console strict pass.
 
-## 2026-08-04 Onboarding/Mapping Real Gate
+## 历史快照（非权威）: 2026-08-04 Onboarding/Mapping Real Gate
 
 - `OnboardingService.run` F0 requires validated site readiness evidence; F2
   publishes connectors; F3 installs scenario packs with idempotent DB/audit.
@@ -86,7 +101,7 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
 - Slow-query API and Prometheus counter are covered by unit tests and real PG
   E2E.
 
-## 2026-08-04 Frontend Performance Gate
+## 历史快照（非权威）: 2026-08-04 Frontend Performance Gate
 
 - Routes are lazy-loaded; standalone production build emits per-page chunks.
 - `getWorldState`/`getReplay` accept `AbortSignal` and are wired through
@@ -108,7 +123,7 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
 - Role workbench tables slice to 50 and support load-more without replacing
   the data source.
 
-## 2026-08-04 Pilot Readiness Rerun
+## 历史快照（非权威）: 2026-08-04 Pilot Readiness Rerun
 
 - Current code: 7 passed, 3 failed (Docker/Kubectl/Helm unavailable locally),
   5 pending external approval/input.
@@ -121,7 +136,7 @@ passed locally on embedded PG 17: `29/29` (`npm run test:e2e`).
 - Event center can fetch and display replay before/during/after context.
 - Replay context summarizer is unit-tested.
 
-## 2026-08-04 Git Sync Apply Gate
+## 历史快照（非权威）: 2026-08-04 Git Sync Apply Gate
 
 - Apply endpoint is exposed but fails closed without `EWOH_WORK_WRITABLE`.
 - Real GitHub creation remains approval-gated by environment and human

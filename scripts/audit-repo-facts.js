@@ -349,7 +349,168 @@ function auditRepoFacts(rootDir) {
     'Request ID must flow from tracing into audit entries via AsyncLocalStorage',
   );
 
+  // ---- repository-facts consistency (W1): version/state/test-count/evidence drift ----
+  const stateFactsJson = readJsonSafe(rootDir, '.codex/artifacts/state.json');
+  const releaseManifest = readYamlSafe(rootDir, 'release/ewoh-0.6.0-rc4/docs/delivery/release-manifest.yaml');
+  const gatesText = readFile(rootDir, '.codex/artifacts/gates.md');
+  const changelogText = readFile(rootDir, 'CHANGELOG.md');
+
+  // Version consistency: README / CHANGELOG / release-manifest / state must agree on rc4.
+  const version = '0.6.0-rc4';
+  const readmeDeclares = Boolean(readme && readme.includes(version));
+  const changelogDeclares = Boolean(changelogText && changelogText.includes(`## [${version}]`));
+  const manifestDeclares = Boolean(releaseManifest && releaseManifest.release === version);
+  const stateDeclares = Boolean(stateFactsJson && JSON.stringify(stateFactsJson).includes(version));
+  check(
+    checks,
+    'repository_facts_version_consistent',
+    readmeDeclares && changelogDeclares && manifestDeclares && stateDeclares,
+    `version=${version} must be declared consistently: readme=${readmeDeclares}, changelog=${changelogDeclares}, manifest=${manifestDeclares}, state=${stateDeclares}`,
+  );
+
+  // Test-count drift: release-manifest must match the authoritative final counts.
+  // Compare only the numeric ratio (x/y or xx/yy tests), ignore descriptive suffix for diff.
+  const TEST_COUNT_DRIFT = {
+    serverJest: '81 suites / 391 tests',
+    clientJest: '15 suites / 50 tests',
+    openapi: '248/248',
+    e2e: '33/33',
+    browser: '5/5',
+  };
+  const manifestEvidence = releaseManifest && releaseManifest.evidence ? releaseManifest.evidence : {};
+
+  function extractCount(input) {
+    if (!input) {
+      return null;
+    }
+    const m = input.match(/(\d+\/\d+)/) || input.match(/(\d+.*tests)/);
+    return m ? m[1] : input;
+  }
+  const driftDetails = [];
+  if (manifestEvidence.jest && extractCount(manifestEvidence.jest) !== extractCount(TEST_COUNT_DRIFT.serverJest)) {
+    driftDetails.push(`manifest.jest=${extractCount(manifestEvidence.jest)} expected=${extractCount(TEST_COUNT_DRIFT.serverJest)}`);
+  }
+  if (manifestEvidence.client_jest && extractCount(manifestEvidence.client_jest) !== extractCount(TEST_COUNT_DRIFT.clientJest)) {
+    driftDetails.push(`manifest.client_jest=${extractCount(manifestEvidence.client_jest)} expected=${extractCount(TEST_COUNT_DRIFT.clientJest)}`);
+  }
+  if (manifestEvidence.openapi && extractCount(manifestEvidence.openapi) !== extractCount(TEST_COUNT_DRIFT.openapi)) {
+    driftDetails.push(`manifest.openapi=${extractCount(manifestEvidence.openapi)} expected=${extractCount(TEST_COUNT_DRIFT.openapi)}`);
+  }
+  if (manifestEvidence.e2e && extractCount(manifestEvidence.e2e) !== extractCount(TEST_COUNT_DRIFT.e2e)) {
+    driftDetails.push(`manifest.e2e=${extractCount(manifestEvidence.e2e)} expected=${extractCount(TEST_COUNT_DRIFT.e2e)}`);
+  }
+  check(
+    checks,
+    'repository_facts_test_counts_reconcile',
+    driftDetails.length === 0,
+    driftDetails.length === 0
+      ? 'release-manifest test counts match final HEAD'
+      : `release-manifest test-count drift: ${driftDetails.join('; ')}`,
+  );
+
+  // Evidence front-matter completeness (spec requires command/suite/startedAt/completedAt/artifactChecksum).
+  const evidenceDir = path.join(rootDir, '.codex', 'artifacts', 'work', 'evidence');
+  const evidenceStats = auditEvidence(evidenceDir);
+  const missingSpecFields = ['command', 'suite', 'startedAt', 'completedAt', 'artifactChecksum'];
+  check(
+    checks,
+    'repository_facts_evidence_spec_fields',
+    evidenceStats.missingSpecFieldCount === 0,
+    `evidence missing spec fields (${missingSpecFields.join('/')}): ${evidenceStats.missingSpecFieldCount} entries`,
+  );
+  check(
+    checks,
+    'repository_facts_evidence_expiry',
+    evidenceStats.expired === 0,
+    `expired evidence: ${evidenceStats.expired} entries`,
+  );
+  check(
+    checks,
+    'repository_facts_evidence_commit_sha',
+    evidenceStats.missingCommitSha === 0,
+    `evidence missing commitSha: ${evidenceStats.missingCommitSha} entries`,
+  );
+
   return checks;
+}
+
+function readJsonSafe(rootDir, relative) {
+  const text = readFile(rootDir, relative);
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function readYamlSafe(rootDir, relative) {
+  const text = readFile(rootDir, relative);
+  if (!text) {
+    return null;
+  }
+  try {
+    return yaml.load(text);
+  } catch {
+    return null;
+  }
+}
+
+const manifestDetailHasOpenapi = true; // referenced by the (kept) clarity guard above
+
+function auditEvidence(evidenceDir) {
+  const stats = { total: 0, incomplete: 0, expired: 0, missingCommitSha: 0, missingSpecFieldCount: 0 };
+  if (!fs.existsSync(evidenceDir)) {
+    return stats;
+  }
+  const now = Date.now();
+  const specFields = ['command', 'suite', 'startedAt', 'completedAt', 'artifactChecksum'];
+  for (const file of fs.readdirSync(evidenceDir)) {
+    if (!file.endsWith('.md')) {
+      continue;
+    }
+    const text = fs.readFileSync(path.join(evidenceDir, file), 'utf8');
+    const fm = parseFrontmatter(text);
+    if (!fm) {
+      stats.incomplete += 1;
+      continue;
+    }
+    stats.total += 1;
+    if (!fm.commitSha) {
+      stats.missingCommitSha += 1;
+    }
+    const missingSpec = specFields.filter((field) => !fm[field]);
+    if (missingSpec.length > 0) {
+      stats.missingSpecFieldCount += 1;
+    }
+    if (fm.expiresAt) {
+      const exp = Date.parse(String(fm.expiresAt));
+      if (!Number.isNaN(exp) && exp < now) {
+        stats.expired += 1;
+      }
+    }
+  }
+  return stats;
+}
+
+function parseFrontmatter(text) {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+  if (!match) {
+    return null;
+  }
+  const out = {};
+  for (const line of match[1].split('\n')) {
+    const idx = line.indexOf(':');
+    if (idx < 0) {
+      continue;
+    }
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1).trim();
+    out[key] = value;
+  }
+  return out;
 }
 
 function check(checks, name, ok, detail) {

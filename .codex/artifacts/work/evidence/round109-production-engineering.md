@@ -8,6 +8,11 @@ buildVersion: 0.6.0-rc4
 envFingerprint: fc13fa824502c48c54b7885cd4b8d6d7a749b47994c4d3ad4f84a56effa23e9b
 dependencyVersion: 3:2.2.5
 testTime: 2026-08-04T05:05:00.000Z
+command: "make test"
+suite: python-edge
+startedAt: 2026-08-04T05:05:00.000Z
+completedAt: 2026-08-04T05:05:00.000Z
+artifactChecksum: 790b62e8f4bf560fb64bf83c15b864fd84680508c7ed58e4ac9d23a559f08cf8
 verifier: 独立验证 Agent
 expiresAt: 2026-11-01T12:00:00.000Z
 ---

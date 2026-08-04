@@ -19,6 +19,8 @@ npm run test:client
 echo "== openapi strict audit =="
 cd "$ROOT_DIR"
 node scripts/audit-repo-facts.js --strict
+node scripts/collect-repo-facts.js --out output/repository-facts.json
+node scripts/validate-repo-facts.js --snapshot output/repository-facts.json
 node tools/work-indexer/index.js --root "$ROOT_DIR" --output output/work-graph.json --strict
 node tools/work-indexer/index.js --root "$ROOT_DIR" --invariants
 node tools/gate-engine/index.js --root "$ROOT_DIR" --output output/gate-decisions.json

@@ -3,7 +3,22 @@
 Updated: 2026-08-04
 Trace: EWOH-2026-08-04-principal-final6
 
-## Latest Round - 2026-08-04 Task 11 Contract & Migration收口
+## 当前权威状态（2026-08-04 HEAD 9fe8a8f）
+
+以下为本仓库的单一、权威当前状态，来自 `CHANGELOG` rc4、`release-manifest` 与 `audit-repo-facts` 的一致聚合。**以下所有 `## Latest Round - ...` 小节均为历史快照（非权威），权威计数一律以本节为准。**
+
+- server Jest：`81 suites / 391 tests`
+- client Jest：`15 suites / 50 tests`
+- OpenAPI：`248/248`
+- E2E：`33/33`
+- browser：`5/5`
+- repo-facts：`38/38`
+- work graph：`252 items / 209 edges / 48 actors / 191 evidence / 14 gates / 0 conflicts`
+- DB：`51 managed tables / 57 physical tables`
+- Pilot readiness：`NOT READY（7 passed / 3 failed / 5 pending）`
+- Gate：G0-G6 已通过，G7-G9 为 validation，G10 passed-locally / production-pending，G11-G13 pending
+
+## 历史快照（非权威）: Latest Round - 2026-08-04 Task 11 Contract & Migration收口
 
 - `POST /api/work/git-sync/apply` contract closed: OpenAPI `GitSyncApplyRequest`
   (`idempotencyKey`/`approved` required, `reason`/`actor` optional) added and
@@ -125,7 +140,7 @@ Trace: EWOH-2026-08-04-principal-final6
 - Full gate with runtime DB: server Jest 78/377, client 13/46, OpenAPI 233/233,
   repo facts 33/33, work graph 241 nodes / 0 invariant conflicts, build passed.
 
-## Latest Round - 2026-08-04 World Replay Unified Timeline
+## 历史快照（非权威）: Latest Round - 2026-08-04 World Replay Unified Timeline
 
 - `GET /api/world/replay` now merges world states, events, tasks, steps, and
   material changes into lane-aware snapshots.
@@ -161,7 +176,7 @@ Trace: EWOH-2026-08-04-principal-final6
 - Full suite after quality wave: server Jest 79/386, client 13/46, OpenAPI
   245/245, work graph 244 nodes / 101 evidence / 0 invariant conflicts.
 
-## Latest Round - 2026-08-04 Slow Query Observability
+## 历史快照（非权威）: Latest Round - 2026-08-04 Slow Query Observability
 
 - `RequestDatabaseContext` applies `EWOH_DB_STATEMENT_TIMEOUT_MS` and records
   transactions over `EWOH_DB_SLOW_THRESHOLD_MS`.
@@ -191,7 +206,7 @@ Trace: EWOH-2026-08-04-principal-final6
 - Full suite after role workbench wave: server Jest 81/391, client 13/46,
   OpenAPI 247/247, work graph 247 items / 104 evidence / 0 conflicts.
 
-## Latest Round - 2026-08-04 Progressive Lists
+## 历史快照（非权威）: Latest Round - 2026-08-04 Progressive Lists
 
 - `progressiveSlice/hasMoreItems/nextProgressiveLimit` helper added with unit
   tests.
@@ -381,7 +396,7 @@ factory replication drills, partner shadow delivery, and production SLO/approval
 - Work graph after git sync apply wave: 251 items / 108 evidence /
   0 invariant conflicts.
 
-## Latest Round - 2026-08-04 Final Standalone Gate
+## 历史快照（非权威）: Latest Round - 2026-08-04 Final Standalone Gate
 
 - `ALL STANDALONE CHECKS PASSED` with real PostgreSQL.
 - Server 81/391, client 15/50, E2E 33/33, browser 5/5, OpenAPI 248/248,

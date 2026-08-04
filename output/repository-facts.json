@@ -1,0 +1,39 @@
+{
+  "schema": "ewoh:///repository-facts/v1",
+  "generatedAt": "2026-08-04T10:55:21.865Z",
+  "head": "9fe8a8f9881d08026cd70d4d32b41ddddccf530a",
+  "branch": "main",
+  "version": "0.6.0-rc4",
+  "testCounts": {
+    "serverJest": "81 suites / 391 tests",
+    "clientJest": "15 suites / 50 tests",
+    "openapi": "248/248",
+    "e2e": "33/33",
+    "browser": "5/5",
+    "evidence": 110
+  },
+  "evidence": {
+    "total": 110,
+    "incomplete": 0,
+    "expired": 0,
+    "missingCommitSha": 0
+  },
+  "workGraph": {
+    "items": 0,
+    "edges": 0,
+    "actors": 0,
+    "evidence": 0,
+    "gates": 0,
+    "conflicts": 0
+  },
+  "openapi": {
+    "controller": 253,
+    "spec": 253,
+    "unimplemented": 0
+  },
+  "database": {
+    "managedTables": 51,
+    "physicalTables": 57
+  },
+  "checks": []
+}

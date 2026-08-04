@@ -8,6 +8,11 @@ buildVersion: 0.6.0-rc4
 envFingerprint: 47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49
 dependencyVersion: 3:2.2.5
 testTime: 2026-08-04T13:00:00.000Z
+command: "npm run test:browser"
+suite: browser-playwright
+startedAt: 2026-08-04T13:00:00.000Z
+completedAt: 2026-08-04T13:00:00.000Z
+artifactChecksum: 6d06f7522b0c25a1a51b593429f8a756fc254e02c88df46b01ea7590e80db4d0
 verifier: AG-00 local gate
 expiresAt: 2026-11-02T13:00:00.000Z
 ---

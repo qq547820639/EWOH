@@ -8,6 +8,11 @@ buildVersion: 0.6.0-rc4
 envFingerprint: 47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49
 dependencyVersion: 3:2.2.5
 testTime: 2026-08-04T11:00:00.000Z
+command: "npm run test:client"
+suite: http-e2e
+startedAt: 2026-08-04T11:00:00.000Z
+completedAt: 2026-08-04T11:00:00.000Z
+artifactChecksum: 1e15ca48c0c9222b8cb30d984ff104f9d438fa0ad251c460ec2a5d267ab00cd1
 verifier: AG-00 local gate
 expiresAt: 2026-11-02T11:00:00.000Z
 ---

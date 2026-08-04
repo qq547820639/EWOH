@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ewoh:///repository-facts/v1",
+  "title": "EWOH Repository Facts",
+  "description": "Canonical, machine-readable snapshot of authoritative repository facts (version, test counts, evidence, work graph, OpenAPI, DB footprint) used to cross-check README/CHANGELOG/release-manifest/state/gates/phase-state for drift. Detects state conflicts, version conflicts, missing commit SHA, and expired evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "generatedAt",
+    "head",
+    "branch",
+    "version",
+    "testCounts",
+    "evidence",
+    "workGraph",
+    "openapi",
+    "database",
+    "checks"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "ewoh:///repository-facts/v1"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "head": {
+      "type": "string",
+      "description": "HEAD commit SHA."
+    },
+    "branch": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string",
+      "description": "Release version, e.g. 0.6.0-rc4."
+    },
+    "testCounts": {
+      "type": "object",
+      "description": "Authoritative test counts collected from the current tree. Each sub-object asserts a single source of truth.",
+      "additionalProperties": false,
+      "required": ["serverJest", "clientJest", "openapi", "e2e", "browser", "evidence"],
+      "properties": {
+        "serverJest": { "type": "string", "description": "e.g. '81 suites / 391 tests'" },
+        "clientJest": { "type": "string", "description": "e.g. '15 suites / 50 tests'" },
+        "openapi": { "type": "string", "description": "e.g. '248/248'" },
+        "e2e": { "type": "string", "description": "e.g. '33/33'" },
+        "browser": { "type": "string", "description": "e.g. '5/5'" },
+        "evidence": { "type": "integer", "description": "total evidence entries" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "description": "Evidence completeness and expiry summary.",
+      "additionalProperties": false,
+      "required": ["total", "incomplete", "expired", "missingCommitSha"],
+      "properties": {
+        "total": { "type": "integer" },
+        "incomplete": { "type": "integer" },
+        "expired": { "type": "integer" },
+        "missingCommitSha": { "type": "integer" }
+      }
+    },
+    "workGraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "edges", "actors", "evidence", "gates", "conflicts"],
+      "properties": {
+        "items": { "type": "integer" },
+        "edges": { "type": "integer" },
+        "actors": { "type": "integer" },
+        "evidence": { "type": "integer" },
+        "gates": { "type": "integer" },
+        "conflicts": { "type": "integer" }
+      }
+    },
+    "openapi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["controller", "spec", "unimplemented"],
+      "properties": {
+        "controller": { "type": "integer" },
+        "spec": { "type": "integer" },
+        "unimplemented": { "type": "integer" }
+      }
+    },
+    "database": {
+      "type": "object",
+      "description": "DB footprint. Distinguishes managed tables (51) from physical tables (57).",
+      "additionalProperties": false,
+      "required": ["managedTables", "physicalTables"],
+      "properties": {
+        "managedTables": { "type": "integer" },
+        "physicalTables": { "type": "integer" }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "description": "Consistency check results. Any check with ok=false must cause a non-zero exit.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "ok", "detail"],
+        "properties": {
+          "name": { "type": "string" },
+          "ok": { "type": "boolean" },
+          "detail": { "type": "string" }
+        }
+      }
+    }
+  }
+}

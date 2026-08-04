@@ -28,11 +28,16 @@ artifacts:
     - tools/factory-replication/
   final6_catalog: catalog/
   contracts: contracts/
+contracts:
+  database:
+    managed_tables: 51
+    physical_tables: 57
+    note: "51 managed tables (schema-manifest.yaml managed_tables) + 6 system/physical tables = 57 physical. additional_hardened_existing_tables (5) are existing tables hardened with RLS, not counted in the 51."
 evidence:
-  jest: "76 suites / 362 tests"
-  client_jest: "13 suites / 42 tests"
-  e2e: "29/29 HTTP + PostgreSQL"
-  openapi: "232/232 documented, 0 unimplemented"
+  jest: "81 suites / 391 tests"
+  client_jest: "15 suites / 50 tests"
+  e2e: "33/33 HTTP + PostgreSQL"
+  openapi: "248/248 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/client-jest/repo-facts/openapi/e2e/build/ddl/hygiene)"
   release_drill: "RELEASE DRILL PASSED on disposable PostgreSQL 17"
   postgres_gate: "standalone-postgres-check PASSED; 51 managed tables / 51 RLS / audit chain / rollback to 0 objects / rebuild"
@@ -40,7 +45,7 @@ evidence:
   python: "unittest 667 passed; pytest 120 passed; ruff clean"
   perf: "500 req / 50 concurrency on /health/live, 4610 qps, p95 26.83ms"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; 57 tables backup/restore/verify; identity sequence advanced"
-  work_graph: "202 items / 21 edges / 48 actors / 69 evidence / 14 gates / 0 conflicts"
+  work_graph: "252 items / 209 edges / 48 actors / 191 evidence / 14 gates / 0 conflicts"
   git_sync: "offline-first issue/PR plan; 188 items; live creation approval-gated"
   console_ux: "DAG pan/zoom, node search, gate/evidence filters, evidence content preview, batch gate decisions, handoff state actions, lock countdown, site readiness tab, q/limit/offset API"
   factory_replication: "replication-report schema + passing/failing fixtures; 20 factory contract checks"

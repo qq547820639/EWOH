@@ -8,6 +8,11 @@ buildVersion: 0.6.0-rc4
 envFingerprint: 47822008a4bbb06009984c92afd6db08243e1003c1ac9c758cf727c31671ab49
 dependencyVersion: 3:2.2.5
 testTime: 2026-08-04T05:10:00.000Z
+command: "npm test -- --runInBand"
+suite: browser-playwright
+startedAt: 2026-08-04T05:10:00.000Z
+completedAt: 2026-08-04T05:10:00.000Z
+artifactChecksum: e807b8dbdf77c66514ce61f4beff5dc4cabcda9f28391a5804b6660d751a5135
 verifier: 独立验证 Agent
 expiresAt: 2026-11-01T05:10:00.000Z
 ---

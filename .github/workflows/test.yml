@@ -47,7 +47,10 @@ jobs:
         working-directory: ewoh-spark-app
 
       - name: 仓库事实源一致性校验（P0-1）
-        run: node scripts/audit-repo-facts.js --strict
+        run: |
+          node scripts/audit-repo-facts.js --strict
+          node scripts/collect-repo-facts.js --out "$GITHUB_WORKSPACE/output/repository-facts.json"
+          node scripts/validate-repo-facts.js --snapshot "$GITHUB_WORKSPACE/output/repository-facts.json"
 
       - name: Work Graph 不变量与阻塞诊断（P0-6/P0-7）
         run: |

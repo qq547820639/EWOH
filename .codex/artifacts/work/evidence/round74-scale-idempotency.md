@@ -8,6 +8,11 @@ buildVersion: 0.6.0-rc4
 envFingerprint: 5fe7c6feb11e2726634abc7e27cd90a86f694b21422960b4c3d7f6c71d1facce
 dependencyVersion: 3:2.2.5
 producedAt: 2026-08-04T05:35:50.594Z
+command: "npm test -- --runInBand"
+suite: http-e2e
+startedAt: 2026-08-04T05:35:50.594Z
+completedAt: 2026-08-04T05:35:50.594Z
+artifactChecksum: bc4592ce153e43d02c9c8e3a2391c0a7c4913dd629e11e070e7a7292aedd9117
 expiresAt: 2026-11-02T05:35:50.594Z
 verifier: "EWOH independent verification agent"
 ---

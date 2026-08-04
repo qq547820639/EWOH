@@ -8,6 +8,11 @@ buildVersion: 0.6.0-rc4
 envFingerprint: 5fe7c6feb11e2726634abc7e27cd90a86f694b21422960b4c3d7f6c71d1facce
 dependencyVersion: 3:2.2.5
 producedAt: 2026-08-04T05:35:50.594Z
+command: "scripts/standalone-postgres-check.sh"
+suite: http-e2e
+startedAt: 2026-08-04T05:35:50.594Z
+completedAt: 2026-08-04T05:35:50.594Z
+artifactChecksum: 3cc73a7eaa11e8d0e842e6d6f1087ec46084c00646d2b269125e3be79f51c37a
 expiresAt: 2026-11-02T05:35:50.594Z
 verifier: "EWOH independent verification agent"
 ---

@@ -8,6 +8,11 @@ buildVersion: 0.6.0-rc4
 envFingerprint: ed991c0a0b9c0561d3add5558435d908cdb800019e637390ceefd3a3ecfbba65
 dependencyVersion: 3:2.2.5
 testTime: 2026-08-04T11:30:00.000Z
+command: "node scripts/audit-openapi-routes.js"
+suite: server-jest
+startedAt: 2026-08-04T11:30:00.000Z
+completedAt: 2026-08-04T11:30:00.000Z
+artifactChecksum: fb9c1a1a470b9e314f11d12245df8d13c0d830f0f39fa2bc61de0f2bdd094f2d
 verifier: 独立验证 Agent
 expiresAt: 2026-11-01T11:30:00.000Z
 ---

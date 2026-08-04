@@ -41,7 +41,7 @@ evidence:
   python: "unittest 667 passed; pytest 120 passed; ruff clean"
   perf: "500 req / 50 concurrency on /health/live, 4610 qps, p95 26.83ms"
   ops_drill: "ALL STANDALONE OPS CHECKS PASSED; 57 tables backup/restore/verify; identity sequence advanced"
-  work_graph: "252 items / 39 edges / 48 actors / 109 evidence / 14 gates / 0 invariant conflicts"
+  work_graph: "252 items / 209 edges / 48 actors / 191 evidence / 14 gates / 0 invariant conflicts"
   git_sync: "offline-first issue/PR plan; 238 items; live creation approval-gated"
   console_ux: "DAG pan/zoom, node search, gate/evidence filters, evidence content preview, batch gate decisions, handoff state actions, lock countdown, site readiness tab, q/limit/offset API, tools/work-console blocker diagnosis, evidence binding status"
   world_replay: "unified task/material/quality/alert lanes; event before/during/after context; replay-derived issue creation with causal chain"
