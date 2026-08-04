@@ -167,6 +167,49 @@
 
 该方向对应 **A（核心实现完成，但仍不具备生产和规模复制条件）**，将在 Phase 6 由独立验证 Agent 复核后给出最终结论（A-E 五档选一，附证据）。
 
+## 12. Phase 1 对账 CLI 验证（权威制品一致性 + Work Graph）
+
+> 依据 Phase 1（Task 1.4/1.5/1.6/1.7/1.8）新增 `scripts/reconcile-authoritative-artifacts.js` 只读对账 CLI，
+> 并在 pre-commit 与 CI 接入。以下为实际运行结果（只读，未改写任何权威源）。
+
+### 12.1 实际运行命令
+
+| # | 命令 | 退出码 |
+|---|---|---|
+| 1 | `node scripts/reconcile-authoritative-artifacts.js --strict --root .` | **1**（存在冲突，符合设计） |
+| 2 | `node scripts/reconcile-authoritative-artifacts.js --strict --json --root .` | **1**（机器可读 JSON 输出） |
+| 3 | `npx jest test/unit/reconcile-authoritative-artifacts.spec.ts --runInBand`（ewoh-spark-app） | **0**（5/5 通过） |
+
+HEAD：`3eaf1260f3d77840917ae1a327c5da195b431b57`（main）。运行时间：2026-08-04。
+
+### 12.2 检查项结果（6 项：3 PASS / 3 FAIL）
+
+| 检查项 | 结果 | 说明 |
+|---|---|---|
+| `version_changelog_vs_release_manifest` | **PASS** | CHANGELOG 最新版本号 == release-manifest.release |
+| `trace_id_in_phase_state` | **PASS** | state.json.trace_id 在 phase-state.md 中被引用 |
+| `route_manifest_consistent_with_live_scan` | **PASS** | route-manifest.json 与实时扫描一致（controller/spec operations 匹配） |
+| `db_table_footprint_reconcile` | **FAIL** | **C1 冲突**：schema-manifest 计算表数与 CHANGELOG(48→51)/state.json/release-manifest 声称的 51 不一致 |
+| `evidence_structure_complete` | **FAIL** | 110 条证据中 87 条缺 `workItemId` 字段（结构完整性未达标；本报告新增的 round105 证据已含全部字段） |
+| `open_tasks_have_evidence_or_blocked` | **FAIL** | 58 个打开/进行中任务缺 Evidence 且未标记 Blocked by External Validation |
+
+### 12.3 汇总
+
+- `summary: passed=3, failed=3, total=6, conflictCount=146, evidenceCount=110, openTaskCount=58`
+- 冲突（146）集中在三类：C1 表口径（1）、Evidence 结构缺字段（87）、打开任务缺证据（约 37）。
+- **C1 51 表口径冲突已被如实报告**，未自动修复任何权威源（符合只读约束）。
+- 输出模式：人类可读（默认）、`--json`（机器可读）、`--output`（写文件）、`--diff`（仅报告建议，不写回）。
+- 冲突时退出码非零（`--strict` 亦强制 1），无冲突时退出 0。
+
+### 12.4 接线位置
+
+- **pre-commit**：`ewoh-spark-app/scripts/hooks/run-precommit.js` → `runReconcile()`（lint 之后、非零失败即阻断提交，可 `--no-verify` 绕过）。
+- **CI**：`.github/workflows/test.yml` → step「权威制品一致性对账（Phase 1）」`node scripts/reconcile-authoritative-artifacts.js --strict --json --output ...`。
+
+### 12.5 结论
+
+Phase 1 对账 CLI 交付完成：实现 + 单元测试（5/5）通过 + pre-commit/CI 接线 + 只读不回写。该 CLI 将原有 `audit-repo-facts` 覆盖的 C1/R2 权威口径冲突、Evidence 结构缺口（G2）与打开任务缺证据固化为机器可验证的门禁，作为后续 Phase 2/3 收敛权威口径与补齐 Evidence 的客观基线。
+
 ---
 *审计人：EWOH 总控工程 Agent（独立审计，非实现自签）*
 *审计时间：2026-08-04*

@@ -3,8 +3,11 @@
 'use strict';
 
 const { spawnSync } = require('node:child_process');
+const path = require('node:path');
 
 const SEP = '  ' + '─'.repeat(36);
+
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 
 function failAndExit(step, body) {
   process.stderr.write('\n✗ pre-commit failed: ' + step + '\n');
@@ -34,4 +37,21 @@ function runLint() {
   }
 }
 
+function runReconcile() {
+  const res = spawnSync('node', ['scripts/reconcile-authoritative-artifacts.js', '--strict', '--root', REPO_ROOT], {
+    cwd: REPO_ROOT,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: process.env,
+  });
+  if (res.error) {
+    failAndExit('reconcile-authoritative-artifacts', String(res.error.message || res.error));
+  }
+  const stdout = res.stdout ? res.stdout.toString() : '';
+  const stderr = res.stderr ? res.stderr.toString() : '';
+  if (res.status !== 0) {
+    failAndExit('reconcile-authoritative-artifacts', stdout + '\n' + stderr);
+  }
+}
+
 runLint();
+runReconcile();

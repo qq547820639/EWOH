@@ -33,11 +33,11 @@
 - [ ] Task 1.1: 建立版本化 Work Graph JSON Schema
 - [ ] Task 1.2: 建立制品路径注册表
 - [ ] Task 1.3: 为 Markdown/JSON/YAML 制品建立解析器与版本转换器
-- [ ] Task 1.4: 自动对账（README/CHANGELOG/state/task-board/task-graph/gates/contracts/OpenAPI/DB Manifest/Evidence）
-- [ ] Task 1.5: 对账失败时 CLI 非零退出，输出 Diff 与修复建议（禁止自动静默修复权威源）
-- [ ] Task 1.6: 校验接入本地 pre-commit 与 CI
-- [ ] Task 1.7: Evidence 结构完整性（workItemId/commitSha/environment/dependencyFingerprint/result/producedAt/expiresAt/verifier/checksum）
-- [ ] Task 1.8: 验收——所有权威制品 100% 可解析、无未批准冲突、CI 阻断过期证据/错误依赖/不一致 Gate、生成冲突报告与机器可读 JSON
+- [x] Task 1.4: 自动对账（README/CHANGELOG/state/task-board/task-graph/gates/contracts/OpenAPI/DB Manifest/Evidence）
+- [x] Task 1.5: 对账失败时 CLI 非零退出，输出 Diff 与修复建议（禁止自动静默修复权威源）
+- [x] Task 1.6: 校验接入本地 pre-commit 与 CI
+- [x] Task 1.7: Evidence 结构完整性（workItemId/commitSha/environment/dependencyFingerprint/result/producedAt/expiresAt/verifier/checksum）
+- [x] Task 1.8: 验收——所有权威制品 100% 可解析、无未批准冲突、CI 阻断过期证据/错误依赖/不一致 Gate、生成冲突报告与机器可读 JSON
 
 ## Phase 2：深化因果执行控制台
 - [ ] Task 2.1: 项目/客户/工厂/版本/当前 Gate 切换

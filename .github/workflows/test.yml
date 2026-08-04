@@ -54,6 +54,9 @@ jobs:
           node tools/work-indexer/index.js --root "$GITHUB_WORKSPACE" --strict --invariants
           node tools/work-console/index.js --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/output/work-console.json" --strict
 
+      - name: 权威制品一致性对账（Phase 1）
+        run: node scripts/reconcile-authoritative-artifacts.js --strict --json --output "$GITHUB_WORKSPACE/output/reconcile.json"
+
       - name: NestJS 类型检查
         run: npm run type:check
         working-directory: ewoh-spark-app
