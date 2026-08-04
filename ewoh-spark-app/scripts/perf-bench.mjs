@@ -110,6 +110,35 @@ async function main() {
     };
   }
 
+  // 1b) W3.4 因果控制台交互纯函数：3000 节点规模下的性能基线。
+  const graph3000 = graphResults['graph-3000'];
+  const items3000 = makeItems(3000);
+  const edges3000 = makeEdges(3000);
+  const layout3000 = graphLayout.buildGraphLayout(items3000, edges3000, 'all');
+  const traceGraph = {
+    nodes: layout3000.nodes,
+    edges: edges3000,
+    items: items3000,
+  };
+  graphResults['graph-3000-trace-upstream'] = {
+    nodes: 3000,
+    ...medianMs(7, () => graphLayout.traceUpstream(edges3000, 'W1500')),
+  };
+  graphResults['graph-3000-trace-downstream'] = {
+    nodes: 3000,
+    ...medianMs(7, () => graphLayout.traceDownstream(edges3000, 'W1500')),
+  };
+  graphResults['graph-3000-exception-backflow'] = {
+    nodes: 3000,
+    ...medianMs(7, () => graphLayout.exceptionBackflowNodes(layout3000.nodes, edges3000)),
+  };
+  graphResults['graph-3000-stage-collapse'] = {
+    nodes: 3000,
+    ...medianMs(7, () => graphLayout.groupStagesByWave(items3000, 20)),
+  };
+  void graph3000;
+  void traceGraph;
+
   // 2) 渐进式列表：大数组分片。
   const bigArray = Array.from({ length: 100000 }, (_, index) => index);
   const progressiveResult = {

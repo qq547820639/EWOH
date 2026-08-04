@@ -14,6 +14,7 @@ import {
   Search,
   ShieldAlert,
   Users,
+  Keyboard,
   type LucideIcon,
 } from 'lucide-react';
 import { queryKeys } from '../../hooks/queryKeys';
@@ -188,6 +189,35 @@ const WorkOrchestration = (): React.ReactElement => {
     [activeTab],
   );
 
+  // W3.8：键盘快捷键。数字键 1-9 切换分区；`?` 弹出快捷键帮助。
+  // 注意：审批类写操作（批准/驳回/撤销/加锁/释放）仍须通过显式确认弹窗，
+  // 快捷键只切换导航/打开帮助，绝不绕过审批。
+  const [helpOpen, setHelpOpen] = useState(false);
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable) {
+        return;
+      }
+      if (/^[1-9]$/.test(event.key)) {
+        const index = parseInt(event.key, 10) - 1;
+        const tabItem = TABS[index];
+        if (tabItem) {
+          event.preventDefault();
+          setTab(tabItem.key);
+        }
+        return;
+      }
+      if (event.key === '?' && !event.metaKey && !event.ctrlKey) {
+        event.preventDefault();
+        setHelpOpen((value) => !value);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [setTab]);
+
   return (
     <div className="space-y-5 p-4 sm:p-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
@@ -207,6 +237,19 @@ const WorkOrchestration = (): React.ReactElement => {
             <span className="hidden sm:inline">命令面板</span>
             <kbd className="rounded border border-[hsl(220_14%_89%)] px-1 text-[10px] text-[hsl(218_10%_42%)]">
               ⌘K
+            </kbd>
+          </button>
+          <button
+            type="button"
+            onClick={() => setHelpOpen(true)}
+            aria-label="快捷键帮助"
+            title="快捷键帮助（?）"
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-3 text-sm font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+          >
+            <Keyboard className="h-4 w-4" />
+            <span className="hidden sm:inline">快捷键</span>
+            <kbd className="rounded border border-[hsl(220_14%_89%)] px-1 text-[10px] text-[hsl(218_10%_42%)]">
+              ?
             </kbd>
           </button>
           <div
@@ -284,6 +327,51 @@ const WorkOrchestration = (): React.ReactElement => {
         onClose={() => setPaletteOpen(false)}
         onSelect={(key) => setTab(key)}
       />
+
+      {/* W3.8：快捷键帮助对话框 */}
+      {helpOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="快捷键帮助"
+          onClick={() => setHelpOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-lg border border-[hsl(220_14%_89%)] bg-white p-5 shadow-lg"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-[hsl(220_14%_14%)]">快捷键</h3>
+              <button
+                type="button"
+                onClick={() => setHelpOpen(false)}
+                aria-label="关闭"
+                className="rounded-lg border border-[hsl(220_14%_89%)] px-3 py-1 text-sm text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+              >
+                关闭
+              </button>
+            </div>
+            <ul className="mt-4 space-y-2 text-sm text-[hsl(220_14%_14%)]">
+              <li className="flex items-center justify-between">
+                <span>打开命令面板</span>
+                <kbd className="rounded border border-[hsl(220_14%_89%)] px-1.5 text-xs">⌘K</kbd>
+              </li>
+              <li className="flex items-center justify-between">
+                <span>切换分区（1-9）</span>
+                <kbd className="rounded border border-[hsl(220_14%_89%)] px-1.5 text-xs">1-9</kbd>
+              </li>
+              <li className="flex items-center justify-between">
+                <span>快捷键帮助</span>
+                <kbd className="rounded border border-[hsl(220_14%_89%)] px-1.5 text-xs">?</kbd>
+              </li>
+            </ul>
+            <p className="mt-4 rounded-md bg-slate-50 px-3 py-2 text-xs text-[hsl(218_10%_42%)]">
+              审批类写操作（批准/驳回/撤销/加锁/释放）仍须通过显式确认弹窗，快捷键不会绕过审批。
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
