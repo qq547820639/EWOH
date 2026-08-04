@@ -10,6 +10,10 @@ export interface WorkItem {
   wave?: string;
   evidence?: string;
   summary?: string;
+  /** 与 work-graph.schema.json 对齐（可选，向后兼容）。 */
+  priority?: string;
+  dueAt?: string;
+  updatedAt?: string;
 }
 
 export interface WorkEdge {
