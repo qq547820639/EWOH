@@ -6,6 +6,7 @@ import {
 } from 'recharts';
 import { getEvents, getEventStats } from '../../api/dashboard';
 import type { EventInfo, EventStats as EventStatsType } from '@shared/api.interface';
+import ErrorState from '../../components/ErrorState';
 
 const SEVERITY_COLORS: Record<string, string> = {
   L1: '#22c55e',
@@ -22,7 +23,7 @@ const STATUS_LABELS: Record<string, string> = {
 const Events = () => {
   const [statusFilter, setStatusFilter] = useState<string>('');
 
-  const { data: events, isLoading } = useQuery<EventInfo[]>({
+  const { data: events, isLoading, isError, error, refetch } = useQuery<EventInfo[]>({
     queryKey: ['events', statusFilter],
     queryFn: () => getEvents(50, statusFilter || undefined),
     refetchInterval: 30000,

@@ -2,9 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { getWorkers } from '../../api/dashboard';
 import type { WorkerLoad } from '@shared/api.interface';
+import ErrorState from '../../components/ErrorState';
 
 const Workers = () => {
-  const { data: workers, isLoading } = useQuery<WorkerLoad[]>({
+  const { data: workers, isLoading, isError, error, refetch } = useQuery<WorkerLoad[]>({
     queryKey: ['workers'],
     queryFn: getWorkers,
     refetchInterval: 30000,
@@ -53,6 +54,15 @@ const Workers = () => {
       <div className="grid grid-cols-3 gap-4">
         {isLoading ? (
           <div className="col-span-3 text-center py-8 text-sm text-[hsl(218_10%_42%)]">加载中...</div>
+        ) : isError ? (
+          <div className="col-span-3">
+            <ErrorState
+              error={error}
+              errorMessage="人员数据加载失败"
+              onRetry={() => refetch()}
+              backHref="/command-center"
+            />
+          </div>
         ) : workers && workers.length > 0 ? (
           workers.map((w) => (
             <div key={w.deviceId} className="bg-white rounded-xl border border-[hsl(220_14%_89%)] p-5">
