@@ -169,6 +169,13 @@ export interface GateDecisionRecord {
   conditions?: string[];
 }
 
+export interface GateHistoryRecord extends GateDecisionRecord {
+  action?: 'decision' | 'revoked';
+  reason?: string;
+  revokedAt?: string;
+  revokedBy?: string;
+}
+
 export interface ResourceLockRecord {
   resourceId: string;
   holder: string;
@@ -705,6 +712,148 @@ export class WorkOrchestrationService {
     return { recorded: records.length, records };
   }
 
+  /**
+   * 撤销某门禁的当前人工决定。若历史中存在该门禁的前一条决定则回滚恢复，
+   * 否则该门禁回到无决定状态。撤销本身会作为一条 action='revoked' 的审计记录追加到历史。
+   */
+  revokeGateDecision(
+    gateId: string,
+    body: { reason?: string },
+    actor: { userId: string; primaryOrgId: string } | undefined,
+  ) {
+    const gate = this.getGates().find((entry) => entry.gateId === gateId);
+    if (!gate) {
+      throw new NotFoundException(`Gate ${gateId} not found`);
+    }
+    this.assertWritable();
+    const decisions = this.loadGateDecisions();
+    const index = decisions.findIndex((entry) => entry.gateId === gateId);
+    if (index < 0) {
+      throw new BadRequestException(`Gate ${gateId} has no decision to revoke`);
+    }
+    const current = decisions[index];
+    const history = this.loadGateHistory();
+    const previous = [...history]
+      .reverse()
+      .find(
+        (entry) =>
+          entry.gateId === gateId &&
+          (entry.action === undefined || entry.action === 'decision'),
+      );
+    const revokedAt = new Date().toISOString();
+    const revokedBy = actor?.userId ?? 'anonymous';
+    this.appendGateHistory({
+      gateId,
+      decision: current.decision,
+      approver: current.approver,
+      decidedAt: current.decidedAt,
+      conditions: current.conditions,
+      action: 'revoked',
+      reason: body.reason,
+      revokedAt,
+      revokedBy,
+    });
+    decisions.splice(index, 1);
+    if (previous) {
+      decisions.push({
+        gateId: previous.gateId,
+        decision: previous.decision,
+        approver: previous.approver,
+        decidedAt: previous.decidedAt,
+        conditions: previous.conditions,
+      });
+    }
+    const file = join(this.artifactsDir(), 'work', 'gate-decisions.json');
+    mkdirSync(join(this.artifactsDir(), 'work'), { recursive: true });
+    writeFileSync(file, `${JSON.stringify(decisions, null, 2)}\n`, 'utf8');
+    return {
+      gateId,
+      revoked: true,
+      revokedAt,
+      revokedBy,
+      reason: body.reason ?? '',
+      restored: previous
+        ? { gateId: previous.gateId, decision: previous.decision }
+        : null,
+    };
+  }
+
+  /**
+   * 返回某门禁在 gate-decision-history.json 中的完整历史记录（含决定/撤销，时间、actor、reason）。
+   * 历史中未标注 action 的旧记录按 decision 处理。
+   */
+  getGateHistory(gateId: string) {
+    const gate = this.getGates().find((entry) => entry.gateId === gateId);
+    if (!gate) {
+      throw new NotFoundException(`Gate ${gateId} not found`);
+    }
+    return this.loadGateHistory()
+      .filter((entry) => entry.gateId === gateId)
+      .map((entry) => ({ ...entry, action: entry.action ?? 'decision' }));
+  }
+
+  /**
+   * 为你一个 work item 解析前置依赖（blocking/depends 边）与门禁状态，
+   * 返回自然语言中文解释，说明该节点当前为什么被阻塞。
+   */
+  getBlockedReason(itemId: string) {
+    const graph = this.getGraph();
+    const item = graph.items.find((candidate) => candidate.id === itemId);
+    if (!item) {
+      throw new NotFoundException(`Work item ${itemId} not found`);
+    }
+    const gates = this.getGates();
+    const byId = new Map(graph.items.map((entry) => [entry.id, entry]));
+    const segments: string[] = [];
+    const ownedGate = gates.find((gate) => gate.gateId === itemId);
+    if (
+      ownedGate &&
+      (ownedGate.calculatedStatus === 'requires_approval' ||
+        ownedGate.calculatedStatus === 'pending') &&
+      !ownedGate.humanDecision
+    ) {
+      segments.push(`${itemId} 的门禁待人工批准`);
+    }
+    const incoming = graph.edges.filter(
+      (edge) =>
+        edge.to === itemId &&
+        (edge.blocking === true || /depends|block/i.test(edge.edgeType)),
+    );
+    for (const edge of incoming) {
+      const upstream = byId.get(edge.from);
+      if (!upstream) continue;
+      const causes: string[] = [];
+      if (!/done|completed|closed|passed/i.test(upstream.status)) {
+        causes.push(`${edge.from} 尚未完成`);
+      }
+      const upstreamGate = gates.find((gate) => gate.gateId === edge.from);
+      if (
+        upstreamGate &&
+        (upstreamGate.calculatedStatus === 'requires_approval' ||
+          upstreamGate.calculatedStatus === 'pending') &&
+        !upstreamGate.humanDecision
+      ) {
+        causes.push(`${edge.from} 门禁待批准`);
+      }
+      const staleEvidence = graph.evidence.filter(
+        (entry) =>
+          entry.workItemId === edge.from && this.isEvidenceStale(entry),
+      );
+      if (staleEvidence.length > 0) {
+        causes.push(`${edge.from} 的依赖 Evidence 过期`);
+      }
+      if (causes.length > 0) {
+        segments.push(`${itemId} 被 ${edge.from} 阻塞：${causes.join('，')}`);
+      }
+    }
+    const blocked = segments.length > 0;
+    return {
+      itemId,
+      blocked,
+      explanation: blocked ? segments.join('；') : `${itemId} 当前未受阻塞`,
+    };
+  }
+
   private currentPhase(): string {
     const file = join(this.artifactsDir(), 'phase-state.md');
     if (!existsSync(file)) return 'unknown';
@@ -753,6 +902,36 @@ export class WorkOrchestrationService {
     history.push(record);
     mkdirSync(join(this.artifactsDir(), 'work'), { recursive: true });
     writeFileSync(file, `${JSON.stringify(history, null, 2)}\n`, 'utf8');
+  }
+
+  private loadGateHistory(): GateHistoryRecord[] {
+    const file = join(this.artifactsDir(), 'work', 'gate-decision-history.json');
+    if (!existsSync(file)) return [];
+    try {
+      const parsed = JSON.parse(readFileSync(file, 'utf8')) as GateHistoryRecord[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private appendGateHistory(record: GateHistoryRecord): void {
+    const history = this.loadGateHistory();
+    history.push(record);
+    mkdirSync(join(this.artifactsDir(), 'work'), { recursive: true });
+    writeFileSync(
+      join(this.artifactsDir(), 'work', 'gate-decision-history.json'),
+      `${JSON.stringify(history, null, 2)}\n`,
+      'utf8',
+    );
+  }
+
+  private isEvidenceStale(evidence: WorkEvidence): boolean {
+    if (evidence.status && /stale|expired/i.test(evidence.status)) return true;
+    if (evidence.expiresAt && Number.isFinite(Date.parse(evidence.expiresAt))) {
+      return Date.parse(evidence.expiresAt) <= Date.now();
+    }
+    return false;
   }
 
   private loadGitSyncRegistry(): Array<Record<string, unknown>> {

@@ -63,6 +63,8 @@ export const queryKeys = {
   workEvidence: (filters?: Record<string, unknown>) => ['work-evidence', filters ?? {}] as const,
   workAgents: ['work-agents'] as const,
   workGates: ['work-gates'] as const,
+  workGateHistory: (gateId: string) => ['work-gate-history', gateId] as const,
+  workBlockedReason: (itemId: string) => ['work-blocked-reason', itemId] as const,
   workRisks: ['work-risks'] as const,
   workResources: ['work-resources'] as const,
   workHandoffs: ['work-handoffs'] as const,

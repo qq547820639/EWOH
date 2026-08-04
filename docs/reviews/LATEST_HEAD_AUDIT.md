@@ -213,3 +213,33 @@ Phase 1 对账 CLI 交付完成：实现 + 单元测试（5/5）通过 + pre-com
 ---
 *审计人：EWOH 总控工程 Agent（独立审计，非实现自签）*
 *审计时间：2026-08-04*
+
+## 13. Phase 2 因果控制台验证（Gate 撤销/历史/阻塞原因）
+
+> 依据 Phase 2（G3 契约闭合）实现门禁撤销/回滚、历史查询与「为什么被阻塞」解释，并接线前端。
+> 以下为实际运行命令与结果（本机，无 PG/浏览器）。
+
+### 13.1 实际运行命令与结果
+
+| # | 命令 | 结果 |
+|---|---|---|
+| 1 | `npx jest test/unit/work-orchestration/work-orchestration.service.spec.ts --runInBand` | **PASS**（25/25，含 7 个新增 revoke/history/blockedReason 用例） |
+| 2 | `npm run type:check` | **PASS**（server+client tsc 0 错误） |
+| 3 | `npm run lint` | **PASS**（eslint + stylelint + type:check） |
+| 4 | `npm test -- --runInBand` | **PASS**（82 套件 / 405 测试） |
+| 5 | `node scripts/audit-openapi-routes.js --strict` | **PASS**（controller 251 / spec 251 / 0 未登记 / 0 未实现） |
+| 6 | `node scripts/audit-openapi-routes.js --strict --write-manifest openapi/route-manifest.json` | **PASS**（route-manifest 已更新至 251 ops） |
+
+### 13.2 新增/修改契约
+
+- `POST /api/work/gates/{id}/revoke`：撤销门禁当前决定；若历史存在前一条决定则回滚恢复，否则回到无决定状态；撤销以 `action='revoked'` 审计记录追加到 `gate-decision-history.json`。
+- `GET /api/work/gates/{id}/history`：返回该门禁完整历史（决定/撤销，含时间、actor、reason）。
+- `GET /api/work/items/{id}/blocked-reason`：解析前置依赖（blocking/depends 边）与门禁状态，返回自然语言中文解释。
+- 前端：`GatesPanel.tsx` 撤销/历史按钮接线；`WorkGraphPanel.tsx` 节点详情展示「为什么被阻塞」。
+- OpenAPI 契约登记：`openapi/work-orchestration.yaml`（新增 3 条 path + GateRevokeRequest/GateRevokeResult/GateHistoryRecord/BlockedReason schema）。
+
+### 13.3 结论
+
+Phase 2 因果控制台契约闭合完成：实现 + 单元测试通过 + 前端接线 + OpenAPI 契约登记 + route-manifest 更新。
+撤销/历史沿用 `gate-decisions.json` / `gate-decision-history.json` 落盘，未引入新依赖，未改冻结状态机/安全边界/共享契约。
+真实 PG/浏览器 E2E 依赖外部环境（本机不可用），未伪造结果。证据文件 `.codex/artifacts/work/evidence/round106-causal-console-gate-revoke.md`。

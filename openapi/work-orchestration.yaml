@@ -566,6 +566,104 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/work/gates/{id}/revoke:
+    post:
+      tags:
+        - work
+      summary: Revoke a human gate decision
+      description: >-
+        Removes the current human decision for a gate. If history contains an
+        earlier decision for the gate it is restored (rolled back), otherwise
+        the gate returns to no-decision state. The revocation is appended to the
+        history as an action='revoked' audit record.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GateRevokeRequest'
+      responses:
+        '200':
+          description: Revocation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GateRevokeResult'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/gates/{id}/history:
+    get:
+      tags:
+        - work
+      summary: Gate decision history
+      description: Returns the full decision/revocation history for a gate.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Gate history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GateHistoryRecord'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/work/items/{id}/blocked-reason:
+    get:
+      tags:
+        - work
+      summary: Explain why a work item is blocked
+      description: >-
+        Resolves a work item's predecessor dependencies (blocking/depends edges)
+        and gate status, returning a natural-language Chinese explanation of why
+        the item is currently blocked.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Blocked reason
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlockedReason'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
 components:
   securitySchemes:
     BearerAuth:
@@ -833,3 +931,86 @@ components:
         - decision
         - approver
         - decidedAt
+    GateRevokeRequest:
+      type: object
+      additionalProperties: true
+      properties:
+        reason:
+          type: string
+          description: Optional justification recorded in the audit trail.
+    GateRevokeResult:
+      type: object
+      additionalProperties: true
+      required:
+        - gateId
+        - revoked
+        - revokedAt
+        - revokedBy
+      properties:
+        gateId:
+          type: string
+        revoked:
+          type: boolean
+        revokedAt:
+          type: string
+        revokedBy:
+          type: string
+        reason:
+          type: string
+        restored:
+          type: object
+          additionalProperties: true
+          nullable: true
+          properties:
+            gateId:
+              type: string
+            decision:
+              type: string
+    GateHistoryRecord:
+      type: object
+      additionalProperties: true
+      required:
+        - gateId
+        - decision
+      properties:
+        gateId:
+          type: string
+        decision:
+          type: string
+          enum:
+            - approved
+            - rejected
+            - conditional
+        approver:
+          type: string
+        decidedAt:
+          type: string
+        conditions:
+          type: array
+          items:
+            type: string
+        action:
+          type: string
+          enum:
+            - decision
+            - revoked
+        reason:
+          type: string
+        revokedAt:
+          type: string
+        revokedBy:
+          type: string
+    BlockedReason:
+      type: object
+      additionalProperties: true
+      required:
+        - itemId
+        - blocked
+        - explanation
+      properties:
+        itemId:
+          type: string
+        blocked:
+          type: boolean
+        explanation:
+          type: string

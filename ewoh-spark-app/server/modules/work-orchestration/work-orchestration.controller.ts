@@ -176,6 +176,25 @@ export class WorkOrchestrationController {
     return this.workService.recordGateDecision(id, body, request.userContext);
   }
 
+  @Post('gates/:id/revoke')
+  revokeGateDecision(
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.workService.revokeGateDecision(id, body, request.userContext);
+  }
+
+  @Get('gates/:id/history')
+  getGateHistory(@Param('id') id: string) {
+    return this.workService.getGateHistory(id);
+  }
+
+  @Get('items/:id/blocked-reason')
+  getBlockedReason(@Param('id') id: string) {
+    return this.workService.getBlockedReason(id);
+  }
+
   @Post('gates/batch-decision')
   recordGateDecisions(
     @Body()

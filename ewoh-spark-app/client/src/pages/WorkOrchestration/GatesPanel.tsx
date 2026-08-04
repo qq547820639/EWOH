@@ -5,7 +5,15 @@ import { toast } from 'sonner';
 import QueryState from '../../components/QueryState';
 import { queryKeys } from '../../hooks/queryKeys';
 import { ADMIN_REFETCH_INTERVAL_MS, QUERY_STALE_TIME_MS } from '../../hooks/queryConfig';
-import { getWorkGraph, listWorkGates, recordGateDecision, recordGateDecisions } from '../../api/work';
+import {
+  getWorkGraph,
+  getGateHistory,
+  listWorkGates,
+  recordGateDecision,
+  recordGateDecisions,
+  revokeGateDecision,
+  type GateHistoryEntry,
+} from '../../api/work';
 import { StatusBadge, useUrlParam, WriteConfirmDialog } from './shared';
 
 type Decision = 'approved' | 'rejected' | 'conditional';
@@ -15,6 +23,89 @@ interface PendingConfirm {
   decision: Decision;
 }
 
+const GateHistoryDialog = ({
+  gateId,
+  entries,
+  onClose,
+}: {
+  gateId: string;
+  entries: GateHistoryEntry[];
+  onClose: () => void;
+}): React.ReactElement | null => {
+  if (!gateId) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${gateId} 门禁历史`}
+    >
+      <div className="w-full max-w-2xl rounded-lg border border-[hsl(220_14%_89%)] bg-white p-5 shadow-lg">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-[hsl(220_14%_14%)]">
+            {gateId} 门禁历史
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-[hsl(220_14%_89%)] px-3 py-1 text-sm text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+          >
+            关闭
+          </button>
+        </div>
+        {entries.length === 0 ? (
+          <p className="mt-4 text-sm text-[hsl(218_10%_42%)]">该门禁暂无历史记录。</p>
+        ) : (
+          <div className="mt-4 max-h-[420px] overflow-y-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+                <tr>
+                  <th className="px-3 py-2 font-medium">动作</th>
+                  <th className="px-3 py-2 font-medium">决定</th>
+                  <th className="px-3 py-2 font-medium">操作者</th>
+                  <th className="px-3 py-2 font-medium">时间</th>
+                  <th className="px-3 py-2 font-medium">备注</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+                {entries.map((entry, index) => (
+                  <tr key={`${entry.decidedAt ?? entry.revokedAt ?? index}-${index}`}>
+                    <td className="px-3 py-2">
+                      {entry.action === 'revoked' ? (
+                        <span className="rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+                          撤销
+                        </span>
+                      ) : (
+                        <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                          决定
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <StatusBadge status={entry.decision} />
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs text-[hsl(218_10%_42%)]">
+                      {entry.revokedBy ?? entry.approver ?? '—'}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-[hsl(218_10%_42%)]">
+                      {new Date(entry.revokedAt ?? entry.decidedAt ?? '').toLocaleString('zh-CN', {
+                        hour12: false,
+                      })}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-[hsl(218_10%_42%)]">
+                      {entry.reason ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => {
   const queryClient = useQueryClient();
   const [gateStatusFilter, setGateStatusFilter] = useUrlParam('gateStatus');
@@ -22,6 +113,8 @@ const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => 
   const [batchDecision, setBatchDecision] = useState<Decision>('approved');
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const [batchPending, setBatchPending] = useState(false);
+  const [revokePending, setRevokePending] = useState<string | null>(null);
+  const [historyGateId, setHistoryGateId] = useState<string | null>(null);
 
   const gatesQuery = useQuery({
     queryKey: queryKeys.workGates,
@@ -52,6 +145,26 @@ const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => 
       queryClient.invalidateQueries({ queryKey: queryKeys.workOverview });
       toast.success('批量决定已记录');
     },
+  });
+  const revokeMutation = useMutation({
+    mutationFn: ({ gateId, reason }: { gateId: string; reason: string }) =>
+      revokeGateDecision(gateId, { reason }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workGates });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workOverview });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workGateHistory(data.gateId) });
+      toast.success(
+        data.restored
+          ? `已撤销 ${data.gateId} 并回滚为「${data.restored.decision}」`
+          : `已撤销 ${data.gateId} 的决定`,
+      );
+    },
+  });
+  const historyQuery = useQuery({
+    queryKey: queryKeys.workGateHistory(historyGateId ?? ''),
+    queryFn: () => getGateHistory(historyGateId ?? ''),
+    enabled: Boolean(historyGateId),
+    staleTime: QUERY_STALE_TIME_MS,
   });
 
   const filteredGates = useMemo(
@@ -233,21 +346,18 @@ const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => 
                           </button>
                           <button
                             type="button"
-                            title="撤销需后端提供撤销 API（TODO）"
-                            onClick={() =>
-                              toast.info('撤销功能待后端支持：需新增 gate 撤销/回滚 API（TODO）')
-                            }
-                            className="inline-flex items-center gap-1 rounded-lg border border-[hsl(220_14%_89%)] px-2.5 py-1.5 text-xs font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+                            title="撤销该门禁的当前决定（可回滚到前一条决定）"
+                            disabled={!gate.humanDecision || revokeMutation.isPending}
+                            onClick={() => setRevokePending(gate.gateId)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-[hsl(220_14%_89%)] px-2.5 py-1.5 text-xs font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)] disabled:opacity-40"
                           >
                             <RotateCcw className="h-3.5 w-3.5" />
                             撤销
                           </button>
                           <button
                             type="button"
-                            title="门禁完整历史记录需后端提供历史 API（TODO）"
-                            onClick={() =>
-                              toast.info('门禁历史需后端支持：当前仅返回最新一次人工决定（TODO）')
-                            }
+                            title="查看该门禁的完整历史记录"
+                            onClick={() => setHistoryGateId(gate.gateId)}
                             className="inline-flex items-center gap-1 rounded-lg border border-[hsl(220_14%_89%)] px-2.5 py-1.5 text-xs font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
                           >
                             <History className="h-3.5 w-3.5" />
@@ -281,7 +391,7 @@ const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => 
         }
         actionLabel="确认记录"
         tone="success"
-        rollbackPoint="暂不支持撤销；如需回滚需后端提供 gate 撤销 API（TODO）。"
+        rollbackPoint="批准后可通过「撤销」按钮回滚；撤销会恢复该门禁的前一条决定（如有）。"
         onCancel={() => setPendingConfirm(null)}
         onConfirm={(reason) => {
           if (!pendingConfirm) return;
@@ -298,9 +408,36 @@ const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => 
         }」。`}
         actionLabel="批量确认"
         tone="success"
-        rollbackPoint="暂不支持批量撤销；如需回滚需后端提供 gate 撤销 API（TODO）。"
+        rollbackPoint="批量记录后可通过各门禁「撤销」按钮单独回滚。"
         onCancel={() => setBatchPending(false)}
         onConfirm={confirmBatch}
+      />
+
+      {/* 撤销确认 */}
+      <WriteConfirmDialog
+        open={Boolean(revokePending)}
+        title="确认撤销门禁决定"
+        description={
+          revokePending
+            ? `对 ${revokePending} 执行撤销。${gatesQuery.data?.find((g) => g.gateId === revokePending)?.humanDecision ? '' : '（当前无决定）'}`
+            : ''
+        }
+        actionLabel="确认撤销"
+        tone="danger"
+        rollbackPoint="撤销会移除此门禁的当前决定；若存在前一条决定则自动回滚恢复。"
+        onCancel={() => setRevokePending(null)}
+        onConfirm={(reason) => {
+          if (!revokePending) return;
+          revokeMutation.mutate({ gateId: revokePending, reason });
+          setRevokePending(null);
+        }}
+      />
+
+      {/* 历史弹窗 */}
+      <GateHistoryDialog
+        gateId={historyGateId ?? ''}
+        entries={historyQuery.data ?? []}
+        onClose={() => setHistoryGateId(null)}
       />
     </QueryState>
   );

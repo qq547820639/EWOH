@@ -320,6 +320,81 @@ describe('WorkOrchestrationService', () => {
     expect(history[0].decidedAt).toBe(first.decidedAt);
   });
 
+  it('revokes a gate decision and returns it to no-decision when no prior decision', () => {
+    process.env.EWOH_WORK_WRITABLE = 'true';
+    service.recordGateDecision(
+      'G2',
+      { decision: 'approved' },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+    const result = service.revokeGateDecision(
+      'G2',
+      { reason: 'revert' },
+      { userId: 'user-2', primaryOrgId: 'org-1' },
+    );
+    expect(result.revoked).toBe(true);
+    expect(result.revokedBy).toBe('user-2');
+    expect(result.restored).toBeNull();
+    expect(service.getGates().find((gate) => gate.gateId === 'G2')?.humanDecision).toBeNull();
+    const history = service.getGateHistory('G2');
+    expect(history).toHaveLength(1);
+    expect(history[0].action).toBe('revoked');
+    expect(history[0].reason).toBe('revert');
+  });
+
+  it('revokes a gate decision and restores the previous decision', () => {
+    process.env.EWOH_WORK_WRITABLE = 'true';
+    service.recordGateDecision(
+      'G2',
+      { decision: 'approved' },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+    service.recordGateDecision(
+      'G2',
+      { decision: 'conditional' },
+      { userId: 'user-2', primaryOrgId: 'org-1' },
+    );
+    const result = service.revokeGateDecision(
+      'G2',
+      {},
+      { userId: 'user-3', primaryOrgId: 'org-1' },
+    );
+    expect(result.restored).toEqual({ gateId: 'G2', decision: 'approved' });
+    expect(service.getGates().find((gate) => gate.gateId === 'G2')?.humanDecision).toBe(
+      'approved',
+    );
+    const history = service.getGateHistory('G2');
+    expect(history.map((entry) => entry.action)).toEqual(['decision', 'revoked']);
+  });
+
+  it('rejects revoking a gate with no recorded decision', () => {
+    process.env.EWOH_WORK_WRITABLE = 'true';
+    expect(() =>
+      service.revokeGateDecision('G2', {}, { userId: 'user-1', primaryOrgId: 'org-1' }),
+    ).toThrow('no decision to revoke');
+  });
+
+  it('rejects revoking or querying history for a missing gate', () => {
+    process.env.EWOH_WORK_WRITABLE = 'true';
+    expect(() =>
+      service.revokeGateDecision('G-X', {}, { userId: 'user-1', primaryOrgId: 'org-1' }),
+    ).toThrow('not found');
+    expect(() => service.getGateHistory('G-X')).toThrow('not found');
+  });
+
+  it('explains why a work item is blocked via blocking dependencies', () => {
+    const reason = service.getBlockedReason('W1');
+    expect(reason.blocked).toBe(true);
+    expect(reason.explanation).toContain('W1 被 W0 阻塞');
+    expect(reason.explanation).toContain('W0 尚未完成');
+  });
+
+  it('reports a work item as unblocked when no blocking reasons exist', () => {
+    const reason = service.getBlockedReason('T-001');
+    expect(reason.blocked).toBe(false);
+    expect(reason.explanation).toContain('T-001 当前未受阻塞');
+  });
+
   it('blocks writes when EWOH_WORK_WRITABLE is not enabled', () => {
     expect(() =>
       service.createHandoff(

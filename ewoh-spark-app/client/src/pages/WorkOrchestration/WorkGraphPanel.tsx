@@ -5,7 +5,7 @@ import { FileText, GitBranch, Save, RotateCcw } from 'lucide-react';
 import QueryState from '../../components/QueryState';
 import { queryKeys } from '../../hooks/queryKeys';
 import { ADMIN_REFETCH_INTERVAL_MS, QUERY_STALE_TIME_MS } from '../../hooks/queryConfig';
-import { getWorkGraph, getWorkOverview, listWorkEvidence, type WorkOverview } from '../../api/work';
+import { getWorkGraph, getWorkOverview, getWorkBlockedReason, listWorkEvidence, type WorkOverview } from '../../api/work';
 import { buildGraphLayout, filterGraphItems, statusTone, type WorkGraphScope } from './graphLayout';
 import { buildGraphTextAlt, graphTextToPlainText } from './graphText';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
@@ -238,6 +238,12 @@ const WorkGraphPanel = (): React.ReactElement => {
   const evidenceQuery = useQuery({
     queryKey: queryKeys.workEvidence(),
     queryFn: () => listWorkEvidence(),
+    staleTime: QUERY_STALE_TIME_MS,
+  });
+  const blockedReasonQuery = useQuery({
+    queryKey: queryKeys.workBlockedReason(selectedNodeId ?? ''),
+    queryFn: () => getWorkBlockedReason(selectedNodeId ?? ''),
+    enabled: Boolean(selectedNodeId),
     staleTime: QUERY_STALE_TIME_MS,
   });
 
@@ -623,6 +629,20 @@ const WorkGraphPanel = (): React.ReactElement => {
                 Owner {selectedNode.owner}
               </span>
             </div>
+            {selectedNodeId && (
+              <div
+                className={`mt-3 rounded-lg border px-4 py-3 text-sm ${
+                  blockedReasonQuery.data?.blocked
+                    ? 'border-red-200 bg-red-50 text-red-800'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                }`}
+              >
+                <span className="font-medium">为什么被阻塞：</span>
+                {blockedReasonQuery.isFetching
+                  ? '解析中…'
+                  : blockedReasonQuery.data?.explanation ?? '—'}
+              </div>
+            )}
             {selectedEvidence.length > 0 ? (
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {selectedEvidence.map((entry) => (

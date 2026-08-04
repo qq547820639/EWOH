@@ -169,6 +169,19 @@ export interface GateDecisionRecord {
   conditions?: string[];
 }
 
+export interface GateHistoryEntry extends GateDecisionRecord {
+  action?: 'decision' | 'revoked';
+  reason?: string;
+  revokedAt?: string;
+  revokedBy?: string;
+}
+
+export interface BlockedReason {
+  itemId: string;
+  blocked: boolean;
+  explanation: string;
+}
+
 export interface GitSyncEntry {
   workItemId: string;
   title: string;
@@ -414,6 +427,41 @@ export async function recordGateDecisions(
     url: '/api/work/gates/batch-decision',
     method: 'POST',
     data: { gateIds, ...body },
+  });
+  return res.data;
+}
+
+export async function revokeGateDecision(
+  gateId: string,
+  body: { reason?: string } = {},
+): Promise<{
+  gateId: string;
+  revoked: boolean;
+  revokedAt: string;
+  revokedBy: string;
+  reason: string;
+  restored: { gateId: string; decision: string } | null;
+}> {
+  const res = await axiosForBackend({
+    url: `/api/work/gates/${encodeURIComponent(gateId)}/revoke`,
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}
+
+export async function getGateHistory(gateId: string): Promise<GateHistoryEntry[]> {
+  const res = await axiosForBackend({
+    url: `/api/work/gates/${encodeURIComponent(gateId)}/history`,
+    method: 'GET',
+  });
+  return res.data;
+}
+
+export async function getWorkBlockedReason(itemId: string): Promise<BlockedReason> {
+  const res = await axiosForBackend({
+    url: `/api/work/items/${encodeURIComponent(itemId)}/blocked-reason`,
+    method: 'GET',
   });
   return res.data;
 }
