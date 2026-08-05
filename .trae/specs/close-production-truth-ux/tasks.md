@@ -87,6 +87,8 @@
   - [x] 产出 `docs/reviews/close-production-truth-ux-report.md`（A 当前 SHA+基线问题清单；B 修改文件+原因；C 安全根因+修复；D 各子系统变化；E 完整命令；F 各测试套件与浏览器真实结果；G evidence manifest 摘要+digest；H 外部验证/审批/环境阻塞；I 未通过项+失败原因；五级结论如实）
   - [x] 提交并推送 P1 收口 `origin/main`（P0 收口 `5133bd8`、P1 收口 `f54cbbe`，工作树干净，无调试残留）
   - [x] security 工作流 gitleaks 首轮失败（feishu-config base_token 真实凭据 + MIGRATION_FLAG_KEY 误报）→ 修复：移除真实凭据入库 + .gitignore + 模板 + 精确豁免；更新报告 A/C/F/I；待 CI 复跑确认（见 checklist C9/C10）
+  - [x] security 工作流复跑确认（gitleaks/bandit 通过，upload-artifact 升级 v6）；修复 test.yml @latest 守护自匹配 bug（构造拼接检索词 + 去除步骤名/注释字面量），本机模拟两守卫全通过
+  - [x] upload-artifact 全面升级 v5→v6（Node 24 兼容，package/security/standalone/test.yml）；swRegistration 增加 navigator.serviceWorker 空值防御
   - [ ] CHANGELOG/version.json/release manifest/版本页/关于页同步 evidence 派生（如本版本无独立发布页则在报告中说明）
 
 # Task Dependencies

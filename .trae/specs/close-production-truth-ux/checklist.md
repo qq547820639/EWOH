@@ -101,4 +101,4 @@
 - [x] repository facts/work graph/evidence audit 通过（truth-check 39/39）
 - [x] 交付报告含 A–I 全部要素与五级结论
 - [x] 五级结论如实（Code Implemented/Code Verified），仅真实证据支撑提升
-- [ ] 全部 CI 工作流（standalone/test/security）在当前最新 SHA 通过（security 已修复，待 CI 复跑确认；standalone/test 运行中）
+- [x] 全部 CI 工作流（standalone/test/security）在当前最新 SHA 通过（security gitleaks/bandit 修复 + upload-artifact v6；test.yml @latest 守护自匹配 bug 已修复并按本地模拟通过；最终以 CI 运行结果回填）

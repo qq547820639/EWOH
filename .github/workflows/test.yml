@@ -69,19 +69,21 @@ jobs:
           node scripts/generate-sbom.js
           test -s release/ewoh-spark-sbom.cyclonedx.json && echo "SBOM OK: $(node -e 'const b=require("./release/ewoh-spark-sbom.cyclonedx.json");console.log(b.bomFormat+" "+b.specVersion+" components="+b.components.length)')"
 
-      - name: 禁止生成命令/CI 使用 @latest 的守护检查
+      - name: 禁止生成命令/CI 使用浮动版本标记的守护检查
         run: |
           set -e
-          if grep -rn "@latest" ewoh-spark-app/package.json .github/workflows/ 2>/dev/null; then
-            echo "::error::检测到 @latest，违反 Task 11 版本固定约束。"
+          # 用字符串拼接构造检索词，避免本守护脚本自身命中（自匹配 false positive）。
+          needle='@''latest'
+          if grep -rnF "$needle" ewoh-spark-app/package.json .github/workflows/ 2>/dev/null; then
+            echo "::error::检测到浮动版本标记（违反 Task 11 版本固定约束）。"
             exit 1
           fi
-          echo "OK: 未发现 @latest"
+          echo "OK: 未发现浮动版本标记"
 
       - name: GitHub Actions uses 必须固定到 commit SHA（Task 11）
         run: |
           set -e
-          # 允许 "@<40位hex> # 注释"；禁止浮动 tag（如 @v4 / @main / @latest）
+          # 允许 "@<40位hex> # 注释"；禁止浮动 tag（如 @v4 / @main 等）
           if grep -rEn "uses: .+@(v[0-9]+(\.[0-9]+)*|[a-z]+)( |$|#)" .github/workflows/ 2>/dev/null; then
             echo "::error::检测到未固定到 commit SHA 的 Actions uses（浮动 tag），请改为 @<commit-sha>。"
             exit 1
@@ -122,7 +124,7 @@ jobs:
         run: node scripts/bundle-budget.mjs
 
       - name: 上传 bundle 性能预算报告（可定位）
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: bundle-performance-budget-report
           path: output/bundle-report.json

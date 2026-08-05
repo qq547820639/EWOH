@@ -100,7 +100,11 @@ export interface SwUpdateController {
 }
 
 function isSwSupported(): boolean {
-  return typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
+  return (
+    typeof navigator !== 'undefined' &&
+    'serviceWorker' in navigator &&
+    navigator.serviceWorker != null
+  );
 }
 
 /**
