@@ -129,7 +129,7 @@ function EntityBox({
       </mesh>
       {selected && (
         <lineSegments>
-          <edgesGeometry args={[new THREE.BoxGeometry(w * 1.05, h * 1.05, w * 1.05)]} />
+          <edgesGeometry args={[new THREE.BoxGeometry(w * 1.05, h * 1.05, w * 1.05) as any]} />
           <lineBasicMaterial color="#fbbf24" />
         </lineSegments>
       )}

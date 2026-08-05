@@ -49,6 +49,7 @@ import { TracingModule } from './modules/tracing/tracing.module';
 import { TracingInterceptor } from './modules/tracing/tracing.interceptor';
 import { WorkOrchestrationModule } from './modules/work-orchestration/work-orchestration.module';
 import { ObservabilityModule } from './modules/observability/observability.module';
+import { TimelineModule } from './modules/timeline/timeline.module';
 
 @Module({
   imports: [
@@ -91,6 +92,7 @@ import { ObservabilityModule } from './modules/observability/observability.modul
     AasModule,
     TracingModule,
     WorkOrchestrationModule,
+    TimelineModule,
     ObservabilityModule,
   ],
   providers: [

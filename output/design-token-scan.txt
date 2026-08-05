@@ -1,0 +1,80 @@
+EWOH 客户端设计 token 扫描报告
+========================================================================
+范围：client/src/components（含 components/ui）与 client/src/pages
+工具：正则扫描硬编码设计值（颜色 hsl/rgb/hex、Tailwind 具名色、间距/字号/圆角/阴影/z-index/动效时长）
+时间：按代码库现状生成（非实时构建）
+
+一、颜色硬编码（最严重问题）
+------------------------------------------------------------------------
+1) 任意的 hsl() 颜色字面量 —— 大量散落在 class 的任意值写法 text-[hsl(...)] / border-[hsl(...)] 中。
+   这些值与 tailwind-theme.css 中已定义的 token（--border/--muted/--foreground/
+   --muted-foreground/--ring/--success/--destructive）一致，但被硬编码复用而非引用 token。
+   出现频率最高的几组：
+     - hsl(220 14% 89%)   === --border                         （边框）
+     - hsl(220 14% 96%)   === --secondary / --muted           （次级/弱背景）
+     - hsl(220 14% 14%)   === --foreground                     （正文）
+     - hsl(218 10% 42%)   === --muted-foreground               （弱化文字）
+     - hsl(221 83% 53%)   === --primary / --ring / --focus-ring（主色/焦点环）
+     - hsl(130 54% 42%)   === --success                        （成功/正常）
+     - hsl(2 84% 62%)     === --destructive                    （危险/阻塞）
+   受影响文件（示例，非穷举）：
+     components/DataCredibility.tsx
+     components/ErrorState.tsx
+     components/QueryState.tsx
+     components/OfflineState.tsx
+     components/PermissionState.tsx
+     components/Layout.tsx
+     components/app-shell/ContextBar.tsx
+     components/app-shell/GlobalSearchCommand.tsx
+     components/app-shell/OnlineStatusBadge.tsx
+     components/app-shell/PendingInbox.tsx
+     components/app-shell/RecentAccessMenu.tsx
+     components/app-shell/VersionFreshnessBadge.tsx
+     pages/Devices/Devices.tsx
+     pages/Devices/DeviceConfigDrawer.tsx
+     pages/Login/Login.tsx
+     pages/Personnel/Personnel.tsx
+     pages/AiDecision/AiDecision.tsx
+     pages/Workers/Workers.tsx
+     pages/System/System.tsx
+     pages/CommandMap/*（多处）
+     pages/WorkOrchestration/*（多处）
+     pages/MobileWorkbench/MobileWorkbench.tsx
+
+2) Tailwind 具名状态色 —— 业务状态采用 bg-*-{50,100,200,300,400,500,600,700,800,900} 直接写死：
+     red/amber/yellow/sky/emerald/green/orange/purple/gray/slate/blue/white
+   示例：
+     pages/Devices/Devices.tsx         bg-green-500 / bg-yellow-500 / bg-red-500 / bg-gray-200 / bg-green-100 text-green-700
+     pages/Overview/Overview.tsx       bg-green-100 text-green-700 / bg-red-100 text-red-700 / bg-yellow-100 text-yellow-700
+     pages/Personnel/Personnel.tsx     bg-red-100 text-red-700 / bg-amber-100 text-amber-700 / bg-emerald-100 text-emerald-700
+     pages/Events/Events.tsx           bg-red-100 text-red-700 / bg-yellow-100 text-yellow-700 / bg-green-100 text-green-700
+     pages/System/System.tsx           bg-slate-800 / bg-emerald-50 text-emerald-700 / bg-amber-50 text-amber-700 / bg-blue-50 text-blue-700
+     pages/AiDecision/AiDecision.tsx   border-emerald-200 bg-emerald-50 text-emerald-800 / border-red-200 bg-red-50 text-red-700
+     pages/Scheduling/Scheduling.tsx   border-amber-200 bg-amber-50 text-amber-700
+     components/DataSourceBadge.tsx    bg-blue-100 text-blue-700 border-blue-200（数据来源状态）
+     components/ErrorState.tsx         border-amber-200 bg-amber-50 / border-red-200 bg-red-50 / border-sky-200 bg-sky-50
+
+3) 内联 hex 颜色字面量（图表/填充）：
+     pages/Devices/Devices.tsx         '#22c55e' '#eab308' '#ef4444' '#e5e7eb'
+     pages/Workers/Workers.tsx         '#ef4444' '#f97316' '#22c55e' '#e5e7eb' '#94a3b8'
+     components/ui/icons/*.tsx         fill="#336DF4" 等文件类型图标品牌色（位于被豁免的 ui 层）
+
+4) 其它颜色：
+     components/AlertToast.tsx         bg-[hsl(0_60%_12%)]/95 等深色浮层
+     components/app-shell/PendingInbox.tsx  bg-[hsl(0_84%_60%)] 未读数红点
+
+二、非颜色 token（间距/字号/圆角/阴影/动效）
+------------------------------------------------------------------------
+- 间距：沿用 Tailwind 间距工具 p-4/p-6/px-5/gap-2 等，属 Tailwind 默认语义刻度，未发现自定义魔法值。
+- 字号：text-xs/sm/base/lg/xl/2xl 等默认刻度；存在少量魔法值 text-[10px]/text-[11px]/text-[9px]。
+- 圆角：rounded-lg/md/xl 等默认刻度；与 --radius 一致。
+- 阴影：shadow-lg/md/sm 等默认刻度；存在 arbitrary shadow-[0_0_0_1px_hsl(var(--sidebar-border))]（ui 层）。
+- z-index：focus:z-[200]、z-50、z-[-1]、z-999 等散落（Layout.tsx、tailwind-theme.css 内部）。
+- 动效时长：duration-200 等默认刻度；tailwind-theme.css 已定义 --motion-duration-*。
+
+三、结论与建议
+------------------------------------------------------------------------
+- 优先迁移共享组件（components/*，ui 除外）与核心页面到语义 token。
+- 具名状态色（red/amber/emerald…）与 token 色值存在语义重叠，建议收敛到 risk-* 语义 token。
+- 引入 design-tokens 扫描器（scripts/lint-design-tokens.mjs）作为未来页面硬编码的守门机制，
+  允许清单覆盖当前已存在的受控 / 遗留业务色板，超出允许清单的硬编码将被拦截。

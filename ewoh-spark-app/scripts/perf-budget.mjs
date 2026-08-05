@@ -22,6 +22,8 @@ const defaultMeasured = path.resolve(root, '..', 'output', 'perf-bench.json');
 /** 预算表（与 client/src/lib/perfBudget.ts 语义保持一致）。 */
 const BUDGETS = [
   { key: 'first-screen-js-gzip', category: '首屏资源', label: 'JS 首屏体积 gzip', unit: 'kb', limit: 420, tolerance: 40 },
+  { key: 'single-async-chunk-gzip', category: '首屏资源', label: '单异步 chunk gzip', unit: 'kb', limit: 480, tolerance: 40 },
+  { key: 'first-interactive-time', category: '首屏资源', label: '首屏交互 TTI', unit: 'ms', limit: 3500, tolerance: 500 },
   { key: 'route-switch-interactive', category: '路由切换', label: '路由切换至可交互', unit: 'ms', limit: 300, tolerance: 80 },
   { key: 'large-table-5000-render', category: '大表格', label: '5000 行首屏渲染', unit: 'ms', limit: 500, tolerance: 100 },
   { key: 'work-graph-3000-layout', category: 'Work Graph', label: '3000 节点布局', unit: 'ms', limit: 450, tolerance: 80 },
@@ -31,6 +33,7 @@ const BUDGETS = [
   { key: 'api-p95', category: 'API', label: 'p95 响应', unit: 'ms', limit: 800, tolerance: 200 },
   { key: 'slow-query', category: '慢查询', label: '慢查询耗时', unit: 'ms', limit: 1000, tolerance: 200 },
   { key: 'low-end-tablet-frame', category: '低端平板', label: '单帧预算', unit: 'ms', limit: 50, tolerance: 10 },
+  { key: 'low-end-tablet-memory-peak', category: '低端平板', label: '内存峰值', unit: 'mb', limit: 400, tolerance: 50 },
 ];
 
 /** 从 perf-bench.json 提取可实测项，键与 BUDGETS.key 对齐。 */

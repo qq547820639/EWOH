@@ -1,0 +1,38 @@
+{
+  "spec": "code-deepening-ux-closed-loop",
+  "generatedAt": "2026-08-06T00:00:00+08:00",
+  "fingerprint": {
+    "branch": "main",
+    "headSha": "5a810c70960702201f5b870c35f5be58c5373e48",
+    "headCommitTime": "2026-08-05 18:07:48 +0800",
+    "os": "macOS",
+    "node": "v26.5.1",
+    "python": "3.9.6",
+    "postgres": "unavailable (pg_isready: not ready; psql missing)",
+    "docker": "MISSING",
+    "helm": "MISSING",
+    "kubectl": "MISSING",
+    "kind/k3d": "MISSING",
+    "playwrightBrowsers": ["chromium-1223","chromium-1228","chromium_headless_shell-1223/1228/1234","firefox-1522","firefox-1538","webkit-2287","webkit-2336","ffmpeg-1011"],
+    "bandit": "1.8.6 (via python3 -m bandit)"
+  },
+  "baselineGates": {
+    "pythonUnitTests": { "status": "OK", "ran": 667, "durationSec": 20.4 },
+    "bandit": { "status": "PASS", "severity": { "HIGH": 0, "MEDIUM": 0, "LOW": 53 }, "report": "/tmp/bandit-mid.json" },
+    "ruff": "not rerun in this session (declared in CI)",
+    "typecheckLintUnitClient": "baseline to be recorded after implementation gates",
+    "realRuntimeGates": "BLOCKED_BY_ENVIRONMENT",
+    "realRuntimeReason": "No local PostgreSQL/Docker/Helm/kubectl/kind available; browser-only Playwright available."
+  },
+  "blockedByEnvironment": [
+    "PostgreSQL migration apply/verify/rollback/re-apply",
+    "HTTP + PostgreSQL E2E",
+    "concurrency/idempotency/lock-contention tests",
+    "Docker image startup + health check",
+    "Helm install/upgrade/rollback + smoke",
+    "backup/restore + version compatibility",
+    "edge node disconnect/backlog/replay/duplicate",
+    "canary upgrade + rollback",
+    "soak/load tests"
+  ]
+}

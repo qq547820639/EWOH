@@ -26,12 +26,12 @@ jobs:
           --health-retries 10
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
           cache-dependency-path: ewoh-spark-app/package-lock.json
 
@@ -89,6 +89,17 @@ jobs:
       - name: Build standalone
         working-directory: ewoh-spark-app
         run: npm run build:prod:standalone
+
+      - name: Deployment TCK（部署制品 + Helm 图表静态审计 + Scale Release 复核 + Rego 门禁）
+        # 静态可运行门禁：verify-deploy-artifacts / verify-helm-chart（Helm 图表
+        # 结构审计，无需集群）/ scale-release-review / rego-tck。真实的 Helm
+        # install/upgrade/rollback + smoke 需 kind/k3d 集群，见 docs/runtime-gates.md。
+        working-directory: ewoh-spark-app
+        run: npm run deployment:tck
+
+      - name: Scenario TCK（Golden Factory/策略/工作流/映射/事件目录契约审计）
+        working-directory: ewoh-spark-app
+        run: npm run scenario:tck
 
       - name: DDL runner plans
         run: |
@@ -163,21 +174,101 @@ jobs:
           EWOH_E2E_RUNTIME_DATABASE_URL: postgresql://ewoh_api:${{ env.EWOH_API_DATABASE_PASSWORD }}@127.0.0.1:5432/ewoh
         run: npm run test:e2e
 
-      - name: Install Playwright browsers
+      - name: Install Playwright browsers (full matrix)
+        # 真实安装 Chromium、Firefox、WebKit（不依赖 runner 偶然预装），
+        # 使 chromium/firefox/webkit/mobile-chromium/industrial-tablet/reduced-motion
+        # 六个项目都能真实执行。WebKit 无头环境对键盘焦点/读屏能力受限，相关用例
+        # 按 BLOCKED_BY_ENVIRONMENT 显式标记，绝不静默跳过。
         working-directory: ewoh-spark-app
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox webkit
 
-      - name: Browser authenticated flows
+      - name: Browser authenticated flows (full matrix)
         working-directory: ewoh-spark-app
         env:
           EWOH_E2E_OWNER_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
           EWOH_E2E_RUNTIME_DATABASE_URL: postgresql://ewoh_api:${{ env.EWOH_API_DATABASE_PASSWORD }}@127.0.0.1:5432/ewoh
         run: npm run test:browser
 
+      - name: Upload browser test reports
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: playwright-reports-${{ github.sha }}
+          path: |
+            ewoh-spark-app/test-results/playwright.json
+            ewoh-spark-app/test-results/junit.xml
+            ewoh-spark-app/test-results/playwright-report/
+            ewoh-spark-app/test-results/
+          if-no-files-found: ignore
+          retention-days: 30
+
       - name: Build Docker image
         run: |
           docker build -f deploy/cloud/Dockerfile.api -t ewoh-api:ci .
           docker build -f deploy/cloud/Dockerfile.migrate -t ewoh-migrate:ci .
+
+      - name: Docker image startup + health check
+        # 在 ubuntu runner 上真实启动 ewoh-api 容器（--network host，复用 PostgreSQL
+        # Service Container 的 127.0.0.1:5432），并轮询 /health/live 与 /health/ready。
+        # 本地无 Docker 故不可手动复现：属 CI-only 门禁。
+        env:
+          EWOH_RUNTIME_DATABASE_URL: ${{ env.EWOH_RUNTIME_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EWOH_RUNTIME_DATABASE_URL:-}" ]; then
+            echo "::notice::BLOCKED_BY_ENVIRONMENT: EWOH_RUNTIME_DATABASE_URL 未注入（前置迁移步骤未设 GITHUB_ENV），跳过容器健康检查。"
+            exit 0
+          fi
+          container="$(docker run -d --network host \
+            -e EWOH_DEPLOY_TARGET=standalone \
+            -e EWOH_OWNER_DATABASE_URL="postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh" \
+            -e EWOH_RUNTIME_DATABASE_URL="$EWOH_RUNTIME_DATABASE_URL" \
+            ewoh-api:ci)"
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+          ready=0
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:3000/health/live >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "1" ]; then
+            echo "::error::API 容器未在 60s 内就绪"
+            docker logs "$container" || true
+            exit 1
+          fi
+          echo "--- /health/live ---"
+          curl -fsS http://127.0.0.1:3000/health/live
+          echo ""
+          echo "--- /health/ready ---"
+          curl -fsS http://127.0.0.1:3000/health/ready
+          echo ""
+          echo "DOCKER STARTUP + HEALTH OK"
+          docker rm -f "$container" >/dev/null 2>&1 || true
+
+      - name: Backup/restore + post-restore identity smoke drill
+        # 逻辑备份/恢复/校验 + 恢复后 identity 序列冒烟（版本兼容 drill）。
+        # 使用真实 PostgreSQL Service Container；本地无 PG 时不可手动复现（CI-only）。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ewoh-backup
+          node scripts/postgres-logical-backup.mjs \
+            --action backup \
+            --url "$EWOH_DATABASE_URL" \
+            --out /tmp/ewoh-backup/backup.json
+          node scripts/postgres-logical-backup.mjs \
+            --action restore \
+            --url "$EWOH_DATABASE_URL" \
+            --in /tmp/ewoh-backup/backup.json
+          node scripts/postgres-logical-backup.mjs \
+            --action verify \
+            --url "$EWOH_DATABASE_URL" \
+            --in /tmp/ewoh-backup/backup.json
+          RESTORE_URL="$EWOH_DATABASE_URL" node scripts/post-restore-smoke.mjs
+          echo "BACKUP/RESTORE + VERSION COMPAT DRILL OK"
 
       - name: Collect F61-02 CI evidence
         if: always()
@@ -202,7 +293,7 @@ jobs:
 
       - name: Upload F61-02 CI evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: f61-02-ci-evidence-${{ github.sha }}
           path: fs_logs/f61-02-ci-evidence.txt

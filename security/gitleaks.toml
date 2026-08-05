@@ -1,0 +1,16 @@
+# gitleaks 配置（Task 7 秘密扫描）
+# 继承默认规则集，并显式声明 allowlist（当前为空，即“零豁免”）。
+# 若日后需豁免某类匹配，须在此处添加并附带说明；禁止无理由放行。
+
+title = "EWOH gitleaks config"
+
+[extend]
+useDefault = true
+
+# allowlist 为空：不允许任何秘密匹配被放行（fail on findings）。
+# 示例——如需豁免 GitHub 个人访问令牌类测试值，可取消注释并明确理由：
+# [[allowlist]]
+#   description = "EWOH 仓库契约测试中的假令牌（仅用于示例，非真实凭据）"
+#   regexes = [
+#     '''github_pat_[A-Za-z0-9_]+''',
+#   ]

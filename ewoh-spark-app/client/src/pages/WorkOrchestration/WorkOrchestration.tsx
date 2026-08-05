@@ -20,6 +20,7 @@ import {
 import { queryKeys } from '../../hooks/queryKeys';
 import { ADMIN_REFETCH_INTERVAL_MS, QUERY_STALE_TIME_MS } from '../../hooks/queryConfig';
 import { getWorkOverview, type WorkOverview } from '../../api/work';
+import AppErrorState from '../../components/AppErrorState';
 import { useUrlParam } from './shared';
 import ExecutionOverview from './ExecutionOverview';
 import WorkGraphPanel from './WorkGraphPanel';
@@ -172,6 +173,12 @@ const WorkOrchestration = (): React.ReactElement => {
   const overview = overviewQuery.data;
   const writable = overview?.writable ?? false;
 
+  // 执行态势加载失败：展示统一、可操作、可复现的错误视图
+  const overviewFailed = overviewQuery.isError;
+  const retryOverview = () => {
+    void overviewQuery.refetch();
+  };
+
   // W3.2：Cmd/Ctrl+K 打开命令面板。
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -264,6 +271,16 @@ const WorkOrchestration = (): React.ReactElement => {
           </div>
         </div>
       </header>
+
+      {overviewFailed && (
+        <AppErrorState
+          error={overviewQuery.error}
+          errorMessage="执行控制台数据加载失败"
+          impact="执行态势与各分区将无法展示最新数据。"
+          onRetry={retryOverview}
+          backHref="/command-center"
+        />
+      )}
 
       {overview && overview.conflicts.length > 0 && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">

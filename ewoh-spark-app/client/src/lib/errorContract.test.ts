@@ -1,4 +1,4 @@
-import { parseError } from './errorContract';
+import { parseError, authzGuidance } from './errorContract';
 
 describe('parseError', () => {
   it('解析权限不足错误（403/PERMISSION_DENIED）', () => {
@@ -96,5 +96,20 @@ describe('parseError', () => {
     expect(parseError({ code: 'ERR_NETWORK', message: 'Network Error' }).retryable).toBe(true);
     expect(parseError({ response: { status: 500, data: { error: { message: 'x' } } } }).retryable).toBe(true);
     expect(parseError(new Error('未知')).retryable).toBe(true);
+  });
+
+  it('携带 HTTP 状态码到 status 字段，供 401/403/409 细分', () => {
+    expect(parseError({ response: { status: 401, data: { error: { message: 'x' } } } }).status).toBe(401);
+    expect(parseError({ response: { status: 403, data: { error: { message: 'x' } } } }).status).toBe(403);
+    expect(parseError({ response: { status: 409, data: { error: { message: 'x' } } } }).status).toBe(409);
+    expect(parseError({ code: 'ERR_NETWORK', message: 'Network Error' }).status).toBeUndefined();
+  });
+
+  it('authzGuidance 区分 401/403/409 并给出可操作指导', () => {
+    expect(authzGuidance(401)?.nextStep).toContain('重新登录');
+    expect(authzGuidance(403)?.nextStep).toContain('申请相应权限');
+    expect(authzGuidance(409)?.nextStep).toContain('刷新加载最新数据');
+    expect(authzGuidance(500)).toBeNull();
+    expect(authzGuidance(undefined)).toBeNull();
   });
 });

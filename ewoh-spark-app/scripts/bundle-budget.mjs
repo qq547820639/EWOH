@@ -8,7 +8,8 @@
  *   2) 所有路由级 chunk 的 gzip 体积，输出 bundle 体积报告。
  *
  * 输出 bundle 体积报告到仓库根 output/bundle-report.json，并打印可读表格。
- * 首屏 gzip 超预算时以非零退出码失败，用于接入构建与 CI。
+ * 首屏 gzip 或单块异步/路由 chunk gzip（perfBudget.ts 的 single-async-chunk-gzip，
+ * limit 480 + tolerance 40 = 520kB）超预算时均以非零退出码失败，用于接入构建与 CI。
  *
  * 用法：
  *   node scripts/bundle-budget.mjs              # 分析 dist/client 并校验预算
@@ -30,8 +31,10 @@ const FIRST_SCREEN_LIMIT_KB = 420;
 const FIRST_SCREEN_TOLERANCE_KB = 40;
 const FIRST_SCREEN_EFFECTIVE_KB = FIRST_SCREEN_LIMIT_KB + FIRST_SCREEN_TOLERANCE_KB;
 
-/** 单块路由 chunk 预算（gzip），超限告警但不阻断（仅记录）。 */
-const ROUTE_CHUNK_LIMIT_KB = 480;
+/** 单块异步/路由 chunk 预算（gzip），与 perfBudget.ts 的 single-async-chunk-gzip 对齐，超限即失败。 */
+const ASYNC_CHUNK_LIMIT_KB = 480;
+const ASYNC_CHUNK_TOLERANCE_KB = 40;
+const ASYNC_CHUNK_EFFECTIVE_KB = ASYNC_CHUNK_LIMIT_KB + ASYNC_CHUNK_TOLERANCE_KB;
 
 function gzipSizeBytes(file) {
   const buf = fs.readFileSync(file);
@@ -96,7 +99,16 @@ function main() {
 
   const firstScreenKB = kb(firstScreenBytes);
   const withinBudget = firstScreenKB <= FIRST_SCREEN_EFFECTIVE_KB;
-  const overLimitChunks = allJs.filter((c) => c.gzipKB > ROUTE_CHUNK_LIMIT_KB);
+
+  // 异步/路由 chunk：排除入口 chunk 后，体积最大的单块是否超预算。
+  const entryFilenames = new Set(entryScripts.map((rel) => path.basename(rel)));
+  const asyncChunks = allJs.filter((c) => !entryFilenames.has(c.file));
+  const maxAsyncChunk = asyncChunks[0] || null; // allJs 已按 gzipKB 降序排序
+  const maxAsyncGzipKB = maxAsyncChunk ? maxAsyncChunk.gzipKB : 0;
+  const overBudgetAsyncChunks = asyncChunks.filter(
+    (c) => c.gzipKB > ASYNC_CHUNK_EFFECTIVE_KB,
+  );
+  const asyncChunkWithin = overBudgetAsyncChunks.length === 0;
 
   // 打印可读报告
   console.log('EWOH bundle 体积报告（bundle 分析）');
@@ -108,6 +120,10 @@ function main() {
   console.log(`  首屏 JS 合计 gzip: ${firstScreenKB.toFixed(2)} kB`);
   console.log(`  预算: limit ${FIRST_SCREEN_LIMIT_KB} + tolerance ${FIRST_SCREEN_TOLERANCE_KB} = ${FIRST_SCREEN_EFFECTIVE_KB} kB`);
   console.log(`  状态: ${withinBudget ? 'PASS' : 'FAIL'}`);
+  console.log('-'.repeat(74));
+  console.log(`单块异步/路由 chunk 最大 gzip: ${maxAsyncGzipKB.toFixed(2)} kB`);
+  console.log(`  预算: limit ${ASYNC_CHUNK_LIMIT_KB} + tolerance ${ASYNC_CHUNK_TOLERANCE_KB} = ${ASYNC_CHUNK_EFFECTIVE_KB} kB`);
+  console.log(`  状态: ${asyncChunkWithin ? 'PASS' : 'FAIL'}（超限 ${overBudgetAsyncChunks.length} 块）`);
   console.log('-'.repeat(74));
   console.log('Top 10 路由/异步 chunk（gzip）:');
   for (const c of allJs.slice(0, 10)) {
@@ -128,9 +144,22 @@ function main() {
       withinBudget,
       status: withinBudget ? 'pass' : 'fail',
     },
+    asyncChunk: {
+      maxGzipKB: Number(maxAsyncGzipKB.toFixed(2)),
+      limitKB: ASYNC_CHUNK_LIMIT_KB,
+      toleranceKB: ASYNC_CHUNK_TOLERANCE_KB,
+      effectiveLimitKB: ASYNC_CHUNK_EFFECTIVE_KB,
+      withinBudget: asyncChunkWithin,
+      status: asyncChunkWithin ? 'pass' : 'fail',
+      overBudget: overBudgetAsyncChunks.map((c) => ({
+        file: c.file,
+        gzipKB: Number(c.gzipKB.toFixed(2)),
+      })),
+    },
     chunks: {
       total: allJs.length,
-      overRouteLimit: overLimitChunks.map((c) => ({ file: c.file, gzipKB: Number(c.gzipKB.toFixed(2)) })),
+      asyncTotal: asyncChunks.length,
+      overRouteLimit: overBudgetAsyncChunks.map((c) => ({ file: c.file, gzipKB: Number(c.gzipKB.toFixed(2)) })),
       top: allJs.slice(0, 20).map((c) => ({ file: c.file, rawKB: Number(c.rawKB.toFixed(2)), gzipKB: Number(c.gzipKB.toFixed(2)) })),
     },
   };
@@ -140,11 +169,20 @@ function main() {
   console.log(`\n[bundle-budget] 已写入报告: ${outReport}`);
 
   if (reportOnly) process.exit(0);
+  const failures = [];
   if (!withinBudget) {
-    console.error(`\n[bundle-budget] 首屏 JS gzip ${firstScreenKB.toFixed(2)} kB 超过预算 ${FIRST_SCREEN_EFFECTIVE_KB} kB，CI 失败。`);
+    failures.push(`首屏 JS gzip ${firstScreenKB.toFixed(2)} kB 超过预算 ${FIRST_SCREEN_EFFECTIVE_KB} kB`);
+  }
+  if (!asyncChunkWithin) {
+    failures.push(
+      `存在 ${overBudgetAsyncChunks.length} 块异步/路由 chunk 超预算 ${ASYNC_CHUNK_EFFECTIVE_KB} kB（最大 ${maxAsyncGzipKB.toFixed(2)} kB）`,
+    );
+  }
+  if (failures.length > 0) {
+    console.error(`\n[bundle-budget] 性能预算未通过：${failures.join('；')}，CI 失败。报告见 ${outReport}`);
     process.exit(1);
   }
-  console.log('\n[bundle-budget] 首屏预算校验通过。');
+  console.log('\n[bundle-budget] 首屏与单异步 chunk 预算校验通过。');
   process.exit(0);
 }
 

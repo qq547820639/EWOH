@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-05T09:40:30.658Z",
+  "generatedAt": "2026-08-05T21:04:29.580Z",
   "spec": "openapi/ewoh.yaml",
   "controllerKeys": [
     "DELETE /api/dashboard/devices/{deviceId}/bindings",
@@ -93,6 +93,7 @@
     "GET /api/scale/metrics",
     "GET /api/scale/onboarding/checklist",
     "GET /api/scale/onboarding/partner/checklist",
+    "GET /api/scale/onboarding/sample-factory/status",
     "GET /api/scale/profiles",
     "GET /api/scale/scenario-packs",
     "GET /api/scale/templates",
@@ -112,6 +113,7 @@
     "GET /api/system/feature-flags/{key}",
     "GET /api/tasks",
     "GET /api/tasks/{id}",
+    "GET /api/timeline/events",
     "GET /api/work/agents",
     "GET /api/work/catalog",
     "GET /api/work/evidence",
@@ -235,6 +237,8 @@
     "POST /api/scale/mappings/{id}/dry-run",
     "POST /api/scale/onboarding/partner/shadow-run",
     "POST /api/scale/onboarding/run",
+    "POST /api/scale/onboarding/sample-factory/clear",
+    "POST /api/scale/onboarding/sample-factory/init",
     "POST /api/scale/profiles/{id}/replay",
     "POST /api/scale/scenario-packs",
     "POST /api/scale/scenario-packs/{id}/install",
@@ -382,6 +386,7 @@
     "GET /api/system/feature-flags/{key}",
     "GET /api/tasks",
     "GET /api/tasks/{id}",
+    "GET /api/timeline/events",
     "GET /api/work/agents",
     "GET /api/work/catalog",
     "GET /api/work/evidence",
@@ -541,9 +546,25 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 268,
-  "specOperations": 268,
-  "documentedControllerOperations": 268,
-  "undocumented": [],
+  "controllerOperations": 272,
+  "specOperations": 269,
+  "documentedControllerOperations": 269,
+  "undocumented": [
+    {
+      "method": "GET",
+      "path": "/api/scale/onboarding/sample-factory/status",
+      "file": "ewoh-spark-app/server/modules/onboarding/onboarding.controller.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/api/scale/onboarding/sample-factory/clear",
+      "file": "ewoh-spark-app/server/modules/onboarding/onboarding.controller.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/api/scale/onboarding/sample-factory/init",
+      "file": "ewoh-spark-app/server/modules/onboarding/onboarding.controller.ts"
+    }
+  ],
   "unimplemented": []
 }

@@ -1,0 +1,219 @@
+/*
+ * EWOH 语义化设计 Token 系统（客户端正统单一来源）。
+ *
+ * 本文件定义业务语义 token，并叠加 暗色模式 / 高对比模式 / 减少动效 支持。
+ * 依赖 tailwind-theme.css 中已存在的基础 token（--background/--foreground/--border/…）。
+ *
+ * 命名约定：
+ *   - 原始 CSS 变量不带 color- 前缀（如 --risk-blocked），可被 @theme inline
+ *     映射为 Tailwind 工具类（如 bg-risk-blocked / text-risk-blocked）。
+ *   - 语义状态：success/warning/danger/info；risk-normal/degraded/offline/blocked/conflict/unknown。
+ *   - risk-* 色值沿用既有的业务语义（normal=绿 / degraded=琥珀 / offline=青 / blocked=红 / conflict=紫 / unknown=灰），
+ *     与 DataSourceBadge / DataCredibility 既有视觉语义保持一致。
+ */
+
+/* ------------------------------------------------------------------ */
+/* 一、语义状态色（success / warning / danger / info）                */
+/*     —— 复用 tailwind-theme.css 既有值，保证视觉不变。               */
+/* ------------------------------------------------------------------ */
+:root {
+  --semantic-success: hsl(130 54% 42%);
+  --semantic-success-foreground: hsl(115 77% 97%);
+  --semantic-warning: hsl(26 90% 49%);
+  --semantic-warning-foreground: hsl(33 100% 96%);
+  --semantic-danger: hsl(2 84% 62%);
+  --semantic-danger-foreground: hsl(0 0% 100%);
+  --semantic-info: hsl(221 83% 53%);
+  --semantic-info-foreground: hsl(230 100% 98%);
+}
+
+/* ------------------------------------------------------------------ */
+/* 二、风险状态 token（risk-*）                                        */
+/*     每个状态提供 主色/文字色/底色/边框色 四个维度，便于标签与卡片。  */
+/* ------------------------------------------------------------------ */
+:root {
+  /* normal —— 正常 / 低风险（绿） */
+  --risk-normal: hsl(130 54% 42%);
+  --risk-normal-foreground: hsl(130 54% 24%);
+  --risk-normal-soft: hsl(120 60% 96%);
+  --risk-normal-border: hsl(130 54% 82%);
+
+  /* degraded —— 降级 / 中风险（琥珀） */
+  --risk-degraded: hsl(26 90% 49%);
+  --risk-degraded-foreground: hsl(26 90% 30%);
+  --risk-degraded-soft: hsl(33 100% 96%);
+  --risk-degraded-border: hsl(26 90% 82%);
+
+  /* offline —— 离线 / 断连（青） */
+  --risk-offline: hsl(199 89% 48%);
+  --risk-offline-foreground: hsl(199 89% 28%);
+  --risk-offline-soft: hsl(199 89% 96%);
+  --risk-offline-border: hsl(199 89% 82%);
+
+  /* blocked —— 阻塞 / 高危险（红） */
+  --risk-blocked: hsl(2 84% 62%);
+  --risk-blocked-foreground: hsl(2 84% 32%);
+  --risk-blocked-soft: hsl(2 84% 97%);
+  --risk-blocked-border: hsl(2 84% 85%);
+
+  /* conflict —— 冲突（紫） */
+  --risk-conflict: hsl(262 83% 58%);
+  --risk-conflict-foreground: hsl(262 83% 38%);
+  --risk-conflict-soft: hsl(262 83% 97%);
+  --risk-conflict-border: hsl(262 83% 85%);
+
+  /* unknown —— 未知 / 缺失（灰） */
+  --risk-unknown: hsl(220 9% 46%);
+  --risk-unknown-foreground: hsl(220 9% 26%);
+  --risk-unknown-soft: hsl(220 14% 96%);
+  --risk-unknown-border: hsl(220 9% 85%);
+}
+
+/* ------------------------------------------------------------------ */
+/* 三、z-index 刻度                                                    */
+/* ------------------------------------------------------------------ */
+:root {
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-nav: 50;
+  --z-overlay: 100;
+  --z-modal: 200;
+  --z-toast: 300;
+}
+
+/* ------------------------------------------------------------------ */
+/* 四、@theme inline 映射：暴露为 Tailwind 工具类                      */
+/*     bg-risk-normal / text-risk-degraded / z-modal …                */
+/* ------------------------------------------------------------------ */
+@theme inline {
+  --color-semantic-success: var(--semantic-success);
+  --color-semantic-success-foreground: var(--semantic-success-foreground);
+  --color-semantic-warning: var(--semantic-warning);
+  --color-semantic-warning-foreground: var(--semantic-warning-foreground);
+  --color-semantic-danger: var(--semantic-danger);
+  --color-semantic-danger-foreground: var(--semantic-danger-foreground);
+  --color-semantic-info: var(--semantic-info);
+  --color-semantic-info-foreground: var(--semantic-info-foreground);
+
+  --color-risk-normal: var(--risk-normal);
+  --color-risk-normal-foreground: var(--risk-normal-foreground);
+  --color-risk-normal-soft: var(--risk-normal-soft);
+  --color-risk-normal-border: var(--risk-normal-border);
+
+  --color-risk-degraded: var(--risk-degraded);
+  --color-risk-degraded-foreground: var(--risk-degraded-foreground);
+  --color-risk-degraded-soft: var(--risk-degraded-soft);
+  --color-risk-degraded-border: var(--risk-degraded-border);
+
+  --color-risk-offline: var(--risk-offline);
+  --color-risk-offline-foreground: var(--risk-offline-foreground);
+  --color-risk-offline-soft: var(--risk-offline-soft);
+  --color-risk-offline-border: var(--risk-offline-border);
+
+  --color-risk-blocked: var(--risk-blocked);
+  --color-risk-blocked-foreground: var(--risk-blocked-foreground);
+  --color-risk-blocked-soft: var(--risk-blocked-soft);
+  --color-risk-blocked-border: var(--risk-blocked-border);
+
+  --color-risk-conflict: var(--risk-conflict);
+  --color-risk-conflict-foreground: var(--risk-conflict-foreground);
+  --color-risk-conflict-soft: var(--risk-conflict-soft);
+  --color-risk-conflict-border: var(--risk-conflict-border);
+
+  --color-risk-unknown: var(--risk-unknown);
+  --color-risk-unknown-foreground: var(--risk-unknown-foreground);
+  --color-risk-unknown-soft: var(--risk-unknown-soft);
+  --color-risk-unknown-border: var(--risk-unknown-border);
+
+  --z-base: var(--z-base);
+  --z-sticky: var(--z-sticky);
+  --z-nav: var(--z-nav);
+  --z-overlay: var(--z-overlay);
+  --z-modal: var(--z-modal);
+  --z-toast: var(--z-toast);
+}
+
+/* ------------------------------------------------------------------ */
+/* 五、暗色模式：data-theme="dark"（由 contrastMode/主题助手切换）     */
+/* ------------------------------------------------------------------ */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --background: hsl(222 47% 8%);
+  --foreground: hsl(220 14% 92%);
+  --card: hsl(222 47% 10%);
+  --card-foreground: hsl(220 14% 92%);
+  --popover: hsl(222 47% 10%);
+  --popover-foreground: hsl(220 14% 92%);
+  --primary: hsl(221 83% 62%);
+  --primary-foreground: hsl(220 14% 98%);
+  --secondary: hsl(222 30% 16%);
+  --secondary-foreground: hsl(220 14% 92%);
+  --muted: hsl(222 30% 16%);
+  --muted-foreground: hsl(218 10% 64%);
+  --accent: hsl(222 30% 18%);
+  --accent-foreground: hsl(220 14% 92%);
+  --border: hsl(222 26% 20%);
+  --input: hsl(222 26% 22%);
+  --ring: hsl(221 83% 62%);
+
+  --sidebar: hsl(222 40% 10%);
+  --sidebar-foreground: hsl(220 14% 92%);
+  --sidebar-primary: hsl(221 83% 62%);
+  --sidebar-primary-foreground: hsl(220 14% 98%);
+  --sidebar-accent: hsl(222 30% 18%);
+  --sidebar-accent-foreground: hsl(221 83% 80%);
+  --sidebar-border: hsl(222 26% 20%);
+  --sidebar-ring: hsl(221 83% 62%);
+
+  --button-outline: rgba(255, 255, 255, 0.12);
+  --badge-outline: rgba(255, 255, 255, 0.06);
+  --elevate-1: rgba(255, 255, 255, 0.05);
+  --elevate-2: rgba(255, 255, 255, 0.1);
+
+  /* risk-* 主色在暗色下提亮，保持可读性 */
+  --risk-normal: hsl(130 54% 56%);
+  --risk-degraded: hsl(26 90% 60%);
+  --risk-offline: hsl(199 89% 60%);
+  --risk-blocked: hsl(2 84% 66%);
+  --risk-conflict: hsl(262 83% 70%);
+  --risk-unknown: hsl(220 9% 62%);
+}
+
+/* ------------------------------------------------------------------ */
+/* 六、高对比模式：data-contrast="high"                                */
+/* ------------------------------------------------------------------ */
+[data-contrast="high"] {
+  --border: hsl(220 14% 62%);
+  --input: hsl(220 14% 58%);
+  --muted-foreground: hsl(218 10% 30%);
+  --secondary-foreground: hsl(220 14% 14%);
+  --focus-ring: hsl(221 95% 45%);
+  --ring: hsl(221 95% 45%);
+  --risk-degraded: hsl(26 90% 40%);
+  --risk-offline: hsl(199 90% 38%);
+  --risk-unknown: hsl(220 9% 34%);
+}
+
+[data-theme="dark"][data-contrast="high"] {
+  --border: hsl(220 14% 55%);
+  --input: hsl(220 14% 52%);
+  --muted-foreground: hsl(218 10% 78%);
+  --secondary-foreground: hsl(220 14% 98%);
+  --focus-ring: hsl(221 95% 70%);
+  --ring: hsl(221 95% 70%);
+}
+
+/* ------------------------------------------------------------------ */
+/* 七、减少动效：prefers-reduced-motion                                */
+/* ------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

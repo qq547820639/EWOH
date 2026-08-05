@@ -21,6 +21,8 @@ import { toast } from 'sonner';
 import { registerServiceWorker } from './lib/swRegistration';
 import { openOfflineDb } from './lib/offlineDb';
 import { clearTokens } from './lib/auth';
+import { flushLeaseManager } from './lib/offlineLeader';
+import { sessionLifecycle } from './lib/runtimeLifecycle';
 
 const CLIENT_BASE_PATH = process.env.CLIENT_BASE_PATH || '/';
 
@@ -110,8 +112,17 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 startWebVitalsCollection();
 // 会话安全：空闲计时随用户活动重置；收到其它标签页登出广播时同步退出（清令牌并回登录页）。
+// 同时把 offlineLeader 的缓选举状态登记进会话生命周期，登出时统一释放。
+sessionLifecycle.registerResource(
+  'broadcast',
+  () => {
+    flushLeaseManager.clear();
+  },
+  'offline-flush-leader',
+);
 initSessionSecurity({
   onRemoteLogout() {
+    sessionLifecycle.disposeForReason('logout');
     clearTokens();
     const base = CLIENT_BASE_PATH || '/';
     if (!window.location.pathname.startsWith(`${base}login`)) {

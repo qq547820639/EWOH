@@ -26,7 +26,7 @@ export type PerfCategory =
   | 'slow-query'
   | 'low-end-tablet';
 
-export type PerfUnit = 'ms' | 'kb' | 'rows' | 'nodes';
+export type PerfUnit = 'ms' | 'kb' | 'mb' | 'rows' | 'nodes';
 
 export interface PerfBudget {
   /** 稳定标识，供 CI 与测量结果按 key 对齐。 */
@@ -54,6 +54,26 @@ export const PERF_BUDGETS: PerfBudget[] = [
     limit: 420,
     tolerance: 40,
     measure: '构建后路由级 chunk 经 gzip 的体积（需真实浏览器/构建产物）',
+    measurableInNode: false,
+  },
+  {
+    key: 'single-async-chunk-gzip',
+    category: 'first-screen',
+    label: '单块异步/路由 chunk（gzip）',
+    unit: 'kb',
+    limit: 480,
+    tolerance: 40,
+    measure: '构建产物中体积最大的单块异步/路由 chunk 的 gzip 体积（由 scripts/bundle-budget.mjs 实测）',
+    measurableInNode: true,
+  },
+  {
+    key: 'first-interactive-time',
+    category: 'first-screen',
+    label: '首屏交互可用时间（TTI）',
+    unit: 'ms',
+    limit: 3500,
+    tolerance: 500,
+    measure: '页面加载到首屏可交互时间 TTI（需真实浏览器）',
     measurableInNode: false,
   },
   {
@@ -144,6 +164,16 @@ export const PERF_BUDGETS: PerfBudget[] = [
     limit: 50,
     tolerance: 10,
     measure: '低端平板单帧预算（20fps，需真实设备）',
+    measurableInNode: false,
+  },
+  {
+    key: 'low-end-tablet-memory-peak',
+    category: 'low-end-tablet',
+    label: '低端平板内存峰值',
+    unit: 'mb',
+    limit: 400,
+    tolerance: 50,
+    measure: '低端工业平板运行峰值内存（需真实设备）',
     measurableInNode: false,
   },
 ];

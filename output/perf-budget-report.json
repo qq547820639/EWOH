@@ -1,0 +1,83 @@
+{
+  "title": "EWOH 前端性能预算记录（Task 4：真实可阻断的性能预算）",
+  "generatedAt": "2026-08-06T00:00:00.000Z",
+  "note": "本记录汇总各预算维度在 node / 构建产物中的实测情况，以及需要真实浏览器/真实环境的 pending 项。before 为 Task 4 前基线，after 为 Task 4 后实测。",
+  "budgetKeys": [
+    "first-screen-js-gzip",
+    "single-async-chunk-gzip",
+    "route-switch-interactive",
+    "large-table-5000-render",
+    "work-graph-3000-layout",
+    "world-replay-frame",
+    "offline-queue-flush-100",
+    "image-attachment-process",
+    "api-p95",
+    "slow-query",
+    "low-end-tablet-frame",
+    "first-interactive-time",
+    "low-end-tablet-memory-peak"
+  ],
+  "specDimensionCoverage": {
+    "initial-js-size": { "budgetKey": "first-screen-js-gzip", "measuredInNode": true, "source": "scripts/bundle-budget.mjs" },
+    "single-async-chunk-size": { "budgetKey": "single-async-chunk-gzip", "measuredInNode": true, "source": "scripts/bundle-budget.mjs" },
+    "first-interactive-time-TTI": { "budgetKey": "first-interactive-time", "measuredInNode": false, "status": "BLOCKED/pending", "reason": "需真实浏览器" },
+    "large-table-latency": { "budgetKey": "large-table-5000-render", "measuredInNode": false, "status": "BLOCKED/pending", "reason": "需真实浏览器" },
+    "large-image-render": { "budgetKey": "image-attachment-process", "measuredInNode": false, "status": "BLOCKED/pending", "reason": "需真实浏览器" },
+    "low-end-tablet-memory-peak": { "budgetKey": "low-end-tablet-memory-peak", "measuredInNode": false, "status": "BLOCKED/pending", "reason": "需真实设备" },
+    "offline-recovery-queue-replay": { "budgetKey": "offline-queue-flush-100", "measuredInNode": true, "source": "scripts/perf-bench.mjs" }
+  },
+  "bundleBudget": {
+    "source": "/Volumes/Extra/CodeProj/EWOH/output/bundle-report.json",
+    "firstScreenJsGzipKB": {
+      "before": 176.94,
+      "after": 176.94,
+      "limitKB": 420,
+      "toleranceKB": 40,
+      "effectiveLimitKB": 460,
+      "status": "pass"
+    },
+    "singleAsyncChunkGzipKB": {
+      "before": null,
+      "after": 272.17,
+      "limitKB": 480,
+      "toleranceKB": 40,
+      "effectiveLimitKB": 520,
+      "status": "pass",
+      "note": "before 阶段未强制校验该维度（旧脚本仅告警不阻断），after 起纳入 CI 阻断。"
+    }
+  },
+  "measuredInNode": {
+    "work-graph-3000-layout": {
+      "before": 8.537,
+      "after": null,
+      "limitMs": 450,
+      "toleranceMs": 80,
+      "status": "pass",
+      "source": "output/perf-bench.json results.graphLayout['graph-3000'].medianMs"
+    },
+    "offline-queue-flush-100": {
+      "before": 22.618,
+      "after": null,
+      "limitMs": 200,
+      "toleranceMs": 50,
+      "status": "pass",
+      "source": "output/perf-bench.json results.offlineQueue.medianMs"
+    }
+  },
+  "pending": {
+    "first-interactive-time": "BLOCKED：需真实浏览器测量 TTI",
+    "route-switch-interactive": "BLOCKED：需真实浏览器",
+    "large-table-5000-render": "BLOCKED：需真实浏览器",
+    "world-replay-frame": "BLOCKED：需真实浏览器",
+    "image-attachment-process": "BLOCKED：需真实浏览器",
+    "api-p95": "BLOCKED：需真实服务/环境",
+    "slow-query": "BLOCKED：需真实数据库",
+    "low-end-tablet-frame": "BLOCKED：需真实设备",
+    "low-end-tablet-memory-peak": "BLOCKED：需真实设备"
+  },
+  "ciWiring": {
+    "workflow": "/Volumes/Extra/CodeProj/EWOH/.github/workflows/test.yml",
+    "gate": "build:prod 内 build:client 串联 node scripts/bundle-budget.mjs（&&），超限即非零退出；另新增显式步骤运行 bundle-budget 并上传 output/bundle-report.json 为可下载 artifact。",
+    "failOnOverBudget": true
+  }
+}

@@ -14,6 +14,7 @@ import PageSkeleton from './app-shell/PageSkeleton';
 import PendingInbox from './app-shell/PendingInbox';
 import RecentAccessMenu from './app-shell/RecentAccessMenu';
 import { useOfflineSnapshot } from './app-shell/useOfflineSnapshot';
+import OnboardingQuickStart from './OnboardingQuickStart';
 import { prefetchRoute } from '../lib/routePrefetch';
 
 const Layout = () => {
@@ -24,6 +25,7 @@ const Layout = () => {
   const offlineSnapshot = useOfflineSnapshot();
   const pendingCount = offlineSnapshot?.pendingCount ?? 0;
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const wasSidebarOpenRef = useRef(false);
@@ -207,6 +209,13 @@ const Layout = () => {
           </div>
         </div>
         <ContextBar />
+        {user && !onboardingDismissed && (
+          <OnboardingQuickStart
+            userId={user.userId}
+            roles={user.roles}
+            onClose={() => setOnboardingDismissed(true)}
+          />
+        )}
         <Suspense fallback={<PageSkeleton />}>
           <Outlet />
         </Suspense>

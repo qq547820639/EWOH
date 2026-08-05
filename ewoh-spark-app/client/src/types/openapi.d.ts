@@ -2351,6 +2351,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/timeline/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the unified object timeline events
+         * @description Returns a unified timeline of domain events projected to the shared TimelineEvent DTO. Respects organization isolation and role-based access.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    status?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Unified timeline events */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TimelineEvent"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/policies/examples": {
         parameters: {
             query?: never;
@@ -10093,6 +10138,50 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @enum {string} */
+        TimelineSource: "workflow" | "alert" | "device" | "system" | "user" | "edge" | "evidence";
+        /** @enum {string} */
+        PermissionVisibility: "visible" | "restricted" | "hidden";
+        TimelineCredibility: {
+            sourceType?: string | null;
+            collectedAt?: string | null;
+            lastSyncedAt?: string | null;
+            completeness?: number | null;
+            confidence?: number | null;
+            isOfflineCache?: boolean | null;
+            isSimulatedOrReplay?: boolean | null;
+            decisionAuthorized?: boolean | null;
+        };
+        TimelineEvidenceRef: {
+            id: string;
+            type?: string | null;
+            ref?: string | null;
+            label?: string | null;
+            url?: string | null;
+        };
+        TimelineEvent: {
+            id: string;
+            timestamp: string;
+            actor: string;
+            source: components["schemas"]["TimelineSource"];
+            objectType: string;
+            objectId: string;
+            action: string;
+            previousState: string | null;
+            currentState: string | null;
+            correlationId: string | null;
+            causationId: string | null;
+            evidence: components["schemas"]["TimelineEvidenceRef"][];
+            credibility: components["schemas"]["TimelineCredibility"];
+            permissionVisibility: components["schemas"]["PermissionVisibility"];
+            severity?: string | null;
+            title?: string | null;
+            status?: string | null;
+            riskLevel?: string | null;
+            meta?: {
+                [key: string]: unknown;
+            } | null;
+        };
         OperationsAssetRequest: {
             assetId?: string;
             name: string;

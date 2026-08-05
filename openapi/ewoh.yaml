@@ -1606,6 +1606,39 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/timeline/events:
+    get:
+      tags:
+        - timeline
+      summary: Read the unified object timeline events
+      description: Returns a unified timeline of domain events projected to the shared TimelineEvent DTO. Respects organization isolation and role-based access.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Unified timeline events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TimelineEvent'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/policies/examples:
     get:
       tags:
@@ -7001,6 +7034,126 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    TimelineSource:
+      type: string
+      enum: [workflow, alert, device, system, user, edge, evidence]
+    PermissionVisibility:
+      type: string
+      enum: [visible, restricted, hidden]
+    TimelineCredibility:
+      type: object
+      properties:
+        sourceType:
+          type: string
+          nullable: true
+        collectedAt:
+          type: string
+          nullable: true
+        lastSyncedAt:
+          type: string
+          nullable: true
+        completeness:
+          type: number
+          nullable: true
+        confidence:
+          type: number
+          nullable: true
+        isOfflineCache:
+          type: boolean
+          nullable: true
+        isSimulatedOrReplay:
+          type: boolean
+          nullable: true
+        decisionAuthorized:
+          type: boolean
+          nullable: true
+    TimelineEvidenceRef:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          nullable: true
+        ref:
+          type: string
+          nullable: true
+        label:
+          type: string
+          nullable: true
+        url:
+          type: string
+          nullable: true
+      required:
+        - id
+    TimelineEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        timestamp:
+          type: string
+        actor:
+          type: string
+        source:
+          $ref: '#/components/schemas/TimelineSource'
+        objectType:
+          type: string
+        objectId:
+          type: string
+        action:
+          type: string
+        previousState:
+          type: string
+          nullable: true
+        currentState:
+          type: string
+          nullable: true
+        correlationId:
+          type: string
+          nullable: true
+        causationId:
+          type: string
+          nullable: true
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineEvidenceRef'
+        credibility:
+          $ref: '#/components/schemas/TimelineCredibility'
+        permissionVisibility:
+          $ref: '#/components/schemas/PermissionVisibility'
+        severity:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        riskLevel:
+          type: string
+          nullable: true
+        meta:
+          type: object
+          additionalProperties: true
+          nullable: true
+      required:
+        - id
+        - timestamp
+        - actor
+        - source
+        - objectType
+        - objectId
+        - action
+        - previousState
+        - currentState
+        - correlationId
+        - causationId
+        - evidence
+        - credibility
+        - permissionVisibility
     OperationsAssetRequest:
       type: object
       properties:

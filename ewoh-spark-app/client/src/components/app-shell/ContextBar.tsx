@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { readAppContext, writeAppContext, type AppContext } from '@/lib/appContext';
+import { sessionLifecycle } from '@/lib/runtimeLifecycle';
 import OrgEnvSwitcher from './OrgEnvSwitcher';
 import VersionFreshnessBadge from './VersionFreshnessBadge';
 
@@ -14,6 +15,10 @@ const ContextBar = () => {
     const next = { ...context, ...partial };
     setContext(next);
     writeAppContext(next);
+    // 组织（租户）切换：释放旧租户会话资源，新会话在全新的生命周期 scope 上重建。
+    if (partial.orgId !== undefined && partial.orgId !== context.orgId) {
+      sessionLifecycle.disposeForReason('tenant-switch');
+    }
   };
 
   return (

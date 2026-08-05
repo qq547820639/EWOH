@@ -1,5 +1,9 @@
-# EWOH 受控试点系统 - 安全扫描 CI
+# EWOH 受控试点系统 - 安全扫描 CI（Task 7）
 # 触发：push 与 pull_request
+# 门禁要点：
+#   - Bandit 静态扫描：机器可读 JSON 报告并存为 artifact，HIGH 级发现阻断合并。
+#   - Gitleaks 秘密扫描：固定版本二进制，发现秘密即失败。
+#   - Node 生产依赖审计 / SBOM 校验 / 镜像漏洞扫描（Trivy，镜像可用时执行）。
 name: security
 
 on:
@@ -14,20 +18,67 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: 安装 Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
 
-      - name: 安装 bandit
+      - name: 安装 bandit（固定版本）
         run: |
           python -m pip install --upgrade pip
-          python -m pip install bandit
+          python -m pip install bandit==1.8.6
 
-      - name: 运行 bandit 静态安全扫描（低噪音级别）
-        run: bandit -r src/edge_platform -ll
+      - name: 运行 bandit 生成 JSON 报告（低噪音级别）
+        run: |
+          set -e
+          python -m bandit --version >/dev/null 2>&1 || {
+            echo "::error::bandit 未安装，无法执行安全门禁，视为失败。"
+            exit 1
+          }
+          python -m bandit -r src/edge_platform -ll -f json -o bandit-report.json
+
+      - name: Bandit HIGH 门禁（阻断合并）
+        # 机器可读摘要；存在未豁免 HIGH 即非零退出。
+        run: |
+          python3 scripts/bandit-gate.py bandit-report.json \
+            --suppressions security/bandit-suppressions.json
+
+      - name: 上传 bandit 报告 artifact
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: bandit-report
+          path: bandit-report.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 安装 gitleaks（固定版本 v8.30.1）
+        run: |
+          set -e
+          GITLEAKS_VERSION="v8.30.1"
+          curl -sSL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/gitleaks_8.30.1_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          chmod +x /tmp/gitleaks
+          /tmp/gitleaks version
+
+      - name: 运行 gitleaks 秘密扫描（发现秘密即失败）
+        run: |
+          set -e
+          /tmp/gitleaks detect --source "${GITHUB_WORKSPACE}" \
+            --config security/gitleaks.toml \
+            --report-path gitleaks-report.json \
+            --report-format json --exit-code 1 --verbose
+          echo "OK: gitleaks 未发现秘密。"
+
+      - name: 上传 gitleaks 报告 artifact
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.json
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: 安全边界守护（grep 关键控制符号）
         # 最低守护：禁止平台代码中出现急停/限扭/关节实时控制/助力实时闭环的写入实现。
@@ -42,3 +93,54 @@ jobs:
             echo "未检测到禁止符号，守护通过。"
             exit 0
           fi
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ewoh-spark-app/package-lock.json
+
+      - name: 安装前端/后端依赖
+        run: npm ci
+        working-directory: ewoh-spark-app
+
+      - name: 生产依赖漏洞审计（npm audit --omit=dev）
+        # 生产依赖专项审计；全量审计（含 dev）已在 test.yml 中以 audit-level=high 覆盖。
+        run: npm audit --registry=https://registry.npmjs.org --omit=dev --audit-level=high
+        working-directory: ewoh-spark-app
+
+      - name: 校验 SBOM 存在且非空（CycloneDX）
+        # SBOM 生成见 test.yml 的 generate-sbom.js；此处校验权威制品有效。
+        run: |
+          set -e
+          SBOM="release/ewoh-spark-sbom.cyclonedx.json"
+          test -s "$SBOM" || { echo "::error::SBOM 缺失或为空：$SBOM"; exit 1; }
+          node -e '
+            const b = require("./" + process.argv[1]);
+            if (b.bomFormat !== "CycloneDX") throw new Error("bomFormat 错误: " + b.bomFormat);
+            if (!Array.isArray(b.components) || b.components.length === 0)
+              throw new Error("SBOM components 为空");
+            console.log("SBOM OK: " + b.bomFormat + " " + b.specVersion + " components=" + b.components.length);
+          ' "$SBOM"
+
+      - name: 容器镜像漏洞扫描（Trivy，镜像可用时执行）
+        # 当前仓库未在 CI 构建容器镜像，未设置 EWOH_IMAGE_REF 时记录为
+        # BLOCKED_BY_ENVIRONMENT（环境阻断），不伪造通过。
+        # 一旦流水线产出镜像，设置 EWOH_IMAGE_REF 后本步将执行 Trivy fs/image 扫描。
+        env:
+          EWOH_IMAGE_REF: ${{ vars.EWOH_IMAGE_REF }}
+        run: |
+          set -e
+          if [ -z "${EWOH_IMAGE_REF:-}" ]; then
+            echo "::notice::BLOCKED_BY_ENVIRONMENT: 未构建/未提供容器镜像（EWOH_IMAGE_REF 未设置），Trivy 镜像漏洞扫描暂缓。"
+            exit 0
+          fi
+          if ! command -v trivy >/dev/null 2>&1; then
+            TRIVY_VERSION="v0.58.1"
+            curl -sSL -o /tmp/trivy.tar.gz \
+              "https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_0.58.1_Linux-64bit.tar.gz"
+            tar -xzf /tmp/trivy.tar.gz -C /tmp trivy
+          fi
+          /tmp/trivy image --exit-code 1 --severity HIGH,CRITICAL "${EWOH_IMAGE_REF}"
+          echo "OK: 镜像 ${EWOH_IMAGE_REF} 未发现 HIGH/CRITICAL 漏洞。"

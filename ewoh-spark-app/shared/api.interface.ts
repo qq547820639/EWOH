@@ -932,3 +932,121 @@ export type ApprovalStepAction =
   | 'delegate'
   | 'skip'
   | 'expire';
+
+// ===== 统一对象时间线（Unified Object Timeline）=====
+
+/**
+ * 时间线事件来源类型。用于区分事件来自工作流编排、告警、设备遥测、
+ * 系统审计、用户操作、边缘接入还是证据归档。
+ */
+export type TimelineSource =
+  | 'workflow'
+  | 'alert'
+  | 'device'
+  | 'system'
+  | 'user'
+  | 'edge'
+  | 'evidence';
+
+/** 权限可见性：visible=对当前身份完全可见；restricted=受限；hidden=不可见。 */
+export type PermissionVisibility = 'visible' | 'restricted' | 'hidden';
+
+/**
+ * 时间线事件可信度摘要（与 client/src/lib/credibility.ts 的 CredibilityInfo
+ * 结构保持一致，便于客户端直接复用 credibilitySummary 判定）。
+ */
+export interface TimelineCredibility {
+  /** 数据来源类型（real / controlled_test / simulated / replayed / stale / offline 等）。 */
+  sourceType?: string;
+  /** 采集时间（ISO）。 */
+  collectedAt?: string;
+  /** 最近同步时间（ISO）。 */
+  lastSyncedAt?: string;
+  /** 数据完整性 0..1。 */
+  completeness?: number;
+  /** 置信度 0..1。 */
+  confidence?: number;
+  /** 是否来自离线缓存。 */
+  isOfflineCache?: boolean;
+  /** 是否模拟或回放数据。 */
+  isSimulatedOrReplay?: boolean;
+  /** 显式授权标记（false 则强制不可用于决策）。 */
+  decisionAuthorized?: boolean;
+}
+
+/** 证据引用。 */
+export interface TimelineEvidenceRef {
+  /** 证据 ID（如 record_id / evidence_id）。 */
+  id: string;
+  /** 证据类型/媒介（image / video / telemetry / raw / document 等）。 */
+  type?: string;
+  /** 原始记录引用（record_id / raw_ref）。 */
+  ref?: string;
+  /** 人类可读标签。 */
+  label?: string;
+  /** 可访问资源地址。 */
+  url?: string;
+}
+
+/**
+ * 统一时间线事件模型。所有页面（Events / CommandMap 事件中心 / 回放）都应
+ * 消费此结构，避免各页面各自拼装不兼容的时间线结构。
+ */
+export interface TimelineEvent {
+  /** 稳定事件 ID（同时用作锚点 hash）。 */
+  id: string;
+  /** 事件发生时间（ISO 8601）。 */
+  timestamp: string;
+  /** 执行者（用户 id/姓名 或 system）。 */
+  actor: string;
+  /** 来源（workflow / alert / device / system / user / edge / evidence）。 */
+  source: TimelineSource | string;
+  /** 对象类型（alert / workflow / task / device / schedule / approval ...）。 */
+  objectType: string;
+  /** 对象 ID。 */
+  objectId: string;
+  /** 动作（created / updated / triggered / handled / approved ...）。 */
+  action: string;
+  /** 变更前状态（可为 null）。 */
+  previousState: string | null;
+  /** 变更后状态（可为 null）。 */
+  currentState: string | null;
+  /** 关联 ID（把 alert→decision→command→execution→receipt→review 串成链）。 */
+  correlationId: string | null;
+  /** 因果 ID（父事件，用于因果追溯）。 */
+  causationId: string | null;
+  /** 证据引用列表。 */
+  evidence: TimelineEvidenceRef[];
+  /** 可信度摘要（结构对齐 credibility.ts CredibilityInfo）。 */
+  credibility: TimelineCredibility;
+  /** 权限可见性。 */
+  permissionVisibility: PermissionVisibility | string;
+  /** 展示用严重度（可选）。 */
+  severity?: string;
+  /** 展示用标题（可选）。 */
+  title?: string;
+  /** 展示用状态（可选）。 */
+  status?: string;
+  /** 风险等级（low / medium / high，可选）。 */
+  riskLevel?: 'low' | 'medium' | 'high' | string;
+  /** 扩展元数据（可选）。 */
+  meta?: Record<string, unknown>;
+}
+
+/** 时间线过滤条件。 */
+export interface TimelineFilter {
+  /** 对象类型过滤。 */
+  objectType?: string;
+  /** 事件类型/动作过滤（同 action）。 */
+  eventType?: string;
+  /** 动作过滤。 */
+  action?: string;
+  /** 风险等级过滤。 */
+  riskLevel?: string;
+  /** 执行者过滤。 */
+  actor?: string;
+  /** 起始时间（ISO，含）。 */
+  from?: string;
+  /** 结束时间（ISO，含）。 */
+  to?: string;
+}

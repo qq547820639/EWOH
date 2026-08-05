@@ -26,6 +26,29 @@ export class OnboardingController {
     return this.onboardingService.partnerChecklist();
   }
 
+  @Get('sample-factory/status')
+  sampleFactoryStatus(
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.onboardingService.sampleFactoryStatus(request.userContext);
+  }
+
+  @Post('sample-factory/init')
+  sampleFactoryInit(
+    @Body() body: { token: string; factoryName?: string },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.onboardingService.sampleFactoryInit(body, request.userContext);
+  }
+
+  @Post('sample-factory/clear')
+  sampleFactoryClear(
+    @Body() body: { token: string },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.onboardingService.sampleFactoryClear(body, request.userContext);
+  }
+
   @Post('partner/shadow-run')
   partnerShadowRun(
     @Body() body: { factoryName: string; config?: Record<string, unknown> },

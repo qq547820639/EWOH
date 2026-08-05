@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
@@ -8,6 +9,7 @@ import {
   QUERY_STALE_TIME_MS,
 } from '../../hooks/queryConfig';
 import QueryState from '../../components/QueryState';
+import OfflineState from '../../components/OfflineState';
 import { Button } from '@client/src/components/ui/button';
 
 const statusLabel: Record<string, string> = {
@@ -35,6 +37,21 @@ const actionFor = (status: string | null): { label: string; action: string } => 
 
 const Alerts = (): React.ReactElement => {
   const queryClient = useQueryClient();
+  const [isOffline, setIsOffline] = useState(() =>
+    typeof navigator !== 'undefined' ? !navigator.onLine : false,
+  );
+
+  useEffect(() => {
+    const goOnline = () => setIsOffline(false);
+    const goOffline = () => setIsOffline(true);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
+
   const query = useQuery<AlertRecord[]>({
     queryKey: queryKeys.alerts,
     queryFn: listAlerts,
@@ -64,6 +81,15 @@ const Alerts = (): React.ReactElement => {
         <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">风险与告警</h1>
         <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">告警确认、处置、关闭与重开闭环。</p>
       </header>
+
+      {isOffline && (
+        <OfflineState
+          title="当前处于离线状态"
+          description="网络连接已断开，告警操作将加入待同步队列，联网后自动提交。"
+          pendingCount={rows.length}
+          onRetry={() => query.refetch()}
+        />
+      )}
 
       {transitionMutation.isError && (
         <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">

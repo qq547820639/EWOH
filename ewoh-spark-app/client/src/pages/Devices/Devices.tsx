@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from '@client/src/components/ui/select';
 import { DataSourceBadge } from '@client/src/components/DataSourceBadge';
-import ErrorState from '@client/src/components/ErrorState';
+import AppErrorState from '@client/src/components/AppErrorState';
 import DeviceConfigDrawer from './DeviceConfigDrawer';
 
 type OnlineFilter = 'all' | 'online' | 'offline';
@@ -333,10 +333,13 @@ const Devices = (): React.ReactElement => {
               ) : isError ? (
                 <tr>
                   <td colSpan={TABLE_COL_COUNT} className="px-5 py-8">
-                    <ErrorState
+                    <AppErrorState
                       error={error}
                       errorMessage="设备数据加载失败"
+                      impact="设备列表与电量分布将无法展示，其余功能可正常使用。"
+                      saved={false}
                       onRetry={() => refetch()}
+                      onSaveDraft={undefined}
                       backHref="/command-center"
                     />
                   </td>

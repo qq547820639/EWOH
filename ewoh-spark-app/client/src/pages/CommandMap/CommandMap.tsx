@@ -56,6 +56,7 @@ import ResourcePoolPanel from './panels/ResourcePoolPanel';
 import TaskOrchestrationPanel from './panels/TaskOrchestrationPanel';
 import BrainPanel from './panels/BrainPanel';
 import AlertToast from '../../components/AlertToast';
+import DataStates from '../../components/DataStates';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
 import {
@@ -494,20 +495,13 @@ const CommandMap = (): React.ReactElement => {
       />
 
       {failedQueries.length > 0 && (
-        <div
-          role="alert"
-          className="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700"
-        >
-          <span>
-            部分数据加载失败：{failedQueries.map((query) => query.label).join('、')}
-          </span>
-          <button
-            type="button"
-            onClick={() => retryAll(failedQueries)}
-            className="rounded border border-red-300 bg-white px-2 py-1 font-medium hover:bg-red-100"
-          >
-            全部重试
-          </button>
+        <div className="mx-4 mt-3">
+          <DataStates
+            health="degraded"
+            message={`部分数据加载失败：${failedQueries.map((query) => query.label).join('、')}`}
+            detail="地图主体仍可浏览，失败的数据会在恢复后自动刷新。"
+            onRetry={() => retryAll(failedQueries)}
+          />
         </div>
       )}
 

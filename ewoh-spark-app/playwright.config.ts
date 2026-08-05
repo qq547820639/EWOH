@@ -17,7 +17,12 @@ export default defineConfig({
   timeout: 120_000,
   fullyParallel: false,
   workers: 1,
-  reporter: [['list']],
+  reporter: [
+    ['list'],
+    ['json', { outputFile: 'test-results/playwright.json' }],
+    ['junit', { outputFile: 'test-results/junit.xml' }],
+    ['html', { outputFile: 'test-results/playwright-report' }],
+  ],
   projects: [
     {
       name: 'chromium',
@@ -58,5 +63,8 @@ export default defineConfig({
   ],
   use: {
     headless: true,
+    trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
   },
 });

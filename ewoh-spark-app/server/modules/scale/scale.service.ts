@@ -1536,4 +1536,58 @@ export class ScaleService {
       reused: Boolean(existingProfile),
     };
   }
+
+  /**
+   * 探测真实数据库是否可用。样例工厂（sample factory）在数据库不可用时必须
+   * 返回明确的 BLOCKED，而不是假装成功。探测方式是执行一次轻量查询。
+   */
+  async isDatabaseAvailable(): Promise<boolean> {
+    try {
+      await this.listProfiles();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 列出工厂名以指定前缀开头的工厂配置（供样例工厂安全清理使用）。
+   * 只按 factoryName 前缀匹配，绝不触碰生产数据。
+   */
+  async listDemoProfiles(prefix: string) {
+    return this.db
+      .select()
+      .from(ewohFactoryProfile)
+      .where(like(ewohFactoryProfile.factoryName, `${prefix}%`))
+      .orderBy(desc(ewohFactoryProfile.createdAt));
+  }
+
+  /**
+   * 安全清理样例工厂数据：仅删除 factoryName 以演示前缀开头的工厂配置，
+   * 写入审计日志并返回删除数量。演示前缀由调用方（OnboardingService）强制校验。
+   */
+  async clearDemoProfiles(
+    prefix: string,
+    actor?: OrgContext,
+  ): Promise<{ removed: number; profileIds: string[] }> {
+    const profiles = await this.listDemoProfiles(prefix);
+    const profileIds = profiles.map((profile) => profile.profileId);
+    let removed = 0;
+    for (const profile of profiles) {
+      await this.db
+        .delete(ewohFactoryProfile)
+        .where(eq(ewohFactoryProfile.profileId, profile.profileId));
+      removed += 1;
+    }
+    await this.auditService.appendAuditLog({
+      actorId: actor?.userId ?? 'system',
+      orgId: actor?.primaryOrgId ?? '',
+      action: 'scale.sample_factory.clear',
+      entityType: 'factory_profile',
+      entityId: prefix,
+      before: null,
+      after: { removed, prefix },
+    });
+    return { removed, profileIds };
+  }
 }

@@ -5,6 +5,8 @@ import { Activity, AlertTriangle, Users, Zap, TrendingUp, ArrowRight, Map } from
 import type { LucideIcon } from 'lucide-react';
 import { getOverview, getEvents, getDevices } from '../../api/dashboard';
 import type { OverviewStats, EventInfo, DeviceInfo } from '@shared/api.interface';
+import AppErrorState from '../../components/AppErrorState';
+import DataStates from '../../components/DataStates';
 
 function KpiCard({
   title,
@@ -44,7 +46,14 @@ function KpiCard({
 }
 
 const Overview = () => {
-  const { data: stats } = useQuery<OverviewStats>({
+  const {
+    data: stats,
+    isError: statsError,
+    error: statsErrorObj,
+    refetch: refetchStats,
+    isStale: statsStale,
+    dataUpdatedAt: statsUpdatedAt,
+  } = useQuery<OverviewStats>({
     queryKey: ['overview'],
     queryFn: getOverview,
     refetchInterval: 30000,
@@ -90,6 +99,25 @@ const Overview = () => {
           <ArrowRight className="w-3.5 h-3.5" />
         </Link>
       </div>
+
+      {statsError && (
+        <AppErrorState
+          error={statsErrorObj}
+          errorMessage="总览数据加载失败"
+          impact="KPI 指标将无法展示，其余功能可正常使用。"
+          onRetry={() => refetchStats()}
+          backHref="/command-center"
+        />
+      )}
+
+      {statsStale && stats && !statsError && (
+        <DataStates
+          health="stale"
+          message="总览指标已过期，正在展示上次成功获取的数据。"
+          detail={statsUpdatedAt ? `更新于 ${new Date(statsUpdatedAt).toLocaleTimeString('zh-CN', { hour12: false })}` : undefined}
+          onRetry={() => refetchStats()}
+        />
+      )}
 
       {/* 指挥地图能力概览 */}
       <div className="bg-gradient-to-r from-[hsl(221_83%_53%)] to-[hsl(250_73%_55%)] rounded-xl p-5 text-white">

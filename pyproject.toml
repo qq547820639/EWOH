@@ -18,7 +18,7 @@ dependencies = []
 # 仅用于可选集成测试；主测试仍使用标准库 unittest
 dev = [
     "ruff",
-    "bandit",
+    "bandit==1.8.6",
     "pytest",
 ]
 

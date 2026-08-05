@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "description": "Bandit 静态安全扫描豁免清单（Task 7）。当前基线 src/edge_platform 无 HIGH 级发现，故无需豁免条目。",
+  "suppressions": []
+}

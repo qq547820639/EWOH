@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   PieChart, Pie, Cell as ReCell,
@@ -6,7 +6,10 @@ import {
 } from 'recharts';
 import { getEvents, getEventStats } from '../../api/dashboard';
 import type { EventInfo, EventStats as EventStatsType } from '@shared/api.interface';
-import ErrorState from '../../components/ErrorState';
+import AppErrorState from '../../components/AppErrorState';
+import DataStates from '../../components/DataStates';
+import { normalizeTimelineEvent, type TimelineEventModel } from '../../lib/timelineModel';
+import Timeline from '../../components/Timeline';
 
 const SEVERITY_COLORS: Record<string, string> = {
   L1: '#22c55e',
@@ -23,7 +26,7 @@ const STATUS_LABELS: Record<string, string> = {
 const Events = () => {
   const [statusFilter, setStatusFilter] = useState<string>('');
 
-  const { data: events, isLoading, isError, error, refetch } = useQuery<EventInfo[]>({
+  const { data: events, isLoading, isError, error, refetch, isFetching, dataUpdatedAt, isStale } = useQuery<EventInfo[]>({
     queryKey: ['events', statusFilter],
     queryFn: () => getEvents(50, statusFilter || undefined),
     refetchInterval: 30000,
@@ -40,6 +43,28 @@ const Events = () => {
     : [];
 
   const trendData = stats?.trend || [];
+
+  const timelineEvents: TimelineEventModel[] = useMemo(
+    () =>
+      (events ?? []).map((e) =>
+        normalizeTimelineEvent({
+          id: e.id,
+          createdAt: e.createdAt,
+          eventId: e.eventId,
+          eventType: e.eventType,
+          title: e.title,
+          severity: e.severity,
+          status: e.status,
+          deviceId: e.deviceId,
+          source: e.sourceType,
+          evidence:
+            e.evidenceJson && typeof e.evidenceJson === 'object'
+              ? (e.evidenceJson as Record<string, unknown>)
+              : undefined,
+        }),
+      ),
+    [events],
+  );
 
   const statusButtons = [
     { label: '全部', value: '' },
@@ -131,6 +156,18 @@ const Events = () => {
             ))}
           </div>
         </div>
+
+        {isStale && events && events.length > 0 && (
+          <div className="border-b border-[hsl(220_14%_89%)] px-5 py-3">
+            <DataStates
+              health="stale"
+              message="事件数据已过期，正在展示上次成功获取的结果。"
+              detail={dataUpdatedAt ? `更新于 ${new Date(dataUpdatedAt).toLocaleTimeString('zh-CN', { hour12: false })}` : undefined}
+              onRetry={() => refetch()}
+            />
+          </div>
+        )}
+
         <table className="w-full">
           <thead>
             <tr className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
@@ -147,6 +184,18 @@ const Events = () => {
               <tr>
                 <td colSpan={6} className="px-5 py-8 text-center text-sm text-[hsl(218_10%_42%)]">
                   加载中...
+                </td>
+              </tr>
+            ) : isError ? (
+              <tr>
+                <td colSpan={6} className="px-5 py-8">
+                  <AppErrorState
+                    error={error}
+                    errorMessage="事件数据加载失败"
+                    impact="事件列表、严重度分布与趋势图可能无法展示。"
+                    onRetry={() => refetch()}
+                    backHref="/command-center"
+                  />
                 </td>
               </tr>
             ) : events && events.length > 0 ? (
@@ -190,6 +239,11 @@ const Events = () => {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* 统一对象时间线（复用 Timeline 组件） */}
+      <div className="bg-white rounded-xl border border-[hsl(220_14%_89%)] p-5">
+        <Timeline events={timelineEvents} />
       </div>
     </div>
   );

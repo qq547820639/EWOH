@@ -22,6 +22,47 @@ export interface ParsedError {
   kind: ErrorKind;
   /** 是否可安全重试（决定是否展示「重试」按钮） */
   retryable: boolean;
+  /** HTTP 状态码（若有）。用于在 401/403/409 之间进一步细分语义。 */
+  status?: number;
+}
+
+/** 权限/冲突类错误的分类型指导（区别于普通 permission 类别）。 */
+export interface AuthzGuidance {
+  /** 标题（现象的一句话） */
+  title: string;
+  /** 可能影响 */
+  impact: string;
+  /** 后续操作 */
+  nextStep: string;
+}
+
+/**
+ * 区分 401(未认证) / 403(禁止) / 409(冲突) 三类，返回差异化的可操作指导；
+ * 非这三种状态码返回 null。
+ */
+export function authzGuidance(status: number | undefined): AuthzGuidance | null {
+  if (status === 401) {
+    return {
+      title: '登录状态已失效',
+      impact: '当前会话已失效，无法获取或修改数据。',
+      nextStep: '请重新登录后重试。',
+    };
+  }
+  if (status === 403) {
+    return {
+      title: '权限不足',
+      impact: '当前账号的角色无权访问此数据或执行此操作。',
+      nextStep: '请联系管理员申请相应权限后重试。',
+    };
+  }
+  if (status === 409) {
+    return {
+      title: '数据冲突',
+      impact: '数据已被其他操作修改，当前视图可能已过期。',
+      nextStep: '请刷新加载最新数据后重试，或解决冲突。',
+    };
+  }
+  return null;
 }
 
 const KIND_DEFAULT: Record<
@@ -161,5 +202,5 @@ export function parseError(error: unknown): ParsedError {
         ? false
         : true;
 
-  return { code: rawCode, requestId, recommendedAction, message, kind, retryable };
+  return { code: rawCode, requestId, recommendedAction, message, kind, retryable, status };
 }

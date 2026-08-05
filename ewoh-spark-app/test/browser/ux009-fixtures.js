@@ -66,6 +66,197 @@ function startStaticServer() {
   });
 }
 
+/** 分成小块按带宽速率限速写入响应体（bytes/sec，0 表示不限速）。 */
+function writeRateLimited(res, data, bytesPerSec) {
+  const CHUNK = 16384;
+  let offset = 0;
+  const delayMs = Math.max(1, (CHUNK / bytesPerSec) * 1000);
+  const timer = setInterval(() => {
+    if (offset >= data.length) {
+      clearInterval(timer);
+      res.end();
+      return;
+    }
+    const end = Math.min(offset + CHUNK, data.length);
+    res.write(data.subarray(offset, end));
+    offset = end;
+  }, delayMs);
+  res.on('close', () => clearInterval(timer));
+}
+
+/**
+ * 统一的服务端限速/故障注入层（state 见 startThrottledServer）。
+ * 顺序：随机断连(dropRate) → 错误状态注入(errorStatus) → 超时(timeoutMs) → 延迟(latency) → 带宽(bandwidth)。
+ * 这是纯 node http 实现，与浏览器无关，因此 Chromium / Firefox / WebKit 命中同一套弱网语义。
+ */
+function serveThrottled(res, state, response) {
+  if (state.dropRate > 0 && Math.random() < state.dropRate) {
+    // 随机断连：直接销毁 socket，模拟物理断网/连接重置。
+    res.destroy();
+    return;
+  }
+  if (state.errorStatus) {
+    response = {
+      status: state.errorStatus,
+      headers: { 'Content-Type': 'application/json' },
+      body: Buffer.from(
+        JSON.stringify({ message: `injected error ${state.errorStatus}` }),
+      ),
+    };
+  }
+  const body = Buffer.isBuffer(response.body)
+    ? response.body
+    : Buffer.from(String(response.body));
+  let finished = false;
+  const timer =
+    state.timeoutMs > 0
+      ? setTimeout(() => {
+          if (!finished) {
+            // 网关超时：挂起后销毁连接，模拟后端超时。
+            res.destroy();
+          }
+        }, state.timeoutMs)
+      : null;
+  const send = () => {
+    if (finished || res.destroyed) {
+      return;
+    }
+    if (timer) {
+      clearTimeout(timer);
+    }
+    res.writeHead(response.status || 200, response.headers || {});
+    if (state.bandwidth && state.bandwidth > 0) {
+      writeRateLimited(res, body, state.bandwidth);
+    } else {
+      res.end(body);
+    }
+    finished = true;
+  };
+  if (state.latency && state.latency > 0) {
+    setTimeout(send, state.latency);
+  } else {
+    send();
+  }
+}
+
+/** 行为与真实 sw.js 等价、版本/契约可参数化的模板 Service Worker（复用 sw-update 思路）。 */
+function swScript(version, contract) {
+  return `const BASE='sw-test';const VER='${version}';const CONTRACT='${contract}';
+self.addEventListener('install',(e)=>{e.waitUntil((async()=>{const c=await caches.open(BASE+'-'+VER);await c.add('/index.standalone.html').catch(()=>undefined);})())});
+self.addEventListener('activate',(e)=>{e.waitUntil((async()=>{await self.clients.claim();const ks=await caches.keys();for(const k of ks){if(k.startsWith(BASE+'-')&&k!==BASE+'-'+VER)await caches.delete(k);}})())});
+self.addEventListener('message',(e)=>{if(!e.data)return;if(e.data.type==='SKIP_WAITING'){self.skipWaiting();return;}if(e.data.type==='GET_STATE'){e.ports[0].postMessage({version:VER,contract:CONTRACT});return;}});
+self.addEventListener('fetch',(e)=>{const r=e.request;if(r.method!=='GET')return;const u=new URL(r.url);if(u.origin!==self.location.origin)return;if(/^\\/api\\//.test(u.pathname))return;e.respondWith((async()=>{const c=await caches.open(BASE+'-'+VER);const hit=await c.match(r);if(hit)return hit;const res=await fetch(r);if(res&&res.ok)c.put(r,res.clone());return res;})());});`;
+}
+
+const SW_SHELL_HTML =
+  '<!DOCTYPE html><html><head><title>SW weak-net test</title></head>' +
+  '<body><div id="app-root">app-shell</div></body></html>';
+
+/**
+ * 启动一个「跨浏览器可复用的弱网测试服务器」。
+ *
+ * 与 startStaticServer 的差异：所有响应都经过服务端限速/故障注入层，因此
+ * Chromium / Firefox / WebKit 都能命中同一套弱网语义（无需依赖 CDP
+ * Network.emulateNetworkConditions 这类 Chromium-only 机制）。
+ *
+ * options：
+ *   latency     - 每请求额外延迟（ms）
+ *   bandwidth   - 响应带宽上限（bytes/sec，0=不限速）
+ *   dropRate    - 随机断连概率（0-1，命中即销毁连接，模拟物理断网/连接重置）
+ *   timeoutMs   - 网关超时（ms，模拟后端挂起后超时）
+ *   errorStatus - 注入错误响应状态码（默认响应该状态码的 JSON 错误）
+ *   sw          - 若为 true，则托管一个参数化 SW 的最小 shell（用于 SW 更新弱网用例）
+ *   swVersion / swContract - SW 初始版本/契约
+ *
+ * 返回 { baseUrl, configureThrottle(next), setSw(opts), close }。
+ * configureThrottle 可在测试运行时动态调整弱网参数（按用例参数化）。
+ */
+function startThrottledServer(options = {}) {
+  return new Promise((resolve, reject) => {
+    const state = {
+      latency: options.latency ?? 0,
+      bandwidth: options.bandwidth ?? 0,
+      dropRate: options.dropRate ?? 0,
+      timeoutMs: options.timeoutMs ?? 0,
+      errorStatus: options.errorStatus ?? 0,
+    };
+    const swMode = Boolean(options.sw);
+    let swVersion = options.swVersion || 'v1';
+    let swContract = options.swContract || '1.0.0';
+
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url || '/', 'http://127.0.0.1');
+
+      // 随机断连优先在请求抵达时同步结算：立即重置 socket，模拟物理断网/连接重置。
+      // 放在异步 readFile 之前，确保 Chromium / Firefox / WebKit 的 fetch 都观察到「连接被重置」
+      // 而非「正常结束」，从而稳定 reject（规避 Firefox 对正常 socket close 的宽容处理）。
+      if (state.dropRate > 0 && Math.random() < state.dropRate) {
+        req.socket.destroy();
+        return;
+      }
+
+      if (swMode) {
+        if (url.pathname === '/sw.js') {
+          serveThrottled(res, state, {
+            status: 200,
+            headers: { 'Content-Type': 'text/javascript; charset=utf-8' },
+            body: swScript(swVersion, swContract),
+          });
+          return;
+        }
+        if (url.pathname === '/' || url.pathname === '/index.standalone.html') {
+          serveThrottled(res, state, {
+            status: 200,
+            headers: { 'Content-Type': 'text/html; charset=utf-8' },
+            body: SW_SHELL_HTML,
+          });
+          return;
+        }
+        res.writeHead(404);
+        res.end('not found');
+        return;
+      }
+
+      // 静态模式：托管 dist/client（与 startStaticServer 一致，含 SPA fallback）
+      let filePath = path.join(CLIENT_DIR, url.pathname);
+      if (url.pathname === '/') filePath = INDEX_HTML;
+      if (!filePath.startsWith(CLIENT_DIR)) filePath = INDEX_HTML;
+      if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+        filePath = INDEX_HTML;
+      }
+      const ext = path.extname(filePath).toLowerCase();
+      fs.readFile(filePath, (err, data) => {
+        if (err) {
+          res.writeHead(404);
+          res.end('not found');
+          return;
+        }
+        serveThrottled(res, state, {
+          status: 200,
+          headers: { 'Content-Type': MIME[ext] || 'application/octet-stream' },
+          body: data,
+        });
+      });
+    });
+
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      resolve({
+        baseUrl: `http://127.0.0.1:${port}`,
+        configureThrottle(next) {
+          Object.assign(state, next);
+        },
+        setSw(opts) {
+          if (opts && opts.version) swVersion = opts.version;
+          if (opts && opts.contract) swContract = opts.contract;
+        },
+        close: () => new Promise((r) => server.close(r)),
+      });
+    });
+  });
+}
+
 /**
  * UX-009 需求中的角色映射到代码库角色（EwohRole）。
  * 质检员/签到/质量处置在代码中由移动工作台（worker 角色）承担，故复用 worker。
@@ -141,7 +332,15 @@ async function mockApi(page, handlers) {
       });
       return;
     }
-    const value = typeof matcher === 'function' ? matcher({ url, method, route }) : matcher;
+    const value =
+      typeof matcher === 'function'
+        ? matcher({
+            url,
+            method,
+            route,
+            body: req.postDataJSON ? req.postDataJSON() : undefined,
+          })
+        : matcher;
     const response =
       value && typeof value === 'object' && 'status' in value && 'body' in value
         ? value
@@ -233,6 +432,7 @@ module.exports = {
   ROLES,
   VIEWPORTS,
   startStaticServer,
+  startThrottledServer,
   openSession,
   sessionInitScript,
   mockApi,

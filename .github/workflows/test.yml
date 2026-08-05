@@ -14,10 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: 安装 Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
 
@@ -32,13 +32,23 @@ jobs:
       - name: 运行仓库级契约测试
         run: make test-contract
 
+      - name: Edge 节点断连/乱序/重放/去重门禁（SequenceBuffer + Mesh bridge + Sparkplug session）
+        # 显式门禁：SequenceBuffer 乱序/重复/补传/窗口拒绝，edge bridge 失败批缓冲与
+        # 重试，Sparkplug session 序列缺口/重复检测。完整覆盖已并入 make test-contract，
+        # 此处以命名步骤单独拉出以便门禁可追溯。
+        run: |
+          PYTHONPATH=src python3 -m pytest \
+            tests/test_edge_backfill.py \
+            tests/test_edge_bridge_ingest.py \
+            tests/test_connector_runtime.py -q
+
       - name: 运行 ruff 静态检查
         run: ruff check src/edge_platform
 
       - name: 安装 Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
           cache-dependency-path: ewoh-spark-app/package-lock.json
 
@@ -106,6 +116,17 @@ jobs:
       - name: NestJS 生产构建（跳过交互式插件初始化）
         run: EWOH_SKIP_PLUGIN_INIT=1 npm run build:prod
         working-directory: ewoh-spark-app
+
+      - name: 性能预算校验（bundle-budget：首屏 + 单异步 chunk，超限即失败）
+        working-directory: ewoh-spark-app
+        run: node scripts/bundle-budget.mjs
+
+      - name: 上传 bundle 性能预算报告（可定位）
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: bundle-performance-budget-report
+          path: output/bundle-report.json
+          if-no-files-found: error
 
       - name: 构建确定性校验（TR-11.1：同一 commit 两次构建字节一致）
         working-directory: ewoh-spark-app

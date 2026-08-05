@@ -1,6 +1,7 @@
 import type { AuthTokens, AuthUser } from '../api/auth';
 import { logout as revokeServerRefreshToken } from '../api/auth';
 import { broadcastLogout } from './sessionSecurity';
+import { sessionLifecycle } from './runtimeLifecycle';
 
 const ACCESS_KEY = 'ewoh_access_token';
 const REFRESH_KEY = 'ewoh_refresh_token';
@@ -94,6 +95,8 @@ export async function revokeSession(): Promise<void> {
     }
   }
   clearTokens();
+  // 统一释放旧会话资源（WebSocket/SSE/定时器/重试/广播等），避免旧会话继续接收消息或写入数据。
+  sessionLifecycle.disposeForReason('logout');
   // 通知其它标签页同步登出（BroadcastChannel；见 ux009-uxindustrial 多标签登出测试）。
   broadcastLogout();
 }

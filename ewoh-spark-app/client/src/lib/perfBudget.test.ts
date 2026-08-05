@@ -22,6 +22,21 @@ describe('perfBudget', () => {
     expect(categories.has('low-end-tablet')).toBe(true);
   });
 
+  it('covers every required spec budget dimension by key', () => {
+    const requiredKeys = [
+      'first-screen-js-gzip', // 初始 JS 体积
+      'single-async-chunk-gzip', // 单块异步 chunk 体积
+      'first-interactive-time', // 首屏可交互时间 TTI
+      'large-table-5000-render', // 大表格操作延迟
+      'image-attachment-process', // 大图渲染
+      'low-end-tablet-memory-peak', // 低端平板内存峰值
+      'offline-queue-flush-100', // 离线恢复与队列回放
+    ];
+    for (const key of requiredKeys) {
+      expect(getBudgetByKey(key)).toBeDefined();
+    }
+  });
+
   it('marks a budget as pass when measured is within limit + tolerance', () => {
     const budget = getBudgetByKey('work-graph-3000-layout')!;
     const result = evaluateBudget(budget, budget.limit + budget.tolerance / 2);
@@ -36,6 +51,16 @@ describe('perfBudget', () => {
     expect(result.status).toBe('fail');
     expect(result.within).toBe(false);
     expect(result.delta).toBeGreaterThan(budget.tolerance);
+  });
+
+  it('evaluates the single async chunk budget pass/fail', () => {
+    const budget = getBudgetByKey('single-async-chunk-gzip')!;
+    expect(
+      evaluateBudget(budget, budget.limit + budget.tolerance / 2).status,
+    ).toBe('pass');
+    expect(
+      evaluateBudget(budget, budget.limit + budget.tolerance + 10).status,
+    ).toBe('fail');
   });
 
   it('marks a budget as pending when there is no measured data', () => {
