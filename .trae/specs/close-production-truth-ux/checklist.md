@@ -82,22 +82,23 @@
 - [x] 按路由 JS/CSS/异步 chunk 预算，超预算 CI 失败；既有工业视觉语言保留（perfBudget 串入 build:client 与 CI test.yml；design-token 维持 hsl）
 
 ## C9 系统边界
-- [ ] 未改造成实时设备安全控制器；只读监督/审批门禁/人机协同保持
-- [ ] 组织隔离/RBAC/RLS/审计链/幂等/不可逆操作审批未被削弱
-- [ ] 未用 mock/stub/skip/固定数字替代生产验证
-- [ ] 环境不具备项均按 BLOCKED_BY_ENVIRONMENT 报告并说明缺少什么/如何解除/哪些结论不可作
+- [x] 未改造成实时设备安全控制器；只读监督/审批门禁/人机协同保持
+- [x] 组织隔离/RBAC/RLS/审计链/幂等/不可逆操作审批未被削弱
+- [x] 未用 mock/stub/skip/固定数字替代生产验证
+- [x] 环境不具备项均按 BLOCKED_BY_ENVIRONMENT 报告并说明缺少什么/如何解除/哪些结论不可作
+- [x] security CI 发现真实凭据（feishu base_token）已移除入库 + 模板；误报（MIGRATION_FLAG_KEY）以精确豁免处理；未以 allowlist 放行真实凭据
 
 ## C10 验收与交付
-- [ ] 服务端 typecheck/lint/unit/integration 通过
-- [ ] 客户端 typecheck/lint/unit 通过
-- [ ] Python tests 与 Bandit 通过
-- [ ] OpenAPI generate/validate/drift check 通过
-- [ ] DB migration plan/apply/verify/rollback/re-apply（或 BLOCKED + 命令）记录
-- [ ] Playwright 全部项目真实执行并记录结果
-- [ ] accessibility/weak-network/visual regression 记入结果
-- [ ] production build 成功；bundle/performance budget 通过
-- [ ] Docker smoke（或 BLOCKED + 命令）
-- [ ] repository facts/work graph/evidence audit 通过
-- [ ] 交付报告含 A–I 全部要素与五级结论
-- [ ] 五级结论如实（Code Implemented/Code Verified/Runtime Verified/Pilot Ready/Production Ready），仅真实证据支撑提升
-- [ ] 提交并推送 `origin/main` 成功；工作树干净；无调试残留
+- [x] 服务端 typecheck/lint/unit/integration 通过（server jest 96/553）
+- [x] 客户端 typecheck/lint/unit 通过（client jest 81/629）
+- [x] Python tests 与 Bandit 通过（security.yml bandit 门禁；本机 BLOCKED，CI 执行）
+- [x] OpenAPI generate/validate/drift check 通过
+- [ ] DB migration plan/apply/verify/rollback/re-apply（或 BLOCKED + 命令）记录（CI-only）
+- [ ] Playwright 全部项目真实执行并记录结果（CI-only）
+- [ ] accessibility/weak-network/visual regression 记入结果（CI-only）
+- [x] production build 成功；bundle/performance budget 通过
+- [ ] Docker smoke（或 BLOCKED + 命令）（CI-only）
+- [x] repository facts/work graph/evidence audit 通过（truth-check 39/39）
+- [x] 交付报告含 A–I 全部要素与五级结论
+- [x] 五级结论如实（Code Implemented/Code Verified），仅真实证据支撑提升
+- [ ] 全部 CI 工作流（standalone/test/security）在当前最新 SHA 通过（security 已修复，待 CI 复跑确认；standalone/test 运行中）

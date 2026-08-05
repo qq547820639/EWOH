@@ -15,6 +15,7 @@
   3. `npm audit --audit-level=high` 依赖漏洞（经修复后 high/critical=0）。
   4. RoleWorkbench 前端仍使用浏览器内全量筛选/排序/`progressiveSlice`/浏览器 CSV/`localStorage` 保存视图，未走服务端数据路径。
   5. Playwright 浏览器矩阵配置含 6 个项目，但 CI 仅安装 chromium，firefox/webkit 不会真实执行。
+  6. security 工作流 gitleaks 在推送 `f54cbbe` 时失败：`ewoh-feishu-app/feishu-config.json` 内提交了真实飞书 Base `base_token`（历史遗留，非本轮引入）；`offlineDb.ts` 的 `MIGRATION_FLAG_KEY='pending-migrated-v1'` 被 generic-api-key 误报（非凭据）。
 
 ## B. 实际修改的文件及原因
 
@@ -31,6 +32,14 @@
 - 根因：直接依赖版本过旧（axios、form-data 等）及传递依赖（multer、js-yaml、lodash、shell-quote、undici、tmp、brace-expansion、minimatch、OpenTelemetry）存在已知公告；部分 build 工具链（webpack）与框架栈（@nestjs/@lark-apaas）沿用了旧版本。
 - 修复：通过合法升级 + `overrides` 固定受影响版本，未使用 `|| true`、未降低 audit level、未使用 `npm audit fix --force`、未删除扫描步骤。
 - 结果：`npm audit --audit-level=high` 退出码 0（high=0，critical=0）。剩余 moderate 集中在 `@nestjs/*`/`@lark-apaas/*` 框架栈（需要 NestJS 11 大版本升级，属高风险变更，本收口不改动以保生产线稳定）。
+
+### 安全 CI（gitleaks）修复
+
+- 根因（历史遗留，非本轮 P1 引入）：`ewoh-feishu-app/feishu-config.json` 将真实飞书 Base `base_token` 提交入库；`security.yml` 的 gitleaks（零豁免配置）在每次推送时扫描当前工作树，因而在 `f54cbbe` 上失败。
+- 修复方式：
+  - 将 `ewoh-feishu-app/feishu-config.json` 加入 `.gitignore` 并从版本控制中移除（`git rm --cached`，本地文件保留、连接器可继续运行）；新增 `ewoh-feishu-app/feishu-config.example.json` 占位模板供本地创建真实配置。连接器 `feishu.js` 对配置缺失已 try/catch 容错（`config=null`，不阻断主流程）。
+  - `security/gitleaks.toml` 增加一条**精确、书面说明**的豁免，仅匹配 `pending-migrated-v1` 这一前端 localStorage 迁移标记键（非凭据，属 generic-api-key 熵值误报），不匹配任何真实凭据形态。
+  - 未通过 allowlist 放行真实 `base_token`（那将削弱安全标准）；真实凭据从仓库移除。
 
 ## D. 各子系统变化
 
@@ -73,6 +82,7 @@
 | bundle budget | PASS |
 | truth-check / repo-facts | 39/39 PASS |
 | npm audit high | PASS（0 high / 0 critical） |
+| security（gitleaks） | 首轮 `f54cbbe` FAIL（feishu base_token 真实凭据 + MIGRATION_FLAG_KEY 误报）→ 已修复（移除真实凭据 + 精确豁免），待 CI 复跑 |
 | 浏览器矩阵真实执行 | `BLOCKED_BY_ENVIRONMENT`（本机无 PG/浏览器依赖；CI 侧配置已就绪） |
 
 ## G. 当前 evidence manifest 摘要与 digest
@@ -90,6 +100,7 @@
 
 - **Task 1 中的 PG/E2E/浏览器/Docker 运行时门禁**：本机环境不具备（无 PostgreSQL/Docker/浏览器依赖），未在本机运行，仍为 `BLOCKED_BY_ENVIRONMENT`，需在 GitHub Actions 上执行以产出真实运行时证据。这是唯一未闭环的运行时验证项。
 - **浏览器矩阵真实执行结果**：本机无法执行，等待 CI；CI 配置已真实安装并执行 chromium/firefox/webkit 全矩阵并上传 JSON/JUnit/HTML/trace/截图 artifacts。
+- **security 工作流（gitleaks）首轮失败**：`feishu-config.json` 真实 `base_token`（历史遗留）+ `MIGRATION_FLAG_KEY` 误报。已修复（移除真实凭据 + 精确豁免），待 CI 复跑确认。
 - **NestJS 11 大版本升级（消除剩余 moderate 漏洞）**：未做，属高风险变更，需书面风险评估与审批。
 
 ## 结论（如实）

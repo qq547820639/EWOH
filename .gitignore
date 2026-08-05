@@ -37,6 +37,8 @@ tmp/
 .ruff_cache/
 test-results/
 ewoh-spark-app/playwright-report/
+# 飞书集成运行时配置（含真实 base_token，不入库；请以 feishu-config.example.json 为模板本地创建）
+ewoh-feishu-app/feishu-config.json
 # CI/本地生成的测试计数报告（单一事实源运行时生成，永不入库）
 ewoh-spark-app/jest.results.json
 ewoh-spark-app/client/jest.results.json

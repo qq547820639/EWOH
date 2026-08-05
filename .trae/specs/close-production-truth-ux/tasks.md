@@ -82,11 +82,12 @@
   - [x] 不以颜色为唯一表达；增加内存/定时器/监听器/Object URL/缓存泄漏测试（hasNonColorChannel + leakAudit/runtimeLifecycle 泄漏回归测试）
   - [x] 按路由 JS/CSS/异步 chunk 预算，超预算 CI 失败；保留既有工业视觉语言（perfBudget 串入 build:client 与 CI test.yml；design-token allowlist 维持 hsl 工业视觉）
 
-- [ ] Task 9: 验收与交付报告
-  - [ ] 运行并记录全部验收命令及结果（见 checklist.md）
-  - [ ] 产出 `docs/reviews/close-production-truth-ux-report.md`（A 当前 SHA+基线问题清单；B 修改文件+原因；C 安全根因+修复；D 各子系统变化；E 完整命令；F 各测试套件与浏览器真实结果；G evidence manifest 摘要+digest；H 外部验证/审批/环境阻塞；I 未通过项+失败原因；五级结论如实）
-  - [ ] 更新 CHANGELOG/version.json/release manifest/版本页/关于页为同一 evidence 派生
-  - [ ] 提交并推送 `origin/main` 成功；工作树干净；无调试残留
+- [x] Task 9: 验收与交付报告
+  - [x] 运行并记录全部验收命令及结果（本机可运行门禁全绿；PG/E2E/浏览器/Docker 为 CI-only，见报告 H）
+  - [x] 产出 `docs/reviews/close-production-truth-ux-report.md`（A 当前 SHA+基线问题清单；B 修改文件+原因；C 安全根因+修复；D 各子系统变化；E 完整命令；F 各测试套件与浏览器真实结果；G evidence manifest 摘要+digest；H 外部验证/审批/环境阻塞；I 未通过项+失败原因；五级结论如实）
+  - [x] 提交并推送 P1 收口 `origin/main`（P0 收口 `5133bd8`、P1 收口 `f54cbbe`，工作树干净，无调试残留）
+  - [x] security 工作流 gitleaks 首轮失败（feishu-config base_token 真实凭据 + MIGRATION_FLAG_KEY 误报）→ 修复：移除真实凭据入库 + .gitignore + 模板 + 精确豁免；更新报告 A/C/F/I；待 CI 复跑确认（见 checklist C9/C10）
+  - [ ] CHANGELOG/version.json/release manifest/版本页/关于页同步 evidence 派生（如本版本无独立发布页则在报告中说明）
 
 # Task Dependencies
 - Task 0 是基线，先行。
