@@ -26,7 +26,12 @@ describe('truth-manifest (single source of truth)', () => {
     expect(typeof m.testStartedAt).toBe('string');
     expect(typeof m.testFinishedAt).toBe('string');
     expect(typeof m.verifier).toBe('string');
-    expect(m.workflowRunId).toBeNull();
+    // CI（GITHUB_RUN_ID 存在）时为字符串 run id；本地无 CI 环境时为 null。
+    if (process.env.GITHUB_RUN_ID) {
+      expect(typeof m.workflowRunId).toBe('string');
+    } else {
+      expect(m.workflowRunId).toBeNull();
+    }
     expect(m.artifactDigest).toMatch(/^[0-9a-f]{64}$/);
     expect(m.expiration.policy).toBeTruthy();
   });

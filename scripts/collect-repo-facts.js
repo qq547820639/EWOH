@@ -250,20 +250,25 @@ function collect(opts) {
   const openapi = openapiFacts();
   const liveOpenapi = `${openapi.controller}/${openapi.controller}`;
 
+  // 报告缺失时以字符串哨兵 "not-run" 表示"尚未测量"，而非 JSON null：
+  // schema 要求 testCounts.* 为 string，且哨兵如实反映"报告未生成"状态，
+  // 避免把 null 误当通过或伪造数字。
+  const sentinel = (value) => (value === null ? 'not-run' : value);
+
   const testCounts = {
-    serverJest: reportCounts.serverJest,
-    clientJest: reportCounts.clientJest,
+    serverJest: sentinel(reportCounts.serverJest),
+    clientJest: sentinel(reportCounts.clientJest),
     // OpenAPI is always derived live from the route audit.
     openapi: liveOpenapi,
-    e2e: reportCounts.e2e,
-    browser: reportCounts.browser,
+    e2e: sentinel(reportCounts.e2e),
+    browser: sentinel(reportCounts.browser),
     evidence: evidence.total,
   };
 
   for (const key of ['serverJest', 'clientJest', 'e2e', 'browser']) {
-    if (testCounts[key] === null) {
+    if (reportCounts[key] === null) {
       console.warn(
-        `testCounts.${key}: 报告缺失，未生成（CI 中由 jest --json --outputFile 输出文件填充）`,
+        `testCounts.${key}: 报告缺失，未生成（CI 前置步骤运行 jest --json --outputFile 后填充，当前为 not-run）`,
       );
     }
   }
