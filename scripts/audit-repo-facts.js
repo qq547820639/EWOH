@@ -448,7 +448,12 @@ function auditRepoFacts(rootDir) {
 
   // ---- F61-01 semantic consistency: run the single-source-of-truth engine ----
   // Any unexempted semantic conflict (error or warning) fails the audit.
-  const semanticCtx = semanticRules.buildContext(rootDir);
+  // Exemptions are loaded from tools/semantic-rules/exemptions.json (documented,
+  // warning-level, non-high-risk rules only; high-risk rules are enforced by the
+  // no-self-exemption rule and cannot be exempted here).
+  const semanticCtx = semanticRules.buildContext(rootDir, {
+    exemptions: Object.keys(readJsonSafe(rootDir, 'tools/semantic-rules/exemptions.json') || {}),
+  });
   const semanticResult = semanticRules.runRules(semanticCtx, { strict: true });
   const unexemptedFindings = semanticResult.findings.filter(
     (f) => !(semanticCtx.exemptions || []).includes(f.ruleId),

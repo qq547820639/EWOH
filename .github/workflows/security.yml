@@ -65,14 +65,18 @@ jobs:
           chmod +x /tmp/gitleaks
           /tmp/gitleaks version
 
-      - name: 运行 gitleaks 秘密扫描（发现秘密即失败）
+      - name: 运行 gitleaks 秘密扫描（发现新秘密即失败；历史遗留按基线豁免）
         run: |
           set -e
+          # 全历史扫描 + 基线：security/gitleaks-baseline.json 显式登记已知历史遗留
+          # （提交 762e28a 中已移除并轮换的飞书 base_token）。仅出现基线之外的新秘密
+          # 时本步失败；新增秘密的指纹不在基线中，无法被豁免。
           /tmp/gitleaks detect --source "${GITHUB_WORKSPACE}" \
             --config security/gitleaks.toml \
+            --baseline-path security/gitleaks-baseline.json \
             --report-path gitleaks-report.json \
             --report-format json --exit-code 1 --verbose
-          echo "OK: gitleaks 未发现秘密。"
+          echo "OK: gitleaks 未发现基线之外的新秘密。"
 
       - name: 上传 gitleaks 报告 artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0

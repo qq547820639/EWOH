@@ -148,12 +148,16 @@ function buildAlertCard(event) {
     ? JSON.stringify(event.trigger_data, null, 2)
     : '-';
 
-  // 仪表盘 URL：优先从 config.dashboards.event_risk.url 读取，失败用默认 URL
-  const DEFAULT_DASHBOARD_URL = 'https://xqjyctsd.feishu.cn/base/WQmbbeplMaGffVsjtW0cTgAMn5c/dashboard/blkbdfYoQACu9MU7';
+  // 仪表盘 URL：优先从 config.dashboards.event_risk.url 读取；缺失时由
+  // config.base_url + dashboard id 拼装。禁止在源码中硬编码真实 base_token。
+  // 配置未就绪（无 base_url）时返回空串，不泄露任何凭据。
   const cfg = getConfig();
+  const dash = cfg && cfg.dashboards && cfg.dashboards.event_risk;
   const dashboardUrl =
-    (cfg && cfg.dashboards && cfg.dashboards.event_risk && cfg.dashboards.event_risk.url) ||
-    DEFAULT_DASHBOARD_URL;
+    (dash && dash.url) ||
+    (cfg && cfg.base_url
+      ? `${cfg.base_url.replace(/\/+$/, '')}/dashboard/${(dash && dash.id) || ''}`
+      : '');
 
   return {
     config: { wide_screen_mode: true },

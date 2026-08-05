@@ -177,6 +177,11 @@ export function registerServiceWorker(
 
   navigator.serviceWorker.register(SW_URL, { scope: '/' }).then(
     (registration) => {
+      // Some environments (e.g. Playwright with serviceWorkers:'block') resolve
+      // registration with `undefined` instead of rejecting; guard before wiring.
+      if (!registration) {
+        return;
+      }
       registration.addEventListener('updatefound', () => {
         const newWorker = registration.installing;
         if (!newWorker) {

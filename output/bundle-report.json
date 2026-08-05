@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-05T21:50:44.602Z",
+  "generatedAt": "2026-08-05T22:39:18.405Z",
   "dist": "/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/dist/client",
   "environment": {
     "node": "v26.5.1",
@@ -9,11 +9,11 @@
     "entryScripts": [
       {
         "rel": "assets/index.js",
-        "rawKB": 564.849609375,
-        "gzipKB": 174.7138671875
+        "rawKB": 564.8828125,
+        "gzipKB": 174.7177734375
       }
     ],
-    "totalGzipKB": 174.71,
+    "totalGzipKB": 174.72,
     "limitKB": 420,
     "toleranceKB": 40,
     "effectiveLimitKB": 460,
@@ -21,7 +21,7 @@
     "status": "pass"
   },
   "asyncChunk": {
-    "maxGzipKB": 319.68,
+    "maxGzipKB": 319.6,
     "limitKB": 480,
     "toleranceKB": 40,
     "effectiveLimitKB": 520,
@@ -30,19 +30,14 @@
     "overBudget": []
   },
   "chunks": {
-    "total": 132,
-    "asyncTotal": 131,
+    "total": 111,
+    "asyncTotal": 110,
     "overRouteLimit": [],
     "top": [
       {
-        "file": "CommandMap-BujsurT-.js",
-        "rawKB": 1146.06,
-        "gzipKB": 319.68
-      },
-      {
-        "file": "CommandMap-CKj80KlJ.js",
-        "rawKB": 1009.25,
-        "gzipKB": 272.93
+        "file": "CommandMap-Ct6xSevp.js",
+        "rawKB": 1145.85,
+        "gzipKB": 319.6
       },
       {
         "file": "CommandMap-Bp8ZJtJH.js",
@@ -50,14 +45,14 @@
         "gzipKB": 272.84
       },
       {
-        "file": "index.standalone-BrW-a5L0.js",
-        "rawKB": 557.76,
-        "gzipKB": 181.52
+        "file": "index.standalone-4P1uZ-ng.js",
+        "rawKB": 560.82,
+        "gzipKB": 182.53
       },
       {
         "file": "index.js",
-        "rawKB": 564.85,
-        "gzipKB": 174.71
+        "rawKB": 564.88,
+        "gzipKB": 174.72
       },
       {
         "file": "vendor-ui-CR8PtM5a.js",
@@ -65,7 +60,7 @@
         "gzipKB": 161.08
       },
       {
-        "file": "Devices-BTw_NaXB.js",
+        "file": "Devices-DbXXmeAE.js",
         "rawKB": 400.94,
         "gzipKB": 111.22
       },
@@ -75,19 +70,14 @@
         "gzipKB": 91.44
       },
       {
-        "file": "Devices-CvgW-JuL.js",
-        "rawKB": 332.83,
-        "gzipKB": 88.81
-      },
-      {
         "file": "Devices-Dlk0Pze7.js",
         "rawKB": 332.83,
         "gzipKB": 88.81
       },
       {
-        "file": "WorkOrchestration-CeCWQpmp.js",
-        "rawKB": 142.47,
-        "gzipKB": 36.81
+        "file": "WorkOrchestration-Cc0V_aQe.js",
+        "rawKB": 142.56,
+        "gzipKB": 36.82
       },
       {
         "file": "WorkOrchestration-DSvKb6L5.js",
@@ -95,14 +85,14 @@
         "gzipKB": 36.8
       },
       {
-        "file": "WorkOrchestration-BoHHMCLh.js",
-        "rawKB": 142.46,
-        "gzipKB": 36.79
-      },
-      {
         "file": "vendor-anim-DnwAN1sl.js",
         "rawKB": 111.17,
         "gzipKB": 36.6
+      },
+      {
+        "file": "MobileWorkbench-C-eg8gIn.js",
+        "rawKB": 43.9,
+        "gzipKB": 13.8
       },
       {
         "file": "MobileWorkbench-BDe3y2qn.js",
@@ -110,17 +100,7 @@
         "gzipKB": 13.78
       },
       {
-        "file": "MobileWorkbench-EvtzFSwz.js",
-        "rawKB": 38.7,
-        "gzipKB": 12.51
-      },
-      {
-        "file": "MobileWorkbench-DBLwVuv4.js",
-        "rawKB": 36.98,
-        "gzipKB": 11.96
-      },
-      {
-        "file": "index.esm-ABu5HmZf.js",
+        "file": "index.esm-LTIk2DXm.js",
         "rawKB": 36.37,
         "gzipKB": 11.79
       },
@@ -130,9 +110,29 @@
         "gzipKB": 11.31
       },
       {
+        "file": "RoleWorkbench-DHSr32_0.js",
+        "rawKB": 31.81,
+        "gzipKB": 11.01
+      },
+      {
         "file": "RoleWorkbench-CY6YQ5mv.js",
         "rawKB": 31.84,
         "gzipKB": 11
+      },
+      {
+        "file": "drawer-DbsPAEvI.js",
+        "rawKB": 30.93,
+        "gzipKB": 9.29
+      },
+      {
+        "file": "errorContract-DYebLlBI.js",
+        "rawKB": 14.71,
+        "gzipKB": 5.87
+      },
+      {
+        "file": "Operations-C8KH6d6K.js",
+        "rawKB": 26.26,
+        "gzipKB": 5.87
       }
     ]
   }

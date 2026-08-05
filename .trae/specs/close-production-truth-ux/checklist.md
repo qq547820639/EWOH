@@ -86,7 +86,7 @@
 - [x] 组织隔离/RBAC/RLS/审计链/幂等/不可逆操作审批未被削弱
 - [x] 未用 mock/stub/skip/固定数字替代生产验证
 - [x] 环境不具备项均按 BLOCKED_BY_ENVIRONMENT 报告并说明缺少什么/如何解除/哪些结论不可作
-- [x] security CI 发现真实凭据（feishu base_token）已移除入库 + 模板；误报（MIGRATION_FLAG_KEY）以精确豁免处理；未以 allowlist 放行真实凭据
+- [x] security CI 发现真实凭据（feishu base_token）已移除入库 + 模板 + 移除源码硬编码凭据；非凭据误报（MIGRATION_FLAG_KEY/幂等键）以精确豁免处理；历史遗留真实 base_token 以 gitleaks 基线（`security/gitleaks-baseline.json`）登记而非 allowlist 放行，新秘密仍阻断
 
 ## C10 验收与交付
 - [x] 服务端 typecheck/lint/unit/integration 通过（server jest 96/553）

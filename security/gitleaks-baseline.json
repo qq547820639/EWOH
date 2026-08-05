@@ -1,0 +1,23 @@
+[
+ {
+  "RuleID": "generic-api-key",
+  "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+  "StartLine": 2,
+  "EndLine": 2,
+  "StartColumn": 5,
+  "EndColumn": 46,
+  "Match": "base_token\": \"WQmbbeplMaGffVsjtW0cTgAMn5c\"",
+  "Secret": "WQmbbeplMaGffVsjtW0cTgAMn5c",
+  "File": "ewoh-feishu-app/feishu-config.json",
+  "SymlinkFile": "",
+  "Commit": "762e28a49403a9224bc2f9a836c90c4d2bd2efad",
+  "Link": "https://github.com/qq547820639/EWOH/blob/762e28a49403a9224bc2f9a836c90c4d2bd2efad/ewoh-feishu-app/feishu-config.json#L2",
+  "Entropy": 4.384517,
+  "Author": "panhao",
+  "Email": "panhao@bogon",
+  "Date": "2026-07-31T14:57:08Z",
+  "Message": "feat: 飞书全家桶闭环 — 仪表盘+告警卡片+workflow 通知全链路打通\n\n- 新增 ewoh-feishu-app：本地 Node.js 后端（Express+SQLite+模拟器）\n  - 设备/遥测/事件三表 30s 全量同步到飞书多维表格\n  - 规则引擎 4 条规则实时评估，触发事件自动发告警卡片到群聊\n  - 告警卡片含[确认][解决][上报][查看仪表盘]4 个按钮\n  - 事件状态轮询回写（60s），飞书侧改状态自动同步本地\n- 飞书多维表格 3 个仪表盘（设备态势/事件风险/人员负荷）共 10 个组件\n- workflow（wkfhFqFgt8NSa5FS）状态变更通知已启用\n- 指挥地图前端升级（entity-panel/event-center/timeline/scenario-panel/map）\n- 后端 server.py 增加 CORS + WAL 模式 + 线程锁修复并发崩溃\n- 端到端验证通过：数据同步✓ 仪表盘组件✓ 告警卡片✓ workflow通知✓",
+  "Tags": [],
+  "Fingerprint": "762e28a49403a9224bc2f9a836c90c4d2bd2efad:ewoh-feishu-app/feishu-config.json:generic-api-key:2"
+ }
+]

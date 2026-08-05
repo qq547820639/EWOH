@@ -15,11 +15,15 @@ useDefault = true
 #     '''github_pat_[A-Za-z0-9_]+''',
 #   ]
 
-# 精确豁免：前端离线队列的 localStorage 迁移标记键（非凭据）。
-# 该常量值是 IndexedDB/localStorage 的迁移标识字符串，gitleaks 的 generic-api-key
-# 规则按其熵值误报为秘密。此豁免仅匹配该固定键名，不匹配任何真实凭据形态。
+# 精确豁免（仅限非凭据的确定性误报，绝不放行真实凭据）。
+# 以下均为 generic-api-key 按其熵值对“非秘密”常量/测试值的误报，逐条附带说明。
+# 真实凭据（如历史提交中的飞书 base_token）一律不得在此豁免，而是通过
+# security/gitleaks-baseline.json 基线显式登记为已知历史遗留，见 security.yml。
 [allowlist]
-  description = "前端离线队列 localStorage 迁移标记键（非凭据，generic-api-key 误报）"
+  description = "非凭据的确定性误报豁免（迁移标记键 + 测试幂等键）"
   regexes = [
+    # 前端离线队列 localStorage 迁移标记键（非凭据）
     '''pending-migrated-v1''',
+    # 测试夹具幂等键（非凭据）：edge_platform/tests/test_stage2_api.py 验证 409/幂等语义的固定测试头值
+    '''idem-stage2-001''',
   ]

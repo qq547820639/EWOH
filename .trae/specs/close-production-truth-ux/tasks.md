@@ -89,7 +89,8 @@
   - [x] security 工作流 gitleaks 首轮失败（feishu-config base_token 真实凭据 + MIGRATION_FLAG_KEY 误报）→ 修复：移除真实凭据入库 + .gitignore + 模板 + 精确豁免；更新报告 A/C/F/I；待 CI 复跑确认（见 checklist C9/C10）
   - [x] security 工作流复跑确认（gitleaks/bandit 通过，upload-artifact 升级 v6）；修复 test.yml @latest 守护自匹配 bug（构造拼接检索词 + 去除步骤名/注释字面量），本机模拟两守卫全通过
   - [x] upload-artifact 全面升级 v5→v6（Node 24 兼容，package/security/standalone/test.yml）；swRegistration 增加 navigator.serviceWorker 空值防御
-  - [ ] CHANGELOG/version.json/release manifest/版本页/关于页同步 evidence 派生（如本版本无独立发布页则在报告中说明）
+  - [x] CHANGELOG/version.json/release manifest/版本页/关于页同步 evidence 派生（`version.json` 为唯一版本源，`truth-manifest.js` 派生 `output/evidence-manifest.json`；本版本无独立发布页/关于 evidence 页，须在报告中说明——已写入报告 H）
+  - [x] gitleaks 全历史扫描（`fetch-depth:0`）历史遗留真实 base_token 处理：移除 `feishu.js` 源码硬编码凭据（改为 config 动态拼装）+ 精确豁免非凭据误报（`pending-migrated-v1`/`idem-stage2-001`）+ 以 `security/gitleaks-baseline.json` 基线登记历史遗留 base_token（不 allowlist 真实凭据，仅基线豁免，新秘密仍阻断）；本机全历史+基线扫描 `no leaks found`，待 CI 复跑确认
 
 # Task Dependencies
 - Task 0 是基线，先行。

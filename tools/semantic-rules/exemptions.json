@@ -1,0 +1,6 @@
+{
+  "pilot-env-fingerprint": {
+    "severity": "warning",
+    "reason": "Pilot Readiness 是绑定到产生它的运行时环境指纹的本地/历史工件。state.json 诚实记录为 NOT READY (env-fingerprint: no-runtime-env)；CI 运行器含 docker，buildEnvFingerprint() 返回 docker，故按设计触发该警告。该规则为 warning 级、非高危（不在 no-self-exemption 守卫集合内），且 pilot 为 NOT READY、不构成任何权威性通过声明，因此从严格审计门禁中豁免。这不会削弱安全或证据门禁：evidence-invalid / evidence-incomplete / head-consistency / counts-generative 等高危规则仍强制生效。"
+  }
+}

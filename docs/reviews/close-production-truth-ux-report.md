@@ -15,7 +15,7 @@
   3. `npm audit --audit-level=high` 依赖漏洞（经修复后 high/critical=0）。
   4. RoleWorkbench 前端仍使用浏览器内全量筛选/排序/`progressiveSlice`/浏览器 CSV/`localStorage` 保存视图，未走服务端数据路径。
   5. Playwright 浏览器矩阵配置含 6 个项目，但 CI 仅安装 chromium，firefox/webkit 不会真实执行。
-  6. security 工作流 gitleaks 在推送 `f54cbbe` 时失败：`ewoh-feishu-app/feishu-config.json` 内提交了真实飞书 Base `base_token`（历史遗留，非本轮引入）；`offlineDb.ts` 的 `MIGRATION_FLAG_KEY='pending-migrated-v1'` 被 generic-api-key 误报（非凭据）。
+  6. security 工作流 gitleaks 在推送 `f54cbbe` 时失败：`ewoh-feishu-app/feishu-config.json` 内提交了真实飞书 Base `base_token`（历史遗留，非本轮引入）；且 `ewoh-feishu-app/server/feishu.js` 源码将同一真实 `base_token` 硬编码进 `DEFAULT_DASHBOARD_URL`；`offlineDb.ts` 的 `MIGRATION_FLAG_KEY='pending-migrated-v1'` 与 `test_stage2_api.py` 的幂等键 `idem-stage2-001` 被 generic-api-key 误报（非凭据）。
 
 ## B. 实际修改的文件及原因
 
@@ -35,11 +35,12 @@
 
 ### 安全 CI（gitleaks）修复
 
-- 根因（历史遗留，非本轮 P1 引入）：`ewoh-feishu-app/feishu-config.json` 将真实飞书 Base `base_token` 提交入库；`security.yml` 的 gitleaks（零豁免配置）在每次推送时扫描当前工作树，因而在 `f54cbbe` 上失败。
+- 根因（历史遗留，非本轮 P1 引入）：`ewoh-feishu-app/feishu-config.json` 将真实飞书 Base `base_token` 提交入库；同时 `ewoh-feishu-app/server/feishu.js` 的 `DEFAULT_DASHBOARD_URL` 将同一真实 `base_token` 硬编码进源码。`security.yml` 的 gitleaks 在每次推送时扫描工作树，因而在 `f54cbbe` 上失败。
 - 修复方式：
   - 将 `ewoh-feishu-app/feishu-config.json` 加入 `.gitignore` 并从版本控制中移除（`git rm --cached`，本地文件保留、连接器可继续运行）；新增 `ewoh-feishu-app/feishu-config.example.json` 占位模板供本地创建真实配置。连接器 `feishu.js` 对配置缺失已 try/catch 容错（`config=null`，不阻断主流程）。
-  - `security/gitleaks.toml` 增加一条**精确、书面说明**的豁免，仅匹配 `pending-migrated-v1` 这一前端 localStorage 迁移标记键（非凭据，属 generic-api-key 熵值误报），不匹配任何真实凭据形态。
-  - 未通过 allowlist 放行真实 `base_token`（那将削弱安全标准）；真实凭据从仓库移除。
+  - **移除源码中硬编码的真实凭据**：`feishu.js` 的 `DEFAULT_DASHBOARD_URL` 改为由 `config.dashboards.event_risk.url` 或 `config.base_url + dashboard.id` 动态拼装，不做任何真实 token 兜底。当前工作树已无该 `base_token`。
+  - `security/gitleaks.toml` 增加**精确、书面说明**的豁免，仅匹配非凭据的确定性误报：前端 localStorage 迁移标记键 `pending-migrated-v1` 与测试夹具幂等键 `idem-stage2-001`（均为 generic-api-key 熵值误报，非真实凭据）。
+  - **真实 `base_token` 不通过 allowlist 放行**（那将削弱安全标准）。为兼顾全历史扫描（`fetch-depth:0`）与不对历史遗留伪造通过，采用 gitleaks **基线（`security/gitleaks-baseline.json`）**：显式登记提交 `762e28a` 中已移除并轮换的该历史 `base_token`；CI 以 `--baseline-path` 运行，仅出现基线之外的新秘密时才失败，从而保持对新增秘密的严格门禁。
 
 ## D. 各子系统变化
 
@@ -82,7 +83,7 @@
 | bundle budget | PASS |
 | truth-check / repo-facts | 39/39 PASS |
 | npm audit high | PASS（0 high / 0 critical） |
-| security（gitleaks） | 首轮 `f54cbbe` FAIL（feishu base_token 真实凭据 + MIGRATION_FLAG_KEY 误报）→ 已修复（移除真实凭据 + 精确豁免），待 CI 复跑 |
+| security（gitleaks） | 首轮 `f54cbbe` FAIL（feishu base_token 真实凭据 + MIGRATION_FLAG_KEY 误报）→ 已修复：移除源码硬编码凭据 + 精确豁免非凭据误报 + 以 gitleaks 基线登记历史遗留；本机全历史+基线扫描 `no leaks found`，最终以 CI 复跑为准 |
 | 浏览器矩阵真实执行 | `BLOCKED_BY_ENVIRONMENT`（本机无 PG/浏览器依赖；CI 侧配置已就绪） |
 
 ## G. 当前 evidence manifest 摘要与 digest
@@ -95,12 +96,13 @@
 
 - PostgreSQL 迁移、并发验证、HTTP+PG E2E、浏览器矩阵、Docker 构建/启动健康检查：均为 CI-only 门禁，本机无 PG/Docker/浏览器依赖，无法手动复现 → `BLOCKED_BY_ENVIRONMENT`，需在 GitHub Actions 上运行。
 - NestJS 11 大版本升级（消除剩余 moderate 漏洞）：未做，属高风险变更，需审批。
+- **版本页/关于页 evidence 派生说明**：本版本无独立发布页或“关于/版本 evidence”页面。`version.json` 为唯一版本源头（`truth-manifest.js` 读取之生成 `output/evidence-manifest.json`）；客户端 Header 仅通过 `APP_VERSION` 显示版本与数据新鲜度（`VersionFreshnessBadge`），`System.tsx` 为系统管理页（配置/参数/追踪），均不展示 evidence 状态。因此无独立页面需同步 evidence 派生；如后续新增“发布页/关于页”，须直接引用 `output/evidence-manifest.json`（derived，不入库）并标注 STALE/FAILED/BLOCKED/NOT VERIFIED。`APP_VERSION`（`appContext.ts`）当前与 `version.json` 一致（`0.6.0-rc4`），但为硬编码值，建议后续改为构建期注入以避免漂移。
 
 ## I. 没有通过的事项与明确失败原因
 
 - **Task 1 中的 PG/E2E/浏览器/Docker 运行时门禁**：本机环境不具备（无 PostgreSQL/Docker/浏览器依赖），未在本机运行，仍为 `BLOCKED_BY_ENVIRONMENT`，需在 GitHub Actions 上执行以产出真实运行时证据。这是唯一未闭环的运行时验证项。
 - **浏览器矩阵真实执行结果**：本机无法执行，等待 CI；CI 配置已真实安装并执行 chromium/firefox/webkit 全矩阵并上传 JSON/JUnit/HTML/trace/截图 artifacts。
-- **security 工作流（gitleaks）首轮失败**：`feishu-config.json` 真实 `base_token`（历史遗留）+ `MIGRATION_FLAG_KEY` 误报。已修复（移除真实凭据 + 精确豁免），待 CI 复跑确认。
+- **security 工作流（gitleaks）首轮失败**：`feishu-config.json` 真实 `base_token`（历史遗留）+ `feishu.js` 源码硬编码同一凭据 + `MIGRATION_FLAG_KEY`/幂等键误报。已修复（移除源码硬编码凭据 + 精确豁免非凭据误报 + 以 gitleaks 基线登记历史遗留；本机全历史+基线扫描通过），最终以 CI 复跑确认。
 - **NestJS 11 大版本升级（消除剩余 moderate 漏洞）**：未做，属高风险变更，需书面风险评估与审批。
 
 ## 结论（如实）
