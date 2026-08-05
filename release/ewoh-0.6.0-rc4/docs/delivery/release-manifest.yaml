@@ -34,8 +34,8 @@ contracts:
     physical_tables: 57
     note: "51 managed tables (schema-manifest.yaml managed_tables) + 6 system/physical tables = 57 physical. additional_hardened_existing_tables (5) are existing tables hardened with RLS, not counted in the 51."
 evidence:
-  jest: "92 suites / 516 tests"
-  client_jest: "63 suites / 453 tests"
+  jest: "96 suites / 553 tests"
+  client_jest: "81 suites / 629 tests"
   e2e: "33/33 HTTP + PostgreSQL"
   openapi: "268/268 documented, 0 unimplemented"
   standalone_check: "passed (typecheck/lint/jest/client-jest/repo-facts/openapi/e2e/build/ddl/hygiene)"

@@ -142,6 +142,9 @@ jobs:
         env:
           EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
           EWOH_ALLOW_DDL: "1"
+          # Rollback of the domain tables is destructive (drops tables); the
+          # migration runner refuses without this explicit opt-in.
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
         run: |
           # Upgrade path: apply the 6 domain tables and verify their presence.
           node db/runner/run_migrations.js --apply-standalone-domain
