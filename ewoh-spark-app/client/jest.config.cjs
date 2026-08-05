@@ -11,8 +11,9 @@ module.exports = {
     ],
   },
   moduleNameMapper: {
+    // 与 tsconfig.app.json paths 保持一致：@client/* → client/*（rootDir 即 client/）
+    '^@client/(.*)$': '<rootDir>/$1',
     '^@/(.*)$': '<rootDir>/src/$1',
-    '^@client/(.*)$': '<rootDir>/src/$1',
     '^@shared/(.*)$': '<rootDir>/../shared/$1',
   },
   modulePathIgnorePatterns: ['<rootDir>/../node_modules/', '<rootDir>/../dist/'],

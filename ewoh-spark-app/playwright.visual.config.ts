@@ -1,4 +1,4 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 import base from './playwright.config';
 
 /**
@@ -11,6 +11,13 @@ import base from './playwright.config';
  */
 export default defineConfig({
   ...base,
+  // 视觉回归仅在单工程（桌面 Chromium）下运行，避免多工程矩阵互相覆盖基线截图。
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
   testMatch: /ux009-visual\.spec\.js/,
   expect: {
     toHaveScreenshot: {

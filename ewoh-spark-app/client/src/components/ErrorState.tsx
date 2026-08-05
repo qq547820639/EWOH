@@ -119,6 +119,7 @@ const ErrorState = ({
       requestId: '',
       recommendedAction: '',
       message: errorMessage,
+      retryable: true,
     };
   }, [error, errorMessage]);
 
@@ -166,6 +167,15 @@ const ErrorState = ({
               {parsed.recommendedAction}
             </p>
           )}
+          <span
+            className={`mt-2 inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium ${
+              parsed.retryable
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-[hsl(220_14%_89%)] bg-[hsl(220_14%_96%)] text-[hsl(218_10%_42%)]'
+            }`}
+          >
+            {parsed.retryable ? '可安全重试' : '不可重试'}
+          </span>
         </div>
       </div>
 
@@ -187,7 +197,7 @@ const ErrorState = ({
       )}
 
       <div className="flex flex-wrap gap-2">
-        {onRetry && (
+        {onRetry && parsed.retryable && (
           <Button type="button" size="sm" variant="outline" onClick={onRetry}>
             <RefreshCw className="size-3.5" />
             重试

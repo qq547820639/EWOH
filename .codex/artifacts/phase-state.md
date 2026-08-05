@@ -3,7 +3,7 @@
 Updated: 2026-08-04
 Trace: EWOH-2026-08-04-principal-final6
 
-## 当前权威状态（2026-08-05 HEAD 79465703b8fafcfdd3adaf0408eb15ab881dfa4f）
+## 当前权威状态（2026-08-05 HEAD 5986564ac34b63785959d9e92c3d2750e2c7a7b2）
 
 以下为本仓库的单一、权威当前状态，来自 `CHANGELOG` rc4、`release-manifest` 与 `audit-repo-facts` 的一致聚合。**以下所有 `## Latest Round - ...` 小节均为历史快照（非权威），权威计数一律以本节为准。**
 

@@ -2,6 +2,7 @@ import {
   backoffDelay,
   flushOfflineQueue,
   generateIdempotencyKey,
+  isAuthError,
   migratePendingActionsFromLocalStorage,
   MIGRATION_FLAG_KEY,
   type OfflineAttachment,
@@ -206,5 +207,157 @@ describe('offlineDb', () => {
     const remaining = await pending.getAll();
     expect(remaining[0].status).toBe('failed');
     expect(remaining[0].retryCount).toBe(1);
+  });
+
+  it('detects auth failures so the flush loop does not retry them', () => {
+    expect(isAuthError({ response: { status: 401 } })).toBe(true);
+    expect(isAuthError({ code: 'TOKEN_EXPIRED' })).toBe(true);
+    expect(isAuthError(new Error('Unauthorized'))).toBe(true);
+    expect(isAuthError(new Error('network down'))).toBe(false);
+    expect(isAuthError({ response: { status: 503 } })).toBe(false);
+  });
+
+  it('flushOfflineQueue marks auth failures non-retryable (AUTH_REQUIRED)', async () => {
+    const pending = createMemoryStore<StoredPendingAction>();
+    await pending.put({
+      key: 'auth',
+      id: 'auth',
+      type: 'transition',
+      orderId: 'WO-1',
+      stepId: 'S1',
+      action: 'report',
+      idempotencyKey: 'k-auth',
+      queuedAt: new Date().toISOString(),
+      status: 'local',
+    });
+
+    const syncOne = jest.fn().mockRejectedValue({ response: { status: 401 } });
+    const summary = await flushOfflineQueue(syncOne, pending, {
+      includeManual: true,
+      maxAttempts: 3,
+    });
+
+    // Auth errors break out of the retry loop immediately (no backoff retries).
+    expect(syncOne).toHaveBeenCalledTimes(1);
+    expect(summary.failed).toEqual(['auth']);
+    const remaining = await pending.getAll();
+    expect(remaining[0].status).toBe('failed');
+    expect(remaining[0].error?.code).toBe('AUTH_REQUIRED');
+    expect(remaining[0].error?.retryable).toBe(false);
+  });
+
+  it('queued items restore after a reload (re-hydration from persisted store)', async () => {
+    // Two store handles over the SAME backing map simulate a page reload: data
+    // written through handle A is read back through a fresh handle B.
+    const values = new Map<string, StoredPendingAction>();
+    const makeHandle = (): SimpleStore<StoredPendingAction> => ({
+      async getAll() {
+        return Array.from(values.values());
+      },
+      async get(key) {
+        return values.get(key);
+      },
+      async put(value) {
+        values.set(value.key, value);
+      },
+      async delete(key) {
+        values.delete(key);
+      },
+      async clear() {
+        values.clear();
+      },
+      async count() {
+        return values.size;
+      },
+    });
+
+    const beforeReload = makeHandle();
+    const queued: StoredPendingAction[] = [
+      {
+        key: 'q1',
+        id: 'q1',
+        type: 'transition',
+        orderId: 'WO-1',
+        stepId: 'S1',
+        action: 'start',
+        idempotencyKey: 'k-q1',
+        queuedAt: new Date().toISOString(),
+        status: 'local',
+      },
+      {
+        key: 'q2',
+        id: 'q2',
+        type: 'inspection',
+        orderId: 'WO-1',
+        stepId: 'S2',
+        body: { result: 'pass' },
+        idempotencyKey: 'k-q2',
+        queuedAt: new Date().toISOString(),
+        status: 'failed',
+        error: { code: 'SYNC_ERROR', retryable: true, message: 'boom' },
+        retryCount: 1,
+      },
+    ];
+    for (const item of queued) {
+      await beforeReload.put(item);
+    }
+
+    // A brand-new handle (as if the app restarted) reads the same persisted data.
+    const afterReload = makeHandle();
+    const restored = await afterReload.getAll();
+    expect(restored).toHaveLength(2);
+    expect(restored.map((i) => i.id)).toEqual(['q1', 'q2']);
+    // Status/error/retry state survives the reload so manual retry still works.
+    const q2 = restored.find((i) => i.id === 'q2');
+    expect(q2?.status).toBe('failed');
+    expect(q2?.error?.retryable).toBe(true);
+    expect(q2?.retryCount).toBe(1);
+  });
+
+  it('restored queued items flush to success after reload (weak-network retry)', async () => {
+    const values = new Map<string, StoredPendingAction>();
+    const store = {
+      async getAll() {
+        return Array.from(values.values());
+      },
+      async get(key: string) {
+        return values.get(key);
+      },
+      async put(value: StoredPendingAction) {
+        values.set(value.key, value);
+      },
+      async delete(key: string) {
+        values.delete(key);
+      },
+      async clear() {
+        values.clear();
+      },
+      async count() {
+        return values.size;
+      },
+    };
+    await store.put({
+      key: 'r1',
+      id: 'r1',
+      type: 'transition',
+      orderId: 'WO-1',
+      stepId: 'S1',
+      action: 'report',
+      idempotencyKey: 'k-r1',
+      queuedAt: new Date().toISOString(),
+      status: 'local',
+    });
+
+    // Weak network: first attempt fails, transient retry succeeds.
+    const syncOne = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('timeout'))
+      .mockResolvedValueOnce(undefined);
+    const summary = await flushOfflineQueue(syncOne, store, {
+      includeManual: true,
+    });
+    expect(summary.synced).toEqual(['r1']);
+    expect(syncOne).toHaveBeenCalledTimes(2);
+    expect(await store.count()).toBe(0);
   });
 });

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
+import PageSkeleton from './components/app-shell/PageSkeleton';
 import { getAuthUser, isAuthenticated } from './lib/auth';
 import { getAllowedRoles, hasRoleAccess } from './lib/navigation';
 
@@ -49,8 +50,8 @@ const RequireRole = ({ path, children }: { path: string; children: React.ReactEl
 };
 
 const PageFallback = () => (
-  <div className="flex min-h-screen items-center justify-center text-sm text-[hsl(218_10%_42%)]">
-    加载中...
+  <div className="min-h-screen">
+    <PageSkeleton />
   </div>
 );
 

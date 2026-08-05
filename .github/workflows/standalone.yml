@@ -54,6 +54,13 @@ jobs:
       - name: OpenAPI route audit (strict)
         run: node scripts/audit-openapi-routes.js --strict
 
+      - name: OpenAPI contract drift gate (W4)
+        # Regenerates the TypeScript contract from the OpenAPI specs into a temp
+        # dir and diffs against the committed client/src/types/*.d.ts outputs,
+        # failing the build if the committed generated types have drifted.
+        working-directory: ewoh-spark-app
+        run: npm run gen:openapi:check
+
       - name: Work Graph 不变量与阻塞诊断（P0-6/P0-7）
         run: |
           node tools/work-indexer/index.js --root "$GITHUB_WORKSPACE" --strict --invariants

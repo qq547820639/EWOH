@@ -1,6 +1,6 @@
 {
-  "name": "fullstack-nestjs-template",
-  "version": "2.2.5",
+  "name": "ewoh-spark-app",
+  "version": "0.6.0-rc4",
   "private": true,
   "flags": {
     "supportBusinessUser": true,
@@ -13,7 +13,9 @@
     "dev:server": "NODE_ENV=development nest start --watch",
     "dev:client": "NODE_ENV=development vite --config vite.config.ts",
     "gen:db-schema": "npx -y @lark-apaas/db-schema-sync@latest --output server/database/schema.ts --export-custom-types",
-    "gen:openapi": "echo 'UNSUPPORTED, SKIP'",
+    "gen:openapi": "node scripts/gen-openapi.js",
+    "gen:openapi:check": "node scripts/gen-openapi.js --check",
+    "openapi:no-drift": "node scripts/gen-openapi.js --check",
     "build": "./scripts/build.sh",
     "build:prod": "npm run build:server && npm run build:client",
     "build:prod:standalone": "npm run build:server && npm run build:client:standalone",
@@ -184,6 +186,7 @@
     "lucide-react": "^0.554.0",
     "nanoid": "^5.1.6",
     "next-themes": "^0.4.6",
+    "openapi-typescript": "^7.13.0",
     "pinyin-pro": "^3.27.0",
     "postcss": "^8.5.6",
     "postcss-import": "^16.1.1",
@@ -248,7 +251,8 @@
     "testPathIgnorePatterns": [
       "/node_modules/",
       "/dist/",
-      "<rootDir>/test/e2e/"
+      "<rootDir>/test/e2e/",
+      "<rootDir>/test/browser/"
     ],
     "testMatch": [
       "<rootDir>/server/**/*.spec.ts",

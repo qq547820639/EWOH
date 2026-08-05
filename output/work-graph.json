@@ -1,7 +1,7 @@
 {
   "schema": "ewoh:///work-graph/v1",
-  "generatedAt": "2026-08-04T18:45:35.711Z",
-  "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
+  "generatedAt": "2026-08-04T23:27:48.087Z",
+  "sourceRoot": ".codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "summary": {
     "itemCount": 252,
@@ -4903,7 +4903,7 @@
       "artifactId": "gates-md",
       "path": "gates.md",
       "mediaType": "text/markdown",
-      "checksum": "bdcbf99a20fc4282416e1f6f5ab8b2a737b2ba85260a5131e8adc35a719ccbf4",
+      "checksum": "b79b9524d495d92e049b9a462590818d9d3cd913563e88d49bdabacf1a0c1f15",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4939,7 +4939,7 @@
       "artifactId": "phase-state-md",
       "path": "phase-state.md",
       "mediaType": "text/markdown",
-      "checksum": "a16752e34d5d550c4f200097dfd3a28fcc5e1477079828fcbf98162e101efd88",
+      "checksum": "e9aaa39cc1b365c6176c9f1218775b43050c316a71f8d2111321331f6d7acecd",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -4948,7 +4948,7 @@
       "artifactId": "state-json",
       "path": "state.json",
       "mediaType": "application/json",
-      "checksum": "628dff4486106ffade265e3c0daf57151964d8ae242372bee4c7e4dc0821b613",
+      "checksum": "16fdb4113b2becd9b542fc390dfae886decf0d548aa21fe7656dfa98edefda5c",
       "version": "current",
       "producedBy": "AG-00",
       "sensitivity": "internal"
@@ -5044,7 +5044,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round1-2",
@@ -5063,7 +5063,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round1-3",
@@ -5082,7 +5082,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round1-4",
@@ -5101,7 +5101,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round1-5",
@@ -5120,7 +5120,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round1-6",
@@ -5139,7 +5139,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round1-7",
@@ -5158,7 +5158,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round1-8",
@@ -5177,7 +5177,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round1-9",
@@ -5196,7 +5196,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round1-10",
@@ -5215,7 +5215,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round10-mes-p0-1",
@@ -5234,7 +5234,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round10-mes-p0-2",
@@ -5253,7 +5253,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round100-progressive-lists",
@@ -5272,7 +5272,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T15:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 93b605dadba097c812cb0b12922a979bb60feaf8 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 93b605dadba097c812cb0b12922a979bb60feaf8 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round101-pilot-readiness-rerun",
@@ -5291,7 +5291,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T16:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 93b605dadba097c812cb0b12922a979bb60feaf8 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 93b605dadba097c812cb0b12922a979bb60feaf8 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round102-replay-context-ui",
@@ -5310,7 +5310,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T17:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 4406f218a4dcd3a820b1d753ed3009066bbb1aed differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 4406f218a4dcd3a820b1d753ed3009066bbb1aed differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round103-git-sync-apply-gate",
@@ -5329,7 +5329,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T18:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 3013633c237f1ce9d63f1374e759b173378e2640 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 3013633c237f1ce9d63f1374e759b173378e2640 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round104-final-standalone-gate",
@@ -5348,7 +5348,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T19:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 3013633c237f1ce9d63f1374e759b173378e2640 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 3013633c237f1ce9d63f1374e759b173378e2640 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round105-authoritative-reconcile",
@@ -5367,7 +5367,7 @@
       "verifier": "independent verification agent",
       "expiresAt": "2026-11-02T19:30:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 3eaf1260f3d77840917ae1a327c5da195b431b57 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 3eaf1260f3d77840917ae1a327c5da195b431b57 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round106-causal-console-gate-revoke",
@@ -5386,7 +5386,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T04:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 4e06e0a5a8d35e19f86213e1b00b09e49d967d0c differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 4e06e0a5a8d35e19f86213e1b00b09e49d967d0c differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round107-g4-offline-conflict-force-resolve",
@@ -5405,7 +5405,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T11:30:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit fafd4e5 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit fafd4e5 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round108-connector-scenario-deepening",
@@ -5424,7 +5424,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T12:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 9850f6c5c362c0377d91323f8171ab69588940b8 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 9850f6c5c362c0377d91323f8171ab69588940b8 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round109-production-engineering",
@@ -5443,7 +5443,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T12:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 20388380dff8c15ba0841db6d8af0bc2776127ea differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 20388380dff8c15ba0841db6d8af0bc2776127ea differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round11-oee-andon",
@@ -5462,7 +5462,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round110-independent-verification-1",
@@ -5481,7 +5481,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T05:10:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round110-independent-verification-2",
@@ -5500,7 +5500,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T05:10:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round110-independent-verification-3",
@@ -5519,7 +5519,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T05:10:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round110-independent-verification-4",
@@ -5538,7 +5538,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T05:10:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round110-independent-verification-5",
@@ -5557,7 +5557,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T05:10:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round110-independent-verification-6",
@@ -5576,7 +5576,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T05:10:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round110-independent-verification-7",
@@ -5595,7 +5595,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T05:10:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round110-independent-verification-8",
@@ -5614,7 +5614,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T05:10:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round110-independent-verification-9",
@@ -5633,7 +5633,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T05:10:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round110-independent-verification-10",
@@ -5652,7 +5652,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T05:10:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round110-independent-verification-11",
@@ -5671,7 +5671,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T05:10:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round110-independent-verification-12",
@@ -5690,7 +5690,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T05:10:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round110-independent-verification-13",
@@ -5709,7 +5709,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T05:10:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round110-independent-verification-14",
@@ -5728,7 +5728,7 @@
       "verifier": "独立验证 Agent",
       "expiresAt": "2026-11-01T05:10:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 984ff8c28c08e62cdd9a688ab7cc57512500b8f6 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round12-erp-connector",
@@ -5747,7 +5747,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round13-trace-mobile",
@@ -5766,7 +5766,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round14-mobile-workbench-ui",
@@ -5785,7 +5785,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round15-final5-scale-kernel-1",
@@ -5804,7 +5804,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round15-final5-scale-kernel-2",
@@ -5823,7 +5823,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round16-connector-scenario",
@@ -5842,7 +5842,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round17-conformance-replay",
@@ -5861,7 +5861,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round18-fleet-ops-event-catalog",
@@ -5880,7 +5880,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round19-helm-deployment-factory",
@@ -5899,7 +5899,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round2-1",
@@ -5918,7 +5918,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round2-2",
@@ -5937,7 +5937,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round2-3",
@@ -5956,7 +5956,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round2-4",
@@ -5975,7 +5975,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round2-5",
@@ -5994,7 +5994,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round2-6",
@@ -6013,7 +6013,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round2-7",
@@ -6032,7 +6032,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round2-8",
@@ -6051,7 +6051,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round2-9",
@@ -6070,7 +6070,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round2-10",
@@ -6089,7 +6089,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round20-golden-factory",
@@ -6108,7 +6108,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round21-mapping-dsl",
@@ -6127,7 +6127,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round22-fleet-rings-support",
@@ -6146,7 +6146,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round23-otel-resource-attributes",
@@ -6165,7 +6165,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round24-compatibility-catalog",
@@ -6184,7 +6184,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round25-policy-engine",
@@ -6203,7 +6203,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round26-diff-preview",
@@ -6222,7 +6222,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round27-connector-runtime",
@@ -6241,7 +6241,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round28-factory-onboarding",
@@ -6260,7 +6260,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round29-scale-release-review",
@@ -6279,7 +6279,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round3-1",
@@ -6298,7 +6298,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round3-2",
@@ -6317,7 +6317,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round3-3",
@@ -6336,7 +6336,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round3-4",
@@ -6355,7 +6355,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round3-5",
@@ -6374,7 +6374,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round3-6",
@@ -6393,7 +6393,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round3-7",
@@ -6412,7 +6412,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round3-8",
@@ -6431,7 +6431,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round3-9",
@@ -6450,7 +6450,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round3-10",
@@ -6469,7 +6469,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round30-workflow-engine",
@@ -6488,7 +6488,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round31-feature-flags",
@@ -6507,7 +6507,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round32-edge-backfill",
@@ -6526,7 +6526,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round33-twin-package",
@@ -6545,7 +6545,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round34-partner-shadow",
@@ -6564,7 +6564,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round35-deployment-tck",
@@ -6583,7 +6583,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round36-scale-ui",
@@ -6602,7 +6602,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round37-erp-mes-connector",
@@ -6621,7 +6621,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round38-scale-metrics",
@@ -6640,7 +6640,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round39-scenario-uninstall",
@@ -6659,7 +6659,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round4-1",
@@ -6678,7 +6678,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round4-2",
@@ -6697,7 +6697,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round4-3",
@@ -6716,7 +6716,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round4-4",
@@ -6735,7 +6735,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round4-5",
@@ -6754,7 +6754,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round4-6",
@@ -6773,7 +6773,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round4-7",
@@ -6792,7 +6792,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round4-8",
@@ -6811,7 +6811,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round4-9",
@@ -6830,7 +6830,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round4-10",
@@ -6849,7 +6849,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round40-connector-tck",
@@ -6868,7 +6868,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round41-scenario-tck",
@@ -6887,7 +6887,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round42-third-factory-drill",
@@ -6906,7 +6906,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round43-factory-differences",
@@ -6925,7 +6925,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round44-difference-resolve",
@@ -6944,7 +6944,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round45-cross-tenant-tck",
@@ -6963,7 +6963,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round46-differences-ui",
@@ -6982,7 +6982,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round47-workflow-instances",
@@ -7001,7 +7001,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round48-support-bundle-ui",
@@ -7020,7 +7020,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round49-fleet-ui",
@@ -7039,7 +7039,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round5-1",
@@ -7058,7 +7058,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round5-2",
@@ -7077,7 +7077,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round5-3",
@@ -7096,7 +7096,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round5-4",
@@ -7115,7 +7115,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round5-5",
@@ -7134,7 +7134,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round5-6",
@@ -7153,7 +7153,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round5-7",
@@ -7172,7 +7172,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round5-8",
@@ -7191,7 +7191,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round5-9",
@@ -7210,7 +7210,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round5-10",
@@ -7229,7 +7229,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round50-workflow-instances-ui",
@@ -7248,7 +7248,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round51-scenario-ui",
@@ -7267,7 +7267,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round52-operations-capability",
@@ -7286,7 +7286,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round53-sparkplug-openfeature",
@@ -7305,7 +7305,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round54-parameter-registry",
@@ -7324,7 +7324,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round55-aas-codec",
@@ -7343,7 +7343,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round56-rego-policy-as-code",
@@ -7362,7 +7362,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round57-aas-asset-api",
@@ -7381,7 +7381,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round58-opcua-connector",
@@ -7400,7 +7400,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round59-modbus-connector",
@@ -7419,7 +7419,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round6-ingestion-protocol-1",
@@ -7438,7 +7438,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round6-ingestion-protocol-2",
@@ -7457,7 +7457,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round6-ingestion-protocol-3",
@@ -7476,7 +7476,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round60-webhook-connector",
@@ -7495,7 +7495,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round61-csv-file-connector",
@@ -7514,7 +7514,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round62-otel-request-tracing",
@@ -7533,7 +7533,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round63-support-bundle-traces",
@@ -7552,7 +7552,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round64-tracing-ui",
@@ -7571,7 +7571,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round65-release-bundle-rerolled",
@@ -7590,7 +7590,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round66-final-gate-sweep",
@@ -7609,7 +7609,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round67-pilot-readiness-blockers",
@@ -7628,7 +7628,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round68-release-bundle-includes-pilot-gate",
@@ -7647,7 +7647,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round69-final6-work-orchestration-1",
@@ -7666,7 +7666,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round69-final6-work-orchestration-2",
@@ -7685,7 +7685,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round69-final6-work-orchestration-3",
@@ -7704,7 +7704,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round69-final6-work-orchestration-4",
@@ -7723,7 +7723,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round69-final6-work-orchestration-5",
@@ -7742,7 +7742,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round7-ops-readiness-1",
@@ -7761,7 +7761,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round7-ops-readiness-2",
@@ -7780,7 +7780,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round70-iteration-p0-2026-08-04-1",
@@ -7799,7 +7799,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round70-iteration-p0-2026-08-04-2",
@@ -7818,7 +7818,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round70-iteration-p0-2026-08-04-3",
@@ -7837,7 +7837,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round70-iteration-p0-2026-08-04-4",
@@ -7856,7 +7856,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round70-iteration-p0-2026-08-04-5",
@@ -7875,7 +7875,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round71-validation-and-command-map-1",
@@ -7894,7 +7894,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round71-validation-and-command-map-2",
@@ -7913,7 +7913,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round72-mobile-offline-queue",
@@ -7932,7 +7932,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round73-state-guards",
@@ -7951,7 +7951,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round74-scale-idempotency",
@@ -7970,7 +7970,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round75-real-postgres-e2e",
@@ -7989,7 +7989,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round76-mobile-photo-attachments",
@@ -8008,7 +8008,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round77-pwa-installability",
@@ -8027,7 +8027,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round78-offline-photo-queue",
@@ -8046,7 +8046,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round79-release-drill-and-verification",
@@ -8065,7 +8065,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round8-org-scope-hardening-1",
@@ -8084,7 +8084,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round8-org-scope-hardening-2",
@@ -8103,7 +8103,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round8-org-scope-hardening-3",
@@ -8122,7 +8122,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round80-playwright-browser-evidence-1",
@@ -8141,7 +8141,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round80-playwright-browser-evidence-2",
@@ -8160,7 +8160,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round81-request-audit-correlation",
@@ -8179,7 +8179,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round82-error-sanitization",
@@ -8198,7 +8198,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round83-devices-error-state",
@@ -8217,7 +8217,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round84-command-map-query-state",
@@ -8236,7 +8236,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round85-rc4-candidate-bundle",
@@ -8255,7 +8255,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round86-authenticated-browser-test",
@@ -8274,7 +8274,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round87-browser-tests-in-ci",
@@ -8293,7 +8293,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round88-pilot-readiness-rc4",
@@ -8312,7 +8312,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round89-ops-drill-rc4",
@@ -8331,7 +8331,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round9-observability-deploy-artifacts-1",
@@ -8350,7 +8350,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round9-observability-deploy-artifacts-2",
@@ -8369,7 +8369,7 @@
       "verifier": "EWOH independent verification agent",
       "expiresAt": "2026-11-02T05:35:50.594Z",
       "status": "stale",
-      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit dee6503effd7c4cea76dbb1d7ce30054d366f0cb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-1",
@@ -8388,7 +8388,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-2",
@@ -8407,7 +8407,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-3",
@@ -8426,7 +8426,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-4",
@@ -8445,7 +8445,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round90-p0-mobile-orchestration-5",
@@ -8464,7 +8464,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T06:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit db622540292dd06e65f2b3f068cbaf23de9fa649 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round91-review-fixes",
@@ -8483,7 +8483,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T07:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit fac2e6f0cf8b559b04b71857c4fa4aa83165b9e2 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round92-real-pg-e2e-browser",
@@ -8502,7 +8502,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T08:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round93-onboarding-mapping-real-gate-1",
@@ -8521,7 +8521,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T08:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round93-onboarding-mapping-real-gate-2",
@@ -8540,7 +8540,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T08:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit ce93fc022c35779ee0bd9c14bebd0f417ae09d78 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round94-world-replay-unified-timeline",
@@ -8559,7 +8559,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T09:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit d9d7dc546f6684759385dafff2a12c6b657d0ceb differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit d9d7dc546f6684759385dafff2a12c6b657d0ceb differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round95-esop-signoff",
@@ -8578,7 +8578,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T10:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 64d237576133b93e73a44a0cb8ac8495f110b877 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 64d237576133b93e73a44a0cb8ac8495f110b877 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round96-quality-schemes",
@@ -8597,7 +8597,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T11:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit d15fb3410dbd4ea5bd560a9883c64fac7d12b9c5 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round97-slow-query-observability",
@@ -8616,7 +8616,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T12:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 98716f200f10587384c6da881f42906589563b14 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 98716f200f10587384c6da881f42906589563b14 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round98-frontend-performance",
@@ -8635,7 +8635,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T13:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 034b26340137cea24c34550153f8ef67175efa86 differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 034b26340137cea24c34550153f8ef67175efa86 differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     },
     {
       "evidenceId": "EVD-round99-role-workbench",
@@ -8654,7 +8654,7 @@
       "verifier": "AG-00 local gate",
       "expiresAt": "2026-11-02T14:00:00.000Z",
       "status": "stale",
-      "staleReason": "evidence commit 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f differs from code HEAD ac9ff88ca8535ef7606b75072bd6089be9331b0b"
+      "staleReason": "evidence commit 056eae1e28ab02537ab8f2207c2ca61ff02b2e0f differs from code HEAD 4611df46c8fc478a6d3e148ec0dbdd73fe5a1d58"
     }
   ],
   "gates": [

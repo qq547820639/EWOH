@@ -306,7 +306,7 @@ fa66e2ce1360765d98a85f8ebb7d1efa6b1d4acd8ccee343d1cfea18846ea5af  ./docs/data/mu
 74c30f1c74878690aa7535b5f1cbfa52eb86f5f541979aae69e088b6ef78e734  ./docs/delivery/acceptance-evidence.md
 d75812a1a317ebf61514bc4bcc14dcf4577a979de182352358fcdb084ffad1c3  ./docs/delivery/deployment-runbook.md
 42fa135a265b8cac08da8c0b733c8282f529c06f15c7e215323241e04ece6e68  ./docs/delivery/release-checklist.md
-5757318606c78fc26d6fcdff6175de9da8a4f73cfc9227f9ccb38a9b0b36b1c8  ./docs/delivery/release-manifest.yaml
+4b5d6814a3d5a3a2b56a69289cc13fc883ddc42538d65cdfed267cd78d0c7d64  ./docs/delivery/release-manifest.yaml
 c4d7c48a1b73b4703d8e96632a7d0c219d8fa670a5e16072528d0b14eecea447  ./docs/delivery/standalone-product-pack.md
 0a4104abf8bbe2035f4959bc07c2c4289def7d5ad0837d42a438821d32298918  ./docs/delivery/training-plan.md
 3ea9383939b71473480f0df40a56efe020c28127365d195947438b92cf90e1aa  ./docs/deployment/README.md

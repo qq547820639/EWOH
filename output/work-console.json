@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-04T18:45:44.755Z",
-  "sourceRoot": "/Volumes/Extra/CodeProj/EWOH/.codex/artifacts",
+  "generatedAt": "2026-08-05T02:27:06.849Z",
+  "sourceRoot": ".codex/artifacts",
   "criticalPath": "Environment probe -> C1 data / C4 security contracts -> DDL + migrations -> backend shared transaction context -> master-data domains -> task/resource state machines -> scenario integration -> independent verification -> release. Frontend can parallelize on C2/C5 contracts + mocks, but final acceptance is blocked by real API and scenario gates.",
   "counts": {
     "itemCount": 252,
@@ -27,6 +27,52 @@
       "Refining": 1
     },
     "conflicts": []
+  },
+  "evidenceMeta": {
+    "total": 191,
+    "fields": {
+      "commitSha": {
+        "present": 191,
+        "missing": 0,
+        "unknown": 0
+      },
+      "branch": {
+        "present": 191,
+        "missing": 0,
+        "unknown": 0
+      },
+      "buildVersion": {
+        "present": 191,
+        "missing": 0,
+        "unknown": 0
+      },
+      "envFingerprint": {
+        "present": 191,
+        "missing": 0,
+        "unknown": 0
+      },
+      "dependencyVersion": {
+        "present": 191,
+        "missing": 0,
+        "unknown": 0
+      },
+      "testTime": {
+        "present": 191,
+        "missing": 0,
+        "unknown": 0
+      },
+      "verifier": {
+        "present": 191,
+        "missing": 0,
+        "unknown": 0
+      },
+      "expiresAt": {
+        "present": 191,
+        "missing": 0,
+        "unknown": 0
+      }
+    },
+    "complete": true
   },
   "blocked": {
     "blockedItems": [],

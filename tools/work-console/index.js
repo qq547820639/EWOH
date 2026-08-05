@@ -149,6 +149,44 @@ function loadHumanDecisions(artifactsDir) {
   }
 }
 
+const EVIDENCE_META_FIELDS = [
+  'commitSha',
+  'branch',
+  'buildVersion',
+  'envFingerprint',
+  'dependencyVersion',
+  'testTime',
+  'verifier',
+  'expiresAt',
+];
+
+// 审计顶层证据对象的元数据完整性：统计每个字段在所有证据中的缺失/未知数量。
+function computeEvidenceMeta(graph) {
+  const evidence = graph.evidence || [];
+  const total = evidence.length;
+  const fields = {};
+  for (const field of EVIDENCE_META_FIELDS) {
+    let missing = 0;
+    let unknown = 0;
+    for (const entry of evidence) {
+      const value = entry[field];
+      if (value === undefined || value === null || value === '') missing += 1;
+      if (value === 'unknown') unknown += 1;
+    }
+    fields[field] = { present: total - missing, missing, unknown };
+  }
+  return {
+    total,
+    fields,
+    complete: total > 0 && evidence.every((entry) =>
+      EVIDENCE_META_FIELDS.every((field) => {
+        const value = entry[field];
+        return value !== undefined && value !== null && value !== '';
+      }),
+    ),
+  };
+}
+
 function computeGraphSummary(graph, artifactsDir) {
   const blockedResult = computeBlockedItems(graph);
   const missingEvidence = computeMissingEvidence(graph);
@@ -176,6 +214,7 @@ function computeGraphSummary(graph, artifactsDir) {
     sourceRoot: graph.sourceRoot,
     criticalPath: graph.criticalPath,
     counts: graph.summary,
+    evidenceMeta: computeEvidenceMeta(graph),
     blocked: blockedResult,
     missingEvidence,
     gateSummary: {
@@ -279,8 +318,10 @@ function main() {
 
 module.exports = {
   computeBlockedItems,
+  computeEvidenceMeta,
   computeGraphSummary,
   computeMissingEvidence,
+  EVIDENCE_META_FIELDS,
   parseArgs,
 };
 

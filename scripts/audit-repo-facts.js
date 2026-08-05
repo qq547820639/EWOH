@@ -371,10 +371,13 @@ function auditRepoFacts(rootDir) {
 
   // Test-count drift: release-manifest must match the authoritative final counts.
   // Compare only the numeric ratio (x/y or xx/yy tests), ignore descriptive suffix for diff.
+  // Authoritative counts reconciled to current HEAD (production-ux-deepening W8 evidence).
+  // serverJest/clientJest/openapi measured on this HEAD; e2e/browser are environment-gated
+  // counts carried from the last real-PostgreSQL CI run (BLOCKED_BY_ENVIRONMENT locally).
   const TEST_COUNT_DRIFT = {
-    serverJest: '81 suites / 391 tests',
-    clientJest: '15 suites / 50 tests',
-    openapi: '248/248',
+    serverJest: '84 suites / 449 tests',
+    clientJest: '55 suites / 335 tests',
+    openapi: '255/255',
     e2e: '33/33',
     browser: '5/5',
   };

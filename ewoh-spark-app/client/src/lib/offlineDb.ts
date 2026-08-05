@@ -215,6 +215,35 @@ export function backoffDelay(attempt: number): number {
   return Math.min(1000 * 2 ** attempt, 10000);
 }
 
+/**
+ * Distinguishes authentication/session failures (401, token expired) from
+ * transient network errors. Auth failures are not worth retrying — the session
+ * must be refreshed first — so the flush loop treats them as non-retryable.
+ */
+export function isAuthError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const record = error as {
+    response?: { status?: number };
+    code?: string;
+  };
+  if (record.response?.status === 401) {
+    return true;
+  }
+  if (record.code === 'TOKEN_EXPIRED' || record.code === 'AUTH_REQUIRED') {
+    return true;
+  }
+  if (error instanceof Error) {
+    return (
+      error.message.includes('401') ||
+      error.message.includes('TOKEN_EXPIRED') ||
+      error.message.includes('Unauthorized')
+    );
+  }
+  return false;
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -360,6 +389,10 @@ export async function flushOfflineQueue(
           conflict = true;
           break;
         }
+        if (isAuthError(error)) {
+          // Session invalid — retrying won't help until auth is refreshed.
+          break;
+        }
         if (attempts < maxAttempts) {
           await delay(backoffDelay(attempts));
         }
@@ -386,14 +419,15 @@ export async function flushOfflineQueue(
       });
       summary.conflict.push(item.id);
     } else {
+      const authFailure = isAuthError(lastError);
       await pendingStore.put({
         ...item,
         status: 'failed',
         retryCount: (item.retryCount ?? 0) + 1,
         error: {
-          code: 'SYNC_ERROR',
+          code: authFailure ? 'AUTH_REQUIRED' : 'SYNC_ERROR',
           message: pendingActionErrorMessage(lastError),
-          retryable: true,
+          retryable: !authFailure,
         },
         lastAttemptAt: new Date().toISOString(),
       });

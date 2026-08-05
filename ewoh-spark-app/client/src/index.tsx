@@ -8,6 +8,12 @@ import './index.css';
 import { createPortal } from 'react-dom';
 import { Toaster } from '@client/src/components/ui/sonner';
 import { AppContainer } from './lib/AppContainer';
+import {
+  captureUnhandledError,
+  detectWhiteScreen,
+  startWebVitalsCollection,
+} from './lib/observability';
+import { initSessionSecurity } from './lib/sessionSecurity';
 
 const CLIENT_BASE_PATH = process.env.CLIENT_BASE_PATH || '/';
 
@@ -48,4 +54,20 @@ if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
   });
 }
 
+// Wave W8「可观测性 / 安全」— 低风险全局接线：
+// 未处理异常采集、Web Vitals 采集、空闲会话计时重置（用户活动时重置）。
+window.addEventListener('error', (event) => {
+  captureUnhandledError(event.error ?? event.message, 'window.error');
+});
+window.addEventListener('unhandledrejection', (event) => {
+  captureUnhandledError(event.reason, 'unhandledrejection');
+});
+startWebVitalsCollection();
+initSessionSecurity(); // 会话安全：空闲计时随用户活动重置
+
 createRoot(document.getElementById('root')!).render(<MainApp />);
+
+// 挂载后做一次白屏检测（纯观测，不干预渲染）。
+requestAnimationFrame(() => {
+  detectWhiteScreen(document);
+});

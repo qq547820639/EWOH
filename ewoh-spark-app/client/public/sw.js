@@ -1,4 +1,25 @@
-const CACHE_NAME = 'ewoh-shell-v1';
+// EWOH standalone service worker.
+//
+// Cache versioning: bump SW_CACHE_VERSION on any breaking change to the shell
+// asset set or the fetch strategy. This mirrors the pure helpers in
+// client/src/lib/swCache.ts (unit-tested); the SW keeps an inline equivalent
+// because a service worker is a standalone script rather than a bundled module.
+const SW_CACHE_BASE = 'ewoh-shell';
+const SW_CACHE_VERSION = 'v2';
+
+function currentCacheName() {
+  return `${SW_CACHE_BASE}-${SW_CACHE_VERSION}`;
+}
+
+function isManagedCache(name) {
+  return name.startsWith(`${SW_CACHE_BASE}-`);
+}
+
+// Safe update strategy: install the new version immediately, then in `activate`
+// claim clients and delete stale caches from older versions. Requests served by
+// the previous cache keep working until the new version is activated, so a
+// broken update can still serve the last-good shell.
+const CACHE_NAME = currentCacheName();
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -14,7 +35,18 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    (async () => {
+      await self.clients.claim();
+      // Remove stale caches from older versions to avoid unbounded growth.
+      const keys = await caches.keys();
+      await Promise.all(
+        keys
+          .filter((name) => isManagedCache(name) && name !== CACHE_NAME)
+          .map((name) => caches.delete(name)),
+      );
+    })(),
+  );
 });
 
 self.addEventListener('fetch', (event) => {

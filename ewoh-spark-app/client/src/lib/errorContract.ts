@@ -20,6 +20,8 @@ export interface ParsedError {
   message: string;
   /** 差异化错误类别 */
   kind: ErrorKind;
+  /** 是否可安全重试（决定是否展示「重试」按钮） */
+  retryable: boolean;
 }
 
 const KIND_DEFAULT: Record<
@@ -150,6 +152,14 @@ export function parseError(error: unknown): ParsedError {
     typeof errorObj?.message === 'string' && errorObj.message
       ? errorObj.message
       : getRawMessage(error) || fallback.message;
+  // 后端显式声明 retryable 时优先采用；否则按错误类别推断：
+  // 权限/校验类重试无意义，连接/服务器/未知类可安全重试。
+  const retryable =
+    typeof errorObj?.retryable === 'boolean'
+      ? errorObj.retryable
+      : kind === 'permission' || kind === 'validation'
+        ? false
+        : true;
 
-  return { code: rawCode, requestId, recommendedAction, message, kind };
+  return { code: rawCode, requestId, recommendedAction, message, kind, retryable };
 }

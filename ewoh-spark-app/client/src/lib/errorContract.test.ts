@@ -68,4 +68,33 @@ describe('parseError', () => {
     expect(parsed.requestId).toBe('');
     expect(parsed.message).toBe('未知错误');
   });
+
+  it('retryable: 后端显式声明优先，覆盖类别推断', () => {
+    const err = {
+      response: {
+        status: 503,
+        data: {
+          error: {
+            errorCode: 'SERVER_ERROR',
+            message: '稍后可重试',
+            retryable: true,
+          },
+        },
+      },
+    };
+    const parsed = parseError(err);
+    expect(parsed.kind).toBe('server');
+    expect(parsed.retryable).toBe(true);
+  });
+
+  it('retryable: 权限/校验类默认不可重试', () => {
+    expect(parseError({ response: { status: 403, data: { error: { message: 'x' } } } }).retryable).toBe(false);
+    expect(parseError({ response: { status: 422, data: { error: { message: 'x' } } } }).retryable).toBe(false);
+  });
+
+  it('retryable: 连接/服务器/未知类默认可重试', () => {
+    expect(parseError({ code: 'ERR_NETWORK', message: 'Network Error' }).retryable).toBe(true);
+    expect(parseError({ response: { status: 500, data: { error: { message: 'x' } } } }).retryable).toBe(true);
+    expect(parseError(new Error('未知')).retryable).toBe(true);
+  });
 });

@@ -1,27 +1,15 @@
 import { axiosForBackend } from '../lib/http';
+import type { components } from '../types/openapi';
 
-export interface SystemConfigRecord {
-  id: string;
-  configKey: string;
-  configValue: Record<string, unknown>;
-  updatedBy: string | null;
-  updatedAt: string;
-}
+// 契约来源：openapi/ewoh.yaml（npm run gen:openapi）。
+// 类型形状由生成的 client/src/types/openapi.d.ts 提供，不再手写维护。
+export type SystemConfigRecord = components['schemas']['SystemConfig'];
 
-export interface FeatureFlagEvaluationResult {
-  key: string;
-  enabled: boolean;
-  reason: string;
-  variant: string;
-  targetingApplied: boolean;
-}
+export type FeatureFlagEvaluationResult =
+  components['schemas']['FeatureFlagEvaluation'];
 
-export interface FeatureFlagEvaluationContext {
-  orgId?: string;
-  factoryId?: string;
-  upgradeRing?: string;
-  roles?: string[];
-}
+export type FeatureFlagEvaluationContext =
+  components['schemas']['FeatureFlagEvaluateRequest']['context'];
 
 export async function listSystemConfigs(): Promise<SystemConfigRecord[]> {
   const res = await axiosForBackend({ url: '/api/system/config', method: 'GET' });

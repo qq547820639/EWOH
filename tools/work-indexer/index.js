@@ -855,7 +855,9 @@ function indexWorkGraph(artifactsDir, options = {}) {
   const graphData = {
     schema: 'ewoh:///work-graph/v1',
     generatedAt: new Date().toISOString(),
-    sourceRoot: artifactsDir,
+    // 仓库相对路径，避免泄漏开发者机器绝对路径（如 /Volumes/...）。
+    // 当 artifactsDir 位于 root 之外时回退到绝对路径以保留可用信息。
+    sourceRoot: path.relative(root, artifactsDir) || artifactsDir,
     criticalPath: graph.criticalPath,
     summary: {
       itemCount: items.length,

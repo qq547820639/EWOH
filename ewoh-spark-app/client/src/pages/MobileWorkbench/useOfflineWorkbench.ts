@@ -20,6 +20,11 @@ import {
   wouldExceedQuota,
 } from '../../lib/attachmentCompression';
 import { createDraftStore, type DraftStore } from '../../lib/draftStore';
+import {
+  createStorageController,
+  DEFAULT_AUDIT_TTL_MS,
+  SCHEMA_VERSION,
+} from '../../lib/storageController';
 import { uploadFile } from '../../api/files';
 import { forceResolveMobileStep, inspectMobileStep, transitionMobileStep } from '../../api/mobile';
 import { getAuthUser } from '../../lib/auth';
@@ -154,6 +159,32 @@ export function useOfflineWorkbench(
         );
       } catch {
         // Migration is best-effort; never block a session on it.
+      }
+      // Storage controller: advance schema, prune expired audit entries, and
+      // surface quota pressure. Best-effort — never blocks the workbench.
+      const storageController = createStorageController({
+        versionStore: db.syncState,
+        migrations: [{ from: 0, to: SCHEMA_VERSION, migrate: async () => {} }],
+        usageBytes: async () =>
+          estimateAttachmentUsage(await db.attachments.getAll()),
+        capacityBytes: 25 * 1024 * 1024,
+        expiryTargets: [
+          {
+            store: db.auditLog,
+            timestampOf: (entry) =>
+              Date.parse((entry as unknown as { at: string }).at),
+            ttlMs: DEFAULT_AUDIT_TTL_MS,
+          },
+        ],
+      });
+      try {
+        await storageController.migrate();
+        await storageController.purgeExpired();
+        if (await storageController.isQuotaLow()) {
+          toast.warning('离线附件存储空间即将占满，请及时清理或导出');
+        }
+      } catch {
+        // Storage maintenance is best-effort; never block the workbench.
       }
       setDrafts(createDraftStore(db.drafts));
       setReady(true);

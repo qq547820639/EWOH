@@ -229,4 +229,95 @@ describe('offline pending action queue', () => {
     expect(manualSummary.synced).toHaveLength(2);
     expect(syncOne).toHaveBeenCalledTimes(2);
   });
+
+  it('scoped retry of a single failed item does not resend already-synced items', async () => {
+    const storage = createStorage();
+    // A1 已同步（成功后被移除出队列）
+    const a1 = appendPendingAction(
+      {
+        type: 'transition',
+        orderId: 'WO-1',
+        stepId: 'S1',
+        action: 'report',
+      },
+      storage,
+    )[0];
+    // A2 同步失败，留在队列
+    const a2 = appendPendingAction(
+      {
+        type: 'transition',
+        orderId: 'WO-1',
+        stepId: 'S2',
+        action: 'report',
+      },
+      storage,
+    )[1];
+    markPendingAction(a1.id, 'synced', undefined, storage);
+    // 已同步项从持久化队列移除，仅剩失败项
+    removePendingAction(a1.id, storage);
+    markPendingAction(
+      a2.id,
+      'failed',
+      { code: 'SYNC_ERROR', retryable: true },
+      storage,
+    );
+
+    const syncOne = jest.fn().mockResolvedValue(undefined);
+    const queue = readPendingActions(storage);
+    expect(queue.map((item) => item.id)).toEqual([a2.id]);
+
+    // 仅对失败项做单条重试：只同步该失败项，不重复发送已同步项
+    const singleRetry = await flushPendingQueue(
+      syncOne,
+      [queue[0]],
+      storage,
+      { includeManual: true },
+    );
+    expect(singleRetry.synced).toEqual([a2.id]);
+    expect(syncOne).toHaveBeenCalledTimes(1);
+    expect(syncOne.mock.calls[0][0].id).toBe(a2.id);
+  });
+
+  it('"retry all" only retries non-synced items', async () => {
+    const storage = createStorage();
+    // 已同步项（已从队列移除）与失败项
+    const synced = appendPendingAction(
+      {
+        type: 'transition',
+        orderId: 'WO-1',
+        stepId: 'S1',
+        action: 'report',
+      },
+      storage,
+    )[0];
+    const failed = appendPendingAction(
+      {
+        type: 'transition',
+        orderId: 'WO-1',
+        stepId: 'S2',
+        action: 'report',
+      },
+      storage,
+    )[1];
+    markPendingAction(synced.id, 'synced', undefined, storage);
+    removePendingAction(synced.id, storage);
+    markPendingAction(
+      failed.id,
+      'failed',
+      { code: 'SYNC_ERROR', retryable: true },
+      storage,
+    );
+
+    const syncOne = jest.fn().mockResolvedValue(undefined);
+    const summary = await flushPendingQueue(
+      syncOne,
+      readPendingActions(storage),
+      storage,
+      { includeManual: true },
+    );
+    // 仅重试队列中仍存在的失败项
+    expect(summary.synced).toEqual([failed.id]);
+    expect(syncOne).toHaveBeenCalledTimes(1);
+    expect(syncOne.mock.calls[0][0].id).toBe(failed.id);
+  });
 });

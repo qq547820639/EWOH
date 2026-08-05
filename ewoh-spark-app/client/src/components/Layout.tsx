@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowUpRight, LogOut, Menu, X } from 'lucide-react';
 import { EWOH_ROLE_LABELS } from '@client/src/types/ewoh';
@@ -10,6 +10,7 @@ import ContextBar from './app-shell/ContextBar';
 import FavoriteViewsMenu from './app-shell/FavoriteViewsMenu';
 import GlobalSearchCommand from './app-shell/GlobalSearchCommand';
 import OnlineStatusBadge from './app-shell/OnlineStatusBadge';
+import PageSkeleton from './app-shell/PageSkeleton';
 import PendingInbox from './app-shell/PendingInbox';
 import RecentAccessMenu from './app-shell/RecentAccessMenu';
 import { useOfflineSnapshot } from './app-shell/useOfflineSnapshot';
@@ -206,7 +207,9 @@ const Layout = () => {
           </div>
         </div>
         <ContextBar />
-        <Outlet />
+        <Suspense fallback={<PageSkeleton />}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   );

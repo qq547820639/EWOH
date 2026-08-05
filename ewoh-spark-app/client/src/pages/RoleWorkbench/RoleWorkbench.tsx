@@ -32,6 +32,7 @@ import {
   type ColumnDefinition,
   type ListDefinition,
 } from './roleSchema';
+import { prioritySortRows } from './priorityTriage';
 
 const ROLES: Array<{ key: RoleWorkbenchRole; label: string }> = [
   { key: 'operator', label: '操作员' },
@@ -206,7 +207,8 @@ function WorkbenchList({
               list.columns[0],
             sort.dir,
           )
-        : filtered,
+        : // 未显式选择排序时，默认「待处理事项优先」：存在优先级列则按优先级升序前置高优项。
+          prioritySortRows(filtered, list.columns),
     [filtered, sort, list.columns],
   );
   const visible = progressiveSlice(sorted, limit);
