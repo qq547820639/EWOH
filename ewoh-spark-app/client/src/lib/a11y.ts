@@ -133,3 +133,64 @@ export function isReadableText(
 ): boolean {
   return contrastRatio(foreground, background) >= minRatio;
 }
+
+/* ------------------------------------------------------------------ *
+ * 可达焦点（reachable focus）与「不只靠颜色表达状态」的可测试断言
+ * ------------------------------------------------------------------ */
+
+/** 一个可聚焦元素的最小接口（便于在测试中注入）。 */
+export interface FocusableElement {
+  /** 原生 tabIndex（-1 表示脱离 Tab 顺序）。 */
+  tabIndex: number;
+  disabled?: boolean;
+  hidden?: boolean;
+}
+
+/**
+ * 校验一组元素是否构成「完整可触达」的焦点顺序：非空、无 disabled/hidden、
+ * 无 tabIndex=-1，且 tabIndex 序列恰好为 0..n-1（无空洞、无跳号）。
+ * 用于在测试中断言页面 Tab 顺序完整（UX-007 7.1）。
+ */
+export function focusOrderIsContiguous(
+  elements: readonly FocusableElement[],
+): boolean {
+  if (elements.length === 0) return false;
+  const indices = elements.map((el) => el.tabIndex).sort((a, b) => a - b);
+  return indices.every((value, i) => value === i);
+}
+
+/** 返回可触达（非 disabled/hidden、tabIndex>=0）的焦点元素数量。 */
+export function reachableFocusCount(elements: readonly FocusableElement[]): number {
+  return elements.filter(
+    (el) => !el.disabled && !el.hidden && el.tabIndex >= 0,
+  ).length;
+}
+
+/**
+ * 状态指示器的「非颜色信道」描述：颜色之外，是否同时以文本或图标表达同一状态。
+ * 用于 1.4.1 不只靠颜色——测试断言每个状态都带文字/图标，而非仅靠颜色差异。
+ */
+export interface StatusChannel {
+  /** 状态标识（如 'online' / 'failed'）。 */
+  status: string;
+  /** 是否具备文本表达（可见文字）。 */
+  hasText: boolean;
+  /** 是否具备图标/符号表达。 */
+  hasIcon: boolean;
+  /** 是否具备语义（aria）表达。 */
+  hasAria: boolean;
+}
+
+/** 该状态是否不依赖颜色即可被识别（至少有一个非颜色信道）。 */
+export function hasNonColorChannel(channel: StatusChannel): boolean {
+  return channel.hasText || channel.hasIcon || channel.hasAria;
+}
+
+/** 批量断言：每个状态都具备非颜色信道；返回缺失色信道表达的状态列表。 */
+export function statusesMissingNonColorChannel(
+  channels: readonly StatusChannel[],
+): string[] {
+  return channels
+    .filter((channel) => !hasNonColorChannel(channel))
+    .map((channel) => channel.status);
+}

@@ -51,3 +51,19 @@ declare namespace React {
     [key: `--${string}`]: string | number | undefined;
   }
 }
+
+// Network Information API (`navigator.connection`) — optional, not part of the
+// standard lib.dom types. Declared globally so workbench code can read it in a
+// type-safe way instead of casting to `any`.
+interface NetworkInformation {
+  readonly effectiveType?: 'slow-2g' | '2g' | '3g' | '4g';
+  readonly downlink?: number;
+  readonly rtt?: number;
+  readonly saveData?: boolean;
+  addEventListener?: (type: string, cb: () => void) => void;
+  removeEventListener?: (type: string, cb: () => void) => void;
+}
+
+interface Navigator {
+  readonly connection?: NetworkInformation;
+}

@@ -36,6 +36,7 @@ tmp/
 .pytest_cache/
 .ruff_cache/
 test-results/
+ewoh-spark-app/playwright-report/
 # CI/本地生成的测试计数报告（单一事实源运行时生成，永不入库）
 ewoh-spark-app/jest.results.json
 ewoh-spark-app/client/jest.results.json

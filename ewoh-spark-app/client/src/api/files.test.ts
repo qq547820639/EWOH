@@ -8,7 +8,13 @@ jest.mock('../lib/http', () => ({
 const mockAxios = axiosForBackend as jest.Mock;
 
 function fileOf(name: string, type: string, size = 100): File {
-  return new File([new Uint8Array(size)], name, { type });
+  // 为 image/png 注入真实 PNG magic，使流式 magic bytes 校验通过；
+  // 其余类型保持零字节（被基础校验/指纹校验拦截）。
+  const payload = new Uint8Array(size);
+  if (type === 'image/png') {
+    payload.set(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  }
+  return new File([payload], name, { type });
 }
 
 describe('api/files upload entry (uploadGuard wiring)', () => {

@@ -448,6 +448,8 @@ export interface OfflineFlushOptions {
   concurrency?: number;
   /** When provided, the orphaned attachment is removed once its action completes. */
   attachmentStore?: SimpleStore<OfflineAttachment>;
+  /** Restrict flushing to exactly these item ids (e.g. a user-selected batch). */
+  onlyIds?: string[];
 }
 
 /**
@@ -472,6 +474,7 @@ export async function flushOfflineQueue(
   const maxAttempts = options?.maxAttempts ?? MAX_RETRY_ATTEMPTS;
   const concurrency = Math.max(1, options?.concurrency ?? 3);
   const attachmentStore = options?.attachmentStore;
+  const onlyIds = options?.onlyIds;
   const summary: OfflineFlushSummary = {
     synced: [],
     conflict: [],
@@ -481,8 +484,9 @@ export async function flushOfflineQueue(
   const items = await pendingStore.getAll();
   const eligible = items.filter(
     (item) =>
-      includeManual ||
-      (item.status !== 'failed' && item.status !== 'conflict'),
+      (onlyIds ? onlyIds.includes(item.id) : true) &&
+      (includeManual ||
+        (item.status !== 'failed' && item.status !== 'conflict')),
   );
 
   // Group by entity so same-entity items stay serial; distinct entities can run

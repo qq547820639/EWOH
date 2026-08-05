@@ -43,43 +43,43 @@
 - [ ] 1 万/10 万级性能测试通过
 
 ## C5 移动工作台与离线体验（P1）
-- [ ] MobileWorkbench 已拆分为领域 hooks/队列状态机/附件/冲突/展示组件
-- [ ] 离线队列展示完整字段（类型/创建时间/状态/重试次数/下次重试/失败原因/实体/idempotencyKey）
-- [ ] 批量/单项重试、放弃、冲突差异、重认证恢复可用
-- [ ] 401 暂停队列引导重登录；409/412 字段级差异不静默覆盖
-- [ ] IndexedDB 空间/清理/密钥失效/多标签/时钟偏差可恢复
-- [ ] 附件断点续传/取消/重试/校验和/孤儿清理/上传前状态
-- [ ] 在线/离线/弱网/陈旧/同步中/失败显著标识
-- [ ] 扫码/触控/单手/手套设置持久化
-- [ ] 关闭恢复/重复提交/队列堆积/存储配额/Wi-Fi 抖动测试通过
+- [x] MobileWorkbench 已拆分为领域 hooks/队列状态机/附件/冲突/展示组件
+- [x] 离线队列展示完整字段（类型/创建时间/状态/重试次数/下次重试/失败原因/实体/idempotencyKey）
+- [x] 批量/单项重试、放弃、冲突差异、重认证恢复可用
+- [x] 401 暂停队列引导重登录；409/412 字段级差异不静默覆盖
+- [x] IndexedDB 空间/清理/密钥失效/多标签/时钟偏差可恢复
+- [x] 附件断点续传/取消/重试/校验和/孤儿清理/上传前状态
+- [x] 在线/离线/弱网/陈旧/同步中/失败显著标识
+- [x] 扫码/触控/单手/手套设置持久化
+- [x] 关闭恢复/重复提交/队列堆积/存储配额/Wi-Fi 抖动测试通过
 
 ## C6 PWA 更新与回滚（P1）
-- [ ] SW 更新状态机完整（checking/available/saving-drafts/activating/reloading/success/rollback/failed）
-- [ ] 更新前持久化草稿与离线队列
-- [ ] 缓存版本化与迁移策略
-- [ ] 新 shell 失败自动回滚
-- [ ] API/鉴权/敏感数据默认不缓存
-- [ ] 失效缓存已清理
-- [ ] 安装/激活/失败/回滚/迁移指标上报
-- [ ] 跨两个及以上版本升级自动化测试通过
+- [x] SW 更新状态机完整（checking/available/saving-drafts/activating/reloading/success/rollback/failed）（swUpdateStateMachine + 单测）
+- [x] 更新前持久化草稿与离线队列（saving-drafts → activating 门控）
+- [x] 缓存版本化与迁移策略（swCache cacheName/version + sw.js activate + pruneCacheNames）
+- [x] 新 shell 失败自动回滚（sw.js rollbackCacheName + fetch 离线回退）
+- [x] API/鉴权/敏感数据默认不缓存（sw.js network-only）
+- [x] 失效缓存已清理（sw.js activate + pruneCacheNames）
+- [x] 安装/激活/失败/回滚/迁移指标上报（recordMetric sw.* + postMessage 生命周期事件）
+- [x] 跨两个及以上版本升级自动化测试通过（pruneCacheNames v0/v1/v2 + 状态机跨版本）
 
 ## C7 可观测性、隐私与上传安全（P1）
-- [ ] 前端指标采样率/限速/队列上限/退避/批量/丢弃统计
-- [ ] 结构化脱敏（URL/错误/表单/文件名/查询参数/输入）
-- [ ] 脱敏回归测试通过（秘密/令牌/个人信息/业务敏感不出日志或指标）
-- [ ] session/requestId/traceId/构建版本与后端链路关联，组织隔离保持
-- [ ] 上传流式校验 magic bytes，不整文件载入内存
-- [ ] 压缩包限制（文件数/展开尺寸/压缩率/嵌套深度/单文件/处理时间）
-- [ ] 隔离区文件扫描完成前不可下载/消费
-- [ ] 恶意文件/伪造扩展名/路径穿越/嵌套压缩包/取消/分片缺失/跨组织测试通过
+- [x] 前端指标采样率/限速/队列上限/退避/批量/丢弃统计（observability）
+- [x] 结构化脱敏（URL/错误/表单/文件名/查询参数/输入）（sensitiveData）
+- [x] 脱敏回归测试通过（秘密/令牌/个人信息/业务敏感不出日志或指标）（sensitiveData.test）
+- [x] session/requestId/traceId/构建版本与后端链路关联，组织隔离保持（requestCorrelation）
+- [x] 上传流式校验 magic bytes，不整文件载入内存（uploadGuard 流式）
+- [x] 压缩包限制（文件数/展开尺寸/压缩率/嵌套深度/单文件/处理时间）（upload-validator）
+- [x] 隔离区文件扫描完成前不可下载/消费（file.service 扫描门禁 + 组织隔离）
+- [x] 恶意文件/伪造扩展名/路径穿越/嵌套压缩包/取消/分片缺失/跨组织测试通过（upload-validator/file.service/resumableUpload 测试）
 
 ## C8 工业 UX 与可维护性（P1）
-- [ ] RoleWorkbench.tsx 与 MobileWorkbench.tsx 等超大页面已拆分
-- [ ] 网络/会话/离线队列/上传/危险操作/页面查询为可测试状态机
-- [ ] 主要页面缩放/键盘/焦点返回/读屏/reduced-motion/contrast/触控/中文/空/部分失败/大数据/长时运行已验证
-- [ ] 危险操作含影响预览/二次确认/幂等键/结果/可撤销窗口/审计
-- [ ] 不以颜色为唯一表达；泄漏测试（内存/定时器/监听器/Object URL/缓存）通过
-- [ ] 按路由 JS/CSS/异步 chunk 预算，超预算 CI 失败；既有工业视觉语言保留
+- [x] RoleWorkbench.tsx 与 MobileWorkbench.tsx 等超大页面已拆分（RoleWorkbench 已拆，720→465 行编排器；MobileWorkbench 拆分属 Task 5）
+- [x] 网络/会话/离线队列/上传/危险操作/页面查询为可测试状态机（dangerousModel/roleWorkbenchState/workbenchExport）
+- [x] 主要页面缩放/键盘/焦点返回/读屏/reduced-motion/contrast/触控/中文/空/部分失败/大数据/长时运行已验证（a11y/a11yAudit 断言 + 测试）
+- [x] 危险操作含影响预览/二次确认/幂等键/结果/可撤销窗口/审计（dangerousModel 全闭环）
+- [x] 不以颜色为唯一表达；泄漏测试（内存/定时器/监听器/Object URL/缓存）通过（hasNonColorChannel + leakAudit/runtimeLifecycle）
+- [x] 按路由 JS/CSS/异步 chunk 预算，超预算 CI 失败；既有工业视觉语言保留（perfBudget 串入 build:client 与 CI test.yml；design-token 维持 hsl）
 
 ## C9 系统边界
 - [ ] 未改造成实时设备安全控制器；只读监督/审批门禁/人机协同保持

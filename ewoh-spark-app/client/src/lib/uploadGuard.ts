@@ -96,6 +96,115 @@ export function guardUpload(file: {
   );
 }
 
+// ---- 流式 magic bytes 校验（不把大文件整读进内存） ----
+
+/** 嗅探文件头所需的最大字节数：仅读取前 32 字节即可判定常见类型。 */
+export const MAGIC_SNIFF_BYTES = 32;
+
+/** 可流式嗅探的文件形状（Blob/File 的子集）。 */
+export interface SniffableFile {
+  type?: string;
+  size?: number;
+  slice(start: number, end: number): Blob;
+}
+
+/** 无可靠指纹、跳过 magic 校验的类型（文本 / CSV / JSON / 二进制流）。 */
+const MAGIC_OPTIONAL = new Set([
+  'text/plain',
+  'text/csv',
+  'application/json',
+  'application/octet-stream',
+  'model/gltf+json',
+]);
+
+/** 声明 MIME → 期望的 magic 类型（仅对可指纹类型生效）。 */
+function expectedMagicKind(mime: string): string | null {
+  switch (mime) {
+    case 'image/jpeg':
+      return 'image/jpeg';
+    case 'image/png':
+      return 'image/png';
+    case 'image/webp':
+      return 'image/webp';
+    case 'application/pdf':
+      return 'application/pdf';
+    case 'application/zip':
+      return 'application/zip';
+    case 'model/gltf-binary':
+      return 'model/gltf-binary';
+    default:
+      return null;
+  }
+}
+
+function bytesStartWith(head: Uint8Array, magic: number[]): boolean {
+  if (head.length < magic.length) return false;
+  for (let i = 0; i < magic.length; i += 1) {
+    if (head[i] !== magic[i]) return false;
+  }
+  return true;
+}
+
+function latin1(head: Uint8Array, start: number, end: number): string {
+  return String.fromCharCode(...head.slice(start, end));
+}
+
+/** 根据文件头字节识别真实类型；无法可靠指纹时返回 null。 */
+export function detectFileMagic(head: Uint8Array): string | null {
+  if (!head || head.length === 0) return null;
+  if (bytesStartWith(head, [0xff, 0xd8, 0xff])) return 'image/jpeg';
+  if (bytesStartWith(head, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png';
+  if (head.length >= 12 && latin1(head, 0, 4) === 'RIFF' && latin1(head, 8, 12) === 'WEBP') {
+    return 'image/webp';
+  }
+  if (head.length >= 5 && latin1(head, 0, 5) === '%PDF-') return 'application/pdf';
+  if (
+    bytesStartWith(head, [0x50, 0x4b, 0x03, 0x04]) ||
+    bytesStartWith(head, [0x50, 0x4b, 0x05, 0x06]) ||
+    bytesStartWith(head, [0x50, 0x4b, 0x07, 0x08])
+  ) {
+    return 'application/zip';
+  }
+  if (head.length >= 4 && latin1(head, 0, 4) === 'glTF') return 'model/gltf-binary';
+  return null;
+}
+
+/**
+ * 流式读取文件前 MAGIC_SNIFF_BYTES 字节做 magic bytes 校验，绝不把整个大文件
+ * 读入内存。对声明的可指纹类型（图片/PDF/ZIP/glTF）校验头部与声明一致；对
+ * 无指纹类型跳过。返回 ok 表示通过。
+ */
+export async function checkUploadMagic(file: SniffableFile): Promise<UploadCheckResult> {
+  const declared = (file?.type ?? '').trim().toLowerCase();
+  if (MAGIC_OPTIONAL.has(declared)) return { ok: true };
+  const expected = expectedMagicKind(declared);
+  if (!expected) return { ok: true }; // 未知/不可指纹声明：交由组合校验与后端处理。
+  const head = await sniffHead(file, MAGIC_SNIFF_BYTES);
+  const detected = detectFileMagic(head);
+  if (!detected || detected !== expected) {
+    return {
+      ok: false,
+      reason: `content type mismatch: declared ${declared}, detected ${detected ?? 'unknown'}`,
+    };
+  }
+  return { ok: true };
+}
+
+async function sniffHead(file: SniffableFile, bytes: number): Promise<Uint8Array> {
+  const slice = file.slice(0, bytes);
+  const buf = await slice.arrayBuffer();
+  return new Uint8Array(buf);
+}
+
+/** 组合流式校验：基础校验（MIME/扩展名/大小）+ magic bytes。 */
+export async function guardUploadStreaming(
+  file: SniffableFile & { name?: string; size?: number },
+): Promise<UploadCheckResult> {
+  const basic = guardUpload({ name: file.name, type: file.type, size: file.size });
+  if (!basic.ok) return basic;
+  return checkUploadMagic(file);
+}
+
 /** 数量预校验：单次上传不能超过上限。 */
 export function checkUploadCount(count: number): UploadCheckResult {
   if (!Number.isFinite(count) || count < 0) {

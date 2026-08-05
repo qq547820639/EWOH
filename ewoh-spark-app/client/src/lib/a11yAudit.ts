@@ -200,6 +200,35 @@ export const STATIC_RULES: StaticRule[] = [
     description: '交互元素使用 tabIndex={-1}（需确认可通过其他方式聚焦）',
     detect: (source) => /tabIndex\s*=\s*\{?\s*-1\s*\}?/.test(source),
   },
+  {
+    id: 'status-color-only',
+    wcag: '1.4.1',
+    severity: 'serious',
+    description:
+      '状态仅以颜色表达（span/div 带颜色类但既无可见文本，也无图标/aria-label）',
+    detect: (source) => {
+      const colorClass = /(?:text|bg|border)-/;
+      const hasAlt = /aria-label\s*=|aria-describedby\s*=|role\s*=|title\s*=|aria-labelledby\s*=/i;
+      // 配对元素：带颜色类、无替代信道、且无可见文本。
+      const paired = [...source.matchAll(/<(span|div|i)\b([^>]*)>([\s\S]*?)<\/\1>/gi)];
+      const pairedHit = paired.some((match) => {
+        const attrs = match[2];
+        if (!colorClass.test(attrs)) return false;
+        if (hasAlt.test(attrs)) return false;
+        const inner = match[3].replace(/<[^>]+>/g, '').trim();
+        return inner.length === 0;
+      });
+      if (pairedHit) return true;
+      // 自闭合元素（如 <span className="bg-red-600" />）：空元素、带颜色类、无替代信道。
+      const selfClosing = [...source.matchAll(/<(span|div|i)\b([^>]*)\/>/gi)];
+      return selfClosing.some((match) => {
+        const attrs = match[2];
+        if (!colorClass.test(attrs)) return false;
+        if (hasAlt.test(attrs)) return false;
+        return true;
+      });
+    },
+  },
 ];
 
 export interface A11yFinding {

@@ -12,6 +12,7 @@ import {
   getBuffer,
   getBufferSize,
   getConflictRate,
+  getDropStats,
   getFlushOptions,
   getStagedCount,
   isWhiteScreen,
@@ -21,6 +22,7 @@ import {
   recordSyncLatency,
   recordSyncOutcome,
   resetApiStats,
+  resetDropStats,
   resetSyncStats,
   setFlushTransportForTesting,
   setStageStorageForTesting,
@@ -32,6 +34,7 @@ describe('observability', () => {
     clearBuffer();
     resetApiStats();
     resetSyncStats();
+    resetDropStats();
     clearStaged();
     cancelPendingFlush();
     setFlushTransportForTesting(null);
@@ -177,5 +180,60 @@ describe('observability', () => {
     expect(detectDeviceCategory('Mozilla iPhone')).toBe('mobile');
     expect(detectDeviceCategory('Mozilla iPad')).toBe('tablet');
     expect(detectDeviceCategory('Mozilla Windows')).toBe('desktop');
+  });
+
+  it('records queue-overflow drops when the bounded buffer sheds oldest metrics', () => {
+    resetDropStats();
+    for (let i = 0; i < MAX_BUFFER_SIZE + 50; i += 1) {
+      recordMetric(`m${i}`, i);
+    }
+    expect(getBufferSize()).toBe(MAX_BUFFER_SIZE);
+    expect(getDropStats().queueOverflowDropped).toBe(50);
+  });
+
+  it('records sampling drops when a batch is deliberately dropped', async () => {
+    resetDropStats();
+    recordMetric('a', 1);
+    configureFlush({ samplingRate: 0 });
+    setFlushTransportForTesting(async () => {
+      throw new Error('should not be called');
+    });
+    await flush();
+    expect(getDropStats().samplingDropped).toBe(1);
+  });
+
+  it('rate-limits flushes to maxFlushesPerWindow per window and counts drops', async () => {
+    resetDropStats();
+    configureFlush({ maxFlushesPerWindow: 2, rateLimitWindowMs: 60_000 });
+    let sends = 0;
+    setFlushTransportForTesting(async () => {
+      sends += 1;
+    });
+    // 前两次发送正常。
+    recordMetric('a', 1);
+    await flush();
+    recordMetric('b', 1);
+    await flush();
+    expect(sends).toBe(2);
+    // 第三次 flush 触发限速：批次被刻意丢弃并计数，不发送。
+    recordMetric('c', 1);
+    await flush();
+    expect(sends).toBe(2);
+    expect(getDropStats().rateLimitedDropped).toBe(1);
+    expect(getBufferSize()).toBe(0);
+  });
+
+  it('envelope does not leak organization identity (org isolation)', async () => {
+    recordMetric('a', 1);
+    let received: FrontendMetricsEnvelope | null = null;
+    setFlushTransportForTesting(async (env) => {
+      received = env;
+    });
+    await flush();
+    expect(received).not.toBeNull();
+    // 信封不携带组织身份字段（org isolation）：类型上不含，运行时也不应出现。
+    const keys = received ? Object.keys(received) : [];
+    expect(keys).not.toContain('orgId');
+    expect(keys).not.toContain('org');
   });
 });

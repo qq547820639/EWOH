@@ -6,8 +6,12 @@ import {
   UI_ARIA_LABELS,
   contrastRatio,
   eventAccessibleLabel,
+  focusOrderIsContiguous,
+  hasNonColorChannel,
   isReadableText,
+  reachableFocusCount,
   relativeLuminance,
+  statusesMissingNonColorChannel,
 } from './a11y';
 
 describe('a11y labels', () => {
@@ -52,5 +56,55 @@ describe('contrast tokens', () => {
     expect(contrastRatio(FOCUS_RING, 'hsl(220 14% 14%)')).toBeGreaterThanOrEqual(
       MIN_NON_TEXT_CONTRAST,
     );
+  });
+});
+
+describe('reachable focus (可为页面验证的焦点顺序断言)', () => {
+  it('accepts a contiguous natural tab order', () => {
+    expect(
+      focusOrderIsContiguous([
+        { tabIndex: 0 },
+        { tabIndex: 1 },
+        { tabIndex: 2 },
+      ]),
+    ).toBe(true);
+  });
+
+  it('rejects gaps, negatives, or empty order', () => {
+    expect(focusOrderIsContiguous([{ tabIndex: 0 }, { tabIndex: 2 }])).toBe(false);
+    expect(focusOrderIsContiguous([{ tabIndex: -1 }, { tabIndex: 0 }])).toBe(false);
+    expect(focusOrderIsContiguous([])).toBe(false);
+  });
+
+  it('counts only reachable (non-disabled/hidden, tabIndex>=0) elements', () => {
+    expect(
+      reachableFocusCount([
+        { tabIndex: 0 },
+        { tabIndex: 1, disabled: true },
+        { tabIndex: 2, hidden: true },
+        { tabIndex: -1 },
+      ]),
+    ).toBe(1);
+  });
+});
+
+describe('非颜色唯一表达 (1.4.1)', () => {
+  it('accepts a status that carries text or icon in addition to color', () => {
+    expect(hasNonColorChannel({ status: 'failed', hasText: true, hasIcon: false, hasAria: false })).toBe(true);
+    expect(hasNonColorChannel({ status: 'online', hasText: false, hasIcon: true, hasAria: false })).toBe(true);
+    expect(hasNonColorChannel({ status: 'offline', hasText: false, hasIcon: false, hasAria: true })).toBe(true);
+  });
+
+  it('flags a status conveyed only by color', () => {
+    expect(hasNonColorChannel({ status: 'warning', hasText: false, hasIcon: false, hasAria: false })).toBe(false);
+  });
+
+  it('reports every status missing a non-color channel', () => {
+    const missing = statusesMissingNonColorChannel([
+      { status: 'ok', hasText: true, hasIcon: false, hasAria: false },
+      { status: 'warn', hasText: false, hasIcon: false, hasAria: false },
+      { status: 'err', hasText: false, hasIcon: true, hasAria: false },
+    ]);
+    expect(missing).toEqual(['warn']);
   });
 });

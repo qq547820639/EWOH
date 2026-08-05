@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-04T12:50:29.864Z",
+  "generatedAt": "2026-08-05T21:40:14.293Z",
   "environment": {
     "node": "v26.5.1",
     "platform": "darwin"
@@ -10,61 +10,61 @@
         "nodes": 500,
         "edges": 499,
         "runs": 7,
-        "medianMs": 1.03,
-        "minMs": 0.812,
-        "maxMs": 1.151
+        "medianMs": 0.666,
+        "minMs": 0.487,
+        "maxMs": 0.895
       },
       "graph-1000": {
         "nodes": 1000,
         "edges": 999,
         "runs": 7,
-        "medianMs": 1.705,
-        "minMs": 1.434,
-        "maxMs": 9.696
+        "medianMs": 1.575,
+        "minMs": 1.412,
+        "maxMs": 6.932
       },
       "graph-2000": {
         "nodes": 2000,
         "edges": 1999,
         "runs": 7,
-        "medianMs": 4.586,
-        "minMs": 4.123,
-        "maxMs": 20.274
+        "medianMs": 3.375,
+        "minMs": 3.082,
+        "maxMs": 15.898
       },
       "graph-3000": {
         "nodes": 3000,
         "edges": 2999,
         "runs": 7,
-        "medianMs": 8.537,
-        "minMs": 8.074,
-        "maxMs": 9.055
+        "medianMs": 7.644,
+        "minMs": 6.567,
+        "maxMs": 8.629
       },
       "graph-3000-trace-upstream": {
         "nodes": 3000,
         "runs": 7,
-        "medianMs": 20.896,
-        "minMs": 20.283,
-        "maxMs": 24.355
+        "medianMs": 21.429,
+        "minMs": 19.585,
+        "maxMs": 23.409
       },
       "graph-3000-trace-downstream": {
         "nodes": 3000,
         "runs": 7,
-        "medianMs": 36.042,
-        "minMs": 23.862,
-        "maxMs": 43.575
+        "medianMs": 27.296,
+        "minMs": 26.603,
+        "maxMs": 33.664
       },
       "graph-3000-exception-backflow": {
         "nodes": 3000,
         "runs": 7,
-        "medianMs": 0.652,
-        "minMs": 0.424,
-        "maxMs": 1.851
+        "medianMs": 0.588,
+        "minMs": 0.446,
+        "maxMs": 1.229
       },
       "graph-3000-stage-collapse": {
         "nodes": 3000,
         "runs": 7,
-        "medianMs": 0.139,
-        "minMs": 0.114,
-        "maxMs": 0.593
+        "medianMs": 0.104,
+        "minMs": 0.095,
+        "maxMs": 0.425
       }
     },
     "progressiveList": {
@@ -73,14 +73,14 @@
       "runs": 200,
       "medianMs": 0,
       "minMs": 0,
-      "maxMs": 0.091
+      "maxMs": 0.031
     },
     "offlineQueue": {
       "queueCount": 100,
       "runs": 5,
-      "medianMs": 22.618,
-      "minMs": 22.044,
-      "maxMs": 23.739
+      "medianMs": 23.096,
+      "minMs": 20.954,
+      "maxMs": 25.352
     }
   }
 }

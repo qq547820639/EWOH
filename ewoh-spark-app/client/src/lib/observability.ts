@@ -59,6 +59,10 @@ export interface FlushOptions {
   backoffMaxMs?: number;
   /** 是否对退避时间加抖动，避免惊群。 */
   jitter?: boolean;
+  /** 速率限制：每个 rateLimitWindowMs 窗口内最多触发 maxFlushesPerWindow 次发送。 */
+  maxFlushesPerWindow?: number;
+  /** 速率限制窗口（ms）。 */
+  rateLimitWindowMs?: number;
 }
 
 const DEFAULT_FLUSH_OPTIONS: FlushOptions = {
@@ -67,6 +71,8 @@ const DEFAULT_FLUSH_OPTIONS: FlushOptions = {
   backoffBaseMs: 1000,
   backoffMaxMs: 60_000,
   jitter: true,
+  maxFlushesPerWindow: 60,
+  rateLimitWindowMs: 60_000,
 };
 
 const buffer: MetricRecord[] = [];
@@ -209,6 +215,55 @@ export function clearStaged(): void {
   }
 }
 
+// ---- 丢弃统计 ----
+/** 因队列上限 / 采样 / 速率限制而丢弃的指标条数（可查询，用于本地诊断）。 */
+export interface DropStats {
+  queueOverflowDropped: number;
+  samplingDropped: number;
+  rateLimitedDropped: number;
+}
+
+let dropStats: DropStats = {
+  queueOverflowDropped: 0,
+  samplingDropped: 0,
+  rateLimitedDropped: 0,
+};
+
+/** 返回丢弃统计的只读快照。 */
+export function getDropStats(): DropStats {
+  return { ...dropStats };
+}
+
+/** 重置丢弃统计与限速窗口（测试 / 登出 / 诊断时调用）。 */
+export function resetDropStats(): void {
+  dropStats = { queueOverflowDropped: 0, samplingDropped: 0, rateLimitedDropped: 0 };
+  flushTimestamps.length = 0;
+}
+
+// ---- 速率限制（单位时间最多发送 N 次） ----
+/** 近一个窗口内已发生的发送时刻（epoch ms），用于滑动窗口限速。 */
+const flushTimestamps: number[] = [];
+
+function pruneFlushWindow(now: number): void {
+  const windowMs = flushOptions.rateLimitWindowMs ?? DEFAULT_FLUSH_OPTIONS.rateLimitWindowMs!;
+  while (flushTimestamps.length > 0 && now - flushTimestamps[0] > windowMs) {
+    flushTimestamps.shift();
+  }
+}
+
+/** 当前是否已超过限速窗口内的发送次数上限。 */
+function isRateLimited(): boolean {
+  const max = flushOptions.maxFlushesPerWindow ?? DEFAULT_FLUSH_OPTIONS.maxFlushesPerWindow!;
+  pruneFlushWindow(Date.now());
+  return flushTimestamps.length >= max;
+}
+
+/** 记录一次实际发送发生的时刻。 */
+function recordSendTime(): void {
+  pruneFlushWindow(Date.now());
+  flushTimestamps.push(Date.now());
+}
+
 /** 记录一条指标到有界缓冲。 */
 export function recordMetric(
   name: string,
@@ -217,7 +272,9 @@ export function recordMetric(
 ): void {
   buffer.push({ name, value, tags, at: Date.now() });
   if (buffer.length > MAX_BUFFER_SIZE) {
-    buffer.splice(0, buffer.length - MAX_BUFFER_SIZE);
+    const dropped = buffer.length - MAX_BUFFER_SIZE;
+    buffer.splice(0, dropped);
+    dropStats.queueOverflowDropped += dropped;
   }
 }
 
@@ -251,6 +308,13 @@ export async function flush(): Promise<number> {
   }
   if (!isSampled()) {
     // 采样丢弃为刻意降采样，允许清空这批。
+    dropStats.samplingDropped += payload.length;
+    clearBuffer();
+    return payload.length;
+  }
+  if (isRateLimited()) {
+    // 速率限制为刻意节流（单位时间最多发送 N 次），超出窗口的批次被丢弃并计数。
+    dropStats.rateLimitedDropped += payload.length;
     clearBuffer();
     return payload.length;
   }
@@ -269,6 +333,7 @@ export async function flush(): Promise<number> {
       });
     }
     // 发送成功后才允许清空本地缓冲。
+    recordSendTime();
     clearBuffer();
     retryCount = 0;
     if (backoffTimer) {

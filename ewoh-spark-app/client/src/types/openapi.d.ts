@@ -3921,6 +3921,133 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scale/onboarding/sample-factory/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the sample factory onboarding status */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sample factory status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SampleFactoryStatus"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scale/onboarding/sample-factory/init": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Initialize the sample factory (re-runnable) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SampleFactoryInitRequest"];
+                };
+            };
+            responses: {
+                /** @description Sample factory init result */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SampleFactoryInitResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scale/onboarding/sample-factory/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear the sample factory demo data */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SampleFactoryClearRequest"];
+                };
+            };
+            responses: {
+                /** @description Sample factory clear result */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SampleFactoryClearResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scale/fleet/support-bundle": {
         parameters: {
             query?: never;
@@ -11842,6 +11969,44 @@ export interface components {
         };
         PartnerShadowRunResult: components["schemas"]["OnboardingRunResult"] & {
             partner?: boolean;
+        };
+        SampleFactoryStatus: {
+            /** @enum {string} */
+            status?: "ready" | "BLOCKED";
+            /** @enum {string} */
+            reason?: "DATABASE_UNAVAILABLE";
+            prefix?: string;
+            dbAvailable?: boolean;
+            demoProfileCount?: number;
+            demoProfiles?: components["schemas"]["SampleFactoryProfile"][];
+            guardConfigured?: boolean;
+            actorId?: string;
+        };
+        SampleFactoryProfile: {
+            profileId?: string;
+            factoryName?: string;
+        };
+        SampleFactoryInitRequest: {
+            token: string;
+            factoryName?: string;
+        };
+        SampleFactoryInitResult: {
+            /** @enum {string} */
+            status?: "created";
+            factoryName?: string;
+            profileId?: string;
+            templateId?: string;
+            reused?: boolean;
+        };
+        SampleFactoryClearRequest: {
+            token: string;
+        };
+        SampleFactoryClearResult: {
+            /** @enum {string} */
+            status?: "cleared";
+            removed?: boolean;
+            profileIds?: string[];
+            prefix?: string;
         };
         SupportBundleResult: {
             bundleId?: string;

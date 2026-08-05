@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-05T21:06:08.429Z",
+  "generatedAt": "2026-08-05T21:50:44.602Z",
   "dist": "/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/dist/client",
   "environment": {
     "node": "v26.5.1",
@@ -9,11 +9,11 @@
     "entryScripts": [
       {
         "rel": "assets/index.js",
-        "rawKB": 561.8193359375,
-        "gzipKB": 173.7060546875
+        "rawKB": 564.849609375,
+        "gzipKB": 174.7138671875
       }
     ],
-    "totalGzipKB": 173.71,
+    "totalGzipKB": 174.71,
     "limitKB": 420,
     "toleranceKB": 40,
     "effectiveLimitKB": 460,
@@ -30,8 +30,8 @@
     "overBudget": []
   },
   "chunks": {
-    "total": 108,
-    "asyncTotal": 107,
+    "total": 132,
+    "asyncTotal": 131,
     "overRouteLimit": [],
     "top": [
       {
@@ -45,14 +45,19 @@
         "gzipKB": 272.93
       },
       {
+        "file": "CommandMap-Bp8ZJtJH.js",
+        "rawKB": 1009.05,
+        "gzipKB": 272.84
+      },
+      {
         "file": "index.standalone-BrW-a5L0.js",
         "rawKB": 557.76,
         "gzipKB": 181.52
       },
       {
         "file": "index.js",
-        "rawKB": 561.82,
-        "gzipKB": 173.71
+        "rawKB": 564.85,
+        "gzipKB": 174.71
       },
       {
         "file": "vendor-ui-CR8PtM5a.js",
@@ -75,9 +80,19 @@
         "gzipKB": 88.81
       },
       {
+        "file": "Devices-Dlk0Pze7.js",
+        "rawKB": 332.83,
+        "gzipKB": 88.81
+      },
+      {
         "file": "WorkOrchestration-CeCWQpmp.js",
         "rawKB": 142.47,
         "gzipKB": 36.81
+      },
+      {
+        "file": "WorkOrchestration-DSvKb6L5.js",
+        "rawKB": 142.56,
+        "gzipKB": 36.8
       },
       {
         "file": "WorkOrchestration-BoHHMCLh.js",
@@ -88,6 +103,11 @@
         "file": "vendor-anim-DnwAN1sl.js",
         "rawKB": 111.17,
         "gzipKB": 36.6
+      },
+      {
+        "file": "MobileWorkbench-BDe3y2qn.js",
+        "rawKB": 43.9,
+        "gzipKB": 13.78
       },
       {
         "file": "MobileWorkbench-EvtzFSwz.js",
@@ -110,29 +130,9 @@
         "gzipKB": 11.31
       },
       {
-        "file": "drawer-CuAnLkOz.js",
-        "rawKB": 30.93,
-        "gzipKB": 9.29
-      },
-      {
-        "file": "RoleWorkbench-p17dHNHT.js",
-        "rawKB": 20.93,
-        "gzipKB": 7.69
-      },
-      {
-        "file": "RoleWorkbench-CnNXMSxA.js",
-        "rawKB": 20.97,
-        "gzipKB": 7.68
-      },
-      {
-        "file": "Operations-Dv8R2ucq.js",
-        "rawKB": 26.26,
-        "gzipKB": 5.87
-      },
-      {
-        "file": "errorContract-B_jc7jyn.js",
-        "rawKB": 14.71,
-        "gzipKB": 5.87
+        "file": "RoleWorkbench-CY6YQ5mv.js",
+        "rawKB": 31.84,
+        "gzipKB": 11
       }
     ]
   }

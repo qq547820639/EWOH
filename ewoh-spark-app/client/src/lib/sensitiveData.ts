@@ -13,6 +13,7 @@ export const SENSITIVE_FIELD_PATTERNS: RegExp[] = [
   /token/i,
   /password/i,
   /passwd/i,
+  /passphrase/i,
   /secret/i,
   /credential/i,
   /authorization/i,
@@ -20,6 +21,11 @@ export const SENSITIVE_FIELD_PATTERNS: RegExp[] = [
   /access[_-]?token/i,
   /refresh[_-]?token/i,
   /client[_-]?secret/i,
+  // 个人信息（PII）：证件号 / 手机号 / 邮箱 / 银行卡号。
+  /idcard|id_card|identity[_-]?card|national[_-]?id|passport|ssn/i,
+  /\bphone\b|\bmobile\b|phone[_-]?number|mobile[_-]?number|telephone/i,
+  /\bemail\b|e[-_]?mail/i,
+  /bank[_-]?card|credit[_-]?card|card[_-]?number/i,
 ];
 
 /** 判断某个字段名是否属于敏感字段（如 token / password / secret）。 */
@@ -32,6 +38,44 @@ const MASK = '***REDACTED***';
 /** 对单个值脱敏：字符串/数字/布尔统一替换为掩码。 */
 export function redactValue(_value: unknown): unknown {
   return MASK;
+}
+
+/** 查询参数中会被脱敏的键名（口令/令牌/密钥/授权凭证等）。 */
+const SENSITIVE_QUERY_PARAM = /(passphrase|password|passwd|token|secret|credential|authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret)/i;
+
+/**
+ * 对一段查询串（"?" 开头或裸参数字段）中的敏感键值做结构化脱敏。
+ * 保留非敏感参数，仅替换敏感键的取值。
+ */
+export function redactSensitiveQueryString(query: string): string {
+  if (!query) return query;
+  const prefix = query.startsWith('?') ? '?' : '';
+  const params = new URLSearchParams(prefix ? query.slice(1) : query);
+  for (const key of Array.from(params.keys())) {
+    if (SENSITIVE_QUERY_PARAM.test(key)) {
+      params.set(key, MASK);
+    }
+  }
+  return prefix + params.toString();
+}
+
+/**
+ * 对 URL（绝对或相对）中的敏感查询参数做结构化脱敏，避免口令/令牌/密钥随
+ * URL 进入日志或指标。无查询参数的 URL 原样返回。
+ */
+export function redactUrl(url: string): string {
+  if (!url) return url;
+  try {
+    // 绝对 URL（http/https/...）可用 URL 解析。
+    const parsed = new URL(url);
+    parsed.search = redactSensitiveQueryString(parsed.search);
+    return parsed.toString();
+  } catch {
+    // 相对路径（如 "/api/foo?token=abc"）无法用 URL 解析，退化为对查询串脱敏。
+    const qIndex = url.indexOf('?');
+    if (qIndex < 0) return url;
+    return url.slice(0, qIndex) + redactSensitiveQueryString(url.slice(qIndex));
+  }
 }
 
 /**

@@ -9,9 +9,28 @@
  * browser ServiceWorker API.
  */
 import { shouldServeContract, API_CONTRACT_VERSION } from './swCache';
+import { recordMetric } from './observability';
+import {
+  createSwUpdateStateMachine,
+  type SwUpdateStateMachine,
+} from './swUpdateStateMachine';
 
 export const SW_URL = '/sw.js';
 export const SW_MESSAGE_UPDATE_AVAILABLE = 'EWOH_SW_UPDATE_AVAILABLE';
+
+/** Lifecycle messages the service worker posts back to the page for metrics. */
+export const SW_MESSAGE_INSTALLED = 'EWOH_SW_INSTALLED';
+export const SW_MESSAGE_ACTIVATED = 'EWOH_SW_ACTIVATED';
+export const SW_MESSAGE_ROLLBACK = 'EWOH_SW_ROLLBACK';
+
+/** Report a `sw.*` observability metric (setup/activate/failure/rollback/migration). */
+function reportSwMetric(
+  name: string,
+  value: number,
+  tags?: Record<string, string | number | boolean>,
+): void {
+  recordMetric(`sw.${name}`, value, tags);
+}
 
 export interface PendingWork {
   drafts: number;
@@ -76,6 +95,8 @@ export interface SwUpdateController {
   safeUpdate(): Promise<UpdateDecision>;
   /** "稍后更新": leave the waiting worker idle; it activates on next reload. */
   deferUpdate(): void;
+  /** Current state of the update flow state machine (diagnostics). */
+  getState(): string;
 }
 
 function isSwSupported(): boolean {
@@ -85,33 +106,57 @@ function isSwSupported(): boolean {
 /**
  * Registers the service worker and wires the update flow. Pure decision logic
  * (`updateSafety`) is used to guard forced reloads; the browser API calls are
- * isolated behind this function so the live wiring stays thin.
+ * isolated behind this function so the live wiring stays thin. The flow is
+ * driven through an explicit, unit-testable state machine
+ * (`createSwUpdateStateMachine`), and every step that can fail is reported as a
+ * `sw.*` observability metric.
  */
 export function registerServiceWorker(
   options: SwRegistrarOptions = {},
 ): SwUpdateController {
+  const machine: SwUpdateStateMachine = createSwUpdateStateMachine();
+
   const controller: SwUpdateController = {
+    getState: () => machine.getState(),
     async safeUpdate() {
       if (!isSwSupported()) {
+        machine.dispatch({ type: 'FAIL', reason: 'unsupported' });
+        reportSwMetric('update.failed', 1, { reason: 'unsupported' });
         return { applied: false, reason: '当前环境不支持 Service Worker。' };
       }
       const registration = await navigator.serviceWorker.getRegistration(SW_URL);
       if (!registration) {
+        machine.dispatch({ type: 'FAIL', reason: 'no-registration' });
+        reportSwMetric('update.failed', 1, { reason: 'no-registration' });
         return { applied: false, reason: '未找到已注册的 Service Worker。' };
       }
-      // Persist drafts first so nothing is lost on reload.
+      // 更新前先持久化草稿与离线队列；保存失败则中止，绝不进入 activating。
+      machine.dispatch('SAVING_START');
       if (options.saveDrafts) {
-        await options.saveDrafts();
+        try {
+          await options.saveDrafts();
+        } catch {
+          machine.dispatch({ type: 'SAVE_FAILED', reason: 'save-drafts' });
+          reportSwMetric('update.failed', 1, { reason: 'save-drafts' });
+          return { applied: false, reason: '草稿/离线队列保存失败，已中止更新。' };
+        }
       }
       const work = options.getPendingWork ? await options.getPendingWork() : { drafts: 0, pendingActions: 0 };
       const safety = updateSafety(work);
       if (!safety.safe) {
+        machine.dispatch({ type: 'FAIL', reason: 'safety' });
+        reportSwMetric('update.failed', 1, { reason: 'safety' });
         return { applied: false, reason: safety.reason };
       }
+      // 草稿与离线队列已安全持久化 → 进入 activating。
+      machine.dispatch('DRAFTS_SAVED');
       const waiting = registration.waiting || registration.installing;
       if (!waiting) {
+        machine.dispatch({ type: 'FAIL', reason: 'no-waiting' });
+        reportSwMetric('update.failed', 1, { reason: 'no-waiting' });
         return { applied: false, reason: '没有待激活的新版本。' };
       }
+      machine.dispatch('ACTIVATING');
       waiting.postMessage({ type: 'SKIP_WAITING' });
       return { applied: true, reason: '' };
     },
@@ -133,6 +178,8 @@ export function registerServiceWorker(
         if (!newWorker) {
           return;
         }
+        // A new version is being checked for / installed.
+        machine.dispatch('UPDATE_FOUND');
         newWorker.addEventListener('statechange', () => {
           // A new version is installed and waiting while a controller already
           // exists — surface the notice so the user can choose to apply it.
@@ -147,10 +194,39 @@ export function registerServiceWorker(
     },
   );
 
+  // The waiting worker taking control means the new shell activated successfully.
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    machine.dispatch('ACTIVATED');
+    reportSwMetric('activate', 1);
+  });
+
   navigator.serviceWorker.addEventListener('message', (event) => {
-    const data = event.data as { type?: string; version?: string } | undefined;
+    const data = event.data as
+      | { type?: string; version?: string; from?: string; to?: string; removed?: string[] }
+      | undefined;
     if (data?.type === SW_MESSAGE_UPDATE_AVAILABLE) {
       options.onUpdateAvailable?.(data.version ?? '');
+      return;
+    }
+    // SW lifecycle events -> observability metrics (sw.*).
+    if (data?.type === SW_MESSAGE_INSTALLED) {
+      reportSwMetric('install', 1, { version: data.version ?? '' });
+      return;
+    }
+    if (data?.type === SW_MESSAGE_ACTIVATED) {
+      reportSwMetric('activate', 1, { version: data.version ?? '' });
+      // Cache migration cleanup report: number of stale caches pruned.
+      if (Array.isArray(data.removed) && data.removed.length > 0) {
+        reportSwMetric('migration', data.removed.length, {
+          version: data.version ?? '',
+          removed: data.removed.join(','),
+        });
+      }
+      return;
+    }
+    if (data?.type === SW_MESSAGE_ROLLBACK) {
+      machine.dispatch('ROLLBACK');
+      reportSwMetric('rollback', 1, { from: data.from ?? '', to: data.to ?? '' });
     }
   });
 

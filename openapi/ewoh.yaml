@@ -2594,6 +2594,76 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scale/onboarding/sample-factory/status:
+    get:
+      tags:
+        - scale
+      summary: Read the sample factory onboarding status
+      responses:
+        '200':
+          description: Sample factory status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SampleFactoryStatus'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/onboarding/sample-factory/init:
+    post:
+      tags:
+        - scale
+      summary: Initialize the sample factory (re-runnable)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SampleFactoryInitRequest'
+      responses:
+        '201':
+          description: Sample factory init result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SampleFactoryInitResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scale/onboarding/sample-factory/clear:
+    post:
+      tags:
+        - scale
+      summary: Clear the sample factory demo data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SampleFactoryClearRequest'
+      responses:
+        '201':
+          description: Sample factory clear result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SampleFactoryClearResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scale/fleet/support-bundle:
     post:
       tags:
@@ -10834,6 +10904,85 @@ components:
           properties:
             partner:
               type: boolean
+    SampleFactoryStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - ready
+            - BLOCKED
+        reason:
+          type: string
+          enum:
+            - DATABASE_UNAVAILABLE
+        prefix:
+          type: string
+        dbAvailable:
+          type: boolean
+        demoProfileCount:
+          type: integer
+        demoProfiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/SampleFactoryProfile'
+        guardConfigured:
+          type: boolean
+        actorId:
+          type: string
+    SampleFactoryProfile:
+      type: object
+      properties:
+        profileId:
+          type: string
+        factoryName:
+          type: string
+    SampleFactoryInitRequest:
+      type: object
+      properties:
+        token:
+          type: string
+        factoryName:
+          type: string
+      required:
+        - token
+    SampleFactoryInitResult:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - created
+        factoryName:
+          type: string
+        profileId:
+          type: string
+        templateId:
+          type: string
+        reused:
+          type: boolean
+    SampleFactoryClearRequest:
+      type: object
+      properties:
+        token:
+          type: string
+      required:
+        - token
+    SampleFactoryClearResult:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - cleared
+        removed:
+          type: boolean
+        profileIds:
+          type: array
+          items:
+            type: string
+        prefix:
+          type: string
     SupportBundleResult:
       type: object
       properties:

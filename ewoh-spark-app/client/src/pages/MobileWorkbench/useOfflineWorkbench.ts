@@ -43,6 +43,8 @@ export interface OfflineWorkbench {
   ready: boolean;
   isOnline: boolean;
   syncing: boolean;
+  /** True when a 401 paused the queue; the user must re-authenticate. */
+  authPaused: boolean;
   pendingActions: StoredPendingAction[];
   pendingCount: number;
   lastSyncAt: string | null;
@@ -61,6 +63,8 @@ export interface OfflineWorkbench {
     note?: string;
   }) => Promise<void>;
   retryPending: (id: string) => Promise<void>;
+  /** Retries a user-selected set of pending actions in one batch. */
+  batchRetry: (ids: string[]) => Promise<void>;
   discardPending: (id: string) => Promise<void>;
   resolveConflict: (
     id: string,
@@ -136,6 +140,7 @@ export function useOfflineWorkbench(
     () => (typeof navigator === 'undefined' ? true : navigator.onLine),
   );
   const [syncing, setSyncing] = useState(false);
+  const [authPaused, setAuthPaused] = useState(false);
   const [pendingActions, setPendingActions] = useState<StoredPendingAction[]>([]);
   const [lastSyncAt, setLastSyncAtState] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<DraftStore | null>(null);
@@ -266,12 +271,15 @@ export function useOfflineWorkbench(
         setSyncing(false);
         await refreshPending();
         if (result.authRequired) {
-          // 401 → 暂停队列并引导重新认证；认证恢复后随 online 事件继续。
+          // 401 → 暂停队列并引导重新认证；认证恢复后又一个 online 事件触发
+          // 自动 flush，队列择 safe 地从暂停态恢复。
+          setAuthPaused(true);
           toast.error('登录已失效，离线操作已暂停', {
             description: '请重新登录后继续同步，未同步的操作会安全保留。',
           });
           return;
         }
+        setAuthPaused(false);
         if (result.synced.length > 0) {
           toast.success(`已同步 ${result.synced.length} 项离线操作`);
           optionsRef.current?.onSynced?.();
@@ -423,8 +431,8 @@ export function useOfflineWorkbench(
     [personId, recordAudit, refreshPending],
   );
 
-  const flushItem = useCallback(
-    async (item: StoredPendingAction, includeManual: boolean) => {
+  const flushSelected = useCallback(
+    async (ids: string[], includeManual: boolean) => {
       const db = dbRef.current;
       if (!db) {
         return;
@@ -433,6 +441,7 @@ export function useOfflineWorkbench(
       const syncOne = await buildSyncOne(db);
       const result = await flushOfflineQueue(syncOne, db.pendingActions, {
         includeManual,
+        onlyIds: ids,
         attachmentStore: db.attachments,
       });
       await setLastSyncAt(db.syncState);
@@ -457,7 +466,7 @@ export function useOfflineWorkbench(
       if (!item) {
         return;
       }
-      const result = await flushItem(item, true);
+      const result = await flushSelected([id], true);
       if (result?.synced.length) {
         toast.success(`已重试同步：${item.stepId}`);
         optionsRef.current?.onSynced?.();
@@ -467,7 +476,34 @@ export function useOfflineWorkbench(
         toast.error(`重试失败：${item.stepId}`);
       }
     },
-    [isOnline, flushItem],
+    [isOnline, flushSelected],
+  );
+
+  const batchRetry = useCallback(
+    async (ids: string[]) => {
+      const db = dbRef.current;
+      if (!db || ids.length === 0) {
+        return;
+      }
+      if (!isOnline) {
+        toast.error('当前处于离线状态，无法重试');
+        return;
+      }
+      const result = await flushSelected(ids, true);
+      if (result) {
+        if (result.synced.length > 0) {
+          toast.success(`已重试同步 ${result.synced.length} 项离线操作`);
+          optionsRef.current?.onSynced?.();
+        }
+        if (result.conflict.length > 0) {
+          toast.error(`${result.conflict.length} 项仍存在状态冲突`);
+        }
+        if (result.failed.length > 0) {
+          toast.error(`${result.failed.length} 项重试失败`);
+        }
+      }
+    },
+    [isOnline, flushSelected],
   );
 
   const discardPending = useCallback(
@@ -628,6 +664,7 @@ export function useOfflineWorkbench(
     ready,
     isOnline,
     syncing,
+    authPaused,
     pendingActions,
     pendingCount: pendingActions.length,
     lastSyncAt,
@@ -635,6 +672,7 @@ export function useOfflineWorkbench(
     queueTransition,
     queueInspection,
     retryPending,
+    batchRetry,
     discardPending,
     resolveConflict,
     recordAudit,

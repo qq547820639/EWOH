@@ -158,7 +158,7 @@ describe('upload-validator archive bombs', () => {
       declaredMime: 'application/zip',
     });
     expect(result.ok).toBe(false);
-    expect(result.reason).toContain('archive bomb');
+    expect(result.reason).toContain('archive rejected');
   });
 });
 

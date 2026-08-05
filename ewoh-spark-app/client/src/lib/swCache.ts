@@ -46,6 +46,26 @@ export function staleCacheNames(
   return keys.filter((name) => isManagedCache(name, base) && name !== current);
 }
 
+/**
+ * Managed cache names to prune during activation. The current version and the
+ * previous stable shell (rollback target) are retained; only versions older
+ * than the previous one are removed. Mirrors the SW `activate` cleanup so the
+ * multi-version upgrade policy is pure and unit-testable.
+ */
+export function pruneCacheNames(
+  keys: string[],
+  base: string = SW_CACHE_BASE,
+  version: string = SW_CACHE_VERSION,
+): string[] {
+  const current = cacheName(base, version);
+  const rollback = rollbackCacheName(keys, current, base);
+  const keep = new Set([current]);
+  if (rollback) {
+    keep.add(rollback);
+  }
+  return keys.filter((name) => isManagedCache(name, base) && !keep.has(name));
+}
+
 // ---------------------------------------------------------------------------
 // Request classification
 // ---------------------------------------------------------------------------

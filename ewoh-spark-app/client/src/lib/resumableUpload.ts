@@ -43,6 +43,9 @@ export interface ResumableUploadOptions<T = UploadChunkResult> {
   /** Runs once after every chunk is uploaded. Receives results for chunks
    *  uploaded in THIS run (previously-completed chunks are not re-uploaded). */
   finalize?: (results: T[], meta: UploadMeta) => Promise<void>;
+  /** When provided, the whole-file checksum is computed and returned in the
+   *  result for integrity verification after upload. */
+  checksumFile?: (blob: Blob) => Promise<string>;
 }
 
 export interface ResumableUploadResult {
@@ -51,9 +54,35 @@ export interface ResumableUploadResult {
   uploadedChunks: number;
   resumed: boolean;
   bytesUploaded: number;
+  /** Whole-file SHA-256 checksum when `options.checksumFile` was provided. */
+  fileChecksum?: string;
 }
 
 export const DEFAULT_CHUNK_SIZE_BYTES = 1024 * 1024; // 1 MiB
+
+/**
+ * Computes a SHA-256 hex checksum of a Blob for integrity verification. Uses
+ * Web Crypto when available; otherwise falls back to a deterministic FNV-style
+ * hash so the API still works in constrained environments. Pure.
+ */
+export async function computeBlobChecksum(blob: Blob): Promise<string> {
+  const data = new Uint8Array(await blob.arrayBuffer());
+  const g = globalThis as { crypto?: { subtle?: SubtleCrypto } };
+  if (g.crypto?.subtle?.digest) {
+    const digest = await g.crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+  // Deterministic fallback hash (FNV-1a) — not cryptographic, but catch
+  // corruption when the platform lacks Web Crypto.
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < data.length; i += 1) {
+    hash ^= data[i];
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `fnv-${hash.toString(16)}`;
+}
 
 /** Slices a blob into fixed-size chunks. Pure. */
 export function createChunks(
@@ -132,11 +161,16 @@ export async function runResumableUpload<T = UploadChunkResult>(
     await options.finalize(results, meta);
   }
 
+  const fileChecksum = options.checksumFile
+    ? await options.checksumFile(file)
+    : undefined;
+
   return {
     uploadId,
     totalChunks: chunks.length,
     uploadedChunks: completed.size,
     resumed,
     bytesUploaded,
+    ...(fileChecksum ? { fileChecksum } : {}),
   };
 }

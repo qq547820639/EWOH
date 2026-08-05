@@ -20,6 +20,7 @@ import {
   API_CONTRACT_VERSION,
   isApiUrl,
   isSensitiveUrl,
+  pruneCacheNames,
 } from './swCache';
 
 describe('swCache (pure cache-versioning helpers)', () => {
@@ -221,5 +222,23 @@ describe('swCache rollback to last-good shell', () => {
   it('returns null when no older managed cache exists', () => {
     expect(rollbackCacheName(['ewoh-shell-v2', 'other-app-v9'], 'ewoh-shell-v2')).toBeNull();
     expect(rollbackCacheName([], 'ewoh-shell-v2')).toBeNull();
+  });
+
+  it('prunes caches older than the previous version across a multi-version upgrade (C6-8)', () => {
+    // v0 / v1 / v2 all present, current is v2: activate keeps v2 (current) and
+    // v1 (rollback target), and prunes only v0. Mirrors sw.js activate cleanup.
+    const keys = ['ewoh-shell-v0', 'ewoh-shell-v1', 'ewoh-shell-v2', 'other-app-v9'];
+    expect(pruneCacheNames(keys, 'ewoh-shell', 'v2')).toEqual(['ewoh-shell-v0']);
+  });
+
+  it('keeps the immediate previous version and prunes nothing older than it', () => {
+    // v1 -> v2 upgrade: only v1 exists as older, it is the rollback target, so
+    // nothing is pruned.
+    expect(pruneCacheNames(['ewoh-shell-v1', 'ewoh-shell-v2'], 'ewoh-shell', 'v2')).toEqual([]);
+  });
+
+  it('prunes nothing when only the current version exists', () => {
+    expect(pruneCacheNames(['ewoh-shell-v2'], 'ewoh-shell', 'v2')).toEqual([]);
+    expect(pruneCacheNames([], 'ewoh-shell', 'v2')).toEqual([]);
   });
 });

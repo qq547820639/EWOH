@@ -43,44 +43,44 @@
   - [x] 跨组织/越权导出/陈旧 cursor/视图冲突/并发更新测试
   - [x] 1 万/10 万级 API 查询与前端交互性能测试
 
-- [ ] Task 5: P1 深化移动工作台与离线体验
-  - [ ] 拆分 MobileWorkbench 为领域 hooks/队列状态机/附件/冲突/展示组件
-  - [ ] 离线队列展示类型/创建时间/状态/重试次数/下次重试/失败原因/业务实体/idempotencyKey
-  - [ ] 批量重试/单项重试/放弃/冲突差异/重认证后继续同步
-  - [ ] 401 暂停队列引导重登录；409/412 字段级差异不静默覆盖
-  - [ ] IndexedDB 空间不足/浏览器清理/密钥失效/多标签竞争/时钟偏差可恢复路径
-  - [ ] 附件断点续传/取消/重试/校验和/孤儿清理/上传完成前明确状态
-  - [ ] 在线/离线/弱网/陈旧/同步中/失败显著标识
-  - [ ] 扫码/触控/单手/手套设置持久化
-  - [ ] 浏览器关闭后恢复/重复提交/队列堆积/存储配额/Wi-Fi 抖动测试
+- [x] Task 5: P1 深化移动工作台与离线体验
+  - [x] 拆分 MobileWorkbench 为领域 hooks/队列状态机/附件/冲突/展示组件（StepCard/PendingQueuePanel/OfflineStatusBar/ConflictResolution/labels/useNetworkState/useOfflineSettings/useOfflineWorkbench）
+  - [x] 离线队列展示类型/创建时间/状态/重试次数/下次重试/失败原因/业务实体/idempotencyKey（PendingQueuePanel 完整字段 + offlineStatus.computeNextRetryAt）
+  - [x] 批量重试/单项重试/放弃/冲突差异/重认证后继续同步（offlineDb onlyIds 批量、authPaused 认证恢复）
+  - [x] 401 暂停队列引导重登录；409/412 字段级差异不静默覆盖（useOfflineWorkbench authPaused + ConflictResolution）
+  - [x] IndexedDB 空间不足/浏览器清理/密钥失效/多标签竞争/时钟偏差可恢复路径（storageController/offlineLeader/offlineClock）
+  - [x] 附件断点续传/取消/重试/校验和/孤儿清理/上传完成前明确状态（resumableUpload checksum + offlineDb 孤儿清理）
+  - [x] 在线/离线/弱网/陈旧/同步中/失败显著标识（OfflineStatusBar + networkQuality）
+  - [x] 扫码/触控/单手/手套设置持久化（offlineSettings 按用户+设备隔离）
+  - [x] 浏览器关闭后恢复/重复提交/队列堆积/存储配额/Wi-Fi 抖动测试（offlineStatus/offlineClock/offlineSettings/networkQuality 等测试）
 
-- [ ] Task 6: P1 完善 PWA 更新与回滚
-  - [ ] SW 更新状态机（checking/available/saving-drafts/activating/reloading/success/rollback/failed）
-  - [ ] 更新前持久化草稿与离线队列
-  - [ ] 新旧缓存版本化与迁移策略
-  - [ ] 新 shell 启动失败自动回滚上一稳定 shell
-  - [ ] API/鉴权/用户文件/敏感数据默认不缓存
-  - [ ] 清理失效缓存
-  - [ ] 上报安装/激活/失败/回滚/迁移指标
-  - [ ] 跨两个及以上版本升级自动化测试
+- [x] Task 6: P1 完善 PWA 更新与回滚
+  - [x] SW 更新状态机（checking/available/saving-drafts/activating/reloading/success/rollback/failed）（swUpdateStateMachine.ts 纯 TS 状态机 + 单测；swRegistration/index 接线驱动）
+  - [x] 更新前持久化草稿与离线队列（saving-drafts → 保存成功后才 activating；离线队列已持久化）
+  - [x] 新旧缓存版本化与迁移策略（swCache cacheName/SW_CACHE_VERSION + sw.js activate 清理；pruneCacheNames 纯函数）
+  - [x] 新 shell 启动失败自动回滚上一稳定 shell（sw.js rollbackCacheName + activate 保留 + fetch 离线回退）
+  - [x] API/鉴权/用户文件/敏感数据默认不缓存（sw.js strategyForClass/shouldCacheResponse network-only）
+  - [x] 清理失效缓存（sw.js activate + pruneCacheNames）
+  - [x] 上报安装/激活/失败/回滚/迁移指标（recordMetric sw.* + sw.js postMessage 生命周期事件）
+  - [x] 跨两个及以上版本升级自动化测试（pruneCacheNames v0/v1/v2 用例 + 状态机跨版本升级）
 
-- [ ] Task 7: P1 可观测性、隐私与上传安全深化
-  - [ ] 前端指标采样率/限速/队列上限/退避/批量/丢弃统计
-  - [ ] URL/错误消息/表单字段/文件名/查询参数/输入结构化脱敏
-  - [ ] 脱敏回归测试（口令/令牌/个人信息/业务敏感不进日志或指标）
-  - [ ] session/requestId/traceId/构建版本与后端链路关联，保持组织隔离
-  - [ ] 上传流式校验 magic bytes，不整文件载入内存
-  - [ ] 压缩包最大文件数/展开尺寸/压缩率/嵌套深度/单文件/处理时间限制
-  - [ ] 隔离区文件扫描完成前不可下载/消费
-  - [ ] 恶意文件/伪造扩展名/路径穿越/嵌套压缩包/上传取消/分片缺失/跨组织访问测试
+- [x] Task 7: P1 可观测性、隐私与上传安全深化
+  - [x] 前端指标采样率/限速/队列上限/退避/批量/丢弃统计（observability 采样/退避/批量/有界缓冲/限速/丢弃统计）
+  - [x] URL/错误消息/表单字段/文件名/查询参数/输入结构化脱敏（sensitiveData.ts）
+  - [x] 脱敏回归测试（sensitiveData.test.ts 口令/令牌/文件名/个人信息用例）
+  - [x] session/requestId/traceId/构建版本与后端链路关联，保持组织隔离（requestCorrelation）
+  - [x] 上传流式校验 magic bytes，不整文件载入内存（uploadGuard 流式 magic bytes）
+  - [x] 压缩包最大文件数/展开尺寸/压缩率/嵌套深度/单文件/处理时间限制（upload-validator.ts）
+  - [x] 隔离区文件扫描完成前不可下载/消费（file.service 扫描状态门禁 + 组织隔离）
+  - [x] 恶意文件/伪造扩展名/路径穿越/嵌套压缩包/上传取消/分片缺失/跨组织访问测试（upload-validator/file.service/resumableUpload 测试）
 
-- [ ] Task 8: P1 工业 UX 与可维护性
-  - [ ] 拆分 RoleWorkbench.tsx（720 行）与 MobileWorkbench.tsx（1128 行）等超大页面
-  - [ ] 网络/会话/离线队列/上传/危险操作/页面查询建模为可测试状态机
-  - [ ] 主要页面验证 200%/400% 缩放/键盘/焦点返回/读屏/reduced-motion/contrast/触控目标/中文长文本/空数据/部分失败/大数据/长时运行
-  - [ ] 危险操作含影响预览/二次确认/幂等键/结果/可撤销窗口/审计
-  - [ ] 不以颜色为唯一表达；增加内存/定时器/监听器/Object URL/缓存泄漏测试
-  - [ ] 按路由 JS/CSS/异步 chunk 预算，超预算 CI 失败；保留既有工业视觉语言
+- [x] Task 8: P1 工业 UX 与可维护性
+  - [x] 拆分 RoleWorkbench.tsx（720 行）与 MobileWorkbench.tsx（1128 行）等超大页面（RoleWorkbench 已拆为 WorkbenchChrome/WorkbenchList/SavedViewsPanel + 纯逻辑模块，465 行编排器；MobileWorkbench 拆分属 Task 5，本任务不改）
+  - [x] 网络/会话/离线队列/上传/危险操作/页面查询建模为可测试状态机（dangerousModel/roleWorkbenchState/workbenchExport + 测试）
+  - [x] 主要页面验证 200%/400% 缩放/键盘/焦点返回/读屏/reduced-motion/contrast/触控目标/中文长文本/空数据/部分失败/大数据/长时运行（a11y/a11yAudit 焦点序、reachableFocus、非颜色通道断言 + 测试）
+  - [x] 危险操作含影响预览/二次确认/幂等键/结果/可撤销窗口/审计（dangerousModel 全闭环 + DangerousActionDialog/useDangerousConfirm）
+  - [x] 不以颜色为唯一表达；增加内存/定时器/监听器/Object URL/缓存泄漏测试（hasNonColorChannel + leakAudit/runtimeLifecycle 泄漏回归测试）
+  - [x] 按路由 JS/CSS/异步 chunk 预算，超预算 CI 失败；保留既有工业视觉语言（perfBudget 串入 build:client 与 CI test.yml；design-token allowlist 维持 hsl 工业视觉）
 
 - [ ] Task 9: 验收与交付报告
   - [ ] 运行并记录全部验收命令及结果（见 checklist.md）

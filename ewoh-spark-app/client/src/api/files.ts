@@ -2,7 +2,7 @@ import type { FileRecord } from '@shared/api.interface';
 import { axiosForBackend } from '../lib/http';
 import {
   createUploadRequestId,
-  guardUpload,
+  guardUploadStreaming,
   UploadGuardError,
 } from '../lib/uploadGuard';
 
@@ -12,14 +12,21 @@ export interface UploadFileResult extends FileRecord {
 
 /**
  * Real frontend upload entry. Runs the client-side guard (MIME / extension /
- * size / idempotent retry diagnostics) BEFORE any network call, so obviously
- * invalid files are rejected locally instead of consuming a round-trip. A
- * per-upload `requestId` is generated for diagnostics and echoed on error.
+ * size / magic bytes / idempotent retry diagnostics) BEFORE any network call,
+ * so obviously invalid files are rejected locally instead of consuming a
+ * round-trip. A per-upload `requestId` is generated for diagnostics and echoed
+ * on error. Magic-bytes validation streams only the first few bytes (never the
+ * whole file into memory).
  */
 export async function uploadFile(file: File, note?: string): Promise<UploadFileResult> {
   const requestId = createUploadRequestId();
 
-  const guarded = guardUpload({ name: file.name, type: file.type, size: file.size });
+  const guarded = await guardUploadStreaming({
+    name: file.name,
+    type: file.type,
+    size: file.size,
+    slice: (start, end) => file.slice(start, end),
+  });
   if (!guarded.ok) {
     throw buildGuardError(guarded.reason ?? 'invalid file', requestId);
   }
@@ -53,7 +60,12 @@ export async function uploadFiles(
   const requestId = createUploadRequestId();
   const results: UploadFileResult[] = [];
   for (const file of files) {
-    const guarded = guardUpload({ name: file.name, type: file.type, size: file.size });
+    const guarded = await guardUploadStreaming({
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      slice: (start, end) => file.slice(start, end),
+    });
     if (!guarded.ok) {
       throw buildGuardError(guarded.reason ?? 'invalid file', requestId);
     }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Camera, Loader2, QrCode, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { Camera, Loader2, QrCode, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   getMobileOrder,
@@ -8,20 +8,16 @@ import {
   inspectMobileStep,
   scanWorkbench,
   transitionMobileStep,
-  type MobileWorkbenchStep,
 } from '../../api/mobile';
 import { uploadFile } from '../../api/files';
 import { getAuthUser } from '../../lib/auth';
 import { useOfflineWorkbench } from './useOfflineWorkbench';
-import { buildConflictModel } from '../../lib/offlineConflict';
-import { formatLastSync } from '../../lib/offlineStatus';
 import {
   createScannerListener,
   detectBarcodeFromFile,
   playScanFeedback,
   supportsCameraCapture,
 } from '../../lib/scanner';
-import type { StoredPendingAction } from '../../lib/offlineDb';
 import { queryKeys } from '../../hooks/queryKeys';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
@@ -38,152 +34,12 @@ import {
 } from '@client/src/components/ui/alert-dialog';
 import QueryState from '../../components/QueryState';
 import { buildExceptionBody } from './exceptionPayload';
-
-const STEP_ACTIONS = ['start', 'report', 'pause', 'resume', 'review', 'handover'] as const;
-const QUALITY_RESULTS = ['pass', 'fail', 'rework'] as const;
-
-function stepStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    pending: '待开工',
-    in_progress: '进行中',
-    paused: '暂停',
-    reported: '报工',
-    reviewed: '审核',
-    handed_over: '交收',
-    cancelled: '取消',
-  };
-  return labels[status] ?? status;
-}
-
-function orderStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    draft: '草稿',
-    released: '已释放',
-    in_progress: '生产中',
-    completed: '已完工',
-    cancelled: '已取消',
-  };
-  return labels[status] ?? status;
-}
-
-function pendingStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    local: '本地',
-    queued: '排队',
-    syncing: '同步中',
-    synced: '已同步',
-    failed: '失败',
-    conflict: '冲突',
-  };
-  return labels[status] ?? status;
-}
-
-function pendingStatusVariant(
-  status: string,
-): 'default' | 'secondary' | 'destructive' | 'outline' {
-  if (status === 'failed' || status === 'conflict') {
-    return 'destructive';
-  }
-  if (status === 'synced') {
-    return 'secondary';
-  }
-  if (status === 'syncing') {
-    return 'default';
-  }
-  return 'outline';
-}
-
-function pendingActionLabel(item: StoredPendingAction): string {
-  if (item.type === 'inspection') {
-    return '质检';
-  }
-  const labels: Record<string, string> = {
-    start: '开工',
-    report: '报工',
-    pause: '暂停',
-    resume: '恢复',
-    review: '审核',
-    handover: '交收',
-  };
-  return labels[item.action ?? ''] ?? item.action ?? '操作';
-}
-
-function scanTypeLabel(scanType: string): string {
-  const labels: Record<string, string> = {
-    device: '设备',
-    material: '物料',
-    batch: '批次',
-    station: '工位',
-    factory: '工厂',
-  };
-  return labels[scanType] ?? scanType;
-}
-
-function ConflictResolution({
-  item,
-  onResolve,
-}: {
-  item: StoredPendingAction;
-  onResolve: (choice: 'local' | 'server' | 'manual') => void;
-}): React.ReactElement {
-  const localValue = item.body;
-  const serverValue = item.conflict?.serverValue;
-  const model = buildConflictModel(localValue, serverValue);
-  return (
-    <div className="mt-2 w-full rounded bg-white p-2 text-xs">
-      <p className="font-medium text-[hsl(220_14%_14%)]">状态冲突 — 请选择处理方式</p>
-      <div className="mt-1 grid grid-cols-2 gap-2">
-        <div>
-          <p className="text-[hsl(218_10%_42%)]">本地值</p>
-          <pre className="mt-0.5 max-h-24 overflow-auto rounded bg-[hsl(220_14%_96%)] p-1 font-mono text-[10px] text-[hsl(220_14%_14%)]">
-            {JSON.stringify(localValue ?? null, null, 2) || '—'}
-          </pre>
-        </div>
-        <div>
-          <p className="text-[hsl(218_10%_42%)]">服务端值</p>
-          {serverValue === undefined ? (
-            <p className="mt-0.5 rounded bg-[hsl(220_14%_96%)] p-1 text-amber-700">
-              服务端未返回当前值
-            </p>
-          ) : (
-            <pre className="mt-0.5 max-h-24 overflow-auto rounded bg-[hsl(220_14%_96%)] p-1 font-mono text-[10px] text-[hsl(220_14%_14%)]">
-              {JSON.stringify(serverValue, null, 2) || '—'}
-            </pre>
-          )}
-        </div>
-      </div>
-      {model.diff.length > 0 && (
-        <div className="mt-1">
-          <p className="text-[hsl(218_10%_42%)]">差异</p>
-          <ul className="mt-0.5 space-y-0.5">
-            {model.diff.map((diff, index) => (
-              <li
-                key={index}
-                className="rounded bg-[hsl(220_14%_96%)] px-1 py-0.5 font-mono text-[10px]"
-              >
-                {diff.path || '—'}：{JSON.stringify(diff.local)} → {JSON.stringify(diff.server)}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      <p className="mt-1 text-[hsl(218_10%_42%)]">
-        推荐：{model.recommended === 'server' ? '采用服务端' : '采用本地'}
-      </p>
-      <div className="mt-2 flex flex-wrap gap-1">
-        <Button size="sm" variant="outline" onClick={() => onResolve('local')}>
-          采用本地
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => onResolve('server')}>
-          采用服务端
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => onResolve('manual')}>
-          手动编辑
-        </Button>
-      </div>
-    </div>
-  );
-}
+import { StepCard } from './StepCard';
+import { PendingQueuePanel } from './PendingQueuePanel';
+import { OfflineStatusBar } from './OfflineStatusBar';
+import { useNetworkState } from './useNetworkState';
+import { useOfflineSettings } from './useOfflineSettings';
+import { orderStatusLabel, scanTypeLabel, stepStatusLabel } from './labels';
 
 const MobileWorkbench = (): React.ReactElement => {
   const queryClient = useQueryClient();
@@ -216,6 +72,7 @@ const MobileWorkbench = (): React.ReactElement => {
     ready,
     isOnline,
     syncing,
+    authPaused,
     pendingActions,
     pendingCount,
     lastSyncAt,
@@ -223,12 +80,21 @@ const MobileWorkbench = (): React.ReactElement => {
     queueTransition,
     queueInspection,
     retryPending,
+    batchRetry,
     discardPending,
     resolveConflict,
     exportOffline,
     recoverOffline,
     clearOfflineData,
   } = useOfflineWorkbench(personId, { onSynced });
+
+  const network = useNetworkState({
+    isOnline,
+    lastSyncAt,
+    pendingStatuses: pendingActions.map((item) => item.status),
+  });
+
+  const { settings, update: updateSettings } = useOfflineSettings(personId);
 
   const workbenchQuery = useQuery({
     queryKey: queryKeys.mobileWorkbench(personId),
@@ -558,30 +424,27 @@ const MobileWorkbench = (): React.ReactElement => {
         </div>
       </header>
 
-      {/* Offline status center (step 6) */}
-      <div
-        role="status"
-        className="flex flex-wrap items-center gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-3 py-2 text-sm"
-      >
-        <span
-          className={`inline-flex items-center gap-1.5 font-medium ${
-            isOnline ? 'text-emerald-700' : 'text-amber-600'
-          }`}
+      {/* Offline status center (online / offline / weak / stale / syncing / failed) */}
+      <OfflineStatusBar
+        network={network}
+        pendingCount={pendingCount}
+        lastSyncAt={lastSyncAt}
+        syncing={syncing}
+      />
+
+      {authPaused && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800"
         >
-          {isOnline ? <Wifi className="size-4" /> : <WifiOff className="size-4" />}
-          {isOnline ? '在线' : '离线'}
-        </span>
-        <Badge variant="outline">待同步 {pendingCount}</Badge>
-        <span className="text-xs text-[hsl(218_10%_42%)]">
-          最后同步：{formatLastSync(lastSyncAt)}
-        </span>
-        {syncing && (
-          <span className="inline-flex items-center gap-1 text-xs text-[hsl(218_10%_42%)]">
-            <Loader2 className="size-3 animate-spin" />
-            同步中
+          <span className="min-w-0 flex-1">
+            登录已失效，离线同步已暂停。请重新登录后继续同步，未同步的操作会安全保留。
           </span>
-        )}
-      </div>
+          <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
+            重新登录
+          </Button>
+        </div>
+      )}
 
       {!isOnline && (
         <div
@@ -619,6 +482,65 @@ const MobileWorkbench = (): React.ReactElement => {
         </p>
       </section>
 
+      {/* Per-user + per-device workbench settings (scan / touch / one-hand / glove) */}
+      <section
+        aria-label="工作台设置"
+        className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-3"
+      >
+        <p className="text-sm font-semibold text-[hsl(220_14%_14%)]">工作台设置</p>
+        <div className="mt-2 flex flex-wrap gap-3 text-xs text-[hsl(218_10%_42%)]">
+          <label className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={Boolean(settings.touchMode)}
+              onChange={(event) =>
+                updateSettings({ touchMode: event.target.checked })
+              }
+            />
+            触控优化
+          </label>
+          <label className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={Boolean(settings.oneHandMode)}
+              onChange={(event) =>
+                updateSettings({ oneHandMode: event.target.checked })
+              }
+            />
+            单手模式
+          </label>
+          <label className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={Boolean(settings.gloveMode)}
+              onChange={(event) =>
+                updateSettings({ gloveMode: event.target.checked })
+              }
+            />
+            手套模式
+          </label>
+          <label className="flex items-center gap-1">
+            扫码
+            <select
+              value={settings.scanMode ?? 'manual'}
+              onChange={(event) =>
+                updateSettings({
+                  scanMode: event.target.value as
+                    | 'scanner'
+                    | 'camera'
+                    | 'manual',
+                })
+              }
+              className="rounded border border-[hsl(220_14%_89%)] bg-white px-1"
+            >
+              <option value="manual">手动输入</option>
+              <option value="scanner">扫码枪</option>
+              <option value="camera">相机</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
       <AlertDialog open={confirmClearOpen} onOpenChange={setConfirmClearOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -642,71 +564,13 @@ const MobileWorkbench = (): React.ReactElement => {
       </AlertDialog>
 
       {pendingActions.length > 0 && (
-        <section
-          aria-label="待同步队列"
-          className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4"
-        >
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-[hsl(220_14%_14%)]">
-              待同步队列
-            </h2>
-            <Badge variant="outline">{pendingCount}</Badge>
-          </div>
-          <ul className="space-y-2">
-            {pendingActions.map((item) => (
-              <li
-                key={item.id}
-                className="flex flex-wrap items-start gap-2 rounded border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_98%)] p-2"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-[hsl(220_14%_14%)]">
-                    {item.stepId} · {pendingActionLabel(item)}
-                  </p>
-                  {item.error?.message && (
-                    <p className="mt-0.5 truncate text-xs text-red-700">
-                      {item.error.message}
-                    </p>
-                  )}
-                  {item.lastAttemptAt && (
-                    <p className="mt-0.5 text-[10px] text-[hsl(218_10%_42%)]">
-                      最近尝试：{new Date(item.lastAttemptAt).toLocaleString()}
-                    </p>
-                  )}
-                </div>
-                <Badge variant={pendingStatusVariant(item.status)}>
-                  {pendingStatusLabel(item.status)}
-                </Badge>
-                {(item.status === 'failed' || item.status === 'conflict') && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => retryPending(item.id)}
-                  >
-                    <RefreshCw className="size-3" />
-                    重试
-                  </Button>
-                )}
-                {item.status === 'conflict' && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => discardPending(item.id)}
-                  >
-                    丢弃
-                  </Button>
-                )}
-                {item.status === 'conflict' && (
-                  <div className="w-full">
-                    <ConflictResolution
-                      item={item}
-                      onResolve={(choice) => resolveConflict(item.id, choice)}
-                    />
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
+        <PendingQueuePanel
+          items={pendingActions}
+          onRetry={(id) => retryPending(id)}
+          onBatchRetry={(ids) => batchRetry(ids)}
+          onDiscard={(id) => discardPending(id)}
+          onResolve={(id, choice) => resolveConflict(id, choice)}
+        />
       )}
 
       <div className="flex flex-col gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4 sm:flex-row">
@@ -922,208 +786,5 @@ const MobileWorkbench = (): React.ReactElement => {
     </div>
   );
 };
-
-function StepCard({
-  step,
-  pending,
-  error,
-  exceptionOpen,
-  exceptionNote,
-  exceptionFile,
-  qcOpen,
-  qcResult,
-  qcNote,
-  onExceptionNoteChange,
-  onExceptionFileChange,
-  onExceptionOpenChange,
-  onQcOpenChange,
-  onQcResultChange,
-  onQcNoteChange,
-  onSubmitException,
-  onSubmitInspection,
-  onRetry,
-  onAction,
-}: {
-  step: MobileWorkbenchStep;
-  pending: boolean;
-  error: Error | null;
-  exceptionOpen: boolean;
-  exceptionNote: string;
-  exceptionFile: File | null;
-  qcOpen: boolean;
-  qcResult: 'pass' | 'fail' | 'rework' | undefined;
-  qcNote: string;
-  onExceptionNoteChange: (value: string) => void;
-  onExceptionFileChange: (file: File | null) => void;
-  onExceptionOpenChange: (open: boolean) => void;
-  onQcOpenChange: (open: boolean) => void;
-  onQcResultChange: (value: 'pass' | 'fail' | 'rework') => void;
-  onQcNoteChange: (value: string) => void;
-  onSubmitException: () => void;
-  onSubmitInspection: () => void;
-  onRetry: () => void;
-  onAction: (action: string, body?: Record<string, unknown>) => void;
-}): React.ReactElement {
-  const exception = step.resultJson?.exception as
-    | Record<string, unknown>
-    | undefined;
-  const quality = step.resultJson?.quality as Record<string, unknown> | undefined;
-  const actionMeta: Record<string, { label: string; next: string; canRun: boolean }> = {
-    start: { label: '开工', next: 'in_progress', canRun: step.status === 'pending' },
-    report: { label: '报工', next: 'reported', canRun: step.status === 'in_progress' },
-    pause: { label: '暂停', next: 'paused', canRun: step.status === 'in_progress' },
-    resume: { label: '恢复', next: 'in_progress', canRun: step.status === 'paused' },
-    review: { label: '审核', next: 'reviewed', canRun: step.status === 'reported' },
-    handover: { label: '交收', next: 'handed_over', canRun: step.status === 'reviewed' },
-  };
-
-  return (
-    <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_98%)] p-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-[hsl(220_14%_14%)]">
-            {step.stepNo}. {step.name}
-          </p>
-          <p className="mt-0.5 font-mono text-xs text-[hsl(218_10%_42%)]">
-            {step.stepId}
-          </p>
-        </div>
-        <Badge variant="outline">{stepStatusLabel(step.status)}</Badge>
-      </div>
-      {step.instruction && (
-        <p className="mt-2 rounded bg-white p-2 text-xs text-[hsl(218_10%_42%)]">
-          <span className="font-semibold text-[hsl(220_14%_14%)]">SOP：</span>
-          {step.instruction}
-        </p>
-      )}
-      {(exception || quality) && (
-        <div className="mt-2 space-y-1 rounded bg-white p-2 text-xs text-[hsl(218_10%_42%)]">
-          {exception && (exception.code || exception.note) && (
-            <p>
-              异常：
-              {exception.code ? `${String(exception.code)}: ` : ''}
-              {String(exception.note ?? '已记录')}
-              {exception.reportedAt ? `（${String(exception.reportedAt)}）` : ''}
-            </p>
-          )}
-          {quality && <p>质检：{String(quality.result ?? '')}</p>}
-        </div>
-      )}
-      <div className="mt-3 flex flex-wrap gap-1">
-        {STEP_ACTIONS.map((action) => (
-          <Button
-            key={action}
-            size="sm"
-            variant="outline"
-            disabled={!actionMeta[action].canRun || pending}
-            onClick={() => onAction(action)}
-            className="min-h-12 px-4 text-sm"
-          >
-            {actionMeta[action].label}
-            {pending && <Loader2 className="ml-1 size-3 animate-spin" />}
-            <span className="sr-only">{actionMeta[action].next}</span>
-          </Button>
-        ))}
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={pending}
-          onClick={() => onExceptionOpenChange(!exceptionOpen)}
-          className="min-h-12 px-4 text-sm"
-        >
-          异常上报
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={
-            pending || !['in_progress', 'reported', 'reviewed'].includes(step.status)
-          }
-          onClick={() => onQcOpenChange(!qcOpen)}
-          className="min-h-12 px-4 text-sm"
-        >
-          质检
-        </Button>
-      </div>
-      {error && (
-        <div
-          role="alert"
-          className="mt-2 flex flex-wrap items-center gap-2 rounded bg-red-50 p-2 text-xs text-red-700"
-        >
-          <span className="min-w-0 flex-1">{error.message}</span>
-          <Button size="sm" variant="ghost" onClick={onRetry}>
-            重试
-          </Button>
-        </div>
-      )}
-      {exceptionOpen && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 rounded bg-white p-2">
-          <Input
-            value={exceptionNote}
-            onChange={(event) => onExceptionNoteChange(event.target.value)}
-            placeholder="异常说明"
-            aria-label="异常说明"
-            className="min-h-12 min-w-0 flex-1"
-          />
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            onChange={(event) => onExceptionFileChange(event.target.files?.[0] ?? null)}
-            className="min-h-12 text-xs"
-            aria-label="异常照片"
-          />
-          {exceptionFile && (
-            <span className="max-w-[140px] truncate text-[10px] text-[hsl(218_10%_42%)]">
-              {exceptionFile.name}
-            </span>
-          )}
-          <Button size="sm" onClick={onSubmitException} disabled={pending} className="min-h-12">
-            提交异常
-          </Button>
-        </div>
-      )}
-      {qcOpen && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 rounded bg-white p-2">
-          <label htmlFor={`qc-result-${step.stepId}`} className="text-xs">
-            结果
-          </label>
-          <select
-            id={`qc-result-${step.stepId}`}
-            value={qcResult ?? ''}
-            onChange={(event) =>
-              onQcResultChange(
-                event.target.value === ''
-                  ? undefined
-                  : (event.target.value as 'pass' | 'fail' | 'rework'),
-              )
-            }
-            className="min-h-12 rounded border border-[hsl(220_14%_89%)] bg-white px-2 text-xs"
-          >
-            {QUALITY_RESULTS.map((result) => (
-              <option key={result} value={result}>
-                {result === 'pass' ? '合格' : result === 'fail' ? '不合格' : '返工'}
-              </option>
-            ))}
-          </select>
-          <Input
-            value={qcNote}
-            onChange={(event) => onQcNoteChange(event.target.value)}
-            placeholder="质检备注"
-            aria-label="质检备注"
-            className="min-h-12 min-w-0 flex-1"
-          />
-          <Button
-            size="sm"
-            onClick={onSubmitInspection}
-            disabled={!qcResult || pending}
-            className="min-h-12"
-          >
-            提交质检
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default MobileWorkbench;

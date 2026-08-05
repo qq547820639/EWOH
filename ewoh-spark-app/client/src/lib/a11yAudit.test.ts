@@ -94,6 +94,24 @@ describe('STATIC_RULES', () => {
     const findings = scanFile('className="outline-none focus:border-blue-500"', 'a.tsx');
     expect(findings.some((f) => f.ruleId === 'outline-none-without-focus')).toBe(false);
   });
+
+  it('flags a status conveyed only by color (empty span with color class)', () => {
+    const findings = scanFile('<span className="bg-red-600" />', 'a.tsx');
+    expect(findings.some((f) => f.ruleId === 'status-color-only')).toBe(true);
+  });
+
+  it('accepts a color span that also carries text or aria', () => {
+    expect(
+      scanFile('<span className="bg-red-600">故障</span>', 'a.tsx').some(
+        (f) => f.ruleId === 'status-color-only',
+      ),
+    ).toBe(false);
+    expect(
+      scanFile('<span className="bg-red-600" aria-label="故障" />', 'a.tsx').some(
+        (f) => f.ruleId === 'status-color-only',
+      ),
+    ).toBe(false);
+  });
 });
 
 describe('summarize / hasCriticalOrSerious', () => {

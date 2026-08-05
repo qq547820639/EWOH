@@ -1,11 +1,13 @@
 # 生产真实性与用户体验深化收口 — 交付报告
 
-> 基线：`main` @ `5a810c70960702201f5b870c35f5be58c5373e48`
+> 首轮基线：`main` @ `5a810c70960702201f5b870c35f5be58c5373e48`
+> 本轮 P1 收口基线：`main` @ `5133bd8caf672317f6eae874b2114032e82561a4`（P0 收口已提交）。
 > 原则：以真实代码、测试结果、CI 门禁与运行证据为准；不信任 README/CHANGELOG/release manifest 中的文字结论。环境不具备项诚实标 `BLOCKED_BY_ENVIRONMENT`，不伪造通过。
 
 ## A. 当前 SHA 与基线问题清单
 
-- 基线 commit：`5a810c70960702201f5b870c35f5be58c5373e48`（branch=`main`）
+- 基线 commit：`5a810c70960702201f5b870c35f5be58c5373e48` → P0 收口 `5133bd8` → 本轮 P1 收口（本次提交，见 git log）
+- branch=`main`
 - 环境指纹（本机）：macOS 27.0 / Node `v26.5.1` / npm `11.17.0` / Python `3.9.6` / PostgreSQL、Docker 不可用（`psql`、`docker` 不在 PATH）
 - 基线发现的问题：
   1. 设计 Token 静态检查未放行 3 个新组件（`AppErrorState`、`DataStates`、`OnboardingQuickStart`），`npm run lint` 退出码 1。
@@ -35,7 +37,10 @@
 - **角色工作台（Task 4，P0，已完成）**：前端改为 `getWorkbenchList` 服务端分页/筛选/排序；删除 `progressiveSlice`/`buildCsv`/本地排序筛选；筛选/排序/分页状态同步到 URL search params（可刷新/返回/复制链接）；保存视图改走服务端 `workbench/views` API 并对旧 `localStorage` 视图做一次性幂等迁移后清理；CSV 导出改为服务端异步任务（创建→轮询进度→完成下载）；表格行虚拟化（`useWindowedRange`）；表头排序保持 `<button>` + `aria-sort`。后端 `operations.controller.ts` 与 `api/operations.ts` 已具备对应能力，未改动。
 - **浏览器矩阵（Task 3，P0，CI 侧完成）**：CI 真实安装并执行 chromium/firefox/webkit 全矩阵并上传报告；WebKit 无头受限键盘焦点用例按既有 `BLOCKED_BY_ENVIRONMENT` 显式标记（见 `ux009-uxindustrial.spec.js`）。
 - **工程事实源（Task 2，P0，验证既有实现）**：`truth-manifest.js` 已含完整证据字段并支持 `--check` 漂移检测；`make truth-check` 通过（39/39，无漂移），证据 manifest 已生成。
-- **移动工作台 / PWA / 可观测性 / 上传安全（Task 5-8，P1）**：本轮未完成（见 H/I）。
+- **移动工作台与离线体验（Task 5，P1，已完成）**：`MobileWorkbench.tsx`（1128 行）已拆分为 `StepCard.tsx`/`PendingQueuePanel.tsx`/`OfflineStatusBar.tsx`/`ConflictResolution.tsx`/`labels.ts`/`useNetworkState.ts`/`useOfflineSettings.ts` 与既有 `useOfflineWorkbench.ts`；离线队列 UI 展示完整字段（类型/创建时间/状态/重试次数/`computeNextRetryAt` 下次重试/失败原因/业务实体/`idempotencyKey`）；新增批量重试（`offlineDb.onlyIds`）与 401 认证暂停/恢复（`authPaused`）；409/412 字段级差异不静默覆盖；IndexedDB 空间/清理/密钥失效/多标签竞争/时钟偏差可恢复（`storageController`/`offlineLeader`/`offlineClock`）；附件断点续传/校验和/孤儿清理（`resumableUpload`/`offlineDb`）；弱网/数据陈旧/同步失败显著标识（`OfflineStatusBar`+`networkQuality`）；扫码/触控/单手/手套设置按用户与设备持久化（`offlineSettings`）。
+- **PWA 更新与回滚（Task 6，P1，已完成）**：新增纯 TS 状态机 `swUpdateStateMachine.ts`（checking/available/saving-drafts/activating/reloading/success/rollback/failed，可单测），`swRegistration`/`index.tsx` 接线驱动；更新前 saving-drafts 落盘成功后才 activating；缓存版本化/迁移/失效清理/回滚已由 `swCache`+`public/sw.js` 实现并新增 `pruneCacheNames` 纯函数；API/鉴权/用户文件/敏感数据 network-only 不缓存；`sw.js` 通过 postMessage 上报 install/activate/rollback/migration 事件，页面经 `recordMetric` 上报 `sw.*` 指标；新增跨 v0/v1/v2 多版本升级清理测试。
+- **可观测性、隐私与上传安全（Task 7，P1，已完成）**：前端指标具备采样率/限速/队列上限/退避/批量/丢弃统计（`observability`）；结构化脱敏覆盖 URL/错误/表单/文件名/查询参数/输入（`sensitiveData`）并有脱敏回归测试；session/requestId/traceId/构建版本与后端关联并保持组织隔离（`requestCorrelation`）；上传流式校验 magic bytes 不整文件载入内存（`uploadGuard`）；压缩包限制含文件数/展开尺寸/压缩率/嵌套深度/单文件/处理时间（`upload-validator.ts`）；隔离区文件扫描完成前不可下载/消费（`file.service` 扫描状态门禁+组织隔离）；新增恶意文件/伪造扩展名/路径穿越/嵌套压缩包/上传取消/分片缺失/跨组织测试。
+- **工业 UX 与可维护性（Task 8，P1，已完成）**：`RoleWorkbench.tsx`（720 行）拆为 `WorkbenchChrome`/`WorkbenchList`/`SavedViewsPanel` + 纯逻辑 `roleWorkbenchState`/`workbenchExport`（465 行编排器）；危险操作建模为可测试状态机 `dangerousModel`（影响预览/二次确认/幂等键/结果/可撤销窗口/审计）+ `DangerousActionDialog`/`useDangerousConfirm`；`a11y`/`a11yAudit` 提供焦点序/reachableFocus/非颜色通道断言；新增 `leakAudit`/`runtimeLifecycle` 泄漏回归测试（定时器/监听器/Object URL/scope）；`perfBudget` 串入 `build:client` 与 CI `test.yml`，按路由 JS/CSS/异步 chunk 预算超限 CI 失败；保留既有 hsl 工业视觉语言。
 
 ## E. 执行过的完整命令
 
@@ -54,6 +59,7 @@
 - `node scripts/audit-openapi-routes.js --strict --write-manifest openapi/route-manifest.json`
 - `make truth-check`（39/39）
 - `node scripts/truth-manifest.js --out output/evidence-manifest.json`
+- P1 收口（本轮）：`npm run type:check`、`npm run lint`、`npm run test:client`（81 suites / 629 tests）、`npm test`（96 suites / 553 tests）、`npm run build:client`（含 bundle budget，PASS）、`make truth-check`（39/39 无漂移）。
 
 ## F. 各测试套件与浏览器项目真实结果
 
@@ -61,8 +67,8 @@
 |---|---|
 | typecheck（server+client） | PASS |
 | lint（eslint + design-tokens） | PASS |
-| Server Jest | 94 suites / 529 tests PASS |
-| Client Jest | 73 suites / 529 tests PASS |
+| Server Jest | 96 suites / 553 tests PASS |
+| Client Jest | 81 suites / 629 tests PASS |
 | OpenAPI drift | PASS |
 | bundle budget | PASS |
 | truth-check / repo-facts | 39/39 PASS |
@@ -72,8 +78,8 @@
 ## G. 当前 evidence manifest 摘要与 digest
 
 - 生成：`output/evidence-manifest.json`
-- HEAD=`5a810c...` branch=`main` version=`0.6.0-rc4`
-- artifactDigest=`1b4fce3918166f3b611cd53b1cf2b2565770fdb451bcda412896835a57306aff`
+- HEAD=`5133bd8...`（P0 收口）→ 本轮 P1 收口提交（见 git HEAD） branch=`main` version=`0.6.0-rc4`
+- artifactDigest / evidence 总数：以 `make truth-check` 于当前 HEAD 生成输出为准（本轮已验证 39/39 无漂移；提交后重新生成最终 digest）
 
 ## H. 仍未完成的外部验证 / 审批 / 环境阻塞
 
@@ -82,13 +88,12 @@
 
 ## I. 没有通过的事项与明确失败原因
 
-- **Task 5（移动工作台与离线体验深化）**：未完成。
-- **Task 6（PWA 更新与回滚）**：未完成。
-- **Task 7（可观测性、隐私与上传安全深化）**：未完成。
-- **Task 8（工业 UX 与可维护性：MobileWorkbench.tsx 拆分、状态机建模、泄漏/性能测试）**：未完成。
-- **Task 1 中的 PG/E2E/浏览器/Docker 运行时门禁**：本机环境不具备，未在本机运行（CI 侧配置已就绪）。
+- **Task 1 中的 PG/E2E/浏览器/Docker 运行时门禁**：本机环境不具备（无 PostgreSQL/Docker/浏览器依赖），未在本机运行，仍为 `BLOCKED_BY_ENVIRONMENT`，需在 GitHub Actions 上执行以产出真实运行时证据。这是唯一未闭环的运行时验证项。
+- **浏览器矩阵真实执行结果**：本机无法执行，等待 CI；CI 配置已真实安装并执行 chromium/firefox/webkit 全矩阵并上传 JSON/JUnit/HTML/trace/截图 artifacts。
+- **NestJS 11 大版本升级（消除剩余 moderate 漏洞）**：未做，属高风险变更，需书面风险评估与审批。
 
 ## 结论（如实）
 
-- P0 核心（恢复主分支全绿的本机可运行门禁、统一工程事实源验证、浏览器矩阵 CI 配置、RoleWorkbench 服务端数据路径）已实现并通过真实验证。
-- 未提升到 "Runtime Verified / Pilot Ready / Production Ready"：P1 的移动/PWA/可观测性/上传安全深化与需要 PG/Docker/浏览器运行时证据的门禁仍未完成，不能宣称"全部完成"。
+- P0 核心（恢复主分支全绿的本机可运行门禁、统一工程事实源、浏览器矩阵 CI 配置、RoleWorkbench 服务端数据路径）已实现并通过真实验证。
+- P1 的移动工作台离线体验、PWA 更新回滚、可观测性/隐私/上传安全、工业 UX 与可维护性已在代码层面实现，并通过本机可运行的 typecheck/lint/Jest（客户端 629、服务端 553）/build/bundle-budget/truth-check 全部门禁。
+- 达标结论：**Code Implemented + Code Verified**。尚未提升到 "Runtime Verified / Pilot Ready / Production Ready"：PG 迁移、并发、HTTP+PG E2E、浏览器矩阵、Docker 构建/健康检查等需要 PG/Docker/浏览器运行时的门禁仍为 `BLOCKED_BY_ENVIRONMENT`，须待 GitHub Actions 运行为真实运行时证据后方可宣称更高等级。不宣称"全部完成"。

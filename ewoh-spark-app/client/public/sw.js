@@ -231,13 +231,15 @@ self.addEventListener('install', (event) => {
         writeMeta('/manifest.webmanifest', { storedAt: Date.now(), lastUsedAt: Date.now() }),
       ]);
       await notifyClients({ type: 'EWOH_SW_UPDATE_AVAILABLE', version: SW_CACHE_VERSION });
+      await notifyClients({ type: 'EWOH_SW_INSTALLED', version: SW_CACHE_VERSION });
     })(),
   );
 });
 
 // Activate: claim clients, then prune stale caches. We keep the current cache and
 // the previous stable shell (rollback target); only older versions are removed so
-// a broken update can still roll back to the last-good shell.
+// a broken update can still roll back to the last-good shell. The page is told
+// which caches were migrated so it can report a `sw.migration` metric.
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
@@ -249,10 +251,15 @@ self.addEventListener('activate', (event) => {
       if (rollback) {
         keep.add(rollback);
       }
-      await Promise.all(
-        keys.filter((name) => isManagedCache(name) && !keep.has(name)).map((name) => caches.delete(name)),
-      );
+      const removed = keys.filter((name) => isManagedCache(name) && !keep.has(name));
+      await Promise.all(removed.map((name) => caches.delete(name)));
       await trimCache();
+      await notifyClients({
+        type: 'EWOH_SW_ACTIVATED',
+        version: SW_CACHE_VERSION,
+        removed,
+        rollback: rollback || null,
+      });
     })(),
   );
 });
@@ -333,13 +340,18 @@ async function handleCached(event, cls, strategy) {
       return cached;
     }
     // Offline fallback to the last-good shell so a broken/empty current cache
-    // still leaves the app usable.
+    // still leaves the app usable. Tell the page so it can report a sw.rollback.
     const keys = await caches.keys();
     const rollback = rollbackCacheName(keys, currentCacheName());
     if (rollback && cls === 'document') {
       const rollbackCache = await caches.open(rollback);
       const fallback = await rollbackCache.match(request);
       if (fallback) {
+        notifyClients({
+          type: 'EWOH_SW_ROLLBACK',
+          from: currentCacheName(),
+          to: rollback,
+        });
         return fallback;
       }
     }

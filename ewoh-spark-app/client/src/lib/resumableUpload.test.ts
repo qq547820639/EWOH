@@ -127,6 +127,29 @@ describe('resumableUpload', () => {
     expect(persisted).toEqual([0, 1, 2]);
   });
 
+  it('uploads a missing chunk in the middle of a non-contiguous resume state', async () => {
+    const blob = new Blob([new Uint8Array(3 * DEFAULT_CHUNK_SIZE_BYTES)]);
+    const uploaded: number[] = [];
+    // Prior attempt recorded chunks 0 and 2, but chunk 1 was lost — only the
+    // gap must be re-uploaded.
+    const result = await runResumableUpload(blob, {
+      idempotencyKey: 'ik-4',
+      fileIdentifier: 'a.bin',
+      resumeState: async () => [0, 2],
+      saveProgress: async () => {},
+      uploadChunk: (chunk) => {
+        uploaded.push(chunk.index);
+        return Promise.resolve({ ok: true as const, chunkId: `c${chunk.index}` });
+      },
+    });
+
+    expect(result.resumed).toBe(true);
+    expect(result.totalChunks).toBe(3);
+    expect(result.uploadedChunks).toBe(3);
+    expect(uploaded).toEqual([1]); // only the missing chunk is uploaded
+    expect(result.bytesUploaded).toBe(blob.size);
+  });
+
   it('finalize receives only chunks uploaded in this run', async () => {
     const blob = new Blob([new Uint8Array(DEFAULT_CHUNK_SIZE_BYTES * 2)]);
     const results: string[] = [];

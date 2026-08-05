@@ -24,6 +24,14 @@ export const MAX_CONTENT_TYPE_LENGTH = 128;
 export const DEFAULT_MAX_ZIP_EXPANDED_BYTES = 100 * 1024 * 1024;
 /** Maximum expansion ratio (uncompressed / compressed) we tolerate. */
 export const DEFAULT_MAX_ZIP_RATIO = 1000;
+/** Maximum number of entries inside a single archive. */
+export const DEFAULT_MAX_ZIP_ENTRIES = 1000;
+/** Maximum uncompressed size of a single entry inside an archive. */
+export const DEFAULT_MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES = 50 * 1024 * 1024;
+/** Maximum nesting depth (path segments) of an archive entry. */
+export const DEFAULT_MAX_ZIP_NESTING_DEPTH = 10;
+/** Upper bound on estimated extraction time (ms) for an archive. */
+export const DEFAULT_MAX_ZIP_PROCESSING_MS = 5000;
 /** Maximum image dimension (either edge) in pixels. */
 export const DEFAULT_MAX_IMAGE_DIMENSION = 12000;
 
@@ -33,6 +41,10 @@ export interface UploadValidationLimits {
   maxContentTypeLength?: number;
   maxZipExpandedBytes?: number;
   maxZipRatio?: number;
+  maxZipEntries?: number;
+  maxZipEntryUncompressedBytes?: number;
+  maxZipNestingDepth?: number;
+  maxZipProcessingMs?: number;
   maxImageDimension?: number;
 }
 
@@ -274,6 +286,118 @@ export function isZipBomb(
   return ratio > maxRatio;
 }
 
+/** 单个 ZIP 本地文件头的固定长度（签名 + 26 字节固定字段）。 */
+const ZIP_LOCAL_HEADER_FIXED = 30;
+/** ZIP 本地文件头签名 PK\x03\x04。 */
+const ZIP_LOCAL_SIG = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+
+export interface ZipEntryInfo {
+  /** 条目名（路径分隔符统一为 '/'，去掉尾部 '/'）。 */
+  name: string;
+  /** 声明解压后大小（字节）。 */
+  uncompressedSize: number;
+}
+
+/**
+ * 解析 ZIP 流中的本地文件头，返回条目名与声明解压大小。不做解压，仅遍历
+ * 头部以支撑文件数/嵌套深度/单文件尺寸等结构限制。
+ */
+export function readZipEntries(buffer: Buffer): ZipEntryInfo[] {
+  if (!buffer) return [];
+  const entries: ZipEntryInfo[] = [];
+  let offset = 0;
+  const maxIterations = 100000;
+  for (let i = 0; i < maxIterations; i += 1) {
+    const idx = buffer.indexOf(ZIP_LOCAL_SIG, offset);
+    if (idx < 0 || idx + ZIP_LOCAL_HEADER_FIXED > buffer.length) break;
+    const nameLen = buffer.readUInt16LE(idx + 26);
+    const extraLen = buffer.readUInt16LE(idx + 28);
+    const uncompressedSize = buffer.readUInt32LE(idx + 22);
+    const nameStart = idx + ZIP_LOCAL_HEADER_FIXED;
+    const nameEnd = nameStart + nameLen;
+    if (nameEnd > buffer.length) break;
+    const raw = buffer.toString('utf8', nameStart, nameEnd).replace(/\\/g, '/');
+    const name = raw.replace(/\/+$/, '');
+    entries.push({ name, uncompressedSize });
+    offset = idx + ZIP_LOCAL_HEADER_FIXED + nameLen + extraLen;
+    if (offset >= buffer.length) break;
+  }
+  return entries;
+}
+
+/** 统计 ZIP 内的条目数。 */
+export function countZipEntries(buffer: Buffer): number {
+  return readZipEntries(buffer).length;
+}
+
+/** 求出 ZIP 内单条目声明解压大小的最大值（无可解析条目时返回 0）。 */
+export function maxZipEntryUncompressedBytes(buffer: Buffer): number {
+  return readZipEntries(buffer).reduce((max, e) => Math.max(max, e.uncompressedSize), 0);
+}
+
+/** 求出 ZIP 条目目录嵌套的最大深度（按 '/' 分割的路径段数）。 */
+export function maxZipNestingDepth(buffer: Buffer): number {
+  return readZipEntries(buffer).reduce((max, e) => {
+    const depth = e.name.split('/').filter(Boolean).length;
+    return Math.max(max, depth);
+  }, 0);
+}
+
+export interface ZipLimitCheckResult {
+  ok: boolean;
+  reason?: string;
+  entries: number;
+  maxEntryBytes: number;
+  maxDepth: number;
+  totalExpandedBytes: number;
+}
+
+/**
+ * 对压缩包做全套结构限制校验：总展开尺寸、压缩率、条目数、单条目尺寸、
+ * 嵌套深度、估算处理时间。任一超限即拒绝（fail-closed）。
+ */
+export function validateZipLimits(
+  buffer: Buffer,
+  limits?: UploadValidationLimits,
+): ZipLimitCheckResult {
+  const maxExpanded = limits?.maxZipExpandedBytes ?? DEFAULT_MAX_ZIP_EXPANDED_BYTES;
+  const maxRatio = limits?.maxZipRatio ?? DEFAULT_MAX_ZIP_RATIO;
+  const maxEntries = limits?.maxZipEntries ?? DEFAULT_MAX_ZIP_ENTRIES;
+  const maxEntryBytes = limits?.maxZipEntryUncompressedBytes ?? DEFAULT_MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES;
+  const maxNesting = limits?.maxZipNestingDepth ?? DEFAULT_MAX_ZIP_NESTING_DEPTH;
+  const maxProcessingMs = limits?.maxZipProcessingMs ?? DEFAULT_MAX_ZIP_PROCESSING_MS;
+
+  const entries = readZipEntries(buffer);
+  const totalExpandedBytes = entries.reduce((sum, e) => sum + e.uncompressedSize, 0);
+  const maxEntry = entries.reduce((m, e) => Math.max(m, e.uncompressedSize), 0);
+  const depth = maxZipNestingDepth(buffer);
+  const ratio = buffer.length > 0 ? totalExpandedBytes / buffer.length : 0;
+  // 解压耗时估算：头部遍历开销 + 展开字节吞吐（约 1 字节/1µs 的保守上界）。
+  const estimatedProcessingMs = totalExpandedBytes / 1000 + entries.length;
+
+  const base = { entries: entries.length, maxEntryBytes: maxEntry, maxDepth: depth, totalExpandedBytes };
+
+  if (totalExpandedBytes > maxExpanded) {
+    return { ok: false, reason: 'archive expanded size exceeds limit', ...base };
+  }
+  if (ratio > maxRatio) {
+    return { ok: false, reason: 'archive compression ratio exceeds limit', ...base };
+  }
+  if (entries.length > maxEntries) {
+    return { ok: false, reason: 'archive contains too many entries', ...base };
+  }
+  if (maxEntry > maxEntryBytes) {
+    return { ok: false, reason: 'archive entry exceeds single-file size limit', ...base };
+  }
+  if (depth > maxNesting) {
+    return { ok: false, reason: 'archive nesting depth exceeds limit', ...base };
+  }
+  if (estimatedProcessingMs > maxProcessingMs) {
+    return { ok: false, reason: 'archive processing time estimate exceeds limit', ...base };
+  }
+  return { ok: true, ...base };
+}
+
 /** Reads pixel dimensions for common image types. Returns null when undecodable. */
 export function readImageDimensions(
   buffer: Buffer,
@@ -396,9 +520,12 @@ export function validateUpload(input: UploadValidationInput): UploadValidationRe
     }
   }
 
-  // Archive bomb check for zip.
-  if (detected === 'application/zip' && isZipBomb(buffer, limits)) {
-    return { ok: false, reason: 'archive bomb rejected' };
+  // Archive bomb / structure limits for zip（展开尺寸/压缩率/条目数/单文件/嵌套深度/耗时）。
+  if (detected === 'application/zip') {
+    const zipCheck = validateZipLimits(buffer, limits);
+    if (!zipCheck.ok) {
+      return { ok: false, reason: `archive rejected: ${zipCheck.reason}` };
+    }
   }
 
   // Oversized / undecodable images.

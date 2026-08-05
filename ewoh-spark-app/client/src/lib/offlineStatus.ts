@@ -1,5 +1,47 @@
 import type { SimpleStore, StoredPendingAction, SyncState } from './offlineDb';
-import { getLastSyncAt } from './offlineDb';
+import { backoffDelayWithJitter, getLastSyncAt } from './offlineDb';
+
+/** Threshold after which a workbench is considered "data stale" (no sync). */
+export const STALE_DATA_THRESHOLD_MS = 5 * 60 * 1000;
+
+/**
+ * Computes the next scheduled retry time for a failed item, based on its retry
+ * count and last attempt time (exponential backoff + jitter). Returns null for
+ * non-failed items or when there is nothing to schedule. Pure and injectable.
+ */
+export function computeNextRetryAt(
+  item: StoredPendingAction,
+  now: number = Date.now(),
+): string | null {
+  if (item.status !== 'failed') {
+    return null;
+  }
+  const attempts = item.retryCount ?? 0;
+  const base = item.lastAttemptAt ? new Date(item.lastAttemptAt).getTime() : now;
+  if (Number.isNaN(base)) {
+    return null;
+  }
+  return new Date(base + backoffDelayWithJitter(attempts)).toISOString();
+}
+
+/**
+ * Whether the last successful sync is older than `thresholdMs`, i.e. the
+ * workbench data is stale and the user should be warned. Pure and injectable.
+ */
+export function isDataStale(
+  lastSyncAt: string | null,
+  now: number = Date.now(),
+  thresholdMs: number = STALE_DATA_THRESHOLD_MS,
+): boolean {
+  if (!lastSyncAt) {
+    return false;
+  }
+  const then = new Date(lastSyncAt).getTime();
+  if (Number.isNaN(then)) {
+    return false;
+  }
+  return now - then > thresholdMs;
+}
 
 export interface OfflineStatusSnapshot {
   online: boolean;
