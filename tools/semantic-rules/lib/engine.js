@@ -163,11 +163,29 @@ function loadEvidence(artifactsDir) {
 }
 
 /**
- * Build the shared rule context for a repository root.
+ * Load documented exemptions from tools/semantic-rules/exemptions.json.
+ * Each key is a ruleId that is exempted from the strict audit gate. Exempting
+ * a high-risk rule remains blocked by the no-self-exemption rule, so this file
+ * can never weaken the evidence/security gates.
  */
+function loadExemptions(root) {
+  const text = readFileSafe(root, 'tools/semantic-rules/exemptions.json');
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    return Object.keys(parsed || {}).filter((id) => parsed[id] && parsed[id].severity === 'warning');
+  } catch {
+    return [];
+  }
+}
+
 function buildContext(root, options = {}) {
   const opts = { root: root || process.cwd(), ...options };
   const artifactsDir = opts.artifactsDir || findArtifactsDir(opts.root);
+  const exemptions =
+    opts.exemptions && opts.exemptions.length > 0
+      ? opts.exemptions
+      : loadExemptions(opts.root);
 
   const markdown = (rel) => {
     const text = readFileSafe(opts.root, rel);
