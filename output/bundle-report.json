@@ -1,0 +1,129 @@
+{
+  "generatedAt": "2026-08-05T10:01:19.796Z",
+  "dist": "/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/dist/client",
+  "environment": {
+    "node": "v26.5.1",
+    "platform": "darwin"
+  },
+  "firstScreen": {
+    "entryScripts": [
+      {
+        "rel": "assets/index.js",
+        "rawKB": 564.37890625,
+        "gzipKB": 176.943359375
+      }
+    ],
+    "totalGzipKB": 176.94,
+    "limitKB": 420,
+    "toleranceKB": 40,
+    "effectiveLimitKB": 460,
+    "withinBudget": true,
+    "status": "pass"
+  },
+  "chunks": {
+    "total": 80,
+    "overRouteLimit": [],
+    "top": [
+      {
+        "file": "CommandMap-DAH6OBJY.js",
+        "rawKB": 1007.5,
+        "gzipKB": 272.17
+      },
+      {
+        "file": "CommandMap-D992Go_a.js",
+        "rawKB": 1007.5,
+        "gzipKB": 272.17
+      },
+      {
+        "file": "index.js",
+        "rawKB": 564.38,
+        "gzipKB": 176.94
+      },
+      {
+        "file": "vendor-ui-hPn1RAbq.js",
+        "rawKB": 569.31,
+        "gzipKB": 158.05
+      },
+      {
+        "file": "vendor-ui-DFX5JGr1.js",
+        "rawKB": 566.58,
+        "gzipKB": 157.1
+      },
+      {
+        "file": "vendor-react-BwTqafMk.js",
+        "rawKB": 290.73,
+        "gzipKB": 91.43
+      },
+      {
+        "file": "Devices-QKPJFNNU.js",
+        "rawKB": 332.71,
+        "gzipKB": 88.73
+      },
+      {
+        "file": "Devices-xH05gUR_.js",
+        "rawKB": 332.71,
+        "gzipKB": 88.72
+      },
+      {
+        "file": "WorkOrchestration-BI8lIphg.js",
+        "rawKB": 142.2,
+        "gzipKB": 36.66
+      },
+      {
+        "file": "WorkOrchestration-sIGd_AxL.js",
+        "rawKB": 142.2,
+        "gzipKB": 36.65
+      },
+      {
+        "file": "vendor-anim-haURjzRj.js",
+        "rawKB": 111.17,
+        "gzipKB": 36.6
+      },
+      {
+        "file": "MobileWorkbench-B-ybrerT.js",
+        "rawKB": 38.48,
+        "gzipKB": 12.68
+      },
+      {
+        "file": "MobileWorkbench-CtwoVx1D.js",
+        "rawKB": 38.96,
+        "gzipKB": 12.6
+      },
+      {
+        "file": "vendor-state-BjiRU6xN.js",
+        "rawKB": 37.26,
+        "gzipKB": 11.28
+      },
+      {
+        "file": "RoleWorkbench-Rh_I4vRq.js",
+        "rawKB": 20.97,
+        "gzipKB": 7.67
+      },
+      {
+        "file": "RoleWorkbench-D-7tdaTd.js",
+        "rawKB": 18.71,
+        "gzipKB": 6.87
+      },
+      {
+        "file": "Operations-6g-Yl0D7.js",
+        "rawKB": 26.26,
+        "gzipKB": 5.83
+      },
+      {
+        "file": "Operations-T1q03lwS.js",
+        "rawKB": 26.26,
+        "gzipKB": 5.83
+      },
+      {
+        "file": "Scale-DKn_OBdx.js",
+        "rawKB": 23.52,
+        "gzipKB": 4.78
+      },
+      {
+        "file": "Scale-BGcWN0e-.js",
+        "rawKB": 23.52,
+        "gzipKB": 4.78
+      }
+    ]
+  }
+}

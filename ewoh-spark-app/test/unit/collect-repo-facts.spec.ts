@@ -1,6 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { collect } from '../../../scripts/collect-repo-facts';
+import {
+  gitBranch,
+  gitHead,
+  readVersion,
+} from '../../../scripts/truth-source';
 
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 
@@ -9,21 +14,30 @@ describe('collect-repo-facts', () => {
     const snapshot = collect();
     expect(snapshot.schema).toBe('ewoh:///repository-facts/v1');
     expect(typeof snapshot.generatedAt).toBe('string');
-    expect(snapshot.version).toBe('0.6.0-rc4');
+
+    // Version comes from the single source of truth (version.json), never a
+    // hard-coded literal in the snapshot.
+    expect(snapshot.version).toBe(readVersion());
+    expect(snapshot.version).toBeTruthy();
+
+    // head/branch come from live git, not a stale copied SHA.
     expect(typeof snapshot.head).toBe('string');
     expect(snapshot.head.length).toBeGreaterThan(0);
-    expect(snapshot.branch).toBe('main');
+    expect(snapshot.head).toBe(gitHead());
+    expect(snapshot.branch).toBe(gitBranch());
 
-    // Test-count authoritative values must match the final HEAD.
-    expect(snapshot.testCounts.serverJest).toMatch(/391/);
-    expect(snapshot.testCounts.clientJest).toMatch(/50/);
-    expect(snapshot.testCounts.openapi).toMatch(/248\/248/);
-    expect(snapshot.testCounts.e2e).toMatch(/33\/33/);
-    expect(snapshot.testCounts.browser).toMatch(/5\/5/);
+    // Test counts are structurally present. Locally the CI JSON reports are
+    // absent, so serverJest/clientJest/e2e/browser are null ("待生成"); when a
+    // report exists they must be strings. openapi is always derived live.
+    const { serverJest, clientJest, openapi, e2e, browser } = snapshot.testCounts;
+    expect(openapi).toMatch(/^\d+\/\d+$/);
+    for (const value of [serverJest, clientJest, e2e, browser]) {
+      expect(value === null || typeof value === 'string').toBe(true);
+    }
 
-    // DB footprint: distinguish 51 managed from 57 physical.
-    expect(snapshot.database.managedTables).toBe(51);
-    expect(snapshot.database.physicalTables).toBe(57);
+    // DB footprint is structurally present (numbers are derived, not asserted).
+    expect(typeof snapshot.database.managedTables).toBe('number');
+    expect(typeof snapshot.database.physicalTables).toBe('number');
 
     // Evidence summary must be present and internally consistent.
     expect(snapshot.evidence.total).toBeGreaterThan(0);

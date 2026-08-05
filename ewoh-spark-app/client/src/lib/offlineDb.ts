@@ -113,6 +113,8 @@ export interface OfflineDatabase {
   syncState: SimpleStore<SyncState>;
   serverVersion: SimpleStore<ServerVersion>;
   auditLog: SimpleStore<AuditLogEntry>;
+  /** Raw IndexedDB handle — used for multi-store atomic transactions. */
+  db: IDBDatabase;
   close(): Promise<void>;
 }
 
@@ -183,11 +185,39 @@ export async function openOfflineDb(): Promise<OfflineDatabase> {
     syncState: createStore<SyncState>(db, STORE_NAMES.syncState),
     serverVersion: createStore<ServerVersion>(db, STORE_NAMES.serverVersion),
     auditLog: createStore<AuditLogEntry>(db, STORE_NAMES.auditLog),
+    db,
     close: () => {
       db.close();
       return Promise.resolve();
     },
   };
+}
+
+/**
+ * Atomically writes a pending action and its attachment (when present) in a
+ * SINGLE IndexedDB transaction. If either write fails, both are rolled back, so
+ * an action is never persisted without its attachment (and vice-versa) — the
+ * guarantee that prevents orphaned attachments from being created in the first
+ * place.
+ */
+export async function savePendingActionWithAttachment(
+  db: IDBDatabase,
+  pending: StoredPendingAction,
+  attachment?: OfflineAttachment,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(
+      [STORE_NAMES.pendingActions, STORE_NAMES.attachments],
+      'readwrite',
+    );
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error);
+    if (attachment) {
+      tx.objectStore(STORE_NAMES.attachments).put(attachment);
+    }
+    tx.objectStore(STORE_NAMES.pendingActions).put(pending);
+  });
 }
 
 /** Creates a unique, collision-resistant id (crypto UUID when available). */
@@ -213,6 +243,57 @@ export function generateIdempotencyKey(
 
 export function backoffDelay(attempt: number): number {
   return Math.min(1000 * 2 ** attempt, 10000);
+}
+
+/**
+ * Adds bounded random jitter to a base delay: `base + rnd(0, jitterMs)`. Jitter
+ * de-synchronizes retries across many clients so they do not all retry at the
+ * same instant (thundering herd). Pure and deterministic in its bounds so tests
+ * can assert `[base, base + jitterMs)`.
+ */
+export function addJitter(base: number, jitterMs: number = 1000): number {
+  return base + Math.floor(Math.random() * (jitterMs + 1));
+}
+
+/**
+ * Retry backoff with jitter (requirement: exponential backoff + jitter + max
+ * attempts + Retry-After). The base grows exponentially (capped at 10s) and a
+ * capped random jitter is added so simultaneous flushers spread their retries.
+ */
+export function backoffDelayWithJitter(attempt: number, jitterMs: number = 1000): number {
+  return addJitter(backoffDelay(attempt), jitterMs);
+}
+
+/**
+ * Reads a `Retry-After` hint from a transient error and returns the backoff
+ * delay in ms, or `null` when no hint is present (caller falls back to its own
+ * exponential backoff). The HTTP `Retry-After` header is expressed in SECONDS;
+ * the numeric `retryAfter` field some clients emit is treated as MILLISECONDS.
+ */
+export function retryAfterMs(error: unknown): number | null {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+  const record = error as {
+    response?: { headers?: Record<string, unknown> };
+    retryAfter?: unknown;
+  };
+  const headerVal =
+    record.response?.headers?.['retry-after'] ??
+    record.response?.headers?.['Retry-After'];
+  if (headerVal !== undefined && headerVal !== null) {
+    const seconds = Number(headerVal);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(seconds * 1000, 60_000);
+    }
+  }
+  if (record.retryAfter !== undefined && record.retryAfter !== null) {
+    const ms = Number(record.retryAfter);
+    if (Number.isFinite(ms) && ms >= 0) {
+      return Math.min(ms, 60_000);
+    }
+  }
+  return null;
 }
 
 /**
@@ -319,6 +400,18 @@ export async function migratePendingActionsFromLocalStorage(
     value: true,
     updatedAt: new Date().toISOString(),
   });
+  // 迁移完成后安全清理遗留 localStorage（若存储支持 removeItem）。
+  // 数据已进入 IndexedDB，遗留键不再被读取，避免陈旧数据长期占用存储。
+  const legacyStore = storage as StorageLike & {
+    removeItem?: (key: string) => void;
+  };
+  if (typeof legacyStore.removeItem === 'function') {
+    try {
+      legacyStore.removeItem(PENDING_ACTIONS_STORAGE_KEY);
+    } catch {
+      // 清理失败不影响迁移结果（数据已在 IndexedDB 中）。
+    }
+  }
   return migrated;
 }
 
@@ -344,32 +437,66 @@ export interface OfflineFlushSummary {
   synced: string[];
   conflict: string[];
   failed: string[];
+  /** True when a 401/auth failure was hit — the queue should pause and guide re-auth. */
+  authRequired?: boolean;
+}
+
+export interface OfflineFlushOptions {
+  includeManual?: boolean;
+  maxAttempts?: number;
+  /** Bounded cross-entity concurrency (>=1). Items of the SAME entity stay serial. */
+  concurrency?: number;
+  /** When provided, the orphaned attachment is removed once its action completes. */
+  attachmentStore?: SimpleStore<OfflineAttachment>;
 }
 
 /**
  * Flushes queued offline actions through the backend state machine. Failed items
- * are retried with exponential backoff (up to `maxAttempts`). Conflict (409) items
- * are surfaced for manual resolution and never auto-retried. This still calls the
- * backend `transitionMobileStep` / `inspectMobileStep` — the state machine is
- * enforced server-side, never bypassed locally.
+ * are retried with exponential backoff (up to `maxAttempts`), honoring a
+ * `Retry-After` hint when the server sends one. Conflict (409) items are surfaced
+ * for manual resolution and never auto-retried. Auth failures (401) mark the
+ * queue as `authRequired` so the caller can pause and guide re-authentication.
+ *
+ * Execution guarantees:
+ *   - Items of the same entity (orderId) run strictly in order (serial).
+ *   - Different entities run concurrently, bounded by `options.concurrency`.
+ *   - On success the queued action is removed and its orphaned attachment (if any)
+ *     is cleaned up, so no orphan bytes are left behind after completion.
  */
 export async function flushOfflineQueue(
   syncOne: (item: StoredPendingAction) => Promise<void>,
   pendingStore: SimpleStore<StoredPendingAction>,
-  options?: { includeManual?: boolean; maxAttempts?: number },
+  options?: OfflineFlushOptions,
 ): Promise<OfflineFlushSummary> {
   const includeManual = options?.includeManual ?? false;
   const maxAttempts = options?.maxAttempts ?? MAX_RETRY_ATTEMPTS;
-  const summary: OfflineFlushSummary = { synced: [], conflict: [], failed: [] };
-  const items = await pendingStore.getAll();
+  const concurrency = Math.max(1, options?.concurrency ?? 3);
+  const attachmentStore = options?.attachmentStore;
+  const summary: OfflineFlushSummary = {
+    synced: [],
+    conflict: [],
+    failed: [],
+  };
 
-  for (const item of items) {
-    if (
-      !includeManual &&
-      (item.status === 'failed' || item.status === 'conflict')
-    ) {
-      continue;
-    }
+  const items = await pendingStore.getAll();
+  const eligible = items.filter(
+    (item) =>
+      includeManual ||
+      (item.status !== 'failed' && item.status !== 'conflict'),
+  );
+
+  // Group by entity so same-entity items stay serial; distinct entities can run
+  // concurrently (bounded by `concurrency`).
+  const groups = new Map<string, StoredPendingAction[]>();
+  for (const item of eligible) {
+    const entity = item.orderId || item.id;
+    const list = groups.get(entity) ?? [];
+    list.push(item);
+    groups.set(entity, list);
+  }
+  const groupList = Array.from(groups.values());
+
+  const syncItem = async (item: StoredPendingAction): Promise<void> => {
     await pendingStore.put({ ...item, status: 'syncing' });
 
     let lastError: unknown;
@@ -390,17 +517,22 @@ export async function flushOfflineQueue(
           break;
         }
         if (isAuthError(error)) {
-          // Session invalid — retrying won't help until auth is refreshed.
+          summary.authRequired = true;
           break;
         }
         if (attempts < maxAttempts) {
-          await delay(backoffDelay(attempts));
+          const wait = retryAfterMs(error) ?? backoffDelayWithJitter(attempts);
+          await delay(wait);
         }
       }
     }
 
     if (succeeded) {
       await pendingStore.delete(item.key);
+      // 完成即清理孤儿附件，避免成功后残留无效附件字节。
+      if (item.attachmentId && attachmentStore) {
+        await attachmentStore.delete(item.attachmentId);
+      }
       summary.synced.push(item.id);
     } else if (conflict) {
       const payload = parseConflictPayload(lastError);
@@ -433,8 +565,93 @@ export async function flushOfflineQueue(
       });
       summary.failed.push(item.id);
     }
-  }
+  };
+
+  // Process each entity group serially; run up to `concurrency` groups in parallel.
+  let groupIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, groupList.length) },
+    async () => {
+      while (groupIndex < groupList.length) {
+        const group = groupList[groupIndex];
+        groupIndex += 1;
+        for (const item of group) {
+          await syncItem(item);
+        }
+      }
+    },
+  );
+  await Promise.all(workers);
+
   return summary;
+}
+
+/** Serializes a Blob to a base64 data URL (only used client-side for export). */
+export function blobToDataUrl(blob: Blob): Promise<string> {
+  if (typeof FileReader === 'undefined') {
+    // Non-browser (test) environment — fall back to an empty data URL.
+    return Promise.resolve(`data:${blob.type || 'application/octet-stream'};base64,`);
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error('Blob read failed'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** Serialized snapshot of the offline vault for backup/export (attachments as
+ *  data URLs so the whole export is a single JSON document). */
+export interface OfflineExportSnapshot {
+  schema: string;
+  exportedAt: string;
+  pendingActions: StoredPendingAction[];
+  drafts: Draft[];
+  attachments: Array<Omit<OfflineAttachment, 'blob'> & { dataUrl: string }>;
+  syncState: SyncState[];
+  serverVersion: ServerVersion[];
+  auditLog: AuditLogEntry[];
+}
+
+/**
+ * Exports the entire offline vault to a JSON snapshot so the user can back it
+ * up before cleanup / recovery, or move it to another device. Pending actions
+ * retain their idempotency keys so a re-imported queue can be re-delivered
+ * safely without duplicate side effects. Pure and injectable for tests.
+ */
+export async function exportOfflineData(
+  db: OfflineDatabase,
+): Promise<OfflineExportSnapshot> {
+  const [pendingActions, drafts, attachments, syncState, serverVersion, auditLog] =
+    await Promise.all([
+      db.pendingActions.getAll(),
+      db.drafts.getAll(),
+      db.attachments.getAll(),
+      db.syncState.getAll(),
+      db.serverVersion.getAll(),
+      db.auditLog.getAll(),
+    ]);
+  const serializedAttachments = await Promise.all(
+    attachments.map(async (att) => ({
+      key: att.key,
+      id: att.id,
+      name: att.name,
+      contentType: att.contentType,
+      size: att.size,
+      createdAt: att.createdAt,
+      dataUrl: await blobToDataUrl(att.blob),
+    })),
+  );
+  return {
+    schema: 'ewoh.offline.export.v1',
+    exportedAt: new Date().toISOString(),
+    pendingActions,
+    drafts,
+    attachments: serializedAttachments,
+    syncState,
+    serverVersion,
+    auditLog,
+  };
 }
 
 /** Convenience: drop legacy localStorage key (kept for compatibility tests). */

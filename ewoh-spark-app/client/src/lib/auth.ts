@@ -1,5 +1,6 @@
 import type { AuthTokens, AuthUser } from '../api/auth';
 import { logout as revokeServerRefreshToken } from '../api/auth';
+import { broadcastLogout } from './sessionSecurity';
 
 const ACCESS_KEY = 'ewoh_access_token';
 const REFRESH_KEY = 'ewoh_refresh_token';
@@ -93,6 +94,8 @@ export async function revokeSession(): Promise<void> {
     }
   }
   clearTokens();
+  // 通知其它标签页同步登出（BroadcastChannel；见 ux009-uxindustrial 多标签登出测试）。
+  broadcastLogout();
 }
 
 export function isAuthenticated(): boolean {

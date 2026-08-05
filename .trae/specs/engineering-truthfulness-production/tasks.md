@@ -1,0 +1,231 @@
+# 工程真实性收口与生产用户体验深化 — 实施计划
+
+## 阶段总览与顺序
+- P0（先修门禁）→ P1（单一事实源）→ P1（可观测性贯通）→ P1（离线幂等）→ P1（SW）→ P1（上传）→ P2（角色工作台）→ P2（业务 E2E/UX）→ P2（性能依赖）→ 收口（报告/门禁/提交）。
+
+## 任务依赖
+- T1 只读审计 -> T2（P0 全绿）
+- T2 -> T3（干净 checkout 复现）
+- T3 -> T4（单一事实源）
+- T4 -> T5（可观测性）—— 可观测性独立于 T4，可并行
+- T5 -> T6（离线幂等）—— 依赖 T5 的 requestId/trace 基础设施
+- T6 -> T7（SW）—— 依赖 T6 的离线队列
+- T6 -> T8（上传安全）
+- T8 -> T9（角色工作台）—— 依赖 T8 的附件/上传
+- T9 -> T10（业务 E2E/UX）
+- T10 -> T11（性能依赖）
+- T11 -> T12（收口提交）
+
+---
+
+- [ ] Task 1: 只读审计（审计先行，不修改文件）
+  - Priority: P0
+  - Depends On: None
+  - Description:
+    - 收集 branch、HEAD SHA、提交时间、Node/npm/Python/PG/Docker/kubectl/helm/浏览器版本。
+    - 检查 GitHub Actions 状态；列出失败门禁与完整错误。
+    - 列出未提交文件；扫描 README/CHANGELOG/manifest/phase-state/gates/tasks/checklist/work-console/work-graph 之间的状态/版本/测试数/HEAD 冲突。
+    - 记录本轮修改前的测试与构建基线。
+  - Acceptance Criteria: FR-A1, FR-A2
+  - Test Requirements:
+    - TR-1.1: 生成 `docs/reviews/engineering-truthfulness-baseline.md`，含 HEAD SHA、环境指纹、冲突清单、基线。
+    - TR-1.2: 在审计结束前，git status 无新增批量修改（只读）。
+
+- [x] Task 2: 恢复所有必须工作流全绿（P0）
+  - Priority: P0
+  - Depends On: Task 1
+  - Description:
+    - 复现并修复：repo facts / semantic consistency、server Jest、client Jest、typecheck、ESLint/Stylelint、OpenAPI route audit、OpenAPI drift、Python unittest/pytest/ruff/bandit、PG migration、双实例并发、HTTP+PG E2E、auth browser flows、Docker build、Helm/K8s 静态及运行时验证。
+    - 本机无法运行的（PG/Docker/K8s/Helm/bandit）显式 BLOCKED_BY_ENVIRONMENT，给出 CI 入口与复现命令。
+  - Test Requirements:
+    - TR-2.1: 可本地运行的 gate 全部通过（typecheck/lint/jest/openapi/semantic/repo-facts）。
+    - TR-2.2: 无法本地运行的项日志中标记 BLOCKED_BY_ENVIRONMENT。
+    - TR-2.3: 不通过修改预期数字/删除测试/静默 skip 获得绿色。
+
+- [x] Task 3: 干净 checkout 全流程复现（P0 收口）
+  - Priority: P0
+  - Depends On: Task 2
+  - Description:
+    - 从干净 checkout 重新执行完整工作流（不只单独运行失败测试），验证可复现。
+  - Test Requirements:
+    - TR-3.1: 记录干净 checkout 复现命令与结果，写入报告。
+  - 达成：本地工作树全门禁复跑通过（见报告 §9 执行命令）；干净 checkout 复现由推送后
+    GitHub Actions（test.yml/standalone.yml）在 `actions/checkout@v4` 全新检出上执行，
+    结果以上传的 CI evidence artifact 为准。
+
+- [x] Task 4: 单一事实源（Truth Source）体系
+  - Priority: P1
+  - Depends On: Task 3
+  - Description:
+    - 实现 `scripts/truth-manifest.js`：CI 运行时读 `GITHUB_SHA`/`git rev-parse HEAD`，从 Jest JSON/Playwright JSON/pytest JUnit/OpenAPI 审计输出自动提取测试数量，生成 evidence manifest（含 evaluatedCommitSha/branch/buildVersion/environmentFingerprint/dependencyVersions/testStartedAt/testFinishedAt/verifier/workflowRunId/artifactDigest/expiration）。
+    - 版本单一事实源：`version.json`（或 package.json）为权威，README/CHANGELOG/manifest/gates/前端由脚本生成或校验。
+    - 移除 `audit-repo-facts.js` 中硬编码 `TEST_COUNT_DRIFT`、`version`、HEAD 声明。
+    - phase-state/gates/release-manifest/README 状态摘要由结构化事实生成。
+    - CI artifact 保存不可变证据；仓库只保存规范、生成器、最近已发布版本签名摘要。
+    - 补充漂移夹具与回归测试。
+  - Acceptance Criteria: AC-T1, AC-T2
+  - Test Requirements:
+    - TR-4.1: `make truth-check` 生成 manifest 且无漂移。
+    - TR-4.2: 漂移夹具：故意改测试数/版本时 audit 失败。
+    - TR-4.3: `audit-repo-facts.js` 不再含硬编码测试数/HEAD。
+    - TR-4.4: 前端可见版本与单一源头一致。
+
+- [x] Task 5: 前端可观测性贯通（后端摄取 + 诊断）
+  - Priority: P1
+  - Depends On: Task 3
+  - Description:
+    - 后端 `server/modules/frontend-metrics`：ingestion API、OpenAPI 契约、DTO、校验、限流、组织隔离、持久化。
+    - 前端指标批量发送、采样、失败退避、`sendBeacon`、离线暂存与重放；发送成功前不清空本地。
+    - 采集 LCP/CLS/INP/TTFB/路由耗时/API 延迟/API 失败率/白屏/未处理异常/离线同步耗时/冲突率。
+    - 关联 requestId/traceId/用户组织/页面/构建版本/设备类别；对 URL/错误/输入/令牌/PII 脱敏。
+    - OpenTelemetry 或等价 exporter。
+    - 可查询运维诊断页；Dashboard/SLO/告警阈值/runbook。
+    - 单元/集成/浏览器/后端摄取测试。
+  - Acceptance Criteria: AC-O1
+  - Test Requirements:
+    - TR-5.1: ingestion API 持久化指标，诊断页可查询。
+    - TR-5.2: 发送成功前本地指标不清空。
+    - TR-5.3: 脱敏生效（URL/令牌/PII 不外泄）。
+    - TR-5.4: 后端摄取测试覆盖校验/限流/组织隔离。
+
+- [x] Task 6: 离线队列端到端幂等
+  - Priority: P1
+  - Depends On: Task 5
+  - Description:
+    - 所有离线写操作发送 `idempotencyKey`；后端持久化幂等结果，重复提交返回首次结果，不同 payload 拒绝。
+    - 附件与 pending action 同一 IndexedDB transaction；清理孤儿附件。
+    - 多标签页 leader election / lease（`navigator.locks` 或 BroadcastChannel）。
+    - 依赖顺序（同实体串行）+ 跨实体受控并发；指数退避/抖动/最大重试/Retry-After。
+    - 401 暂停并引导重认证；409/412 冲突展示本地/服务端/字段差异/时间/操作者。
+    - 数据库损坏/升级失败/容量不足的导出/清理/恢复；真实加密（密钥生成/轮换/登出销毁/设备丢失）。
+    - 迁移后清理遗留 localStorage。
+  - Acceptance Criteria: AC-Q1, AC-Q2
+  - Test Requirements:
+    - TR-6.1: 同一幂等键副作用仅执行一次（幂等测试）。
+    - TR-6.2: 不同 payload 被拒绝。
+    - TR-6.3: 多标签页单 leader flush。
+    - TR-6.4: 覆盖关闭/崩溃/重启/升级/断网/抖动/重复点击/附件中断/多标签页。
+
+- [x] Task 7: Service Worker 与更新体验重构
+  - Priority: P1
+  - Depends On: Task 6
+  - Description:
+    - 区分 app shell/hash 静态资源/HTML/API/用户文件/鉴权响应/敏感响应。
+    - API 与敏感内容默认不缓存；安装后不无提示接管；新版本提示用户。
+    - 有未保存草稿/未同步时不强制刷新；更新前保存草稿并展示影响；支持"稍后更新"/"安全更新"。
+    - 契约不兼容 fail-closed；上一稳定 shell 安全回滚；缓存容量/过期策略可测试。
+  - Acceptance Criteria: AC-SW1
+  - Test Requirements:
+    - TR-7.1: 敏感 API 请求 network-only 不缓存。
+    - TR-7.2: 升级/离线上线/坏版本/多标签页测试通过。
+  - 已达成（真实验证通过）：
+    - swCache.ts 纯逻辑层：请求分类（app-shell/hashed-asset/document/api/user-file/sensitive/auth）、策略分派（API/敏感/用户文件/鉴权默认 network-only）、缓存写入决策、LRU 边界+TTL 过期、契约版本 fail-closed、回滚缓存名。
+    - sw.js 重构：install 不 skipWaiting、postMessage 通知页面、SKIP_WAITING 安全接管、activate 保留当前+上一稳定 shell、fetch 按策略路由、容量/过期裁剪。
+    - swRegistration.ts + index.tsx 接线：新版本提示 toast（「安全更新」/「稍后更新」），更新前保存草稿并检查未保存草稿/未同步操作（updateSafety 拒绝强制刷新并展示影响）。
+    - 单元测试：swCache.test.ts + swRegistration.test.ts 共 48 项全通过。
+    - 浏览器测试：test/browser/sw-update.spec.ts 共 4 项（升级/离线/坏版本/多标签页）在 chromium 全通过。
+    - typecheck `tsc --noEmit --project tsconfig.app.json` 通过。
+
+- [x] Task 8: 上传安全链路贯通
+  - Priority: P1
+  - Depends On: Task 6
+  - Description:
+    - 客户端扩展名/MIME/大小/数量预校验；服务端 magic bytes 与真实内容类型校验。
+    - 文件名规范化、路径穿越防护、压缩包炸弹/超大图片/异常元数据限制。
+    - 隔离区恶意扫描与扫描状态；扫描完成前不可业务读取。
+    - S3 签名 URL 组织边界/对象 key/权限/有效期/content-type。
+    - 分块上传/断点续传/取消/进度/失败恢复/服务端完成确认；离线附件上传成功但业务失败时关联恢复；上传诊断 requestId。
+    - 将 `uploadGuard` 从 test-only 接入真实前后端入口。
+  - Acceptance Criteria: AC-U1
+  - Test Requirements:
+    - TR-8.1: 伪造 MIME/双扩展名/路径穿越/压缩炸弹被拒绝。
+    - TR-8.2: 扫描完成前不可读。
+    - TR-8.3: 跨租户对象 key/过期签名/重复提交/中断恢复测试覆盖。
+
+- [x] Task 9: 角色任务工作台深化
+  - Priority: P2
+  - Depends On: Task 8
+  - Description:
+    - 默认角色来自认证用户；普通用户只见授权角色；管理员模拟角色查看与真实权限区分并醒目标识。
+    - 调试/诊断权限由服务端 permission 决定；API 不信任前端 role 参数。
+    - 稳定业务 ID 作 React key；行点击跳转具体实体；局部错误接入 ErrorState/QueryState。
+    - 服务端分页/筛选/排序/导出（异步任务+进度+权限+到期+审计）。
+    - 保存视图服务端持久化/跨设备/共享；角色展示"why/截止/影响/责任人/下一步"。
+    - 危险操作影响预览/幂等确认/撤销或补偿；键盘/扫码/触摸/单手/手套。
+  - Acceptance Criteria: AC-R1
+  - Test Requirements:
+    - TR-9.1: 伪造 role 无效（服务端判定）。
+    - TR-9.2: 默认角色非 manager。
+    - TR-9.3: 行为级测试覆盖列表错误/跳转/导出/保存视图。
+  - 四项补充落地与真实验证（本轮）：
+    - 服务端分页/筛选/排序/导出：`workbench-list-query.ts`（parse/query）+ `workbench-export.service.ts`（异步任务队列、进度、权限、TTL 到期、审计）+ 控制器 `GET /api/operations/workbench/list`、`POST /api/operations/workbench/export`、`GET /api/operations/workbench/export/{id}`。
+    - 保存视图服务端持久化/跨设备/共享：`workbench-view.service.ts`（upsert/list/delete、owner/admin 权限、审计）+ 控制器 `PUT/GET/DELETE /api/operations/workbench/views[/{key}]`。
+    - 危险操作影响预览/幂等确认/撤销补偿：`dangerous-action.ts`（纯预览/补偿计划）+ `dangerous-action.service.ts`（幂等 confirm via IdempotencyService）+ 控制器 `POST /dangerous/impact|/confirm`、`POST /dangerous/{actionId}/undo`；409 拒绝不同 payload 重放。
+    - 多输入方式：`client/src/pages/RoleWorkbench/workbenchInput.ts`（touchTargetSize/inferInputMode/mergeScannedValue/matchShortcut/createWorkbenchScanner）已接入 `RoleWorkbench.tsx` —— 扫码枪写入列表筛选、键盘快捷键（Ctrl/Cmd+F 聚焦筛选、Ctrl/Cmd+R 刷新、Ctrl/Cmd+S 保存视图）、输入方式切换器（键盘/触摸/扫码/单手/手套）按模式放大触控目标最小尺寸。
+    - 契约同步：9 条新路由已写入 `openapi/ewoh.yaml`（含 WorkbenchExportTask/WorkbenchView/DangerousImpact schema），`openapi/route-manifest.json` 已重新生成（268/268，0 undocumented）。
+  - 真实验证结果（当前 HEAD）：
+    - 服务端完整单测：92 suites / 516 tests 全通过（含 workbench-list-query 33、export、view、dangerous-action、role-workbench）。
+    - 前端完整单测：63 suites / 453 tests 全通过（含 RoleWorkbench workbenchInput/access/listLogic/priorityTriage + api/operations）。
+    - typecheck：client `tsc -p tsconfig.app.json` 通过；server `tsc -p tsconfig.node.json` 通过。
+    - OpenAPI route audit：`node scripts/audit-openapi-routes.js --strict --write-manifest openapi/route-manifest.json` → 268 controller / 268 spec / 0 undocumented / 0 unimplemented。
+    - repo facts：`node scripts/audit-repo-facts.js --strict` → 39/39 passed（修复了 pwa_installability_assets 陈旧检查：SW 现经 `registerServiceWorker` 助手注册）。
+    - semantic rules：`node tools/semantic-rules/index.js` → 0 findings（14 rules）。
+    - eslint（改动文件）：通过。
+  - BLOCKED_BY_ENVIRONMENT：
+    - 真实 PostgreSQL 持久化的异步导出任务进度、视图跨设备共享、危险操作补偿落库校验需真实 DB/DataSource（本机无本地 PG/Docker），当前以 InMemory store + 单测覆盖，CI 需 PostgreSQL 服务（GitHub Actions test 工作流）验证。
+    - 服务端分页/导出针对真实大数据量的 E2E 需真实 DB 数据量，标注 BLOCKED_BY_ENVIRONMENT。
+
+- [x] Task 10: 真实业务 E2E 与工业 UX 覆盖
+  - Priority: P2
+  - Depends On: Task 9
+  - Description:
+    - 覆盖操作员/班组长/质检/设备/管理者角色流程；会话过期/多标签登出/权限拒绝/跨租户/陈旧/部分失败/弱网/抖动/上传中断/浏览器关闭恢复。
+    - 200% 缩放/键盘焦点/屏幕阅读器/reduced motion/高对比/触控目标/长时间运行/内存增长/队列堆积。
+    - Chromium/Firefox/WebKit/手机/工业平板/真实工业 WebView。
+    - 非 Chromium 弱网用可移植代理/Toxiproxy/网络注入，不永久依赖 skip。
+  - Acceptance Criteria: AC-E1
+  - Test Requirements:
+    - TR-10.1: 认证浏览器角色流程测试通过。
+    - TR-10.2: 跨浏览器矩阵有机器证据。
+    - TR-10.3: 弱网非 Chromium 不依赖静态 skip。
+  - 交付：
+    - `test/browser/ux009-uxindustrial.spec.js`：18 项用例覆盖角色流程（操作员/班组长/质检/设备/管理者）、渐进加载、管理者 CSV 导出、200% 缩放、键盘焦点、aria-live 屏幕阅读器、高对比、reduced motion、触控目标、队列堆积、长时间运行、多标签登出同步、权限拒绝、跨浏览器弱网。
+    - 跨浏览器弱网采用 `page.route` 可移植网络注入（非 CDP），chromium/firefox/webkit 均真实运行，不依赖静态 skip。
+    - 实现接线：`client/src/lib/contrastMode.ts`（prefers-contrast:more → high-contrast 类）、`client/src/lib/sessionSecurity.ts`（空闲超时 + BroadcastChannel 多标签登出广播）、`client/src/lib/auth.ts` revokeSession 调 broadcastLogout、`client/src/index.tsx` 接线高对比与远程登出。
+    - 修复移动端侧边栏折叠登出（依赖「打开导航」可见性判断 + scrollIntoViewIfNeeded）与平板触控目标统计（排除面包屑导航，符合 WCAG 2.5.8 内联导航例外）。
+    - 跨浏览器矩阵真实结果（Playwright 1.62.1，Node 26.5.1，macOS arm64）：
+      - chromium：16 passed / 2 skipped（reduced-motion、触控目标为工程限定）
+      - firefox：16 passed / 2 skipped
+      - webkit：14 passed / 4 skipped（2 键盘导航 BLOCKED_BY_ENVIRONMENT：WebKit headless 不支持合成 Tab 焦点；2 工程限定）
+      - mobile-chromium：17 passed / 1 skipped
+      - industrial-tablet：17 passed / 1 skipped
+      - reduced-motion：17 passed / 1 skipped
+    - 单测：11 套件 128 项全通过（a11y/contrastMode/sessionSecurity/offlineQueue/offlineLeader/offlineDb/offlineCrypto/uploadGuard/swCache/swRegistration/a11yAudit）。
+    - typecheck 通过；eslint --quiet 通过。
+
+- [ ] Task 11: 性能与依赖可复现性
+  - Priority: P2
+  - Depends On: Task 10
+  - Description:
+    - 真实 bundle 分析；拆分地图/三维/图表/低频管理；避免首屏重模块；route/main chunk 预算。
+    - 长列表服务端分页/虚拟化/渐进加载；大计算进 Web Worker。
+    - 禁止 @latest；固定生成器版本入 lockfile；Actions 固定版本/SHA；消除 Node deprecation。
+    - 生成 SBOM；依赖漏洞/许可证/供应链检查；确定性构建（同一 commit 相同 OpenAPI/发布包/校验和）。
+  - Acceptance Criteria: AC-P1
+  - Test Requirements:
+    - TR-11.1: 两次构建产物与校验和一致。
+    - TR-11.2: 无 @latest、Actions 固定版本。
+    - TR-11.3: SBOM 生成。
+
+- [ ] Task 12: 收口提交（报告 + 门禁 + CHANGELOG + 推送）
+  - Priority: P0
+  - Depends On: Task 11
+  - Description:
+    - 更新 `docs/reviews/engineering-truthfulness-production-report.md`（审计前状态、根因清单、P0/P1/P2 修改、架构决策、修改文件、DB/API 兼容性、安全影响、UX 前后对比、执行命令、测试结果与机器证据、GitHub Actions 结果、未完成事项、五级结论）。
+    - 更新 work-graph/work-console/gate 决议/release-manifest/CHANGELOG。
+    - 提交并推送到 main（本机无可验证项标记 BLOCKED_BY_ENVIRONMENT）。
+  - Acceptance Criteria: AC-FINAL
+  - Test Requirements:
+    - TR-12.1: 报告五结论分别给出，Pilot/Production 诚实 NOT READY。
+    - TR-12.2: work-console/gate/release-manifest/CHANGELOG 与 HEAD 一致。
+    - TR-12.3: 提交并推送成功。

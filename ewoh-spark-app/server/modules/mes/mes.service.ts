@@ -436,6 +436,28 @@ export class MesService {
     body: Record<string, unknown> | undefined,
     actor?: OrgContext,
   ) {
+    // Offline writes carry an idempotency key so a delivered-but-mistaken-for-
+    // failed replay returns the first result WITHOUT re-executing the side
+    // effect (and a different payload on the same key is rejected with 409).
+    const idempotencyKey = (body as { idempotencyKey?: string } | undefined)
+      ?.idempotencyKey;
+    if (idempotencyKey?.trim()) {
+      return this.idempotencyService.executeWithPayload(
+        idempotencyKey.trim(),
+        { orderId, stepId, action, body },
+        () => this.doTransitionStep(orderId, stepId, action, body, actor),
+      );
+    }
+    return this.doTransitionStep(orderId, stepId, action, body, actor);
+  }
+
+  private async doTransitionStep(
+    orderId: string,
+    stepId: string,
+    action: string,
+    body: Record<string, unknown> | undefined,
+    actor?: OrgContext,
+  ) {
     const workOrder = await this.getWorkOrder(orderId);
     const step = workOrder.steps.find((candidate) => candidate.stepId === stepId);
     if (!step) {
@@ -1010,6 +1032,36 @@ export class MesService {
   }
 
   async qualityInspection(
+    orderId: string,
+    body: {
+      stepId: string;
+      inspectorId?: string;
+      result: 'pass' | 'fail' | 'rework';
+      defectCode?: string;
+      quantity?: number;
+      note?: string;
+      schemeId?: string;
+      stage?: 'first' | 'in_process' | 'final';
+      checkResults?: Array<{
+        itemId: string;
+        result: 'pass' | 'fail';
+        note?: string;
+      }>;
+      idempotencyKey?: string;
+    },
+    actor?: OrgContext,
+  ) {
+    if (body.idempotencyKey?.trim()) {
+      return this.idempotencyService.executeWithPayload(
+        body.idempotencyKey.trim(),
+        { orderId, body },
+        () => this.doQualityInspection(orderId, body, actor),
+      );
+    }
+    return this.doQualityInspection(orderId, body, actor);
+  }
+
+  private async doQualityInspection(
     orderId: string,
     body: {
       stepId: string;

@@ -5461,6 +5461,72 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/files/{id}/presigned-url:
+    post:
+      tags:
+        - files
+      summary: Request a short-lived S3 presigned download URL
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: File id
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresignedUrlRequest'
+      responses:
+        '201':
+          description: Presigned URL generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignedUrlResult'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/files/{id}/scan-result:
+    post:
+      tags:
+        - files
+      summary: Record malware scan outcome (admin / scanner identity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: File id
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScanResultRequest'
+      responses:
+        '201':
+          description: Scan status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileRecord'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /health/live:
     get:
       tags:
@@ -5595,6 +5661,119 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/observability/frontend-metrics:
+    post:
+      tags:
+        - observability
+      summary: Ingest frontend Web Vitals / route / API / offline metrics
+      description: >
+        Batch ingestion endpoint for browser metrics (LCP, CLS, INP, TTFB,
+        route latency, API latency/failure, white screen, unhandled errors,
+        offline sync latency/conflict rate). Records are bound to the
+        requester's org from the auth token; sensitive values are redacted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [metrics]
+              properties:
+                metrics:
+                  type: array
+                  maxItems: 200
+                  items:
+                    type: object
+                    required: [name, value]
+                    properties:
+                      name:
+                        type: string
+                        maxLength: 200
+                      value:
+                        type: number
+                      tags:
+                        type: object
+                        additionalProperties: true
+                      at:
+                        type: integer
+                        description: epoch ms
+                requestId:
+                  type: string
+                traceId:
+                  type: string
+                page:
+                  type: string
+                buildVersion:
+                  type: string
+                deviceCategory:
+                  type: string
+      responses:
+        '201':
+          description: Accepted metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: integer
+        '400':
+          description: Invalid metrics / missing org context
+        '429':
+          description: Rate limited
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+    get:
+      tags:
+        - observability
+      summary: Query ingested frontend metrics (org-isolated, roles restricted)
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+        - name: metric
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: orgId
+          in: query
+          required: false
+          schema:
+            type: string
+            description: only honored for global admins
+      responses:
+        '200':
+          description: Query result with summary and org-scoped metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orgId:
+                    type: string
+                  summary:
+                    type: object
+                    additionalProperties:
+                      type: number
+                  metrics:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+
   /api/operations/assets/{id}/state:
     post:
       tags:
@@ -5975,7 +6154,427 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties: true
+                required:
+                  - role
+                  - generatedAt
+                  - authorizedRoles
+                  - canDebug
+                  - simulating
+                  - data
+                properties:
+                  role:
+                    type: string
+                    enum: [operator, team_lead, quality, equipment, manager]
+                  generatedAt:
+                    type: string
+                    format: date-time
+                  authorizedRoles:
+                    type: array
+                    description: >
+                      Workbench roles the authenticated user is allowed to
+                      view, resolved server-side from the JWT auth roles. A
+                      forged `role` query param is rejected (403) when it is
+                      not in this set.
+                    items:
+                      type: string
+                      enum: [operator, team_lead, quality, equipment, manager]
+                  canDebug:
+                    type: boolean
+                    description: >
+                      Server-granted debug/diagnostics permission (admin only);
+                      never derived from a client localStorage flag.
+                  simulating:
+                    type: boolean
+                    description: >
+                      True when the requested role is not the user's own
+                      default role (admin simulate-as-role view).
+                  data:
+                    type: object
+                    additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/workbench/list:
+    get:
+      tags:
+        - operations
+      summary: Server-side paginated, filtered, sorted workbench list
+      parameters:
+        - name: role
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [operator, team_lead, quality, equipment, manager]
+        - name: listKey
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+        - name: filter
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: sortKey
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: sortDir
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: personId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated workbench list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, page, pageSize, hasMore]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  pageSize:
+                    type: integer
+                  hasMore:
+                    type: boolean
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/workbench/export:
+    post:
+      tags:
+        - operations
+      summary: Create an asynchronous big-data export task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role, listKey]
+              properties:
+                role:
+                  type: string
+                  enum: [operator, team_lead, quality, equipment, manager]
+                listKey:
+                  type: string
+                filter:
+                  type: string
+      responses:
+        '201':
+          description: Created export task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkbenchExportTask'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/workbench/export/{id}:
+    get:
+      tags:
+        - operations
+      summary: Read an export task by id (owner or admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Export task state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkbenchExportTask'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/workbench/views:
+    get:
+      tags:
+        - operations
+      summary: List saved workbench views for the actor
+      responses:
+        '200':
+          description: Saved views
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkbenchView'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/workbench/views/{key}:
+    put:
+      tags:
+        - operations
+      summary: Save (upsert) a workbench view
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role, listKey]
+              properties:
+                role:
+                  type: string
+                  enum: [operator, team_lead, quality, equipment, manager]
+                listKey:
+                  type: string
+                filter:
+                  type: string
+                sortKey:
+                  type: string
+                sortDir:
+                  type: string
+                  enum: [asc, desc]
+                limit:
+                  type: integer
+                shared:
+                  type: boolean
+      responses:
+        '200':
+          description: Saved view
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkbenchView'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags:
+        - operations
+      summary: Delete a saved workbench view (owner or admin)
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/dangerous/impact:
+    post:
+      tags:
+        - operations
+      summary: Preview impact of a dangerous operation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, targetType, targetId]
+              properties:
+                action:
+                  type: string
+                  enum: [transfer, approve, delete, cancel, resolve]
+                targetType:
+                  type: string
+                targetId:
+                  type: string
+                affectedCount:
+                  type: integer
+                  minimum: 1
+      responses:
+        '200':
+          description: Impact preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DangerousImpact'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/dangerous/confirm:
+    post:
+      tags:
+        - operations
+      summary: Idempotent confirmation of a dangerous operation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, targetType, targetId]
+              properties:
+                action:
+                  type: string
+                  enum: [transfer, approve, delete, cancel, resolve]
+                targetType:
+                  type: string
+                targetId:
+                  type: string
+                affectedCount:
+                  type: integer
+                  minimum: 1
+                reason:
+                  type: string
+                idempotencyKey:
+                  type: string
+      responses:
+        '200':
+          description: Confirmation result with compensation plan
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [actionId, impact, compensation]
+                properties:
+                  actionId:
+                    type: string
+                  impact:
+                    $ref: '#/components/schemas/DangerousImpact'
+                  compensation:
+                    type: object
+                    required: [kind, description]
+                    properties:
+                      kind:
+                        type: string
+                        enum: [undo, restore, noop]
+                      description:
+                        type: string
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/operations/dangerous/{actionId}/undo:
+    post:
+      tags:
+        - operations
+      summary: Undo / compensate a confirmed dangerous operation
+      parameters:
+        - name: actionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetType, targetId]
+              properties:
+                targetType:
+                  type: string
+                targetId:
+                  type: string
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Undo result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [actionId, undo, targetType, targetId]
+                properties:
+                  actionId:
+                    type: string
+                  undo:
+                    type: boolean
+                  targetType:
+                    type: string
+                  targetId:
+                    type: string
         BadRequest:
           $ref: '#/components/responses/BadRequest'
         Unauthorized:
@@ -9324,7 +9923,52 @@ components:
           type: string
         createdAt:
           type: string
+        scanStatus:
+          type: string
+          enum:
+            - pending
+            - clean
+            - infected
+        idempotencyKey:
+          type: string
       required: []
+      additionalProperties: false
+    PresignedUrlRequest:
+      type: object
+      properties:
+        expiresInSeconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+          description: Signed URL lifetime in seconds (clamped to 24h)
+        contentType:
+          type: string
+          description: Optional Content-Type override for the signed response
+      additionalProperties: false
+    PresignedUrlResult:
+      type: object
+      properties:
+        url:
+          type: string
+        expiresAt:
+          type: string
+        key:
+          type: string
+      required:
+        - url
+        - expiresAt
+        - key
+      additionalProperties: false
+    ScanResultRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - clean
+            - infected
+      required:
+        - status
       additionalProperties: false
     FileRecordList:
       type: array
@@ -11112,4 +11756,124 @@ components:
           description: Optional readiness checks
           additionalProperties: true
       required: []
+      additionalProperties: false
+    WorkbenchExportTask:
+      type: object
+      required:
+        - id
+        - role
+        - listKey
+        - filter
+        - status
+        - progress
+        - processed
+        - total
+        - ownerId
+        - orgId
+        - action
+        - createdAt
+        - expiresAt
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+          enum: [operator, team_lead, quality, equipment, manager]
+        listKey:
+          type: string
+        filter:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, expired]
+        progress:
+          type: number
+        processed:
+          type: number
+        total:
+          type: number
+        ownerId:
+          type: string
+        orgId:
+          type: string
+        action:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        downloadUrl:
+          type: string
+        error:
+          type: string
+      additionalProperties: false
+    WorkbenchView:
+      type: object
+      required:
+        - key
+        - role
+        - listKey
+        - ownerId
+        - orgId
+        - shared
+        - createdAt
+        - updatedAt
+      properties:
+        key:
+          type: string
+        role:
+          type: string
+          enum: [operator, team_lead, quality, equipment, manager]
+        listKey:
+          type: string
+        ownerId:
+          type: string
+        orgId:
+          type: string
+        filter:
+          type: string
+        sortKey:
+          type: string
+        sortDir:
+          type: string
+          enum: [asc, desc]
+        limit:
+          type: integer
+        shared:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    DangerousImpact:
+      type: object
+      required:
+        - action
+        - targetType
+        - targetId
+        - summary
+        - affectedCount
+        - irreversible
+        - requiresConfirmation
+      properties:
+        action:
+          type: string
+          enum: [transfer, approve, delete, cancel, resolve]
+        targetType:
+          type: string
+        targetId:
+          type: string
+        summary:
+          type: string
+        affectedCount:
+          type: integer
+        irreversible:
+          type: boolean
+        requiresConfirmation:
+          type: boolean
       additionalProperties: false

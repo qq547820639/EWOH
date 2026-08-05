@@ -169,6 +169,8 @@ export interface FileRecord {
   size: number;
   note?: string;
   createdAt: string;
+  scanStatus?: 'pending' | 'clean' | 'infected';
+  idempotencyKey?: string;
 }
 
 export interface WorkerLoad {

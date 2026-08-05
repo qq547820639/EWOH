@@ -1,4 +1,9 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { desc } from 'drizzle-orm';
 import {
@@ -10,14 +15,23 @@ import {
   ewohWorldState,
 } from '@server/database/schema';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import {
+  canAccessWorkbenchRole,
+  canUseWorkbenchDebug,
+  canUseWorkbenchSimulation,
+  resolveAuthorizedWorkbenchRoles,
+  resolveDefaultWorkbenchRole,
+  WORKBENCH_ROLES,
+  type WorkbenchRole,
+} from './workbench-access';
+import {
+  parseWorkbenchListQuery,
+  queryWorkbenchList,
+  type WorkbenchListQueryInput,
+  type WorkbenchListResult,
+} from './workbench-list-query';
 
-export const ROLE_WORKBENCH_ROLES = [
-  'operator',
-  'team_lead',
-  'quality',
-  'equipment',
-  'manager',
-] as const;
+export const ROLE_WORKBENCH_ROLES = WORKBENCH_ROLES;
 
 export type RoleWorkbenchRole = (typeof ROLE_WORKBENCH_ROLES)[number];
 
@@ -63,6 +77,38 @@ export class RoleWorkbenchService {
         `role must be one of ${ROLE_WORKBENCH_ROLES.join(', ')}`,
       );
     }
+    const target = role as WorkbenchRole;
+    const authRoles = actor?.roles ?? [];
+
+    // Server-side RBAC: a forged `role` query param must never grant access.
+    // Only users whose auth roles authorize the target role may view it;
+    // admins may additionally simulate any role.
+    const canSimulate = canUseWorkbenchSimulation(authRoles);
+    if (
+      !canAccessWorkbenchRole(authRoles, target) &&
+      !canSimulate
+    ) {
+      throw new ForbiddenException(
+        `You are not authorized to view the '${target}' workbench`,
+      );
+    }
+
+    // personId is only honored for the caller's own identity or an admin
+    // simulating an operator; otherwise the request is rejected, never
+    // silently downgraded.
+    if (personId && personId.trim()) {
+      const isSelf = Boolean(actor && personId.trim() === actor.userId);
+      if (!isSelf && !canSimulate) {
+        throw new ForbiddenException(
+          'You may only query your own operator workbench',
+        );
+      }
+    }
+
+    const authorizedRoles = resolveAuthorizedWorkbenchRoles(authRoles);
+    const canDebug = canUseWorkbenchDebug(authRoles);
+    const simulating = target !== resolveDefaultWorkbenchRole(authRoles);
+
     const [tasks, steps, events, entities, states, materials] = await Promise.all([
       this.db
         .select()
@@ -235,7 +281,41 @@ export class RoleWorkbenchService {
     return {
       role,
       generatedAt: now.toISOString(),
+      authorizedRoles,
+      canDebug,
+      simulating,
       data,
     };
+  }
+
+  /**
+   * Server-side paginated / filtered / sorted access to a single workbench
+   * list. Re-runs the role's RBAC gate (getWorkbench) then extracts the target
+   * list and applies the bounded query. Object-shaped lists (e.g. device-status
+   * distributions) are normalised to `[key, value]` rows so every list can be
+   * filtered and sorted uniformly.
+   */
+  async getWorkbenchList(
+    role: string,
+    listKey: string,
+    query: WorkbenchListQueryInput | Record<string, unknown> = {},
+    personId?: string,
+    actor?: OrgContext,
+  ): Promise<WorkbenchListResult> {
+    const workbench = await this.getWorkbench(role, personId, actor);
+    const raw = (workbench.data as Record<string, unknown>)[listKey];
+    let rows: Array<Record<string, unknown>> = [];
+    if (Array.isArray(raw)) {
+      rows = raw as Array<Record<string, unknown>>;
+    } else if (raw && typeof raw === 'object') {
+      rows = Object.entries(raw as Record<string, unknown>).map(
+        ([key, value]) => ({ key, value }),
+      );
+    }
+    const columns =
+      rows.length > 0
+        ? Object.keys(rows[0]).map((key) => ({ key, label: key }))
+        : [];
+    return queryWorkbenchList(rows, columns, parseWorkbenchListQuery(query));
   }
 }

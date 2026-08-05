@@ -106,6 +106,46 @@ export function triageRoleItems(
 /** 常见优先级字段名（用于从通用表格行中识别「优先级」列）。 */
 const PRIORITY_KEYS = ['priority', 'urgency', 'level', 'severity'];
 
+/**
+ * 人事/任务摘要（spec item 11）：把「为什么现在处理、截止时间、影响、
+ * 责任人、推荐下一步」收敛为一段面向一线用户的纯文本，可在列表行 / 详情
+ * 中统一展示。纯函数，便于单测与复用。
+ */
+export interface ItemSummary {
+  /** 为什么现在处理（原因 + 逾期提示）。 */
+  reason: string;
+  /** 截止时间（无则填空）。 */
+  deadline: string;
+  /** 影响面。 */
+  impact: string;
+  /** 责任人。 */
+  owner: string;
+  /** 推荐的下一步动作。 */
+  nextStep: string;
+}
+
+export function summarizeItem(
+  item: TriageResult,
+  now = Date.now(),
+): ItemSummary {
+  const overdue = isOverdue(item.deadline, now);
+  const reason = [
+    item.reason,
+    overdue && item.deadline ? '（已逾期）' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return {
+    reason: reason || '待处理事项',
+    deadline: item.deadline
+      ? new Date(item.deadline).toLocaleString('zh-CN', { hour12: false })
+      : '',
+    impact: item.impact ?? '',
+    owner: item.owner ?? '',
+    nextStep: item.nextStep ?? '',
+  };
+}
+
 /** 在列定义中查找优先级列；找不到返回 null。 */
 export function priorityColumnKey(
   columns: Array<{ key: string }>,

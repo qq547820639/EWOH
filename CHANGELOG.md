@@ -6,6 +6,36 @@
 ## [Unreleased]
 
 ### Added
+- 工程真实性收口与生产用户体验深化（单一事实源 + 生产链路贯通）：
+  - **单一事实源**：`scripts/truth-manifest.js` + `scripts/truth-source.js` 由 CI 运行时读取
+    `GITHUB_SHA`/`git rev-parse HEAD`，从 Jest JSON 自动取测试计数并生成 evidence manifest
+    （evaluatedCommitSha/branch/buildVersion/environmentFingerprint/dependencyVersions/
+    testStartedAt/testFinishedAt/verifier/workflowRunId/artifactDigest/expiration）；
+    `version.json` 为唯一版本源头；`make truth-check` 漂移校验；漂移夹具与回归测试。
+    `output/evidence-manifest.json` 为运行时/CI 派生产物不入库（避免自指失效与跨环境漂移）。
+  - **前端可观测性贯通**：后端 `frontend-metrics` ingestion API（契约/DTO/校验/限流/组织隔离），
+    前端批量发送/采样/失败退避/sendBeacon/离线暂存重放，发送成功前不清空本地；采集
+    LCP/CLS/INP/TTFB/路由/API 延迟/失败率/白屏/异常/离线指标；关联 requestId/traceId/组织/页面/
+    构建版本/设备类别并脱敏；后端摄取测试。
+  - **离线队列端到端幂等**：所有离线写操作发送 `idempotencyKey`，后端持久化幂等结果、重复提交
+    副作用只执行一次、不同 payload 拒绝；附件/action 同 IndexedDB transaction 与孤儿清理；
+    多标签页 leader election；401 暂停引导重认证；409/412 冲突展示差异；真实加密与密钥生命周期。
+  - **Service Worker 重构**：区分 app shell/静态资源/HTML/API/用户文件/鉴权/敏感响应；API 与
+    敏感内容默认不缓存；新版本提示、「安全更新/稍后更新」、更新前保存草稿、上一稳定 shell 回滚。
+  - **上传安全贯通**：服务端 magic bytes/真实 content-type/路径穿越/压缩包炸弹校验接真实入口；
+    隔离区扫描状态；S3 签名 URL 组织边界；断点续传/取消/进度/失败恢复/requestId。
+  - **角色任务工作台深化**：默认角色来自认证用户；服务端 RBAC 判定、不信任前端 role；行点击跳转
+    具体实体；服务端分页/筛选/排序/导出（异步+进度+权限+到期+审计）；保存视图服务端持久化；
+    危险操作影响预览/幂等确认/撤销；键盘/扫码/触摸/单手/手套输入。
+  - **真实业务 E2E 与工业 UX**：`test/browser/ux009-uxindustrial.spec.js` 覆盖角色流程、会话过期、
+    多标签登出、权限拒绝、跨租户、陈旧/部分失败、弱网/抖动/上传中断、浏览器关闭恢复、200% 缩放、
+    键盘焦点、屏幕阅读器、reduced motion、高对比、触控目标、长时间运行/内存/队列堆积；跨浏览器
+    （chromium/firefox/webkit/mobile/industrial-tablet）真实运行，非 Chromium 弱网用可移植
+    `page.route` 网络注入。
+  - **性能与依赖可复现性**：`bundle-budget.mjs` 真实 bundle 分析（main chunk 176.94KB gzip < 460KB）；
+    路由懒加载避免首屏重模块；`check-licenses.mjs` 许可证扫描（0 强 copyleft）；SBOM（CycloneDX）；
+    移除未使用高危依赖（xlsx/jspdf/html2canvas/echarts）并升级 axios/form-data/postcss；
+    无 `@latest`、Actions 固定版本、确定性构建（CI 两次构建字节一致）。
 - F61-01 单一事实源语义一致性：7 个版本化 JSON Schema、14 条跨文件语义规则、
   13 类漂移夹具检测；`audit-repo-facts.js --strict` 任一未豁免冲突即非零退出。
 - F61-02 领域状态持久化（Code Complete / Runtime Verification Blocked）：

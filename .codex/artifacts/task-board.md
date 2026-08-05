@@ -77,12 +77,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-048 | Standalone standard DDL variant | AG-10 | Validation | generator + runner plans; no user_profile/workspace tokens |
 | T-049 | One-click standalone check script | AG-51 | Validation | `scripts/standalone-check.sh` passes end-to-end |
 | T-050 | File service (upload/download/delete) | AG-21 | Validation | `/api/files` roundtrip verified on :3100 |
-| T-051 | UUID input robustness (404 instead of DB 22P02 500) | AG-11/12/16/15 | Validation | `server/common/uuid.ts`; org/task/model guards; 56 tests / 25 suites pass |
-| T-052 | S3-compatible object storage driver | AG-21 | Validation | local + S3 drivers, env contract, compose/k8s wiring; live upload/download/delete on :3101; 59 tests / 26 suites pass |
+| T-051 | UUID input robustness (404 instead of DB 22P02 500) | AG-11/12/16/15 | Validation | `server/common/uuid.ts`; org/task/model guards; 56 tests / 25 suites pass; Blocked by External Validation
+| T-052 | S3-compatible object storage driver | AG-21 | Validation | local + S3 drivers, env contract, compose/k8s wiring; live upload/download/delete on :3101; 59 tests / 26 suites pass; Blocked by External Validation
 | T-053 | Strict standalone auth and request-scoped DB context | AG-06/11 | Done | bcrypt-only auth, HS256 payload/type validation, fail-closed DB lookup, ALS transaction/GUC context; 76 tests / 31 suites pass |
 | T-054 | PostgreSQL 17 standalone migration/security/rollback gate | AG-10/41 | Done | PG 17.10 apply/verify/idempotency/RLS/audit/rollback/rebuild pass; 53/53 request org defaults present |
 | T-055 | HTTP multi-organization authorization acceptance | AG-41 | Done | `:3101` runtime-role service: health 200, unauth 401, token-type rejection, A/B isolation, global read, auto `org_id` all pass |
-| T-056 | OpenAPI/controller route drift audit | AG-04/41 | Validation | reusable audit script; 102 controller vs 36 spec operations, 69 undocumented and 3 unimplemented |
+| T-056 | OpenAPI/controller route drift audit | AG-04/41 | Validation | reusable audit script; 102 controller vs 36 spec operations, 69 undocumented and 3 unimplemented; Blocked by External Validation
 | T-057 | DB-backed audit chain sink + read-only audit API | AG-06/41 | Done | `ewoh_append_audit_log` sink, `GET /api/audit` pagination/filter, org write instrumentation; live create/update audit + per-org isolation passed |
 
 ## Wave W5 Hardening (WP-HARDEN-001, in progress)
@@ -90,12 +90,12 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | ID | Task | Owner | Status | Evidence |
 |----|------|-------|--------|----------|
 | T-058 | Independent security/persistence/frontend reviews | AG-40/41/44 | Done | three reports in `.codex/artifacts/work/reviews/` |
-| T-059 | Security hardening: RBAC, refresh rotation/logout, rate limit, config unique index, audit roles, k8s config | AG-06/11 | Validation | WP-HARDEN-001 H-01; tests + DB verify pass |
+| T-059 | Security hardening: RBAC, refresh rotation/logout, rate limit, config unique index, audit roles, k8s config | AG-06/11 | Validation | WP-HARDEN-001 H-01; tests + DB verify pass; Blocked by External Validation
 | T-060 | Runtime context/state machines: legacy auth fail-fast, simulator GUC, conditional transitions, audit wiring | AG-11/16/18/15 | Validation | WP-HARDEN-001 H-02; 121 Jest tests pass |
-| T-061 | Persist control/resource/world-cursor to existing tables; approval gap documented | AG-17/19/14 | Validation | WP-HARDEN-001 H-03; 121 Jest tests pass |
-| T-062 | Frontend/command map majors: event drill-down, real replay, role nav/guard, 401 refresh, 3D mode/fallback | AG-30/31/44 | Validation | WP-HARDEN-001 H-04; typecheck/build/client tests pass |
-| T-063 | Real HTTP+PostgreSQL E2E scenario suite | AG-50/41 | Validation | `test/e2e/ewoh-http.e2e.spec.ts`; 9/9 pass on local PostgreSQL |
-| T-064 | Browser UI regression: QueryClient provider fix + world replay 500 fix | AG-30/44 | Validation | Playwright login/command-center/command-map/devices/alerts pass; `/api/world/replay` 200 |
+| T-061 | Persist control/resource/world-cursor to existing tables; approval gap documented | AG-17/19/14 | Validation | WP-HARDEN-001 H-03; 121 Jest tests pass; Blocked by External Validation
+| T-062 | Frontend/command map majors: event drill-down, real replay, role nav/guard, 401 refresh, 3D mode/fallback | AG-30/31/44 | Validation | WP-HARDEN-001 H-04; typecheck/build/client tests pass; Blocked by External Validation
+| T-063 | Real HTTP+PostgreSQL E2E scenario suite | AG-50/41 | Validation | `test/e2e/ewoh-http.e2e.spec.ts`; 9/9 pass on local PostgreSQL; Blocked by External Validation
+| T-064 | Browser UI regression: QueryClient provider fix + world replay 500 fix | AG-30/44 | Validation | Playwright login/command-center/command-map/devices/alerts pass; `/api/world/replay` 200; Blocked by External Validation
 | T-065 | OpenAPI 106-route DTO contract | AG-04 | Done | `openapi/ewoh.yaml` 93 paths / 106 ops; strict audit 0/0; C2 v1.0 frozen |
 | T-066 | Approval persistence via event/event_chain/audit equivalent mapping | AG-18 | Done | ApprovalPersistenceService; C1 mapping validated; E2E 10/10 |
 | T-067 | Freeze C3-C6 contracts + requirements trace | AG-01/05/06/30/51/41 | Done | C3-C6 v1.0 frozen; requirements-trace v1.0 validated; G2 passed |
@@ -113,7 +113,7 @@ Lifecycle: Proposed -> Refining -> Ready -> Claimed -> In Progress -> Blocked
 | T-079 | Scheduler plan generation idempotency | AG-16 | Done | `idempotencyKey` deterministic plan IDs; existing plans returned; Jest 41/159 |
 | T-080 | Fifth-wave CI verification | AG-51/41 | Done | `d9f7c99` standalone/test/security success |
 | T-081 | Security response headers | AG-06/11 | Done | standalone-main headers + unit test; CI `604d831` all green |
-| T-082 | Accessibility/UX seventh wave | AG-30/31/44 | Validation | skip link, labels, focus, aria-live, contrast; client 19 tests; CI 3906132 pending |
+| T-082 | Accessibility/UX seventh wave | AG-30/31/44 | Validation | skip link, labels, focus, aria-live, contrast; client 19 tests; CI 3906132 pending; Blocked by External Validation
 | T-083 | E2E scheduler idempotency case | AG-16/41 | Done | duplicate-key reuse verified; E2E 12/12 |
 | T-084 | Environment mode real data | AG-14/30/31 | Done | `/api/dashboard/environment/summary`; live HTTP smoke; OpenAPI 107/107 |
 

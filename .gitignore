@@ -36,7 +36,14 @@ tmp/
 .pytest_cache/
 .ruff_cache/
 test-results/
+# CI/本地生成的测试计数报告（单一事实源运行时生成，永不入库）
+ewoh-spark-app/jest.results.json
+ewoh-spark-app/client/jest.results.json
 output/ewoh-storage.json
+# 单一事实源 evidence manifest 为运行时/CI 派生产物：evaluatedCommitSha 与
+# environmentFingerprint 随 HEAD/工具链变化（自指失效），且本地与 CI 指纹不同，
+# 故不入库（FR-T7/FR-T8）；不可变证据由 CI artifact 保存，仓库仅存规范与生成器。
+output/evidence-manifest.json
 
 # Node.js
 node_modules/

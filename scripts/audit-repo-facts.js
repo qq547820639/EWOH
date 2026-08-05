@@ -10,6 +10,8 @@ const requireFromApp = createRequire(path.join(root, 'ewoh-spark-app', 'package.
 const yaml = requireFromApp('js-yaml');
 const routeAudit = require('./audit-openapi-routes');
 const semanticRules = require('../tools/semantic-rules/lib/engine');
+const collectFacts = require('./collect-repo-facts');
+const truth = require('./truth-source');
 
 const REQUIRED_NAVIGATION = [
   'src/edge_platform',
@@ -317,7 +319,8 @@ function auditRepoFacts(rootDir) {
       pwaManifest?.includes('"start_url"') &&
       serviceWorker?.includes("addEventListener('fetch'") &&
       standaloneHtml?.includes('manifest.webmanifest') &&
-      clientEntry?.includes('serviceWorker.register'),
+      (clientEntry?.includes('serviceWorker.register') ||
+        clientEntry?.includes('registerServiceWorker')),
   );
   check(
     checks,
@@ -356,12 +359,19 @@ function auditRepoFacts(rootDir) {
   const gatesText = readFile(rootDir, '.codex/artifacts/gates.md');
   const changelogText = readFile(rootDir, 'CHANGELOG.md');
 
-  // Version consistency: README / CHANGELOG / release-manifest / state must agree on rc4.
-  const version = '0.6.0-rc4';
-  const readmeDeclares = Boolean(readme && readme.includes(version));
-  const changelogDeclares = Boolean(changelogText && changelogText.includes(`## [${version}]`));
-  const manifestDeclares = Boolean(releaseManifest && releaseManifest.release === version);
-  const stateDeclares = Boolean(stateFactsJson && JSON.stringify(stateFactsJson).includes(version));
+  // Version consistency: README / CHANGELOG / release-manifest / state must
+  // all agree on the single authoritative version from version.json.
+  const version = truth.readVersion();
+  const readmeDeclares = Boolean(readme && version && readme.includes(version));
+  const changelogDeclares = Boolean(
+    changelogText && version && changelogText.includes(`## [${version}]`),
+  );
+  const manifestDeclares = Boolean(
+    releaseManifest && version && releaseManifest.release === version,
+  );
+  const stateDeclares = Boolean(
+    stateFactsJson && version && JSON.stringify(stateFactsJson).includes(version),
+  );
   check(
     checks,
     'repository_facts_version_consistent',
@@ -369,18 +379,12 @@ function auditRepoFacts(rootDir) {
     `version=${version} must be declared consistently: readme=${readmeDeclares}, changelog=${changelogDeclares}, manifest=${manifestDeclares}, state=${stateDeclares}`,
   );
 
-  // Test-count drift: release-manifest must match the authoritative final counts.
-  // Compare only the numeric ratio (x/y or xx/yy tests), ignore descriptive suffix for diff.
-  // Authoritative counts reconciled to current HEAD (production-ux-deepening W8 evidence).
-  // serverJest/clientJest/openapi measured on this HEAD; e2e/browser are environment-gated
-  // counts carried from the last real-PostgreSQL CI run (BLOCKED_BY_ENVIRONMENT locally).
-  const TEST_COUNT_DRIFT = {
-    serverJest: '84 suites / 449 tests',
-    clientJest: '55 suites / 335 tests',
-    openapi: '255/255',
-    e2e: '33/33',
-    browser: '5/5',
-  };
+  // Test-count reconcile: compare release-manifest evidence against the LIVE
+  // values derived from CI-generated JSON reports via the truth-source
+  // collector. No test counts are hard-coded here. When a report file does not
+  // exist the live value is null and that comparison is SKIPPED (no false
+  // positive) — the CI job that emits the JSON report is what fills it in.
+  const liveCounts = collectFacts.readReportTestCounts();
   const manifestEvidence = releaseManifest && releaseManifest.evidence ? releaseManifest.evidence : {};
 
   function extractCount(input) {
@@ -390,26 +394,33 @@ function auditRepoFacts(rootDir) {
     const m = input.match(/(\d+\/\d+)/) || input.match(/(\d+.*tests)/);
     return m ? m[1] : input;
   }
-  const driftDetails = [];
-  if (manifestEvidence.jest && extractCount(manifestEvidence.jest) !== extractCount(TEST_COUNT_DRIFT.serverJest)) {
-    driftDetails.push(`manifest.jest=${extractCount(manifestEvidence.jest)} expected=${extractCount(TEST_COUNT_DRIFT.serverJest)}`);
-  }
-  if (manifestEvidence.client_jest && extractCount(manifestEvidence.client_jest) !== extractCount(TEST_COUNT_DRIFT.clientJest)) {
-    driftDetails.push(`manifest.client_jest=${extractCount(manifestEvidence.client_jest)} expected=${extractCount(TEST_COUNT_DRIFT.clientJest)}`);
-  }
-  if (manifestEvidence.openapi && extractCount(manifestEvidence.openapi) !== extractCount(TEST_COUNT_DRIFT.openapi)) {
-    driftDetails.push(`manifest.openapi=${extractCount(manifestEvidence.openapi)} expected=${extractCount(TEST_COUNT_DRIFT.openapi)}`);
-  }
-  if (manifestEvidence.e2e && extractCount(manifestEvidence.e2e) !== extractCount(TEST_COUNT_DRIFT.e2e)) {
-    driftDetails.push(`manifest.e2e=${extractCount(manifestEvidence.e2e)} expected=${extractCount(TEST_COUNT_DRIFT.e2e)}`);
+  const drifts = [];
+  const candidates = [
+    ['jest', 'serverJest', manifestEvidence.jest],
+    ['client_jest', 'clientJest', manifestEvidence.client_jest],
+    ['openapi', 'openapi', manifestEvidence.openapi],
+    ['e2e', 'e2e', manifestEvidence.e2e],
+    ['browser', 'browser', manifestEvidence.browser],
+  ];
+  for (const [manifestField, liveField, manifestValue] of candidates) {
+    const live = liveCounts[liveField];
+    if (live === null || live === undefined) {
+      // No report available locally — skip, not a false positive.
+      continue;
+    }
+    if (manifestValue && extractCount(manifestValue) !== extractCount(live)) {
+      drifts.push(
+        `manifest.${manifestField}=${extractCount(manifestValue)} live=${extractCount(live)}`,
+      );
+    }
   }
   check(
     checks,
     'repository_facts_test_counts_reconcile',
-    driftDetails.length === 0,
-    driftDetails.length === 0
-      ? 'release-manifest test counts match final HEAD'
-      : `release-manifest test-count drift: ${driftDetails.join('; ')}`,
+    drifts.length === 0,
+    drifts.length === 0
+      ? 'release-manifest test counts match live truth-source reports (missing reports skipped)'
+      : `release-manifest test-count drift vs live reports: ${drifts.join('; ')}`,
   );
 
   // Evidence front-matter completeness (spec requires command/suite/startedAt/completedAt/artifactChecksum).

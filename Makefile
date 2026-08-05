@@ -49,6 +49,11 @@ lint-fix:  ## 自动修复可修复的 lint 问题（import 排序等）
 security:  ## 静态安全扫描（bandit，低噪音级别）
 	bandit -r src/edge_platform -ll
 
+truth-check:  ## 生成并列示单一事实源证据清单（无漂移，P0 门禁）
+	@node scripts/truth-manifest.js --out output/evidence-manifest.json
+	@node scripts/truth-manifest.js --check --out output/evidence-manifest.json
+	@node scripts/audit-repo-facts.js --strict
+
 format:  ## 代码格式化（ruff format）
 	ruff format src/edge_platform
 

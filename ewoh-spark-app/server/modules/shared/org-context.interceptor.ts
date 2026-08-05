@@ -13,6 +13,13 @@ export interface OrgContext {
   primaryOrgId: string;
   /** Parsed for downstream guards/audit; not emitted as a GUC. */
   role?: string;
+  /**
+   * Auth roles attached by AccessTokenGuard from the JWT payload (worker,
+   * workshop_lead, dispatcher, device_ops, safety_admin, global_admin, …).
+   * Distinct from `role` (a single parsed role) and from the Role Workbench
+   * product roles (operator/team_lead/quality/equipment/manager).
+   */
+  roles?: string[];
   accessibleOrgIds?: string[];
   isGlobalAdmin?: boolean;
 }

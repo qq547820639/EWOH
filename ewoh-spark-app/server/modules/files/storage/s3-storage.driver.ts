@@ -6,7 +6,12 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
-import type { FileRecord, StorageDriver } from './storage-driver';
+import type {
+  FileRecord,
+  PresignedUrlRequest,
+  PresignedUrlResult,
+  StorageDriver,
+} from './storage-driver';
 
 export interface S3StorageOptions {
   endpoint?: string;
@@ -18,12 +23,42 @@ export interface S3StorageOptions {
   prefix?: string;
 }
 
+/** Max allowed presigned URL lifetime (24h). */
+export const MAX_PRESIGN_EXPIRY_SECONDS = 24 * 60 * 60;
+/** Default presigned URL lifetime (1h). */
+export const DEFAULT_PRESIGN_EXPIRY_SECONDS = 60 * 60;
+
+export type S3CommandSigner = (
+  command: GetObjectCommand,
+  options: { expiresIn?: number },
+) => Promise<string>;
+
+/**
+ * Production signer backed by @aws-sdk/s3-request-presigner. It is resolved
+ * lazily so the rest of the module can be imported and unit-tested without the
+ * optional runtime dependency installed.
+ */
+function defaultSigner(client: S3Client): S3CommandSigner {
+  return async (command, options) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getSignedUrl } = require('@aws-sdk/s3-request-presigner') as {
+      getSignedUrl: (
+        c: S3Client,
+        command: GetObjectCommand,
+        opts?: { expiresIn?: number },
+      ) => Promise<string>;
+    };
+    return getSignedUrl(client, command, { expiresIn: options.expiresIn });
+  };
+}
+
 export class S3StorageDriver implements StorageDriver {
   private readonly client: S3Client;
   private readonly bucket: string;
   private readonly prefix: string;
+  private readonly signer: S3CommandSigner;
 
-  constructor(options: S3StorageOptions, client?: S3Client) {
+  constructor(options: S3StorageOptions, client?: S3Client, signer?: S3CommandSigner) {
     this.bucket = options.bucket;
     this.prefix = options.prefix?.replace(/^\/+|\/+$/g, '') || 'files';
     this.client = client ?? new S3Client({
@@ -34,6 +69,7 @@ export class S3StorageDriver implements StorageDriver {
         ? { credentials: { accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey } }
         : {}),
     });
+    this.signer = signer ?? defaultSigner(this.client);
   }
 
   async save(id: string, buffer: Buffer, record: FileRecord): Promise<void> {
@@ -118,6 +154,38 @@ export class S3StorageDriver implements StorageDriver {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: this.metaKey(id) }));
   }
 
+  async findByIdempotencyKey(key: string, orgId: string): Promise<FileRecord | null> {
+    if (!key) return null;
+    const records = await this.list();
+    return (
+      records.find(
+        (record) => record.idempotencyKey === key && record.orgId === orgId,
+      ) ?? null
+    );
+  }
+
+  async createPresignedUrl(
+    id: string,
+    _orgId: string,
+    request: PresignedUrlRequest,
+  ): Promise<PresignedUrlResult> {
+    const expiresIn = clampLifetime(request.expiresInSeconds);
+    const key = this.contentKey(id);
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ...(request.contentType
+        ? { ResponseContentType: request.contentType }
+        : {}),
+    });
+    const url = await this.signer(command, { expiresIn });
+    return {
+      url,
+      key,
+      expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
+    };
+  }
+
   private contentKey(id: string): string {
     return `${this.prefix}/${id}`;
   }
@@ -129,4 +197,12 @@ export class S3StorageDriver implements StorageDriver {
   private isMissingKey(error: unknown): boolean {
     return typeof error === 'object' && error !== null && 'name' in error && error.name === 'NoSuchKey';
   }
+}
+
+/** Clamps the requested lifetime into [1s, MAX_PRESIGN_EXPIRY_SECONDS]. */
+function clampLifetime(requested?: number): number {
+  const value = Number.isFinite(requested) ? Math.floor(requested as number) : DEFAULT_PRESIGN_EXPIRY_SECONDS;
+  if (value < 1) return 1;
+  if (value > MAX_PRESIGN_EXPIRY_SECONDS) return MAX_PRESIGN_EXPIRY_SECONDS;
+  return value;
 }

@@ -107,6 +107,7 @@ export async function axiosForBackend<T = unknown>(config: {
   params?: Record<string, unknown>;
   data?: unknown;
   signal?: AbortSignal;
+  headers?: Record<string, string>;
 }): Promise<{ data: any }> {
   return http.request({
     url: config.url,
@@ -114,5 +115,6 @@ export async function axiosForBackend<T = unknown>(config: {
     params: config.params,
     data: config.data,
     signal: config.signal,
+    headers: config.headers,
   });
 }

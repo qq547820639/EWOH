@@ -277,6 +277,14 @@ function findRecordedFingerprint(ctx) {
 /**
  * head-consistency: the authoritative HEAD declared in phase-state.md / gates.md
  * must match the actual git HEAD of the repository.
+ *
+ * Live-reference marker: a doc may declare `HEAD @git-head` (or `<git-head>`)
+ * instead of a concrete SHA. `@git-head` is a *live* reference to the runtime git
+ * HEAD, so it is inherently consistent by construction and never goes stale when
+ * the next commit lands. `HEAD_RE` only matches hex SHAs, so `extractHeadFromMarkdown`
+ * returns null for such a marker and the doc is simply skipped below (no SHA
+ * comparison). A doc that hard-codes a real SHA that differs from git HEAD is
+ * still an error — this rule keeps its drift-detection for hard-coded SHAs.
  */
 function headConsistency(ctx) {
   const findings = [];

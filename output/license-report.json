@@ -1,0 +1,164 @@
+{
+  "generatedAt": "2026-08-05T09:39:20.092Z",
+  "total": 2146,
+  "strongCopyleft": [],
+  "weakCopyleft": [
+    {
+      "name": "node_modules/@axe-core/playwright",
+      "version": "4.12.1",
+      "license": "MPL-2.0",
+      "deprecated": false,
+      "integrity": "sha512-rMd7xriptqKpP+w5265i4Hdkv2X5kbu6uiBi/B2I7uf3hieRBM3qDCfaKPtxfiYb2mKXfF+yLODJwIx+Jv1GDw=="
+    },
+    {
+      "name": "node_modules/axe-core",
+      "version": "4.12.1",
+      "license": "MPL-2.0",
+      "deprecated": false,
+      "integrity": "sha512-s7iGf5GaVMxEG0ENN9x+xTr7GFZCb1ZP/1uATUpCEK2X78nDB3RwbtFCo9pGAf9ru+VwoQ464DkaLEeRM08wJA=="
+    },
+    {
+      "name": "node_modules/dompurify",
+      "version": "3.4.8",
+      "license": "(MPL-2.0 OR Apache-2.0)",
+      "deprecated": false,
+      "integrity": "sha512-yb1cEmaOum7wFvOCSQxyfgVlv5D47Rc30iZWoMpbDIWTnJ6grDDQyu2KFJzB2k7u0pMuJcQ1zphH//fFnw2tjQ=="
+    },
+    {
+      "name": "node_modules/lightningcss",
+      "version": "1.32.0",
+      "license": "MPL-2.0",
+      "deprecated": false,
+      "integrity": "sha512-NXYBzinNrblfraPGyrbPoD19C1h9lfI/1mzgWYvXUTe414Gz/X1FD2XBZSZM7rRTrMA8JL3OtAaGifrIKhQ5yQ=="
+    },
+    {
+      "name": "node_modules/lightningcss-android-arm64",
+      "version": "1.32.0",
+      "license": "MPL-2.0",
+      "deprecated": false,
+      "integrity": "sha512-YK7/ClTt4kAK0vo6w3X+Pnm0D2cf2vPHbhOXdoNti1Ga0al1P4TBZhwjATvjNwLEBCnKvjJc2jQgHXH0NEwlAg=="
+    },
+    {
+      "name": "node_modules/lightningcss-darwin-arm64",
+      "version": "1.32.0",
+      "license": "MPL-2.0",
+      "deprecated": false,
+      "integrity": "sha512-RzeG9Ju5bag2Bv1/lwlVJvBE3q6TtXskdZLLCyfg5pt+HLz9BqlICO7LZM7VHNTTn/5PRhHFBSjk5lc4cmscPQ=="
+    },
+    {
+      "name": "node_modules/lightningcss-darwin-x64",
+      "version": "1.32.0",
+      "license": "MPL-2.0",
+      "deprecated": false,
+      "integrity": "sha512-U+QsBp2m/s2wqpUYT/6wnlagdZbtZdndSmut/NJqlCcMLTWp5muCrID+K5UJ6jqD2BFshejCYXniPDbNh73V8w=="
+    },
+    {
+      "name": "node_modules/lightningcss-freebsd-x64",
+      "version": "1.32.0",
+      "license": "MPL-2.0",
+      "deprecated": false,
+      "integrity": "sha512-JCTigedEksZk3tHTTthnMdVfGf61Fky8Ji2E4YjUTEQX14xiy/lTzXnu1vwiZe3bYe0q+SpsSH/CTeDXK6WHig=="
+    },
+    {
+      "name": "node_modules/lightningcss-linux-arm-gnueabihf",
+      "version": "1.32.0",
+      "license": "MPL-2.0",
+      "deprecated": false,
+      "integrity": "sha512-x6rnnpRa2GL0zQOkt6rts3YDPzduLpWvwAF6EMhXFVZXD4tPrBkEFqzGowzCsIWsPjqSK+tyNEODUBXeeVHSkw=="
+    },
+    {
+      "name": "node_modules/lightningcss-linux-arm64-gnu",
+      "version": "1.32.0",
+      "license": "MPL-2.0",
+      "deprecated": false,
+      "integrity": "sha512-0nnMyoyOLRJXfbMOilaSRcLH3Jw5z9HDNGfT/gwCPgaDjnx0i8w7vBzFLFR1f6CMLKF8gVbebmkUN3fa/kQJpQ=="
+    },
+    {
+      "name": "node_modules/lightningcss-linux-arm64-musl",
+      "version": "1.32.0",
+      "license": "MPL-2.0",
+      "deprecated": false,
+      "integrity": "sha512-UpQkoenr4UJEzgVIYpI80lDFvRmPVg6oqboNHfoH4CQIfNA+HOrZ7Mo7KZP02dC6LjghPQJeBsvXhJod/wnIBg=="
+    },
+    {
+      "name": "node_modules/lightningcss-linux-x64-gnu",
+      "version": "1.32.0",
+      "license": "MPL-2.0",
+      "deprecated": false,
+      "integrity": "sha512-V7Qr52IhZmdKPVr+Vtw8o+WLsQJYCTd8loIfpDaMRWGUZfBOYEJeyJIkqGIDMZPwPx24pUMfwSxxI8phr/MbOA=="
+    },
+    {
+      "name": "node_modules/lightningcss-linux-x64-musl",
+      "version": "1.32.0",
+      "license": "MPL-2.0",
+      "deprecated": false,
+      "integrity": "sha512-bYcLp+Vb0awsiXg/80uCRezCYHNg1/l3mt0gzHnWV9XP1W5sKa5/TCdGWaR/zBM2PeF/HbsQv/j2URNOiVuxWg=="
+    },
+    {
+      "name": "node_modules/lightningcss-win32-arm64-msvc",
+      "version": "1.32.0",
+      "license": "MPL-2.0",
+      "deprecated": false,
+      "integrity": "sha512-8SbC8BR40pS6baCM8sbtYDSwEVQd4JlFTOlaD3gWGHfThTcABnNDBda6eTZeqbofalIJhFx0qKzgHJmcPTnGdw=="
+    },
+    {
+      "name": "node_modules/lightningcss-win32-x64-msvc",
+      "version": "1.32.0",
+      "license": "MPL-2.0",
+      "deprecated": false,
+      "integrity": "sha512-Amq9B/SoZYdDi1kFrojnoqPLxYhQ4Wo5XiL8EVJrVsB8ARoC1PWW6VGtT0WKCemjy8aC+louJnjS7U18x3b06Q=="
+    }
+  ],
+  "unknown": [],
+  "deprecated": [
+    {
+      "name": "node_modules/@jest/reporters/node_modules/glob",
+      "version": "7.2.3",
+      "license": "ISC",
+      "deprecated": true,
+      "integrity": "sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q=="
+    },
+    {
+      "name": "node_modules/hast",
+      "version": "1.0.0",
+      "license": "MIT",
+      "deprecated": true,
+      "integrity": "sha512-vFUqlRV5C+xqP76Wwq2SrM0kipnmpxJm7OfvVXpB35Fp+Fn4MV+ozr+JZr5qFvyR1q/U+Foim2x+3P+x9S1PLA=="
+    },
+    {
+      "name": "node_modules/inflight",
+      "version": "1.0.6",
+      "license": "ISC",
+      "deprecated": true,
+      "integrity": "sha512-k92I/b08q4wvFscXCLvqfsHCrjrF7yiXsQuIVvVE7N82W3+aqpzuUdBbfhWcy/FZR3/4IgflMgKLOsvPDrGCJA=="
+    },
+    {
+      "name": "node_modules/jest-config/node_modules/glob",
+      "version": "7.2.3",
+      "license": "ISC",
+      "deprecated": true,
+      "integrity": "sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q=="
+    },
+    {
+      "name": "node_modules/jest-runtime/node_modules/glob",
+      "version": "7.2.3",
+      "license": "ISC",
+      "deprecated": true,
+      "integrity": "sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q=="
+    },
+    {
+      "name": "node_modules/react-dev-utils/node_modules/glob",
+      "version": "7.2.3",
+      "license": "ISC",
+      "deprecated": true,
+      "integrity": "sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q=="
+    },
+    {
+      "name": "node_modules/test-exclude/node_modules/glob",
+      "version": "7.2.3",
+      "license": "ISC",
+      "deprecated": true,
+      "integrity": "sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q=="
+    }
+  ]
+}

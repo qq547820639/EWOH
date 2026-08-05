@@ -146,6 +146,7 @@ export class MobileService {
       defectCode?: string;
       quantity?: number;
       note?: string;
+      idempotencyKey?: string;
     },
     actor?: OrgContext,
   ) {

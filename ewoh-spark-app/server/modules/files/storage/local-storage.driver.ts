@@ -52,6 +52,16 @@ export class LocalStorageDriver implements StorageDriver {
     await rm(this.metaPath(id), { force: true });
   }
 
+  async findByIdempotencyKey(key: string, orgId: string): Promise<FileRecord | null> {
+    if (!key) return null;
+    const records = await this.list();
+    return (
+      records.find(
+        (record) => record.idempotencyKey === key && record.orgId === orgId,
+      ) ?? null
+    );
+  }
+
   private path(id: string): string {
     return join(this.rootDir, id);
   }

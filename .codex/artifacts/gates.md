@@ -17,18 +17,19 @@
 | G12 | Follow-on phases accepted | Pending | phase acceptance reports |
 | G13 | Final project closeout | Pending | closeout package |
 
-## 当前权威状态（2026-08-05 HEAD 5986564ac34b63785959d9e92c3d2750e2c7a7b2）
+## 当前权威状态（HEAD @git-head — live git HEAD，见 scripts/truth-source.js）
 
 以下为本仓库的单一、权威当前状态，来自 `CHANGELOG` rc4、`release-manifest` 与 `audit-repo-facts` 的一致聚合。**以下所有历史 `## 2026-08-04 ...` Gate 小节均为历史快照（非权威），权威计数一律以本节为准。**
 
-- server Jest：`81 suites / 391 tests`
-- client Jest：`15 suites / 50 tests`
-- OpenAPI：`253/253`
-- E2E：`33/33`
-- browser：`5/5`
-- repo-facts：`38/38`
-- work graph：`252 items / 209 edges / 48 actors / 191 evidence / 14 gates / 0 conflicts`
-- DB：`51 managed tables / 57 physical tables`
+以下计数一律以 `scripts/collect-repo-facts.js` 从 CI 生成的 JSON 报告（`jest --json --outputFile`）**实时读取**为权威，此处不再硬编码；报告缺失时对应项为"待生成"（本地无报告时 server/client/e2e/browser 为 null）。OpenAPI、work graph、DB 由脚本实时计算。
+- server Jest：`由 collect-repo-facts 从 ewoh-spark-app/jest.results.json 实时读取`
+- client Jest：`由 collect-repo-facts 从 ewoh-spark-app/client/jest.results.json 实时读取`
+- OpenAPI：`由 collect-repo-facts 实时计算（controller/spec 一致）`
+- E2E：`由 collect-repo-facts 从 Playwright JSON 报告实时读取（本地 BLOCKED_BY_ENVIRONMENT）`
+- browser：`由 collect-repo-facts 从 Playwright JSON 报告实时读取`
+- repo-facts：`由 scripts/audit-repo-facts.js --strict 实时审计`
+- work graph：`由 tools/work-indexer 实时生成（当前 252 items / 209 edges / 48 actors / 191 evidence / 14 gates / 0 conflicts）`
+- DB：`由 db/contracts/schema-manifest.yaml 的生成式 managed_tables 实时计算`
 - Pilot readiness：`NOT READY（7 passed / 3 failed / 5 pending）`
 - Gate：G0-G6 已通过，G7-G9 为 validation，G10 passed-locally / production-pending，G11-G13 pending
 

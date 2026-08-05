@@ -5,14 +5,18 @@
  * 设计约定：
  * - 运行时零依赖：Web Vitals 仅用浏览器原生 PerformanceObserver 实现
  *   （`web-vitals` 未安装，见 package.json），无新依赖。
- * - 有界内存缓冲：`recordMetric` 只追加到有界数组，上限 MAX_BUFFER 条。
- * - 安全 flush：仅当配置了摄取端点（FRONTEND_METRICS_ENDPOINT）时才 POST；
- *   当前后端未暴露 `/api/observability/frontend-metrics`，缺省为空串，
- *   flush 退化为"清空缓冲 + 日志"，绝不抛错、绝不产生网络噪声。
+ * - 有界内存缓冲：`recordMetric` 只追加到有界数组，上限 MAX_BUFFER_SIZE 条。
+ * - 不丢失冲刷：`flush()` POST 到后端摄取端点（默认已配置），发送成功前不清空
+ *   本地缓冲；失败按指数退避 + 抖动重试，重试超限转入离线暂存（重连后重放），
+ *   绝不默认静默丢弃。页面隐藏时优先用 sendBeacon 投递。
+ * - 关联与脱敏：信封携带 requestId/traceId/组织页面/构建版本/设备类别；
+ *   敏感源头在后端摄取时统一脱敏。
  * - 纯函数与统计计数器均可单测；浏览器专属的 Web Vitals 采集用守卫保护。
  */
 
 import { logger } from './logger';
+import { APP_VERSION } from './appContext';
+import { getTraceContext as readRequestTrace } from './requestCorrelation';
 
 export interface MetricRecord {
   name: string;
@@ -25,12 +29,185 @@ export interface MetricRecord {
 export const MAX_BUFFER_SIZE = 200;
 
 /**
- * 前端指标摄取端点。默认空串表示后端尚无对应接口；如需启用，改此值并确保
- * 后端暴露 `POST /api/observability/frontend-metrics`。
+ * 前端指标摄取端点。后端暴露 `POST /api/observability/frontend-metrics`
+ * （见 server/modules/observability/frontend-metrics.controller.ts），已接入
+ * 生产链路；flush() 会批量 POST 这些指标，不再默认丢弃。
  */
-export const FRONTEND_METRICS_ENDPOINT = '';
+export const FRONTEND_METRICS_ENDPOINT = '/api/observability/frontend-metrics';
+
+/** 离线暂存 key（发送失败/离线时暂存，重连后重放，绝不静默丢弃）。 */
+export const STAGE_STORAGE_KEY = 'ewoh.frontend-metrics.stage';
+/** 离线暂存上限（条数），超出丢弃最旧。 */
+export const STAGE_MAX = 2000;
+
+/** 发送给后端的一个批次信封，携带关联与元数据。 */
+export interface FrontendMetricsEnvelope {
+  metrics: MetricRecord[];
+  requestId?: string;
+  traceId?: string;
+  page?: string;
+  buildVersion?: string;
+  deviceCategory?: string;
+}
+
+export interface FlushOptions {
+  /** 采样率 0..1；1 发送全部，<1 随机抽样。 */
+  samplingRate?: number;
+  /** 失败最大重试次数（超出后转入离线暂存）。 */
+  maxRetries?: number;
+  backoffBaseMs?: number;
+  backoffMaxMs?: number;
+  /** 是否对退避时间加抖动，避免惊群。 */
+  jitter?: boolean;
+}
+
+const DEFAULT_FLUSH_OPTIONS: FlushOptions = {
+  samplingRate: 1.0,
+  maxRetries: 5,
+  backoffBaseMs: 1000,
+  backoffMaxMs: 60_000,
+  jitter: true,
+};
 
 const buffer: MetricRecord[] = [];
+
+let retryCount = 0;
+let backoffTimer: ReturnType<typeof setTimeout> | null = null;
+let flushOptions: FlushOptions = { ...DEFAULT_FLUSH_OPTIONS };
+
+/** 诊断用：允许测试注入传输层，避免真实网络。 */
+export type FlushTransport = (envelope: FrontendMetricsEnvelope) => Promise<void>;
+let flushTransport: FlushTransport | null = null;
+
+/** 仅供测试注入传输层；传 null 恢复默认（动态 import http）。 */
+export function setFlushTransportForTesting(transport: FlushTransport | null): void {
+  flushTransport = transport;
+}
+
+/** 配置冲刷（采样/退避）。 */
+export function configureFlush(options: FlushOptions): void {
+  flushOptions = { ...flushOptions, ...options };
+}
+
+export function getFlushOptions(): FlushOptions {
+  return { ...flushOptions };
+}
+
+function isSampled(): boolean {
+  const rate = flushOptions.samplingRate ?? DEFAULT_FLUSH_OPTIONS.samplingRate!;
+  if (rate <= 0) return false;
+  if (rate >= 1) return true;
+  return Math.random() < rate;
+}
+
+function computeBackoffMs(attempt: number): number {
+  const base = flushOptions.backoffBaseMs ?? DEFAULT_FLUSH_OPTIONS.backoffBaseMs!;
+  const max = flushOptions.backoffMaxMs ?? DEFAULT_FLUSH_OPTIONS.backoffMaxMs!;
+  const jitter = flushOptions.jitter ?? true;
+  const exp = Math.min(base * 2 ** attempt, max);
+  if (!jitter) return exp;
+  return Math.round(exp * (0.5 + Math.random() * 0.5));
+}
+
+/** 估算设备类别（低端/桌面/平板/手机/工业平板）。 */
+export function detectDeviceCategory(ua: string = globalThis.navigator?.userAgent ?? ''): string {
+  const lower = ua.toLowerCase();
+  const isTablet = /ipad|tablet|playbook|silk/i.test(lower);
+  const isMobile =
+    /android.+mobile|iphone|ipod|windows phone|blackberry|iemobile/i.test(lower);
+  if (isTablet) return 'tablet';
+  if (isMobile) return 'mobile';
+  if (/low.?mem|mobilecpu|mobile phone/i.test(lower)) return 'low-end';
+  return 'desktop';
+}
+
+function currentPage(): string | undefined {
+  try {
+    if (typeof window === 'undefined') return undefined;
+    return window.location.pathname + window.location.search;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildEnvelope(metrics: MetricRecord[]): FrontendMetricsEnvelope {
+  const envelope: FrontendMetricsEnvelope = {
+    metrics,
+    requestId: getTraceContext().requestId,
+    traceId: getTraceContext().traceId,
+    page: currentPage(),
+    buildVersion: APP_VERSION,
+    deviceCategory: detectDeviceCategory(),
+  };
+  return envelope;
+}
+
+// requestId/traceId 解析 —— 复用 requestCorrelation 的最新上下文。
+function getTraceContext(): { requestId?: string; traceId?: string } {
+  try {
+    return readRequestTrace();
+  } catch {
+    return {};
+  }
+}
+
+// ---- 离线暂存（失败/离线时保留证据，重连后重放） ----
+interface StageEntry {
+  envelope: FrontendMetricsEnvelope;
+  at: number;
+}
+
+type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null | undefined;
+
+/** 暂存存储（默认浏览器 localStorage；测试可注入内存实现）。 */
+let stageStorage: StorageLike = globalThis.localStorage;
+
+/** 仅供测试注入暂存存储。 */
+export function setStageStorageForTesting(storage: StorageLike): void {
+  stageStorage = storage;
+}
+
+function readStageEntries(): StageEntry[] {
+  try {
+    const raw = stageStorage?.getItem(STAGE_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as StageEntry[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStageEntries(entries: StageEntry[]): void {
+  try {
+    stageStorage?.setItem(STAGE_STORAGE_KEY, JSON.stringify(entries));
+  } catch {
+    // localStorage 不可用（容量/隐私模式）时静默放弃暂存，但不影响内存缓冲。
+  }
+}
+
+function stageForReplay(metrics: MetricRecord[]): void {
+  const entries = readStageEntries();
+  entries.push({ envelope: buildEnvelope(metrics), at: Date.now() });
+  while (entries.length > Math.floor(STAGE_MAX / 200)) {
+    entries.shift();
+  }
+  writeStageEntries(entries);
+}
+
+/** 返回待重放的暂存信封数（供测试/诊断）。 */
+export function getStagedCount(): number {
+  return readStageEntries().length;
+}
+
+/** 清理暂存（发送成功/登出后调用）。 */
+export function clearStaged(): void {
+  try {
+    stageStorage?.removeItem(STAGE_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 /** 记录一条指标到有界缓冲。 */
 export function recordMetric(
@@ -58,31 +235,118 @@ export function clearBuffer(): void {
 }
 
 /**
- * 安全冲刷：抽空缓冲并 POST 到摄取端点（若已配置）。
- * 无论是否配置端点、无论网络是否失败，都会清空缓冲并返回本次条数，绝不抛错。
+ * 安全冲刷：POST 缓冲指标到摄取端点。核心不变量：**发送成功前绝不清空本地缓冲**。
+ * - 成功 → 清空缓冲并清除退避状态，返回本次条数。
+ * - 失败 → 保留缓冲，指数退避 + 抖动安排重试；重试超限后转入离线暂存（重连后重放）。
+ * - 采样丢弃是刻意行为（非静默 skip），仅当采样率 < 1 时发生。
+ * - 绝不抛错。
  */
 export async function flush(): Promise<number> {
-  const payload = buffer.splice(0, buffer.length);
+  const payload = buffer.slice();
   if (payload.length === 0) return 0;
   if (!FRONTEND_METRICS_ENDPOINT) {
-    logger.info(
-      `[observability] buffered ${payload.length} metric(s) dropped — no ingest endpoint configured`,
-    );
+    // 无摄取端点：保留缓冲（不静默丢弃），等待配置后重试。
+    scheduleRetry();
+    return 0;
+  }
+  if (!isSampled()) {
+    // 采样丢弃为刻意降采样，允许清空这批。
+    clearBuffer();
     return payload.length;
   }
+  const envelope = buildEnvelope(payload);
   try {
-    // 惰性加载 http.ts：它的 import.meta.env 是 Vite 专属语法（jest CommonJS 无法
-    // 静态解析），因此仅在确实配置了摄取端点时才动态加载，避免拖垮单测环境。
-    const { axiosForBackend } = await import('./http');
-    await axiosForBackend({
-      url: FRONTEND_METRICS_ENDPOINT,
-      method: 'POST',
-      data: { metrics: payload },
-    });
+    if (flushTransport) {
+      await flushTransport(envelope);
+    } else {
+      // 惰性加载 http.ts：它的 import.meta.env 是 Vite 专属语法（jest CommonJS 无法
+      // 静态解析），因此仅在确实需要发送时才动态加载，避免拖垮单测环境。
+      const { axiosForBackend } = await import('./http');
+      await axiosForBackend({
+        url: FRONTEND_METRICS_ENDPOINT,
+        method: 'POST',
+        data: envelope,
+      });
+    }
+    // 发送成功后才允许清空本地缓冲。
+    clearBuffer();
+    retryCount = 0;
+    if (backoffTimer) {
+      clearTimeout(backoffTimer);
+      backoffTimer = null;
+    }
+    return payload.length;
   } catch (error) {
-    logger.warn('[observability] flush failed', error);
+    logger.warn('[observability] flush failed, retaining buffer for retry', error);
+    retryCount += 1;
+    if (retryCount > (flushOptions.maxRetries ?? DEFAULT_FLUSH_OPTIONS.maxRetries!)) {
+      // 重试耗尽：转入离线暂存，重连后重放，绝不静默丢弃。
+      stageForReplay(payload);
+      retryCount = 0;
+      return 0;
+    }
+    scheduleRetry();
+    return 0;
   }
-  return payload.length;
+}
+
+/** 安排一次基于指数退避 + 抖动的延迟重试。 */
+function scheduleRetry(): void {
+  if (backoffTimer) return;
+  const delayMs = computeBackoffMs(retryCount);
+  backoffTimer = setTimeout(() => {
+    backoffTimer = null;
+    void flush();
+  }, delayMs);
+}
+
+/** 取消未决的退避定时器（测试/登出时调用）。 */
+export function cancelPendingFlush(): void {
+  if (backoffTimer) {
+    clearTimeout(backoffTimer);
+    backoffTimer = null;
+  }
+}
+
+/**
+ * 在页面不可见/即将卸载时用 sendBeacon 尽量投递待发送指标（不阻塞页面卸载）。
+ * 仅浏览器环境安装；返回卸载器。
+ */
+export function installPagehideFlush(): () => void {
+  if (typeof document === 'undefined') return () => {};
+  const onVisibility = (): void => {
+    if (document.visibilityState === 'hidden') {
+      void safeBeaconFlush();
+    }
+  };
+  const onPagehide = (): void => {
+    void safeBeaconFlush();
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('pagehide', onPagehide);
+  return () => {
+    document.removeEventListener('visibilitychange', onVisibility);
+    window.removeEventListener('pagehide', onPagehide);
+  };
+}
+
+/** 用 sendBeacon 尽量投递当前缓冲；失败或不可用时回退到常规 flush。 */
+async function safeBeaconFlush(): Promise<void> {
+  const payload = buffer.slice();
+  if (payload.length === 0) return;
+  const envelope = buildEnvelope(payload);
+  try {
+    const raw = JSON.stringify(envelope);
+    const sent = typeof navigator !== 'undefined' && navigator.sendBeacon
+      && navigator.sendBeacon(FRONTEND_METRICS_ENDPOINT, new Blob([raw], { type: 'text/plain' }));
+    if (sent) {
+      clearBuffer();
+      return;
+    }
+  } catch {
+    // 回退到常规 flush。
+  }
+  await flush();
 }
 
 // ---- API 失败率 ----

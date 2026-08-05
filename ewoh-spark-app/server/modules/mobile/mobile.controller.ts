@@ -82,6 +82,7 @@ export class MobileController {
       defectCode?: string;
       quantity?: number;
       note?: string;
+      idempotencyKey?: string;
     },
     @Req() request: { userContext?: OrgContext },
   ) {
@@ -93,6 +94,7 @@ export class MobileController {
         defectCode: body.defectCode,
         quantity: body.quantity,
         note: body.note,
+        idempotencyKey: body.idempotencyKey,
       },
       request.userContext,
     );

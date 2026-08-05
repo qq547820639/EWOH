@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import {
@@ -21,6 +21,7 @@ import { getAuthUser } from '../../lib/auth';
 import { queryKeys } from '../../hooks/queryKeys';
 import { Button } from '@client/src/components/ui/button';
 import QueryState from '../../components/QueryState';
+import ErrorState from '../../components/ErrorState';
 import {
   hasMoreItems,
   nextProgressiveLimit,
@@ -33,6 +34,28 @@ import {
   type ListDefinition,
 } from './roleSchema';
 import { prioritySortRows } from './priorityTriage';
+import {
+  canUseWorkbenchDebug,
+  resolveAuthorizedWorkbenchRoles,
+  resolveDefaultWorkbenchRole,
+} from './workbenchAccess';
+import {
+  buildCsv,
+  detectListError,
+  parseSavedView,
+  resolveRowPath,
+  serializeSavedView,
+  stableRowId,
+  type SavedView,
+} from './workbenchListLogic';
+import {
+  createWorkbenchScanner,
+  inferInputMode,
+  matchShortcut,
+  mergeScannedValue,
+  touchTargetSize,
+  type WorkbenchInputMode,
+} from './workbenchInput';
 
 const ROLES: Array<{ key: RoleWorkbenchRole; label: string }> = [
   { key: 'operator', label: '操作员' },
@@ -47,13 +70,6 @@ interface SortState {
   dir: 'asc' | 'desc';
 }
 
-interface SavedView {
-  filter?: string;
-  sortKey?: string;
-  sortDir?: 'asc' | 'desc';
-  limit?: number;
-}
-
 function viewKey(role: RoleWorkbenchRole, listKey: string): string {
   return `ewoh.roleWorkbench.view.${role}.${listKey}`;
 }
@@ -61,24 +77,10 @@ function viewKey(role: RoleWorkbenchRole, listKey: string): string {
 function loadView(role: RoleWorkbenchRole, listKey: string): SavedView | null {
   try {
     const raw = localStorage.getItem(viewKey(role, listKey));
-    if (!raw) return null;
-    return JSON.parse(raw) as SavedView;
+    return parseSavedView(raw);
   } catch {
     return null;
   }
-}
-
-function canEnableDebug(): boolean {
-  try {
-    const flag = localStorage.getItem('ewoh.debug');
-    if (flag === '1' || flag === 'true') return true;
-  } catch {
-    // ignore
-  }
-  const roles = getAuthUser()?.roles ?? [];
-  return roles.some((role) =>
-    role.toLowerCase().includes('admin') || role.toLowerCase().includes('developer'),
-  );
 }
 
 function sortRows(
@@ -116,18 +118,8 @@ function filterRows(
 }
 
 function exportCsv(list: ListDefinition, rows: Array<Record<string, unknown>>): void {
-  const header = list.columns.map((column) => column.label).join(',');
-  const body = rows
-    .map((row) =>
-      list.columns
-        .map((column) => {
-          const text = formatValue(column.format, row[column.key]);
-          return `"${String(text).replace(/"/g, '""')}"`;
-        })
-        .join(','),
-    )
-    .join('\n');
-  const blob = new Blob([`\uFEFF${header}\n${body}`], {
+  const content = buildCsv(list, rows);
+  const blob = new Blob([content], {
     type: 'text/csv;charset=utf-8;',
   });
   const url = URL.createObjectURL(blob);
@@ -172,11 +164,16 @@ interface WorkbenchListProps {
   filter: string;
   sort?: SortState;
   limit: number;
+  targetSize: number;
+  filterInputRef: (element: HTMLInputElement | null) => void;
+  onFilterFocus: () => void;
   onFilter: (value: string) => void;
   onToggleSort: (columnKey: string) => void;
   onLoadMore: () => void;
   onSaveView: () => void;
   onExport: () => void;
+  onRefresh: () => void;
+  error: unknown;
 }
 
 function WorkbenchList({
@@ -186,11 +183,16 @@ function WorkbenchList({
   filter,
   sort,
   limit,
+  targetSize,
+  filterInputRef,
+  onFilterFocus,
   onFilter,
   onToggleSort,
   onLoadMore,
   onSaveView,
   onExport,
+  onRefresh,
+  error,
 }: WorkbenchListProps): React.ReactElement {
   const navigate = useNavigate();
 
@@ -214,25 +216,36 @@ function WorkbenchList({
   const visible = progressiveSlice(sorted, limit);
   const hasMore = hasMoreItems(sorted, limit);
 
+  const handleRowClick = (row: Record<string, unknown>) => {
+    const path = resolveRowPath(list, row);
+    if (path) navigate(path);
+  };
+
   return (
     <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
       <div className="flex flex-wrap items-center gap-2 border-b border-[hsl(220_14%_89%)] px-4 py-3">
         <ClipboardList className="size-4 text-[hsl(221_83%_53%)]" />
         <h2 className="font-semibold text-[hsl(220_14%_14%)]">{list.label}</h2>
-        <span className="text-xs text-[hsl(218_10%_42%)]">{sorted.length} 条</span>
+        <span className="text-xs text-[hsl(218_10%_42%)]">
+          {listError ? '加载失败' : `${sorted.length} 条`}
+        </span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <input
             type="text"
+            ref={filterInputRef}
             value={filter}
             onChange={(event) => onFilter(event.target.value)}
+            onFocus={onFilterFocus}
             placeholder="筛选…"
             aria-label={`筛选${list.label}`}
             className="h-8 w-40 rounded-md border border-[hsl(220_14%_89%)] px-2 text-xs text-[hsl(220_14%_14%)] outline-none focus:border-[hsl(221_83%_53%)]"
+            style={{ minHeight: targetSize }}
           />
           <Button
             size="sm"
             variant="outline"
             className="h-8 gap-1.5 text-xs"
+            style={{ minHeight: targetSize }}
             onClick={onSaveView}
           >
             <Save className="size-3" />
@@ -242,6 +255,7 @@ function WorkbenchList({
             size="sm"
             variant="outline"
             className="h-8 gap-1.5 text-xs"
+            style={{ minHeight: targetSize }}
             onClick={onExport}
           >
             <Download className="size-3" />
@@ -251,8 +265,13 @@ function WorkbenchList({
       </div>
 
       {listError ? (
-        <div className="px-4 py-3 text-sm text-red-600">
-          该列表数据加载失败，请稍后重试。
+        <div className="p-4">
+          <ErrorState
+            error={error}
+            errorMessage={`「${list.label}」数据加载失败，请稍后重试。`}
+            onRetry={onRefresh}
+            backLabel="返回工作台"
+          />
         </div>
       ) : visible.length === 0 ? (
         <p className="px-4 py-3 text-sm text-[hsl(218_10%_42%)]">{list.emptyText}</p>
@@ -284,21 +303,26 @@ function WorkbenchList({
               </tr>
             </thead>
             <tbody className="divide-y divide-[hsl(220_14%_89%)]">
-              {visible.map((row, index) => (
-                <tr
-                  key={index}
-                  onClick={list.rowTo ? () => navigate(list.rowTo ?? '') : undefined}
-                  className={
-                    list.rowTo ? 'cursor-pointer hover:bg-[hsl(220_14%_96%)]' : undefined
-                  }
-                >
-                  {list.columns.map((column) => (
-                    <td key={column.key} className="px-4 py-2 text-[hsl(220_14%_14%)]">
-                      {renderCell(column, row)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
+              {visible.map((row, index) => {
+                const rowPath = resolveRowPath(list, row);
+                return (
+                  <tr
+                    key={stableRowId(row, list, index)}
+                    onClick={rowPath ? () => handleRowClick(row) : undefined}
+                    className={
+                      rowPath
+                        ? 'cursor-pointer hover:bg-[hsl(220_14%_96%)]'
+                        : undefined
+                    }
+                  >
+                    {list.columns.map((column) => (
+                      <td key={column.key} className="px-4 py-2 text-[hsl(220_14%_14%)]">
+                        {renderCell(column, row)}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -306,7 +330,12 @@ function WorkbenchList({
 
       {hasMore && (
         <div className="border-t border-[hsl(220_14%_89%)] px-4 py-2">
-          <Button size="sm" variant="outline" onClick={onLoadMore}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onLoadMore}
+            style={{ minHeight: targetSize }}
+          >
             加载更多
           </Button>
         </div>
@@ -316,14 +345,35 @@ function WorkbenchList({
 }
 
 export default function RoleWorkbench(): React.ReactElement {
-  const [role, setRole] = useState<RoleWorkbenchRole>('manager');
+  const authRoles = useMemo(() => getAuthUser()?.roles ?? [], []);
+  const personId = useMemo(() => getAuthUser()?.userId ?? undefined, []);
+
+  // TR-9.2: 默认角色来自当前认证用户，普通用户绝不默认 manager。
+  const [role, setRole] = useState<RoleWorkbenchRole>(() =>
+    resolveDefaultWorkbenchRole(authRoles),
+  );
   const [limits, setLimits] = useState<Record<string, number>>({});
   const [sortState, setSortState] = useState<Record<string, SortState>>({});
   const [filterState, setFilterState] = useState<Record<string, string>>({});
   const [debugMode, setDebugMode] = useState(false);
+  // 多输入方式：默认由平台能力推断（触摸/键盘），管理员可切换单手/手套以放大触控目标。
+  const [inputMode, setInputMode] = useState<WorkbenchInputMode>(() =>
+    inferInputMode({
+      hasTouch:
+        typeof window !== 'undefined' &&
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(pointer: coarse)').matches,
+      coarsePointer:
+        typeof window !== 'undefined' &&
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(pointer: coarse)').matches,
+    }),
+  );
+  const targetSize = touchTargetSize(inputMode);
+  const filterInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const activeListKeyRef = useRef<string | null>(null);
   const navigate = useNavigate();
 
-  const personId = getAuthUser()?.userId ?? undefined;
   const workbenchQuery = useQuery({
     queryKey: queryKeys.roleWorkbench(role),
     queryFn: () => getRoleWorkbench(role, role === 'operator' ? personId : undefined),
@@ -333,6 +383,26 @@ export default function RoleWorkbench(): React.ReactElement {
   const schema = getRoleSchema(role);
   const data = workbenchQuery.data?.data ?? {};
   const generatedAt = workbenchQuery.data?.generatedAt;
+
+  // 服务端判定：调试/模拟权限与可访问角色集（不信任前端 role 参数）。
+  const serverAuthorized = workbenchQuery.data?.authorizedRoles;
+  const canDebug =
+    workbenchQuery.data?.canDebug ?? canUseWorkbenchDebug(authRoles);
+  const simulating = Boolean(workbenchQuery.data?.simulating);
+
+  // 客户端镜像在数据到达前先渲染标签；数据到达后以服务端为准。
+  const clientAuthorized = useMemo(
+    () => resolveAuthorizedWorkbenchRoles(authRoles),
+    [authRoles],
+  );
+  const visibleRoles =
+    serverAuthorized && serverAuthorized.length > 0
+      ? serverAuthorized
+      : clientAuthorized;
+  const visibleTabs = useMemo(
+    () => ROLES.filter((item) => visibleRoles.includes(item.key)),
+    [visibleRoles],
+  );
 
   // 加载该角色已保存的视图（筛选/排序/加载更多）。
   useEffect(() => {
@@ -358,7 +428,7 @@ export default function RoleWorkbench(): React.ReactElement {
     for (const list of schema.lists) {
       localStorage.setItem(
         viewKey(role, list.key),
-        JSON.stringify({
+        serializeSavedView({
           filter: filterState[list.key] ?? '',
           sortKey: sortState[list.key]?.key,
           sortDir: sortState[list.key]?.dir,
@@ -367,6 +437,45 @@ export default function RoleWorkbench(): React.ReactElement {
       );
     }
   }, [schema, role, filterState, sortState, limits]);
+
+  // 多输入方式：扫码枪 + 键盘快捷键（Ctrl/Cmd+F 聚焦筛选、Ctrl/Cmd+R 刷新、Ctrl/Cmd+S 保存视图）。
+  useEffect(() => {
+    const scanner = createWorkbenchScanner({
+      onScan: (value) => {
+        const key = activeListKeyRef.current ?? schema.lists[0]?.key;
+        if (!key) return;
+        setFilterState((current) => ({
+          ...current,
+          [key]: mergeScannedValue(current[key] ?? '', value),
+        }));
+      },
+      onError: () => {
+        // 扫码失败/过短：保持静默，用户可手动输入。
+      },
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      scanner.handleKeyDown(event);
+      const action = matchShortcut(event);
+      if (!action) return;
+      if (action === 'focus-filter') {
+        event.preventDefault();
+        const key = activeListKeyRef.current ?? schema.lists[0]?.key;
+        filterInputRefs.current[key ?? '']?.focus();
+      } else if (action === 'refresh') {
+        event.preventDefault();
+        void workbenchQuery.refetch();
+      } else if (action === 'save-view') {
+        event.preventDefault();
+        saveView();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [schema, saveView]);
 
   const toggleSort = useCallback(
     (listKey: string, columnKey: string) => {
@@ -387,12 +496,9 @@ export default function RoleWorkbench(): React.ReactElement {
   }, []);
 
   const kpiCards = useMemo(
-    () =>
-      schema.kpis.filter((kpi) => data[kpi.key] !== undefined),
+    () => schema.kpis.filter((kpi) => data[kpi.key] !== undefined),
     [schema, data],
   );
-
-  const canDebug = useMemo(() => canEnableDebug(), []);
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
@@ -426,8 +532,54 @@ export default function RoleWorkbench(): React.ReactElement {
         </div>
       </header>
 
+      {/* 输入方式切换：键盘 / 触摸 / 扫码 / 单手 / 手套（放大触控目标） */}
+      <div
+        className="flex flex-wrap items-center gap-2"
+        role="group"
+        aria-label="输入方式"
+      >
+        <span className="text-xs text-[hsl(218_10%_42%)]">输入方式：</span>
+        {(
+          [
+            ['keyboard', '键盘'],
+            ['touch', '触摸'],
+            ['scan', '扫码'],
+            ['singlehand', '单手'],
+            ['glove', '手套'],
+          ] as Array<[WorkbenchInputMode, string]>
+        ).map(([mode, label]) => (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => setInputMode(mode)}
+            aria-pressed={inputMode === mode}
+            className={`rounded-md px-3 py-2 text-xs font-medium ${
+              inputMode === mode
+                ? 'bg-[hsl(221_83%_53%)] text-white'
+                : 'text-[hsl(218_10%_42%)] hover:bg-[hsl(220_14%_96%)]'
+            }`}
+            style={{ minHeight: targetSize }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {simulating && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800"
+        >
+          <Users className="size-4 shrink-0" />
+          <span>
+            您正在以「{ROLES.find((item) => item.key === role)?.label ?? role}」角色
+            模拟查看（管理员）。此视图不代表您的真实权限，仅用于诊断与演示。
+          </span>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-1 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-1">
-        {ROLES.map((item) => (
+        {visibleTabs.map((item) => (
           <button
             key={item.key}
             type="button"
@@ -512,15 +664,13 @@ export default function RoleWorkbench(): React.ReactElement {
         {schema.lists.map((list) => {
           const raw = data[list.key];
           let rows: Array<Record<string, unknown>> = [];
-          let listError = false;
-          if (raw === undefined || raw === null) {
-            listError = true;
-          } else if (list.transform) {
-            rows = list.transform(raw);
-          } else if (Array.isArray(raw)) {
-            rows = raw as Array<Record<string, unknown>>;
-          } else {
-            listError = true;
+          const listError = detectListError(raw, Boolean(list.transform));
+          if (!listError) {
+            if (list.transform) {
+              rows = list.transform(raw);
+            } else {
+              rows = raw as Array<Record<string, unknown>>;
+            }
           }
 
           return (
@@ -529,9 +679,17 @@ export default function RoleWorkbench(): React.ReactElement {
               list={list}
               rows={rows}
               listError={listError}
+              error={workbenchQuery.error}
               filter={filterState[list.key] ?? ''}
               sort={sortState[list.key]}
               limit={limits[list.key] ?? 50}
+              targetSize={targetSize}
+              filterInputRef={(element) => {
+                filterInputRefs.current[list.key] = element;
+              }}
+              onFilterFocus={() => {
+                activeListKeyRef.current = list.key;
+              }}
               onFilter={(value) => setFilter(list.key, value)}
               onToggleSort={(columnKey) => toggleSort(list.key, columnKey)}
               onLoadMore={() =>
@@ -542,6 +700,7 @@ export default function RoleWorkbench(): React.ReactElement {
               }
               onSaveView={() => saveView()}
               onExport={() => exportCsv(list, rows)}
+              onRefresh={() => workbenchQuery.refetch()}
             />
           );
         })}
@@ -549,7 +708,7 @@ export default function RoleWorkbench(): React.ReactElement {
         {debugMode && canDebug && (
           <section className="rounded-lg border border-dashed border-[hsl(220_14%_89%)] bg-slate-50 p-4">
             <h2 className="mb-2 text-sm font-semibold text-[hsl(220_14%_14%)]">
-              原始诊断数据（仅管理员 / 开发者可见）
+              原始诊断数据（服务端鉴权，仅管理员可见）
             </h2>
             <pre className="overflow-x-auto text-xs text-[hsl(218_10%_42%)]">
               {JSON.stringify(data, null, 2)}

@@ -5,14 +5,17 @@ import {
   getLastSyncAt,
   migratePendingActionsFromLocalStorage,
   openOfflineDb,
+  savePendingActionWithAttachment,
   setLastSyncAt,
   createId,
+  exportOfflineData,
   generateIdempotencyKey,
   type AuditLogEntry,
   type OfflineAttachment,
   type OfflineDatabase,
   type StoredPendingAction,
 } from '../../lib/offlineDb';
+import { downloadTextFile } from '../../lib/siteReadinessExport';
 import {
   compressImageFile,
   compressionForQuota,
@@ -28,6 +31,7 @@ import {
 import { uploadFile } from '../../api/files';
 import { forceResolveMobileStep, inspectMobileStep, transitionMobileStep } from '../../api/mobile';
 import { getAuthUser } from '../../lib/auth';
+import { flushLeaseManager } from '../../lib/offlineLeader';
 
 export interface QueueAttachment {
   name: string;
@@ -64,13 +68,19 @@ export interface OfflineWorkbench {
   ) => Promise<void>;
   recordAudit: (entry: Omit<AuditLogEntry, 'key' | 'at'>) => Promise<void>;
   refreshPending: () => Promise<void>;
+  /** Export the entire offline vault as a downloadable JSON backup. */
+  exportOffline: () => Promise<void>;
+  /** Repair structurally-corrupt offline entries (corruption recovery). */
+  recoverOffline: () => Promise<void>;
+  /** Drop all queued pending actions and attachments (capacity cleanup). */
+  clearOfflineData: () => Promise<void>;
 }
 
 async function buildSyncOne(db: OfflineDatabase) {
   return async (item: StoredPendingAction): Promise<void> => {
-    // TODO: idempotency — pass `item.idempotencyKey` (e.g. as an Idempotency-Key
-    // header / body field) once the backend supports it. Until then the key is
-    // only recorded locally in the audit log.
+    // Every offline write carries its recorded idempotency key so the backend
+    // persists the result and replays it on re-delivery (side effect runs once)
+    // while rejecting a mutated payload with a 409.
     if (item.type === 'transition') {
       let body = item.body;
       if (item.attachmentId) {
@@ -97,13 +107,19 @@ async function buildSyncOne(db: OfflineDatabase) {
         item.stepId,
         item.action ?? '',
         body,
+        item.idempotencyKey,
       );
       return;
     }
-    await inspectMobileStep(item.orderId, item.stepId, {
-      result: (item.body?.result as 'pass' | 'fail' | 'rework') ?? 'pass',
-      note: item.body?.note as string | undefined,
-    });
+    await inspectMobileStep(
+      item.orderId,
+      item.stepId,
+      {
+        result: (item.body?.result as 'pass' | 'fail' | 'rework') ?? 'pass',
+        note: item.body?.note as string | undefined,
+      },
+      item.idempotencyKey,
+    );
   };
 }
 
@@ -114,6 +130,7 @@ export function useOfflineWorkbench(
   const optionsRef = useRef(options);
   optionsRef.current = options;
   const dbRef = useRef<OfflineDatabase | null>(null);
+  const storageControllerRef = useRef<ReturnType<typeof createStorageController> | null>(null);
   const [ready, setReady] = useState(false);
   const [isOnline, setIsOnline] = useState(
     () => (typeof navigator === 'undefined' ? true : navigator.onLine),
@@ -177,6 +194,7 @@ export function useOfflineWorkbench(
           },
         ],
       });
+      storageControllerRef.current = storageController;
       try {
         await storageController.migrate();
         await storageController.purgeExpired();
@@ -232,11 +250,28 @@ export function useOfflineWorkbench(
       }
       setSyncing(true);
       const syncOne = await buildSyncOne(db);
-      const result = await flushOfflineQueue(syncOne, db.pendingActions);
+      // 多标签页单 leader：只有获选标签页 flush 队列，防止并发重放（配合幂等键）。
+      let result: Awaited<ReturnType<typeof flushOfflineQueue>> = {
+        synced: [],
+        conflict: [],
+        failed: [],
+      };
+      await flushLeaseManager.runWithLease('mobile', async () => {
+        result = await flushOfflineQueue(syncOne, db.pendingActions, {
+          attachmentStore: db.attachments,
+        });
+      });
       await setLastSyncAt(db.syncState);
       if (!cancelled) {
         setSyncing(false);
         await refreshPending();
+        if (result.authRequired) {
+          // 401 → 暂停队列并引导重新认证；认证恢复后随 online 事件继续。
+          toast.error('登录已失效，离线操作已暂停', {
+            description: '请重新登录后继续同步，未同步的操作会安全保留。',
+          });
+          return;
+        }
         if (result.synced.length > 0) {
           toast.success(`已同步 ${result.synced.length} 项离线操作`);
           optionsRef.current?.onSynced?.();
@@ -287,6 +322,7 @@ export function useOfflineWorkbench(
         throw new Error('离线存储不可用');
       }
       let attachmentId: string | undefined;
+      let attachmentRecord: OfflineAttachment | undefined;
       if (opts.attachment) {
         const attachments = await db.attachments.getAll();
         const usage = estimateAttachmentUsage(attachments);
@@ -301,7 +337,7 @@ export function useOfflineWorkbench(
           throw new Error('附件容量已满，请先清理或减小照片再重试');
         }
         attachmentId = createId();
-        await db.attachments.put({
+        attachmentRecord = {
           key: attachmentId,
           id: attachmentId,
           name: opts.attachment.name,
@@ -309,7 +345,7 @@ export function useOfflineWorkbench(
           blob,
           size: blob.size,
           createdAt: new Date().toISOString(),
-        });
+        };
       }
       const now = new Date().toISOString();
       const idempotencyKey = generateIdempotencyKey(
@@ -318,7 +354,7 @@ export function useOfflineWorkbench(
         opts.action,
       );
       const key = createId();
-      await db.pendingActions.put({
+      const pending: StoredPendingAction = {
         key,
         id: key,
         type: 'transition',
@@ -332,7 +368,10 @@ export function useOfflineWorkbench(
         queuedAt: now,
         status: 'local',
         retryCount: 0,
-      });
+      };
+      // 附件与 pending action 在同一个 IndexedDB transaction 中原子写入，
+      // 避免任一侧单独失败留下孤儿附件/孤儿动作。
+      await savePendingActionWithAttachment(db.db, pending, attachmentRecord);
       await recordAudit({
         actorId: personId,
         action: `transition:${opts.action}`,
@@ -394,6 +433,7 @@ export function useOfflineWorkbench(
       const syncOne = await buildSyncOne(db);
       const result = await flushOfflineQueue(syncOne, db.pendingActions, {
         includeManual,
+        attachmentStore: db.attachments,
       });
       await setLastSyncAt(db.syncState);
       setSyncing(false);
@@ -517,6 +557,73 @@ export function useOfflineWorkbench(
     [personId, recordAudit, refreshPending, isOnline],
   );
 
+  const exportOffline = useCallback(async () => {
+    const db = dbRef.current;
+    if (!db) {
+      toast.error('离线存储不可用，无法导出');
+      return;
+    }
+    try {
+      const snapshot = await exportOfflineData(db);
+      downloadTextFile(
+        `ewoh-offline-export-${new Date().toISOString().slice(0, 10)}.json`,
+        JSON.stringify(snapshot, null, 2),
+        'application/json',
+      );
+      toast.success(`已导出离线数据（共 ${snapshot.pendingActions.length} 项待同步）`);
+    } catch (error) {
+      toast.error('导出失败', {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    }
+  }, []);
+
+  const recoverOffline = useCallback(async () => {
+    const controller = storageControllerRef.current;
+    if (!controller) {
+      toast.error('离线存储未就绪，无法执行恢复');
+      return;
+    }
+    try {
+      const report = await controller.recover();
+      if (report.corruptKeys.length === 0) {
+        toast.success('离线数据校验通过，未发现损坏项');
+      } else {
+        toast.info(
+          `已修复 ${report.recoveredKeys.length} 项，清理 ${report.failedKeys.length} 项损坏数据`,
+        );
+      }
+      await refreshPending();
+    } catch (error) {
+      toast.error('恢复失败', {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    }
+  }, [refreshPending]);
+
+  const clearOfflineData = useCallback(async () => {
+    const db = dbRef.current;
+    if (!db) {
+      return;
+    }
+    try {
+      await db.pendingActions.clear();
+      await db.attachments.clear();
+      await recordAudit({
+        actorId: personId,
+        action: 'offline-clear',
+        idempotencyKey: '',
+        result: 'cleared',
+      });
+      await refreshPending();
+      toast.success('已清空待同步队列与离线附件');
+    } catch (error) {
+      toast.error('清理失败', {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    }
+  }, [personId, recordAudit, refreshPending]);
+
   return {
     ready,
     isOnline,
@@ -532,5 +639,8 @@ export function useOfflineWorkbench(
     resolveConflict,
     recordAudit,
     refreshPending,
+    exportOffline,
+    recoverOffline,
+    clearOfflineData,
   };
 }

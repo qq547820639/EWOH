@@ -2,10 +2,10 @@
   "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:061a241e-85f5-41b0-b772-f313b9e0f52b",
+  "serialNumber": "urn:uuid:17d6aa72-1ffc-48e6-bd9e-2dd9f02e6fb5",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-08-04T05:00:14.647Z",
+    "timestamp": "2026-08-05T09:40:13.400Z",
     "lifecycles": [
       {
         "phase": "build"
@@ -19,12 +19,12 @@
       }
     ],
     "component": {
-      "bom-ref": "fullstack-nestjs-template@2.2.5",
+      "bom-ref": "ewoh-spark-app@0.6.0-rc4",
       "type": "library",
       "name": "ewoh-spark-app",
-      "version": "2.2.5",
+      "version": "0.6.0-rc4",
       "scope": "required",
-      "purl": "pkg:npm/fullstack-nestjs-template@2.2.5",
+      "purl": "pkg:npm/ewoh-spark-app@0.6.0-rc4",
       "properties": [
         {
           "name": "cdx:npm:package:private",
@@ -8308,7 +8308,7 @@
   ],
   "dependencies": [
     {
-      "ref": "fullstack-nestjs-template@2.2.5",
+      "ref": "ewoh-spark-app@0.6.0-rc4",
       "dependsOn": [
         "@aws-sdk/client-s3@3.1101.0",
         "@lark-apaas/fullstack-nestjs-core@1.1.57",

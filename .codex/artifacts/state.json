@@ -210,7 +210,7 @@
     "c7_work_graph_contract": "work graph schema/registry/audit passed (17 checks)",
     "c8_asset_catalog_contract": "catalog schema/manifests audit passed (32 checks)",
     "c9_factory_profile_contract": "factory profile schema/example audit passed (8 checks)",
-    "work_graph_index": "202 items / 21 edges / 48 actors / 69 evidence / 14 gates / 0 conflicts",
+    "work_graph_index": "252 items / 209 edges / 48 actors / 191 evidence / 14 gates / 0 conflicts",
     "work_orchestration_api": "/api/work/* verified on :3102; 226/226 OpenAPI route audit",
     "work_orchestration_ui": "Playwright render passed; eight tabs; gate rows 14; no console errors",
     "work_write_gate": "EWOH_WORK_WRITABLE=false returns 400; true persists handoff/gate/lock records",

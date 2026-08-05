@@ -1,13 +1,19 @@
 import {
   MAX_BUFFER_SIZE,
+  cancelPendingFlush,
   captureUnhandledError,
   clearBuffer,
+  clearStaged,
+  configureFlush,
+  detectDeviceCategory,
   detectWhiteScreen,
   flush,
   getApiFailureRate,
   getBuffer,
   getBufferSize,
   getConflictRate,
+  getFlushOptions,
+  getStagedCount,
   isWhiteScreen,
   recordApiResult,
   recordMetric,
@@ -16,6 +22,9 @@ import {
   recordSyncOutcome,
   resetApiStats,
   resetSyncStats,
+  setFlushTransportForTesting,
+  setStageStorageForTesting,
+  type FrontendMetricsEnvelope,
 } from './observability';
 
 describe('observability', () => {
@@ -23,6 +32,11 @@ describe('observability', () => {
     clearBuffer();
     resetApiStats();
     resetSyncStats();
+    clearStaged();
+    cancelPendingFlush();
+    setFlushTransportForTesting(null);
+    setStageStorageForTesting(null);
+    configureFlush({ samplingRate: 1, maxRetries: 5, backoffBaseMs: 1, backoffMaxMs: 10, jitter: false });
   });
 
   it('buffer respects max length (drops oldest beyond cap)', () => {
@@ -90,13 +104,78 @@ describe('observability', () => {
     expect(last.value).toBe(123);
   });
 
-  it('flush clears the buffer and returns the flushed count (no-op endpoint)', async () => {
+  it('flush clears buffer only after a successful send (TR-5.2 invariant)', async () => {
     recordMetric('a', 1);
     recordMetric('b', 2);
+    let received: FrontendMetricsEnvelope | null = null;
+    setFlushTransportForTesting(async (env) => {
+      received = env;
+    });
     const count = await flush();
     expect(count).toBe(2);
+    expect(received?.metrics).toHaveLength(2);
+    // 发送成功后才清空。
     expect(getBufferSize()).toBe(0);
-    // 再次 flush 空缓冲为 0。
+    // 缓冲为空时 flush 返回 0。
     expect(await flush()).toBe(0);
+  });
+
+  it('retains the buffer when the send fails (no silent drop)', async () => {
+    recordMetric('a', 1);
+    setFlushTransportForTesting(async () => {
+      throw new Error('network down');
+    });
+    const count = await flush();
+    expect(count).toBe(0);
+    // 失败不清空本地缓冲。
+    expect(getBufferSize()).toBe(1);
+    cancelPendingFlush();
+  });
+
+  it('stages metrics for offline replay after retries are exhausted', async () => {
+    recordMetric('a', 1);
+    configureFlush({ maxRetries: 0 });
+    const mem = new Map<string, string>();
+    setStageStorageForTesting({
+      getItem: (k) => mem.get(k) ?? null,
+      setItem: (k, v) => void mem.set(k, v),
+      removeItem: (k) => void mem.delete(k),
+    });
+    setFlushTransportForTesting(async () => {
+      throw new Error('unreachable');
+    });
+    await flush();
+    // 重试已耗尽 → 转入离线暂存，缓冲清空以待新指标。
+    expect(getStagedCount()).toBe(1);
+    clearStaged();
+  });
+
+  it('envelope carries requestId/traceId/buildVersion/deviceCategory metadata', async () => {
+    recordMetric('a', 1);
+    let received: FrontendMetricsEnvelope | null = null;
+    setFlushTransportForTesting(async (env) => {
+      received = env;
+    });
+    await flush();
+    expect(received?.buildVersion).toBeTruthy();
+    expect(received?.deviceCategory).toBeTruthy();
+    expect(received?.metrics).toHaveLength(1);
+  });
+
+  it('sampling rate 0 drops the batch deliberately (not silent skip)', async () => {
+    recordMetric('a', 1);
+    configureFlush({ samplingRate: 0 });
+    setFlushTransportForTesting(async () => {
+      throw new Error('should not be called');
+    });
+    const count = await flush();
+    expect(count).toBe(1);
+    expect(getBufferSize()).toBe(0);
+  });
+
+  it('detectDeviceCategory distinguishes mobile/tablet/desktop', () => {
+    expect(detectDeviceCategory('Mozilla iPhone')).toBe('mobile');
+    expect(detectDeviceCategory('Mozilla iPad')).toBe('tablet');
+    expect(detectDeviceCategory('Mozilla Windows')).toBe('desktop');
   });
 });

@@ -74,11 +74,12 @@ export async function transitionMobileStep(
   stepId: string,
   action: string,
   body: Record<string, unknown> = {},
+  idempotencyKey?: string,
 ): Promise<MobileWorkbenchStep> {
   const res = await axiosForBackend({
     url: `/api/mobile/workbench/orders/${encodeURIComponent(orderId)}/steps/${encodeURIComponent(stepId)}/state?action=${action}`,
     method: 'POST',
-    data: body,
+    data: idempotencyKey ? { ...body, idempotencyKey } : body,
   });
   return res.data;
 }
@@ -92,11 +93,12 @@ export async function inspectMobileStep(
     quantity?: number;
     note?: string;
   },
+  idempotencyKey?: string,
 ): Promise<{ stepId: string; eventId: string; result: string }> {
   const res = await axiosForBackend({
     url: `/api/mobile/workbench/orders/${encodeURIComponent(orderId)}/steps/${encodeURIComponent(stepId)}/quality`,
     method: 'POST',
-    data: body,
+    data: idempotencyKey ? { ...body, idempotencyKey } : body,
   });
   return res.data;
 }

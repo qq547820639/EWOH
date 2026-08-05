@@ -26,6 +26,16 @@ import { queryKeys } from '../../hooks/queryKeys';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
 import { Input } from '@client/src/components/ui/input';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@client/src/components/ui/alert-dialog';
 import QueryState from '../../components/QueryState';
 import { buildExceptionBody } from './exceptionPayload';
 
@@ -179,6 +189,7 @@ const MobileWorkbench = (): React.ReactElement => {
   const queryClient = useQueryClient();
   const personId = getAuthUser()?.userId ?? '';
   const [scanInput, setScanInput] = useState('');
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   const [exceptionOpen, setExceptionOpen] = useState<Record<string, boolean>>({});
   const [exceptionNote, setExceptionNote] = useState<Record<string, string>>({});
@@ -214,6 +225,9 @@ const MobileWorkbench = (): React.ReactElement => {
     retryPending,
     discardPending,
     resolveConflict,
+    exportOffline,
+    recoverOffline,
+    clearOfflineData,
   } = useOfflineWorkbench(personId, { onSynced });
 
   const workbenchQuery = useQuery({
@@ -577,6 +591,55 @@ const MobileWorkbench = (): React.ReactElement => {
           当前处于离线状态，操作会加入待同步队列，联网后自动提交。
         </div>
       )}
+
+      {/* Offline data management (corruption / upgrade / capacity entry points) */}
+      <section
+        aria-label="离线数据管理"
+        className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-3"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-semibold text-[hsl(220_14%_14%)]">离线数据管理</p>
+          <Button size="sm" variant="outline" onClick={() => void exportOffline()}>
+            导出备份
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => void recoverOffline()}>
+            修复数据
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-red-700"
+            onClick={() => setConfirmClearOpen(true)}
+          >
+            清空离线数据
+          </Button>
+        </div>
+        <p className="mt-1 text-[10px] text-[hsl(218_10%_42%)]">
+          数据库损坏、升级失败或容量不足时可导出备份、修复损坏项或清空离线队列。
+        </p>
+      </section>
+
+      <AlertDialog open={confirmClearOpen} onOpenChange={setConfirmClearOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>清空离线数据</AlertDialogTitle>
+            <AlertDialogDescription>
+              此操作将清空全部待同步操作与离线附件，且不可撤销。请先导出备份再继续。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmClearOpen(false);
+                void clearOfflineData();
+              }}
+            >
+              确认清空
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {pendingActions.length > 0 && (
         <section

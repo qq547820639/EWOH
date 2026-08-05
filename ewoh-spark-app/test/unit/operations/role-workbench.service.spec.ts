@@ -59,9 +59,13 @@ describe('RoleWorkbenchService', () => {
     const result = await service.getWorkbench('operator', 'P-1', {
       userId: 'P-1',
       primaryOrgId: 'org-1',
+      roles: ['worker'],
     });
 
     expect(result.role).toBe('operator');
+    expect(result.simulating).toBe(false);
+    expect(result.canDebug).toBe(false);
+    expect(result.authorizedRoles).toEqual(['operator']);
     const data = result.data as {
       mySteps: Array<{ stepId: string; sopPending: boolean; exception: boolean }>;
       sopPendingCount: number;
@@ -108,7 +112,21 @@ describe('RoleWorkbenchService', () => {
     rows.set(ewohResourceBinding, []);
     const service = createService(rows);
 
-    const result = await service.getWorkbench('manager');
+    const result = await service.getWorkbench('manager', undefined, {
+      userId: 'M-1',
+      primaryOrgId: 'org-1',
+      roles: ['global_admin'],
+    });
+    expect(result.role).toBe('manager');
+    expect(result.simulating).toBe(false);
+    expect(result.canDebug).toBe(true);
+    expect(result.authorizedRoles).toEqual([
+      'operator',
+      'team_lead',
+      'quality',
+      'equipment',
+      'manager',
+    ]);
     const data = result.data as {
       orderDeliveryRisk: number;
       capacityBottleneck: number;
@@ -126,5 +144,60 @@ describe('RoleWorkbenchService', () => {
     await expect(service.getWorkbench('nobody')).rejects.toThrow(
       'role must be one of',
     );
+  });
+
+  // TR-9.1: a forged `role` query param must be rejected server-side.
+  it('rejects a forged manager role for an ordinary worker (server-side RBAC)', async () => {
+    const service = createService(new Map());
+    await expect(
+      service.getWorkbench('manager', undefined, {
+        userId: 'P-1',
+        primaryOrgId: 'org-1',
+        roles: ['worker'],
+      }),
+    ).rejects.toThrow('not authorized');
+  });
+
+  it('rejects a forged quality role for a device_ops user', async () => {
+    const service = createService(new Map());
+    await expect(
+      service.getWorkbench('quality', undefined, {
+        userId: 'D-1',
+        primaryOrgId: 'org-1',
+        roles: ['device_ops'],
+      }),
+    ).rejects.toThrow('not authorized');
+  });
+
+  it('rejects querying another operator unless the caller is an admin', async () => {
+    const service = createService(new Map());
+    await expect(
+      service.getWorkbench('operator', 'OTHER-USER', {
+        userId: 'P-1',
+        primaryOrgId: 'org-1',
+        roles: ['worker'],
+      }),
+    ).rejects.toThrow('only query your own operator workbench');
+  });
+
+  it('allows an admin to simulate another operator', async () => {
+    const rows = new Map<unknown, unknown[]>();
+    rows.set(ewohScheduleTask, []);
+    rows.set(ewohScheduleTaskStep, []);
+    rows.set(ewohEvent, []);
+    rows.set(ewohSpatialEntity, []);
+    rows.set(ewohWorldState, []);
+    rows.set(ewohResourceBinding, []);
+    const service = createService(rows);
+
+    const result = await service.getWorkbench('equipment', undefined, {
+      userId: 'A-1',
+      primaryOrgId: 'org-1',
+      roles: ['global_admin'],
+    });
+    // Admin's own role is manager; viewing equipment is a simulation.
+    expect(result.simulating).toBe(true);
+    expect(result.canDebug).toBe(true);
+    expect(result.role).toBe('equipment');
   });
 });

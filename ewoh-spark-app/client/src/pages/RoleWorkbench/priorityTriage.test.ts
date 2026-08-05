@@ -5,6 +5,7 @@ import {
   priorityLabel,
   priorityOrder,
   prioritySortRows,
+  summarizeItem,
   triageRoleItems,
 } from './priorityTriage';
 
@@ -95,5 +96,44 @@ describe('priorityTriage (UX-001 待处理事项优先)', () => {
   it('returns rows unchanged when no priority column exists', () => {
     const rows = [{ name: 'a' }, { name: 'b' }];
     expect(prioritySortRows(rows, [{ key: 'name' }])).toEqual(rows);
+  });
+
+  it('summarizes why-now / deadline / impact / owner / next-step (spec item 11)', () => {
+    const [item] = triageRoleItems(
+      'operator',
+      [
+        {
+          id: 's1',
+          title: '装配异常',
+          reason: '设备故障影响产能',
+          priority: 'high',
+          deadline: '2026-08-05T11:00:00Z',
+          impact: '该线产能下降 30%',
+          owner: '张工',
+          nextStep: '切换备用工位',
+        },
+      ],
+      NOW,
+    );
+    const summary = summarizeItem(item, NOW);
+    expect(summary.reason).toContain('设备故障影响产能');
+    expect(summary.reason).toContain('已逾期');
+    expect(summary.impact).toBe('该线产能下降 30%');
+    expect(summary.owner).toBe('张工');
+    expect(summary.nextStep).toBe('切换备用工位');
+    expect(summary.deadline).not.toBe('');
+  });
+
+  it('summarizes an item without deadline or owner gracefully', () => {
+    const [item] = triageRoleItems(
+      'operator',
+      [{ id: 's2', title: '待检', reason: '', priority: 'low' }],
+      NOW,
+    );
+    const summary = summarizeItem(item, NOW);
+    expect(summary.reason).toBe('待处理事项');
+    expect(summary.deadline).toBe('');
+    expect(summary.owner).toBe('');
+    expect(summary.nextStep).toBe('');
   });
 });

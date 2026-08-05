@@ -14,10 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: 安装 Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
 
@@ -36,7 +36,7 @@ jobs:
         run: ruff check src/edge_platform
 
       - name: 安装 Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
@@ -45,6 +45,38 @@ jobs:
       - name: 安装前端/后端依赖
         run: npm ci
         working-directory: ewoh-spark-app
+
+      - name: 依赖漏洞扫描（npm audit，官方 registry）
+        working-directory: ewoh-spark-app
+        run: npm audit --registry=https://registry.npmjs.org --audit-level=high
+
+      - name: 许可证扫描
+        working-directory: ewoh-spark-app
+        run: node scripts/check-licenses.mjs --allow-unknown
+
+      - name: 生成并校验 SBOM（CycloneDX）
+        run: |
+          node scripts/generate-sbom.js
+          test -s release/ewoh-spark-sbom.cyclonedx.json && echo "SBOM OK: $(node -e 'const b=require("./release/ewoh-spark-sbom.cyclonedx.json");console.log(b.bomFormat+" "+b.specVersion+" components="+b.components.length)')"
+
+      - name: 禁止生成命令/CI 使用 @latest 的守护检查
+        run: |
+          set -e
+          if grep -rn "@latest" ewoh-spark-app/package.json .github/workflows/ 2>/dev/null; then
+            echo "::error::检测到 @latest，违反 Task 11 版本固定约束。"
+            exit 1
+          fi
+          echo "OK: 未发现 @latest"
+
+      - name: GitHub Actions uses 必须固定到 commit SHA（Task 11）
+        run: |
+          set -e
+          # 允许 "@<40位hex> # 注释"；禁止浮动 tag（如 @v4 / @main / @latest）
+          if grep -rEn "uses: .+@(v[0-9]+(\.[0-9]+)*|[a-z]+)( |$|#)" .github/workflows/ 2>/dev/null; then
+            echo "::error::检测到未固定到 commit SHA 的 Actions uses（浮动 tag），请改为 @<commit-sha>。"
+            exit 1
+          fi
+          echo "OK: 所有 Actions uses 均已固定到 commit SHA"
 
       - name: 仓库事实源一致性校验（P0-1）
         run: |
@@ -64,13 +96,29 @@ jobs:
         run: npm run type:check
         working-directory: ewoh-spark-app
 
-      - name: NestJS Jest 测试
-        run: npm test -- --runInBand
+      - name: NestJS Jest 测试（输出 JSON 供单一事实源收集）
+        run: npm test -- --runInBand --json --outputFile=jest.results.json
         working-directory: ewoh-spark-app
+
+      - name: 单一事实源证据清单生成与漂移校验（truth-check）
+        run: make truth-check
 
       - name: NestJS 生产构建（跳过交互式插件初始化）
         run: EWOH_SKIP_PLUGIN_INIT=1 npm run build:prod
         working-directory: ewoh-spark-app
+
+      - name: 构建确定性校验（TR-11.1：同一 commit 两次构建字节一致）
+        working-directory: ewoh-spark-app
+        run: |
+          set -e
+          RELEASE_ID="$(git rev-parse HEAD)" NODE_ENV=production npx vite build --config vite.config.ts --outDir /tmp/det-a >/dev/null 2>&1
+          RELEASE_ID="$(git rev-parse HEAD)" NODE_ENV=production npx vite build --config vite.config.ts --outDir /tmp/det-b >/dev/null 2>&1
+          if ! diff -r /tmp/det-a /tmp/det-b >/dev/null 2>&1; then
+            echo "::error::相同 commit 的两次构建产物不一致，违反确定性构建约束（TR-11.1）。"
+            diff -rq /tmp/det-a /tmp/det-b || true
+            exit 1
+          fi
+          echo "OK: 两次构建字节一致（确定性通过）"
 
       - name: 断言零第三方运行时依赖（护栏 P0-1）
         run: |

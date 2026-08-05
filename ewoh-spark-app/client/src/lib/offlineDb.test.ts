@@ -1,11 +1,18 @@
 import {
+  addJitter,
   backoffDelay,
+  backoffDelayWithJitter,
+  exportOfflineData,
   flushOfflineQueue,
   generateIdempotencyKey,
   isAuthError,
   migratePendingActionsFromLocalStorage,
   MIGRATION_FLAG_KEY,
+  retryAfterMs,
+  savePendingActionWithAttachment,
   type OfflineAttachment,
+  type OfflineDatabase,
+  type OfflineExportSnapshot,
   type SimpleStore,
   type StoredPendingAction,
   type SyncState,
@@ -359,5 +366,353 @@ describe('offlineDb', () => {
     expect(summary.synced).toEqual(['r1']);
     expect(syncOne).toHaveBeenCalledTimes(2);
     expect(await store.count()).toBe(0);
+  });
+
+  it('retryAfterMs parses Retry-After headers and numeric hints', () => {
+    expect(
+      retryAfterMs({ response: { headers: { 'retry-after': '2' } } }),
+    ).toBe(2000);
+    expect(
+      retryAfterMs({ response: { headers: { 'Retry-After': '5' } } }),
+    ).toBe(5000);
+    expect(retryAfterMs({ retryAfter: 1500 })).toBe(1500);
+    expect(retryAfterMs({ response: { status: 503 } })).toBeNull();
+    expect(retryAfterMs(null)).toBeNull();
+    expect(retryAfterMs('nope')).toBeNull();
+  });
+
+  it('flushOfflineQueue cleans up the orphaned attachment on success', async () => {
+    const pending = createMemoryStore<StoredPendingAction>();
+    const attachments = createMemoryStore<OfflineAttachment>();
+    await pending.put({
+      key: 'att-1',
+      id: 'att-1',
+      type: 'transition',
+      orderId: 'WO-1',
+      stepId: 'S1',
+      action: 'report',
+      attachmentId: 'blob-1',
+      idempotencyKey: 'k-att',
+      queuedAt: new Date().toISOString(),
+      status: 'local',
+    });
+    await attachments.put({
+      key: 'blob-1',
+      id: 'blob-1',
+      name: 'photo.jpg',
+      contentType: 'image/jpeg',
+      blob: new Blob(['x']),
+      size: 1,
+      createdAt: new Date().toISOString(),
+    });
+
+    const syncOne = jest.fn().mockResolvedValue(undefined);
+    const summary = await flushOfflineQueue(syncOne, pending, {
+      includeManual: true,
+      attachmentStore: attachments,
+    });
+
+    expect(summary.synced).toEqual(['att-1']);
+    expect(await pending.count()).toBe(0);
+    // Orphan attachment removed once the action completes.
+    expect(attachments.values.size).toBe(0);
+  });
+
+  it('flushOfflineQueue surfaces authRequired when a 401 is hit (queue should pause)', async () => {
+    const pending = createMemoryStore<StoredPendingAction>();
+    await pending.put({
+      key: 'qa',
+      id: 'qa',
+      type: 'inspection',
+      orderId: 'WO-1',
+      stepId: 'S1',
+      idempotencyKey: 'k-qa',
+      queuedAt: new Date().toISOString(),
+      status: 'local',
+    });
+    const syncOne = jest.fn().mockRejectedValue({ response: { status: 401 } });
+    const summary = await flushOfflineQueue(syncOne, pending, {
+      includeManual: true,
+    });
+    expect(summary.authRequired).toBe(true);
+    expect(syncOne).toHaveBeenCalledTimes(1);
+    const remaining = await pending.getAll();
+    expect(remaining[0].error?.code).toBe('AUTH_REQUIRED');
+  });
+
+  it('keeps same-entity items serial and processes distinct entities concurrently', async () => {
+    const pending = createMemoryStore<StoredPendingAction>();
+    const activeEntities = new Set<string>();
+    let serialViolation = false;
+    let maxActiveEntities = 0;
+
+    const make = (id: string, orderId: string): StoredPendingAction => ({
+      key: id,
+      id,
+      type: 'transition',
+      orderId,
+      stepId: id,
+      action: 'report',
+      idempotencyKey: `k-${id}`,
+      queuedAt: new Date().toISOString(),
+      status: 'local',
+    });
+    // Same entity: WO-A (a1, a2) — must be strictly serial.
+    // Distinct entity: WO-B (b1) — may overlap with WO-A.
+    await pending.put(make('a1', 'WO-A'));
+    await pending.put(make('a2', 'WO-A'));
+    await pending.put(make('b1', 'WO-B'));
+
+    const syncOne = jest.fn().mockImplementation(async (item: StoredPendingAction) => {
+      // Two items of the SAME entity in flight at once is a serialization breach.
+      if (activeEntities.has(item.orderId)) {
+        serialViolation = true;
+      }
+      activeEntities.add(item.orderId);
+      maxActiveEntities = Math.max(maxActiveEntities, activeEntities.size);
+      await new Promise((r) => setTimeout(r, 2));
+      activeEntities.delete(item.orderId);
+    });
+
+    const summary = await flushOfflineQueue(syncOne, pending, {
+      includeManual: true,
+      concurrency: 3,
+    });
+
+    expect(summary.synced.sort()).toEqual(['a1', 'a2', 'b1']);
+    // Same-entity items never ran concurrently.
+    expect(serialViolation).toBe(false);
+    // Cross-entity concurrency actually happened (WO-A and WO-B overlapped).
+    expect(maxActiveEntities).toBe(2);
+  });
+
+  it('migrate cleans the legacy localStorage key when removeItem is available', async () => {
+    const values: Record<string, string> = {
+      [PENDING_ACTIONS_STORAGE_KEY]: JSON.stringify([
+        { id: 'legacy-clean', type: 'transition', orderId: 'WO-1', stepId: 'S1' },
+      ]),
+    };
+    const storage: StorageLike & { removeItem: (k: string) => void } = {
+      getItem: (k: string) => values[k] ?? null,
+      setItem: (k: string, v: string) => {
+        values[k] = v;
+      },
+      removeItem: (k: string) => {
+        delete values[k];
+      },
+    };
+
+    const pending = createMemoryStore<StoredPendingAction>();
+    const attachments = createMemoryStore<OfflineAttachment>();
+    const syncState = createMemoryStore<SyncState>();
+
+    const migrated = await migratePendingActionsFromLocalStorage(
+      storage,
+      pending,
+      attachments,
+      syncState,
+    );
+    expect(migrated).toBe(1);
+    // Legacy key removed after migration.
+    expect(values[PENDING_ACTIONS_STORAGE_KEY]).toBeUndefined();
+    expect(await pending.count()).toBe(1);
+  });
+
+  it('savePendingActionWithAttachment writes action + attachment in one transaction', async () => {
+    const storesHit: string[] = [];
+    const tx = {
+      oncomplete: (() => undefined) as (() => void) | null,
+      onabort: null,
+      onerror: null,
+      objectStore(name: string) {
+        storesHit.push(name);
+        return { put: () => undefined };
+      },
+    };
+    const fakeDb = {
+      transaction(storeList: string[], mode: string) {
+        expect(mode).toBe('readwrite');
+        expect(storeList).toEqual(['pendingActions', 'attachments']);
+        // Simulate the transaction committing after puts are issued.
+        setTimeout(() => tx.oncomplete?.(), 0);
+        return tx;
+      },
+    } as unknown as IDBDatabase;
+
+    const pending: StoredPendingAction = {
+      key: 'p1',
+      id: 'p1',
+      type: 'transition',
+      orderId: 'WO-1',
+      stepId: 'S1',
+      action: 'report',
+      idempotencyKey: 'k-p1',
+      queuedAt: new Date().toISOString(),
+      status: 'local',
+    };
+    const attachment: OfflineAttachment = {
+      key: 'blob-1',
+      id: 'blob-1',
+      name: 'p.jpg',
+      contentType: 'image/jpeg',
+      blob: new Blob(['x']),
+      size: 1,
+      createdAt: new Date().toISOString(),
+    };
+
+    await savePendingActionWithAttachment(fakeDb, pending, attachment);
+    // Both stores written within the SAME transaction.
+    expect(storesHit).toEqual(['attachments', 'pendingActions']);
+  });
+
+  it('backoffDelayWithJitter stays within [base, base + jitter] bounds', () => {
+    for (let i = 0; i < 200; i += 1) {
+      const base = backoffDelay(1); // 2000
+      const value = backoffDelayWithJitter(1, 500);
+      expect(value).toBeGreaterThanOrEqual(base);
+      expect(value).toBeLessThanOrEqual(base + 500);
+    }
+    // addJitter(0) returns exactly 0 (no jitter requested).
+    expect(addJitter(100, 0)).toBe(100);
+  });
+
+  it('exportOfflineData serializes the whole vault with attachments as data URLs', async () => {
+    const pending = createMemoryStore<StoredPendingAction>();
+    const attachments = createMemoryStore<OfflineAttachment>();
+    const drafts = createMemoryStore<{ key: string; orderId: string }>();
+    const syncState = createMemoryStore<SyncState>();
+    const serverVersion = createMemoryStore<{ key: string; version: unknown }>();
+    const auditLog = createMemoryStore<{ key: string; at: string }>();
+
+    await pending.put({
+      key: 'e1',
+      id: 'e1',
+      type: 'inspection',
+      orderId: 'WO-1',
+      stepId: 'S1',
+      idempotencyKey: 'k-export',
+      queuedAt: new Date().toISOString(),
+      status: 'local',
+    });
+    await attachments.put({
+      key: 'blob-e',
+      id: 'blob-e',
+      name: 'p.jpg',
+      contentType: 'image/jpeg',
+      blob: new Blob(['x'], { type: 'image/jpeg' }),
+      size: 1,
+      createdAt: new Date().toISOString(),
+    });
+    await drafts.put({ key: 'd1', orderId: 'WO-1' });
+    await syncState.put({ key: 'ss1', value: true, updatedAt: new Date().toISOString() });
+    await serverVersion.put({ key: 'sv1', version: '1.0.0' });
+    await auditLog.put({ key: 'a1', at: new Date().toISOString() });
+
+    const db = {
+      pendingActions: pending,
+      drafts,
+      attachments,
+      syncState,
+      serverVersion,
+      auditLog,
+    } as unknown as OfflineDatabase;
+
+    const snapshot = await exportOfflineData(db);
+    expect(snapshot.schema).toBe('ewoh.offline.export.v1');
+    expect(snapshot.pendingActions).toHaveLength(1);
+    expect(snapshot.pendingActions[0].idempotencyKey).toBe('k-export');
+    expect(snapshot.attachments).toHaveLength(1);
+    // Blob converted to a data URL so the export is a single JSON document.
+    expect(snapshot.attachments[0].dataUrl).toContain('data:image/jpeg');
+    expect(snapshot.drafts).toHaveLength(1);
+    expect(snapshot.syncState).toHaveLength(1);
+    expect(snapshot.serverVersion).toHaveLength(1);
+    expect(snapshot.auditLog).toHaveLength(1);
+  });
+
+  it('repeated clicks queue distinct idempotency keys (no collision for duplicate actions)', async () => {
+    const keyA = generateIdempotencyKey('WO-1', 'S1', 'report');
+    const keyB = generateIdempotencyKey('WO-1', 'S1', 'report');
+    // Two rapid identical clicks still produce unique keys so the backend can
+    // dedupe correctly instead of the second overwriting the first.
+    expect(keyA).not.toBe(keyB);
+    expect(keyA.split(':')).toHaveLength(4);
+  });
+
+  it('re-flushes items left in syncing status after a browser crash / device restart', async () => {
+    const pending = createMemoryStore<StoredPendingAction>();
+    // A crash/restart leaves an item stuck in 'syncing' (the flush never got to
+    // delete it). On restart the queue must re-deliver it idempotently.
+    await pending.put({
+      key: 'crash1',
+      id: 'crash1',
+      type: 'transition',
+      orderId: 'WO-1',
+      stepId: 'S1',
+      action: 'report',
+      idempotencyKey: 'k-crash',
+      queuedAt: new Date().toISOString(),
+      status: 'syncing',
+    });
+
+    const syncOne = jest.fn().mockResolvedValue(undefined);
+    const summary = await flushOfflineQueue(syncOne, pending, {
+      includeManual: true,
+    });
+    // The syncing (orphaned-by-crash) item is picked up and delivered.
+    expect(summary.synced).toEqual(['crash1']);
+    expect(syncOne).toHaveBeenCalledTimes(1);
+    expect(await pending.count()).toBe(0);
+  });
+
+  it('savePendingActionWithAttachment rolls back BOTH stores when the transaction aborts', async () => {
+    const writes: string[] = [];
+    const tx = {
+      oncomplete: null,
+      onabort: null,
+      onerror: null,
+      error: new Error('quota exceeded'),
+      objectStore(name: string) {
+        writes.push(name);
+        return { put: () => undefined };
+      },
+    };
+    const fakeDb = {
+      transaction() {
+        // Simulate an attachment-write failure causing the transaction to abort.
+        setTimeout(() => {
+          tx.onabort?.();
+        }, 0);
+        return tx;
+      },
+    } as unknown as IDBDatabase;
+
+    const pending: StoredPendingAction = {
+      key: 'rollback-1',
+      id: 'rollback-1',
+      type: 'transition',
+      orderId: 'WO-1',
+      stepId: 'S1',
+      action: 'report',
+      idempotencyKey: 'k-rollback',
+      queuedAt: new Date().toISOString(),
+      status: 'local',
+    };
+    const attachment: OfflineAttachment = {
+      key: 'blob-r',
+      id: 'blob-r',
+      name: 'p.jpg',
+      contentType: 'image/jpeg',
+      blob: new Blob(['x']),
+      size: 1,
+      createdAt: new Date().toISOString(),
+    };
+
+    await expect(
+      savePendingActionWithAttachment(fakeDb, pending, attachment),
+    ).rejects.toBeTruthy();
+    // Both stores were addressed in the same tx; neither is committed since
+    // the tx aborted (the caller's writes are rolled back atomically).
+    expect(writes).toEqual(['attachments', 'pendingActions']);
   });
 });

@@ -8075,6 +8075,100 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/files/{id}/presigned-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request a short-lived S3 presigned download URL */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description File id */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["PresignedUrlRequest"];
+                };
+            };
+            responses: {
+                /** @description Presigned URL generated */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PresignedUrlResult"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/files/{id}/scan-result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record malware scan outcome (admin / scanner identity) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description File id */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ScanResultRequest"];
+                };
+            };
+            responses: {
+                /** @description Scan status updated */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FileRecord"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health/live": {
         parameters: {
             query?: never;
@@ -8333,6 +8427,117 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/observability/frontend-metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Query ingested frontend metrics (org-isolated, roles restricted) */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    metric?: string;
+                    orgId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Query result with summary and org-scoped metrics */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            orgId?: string;
+                            summary?: {
+                                [key: string]: number;
+                            };
+                            metrics?: {
+                                [key: string]: unknown;
+                            }[];
+                        };
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /**
+         * Ingest frontend Web Vitals / route / API / offline metrics
+         * @description Batch ingestion endpoint for browser metrics (LCP, CLS, INP, TTFB, route latency, API latency/failure, white screen, unhandled errors, offline sync latency/conflict rate). Records are bound to the requester's org from the auth token; sensitive values are redacted.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        metrics: {
+                            name: string;
+                            value: number;
+                            tags?: {
+                                [key: string]: unknown;
+                            };
+                            /** @description epoch ms */
+                            at?: number;
+                        }[];
+                        requestId?: string;
+                        traceId?: string;
+                        page?: string;
+                        buildVersion?: string;
+                        deviceCategory?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Accepted metrics */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            accepted?: number;
+                        };
+                    };
+                };
+                /** @description Invalid metrics / missing org context */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Rate limited */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -8918,7 +9123,19 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            [key: string]: unknown;
+                            /** @enum {string} */
+                            role: "operator" | "team_lead" | "quality" | "equipment" | "manager";
+                            /** Format: date-time */
+                            generatedAt: string;
+                            /** @description Workbench roles the authenticated user is allowed to view, resolved server-side from the JWT auth roles. A forged `role` query param is rejected (403) when it is not in this set. */
+                            authorizedRoles: ("operator" | "team_lead" | "quality" | "equipment" | "manager")[];
+                            /** @description Server-granted debug/diagnostics permission (admin only); never derived from a client localStorage flag. */
+                            canDebug: boolean;
+                            /** @description True when the requested role is not the user's own default role (admin simulate-as-role view). */
+                            simulating: boolean;
+                            data: {
+                                [key: string]: unknown;
+                            };
                         };
                     };
                 };
@@ -8930,6 +9147,441 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/workbench/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Server-side paginated, filtered, sorted workbench list */
+        get: {
+            parameters: {
+                query: {
+                    role: "operator" | "team_lead" | "quality" | "equipment" | "manager";
+                    listKey: string;
+                    page?: number;
+                    pageSize?: number;
+                    filter?: string;
+                    sortKey?: string;
+                    sortDir?: "asc" | "desc";
+                    personId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated workbench list */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                [key: string]: unknown;
+                            }[];
+                            total: number;
+                            page: number;
+                            pageSize: number;
+                            hasMore: boolean;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/workbench/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create an asynchronous big-data export task */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        role: "operator" | "team_lead" | "quality" | "equipment" | "manager";
+                        listKey: string;
+                        filter?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Created export task */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkbenchExportTask"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/workbench/export/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an export task by id (owner or admin) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Export task state */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkbenchExportTask"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/workbench/views": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List saved workbench views for the actor */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Saved views */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkbenchView"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/workbench/views/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save (upsert) a workbench view */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        role: "operator" | "team_lead" | "quality" | "equipment" | "manager";
+                        listKey: string;
+                        filter?: string;
+                        sortKey?: string;
+                        /** @enum {string} */
+                        sortDir?: "asc" | "desc";
+                        limit?: number;
+                        shared?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Saved view */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkbenchView"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        post?: never;
+        /** Delete a saved workbench view (owner or admin) */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SuccessResponse"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/dangerous/impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview impact of a dangerous operation */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        action: "transfer" | "approve" | "delete" | "cancel" | "resolve";
+                        targetType: string;
+                        targetId: string;
+                        affectedCount?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Impact preview */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DangerousImpact"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/dangerous/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Idempotent confirmation of a dangerous operation */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        action: "transfer" | "approve" | "delete" | "cancel" | "resolve";
+                        targetType: string;
+                        targetId: string;
+                        affectedCount?: number;
+                        reason?: string;
+                        idempotencyKey?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Confirmation result with compensation plan */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            actionId: string;
+                            impact: components["schemas"]["DangerousImpact"];
+                            compensation: {
+                                /** @enum {string} */
+                                kind: "undo" | "restore" | "noop";
+                                description: string;
+                            };
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                Conflict: components["responses"]["Conflict"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/dangerous/{actionId}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo / compensate a confirmed dangerous operation */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    actionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        targetType: string;
+                        targetId: string;
+                        reason?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Undo result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            actionId: string;
+                            undo: boolean;
+                            targetType: string;
+                            targetId: string;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -10745,6 +11397,24 @@ export interface components {
             size?: number;
             note?: string;
             createdAt?: string;
+            /** @enum {string} */
+            scanStatus?: "pending" | "clean" | "infected";
+            idempotencyKey?: string;
+        };
+        PresignedUrlRequest: {
+            /** @description Signed URL lifetime in seconds (clamped to 24h) */
+            expiresInSeconds?: number;
+            /** @description Optional Content-Type override for the signed response */
+            contentType?: string;
+        };
+        PresignedUrlResult: {
+            url: string;
+            expiresAt: string;
+            key: string;
+        };
+        ScanResultRequest: {
+            /** @enum {string} */
+            status: "clean" | "infected";
         };
         FileRecordList: components["schemas"]["FileRecord"][];
         FileUpload: {
@@ -11560,6 +12230,55 @@ export interface components {
             checks?: {
                 [key: string]: unknown;
             };
+        };
+        WorkbenchExportTask: {
+            id: string;
+            /** @enum {string} */
+            role: "operator" | "team_lead" | "quality" | "equipment" | "manager";
+            listKey: string;
+            filter: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "succeeded" | "failed" | "expired";
+            progress: number;
+            processed: number;
+            total: number;
+            ownerId: string;
+            orgId: string;
+            action: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            downloadUrl?: string;
+            error?: string;
+        };
+        WorkbenchView: {
+            key: string;
+            /** @enum {string} */
+            role: "operator" | "team_lead" | "quality" | "equipment" | "manager";
+            listKey: string;
+            ownerId: string;
+            orgId: string;
+            filter?: string;
+            sortKey?: string;
+            /** @enum {string} */
+            sortDir?: "asc" | "desc";
+            limit?: number;
+            shared: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        DangerousImpact: {
+            /** @enum {string} */
+            action: "transfer" | "approve" | "delete" | "cancel" | "resolve";
+            targetType: string;
+            targetId: string;
+            summary: string;
+            affectedCount: number;
+            irreversible: boolean;
+            requiresConfirmation: boolean;
         };
     };
     responses: {

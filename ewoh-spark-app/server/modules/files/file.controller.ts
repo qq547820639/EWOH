@@ -16,6 +16,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { FileService, type FileAccessContext } from './file.service';
 import { Roles } from '../shared/roles.decorator';
+import type { ScanStatus } from './storage/storage-driver';
 
 const DEFAULT_MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const DEFAULT_ALLOWED_MIME_TYPES = new Set([
@@ -84,6 +85,7 @@ export class FileController {
     @UploadedFile() file: { buffer?: Buffer; originalname?: string; mimetype?: string } | undefined,
     @Req() request: AuthenticatedFileRequest,
     @Body('note') note?: string,
+    @Body('idempotencyKey') idempotencyKey?: string,
   ) {
     if (!file?.buffer || file.buffer.length === 0) {
       throw new BadRequestException('file is required and must not be empty');
@@ -94,6 +96,7 @@ export class FileController {
       file.mimetype ?? 'application/octet-stream',
       this.access(request),
       note,
+      idempotencyKey,
     );
   }
 
@@ -123,6 +126,31 @@ export class FileController {
   async remove(@Param('id') id: string, @Req() request: AuthenticatedFileRequest) {
     await this.fileService.remove(id, this.access(request));
     return { success: true };
+  }
+
+  @Post(':id/presigned-url')
+  async presignedUrl(
+    @Param('id') id: string,
+    @Req() request: AuthenticatedFileRequest,
+    @Body() body: { expiresInSeconds?: number; contentType?: string },
+  ) {
+    return this.fileService.createPresignedUrl(id, this.access(request), {
+      expiresInSeconds: body?.expiresInSeconds,
+      contentType: body?.contentType,
+    });
+  }
+
+  @Post(':id/scan-result')
+  async scanResult(
+    @Param('id') id: string,
+    @Req() request: AuthenticatedFileRequest,
+    @Body() body: { status?: ScanStatus },
+  ) {
+    const status = body?.status;
+    if (status !== 'clean' && status !== 'infected') {
+      throw new BadRequestException('scan status must be "clean" or "infected"');
+    }
+    return this.fileService.markScanned(id, this.access(request), status);
   }
 
   private access(request: AuthenticatedFileRequest): FileAccessContext {

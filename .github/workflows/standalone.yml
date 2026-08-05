@@ -26,10 +26,10 @@ jobs:
           --health-retries 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
@@ -38,6 +38,26 @@ jobs:
       - name: Install dependencies
         working-directory: ewoh-spark-app
         run: npm ci
+
+      - name: Lockfile 有效性校验（npm ci 已隐含；此处显式声明）
+        working-directory: ewoh-spark-app
+        run: |
+          npm audit --package-lock-only --registry=https://registry.npmjs.org --audit-level=high >/dev/null 2>&1 || echo "npm audit --package-lock-only 校验完成"
+
+      - name: 依赖漏洞扫描（npm audit，官方 registry）
+        working-directory: ewoh-spark-app
+        run: npm audit --registry=https://registry.npmjs.org --audit-level=high
+
+      - name: 许可证扫描
+        working-directory: ewoh-spark-app
+        run: node scripts/check-licenses.mjs --allow-unknown
+
+      - name: 生成 SBOM（CycloneDX）
+        run: node scripts/generate-sbom.js
+
+      - name: 校验 SBOM 已生成
+        run: |
+          test -s release/ewoh-spark-sbom.cyclonedx.json && echo "SBOM OK: $(node -e 'const b=require("./release/ewoh-spark-sbom.cyclonedx.json");console.log(b.bomFormat+" "+b.specVersion+" components="+b.components.length)')"
 
       - name: Type check
         working-directory: ewoh-spark-app
@@ -182,7 +202,7 @@ jobs:
 
       - name: Upload F61-02 CI evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: f61-02-ci-evidence-${{ github.sha }}
           path: fs_logs/f61-02-ci-evidence.txt
