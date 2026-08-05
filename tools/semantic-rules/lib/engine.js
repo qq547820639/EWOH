@@ -214,7 +214,7 @@ function buildContext(root, options = {}) {
     changelogVersion: currentChangelogVersion(opts.root),
     evidence: loadEvidence(artifactsDir),
     decisions: parseDecisions(artifactsDir),
-    exemptions: opts.exemptions || [],
+    exemptions,
     helpers: { parseMarkdown },
     fact,
   };
