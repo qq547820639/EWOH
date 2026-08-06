@@ -111,11 +111,16 @@ function main() {
       set version = version + 1, _updated_at = now()
       where org_id = ${ORG} and resource_key = ${key2} and version = 1`;
     const [countA, countB] = await Promise.all([casA, casB]);
-    const casWinners = [countA, countB].filter((c) => c === 1).length;
+    // postgresjs returns a Result (Array subclass) for UPDATE without RETURNING,
+    // whose .count is a leading-zero-padded *string* of affected rows. Compare the
+    // numeric row counts, not the Result objects.
+    const affectedA = Number(countA && countA.count);
+    const affectedB = Number(countB && countB.count);
+    const casWinners = [affectedA, affectedB].filter((c) => c === 1).length;
     check(
       'optimistic version CAS: concurrent WHERE version = X updates yield one winner',
       casWinners === 1,
-      `winners=${casWinners} (A=${countA}, B=${countB})`,
+      `winners=${casWinners} (A=${affectedA}, B=${affectedB})`,
     );
 
     // --- 3) Non-holder cannot release or renew a lock. ---
@@ -135,10 +140,13 @@ function main() {
         where org_id = ${ORG} and resource_key = ${key3}
           and active = true and holder = 'instance-B'`,
     ]);
+    // Again, compare affected-row counts (strings from postgresjs) not objects.
+    const renewAffected = Number(renewal && renewal.count);
+    const releaseAffected = Number(released && released.count);
     check(
       'non-holder cannot renew/release: zero rows affected by holder-checked writes',
-      renewal === 0 && released === 0,
-      `renewAffected=${renewal}, releaseAffected=${released}`,
+      renewAffected === 0 && releaseAffected === 0,
+      `renewAffected=${renewAffected}, releaseAffected=${releaseAffected}`,
     );
     const holderStill = await instanceA`
       select active, holder from ${instanceA(L)}
