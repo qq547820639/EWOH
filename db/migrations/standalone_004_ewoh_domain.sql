@@ -143,3 +143,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_ewoh_idempotency_keys_scope_key ON __EWOH_S
 
 COMMENT ON TABLE __EWOH_SCHEMA__.ewoh_idempotency_keys IS 'Idempotency keys for deduplicated operations';
 COMMENT ON COLUMN __EWOH_SCHEMA__.ewoh_idempotency_keys.response IS 'Cached response for replay (jsonb)';
+
+-- ---------------------------------------------------------------------------
+-- 7) Grants — the standalone API connects as `ewoh_api` (which is a member of
+-- `service_role`); without explicit table grants the domain persistence writes
+-- surface as 500 / permission denied. Mirror the grant set in
+-- standalone_001_schema.sql. (No sequences: all PKs use gen_random_uuid().)
+-- ---------------------------------------------------------------------------
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_resource_locks TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_handoffs TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_git_sync_state TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_evidence_metadata TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_factory_replication_sessions TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_idempotency_keys TO service_role;

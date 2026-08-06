@@ -664,23 +664,37 @@ export class WorkOrchestrationService {
     if (!this.domainPersistence) {
       return this.acquireResource(resourceId, body, actor);
     }
+    // The static resource catalog is only used for the kind-based double-confirmation
+    // heuristic. The durable lock is a generic domain primitive and must accept
+    // arbitrary resourceIds (e.g. dynamic/factory resources not in the static catalog),
+    // so an unknown id is NOT rejected here.
     const resource = this.getResources().find((entry) => entry.resourceId === resourceId);
-    if (!resource) {
-      throw new NotFoundException(`Resource ${resourceId} not found`);
-    }
     this.assertWritable();
-    if (/device|production|environment/i.test(resource.kind) && body.confirm !== true) {
+    if (resource && /device|production|environment/i.test(resource.kind) && body.confirm !== true) {
       throw new BadRequestException('double confirmation required for this resource kind');
     }
     const orgId = actor?.primaryOrgId ?? 'default';
-    const record = await this.domainPersistence.acquireLock({
-      orgId,
-      resourceKey: resourceId,
-      resourceId,
-      holder: actor?.userId ?? 'anonymous',
-      purpose: body.purpose,
-      expiresAt: body.expiresAt,
-    });
+    // 2.C composite: acquire the lock and register its audit row in a single
+    // transaction so a mid-failure cannot leave a lock without an audit trail.
+    const record = await this.domainPersistence.acquireLockWithAudit(
+      {
+        orgId,
+        resourceKey: resourceId,
+        resourceId,
+        holder: actor?.userId ?? 'anonymous',
+        purpose: body.purpose,
+        expiresAt: body.expiresAt,
+      },
+      {
+        actorId: actor?.userId ?? 'anonymous',
+        orgId,
+        action: 'work.resource.lock',
+        entityType: 'resource_lock',
+        entityId: resourceId,
+        after: { purpose: body.purpose },
+        reason: body.purpose,
+      },
+    );
     return {
       resourceId: record.resourceId,
       holder: record.holder,

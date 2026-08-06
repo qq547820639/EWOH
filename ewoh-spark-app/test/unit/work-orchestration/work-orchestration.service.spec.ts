@@ -477,6 +477,15 @@ describe('WorkOrchestrationService durable (DB-backed) paths', () => {
         active: true,
         version: 1,
       }),
+      acquireLockWithAudit: jest.fn().mockResolvedValue({
+        resourceId: 'res-1',
+        holder: 'user-1',
+        purpose: undefined,
+        acquiredAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: undefined,
+        active: true,
+        version: 1,
+      }),
       releaseLock: jest.fn().mockResolvedValue({ released: true, holder: 'user-1' }),
       renewLock: jest.fn().mockResolvedValue({
         resourceId: 'res-1',
@@ -639,8 +648,9 @@ describe('WorkOrchestrationService durable (DB-backed) paths', () => {
       { purpose: 'install', confirm: true },
       { userId: 'user-1', primaryOrgId: 'org-1' },
     );
-    expect(persistence.acquireLock).toHaveBeenCalledWith(
+    expect(persistence.acquireLockWithAudit).toHaveBeenCalledWith(
       expect.objectContaining({ holder: 'user-1', orgId: 'org-1' }),
+      expect.objectContaining({ action: 'work.resource.lock', entityId: resourceId }),
     );
     expect((lock as { persisted?: string }).persisted).toBe('postgres');
   });

@@ -14,6 +14,7 @@
 - [ ] 审计结果输出为 CI artifact + 面向人摘要
 - [ ] GitHub Actions 已升级到支持 Node 24 的稳定版本并固定 commit SHA
 - [ ] typecheck/lint/Jest/客户端测试/OpenAPI 漂移/PG 迁移+并发/E2E/浏览器矩阵/构建/Docker/仓库卫生全部通过
+  - F61-02 E2E 修复（本会话，CI 复跑验证）：① `standalone_004_ewoh_domain.sql` 为 6 张 domain 表补 `GRANT ... TO service_role`（此前缺权限 → 500）；② `acquireResourceDurable` 移除静态 catalog 404，允许任意 resourceId 加锁；③ 锁路径改用 `acquireLockWithAudit`（原子 lock+audit，兑现 F61-02 2.C），单测同步；④ `workbench-access.ts` dispatcher 补齐 `quality` 角色（对齐 E2E 断言）；⑤ composite rollback 测试 fault-injection 改用 REVOKE/GRANT EXECUTE 精确 12 参签名（原 `create or replace ...(...)` 0 参 void 重载永不命中）。server 单测 127/127 通过、type:check:server 与 eslint 通过。
 
 ## C2 统一工程事实源（P0）
 - [ ] evidence 记录含完整字段（SHA/branch/workflow/run id/时间/环境指纹/依赖版本/artifact digest/verifier/expiration/状态）

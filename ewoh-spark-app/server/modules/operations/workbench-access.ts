@@ -32,7 +32,7 @@ export type WorkbenchRole = (typeof WORKBENCH_ROLES)[number];
 const AUTH_ROLE_TO_WORKBENCH: Record<string, readonly WorkbenchRole[]> = {
   worker: ['operator'],
   workshop_lead: ['operator', 'team_lead', 'quality'],
-  dispatcher: ['operator', 'team_lead', 'equipment', 'manager'],
+  dispatcher: ['operator', 'team_lead', 'quality', 'equipment', 'manager'],
   device_ops: ['operator', 'equipment'],
   safety_admin: ['operator', 'quality'],
   global_admin: ['operator', 'team_lead', 'quality', 'equipment', 'manager'],

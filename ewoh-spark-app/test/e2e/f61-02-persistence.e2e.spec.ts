@@ -298,12 +298,13 @@ describe('F61-02 Persistence + Multi-Instance E2E (BLOCKED_BY_ENVIRONMENT unless
     const resourceId = `EXO-TX-${runId}`;
     const ownerSql = owner!;
     // Force the audit-write step of the composite lock+audit path to fail.
-    // (The audit log is written via `ewoh_append_audit_log`; revoking it makes
-    // the transaction's second step throw, which must roll back the lock row.)
-    await ownerSql.unsafe(
-      `create or replace function public.ewoh_append_audit_log(...) -- fault-inject
-       returns void language plpgsql as $$ begin raise exception 'injected audit failure'; end $$`,
-    );
+    // (The composite path calls `ewoh_append_audit_log`; revoking EXECUTE on the
+    // exact 12-arg signature makes the transaction's second step throw, which must
+    // roll back the lock row. A `create or replace function ...(...)` overload does
+    // NOT work here because it would create a 0-arg overload with a non-matching
+    // `void` return that never shadows the real 12-arg, `uuid`-returning function.)
+    const auditFn = `public.ewoh_append_audit_log(uuid, text, text, text, text, jsonb, jsonb, text, text, text, boolean, text)`;
+    await ownerSql.unsafe(`revoke execute on function ${auditFn} from service_role`);
     try {
       const response = await apiRequest(
         baseUrl,
@@ -317,9 +318,7 @@ describe('F61-02 Persistence + Multi-Instance E2E (BLOCKED_BY_ENVIRONMENT unless
       // The composite write must fail (500 / 503), never a partial success.
       expect([500, 502, 503]).toContain(response.status);
     } finally {
-      await ownerSql.unsafe(
-        `drop function if exists public.ewoh_append_audit_log(...)`,
-      );
+      await ownerSql.unsafe(`grant execute on function ${auditFn} to service_role`);
     }
 
     // The lock must NOT have been persisted (atomic rollback).
