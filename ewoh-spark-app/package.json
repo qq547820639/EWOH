@@ -43,6 +43,10 @@
     "scenario:tck": "node ../scripts/scenario-tck.js",
     "cross-tenant:tck": "bash ../scripts/cross-tenant-tck.sh",
     "perf:smoke": "node scripts/perf-smoke.js",
+    "perf:seed": "node scripts/perf/seed-workbench-data.js",
+    "perf:bench": "node scripts/perf/workbench-benchmark.js",
+    "perf:gate": "node scripts/perf/perf-gate.js",
+    "perf:workbench": "node scripts/perf/seed-workbench-data.js && node scripts/perf/workbench-benchmark.js && node scripts/perf/perf-gate.js",
     "bundle:report": "node scripts/bundle-budget.mjs --report",
     "bundle:budget": "node scripts/bundle-budget.mjs",
     "license:check": "node scripts/check-licenses.mjs",
@@ -239,6 +243,7 @@
     "@opentelemetry/sdk-node": "^0.221.0",
     "@opentelemetry/exporter-prometheus": "^0.221.0",
     "@opentelemetry/propagator-jaeger": "^2.10.0",
+    "qs": "^6.15.3",
     "@nestjs/cli": {
       "glob": "^10.5.0"
     },

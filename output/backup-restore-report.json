@@ -1,0 +1,7 @@
+{
+  "gate": "backup-restore-prod",
+  "checkedAt": "2026-08-06T04:48:19.184Z",
+  "gates": [],
+  "status": "BLOCKED_BY_ENVIRONMENT",
+  "reason": "EWOH_BACKUP_SOURCE_URL 与 EWOH_BACKUP_RESTORE_URL 均需设置（可丢弃的 PostgreSQL URL）"
+}

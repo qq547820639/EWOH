@@ -1,0 +1,25 @@
+{
+  "generatedAt": "2026-08-06T04:44:03.588Z",
+  "status": "BLOCKED_BY_ENVIRONMENT",
+  "reason": "浏览器可启动，但被测应用未渲染（body 为空 / 无 LCP）—— 需要完整后端+数据库服务方可测量 LCP/INP/CLS。以下为可测得的运维指标（TTFB/长任务/JS 执行），LCP/INP/CLS 不计入通过。",
+  "target": "http://127.0.0.1:4173/",
+  "environment": {
+    "playwright": "chromium"
+  },
+  "navigationMs": 3280.6,
+  "partial": {
+    "lcpMs": null,
+    "cls": 0,
+    "layoutShiftCount": 0,
+    "inpMs": null,
+    "fcpMs": null,
+    "ttfbMs": 2.099999997764826,
+    "domContentLoadedMs": 0,
+    "loadMs": 0,
+    "longTaskCount": 0,
+    "longestTaskMs": null,
+    "jsExecMs": 231,
+    "bodyTextLen": 0,
+    "finalUrl": "http://127.0.0.1:4173/"
+  }
+}

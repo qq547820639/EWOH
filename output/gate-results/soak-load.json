@@ -1,0 +1,8 @@
+{
+  "id": "soak-load",
+  "name": "长稳/负载门禁（真实 API+PG/多org并发/连接池/队列积压/导出任务/弱网重连/资源泄漏）",
+  "status": "BLOCKED_BY_ENVIRONMENT",
+  "details": "需设置 TARGET_URL 与 EWOH_SOAK_DATABASE_URL（运行中的 API + PostgreSQL）",
+  "checkedAt": "2026-08-06T04:48:19.438Z",
+  "commitSha": "300a2b0ec639ccb112912a25419b887d1af4dc65"
+}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   createWorkbenchExport,
   getRoleWorkbench,
@@ -32,15 +33,24 @@ import {
   LEGACY_VIEW_PREFIX,
   PAGE_SIZE,
   ROLES,
+  buildClearFiltersParams,
   buildFilterParams,
+  buildOpenViewParams,
   buildPageParams,
   buildRoleParams,
   buildSortParams,
   defaultListState,
   parseLegacyViewKey,
   readListStates,
+  readOpenedView,
   serverViewKey,
 } from './roleWorkbenchState';
+import {
+  collectAvailabilityStats,
+  isMetricAvailability,
+  resolvePageHealth,
+  type MetricAvailability,
+} from './workbenchDataStates';
 import {
   exportRecordReducer,
   type ExportState,
@@ -159,8 +169,14 @@ export default function RoleWorkbench(): React.ReactElement {
           limit: PAGE_SIZE,
         });
         refreshViews();
+        toast.success('视图已保存', {
+          description:
+            '已同步到服务端，可在其它设备复制当前链接复用该视图。',
+        });
       } catch {
-        // 保存失败保持静默，不打断用户操作。
+        toast.error('保存视图失败', {
+          description: '请稍后重试。',
+        });
       }
     },
     [role, listStates, refreshViews],
@@ -306,12 +322,21 @@ export default function RoleWorkbench(): React.ReactElement {
         });
         if (task.status === 'queued' || task.status === 'running') {
           pollExport(task.id, listKey);
+          toast.info('导出任务已创建', {
+            description: '正在后台生成，完成后将自动下载文件。',
+          });
         } else if (task.status === 'succeeded') {
           maybeDownload(task.downloadUrl);
+          toast.success('导出完成', {
+            description: '文件已开始下载。',
+          });
         }
       } catch {
         if (mountedRef.current) {
           dispatchExport({ type: 'tick', listKey, status: 'failed', progress: 0 });
+          toast.error('导出任务创建失败', {
+            description: '请稍后重试。',
+          });
         }
       }
     },
@@ -389,6 +414,70 @@ export default function RoleWorkbench(): React.ReactElement {
     [schema, data],
   );
 
+  // ---- 数据页状态派生（全部来自后端 availability / status 字段，不硬编码） ----
+  // 每个列表在后端 workbench data 中的 availability 标记（对象型/无数据源列表）。
+  const listAvailability = useMemo(() => {
+    const map: Record<string, MetricAvailability | undefined> = {};
+    for (const list of schema.lists) {
+      const raw = data[list.key];
+      map[list.key] = isMetricAvailability(raw) ? raw : undefined;
+    }
+    return map;
+  }, [schema.lists, data]);
+
+  // 页面级健康度：部分指标缺失(partial) / 数据源错误(degraded)。
+  const pageHealth = useMemo(
+    () => resolvePageHealth(collectAvailabilityStats(data)),
+    [data],
+  );
+
+  // 当前开启筛选的列表数（页面元数据条用）。
+  const activeFilterCount = useMemo(
+    () =>
+      schema.lists.filter(
+        (list) => (listStates[list.key]?.filter ?? '').length > 0,
+      ).length,
+    [schema.lists, listStates],
+  );
+
+  // 当前已打开的已保存视图（URL 参数 `view` 派生，刷新/复制链接可恢复）。
+  const openedView = useMemo(() => readOpenedView(searchParams), [searchParams]);
+
+  // 应用已保存视图：把其筛选/排序写入对应列表的 URL 参数，并记录 `view`。
+  const applyView = useCallback(
+    (view: WorkbenchView) => {
+      setSearchParams((prev) => {
+        const next = buildOpenViewParams(prev, view.key);
+        if (view.filter) next.set(`${view.listKey}.filter`, view.filter);
+        else next.delete(`${view.listKey}.filter`);
+        if (view.sortKey) next.set(`${view.listKey}.sort`, view.sortKey);
+        else next.delete(`${view.listKey}.sort`);
+        if (view.sortDir) next.set(`${view.listKey}.dir`, view.sortDir);
+        else next.delete(`${view.listKey}.dir`);
+        next.set(`${view.listKey}.page`, '1');
+        return next;
+      });
+      toast.success('已应用视图', {
+        description:
+          '「' +
+          view.listKey +
+          '」的筛选与排序已生效，复制当前链接即可在其它设备复用。',
+      });
+    },
+    [setSearchParams],
+  );
+
+  // 清除所有列表的筛选/排序/页码，并关闭已打开视图。
+  const clearFilters = useCallback(() => {
+    setSearchParams((prev) => buildClearFiltersParams(prev, schema.lists));
+  }, [setSearchParams, schema.lists]);
+
+  // 清除单个列表的筛选。
+  const clearListFilter = useCallback(
+    (listKey: string) => setListFilter(listKey, ''),
+    [setListFilter],
+  );
+
   return (
     <div className="space-y-5 p-4 sm:p-6">
       <WorkbenchChrome
@@ -407,6 +496,9 @@ export default function RoleWorkbench(): React.ReactElement {
         data={data}
         generatedAt={generatedAt}
         kpiCards={kpiCards}
+        pageHealth={pageHealth}
+        activeFilterCount={activeFilterCount}
+        onClearFilters={clearFilters}
       />
 
       <QueryState
@@ -435,6 +527,7 @@ export default function RoleWorkbench(): React.ReactElement {
             state={listStates[list.key] ?? defaultListState()}
             targetSize={touchTargetSize(inputMode)}
             exportState={exportStates[list.key] ?? { status: 'idle', progress: 0 }}
+            availability={listAvailability[list.key]}
             filterInputRef={(element) => {
               filterInputRefs.current[list.key] = element;
             }}
@@ -442,6 +535,7 @@ export default function RoleWorkbench(): React.ReactElement {
               activeListKeyRef.current = list.key;
             }}
             onFilter={(value) => setListFilter(list.key, value)}
+            onClearFilter={clearListFilter}
             onToggleSort={(columnKey) => toggleSort(list.key, columnKey)}
             onLoadMore={() =>
               setListPage(list.key, (listStates[list.key]?.page ?? 1) + 1)
@@ -458,7 +552,9 @@ export default function RoleWorkbench(): React.ReactElement {
         <SavedViewsPanel
           role={role}
           views={savedViewsForRole}
+          openedViewKey={openedView}
           onViewsChanged={refreshViews}
+          onApply={applyView}
         />
       </QueryState>
     </div>

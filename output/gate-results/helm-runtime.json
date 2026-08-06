@@ -1,0 +1,8 @@
+{
+  "id": "helm-runtime",
+  "name": "Kubernetes/Helm 运行时门禁（install/upgrade/rollback/探针/迁移Job/replicas/worker/storage/networkpolicy）",
+  "status": "BLOCKED_BY_ENVIRONMENT",
+  "details": "helm binary 缺失",
+  "checkedAt": "2026-08-06T04:48:26.546Z",
+  "commitSha": "300a2b0ec639ccb112912a25419b887d1af4dc65"
+}

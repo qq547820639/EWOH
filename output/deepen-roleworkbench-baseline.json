@@ -1,0 +1,26 @@
+{
+  "generatedAt": "2026-08-06T00:00:00.000Z",
+  "branch": "main",
+  "head": "300a2b0ec639ccb112912a25419b887d1af4dc65",
+  "headShort": "300a2b0",
+  "headTimestamp": "2026-08-06 10:26:12 +0800",
+  "environment": {
+    "os": "macOS (Darwin)",
+    "node": "v26.5.1",
+    "npm": "11.17.0",
+    "python": "3.9.6",
+    "postgres": "not-available-locally",
+    "docker": "not-available-locally",
+    "helm": "not-available-locally",
+    "kubectl": "not-available-locally"
+  },
+  "versions": {
+    "version.json": "0.6.0-rc4",
+    "ewoh-spark-app/package.json": "0.6.0-rc4",
+    "pyproject.toml": "0.6.0"
+  },
+  "uncommittedChanges": [
+    ".trae/specs/deepen-roleworkbench-production/ (spec docs, untracked)"
+  ],
+  "note": "Baseline for deepen-roleworkbench-production spec. CI workflow run status cannot be queried from local env; verified on push to origin/main."
+}

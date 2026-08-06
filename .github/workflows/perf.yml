@@ -1,0 +1,96 @@
+# Task 7 — Large-data performance acceptance gate for the Role Workbench.
+#
+# Runs the deterministic seeder, the real-PostgreSQL benchmark runner and the
+# hard-fail budget gate against a fresh PostgreSQL service container. The gate
+# FAILS (exit non-zero) the job when any scenario exceeds its budget, when the
+# data-scale requirement is not met, or when any guard (N+1 / full-table scan /
+# org isolation) is violated. It NEVER fabricates a pass.
+name: perf
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  workbench-perf-gate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ewoh-ci-owner-only
+          POSTGRES_DB: ewoh
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ewoh"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ewoh-spark-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ewoh-spark-app
+        run: npm ci
+
+      - name: Apply workbench schema + org_id/org-isolation migrations
+        # owner superuser URL bypasses RLS; --apply-standalone (standalone_001)
+        # creates the ewoh_* tables, --apply-standalone-workbench-prod
+        # (standalone_005) adds org_id columns + indexes + saved_views +
+        # workbench_export_tasks.
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone
+          node db/runner/run_migrations.js --apply-standalone-workbench-prod
+          node db/runner/run_migrations.js --verify-standalone-workbench-prod
+
+      - name: Seed deterministic 10k dataset (org-a/b/c)
+        working-directory: ewoh-spark-app
+        env:
+          PERF_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+        run: node scripts/perf/seed-workbench-data.js --scale 10000 --truncate
+
+      - name: Run workbench benchmark (real PostgreSQL, org-scoped)
+        working-directory: ewoh-spark-app
+        env:
+          PERF_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+        run: node scripts/perf/workbench-benchmark.js --scale 10000 --iterations 10
+
+      - name: Run performance budget gate (FAIL on any breach)
+        working-directory: ewoh-spark-app
+        run: node scripts/perf/perf-gate.js
+
+      - name: Upload benchmark + gate artifacts
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: workbench-perf-${{ github.sha }}
+          path: output/perf-workbench-report.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload gate verdict artifact
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: workbench-perf-gate-${{ github.sha }}
+          path: output/perf-budget-gate.json
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,8 @@
+{
+  "id": "backup-restore-prod",
+  "name": "PostgreSQL 备份/恢复门禁（空库恢复/行数/业务不变量/组织隔离/跨版本）",
+  "status": "BLOCKED_BY_ENVIRONMENT",
+  "details": "EWOH_BACKUP_SOURCE_URL 与 EWOH_BACKUP_RESTORE_URL 均需设置（可丢弃的 PostgreSQL URL）",
+  "checkedAt": "2026-08-06T04:48:19.242Z",
+  "commitSha": "300a2b0ec639ccb112912a25419b887d1af4dc65"
+}

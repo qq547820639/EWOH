@@ -1,0 +1,38 @@
+{
+  "name": "ewoh-workbench-large-data",
+  "version": 1,
+  "description": "Large-data performance budget for the Role Workbench (Task 7). Evaluated against a REAL PostgreSQL test DB populated by scripts/perf/seed-workbench-data.js.",
+  "budgetMode": "hardFail",
+  "dataScale": {
+    "mode": "totalScheduleTaskRows",
+    "minTotalRows": 10000,
+    "note": "The gate FAILS (not warns) if the seeded schedule_task row count is below this. --scale 100000 is the production-mirror large run; --scale 1000000 available via flag."
+  },
+  "guards": {
+    "nPlusOne": {
+      "maxStatementsPerListQuery": 2,
+      "failOnViolation": true,
+      "note": "A single list query must issue exactly 2 statements (accurate COUNT + data SELECT). More than 2 on a per-item basis indicates N+1."
+    },
+    "fullTableScanPerRefresh": {
+      "failOnViolation": true,
+      "note": "Dashboard/list refresh must not seq-scan the workbench source tables (org_id + predicate indexes must be used)."
+    },
+    "orgIsolation": {
+      "mustPass": true,
+      "note": "org-a scoped queries must never return org-b / org-c rows."
+    }
+  },
+  "scenarios": {
+    "dashboard-aggregates":       { "p95Ms": 1000, "meanMs": 500, "durationMs": 1500 },
+    "list-offset-page1":          { "p95Ms": 300,  "meanMs": 150, "durationMs": 500 },
+    "list-search-filter":         { "p95Ms": 300,  "meanMs": 150, "durationMs": 500 },
+    "list-sort":                  { "p95Ms": 300,  "meanMs": 150, "durationMs": 500 },
+    "list-cursor-next":           { "p95Ms": 300,  "meanMs": 150, "durationMs": 500 },
+    "aggregate-metrics":          { "p95Ms": 600,  "meanMs": 300, "durationMs": 800 },
+    "saved-view-restore":         { "p95Ms": 250,  "meanMs": 120, "durationMs": 400 },
+    "csv-export-dataread":        { "p95Ms": 1200, "meanMs": 600, "durationMs": 2000 },
+    "multi-org-concurrency":      { "p95Ms": 800,  "meanMs": 400, "durationMs": 2000 },
+    "connection-pool-pressure":   { "p95Ms": 1000, "meanMs": 500, "durationMs": 3000 }
+  }
+}

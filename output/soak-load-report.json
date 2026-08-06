@@ -1,0 +1,7 @@
+{
+  "gate": "soak-load",
+  "checkedAt": "2026-08-06T04:48:19.365Z",
+  "gates": [],
+  "status": "BLOCKED_BY_ENVIRONMENT",
+  "reason": "需设置 TARGET_URL 与 EWOH_SOAK_DATABASE_URL（运行中的 API + PostgreSQL）"
+}

@@ -131,15 +131,22 @@ jobs:
           ' "$SBOM"
 
       - name: 容器镜像漏洞扫描（Trivy，镜像可用时执行）
-        # 当前仓库未在 CI 构建容器镜像，未设置 EWOH_IMAGE_REF 时记录为
-        # BLOCKED_BY_ENVIRONMENT（环境阻断），不伪造通过。
+        # 当前仓库未在 CI 构建容器镜像，未设置 EWOH_IMAGE_REF 时结果为
+        # BLOCKED_BY_ENVIRONMENT（环境阻断），通过 truth-gate-record 写入机器可读
+        # gate 记录，下游 truth-manifest 聚合时【不】将其计为 PASS（productionReady=false）。
         # 一旦流水线产出镜像，设置 EWOH_IMAGE_REF 后本步将执行 Trivy fs/image 扫描。
         env:
           EWOH_IMAGE_REF: ${{ vars.EWOH_IMAGE_REF }}
         run: |
           set -e
+          mkdir -p output/gate-results
           if [ -z "${EWOH_IMAGE_REF:-}" ]; then
             echo "::notice::BLOCKED_BY_ENVIRONMENT: 未构建/未提供容器镜像（EWOH_IMAGE_REF 未设置），Trivy 镜像漏洞扫描暂缓。"
+            node scripts/truth-gate-record.js \
+              --id container-image-scan \
+              --name "容器镜像漏洞扫描 (Trivy)" \
+              --status BLOCKED_BY_ENVIRONMENT \
+              --details "EWOH_IMAGE_REF 未设置，CI 未构建容器镜像，环境阻断"
             exit 0
           fi
           if ! command -v trivy >/dev/null 2>&1; then
@@ -148,5 +155,19 @@ jobs:
               "https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_0.58.1_Linux-64bit.tar.gz"
             tar -xzf /tmp/trivy.tar.gz -C /tmp trivy
           fi
-          /tmp/trivy image --exit-code 1 --severity HIGH,CRITICAL "${EWOH_IMAGE_REF}"
-          echo "OK: 镜像 ${EWOH_IMAGE_REF} 未发现 HIGH/CRITICAL 漏洞。"
+          if /tmp/trivy image --exit-code 1 --severity HIGH,CRITICAL "${EWOH_IMAGE_REF}"; then
+            node scripts/truth-gate-record.js \
+              --id container-image-scan \
+              --name "容器镜像漏洞扫描 (Trivy)" \
+              --status SUCCEEDED \
+              --details "镜像 ${EWOH_IMAGE_REF} 未发现 HIGH/CRITICAL 漏洞"
+            echo "OK: 镜像 ${EWOH_IMAGE_REF} 未发现 HIGH/CRITICAL 漏洞。"
+          else
+            TRIVY_EXIT=$?
+            node scripts/truth-gate-record.js \
+              --id container-image-scan \
+              --name "容器镜像漏洞扫描 (Trivy)" \
+              --status FAILED \
+              --details "Trivy 扫描镜像 ${EWOH_IMAGE_REF} 发现 HIGH/CRITICAL 漏洞（exit ${TRIVY_EXIT}）"
+            exit "${TRIVY_EXIT}"
+          fi

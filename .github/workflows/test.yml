@@ -132,6 +132,30 @@ jobs:
           path: output/bundle-report.json
           if-no-files-found: error
 
+      - name: 真实浏览器核心指标采集（LCP/INP/CLS/长任务/JS 执行）
+        # Task 9 前端性能预算：驱动 headless Chromium 采集首屏 Web 指标。
+        # 被测应用需要完整后端+数据库服务才能渲染出可测的 LCP/INP/CLS；此处先以静态
+        # 构建产物启动开发服务器占位运行。若应用未渲染，脚本如实写入
+        # status=BLOCKED_BY_ENVIRONMENT（不伪造通过），报告仍作为可下载 artifact 保留。
+        # 当完整被测服务可用时，将启动命令替换为真实服务地址后即为正式测量。
+        working-directory: ewoh-spark-app
+        run: |
+          set -e
+          npx --yes http-server dist/client -p 4173 -a 127.0.0.1 --silent &
+          SERVER_PID=$!
+          sleep 2
+          node scripts/browser-metrics.mjs --url http://127.0.0.1:4173
+          kill $SERVER_PID 2>/dev/null || true
+          echo "browser-metrics 报告见 output/browser-metrics.json（status 见文件）"
+
+      - name: 上传真实浏览器指标报告（可定位）
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: browser-core-vitals-report
+          path: output/browser-metrics.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: 构建确定性校验（TR-11.1：同一 commit 两次构建字节一致）
         working-directory: ewoh-spark-app
         run: |

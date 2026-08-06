@@ -338,6 +338,12 @@ export interface WorkbenchListResult<T = Record<string, unknown>> {
   page: number;
   pageSize: number;
   hasMore: boolean;
+  /** Server-computed status of this list query ('ok' or a degraded marker). */
+  status?: string;
+  /** Server timestamp of the freshest data that produced this page. */
+  dataFreshness?: string;
+  hasNextPage?: boolean;
+  nextCursor?: string | null;
 }
 
 export async function getWorkbenchList(

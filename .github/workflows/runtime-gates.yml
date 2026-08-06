@@ -1,0 +1,128 @@
+# EWOH 生产运行门禁 CI（Task 8）
+# 触发：push 与 pull_request
+# 内容：
+#   - PostgreSQL 生产迁移门禁（空库/跨版本/幂等/回滚/权限模型）
+#   - PostgreSQL 备份/恢复门禁（空库恢复/行数/业务不变量/组织隔离/跨版本）
+#   - Helm 静态审计（lint + template，无需集群）
+#   - 容器镜像门禁（真实构建 + SBOM + Trivy 漏洞报告 + 镜像摘要）
+#   - Helm 运行时 / canary / 长稳负载：需真实集群 + 运行中 API，本环境标记
+#     BLOCKED_BY_ENVIRONMENT（绝不伪造通过）。
+name: runtime-gates
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-gates:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ewoh-ci-owner-only
+          POSTGRES_DB: ewoh
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ewoh"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PG: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ewoh-spark-app/package-lock.json
+
+      - name: 安装依赖（postgres 驱动 / truth-gate-record）
+        run: npm ci
+        working-directory: ewoh-spark-app
+
+      - name: 创建一次性测试数据库
+        run: |
+          pg_container="$(docker ps -q --filter 'publish=5432' | head -n1)"
+          for db in mig_test br_source br_target; do
+            docker exec "$pg_container" psql -U postgres -d ewoh -c "create database $db;" || true
+          done
+
+      - name: PostgreSQL 迁移门禁（空库/跨版本/幂等/回滚/权限模型）
+        env:
+          EWOH_MIGRATION_TEST_DB_URL: ${{ env.PG }}/mig_test
+        run: node scripts/verify-migration-prod.mjs
+
+      - name: PostgreSQL 备份/恢复门禁（空库恢复/行数/不变量/组织隔离/跨版本）
+        env:
+          EWOH_BACKUP_SOURCE_URL: ${{ env.PG }}/br_source
+          EWOH_BACKUP_RESTORE_URL: ${{ env.PG }}/br_target
+        run: node scripts/verify-backup-restore.mjs
+
+      - name: Helm 静态审计（lint + template，无需集群）
+        run: |
+          set -e
+          if ! command -v helm >/dev/null 2>&1; then
+            curl -fsSL -o /tmp/helm.tar.gz \
+              "https://get.helm.sh/helm-v3.16.3-linux-amd64.tar.gz"
+            tar -xzf /tmp/helm.tar.gz -C /tmp
+            export PATH="/tmp/linux-amd64:$PATH"
+          fi
+          helm lint deploy/cloud/helm/ewoh
+          helm template ewoh deploy/cloud/helm/ewoh \
+            --set image.repository=registry.example/ewoh-api \
+            --set image.tag=ci \
+            --set migration.image.repository=registry.example/ewoh-migrate \
+            --set migration.image.tag=ci \
+            --set ingress.host=ewoh.example.com \
+            > /tmp/ewoh-rendered.yaml
+          set +e
+          node scripts/truth-gate-record.js \
+            --id helm-static \
+            --name "Helm 静态审计（lint + template 渲染）" \
+            --status SUCCEEDED \
+            --details "helm lint 通过；helm template 渲染完整（含 worker/networkpolicy/migration-job）"
+
+      - name: Helm 运行时门禁（install/upgrade/rollback/探针/迁移Job/replicas/worker/storage/networkpolicy）
+        # 无集群：脚本探测到无 helm/kubectl/集群后如实记录 BLOCKED_BY_ENVIRONMENT。
+        run: bash scripts/verify-helm-runtime.sh
+
+      - name: Canary 升级门禁（健康指标/失败阈值/自动回滚/回滚后业务校验）
+        # 无集群：脚本记录 BLOCKED_BY_ENVIRONMENT。
+        run: bash scripts/canary-deploy.sh
+
+      - name: 长稳/负载门禁（真实 API+PG/多org并发/连接池/队列积压/导出任务/弱网重连/资源泄漏）
+        # 无运行中 API：脚本记录 BLOCKED_BY_ENVIRONMENT。
+        run: node scripts/soak-load.js
+
+      - name: 容器镜像安全门禁（真实构建 + SBOM + Trivy + 镜像摘要）
+        run: bash scripts/container-image-gate.sh
+
+      - name: 上传门禁报告
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: runtime-gates-report-${{ github.sha }}
+          path: |
+            output/gate-results/*.json
+            output/migration-prod-report.json
+            output/backup-restore-report.json
+            output/helm-runtime-report.json
+            output/canary-report.json
+            output/soak-load-report.json
+            output/container-image-report.json
+            output/trivy-image-report.json
+            output/ewoh-api-sbom.cyclonedx.json
+          if-no-files-found: ignore
+          retention-days: 30

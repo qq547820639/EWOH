@@ -1,0 +1,7 @@
+{
+  "gate": "postgres-migration-prod",
+  "status": "BLOCKED_BY_ENVIRONMENT",
+  "checkedAt": "2026-08-06T04:48:19.105Z",
+  "reason": "EWOH_MIGRATION_TEST_DB_URL is required (disposable PostgreSQL URL)",
+  "gates": []
+}

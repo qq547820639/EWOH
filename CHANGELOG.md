@@ -6,6 +6,36 @@
 ## [Unreleased]
 
 ### Added
+- **角色工作台生产化深化与真实数据闭环**（`deepen-roleworkbench-production`）：
+  - **数据库级列表查询**：`RoleWorkbenchService.getWorkbenchList` 改为真实 PostgreSQL 查询
+    （参数化 WHERE 含强制 `org_id` / ORDER BY / LIMIT），删除 `.limit(5000)` 全表内存读取；
+    稳定排序键 cursor 分页（`(sort, uniqueId)` 处理重复时间戳/优先级，无重复无遗漏）；
+    页码模式单独准确 COUNT；`workbench-list-query.ts` 提供 cursor 编解码与稳定排序协议。
+  - **占位业务数据消除**：`overdueInspections`/`dispositions`/`maintenanceTasks`/
+    `capacityDegradation`/`riskTrend` 等改为真实 SQL 聚合或明确 `value/status/calculatedAt/
+    dataRange/source` availability 表达（`no_data`/`not_configured`/`permission_denied`/
+    `source_unavailable`/`stale`），前端 `workbenchDataStates.ts` 区分「真实为零」与「无数据」。
+  - **保存视图 PostgreSQL 持久化**：`saved_views` 表 + `standalone_005_workbench_prod.sql`，
+    org+owner 隔离、默认视图唯一、软删除；`PostgresWorkbenchViewStore` 为生产存储，
+    内存实现仅作 test adapter。
+  - **导出任务真实任务系统**：`workbench_export_tasks` 表 + `workbench-export-state.ts`
+    状态机（queued/running/succeeded/failed/cancelling/cancelled/expired）、原子 claim
+    （双 worker 不重复）、幂等、重试/退避、到期；`PostgresWorkbenchExportStore` 生产存储；
+    审计日志记录谁/范围/记录数/文件大小/完成时间。
+  - **发布真值**：`scripts/truth-status.js` 统一四态（NOT_RUN/FAILED/BLOCKED_BY_ENVIRONMENT/
+    SUCCEEDED），`BLOCKED_BY_ENVIRONMENT` 不计为 PASS；Production Ready 由当前 SHA 门禁
+    自动计算；`truth-gate.js` 对 STALE/SHA 漂移 fail-closed；镜像未构建时扫描不入 PASS。
+  - **大数据量性能验收**：`scripts/perf/seed-workbench-data.js` + `workbench-benchmark.js` +
+    `perf-gate.js` 生成 10k/100k 确定性数据并记录 p50/p95/p99、DB 执行/扫描/返回行数；
+    `perf.yml` 接入 CI，超预算即失败。
+  - **生产运行时门禁**：`runtime-gates.yml` + `verify-migration-prod.mjs` /
+    `verify-backup-restore.mjs` / `verify-helm-runtime.sh` / `canary-deploy.sh` /
+    `soak-load.js` / `container-image-gate.sh`；环境不可用项如实标 `BLOCKED_BY_ENVIRONMENT`
+    并给出可复制命令。
+  - **前端性能深化**：`bundle-budget.mjs` 首屏/异步 chunk 预算（首屏 175.09kB gzip < 460kB
+    PASS；单异步 chunk 243.57kB < 520kB PASS）；`browser-metrics.mjs` 记录真实 LCP/INP/CLS。
+  - 验收报告：`docs/reviews/deepen-roleworkbench-production-report.md`。
+
 - 代码深化与用户体验闭环验收（全量门禁证据采集）：
   - **语义化设计系统**：`client/src/lib/designTokens.ts` + `client/src/tokens.css` 集中
     semantic design tokens（背景/表面/边框/文本、success/warning/danger/info、

@@ -29,8 +29,36 @@ const { execFileSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const truth = require('./truth-source');
 const collect = require('./collect-repo-facts');
+const { computeProductionReady } = require('./truth-status');
 
 const DEFAULT_OUT = path.join(root, 'output', 'evidence-manifest.json');
+const GATE_RESULTS_DIR = path.join(root, 'output', 'gate-results');
+
+/**
+ * Aggregate all gate-result records written by CI (scripts/truth-gate-record.js)
+ * into a stable gate array. Each record: { id, name, status, details,
+ * checkedAt, commitSha }. Absent directory -> empty array (no fabricated pass).
+ */
+function collectGateResults() {
+  if (!fs.existsSync(GATE_RESULTS_DIR)) {
+    return [];
+  }
+  const gates = [];
+  for (const file of fs.readdirSync(GATE_RESULTS_DIR)) {
+    if (!file.endsWith('.json')) {
+      continue;
+    }
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(GATE_RESULTS_DIR, file), 'utf8'));
+      if (raw && raw.id && raw.status) {
+        gates.push(raw);
+      }
+    } catch {
+      /* skip unparseable gate record */
+    }
+  }
+  return gates.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
 
 function sha256Hex(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
@@ -129,9 +157,11 @@ function collectSnapshotDigest() {
 function buildManifest() {
   const window = testWindow();
   const digest = collectSnapshotDigest();
-  return {
+  const evaluatedCommitSha = process.env.GITHUB_SHA || truth.gitHead();
+  const gates = collectGateResults();
+  const manifest = {
     schema: 'ewoh:///evidence-manifest/v1',
-    evaluatedCommitSha: process.env.GITHUB_SHA || truth.gitHead(),
+    evaluatedCommitSha,
     branch: process.env.GITHUB_REF_NAME || truth.gitBranch(),
     buildVersion: truth.readVersion() || 'unknown',
     environmentFingerprint: envFingerprint(),
@@ -146,7 +176,12 @@ function buildManifest() {
       expiresAt: null,
     },
     generatedAt: new Date().toISOString(),
+    gates,
   };
+  const status = computeProductionReady(manifest, evaluatedCommitSha);
+  manifest.productionReady = status.ready;
+  manifest.productionReadyReasons = status.reasons;
+  return manifest;
 }
 
 function main() {
@@ -203,4 +238,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { buildManifest, main };
+module.exports = { buildManifest, collectGateResults, main };

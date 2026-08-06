@@ -1,0 +1,80 @@
+{{- if .Values.worker.enabled }}
+# EWOH async worker Deployment — consumes durable export tasks
+# (workbench_export_tasks) and long-running queue work. Scaled independently of
+# the API. Reuses the same runtime Secret (ewoh_api role) and ConfigMap.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ewoh.fullname" . }}-worker
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "ewoh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ewoh.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        {{- include "ewoh.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "dist/server/worker.js"]
+          env:
+            - name: EWOH_WORKER_MODE
+              value: "1"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name }}
+                  key: {{ .Values.secret.keys.databaseUrl }}
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name }}
+                  key: {{ .Values.secret.keys.redisUrl }}
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name }}
+                  key: {{ .Values.secret.keys.jwtSecret }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "ewoh.fullname" . }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: {{ .Values.service.targetPort }}
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: {{ .Values.service.targetPort }}
+          volumeMounts:
+            - name: uploads
+              mountPath: {{ .Values.storage.localPath | quote }}
+      volumes:
+        - name: uploads
+          {{- if eq .Values.storage.driver "local" }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.storage.pvcName }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+{{- end }}

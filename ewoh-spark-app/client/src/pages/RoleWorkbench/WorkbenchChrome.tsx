@@ -1,5 +1,13 @@
 import { Link } from 'react-router-dom';
-import { Eye, EyeOff, RefreshCw, Users } from 'lucide-react';
+import {
+  CloudOff,
+  Eye,
+  EyeOff,
+  FilterX,
+  RefreshCw,
+  TriangleAlert,
+  Users,
+} from 'lucide-react';
 import type { RoleWorkbenchRole } from '../../api/operations';
 import { Button } from '@client/src/components/ui/button';
 import {
@@ -9,6 +17,7 @@ import {
 } from './roleSchema';
 import { ROLES } from './roleWorkbenchState';
 import { touchTargetSize, type WorkbenchInputMode } from './workbenchInput';
+import type { PageDataHealth } from './workbenchDataStates';
 
 /**
  * 角色工作台「页面骨架」：头部、输入方式切换、模拟提示、角色页签、快捷跳转、
@@ -30,6 +39,12 @@ export interface WorkbenchChromeProps {
   data: Record<string, unknown>;
   generatedAt?: string;
   kpiCards: KpiDefinition[];
+  /** 页面级数据健康度（由 availability 派生）。 */
+  pageHealth?: PageDataHealth;
+  /** 当前开启筛选的列表数。 */
+  activeFilterCount?: number;
+  /** 清除所有列表筛选/排序/页码并关闭已打开视图。 */
+  onClearFilters?: () => void;
 }
 
 const INPUT_MODES: Array<[WorkbenchInputMode, string]> = [
@@ -39,6 +54,12 @@ const INPUT_MODES: Array<[WorkbenchInputMode, string]> = [
   ['singlehand', '单手'],
   ['glove', '手套'],
 ];
+
+const PAGE_HEALTH_LABEL: Record<PageDataHealth, string> = {
+  ok: '数据完整',
+  partial: '部分数据缺失',
+  degraded: '数据源降级',
+};
 
 export function WorkbenchChrome({
   schema,
@@ -56,6 +77,9 @@ export function WorkbenchChrome({
   data,
   generatedAt,
   kpiCards,
+  pageHealth = 'ok',
+  activeFilterCount = 0,
+  onClearFilters,
 }: WorkbenchChromeProps): React.ReactElement {
   const targetSize = touchTargetSize(inputMode);
 
@@ -90,6 +114,58 @@ export function WorkbenchChrome({
           </Button>
         </div>
       </header>
+
+      {/* 页面元数据条：更新时间 / 缓存状态 / 数据健康度 / 筛选摘要 + 清除 */}
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-4 py-2 text-xs text-[hsl(218_10%_42%)]"
+      >
+        <span className="inline-flex items-center gap-1.5">
+          <RefreshCw className="size-3" />
+          {generatedAt
+            ? `更新于 ${new Date(generatedAt).toLocaleTimeString('zh-CN', {
+                hour12: false,
+              })}`
+            : '尚未加载'}
+        </span>
+        {pageHealth !== 'ok' && (
+          <span
+            className={
+              pageHealth === 'degraded'
+                ? 'inline-flex items-center gap-1.5 font-medium text-orange-600'
+                : 'inline-flex items-center gap-1.5 font-medium text-amber-600'
+            }
+          >
+            {pageHealth === 'degraded' ? (
+              <CloudOff className="size-3" />
+            ) : (
+              <TriangleAlert className="size-3" />
+            )}
+            {PAGE_HEALTH_LABEL[pageHealth]}
+          </span>
+        )}
+        {activeFilterCount > 0 ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span>
+              已启用 {activeFilterCount} 个列表的筛选
+            </span>
+            <button
+              type="button"
+              onClick={onClearFilters}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-[hsl(221_83%_53%)] hover:underline"
+            >
+              <FilterX className="size-3" />
+              清除
+            </button>
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5">
+            <FilterX className="size-3" />
+            无筛选
+          </span>
+        )}
+      </div>
 
       {/* 输入方式切换：键盘 / 触摸 / 扫码 / 单手 / 手套（放大触控目标） */}
       <div

@@ -1,7 +1,7 @@
 /* eslint-disable */
 /** auto generated, do not edit */
 import { sql } from 'drizzle-orm';
-import { boolean, index, integer, jsonb, numeric, pgTable, real, text, uniqueIndex, uuid, varchar, customType } from "drizzle-orm/pg-core"
+import { boolean, index, integer, jsonb, numeric, pgTable, real, text, uniqueIndex, uuid, varchar, customType, bigint } from "drizzle-orm/pg-core"
 
 export const customTimestamptz = customType<{
   data: Date;
@@ -200,6 +200,7 @@ export const ewohScheduleTask = pgTable("ewoh_schedule_task", {
   isSimulation: boolean("is_simulation").notNull().default(false),
   progress: integer("progress").notNull().default(0),
   deletedAt: customTimestamptz("deleted_at", { precision: 3 }),
+  orgId: varchar("org_id", { length: 255 }),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   createdBy: uuid("_created_by"),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -207,6 +208,10 @@ export const ewohScheduleTask = pgTable("ewoh_schedule_task", {
 }, (table) => [
   index("idx_ewoh_schedule_task_status").on(table.status),
   index("idx_ewoh_schedule_task_source").on(table.source),
+  index("idx_ewoh_schedule_task_org_status").on(table.orgId, table.status),
+  index("idx_ewoh_schedule_task_org_priority").on(table.orgId, table.priority),
+  index("idx_ewoh_schedule_task_org_updated").on(table.orgId, table.updatedAt),
+  index("idx_ewoh_schedule_task_org_key").on(table.orgId, table.scheduleTaskId),
 ]);
 
 export const ewohScheduleTaskStep = pgTable("ewoh_schedule_task_step", {
@@ -227,12 +232,15 @@ export const ewohScheduleTaskStep = pgTable("ewoh_schedule_task_step", {
   progress: integer("progress").notNull().default(0),
   resultJson: jsonb("result_json"),
   parentStepId: varchar("parent_step_id", { length: 255 }),
+  orgId: varchar("org_id", { length: 255 }),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   createdBy: uuid("_created_by"),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedBy: uuid("_updated_by"),
 }, (table) => [
   index("idx_ewoh_schedule_task_step_status").on(table.status),
+  index("idx_ewoh_schedule_task_step_org_status").on(table.orgId, table.status),
+  index("idx_ewoh_schedule_task_step_org_assignee").on(table.orgId, table.assignedPersonId),
 ]);
 
 export const ewohResourceBinding = pgTable("ewoh_resource_binding", {
@@ -250,12 +258,16 @@ export const ewohResourceBinding = pgTable("ewoh_resource_binding", {
   operatorId: varchar("operator_id", { length: 255 }),
   quantity: numeric("quantity", { precision: 18, scale: 4 }).notNull().default('0'),
   version: integer("version").notNull().default(1),
+  orgId: varchar("org_id", { length: 255 }),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   createdBy: uuid("_created_by"),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedBy: uuid("_updated_by"),
 }, (table) => [
   index("idx_ewoh_resource_binding_target").on(table.targetId),
+  index("idx_ewoh_resource_binding_org_status").on(table.orgId, table.status),
+  index("idx_ewoh_resource_binding_org_start").on(table.orgId, table.startTime),
+  index("idx_ewoh_resource_binding_org_key").on(table.orgId, table.bindingId),
 ]);
 
 export const ewohTaskTemplate = pgTable("ewoh_task_template", {
@@ -517,12 +529,14 @@ export const ewohWorldState = pgTable("ewoh_world_state", {
   entityId: varchar("entity_id", { length: 255 }).notNull(),
   stateJson: jsonb("state_json").notNull(),
   ts: customTimestamptz("ts", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  orgId: varchar("org_id", { length: 255 }),
   // System field: Creation time (auto-filled, do not modify)
   createdAt: customTimestamptz("_created_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   // System field: Update time (auto-filled, do not modify)
   updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   index("idx_ewoh_world_state_entity_ts").on(table.entityId, table.ts),
+  index("idx_ewoh_world_state_org_ts").on(table.orgId, table.ts),
 ]);
 
 export const ewohTopology = pgTable("ewoh_topology", {
@@ -555,6 +569,7 @@ export const ewohSpatialEntity = pgTable("ewoh_spatial_entity", {
   confidence: real("confidence").default(1.0),
   version: integer("version").default(1),
   extra: jsonb("extra"),
+  orgId: varchar("org_id", { length: 255 }),
   // System field: Creation time (auto-filled, do not modify)
   createdAt: customTimestamptz("_created_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   // System field: Update time (auto-filled, do not modify)
@@ -563,6 +578,9 @@ export const ewohSpatialEntity = pgTable("ewoh_spatial_entity", {
   uniqueIndex("ewoh_spatial_entity_entity_id_key").on(table.entityId),
   index("idx_ewoh_spatial_entity_type").on(table.entityType),
   index("idx_ewoh_spatial_entity_parent").on(table.parentId),
+  index("idx_ewoh_spatial_entity_org_type").on(table.orgId, table.entityType),
+  index("idx_ewoh_spatial_entity_org_status").on(table.orgId, table.status),
+  index("idx_ewoh_spatial_entity_org_key").on(table.orgId, table.entityId),
 ]);
 
 export const ewohTelemetry = pgTable("ewoh_telemetry", {
@@ -615,6 +633,7 @@ export const ewohEvent = pgTable("ewoh_event", {
    * 证据快照（触发时关键指标）
    */
   evidenceJson: jsonb("evidence_json"),
+  orgId: varchar("org_id", { length: 255 }),
   // System field: Update time (auto-filled, do not modify)
   updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
@@ -622,6 +641,10 @@ export const ewohEvent = pgTable("ewoh_event", {
   index("idx_ewoh_event_status").on(table.status),
   index("idx_ewoh_event_created_at").on(table.createdAt),
   index("idx_event_source").on(table.sourceType),
+  index("idx_ewoh_event_org_status").on(table.orgId, table.status),
+  index("idx_ewoh_event_org_type").on(table.orgId, table.eventType),
+  index("idx_ewoh_event_org_created").on(table.orgId, table.createdAt),
+  index("idx_ewoh_event_org_key").on(table.orgId, table.eventId),
 ]);
 
 export const ewohFactoryTemplate = pgTable("ewoh_factory_template", {
@@ -833,6 +856,84 @@ export const ewohIdempotencyKeys = pgTable("ewoh_idempotency_keys", {
   uniqueIndex("uq_ewoh_idempotency_keys_scope_key").on(table.scope, table.idempotencyKey),
 ]);
 
+export const ewohSavedViews = pgTable("saved_views", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: varchar("organization_id", { length: 255 }).notNull(),
+  ownerUserId: varchar("owner_user_id", { length: 255 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  workbench: varchar("workbench", { length: 50 }).notNull(),
+  listKey: varchar("list_key", { length: 100 }),
+  schemaVersion: integer("schema_version").notNull().default(1),
+  /**
+   * @type { Record<string, unknown> }
+   */
+  filterJson: jsonb("filter_json"),
+  /**
+   * @type { Record<string, unknown> }
+   */
+  sortJson: jsonb("sort_json"),
+  /**
+   * @type { string[] }
+   */
+  visibleColumns: jsonb("visible_columns"),
+  /**
+   * @type { string[] }
+   */
+  columnOrder: jsonb("column_order"),
+  density: varchar("density", { length: 20 }),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  deletedAt: customTimestamptz("deleted_at", { precision: 3 }),
+}, (table) => [
+  index("idx_saved_views_org_owner").on(table.organizationId, table.ownerUserId),
+  index("idx_saved_views_org_name").on(table.organizationId, table.name),
+  uniqueIndex("uq_saved_views_default").on(table.organizationId, table.ownerUserId, table.workbench, table.listKey).where(sql`${table.isDefault} AND ${table.deletedAt} IS NULL`),
+]);
+
+export const ewohWorkbenchExportTask = pgTable("workbench_export_tasks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskId: varchar("task_id", { length: 255 }).notNull().unique(),
+  organizationId: varchar("organization_id", { length: 255 }).notNull(),
+  ownerUserId: varchar("owner_user_id", { length: 255 }).notNull(),
+  role: varchar("role", { length: 50 }).notNull(),
+  listKey: varchar("list_key", { length: 100 }).notNull(),
+  /**
+   * @type { Record<string, unknown> }
+   */
+  filterJson: jsonb("filter_json"),
+  /**
+   * @type { Record<string, unknown> }
+   */
+  sortJson: jsonb("sort_json"),
+  /**
+   * @type { string[] }
+   */
+  columnsJson: jsonb("columns_json"),
+  status: varchar("status", { length: 20 }).notNull().default('queued'),
+  progress: integer("progress").notNull().default(0),
+  processed: integer("processed").notNull().default(0),
+  total: integer("total").notNull().default(0),
+  error: text("error"),
+  idempotencyKey: varchar("idempotency_key", { length: 255 }).unique(),
+  attempts: integer("attempts").notNull().default(0),
+  nextRetryAt: customTimestamptz("next_retry_at", { precision: 3 }),
+  claimedBy: varchar("claimed_by", { length: 255 }),
+  claimedAt: customTimestamptz("claimed_at", { precision: 3 }),
+  startedAt: customTimestamptz("started_at", { precision: 3 }),
+  finishedAt: customTimestamptz("finished_at", { precision: 3 }),
+  expiresAt: customTimestamptz("expires_at", { precision: 3 }),
+  downloadUrl: text("download_url"),
+  fileSize: bigint("file_size", { mode: 'number' }),
+  rowCount: bigint("row_count", { mode: 'number' }),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_workbench_export_tasks_status_retry").on(table.status, table.nextRetryAt),
+  index("idx_workbench_export_tasks_org_owner").on(table.organizationId, table.ownerUserId),
+  index("idx_workbench_export_tasks_idem").on(table.idempotencyKey),
+]);
+
 // table aliases
 export const ewohAiSuggestionTable = ewohAiSuggestion;
 export const ewohDeviceTable = ewohDevice;
@@ -861,3 +962,5 @@ export const ewohSpatialEntityTable = ewohSpatialEntity;
 export const ewohTelemetryTable = ewohTelemetry;
 export const ewohTopologyTable = ewohTopology;
 export const ewohWorldStateTable = ewohWorldState;
+export const ewohSavedViewsTable = ewohSavedViews;
+export const ewohWorkbenchExportTaskTable = ewohWorkbenchExportTask;

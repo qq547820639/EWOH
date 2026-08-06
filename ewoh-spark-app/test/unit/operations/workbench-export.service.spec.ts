@@ -87,3 +87,74 @@ describe('WorkbenchExportService (异步导出任务)', () => {
     ).rejects.toThrow('not found');
   });
 });
+
+describe('WorkbenchExportService (取消 / 重试 / 认领)', () => {
+  it('cancels a queued task immediately', async () => {
+    const service = new WorkbenchExportService(new InMemoryWorkbenchExportStore());
+    const task = await service.createExportTask(worker, { role: 'operator', listKey: 'mySteps' });
+    const cancelled = await service.cancelExportTask(task.id, worker);
+    expect(cancelled.status).toBe('cancelled');
+  });
+
+  it('requests cancellation of a running task (running → cancelling)', async () => {
+    const store = new InMemoryWorkbenchExportStore();
+    const service = new WorkbenchExportService(store);
+    const task = await service.createExportTask(worker, { role: 'operator', listKey: 'mySteps' });
+    await service.claimExportTask(task.id, 'worker-1');
+    const cancelling = await service.cancelExportTask(task.id, worker);
+    expect(cancelling.status).toBe('cancelling');
+    await service.confirmCancellation(task.id, true);
+    const done = await service.getExportTask(task.id, worker);
+    expect(done.status).toBe('cancelled');
+  });
+
+  it('forbids cancelling another user’s task', async () => {
+    const service = new WorkbenchExportService(new InMemoryWorkbenchExportStore());
+    const task = await service.createExportTask(worker, { role: 'operator', listKey: 'mySteps' });
+    await expect(
+      service.cancelExportTask(task.id, { userId: 'OTHER', primaryOrgId: 'org-1', roles: [] }),
+    ).rejects.toThrow('only cancel your own export tasks');
+  });
+
+  it('retries a failed task back to queued with a backoff deadline', async () => {
+    const service = new WorkbenchExportService(new InMemoryWorkbenchExportStore());
+    const task = await service.createExportTask(worker, { role: 'operator', listKey: 'mySteps' });
+    await service.fail(task.id, 'boom');
+    await service.retryExportTask(task.id, 5 * 60 * 1000);
+    const retried = await service.getExportTask(task.id, worker);
+    expect(retried.status).toBe('queued');
+    expect(retried.attempts ?? 0).toBe(0);
+    expect(new Date(retried.nextRetryAt!).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('rejects retry of a terminal succeeded task', async () => {
+    const service = new WorkbenchExportService(new InMemoryWorkbenchExportStore());
+    const task = await service.createExportTask(worker, { role: 'operator', listKey: 'mySteps' });
+    await service.claimExportTask(task.id, 'worker-1');
+    await service.complete(task.id, '/file.csv');
+    await expect(service.retryExportTask(task.id)).rejects.toThrow(
+      'Cannot retry an export',
+    );
+  });
+
+  it('only one of two workers can claim the same task', async () => {
+    const store = new InMemoryWorkbenchExportStore();
+    const service = new WorkbenchExportService(store);
+    const task = await service.createExportTask(worker, { role: 'operator', listKey: 'mySteps' });
+    const first = await service.claimExportTask(task.id, 'worker-1');
+    expect(first?.status).toBe('running');
+    expect(first?.claimedBy).toBe('worker-1');
+    const second = await service.claimExportTask(task.id, 'worker-2');
+    expect(second).toBeUndefined();
+  });
+
+  it('re-claims a failed task whose retry deadline has elapsed', async () => {
+    const store = new InMemoryWorkbenchExportStore();
+    const service = new WorkbenchExportService(store);
+    const task = await service.createExportTask(worker, { role: 'operator', listKey: 'mySteps' });
+    await service.fail(task.id, 'boom');
+    const claimed = await service.claimExportTask(task.id, 'worker-1');
+    expect(claimed?.status).toBe('running');
+    expect(claimed?.attempts).toBe(1);
+  });
+});

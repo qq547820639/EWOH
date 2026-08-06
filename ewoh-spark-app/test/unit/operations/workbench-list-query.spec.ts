@@ -1,6 +1,8 @@
 import {
   parseWorkbenchListQuery,
   queryWorkbenchList,
+  encodeWorkbenchCursor,
+  decodeWorkbenchCursor,
 } from '../../../server/modules/operations/workbench-list-query';
 
 const columns = [
@@ -77,6 +79,31 @@ describe('workbench-list-query (服务端分页/筛选/排序)', () => {
       const result = queryWorkbenchList(rows, columns, q);
       expect(result.total).toBe(0);
       expect(result.items).toEqual([]);
+    });
+  });
+
+  describe('cursor encode/decode', () => {
+    it('round-trips a stable keyset cursor', () => {
+      const cursor = { sortValue: '2026-08-06T10:00:00.000Z', id: 'step-42' };
+      const encoded = encodeWorkbenchCursor(cursor);
+      expect(encoded).not.toContain('{');
+      expect(decodeWorkbenchCursor(encoded)).toEqual(cursor);
+    });
+
+    it('preserves duplicate sort values via the unique id tiebreaker', () => {
+      const a = encodeWorkbenchCursor({ sortValue: 'same', id: 'a' });
+      const b = encodeWorkbenchCursor({ sortValue: 'same', id: 'b' });
+      const decodedA = decodeWorkbenchCursor(a);
+      const decodedB = decodeWorkbenchCursor(b);
+      expect(decodedA?.sortValue).toBe(decodedB?.sortValue);
+      expect(decodedA?.id).toBe('a');
+      expect(decodedB?.id).toBe('b');
+    });
+
+    it('returns null for malformed or tampered cursors', () => {
+      expect(decodeWorkbenchCursor('not-base64!!{')).toBeNull();
+      expect(decodeWorkbenchCursor('')).toBeNull();
+      expect(decodeWorkbenchCursor('aGVsbG8=')).toBeNull(); // decodes but not a valid shape
     });
   });
 });

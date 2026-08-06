@@ -1,5 +1,5 @@
 import { useCallback, useReducer, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Play, Trash2 } from 'lucide-react';
 import {
   deleteWorkbenchView,
   saveWorkbenchView,
@@ -16,19 +16,25 @@ import {
 
 /**
  * 「已保存视图」面板：服务端持久化 / 跨设备 / 共享。
+ * 支持「应用视图」（把该视图的筛选/排序写入 URL，并记录 `view` 查询参数），
  * 删除视图属于危险操作，走 影响预览 → 二次确认 → 幂等删除 → 可撤销 的完整闭环，
  * 并累计审计记录。撤销 = 在窗口内用原视图重新保存（restore）。
  */
 export interface SavedViewsPanelProps {
   role: string;
   views: WorkbenchView[];
+  /** 当前已打开（应用）的视图键，用于高亮。 */
+  openedViewKey?: string | null;
   onViewsChanged: () => void;
+  onApply: (view: WorkbenchView) => void;
 }
 
 export function SavedViewsPanel({
   role,
   views,
+  openedViewKey,
   onViewsChanged,
+  onApply,
 }: SavedViewsPanelProps): React.ReactElement | null {
   const [danger, dispatch] = useReducer(dangerousReducer, DANGEROUS_IDLE);
   const [open, setOpen] = useState(false);
@@ -117,7 +123,11 @@ export function SavedViewsPanel({
         {views.map((view) => (
           <li
             key={view.key}
-            className="flex flex-wrap items-center justify-between gap-2 text-sm text-[hsl(218_10%_42%)]"
+            className={`flex flex-wrap items-center justify-between gap-2 rounded px-2 py-1 text-sm ${
+              openedViewKey === view.key
+                ? 'bg-[hsl(221_83%_96%)] text-[hsl(220_14%_14%)]'
+                : 'text-[hsl(218_10%_42%)]'
+            }`}
           >
             <span>
               {view.listKey}
@@ -125,15 +135,26 @@ export function SavedViewsPanel({
               {view.sortKey ? ` · 按 ${view.sortKey}` : ''}
               {view.shared ? ' · 共享' : ''}
             </span>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1 text-xs"
-              onClick={() => startDelete(view)}
-            >
-              <Trash2 className="size-3" />
-              删除
-            </Button>
+            <span className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant={openedViewKey === view.key ? 'default' : 'outline'}
+                className="h-7 gap-1 text-xs"
+                onClick={() => onApply(view)}
+              >
+                <Play className="size-3" />
+                {openedViewKey === view.key ? '已应用' : '应用'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1 text-xs"
+                onClick={() => startDelete(view)}
+              >
+                <Trash2 className="size-3" />
+                删除
+              </Button>
+            </span>
           </li>
         ))}
       </ul>

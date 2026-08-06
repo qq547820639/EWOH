@@ -50,9 +50,9 @@ export interface WorkbenchViewInput {
 
 export interface WorkbenchViewStore {
   save(view: WorkbenchView): Promise<WorkbenchView>;
-  get(key: string): Promise<WorkbenchView | undefined>;
+  get(orgId: string, ownerId: string, key: string): Promise<WorkbenchView | undefined>;
   list(ownerId: string, orgId: string): Promise<WorkbenchView[]>;
-  remove(key: string): Promise<void>;
+  remove(orgId: string, ownerId: string, key: string): Promise<void>;
 }
 
 export class InMemoryWorkbenchViewStore implements WorkbenchViewStore {
@@ -63,7 +63,7 @@ export class InMemoryWorkbenchViewStore implements WorkbenchViewStore {
     return view;
   }
 
-  async get(key: string): Promise<WorkbenchView | undefined> {
+  async get(orgId: string, ownerId: string, key: string): Promise<WorkbenchView | undefined> {
     return this.views.get(key);
   }
 
@@ -73,7 +73,7 @@ export class InMemoryWorkbenchViewStore implements WorkbenchViewStore {
     );
   }
 
-  async remove(key: string): Promise<void> {
+  async remove(orgId: string, ownerId: string, key: string): Promise<void> {
     this.views.delete(key);
   }
 
@@ -111,7 +111,7 @@ export class WorkbenchViewService {
       throw new NotFoundException('view requires key, role and listKey');
     }
     const now = new Date().toISOString();
-    const existing = await this.store.get(input.key);
+    const existing = await this.store.get(actor.primaryOrgId, actor.userId, input.key);
     const view: WorkbenchView = {
       key: input.key,
       role: input.role,
@@ -145,14 +145,14 @@ export class WorkbenchViewService {
 
   /** Removes a view; only the owner (or a global admin) may delete it. */
   async deleteView(actor: WorkbenchViewActor, key: string): Promise<void> {
-    const existing = await this.store.get(key);
+    const existing = await this.store.get(actor.primaryOrgId, actor.userId, key);
     if (!existing) {
       throw new NotFoundException('view not found');
     }
     if (existing.ownerId !== actor.userId && !this.isAdmin(actor)) {
       throw new ForbiddenException('You may only delete your own saved views');
     }
-    await this.store.remove(key);
+    await this.store.remove(actor.primaryOrgId, actor.userId, key);
     await this.auditService?.appendAuditLog({
       actorId: actor.userId,
       orgId: actor.primaryOrgId,

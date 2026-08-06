@@ -1,0 +1,8 @@
+{
+  "id": "postgres-migration-prod",
+  "name": "PostgreSQL 生产迁移门禁（空库/跨版本/幂等/回滚/权限模型）",
+  "status": "BLOCKED_BY_ENVIRONMENT",
+  "details": "未设置 EWOH_MIGRATION_TEST_DB_URL",
+  "checkedAt": "2026-08-06T04:48:19.081Z",
+  "commitSha": "300a2b0ec639ccb112912a25419b887d1af4dc65"
+}

@@ -45,16 +45,7 @@ import {
 import TopBar from './TopBar';
 import ModePanel, { MODES as MODE_ITEMS } from './ModePanel';
 import FactoryMap from './FactoryMap';
-import FactoryMap3D from './FactoryMap3D';
-import L3L4View from './L3L4View';
 import EntityDetail from './EntityDetail';
-import TimelinePanel from './panels/TimelinePanel';
-import EventCenterPanel from './panels/EventCenterPanel';
-import SchedulePanel from './panels/SchedulePanel';
-import WorkbenchPanel from './panels/WorkbenchPanel';
-import ResourcePoolPanel from './panels/ResourcePoolPanel';
-import TaskOrchestrationPanel from './panels/TaskOrchestrationPanel';
-import BrainPanel from './panels/BrainPanel';
 import AlertToast from '../../components/AlertToast';
 import DataStates from '../../components/DataStates';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
@@ -64,6 +55,26 @@ import {
   retryAll,
   type QueryStateSnapshot,
 } from './queryState';
+
+// 按需懒加载 (Task 9 代码分割)：three.js 3D 地图仅在 L2 层渲染，L3/L4 建筑视图与
+// 各底部面板仅在对应标签激活时渲染。React.lazy 将这三类重/低频组件拆分为独立 chunk，
+// 显著降低 CommandMap 主 chunk（含 three / @react-three/drei）的传载体积。
+const FactoryMap3D = React.lazy(() => import('./FactoryMap3D'));
+const L3L4View = React.lazy(() => import('./L3L4View'));
+const TimelinePanel = React.lazy(() => import('./panels/TimelinePanel'));
+const EventCenterPanel = React.lazy(() => import('./panels/EventCenterPanel'));
+const SchedulePanel = React.lazy(() => import('./panels/SchedulePanel'));
+const WorkbenchPanel = React.lazy(() => import('./panels/WorkbenchPanel'));
+const ResourcePoolPanel = React.lazy(() => import('./panels/ResourcePoolPanel'));
+const TaskOrchestrationPanel = React.lazy(() => import('./panels/TaskOrchestrationPanel'));
+const BrainPanel = React.lazy(() => import('./panels/BrainPanel'));
+
+/** 懒加载 chunk 加载期间的轻量占位，避免空白闪烁。 */
+const MapPanelFallback = () => (
+  <div className="flex h-full w-full items-center justify-center text-xs text-white/50">
+    加载中…
+  </div>
+);
 
 interface TabItem {
   key: string;
@@ -510,24 +521,28 @@ const CommandMap = (): React.ReactElement => {
         <ModePanel mode={mode} onModeChange={setMode} level={level} onLevelChange={setLevel} />
 
         {level === 'L2' ? (
-          <FactoryMap3D
-            entities={entityList}
-            worldState={displayWorldState}
-            environmentReadings={environmentReadings ?? []}
-            mode={mode}
-            selectedEntityId={selectedEntityId}
-            onSelectEntity={setSelectedEntityId}
-            replayMode={replayMode}
-            replayTime={replayTime}
-          />
+          <React.Suspense fallback={<MapPanelFallback />}>
+            <FactoryMap3D
+              entities={entityList}
+              worldState={displayWorldState}
+              environmentReadings={environmentReadings ?? []}
+              mode={mode}
+              selectedEntityId={selectedEntityId}
+              onSelectEntity={setSelectedEntityId}
+              replayMode={replayMode}
+              replayTime={replayTime}
+            />
+          </React.Suspense>
         ) : level === 'L3' || level === 'L4' ? (
-          <L3L4View
-            entities={entityList}
-            worldState={displayWorldState}
-            level={level}
-            selectedEntityId={selectedEntityId}
-            onSelectEntity={setSelectedEntityId}
-          />
+          <React.Suspense fallback={<MapPanelFallback />}>
+            <L3L4View
+              entities={entityList}
+              worldState={displayWorldState}
+              level={level}
+              selectedEntityId={selectedEntityId}
+              onSelectEntity={setSelectedEntityId}
+            />
+          </React.Suspense>
         ) : (
           <FactoryMap
             entities={entityList}
@@ -618,41 +633,63 @@ const CommandMap = (): React.ReactElement => {
 
         <div className="flex-1 min-h-0 overflow-hidden">
           {activeTab === 'timeline' && (
-            <TimelinePanel
-              snapshots={replaySnapshots}
-              isLoading={replayLoading}
-              isError={replayError}
-              replayMode={replayMode}
-              onReplayModeChange={handleReplayModeChange}
-              replayTime={replayTime}
-              onReplayTimeChange={handleReplayTimeChange}
-              paused={replayPaused}
-              onPausedChange={setReplayPaused}
-              speed={replaySpeed}
-              onSpeedChange={setReplaySpeed}
-              onSelectEvent={handleSelectReplayEvent}
-              onCreateItem={(event) =>
-                createReplayItemMutation.mutate({
-                  eventId: event.eventId,
-                  title: event.title,
-                  ts: event.ts,
-                })
-              }
-            />
+            <React.Suspense fallback={<MapPanelFallback />}>
+              <TimelinePanel
+                snapshots={replaySnapshots}
+                isLoading={replayLoading}
+                isError={replayError}
+                replayMode={replayMode}
+                onReplayModeChange={handleReplayModeChange}
+                replayTime={replayTime}
+                onReplayTimeChange={handleReplayTimeChange}
+                paused={replayPaused}
+                onPausedChange={setReplayPaused}
+                speed={replaySpeed}
+                onSpeedChange={setReplaySpeed}
+                onSelectEvent={handleSelectReplayEvent}
+                onCreateItem={(event) =>
+                  createReplayItemMutation.mutate({
+                    eventId: event.eventId,
+                    title: event.title,
+                    ts: event.ts,
+                  })
+                }
+              />
+            </React.Suspense>
           )}
           {activeTab === 'events' && (
-            <EventCenterPanel
-              selectedEventId={selectedEventId}
-              onSelectedEventIdChange={setSelectedEventId}
-            />
+            <React.Suspense fallback={<MapPanelFallback />}>
+              <EventCenterPanel
+                selectedEventId={selectedEventId}
+                onSelectedEventIdChange={setSelectedEventId}
+              />
+            </React.Suspense>
           )}
-          {activeTab === 'schedule' && <SchedulePanel />}
-          {activeTab === 'workbench' && <WorkbenchPanel />}
+          {activeTab === 'schedule' && (
+            <React.Suspense fallback={<MapPanelFallback />}>
+              <SchedulePanel />
+            </React.Suspense>
+          )}
+          {activeTab === 'workbench' && (
+            <React.Suspense fallback={<MapPanelFallback />}>
+              <WorkbenchPanel />
+            </React.Suspense>
+          )}
           {activeTab === 'resource' && (
-            <ResourcePoolPanel entities={entityList} worldState={state} />
+            <React.Suspense fallback={<MapPanelFallback />}>
+              <ResourcePoolPanel entities={entityList} worldState={state} />
+            </React.Suspense>
           )}
-          {activeTab === 'orchestration' && <TaskOrchestrationPanel entities={entityList} />}
-          {activeTab === 'brain' && <BrainPanel />}
+          {activeTab === 'orchestration' && (
+            <React.Suspense fallback={<MapPanelFallback />}>
+              <TaskOrchestrationPanel entities={entityList} />
+            </React.Suspense>
+          )}
+          {activeTab === 'brain' && (
+            <React.Suspense fallback={<MapPanelFallback />}>
+              <BrainPanel />
+            </React.Suspense>
+          )}
         </div>
       </div>
 

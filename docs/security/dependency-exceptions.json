@@ -1,0 +1,101 @@
+{
+  "title": "EWOH 前端/后端依赖安全例外记录（Task 9 依赖安全审计）",
+  "generatedAt": "2026-08-06T00:00:00.000Z",
+  "auditCommand": "npm audit --registry=https://registry.npmjs.org",
+  "auditBaseline": {
+    "before": { "critical": 0, "high": 0, "moderate": 37, "low": 1, "total": 38 },
+    "after": { "critical": 0, "high": 0, "moderate": 34, "low": 2, "total": 36 },
+    "resolved": "qs@6.14.2 -> 6.15.3（npm overrides 强制升级，修复 GHSA-q8mj-m7cp-5q26 中度 DoS）"
+  },
+  "gateStatus": "CI 门禁使用 `npm audit --audit-level=high`，当前 high/critical = 0，门禁 PASS。以下均为 moderate/low 例外，不阻断门禁，但需按计划消解。",
+  "policy": "本仓库遵循「不削弱安全、不升级到破坏构建的版本」约束。所有下列例外均因修复仅能通过 semver-major 升级获得，且升级深度耦合平台/框架（NestJS 10、@nestjs/cli 10、@lark-apaas 平台核心、react-router 6），升级将破坏现有构建，故登记为例外并安排专项升级任务。",
+  "exceptions": [
+
+    {
+      "id": "SEC-DEP-001",
+      "affectedPackages": ["@nestjs/core", "@nestjs/common", "@nestjs/platform-express", "@nestjs/swagger", "@nestjs/testing"],
+      "transitive": ["file-type", "body-parser", "express"],
+      "severity": "moderate",
+      "advisories": [
+        "@nestjs/core Improperly Neutralizes Special Elements in Output (CWE-74, GHSA-36xv-jgw5-4q75)",
+        "file-type ASF 无限循环 (CWE-835, GHSA-5v7r-6r5c-r473)",
+        "file-type ZIP 解压炸弹 DoS (GHSA-j47w-4g3g-c36v)",
+        "body-parser invalid limit 静默禁用大小限制 DoS (GHSA-v422-hmwv-36x6, low)"
+      ],
+      "requiredFix": "NestJS 10 -> 11（@nestjs/core@11.1.28 等，semver-major）",
+      "impactScope": "服务端 HTTP 层（NestJS 平台）与 multipart 文件上传的文件类型检测",
+      "reachable": "部分可达：@nestjs/core 注入告警需 DAO/响应拼接路径；file-type 仅在文件上传路径喂入不可信文件时可达；body-parser DoS 需配置非法 limit。受控试点内暴露面有限。",
+      "temporaryMitigation": "1) 文件上传对来源与大小做白名单校验；2) 不将不可信输入拼接进响应；3) 保持 body size 限制显式配置。无 runtime 侧可用的非 major 修复。",
+      "owner": "平台/后端团队（NestJS 升级专项）",
+      "dueDate": "NestJS 11 升级专项窗口（建议随下个平台基线冻结前排入）"
+    },
+
+    {
+      "id": "SEC-DEP-002",
+      "affectedPackages": ["@nestjs/cli", "@angular-devkit/core", "@angular-devkit/schematics", "@angular-devkit/schematics-cli", "@nestjs/schematics"],
+      "transitive": ["webpack", "ajv"],
+      "severity": "moderate",
+      "advisories": [
+        "ajv ReDoS via $data (CWE-400/1333, GHSA-2g4f-4pwh-qvx6)",
+        "webpack buildHttp allowedUris 绕过 SSRF (GHSA-8fgc-7cc6-rx7x, low)",
+        "webpack HttpUriPlugin 重定向 SSRF + 缓存持久化 (GHSA-38r7-794h-5758, low)"
+      ],
+      "requiredFix": "@nestjs/cli 10 -> 11（semver-major）",
+      "impactScope": "仅开发/构建工具链（devDependency），不进入运行时产物",
+      "reachable": "不可达（运行时）：构建期工具。webpack buildHttp 仅当构建配置使用 HTTP(S) 远程模块时触发（本项目未使用）；ajv ReDoS 需启用 $data 选项（构建期未使用）。",
+      "temporaryMitigation": "无运行时风险；保持构建工具链版本固定即可，不阻塞发布。",
+      "owner": "平台团队（@nestjs/cli 升级随 NestJS 11 一并处理）",
+      "dueDate": "随 SEC-DEP-001 的 NestJS 11 专项一并消解"
+    },
+
+    {
+      "id": "SEC-DEP-003",
+      "affectedPackages": ["@lark-apaas/fullstack-nestjs-core", "@lark-apaas/nestjs-common", "@lark-apaas/nestjs-core-chain"],
+      "transitive": ["@hey-api/openapi-ts", "@lark-apaas/hey-api-custom-client-axios", "@lark-apaas/cache-service", "@lark-apaas/nestjs-*"],
+      "severity": "moderate",
+      "advisories": [
+        "@hey-api/openapi-ts buildClientParams 模板原型链污染 (CWE-1321, GHSA-hhx9-57xq-r5rw)"
+      ],
+      "requiredFix": "@lark-apaas/fullstack-nestjs-core 1.1.x -> 1.1.3+（semver-major）",
+      "impactScope": "服务端平台核心（lark-apaas NestJS 全家桶）",
+      "reachable": "基本不可达（运行时）：@hey-api/openapi-ts 原型链污染为构建期代码生成缺陷，不进入运行时。其余为传导链标记。",
+      "temporaryMitigation": "无运行时风险；锁定平台版本，等待 lark-apaas 平台发布兼容版本后统一升级。",
+      "owner": "平台团队（lark-apaas 平台版本对齐）",
+      "dueDate": "随 lark-apaas 平台兼容版本发布后（建议下个平台基线窗口）"
+    },
+
+    {
+      "id": "SEC-DEP-004",
+      "affectedPackages": ["@lark-apaas/client-toolkit"],
+      "transitive": ["@lark-apaas/observable", "@lark-apaas/observable-web", "@opentelemetry/core", "@opentelemetry/resources", "@opentelemetry/sdk-logs"],
+      "severity": "moderate",
+      "advisories": [
+        "OpenTelemetry Core W3C Baggage 传播无界内存分配 (CWE-770, GHSA-8988-4f7v-96qf)"
+      ],
+      "requiredFix": "@lark-apaas/client-toolkit 1.2.x -> 1.1.36+（semver-major）",
+      "impactScope": "客户端遥测 + 服务端 OTEL 观测",
+      "reachable": "部分可达：OTEL baggage 无界内存仅当启用 W3C Baggage 传播且接收不可信 baggage 头时触发；受控试点内默认传播范围有限，暴露面低。",
+      "temporaryMitigation": "保持遥测传播默认配置；若需强化可在接入层限制 baggage 头长度；等待 client-toolkit 修复版本。",
+      "owner": "平台/前端团队（client-toolkit 升级专项）",
+      "dueDate": "client-toolkit@1.1.36 发布后随平台升级窗口"
+    },
+
+    {
+      "id": "SEC-DEP-005",
+      "affectedPackages": ["react-router-dom"],
+      "transitive": ["react-router"],
+      "severity": "moderate",
+      "advisories": [
+        "React Router Open redirect leading to XSS (CWE-601, GHSA-jjmj-jmhj-qwj2)",
+        "React Router Open redirect via backslash in <Link>/useNavigate (CVE-2025-68470 bypass, GHSA-wrjc-x8rr-h8h6)",
+        "React Router Arbitrary Constructor Injection via deserializeErrors() SSR Hydration (GHSA-337j-9hxr-rhxg)"
+      ],
+      "requiredFix": "react-router-dom 6 -> 7（>=7.18.0，semver-major）",
+      "impactScope": "客户端路由（前端 SPA）",
+      "reachable": "可达：open redirect leading to XSS 需用户点击攻击者构造的 <Link>；本应用为登录鉴权 + 受控试点，内链均受控，无外部用户可注入链接的入口，实际暴露有限。",
+      "temporaryMitigation": "1) 禁止在 <Link to>/useNavigate 中传入不可信/外部来源路径；2) 升级前对路由入口做安全评审；3) 计划专项升级到 react-router v7。",
+      "owner": "前端团队（react-router v7 升级专项）",
+      "dueDate": "专项升级任务（建议 1 个迭代内完成，低风险但需回归路由）"
+    }
+  ]
+}

@@ -1,13 +1,16 @@
 import type { ListDefinition } from './roleSchema';
 import {
   LEGACY_VIEW_PREFIX,
+  buildClearFiltersParams,
   buildFilterParams,
+  buildOpenViewParams,
   buildPageParams,
   buildRoleParams,
   buildSortParams,
   defaultListState,
   parseLegacyViewKey,
   readListStates,
+  readOpenedView,
   serverViewKey,
 } from './roleWorkbenchState';
 
@@ -111,6 +114,48 @@ describe('roleWorkbenchState (页面查询状态建模)', () => {
       expect(parseLegacyViewKey('other.key')).toBeNull();
       expect(parseLegacyViewKey(`${LEGACY_VIEW_PREFIX}unknown.list`)).toBeNull();
       expect(parseLegacyViewKey(`${LEGACY_VIEW_PREFIX}operator.`)).toBeNull();
+    });
+  });
+
+  describe('opened saved-view URL sync', () => {
+    it('reads a `view` param and returns null when absent', () => {
+      expect(readOpenedView(new URLSearchParams({ view: 'operator.mySteps' }))).toBe(
+        'operator.mySteps',
+      );
+      expect(readOpenedView(new URLSearchParams())).toBeNull();
+      expect(readOpenedView(new URLSearchParams({ view: '' }))).toBeNull();
+    });
+
+    it('buildOpenViewParams records the view while preserving other params', () => {
+      const next = buildOpenViewParams(
+        new URLSearchParams({ role: 'operator', 'mySteps.filter': 'fault' }),
+        'operator.mySteps',
+      );
+      expect(next.get('view')).toBe('operator.mySteps');
+      expect(next.get('role')).toBe('operator');
+      expect(next.get('mySteps.filter')).toBe('fault');
+    });
+
+    it('buildClearFiltersParams removes list filters/sort/page and the view, keeping role', () => {
+      const next = buildClearFiltersParams(
+        new URLSearchParams({
+          view: 'operator.mySteps',
+          role: 'quality',
+          'mySteps.filter': 'fault',
+          'mySteps.sort': 'status',
+          'mySteps.dir': 'desc',
+          'mySteps.page': '3',
+          'delayedOrders.filter': 'x',
+        }),
+        lists,
+      );
+      expect(next.has('view')).toBe(false);
+      expect(next.get('role')).toBe('quality');
+      expect(next.has('mySteps.filter')).toBe(false);
+      expect(next.has('mySteps.sort')).toBe(false);
+      expect(next.has('mySteps.dir')).toBe(false);
+      expect(next.has('mySteps.page')).toBe(false);
+      expect(next.has('delayedOrders.filter')).toBe(false);
     });
   });
 

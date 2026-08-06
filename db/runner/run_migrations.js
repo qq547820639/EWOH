@@ -29,6 +29,9 @@ const FILES = {
   standalone_domain_rollback: path.join(root, 'db/migrations/standalone_004_ewoh_domain.rollback.sql'),
   standalone_domain_verify: path.join(root, 'db/verify/standalone_004_verify.sql'),
   standalone_admin: path.join(root, 'db/seed/standalone_002_admin.sql'),
+  standalone_workbench_prod: path.join(root, 'db/migrations/standalone_005_workbench_prod.sql'),
+  standalone_workbench_prod_rollback: path.join(root, 'db/migrations/standalone_005_workbench_prod.rollback.sql'),
+  standalone_workbench_prod_verify: path.join(root, 'db/verify/standalone_005_verify.sql'),
 };
 
 const PLAN_NAMES = Object.freeze(Object.keys(FILES));
@@ -39,6 +42,7 @@ const ROLLBACK_COMMANDS = new Set([
   '--rollback-standalone-users',
   '--rollback-standalone-runtime-role',
   '--rollback-standalone-domain',
+  '--rollback-standalone-workbench-prod',
 ]);
 const EXECUTE_COMMANDS = new Set([
   '--apply',
@@ -60,6 +64,9 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-domain',
   '--rollback-standalone-domain',
   '--verify-standalone-domain',
+  '--apply-standalone-workbench-prod',
+  '--rollback-standalone-workbench-prod',
+  '--verify-standalone-workbench-prod',
 ]);
 
 const TOKEN = '__EWOH_SCHEMA__';
@@ -132,6 +139,7 @@ function usage() {
   console.error('       run_migrations.js --apply-standalone-users | --rollback-standalone-users | --seed-standalone-admin');
   console.error('       run_migrations.js --apply-standalone-runtime-role | --rollback-standalone-runtime-role');
   console.error('       run_migrations.js --apply-standalone-domain | --rollback-standalone-domain | --verify-standalone-domain');
+  console.error('       run_migrations.js --apply-standalone-workbench-prod | --rollback-standalone-workbench-prod | --verify-standalone-workbench-prod');
   console.error('Env: EWOH_DATABASE_URL or SUDA_DATABASE_URL, EWOH_SCHEMA, EWOH_ALLOW_DDL=1');
   console.error('Rollback also requires EWOH_ALLOW_DESTRUCTIVE_ROLLBACK=1.');
   process.exit(2);
@@ -164,7 +172,7 @@ function main() {
     console.error('EWOH_DATABASE_URL or SUDA_DATABASE_URL is required.');
     process.exit(2);
   }
-  if (!['--verify', '--verify-standalone', '--verify-standalone-domain'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
+  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
     console.error('EWOH_ALLOW_DDL=1 is required for --apply and --rollback.');
     process.exit(2);
   }
@@ -190,6 +198,22 @@ function main() {
         process.exitCode = 1;
       } else {
         console.log('VERIFY OK: all 6 F61-02 domain tables present');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-workbench-prod') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_workbench_prod_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      const tableCount = Number(row.ewoh_workbench_persist_table_count || 0);
+      const orgColumns = Number(row.workbench_org_columns || 0);
+      const defaultUq = Number(row.saved_views_default_uq || 0);
+      if (tableCount !== 2 || orgColumns !== 6 || defaultUq !== 1) {
+        console.error(`VERIFY FAILED: expected (2,6,1), got (${tableCount},${orgColumns},${defaultUq})`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: workbench persistence tables + org_id columns + default-view unique index present');
       }
       return;
     }
@@ -235,6 +259,8 @@ function main() {
       '--rollback-standalone-runtime-role': 'standalone_runtime_role_rollback',
       '--apply-standalone-domain': 'standalone_domain',
       '--rollback-standalone-domain': 'standalone_domain_rollback',
+      '--apply-standalone-workbench-prod': 'standalone_workbench_prod',
+      '--rollback-standalone-workbench-prod': 'standalone_workbench_prod_rollback',
       '--seed-standalone-admin': 'standalone_admin',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);

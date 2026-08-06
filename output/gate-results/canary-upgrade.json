@@ -1,0 +1,8 @@
+{
+  "id": "canary-upgrade",
+  "name": "Canary 升级门禁（健康指标/失败阈值/自动回滚/回滚后业务校验）",
+  "status": "BLOCKED_BY_ENVIRONMENT",
+  "details": "helm binary 缺失",
+  "checkedAt": "2026-08-06T04:48:31.280Z",
+  "commitSha": "300a2b0ec639ccb112912a25419b887d1af4dc65"
+}

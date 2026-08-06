@@ -65,6 +65,28 @@ migration:
     repository: ghcr.io/example/ewoh-migrate
     tag: "0.6.0-rc4"
 
+worker:
+  # Worker Deployment 覆盖异步导出任务（workbench_export_tasks）的消费。注意：启用前
+  # API 镜像必须已提供 worker 入口 dist/server/worker.js（当前主镜像仅含
+  # dist/server/main.js），否则该 Deployment 无法就绪。默认关闭以避免破坏标准安装。
+  enabled: false
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+networkPolicy:
+  enabled: true
+  # Namespaces whose pods may reach the API Service port (e.g. the ingress
+  # controller namespace). Pods in this namespace are always allowed.
+  ingressPeers:
+    - "ingress-nginx"
+    - "observability"
+
 storage:
   driver: local
   createPvc: true

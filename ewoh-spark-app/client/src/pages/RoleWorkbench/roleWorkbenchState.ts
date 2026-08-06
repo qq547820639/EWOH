@@ -142,3 +142,35 @@ export function buildRoleParams(
   params.set('role', next);
   return params;
 }
+
+/** 从 URL 读取当前「已打开的已保存视图」键（无则返回 null）。 */
+export function readOpenedView(searchParams: URLSearchParams): string | null {
+  const view = searchParams.get('view');
+  return view && view.length > 0 ? view : null;
+}
+
+/** 打开/应用一个已保存视图：记录 `view` 参数（保留其它查询参数）。 */
+export function buildOpenViewParams(
+  prev: URLSearchParams,
+  viewKey: string,
+): URLSearchParams {
+  const params = new URLSearchParams(prev);
+  params.set('view', viewKey);
+  return params;
+}
+
+/** 清除所有列表的筛选/排序/页码，并取消已打开的视图（保留 role 与其它参数）。 */
+export function buildClearFiltersParams(
+  prev: URLSearchParams,
+  lists: ListDefinition[],
+): URLSearchParams {
+  const params = new URLSearchParams(prev);
+  params.delete('view');
+  for (const list of lists) {
+    params.delete(`${list.key}.filter`);
+    params.delete(`${list.key}.sort`);
+    params.delete(`${list.key}.dir`);
+    params.delete(`${list.key}.page`);
+  }
+  return params;
+}
