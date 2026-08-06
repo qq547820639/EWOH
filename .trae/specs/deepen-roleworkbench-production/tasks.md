@@ -94,11 +94,11 @@
   - [ ] 设置首屏与异步 chunk 性能预算；记录真实浏览器 LCP/INP/CLS/long tasks/JS 执行时间
   - [ ] 不以提高预算数值让门禁变绿
 
-- [ ] Task 10: 验收与交付报告
-  - [ ] 运行并记录全部验收命令及结果（本机可运行项全绿；环境不可用项如实 BLOCKED）
-  - [ ] 产出 `docs/reviews/deepen-roleworkbench-production-report.md`（基线/最终 SHA、修改文件、migration 说明、已消除的内存/占位、新查询与索引、保存视图、导出状态机、UX、安全与组织隔离、测试命令与结果、10k/100k 性能、CI 产物、环境阻塞项与命令、未完成项、五级结论 YES/NO 及证据）
-  - [ ] 更新 README/CHANGELOG/runtime-gates.md/truth-source 产物，确保互不矛盾
-  - [ ] 提交并推送 `origin/main`（提交前排除调试残留）
+- [x] Task 10: 验收与交付报告
+  - [x] 运行并记录全部验收命令及结果（本机可运行项全绿；环境不可用项如实 BLOCKED）
+  - [x] 产出 `docs/reviews/deepen-roleworkbench-production-report.md`（基线/最终 SHA、修改文件、migration 说明、已消除的内存/占位、新查询与索引、保存视图、导出状态机、UX、安全与组织隔离、测试命令与结果、10k/100k 性能、CI 产物、环境阻塞项与命令、未完成项、五级结论 YES/NO 及证据）
+  - [x] 更新 README/CHANGELOG/runtime-gates.md/truth-source 产物，确保互不矛盾
+  - [x] 提交并推送 `origin/main`（提交前排除调试残留）
 
 # Task Dependencies
 - Task 0 是基线，先行。
