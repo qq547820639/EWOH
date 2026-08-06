@@ -6,7 +6,38 @@
 ## [Unreleased]
 
 ### Added
-- 工程真实性收口与生产用户体验深化（单一事实源 + 生产链路贯通）：
+- 代码深化与用户体验闭环验收（全量门禁证据采集）：
+  - **语义化设计系统**：`client/src/lib/designTokens.ts` + `client/src/tokens.css` 集中
+    semantic design tokens（背景/表面/边框/文本、success/warning/danger/info、
+    normal/degraded/offline/blocked/conflict/unknown、spacing/radius/typography/
+    elevation/motion/z-index）；深色/高对比/prefers-reduced-motion 适配；
+    `scripts/lint-design-tokens.mjs` 静态检查阻断业务页面新增未经批准硬编码样式值。
+  - **统一对象时间线**：`server/modules/timeline/*` 统一时间线 DTO（鉴权+组织隔离），
+    `GET /api/timeline/events`；`client/src/lib/timelineModel.ts` 客户端只消费统一 DTO；
+    OpenAPI 契约注册（TimelineSource/PermissionVisibility/TimelineCredibility/
+    TimelineEvidenceRef/TimelineEvent）。
+  - **首次使用与样例工厂闭环**：角色化 Quick Start、可清除样例工厂、五分钟闭环引导
+    （可跳过/恢复/重开+版本记录）、统一空状态与无权限/无设备/无数据/断连/同步中/
+    初始化失败路径、匿名化产品事件。
+  - **性能预算**：`client/src/lib/perfBudget.ts` + `scripts/bundle-budget.mjs` 真实
+    预算门禁（首屏 JS 174.72kB gzip < 460kB；单异步 chunk 319.60kB < 520kB）。
+  - **跨浏览器弱网与视觉回归**：可移植弱网注入（登录后断连/提交断连/离线队列重放/
+    重复提交/冲突 409/SW 更新/刷新/多标签并发）；`ux009-weaknetwork.spec.js`；
+    Linux Chromium 主金基线 + 本地 darwin 自检基线。
+  - **前端资源生命周期统一**：`client/src/lib/runtimeLifecycle.ts` 统一 session/runtime
+    生命周期（BroadcastChannel/WS/SSE/SW listener/timer/retry/AbortController/
+    IndexedDB/Blob URL/event listener），覆盖卸载/登出/Token 失效/租户切换/角色切换/
+    后台/网络恢复/SW 升级。
+  - **安全扫描固定 CI**：Bandit 锁定 1.8.6（`security.yml` 实际运行+JSON 报告+
+    `bandit-gate.py` 阻断未豁免 HIGH）、Gitleaks 秘密扫描（基线豁免历史遗留）、Node 生产
+    依赖审计、SBOM（CycloneDX）校验、镜像漏洞扫描（Trivy，BLOCKED_BY_ENVIRONMENT）、
+    suppressions 文件（带原因/责任人/到期）。
+  - **真实运行门禁**：`docs/runtime-gates.md` 记录 PG migration 往返/HTTP+PG E2E/并发/
+    备份恢复/Docker 健康的 CI 自动化与 Helm/soak 等 BLOCKED + 一键命令。
+  - **错误与恢复体验**：核心页面 12 态一致 + 统一错误组件 `AppErrorState.tsx`
+    （现象/影响/是否已保存/可执行下一步/可复制 trace|request id）。
+  - 验收报告：`docs/reviews/code-deepening-ux-closed-loop-report.md`（修改内容/风险/
+    文件清单/测试清单/验证命令/性能对比/无障碍跨浏览器/BLOCKED/技术债务/五级结论）。
   - **单一事实源**：`scripts/truth-manifest.js` + `scripts/truth-source.js` 由 CI 运行时读取
     `GITHUB_SHA`/`git rev-parse HEAD`，从 Jest JSON 自动取测试计数并生成 evidence manifest
     （evaluatedCommitSha/branch/buildVersion/environmentFingerprint/dependencyVersions/
