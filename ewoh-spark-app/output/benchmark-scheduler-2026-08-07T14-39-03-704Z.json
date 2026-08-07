@@ -1,0 +1,51 @@
+{
+  "generatedAt": "2026-08-07T14:39:03.707Z",
+  "commitSha": "8e9a145f76e823efe04b17e4a78bf7aad5d1df20",
+  "environment": {
+    "node": "v26.5.1",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpSatWorkerUrl": null
+  },
+  "workload": {
+    "tasks": 5,
+    "persons": 3,
+    "devices": 2,
+    "stations": 8,
+    "runs": 1,
+    "seed": 20260807
+  },
+  "heuristic": {
+    "solverVersion": "heuristic-v2",
+    "avgCandidateGenMs": 0.010415,
+    "avgSolveDurationMs": null,
+    "avgWallMs": 1.998334,
+    "avgFeasibleRate": 1,
+    "avgViolations": 0,
+    "metrics": {
+      "lateness": 21,
+      "travelDistanceMeters": 326,
+      "stationWaitMinutes": 21,
+      "maxWorkloadMinutes": 114,
+      "changeCost": 0
+    },
+    "changedAssignments": 0
+  },
+  "cpSat": {
+    "available": false,
+    "note": "cp-sat worker 未配置（无 CPSAT_WORKER_URL / --cp-sat-url）",
+    "rows": [],
+    "avgCandidateGenMs": 0,
+    "avgSolveDurationMs": 0,
+    "avgWallMs": 0,
+    "avgFeasibleRate": 0,
+    "avgViolations": 0,
+    "metrics": {
+      "lateness": 0,
+      "travelDistanceMeters": 0,
+      "stationWaitMinutes": 0,
+      "maxWorkloadMinutes": 0,
+      "changeCost": 0
+    }
+  }
+}

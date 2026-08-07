@@ -33,9 +33,16 @@ export class SchedulerController {
     private readonly schedulerStreamService: SchedulerStreamService,
   ) {}
 
+  /**
+   * @deprecated 请改用 V2 接口 POST /api/scheduler/runs
+   */
   @Post('plans')
   async generatePlans(@Body() body?: GeneratePlansRequest) {
-    return this.schedulerService.generatePlans(body);
+    return this.legacyCompatibility(
+      this.schedulerService.generatePlans(body),
+      'POST /plans',
+      'POST /api/scheduler/runs',
+    );
   }
 
   @Post('plans/data-driven')
@@ -43,11 +50,21 @@ export class SchedulerController {
     return this.schedulerService.getDataDrivenPlans();
   }
 
+  /**
+   * @deprecated 请改用 V2 接口 GET /api/scheduler/runs/:runId 或 GET /api/scheduler/plans/:planId
+   */
   @Get('plans')
   async getPlans(@Query('status') status?: string) {
-    return this.schedulerService.getPlans(status);
+    return this.legacyCompatibility(
+      this.schedulerService.getPlans(status),
+      'GET /plans',
+      'GET /api/scheduler/plans/:planId',
+    );
   }
 
+  /**
+   * @deprecated 请改用 V2 接口 POST /api/scheduler/plans/:planId/approve 或 /dispatch
+   */
   @Post('plans/:planId/confirm')
   async confirmPlan(
     @Param('planId') planId: string,
@@ -57,11 +74,15 @@ export class SchedulerController {
     if (!body.reason || !body.reason.trim()) {
       throw new BadRequestException('reason is required');
     }
-    return this.schedulerService.confirmPlan(
-      planId,
-      body.reason,
-      body.operator,
-      request.userContext,
+    return this.legacyCompatibility(
+      this.schedulerService.confirmPlan(
+        planId,
+        body.reason,
+        body.operator,
+        request.userContext,
+      ),
+      'POST /plans/:planId/confirm',
+      'POST /api/scheduler/plans/:planId/approve',
     );
   }
 
@@ -191,5 +212,24 @@ export class SchedulerController {
         ),
       ),
     );
+  }
+
+  /**
+   * 兼容适配器：legacy 模板风格接口仍委托到服务执行（保持向后可用），
+   * 但响应携带废弃提示，引导调用方迁移到 V2 规范路径。新功能不得依赖 legacy 路径。
+   */
+  private async legacyCompatibility<T>(
+    delegate: Promise<T>,
+    legacyPath: string,
+    v2Path: string,
+  ): Promise<{ deprecated: true; notice: string; legacyPath: string; suggestedV2: string; data: T }> {
+    const data = await delegate;
+    return {
+      deprecated: true,
+      notice: `接口 ${legacyPath} 已废弃，请迁移到 V2 路径 ${v2Path}。`,
+      legacyPath,
+      suggestedV2: v2Path,
+      data,
+    };
   }
 }

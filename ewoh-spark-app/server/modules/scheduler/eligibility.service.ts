@@ -19,6 +19,8 @@ export interface EligibleDevice {
   batteryPct: number;
   online: boolean;
   status: string | null;
+  /** 设备能力（如 'exo-lift' / 'vacuum'），用于 requiredDeviceCapabilities 匹配。 */
+  capabilities: string[];
 }
 
 /** 参与资格判定的任务描述。 */
@@ -30,6 +32,8 @@ export interface EligibleTask {
   stationId: string | null;
   zoneId: string | null;
   predIds: string[];
+  /** 设备能力需求（如 'exo-lift' / 'vacuum'），缺失任一能力则设备不可用。 */
+  requiredDeviceCapabilities?: string[];
 }
 
 /** 资格判定上下文（软/硬约束参数）。 */
@@ -132,6 +136,14 @@ export class EligibilityService {
       if (device.batteryPct < ctx.minBatteryPct) reasons.push('battery_low');
       if (device.status === 'fault' || device.status === 'maintenance')
         reasons.push('device_unavailable');
+      // 6b) 设备能力匹配：任务要求的任一能力缺失 → 设备不可用（即使在线且电量充足）。
+      const requiredCaps = task.requiredDeviceCapabilities ?? [];
+      if (requiredCaps.length > 0) {
+        const missing = requiredCaps.filter(
+          (cap) => !device.capabilities.includes(cap),
+        );
+        if (missing.length > 0) reasons.push('missing_device_capability');
+      }
     }
 
     // 7) 区域访问（禁入区域）

@@ -25,6 +25,8 @@ from . import services
 from .config import Settings
 from .monitoring import PrometheusExporter
 from .rbac import check_export_role
+from .scheduler.cpsat import solver as cpsat_solver
+from .scheduler.cpsat.contract import SolverRequest
 from .security import SecurityHeaders
 
 ROOT = Path(__file__).resolve().parent
@@ -359,6 +361,14 @@ def make_handler(ctx):
                     return self.send_json({"items": items})
                 if p == "/api/scheduling/plans":
                     return self.api_scheduling_plans()
+                if p == "/api/scheduler/v2/solver/health":
+                    return self.send_json(
+                        {
+                            "ok": True,
+                            "available": cpsat_solver.is_available(),
+                            "solverVersion": "cpsat-v1",
+                        }
+                    )
                 if p == "/api/assignments":
                     return self.api_assignments()
                 if p.startswith("/api/tasks/") and p != "/api/tasks/":
@@ -501,6 +511,12 @@ def make_handler(ctx):
                     )
                 if p.startswith("/api/assignments/") and p.endswith("/override"):
                     return self.api_assignment_override(p[len("/api/assignments/") : -len("/override")], payload)
+                if p == "/api/scheduler/v2/solve":
+                    try:
+                        resp = cpsat_solver.solve(SolverRequest.from_dict(payload))
+                        return self.send_json({"ok": True, "response": resp.to_dict()})
+                    except Exception as e:
+                        return self._new_error("solver_error", str(e), 500)
                 self._post_audit_pending = False  # 404 不审计
                 return self.send_json({"error": "not found"}, 404)
             except BrokenPipeError:

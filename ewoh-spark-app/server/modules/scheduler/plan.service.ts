@@ -95,6 +95,7 @@ export class PlanService {
               distanceMeters: a.distanceMeters ?? null,
               riskLevel: a.riskLevel ?? null,
               scoreBreakdownJson: (a.scoreBreakdown ?? null) as unknown as Record<string, unknown> | null,
+              decisionTraceJson: (a.decisionTrace ?? null) as unknown as Record<string, unknown> | null,
               version: 1,
               orgId: ctx.primaryOrgId || null,
               createdBy: ctx.userId,
@@ -460,6 +461,7 @@ export class PlanService {
         distanceMeters: a.distanceMeters ?? undefined,
         riskLevel: a.riskLevel ?? undefined,
         scoreBreakdown: (a.scoreBreakdownJson ?? undefined) as SchedulingAssignment['scoreBreakdown'],
+        decisionTrace: (a.decisionTraceJson ?? undefined) as SchedulingAssignment['decisionTrace'],
       };
     });
 

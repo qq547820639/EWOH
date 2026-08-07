@@ -485,7 +485,7 @@ describe('SolverService.solveVariants', () => {
 
     expect(plans).toHaveLength(3);
     expect(plans.map((p) => p.planId)).toEqual(['PA', 'PB', 'PC']);
-    expect(plans.map((p) => p.planName)).toEqual(['准时优先', '负荷均衡', '均衡']);
+    expect(plans.map((p) => p.planName)).toEqual(['准时优先', '负荷均衡', '综合平衡']);
 
     // 三种权重下至少两种产生不同的人员指派
     const personsByPlan = plans.map((p) => p.assignments[0]?.personId);
@@ -643,3 +643,176 @@ function defaultPolicy(): SchedulingPolicy {
     solverVersion: 'heuristic-v2',
   };
 }
+
+/* ===== Phase 0 正确性：重排新鲜快照 + 资源新鲜度（Task A/C/D） ===== */
+
+describe('重排正确性：新鲜快照 + 冻结 executing/locked（Task A/D）', () => {
+  it('重排绑定新快照版本，且 executing/locked 任务被冻结不可移动', async () => {
+    const { solver } = makeSolver();
+    const snapshot = buildSnapshot({
+      snapshotVersion: 'WS-NEW-0001',
+      persons: [person({ id: 'p1' }), person({ id: 'p2' }), person({ id: 'p3' })],
+      tasks: [
+        { ...task({ id: 't-exec', status: 'executing' }), assigneeId: 'p1' },
+        { ...task({ id: 't-locked', status: 'pending' }) },
+        task({ id: 't-pending' }),
+      ],
+      devices: [device({ id: 'd1' })],
+      lockedAssignments: [
+        { taskId: 't-exec', personId: 'p1', deviceId: null, stationId: null },
+        { taskId: 't-locked', personId: 'p2', deviceId: null, stationId: null },
+      ],
+    });
+    const plan = await solver.solve(snapshot, [], {
+      ...baseSolveOpts,
+      snapshotVersion: snapshot.snapshotVersion,
+      policy: defaultPolicy(),
+    });
+    // 新方案绑定最新快照版本（绝不复用旧快照的 snapshotVersion）
+    expect(plan.snapshotVersion).toBe('WS-NEW-0001');
+    // executing / locked 任务不被移走
+    expect(plan.assignments.some((a) => a.taskId === 't-exec')).toBe(false);
+    expect(plan.assignments.some((a) => a.taskId === 't-locked')).toBe(false);
+    // 待办任务仍被安排
+    expect(plan.assignments.some((a) => a.taskId === 't-pending')).toBe(true);
+  });
+});
+
+describe('WorldStateSnapshotService.isPlanStale / 资源新鲜度（Task C/D）', () => {
+  interface Rows {
+    personnel?: unknown[];
+    devices?: unknown[];
+    tasks?: unknown[];
+    routeEdges?: unknown[];
+  }
+
+  function makeWorldDb(snapshotRow: unknown, rows: Rows) {
+    const from = jest.fn((table: unknown) => {
+      if (table === ewohWorldStateSnapshot) {
+        return {
+          where: () => ({ limit: () => Promise.resolve(snapshotRow ? [snapshotRow] : []) }),
+        };
+      }
+      if (table === ewohResourceReservation || table === ewohDeviceBinding) {
+        return { where: () => Promise.resolve([]) };
+      }
+      const tableRows = new Map<unknown, unknown[]>([
+        [ewohPersonnel, rows.personnel ?? []],
+        [ewohDevice, rows.devices ?? []],
+        [ewohProductionTask, rows.tasks ?? []],
+        [ewohRouteEdge, rows.routeEdges ?? []],
+        [ewohSpatialEntity, []],
+        [ewohEvent, []],
+      ]);
+      return Promise.resolve(tableRows.get(table) ?? []);
+    });
+    return { db: { select: jest.fn(() => ({ from })) } };
+  }
+
+  async function collectState(rows: Rows): Promise<WorldStateSnapshot> {
+    const { db } = makeWorldDb(null, rows);
+    const svc = new WorldStateSnapshotService(db as never, {
+      runInTransaction: jest.fn(),
+    } as never);
+    return (await (
+      svc as unknown as { collectState(): Promise<WorldStateSnapshot> }
+    ).collectState()) as WorldStateSnapshot;
+  }
+
+  const personRow = (id: string, status: string) => ({
+    id, name: id, status, skills: ['work'], updatedAt: new Date(),
+  });
+  const deviceRow = (id: string, online: boolean) => ({
+    id, online, batteryPct: 100, lastTelemetryAt: new Date(), updatedAt: new Date(),
+  });
+  const taskRow = (id: string, status: string) => ({
+    id, title: id, taskType: 'work', priority: 'medium', status,
+    assigneeId: null, deviceId: null, spatialEntityId: null,
+    planStart: null, planEnd: null, progress: 0,
+    predecessorIds: [], requiredSkills: ['work'], requiredCertifications: [],
+  });
+  const routeRow = (edgeId: string, status: string) => ({
+    edgeId, status, riskLevel: null,
+  });
+
+  async function assertBecomesStale(before: Rows, after: Rows): Promise<void> {
+    const state = await collectState(before);
+    const oldSnapshot: WorldStateSnapshot = {
+      ...state,
+      snapshotVersion: 'WS-P',
+      ts: new Date().toISOString(),
+    };
+    const snapshotRow = { snapshotVersion: 'WS-P', snapshotJson: oldSnapshot, createdAt: new Date() };
+    const { db } = makeWorldDb(snapshotRow, after);
+    const svc = new WorldStateSnapshotService(db as never, {
+      runInTransaction: jest.fn(),
+    } as never);
+    expect(await svc.isPlanStale('WS-P')).toBe(true);
+  }
+
+  it('人员状态变更 → 旧方案变 stale（isPlanStale=true）', async () => {
+    await assertBecomesStale(
+      { personnel: [personRow('p1', 'available')] },
+      { personnel: [personRow('p1', 'unavailable')] },
+    );
+  });
+
+  it('设备在线状态变更 → 旧方案变 stale', async () => {
+    await assertBecomesStale(
+      { devices: [deviceRow('d1', true)] },
+      { devices: [deviceRow('d1', false)] },
+    );
+  });
+
+  it('任务状态变更 → 旧方案变 stale', async () => {
+    await assertBecomesStale(
+      { tasks: [taskRow('t1', 'pending')] },
+      { tasks: [taskRow('t1', 'executing')] },
+    );
+  });
+
+  it('路线状态变更 → 旧方案变 stale', async () => {
+    await assertBecomesStale(
+      { routeEdges: [routeRow('e1', 'open')] },
+      { routeEdges: [routeRow('e1', 'closed')] },
+    );
+  });
+
+  it('世界状态未变化 → 方案保持新鲜（不 stale）', async () => {
+    const state = await collectState({ personnel: [personRow('p1', 'available')] });
+    const oldSnapshot: WorldStateSnapshot = {
+      ...state,
+      snapshotVersion: 'WS-P',
+      ts: new Date().toISOString(),
+    };
+    const snapshotRow = { snapshotVersion: 'WS-P', snapshotJson: oldSnapshot, createdAt: new Date() };
+    const { db } = makeWorldDb(snapshotRow, { personnel: [personRow('p1', 'available')] });
+    const svc = new WorldStateSnapshotService(db as never, {
+      runInTransaction: jest.fn(),
+    } as never);
+    expect(await svc.isPlanStale('WS-P')).toBe(false);
+  });
+
+  it('STALE 数据的人员/设备不被视为可用（不可调度）', async () => {
+    const { db } = makeWorldDb(null, {
+      personnel: [{ id: 'p1', name: 'p1', status: 'available', updatedAt: new Date(Date.now() - 10_000) }],
+      devices: [{ id: 'd1', online: true, batteryPct: 100, lastTelemetryAt: new Date(Date.now() - 10_000), updatedAt: new Date() }],
+    });
+    const svc = new WorldStateSnapshotService(db as never, { runInTransaction: jest.fn() } as never, 1000);
+    const state = (await (svc as unknown as { collectState(): Promise<WorldStateSnapshot> }).collectState()) as WorldStateSnapshot;
+    expect(state.persons[0].dataQuality).toBe('STALE');
+    expect(state.persons[0].status).toBe('unavailable');
+    expect(state.devices[0].dataQuality).toBe('STALE');
+    expect(state.devices[0].online).toBe(false);
+  });
+
+  it('UNKNOWN（无时间戳）数据的人员不被视为可用', async () => {
+    const { db } = makeWorldDb(null, {
+      personnel: [{ id: 'p1', name: 'p1', status: 'available', updatedAt: null }],
+    });
+    const svc = new WorldStateSnapshotService(db as never, { runInTransaction: jest.fn() } as never, 1000);
+    const state = (await (svc as unknown as { collectState(): Promise<WorldStateSnapshot> }).collectState()) as WorldStateSnapshot;
+    expect(state.persons[0].dataQuality).toBe('UNKNOWN');
+    expect(state.persons[0].status).toBe('unavailable');
+  });
+});

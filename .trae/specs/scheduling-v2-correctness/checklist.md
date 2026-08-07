@@ -21,11 +21,11 @@
 
 ## Phase 1 资源与约束
 - [ ] ResourceState 覆盖 person/device/station/tool/vehicle/material；device 含 location/capabilities/availabilityWindows/reservations/capacity/battery/fault/telemetryUpdatedAt/version
-- [ ] 任务模型含 requiredResources/requiredDeviceCapabilities/candidateStations/resourceQuantity/capacity
-- [ ] 在线且电量足够但 capability 不匹配的设备不可执行任务
+- [x] 任务模型含 requiredResources/requiredDeviceCapabilities/candidateStations/resourceQuantity/capacity（EligibleTask 增加 requiredDeviceCapabilities）
+- [x] 在线且电量足够但 capability 不匹配的设备不可执行任务（eligibility missing_device_capability + solver 过滤）
 - [ ] requiredSkills/requiredCertifications 使用 {allOf, anyOf} 显式语义
-- [ ] DecisionTrace 生成并持久化（JSONB），前端摘要 + 按需加载详情
-- [ ] legacy `/api/scheduler/plans` 与 confirm 标记 deprecated + adapter；Scheduling.tsx 迁移到 V2
+- [x] DecisionTrace 生成并持久化（JSONB：ewohSchedulingPlanAssignment.decisionTraceJson），前端摘要 + 按需加载详情
+- [x] legacy `/api/scheduler/plans`(POST/GET) 与 confirm 标记 deprecated + adapter（委派 V2 并返回废弃提示）；Scheduling.tsx 迁移到 V2
 
 ## Phase 2 实时闭环
 - [ ] SchedulingEvent 含 entityType/entityVersion；SSE 支持 sinceSequence

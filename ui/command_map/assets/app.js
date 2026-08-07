@@ -249,6 +249,11 @@
     timeline: { mode: 'live', speed: 1, cursorSec: 5400, replayDevice: null }, // 5400s = 09:30:00
     // 数据来源标识：'backend' | 'sample'
     dataSource: 'sample',
+    // 演示/离线模式标志：为 true 时允许真实数据为空时回退 sample 数据；
+    // 生产/后端模式下真实数据为空时显示空态 + 数据质量提示，绝不静默填充样本。
+    demoMode: /[?&]demo=1\b/.test(window.location.search || ''),
+    // 各数据段的数据质量：'FRESH' | 'STALE' | 'UNKNOWN'（后端模式下为空段标记 UNKNOWN）
+    dataQuality: { devices: 'UNKNOWN', people: 'UNKNOWN', events: 'UNKNOWN', models: 'UNKNOWN', rules: 'UNKNOWN' },
     // 最近一次拉取的 backend 状态摘要
     backendStatus: null,
     // 调度确认审计记录（前端会话级），与 /api/audit 关联
@@ -507,6 +512,8 @@
 
     // 用 backend 数据重建 CM.DATA 的动态部分
     function applyBackendData(payload) {
+      var dq = CM.state.dataQuality || {};
+      var demoMode = CM.state.demoMode;
       var sampleById = {};
       CM.SAMPLE_DATA.entities.forEach(function (e) { sampleById[e.entity_id] = e; });
 
@@ -521,45 +528,57 @@
       });
 
       // 设备：以 backend 为准
-      (payload.devices || []).forEach(function (d) {
+      var liveDevices = (payload.devices || []);
+      liveDevices.forEach(function (d) {
         var existing = sampleById[d.device_id];
         newEntities.push(mergeDeviceEntity(d, existing));
       });
 
       // 人员：以 backend 为准
-      (payload.people || []).forEach(function (p) {
+      var livePeople = (payload.people || []);
+      livePeople.forEach(function (p) {
         var existing = sampleById[p.person_id];
-        var dev = (payload.devices || []).find(function (d) { return d.person_id === p.person_id; });
+        var dev = liveDevices.find(function (d) { return d.person_id === p.person_id; });
         newEntities.push(mergePersonEntity(p, dev, existing));
       });
+
+      // 设备/人员数据质量：后端为空时，生产模式标记 UNKNOWN（不填充样本），演示模式沿用样本。
+      dq.devices = liveDevices.length > 0 || demoMode ? 'FRESH' : 'UNKNOWN';
+      dq.people = livePeople.length > 0 || demoMode ? 'FRESH' : 'UNKNOWN';
 
       CM.DATA.entities = newEntities;
 
       // 事件：以 backend 为准；用样本事件补 title 映射
       var sampleEvByCode = {};
       CM.SAMPLE_DATA.events.forEach(function (e) { sampleEvByCode[e.code] = e; });
-      CM.DATA.events = (payload.events || []).map(function (ev) {
+      var liveEvents = (payload.events || []).map(function (ev) {
         return mergeEvent(ev, sampleEvByCode[ev.event_code]);
       });
-      // 若 backend 无事件，保留样本事件（避免空状态）
-      if (CM.DATA.events.length === 0) {
-        CM.DATA.events = JSON.parse(JSON.stringify(CM.SAMPLE_DATA.events));
-      }
+      if (liveEvents.length === 0) {
+        if (demoMode) { CM.DATA.events = JSON.parse(JSON.stringify(CM.SAMPLE_DATA.events)); dq.events = 'FRESH'; }
+        else { CM.DATA.events = []; dq.events = 'UNKNOWN'; } // 生产模式：空态 + UNKNOWN 提示
+      } else { CM.DATA.events = liveEvents; dq.events = 'FRESH'; }
 
       // 模型与规则
       var sampleModelById = {};
       CM.SAMPLE_DATA.models.forEach(function (m) { sampleModelById[m.model_id] = m; });
-      CM.DATA.models = (payload.models || []).map(function (m) {
+      var liveModels = (payload.models || []).map(function (m) {
         return mergeModel(m, sampleModelById[m.model_id]);
       });
-      if (CM.DATA.models.length === 0) CM.DATA.models = JSON.parse(JSON.stringify(CM.SAMPLE_DATA.models));
+      if (liveModels.length === 0) {
+        if (demoMode) { CM.DATA.models = JSON.parse(JSON.stringify(CM.SAMPLE_DATA.models)); dq.models = 'FRESH'; }
+        else { CM.DATA.models = []; dq.models = 'UNKNOWN'; }
+      } else { CM.DATA.models = liveModels; dq.models = 'FRESH'; }
 
       var sampleRuleById = {};
       CM.SAMPLE_DATA.rules.forEach(function (r) { sampleRuleById[r.rule_id] = r; });
-      CM.DATA.rules = (payload.rules || []).map(function (r) {
+      var liveRules = (payload.rules || []).map(function (r) {
         return mergeRule(r, sampleRuleById[r.rule_id]);
       });
-      if (CM.DATA.rules.length === 0) CM.DATA.rules = JSON.parse(JSON.stringify(CM.SAMPLE_DATA.rules));
+      if (liveRules.length === 0) {
+        if (demoMode) { CM.DATA.rules = JSON.parse(JSON.stringify(CM.SAMPLE_DATA.rules)); dq.rules = 'FRESH'; }
+        else { CM.DATA.rules = []; dq.rules = 'UNKNOWN'; }
+      } else { CM.DATA.rules = liveRules; dq.rules = 'FRESH'; }
 
       // 派工记录（backend 仅返回会话级 assignments）
       CM.DATA.assignments = payload.assignments || [];
@@ -568,6 +587,7 @@
       // 由 refreshScheduling() 单独从 backend 拉取并写入。
       // SAMPLE_DATA.plans 仅当 dataSource==='sample' 时使用（离线 demo）。
 
+      CM.state.dataQuality = dq;
       CM.state.dataSource = 'backend';
     }
 
@@ -750,6 +770,12 @@
       return postJSON('/api/assignments/' + encodeURIComponent(id) + '/' + action, body || {});
     }
 
+    // 智能调度约束 API（Phase 3.3.6）：Lock / Exclude / Change resource / Change time
+    // 后端若未提供 /api/scheduler/constraints，则抛错，由调用方以"已标记 fallback"形式告知用户。
+    async function applyConstraint(payload) {
+      return postJSON('/api/scheduler/constraints', payload || {});
+    }
+
     async function fetchResourcesState() {
       // 兼容两种响应形态：{"resources":[...]} 与 {"items":[...]}
       var r = await getJSON('/api/resources/state', {});
@@ -860,6 +886,7 @@
       replanPlan: replanPlan,
       fetchAssignments: fetchAssignments,
       updateAssignmentStatus: updateAssignmentStatus,
+      applyConstraint: applyConstraint,
       fetchResourcesState: fetchResourcesState,
       refreshScheduling: refreshScheduling,
       refreshPlan: refreshPlan,
@@ -1064,7 +1091,18 @@
     var shiftEl = document.getElementById('kpi-shift');
     if (shiftEl) {
       var dsLabel = CM.state.dataSource === 'backend' ? '· LIVE 后端' : '· 离线样本';
-      shiftEl.textContent = '早班 ' + dsLabel;
+      // 生产/后端模式下，若任一关键数据段为空，追加数据质量提示（绝不静默填充样本）。
+      var dq = CM.state.dataQuality || {};
+      var unknown = [];
+      if (CM.state.dataSource === 'backend' && !CM.state.demoMode) {
+        ['devices', 'people', 'events', 'models', 'rules'].forEach(function (k) {
+          if (dq[k] === 'UNKNOWN') unknown.push(k);
+        });
+        if (unknown.length > 0) {
+          dsLabel += ' · <span class="cm-dq-warn" title="后端以上数据段为空，未填充样本，请检查数据源">数据质量 UNKNOWN(' + unknown.join(',') + ')</span>';
+        }
+      }
+      shiftEl.innerHTML = '早班 ' + dsLabel;
     }
   };
 

@@ -241,6 +241,7 @@ body {
 .cm-pop-evidence pre { margin-top: 4px; padding: 6px; background: var(--panel-3); border-radius: var(--radius-sm); font-size: 10px; color: var(--text); max-height: 120px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
 .cm-pop-source { display: block; margin-top: 6px; font-size: 10px; color: var(--muted-2); }
 .cm-pop-error { color: var(--danger); }
+.cm-dq-warn { color: var(--danger, #ef4444); font-weight: 600; }
 
 /* ===== Generic badges ===== */
 .cm-badge {
@@ -262,6 +263,7 @@ button { font-family: inherit; }
 .cm-btn:hover { border-color: var(--accent); }
 .cm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .cm-btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.cm-btn-xs { padding: 2px 7px; font-size: 11px; }
 
 /* ===== Scrollbar ===== */
 ::-webkit-scrollbar { width: 8px; height: 8px; }

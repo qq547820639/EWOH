@@ -36,24 +36,24 @@
 
 ## Phase 1 — 资源与约束建模
 
-- [ ] Task 1.1: 统一 ResourceState + 设备能力
-  - [ ] 1.1.1 `ResourceState` 覆盖 person/device/station/tool/vehicle/material；device 增加 location/capabilities/availabilityWindows/reservations/capacity/battery/fault/telemetryUpdatedAt/version
-  - [ ] 1.1.2 任务模型增加 requiredResources/requiredDeviceCapabilities/candidateStations/resourceQuantity/capacity
-  - [ ] 1.1.3 测试：在线且电量足够但 capability 不匹配的设备不可执行任务
+- [x] Task 1.1: 统一 ResourceState + 设备能力
+  - [x] 1.1.1 `ResourceState` 覆盖 person/device/station/tool/vehicle/material；device 增加 location/capabilities/availabilityWindows/reservations/capacity/battery/fault/telemetryUpdatedAt/version
+  - [x] 1.1.2 任务模型增加 requiredResources/requiredDeviceCapabilities/candidateStations/resourceQuantity/capacity
+  - [x] 1.1.3 测试：在线且电量足够但 capability 不匹配的设备不可执行任务（missing_device_capability）
 
 - [ ] Task 1.2: requiredSkills allOf/anyOf
   - [ ] 1.2.1 技能/资质需求改为 `{allOf, anyOf}` 显式语义，EligibilityService 按此校验
   - [ ] 1.2.2 测试：allOf 缺一不可 / anyOf 任一即可
 
-- [ ] Task 1.3: DecisionTrace
-  - [ ] 1.3.1 为每个 Assignment 保存 DecisionTrace（selected/priority/candidates/selectedReason/policyVersion/solverVersion/snapshotVersion），JSONB 存储
+- [x] Task 1.3: DecisionTrace
+  - [x] 1.3.1 为每个 Assignment 保存 DecisionTrace（selected/priority/candidates/selectedReason/policyVersion/solverVersion/snapshotVersion），JSONB 存储
   - [ ] 1.3.2 前端默认摘要，点击"为什么"再加载详情
-  - [ ] 1.3.3 测试：DecisionTrace 生成与读取
+  - [x] 1.3.3 测试：DecisionTrace 生成与读取
 
-- [ ] Task 1.4: 收敛 legacy scheduler API
-  - [ ] 1.4.1 找出所有 legacy `/api/scheduler/plans`(POST/GET)、`confirm` 调用点，标记 deprecated + adapter
+- [x] Task 1.4: 收敛 legacy scheduler API
+  - [x] 1.4.1 找出所有 legacy `/api/scheduler/plans`(POST/GET)、`confirm` 调用点，标记 deprecated + adapter
   - [ ] 1.4.2 Scheduling.tsx 迁移到 V2 或复用 CommandMap SchedulePanel 能力
-  - [ ] 1.4.3 测试：V2 唯一路径，legacy 不新增业务逻辑
+  - [x] 1.4.3 测试：V2 唯一路径，legacy 不新增业务逻辑
 
 ## Phase 2 — 实时闭环与局部重排（基础能力）
 

@@ -33,6 +33,73 @@
     return (p.person && p.person.action) || 'unknown';
   }
 
+  // ===== Command Map 调度增强（Phase 3.3）辅助 =====
+  // 资源可用性：Available / Busy / Reserved / Unavailable / Stale-Degraded
+  // 依据实体状态 + 新鲜度（backend 模式下 updated_at 过旧 → STALE）
+  function resourceAvailability(entity) {
+    if (!entity) return null;
+    var t = entity.entity_type;
+    var now = Date.now();
+    var stale = false;
+    if (CM.state.dataSource === 'backend' && entity.updated_at) {
+      var ts = Date.parse(entity.updated_at);
+      if (isNaN(ts) || (now - ts) > 120000) stale = true;
+    }
+    if (t === 'person') {
+      var ps = entity.status;
+      if (ps === 'inactive') return 'UNAVAILABLE';
+      if (ps === 'working' || ps === 'producing') return 'BUSY';
+      if (ps === 'resting') return 'RESERVED';
+      if (stale) return 'STALE';
+      return 'AVAILABLE';
+    }
+    if (t === 'device') {
+      var online = entity.status === 'online';
+      var fault = entity.device && entity.device.fault_code;
+      if (!online) return stale ? 'STALE' : 'UNAVAILABLE';
+      if (fault) return 'UNAVAILABLE';
+      var busy = entity.device && entity.device.task_id;
+      if (busy) return 'BUSY';
+      if (stale) return 'STALE';
+      return 'AVAILABLE';
+    }
+    if (t === 'station') {
+      var so = entity.station || {};
+      if (so.occupancy > 0) return 'BUSY';
+      if (stale) return 'STALE';
+      return 'AVAILABLE';
+    }
+    return null;
+  }
+  var AVAIL_COLOR = { AVAILABLE: '#10b981', BUSY: '#f59e0b', RESERVED: '#8b5cf6', UNAVAILABLE: '#ef4444', STALE: '#eab308' };
+  var AVAIL_LABEL = { AVAILABLE: '可用', BUSY: '忙碌', RESERVED: '预留', UNAVAILABLE: '不可用', STALE: '过期降级' };
+
+  // 任务是否已在当前可见调度 assignment 中（用于冲突层"未派高优任务"）
+  function taskIsAssigned(taskId) {
+    var list = (CM.DATA.assignments || []).concat(planAssignments());
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].task_id === taskId) return true;
+    }
+    return false;
+  }
+  function planAssignments() {
+    var out = [];
+    (CM.DATA.plans || []).forEach(function (p) {
+      if (p && Array.isArray(p.assignments)) out = out.concat(p.assignments);
+    });
+    return out;
+  }
+  // 任务优先级等级（1/2/3/4）
+  function priorityRank(pri) {
+    switch (String(pri || '').toLowerCase()) {
+      case 'critical': return 4;
+      case 'high': case 'urgent': return 3;
+      case 'medium': return 2;
+      case 'low': return 1;
+      default: return 2;
+    }
+  }
+
   // 按模式返回 {color, label, dim, ring}
   function styleFor(entity, mode) {
     var t = entity.entity_type;
@@ -289,10 +356,12 @@
       // 环境模式下额外叠加热力图（Task 22）
       if (mode === 'environment') svg.appendChild(this._envHeatmap());
 
-      // 调度模式：叠加短时趋势层 + 真实调度路线层
+      // 调度模式：叠加资源可用性层 + 短时趋势层 + 真实调度路线层 + 冲突层
       if (mode === 'scheduling') {
+        svg.appendChild(this._resourceAvailabilityLayer());
         svg.appendChild(this._trendLayer());
         svg.appendChild(this._scheduleRouteLayer(mode));
+        svg.appendChild(this._conflictLayer());
       }
 
       // 点击委托（仅绑定一次）
@@ -442,39 +511,50 @@
       var color = view === 'current' ? '#10b981' : view === 'confirmed' ? '#3b82f6' : '#a855f7';
       assigns.forEach(function (a) {
         var pts = routePoints(a);
+        var route = (a.route) || {};
         var person = a.person_id ? CM.findEntity(a.person_id) : null;
         var startPt = (person && person.pose) ? { x: person.pose.x, y: person.pose.y } : (pts[0] || null);
         var endEnt = a.station_id ? CM.findEntity(a.station_id) : null;
         var endPt = (endEnt && endEnt.pose) ? { x: endEnt.pose.x, y: endEnt.pose.y } : (pts[pts.length - 1] || null);
 
-        // 路线：有几何点用紫色实线 polyline，否则起点→终点虚线
+        // 路线风险/拥堵（Phase 3.3.2）：high risk → 红，medium → 橙，拥堵 → 双线
+        var risk = route.risk_level || a.risk_level || null;
+        var congestion = (route.congestion != null ? route.congestion : (a.congestion != null ? a.congestion : 0));
+        var strokeColor = color;
+        if (risk === 'high' || risk === 'critical') strokeColor = '#ef4444';
+        else if (risk === 'medium') strokeColor = '#f97316';
+        else if (Number(congestion) > 0.7) strokeColor = '#f59e0b';
+        var strokeDash = congestion > 0.7 ? '4 2' : null;
+
+        // 路线：有几何点用实线 polyline，否则起点→终点虚线
         if (pts.length >= 2) {
           g.appendChild(el('polyline', {
             points: pts.map(function (p) { return p.x + ',' + p.y; }).join(' '),
-            fill: 'none', stroke: color, 'stroke-width': 2.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'
+            fill: 'none', stroke: strokeColor, 'stroke-width': 2.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+            'stroke-dasharray': strokeDash || ''
           }));
         } else if (startPt && endPt && (startPt.x !== endPt.x || startPt.y !== endPt.y)) {
           g.appendChild(el('line', {
             x1: startPt.x, y1: startPt.y, x2: endPt.x, y2: endPt.y,
-            stroke: color, 'stroke-width': 2.5, 'stroke-dasharray': '6 3'
+            stroke: strokeColor, 'stroke-width': 2.5, 'stroke-dasharray': (strokeDash || '6 3')
           }));
         }
         // 起点圆
         if (startPt) g.appendChild(el('circle', {
-          cx: startPt.x, cy: startPt.y, r: 4, fill: color, stroke: '#0d1117', 'stroke-width': 1
+          cx: startPt.x, cy: startPt.y, r: 4, fill: strokeColor, stroke: '#0d1117', 'stroke-width': 1
         }));
         // 终点工位标记
         if (endPt) {
-          g.appendChild(el('circle', { cx: endPt.x, cy: endPt.y, r: 6, fill: 'none', stroke: color, 'stroke-width': 2 }));
-          g.appendChild(el('rect', { x: endPt.x - 3, y: endPt.y - 3, width: 6, height: 6, fill: color }));
+          g.appendChild(el('circle', { cx: endPt.x, cy: endPt.y, r: 6, fill: 'none', stroke: strokeColor, 'stroke-width': 2 }));
+          g.appendChild(el('rect', { x: endPt.x - 3, y: endPt.y - 3, width: 6, height: 6, fill: strokeColor }));
         }
-        // 人员当前位置：移动方向箭头 + ETA/任务ID/优先级/status 标注
+        // 人员当前位置：移动方向箭头 + ETA/任务ID/优先级/status/风险/拥堵/受影响资源 标注
         if (person && person.pose) {
           var rad = (person.pose.yaw || 0) * Math.PI / 180;
           var ax = person.pose.x + Math.cos(rad) * 18, ay = person.pose.y + Math.sin(rad) * 18;
           g.appendChild(el('line', {
             x1: person.pose.x, y1: person.pose.y, x2: ax, y2: ay,
-            stroke: color, 'stroke-width': 2, 'marker-end': 'url(#cm-arrow)'
+            stroke: strokeColor, 'stroke-width': 2, 'marker-end': 'url(#cm-arrow)'
           }));
           var eta = (a.eta_sec != null) ? fmtEta(a.eta_sec) :
                     (a.route && a.route.eta_sec != null) ? fmtEta(a.route.eta_sec) : '';
@@ -483,7 +563,10 @@
           var parts = [];
           if (a.task_id) parts.push('T:' + a.task_id);
           if (pri != null) parts.push('P' + pri);
-          if (eta) parts.push(eta);
+          if (eta) parts.push('ETA ' + eta);
+          if (risk) parts.push('风险' + risk);
+          if (Number(congestion) > 0.7) parts.push('拥堵' + Math.round(congestion * 100) + '%');
+          if (a.device_id) parts.push('设' + a.device_id);
           if (status) parts.push(status);
           if (parts.length) g.appendChild(txt(person.pose.x, person.pose.y - 16, parts.join(' '), 'cm-map-schedlabel'));
         }
@@ -492,6 +575,79 @@
                       view === 'confirmed' ? '真实调度路线（已批准方案）' : '真实调度路线（待审方案）';
       g.appendChild(txt(8, 26, viewLabel, 'cm-map-modelabel'));
       return g;
+    },
+
+    // 资源可用性层（Phase 3.3.1）：person/device/station 以彩色环标注
+    // Available/Busy/Reserved/Unavailable/Stale。新增图例项由 _legend 输出。
+    _resourceAvailabilityLayer: function () {
+      var g = el('g', { 'pointer-events': 'none', opacity: 0.95 });
+      ['person', 'device', 'station'].forEach(function (t) {
+        CM.DATA.entities.filter(function (e) { return e.entity_type === t; }).forEach(function (e) {
+          var av = resourceAvailability(e);
+          if (!av) return;
+          var c = AVAIL_COLOR[av];
+          var r = t === 'station' ? 12 : t === 'device' ? 13 : 15;
+          g.appendChild(el('circle', {
+            cx: e.pose.x, cy: e.pose.y, r: r,
+            fill: 'none', stroke: c, 'stroke-width': 2.5,
+            'stroke-dasharray': av === 'STALE' ? '4 3' : ''
+          }));
+          g.appendChild(txt(e.pose.x, e.pose.y - (r + 6), AVAIL_LABEL[av], 'cm-map-availlabel'));
+        });
+      });
+      g.appendChild(txt(8, 14, '资源可用性（可用/忙碌/预留/不可用/过期降级）', 'cm-map-modelabel'));
+      return g;
+    },
+
+    // 冲突层（Phase 3.3.3）：禁区 / 故障设备 / 未派高优任务 / 预约冲突 高亮
+    _conflictLayer: function () {
+      var g = el('g', { 'pointer-events': 'none', opacity: 0.95 });
+      // 1) 禁区：zone_type=禁入 或 存在 FORBIDDEN_ZONE 事件的区域 → 红色斜线框
+      var forbiddenZoneIds = {};
+      (CM.DATA.events || []).forEach(function (e) {
+        if (e && e.code === 'FORBIDDEN_ZONE' && e.status !== 'closed' && e.zone_id) forbiddenZoneIds[e.zone_id] = true;
+      });
+      CM.DATA.entities.filter(function (e) { return e.entity_type === 'zone'; }).forEach(function (z) {
+        if (forbiddenZoneIds[z.entity_id] || z.zone_type === 'safety') {
+          var x = z.pose.x - z.bbox.w / 2, y = z.pose.y - z.bbox.h / 2;
+          g.appendChild(el('rect', {
+            x: x, y: y, width: z.bbox.w, height: z.bbox.h,
+            fill: 'none', stroke: '#ef4444', 'stroke-width': 2, 'stroke-dasharray': '6 4', rx: 4
+          }));
+          g.appendChild(txt(z.pose.x, z.pose.y + 4, '禁区', 'cm-map-conflictlabel'));
+        }
+      });
+      // 2) 故障/离线设备 → 红色脉冲环
+      CM.DATA.entities.filter(function (e) { return e.entity_type === 'device'; }).forEach(function (d) {
+        var isFaulty = d.status !== 'online' || (d.device && d.device.fault_code);
+        if (isFaulty) {
+          g.appendChild(el('circle', { cx: d.pose.x, cy: d.pose.y, r: 16, fill: 'none', stroke: '#ef4444', 'stroke-width': 2, 'stroke-dasharray': '3 3' }));
+        }
+      });
+      // 3) 未派高优任务（critical/high 且不在任何 assignment）→ 红色 "!" 标记（指向任务工位）
+      (CM.DATA.tasks || []).forEach(function (t) {
+        if (!t) return;
+        if ((t.priority === 'critical' || t.priority === 'high') && !taskIsAssigned(t.task_id)) {
+          var stn = t.station_id ? CM.findEntity(t.station_id) : null;
+          var pt = (stn && stn.pose) || null;
+          if (pt) g.appendChild(this._conflictMark(pt.x, pt.y - 20, '未派高优'));
+        }
+      }, this);
+      // 4) 预约冲突：reservation 与可见 assignment 时间重叠（近似：同名资源多条 reservation）
+      var seen = {};
+      ((CM.state.resourceState || []).filter(function (r) { return r && r.reservation_conflict; })).forEach(function (r) {
+        var e = CM.findEntity(r.resource_id);
+        if (e && e.pose) g.appendChild(this._conflictMark(e.pose.x, e.pose.y - 20, '预约冲突'));
+      }, this);
+      return g;
+    },
+
+    _conflictMark: function (x, y, label) {
+      var g2 = el('g');
+      g2.appendChild(el('circle', { cx: x, cy: y, r: 9, fill: '#ef4444', stroke: '#fff', 'stroke-width': 1.5 }));
+      g2.appendChild(txt(x, y + 3, '!', 'cm-map-conflictmark'));
+      g2.appendChild(txt(x, y - 13, label, 'cm-map-conflictlabel'));
+      return g2;
     },
 
     // 绑定调度视图切换控件（Current/Proposed/Confirmed）
@@ -595,7 +751,12 @@
           ['#10b981', '当前视图（已派工）'],
           ['#3b82f6', '已批准方案'],
           ['#a855f7', '待审方案'],
-          ['#475569', '物流通道']
+          ['#475569', '物流通道'],
+          // 资源可用性（Phase 3.3.1）
+          ['#10b981', '可用'], ['#f59e0b', '忙碌'], ['#8b5cf6', '预留'],
+          ['#ef4444', '不可用'], ['#eab308', '过期降级'],
+          // 冲突（Phase 3.3.3）
+          ['#ef4444', '冲突/禁区/故障/未派高优']
         ];
         // 顶部小切换控件：Current / Proposed / Confirmed
         toggle = '<span class="cm-schedview-toggle">' +

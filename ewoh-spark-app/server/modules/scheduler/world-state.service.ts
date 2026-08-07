@@ -21,6 +21,9 @@ import { RequestDatabaseContext } from '../../database/request-database-context'
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
+/** 资源数据新鲜度阈值（ms）：sourceTs 距今超过该值则标 STALE。 */
+const DEFAULT_FRESHNESS_MS = 5 * 60 * 1000;
+
 /** 世界状态快照服务：构建/持久化/新鲜度校验。 */
 @Injectable()
 export class WorldStateSnapshotService {
@@ -29,6 +32,7 @@ export class WorldStateSnapshotService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly requestDatabaseContext: RequestDatabaseContext,
+    private readonly freshnessMs: number = DEFAULT_FRESHNESS_MS,
   ) {}
 
   /**
@@ -86,6 +90,15 @@ export class WorldStateSnapshotService {
   }
 
   /**
+   * 判断给定快照版本是否已过期（关键状态发生变更）。
+   * 返回 true 表示绑定到该快照的方案已过期，审批应拒绝。
+   * 与 isSnapshotFresh 互为反义，语义上更贴近"方案过期"判定。
+   */
+  async isPlanStale(snapshotVersion: string): Promise<boolean> {
+    return !(await this.isSnapshotFresh(snapshotVersion));
+  }
+
+  /**
    * 审批前的快照新鲜度强校验；过期时抛出 PLAN_STALE 冲突。
    */
   async assertFreshForApprove(snapshotVersion: string): Promise<void> {
@@ -140,16 +153,22 @@ export class WorldStateSnapshotService {
     const spatialByEntityId = new Map<string, (typeof spatialEntities)[number]>();
     for (const se of spatialEntities) spatialByEntityId.set(se.entityId, se);
 
+    const now = Date.now();
+
     const persons = personnel.map((p) => {
       const se = p.spatialEntityId
         ? spatialByEntityId.get(p.spatialEntityId)
         : undefined;
       const load = (p.currentLoad as { loadLevel?: number } | null) ?? {};
       const fatigue = (p.currentLoad as { fatigueLevel?: number } | null) ?? {};
+      const sourceTs = p.updatedAt ? p.updatedAt.getTime() : null;
+      const dataQuality = this.classifyFreshness(sourceTs, now);
       return {
         id: p.id,
         name: p.name,
-        status: p.status ?? 'available',
+        // STALE/UNKNOWN 数据不被视为可用（不透支决策）。
+        status:
+          dataQuality === 'FRESH' ? (p.status ?? 'available') : 'unavailable',
         healthStatus: p.healthStatus ?? 'normal',
         skills: this.asStringArray(p.skills),
         certifications: this.asStringArray(p.certifications),
@@ -159,6 +178,9 @@ export class WorldStateSnapshotService {
         zoneId: se ? (se.parentId ?? null) : null,
         x: se ? (se.x ?? 0) : 0,
         y: se ? (se.y ?? 0) : 0,
+        sourceTs,
+        freshnessMs: this.freshnessMs,
+        dataQuality,
       };
     });
 
@@ -182,14 +204,27 @@ export class WorldStateSnapshotService {
       requiredCertifications: this.asStringArray(t.requiredCertifications),
     }));
 
-    const deviceList = devices.map((d) => ({
-      id: d.id,
-      workerName: d.workerName ?? null,
-      deviceModel: d.deviceModel ?? null,
-      batteryPct: d.batteryPct ?? 100,
-      online: d.online ?? false,
-      status: d.faultCode ? 'fault' : 'online',
-    }));
+    const deviceList = devices.map((d) => {
+      const sourceTs = d.lastTelemetryAt
+        ? d.lastTelemetryAt.getTime()
+        : d.updatedAt
+          ? d.updatedAt.getTime()
+          : null;
+      const dataQuality = this.classifyFreshness(sourceTs, now);
+      const stale = dataQuality !== 'FRESH';
+      return {
+        id: d.id,
+        workerName: d.workerName ?? null,
+        deviceModel: d.deviceModel ?? null,
+        batteryPct: d.batteryPct ?? 100,
+        // STALE/UNKNOWN 设备不视为可用（离线/不可派）。
+        online: stale ? false : (d.online ?? false),
+        status: d.faultCode ? 'fault' : stale ? 'offline' : 'online',
+        sourceTs,
+        freshnessMs: this.freshnessMs,
+        dataQuality,
+      };
+    });
 
     const stations = spatialEntities
       .filter((se) => ['workstation', 'station'].includes(se.entityType))
@@ -350,6 +385,19 @@ export class WorldStateSnapshotService {
         riskLevel: r.riskLevel,
       });
     }
+    for (const s of stations) {
+      entityVersions[`station:${s.id}`] = this.entityVersion({
+        name: s.name,
+        x: s.x,
+        y: s.y,
+      });
+    }
+    for (const fz of forbiddenZones) {
+      entityVersions[`zone:${fz.zoneId}`] = this.entityVersion({
+        zoneId: fz.zoneId,
+        reason: fz.reason,
+      });
+    }
     for (const r of reservationList) {
       entityVersions[`reservation:${r.resourceType}:${r.resourceId}`] =
         this.entityVersion({ startMs: r.startMs, endMs: r.endMs });
@@ -423,6 +471,19 @@ export class WorldStateSnapshotService {
   /** 基于对象 JSON 序列化内容的实体版本。 */
   private entityVersion(obj: unknown): number {
     return this.hash(JSON.stringify(obj));
+  }
+
+  /**
+   * 依据来源时间戳与新鲜度阈值判定资源数据质量。
+   * 无时间戳 → UNKNOWN；距今超过阈值 → STALE；否则 FRESH。
+   */
+  private classifyFreshness(
+    sourceTs: number | null,
+    now: number,
+  ): 'FRESH' | 'STALE' | 'UNKNOWN' {
+    if (sourceTs == null) return 'UNKNOWN';
+    if (now - sourceTs > this.freshnessMs) return 'STALE';
+    return 'FRESH';
   }
 
   /** 精确比较两个 entityVersions 映射（键集与每个值都需一致）。 */

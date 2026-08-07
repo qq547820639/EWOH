@@ -1,0 +1,19 @@
+/* scheduling/scheduling-enhance.css — Phase 3.3 调度增强样式
+   Plan Diff / Explain Panel / Manual Override 复用既有 cm-sc-* 语义，追加 sce-* 增强类。 */
+.sce-wrap { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.sce-section { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.sce-sec-title { font-size: 12px; font-weight: 700; color: var(--accent-2); margin-bottom: 8px; }
+.sce-plan { margin-bottom: 8px; }
+.sce-plan-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.sce-sec-head { font-size: 11px; font-weight: 600; color: var(--muted); margin: 6px 0 3px; }
+.sce-ul { margin: 0; padding-left: 16px; font-size: 11px; line-height: 1.6; }
+.sce-noreason { font-size: 11px; color: var(--muted); padding: 4px 0; }
+.sce-explain-item { margin-bottom: 6px; }
+.sce-explain-toggle { background: none; border: 1px solid var(--border); color: var(--text); font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer; }
+.sce-explain-toggle:hover { background: var(--bg-2); }
+.sce-explain { margin-top: 6px; padding: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; }
+.sce-explain-title { font-size: 11px; font-weight: 600; color: var(--accent-2); margin-bottom: 6px; }
+.sce-k { color: var(--muted); width: 84px; }
+.sce-meta { margin-top: 6px; font-size: 10px; color: var(--muted); font-family: var(--mono); }
+.sce-ov-actions { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.sce-ov-note { font-size: 10px; color: var(--muted); }

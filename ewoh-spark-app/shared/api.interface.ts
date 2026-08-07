@@ -1162,6 +1162,133 @@ export interface SchedulingConstraint {
   hard?: boolean;
 }
 
+/**
+ * 求解器状态：明确标识实际使用的求解器与结果质量。
+ * - OPTIMAL/FEASIBLE：CP-SAT 或启发式产出的可行解；
+ * - FALLBACK：CP-SAT 不可用/超时/异常，回退到启发式；
+ * - INFEASIBLE：无可行解；
+ * - TIMEOUT：求解超时；
+ * - UNAVAILABLE：后端未配置求解器（如 OR-Tools 缺失）。
+ */
+export type SolverStatus =
+  | 'OPTIMAL'
+  | 'FEASIBLE'
+  | 'FALLBACK'
+  | 'INFEASIBLE'
+  | 'TIMEOUT'
+  | 'UNAVAILABLE';
+
+/** 内部求解请求（控制面 → 优化 Worker 的稳定契约）。 */
+export interface SolverRequest {
+  requestId: string;
+  snapshotVersion: string;
+  policyVersion: number;
+  solverVersion: string;
+  horizonMinutes: number;
+  nowMs: number;
+  /** 目标权重（来自版本化 SchedulingPolicy）。 */
+  weights: {
+    lateness: number;
+    travel: number;
+    workloadBalance: number;
+    stationWait: number;
+    changeCost: number;
+    risk: number;
+    energyRisk: number;
+    churn: number;
+  };
+  tasks: Array<{
+    taskId: string;
+    priority: number;
+    earliestStartMs: number;
+    dueMs: number | null;
+    durationMs: number;
+    requiredSkills: string[];
+    requiredCertifications: string[];
+    requiredDeviceCapabilities: string[];
+    candidateStationIds: string[];
+    zoneId: string | null;
+    predecessorIds: string[];
+    safetyCritical: boolean;
+    preemptible: boolean;
+    eligiblePersonIds?: string[];
+    eligibleDeviceIds?: string[];
+  }>;
+  persons: Array<{
+    id: string;
+    status: string;
+    locationStationId: string | null;
+    x: number;
+    y: number;
+    skills: string[];
+    certifications: string[];
+    workload: number;
+    fatigue: number;
+    availableFromMs: number | null;
+    executingTaskIds?: string[];
+  }>;
+  devices: Array<{
+    id: string;
+    status: string;
+    online: boolean;
+    capabilities: string[];
+    batteryPct: number;
+    x: number;
+    y: number;
+    availableFromMs: number | null;
+    executingTaskIds?: string[];
+  }>;
+  stations: Array<{
+    id: string;
+    x: number;
+    y: number;
+    capacity: number;
+    executingTaskIds?: string[];
+  }>;
+  reservations: Array<{
+    resourceId: string;
+    resourceType: string;
+    startMs: number;
+    endMs: number;
+  }>;
+  forbiddenZones: string[];
+  /** 冻结（executing/locked）的 assignment：求解器不可移动。 */
+  frozenAssignments: Array<{
+    taskId: string;
+    personId: string | null;
+    deviceId: string | null;
+    stationId: string | null;
+    startMs: number;
+    endMs: number;
+  }>;
+  /** 基线分配（taskId → personId），用于 churn/stability penalty。 */
+  baselineAssignee: Record<string, string | null>;
+  /** 求解时间上限（ms）。 */
+  timeLimitMs: number;
+}
+
+/** 内部求解响应（优化 Worker → 控制面）。 */
+export interface SolverResponse {
+  solverVersion: string;
+  solverStatus: SolverStatus;
+  solveDurationMs: number;
+  objective: number;
+  objectiveBreakdown: Record<string, number>;
+  hardViolations: Array<Record<string, unknown>>;
+  optimalityGap: number | null;
+  unassignedTaskIds: string[];
+  assignments: Array<{
+    taskId: string;
+    personId: string | null;
+    deviceId: string | null;
+    stationId: string | null;
+    startMs: number;
+    endMs: number;
+    reasons: string[];
+    rejectedAlternatives: Array<Record<string, unknown>>;
+  }>;
+}
+
 /** 多目标评分分解（可解释，非单一 total）。 */
 export interface ScoreBreakdown {
   lateness: number;
@@ -1190,6 +1317,12 @@ export interface ResourceState {
     fatigueLevel: number | null;
     healthStatus: string | null;
   };
+  /** 数据来源时间戳（epoch ms）。 */
+  sourceTs?: number | null;
+  /** 数据新鲜度阈值（ms），超过则标 STALE。 */
+  freshnessMs?: number | null;
+  /** 数据质量：FRESH / STALE / UNKNOWN。 */
+  dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
   version: number;
 }
 
@@ -1225,6 +1358,12 @@ export interface WorldStateSnapshot {
     zoneId: string | null;
     x: number;
     y: number;
+    /** 数据来源时间戳（epoch ms），用于新鲜度判定。 */
+    sourceTs?: number | null;
+    /** 数据新鲜度阈值（ms），超过则标 STALE。 */
+    freshnessMs?: number | null;
+    /** 数据质量：FRESH / STALE / UNKNOWN（STALE/UNKNOWN 不被视为可用）。 */
+    dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
   }>;
   tasks: Array<{
     id: string;
@@ -1242,6 +1381,12 @@ export interface WorldStateSnapshot {
     predecessorIds: string[];
     requiredSkills: string[];
     requiredCertifications: string[];
+    /** 设备能力需求（如 'exo-lift' / 'vacuum'），真正参与筛选。 */
+    requiredDeviceCapabilities?: string[];
+    /** 候选工位 id（无则默认任务 stationId）。 */
+    candidateStations?: string[];
+    /** 资源需求量（单位数）。 */
+    resourceQuantity?: number;
   }>;
   devices: Array<{
     id: string;
@@ -1250,6 +1395,14 @@ export interface WorldStateSnapshot {
     batteryPct: number;
     online: boolean;
     status: string | null;
+    /** 设备能力（如 'exo-lift' / 'vacuum'），用于 capability 匹配。 */
+    capabilities?: string[];
+    /** 数据来源时间戳（epoch ms），用于新鲜度判定。 */
+    sourceTs?: number | null;
+    /** 数据新鲜度阈值（ms），超过则标 STALE。 */
+    freshnessMs?: number | null;
+    /** 数据质量：FRESH / STALE / UNKNOWN（STALE/UNKNOWN 不被视为可用）。 */
+    dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
   }>;
   stations: Array<{
     id: string;
@@ -1313,6 +1466,42 @@ export interface SchedulingAssignment {
   alternatives: Array<Record<string, unknown>>;
   /** 该 assignment 的目标评分分解（可解释）。 */
   scoreBreakdown?: ScoreBreakdown;
+  /** 可解释决策轨迹：为何选中该候选，以及主要未选候选的排除原因。 */
+  decisionTrace?: DecisionTrace;
+}
+
+/** 可解释决策轨迹（任务 → 资源 的选中依据）。 */
+export interface DecisionTrace {
+  taskId: string;
+  selected: {
+    personId: string | null;
+    deviceId: string | null;
+    stationId: string | null;
+  };
+  /** 任务动态优先级信息。 */
+  priority: {
+    level: string;
+    score: number;
+    factors: Array<{ key: string; label: string; value: number }>;
+  };
+  /** 参与评分的候选（person/device 组合）。 */
+  candidates: Array<{
+    personId: string | null;
+    deviceId: string | null;
+    stationId: string | null;
+    score: number;
+    reasons: string[];
+  }>;
+  selectedReason: string[];
+  /** 主要未选候选及其排除原因。 */
+  rejectedAlternatives: Array<{
+    personId: string | null;
+    deviceId: string | null;
+    reason: string[];
+  }>;
+  policyVersion: number;
+  solverVersion: string;
+  snapshotVersion: string;
 }
 
 /** 调度方案指标（V2） */
@@ -1336,6 +1525,14 @@ export interface SchedulingPlanV2 {
   policyVersion: number;
   /** 求解器版本（对应 SchedulingPolicy.solverVersion）。 */
   solverVersion: string;
+  /** 实际使用的求解器状态（CP-SAT / fallback / infeasible 等）。 */
+  solverStatus?: SolverStatus;
+  /** 求解耗时（ms）。 */
+  solveDurationMs?: number;
+  /** 目标函数值（求解器输出，可解释）。 */
+  objective?: number;
+  /** 目标函数分解（求解器输出各分量，可解释）。 */
+  objectiveBreakdown?: Record<string, number>;
   horizonMinutes: number;
   assignments: SchedulingAssignment[];
   metrics: SchedulingPlanMetrics;
@@ -1410,6 +1607,10 @@ export interface OutboxEvent {
   status: 'pending' | 'published' | 'failed';
   sequence: number;
   createdAt: string;
+  /** 实体类型（device / person / task / route / zone ...），用于影响分析与事件分类。 */
+  entityType?: string;
+  /** 该实体在触发时的版本（来自 world-state entityVersions），用于新鲜度/缺口判定。 */
+  entityVersion?: number;
 }
 
 /** 调度实时事件（V2 SSE/流）。 */
@@ -1422,6 +1623,10 @@ export interface SchedulingEvent {
   payload: Record<string, unknown>;
   sourceTs: string;
   serverTs: string;
+  /** 实体类型（device / person / task / route / zone ...）。 */
+  entityType?: string;
+  /** 该实体在触发时的版本。 */
+  entityVersion?: number;
 }
 
 /** 路由图节点（V2） */

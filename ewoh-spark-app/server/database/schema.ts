@@ -1033,6 +1033,11 @@ export const ewohSchedulingPlanAssignment = pgTable("ewoh_scheduling_plan_assign
    * @type { Record<string, unknown> }
    */
   scoreBreakdownJson: jsonb("score_breakdown_json"),
+  /**
+   * 可解释决策轨迹（DecisionTrace）：选中依据、候选与排除原因、策略/求解器/快照版本。
+   * @type { import('@shared/api.interface').DecisionTrace | null }
+   */
+  decisionTraceJson: jsonb("decision_trace_json"),
   version: integer("version").notNull().default(1),
   reason: text("reason"),
   orgId: varchar("org_id", { length: 255 }),
@@ -1173,6 +1178,8 @@ export const ewohOutbox = pgTable("ewoh_outbox", {
   eventId: varchar("event_id", { length: 255 }).notNull().unique(),
   eventType: varchar("event_type", { length: 100 }).notNull(),
   entityId: varchar("entity_id", { length: 255 }).notNull(),
+  entityType: varchar("entity_type", { length: 100 }),
+  entityVersion: integer("entity_version"),
   sequence: bigint("sequence", { mode: "number" }).notNull().default(0),
   status: varchar("status", { length: 50 }).notNull().default('pending'),
   payloadJson: jsonb("payload_json"),

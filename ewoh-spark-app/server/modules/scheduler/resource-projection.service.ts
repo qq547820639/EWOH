@@ -100,6 +100,7 @@ export class ResourceProjectionService {
           fatigueLevel: null,
           healthStatus: null,
         },
+        sourceTs: d.lastTelemetryAt ? d.lastTelemetryAt.getTime() : null,
         version: 1,
       };
     });

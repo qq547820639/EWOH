@@ -86,6 +86,10 @@
       if (CM.state.dataSource === 'backend' && !this._auditItems && !this._loadingAudit) {
         this._loadAudit();
       }
+      // Phase 3.3：调度增强（Plan Diff / Explain / Manual Override）追加到方案区
+      if (CM.schedulingEnhance && typeof CM.schedulingEnhance.render === 'function') {
+        try { CM.schedulingEnhance.render(); } catch (e) { /* 增强为可选，不阻断既有渲染 */ }
+      }
     },
 
     _planCard: function (p) {

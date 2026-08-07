@@ -92,7 +92,7 @@ describe('Hard constraints（15 类）', () => {
     const res = svc.check(
       eligiblePerson(seedPerson({ id: 'p1' })),
       eligibleTask(seedTask({ id: 't1' })),
-      { id: 'd1', batteryPct: 100, online: false, status: 'online' },
+      { id: 'd1', batteryPct: 100, online: false, status: 'online', capabilities: [] },
       makeEligibilityCtx(),
     );
     expect(res.reasons).toContain('device_offline');
@@ -203,7 +203,7 @@ describe('Hard constraints（15 类）', () => {
     const res = svc.check(
       eligiblePerson(seedPerson({ id: 'p1' })),
       eligibleTask(seedTask({ id: 't1' })),
-      { id: 'd1', batteryPct: 5, online: true, status: 'online' },
+      { id: 'd1', batteryPct: 5, online: true, status: 'online', capabilities: [] },
       makeEligibilityCtx({ minBatteryPct: 15 }),
     );
     expect(res.reasons).toContain('battery_low');

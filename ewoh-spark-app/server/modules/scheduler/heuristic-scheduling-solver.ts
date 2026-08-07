@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type {
+  DecisionTrace,
   SchedulingAssignment,
   SchedulingConstraint,
   SchedulingPlanMetrics,
@@ -59,6 +60,11 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     private readonly eligibilityService: EligibilityService,
     private readonly priorityEngine: PriorityEngine = new PriorityEngine(),
   ) {}
+
+  /** 暴露当前激活策略（供外层组合求解器构建请求权重时复用同一策略）。 */
+  async loadActivePolicy(): Promise<SchedulingPolicy> {
+    return this.policyService.getActivePolicy();
+  }
 
   async solve(
     snapshot: WorldStateSnapshot,
@@ -190,9 +196,14 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     }
 
     // ---- 可调度任务排序（动态优先级 + critical/urgent 硬地板） ----
+    // 已锁定/执行中的分配（snapshot.lockedAssignments）必须冻结，不得重排/移动。
+    const lockedAssignmentTaskIds = new Set<string>(
+      (snapshot.lockedAssignments ?? []).map((la) => la.taskId),
+    );
     const ranked = snapshot.tasks
       .filter((t) => TaskLifecycle.isSchedulable(t.status))
       .filter((t) => !cycleTaskIds.has(t.id))
+      .filter((t) => !lockedAssignmentTaskIds.has(t.id))
       .map((t) => ({
         task: t,
         priority: this.priorityEngine.compute(policy, {
@@ -294,6 +305,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           deviceById,
           lockedDeviceByTask,
           effectiveMinBattery,
+          task.requiredDeviceCapabilities,
         );
         for (const device of deviceCandidates) {
           const travelMs = routeCost.etaSeconds * 1000;
@@ -333,6 +345,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
               stationId: task.stationId,
               zoneId: task.zoneId,
               predIds: task.predecessorIds,
+              requiredDeviceCapabilities: task.requiredDeviceCapabilities,
             },
             device
               ? {
@@ -340,6 +353,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
                   batteryPct: device.batteryPct,
                   online: device.online,
                   status: device.status,
+                  capabilities: device.capabilities ?? [],
                 }
               : null,
             {
@@ -477,6 +491,42 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       totalWaitMs += best.waitMs;
       totalChange += best.changeCost;
 
+      // 选中 + 未选候选的决策轨迹（可解释）。
+      const decisionTrace: DecisionTrace = {
+        taskId: task.id,
+        selected: {
+          personId: best.personId,
+          deviceId: best.deviceId,
+          stationId: best.stationId,
+        },
+        priority: {
+          level: String(priority.level),
+          score: priority.score,
+          factors: priority.factors.map((f) => ({
+            key: f.name,
+            label: f.name,
+            value: f.term,
+          })),
+        },
+        candidates: feasible.map((c) => ({
+          personId: c.personId,
+          deviceId: c.deviceId,
+          stationId: c.stationId,
+          score: c.cost,
+          reasons: c.reasons,
+        })),
+        selectedReason: best.reasons,
+        rejectedAlternatives: feasible.slice(1).map((c) => ({
+          personId: c.personId,
+          deviceId: c.deviceId,
+          stationId: c.stationId,
+          reason: c.reasons,
+        })),
+        policyVersion: policy.version,
+        solverVersion: policy.solverVersion,
+        snapshotVersion: opts.snapshotVersion,
+      };
+
       assignments.push({
         assignmentId: `ASG-${opts.planId}-${task.id}`,
         taskId: task.id,
@@ -494,6 +544,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         reasons: best.reasons,
         alternatives: best.alternatives,
         scoreBreakdown: best.scoreBreakdown,
+        decisionTrace,
       });
       doneTaskIds.add(task.id);
     }
@@ -619,17 +670,27 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     deviceById: Map<string, WorldStateSnapshot['devices'][number]>,
     locked: Map<string, string>,
     minBatteryPct: number,
+    requiredCapabilities?: string[],
   ): Array<WorldStateSnapshot['devices'][number] | null> {
     const lockedDevice = locked.get(taskId);
     if (lockedDevice) {
       const d = deviceById.get(lockedDevice);
       return d ? [d] : [];
     }
+    const caps = requiredCapabilities ?? [];
     const onlineDevices = Array.from(deviceById.values()).filter(
-      (d) => d.online && d.batteryPct >= minBatteryPct,
+      (d) =>
+        d.online &&
+        d.batteryPct >= minBatteryPct &&
+        caps.every((cap) => (d.capabilities ?? []).includes(cap)),
     );
-    // 无在线设备时允许 null（人员纯手工作业）。
-    return onlineDevices.length > 0 ? onlineDevices : [null];
+    // 任务要求设备能力时：仅返回具备全部能力的设备，绝不回退到纯手工作业（null）。
+    // 无能力要求时允许 null（人员纯手工作业）。
+    return caps.length > 0
+      ? onlineDevices
+      : onlineDevices.length > 0
+        ? onlineDevices
+        : [null];
   }
 
   private earliestStart(

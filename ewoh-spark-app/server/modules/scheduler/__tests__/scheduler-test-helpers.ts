@@ -161,8 +161,9 @@ export const baseSolveOpts: SolveOptions = {
   horizonMinutes: 480,
 };
 
-/** 构造 SolverService 所需的最小 mock 依赖，并返回依赖以便测试按需改写。 */
-export function makeSolver() {
+/** 构造 SolverService 所需的最小 mock 依赖，并返回依赖以便测试按需改写。
+ *  默认注入一个立即失败的 fetch，使 CP-SAT 尝试安全回退到启发式（保持单测离网、确定性）。 */
+export function makeSolver(cpSatConfig?: import('../cp-sat-scheduling-solver').CpSatSolverConfig) {
   const routing = {
     calculateRoute: jest.fn().mockResolvedValue({ routeId: 'ROUTE-TEST' }),
   };
@@ -189,6 +190,11 @@ export function makeSolver() {
     routing as unknown as RoutingService,
     routeCostProvider as unknown as RouteCostProvider,
     new EligibilityService(),
+    cpSatConfig ?? {
+      workerUrl: 'http://127.0.0.1:1',
+      timeoutMs: 50,
+      fetch: jest.fn().mockRejectedValue(new Error('network disabled in unit test')),
+    },
   );
   return { solver, routing, policy, routeCostProvider };
 }

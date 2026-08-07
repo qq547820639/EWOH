@@ -15,12 +15,15 @@ import { OutboxService } from './outbox.service';
 import { ResourceProjectionService } from './resource-projection.service';
 import { ReplanCoordinatorService } from './replan-coordinator.service';
 import { SchedulerStreamService } from './scheduler-stream.service';
+import { SchedulerMetricsService } from './scheduler-metrics.service';
+import { SchedulerMetricsController } from './scheduler-metrics.controller';
 import { TaskModule } from '../task/task.module';
 
 @Module({
   imports: [TaskModule],
-  controllers: [SchedulerController],
+  controllers: [SchedulerController, SchedulerMetricsController],
   providers: [
+    SchedulerMetricsService,
     SchedulerService,
     WorldStateSnapshotService,
     TriggerService,
@@ -38,6 +41,7 @@ import { TaskModule } from '../task/task.module';
     SchedulerStreamService,
   ],
   exports: [
+    SchedulerMetricsService,
     WorldStateSnapshotService,
     TriggerService,
     RoutingService,
