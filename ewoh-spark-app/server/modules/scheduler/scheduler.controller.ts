@@ -8,8 +8,12 @@ import {
   Query,
   BadRequestException,
   Req,
+  Sse,
+  MessageEvent,
 } from '@nestjs/common';
+import { interval, map, merge, type Observable } from 'rxjs';
 import { SchedulerService } from './scheduler.service';
+import { SchedulerStreamService } from './scheduler-stream.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import type {
   GeneratePlansRequest,
@@ -24,7 +28,10 @@ import type {
 
 @Controller('api/scheduler')
 export class SchedulerController {
-  constructor(private readonly schedulerService: SchedulerService) {}
+  constructor(
+    private readonly schedulerService: SchedulerService,
+    private readonly schedulerStreamService: SchedulerStreamService,
+  ) {}
 
   @Post('plans')
   async generatePlans(@Body() body?: GeneratePlansRequest) {
@@ -59,20 +66,12 @@ export class SchedulerController {
   }
 
   @Post('plans/:planId/reject')
-  async rejectPlan(
+  async rejectPlanV2(
     @Param('planId') planId: string,
-    @Body() body: ConfirmPlanRequest,
+    @Body() body: RejectPlanRequest,
     @Req() request: { userContext?: OrgContext },
   ) {
-    if (!body.reason || !body.reason.trim()) {
-      throw new BadRequestException('reason is required');
-    }
-    return this.schedulerService.rejectPlan(
-      planId,
-      body.reason,
-      body.operator,
-      request.userContext,
-    );
+    return this.schedulerService.rejectPlanV2(planId, body, request.userContext);
   }
 
   @Get('audit')
@@ -132,15 +131,6 @@ export class SchedulerController {
     return this.schedulerService.approvePlanV2(planId, body, request.userContext);
   }
 
-  @Post('plans/:planId/reject')
-  async rejectPlanV2(
-    @Param('planId') planId: string,
-    @Body() body: RejectPlanRequest,
-    @Req() request: { userContext?: OrgContext },
-  ) {
-    return this.schedulerService.rejectPlanV2(planId, body, request.userContext);
-  }
-
   @Post('plans/:planId/dispatch')
   async dispatchPlan(
     @Param('planId') planId: string,
@@ -174,5 +164,32 @@ export class SchedulerController {
   @Post('routes/calculate')
   async calculateRoute(@Body() body: CalculateRouteRequest) {
     return this.schedulerService.calculateRouteV2(body);
+  }
+
+  // ===== Scheduling 实时事件流（SSE）=====
+
+  /** SSE：订阅调度事件流，附带 15s 心跳防止连接超时。 */
+  @Sse('v2/stream')
+  stream(): Observable<MessageEvent> {
+    this.schedulerStreamService.start().catch(() => undefined);
+    return merge(
+      this.schedulerStreamService.events().pipe(
+        map(
+          (event): MessageEvent => ({
+            type: 'scheduling.event',
+            id: event.eventId,
+            data: JSON.stringify(event),
+          }),
+        ),
+      ),
+      interval(15_000).pipe(
+        map(
+          (): MessageEvent => ({
+            type: 'heartbeat',
+            data: JSON.stringify({ ts: new Date().toISOString() }),
+          }),
+        ),
+      ),
+    );
   }
 }

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-05T21:43:00.979Z",
+  "generatedAt": "2026-08-07T12:33:42.132Z",
   "spec": "openapi/ewoh.yaml",
   "controllerKeys": [
     "DELETE /api/dashboard/devices/{deviceId}/bindings",
@@ -9,6 +9,7 @@
     "GET /api/aas/assets",
     "GET /api/aas/assets/{assetId}",
     "GET /api/aas/assets/{assetId}/semantics",
+    "GET /api/ai/config/status",
     "GET /api/ai/plans/{id}",
     "GET /api/ai/snapshot-version",
     "GET /api/ai/suggestions/{id}",
@@ -100,7 +101,10 @@
     "GET /api/scale/templates/{id}",
     "GET /api/scheduler/audit",
     "GET /api/scheduler/plans",
-    "GET /api/scheduler/plans/{planId}/dispatch-status",
+    "GET /api/scheduler/plans/{planId}",
+    "GET /api/scheduler/plans/{planId}/compare/{otherPlanId}",
+    "GET /api/scheduler/routes",
+    "GET /api/scheduler/runs/{runId}",
     "GET /api/scheduler/weights",
     "GET /api/simulator/status",
     "GET /api/spatial/entities",
@@ -144,8 +148,10 @@
     "PATCH /api/organization/{id}",
     "PATCH /api/personnel/{id}",
     "POST /api/aas/assets",
+    "POST /api/ai/chat",
     "POST /api/ai/plans",
     "POST /api/ai/suggestions",
+    "POST /api/ai/vision/understand",
     "POST /api/alerts/{id}/state",
     "POST /api/approvals",
     "POST /api/approvals/{id}/bypass",
@@ -169,6 +175,7 @@
     "POST /api/files",
     "POST /api/files/{id}/presigned-url",
     "POST /api/files/{id}/scan-result",
+    "POST /api/gamification/brain/apply",
     "POST /api/gamification/exo/{deviceId}/feedback",
     "POST /api/gamification/resources/allocate",
     "POST /api/gamification/schedule/{planId}/dispatch",
@@ -249,7 +256,13 @@
     "POST /api/scale/templates/{id}/state",
     "POST /api/scheduler/plans",
     "POST /api/scheduler/plans/data-driven",
+    "POST /api/scheduler/plans/{planId}/approve",
     "POST /api/scheduler/plans/{planId}/confirm",
+    "POST /api/scheduler/plans/{planId}/dispatch",
+    "POST /api/scheduler/plans/{planId}/reject",
+    "POST /api/scheduler/plans/{planId}/replan",
+    "POST /api/scheduler/routes/calculate",
+    "POST /api/scheduler/runs",
     "POST /api/simulator/start",
     "POST /api/simulator/stop",
     "POST /api/system/feature-flags/evaluate",
@@ -269,6 +282,7 @@
     "POST /api/workflows/instances",
     "POST /api/workflows/instances/{key}/advance",
     "POST /api/world/replay/items",
+    "PUT /api/ai/config",
     "PUT /api/operations/workbench/views/{key}",
     "PUT /api/parameters/{key}",
     "PUT /api/scheduler/weights",
@@ -549,9 +563,90 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 272,
+  "controllerOperations": 286,
   "specOperations": 272,
-  "documentedControllerOperations": 272,
-  "undocumented": [],
-  "unimplemented": []
+  "documentedControllerOperations": 271,
+  "undocumented": [
+    {
+      "method": "GET",
+      "path": "/api/ai/config/status",
+      "file": "ewoh-spark-app/server/modules/ai/ai.controller.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scheduler/plans/{planId}",
+      "file": "ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scheduler/plans/{planId}/compare/{otherPlanId}",
+      "file": "ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scheduler/routes",
+      "file": "ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scheduler/runs/{runId}",
+      "file": "ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai/chat",
+      "file": "ewoh-spark-app/server/modules/ai/ai.controller.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai/vision/understand",
+      "file": "ewoh-spark-app/server/modules/ai/ai.controller.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/api/gamification/brain/apply",
+      "file": "ewoh-spark-app/server/modules/gamification/gamification.controller.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/api/scheduler/plans/{planId}/approve",
+      "file": "ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/api/scheduler/plans/{planId}/dispatch",
+      "file": "ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/api/scheduler/plans/{planId}/reject",
+      "file": "ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/api/scheduler/plans/{planId}/replan",
+      "file": "ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/api/scheduler/routes/calculate",
+      "file": "ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/api/scheduler/runs",
+      "file": "ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/ai/config",
+      "file": "ewoh-spark-app/server/modules/ai/ai.controller.ts"
+    }
+  ],
+  "unimplemented": [
+    {
+      "method": "GET",
+      "path": "/api/scheduler/plans/{planId}/dispatch-status"
+    }
+  ]
 }

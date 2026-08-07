@@ -164,6 +164,20 @@ export const ewohProductionTask = pgTable("ewoh_production_task", {
   planEnd: customTimestamptz("plan_end", { precision: 3 }),
   progress: integer("progress").default(0),
   source: varchar("source", { length: 50 }).default('manual'),
+  /**
+   * @type { string[] }
+   */
+  predecessorIds: jsonb("predecessor_ids"),
+  /**
+   * @type { string[] }
+   */
+  requiredSkills: jsonb("required_skills"),
+  /**
+   * @type { string[] }
+   */
+  requiredCertifications: jsonb("required_certifications"),
+  /** 业务版本：每次关键修改自增，用于快照新鲜度判断。 */
+  version: integer("version").default(1),
   // System field: Creation time (auto-filled, do not modify)
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   // System field: Creator (auto-filled, do not modify)
@@ -373,6 +387,12 @@ export const ewohPersonnel = pgTable("ewoh_personnel", {
    * @type { skills: string[] }
    */
   skills: jsonb("skills"),
+  /**
+   * @type { string[] }
+   */
+  certifications: jsonb("certifications"),
+  /** 业务版本：人员状态/位置等关键变化自增，用于快照新鲜度判断。 */
+  version: integer("version").default(1),
   status: varchar("status", { length: 50 }).default('available'),
   healthStatus: varchar("health_status", { length: 50 }).default('normal'),
   /**
@@ -1101,6 +1121,79 @@ export const ewohAssignmentEvent = pgTable("ewoh_assignment_event", {
   index("idx_ewoh_assignment_event_task").on(table.taskId),
 ]);
 
+/** 资源预占（ResourceReservation）：reserve/renew/release/expire，唯一约束防双重占用。 */
+export const ewohResourceReservation = pgTable("ewoh_resource_reservation", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  reservationId: varchar("reservation_id", { length: 255 }).notNull().unique(),
+  resourceType: varchar("resource_type", { length: 50 }).notNull(),
+  resourceId: varchar("resource_id", { length: 255 }).notNull(),
+  assignmentId: varchar("assignment_id", { length: 255 }),
+  planId: varchar("plan_id", { length: 255 }),
+  taskId: varchar("task_id", { length: 255 }),
+  startMs: bigint("start_ms", { mode: "number" }).notNull(),
+  endMs: bigint("end_ms", { mode: "number" }).notNull(),
+  status: varchar("status", { length: 50 }).notNull().default('reserved'),
+  version: integer("version").notNull().default(1),
+  orgId: varchar("org_id", { length: 255 }),
+  createdBy: varchar("created_by", { length: 255 }),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("ewoh_resource_reservation_reservation_id_key").on(table.reservationId),
+  index("idx_ewoh_resource_reservation_resource").on(table.resourceType, table.resourceId),
+  index("idx_ewoh_resource_reservation_plan").on(table.planId),
+  index("idx_ewoh_resource_reservation_task").on(table.taskId),
+]);
+
+/** Outbox：可靠领域事件，先写 outbox 再发布，保证 dispatch 与事件一致。 */
+export const ewohOutbox = pgTable("ewoh_outbox", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventId: varchar("event_id", { length: 255 }).notNull().unique(),
+  eventType: varchar("event_type", { length: 100 }).notNull(),
+  entityId: varchar("entity_id", { length: 255 }).notNull(),
+  sequence: bigint("sequence", { mode: "number" }).notNull().default(0),
+  status: varchar("status", { length: 50 }).notNull().default('pending'),
+  payloadJson: jsonb("payload_json"),
+  orgId: varchar("org_id", { length: 255 }),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  publishedAt: customTimestamptz("published_at", { precision: 3 }),
+}, (table) => [
+  uniqueIndex("ewoh_outbox_event_id_key").on(table.eventId),
+  index("idx_ewoh_outbox_status").on(table.status),
+  index("idx_ewoh_outbox_entity").on(table.entityId),
+]);
+
+/** 版本化调度策略配置（SchedulingPolicyConfig），集中所有调度参数。 */
+export const ewohSchedulingPolicy = pgTable("ewoh_scheduling_policy", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  configVersion: integer("config_version").notNull(),
+  configJson: jsonb("config_json").notNull(),
+  active: boolean("active").notNull().default(true),
+  orgId: varchar("org_id", { length: 255 }),
+  updatedBy: varchar("updated_by", { length: 255 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_ewoh_scheduling_policy_org").on(table.orgId),
+  index("idx_ewoh_scheduling_policy_active").on(table.active),
+]);
+
+/** 持久化重排触发（ReplanTrigger）：orgId+triggerType+entityId+eventVersion 幂等去重。 */
+export const ewohReplanTrigger = pgTable("ewoh_replan_trigger", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  triggerKey: varchar("trigger_key", { length: 512 }).notNull().unique(),
+  orgId: varchar("org_id", { length: 255 }).notNull(),
+  triggerType: varchar("trigger_type", { length: 100 }).notNull(),
+  entityId: varchar("entity_id", { length: 255 }).notNull(),
+  eventVersion: integer("event_version").notNull().default(0),
+  status: varchar("status", { length: 50 }).notNull().default('processed'),
+  runId: varchar("run_id", { length: 255 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("ewoh_replan_trigger_trigger_key_key").on(table.triggerKey),
+  index("idx_ewoh_replan_trigger_org_type").on(table.orgId, table.triggerType),
+]);
+
 // table aliases
 export const ewohAiSuggestionTable = ewohAiSuggestion;
 export const ewohDeviceTable = ewohDevice;
@@ -1138,3 +1231,7 @@ export const ewohWorldStateSnapshotTable = ewohWorldStateSnapshot;
 export const ewohRouteNodeTable = ewohRouteNode;
 export const ewohRouteEdgeTable = ewohRouteEdge;
 export const ewohAssignmentEventTable = ewohAssignmentEvent;
+export const ewohResourceReservationTable = ewohResourceReservation;
+export const ewohOutboxTable = ewohOutbox;
+export const ewohSchedulingPolicyTable = ewohSchedulingPolicy;
+export const ewohReplanTriggerTable = ewohReplanTrigger;

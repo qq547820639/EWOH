@@ -25,6 +25,7 @@ import { getCurrentOperator } from '@client/src/lib/auth';
 import type {
   SchedulingPlanV2,
   SchedulingAssignment,
+  SchedulingConstraint,
   PersonnelInfo,
   PlanStatus,
 } from '@shared/api.interface';
@@ -121,6 +122,8 @@ function buildDemoPlan(): SchedulingPlanV2 {
     status: 'shadow',
     trigger: { type: 'MANUAL', entityId: null },
     snapshotVersion: 'demo-snapshot',
+    policyVersion: 1,
+    solverVersion: 'heuristic-v2',
     horizonMinutes: 480,
     assignments: [
       {
@@ -315,16 +318,7 @@ export default function SchedulePanel({
       reason,
     }: {
       plan: SchedulingPlanV2;
-      lockedConstraints: Array<{
-        taskId?: string;
-        personId?: string;
-        type?:
-          | 'LOCKED_PERSON'
-          | 'LOCKED_DEVICE'
-          | 'LOCKED_TIME'
-          | 'FORBIDDEN_ZONE'
-          | 'MIN_BATTERY';
-      }>;
+      lockedConstraints: SchedulingConstraint[];
       reason?: string;
     }) =>
       replan(plan.planId, {

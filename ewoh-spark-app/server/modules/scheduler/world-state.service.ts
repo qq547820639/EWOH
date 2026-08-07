@@ -12,8 +12,10 @@ import {
   ewohRouteNode,
   ewohRouteEdge,
   ewohWorldStateSnapshot,
+  ewohResourceReservation,
+  ewohDeviceBinding,
 } from '@server/database/schema';
-import { eq, desc, like } from 'drizzle-orm';
+import { eq, desc, like, and, or } from 'drizzle-orm';
 import type { WorldStateSnapshot } from '@shared/api.interface';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { buildGucSettings } from '../shared/org-context.interceptor';
@@ -70,15 +72,16 @@ export class WorldStateSnapshotService {
   }
 
   /**
-   * 判断给定快照是否仍然新鲜：若自快照以来没有重大状态变化则返回 true。
+   * 判断给定快照是否仍然新鲜：比较 entityVersions 映射与 reservations 列表，
+   * 两者完全一致才视为新鲜（基于实体版本，而非粗略计数）。
    */
   async isSnapshotFresh(snapshotVersion: string): Promise<boolean> {
     const snapshot = await this.getSnapshot(snapshotVersion);
     if (!snapshot) return false;
     const current = await this.collectState();
-    return this.fingerprintEqual(
-      this.fingerprint(snapshot),
-      this.fingerprint(current),
+    return (
+      this.mapsEqual(snapshot.entityVersions, current.entityVersions) &&
+      this.reservationsEqual(snapshot.reservations, current.reservations)
     );
   }
 
@@ -96,16 +99,43 @@ export class WorldStateSnapshotService {
   private async collectState(): Promise<
     Omit<WorldStateSnapshot, 'snapshotVersion' | 'ts'>
   > {
-    const [personnel, devices, tasks, spatialEntities, events, routeNodes, routeEdges] =
-      await Promise.all([
-        this.db.select().from(ewohPersonnel),
-        this.db.select().from(ewohDevice),
-        this.db.select().from(ewohProductionTask),
-        this.db.select().from(ewohSpatialEntity),
-        this.db.select().from(ewohEvent),
-        this.db.select().from(ewohRouteNode),
-        this.db.select().from(ewohRouteEdge),
-      ]);
+    const [
+      personnel,
+      devices,
+      tasks,
+      spatialEntities,
+      events,
+      routeNodes,
+      routeEdges,
+      reservations,
+      deviceBindings,
+    ] = await Promise.all([
+      this.db.select().from(ewohPersonnel),
+      this.db.select().from(ewohDevice),
+      this.db.select().from(ewohProductionTask),
+      this.db.select().from(ewohSpatialEntity),
+      this.db.select().from(ewohEvent),
+      this.db.select().from(ewohRouteNode),
+      this.db.select().from(ewohRouteEdge),
+      this.db
+        .select()
+        .from(ewohResourceReservation)
+        .where(
+          or(
+            eq(ewohResourceReservation.status, 'reserved'),
+            eq(ewohResourceReservation.status, 'active'),
+          ),
+        ),
+      this.db
+        .select()
+        .from(ewohDeviceBinding)
+        .where(
+          and(
+            eq(ewohDeviceBinding.targetType, 'person'),
+            eq(ewohDeviceBinding.status, 'active'),
+          ),
+        ),
+    ]);
 
     const spatialByEntityId = new Map<string, (typeof spatialEntities)[number]>();
     for (const se of spatialEntities) spatialByEntityId.set(se.entityId, se);
@@ -121,7 +151,8 @@ export class WorldStateSnapshotService {
         name: p.name,
         status: p.status ?? 'available',
         healthStatus: p.healthStatus ?? 'normal',
-        skills: Array.isArray(p.skills) ? (p.skills as string[]) : [],
+        skills: this.asStringArray(p.skills),
+        certifications: this.asStringArray(p.certifications),
         loadLevel: load.loadLevel ?? 0,
         fatigueLevel: fatigue.fatigueLevel ?? 0,
         stationId: p.spatialEntityId ?? null,
@@ -146,7 +177,18 @@ export class WorldStateSnapshotService {
       planStart: t.planStart ? t.planStart.toISOString() : null,
       planEnd: t.planEnd ? t.planEnd.toISOString() : null,
       progress: t.progress ?? 0,
-      predecessorIds: [],
+      predecessorIds: this.asStringArray(t.predecessorIds),
+      requiredSkills: this.asStringArray(t.requiredSkills),
+      requiredCertifications: this.asStringArray(t.requiredCertifications),
+    }));
+
+    const deviceList = devices.map((d) => ({
+      id: d.id,
+      workerName: d.workerName ?? null,
+      deviceModel: d.deviceModel ?? null,
+      batteryPct: d.batteryPct ?? 100,
+      online: d.online ?? false,
+      status: d.faultCode ? 'fault' : 'online',
     }));
 
     const stations = spatialEntities
@@ -197,17 +239,141 @@ export class WorldStateSnapshotService {
         stationId: t.stationId,
       }));
 
+    // ---- 安全事件映射 ----
+    // deviceId → 活跃人员 targetId（仅保留 targetType='person' 且 status='active'）
+    const deviceBindingByDevice = new Map<string, string>();
+    for (const db of deviceBindings) {
+      if (!deviceBindingByDevice.has(db.deviceId)) {
+        deviceBindingByDevice.set(db.deviceId, db.targetId);
+      }
+    }
+
+    const safetyBlockedPersonIds = new Set<string>();
+    const safetyBlockedDeviceIds = new Set<string>();
+    const safetyForbiddenZones = new Set<string>();
+
+    for (const e of events) {
+      if (e.status !== 'open') continue;
+      if (e.severity !== 'L2' && e.severity !== 'L3') continue;
+
+      const reasons: string[] = [];
+      const deviceId = e.deviceId ?? null;
+
+      if (deviceId) {
+        safetyBlockedDeviceIds.add(deviceId);
+        const boundPersonId = deviceBindingByDevice.get(deviceId);
+        if (boundPersonId) {
+          safetyBlockedPersonIds.add(boundPersonId);
+        } else {
+          reasons.push(`device ${deviceId} has no active person binding`);
+        }
+        const affectedZoneId = spatialByEntityId.get(deviceId)?.parentId ?? null;
+        if (affectedZoneId) {
+          safetyForbiddenZones.add(affectedZoneId);
+        } else {
+          reasons.push(`device ${deviceId} has no spatial entity to resolve zone`);
+        }
+      } else {
+        reasons.push('no deviceId');
+      }
+
+      // 证据链中可选的影响范围，合并进 blocked 集合
+      const evidence = (e.evidenceJson ?? {}) as Record<string, unknown>;
+      for (const pid of this.asStringArray(evidence.affectedPersonIds)) {
+        safetyBlockedPersonIds.add(pid);
+      }
+      for (const did of this.asStringArray(evidence.affectedDeviceIds)) {
+        safetyBlockedDeviceIds.add(did);
+      }
+      for (const zid of this.asStringArray(evidence.affectedZoneIds)) {
+        safetyForbiddenZones.add(zid);
+      }
+
+      if (reasons.length > 0) {
+        this.logger.warn(
+          `safety event ${e.eventId} (${e.severity}) partially unresolved: ${reasons.join('; ')}`,
+        );
+      }
+    }
+
+    for (const zoneId of safetyForbiddenZones) {
+      if (!forbiddenZones.some((z) => z.zoneId === zoneId)) {
+        forbiddenZones.push({ zoneId, reason: 'safety_event' });
+      }
+    }
+
+    const reservationList = reservations.map((r) => ({
+      reservationId: r.reservationId,
+      resourceId: r.resourceId,
+      resourceType: r.resourceType,
+      startMs: r.startMs,
+      endMs: r.endMs,
+    }));
+
+    // ---- 基于内容的实体版本摘要 ----
+    const entityVersions: Record<string, number> = {};
+    for (const p of persons) {
+      entityVersions[`person:${p.id}`] = this.entityVersion({
+        status: p.status,
+        healthStatus: p.healthStatus,
+        loadLevel: p.loadLevel,
+        fatigueLevel: p.fatigueLevel,
+        x: p.x,
+        y: p.y,
+        skills: p.skills,
+        certifications: p.certifications,
+      });
+    }
+    for (const t of taskList) {
+      entityVersions[`task:${t.id}`] = this.entityVersion({
+        status: t.status,
+        priority: t.priority,
+        planStart: t.planStart,
+        planEnd: t.planEnd,
+        assigneeId: t.assigneeId,
+        deviceId: t.deviceId,
+        predecessorIds: t.predecessorIds,
+        requiredSkills: t.requiredSkills,
+        requiredCertifications: t.requiredCertifications,
+      });
+    }
+    for (const d of deviceList) {
+      entityVersions[`device:${d.id}`] = this.entityVersion({
+        batteryPct: d.batteryPct,
+        online: d.online,
+        status: d.status,
+      });
+    }
+    for (const r of routeStatus) {
+      entityVersions[`route:${r.edgeId}`] = this.entityVersion({
+        status: r.status,
+        riskLevel: r.riskLevel,
+      });
+    }
+    for (const r of reservationList) {
+      entityVersions[`reservation:${r.resourceType}:${r.resourceId}`] =
+        this.entityVersion({ startMs: r.startMs, endMs: r.endMs });
+    }
+    entityVersions['safety'] = this.entityVersion({
+      safetyBlockedPersonIds: Array.from(safetyBlockedPersonIds),
+      safetyBlockedDeviceIds: Array.from(safetyBlockedDeviceIds),
+      forbiddenZones,
+    });
+
+    // 粗略的单调标量，用于展示/排序；权威新鲜度信号见 entityVersions 精确比较。
+    let versionSum = 0;
+    for (const v of Object.values(entityVersions)) versionSum += v;
+    const worldVersion = 1000 + versionSum + reservationList.length;
+
     return {
+      worldVersion,
+      entityVersions,
+      reservations: reservationList,
+      safetyBlockedPersonIds: Array.from(safetyBlockedPersonIds),
+      safetyBlockedDeviceIds: Array.from(safetyBlockedDeviceIds),
       persons,
       tasks: taskList,
-      devices: devices.map((d) => ({
-        id: d.id,
-        workerName: d.workerName ?? null,
-        deviceModel: d.deviceModel ?? null,
-        batteryPct: d.batteryPct ?? 100,
-        online: d.online ?? false,
-        status: d.faultCode ? 'fault' : 'online',
-      })),
+      devices: deviceList,
       stations,
       backlog,
       events: eventList,
@@ -238,25 +404,52 @@ export class WorldStateSnapshotService {
     return `${y}${m}${day}`;
   }
 
-  /** 计算状态指纹（用于快照新鲜度比较）。 */
-  private fingerprint(
-    s: Omit<WorldStateSnapshot, 'snapshotVersion' | 'ts'>,
-  ): Record<string, number> {
-    return {
-      openEvents: s.events.filter((e) => e.status === 'open').length,
-      unavailablePersons: s.persons.filter((p) => p.status !== 'available').length,
-      lowBatteryDevices: s.devices.filter((d) => d.batteryPct < 20).length,
-      pendingTasks: s.tasks.filter((t) =>
-        ['draft', 'pending', 'queued'].includes(t.status),
-      ).length,
-      forbiddenZones: s.forbiddenZones.length,
-    };
+  /** jsonb 数组列可能以 unknown 返回；安全地规整为 string[]。 */
+  private asStringArray(v: unknown): string[] {
+    return Array.isArray(v)
+      ? (v as string[]).filter((x): x is string => typeof x === 'string')
+      : [];
   }
 
-  private fingerprintEqual(
+  /** djb2 字符串哈希。 */
+  private hash(str: string): number {
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) {
+      h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+    }
+    return h >>> 0;
+  }
+
+  /** 基于对象 JSON 序列化内容的实体版本。 */
+  private entityVersion(obj: unknown): number {
+    return this.hash(JSON.stringify(obj));
+  }
+
+  /** 精确比较两个 entityVersions 映射（键集与每个值都需一致）。 */
+  private mapsEqual(
     a: Record<string, number>,
     b: Record<string, number>,
   ): boolean {
-    return Object.keys(a).every((k) => a[k] === b[k]);
+    const aKeys = Object.keys(a);
+    if (aKeys.length !== Object.keys(b).length) return false;
+    return aKeys.every((k) => b[k] === a[k]);
+  }
+
+  /** 精确比较两个 reservations 列表（id/type/时间窗一致）。 */
+  private reservationsEqual(
+    a: WorldStateSnapshot['reservations'],
+    b: WorldStateSnapshot['reservations'],
+  ): boolean {
+    if (a.length !== b.length) return false;
+    return a.every((ra, i) => {
+      const rb = b[i];
+      return (
+        ra.reservationId === rb.reservationId &&
+        ra.resourceId === rb.resourceId &&
+        ra.resourceType === rb.resourceType &&
+        ra.startMs === rb.startMs &&
+        ra.endMs === rb.endMs
+      );
+    });
   }
 }

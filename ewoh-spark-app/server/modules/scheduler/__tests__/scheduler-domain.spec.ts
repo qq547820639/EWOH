@@ -12,6 +12,8 @@ import {
   ewohProductionTask,
   ewohSpatialEntity,
   ewohEvent,
+  ewohResourceReservation,
+  ewohDeviceBinding,
 } from '@server/database/schema';
 
 /* ===== 测试数据构造辅助 ===== */
@@ -46,6 +48,7 @@ function person(seed: PersonSeed) {
     status: seed.status ?? 'available',
     healthStatus: 'normal',
     skills: seed.skills ?? ['work'],
+    certifications: [],
     loadLevel: seed.load ?? 0,
     fatigueLevel: 0,
     stationId: null,
@@ -70,6 +73,8 @@ function task(seed: TaskSeed) {
     planEnd: seed.planEnd ?? null,
     progress: 0,
     predecessorIds: seed.predecessorIds ?? [],
+    requiredSkills: [seed.taskType ?? 'work'],
+    requiredCertifications: [],
   };
 }
 
@@ -88,6 +93,9 @@ function buildSnapshot(overrides: Partial<WorldStateSnapshot>): WorldStateSnapsh
   return {
     snapshotVersion: 'WS-TEST-0001',
     ts: new Date().toISOString(),
+    worldVersion: 1,
+    entityVersions: {},
+    reservations: [],
     persons: [],
     tasks: [],
     devices: [],
@@ -113,7 +121,47 @@ function makeSolver() {
   const routing = {
     calculateRoute: jest.fn().mockResolvedValue({ routeId: 'ROUTE-TEST' }),
   };
-  const solver = new SolverService(new EligibilityService(), routing as never);
+  const policy = {
+    getActivePolicy: jest.fn().mockResolvedValue(defaultPolicy()),
+    getConfig: jest.fn().mockResolvedValue({
+      configVersion: 1,
+      minBatteryPct: 15,
+      maxContinuousLoad: 0.9,
+      defaultTaskDurationMs: 1_800_000,
+      horizonMinutes: 480,
+      walkingSpeedMps: 1,
+      euclideanDistanceWeight: 1,
+      congestedFactor: 1.5,
+      blockedFactor: 2,
+      highRiskFactor: 2,
+      mediumRiskFactor: 1.3,
+      triggerCooldownMs: 30_000,
+      priority: {
+        deadlineRiskWeight: 1,
+        waitingAgeWeight: 0.5,
+        eventSeverityWeight: 1,
+        productionImpactWeight: 1,
+        downstreamBlockingWeight: 1,
+        manualBoostWeight: 1,
+        agingBaseMs: 3_600_000,
+      },
+    }),
+  };
+  const routeCostProvider = {
+    estimate: jest.fn().mockResolvedValue({
+      routeId: 'ROUTE-TEST',
+      distanceMeters: 10,
+      etaSeconds: 10,
+      riskLevel: null,
+      feasible: true,
+    }),
+  };
+  const solver = new SolverService(
+    policy as never,
+    routing as never,
+    routeCostProvider as never,
+    new EligibilityService(),
+  );
   return { solver, routing };
 }
 
@@ -331,6 +379,9 @@ describe('WorldStateSnapshotService.assertFreshForApprove', () => {
           where: () => ({ limit: () => Promise.resolve(snapshotRow ? [snapshotRow] : []) }),
         };
       }
+      if (table === ewohResourceReservation || table === ewohDeviceBinding) {
+        return { where: () => Promise.resolve([]) };
+      }
       const rows =
         table === ewohPersonnel
           ? []
@@ -351,6 +402,9 @@ describe('WorldStateSnapshotService.assertFreshForApprove', () => {
   const snapshotObj: WorldStateSnapshot = {
     snapshotVersion: 'WS-OLD',
     ts: new Date().toISOString(),
+    worldVersion: 1,
+    entityVersions: {},
+    reservations: [],
     persons: [],
     tasks: [],
     devices: [],
@@ -378,7 +432,17 @@ describe('WorldStateSnapshotService.assertFreshForApprove', () => {
   });
 
   it('快照仍新鲜时审批通过（不抛异常）', async () => {
-    const { db } = makeWorldDb(snapshotRow, [
+    // 当前世界状态（空 person/task/device，仅 L1 open 事件）经 entityVersion
+    // 序列化得到的 safety 指纹，与快照捕获时刻一致 → 视为新鲜。
+    const freshSnapshotRow = {
+      snapshotVersion: 'WS-OLD',
+      snapshotJson: {
+        ...snapshotObj,
+        entityVersions: { safety: 70619738 },
+      },
+      createdAt: new Date(),
+    };
+    const { db } = makeWorldDb(freshSnapshotRow, [
       { eventId: 'e1', severity: 'L1', status: 'open', eventType: null },
     ]);
     const svc = new WorldStateSnapshotService(
@@ -537,10 +601,14 @@ describe('RoutingService A*', () => {
 
 function defaultPolicy(): SchedulingPolicy {
   return {
+    version: 1,
     latenessWeight: 1,
     walkingWeight: 1,
     workloadBalanceWeight: 1,
     stationWaitWeight: 1,
     changeCostWeight: 1,
+    riskWeight: 1,
+    energyWeight: 1,
+    solverVersion: 'heuristic-v2',
   };
 }

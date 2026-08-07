@@ -15,7 +15,6 @@ import {
   ewohScheduleAudit,
   ewohSchedulingPlanAssignment,
   ewohSchedulingConstraint,
-  ewohAssignmentEvent,
 } from '@server/database/schema';
 import { eq, asc } from 'drizzle-orm';
 import type {
@@ -29,6 +28,7 @@ import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { SolverService, type SolverConstraint } from './solver.service';
 import { WorldStateSnapshotService } from './world-state.service';
+import { DispatchCoordinatorService } from './dispatch-coordinator.service';
 
 /** 方案服务：持久化方案、审批/拒绝/下发/重排/对比。 */
 @Injectable()
@@ -41,6 +41,7 @@ export class PlanService {
     private readonly auditService: AuditService,
     private readonly solverService: SolverService,
     private readonly worldStateSnapshotService: WorldStateSnapshotService,
+    private readonly dispatchCoordinator: DispatchCoordinatorService,
   ) {}
 
   /** 持久化一个 V2 方案（ewoh_schedule_plan + 分配明细）。 */
@@ -231,65 +232,14 @@ export class PlanService {
     return this.getPlan(planId);
   }
 
-  /** 下发方案：分配 approved → dispatched，写入分配事件。 */
+  /**
+   * 下发方案：委托 DispatchCoordinator 原子下发（校验 → 预占 → 下发 → 审计 → 出站事件）。
+   */
   async dispatchPlan(
     planId: string,
     ctx: OrgContext,
   ): Promise<SchedulingPlanV2> {
-    const [plan] = await this.db
-      .select()
-      .from(ewohSchedulePlan)
-      .where(eq(ewohSchedulePlan.planId, planId))
-      .limit(1);
-    if (!plan) throw new NotFoundException(`Plan ${planId} not found`);
-
-    const assignments = await this.db
-      .select()
-      .from(ewohSchedulingPlanAssignment)
-      .where(eq(ewohSchedulingPlanAssignment.planId, planId));
-
-    const now = new Date();
-    await this.requestDatabaseContext.runInTransaction(
-      buildGucSettings(ctx),
-      async () => {
-        await this.db
-          .update(ewohSchedulePlan)
-          .set({ status: 'dispatched' })
-          .where(eq(ewohSchedulePlan.planId, planId));
-
-        for (const a of assignments) {
-          await this.db
-            .update(ewohSchedulingPlanAssignment)
-            .set({ status: 'dispatched' })
-            .where(eq(ewohSchedulingPlanAssignment.assignmentId, a.assignmentId));
-
-          await this.db.insert(ewohAssignmentEvent).values({
-            eventId: `EVT-${now.getTime()}-${a.assignmentId}`,
-            assignmentId: a.assignmentId,
-            taskId: a.taskId ?? null,
-            personId: a.personId ?? null,
-            deviceId: a.deviceId ?? null,
-            fromStatus: a.status,
-            toStatus: 'dispatched',
-            actor: ctx.userId,
-            reason: 'plan dispatched',
-            createdAt: now,
-          });
-        }
-
-        await this.insertAudit(planId, 'dispatch', ctx.userId, '', now);
-      },
-    );
-
-    await this.auditService.appendAuditLog({
-      actorId: ctx.userId,
-      orgId: ctx.primaryOrgId,
-      action: 'scheduler.plan.dispatch',
-      entityType: 'schedule_plan',
-      entityId: planId,
-      before: { status: plan.status },
-      after: { status: 'dispatched', assignments: assignments.length },
-    });
+    await this.dispatchCoordinator.dispatch(planId, ctx);
     return this.getPlan(planId);
   }
 
@@ -321,11 +271,15 @@ export class PlanService {
       snapshotVersion: snapshot.snapshotVersion,
       horizonMinutes: 480,
       policy: {
+        version: 1,
         latenessWeight: 1,
         walkingWeight: 1,
         workloadBalanceWeight: 1,
         stationWaitWeight: 1,
         changeCostWeight: 1,
+        riskWeight: 1,
+        energyWeight: 1,
+        solverVersion: 'heuristic-v2',
       },
     });
     newPlan.version = newVersion;
@@ -482,6 +436,8 @@ export class PlanService {
         entityId: plan.triggerEntityId ?? null,
       },
       snapshotVersion: plan.snapshotVersion ?? '',
+      policyVersion: 1,
+      solverVersion: 'heuristic-v2',
       horizonMinutes: 480,
       assignments,
       metrics: {

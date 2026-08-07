@@ -1117,15 +1117,108 @@ export type SchedulingTrigger =
   | 'ZONE_RESTRICTED';
 
 /** 世界状态快照（V2） */
+/** 硬约束类型（求解器必须真实执行，否则返回 UNSUPPORTED_CONSTRAINT）。 */
+export type SchedulingHardConstraintType =
+  | 'REQUIRED_SKILL'
+  | 'REQUIRED_CERTIFICATION'
+  | 'PERSON_AVAILABLE'
+  | 'DEVICE_AVAILABLE'
+  | 'RESOURCE_TIME_WINDOW'
+  | 'NO_DOUBLE_BOOKING'
+  | 'PREDECESSOR'
+  | 'FORBIDDEN_ZONE'
+  | 'MIN_BATTERY'
+  | 'MAX_WORKLOAD'
+  | 'SAFETY_BLOCK'
+  | 'LOCKED_PERSON'
+  | 'LOCKED_DEVICE'
+  | 'LOCKED_TIME'
+  | 'LOCKED_ASSIGNMENT';
+
+/** 软约束类型（贡献到目标评分，不决定可行性）。 */
+export type SchedulingSoftConstraintType =
+  | 'MIN_TRAVEL_TIME'
+  | 'BALANCE_WORKLOAD'
+  | 'MIN_CHANGE'
+  | 'MIN_WAIT'
+  | 'PREFER_SAME_TEAM'
+  | 'PREFER_NEARBY_RESOURCE';
+
+/** 统一调度约束：接口接受的所有约束都必须被求解器执行或显式拒绝。 */
+export interface SchedulingConstraint {
+  id?: string;
+  type: SchedulingHardConstraintType | SchedulingSoftConstraintType;
+  taskId?: string;
+  personId?: string;
+  deviceId?: string;
+  stationId?: string;
+  zoneId?: string;
+  teamId?: string;
+  /** 时间窗/锁定时间（epoch ms）。 */
+  startMs?: number;
+  endMs?: number;
+  /** LOCKED_TIME / MIN_BATTERY 等参数。 */
+  value?: number;
+  hard?: boolean;
+}
+
+/** 多目标评分分解（可解释，非单一 total）。 */
+export interface ScoreBreakdown {
+  lateness: number;
+  travel: number;
+  workloadBalance: number;
+  stationWait: number;
+  changeCost: number;
+  risk: number;
+  energyCost: number;
+  total: number;
+}
+
+/** 统一资源状态投影（person/device/station/tool/material/vehicle）。 */
+export interface ResourceState {
+  id: string;
+  type: 'person' | 'device' | 'station' | 'tool' | 'material' | 'vehicle';
+  status: string;
+  capabilities: string[];
+  certifications: string[];
+  location: { stationId: string | null; zoneId: string | null; x: number; y: number };
+  availableWindows: Array<{ startMs: number; endMs: number }>;
+  reservations: Array<{ reservationId: string; startMs: number; endMs: number }>;
+  telemetry: {
+    batteryPct: number | null;
+    loadLevel: number | null;
+    fatigueLevel: number | null;
+    healthStatus: string | null;
+  };
+  version: number;
+}
+
 export interface WorldStateSnapshot {
   snapshotVersion: string;
   ts: string;
+  /** 全局单调递增世界版本，用于可靠新鲜度判断。 */
+  worldVersion: number;
+  /** 各类实体的版本摘要（entityId → version）。 */
+  entityVersions: Record<string, number>;
+  /** 当前生效的 reservation 列表（资源占用）。 */
+  reservations: Array<{
+    reservationId: string;
+    resourceId: string;
+    resourceType: string;
+    startMs: number;
+    endMs: number;
+  }>;
+  /** 因安全事件被禁止作业的人员 id（可空，安全模块未启用时为空）。 */
+  safetyBlockedPersonIds?: string[];
+  /** 因安全事件被禁止作业/启用的设备 id（可空）。 */
+  safetyBlockedDeviceIds?: string[];
   persons: Array<{
     id: string;
     name: string;
     status: string;
     healthStatus: string | null;
     skills: string[];
+    certifications: string[];
     loadLevel: number;
     fatigueLevel: number;
     stationId: string | null;
@@ -1147,6 +1240,8 @@ export interface WorldStateSnapshot {
     planEnd: string | null;
     progress: number;
     predecessorIds: string[];
+    requiredSkills: string[];
+    requiredCertifications: string[];
   }>;
   devices: Array<{
     id: string;
@@ -1207,9 +1302,17 @@ export interface SchedulingAssignment {
   plannedStart: string | null;
   plannedEnd: string | null;
   routeId: string | null;
+  /** 路线 ETA（秒），来自与地图一致的 route graph。 */
+  etaSeconds?: number;
+  /** 路线距离（米）。 */
+  distanceMeters?: number;
+  /** 路线风险摘要。 */
+  riskLevel?: string | null;
   status: AssignmentStatus;
   reasons: string[];
   alternatives: Array<Record<string, unknown>>;
+  /** 该 assignment 的目标评分分解（可解释）。 */
+  scoreBreakdown?: ScoreBreakdown;
 }
 
 /** 调度方案指标（V2） */
@@ -1229,9 +1332,15 @@ export interface SchedulingPlanV2 {
   status: PlanStatus;
   trigger: { type: SchedulingTrigger | string; entityId: string | null };
   snapshotVersion: string;
+  /** 求解所用策略版本（对应 SchedulingPolicy.version）。 */
+  policyVersion: number;
+  /** 求解器版本（对应 SchedulingPolicy.solverVersion）。 */
+  solverVersion: string;
   horizonMinutes: number;
   assignments: SchedulingAssignment[];
   metrics: SchedulingPlanMetrics;
+  /** 方案级目标评分分解（可解释）。 */
+  scoreBreakdown?: ScoreBreakdown;
   baselineDelta: Record<string, unknown>;
   violations: Array<Record<string, unknown>>;
   createdAt: string;
@@ -1239,11 +1348,80 @@ export interface SchedulingPlanV2 {
 
 /** 调度策略权重（V2） */
 export interface SchedulingPolicy {
+  version: number;
   latenessWeight: number;
   walkingWeight: number;
   workloadBalanceWeight: number;
   stationWaitWeight: number;
   changeCostWeight: number;
+  riskWeight: number;
+  energyWeight: number;
+  /** 求解器版本，保证同版本可确定性重放。 */
+  solverVersion: string;
+}
+
+/** 版本化调度策略配置（集中所有调度参数，消除 magic numbers）。 */
+export interface SchedulingPolicyConfig {
+  configVersion: number;
+  /** 硬约束参数。 */
+  minBatteryPct: number;
+  maxContinuousLoad: number;
+  defaultTaskDurationMs: number;
+  horizonMinutes: number;
+  /** 步行/移动默认速度（m/s），仅在无 route graph 时兜底。 */
+  walkingSpeedMps: number;
+  /** 路线成本系数（route graph 关闭时欧氏距离兜底的权重）。 */
+  euclideanDistanceWeight: number;
+  /** 拥堵/风险系数。 */
+  congestedFactor: number;
+  blockedFactor: number;
+  highRiskFactor: number;
+  mediumRiskFactor: number;
+  /** 触发 cooldown（ms）。 */
+  triggerCooldownMs: number;
+  /** 动态优先级权重。 */
+  priority: {
+    deadlineRiskWeight: number;
+    waitingAgeWeight: number;
+    eventSeverityWeight: number;
+    productionImpactWeight: number;
+    downstreamBlockingWeight: number;
+    manualBoostWeight: number;
+    agingBaseMs: number;
+  };
+}
+
+/** 下发结果（V2 DispatchCoordinator）。 */
+export interface DispatchCoordinatorResult {
+  planId: string;
+  dispatchedAt: string;
+  dispatchedAssignments: number;
+  reservedAssignments: number;
+  taskIds: string[];
+  outboxEventIds: string[];
+}
+
+/** Outbox 领域事件（V2）。 */
+export interface OutboxEvent {
+  id: string;
+  eventType: string;
+  entityId: string;
+  payload: Record<string, unknown>;
+  status: 'pending' | 'published' | 'failed';
+  sequence: number;
+  createdAt: string;
+}
+
+/** 调度实时事件（V2 SSE/流）。 */
+export interface SchedulingEvent {
+  eventId: string;
+  eventType: string;
+  entityId: string;
+  version: number;
+  sequence: number;
+  payload: Record<string, unknown>;
+  sourceTs: string;
+  serverTs: string;
 }
 
 /** 路由图节点（V2） */
@@ -1320,19 +1498,7 @@ export interface RejectPlanRequest {
 
 /** 重排方案请求（V2） */
 export interface ReplanRequest {
-  lockedConstraints: Array<{
-    taskId?: string;
-    personId?: string;
-    deviceId?: string;
-    stationId?: string;
-    zoneId?: string;
-    type?:
-      | 'LOCKED_PERSON'
-      | 'LOCKED_DEVICE'
-      | 'LOCKED_TIME'
-      | 'FORBIDDEN_ZONE'
-      | 'MIN_BATTERY';
-  }>;
+  lockedConstraints: SchedulingConstraint[];
   operator?: string;
   reason?: string;
 }

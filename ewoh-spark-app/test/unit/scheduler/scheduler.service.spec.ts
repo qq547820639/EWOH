@@ -70,7 +70,16 @@ describe('SchedulerService confirmPlan', () => {
           operation(),
       ),
     };
-    const service = new SchedulerService(db, context as never, audit as never);
+    const service = new SchedulerService(
+      db,
+      context as never,
+      audit as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
 
     const error = await service
       .confirmPlan('P-1', 'ok', 'supervisor', ACTOR)
@@ -138,7 +147,16 @@ describe('SchedulerService confirmPlan', () => {
         },
       ),
     };
-    const service = new SchedulerService(db, context as never, audit as never);
+    const service = new SchedulerService(
+      db,
+      context as never,
+      audit as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
 
     let insertSawTransaction = false;
     insertReturning.mockImplementation(async () => {
@@ -208,7 +226,16 @@ describe('SchedulerService generatePlans idempotency', () => {
       ),
     };
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
-    const service = new SchedulerService(db, context as never, audit as never);
+    const service = new SchedulerService(
+      db,
+      context as never,
+      audit as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
 
     const result = await service.generatePlans({ idempotencyKey: 'key-1' });
 
@@ -252,7 +279,16 @@ describe('SchedulerService updateWeights', () => {
     }));
     const db = { insert } as never;
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
-    const service = new SchedulerService(db, context as never, audit as never);
+    const service = new SchedulerService(
+      db,
+      context as never,
+      audit as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
 
     const result = await service.updateWeights(
       NEW_WEIGHTS,
@@ -299,6 +335,11 @@ describe('SchedulerService updateWeights', () => {
       { insert } as never,
       context as never,
       audit as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
     );
     const before = service.getWeights();
 

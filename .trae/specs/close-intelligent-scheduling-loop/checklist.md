@@ -1,0 +1,29 @@
+# Checklist — 智能调度执行闭环
+
+- [x] `world-state.service.ts` 不再硬编码 `predecessorIds: []`，真实 DAG 依赖已接入
+- [x] Solver 支持多级依赖与环检测（PREDECESSOR_CYCLE）
+- [x] person.certifications/skills 与 task.requiredCertifications/requiredSkills 真实接入，`bookedTimeSlots` 不再为 `[]`
+- [x] Safety 事件精确映射到 person/device/station/zone/task，无空串伪造；解析失败按策略记录
+- [x] SchedulingConstraint 类型系统建立（hard 15 类 + soft 6 类）
+- [x] 求解器真实执行所有约束或显式返回 UNSUPPORTED_CONSTRAINT，无静默忽略
+- [x] objective 权重/minBatteryPct/maxContinuousLoad/默认时长/horizon/系数/cooldown 收敛到版本化 Policy/PolicyConfig
+- [x] 每个 plan 记录 policyVersion / solverVersion / snapshotVersion，可审计可重放
+- [x] 快照新鲜度使用 entity version / worldVersion / event sequence / hash，entity 级变化使旧 plan stale
+- [x] DispatchCoordinator 单事务原子完成 12 步，任一步失败 rollback，不绕过 TaskService 状态机
+- [x] ResourceReservation 防双重占用（唯一/排他约束 + CAS）
+- [x] outbox + domain event 生成
+- [x] dispatch 后 plan / assignment / production task 状态一致
+- [x] ResourceProjectionService 覆盖 person/device/station/tool/material/vehicle 统一 ResourceState
+- [x] RouteCostProvider：Solver 移动成本与地图 route graph 一致（distance/ETA/congestion/risk）
+- [x] SchedulingSolver 接口 + HeuristicSchedulingSolver + CpSat adapter 预留
+- [x] effectivePriorityScore 可解释（critical 不被降级 / aging 防饥饿 / 关键路径加权）
+- [x] 多目标 score breakdown（lateness/travel/workloadBalance/stationWait/changeCost/risk/energyCost）
+- [x] `POST plans/:planId/reject` 重复路由已修复（唯一 V2 handler + deprecated adapter）
+- [x] SSE `GET /api/scheduler/v2/stream` + polling fallback，事件带 version/sequence
+- [x] ReplanCoordinator 持久化幂等去重（orgId+triggerType+entityId+eventVersion），非进程内 Map
+- [x] impact analysis + partial replan：executing/locked 冻结，只重排受影响子图
+- [x] 每个 hard constraint 有单测；solver invariants 有测试（不重叠/predecessor 顺序/禁入区/资质/冻结/确定性重放）
+- [x] 并发测试（双 dispatch / 抢 person / 抢 device / stale 并发）
+- [x] 集成测试（task→run→shadow→approve→reserve→dispatch→task 状态→event→world state→CommandMap）
+- [x] failure injection（person unavailable/device offline/low battery/blocked route/safety event/deadline risk→conflict/replan）
+- [x] lint / typecheck / tests / build 全部通过，原有 schedule 测试不退化

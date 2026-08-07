@@ -1,0 +1,738 @@
+import { Logger } from '@nestjs/common';
+import type {
+  SchedulingAssignment,
+  SchedulingConstraint,
+  SchedulingPlanMetrics,
+  SchedulingPlanV2,
+  SchedulingPolicy,
+  SchedulingPolicyConfig,
+  ScoreBreakdown,
+  WorldStateSnapshot,
+} from '@shared/api.interface';
+import { EligibilityService } from './eligibility.service';
+import { RoutingService } from './routing.service';
+import { RouteCostProvider, type RouteCost } from './route-cost.provider';
+import { SchedulingPolicyService } from './scheduling-policy.service';
+import {
+  checkConstraintSupported,
+  detectDependencyCycle,
+} from './constraints';
+import type { SchedulingSolver, SolveOptions } from './scheduling-solver.interface';
+
+/** 可调度任务状态。 */
+const SCHEDULABLE_STATUSES = ['draft', 'pending', 'queued'];
+/** 已完成任务状态。 */
+const DONE_STATUSES = ['completed', 'done'];
+
+/** 内部候选方案。 */
+interface Candidate {
+  personId: string;
+  deviceId: string | null;
+  stationId: string | null;
+  zoneId: string | null;
+  startMs: number;
+  endMs: number;
+  routeId: string | null;
+  etaSeconds: number;
+  distanceMeters: number;
+  riskLevel: string | null;
+  waitMs: number;
+  lateMs: number;
+  changeCost: number;
+  cost: number;
+  scoreBreakdown: ScoreBreakdown;
+  reasons: string[];
+  alternatives: Array<Record<string, unknown>>;
+}
+
+/** 动态优先级计算缓存。 */
+interface PriorityInfo {
+  score: number;
+  urgent: boolean;
+  explanation: string[];
+}
+
+/**
+ * 确定性启发式求解器（无 LLM）。
+ * 输入世界状态快照 + 资格服务 + 路由成本提供者 + 版本化策略 + 锁定约束，
+ * 执行 任务×人员×设备×时间窗 的联合调度，
+ * 输出含可解释得分分解（ScoreBreakdown）与动态优先级说明的方案。
+ * 同一 (snapshot, policy) 输入 → 同一输出（可确定性重放）。
+ */
+export class HeuristicSchedulingSolver implements SchedulingSolver {
+  private readonly logger = new Logger(HeuristicSchedulingSolver.name);
+
+  constructor(
+    private readonly policyService: SchedulingPolicyService,
+    private readonly routingService: RoutingService,
+    private readonly routeCostProvider: RouteCostProvider,
+    private readonly eligibilityService: EligibilityService,
+  ) {}
+
+  async solve(
+    snapshot: WorldStateSnapshot,
+    constraints: SchedulingConstraint[],
+    opts: SolveOptions,
+  ): Promise<SchedulingPlanV2> {
+    const now = Date.now();
+    const policy = opts.policy ?? (await this.policyService.getActivePolicy());
+    const config = await this.policyService.getConfig();
+    const horizonMinutes = config.horizonMinutes ?? opts.horizonMinutes;
+    const horizonEndMs = now + horizonMinutes * 60 * 1000;
+    const defaultDurationMs = config.defaultTaskDurationMs;
+
+    // 快照可能含有类型定义尚未覆盖的字段（如下游演进），通过受限联合访问。
+    const snapshotExt = snapshot as WorldStateSnapshot & {
+      safetyBlockedPersonIds?: string[];
+    };
+    const safetyBlockedPersonIds = snapshotExt.safetyBlockedPersonIds ?? [];
+
+    const violations: Array<Record<string, unknown>> = [];
+
+    // ---- 约束支持性检查 + 拆解可执行约束 ----
+    const lockedPersonByTask = new Map<string, string>();
+    const lockedDeviceByTask = new Map<string, string>();
+    const lockedTimeByTask = new Map<string, [number, number]>();
+    const forbiddenZones = new Set<string>(
+      snapshot.forbiddenZones.map((f) => f.zoneId),
+    );
+    const manualBoostTasks = new Set<string>();
+    let minBatteryOverride: number | null = null;
+    let maxLoadOverride: number | null = null;
+
+    for (const c of constraints) {
+      const support = checkConstraintSupported(c);
+      if (!support.supported) {
+        violations.push({
+          type: 'unsupported_constraint',
+          constraintType: c.type,
+          reason: 'UNSUPPORTED_CONSTRAINT',
+        });
+        continue;
+      }
+      switch (c.type) {
+        case 'LOCKED_PERSON':
+          if (c.taskId && c.personId) lockedPersonByTask.set(c.taskId, c.personId);
+          break;
+        case 'LOCKED_DEVICE':
+          if (c.taskId && c.deviceId) lockedDeviceByTask.set(c.taskId, c.deviceId);
+          break;
+        case 'LOCKED_TIME':
+          if (c.taskId && c.startMs != null && c.endMs != null)
+            lockedTimeByTask.set(c.taskId, [c.startMs, c.endMs]);
+          break;
+        case 'LOCKED_ASSIGNMENT':
+          if (c.taskId && c.personId && c.deviceId) {
+            lockedPersonByTask.set(c.taskId, c.personId);
+            lockedDeviceByTask.set(c.taskId, c.deviceId);
+          }
+          break;
+        case 'FORBIDDEN_ZONE':
+          if (c.zoneId) forbiddenZones.add(c.zoneId);
+          break;
+        case 'MIN_BATTERY':
+          if (c.value != null) minBatteryOverride = c.value;
+          break;
+        case 'MAX_WORKLOAD':
+          if (c.value != null) maxLoadOverride = c.value;
+          break;
+        default:
+          break;
+      }
+      // MANUAL_BOOST 作为软性人工加急（约束类型为演进预留，可能不在联合中）。
+      if (
+        (c.type === ('MANUAL_BOOST' as SchedulingConstraint['type'])) &&
+        c.taskId
+      ) {
+        manualBoostTasks.add(c.taskId);
+      }
+    }
+
+    const effectiveMinBattery = minBatteryOverride ?? config.minBatteryPct;
+    const effectiveMaxLoad = maxLoadOverride ?? config.maxContinuousLoad;
+
+    // ---- 前置任务 + 环检测 ----
+    const doneTaskIds = new Set<string>(
+      snapshot.tasks
+        .filter((t) => DONE_STATUSES.includes(t.status))
+        .map((t) => t.id),
+    );
+    const allTaskIds = snapshot.tasks.map((t) => t.id);
+    const predecessorOf = (taskId: string): string[] => {
+      const t = snapshot.tasks.find((x) => x.id === taskId);
+      return t ? t.predecessorIds : [];
+    };
+    const cyclePath = detectDependencyCycle(allTaskIds, predecessorOf);
+    const cycleTaskIds = new Set<string>(cyclePath ?? []);
+    if (cyclePath) {
+      violations.push({
+        type: 'PREDECESSOR_CYCLE',
+        reason: 'predecessor_cycle',
+        cycle: cyclePath,
+      });
+    }
+
+    // ---- 下游阻塞计数（动态优先级用） ----
+    const downstreamCount = new Map<string, number>();
+    for (const t of snapshot.tasks) {
+      for (const pred of t.predecessorIds) {
+        downstreamCount.set(pred, (downstreamCount.get(pred) ?? 0) + 1);
+      }
+    }
+
+    // ---- 资源索引 ----
+    const personById = new Map(snapshot.persons.map((p) => [p.id, p]));
+    const deviceById = new Map(snapshot.devices.map((d) => [d.id, d]));
+    const stationById = new Map(snapshot.stations.map((s) => [s.id, s]));
+
+    // 预订时间片（来自快照 reservations，person 类型映射为 personId 区间）。
+    const baseBookedSlots: Array<{ personId: string; start: number; end: number }> =
+      [];
+    for (const r of snapshot.reservations ?? []) {
+      if (r.resourceType === 'person') {
+        baseBookedSlots.push({
+          personId: r.resourceId,
+          start: r.startMs,
+          end: r.endMs,
+        });
+      }
+    }
+
+    // ---- 可调度任务排序（动态优先级 + critical/urgent 硬地板） ----
+    const ranked = snapshot.tasks
+      .filter((t) => SCHEDULABLE_STATUSES.includes(t.status))
+      .filter((t) => !cycleTaskIds.has(t.id))
+      .map((t) => ({
+        task: t,
+        priority: this.computePriority(
+          t,
+          policy,
+          config,
+          now,
+          horizonEndMs,
+          downstreamCount,
+          manualBoostTasks,
+        ),
+      }))
+      .sort((a, b) => {
+        if (a.priority.urgent !== b.priority.urgent)
+          return a.priority.urgent ? -1 : 1;
+        if (a.priority.score !== b.priority.score)
+          return a.priority.score - b.priority.score;
+        return a.task.id < b.task.id ? -1 : a.task.id > b.task.id ? 1 : 0;
+      });
+
+    const assignments: SchedulingAssignment[] = [];
+    const bookedPerson = new Map<string, number>(); // personId -> last end ms
+    const bookedDevice = new Map<string, number>(); // deviceId -> last end ms
+    const runBookedSlots: Array<{ personId: string; start: number; end: number }> =
+      [];
+    const assignedMinutes = new Map<string, number>(); // personId -> total assigned ms
+
+    let totalWalking = 0;
+    let totalLateMs = 0;
+    let totalWaitMs = 0;
+    let totalChange = 0;
+
+    for (const { task, priority } of ranked) {
+      const deadlineMs = task.planEnd ? Date.parse(task.planEnd) : horizonEndMs;
+      const earliestStartMs = Math.max(
+        now,
+        task.planStart ? Date.parse(task.planStart) : now,
+      );
+
+      // 前置任务未全部完成 → 记 violation 并跳过。
+      const predPending = task.predecessorIds.some((p) => !doneTaskIds.has(p));
+      if (predPending) {
+        violations.push({
+          taskId: task.id,
+          reason: 'predecessor_pending',
+          type: 'infeasible',
+        });
+        continue;
+      }
+
+      const lockedWindow = lockedTimeByTask.get(task.id);
+      const taskStation = task.stationId ? stationById.get(task.stationId) : undefined;
+      const taskPoint = taskStation
+        ? { x: taskStation.x, y: taskStation.y }
+        : undefined;
+
+      const candidates: Candidate[] = [];
+
+      const candidatePersons = snapshot.persons.filter((p) =>
+        this.personMatchesLock(p.id, task.id, lockedPersonByTask),
+      );
+
+      for (const person of candidatePersons) {
+        const personStation = person.stationId
+          ? stationById.get(person.stationId)
+          : undefined;
+        const personPoint = personStation
+          ? { x: personStation.x, y: personStation.y }
+          : { x: person.x, y: person.y };
+
+        // 真实路径成本（与地图一致的 route graph）。
+        const routeCost = await this.routeCostProvider.estimate(
+          person.id,
+          task.id,
+          personPoint,
+          taskPoint,
+        );
+        if (routeCost.feasible === false) {
+          // 无可行路径（含纯手工兜底也不可行）→ 该人员不可达，跳过。
+          continue;
+        }
+
+        const deviceCandidates = this.devicesForTask(
+          task.id,
+          deviceById,
+          lockedDeviceByTask,
+          effectiveMinBattery,
+        );
+        for (const device of deviceCandidates) {
+          const eligibility = this.eligibilityService.check(
+            {
+              id: person.id,
+              status: person.status,
+              skills: person.skills,
+              certifications: person.certifications,
+              stationId: person.stationId,
+              loadLevel: person.loadLevel,
+              fatigueLevel: person.fatigueLevel,
+              healthStatus: person.healthStatus,
+            },
+            {
+              id: task.id,
+              taskType: task.taskType,
+              requiredSkills: task.requiredSkills,
+              requiredCertifications: task.requiredCertifications,
+              stationId: task.stationId,
+              zoneId: task.zoneId,
+              predIds: task.predecessorIds,
+            },
+            device
+              ? {
+                  id: device.id,
+                  batteryPct: device.batteryPct,
+                  online: device.online,
+                  status: device.status,
+                }
+              : null,
+            {
+              now,
+              bookedTimeSlots: [...baseBookedSlots, ...runBookedSlots],
+              lockedPersonIds: this.lockedPersonIdsForTask(snapshot, task.id),
+              forbiddenZones: Array.from(forbiddenZones),
+              minBatteryPct: effectiveMinBattery,
+              maxContinuousLoad: effectiveMaxLoad,
+              safetyBlockedPersonIds,
+              predecessorDone: (id) => doneTaskIds.has(id),
+            },
+          );
+
+          if (!eligibility.eligible) {
+            candidates.push({
+              personId: person.id,
+              deviceId: device ? device.id : null,
+              stationId: task.stationId,
+              zoneId: task.zoneId,
+              startMs: 0,
+              endMs: 0,
+              routeId: routeCost.routeId,
+              etaSeconds: routeCost.etaSeconds,
+              distanceMeters: routeCost.distanceMeters,
+              riskLevel: routeCost.riskLevel,
+              waitMs: 0,
+              lateMs: 0,
+              changeCost: 0,
+              cost: Number.POSITIVE_INFINITY,
+              scoreBreakdown: this.zeroBreakdown(),
+              reasons: eligibility.reasons,
+              alternatives: [{ reasons: eligibility.reasons }],
+            });
+            continue;
+          }
+
+          const travelMs = routeCost.etaSeconds * 1000;
+          const rawStartMs = lockedWindow
+            ? lockedWindow[0]
+            : earliestStartMs + travelMs;
+          const startMs = lockedWindow
+            ? lockedWindow[0]
+            : this.earliestStart(
+                rawStartMs,
+                bookedPerson.get(person.id),
+                device ? bookedDevice.get(device.id) : undefined,
+              );
+          const durationMs = lockedWindow
+            ? Math.max(lockedWindow[1] - lockedWindow[0], 1)
+            : task.planEnd && task.planStart
+              ? Date.parse(task.planEnd) - Date.parse(task.planStart)
+              : defaultDurationMs;
+          const endMs = startMs + Math.max(durationMs, 1);
+
+          const lateMs = Math.max(0, endMs - deadlineMs);
+          const waitMs = Math.max(0, startMs - earliestStartMs);
+          const baselineAssignee = opts.baselineAssignee?.get(task.id);
+          const changeCost =
+            baselineAssignee && baselineAssignee !== person.id ? 1 : 0;
+          const loadPenalty = person.loadLevel * 60 * 1000;
+          const changeCostMs = changeCost * 60 * 1000;
+          const riskMs =
+            this.riskFactor(routeCost.riskLevel, config) * travelMs;
+          const batteryPct = device ? device.batteryPct : 100;
+          const energyPenalty =
+            device != null ? (1 - batteryPct / 100) * 60 * 1000 : 0;
+
+          const score = this.computeCandidateScore(
+            policy,
+            lateMs,
+            travelMs,
+            loadPenalty,
+            waitMs,
+            changeCostMs,
+            riskMs,
+            energyPenalty,
+          );
+
+          const reasons = [
+            ...priority.explanation,
+            `effective_score=${priority.score.toFixed(2)}`,
+          ];
+          candidates.push({
+            personId: person.id,
+            deviceId: device ? device.id : null,
+            stationId: task.stationId,
+            zoneId: task.zoneId,
+            startMs,
+            endMs,
+            routeId: routeCost.routeId,
+            etaSeconds: routeCost.etaSeconds,
+            distanceMeters: routeCost.distanceMeters,
+            riskLevel: routeCost.riskLevel,
+            waitMs,
+            lateMs,
+            changeCost,
+            cost: score.total,
+            scoreBreakdown: score,
+            reasons,
+            alternatives: [],
+          });
+        }
+      }
+
+      const feasible = candidates
+        .filter((c) => c.cost !== Number.POSITIVE_INFINITY)
+        .sort(this.candidateCompare);
+      const best = feasible[0];
+
+      if (!best) {
+        violations.push({
+          taskId: task.id,
+          reason: 'no_eligible_resource',
+          type: 'infeasible',
+          alternatives: candidates.map((c) => ({ reasons: c.reasons })),
+        });
+        continue;
+      }
+
+      // 预定资源。
+      bookedPerson.set(best.personId, best.endMs);
+      if (best.deviceId) bookedDevice.set(best.deviceId, best.endMs);
+      runBookedSlots.push({
+        personId: best.personId,
+        start: best.startMs,
+        end: best.endMs,
+      });
+      assignedMinutes.set(
+        best.personId,
+        (assignedMinutes.get(best.personId) ?? 0) + (best.endMs - best.startMs),
+      );
+      totalWalking += best.distanceMeters;
+      totalLateMs += best.lateMs;
+      totalWaitMs += best.waitMs;
+      totalChange += best.changeCost;
+
+      assignments.push({
+        assignmentId: `ASG-${opts.planId}-${task.id}`,
+        taskId: task.id,
+        personId: best.personId,
+        deviceId: best.deviceId,
+        stationId: best.stationId,
+        zoneId: best.zoneId,
+        plannedStart: new Date(best.startMs).toISOString(),
+        plannedEnd: new Date(best.endMs).toISOString(),
+        routeId: best.routeId,
+        etaSeconds: best.etaSeconds,
+        distanceMeters: best.distanceMeters,
+        riskLevel: best.riskLevel,
+        status: 'proposed',
+        reasons: best.reasons,
+        alternatives: best.alternatives,
+        scoreBreakdown: best.scoreBreakdown,
+      });
+      doneTaskIds.add(task.id);
+    }
+
+    const maxWorkload = Math.max(
+      0,
+      ...Array.from(assignedMinutes.values()),
+    );
+    const metrics: SchedulingPlanMetrics = {
+      lateMinutes: Math.round(totalLateMs / 60000),
+      walkingMeters: Math.round(totalWalking),
+      stationWaitMinutes: Math.round(totalWaitMs / 60000),
+      maxWorkload: Math.round(maxWorkload / 60000),
+      changeCost: totalChange,
+    };
+
+    const planScore = this.aggregateBreakdown(
+      assignments.map((a) => a.scoreBreakdown),
+    );
+
+    return {
+      planId: opts.planId,
+      planName: opts.planName,
+      version: 1,
+      status: 'shadow',
+      trigger: { type: opts.triggerType, entityId: opts.triggerEntityId },
+      snapshotVersion: opts.snapshotVersion,
+      policyVersion: policy.version,
+      solverVersion: policy.solverVersion,
+      horizonMinutes,
+      assignments,
+      metrics,
+      scoreBreakdown: planScore,
+      baselineDelta: this.computeBaselineDelta(metrics, snapshot),
+      violations,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  /** 计算单任务动态优先级（分数越小越紧急）。 */
+  private computePriority(
+    task: WorldStateSnapshot['tasks'][number],
+    policy: SchedulingPolicy,
+    config: SchedulingPolicyConfig,
+    now: number,
+    horizonEndMs: number,
+    downstreamCount: Map<string, number>,
+    manualBoostTasks: Set<string>,
+  ): PriorityInfo {
+    const SCALE = 100;
+    const p = config.priority;
+    const explanation: string[] = [];
+    const rank = this.priorityRank(task.priority);
+    const urgent = rank === 0; // critical/urgent 硬地板
+
+    let score = rank * SCALE;
+    explanation.push(`base_priority=${task.priority}(rank=${rank})`);
+
+    // 截止风险：越接近 planEnd 越紧急。
+    const deadlineMs = task.planEnd ? Date.parse(task.planEnd) : horizonEndMs;
+    const windowMs = Math.max(horizonEndMs - now, 1);
+    const deadlineRatio = Math.max(
+      0,
+      Math.min(1, (deadlineMs - now) / windowMs),
+    );
+    const deadlineTerm = p.deadlineRiskWeight * (1 - deadlineRatio) * SCALE;
+    score += deadlineTerm;
+    if (deadlineTerm !== 0)
+      explanation.push(`deadline_risk=+${deadlineTerm.toFixed(2)}`);
+
+    // 等待老化：挂起越久越紧急。
+    if (task.planStart) {
+      const startMs = Date.parse(task.planStart);
+      if (startMs < now) {
+        const ageRatio = Math.min(1, (now - startMs) / (p.agingBaseMs || 1));
+        const waitingTerm = -p.waitingAgeWeight * ageRatio * SCALE;
+        score += waitingTerm;
+        explanation.push(`waiting_age=${waitingTerm.toFixed(2)}`);
+      }
+    }
+
+    // 事件严重度 / 截止风险标记。
+    const taskExt = task as typeof task & { deadlineAtRisk?: boolean };
+    if (taskExt.deadlineAtRisk === true) {
+      const sevTerm = -p.eventSeverityWeight * SCALE;
+      score += sevTerm;
+      explanation.push(`event_severity=${sevTerm.toFixed(2)}`);
+    }
+
+    // 下游阻塞：被越多人依赖越紧急。
+    const downstream = downstreamCount.get(task.id) ?? 0;
+    if (downstream > 0) {
+      const downTerm = -p.downstreamBlockingWeight * downstream * SCALE;
+      score += downTerm;
+      explanation.push(`downstream_blocking=${downTerm.toFixed(2)}`);
+    }
+
+    // 人工加急（MANUAL_BOOST 约束或 critical 优先级）。
+    if (manualBoostTasks.has(task.id)) {
+      const boostTerm = -p.manualBoostWeight * SCALE;
+      score += boostTerm;
+      explanation.push(`manual_boost=${boostTerm.toFixed(2)}`);
+    }
+
+    return { score, urgent, explanation };
+  }
+
+  /** 计算候选多目标成本（分钟归一化，total 即评分）。 */
+  private computeCandidateScore(
+    policy: SchedulingPolicy,
+    lateMs: number,
+    travelMs: number,
+    loadPenalty: number,
+    waitMs: number,
+    changeCostMs: number,
+    riskMs: number,
+    energyPenalty: number,
+  ): ScoreBreakdown {
+    const lateness = (policy.latenessWeight * lateMs) / 60000;
+    const travel = (policy.walkingWeight * travelMs) / 60000;
+    const workloadBalance = (policy.workloadBalanceWeight * loadPenalty) / 60000;
+    const stationWait = (policy.stationWaitWeight * waitMs) / 60000;
+    const changeCost = (policy.changeCostWeight * changeCostMs) / 60000;
+    const risk = (policy.riskWeight * riskMs) / 60000;
+    const energyCost = (policy.energyWeight * energyPenalty) / 60000;
+    return {
+      lateness,
+      travel,
+      workloadBalance,
+      stationWait,
+      changeCost,
+      risk,
+      energyCost,
+      total: lateness + travel + workloadBalance + stationWait + changeCost + risk + energyCost,
+    };
+  }
+
+  private zeroBreakdown(): ScoreBreakdown {
+    return {
+      lateness: 0,
+      travel: 0,
+      workloadBalance: 0,
+      stationWait: 0,
+      changeCost: 0,
+      risk: 0,
+      energyCost: 0,
+      total: 0,
+    };
+  }
+
+  private aggregateBreakdown(
+    items: Array<ScoreBreakdown | undefined>,
+  ): ScoreBreakdown {
+    const sum = this.zeroBreakdown();
+    for (const item of items) {
+      if (!item) continue;
+      sum.lateness += item.lateness;
+      sum.travel += item.travel;
+      sum.workloadBalance += item.workloadBalance;
+      sum.stationWait += item.stationWait;
+      sum.changeCost += item.changeCost;
+      sum.risk += item.risk;
+      sum.energyCost += item.energyCost;
+      sum.total += item.total;
+    }
+    return sum;
+  }
+
+  private personMatchesLock(
+    personId: string,
+    taskId: string,
+    locked: Map<string, string>,
+  ): boolean {
+    const lockedPerson = locked.get(taskId);
+    return lockedPerson ? lockedPerson === personId : true;
+  }
+
+  private lockedPersonIdsForTask(
+    snapshot: WorldStateSnapshot,
+    taskId: string,
+  ): string[] {
+    const ids = snapshot.lockedAssignments
+      .filter((la) => la.taskId !== taskId)
+      .map((la) => la.personId ?? '')
+      .filter(Boolean);
+    return Array.from(new Set(ids));
+  }
+
+  private devicesForTask(
+    taskId: string,
+    deviceById: Map<string, WorldStateSnapshot['devices'][number]>,
+    locked: Map<string, string>,
+    minBatteryPct: number,
+  ): Array<WorldStateSnapshot['devices'][number] | null> {
+    const lockedDevice = locked.get(taskId);
+    if (lockedDevice) {
+      const d = deviceById.get(lockedDevice);
+      return d ? [d] : [];
+    }
+    const onlineDevices = Array.from(deviceById.values()).filter(
+      (d) => d.online && d.batteryPct >= minBatteryPct,
+    );
+    // 无在线设备时允许 null（人员纯手工作业）。
+    return onlineDevices.length > 0 ? onlineDevices : [null];
+  }
+
+  private earliestStart(
+    lowerBoundMs: number,
+    personFreeAtMs: number | undefined,
+    deviceFreeAtMs: number | undefined,
+  ): number {
+    return Math.max(
+      lowerBoundMs,
+      personFreeAtMs ?? 0,
+      deviceFreeAtMs ?? 0,
+    );
+  }
+
+  private riskFactor(
+    riskLevel: string | null,
+    config: SchedulingPolicyConfig,
+  ): number {
+    if (riskLevel === 'high') return config.highRiskFactor;
+    if (riskLevel === 'medium') return config.mediumRiskFactor;
+    return 1;
+  }
+
+  private priorityRank(priority: string): number {
+    switch (priority) {
+      case 'critical':
+      case 'urgent':
+        return 0;
+      case 'high':
+        return 1;
+      case 'medium':
+        return 2;
+      default:
+        return 3;
+    }
+  }
+
+  private candidateCompare(a: Candidate, b: Candidate): number {
+    if (a.cost !== b.cost) return a.cost - b.cost;
+    if (a.personId !== b.personId)
+      return a.personId < b.personId ? -1 : 1;
+    const da = a.deviceId ?? '';
+    const db = b.deviceId ?? '';
+    return da < db ? -1 : da > db ? 1 : 0;
+  }
+
+  private computeBaselineDelta(
+    metrics: SchedulingPlanMetrics,
+    snapshot: WorldStateSnapshot,
+  ): Record<string, unknown> {
+    const baselineLate = snapshot.tasks
+      .filter((t) => t.planEnd && Date.parse(t.planEnd) < Date.now())
+      .length;
+    return {
+      lateMinutesDelta: metrics.lateMinutes - baselineLate,
+      walkingMetersDelta: metrics.walkingMeters,
+      stationWaitMinutesDelta: metrics.stationWaitMinutes,
+      maxWorkloadDelta: metrics.maxWorkload,
+    };
+  }
+}
