@@ -36,3 +36,29 @@ export async function createPlan(suggestionId: string, content: Record<string, u
   });
   return res.data;
 }
+
+export interface VisionUnderstandResult {
+  status: number;
+  ok: boolean;
+  backend?: string;
+  model?: string;
+  answer?: string;
+  error?: string;
+  now?: string;
+}
+
+export async function visionUnderstand(input: {
+  image_url?: string;
+  question?: string;
+  api_key?: string;
+  base_url?: string;
+  model?: string;
+}): Promise<VisionUnderstandResult> {
+  const res = await axiosForBackend({
+    url: '/api/ai/vision/understand',
+    method: 'POST',
+    data: input,
+    timeout: 65000,
+  });
+  return res.data;
+}

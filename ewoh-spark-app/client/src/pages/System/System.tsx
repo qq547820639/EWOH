@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, CheckCircle2, Database, FlaskConical, Plus, Radar, Search, Undo2 } from 'lucide-react';
+import { Ban, BrainCircuit, CheckCircle2, Database, FlaskConical, Loader2, Plus, Radar, Search, Undo2 } from 'lucide-react';
+import { visionUnderstand, type VisionUnderstandResult } from '../../api/ai';
 import {
   evaluateFeatureFlags,
   listSystemConfigs,
@@ -68,6 +69,12 @@ const System = (): React.ReactElement => {
   const [paramValue, setParamValue] = useState('');
   const [paramApproval, setParamApproval] = useState(false);
   const [paramUpdateValues, setParamUpdateValues] = useState<Record<string, string>>({});
+  const [aiApiKey, setAiApiKey] = useState('');
+  const [aiBaseUrl, setAiBaseUrl] = useState('https://ark.cn-beijing.volces.com/api/v3');
+  const [aiModel, setAiModel] = useState('doubao-seed-2-1-pro-260628');
+  const [aiImageUrl, setAiImageUrl] = useState('');
+  const [aiQuestion, setAiQuestion] = useState('你看见了什么？');
+  const [aiResult, setAiResult] = useState<VisionUnderstandResult | null>(null);
   const query = useQuery<SystemConfigRecord[]>({
     queryKey: queryKeys.systemConfigs,
     queryFn: listSystemConfigs,
@@ -158,6 +165,27 @@ const System = (): React.ReactElement => {
   const retireParam = useMutation({
     mutationFn: retireParameter,
     onSuccess: invalidateParameters,
+  });
+
+  const testVision = useMutation({
+    mutationFn: () =>
+      visionUnderstand({
+        api_key: aiApiKey.trim(),
+        base_url: aiBaseUrl.trim(),
+        model: aiModel.trim(),
+        image_url: aiImageUrl.trim(),
+        question: aiQuestion.trim(),
+      }),
+    onSuccess: (result) => {
+      setAiResult(result ?? null);
+    },
+    onError: (error) => {
+      setAiResult({
+        status: 0,
+        ok: false,
+        error: error instanceof Error ? error.message : '连接失败',
+      });
+    },
   });
 
   const rows = query.data ?? [];
@@ -489,6 +517,102 @@ const System = (): React.ReactElement => {
             </div>
           </QueryState>
         </div>
+      </div>
+
+      <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-[hsl(220_14%_14%)]">
+            <BrainCircuit className="h-4 w-4 text-[hsl(262_83%_58%)]" />
+            AI 能力接入
+          </h2>
+          <span className="rounded-full bg-[hsl(220_14%_96%)] px-2 py-1 text-xs text-[hsl(218_10%_42%)]">
+            默认演示：火山方舟视觉理解
+          </span>
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-[hsl(218_10%_42%)]">
+          配置接入大模型能力（默认演示使用视觉理解模型，可识别并描述图片内容）。
+          API Key 留空时使用服务端环境变量 <code className="font-mono">EWOH_ARK_API_KEY</code> 配置的演示密钥；
+          填入你自己的密钥后点击“测试连接”即可验证。
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+            API Key
+            <input
+              value={aiApiKey}
+              onChange={(event) => setAiApiKey(event.target.value)}
+              type="password"
+              autoComplete="off"
+              placeholder="留空则用服务端配置的密钥"
+              className="h-9 min-w-0 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 font-mono text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+            />
+          </label>
+          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+            Base URL
+            <input
+              value={aiBaseUrl}
+              onChange={(event) => setAiBaseUrl(event.target.value)}
+              className="h-9 min-w-0 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 font-mono text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+            />
+          </label>
+          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+            模型
+            <input
+              value={aiModel}
+              onChange={(event) => setAiModel(event.target.value)}
+              className="h-9 min-w-0 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 font-mono text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+            />
+          </label>
+          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+            图片 URL（可选，留空用演示图）
+            <input
+              value={aiImageUrl}
+              onChange={(event) => setAiImageUrl(event.target.value)}
+              placeholder="https://..."
+              className="h-9 min-w-0 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 font-mono text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+            />
+          </label>
+        </div>
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+            提问
+            <input
+              value={aiQuestion}
+              onChange={(event) => setAiQuestion(event.target.value)}
+              className="h-9 min-w-0 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={testVision.isPending}
+            onClick={() => testVision.mutate()}
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[hsl(262_83%_58%)] px-4 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {testVision.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4" />
+            )}
+            测试连接
+          </button>
+        </div>
+        {aiResult && (
+          <div
+            className={`mt-3 rounded-lg border p-3 text-xs leading-relaxed ${
+              aiResult.ok
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : 'border-red-200 bg-red-50 text-red-700'
+            }`}
+          >
+            <p className="font-medium">
+              {aiResult.ok ? '连接成功' : '连接失败'}
+              {aiResult.backend ? ` · 后端 ${aiResult.backend}` : ''}
+              {aiResult.model ? ` · 模型 ${aiResult.model}` : ''}
+            </p>
+            <p className="mt-1 whitespace-pre-wrap break-all">
+              {aiResult.ok ? aiResult.answer : (aiResult.error ?? '未知错误')}
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">

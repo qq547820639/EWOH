@@ -108,6 +108,7 @@ export async function axiosForBackend<T = unknown>(config: {
   data?: unknown;
   signal?: AbortSignal;
   headers?: Record<string, string>;
+  timeout?: number;
 }): Promise<{ data: any }> {
   return http.request({
     url: config.url,
@@ -116,5 +117,6 @@ export async function axiosForBackend<T = unknown>(config: {
     data: config.data,
     signal: config.signal,
     headers: config.headers,
+    timeout: config.timeout,
   });
 }

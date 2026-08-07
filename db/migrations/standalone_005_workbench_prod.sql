@@ -23,31 +23,31 @@ SELECT set_config('search_path', '__EWOH_SCHEMA__, pg_temp', false);
 -- ---------------------------------------------------------------------------
 -- 1) org_id tenant column on workbench source tables + composite indexes
 -- ---------------------------------------------------------------------------
-ALTER TABLE __EWOH_SCHEMA__.ewoh_schedule_task ADD COLUMN IF NOT EXISTS org_id varchar(255);
-ALTER TABLE __EWOH_SCHEMA__.ewoh_schedule_task_step ADD COLUMN IF NOT EXISTS org_id varchar(255);
-ALTER TABLE __EWOH_SCHEMA__.ewoh_event ADD COLUMN IF NOT EXISTS org_id varchar(255);
-ALTER TABLE __EWOH_SCHEMA__.ewoh_world_state ADD COLUMN IF NOT EXISTS org_id varchar(255);
-ALTER TABLE __EWOH_SCHEMA__.ewoh_spatial_entity ADD COLUMN IF NOT EXISTS org_id varchar(255);
-ALTER TABLE __EWOH_SCHEMA__.ewoh_resource_binding ADD COLUMN IF NOT EXISTS org_id varchar(255);
+ALTER TABLE __EWOH_SCHEMA__.ewoh_schedule_task ADD COLUMN IF NOT EXISTS org_id uuid;
+ALTER TABLE __EWOH_SCHEMA__.ewoh_schedule_task_step ADD COLUMN IF NOT EXISTS org_id uuid;
+ALTER TABLE __EWOH_SCHEMA__.ewoh_event ADD COLUMN IF NOT EXISTS org_id uuid;
+ALTER TABLE __EWOH_SCHEMA__.ewoh_world_state ADD COLUMN IF NOT EXISTS org_id uuid;
+ALTER TABLE __EWOH_SCHEMA__.ewoh_spatial_entity ADD COLUMN IF NOT EXISTS org_id uuid;
+ALTER TABLE __EWOH_SCHEMA__.ewoh_resource_binding ADD COLUMN IF NOT EXISTS org_id uuid;
 
 -- Backfill existing rows from the transaction-local org setting (NULL when absent).
 UPDATE __EWOH_SCHEMA__.ewoh_schedule_task
-  SET org_id = nullif(current_setting('app.current_org_id', true), '')::varchar
+  SET org_id = nullif(current_setting('app.current_org_id', true), '')::uuid
   WHERE org_id IS NULL;
 UPDATE __EWOH_SCHEMA__.ewoh_schedule_task_step
-  SET org_id = nullif(current_setting('app.current_org_id', true), '')::varchar
+  SET org_id = nullif(current_setting('app.current_org_id', true), '')::uuid
   WHERE org_id IS NULL;
 UPDATE __EWOH_SCHEMA__.ewoh_event
-  SET org_id = nullif(current_setting('app.current_org_id', true), '')::varchar
+  SET org_id = nullif(current_setting('app.current_org_id', true), '')::uuid
   WHERE org_id IS NULL;
 UPDATE __EWOH_SCHEMA__.ewoh_world_state
-  SET org_id = nullif(current_setting('app.current_org_id', true), '')::varchar
+  SET org_id = nullif(current_setting('app.current_org_id', true), '')::uuid
   WHERE org_id IS NULL;
 UPDATE __EWOH_SCHEMA__.ewoh_spatial_entity
-  SET org_id = nullif(current_setting('app.current_org_id', true), '')::varchar
+  SET org_id = nullif(current_setting('app.current_org_id', true), '')::uuid
   WHERE org_id IS NULL;
 UPDATE __EWOH_SCHEMA__.ewoh_resource_binding
-  SET org_id = nullif(current_setting('app.current_org_id', true), '')::varchar
+  SET org_id = nullif(current_setting('app.current_org_id', true), '')::uuid
   WHERE org_id IS NULL;
 
 -- Composite indexes: org_id + frequent predicates (status / priority / ts analog)

@@ -45,17 +45,33 @@ def _extract_content(raw):
     return str(content)
 
 
-def describe_image(image_url="", question=DEFAULT_QUESTION):
+def resolve_config(api_key="", base_url="", model=""):
+    """按优先级解析视觉理解配置：请求级参数 > 环境变量 > 默认值。"""
+    s = Settings.load()
+    env_key = getattr(s, "ark_api_key", "") or ""
+    env_base = getattr(s, "ark_base_url", "") or DEFAULT_BASE_URL
+    env_model = getattr(s, "ark_model", "") or DEFAULT_MODEL
+    return {
+        "api_key": (api_key or env_key or ""),
+        "base_url": (base_url or env_base or DEFAULT_BASE_URL),
+        "model": (model or env_model or DEFAULT_MODEL),
+    }
+
+
+def describe_image(image_url="", question=DEFAULT_QUESTION, api_key="", base_url="", model=""):
     """调用 Ark 视觉模型描述图片。
 
     :param image_url: 图片地址；为空时使用演示模式默认图。
     :param question:  提问文本，默认为"你看见了什么？"。
+    :param api_key:   可选，请求级 API Key 覆盖（优先级最高）。
+    :param base_url:  可选，请求级 Base URL 覆盖。
+    :param model:     可选，请求级模型名覆盖。
     :return: dict，含 ok/backend/model/answer；失败时含 error。
     """
-    s = Settings.load()
-    api_key = getattr(s, "ark_api_key", "") or ""
-    base_url = getattr(s, "ark_base_url", "") or DEFAULT_BASE_URL
-    model = getattr(s, "ark_model", "") or DEFAULT_MODEL
+    cfg = resolve_config(api_key, base_url, model)
+    api_key = cfg["api_key"]
+    base_url = cfg["base_url"]
+    model = cfg["model"]
     if not api_key:
         return {
             "ok": False,
