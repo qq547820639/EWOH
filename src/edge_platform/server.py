@@ -397,6 +397,9 @@ def make_handler(ctx):
                 if p == "/api/scenario/evaluate":
                     self.send_json(services.evaluate_scenario(payload))
                     return
+                if p == "/api/vision/understand":
+                    self.api_vision_understand(payload)
+                    return
                 if p == "/api/reset":
                     self.api_reset()
                     return
@@ -775,6 +778,39 @@ def make_handler(ctx):
             else:
                 note += "持久层数据保持不动（真实数据不做清除）。"
             return self.send_json({"ok": True, "note": note, "now": now_iso()})
+
+        def api_vision_understand(self, payload):
+            """POST /api/vision/understand — 视觉理解（演示模式默认后端：Ark）。
+
+            body: {image_url?, question?}。image_url 缺省时使用演示模式默认图，
+            question 缺省为"你看见了什么？"。未配置 EWOH_ARK_API_KEY 时返回明确错误。
+            """
+            from edge_platform.perception.ark_vision import describe_image
+
+            image_url = (payload.get("image_url") or "").strip()
+            question = (payload.get("question") or "").strip()
+            self._audit_target_type = "vision"
+            self._audit_target_id = (image_url or "demo_default")[:120]
+            result = describe_image(image_url, question)
+            if not result.get("ok"):
+                return self.send_json(
+                    {
+                        "ok": False,
+                        "backend": result.get("backend", "ark"),
+                        "error": result.get("error", "视觉理解失败"),
+                        "now": now_iso(),
+                    },
+                    502,
+                )
+            return self.send_json(
+                {
+                    "ok": True,
+                    "backend": result.get("backend", "ark"),
+                    "model": result.get("model"),
+                    "answer": result.get("answer", ""),
+                    "now": now_iso(),
+                }
+            )
 
         # ---- Task 16 新增端点实现 ----
 

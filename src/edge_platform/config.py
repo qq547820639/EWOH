@@ -110,6 +110,13 @@ class Settings:
         # ---- TLS ----
         self.tls_cert = os.environ.get("EWOH_TLS_CERT", "")
         self.tls_key = os.environ.get("EWOH_TLS_KEY", "")
+        # ---- 视觉理解（演示模式默认后端：火山方舟 Ark） ----
+        # 读取 EWOH_ARK_API_KEY 等环境变量；未配置时视角理解返回明确错误，不伪造描述
+        self.ark_api_key = os.environ.get("EWOH_ARK_API_KEY", "")
+        self.ark_base_url = os.environ.get(
+            "EWOH_ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"
+        )
+        self.ark_model = os.environ.get("EWOH_ARK_MODEL", "doubao-seed-2-1-pro-260628")
 
     @classmethod
     def load(cls, force_reload=False):
