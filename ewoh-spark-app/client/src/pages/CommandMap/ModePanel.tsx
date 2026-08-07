@@ -115,7 +115,7 @@ const ModePanel = ({
           ))}
         </div>
         <p className="text-[10px] text-white/60 mt-1.5 px-0.5 leading-snug">
-          L0 基础结构 · L1 感知覆盖 · L2 三维孪生 · L3 工位近景 · L4 人员跟随
+          L0 基础结构 · L1 感知覆盖 · L2 全量态势 · L3 工位近景 · L4 人员跟随
         </p>
       </div>
     </div>

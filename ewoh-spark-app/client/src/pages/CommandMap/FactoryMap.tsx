@@ -1,6 +1,10 @@
-import { useMemo } from 'react';
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
-import { ZoomIn, ZoomOut, Maximize } from 'lucide-react';
+import { useMemo, useEffect, useRef } from 'react';
+import {
+  TransformWrapper,
+  TransformComponent,
+  type ReactZoomPanPinchRef,
+} from 'react-zoom-pan-pinch';
+import { ZoomIn, ZoomOut, Maximize, Crosshair } from 'lucide-react';
 import type { EnvironmentReading, SpatialEntity, CurrentWorldState } from '@shared/api.interface';
 import { fitLabel, truncateLabel } from './labels';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
@@ -10,7 +14,7 @@ interface FactoryMapProps {
   worldState: CurrentWorldState | null;
   environmentReadings?: EnvironmentReading[];
   mode: string;
-  level: 'L0' | 'L1';
+  level: 'L0' | 'L1' | 'L2' | 'L3' | 'L4';
   selectedEntityId: string | null;
   onSelectEntity: (id: string | null) => void;
   replayMode: boolean;
@@ -185,6 +189,41 @@ function mergeDevices(
 
 const STATIC_ORDER = ['route', 'zone', 'production_line', 'workshop', 'restricted_zone'];
 
+interface ViewBox {
+  minX: number;
+  minY: number;
+  w: number;
+  h: number;
+}
+
+type ZoomToElement = ReactZoomPanPinchRef['zoomToElement'];
+
+/** 依据实体空间范围自适应计算 viewBox，避免实体挤在画布左上角。 */
+function computeViewBox(entities: SpatialEntity[]): ViewBox {
+  const fallback: ViewBox = { minX: 0, minY: 0, w: 1000, h: 700 };
+  if (!entities.length) return fallback;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const e of entities) {
+    const hw = (e.bboxW ?? 0) / 2;
+    const hh = (e.bboxH ?? 0) / 2;
+    minX = Math.min(minX, e.x - hw);
+    minY = Math.min(minY, e.y - hh);
+    maxX = Math.max(maxX, e.x + hw);
+    maxY = Math.max(maxY, e.y + hh);
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return fallback;
+  const pad = 24;
+  return {
+    minX: minX - pad,
+    minY: minY - pad,
+    w: Math.max(maxX - minX + pad * 2, 120),
+    h: Math.max(maxY - minY + pad * 2, 80),
+  };
+}
+
 const FactoryMap = ({
   entities,
   worldState,
@@ -246,29 +285,107 @@ const FactoryMap = ({
   const strokeFor = (id: string, base: string) => (isSelected(id) ? '#fbbf24' : base);
   const strokeWidthFor = (id: string, base: number) => (isSelected(id) ? 3 : base);
 
+  // 自适应 viewBox：依据实体实际空间范围
+  const viewBox = useMemo(() => computeViewBox(entities), [entities]);
+
+  // 层级 = 同一张地图上的信息密度：
+  //   L0 基础结构 | L1 +感知覆盖(摄像头/UWB) | L2 +生产节拍/安全风险等全量态势
+  //   L3 工位近景 | L4 人员跟随（近景模式，自动缩放定位到焦点实体）
+  const showPerception = level === 'L1' || level === 'L2';
+  const showDensity = level === 'L2';
+  const isNearView = level === 'L3' || level === 'L4';
+
+  const focusType = level === 'L3' ? 'workstation' : 'person';
+  const focus = useMemo(() => {
+    if (!isNearView) return null;
+    const sel = selectedEntityId ? entities.find((e) => e.entityId === selectedEntityId) : null;
+    return sel ?? entities.find((e) => e.entityType === focusType) ?? null;
+  }, [isNearView, selectedEntityId, entities, focusType]);
+
+  // 近景目标点：优先取动态位置，回落到静态坐标
+  const targetPos = useMemo(() => {
+    if (!focus) return null;
+    if (focus.entityType === 'person') {
+      const dp = persons.find((p) => p.entityId === focus.entityId);
+      if (dp) return { x: dp.x, y: dp.y };
+    }
+    if (focus.entityType === 'device') {
+      const dd = devices.find((d) => d.entityId === focus.entityId);
+      if (dd) return { x: dd.x, y: dd.y };
+    }
+    return { x: focus.x, y: focus.y };
+  }, [focus, persons, devices]);
+
+  const nearScale = level === 'L4' ? 3 : 2.5;
+
+  const zoomToElementRef = useRef<ZoomToElement | null>(null);
+  const resetTransformRef = useRef<(() => void) | null>(null);
+
+  // 进入近景或焦点变化时，自动缩放到目标实体
+  useEffect(() => {
+    if (!isNearView || !focus) return;
+    const fn = zoomToElementRef.current;
+    if (!fn) return;
+    const t = window.setTimeout(() => {
+      fn('nearview-target', nearScale, 300, 'easeOut');
+    }, 80);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNearView, focus?.entityId, nearScale]);
+
+  // L4 人员跟随：选中人员后，其位置变化时持续居中
+  const followTarget = level === 'L4' && selectedEntityId && focus?.entityType === 'person' ? targetPos : null;
+  useEffect(() => {
+    if (!isNearView || !followTarget) return;
+    const fn = zoomToElementRef.current;
+    if (!fn) return;
+    fn('nearview-target', nearScale, 250, 'easeOut');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNearView, followTarget?.x, followTarget?.y, nearScale]);
+
+  // 退出近景时回到整体视图
+  useEffect(() => {
+    if (!isNearView) {
+      resetTransformRef.current?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNearView]);
+
   return (
     <div className="relative flex-1 min-w-0 bg-[hsl(220_14%_8%)] overflow-hidden">
       <TransformWrapper
         initialScale={1}
-        minScale={0.5}
-        maxScale={5}
+        minScale={0.3}
+        maxScale={8}
         centerOnInit
-        wheel={{ step: 0.1 }}
+        smooth
+        wheel={{ step: 0.0012 }}
         doubleClick={{ mode: 'zoomIn', step: 0.7 }}
+        zoomAnimation={{ disabled: false, size: 0.4, animationTime: 200, animationType: 'easeOut' }}
       >
-        {({ zoomIn, zoomOut, resetTransform }) => (
-          <>
-            <TransformComponent
-              wrapperClass="!w-full !h-full !cursor-grab active:!cursor-grabbing"
-              contentClass="!w-full !h-full"
-            >
+        {({ zoomIn, zoomOut, resetTransform, zoomToElement }) => {
+          zoomToElementRef.current = zoomToElement;
+          resetTransformRef.current = resetTransform;
+          return (
+            <>
+              <TransformComponent
+                wrapperClass="!w-full !h-full !cursor-grab active:!cursor-grabbing"
+                contentClass="!w-full !h-full"
+              >
       <svg
-        viewBox="0 0 1000 700"
+        viewBox={`${viewBox.minX} ${viewBox.minY} ${viewBox.w} ${viewBox.h}`}
         preserveAspectRatio="xMidYMid meet"
         className="w-full h-full"
       >
         {/* 背景点击区域：点击空白处取消选中 */}
-        <rect x={0} y={0} width={1000} height={700} fill="transparent" onClick={() => onSelectEntity(null)} />
+        <rect
+          x={viewBox.minX}
+          y={viewBox.minY}
+          width={viewBox.w}
+          height={viewBox.h}
+          fill="transparent"
+          onClick={() => onSelectEntity(null)}
+        />
 
         {/* 网格背景 */}
         <defs>
@@ -276,7 +393,7 @@ const FactoryMap = ({
             <path d="M 50 0 L 0 0 0 50" fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="1" />
           </pattern>
         </defs>
-        <rect x={0} y={0} width={1000} height={700} fill="url(#grid)" pointerEvents="none" />
+        <rect x={viewBox.minX} y={viewBox.minY} width={viewBox.w} height={viewBox.h} fill="url(#grid)" pointerEvents="none" />
 
         {/* 1. 静态底图层 */}
         {staticEntities.map((e) => {
@@ -320,8 +437,8 @@ const FactoryMap = ({
           );
         })}
 
-        {/* 2. L1 额外层：摄像头视锥 + UWB 覆盖圈 */}
-        {level === 'L1' && (
+        {/* 2. 感知覆盖层（L1/L2）：摄像头视锥 + UWB 覆盖圈 */}
+        {showPerception && (
           <>
             {cameras.map((c) => {
               const extra = c.extra as { fov_deg?: number; range?: number } | null;
@@ -413,8 +530,8 @@ const FactoryMap = ({
           />
         )}
 
-        {/* 3.5 生产模式：工位间流动虚线 + WIP 气泡 + 节拍脉冲 */}
-        {mode === 'production' && flowLines.map((line, i) => (
+        {/* 3.5 生产模式：工位间流动虚线 + WIP 气泡 + 节拍脉冲（L2 全量态势显示） */}
+        {showDensity && mode === 'production' && flowLines.map((line, i) => (
           <g key={`flow-${i}`}>
             <line
               x1={line.x1}
@@ -436,7 +553,8 @@ const FactoryMap = ({
             </line>
           </g>
         ))}
-        {mode === 'production' &&
+        {showDensity &&
+          mode === 'production' &&
           workstations.map((w) => {
             const wsState = worldState?.workstations?.find((ws) => ws.entityId === w.entityId);
             const occupancy = wsState?.occupancy ?? 0.5;
@@ -529,14 +647,7 @@ const FactoryMap = ({
         {/* 5. 设备层（动态） */}
         {devices.map((d) => {
           const online = d.status !== 'offline';
-          const fill =
-            mode === 'exoskeleton' || mode === 'device'
-              ? online
-                ? '#10b981'
-                : '#6b7280'
-              : online
-                ? '#10b981'
-                : '#6b7280';
+          const fill = online ? '#10b981' : '#6b7280';
           return (
             <g
               key={`dev-${d.entityId}`}
@@ -614,6 +725,18 @@ const FactoryMap = ({
           );
         })}
 
+        {/* 近景模式：透明定位标记，用于 zoomToElement 聚焦 */}
+        {isNearView && focus && targetPos && (
+          <circle
+            id="nearview-target"
+            cx={targetPos.x}
+            cy={targetPos.y}
+            r={1}
+            fill="transparent"
+            pointerEvents="none"
+          />
+        )}
+
         {/* 选中实体高亮光环 */}
         {selectedEntityId &&
           (() => {
@@ -639,6 +762,16 @@ const FactoryMap = ({
 
             {/* 右上角缩放控件 */}
             <div className="absolute top-3 right-3 flex flex-col gap-1 z-10">
+              {isNearView && (
+                <button
+                  onClick={() => resetTransform()}
+                  className="w-8 h-8 flex items-center justify-center rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+                  title="返回整体视图"
+                  aria-label={UI_ARIA_LABELS.resetView}
+                >
+                  <Crosshair className="w-4 h-4" />
+                </button>
+              )}
               <button
                 onClick={() => zoomIn()}
                 className="w-8 h-8 flex items-center justify-center rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
@@ -665,7 +798,8 @@ const FactoryMap = ({
               </button>
             </div>
           </>
-        )}
+          );
+        }}
       </TransformWrapper>
 
       {/* 回放模式提示条 */}
@@ -676,6 +810,17 @@ const FactoryMap = ({
           {replayTime
             ? new Date(replayTime).toLocaleString('zh-CN', { hour12: false })
             : '—'}
+        </div>
+      )}
+
+      {/* 近景模式提示 */}
+      {isNearView && focus && (
+        <div className="pointer-events-none absolute top-3 left-3 z-10 flex max-w-[70%] items-center gap-2 rounded-lg border border-white/10 bg-[hsl(220_14%_14%)]/90 px-3 py-1.5 text-xs text-white/80 shadow-xl backdrop-blur">
+          <Crosshair className="w-3.5 h-3.5 text-[hsl(262_83%_58%)]" />
+          <span className="truncate">
+            {level === 'L3' ? '工位近景' : '人员跟随'}：{focus.name}
+          </span>
+          <span className="text-white/50">滚轮缩放 · 重置回整体</span>
         </div>
       )}
 

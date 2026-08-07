@@ -57,11 +57,8 @@ import {
   type QueryStateSnapshot,
 } from './queryState';
 
-// 按需懒加载 (Task 9 代码分割)：three.js 3D 地图仅在 L2 层渲染，L3/L4 建筑视图与
-// 各底部面板仅在对应标签激活时渲染。React.lazy 将这三类重/低频组件拆分为独立 chunk，
-// 显著降低 CommandMap 主 chunk（含 three / @react-three/drei）的传载体积。
-const FactoryMap3D = React.lazy(() => import('./FactoryMap3D'));
-const L3L4View = React.lazy(() => import('./L3L4View'));
+// 按需懒加载 (Task 9 代码分割)：各底部面板仅在对应标签激活时渲染。
+// React.lazy 将重/低频组件拆分为独立 chunk，降低 CommandMap 主 chunk 的传载体积。
 const TimelinePanel = React.lazy(() => import('./panels/TimelinePanel'));
 const EventCenterPanel = React.lazy(() => import('./panels/EventCenterPanel'));
 const SchedulePanel = React.lazy(() => import('./panels/SchedulePanel'));
@@ -521,42 +518,17 @@ const CommandMap = (): React.ReactElement => {
       <div className="relative flex-1 min-h-0 flex">
         <ModePanel mode={mode} onModeChange={setMode} level={level} onLevelChange={setLevel} />
 
-        {level === 'L2' ? (
-          <React.Suspense fallback={<MapPanelFallback />}>
-            <FactoryMap3D
-              entities={entityList}
-              worldState={displayWorldState}
-              environmentReadings={environmentReadings ?? []}
-              mode={mode}
-              selectedEntityId={selectedEntityId}
-              onSelectEntity={setSelectedEntityId}
-              replayMode={replayMode}
-              replayTime={replayTime}
-            />
-          </React.Suspense>
-        ) : level === 'L3' || level === 'L4' ? (
-          <React.Suspense fallback={<MapPanelFallback />}>
-            <L3L4View
-              entities={entityList}
-              worldState={displayWorldState}
-              level={level}
-              selectedEntityId={selectedEntityId}
-              onSelectEntity={setSelectedEntityId}
-            />
-          </React.Suspense>
-        ) : (
-          <FactoryMap
-            entities={entityList}
-            worldState={displayWorldState}
-            environmentReadings={environmentReadings ?? []}
-            mode={mode}
-            level={level}
-            selectedEntityId={selectedEntityId}
-            onSelectEntity={setSelectedEntityId}
-            replayMode={replayMode}
-            replayTime={replayTime}
-          />
-        )}
+        <FactoryMap
+          entities={entityList}
+          worldState={displayWorldState}
+          environmentReadings={environmentReadings ?? []}
+          mode={mode}
+          level={level}
+          selectedEntityId={selectedEntityId}
+          onSelectEntity={setSelectedEntityId}
+          replayMode={replayMode}
+          replayTime={replayTime}
+        />
 
         <EntityDetail
           entityId={selectedEntityId}
