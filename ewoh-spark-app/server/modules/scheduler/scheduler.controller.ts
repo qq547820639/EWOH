@@ -36,11 +36,6 @@ export class SchedulerController {
     return this.schedulerService.getPlans(status);
   }
 
-  @Get('plans/:planId/dispatch-status')
-  async getDispatchStatus(@Param('planId') planId: string) {
-    return this.schedulerService.getDispatchStatus(planId);
-  }
-
   @Post('plans/:planId/confirm')
   async confirmPlan(
     @Param('planId') planId: string,
@@ -51,6 +46,23 @@ export class SchedulerController {
       throw new BadRequestException('reason is required');
     }
     return this.schedulerService.confirmPlan(
+      planId,
+      body.reason,
+      body.operator,
+      request.userContext,
+    );
+  }
+
+  @Post('plans/:planId/reject')
+  async rejectPlan(
+    @Param('planId') planId: string,
+    @Body() body: ConfirmPlanRequest,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    if (!body.reason || !body.reason.trim()) {
+      throw new BadRequestException('reason is required');
+    }
+    return this.schedulerService.rejectPlan(
       planId,
       body.reason,
       body.operator,

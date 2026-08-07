@@ -25,6 +25,8 @@ import type {
   ExoFeedbackRequest,
   ExoFeedbackResult,
   BrainSuggestion,
+  ApplyBrainSuggestionRequest,
+  ApplyBrainSuggestionResult,
 } from '@shared/api.interface';
 
 /**
@@ -279,19 +281,53 @@ export class GamificationService {
       const planId = `ORCH-${Date.now()}-${this.randomSuffix(4)}`;
       const now = new Date();
 
-      // 1. 节拍模拟：每个已分配工位的节点 takt = 30 + random*30
-      const nodes: ProcessNode[] = req.nodes.map((n) => ({
-        ...n,
-        estimatedTakt: n.estimatedTakt ?? Number((30 + Math.random() * 30).toFixed(2)),
-      }));
+      // 1. 查询已分配工位最近 1h 平均占用，作为节拍推算依据（数据驱动，而非随机）
+      const workstationIds = req.nodes
+        .map((n) => n.assignedWorkstationId)
+        .filter((v): v is string => typeof v === 'string' && v.length > 0);
+      const occupancyByWs = new Map<string, number>();
+      if (workstationIds.length > 0) {
+        const occRows = await this.db
+          .select({
+            entityId: ewohSpatialEntity.entityId,
+            avgLoad: sql<number>`coalesce(avg(${ewohTelemetry.loadScore}), 0)::float`,
+          })
+          .from(ewohTelemetry)
+          .innerJoin(
+            ewohSpatialEntity,
+            eq(ewohSpatialEntity.entityId, ewohTelemetry.deviceId),
+          )
+          .where(
+            and(
+              inArray(ewohSpatialEntity.entityId, workstationIds),
+              gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`),
+            ),
+          )
+          .groupBy(ewohSpatialEntity.entityId);
+        for (const r of occRows) occupancyByWs.set(r.entityId, r.avgLoad ?? 0);
+      }
+
+      // 1. 节拍模拟：按工位实时占用推算 takt（占用越高节拍越慢），无数据时回退默认 30s
+      //    节拍基准 30s，占用每提升 0.1 增加 3s，封顶 60s。
+      const nodes: ProcessNode[] = req.nodes.map((n) => {
+        let takt = n.estimatedTakt;
+        let source: 'telemetry' | 'default' = 'default';
+        if (takt == null && n.assignedWorkstationId) {
+          const occ = occupancyByWs.get(n.assignedWorkstationId);
+          if (occ != null) {
+            takt = Number(Math.min(30 + occ * 30, 60).toFixed(2));
+            source = 'telemetry';
+          }
+        }
+        if (takt == null) takt = 30;
+        // 回传节拍数据来源，供前端标注「真实遥测 / 默认值」，提升演示可信度
+        return { ...n, estimatedTakt: takt, taktSource: source } as ProcessNode;
+      });
 
       const stationTakts: TaktSimulation['stationTakts'] = [];
       const stationNameMap = new Map<string, string>();
 
-      // 查询工位名称
-      const workstationIds = nodes
-        .map((n) => n.assignedWorkstationId)
-        .filter((v): v is string => typeof v === 'string' && v.length > 0);
+      // 查询工位名称（复用上方已求值的 workstationIds）
       if (workstationIds.length > 0) {
         const wsRows = await this.db
           .select({ entityId: ewohSpatialEntity.entityId, name: ewohSpatialEntity.name })
@@ -317,6 +353,7 @@ export class GamificationService {
             workstationName: stationNameMap.get(node.assignedWorkstationId) ?? node.assignedWorkstationId,
             taktSec: Number(takt.toFixed(2)),
             isBottleneck: false,
+            taktSource: node.taktSource ?? 'default',
           });
         }
       }
@@ -565,9 +602,259 @@ export class GamificationService {
 
   // ===== G3.7 大脑推理建议 =====
 
+  /** LLM 增强结果的进程内缓存：先返回规则建议，LLM 异步增强后回写覆盖。 */
+  private brainCache: BrainSuggestion[] | null = null;
+  private brainCacheAt = 0;
+  /** 标记当前是否有后台 LLM 增强正在执行（供前端展示「增强中」状态）。 */
+  private brainEnhancing = false;
+
+  /**
+   * 大脑建议（G3.7）。
+   * 设计：同步返回规则建议（毫秒级），LLM 增强在后台异步执行并写入缓存，
+   * 后续轮询（前端每 10s）命中缓存后返回增强结果。
+   * 返回前会为建议回填已存在的可审批方案 planId，打通「采纳 → 定位方案」闭环。
+   */
   async getBrainSuggestions(): Promise<BrainSuggestion[]> {
     try {
-      // 1. 查询最近 1h 遥测：按 deviceId 分组的平均负荷
+      // 1. 先构造规则建议（毫秒级，不依赖 LLM）
+      const suggestions = await this.buildRuleSuggestions();
+
+      // 2. 若已有较新的 LLM 增强缓存，直接返回增强结果
+      const cacheTtlMs = 10 * 60 * 1000;
+      if (this.brainCache && Date.now() - this.brainCacheAt < cacheTtlMs) {
+        this.logger.log(
+          `getBrainSuggestions serving ${this.brainCache.length} cached (LLM) suggestions`,
+        );
+        return this.attachPlanIds(this.brainCache);
+      }
+
+      // 3. 返回规则建议，同时后台异步触发 LLM 增强并回写缓存
+      void this.enrichBrainSuggestionsWithLlmAsync(suggestions);
+
+      this.logger.log(`getBrainSuggestions returned ${suggestions.length} rule suggestions`);
+      return this.attachPlanIds(
+        suggestions.map((s) => ({ ...s, enhancing: this.brainEnhancing })),
+      );
+    } catch (error) {
+      this.logger.error('getBrainSuggestions 失败', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 为建议回填已存在的可审批（proposed/confirmed）方案 planId。
+   * 按建议类型映射到对应调度策略，取最近一条同策略方案关联。
+   */
+  private async attachPlanIds(suggestions: BrainSuggestion[]): Promise<BrainSuggestion[]> {
+    if (suggestions.length === 0) return suggestions;
+    try {
+      const strategyByType = this.brainStrategyMap();
+      const strategies = Array.from(
+        new Set(suggestions.map((s) => strategyByType[s.type]).filter(Boolean)),
+      );
+      if (strategies.length === 0) return suggestions;
+
+      const rows = await this.db
+        .select({
+          planId: ewohSchedulePlan.planId,
+          strategy: ewohSchedulePlan.strategy,
+          status: ewohSchedulePlan.status,
+        })
+        .from(ewohSchedulePlan)
+        .where(
+          and(
+            inArray(ewohSchedulePlan.strategy, strategies),
+            inArray(ewohSchedulePlan.status, ['proposed', 'confirmed']),
+          ),
+        )
+        .orderBy(desc(ewohSchedulePlan.createdAt));
+
+      const latestByStrategy = new Map<string, string>();
+      for (const r of rows) {
+        if (!latestByStrategy.has(r.strategy)) latestByStrategy.set(r.strategy, r.planId);
+      }
+
+      return suggestions.map((s) => {
+        const planId = latestByStrategy.get(strategyByType[s.type]);
+        return planId ? { ...s, planId } : s;
+      });
+    } catch (error) {
+      this.logger.warn(`attachPlanIds 失败：${String(error)}`);
+      return suggestions;
+    }
+  }
+
+  /** 建议类型 → 调度策略 映射（用于回填 planId 与「采纳」转化） */
+  private brainStrategyMap(): Record<BrainSuggestion['type'], string> {
+    return {
+      load_balance: 'load_balance',
+      battery_swap: 'battery_swap',
+      takt_improve: 'capacity_priority',
+      safety_intervene: 'safety_intervene',
+      bottleneck_resolve: 'capacity_priority',
+    };
+  }
+
+  /**
+   * 大脑建议「采纳」：将一条规则/LLM 建议落库为一条 proposed 调度方案，
+   * 返回 planId 供前端定位到调度面板，打通建议 → 审批闭环。
+   */
+  async applyBrainSuggestion(
+    body: ApplyBrainSuggestionRequest,
+  ): Promise<ApplyBrainSuggestionResult> {
+    const operator = body.operator ?? 'supervisor';
+    const now = new Date();
+    const planId = `BRAIN-${Date.now()}-${this.randomSuffix(4)}`;
+    const strategy = this.brainStrategyMap()[body.type] ?? 'load_balance';
+    const planName = `大脑建议-${(body.title || body.type).slice(0, 20)}`;
+
+    await this.db.insert(ewohSchedulePlan).values({
+      planId,
+      planName,
+      strategy,
+      status: 'proposed',
+      taktImprovement: 0,
+      highLoadPersons: body.type === 'load_balance' ? body.affectedEntities.length : 0,
+      lowBatteryRisk: body.type === 'battery_swap' ? body.affectedEntities.length : 0,
+      affectedPersons: body.affectedEntities.length,
+      metricsJson: {
+        affectedEntities: body.affectedEntities,
+        confidence: body.confidence,
+        expectedBenefit: body.expectedBenefit,
+        source: 'brain',
+        suggestionType: body.type,
+      } as Record<string, unknown>,
+      reason: body.description ?? body.title ?? '',
+      createdAt: now,
+    });
+
+    await this.db.insert(ewohScheduleAudit).values({
+      auditId: `AUDIT-${Date.now()}-${this.randomSuffix(4)}`,
+      planId,
+      action: 'brain_apply',
+      operator,
+      reason: `采纳大脑建议：${body.title}`,
+      createdAt: now,
+    });
+
+    this.logger.log(`applyBrainSuggestion planId=${planId} strategy=${strategy} operator=${operator}`);
+    return { planId, planName, strategy, status: 'proposed' };
+  }
+
+  /** 基于实时数据构造规则建议（不调用 LLM）。 */
+  private async buildRuleSuggestions(): Promise<BrainSuggestion[]> {
+    // 1. 查询最近 1h 遥测：按 deviceId 分组的平均负荷
+    const telemetryRows = await this.db
+      .select({
+        deviceId: ewohTelemetry.deviceId,
+        avgLoad: sql<number>`coalesce(avg(${ewohTelemetry.loadScore}), 0)::float`,
+        avgBattery: sql<number>`coalesce(avg(${ewohTelemetry.batteryPct}), 100)::float`,
+      })
+      .from(ewohTelemetry)
+      .where(gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`))
+      .groupBy(ewohTelemetry.deviceId);
+
+    // 2. 查询未结事件
+    const openEvents = await this.db
+      .select()
+      .from(ewohEvent)
+      .where(eq(ewohEvent.status, 'open'));
+
+    // 3. 查询低电量设备
+    const lowBatteryDevices = await this.db
+      .select({ deviceId: ewohDevice.deviceId, workerName: ewohDevice.workerName, batteryPct: ewohDevice.batteryPct })
+      .from(ewohDevice)
+      .where(sql`${ewohDevice.batteryPct} < 20`);
+
+    const suggestions: BrainSuggestion[] = [];
+
+    const highLoadDevices = telemetryRows.filter((r) => (r.avgLoad ?? 0) > 0.7);
+    const overloadDevices = telemetryRows.filter((r) => (r.avgLoad ?? 0) > 0.8);
+    const l3Events = openEvents.filter((e) => e.severity === 'L3');
+
+    // 建议 1: 负荷均衡（avg load > 0.8）
+    if (overloadDevices.length > 0) {
+      const maxLoad = Math.max(...overloadDevices.map((r) => r.avgLoad ?? 0));
+      const confidence = Number(Math.min(0.6 + (maxLoad - 0.8) * 2, 0.95).toFixed(2));
+      suggestions.push({
+        type: 'load_balance',
+        title: '高负荷人员负荷均衡',
+        description: `检测到 ${overloadDevices.length} 台设备平均负荷超过 0.8，建议将高负荷人员任务部分转移给低负荷人员。`,
+        affectedEntities: overloadDevices.map((r) => r.deviceId),
+        expectedBenefit: `预计平均负荷下降 15-20%，最大负荷由 ${maxLoad.toFixed(2)} 降至 0.7 以下`,
+        confidence,
+      });
+    }
+
+    // 建议 2: 换电（battery < 20）
+    if (lowBatteryDevices.length > 0) {
+      const minBattery = Math.min(...lowBatteryDevices.map((d) => d.batteryPct ?? 100));
+      const confidence = Number(Math.min(0.7 + (20 - minBattery) / 40, 0.95).toFixed(2));
+      suggestions.push({
+        type: 'battery_swap',
+        title: '低电量设备换电',
+        description: `检测到 ${lowBatteryDevices.length} 台设备电量低于 20%，建议立即安排换电或充电。`,
+        affectedEntities: lowBatteryDevices.map((d) => d.deviceId),
+        expectedBenefit: `避免设备停机，最低电量 ${minBattery}%，换电后可持续作业 4 小时`,
+        confidence,
+      });
+    }
+
+    // 建议 3: 安全介入（L3 事件）
+    if (l3Events.length > 0) {
+      suggestions.push({
+        type: 'safety_intervene',
+        title: 'L3 安全事件介入',
+        description: `检测到 ${l3Events.length} 项 L3 级未结安全事件，建议立即介入处理。`,
+        affectedEntities: l3Events.map((e) => e.eventId),
+        expectedBenefit: '及时处置可避免安全事故升级，降低人员受伤风险',
+        confidence: 0.9,
+      });
+    }
+
+    // 建议 4: 节拍优化（高负荷设备 > 0）
+    if (highLoadDevices.length > 0) {
+      const confidence = Number((0.65 + Math.min(highLoadDevices.length * 0.05, 0.25)).toFixed(2));
+      suggestions.push({
+        type: 'takt_improve',
+        title: '瓶颈工位节拍优化',
+        description: `${highLoadDevices.length} 台设备处于高负荷状态，可能存在瓶颈工位，建议优化工序分配。`,
+        affectedEntities: highLoadDevices.map((r) => r.deviceId),
+        expectedBenefit: '通过瓶颈工位拆分或并行化，预计节拍提升 5-10%',
+        confidence,
+      });
+    }
+
+    // 建议 5: 无问题时给出通用优化建议
+    if (suggestions.length === 0) {
+      suggestions.push({
+        type: 'bottleneck_resolve',
+        title: '产线瓶颈通用优化',
+        description: '当前各项指标平稳，建议持续监控并识别潜在瓶颈工位进行预防性优化。',
+        affectedEntities: [],
+        expectedBenefit: '预防性优化可提升整体产线稳定性，预计节拍提升 2-3%',
+        confidence: 0.5,
+      });
+    }
+
+    // 为规则建议补充稳定标识，供「采纳」时定位/转化
+    return suggestions.map((s, i) => ({
+      ...s,
+      suggestionId: `SUG-${s.type}-${i}`,
+    }));
+  }
+
+  /** 后台异步执行 LLM 增强，成功后回写缓存（失败不影响已返回的规则建议）。 */
+  private async enrichBrainSuggestionsWithLlmAsync(
+    fallback: BrainSuggestion[],
+  ): Promise<void> {
+    // 竞态守卫：已有增强在执行时直接跳过，避免前端每次轮询重复触发
+    if (this.brainEnhancing) {
+      this.logger.log('getBrainSuggestions 增强进行中，跳过本次触发');
+      return;
+    }
+    this.brainEnhancing = true;
+    try {
       const telemetryRows = await this.db
         .select({
           deviceId: ewohTelemetry.deviceId,
@@ -577,101 +864,28 @@ export class GamificationService {
         .from(ewohTelemetry)
         .where(gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`))
         .groupBy(ewohTelemetry.deviceId);
-
-      // 2. 查询未结事件
       const openEvents = await this.db
         .select()
         .from(ewohEvent)
         .where(eq(ewohEvent.status, 'open'));
-
-      // 3. 查询低电量设备
       const lowBatteryDevices = await this.db
         .select({ deviceId: ewohDevice.deviceId, workerName: ewohDevice.workerName, batteryPct: ewohDevice.batteryPct })
         .from(ewohDevice)
         .where(sql`${ewohDevice.batteryPct} < 20`);
 
-      const suggestions: BrainSuggestion[] = [];
-
-      const highLoadDevices = telemetryRows.filter((r) => (r.avgLoad ?? 0) > 0.7);
-      const overloadDevices = telemetryRows.filter((r) => (r.avgLoad ?? 0) > 0.8);
-      const l3Events = openEvents.filter((e) => e.severity === 'L3');
-
-      // 建议 1: 负荷均衡（avg load > 0.8）
-      if (overloadDevices.length > 0) {
-        const maxLoad = Math.max(...overloadDevices.map((r) => r.avgLoad ?? 0));
-        const confidence = Number(Math.min(0.6 + (maxLoad - 0.8) * 2, 0.95).toFixed(2));
-        suggestions.push({
-          type: 'load_balance',
-          title: '高负荷人员负荷均衡',
-          description: `检测到 ${overloadDevices.length} 台设备平均负荷超过 0.8，建议将高负荷人员任务部分转移给低负荷人员。`,
-          affectedEntities: overloadDevices.map((r) => r.deviceId),
-          expectedBenefit: `预计平均负荷下降 15-20%，最大负荷由 ${maxLoad.toFixed(2)} 降至 0.7 以下`,
-          confidence,
-        });
-      }
-
-      // 建议 2: 换电（battery < 20）
-      if (lowBatteryDevices.length > 0) {
-        const minBattery = Math.min(...lowBatteryDevices.map((d) => d.batteryPct ?? 100));
-        const confidence = Number(Math.min(0.7 + (20 - minBattery) / 40, 0.95).toFixed(2));
-        suggestions.push({
-          type: 'battery_swap',
-          title: '低电量设备换电',
-          description: `检测到 ${lowBatteryDevices.length} 台设备电量低于 20%，建议立即安排换电或充电。`,
-          affectedEntities: lowBatteryDevices.map((d) => d.deviceId),
-          expectedBenefit: `避免设备停机，最低电量 ${minBattery}%，换电后可持续作业 4 小时`,
-          confidence,
-        });
-      }
-
-      // 建议 3: 安全介入（L3 事件）
-      if (l3Events.length > 0) {
-        suggestions.push({
-          type: 'safety_intervene',
-          title: 'L3 安全事件介入',
-          description: `检测到 ${l3Events.length} 项 L3 级未结安全事件，建议立即介入处理。`,
-          affectedEntities: l3Events.map((e) => e.eventId),
-          expectedBenefit: '及时处置可避免安全事故升级，降低人员受伤风险',
-          confidence: 0.9,
-        });
-      }
-
-      // 建议 4: 节拍优化（高负荷设备 > 0）
-      if (highLoadDevices.length > 0) {
-        const confidence = Number((0.65 + Math.min(highLoadDevices.length * 0.05, 0.25)).toFixed(2));
-        suggestions.push({
-          type: 'takt_improve',
-          title: '瓶颈工位节拍优化',
-          description: `${highLoadDevices.length} 台设备处于高负荷状态，可能存在瓶颈工位，建议优化工序分配。`,
-          affectedEntities: highLoadDevices.map((r) => r.deviceId),
-          expectedBenefit: '通过瓶颈工位拆分或并行化，预计节拍提升 5-10%',
-          confidence,
-        });
-      }
-
-      // 建议 5: 无问题时给出通用优化建议
-      if (suggestions.length === 0) {
-        suggestions.push({
-          type: 'bottleneck_resolve',
-          title: '产线瓶颈通用优化',
-          description: '当前各项指标平稳，建议持续监控并识别潜在瓶颈工位进行预防性优化。',
-          affectedEntities: [],
-          expectedBenefit: '预防性优化可提升整体产线稳定性，预计节拍提升 2-3%',
-          confidence: 0.5,
-        });
-      }
-
-      // 调用 Ark 大模型基于真实数据生成/优化建议；无配置或失败时回落到规则建议。
       const enriched = await this.enrichBrainSuggestionsWithLlm(
-        suggestions,
+        fallback,
         { telemetryRows, openEvents, lowBatteryDevices },
       );
-
-      this.logger.log(`getBrainSuggestions generated ${enriched.length} suggestions`);
-      return enriched;
+      if (enriched && enriched.length > 0) {
+        this.brainCache = enriched;
+        this.brainCacheAt = Date.now();
+        this.logger.log(`getBrainSuggestions cached ${enriched.length} LLM suggestions`);
+      }
     } catch (error) {
-      this.logger.error('getBrainSuggestions 失败', error);
-      throw error;
+      this.logger.warn(`getBrainSuggestions 异步增强失败：${String(error)}`);
+    } finally {
+      this.brainEnhancing = false;
     }
   }
 
@@ -723,13 +937,14 @@ export class GamificationService {
           ),
       );
       if (valid.length === 0) return fallback;
-      return valid.map((s) => ({
+      return valid.map((s, i) => ({
         type: (s.type as BrainSuggestion['type']) ?? 'bottleneck_resolve',
         title: s.title ?? '',
         description: s.description ?? '',
         affectedEntities: Array.isArray(s.affectedEntities) ? s.affectedEntities.filter((v): v is string => typeof v === 'string') : [],
         expectedBenefit: s.expectedBenefit ?? '',
         confidence: typeof s.confidence === 'number' ? Math.min(1, Math.max(0, s.confidence)) : 0.5,
+        suggestionId: `SUG-${s.type ?? 'brain'}-${i}`,
       }));
     } catch (e) {
       this.logger.warn(`getBrainSuggestions LLM 输出解析失败：${String(e)}`);

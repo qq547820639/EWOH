@@ -765,6 +765,8 @@ export interface ProcessNode {
   assignedPersonId?: string | null;
   /** 预计节拍（秒） */
   estimatedTakt?: number | null;
+  /** 节拍数据来源：telemetry=真实遥测推算，default=默认值 */
+  taktSource?: 'telemetry' | 'default';
   /** 依赖的前置工序 ID */
   dependencies: string[];
 }
@@ -796,6 +798,8 @@ export interface TaktSimulation {
     workstationName: string;
     taktSec: number;
     isBottleneck: boolean;
+    /** 节拍数据来源：telemetry=真实遥测推算，default=默认值 */
+    taktSource?: 'telemetry' | 'default';
   }>;
 }
 
@@ -875,8 +879,31 @@ export interface BrainSuggestion {
   expectedBenefit: string;
   /** 置信度 0-1 */
   confidence: number;
-  /** 关联方案 ID */
+  /** 建议唯一标识（用于「采纳」时定位/转化） */
+  suggestionId?: string;
+  /** 关联方案 ID（已存在可审批方案时回填） */
   planId?: string;
+  /** LLM 增强是否仍在进行（true 表示规则建议已返回、大模型增强后台执行中） */
+  enhancing?: boolean;
+}
+
+/** 大脑建议 → 调度方案 转化请求 */
+export interface ApplyBrainSuggestionRequest {
+  type: BrainSuggestion['type'];
+  title: string;
+  description: string;
+  affectedEntities: string[];
+  expectedBenefit: string;
+  confidence: number;
+  operator?: string;
+}
+
+/** 大脑建议 → 调度方案 转化结果 */
+export interface ApplyBrainSuggestionResult {
+  planId: string;
+  planName: string;
+  strategy: string;
+  status: string;
 }
 
 // ===== 审批 =====

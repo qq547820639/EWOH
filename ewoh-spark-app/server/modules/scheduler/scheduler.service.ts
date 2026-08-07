@@ -130,7 +130,7 @@ export class SchedulerService {
           planId: `${idBase}KEEP`,
           planName: '保持现状',
           strategy: 'keep_status',
-          status: 'shadow',
+          status: 'proposed',
           taktImprovement: 0,
           highLoadPersons: highLoadDevices,
           lowBatteryRisk: lowBatteryDevices,
@@ -152,7 +152,7 @@ export class SchedulerService {
           planId: `${idBase}CAP`,
           planName: '产能优先',
           strategy: 'capacity_priority',
-          status: 'shadow',
+          status: 'proposed',
           taktImprovement: 8.5,
           highLoadPersons: Math.max(highLoadDevices - 1, 0),
           lowBatteryRisk: lowBatteryDevices,
@@ -173,7 +173,7 @@ export class SchedulerService {
           planId: `${idBase}BAL`,
           planName: '负荷均衡',
           strategy: 'load_balance',
-          status: 'shadow',
+          status: 'proposed',
           taktImprovement: 3.2,
           highLoadPersons: 0,
           lowBatteryRisk: Math.max(lowBatteryDevices - 1, 0),
@@ -245,7 +245,7 @@ export class SchedulerService {
 
       const op = operator || 'supervisor';
       const now = new Date();
-      const currentStatus = existing.status ?? 'shadow';
+      const currentStatus = existing.status ?? 'proposed';
       const gucContext: OrgContext = {
         userId: actor?.userId ?? 'system',
         primaryOrgId: actor?.primaryOrgId ?? '',
@@ -323,6 +323,111 @@ export class SchedulerService {
         throw error;
       }
       this.logger.error('confirmPlan 失败', error);
+      throw error;
+    }
+  }
+
+  async rejectPlan(
+    planId: string,
+    reason: string,
+    operator?: string,
+    actor?: OrgContext,
+  ): Promise<{ plan: SchedulePlan; audit: ScheduleAudit }> {
+    if (!reason || !reason.trim()) {
+      throw new BadRequestException('reason is required');
+    }
+
+    try {
+      const [existing] = await this.db
+        .select()
+        .from(ewohSchedulePlan)
+        .where(eq(ewohSchedulePlan.planId, planId))
+        .limit(1);
+
+      if (!existing) {
+        throw new NotFoundException(`Schedule plan ${planId} not found`);
+      }
+
+      const op = operator || 'supervisor';
+      const now = new Date();
+      const currentStatus = existing.status ?? 'proposed';
+      const gucContext: OrgContext = {
+        userId: actor?.userId ?? 'system',
+        primaryOrgId: actor?.primaryOrgId ?? '',
+        role: actor?.role,
+        accessibleOrgIds:
+          actor?.accessibleOrgIds ??
+          (actor?.primaryOrgId ? [actor.primaryOrgId] : []),
+        isGlobalAdmin: actor?.isGlobalAdmin ?? false,
+      };
+
+      return this.requestDatabaseContext.runInTransaction(
+        buildGucSettings(gucContext),
+        async () => {
+          const [updated] = await this.db
+            .update(ewohSchedulePlan)
+            .set({
+              status: 'rejected',
+              confirmedBy: op,
+              confirmedAt: now,
+              confirmReason: reason,
+            })
+            .where(
+              and(
+                eq(ewohSchedulePlan.planId, planId),
+                eq(ewohSchedulePlan.status, currentStatus),
+              ),
+            )
+            .returning();
+
+          if (!updated) {
+            throw new ConflictException('STATE_CONFLICT');
+          }
+
+          const [auditRow] = await this.db
+            .insert(ewohScheduleAudit)
+            .values({
+              auditId: `AUDIT-${Date.now()}-${this.randomSuffix()}`,
+              planId,
+              action: 'reject',
+              operator: op,
+              reason,
+              createdAt: now,
+            })
+            .returning();
+
+          await this.auditService.appendAuditLog({
+            actorId: actor?.userId ?? 'system',
+            orgId: actor?.primaryOrgId ?? '',
+            action: 'scheduler.reject',
+            entityType: 'schedule_plan',
+            entityId: planId,
+            before: {
+              status: currentStatus,
+              confirmReason: existing.confirmReason ?? null,
+            },
+            after: {
+              status: 'rejected',
+              confirmedBy: op,
+              confirmReason: reason,
+            },
+          });
+
+          return {
+            plan: this.mapPlan(updated),
+            audit: this.mapAudit(auditRow),
+          };
+        },
+      );
+    } catch (error) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException ||
+        error instanceof ConflictException
+      ) {
+        throw error;
+      }
+      this.logger.error('rejectPlan 失败', error);
       throw error;
     }
   }
@@ -502,7 +607,7 @@ export class SchedulerService {
         planId: `PLAN-${ts}-KEEP`,
         planName: '保持现状',
         strategy: 'keep_status',
-        status: 'shadow',
+        status: 'proposed',
         taktImprovement: 0,
         highLoadPersons: highLoadDevices,
         lowBatteryRisk: lowBatteryDevices,
@@ -551,7 +656,7 @@ export class SchedulerService {
         planId: `PLAN-${ts}-AI`,
         planName: 'AI推荐',
         strategy: 'load_balance',
-        status: 'shadow',
+        status: 'proposed',
         taktImprovement: aiTaktImprovement,
         highLoadPersons: Math.max(highLoadDevices - overloadDevices, 0),
         lowBatteryRisk: aiLowBatteryRisk,
@@ -590,7 +695,7 @@ export class SchedulerService {
         planId: `PLAN-${ts}-CAP`,
         planName: '产能优先',
         strategy: 'capacity_priority',
-        status: 'shadow',
+        status: 'proposed',
         taktImprovement: capTaktImprovement,
         highLoadPersons: Math.min(highLoadDevices + 1, totalDevices),
         lowBatteryRisk: lowBatteryDevices,
@@ -626,62 +731,6 @@ export class SchedulerService {
       return inserted.map((r) => this.mapPlan(r));
     } catch (error) {
       this.logger.error('getDataDrivenPlans 失败', error);
-      throw error;
-    }
-  }
-
-  /**
-   * 查询方案下发/冲突状态（G3.5 增强）
-   */
-  async getDispatchStatus(planId: string): Promise<{
-    planId: string;
-    status: string | null;
-    conflicts: string[];
-    lastAudit: ScheduleAudit | null;
-  }> {
-    try {
-      const [plan] = await this.db
-        .select()
-        .from(ewohSchedulePlan)
-        .where(eq(ewohSchedulePlan.planId, planId))
-        .limit(1);
-
-      if (!plan) {
-        throw new NotFoundException(`Schedule plan ${planId} not found`);
-      }
-
-      // 查询最近的 dispatch 审计
-      const [lastAuditRow] = await this.db
-        .select()
-        .from(ewohScheduleAudit)
-        .where(
-          and(
-            eq(ewohScheduleAudit.planId, planId),
-            eq(ewohScheduleAudit.action, 'dispatch'),
-          ),
-        )
-        .orderBy(desc(ewohScheduleAudit.createdAt))
-        .limit(1);
-
-      // 从审计 reason 中解析冲突信息
-      let conflicts: string[] = [];
-      if (lastAuditRow?.reason && lastAuditRow.reason.includes('冲突')) {
-        const reason = lastAuditRow.reason.replace(/^下发冲突：/, '');
-        conflicts = reason
-          .split(';')
-          .map((s) => s.trim())
-          .filter(Boolean);
-      }
-
-      return {
-        planId,
-        status: plan.status ?? 'shadow',
-        conflicts,
-        lastAudit: lastAuditRow ? this.mapAudit(lastAuditRow) : null,
-      };
-    } catch (error) {
-      if (error instanceof NotFoundException) throw error;
-      this.logger.error('getDispatchStatus 失败', error);
       throw error;
     }
   }
