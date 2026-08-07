@@ -39,6 +39,7 @@ import {
 
 interface TaskOrchestrationPanelProps {
   entities: SpatialEntity[];
+  onOpenSchedule?: () => void;
 }
 
 interface NodeEditorState {
@@ -80,6 +81,7 @@ function formatDuration(sec: number): string {
 
 const TaskOrchestrationPanel = ({
   entities,
+  onOpenSchedule,
 }: TaskOrchestrationPanelProps): React.ReactElement => {
   const workstations = useMemo(
     () => entities.filter((e) => e.entityType === 'workstation'),
@@ -416,6 +418,16 @@ const TaskOrchestrationPanel = ({
                     <AlertTriangle className="w-2.5 h-2.5" />
                     {simulation.bottleneckWorkstationName}
                   </Badge>
+                )}
+                {result && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 text-[10px] px-2 text-cyan-400 border-cyan-500/30"
+                    onClick={() => onOpenSchedule?.()}
+                  >
+                    发布到调度审批
+                  </Button>
                 )}
               </div>
             </div>

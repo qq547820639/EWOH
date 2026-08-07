@@ -565,9 +565,145 @@ export class GamificationService {
 
   // ===== G3.7 大脑推理建议 =====
 
+  /** LLM 增强结果的进程内缓存：先返回规则建议，LLM 异步增强后回写覆盖。 */
+  private brainCache: BrainSuggestion[] | null = null;
+  private brainCacheAt = 0;
+
+  /**
+   * 大脑建议（G3.7）。
+   * 设计：同步返回规则建议（毫秒级），LLM 增强在后台异步执行并写入缓存，
+   * 后续轮询（前端每 10s）命中缓存后返回增强结果。
+   * 这样避免慢 LLM（~140s）阻塞请求，也让规则建议始终立即可用。
+   */
   async getBrainSuggestions(): Promise<BrainSuggestion[]> {
     try {
-      // 1. 查询最近 1h 遥测：按 deviceId 分组的平均负荷
+      // 1. 先构造规则建议（毫秒级，不依赖 LLM）
+      const suggestions = await this.buildRuleSuggestions();
+
+      // 2. 若已有较新的 LLM 增强缓存，直接返回增强结果
+      const cacheTtlMs = 10 * 60 * 1000;
+      if (this.brainCache && Date.now() - this.brainCacheAt < cacheTtlMs) {
+        this.logger.log(
+          `getBrainSuggestions serving ${this.brainCache.length} cached (LLM) suggestions`,
+        );
+        return this.brainCache;
+      }
+
+      // 3. 返回规则建议，同时后台异步触发 LLM 增强并回写缓存
+      void this.enrichBrainSuggestionsWithLlmAsync(suggestions);
+
+      this.logger.log(`getBrainSuggestions returned ${suggestions.length} rule suggestions`);
+      return suggestions;
+    } catch (error) {
+      this.logger.error('getBrainSuggestions 失败', error);
+      throw error;
+    }
+  }
+
+  /** 基于实时数据构造规则建议（不调用 LLM）。 */
+  private async buildRuleSuggestions(): Promise<BrainSuggestion[]> {
+    // 1. 查询最近 1h 遥测：按 deviceId 分组的平均负荷
+    const telemetryRows = await this.db
+      .select({
+        deviceId: ewohTelemetry.deviceId,
+        avgLoad: sql<number>`coalesce(avg(${ewohTelemetry.loadScore}), 0)::float`,
+        avgBattery: sql<number>`coalesce(avg(${ewohTelemetry.batteryPct}), 100)::float`,
+      })
+      .from(ewohTelemetry)
+      .where(gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`))
+      .groupBy(ewohTelemetry.deviceId);
+
+    // 2. 查询未结事件
+    const openEvents = await this.db
+      .select()
+      .from(ewohEvent)
+      .where(eq(ewohEvent.status, 'open'));
+
+    // 3. 查询低电量设备
+    const lowBatteryDevices = await this.db
+      .select({ deviceId: ewohDevice.deviceId, workerName: ewohDevice.workerName, batteryPct: ewohDevice.batteryPct })
+      .from(ewohDevice)
+      .where(sql`${ewohDevice.batteryPct} < 20`);
+
+    const suggestions: BrainSuggestion[] = [];
+
+    const highLoadDevices = telemetryRows.filter((r) => (r.avgLoad ?? 0) > 0.7);
+    const overloadDevices = telemetryRows.filter((r) => (r.avgLoad ?? 0) > 0.8);
+    const l3Events = openEvents.filter((e) => e.severity === 'L3');
+
+    // 建议 1: 负荷均衡（avg load > 0.8）
+    if (overloadDevices.length > 0) {
+      const maxLoad = Math.max(...overloadDevices.map((r) => r.avgLoad ?? 0));
+      const confidence = Number(Math.min(0.6 + (maxLoad - 0.8) * 2, 0.95).toFixed(2));
+      suggestions.push({
+        type: 'load_balance',
+        title: '高负荷人员负荷均衡',
+        description: `检测到 ${overloadDevices.length} 台设备平均负荷超过 0.8，建议将高负荷人员任务部分转移给低负荷人员。`,
+        affectedEntities: overloadDevices.map((r) => r.deviceId),
+        expectedBenefit: `预计平均负荷下降 15-20%，最大负荷由 ${maxLoad.toFixed(2)} 降至 0.7 以下`,
+        confidence,
+      });
+    }
+
+    // 建议 2: 换电（battery < 20）
+    if (lowBatteryDevices.length > 0) {
+      const minBattery = Math.min(...lowBatteryDevices.map((d) => d.batteryPct ?? 100));
+      const confidence = Number(Math.min(0.7 + (20 - minBattery) / 40, 0.95).toFixed(2));
+      suggestions.push({
+        type: 'battery_swap',
+        title: '低电量设备换电',
+        description: `检测到 ${lowBatteryDevices.length} 台设备电量低于 20%，建议立即安排换电或充电。`,
+        affectedEntities: lowBatteryDevices.map((d) => d.deviceId),
+        expectedBenefit: `避免设备停机，最低电量 ${minBattery}%，换电后可持续作业 4 小时`,
+        confidence,
+      });
+    }
+
+    // 建议 3: 安全介入（L3 事件）
+    if (l3Events.length > 0) {
+      suggestions.push({
+        type: 'safety_intervene',
+        title: 'L3 安全事件介入',
+        description: `检测到 ${l3Events.length} 项 L3 级未结安全事件，建议立即介入处理。`,
+        affectedEntities: l3Events.map((e) => e.eventId),
+        expectedBenefit: '及时处置可避免安全事故升级，降低人员受伤风险',
+        confidence: 0.9,
+      });
+    }
+
+    // 建议 4: 节拍优化（高负荷设备 > 0）
+    if (highLoadDevices.length > 0) {
+      const confidence = Number((0.65 + Math.min(highLoadDevices.length * 0.05, 0.25)).toFixed(2));
+      suggestions.push({
+        type: 'takt_improve',
+        title: '瓶颈工位节拍优化',
+        description: `${highLoadDevices.length} 台设备处于高负荷状态，可能存在瓶颈工位，建议优化工序分配。`,
+        affectedEntities: highLoadDevices.map((r) => r.deviceId),
+        expectedBenefit: '通过瓶颈工位拆分或并行化，预计节拍提升 5-10%',
+        confidence,
+      });
+    }
+
+    // 建议 5: 无问题时给出通用优化建议
+    if (suggestions.length === 0) {
+      suggestions.push({
+        type: 'bottleneck_resolve',
+        title: '产线瓶颈通用优化',
+        description: '当前各项指标平稳，建议持续监控并识别潜在瓶颈工位进行预防性优化。',
+        affectedEntities: [],
+        expectedBenefit: '预防性优化可提升整体产线稳定性，预计节拍提升 2-3%',
+        confidence: 0.5,
+      });
+    }
+
+    return suggestions;
+  }
+
+  /** 后台异步执行 LLM 增强，成功后回写缓存（失败不影响已返回的规则建议）。 */
+  private async enrichBrainSuggestionsWithLlmAsync(
+    fallback: BrainSuggestion[],
+  ): Promise<void> {
+    try {
       const telemetryRows = await this.db
         .select({
           deviceId: ewohTelemetry.deviceId,
@@ -577,101 +713,26 @@ export class GamificationService {
         .from(ewohTelemetry)
         .where(gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`))
         .groupBy(ewohTelemetry.deviceId);
-
-      // 2. 查询未结事件
       const openEvents = await this.db
         .select()
         .from(ewohEvent)
         .where(eq(ewohEvent.status, 'open'));
-
-      // 3. 查询低电量设备
       const lowBatteryDevices = await this.db
         .select({ deviceId: ewohDevice.deviceId, workerName: ewohDevice.workerName, batteryPct: ewohDevice.batteryPct })
         .from(ewohDevice)
         .where(sql`${ewohDevice.batteryPct} < 20`);
 
-      const suggestions: BrainSuggestion[] = [];
-
-      const highLoadDevices = telemetryRows.filter((r) => (r.avgLoad ?? 0) > 0.7);
-      const overloadDevices = telemetryRows.filter((r) => (r.avgLoad ?? 0) > 0.8);
-      const l3Events = openEvents.filter((e) => e.severity === 'L3');
-
-      // 建议 1: 负荷均衡（avg load > 0.8）
-      if (overloadDevices.length > 0) {
-        const maxLoad = Math.max(...overloadDevices.map((r) => r.avgLoad ?? 0));
-        const confidence = Number(Math.min(0.6 + (maxLoad - 0.8) * 2, 0.95).toFixed(2));
-        suggestions.push({
-          type: 'load_balance',
-          title: '高负荷人员负荷均衡',
-          description: `检测到 ${overloadDevices.length} 台设备平均负荷超过 0.8，建议将高负荷人员任务部分转移给低负荷人员。`,
-          affectedEntities: overloadDevices.map((r) => r.deviceId),
-          expectedBenefit: `预计平均负荷下降 15-20%，最大负荷由 ${maxLoad.toFixed(2)} 降至 0.7 以下`,
-          confidence,
-        });
-      }
-
-      // 建议 2: 换电（battery < 20）
-      if (lowBatteryDevices.length > 0) {
-        const minBattery = Math.min(...lowBatteryDevices.map((d) => d.batteryPct ?? 100));
-        const confidence = Number(Math.min(0.7 + (20 - minBattery) / 40, 0.95).toFixed(2));
-        suggestions.push({
-          type: 'battery_swap',
-          title: '低电量设备换电',
-          description: `检测到 ${lowBatteryDevices.length} 台设备电量低于 20%，建议立即安排换电或充电。`,
-          affectedEntities: lowBatteryDevices.map((d) => d.deviceId),
-          expectedBenefit: `避免设备停机，最低电量 ${minBattery}%，换电后可持续作业 4 小时`,
-          confidence,
-        });
-      }
-
-      // 建议 3: 安全介入（L3 事件）
-      if (l3Events.length > 0) {
-        suggestions.push({
-          type: 'safety_intervene',
-          title: 'L3 安全事件介入',
-          description: `检测到 ${l3Events.length} 项 L3 级未结安全事件，建议立即介入处理。`,
-          affectedEntities: l3Events.map((e) => e.eventId),
-          expectedBenefit: '及时处置可避免安全事故升级，降低人员受伤风险',
-          confidence: 0.9,
-        });
-      }
-
-      // 建议 4: 节拍优化（高负荷设备 > 0）
-      if (highLoadDevices.length > 0) {
-        const confidence = Number((0.65 + Math.min(highLoadDevices.length * 0.05, 0.25)).toFixed(2));
-        suggestions.push({
-          type: 'takt_improve',
-          title: '瓶颈工位节拍优化',
-          description: `${highLoadDevices.length} 台设备处于高负荷状态，可能存在瓶颈工位，建议优化工序分配。`,
-          affectedEntities: highLoadDevices.map((r) => r.deviceId),
-          expectedBenefit: '通过瓶颈工位拆分或并行化，预计节拍提升 5-10%',
-          confidence,
-        });
-      }
-
-      // 建议 5: 无问题时给出通用优化建议
-      if (suggestions.length === 0) {
-        suggestions.push({
-          type: 'bottleneck_resolve',
-          title: '产线瓶颈通用优化',
-          description: '当前各项指标平稳，建议持续监控并识别潜在瓶颈工位进行预防性优化。',
-          affectedEntities: [],
-          expectedBenefit: '预防性优化可提升整体产线稳定性，预计节拍提升 2-3%',
-          confidence: 0.5,
-        });
-      }
-
-      // 调用 Ark 大模型基于真实数据生成/优化建议；无配置或失败时回落到规则建议。
       const enriched = await this.enrichBrainSuggestionsWithLlm(
-        suggestions,
+        fallback,
         { telemetryRows, openEvents, lowBatteryDevices },
       );
-
-      this.logger.log(`getBrainSuggestions generated ${enriched.length} suggestions`);
-      return enriched;
+      if (enriched && enriched.length > 0) {
+        this.brainCache = enriched;
+        this.brainCacheAt = Date.now();
+        this.logger.log(`getBrainSuggestions cached ${enriched.length} LLM suggestions`);
+      }
     } catch (error) {
-      this.logger.error('getBrainSuggestions 失败', error);
-      throw error;
+      this.logger.warn(`getBrainSuggestions 异步增强失败：${String(error)}`);
     }
   }
 

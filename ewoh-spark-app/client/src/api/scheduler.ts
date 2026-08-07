@@ -37,6 +37,18 @@ export async function confirmPlan(
   return res.data;
 }
 
+export async function rejectPlan(
+  planId: string,
+  body: ConfirmPlanRequest,
+): Promise<{ plan: SchedulePlan; audit: ScheduleAudit }> {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/plans/${planId}/reject`,
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}
+
 export async function getAudit(planId?: string): Promise<ScheduleAudit[]> {
   const params: Record<string, string> = {};
   if (planId) params.planId = planId;

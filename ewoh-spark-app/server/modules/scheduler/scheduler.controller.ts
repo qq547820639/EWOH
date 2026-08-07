@@ -58,6 +58,23 @@ export class SchedulerController {
     );
   }
 
+  @Post('plans/:planId/reject')
+  async rejectPlan(
+    @Param('planId') planId: string,
+    @Body() body: ConfirmPlanRequest,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    if (!body.reason || !body.reason.trim()) {
+      throw new BadRequestException('reason is required');
+    }
+    return this.schedulerService.rejectPlan(
+      planId,
+      body.reason,
+      body.operator,
+      request.userContext,
+    );
+  }
+
   @Get('audit')
   async getAudit(@Query('planId') planId?: string) {
     return this.schedulerService.getAudit(planId);

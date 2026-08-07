@@ -1,14 +1,17 @@
 import { Fragment, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Sparkles, ChevronDown, ChevronRight, History, Check } from 'lucide-react';
+import { Sparkles, ChevronDown, ChevronRight, History, Check, X, Send } from 'lucide-react';
 import dayjs from 'dayjs';
 import { toast } from 'sonner';
 import {
   generatePlans,
   getPlans,
   confirmPlan,
+  rejectPlan,
   getAudit,
 } from '@client/src/api/scheduler';
+import { dispatchPlan } from '@client/src/api/gamification';
+import { getCurrentOperator } from '@client/src/lib/auth';
 import type { SchedulePlan, ScheduleAudit } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { Button } from '@client/src/components/ui/button';
@@ -85,6 +88,8 @@ export default function SchedulePanel() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<SchedulePlan | null>(null);
   const [confirmReason, setConfirmReason] = useState('');
+  const [rejectTarget, setRejectTarget] = useState<SchedulePlan | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const { data: plans, isLoading, isError } = useQuery<SchedulePlan[]>({
     queryKey: ['schedule-plans', statusFilter],
@@ -124,6 +129,38 @@ export default function SchedulePanel() {
     },
   });
 
+  const rejectMutation = useMutation({
+    mutationFn: ({ planId, reason }: { planId: string; reason: string }) =>
+      rejectPlan(planId, { reason }),
+    onSuccess: () => {
+      toast.success('方案已驳回');
+      setRejectTarget(null);
+      setRejectReason('');
+      queryClient.invalidateQueries({ queryKey: ['schedule-plans'] });
+      queryClient.invalidateQueries({ queryKey: ['schedule-audits'] });
+    },
+    onError: () => {
+      toast.error('方案驳回失败');
+    },
+  });
+
+  const dispatchMutation = useMutation({
+    mutationFn: ({ planId }: { planId: string }) =>
+      dispatchPlan(planId, { operator: getCurrentOperator() }),
+    onSuccess: (data) => {
+      if (data.status === 'conflict') {
+        toast.error('下发冲突', { description: data.conflicts.join('；') });
+      } else {
+        toast.success('方案已下发执行');
+      }
+      queryClient.invalidateQueries({ queryKey: ['schedule-plans'] });
+      queryClient.invalidateQueries({ queryKey: ['schedule-audits'] });
+    },
+    onError: () => {
+      toast.error('下发失败');
+    },
+  });
+
   const handleConfirm = () => {
     if (!confirmTarget) return;
     if (!confirmReason.trim()) {
@@ -131,6 +168,15 @@ export default function SchedulePanel() {
       return;
     }
     confirmMutation.mutate({ planId: confirmTarget.planId, reason: confirmReason });
+  };
+
+  const handleReject = () => {
+    if (!rejectTarget) return;
+    if (!rejectReason.trim()) {
+      toast.error('请填写驳回理由');
+      return;
+    }
+    rejectMutation.mutate({ planId: rejectTarget.planId, reason: rejectReason });
   };
 
   const recentAudits = (audits ?? []).slice(0, 5);
@@ -195,6 +241,7 @@ export default function SchedulePanel() {
                 const outputImp = getMetric(plan, 'outputImprovement');
                 const onTimeRate = getMetric(plan, 'onTimeRate');
                 const canConfirm = plan.status === 'shadow' || plan.status === 'proposed';
+                const canDispatch = plan.status === 'confirmed';
                 return (
                   <Fragment key={plan.id}>
                     <TableRow className="border-white/5 hover:bg-white/5">
@@ -252,20 +299,48 @@ export default function SchedulePanel() {
                         {plan.reason ?? '—'}
                       </TableCell>
                       <TableCell className="p-1">
-                        {canConfirm && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-6 text-[10px] px-2"
-                            onClick={() => {
-                              setConfirmTarget(plan);
-                              setConfirmReason('');
-                            }}
-                          >
-                            <Check className="w-3 h-3" />
-                            确认
-                          </Button>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {canConfirm && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 text-[10px] px-2"
+                                onClick={() => {
+                                  setConfirmTarget(plan);
+                                  setConfirmReason('');
+                                }}
+                              >
+                                <Check className="w-3 h-3" />
+                                确认
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 text-[10px] px-2 text-red-400 border-red-500/30"
+                                onClick={() => {
+                                  setRejectTarget(plan);
+                                  setRejectReason('');
+                                }}
+                              >
+                                <X className="w-3 h-3" />
+                                驳回
+                              </Button>
+                            </>
+                          )}
+                          {canDispatch && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-[10px] px-2 text-cyan-400 border-cyan-500/30"
+                              onClick={() => dispatchMutation.mutate({ planId: plan.planId })}
+                              disabled={dispatchMutation.isPending}
+                            >
+                              <Send className="w-3 h-3" />
+                              下发
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                     {isExpanded && (
@@ -358,6 +433,43 @@ export default function SchedulePanel() {
               disabled={confirmMutation.isPending || !confirmReason.trim()}
             >
               {confirmMutation.isPending ? '确认中...' : '确认'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject dialog */}
+      <Dialog
+        open={!!rejectTarget}
+        onOpenChange={(open) => !open && setRejectTarget(null)}
+      >
+        <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">驳回调度方案</DialogTitle>
+            <DialogDescription className="text-white/70">
+              {rejectTarget?.planName} · {rejectTarget?.strategy}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-xs text-white/60">驳回理由（必填）</label>
+            <Textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="请输入驳回理由..."
+              className="bg-white/5 border-white/10 text-white"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setRejectTarget(null)}>
+              取消
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={handleReject}
+              disabled={rejectMutation.isPending || !rejectReason.trim()}
+            >
+              {rejectMutation.isPending ? '驳回中...' : '驳回'}
             </Button>
           </DialogFooter>
         </DialogContent>

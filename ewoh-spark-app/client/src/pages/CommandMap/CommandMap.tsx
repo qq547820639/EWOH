@@ -645,7 +645,11 @@ const CommandMap = (): React.ReactElement => {
           )}
           {activeTab === 'workbench' && (
             <React.Suspense fallback={<MapPanelFallback />}>
-              <WorkbenchPanel />
+              <WorkbenchPanel
+                onNavigate={setActiveTab}
+                onModeChange={setMode}
+                onSelectEntity={setSelectedEntityId}
+              />
             </React.Suspense>
           )}
           {activeTab === 'resource' && (
@@ -655,7 +659,10 @@ const CommandMap = (): React.ReactElement => {
           )}
           {activeTab === 'orchestration' && (
             <React.Suspense fallback={<MapPanelFallback />}>
-              <TaskOrchestrationPanel entities={entityList} />
+              <TaskOrchestrationPanel
+                entities={entityList}
+                onOpenSchedule={() => setActiveTab('schedule')}
+              />
             </React.Suspense>
           )}
           {activeTab === 'brain' && (
