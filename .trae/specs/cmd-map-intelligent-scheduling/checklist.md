@@ -1,0 +1,28 @@
+# Checklist
+
+- [x] 数据库含 8 张新调度表（runs/plans/plan_assignments/constraints/world_state_snapshots/route_nodes/route_edges/assignment_events），migration standalone_006 已注册并可 apply/verify/rollback
+- [x] 人员/设备/任务表具备调度所需字段（skills/certifications/availability/currentPosition/zone/workload/battery/capabilities/earliestStart/deadline/predecessor）
+- [x] WorldStateSnapshot 实现版本化快照并生成 `WS-YYYYMMDD-NNNN`
+- [x] 过期快照 Approve 返回 409 PLAN_STALE，不静默执行过期计划
+- [x] TriggerService 识别 ≥5 类触发源并带 debounce/cooldown
+- [x] Eligibility 层输出 eligible + reasons，仅 eligible 候选进入 Solver
+- [x] 技能不匹配人员不可被调度（测试）
+- [x] Solver 做联合调度并一次生成 Plan A/B/C（目标权重不同）
+- [x] 同一人不同时执行两任务 / 同一设备不同时被两任务占用（测试）
+- [x] blocked/congested 边不可选（测试）
+- [x] deadline 高优先级任务优先（测试）
+- [x] 无可行解时不生成虚假 assignment（测试）
+- [x] Route Graph 实现 A*/最短路径与 ETA 输出 distance/eta/nodes/geometry
+- [x] API 齐全：runs/plans/approve/reject/dispatch/replan/compare/routes/route-calculate
+- [x] 人工锁定转 Locked Constraint，Replan 不破坏锁定（测试）
+- [x] executing task 不被普通 Replan 移走（测试）
+- [x] 设备离线后 Replan 生成新方案（测试）
+- [x] 调度结果可解释（reasons + alternatives）（测试）
+- [x] Assignment 生命周期状态机 + assignment_events 事件
+- [x] 关键动作写审计（actor/action/timestamp/planId/version/before/after/reason）
+- [x] SchedulePanel 重做为 Plan 审批（Header/KPI/Assignment Changes + Approve/Reject/Compare/Adjust/Replan）
+- [x] CommandMap 接入真实 Plan：Shadow 虚线/预测人员/目标工位/拥堵封闭标记
+- [x] 人员/任务详情展示调度解释 + Compare Mode
+- [x] SAMPLE_DATA 仅作 Demo fallback，真实后端连接时使用真实 Plan
+- [x] Demo 场景：≥8 人员、15–20 任务、≥5 设备、5 区域，LINE-B backlog 场景可验证
+- [x] lint / typecheck / tests / build 全部通过

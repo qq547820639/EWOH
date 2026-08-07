@@ -503,11 +503,27 @@ export const ewohSchedulePlan = pgTable("ewoh_schedule_plan", {
   confirmedBy: varchar("confirmed_by", { length: 255 }),
   confirmedAt: customTimestamptz("confirmed_at", { precision: 6 }),
   confirmReason: text("confirm_reason"),
+  // --- Scheduling V2 fields (standalone_006) ---
+  version: integer("version").notNull().default(1),
+  snapshotVersion: varchar("snapshot_version", { length: 255 }),
+  triggerType: varchar("trigger_type", { length: 100 }),
+  triggerEntityId: varchar("trigger_entity_id", { length: 255 }),
+  /**
+   * @type { Record<string, unknown> }
+   */
+  baselineDeltaJson: jsonb("baseline_delta_json"),
+  /**
+   * @type { Array<Record<string, unknown>> }
+   */
+  violationsJson: jsonb("violations_json"),
+  supersededBy: varchar("superseded_by", { length: 255 }),
   // System field: Update time (auto-filled, do not modify)
   updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   uniqueIndex("ewoh_schedule_plan_plan_id_key").on(table.planId),
   index("idx_ewoh_schedule_plan_status").on(table.status),
+  index("idx_ewoh_schedule_plan_snapshot").on(table.snapshotVersion),
+  index("idx_ewoh_schedule_plan_trigger").on(table.triggerType, table.triggerEntityId),
 ]);
 
 export const ewohEventChain = pgTable("ewoh_event_chain", {
@@ -934,6 +950,157 @@ export const ewohWorkbenchExportTask = pgTable("workbench_export_tasks", {
   index("idx_workbench_export_tasks_idem").on(table.idempotencyKey),
 ]);
 
+// --- Scheduling V2 domain tables (standalone_006) ---
+
+export const ewohSchedulingRun = pgTable("ewoh_scheduling_run", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runId: varchar("run_id", { length: 255 }).notNull().unique(),
+  triggerType: varchar("trigger_type", { length: 100 }),
+  triggerEntityId: varchar("trigger_entity_id", { length: 255 }),
+  status: varchar("status", { length: 50 }).notNull().default('queued'),
+  snapshotVersion: varchar("snapshot_version", { length: 255 }),
+  /**
+   * @type { string[] }
+   */
+  planIds: jsonb("plan_ids"),
+  error: text("error"),
+  orgId: varchar("org_id", { length: 255 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("ewoh_scheduling_run_run_id_key").on(table.runId),
+  index("idx_ewoh_scheduling_run_status").on(table.status),
+  index("idx_ewoh_scheduling_run_trigger").on(table.triggerType, table.triggerEntityId),
+  index("idx_ewoh_scheduling_run_org_status").on(table.orgId, table.status),
+]);
+
+export const ewohSchedulingPlanAssignment = pgTable("ewoh_scheduling_plan_assignment", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  assignmentId: varchar("assignment_id", { length: 255 }).notNull().unique(),
+  planId: varchar("plan_id", { length: 255 }).notNull(),
+  taskId: varchar("task_id", { length: 255 }),
+  personId: varchar("person_id", { length: 255 }),
+  deviceId: varchar("device_id", { length: 255 }),
+  stationId: varchar("station_id", { length: 255 }),
+  zoneId: varchar("zone_id", { length: 255 }),
+  plannedStart: customTimestamptz("planned_start", { precision: 3 }),
+  plannedEnd: customTimestamptz("planned_end", { precision: 3 }),
+  routeId: varchar("route_id", { length: 255 }),
+  status: varchar("status", { length: 50 }).notNull().default('proposed'),
+  /**
+   * @type { { reasons?: string[]; alternatives?: Array<Record<string, unknown>> } }
+   */
+  explanationJson: jsonb("explanation_json"),
+  version: integer("version").notNull().default(1),
+  reason: text("reason"),
+  orgId: varchar("org_id", { length: 255 }),
+  createdBy: varchar("created_by", { length: 255 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("ewoh_scheduling_plan_assignment_assignment_id_key").on(table.assignmentId),
+  index("idx_ewoh_scheduling_plan_assignment_plan").on(table.planId),
+  index("idx_ewoh_scheduling_plan_assignment_task").on(table.taskId),
+  index("idx_ewoh_scheduling_plan_assignment_person").on(table.personId),
+  index("idx_ewoh_scheduling_plan_assignment_device").on(table.deviceId),
+  index("idx_ewoh_scheduling_plan_assignment_status").on(table.status),
+]);
+
+export const ewohSchedulingConstraint = pgTable("ewoh_scheduling_constraint", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  constraintId: varchar("constraint_id", { length: 255 }).notNull().unique(),
+  planId: varchar("plan_id", { length: 255 }),
+  taskId: varchar("task_id", { length: 255 }),
+  type: varchar("type", { length: 50 }).notNull(),
+  /**
+   * @type { Record<string, unknown> }
+   */
+  valueJson: jsonb("value_json"),
+  active: boolean("active").notNull().default(true),
+  createdBy: varchar("created_by", { length: 255 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("ewoh_scheduling_constraint_constraint_id_key").on(table.constraintId),
+  index("idx_ewoh_scheduling_constraint_plan").on(table.planId),
+  index("idx_ewoh_scheduling_constraint_task").on(table.taskId),
+  index("idx_ewoh_scheduling_constraint_type").on(table.type),
+]);
+
+export const ewohWorldStateSnapshot = pgTable("ewoh_world_state_snapshot", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  snapshotVersion: varchar("snapshot_version", { length: 255 }).notNull().unique(),
+  snapshotJson: jsonb("snapshot_json").notNull(),
+  createdAt: customTimestamptz("created_at", { precision: 3 }),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("ewoh_world_state_snapshot_snapshot_version_key").on(table.snapshotVersion),
+]);
+
+export const ewohRouteNode = pgTable("ewoh_route_node", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  nodeId: varchar("node_id", { length: 255 }).notNull().unique(),
+  nodeType: varchar("node_type", { length: 50 }),
+  x: real("x"),
+  y: real("y"),
+  floor: varchar("floor", { length: 50 }),
+  stationId: varchar("station_id", { length: 255 }),
+  zoneId: varchar("zone_id", { length: 255 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("ewoh_route_node_node_id_key").on(table.nodeId),
+  index("idx_ewoh_route_node_station").on(table.stationId),
+  index("idx_ewoh_route_node_zone").on(table.zoneId),
+]);
+
+export const ewohRouteEdge = pgTable("ewoh_route_edge", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  edgeId: varchar("edge_id", { length: 255 }).notNull().unique(),
+  fromNodeId: varchar("from_node_id", { length: 255 }),
+  toNodeId: varchar("to_node_id", { length: 255 }),
+  distanceMeters: real("distance_meters"),
+  expectedTimeSeconds: real("expected_time_seconds"),
+  direction: varchar("direction", { length: 20 }),
+  capacity: integer("capacity"),
+  riskLevel: varchar("risk_level", { length: 50 }),
+  status: varchar("status", { length: 50 }).notNull().default('open'),
+  /**
+   * @type { string[] }
+   */
+  accessibleFor: jsonb("accessible_for"),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("ewoh_route_edge_edge_id_key").on(table.edgeId),
+  index("idx_ewoh_route_edge_from").on(table.fromNodeId),
+  index("idx_ewoh_route_edge_to").on(table.toNodeId),
+  index("idx_ewoh_route_edge_status").on(table.status),
+]);
+
+export const ewohAssignmentEvent = pgTable("ewoh_assignment_event", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventId: varchar("event_id", { length: 255 }).notNull().unique(),
+  assignmentId: varchar("assignment_id", { length: 255 }),
+  taskId: varchar("task_id", { length: 255 }),
+  personId: varchar("person_id", { length: 255 }),
+  deviceId: varchar("device_id", { length: 255 }),
+  fromStatus: varchar("from_status", { length: 50 }),
+  toStatus: varchar("to_status", { length: 50 }),
+  actor: varchar("actor", { length: 255 }),
+  reason: text("reason"),
+  /**
+   * @type { Record<string, unknown> }
+   */
+  payloadJson: jsonb("payload_json"),
+  createdAt: customTimestamptz("created_at", { precision: 3 }),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("ewoh_assignment_event_event_id_key").on(table.eventId),
+  index("idx_ewoh_assignment_event_assignment").on(table.assignmentId),
+  index("idx_ewoh_assignment_event_task").on(table.taskId),
+]);
+
 // table aliases
 export const ewohAiSuggestionTable = ewohAiSuggestion;
 export const ewohDeviceTable = ewohDevice;
@@ -964,3 +1131,10 @@ export const ewohTopologyTable = ewohTopology;
 export const ewohWorldStateTable = ewohWorldState;
 export const ewohSavedViewsTable = ewohSavedViews;
 export const ewohWorkbenchExportTaskTable = ewohWorkbenchExportTask;
+export const ewohSchedulingRunTable = ewohSchedulingRun;
+export const ewohSchedulingPlanAssignmentTable = ewohSchedulingPlanAssignment;
+export const ewohSchedulingConstraintTable = ewohSchedulingConstraint;
+export const ewohWorldStateSnapshotTable = ewohWorldStateSnapshot;
+export const ewohRouteNodeTable = ewohRouteNode;
+export const ewohRouteEdgeTable = ewohRouteEdge;
+export const ewohAssignmentEventTable = ewohAssignmentEvent;

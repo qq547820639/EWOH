@@ -16,17 +16,32 @@ import {
   ewohDevice,
   ewohTelemetry,
   ewohEvent,
+  ewohSchedulingRun,
 } from '@server/database/schema';
 import { eq, desc, and, sql, gte, inArray } from 'drizzle-orm';
 import type {
   SchedulePlan,
   ScheduleAudit,
   ScheduleWeights,
+  SchedulingPlanV2,
+  SchedulingRun,
+  RouteGraph,
+  Route,
+  CreateRunRequest,
+  ApprovePlanRequest,
+  RejectPlanRequest,
+  ReplanRequest,
+  CalculateRouteRequest,
 } from '@shared/api.interface';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { AuditService } from '../shared/audit.service';
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { WorldStateSnapshotService } from './world-state.service';
+import { TriggerService } from './trigger.service';
+import { SolverService } from './solver.service';
+import { PlanService } from './plan.service';
+import { RoutingService } from './routing.service';
 
 /**
  * NOTE: ewoh_schedule_audit has no before_json/after_json columns in the
@@ -59,6 +74,11 @@ export class SchedulerService {
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly requestDatabaseContext: RequestDatabaseContext,
     private readonly auditService: AuditService,
+    private readonly worldStateSnapshotService: WorldStateSnapshotService,
+    private readonly triggerService: TriggerService,
+    private readonly solverService: SolverService,
+    private readonly planService: PlanService,
+    private readonly routingService: RoutingService,
   ) {}
 
   async generatePlans(body?: { idempotencyKey?: string }): Promise<SchedulePlan[]> {
@@ -733,6 +753,137 @@ export class SchedulerService {
       this.logger.error('getDataDrivenPlans 失败', error);
       throw error;
     }
+  }
+
+  // ===== Scheduling V2 endpoints =====
+
+  /** 创建调度运行：触发 + 求解 + 持久化方案。 */
+  async createRun(
+    body: CreateRunRequest,
+    actor?: OrgContext,
+  ): Promise<{ run: SchedulingRun | null; plans: SchedulingPlanV2[]; debounced: boolean }> {
+    const ctx = this.toOrgContext(actor);
+    const trigger = body.trigger ?? 'MANUAL';
+    const run = await this.triggerService.evaluate(trigger, body.entityId ?? null, ctx);
+    if (!run) {
+      return { run: null, plans: [], debounced: true };
+    }
+
+    const snapshot = await this.worldStateSnapshotService.buildSnapshot(ctx);
+    const horizonMinutes = body.horizonMinutes ?? 480;
+    const plans = await this.solverService.solveVariants(
+      snapshot,
+      [],
+      {
+        planId: run.runId,
+        triggerType: trigger,
+        triggerEntityId: run.triggerEntityId,
+        snapshotVersion: snapshot.snapshotVersion,
+        horizonMinutes,
+      },
+    );
+
+    for (const plan of plans) {
+      await this.planService.persistPlan(plan, ctx);
+    }
+
+    await this.requestDatabaseContext.runInTransaction(
+      buildGucSettings(ctx),
+      async () => {
+        await this.db
+          .update(ewohSchedulingRun)
+          .set({
+            status: 'succeeded',
+            snapshotVersion: snapshot.snapshotVersion,
+            planIds: plans.map((p) => p.planId),
+          })
+          .where(eq(ewohSchedulingRun.runId, run.runId));
+      },
+    );
+
+    return { run, plans, debounced: false };
+  }
+
+  async getRun(runId: string): Promise<SchedulingRun | null> {
+    const [row] = await this.db
+      .select()
+      .from(ewohSchedulingRun)
+      .where(eq(ewohSchedulingRun.runId, runId))
+      .limit(1);
+    if (!row) return null;
+    return {
+      runId: row.runId,
+      triggerType: row.triggerType ?? 'MANUAL',
+      triggerEntityId: row.triggerEntityId ?? null,
+      status: (row.status ?? 'queued') as SchedulingRun['status'],
+      snapshotVersion: row.snapshotVersion ?? null,
+      planIds: (row.planIds as string[] | null) ?? [],
+      orgId: row.orgId ?? null,
+      error: row.error ?? null,
+      createdAt: row.createdAt ? row.createdAt.toISOString() : '',
+    };
+  }
+
+  async getPlanDetail(planId: string): Promise<SchedulingPlanV2> {
+    return this.planService.getPlan(planId);
+  }
+
+  async approvePlanV2(
+    planId: string,
+    body: ApprovePlanRequest,
+    actor?: OrgContext,
+  ): Promise<SchedulingPlanV2> {
+    return this.planService.approvePlan(planId, body, this.toOrgContext(actor));
+  }
+
+  async rejectPlanV2(
+    planId: string,
+    body: RejectPlanRequest,
+    actor?: OrgContext,
+  ): Promise<SchedulingPlanV2> {
+    return this.planService.rejectPlan(planId, body, this.toOrgContext(actor));
+  }
+
+  async dispatchPlanV2(
+    planId: string,
+    actor?: OrgContext,
+  ): Promise<SchedulingPlanV2> {
+    return this.planService.dispatchPlan(planId, this.toOrgContext(actor));
+  }
+
+  async replanV2(
+    planId: string,
+    body: ReplanRequest,
+    actor?: OrgContext,
+  ): Promise<SchedulingPlanV2> {
+    return this.planService.replan(planId, body, this.toOrgContext(actor));
+  }
+
+  async comparePlansV2(
+    planId: string,
+    otherPlanId: string,
+  ): Promise<Record<string, unknown>> {
+    return this.planService.comparePlans(planId, otherPlanId);
+  }
+
+  async getRoutes(): Promise<RouteGraph> {
+    return this.routingService.loadGraph();
+  }
+
+  async calculateRouteV2(body: CalculateRouteRequest): Promise<Route> {
+    return this.routingService.calculateRoute(body.personId, body.taskId);
+  }
+
+  private toOrgContext(actor?: OrgContext): OrgContext {
+    return {
+      userId: actor?.userId ?? 'system',
+      primaryOrgId: actor?.primaryOrgId ?? '',
+      role: actor?.role,
+      accessibleOrgIds:
+        actor?.accessibleOrgIds ??
+        (actor?.primaryOrgId ? [actor.primaryOrgId] : []),
+      isGlobalAdmin: actor?.isGlobalAdmin ?? false,
+    };
   }
 
   private mapPlan(r: typeof ewohSchedulePlan.$inferSelect): SchedulePlan {

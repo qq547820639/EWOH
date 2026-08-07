@@ -5,7 +5,13 @@ import {
   type ReactZoomPanPinchRef,
 } from 'react-zoom-pan-pinch';
 import { ZoomIn, ZoomOut, Maximize, Crosshair } from 'lucide-react';
-import type { EnvironmentReading, SpatialEntity, CurrentWorldState } from '@shared/api.interface';
+import type {
+  EnvironmentReading,
+  SpatialEntity,
+  CurrentWorldState,
+  SchedulingPlanV2,
+  RouteGraph,
+} from '@shared/api.interface';
 import { fitLabel, truncateLabel } from './labels';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
 
@@ -22,6 +28,8 @@ interface FactoryMapProps {
   /** 调度模式：高亮某方案受影响人员（来自调度面板「在图上查看」） */
   focusPlanPersons?: string[];
   onFocusPlanPersonsConsumed?: () => void;
+  /** 调度方案路由叠加层：shadow 方案虚线、已审批/已下发实线、预测人员位置、目标工位、拥堵/阻断边 */
+  planOverlay?: { plan: SchedulingPlanV2 | null; routeGraph?: RouteGraph | null };
 }
 
 /** 摄像头视锥三角形顶点（yaw=0 朝右，按 yaw 旋转） */
@@ -274,6 +282,7 @@ const FactoryMap = ({
   replayTime,
   focusPlanPersons = [],
   onFocusPlanPersonsConsumed,
+  planOverlay,
 }: FactoryMapProps): React.ReactElement => {
   const staticEntities = useMemo(
     () =>
@@ -625,6 +634,150 @@ const FactoryMap = ({
                   );
                 })()
               : null)}
+
+        {/* 3.6 调度方案覆盖层：路由图 + 分配路由（人员→目标工位）+ 预测人员 + 拥堵/阻断边 */}
+        {showDynamic &&
+          mode === 'scheduling' &&
+          planOverlay?.plan &&
+          (() => {
+            const plan = planOverlay.plan;
+            const graph = planOverlay.routeGraph;
+            const nodeMap = new Map((graph?.nodes ?? []).map((n) => [n.nodeId, n]));
+            const personCoord = (id: string | null) => {
+              if (!id) return null;
+              const p = persons.find((x) => x.entityId === id);
+              if (p) return { x: p.x, y: p.y };
+              const e = entities.find((x) => x.entityId === id);
+              return e ? { x: e.x, y: e.y } : null;
+            };
+            const stationCoord = (id: string | null) => {
+              if (!id) return null;
+              const w = workstations.find((x) => x.entityId === id);
+              if (w) return { x: w.x, y: w.y };
+              const s = entities.find((x) => x.entityId === id);
+              return s ? { x: s.x, y: s.y } : null;
+            };
+            const approved =
+              plan.status === 'approved' ||
+              plan.status === 'dispatched' ||
+              plan.status === 'executing';
+            const routeColor = approved ? '#34d399' : '#a855f7';
+            const dash = approved ? undefined : '6 4';
+            const edgeGeoms = (graph?.edges ?? [])
+              .map((e) => {
+                const f = nodeMap.get(e.fromNodeId);
+                const t = nodeMap.get(e.toNodeId);
+                if (!f || !t) return null;
+                return { e, f, t };
+              })
+              .filter((x): x is NonNullable<typeof x> => Boolean(x));
+            return (
+              <g pointerEvents="none">
+                {/* 路由图边（拥堵/阻断高亮） */}
+                {edgeGeoms.map(({ e, f, t }) => {
+                  const blocked = e.status === 'blocked';
+                  const congested = e.status === 'congested';
+                  const color = blocked
+                    ? '#ef4444'
+                    : congested
+                      ? '#f59e0b'
+                      : 'rgba(148,163,184,0.35)';
+                  const mx = (f.x + t.x) / 2;
+                  const my = (f.y + t.y) / 2;
+                  return (
+                    <g key={e.edgeId}>
+                      <line
+                        x1={f.x}
+                        y1={f.y}
+                        x2={t.x}
+                        y2={t.y}
+                        stroke={color}
+                        strokeWidth={blocked || congested ? 2.5 : 1}
+                        strokeDasharray={congested ? '4 3' : undefined}
+                        opacity={blocked || congested ? 0.9 : 0.6}
+                      >
+                        {congested && (
+                          <animate
+                            attributeName="stroke-dashoffset"
+                            values="0;-7"
+                            dur="0.6s"
+                            repeatCount="indefinite"
+                          />
+                        )}
+                      </line>
+                      {blocked && (
+                        <g>
+                          <circle cx={mx} cy={my} r={5} fill="#ef4444" opacity="0.9" />
+                          <text x={mx} y={my - 7} textAnchor="middle" fill="#ef4444" fontSize="9">
+                            阻断
+                          </text>
+                        </g>
+                      )}
+                      {congested && (
+                        <g>
+                          <circle cx={mx} cy={my} r={4} fill="#f59e0b" opacity="0.9" />
+                          <text x={mx} y={my - 7} textAnchor="middle" fill="#f59e0b" fontSize="9">
+                            拥堵
+                          </text>
+                        </g>
+                      )}
+                    </g>
+                  );
+                })}
+                {/* 分配路由：人员 → 目标工位；shadow=虚线，approved/dispatched=实线 */}
+                {plan.assignments.map((a) => {
+                  const from = personCoord(a.personId);
+                  const to = stationCoord(a.stationId);
+                  if (!from || !to) return null;
+                  return (
+                    <line
+                      key={`aro-${a.assignmentId}`}
+                      x1={from.x}
+                      y1={from.y}
+                      x2={to.x}
+                      y2={to.y}
+                      stroke={routeColor}
+                      strokeWidth={2}
+                      strokeDasharray={dash}
+                      opacity={0.85}
+                    />
+                  );
+                })}
+                {/* 目标工位标记 + 预测人员位置 */}
+                {plan.assignments.map((a) => {
+                  const to = stationCoord(a.stationId);
+                  if (!to) return null;
+                  return (
+                    <g key={`amk-${a.assignmentId}`}>
+                      <rect
+                        x={to.x - 8}
+                        y={to.y - 8}
+                        width={16}
+                        height={16}
+                        fill="none"
+                        stroke={routeColor}
+                        strokeWidth={1.5}
+                        rx="2"
+                        strokeDasharray={dash}
+                      />
+                      {a.personId && (
+                        <circle
+                          cx={to.x}
+                          cy={to.y}
+                          r={6}
+                          fill={routeColor}
+                          opacity={0.35}
+                          stroke={routeColor}
+                          strokeWidth={1}
+                          strokeDasharray={dash}
+                        />
+                      )}
+                    </g>
+                  );
+                })}
+              </g>
+            );
+          })()}
 
         {/* 3.5 生产模式：工位间流动虚线 + WIP 气泡 + 节拍脉冲（L2 全量态势显示） */}
         {showDensity && mode === 'production' && flowLines.map((line, i) => (

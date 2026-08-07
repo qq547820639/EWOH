@@ -16,6 +16,7 @@ import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { getEntities } from '../../api/spatial';
 import { createReplayItem, getReplay, getWorldState } from '../../api/world';
+import { getRoutes } from '../../api/scheduler';
 import {
   getOverview,
   getEvents,
@@ -34,6 +35,8 @@ import type {
   EventInfo,
   OrganizationInfo,
   PersonnelInfo,
+  SchedulingPlanV2,
+  RouteGraph,
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { queryKeys } from '@client/src/hooks/queryKeys';
@@ -106,6 +109,17 @@ const HELP_ITEMS: Array<{ key: string; desc: string }> = [
 
 const NO_ENVIRONMENT_READINGS: EnvironmentReading[] = [];
 
+/** 单个人员的调度解释（why / 备选 / 路由估算），供详情面板展示。 */
+interface PlanAssignmentExplanation {
+  taskId: string;
+  reasons: string[];
+  alternatives: Array<Record<string, unknown>>;
+  stationId: string | null;
+  routeDistanceM?: number;
+  plannedStart: string | null;
+  plannedEnd: string | null;
+}
+
 const CommandMap = (): React.ReactElement => {
   const [mode, setMode] = useState<string>('production');
   const [level, setLevel] = useState<'L0' | 'L1' | 'L2' | 'L3' | 'L4'>('L1');
@@ -114,6 +128,7 @@ const CommandMap = (): React.ReactElement => {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [focusPlanId, setFocusPlanId] = useState<string | null>(null);
   const [focusPlanPersons, setFocusPlanPersons] = useState<string[]>([]);
+  const [activePlan, setActivePlan] = useState<SchedulingPlanV2 | null>(null);
   const [replayMode, setReplayMode] = useState(false);
   const [replayPaused, setReplayPaused] = useState(false);
   const [replaySpeed, setReplaySpeed] = useState(1);
@@ -266,8 +281,44 @@ const CommandMap = (): React.ReactElement => {
     staleTime: QUERY_STALE_TIME_MS,
   });
 
+  // 调度路由图（供调度方案覆盖层渲染拥堵/阻断边）
+  const { data: routeGraph } = useQuery<RouteGraph>({
+    queryKey: ['schedule-route-graph'],
+    queryFn: getRoutes,
+    refetchInterval: 30000,
+    staleTime: QUERY_STALE_TIME_MS,
+  });
+
   const entityList = entities ?? [];
   const state = worldState ?? null;
+
+  // 由当前选中方案构建「人员 → 调度解释」映射，供详情面板展示 why / 备选 / 路由估算
+  const planExplanation = useMemo(() => {
+    if (!activePlan) return null;
+    const map: Map<string, PlanAssignmentExplanation> = new Map();
+    const posOf = (id: string | null) => {
+      if (!id) return null;
+      const e = entityList.find((x) => x.entityId === id);
+      return e ? { x: e.x, y: e.y } : null;
+    };
+    for (const a of activePlan.assignments) {
+      if (!a.personId) continue;
+      const from = posOf(a.personId);
+      const to = posOf(a.stationId);
+      const routeDistanceM =
+        from && to ? Math.hypot(to.x - from.x, to.y - from.y) / 1000 : undefined;
+      map.set(a.personId, {
+        taskId: a.taskId,
+        reasons: a.reasons,
+        alternatives: a.alternatives,
+        stationId: a.stationId,
+        routeDistanceM,
+        plannedStart: a.plannedStart,
+        plannedEnd: a.plannedEnd,
+      });
+    }
+    return map;
+  }, [activePlan, entityList]);
 
   // 回放模式下用最近快照替换实时世界状态
   const replayWorldState = useMemo(() => {
@@ -557,6 +608,7 @@ const CommandMap = (): React.ReactElement => {
           replayTime={replayTime}
           focusPlanPersons={focusPlanPersons}
           onFocusPlanPersonsConsumed={() => setFocusPlanPersons([])}
+          planOverlay={{ plan: activePlan, routeGraph: routeGraph ?? null }}
         />
 
         <EntityDetail
@@ -567,6 +619,7 @@ const CommandMap = (): React.ReactElement => {
           organizations={organizations ?? []}
           devices={devices ?? []}
           events={events ?? []}
+          planExplanation={planExplanation}
           onOpenDisposition={(eventId) => {
             setActiveTab('events');
             setSelectedEventId(eventId);
@@ -695,6 +748,8 @@ const CommandMap = (): React.ReactElement => {
                 focusPlanId={focusPlanId}
                 onFocusPlanConsumed={() => setFocusPlanId(null)}
                 onViewOnMap={handleViewOnMap}
+                onSelectPlan={setActivePlan}
+                personnel={personnel ?? []}
               />
             </React.Suspense>
           )}

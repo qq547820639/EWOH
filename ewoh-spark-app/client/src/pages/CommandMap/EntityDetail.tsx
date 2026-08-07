@@ -19,8 +19,21 @@ interface EntityDetailProps {
   organizations?: OrganizationInfo[];
   devices?: DeviceInfo[];
   events?: EventInfo[];
+  /** 调度解释：personId → 分配说明（why / 备选 / 路由估算） */
+  planExplanation?: Map<string, PlanExplanation> | null;
   onOpenDisposition?: (eventId: string) => void;
   onClose?: () => void;
+}
+
+/** 单个人员的调度解释结构（与 CommandMap 保持一致）。 */
+interface PlanExplanation {
+  taskId: string;
+  reasons: string[];
+  alternatives: Array<Record<string, unknown>>;
+  stationId: string | null;
+  routeDistanceM?: number;
+  plannedStart: string | null;
+  plannedEnd: string | null;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -95,6 +108,7 @@ const EntityDetail = ({
   organizations = [],
   devices = [],
   events = [],
+  planExplanation,
   onOpenDisposition,
   onClose,
 }: EntityDetailProps): React.ReactElement => {
@@ -246,6 +260,64 @@ const EntityDetail = ({
             />
           </div>
         )}
+
+        {entity?.entityType === 'person' &&
+          entityId &&
+          (() => {
+            const exp = planExplanation?.get(entityId);
+            if (!exp) return null;
+            return (
+              <div className="mt-3">
+                <div className="text-[10px] text-white/60 uppercase tracking-wide mb-1">
+                  调度解释
+                </div>
+                <Row label="任务" value={exp.taskId} />
+                <Row label="目标工位" value={exp.stationId ?? '—'} />
+                <Row
+                  label="规划窗口"
+                  value={`${formatTime(exp.plannedStart)} → ${formatTime(exp.plannedEnd)}`}
+                />
+                <Row
+                  label="路由估算"
+                  value={
+                    exp.routeDistanceM != null
+                      ? `${exp.routeDistanceM.toFixed(0)} m`
+                      : '—'
+                  }
+                />
+                <div className="pt-2 text-[10px] text-white/60 uppercase tracking-wide">
+                  选择理由
+                </div>
+                <div className="space-y-0.5">
+                  {exp.reasons.length > 0 ? (
+                    exp.reasons.map((r, i) => (
+                      <div key={i} className="flex items-start gap-1 text-[11px] text-white/75">
+                        <span className="text-white/30">·</span>
+                        <span>{r}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-[11px] text-white/40">—</div>
+                  )}
+                </div>
+                <div className="pt-2 text-[10px] text-white/60 uppercase tracking-wide">
+                  备选人员（{exp.alternatives.length}）
+                </div>
+                <div className="space-y-0.5">
+                  {exp.alternatives.length > 0 ? (
+                    exp.alternatives.map((alt, i) => (
+                      <div key={i} className="text-[11px] text-white/60">
+                        {String(alt.personId ?? alt.person ?? '—')}
+                        {alt.reason ? ` — ${String(alt.reason)}` : ''}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-[11px] text-white/40">—</div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
         {deviceState && (
           <div className="mt-3">

@@ -1,31 +1,36 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Sparkles, ChevronDown, ChevronRight, History, Check, X, Send, MapPin } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
+import {
+  Sparkles,
+  Check,
+  X,
+  Send,
+  GitCompareArrows,
+  Lock,
+  RotateCcw,
+  MapPin,
+  ChevronRight,
+} from 'lucide-react';
 import dayjs from 'dayjs';
 import { toast } from 'sonner';
 import {
-  generatePlans,
-  generateDataDrivenPlans,
-  getPlans,
-  confirmPlan,
-  rejectPlan,
-  getAudit,
+  createRun,
+  approvePlan,
+  rejectPlanV2,
+  dispatchPlanV2,
+  replan,
+  comparePlans,
 } from '@client/src/api/scheduler';
-import { dispatchPlan } from '@client/src/api/gamification';
 import { getCurrentOperator } from '@client/src/lib/auth';
-import type { SchedulePlan, ScheduleAudit } from '@shared/api.interface';
+import type {
+  SchedulingPlanV2,
+  SchedulingAssignment,
+  PersonnelInfo,
+  PlanStatus,
+} from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
-import { UI_ARIA_LABELS } from '../../../lib/a11y';
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from '@client/src/components/ui/table';
 import {
   Dialog,
   DialogContent,
@@ -36,66 +41,128 @@ import {
 } from '@client/src/components/ui/dialog';
 import { Textarea } from '@client/src/components/ui/textarea';
 
-const STATUS_OPTIONS: { label: string; value: string | undefined }[] = [
-  { label: '全部', value: undefined },
-  { label: '建议', value: 'proposed' },
-  { label: '已确认', value: 'confirmed' },
-  { label: '已拒绝', value: 'rejected' },
-  { label: '已下发', value: 'dispatched' },
-];
+const TRIGGER_LABELS: Record<string, string> = {
+  MANUAL: '手动',
+  TASK_CREATED: '任务创建',
+  TASK_UPDATED: '任务更新',
+  PERSON_UNAVAILABLE: '人员不可用',
+  DEVICE_OFFLINE: '设备离线',
+  DEVICE_LOW_BATTERY: '设备低电量',
+  BOTTLENECK_DETECTED: '瓶颈检测',
+  DEADLINE_AT_RISK: '交期风险',
+  SAFETY_EVENT: '安全事件',
+  ZONE_RESTRICTED: '区域受限',
+};
 
-function statusBadgeClass(status: string): string {
+function statusBadgeClass(status: PlanStatus): string {
   switch (status) {
-    case 'shadow':
+    case 'draft':
       return 'bg-gray-500/20 text-gray-300 border-gray-500/30';
-    case 'proposed':
+    case 'shadow':
       return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-    case 'confirmed':
+    case 'approved':
       return 'bg-green-500/20 text-green-400 border-green-500/30';
-    case 'rejected':
-      return 'bg-red-500/20 text-red-400 border-red-500/30';
     case 'dispatched':
       return 'bg-teal-500/20 text-teal-400 border-teal-500/30';
+    case 'executing':
+      return 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30';
+    case 'completed':
+      return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+    case 'rejected':
+      return 'bg-red-500/20 text-red-400 border-red-500/30';
+    case 'superseded':
+      return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
     default:
       return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
   }
 }
 
-function timeAgo(dateStr: string | null): string {
-  if (!dateStr) return '—';
-  const diff = Date.now() - new Date(dateStr).getTime();
-  if (diff < 0) return dayjs(dateStr).format('MM-DD HH:mm');
-  const min = Math.floor(diff / 60000);
-  if (min < 1) return '刚刚';
-  if (min < 60) return `${min}分钟前`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}小时前`;
-  return dayjs(dateStr).format('MM-DD HH:mm');
+function formatTime(iso: string | null): string {
+  if (!iso) return '—';
+  return dayjs(iso).format('MM-DD HH:mm');
 }
 
-function formatPct(val: number | undefined): string {
-  if (val === undefined || val === null) return '—';
-  const pct = Math.abs(val) <= 1 ? val * 100 : val;
-  return `${pct.toFixed(1)}%`;
+function formatPct(val: number | null | undefined): string {
+  if (val == null) return '—';
+  return `${(val * 100).toFixed(1)}%`;
 }
 
-function getMetric(plan: SchedulePlan, key: string): number | undefined {
-  if (!plan.metricsJson) return undefined;
-  const val = plan.metricsJson[key];
-  return typeof val === 'number' ? val : undefined;
+function isPlanStaleError(err: unknown): boolean {
+  const e = err as { response?: { status?: number; data?: unknown }; message?: string };
+  const status = e.response?.status;
+  const dataMsg = (e.response?.data as { message?: string } | undefined)?.message;
+  const msg = dataMsg ?? e.message ?? '';
+  return status === 409 && msg.includes('PLAN_STALE');
 }
 
-/** 从 metricsJson 提取受影响实体 ID（兼容 affectedEntities / assignedEntities 两种存储格式）。 */
-function getAffectedEntityIds(plan: SchedulePlan): string[] {
-  if (!plan.metricsJson) return [];
-  const ids = new Set<string>();
-  for (const key of ['affectedEntities', 'assignedEntities']) {
-    const val = plan.metricsJson[key];
-    if (Array.isArray(val)) {
-      for (const v of val) if (typeof v === 'string') ids.add(v);
-    }
+/** 从 baselineDelta 提取某 delta 字段（兼容多种命名）。 */
+function baselineDeltaValue(plan: SchedulingPlanV2, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const v = plan.baselineDelta?.[key];
+    if (typeof v === 'number') return v;
   }
-  return Array.from(ids);
+  return undefined;
+}
+
+function assignmentAssigneeName(assignment: SchedulingAssignment, personnel: PersonnelInfo[]): string {
+  if (!assignment.personId) return '未指派';
+  const p = personnel.find((pp) => pp.id === assignment.personId || pp.employeeNo === assignment.personId);
+  return p?.name ?? assignment.personId;
+}
+
+/** 后端不可用时的 Demo 兜底方案（明确标注 demo，不影响真实数据）。 */
+function buildDemoPlan(): SchedulingPlanV2 {
+  const now = new Date();
+  const end = new Date(now.getTime() + 60 * 60 * 1000);
+  return {
+    planId: `DEMO-${Date.now()}`,
+    planName: '演示方案（Demo）',
+    version: 1,
+    status: 'shadow',
+    trigger: { type: 'MANUAL', entityId: null },
+    snapshotVersion: 'demo-snapshot',
+    horizonMinutes: 480,
+    assignments: [
+      {
+        assignmentId: 'demo-a1',
+        taskId: 'TASK-001',
+        personId: 'P-001',
+        deviceId: null,
+        stationId: 'W-001',
+        zoneId: null,
+        plannedStart: now.toISOString(),
+        plannedEnd: end.toISOString(),
+        routeId: null,
+        status: 'proposed',
+        reasons: ['当前人员 BODY_LOAD 偏高，换为负荷更低的人员以均衡负载'],
+        alternatives: [{ personId: 'P-002', reason: '技能匹配度次优，路径距离略长' }],
+      },
+      {
+        assignmentId: 'demo-a2',
+        taskId: 'TASK-002',
+        personId: 'P-003',
+        deviceId: null,
+        stationId: 'W-002',
+        zoneId: null,
+        plannedStart: now.toISOString(),
+        plannedEnd: end.toISOString(),
+        routeId: null,
+        status: 'proposed',
+        reasons: ['缩短人员移动距离，减少总体行走路程'],
+        alternatives: [{ personId: 'P-001', reason: '当前已占用，时间冲突' }],
+      },
+    ],
+    metrics: {
+      lateMinutes: 5,
+      walkingMeters: 320,
+      stationWaitMinutes: 8,
+      maxWorkload: 0.72,
+      changeCost: 2,
+    },
+    baselineDelta: { lateMinutesDelta: -12, walkingMetersDelta: -40 },
+    violations: [],
+    createdAt: now.toISOString(),
+  };
 }
 
 interface SchedulePanelProps {
@@ -103,100 +170,126 @@ interface SchedulePanelProps {
   onFocusPlanConsumed?: () => void;
   /** 在调度模式地图上高亮某方案受影响人员 */
   onViewOnMap?: (personIds: string[]) => void;
+  /** 将当前选中方案上抛给地图层做覆盖渲染 */
+  onSelectPlan?: (plan: SchedulingPlanV2 | null) => void;
+  /** 人员列表（用于调整指派/解释说明） */
+  personnel?: PersonnelInfo[];
 }
 
 export default function SchedulePanel({
   focusPlanId,
   onFocusPlanConsumed,
   onViewOnMap,
+  onSelectPlan,
+  personnel = [],
 }: SchedulePanelProps) {
-  const queryClient = useQueryClient();
-  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [confirmTarget, setConfirmTarget] = useState<SchedulePlan | null>(null);
-  const focusRowRef = useRef<HTMLTableRowElement | null>(null);
-  const [confirmReason, setConfirmReason] = useState('');
-  const [rejectTarget, setRejectTarget] = useState<SchedulePlan | null>(null);
+  const [plans, setPlans] = useState<SchedulingPlanV2[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [isDemo, setIsDemo] = useState(false);
+  const [approveTarget, setApproveTarget] = useState<SchedulingPlanV2 | null>(null);
+  const [approveReason, setApproveReason] = useState('');
+  const [rejectTarget, setRejectTarget] = useState<SchedulingPlanV2 | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [adjustTarget, setAdjustTarget] = useState<SchedulingAssignment | null>(null);
+  const [adjustPersonId, setAdjustPersonId] = useState<string>('');
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [comparePlanId, setComparePlanId] = useState<string>('');
+  const [compareResult, setCompareResult] = useState<Record<string, unknown> | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
-  const { data: plans, isLoading, isError } = useQuery<SchedulePlan[]>({
-    queryKey: ['schedule-plans', statusFilter],
-    queryFn: () => getPlans(statusFilter),
-    refetchInterval: 10000,
-  });
+  const selectedPlan = useMemo(
+    () => plans.find((p) => p.planId === selectedPlanId) ?? null,
+    [plans, selectedPlanId],
+  );
 
-  // 聚焦到大脑建议关联的方案：展开并滚动到对应行；
-  // 若当前筛选下找不到目标行（如为非 proposed 状态），自动切到「全部」筛选并提示。
+  // 将选中方案上抛给地图层
   useEffect(() => {
-    if (!focusPlanId || !plans) return;
-    const target = plans.find((plan) => plan.planId === focusPlanId);
-    if (target) {
-      setExpandedId(target.id);
-      // 等待展开后滚动到该行
-      window.setTimeout(() => {
-        focusRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 50);
-    } else if (statusFilter !== undefined) {
-      toast.info('目标方案不在当前筛选，已切换到全部');
-      setStatusFilter(undefined);
+    onSelectPlan?.(selectedPlan);
+  }, [selectedPlan, onSelectPlan]);
+
+  // 聚焦到大脑建议/任务编排关联的方案
+  useEffect(() => {
+    if (!focusPlanId) return;
+    if (plans.some((p) => p.planId === focusPlanId)) {
+      setSelectedPlanId(focusPlanId);
+    } else if (plans.length > 0) {
+      setSelectedPlanId(plans[0].planId);
     }
     onFocusPlanConsumed?.();
-  }, [focusPlanId, plans, statusFilter, onFocusPlanConsumed]);
+  }, [focusPlanId, plans, onFocusPlanConsumed]);
 
-  const { data: audits } = useQuery<ScheduleAudit[]>({
-    queryKey: ['schedule-audits'],
-    queryFn: () => getAudit(),
-    refetchInterval: 15000,
-  });
+  const appendPlans = (newPlans: SchedulingPlanV2[]) => {
+    if (!newPlans || newPlans.length === 0) return;
+    setPlans((prev) => {
+      const merged = [...prev, ...newPlans];
+      const seen = new Set<string>();
+      return merged.filter((p) => (seen.has(p.planId) ? false : (seen.add(p.planId), true)));
+    });
+    setSelectedPlanId((prev) => prev ?? newPlans[0].planId);
+  };
 
   const generateMutation = useMutation({
-    mutationFn: () => generatePlans({}),
-    onSuccess: () => {
-      toast.success('方案生成成功');
-      queryClient.invalidateQueries({ queryKey: ['schedule-plans'] });
-    },
-    onError: () => {
-      toast.error('方案生成失败');
-    },
-  });
-
-  const generateAiMutation = useMutation({
-    mutationFn: () => generateDataDrivenPlans({}),
-    onSuccess: () => {
-      toast.success('AI 数据驱动方案生成成功');
-      queryClient.invalidateQueries({ queryKey: ['schedule-plans'] });
+    mutationFn: () => createRun({ trigger: 'MANUAL', operator: getCurrentOperator() }),
+    onSuccess: (data) => {
+      if (data.debounced || !data.run) {
+        toast.info('调度已排队，请稍后刷新');
+        return;
+      }
+      if (data.plans.length > 0) {
+        appendPlans(data.plans);
+        toast.success(`已生成 ${data.plans.length} 个方案`);
+      } else {
+        toast.info('本次未生成新方案');
+      }
     },
     onError: (err) => {
-      toast.error('AI 方案生成失败', {
+      // 后端不可用 → Demo 兜底
+      toast.warning('后端调度引擎不可用，已加载演示方案', {
         description: err instanceof Error ? err.message : undefined,
       });
+      setIsDemo(true);
+      appendPlans([buildDemoPlan()]);
     },
   });
 
-  const confirmMutation = useMutation({
-    mutationFn: ({ planId, reason }: { planId: string; reason: string }) =>
-      confirmPlan(planId, { reason }),
-    onSuccess: () => {
-      toast.success('方案确认成功');
-      setConfirmTarget(null);
-      setConfirmReason('');
-      queryClient.invalidateQueries({ queryKey: ['schedule-plans'] });
-      queryClient.invalidateQueries({ queryKey: ['schedule-audits'] });
+  const refreshPlan = (plan: SchedulingPlanV2) => {
+    setPlans((prev) => prev.map((p) => (p.planId === plan.planId ? plan : p)));
+    setSelectedPlanId(plan.planId);
+  };
+
+  const approveMutation = useMutation({
+    mutationFn: ({ plan, reason }: { plan: SchedulingPlanV2; reason: string }) =>
+      approvePlan(plan.planId, {
+        version: plan.version,
+        snapshotVersion: plan.snapshotVersion,
+        operator: getCurrentOperator(),
+        reason,
+      }),
+    onSuccess: (plan) => {
+      toast.success('方案已审批通过');
+      setApproveTarget(null);
+      setApproveReason('');
+      refreshPlan(plan);
     },
-    onError: () => {
-      toast.error('方案确认失败');
+    onError: (err) => {
+      if (isPlanStaleError(err)) {
+        toast.error('该方案生成后现场状态已发生变化，请重新计算');
+      } else {
+        toast.error('审批失败', {
+          description: err instanceof Error ? err.message : undefined,
+        });
+      }
     },
   });
 
   const rejectMutation = useMutation({
-    mutationFn: ({ planId, reason }: { planId: string; reason: string }) =>
-      rejectPlan(planId, { reason }),
-    onSuccess: () => {
+    mutationFn: ({ plan, reason }: { plan: SchedulingPlanV2; reason: string }) =>
+      rejectPlanV2(plan.planId, { operator: getCurrentOperator(), reason }),
+    onSuccess: (plan) => {
       toast.success('方案已驳回');
       setRejectTarget(null);
       setRejectReason('');
-      queryClient.invalidateQueries({ queryKey: ['schedule-plans'] });
-      queryClient.invalidateQueries({ queryKey: ['schedule-audits'] });
+      refreshPlan(plan);
     },
     onError: () => {
       toast.error('方案驳回失败');
@@ -204,29 +297,65 @@ export default function SchedulePanel({
   });
 
   const dispatchMutation = useMutation({
-    mutationFn: ({ planId }: { planId: string }) =>
-      dispatchPlan(planId, { operator: getCurrentOperator() }),
-    onSuccess: (data) => {
-      if (data.status === 'conflict') {
-        toast.error('下发冲突', { description: data.conflicts.join('；') });
-      } else {
-        toast.success('方案已下发执行');
-      }
-      queryClient.invalidateQueries({ queryKey: ['schedule-plans'] });
-      queryClient.invalidateQueries({ queryKey: ['schedule-audits'] });
+    mutationFn: (plan: SchedulingPlanV2) =>
+      dispatchPlanV2(plan.planId, getCurrentOperator()),
+    onSuccess: (plan) => {
+      toast.success('方案已下发执行');
+      refreshPlan(plan);
     },
     onError: () => {
       toast.error('下发失败');
     },
   });
 
-  const handleConfirm = () => {
-    if (!confirmTarget) return;
-    if (!confirmReason.trim()) {
-      toast.error('请填写确认理由');
-      return;
-    }
-    confirmMutation.mutate({ planId: confirmTarget.planId, reason: confirmReason });
+  const replanMutation = useMutation({
+    mutationFn: ({
+      plan,
+      lockedConstraints,
+      reason,
+    }: {
+      plan: SchedulingPlanV2;
+      lockedConstraints: Array<{
+        taskId?: string;
+        personId?: string;
+        type?:
+          | 'LOCKED_PERSON'
+          | 'LOCKED_DEVICE'
+          | 'LOCKED_TIME'
+          | 'FORBIDDEN_ZONE'
+          | 'MIN_BATTERY';
+      }>;
+      reason?: string;
+    }) =>
+      replan(plan.planId, {
+        lockedConstraints,
+        operator: getCurrentOperator(),
+        reason,
+      }),
+    onSuccess: (plan) => {
+      toast.success('已重新排程生成新方案');
+      setAdjustTarget(null);
+      setAdjustPersonId('');
+      appendPlans([plan]);
+    },
+    onError: (err) => {
+      toast.error('重新排程失败', {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    },
+  });
+
+  const compareMutation = useMutation({
+    mutationFn: ({ a, b }: { a: string; b: string }) => comparePlans(a, b),
+    onSuccess: (result) => setCompareResult(result),
+    onError: () => {
+      toast.error('方案对比失败');
+    },
+  });
+
+  const handleApprove = () => {
+    if (!approveTarget) return;
+    approveMutation.mutate({ plan: approveTarget, reason: approveReason.trim() });
   };
 
   const handleReject = () => {
@@ -235,10 +364,41 @@ export default function SchedulePanel({
       toast.error('请填写驳回理由');
       return;
     }
-    rejectMutation.mutate({ planId: rejectTarget.planId, reason: rejectReason });
+    rejectMutation.mutate({ plan: rejectTarget, reason: rejectReason });
   };
 
-  const recentAudits = (audits ?? []).slice(0, 5);
+  const handleAdjust = () => {
+    if (!adjustTarget || !adjustPersonId || !selectedPlan) return;
+    replanMutation.mutate({
+      plan: selectedPlan,
+      lockedConstraints: [
+        { taskId: adjustTarget.taskId, personId: adjustPersonId, type: 'LOCKED_PERSON' },
+      ],
+      reason: '班组长锁定指派',
+    });
+  };
+
+  const handleCompare = () => {
+    if (!selectedPlan || !comparePlanId) return;
+    compareMutation.mutate({ a: selectedPlan.planId, b: comparePlanId });
+  };
+
+  const openCompare = () => {
+    const other = plans.find((p) => p.planId !== selectedPlanId);
+    setComparePlanId(other?.planId ?? plans[0]?.planId ?? '');
+    setCompareResult(null);
+    setCompareOpen(true);
+  };
+
+  const kpis = selectedPlan
+    ? [
+        { label: '预计延期', value: `${selectedPlan.metrics.lateMinutes.toFixed(0)} min`, delta: baselineDeltaValue(selectedPlan, 'lateMinutesDelta', 'deltaLateMinutes') },
+        { label: '人员总移动', value: `${selectedPlan.metrics.walkingMeters.toFixed(0)} m`, delta: baselineDeltaValue(selectedPlan, 'walkingMetersDelta', 'deltaWalkingMeters') },
+        { label: '工位等待', value: `${selectedPlan.metrics.stationWaitMinutes.toFixed(0)} min`, delta: baselineDeltaValue(selectedPlan, 'stationWaitMinutesDelta', 'deltaStationWait') },
+        { label: '最大负荷', value: formatPct(selectedPlan.metrics.maxWorkload), delta: baselineDeltaValue(selectedPlan, 'maxWorkloadDelta', 'deltaMaxWorkload') },
+        { label: '计划变更', value: `${selectedPlan.metrics.changeCost.toFixed(0)} 项`, delta: baselineDeltaValue(selectedPlan, 'changeCostDelta', 'deltaChangeCost') },
+      ]
+    : [];
 
   return (
     <div className="h-full flex flex-col bg-[hsl(220_14%_14%)] text-white">
@@ -246,296 +406,306 @@ export default function SchedulePanel({
       <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10 shrink-0">
         <Button
           size="sm"
-          onClick={() => generateAiMutation.mutate()}
-          disabled={generateAiMutation.isPending}
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          {generateAiMutation.isPending ? 'AI 生成中...' : 'AI 数据驱动'}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
           onClick={() => generateMutation.mutate()}
           disabled={generateMutation.isPending}
         >
           <Sparkles className="w-3.5 h-3.5" />
-          {generateMutation.isPending ? '生成中...' : '模板生成'}
+          {generateMutation.isPending ? '生成中...' : '生成调度方案'}
         </Button>
-        <div className="w-px h-4 bg-white/10" />
-        <div className="flex gap-1">
-          {STATUS_OPTIONS.map((opt) => (
-            <Button
-              key={opt.label}
-              variant={statusFilter === opt.value ? 'default' : 'outline'}
-              size="sm"
-              className="h-6 text-[10px] px-2"
-              onClick={() => setStatusFilter(opt.value)}
-            >
-              {opt.label}
-            </Button>
-          ))}
-        </div>
-      </div>
-
-      {/* Plans table */}
-      <div className="flex-1 min-h-0 overflow-auto">
-        {isLoading ? (
-          <div className="p-4 text-center text-sm text-white/70">加载中...</div>
-        ) : isError ? (
-          <div className="p-4 text-center text-sm text-red-400">加载失败</div>
-        ) : !plans || plans.length === 0 ? (
-          <div className="p-4 text-center text-sm text-white/70">暂无数据</div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="border-white/10 hover:bg-transparent">
-                <TableHead className="text-white/60 text-[10px] w-6" />
-                <TableHead className="text-white/60 text-[10px]">方案名</TableHead>
-                <TableHead className="text-white/60 text-[10px]">策略</TableHead>
-                <TableHead className="text-white/60 text-[10px]">状态</TableHead>
-                <TableHead className="text-white/60 text-[10px]">节拍提升(%)</TableHead>
-                <TableHead className="text-white/60 text-[10px]">高负荷人员</TableHead>
-                <TableHead className="text-white/60 text-[10px]">低电量风险</TableHead>
-                <TableHead className="text-white/60 text-[10px]">受影响人员</TableHead>
-                <TableHead className="text-white/60 text-[10px]">产量提升</TableHead>
-                <TableHead className="text-white/60 text-[10px]">准时率</TableHead>
-                <TableHead className="text-white/60 text-[10px]">理由</TableHead>
-                <TableHead className="text-white/60 text-[10px]">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {plans.map((plan) => {
-                const isExpanded = expandedId === plan.id;
-                const outputImp = getMetric(plan, 'outputImprovement');
-                const onTimeRate = getMetric(plan, 'onTimeRate');
-                const canConfirm = plan.status === 'proposed';
-                const canDispatch = plan.status === 'confirmed';
-                return (
-                  <Fragment key={plan.id}>
-                    <TableRow
-                      ref={plan.planId === focusPlanId ? focusRowRef : undefined}
-                      className="border-white/5 hover:bg-white/5"
-                    >
-                      <TableCell className="p-1">
-                        <button
-                          onClick={() => setExpandedId(isExpanded ? null : plan.id)}
-                          className="p-1 hover:bg-white/10 rounded"
-                          aria-expanded={isExpanded}
-                          aria-label={
-                            isExpanded ? UI_ARIA_LABELS.collapsePlan : UI_ARIA_LABELS.expandPlan
-                          }
-                        >
-                          {isExpanded ? (
-                            <ChevronDown className="w-3 h-3 text-white/60" />
-                          ) : (
-                            <ChevronRight className="w-3 h-3 text-white/60" />
-                          )}
-                        </button>
-                      </TableCell>
-                      <TableCell className="text-[10px] text-white/90">
-                        {plan.planName}
-                      </TableCell>
-                      <TableCell className="text-[10px] text-white/60">
-                        {plan.strategy}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          className={cn('text-[9px] px-1.5', statusBadgeClass(plan.status))}
-                        >
-                          {plan.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-[10px] text-white/80">
-                        {formatPct(plan.taktImprovement)}
-                      </TableCell>
-                      <TableCell className="text-[10px] text-white/80">
-                        {plan.highLoadPersons}
-                      </TableCell>
-                      <TableCell className="text-[10px] text-white/80">
-                        {plan.lowBatteryRisk}
-                      </TableCell>
-                      <TableCell className="text-[10px] text-white/80">
-                        {plan.affectedPersons}
-                      </TableCell>
-                      <TableCell className="text-[10px] text-white/80">
-                        {formatPct(outputImp)}
-                      </TableCell>
-                      <TableCell className="text-[10px] text-white/80">
-                        {formatPct(onTimeRate)}
-                      </TableCell>
-                      <TableCell
-                        className="text-[10px] text-white/70 max-w-[200px] truncate"
-                        title={plan.reason ?? ''}
-                      >
-                        {plan.reason ?? '—'}
-                      </TableCell>
-                      <TableCell className="p-1">
-                        <div className="flex items-center gap-1">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-6 text-[10px] px-2"
-                            onClick={() => {
-                              const ids = getAffectedEntityIds(plan);
-                              if (ids.length > 0) {
-                                onViewOnMap?.(ids);
-                              } else {
-                                toast.info('该方案未记录受影响实体，无法在地图上定位');
-                              }
-                            }}
-                            title="在调度模式地图上高亮受影响人员"
-                          >
-                            <MapPin className="w-3 h-3" />
-                            图中查看
-                          </Button>
-                          {canConfirm && (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-6 text-[10px] px-2"
-                                onClick={() => {
-                                  setConfirmTarget(plan);
-                                  setConfirmReason('');
-                                }}
-                              >
-                                <Check className="w-3 h-3" />
-                                确认
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-6 text-[10px] px-2 text-red-400 border-red-500/30"
-                                onClick={() => {
-                                  setRejectTarget(plan);
-                                  setRejectReason('');
-                                }}
-                              >
-                                <X className="w-3 h-3" />
-                                驳回
-                              </Button>
-                            </>
-                          )}
-                          {canDispatch && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-6 text-[10px] px-2 text-cyan-400 border-cyan-500/30"
-                              onClick={() => dispatchMutation.mutate({ planId: plan.planId })}
-                              disabled={dispatchMutation.isPending}
-                            >
-                              <Send className="w-3 h-3" />
-                              下发
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                    {isExpanded && (
-                      <TableRow className="border-white/5">
-                        <TableCell colSpan={12} className="bg-white/5 p-2">
-                          <div className="text-[10px] text-white/60">
-                            <div className="font-medium text-white/80 mb-1">
-                              完整指标 (metricsJson)
-                            </div>
-                            <pre className="text-[9px] text-white/70 overflow-auto max-h-24">
-                              {JSON.stringify(plan.metricsJson, null, 2)}
-                            </pre>
-                            {plan.confirmedBy && (
-                              <div className="mt-1 text-white/60">
-                                确认人: {plan.confirmedBy} | 确认时间:{' '}
-                                {plan.confirmedAt
-                                  ? dayjs(plan.confirmedAt).format('MM-DD HH:mm')
-                                  : '—'}{' '}
-                                | 确认理由: {plan.confirmReason ?? '—'}
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </TableBody>
-          </Table>
+        {isDemo && (
+          <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[9px]">
+            Demo 演示数据
+          </Badge>
+        )}
+        <div className="flex-1" />
+        {selectedPlan && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 text-[10px] px-2"
+            onClick={openCompare}
+            disabled={plans.length < 2}
+          >
+            <GitCompareArrows className="w-3 h-3" />
+            对比方案
+          </Button>
         )}
       </div>
 
-      {/* Bottom: audit records */}
-      <div className="shrink-0 border-t border-white/10 px-3 py-1.5">
-        <div className="flex items-center gap-2">
-          <History className="w-3 h-3 text-white/60 shrink-0" />
-          <span className="text-[10px] text-white/60 shrink-0">最近审计</span>
-          <div className="flex-1 flex items-center gap-3 overflow-x-auto">
-            {recentAudits.length > 0 ? (
-              recentAudits.map((a) => (
-                <div
-                  key={a.id}
-                  className="flex items-center gap-1 text-[10px] text-white/70 shrink-0"
+      <div className="flex-1 min-h-0 flex">
+        {/* 方案列表 */}
+        <div className="w-56 shrink-0 border-r border-white/10 overflow-y-auto" ref={listRef}>
+          <div className="px-2 py-1.5 text-[10px] text-white/60 font-medium">方案列表</div>
+          {plans.length === 0 ? (
+            <div className="px-3 py-4 text-[10px] text-white/50">
+              暂无方案，点击「生成调度方案」开始。
+            </div>
+          ) : (
+            plans.map((p) => {
+              const active = p.planId === selectedPlanId;
+              return (
+                <button
+                  key={p.planId}
+                  type="button"
+                  onClick={() => setSelectedPlanId(p.planId)}
+                  className={cn(
+                    'w-full text-left px-3 py-2 border-b border-white/5 hover:bg-white/5 transition-colors',
+                    active && 'bg-white/10',
+                  )}
                 >
-                  <span className="text-white/70">{a.action}</span>
-                  <span>·</span>
-                  <span>{a.planId}</span>
-                  <span>·</span>
-                  <span>{a.operator ?? '—'}</span>
-                  <span>·</span>
-                  <span>{timeAgo(a.createdAt)}</span>
+                  <div className="flex items-center gap-1.5">
+                    <ChevronRight
+                      className={cn('w-3 h-3 text-white/40', active && 'rotate-90 text-white/80')}
+                    />
+                    <span className="text-[11px] text-white/90 truncate flex-1">
+                      {p.planName ?? p.planId}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1 pl-4">
+                    <Badge className={cn('text-[8px] px-1', statusBadgeClass(p.status))}>
+                      {p.status}
+                    </Badge>
+                    <span className="text-[9px] text-white/50">v{p.version}</span>
+                  </div>
+                  <div className="pl-4 mt-0.5 text-[9px] text-white/40">
+                    {formatTime(p.createdAt)}
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        {/* 方案详情 */}
+        <div className="flex-1 min-w-0 overflow-y-auto">
+          {!selectedPlan ? (
+            <div className="p-6 text-center text-sm text-white/60">
+              请先生成方案或从左侧选择一个方案
+            </div>
+          ) : (
+            <div className="p-3 space-y-3">
+              {/* 方案头部 */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-semibold text-white">
+                  {selectedPlan.planName ?? selectedPlan.planId}
+                </span>
+                <Badge className={cn('text-[9px] px-1.5', statusBadgeClass(selectedPlan.status))}>
+                  {selectedPlan.status}
+                </Badge>
+                <span className="text-[10px] text-white/50">VERSION {selectedPlan.version}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-white/60">
+                <span>
+                  Plan ID: <span className="text-white/80">{selectedPlan.planId}</span>
+                </span>
+                <span>
+                  触发:{' '}
+                  <span className="text-white/80">
+                    {TRIGGER_LABELS[selectedPlan.trigger.type] ?? selectedPlan.trigger.type}
+                  </span>
+                </span>
+                <span>
+                  创建时间:{' '}
+                  <span className="text-white/80">{formatTime(selectedPlan.createdAt)}</span>
+                </span>
+                <span>
+                  快照版本:{' '}
+                  <span className="text-white/80">{selectedPlan.snapshotVersion}</span>
+                </span>
+              </div>
+
+              {/* KPI 网格 */}
+              <div className="grid grid-cols-5 gap-2">
+                {kpis.map((k) => (
+                  <div
+                    key={k.label}
+                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5"
+                  >
+                    <div className="text-[9px] text-white/50">{k.label}</div>
+                    <div className="text-sm font-semibold text-white">{k.value}</div>
+                    {k.delta !== undefined && (
+                      <div
+                        className={cn(
+                          'text-[9px]',
+                          k.delta <= 0 ? 'text-emerald-400' : 'text-red-400',
+                        )}
+                      >
+                        较基线 {k.delta > 0 ? '+' : ''}
+                        {k.delta.toFixed(0)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* 分配变更列表 */}
+              <div>
+                <div className="text-[10px] text-white/60 font-medium mb-1">
+                  分配明细（{selectedPlan.assignments.length}）
                 </div>
-              ))
-            ) : (
-              <span className="text-[10px] text-white/60">暂无审计记录</span>
-            )}
-          </div>
+                <div className="space-y-1">
+                  {selectedPlan.assignments.map((a) => (
+                    <div
+                      key={a.assignmentId}
+                      className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5"
+                    >
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] text-white/80 font-medium">{a.taskId}</span>
+                        <span className="text-[10px] text-white/50">→</span>
+                        <span className="text-[10px] text-cyan-400">
+                          {assignmentAssigneeName(a, personnel)}
+                        </span>
+                        <Badge className={cn('text-[8px] px-1', statusBadgeClassFromAssignment(a.status))}>
+                          {a.status}
+                        </Badge>
+                        {a.stationId && (
+                          <span className="text-[9px] text-white/50">工位 {a.stationId}</span>
+                        )}
+                        <span className="text-[9px] text-white/50">
+                          {formatTime(a.plannedStart)} → {formatTime(a.plannedEnd)}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-[9px] text-white/60">
+                        {a.reasons.length > 0
+                          ? a.reasons.map((r, i) => (
+                              <div key={i} className="flex gap-1">
+                                <span className="text-white/30">·</span>
+                                <span>{r}</span>
+                              </div>
+                            ))
+                          : '—'}
+                        {a.alternatives.length > 0 && (
+                          <div className="mt-1 text-white/40">
+                            备选：{a.alternatives.map((alt) => String(alt.personId ?? alt.person ?? '')).join('、')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 操作 */}
+              <div className="flex items-center gap-2 flex-wrap pt-1">
+                <Button
+                  size="sm"
+                  className="h-6 text-[10px] px-2"
+                  onClick={() => {
+                    setApproveTarget(selectedPlan);
+                    setApproveReason('');
+                  }}
+                  disabled={selectedPlan.status === 'approved' || selectedPlan.status === 'dispatched'}
+                >
+                  <Check className="w-3 h-3" />
+                  审批通过
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-[10px] px-2 text-red-400 border-red-500/30"
+                  onClick={() => {
+                    setRejectTarget(selectedPlan);
+                    setRejectReason('');
+                  }}
+                  disabled={selectedPlan.status === 'rejected' || selectedPlan.status === 'dispatched'}
+                >
+                  <X className="w-3 h-3" />
+                  驳回
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-[10px] px-2 text-cyan-400 border-cyan-500/30"
+                  onClick={() => dispatchMutation.mutate(selectedPlan)}
+                  disabled={selectedPlan.status !== 'approved' || dispatchMutation.isPending}
+                >
+                  <Send className="w-3 h-3" />
+                  下发
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-[10px] px-2"
+                  onClick={() => {
+                    setAdjustTarget(selectedPlan.assignments[0] ?? null);
+                    setAdjustPersonId('');
+                  }}
+                  disabled={selectedPlan.assignments.length === 0}
+                >
+                  <Lock className="w-3 h-3" />
+                  调整指派
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-[10px] px-2"
+                  onClick={() => replanMutation.mutate({ plan: selectedPlan, lockedConstraints: [] })}
+                  disabled={plans.length === 0}
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  重新排程
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-[10px] px-2"
+                  onClick={() => {
+                    const ids = selectedPlan.assignments
+                      .map((a) => a.personId)
+                      .filter((p): p is string => Boolean(p));
+                    if (ids.length > 0) onViewOnMap?.(ids);
+                    else toast.info('该方案未指派人员，无法在地图上定位');
+                  }}
+                >
+                  <MapPin className="w-3 h-3" />
+                  图中查看
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Confirm dialog */}
-      <Dialog
-        open={!!confirmTarget}
-        onOpenChange={(open) => !open && setConfirmTarget(null)}
-      >
+      {/* 审批通过 Dialog */}
+      <Dialog open={!!approveTarget} onOpenChange={(open) => !open && setApproveTarget(null)}>
         <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white">
           <DialogHeader>
-            <DialogTitle className="text-white">确认调度方案</DialogTitle>
+            <DialogTitle className="text-white">审批调度方案</DialogTitle>
             <DialogDescription className="text-white/70">
-              {confirmTarget?.planName} · {confirmTarget?.strategy}
+              {approveTarget?.planName ?? approveTarget?.planId} · v{approveTarget?.version}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <label className="text-xs text-white/60">确认理由（必填）</label>
+            <label className="text-xs text-white/60">审批理由</label>
             <Textarea
-              value={confirmReason}
-              onChange={(e) => setConfirmReason(e.target.value)}
-              placeholder="请输入确认理由..."
+              value={approveReason}
+              onChange={(e) => setApproveReason(e.target.value)}
+              placeholder="请输入审批理由..."
               className="bg-white/5 border-white/10 text-white"
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setConfirmTarget(null)}>
+            <Button variant="outline" size="sm" onClick={() => setApproveTarget(null)}>
               取消
             </Button>
             <Button
               size="sm"
-              onClick={handleConfirm}
-              disabled={confirmMutation.isPending || !confirmReason.trim()}
+              onClick={handleApprove}
+              disabled={approveMutation.isPending}
             >
-              {confirmMutation.isPending ? '确认中...' : '确认'}
+              {approveMutation.isPending ? '提交中...' : '确认审批'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Reject dialog */}
-      <Dialog
-        open={!!rejectTarget}
-        onOpenChange={(open) => !open && setRejectTarget(null)}
-      >
+      {/* 驳回 Dialog */}
+      <Dialog open={!!rejectTarget} onOpenChange={(open) => !open && setRejectTarget(null)}>
         <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white">
           <DialogHeader>
             <DialogTitle className="text-white">驳回调度方案</DialogTitle>
             <DialogDescription className="text-white/70">
-              {rejectTarget?.planName} · {rejectTarget?.strategy}
+              {rejectTarget?.planName ?? rejectTarget?.planId} · v{rejectTarget?.version}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -557,11 +727,184 @@ export default function SchedulePanel({
               onClick={handleReject}
               disabled={rejectMutation.isPending || !rejectReason.trim()}
             >
-              {rejectMutation.isPending ? '驳回中...' : '驳回'}
+              {rejectMutation.isPending ? '驳回中...' : '确认驳回'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 调整指派 Dialog */}
+      <Dialog open={!!adjustTarget} onOpenChange={(open) => !open && setAdjustTarget(null)}>
+        <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">调整指派并重排</DialogTitle>
+            <DialogDescription className="text-white/70">
+              锁定任务到指定人员后重新排程（原方案将被标记 superseded）
+            </DialogDescription>
+          </DialogHeader>
+          {selectedPlan && (
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-white/60">任务</label>
+                <select
+                  value={adjustTarget?.taskId ?? ''}
+                  onChange={(e) =>
+                    setAdjustTarget(
+                      selectedPlan.assignments.find((a) => a.taskId === e.target.value) ?? null,
+                    )
+                  }
+                  className="mt-1 w-full rounded-md border border-white/10 bg-[hsl(220_14%_18%)] px-2 py-1.5 text-xs text-white outline-none"
+                >
+                  {selectedPlan.assignments.map((a) => (
+                    <option key={a.taskId} value={a.taskId}>
+                      {a.taskId}（当前:{' '}
+                      {a.personId ? assignmentAssigneeName(a, personnel) : '未指派'}）
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-white/60">锁定人员</label>
+                <select
+                  value={adjustPersonId}
+                  onChange={(e) => setAdjustPersonId(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-white/10 bg-[hsl(220_14%_18%)] px-2 py-1.5 text-xs text-white outline-none"
+                >
+                  <option value="">请选择人员</option>
+                  {personnel.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}（{p.id}）
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setAdjustTarget(null)}>
+              取消
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleAdjust}
+              disabled={replanMutation.isPending || !adjustTarget || !adjustPersonId}
+            >
+              {replanMutation.isPending ? '重排中...' : '锁定并重排'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 对比方案 Dialog */}
+      <Dialog open={compareOpen} onOpenChange={(open) => !open && setCompareOpen(false)}>
+        <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-white">方案对比</DialogTitle>
+            <DialogDescription className="text-white/70">
+              对比两套方案的分配与指标差异
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Badge className="bg-white/10 text-white text-[9px]">A</Badge>
+              <span className="text-xs text-white/80">{selectedPlan?.planName ?? selectedPlan?.planId}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge className="bg-white/10 text-white text-[9px]">B</Badge>
+              <select
+                value={comparePlanId}
+                onChange={(e) => setComparePlanId(e.target.value)}
+                className="flex-1 rounded-md border border-white/10 bg-[hsl(220_14%_18%)] px-2 py-1.5 text-xs text-white outline-none"
+              >
+                {plans.map((p) => (
+                  <option key={p.planId} value={p.planId}>
+                    {p.planName ?? p.planId} · {p.status}
+                  </option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                onClick={handleCompare}
+                disabled={compareMutation.isPending || !comparePlanId}
+              >
+                {compareMutation.isPending ? '对比中...' : '对比'}
+              </Button>
+            </div>
+            {compareResult && (
+              <CompareResult result={compareResult} />
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setCompareOpen(false)}>
+              关闭
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function statusBadgeClassFromAssignment(status: string): string {
+  switch (status) {
+    case 'approved':
+      return 'bg-green-500/20 text-green-400 border-green-500/30';
+    case 'dispatched':
+    case 'executing':
+      return 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30';
+    case 'failed':
+    case 'blocked':
+      return 'bg-red-500/20 text-red-400 border-red-500/30';
+    case 'completed':
+      return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+    case 'cancelled':
+      return 'bg-red-500/20 text-red-400 border-red-500/30';
+    default:
+      return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+  }
+}
+
+function CompareResult({ result }: { result: Record<string, unknown> }) {
+  const metricsDelta = (result.metricsDelta ?? {}) as Record<string, number>;
+  const assignmentDelta = (result.assignmentDelta ?? []) as Array<Record<string, unknown>>;
+  const labels: Array<[string, string]> = [
+    ['lateMinutes', '延期变化'],
+    ['walkingMeters', '移动变化'],
+    ['stationWaitMinutes', '等待变化'],
+    ['maxWorkload', '负荷变化'],
+    ['changeCost', '变更成本'],
+  ];
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-5 gap-2">
+        {labels.map(([key, label]) => {
+          const v = metricsDelta[key];
+          return (
+            <div key={key} className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5">
+              <div className="text-[9px] text-white/50">{label}</div>
+              <div className={cn('text-sm font-semibold', v != null && v < 0 ? 'text-emerald-400' : v != null && v > 0 ? 'text-red-400' : 'text-white')}>
+                {v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(0)}`}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div>
+        <div className="text-[10px] text-white/60 font-medium mb-1">
+          分配差异（{assignmentDelta.length}）
+        </div>
+        <div className="max-h-40 overflow-y-auto space-y-1">
+          {assignmentDelta.map((d, i) => (
+            <div key={i} className="rounded border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-white/70">
+              {String(d.taskId ?? '—')}：
+              {d.personChanged ? '人员变更' : ''}
+              {d.deviceChanged ? ' / 设备变更' : ''}
+              {d.timeChanged ? ' / 时间变更' : ''}
+              {d.same === true ? ' 无变化' : ''}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

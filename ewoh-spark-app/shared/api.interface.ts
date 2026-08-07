@@ -1077,3 +1077,268 @@ export interface TimelineFilter {
   /** 结束时间（ISO，含）。 */
   to?: string;
 }
+
+// ===== Scheduling V2（智能调度工作台）=====
+
+/** 调度方案状态（V2） */
+export type PlanStatus =
+  | 'draft'
+  | 'shadow'
+  | 'approved'
+  | 'dispatched'
+  | 'executing'
+  | 'completed'
+  | 'rejected'
+  | 'superseded';
+
+/** 调度分配状态（V2） */
+export type AssignmentStatus =
+  | 'proposed'
+  | 'approved'
+  | 'dispatched'
+  | 'acknowledged'
+  | 'executing'
+  | 'completed'
+  | 'blocked'
+  | 'failed'
+  | 'cancelled';
+
+/** 调度触发类型（V2） */
+export type SchedulingTrigger =
+  | 'MANUAL'
+  | 'TASK_CREATED'
+  | 'TASK_UPDATED'
+  | 'PERSON_UNAVAILABLE'
+  | 'DEVICE_OFFLINE'
+  | 'DEVICE_LOW_BATTERY'
+  | 'BOTTLENECK_DETECTED'
+  | 'DEADLINE_AT_RISK'
+  | 'SAFETY_EVENT'
+  | 'ZONE_RESTRICTED';
+
+/** 世界状态快照（V2） */
+export interface WorldStateSnapshot {
+  snapshotVersion: string;
+  ts: string;
+  persons: Array<{
+    id: string;
+    name: string;
+    status: string;
+    healthStatus: string | null;
+    skills: string[];
+    loadLevel: number;
+    fatigueLevel: number;
+    stationId: string | null;
+    zoneId: string | null;
+    x: number;
+    y: number;
+  }>;
+  tasks: Array<{
+    id: string;
+    title: string;
+    taskType: string;
+    priority: string;
+    status: string;
+    assigneeId: string | null;
+    deviceId: string | null;
+    stationId: string | null;
+    zoneId: string | null;
+    planStart: string | null;
+    planEnd: string | null;
+    progress: number;
+    predecessorIds: string[];
+  }>;
+  devices: Array<{
+    id: string;
+    workerName: string | null;
+    deviceModel: string | null;
+    batteryPct: number;
+    online: boolean;
+    status: string | null;
+  }>;
+  stations: Array<{
+    id: string;
+    name: string;
+    x: number;
+    y: number;
+  }>;
+  backlog: Array<{ taskId: string; count: number }>;
+  events: Array<{
+    eventId: string;
+    severity: string;
+    status: string;
+    eventType: string | null;
+  }>;
+  routeStatus: Array<{
+    edgeId: string;
+    status: string;
+    riskLevel: string | null;
+  }>;
+  forbiddenZones: Array<{ zoneId: string; reason: string }>;
+  lockedAssignments: Array<{
+    taskId: string;
+    personId: string | null;
+    deviceId: string | null;
+    stationId: string | null;
+  }>;
+}
+
+/** 调度运行记录（V2） */
+export interface SchedulingRun {
+  runId: string;
+  triggerType: SchedulingTrigger | string;
+  triggerEntityId: string | null;
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  snapshotVersion: string | null;
+  planIds: string[];
+  orgId: string | null;
+  error: string | null;
+  createdAt: string;
+}
+
+/** 调度分配（V2） */
+export interface SchedulingAssignment {
+  assignmentId: string;
+  taskId: string;
+  personId: string | null;
+  deviceId: string | null;
+  stationId: string | null;
+  zoneId: string | null;
+  plannedStart: string | null;
+  plannedEnd: string | null;
+  routeId: string | null;
+  status: AssignmentStatus;
+  reasons: string[];
+  alternatives: Array<Record<string, unknown>>;
+}
+
+/** 调度方案指标（V2） */
+export interface SchedulingPlanMetrics {
+  lateMinutes: number;
+  walkingMeters: number;
+  stationWaitMinutes: number;
+  maxWorkload: number;
+  changeCost: number;
+}
+
+/** 调度方案（V2） */
+export interface SchedulingPlanV2 {
+  planId: string;
+  planName?: string;
+  version: number;
+  status: PlanStatus;
+  trigger: { type: SchedulingTrigger | string; entityId: string | null };
+  snapshotVersion: string;
+  horizonMinutes: number;
+  assignments: SchedulingAssignment[];
+  metrics: SchedulingPlanMetrics;
+  baselineDelta: Record<string, unknown>;
+  violations: Array<Record<string, unknown>>;
+  createdAt: string;
+}
+
+/** 调度策略权重（V2） */
+export interface SchedulingPolicy {
+  latenessWeight: number;
+  walkingWeight: number;
+  workloadBalanceWeight: number;
+  stationWaitWeight: number;
+  changeCostWeight: number;
+}
+
+/** 路由图节点（V2） */
+export interface RouteGraphNode {
+  nodeId: string;
+  nodeType: string | null;
+  x: number;
+  y: number;
+  floor: string | null;
+  stationId: string | null;
+  zoneId: string | null;
+}
+
+/** 路由图边（V2） */
+export interface RouteGraphEdge {
+  edgeId: string;
+  fromNodeId: string;
+  toNodeId: string;
+  distanceMeters: number;
+  expectedTimeSeconds: number;
+  direction: string | null;
+  capacity: number | null;
+  riskLevel: string | null;
+  status: 'open' | 'congested' | 'blocked';
+  accessibleFor: string[];
+}
+
+/** 路由图（V2） */
+export interface RouteGraph {
+  nodes: RouteGraphNode[];
+  edges: RouteGraphEdge[];
+}
+
+/** 规划路径（V2） */
+export interface Route {
+  routeId: string;
+  personId: string;
+  taskId: string;
+  distanceMeters: number;
+  etaSeconds: number;
+  nodes: string[];
+  geometry: Array<{ x: number; y: number }>;
+}
+
+/** 人员资格判定结果（V2） */
+export interface EligibilityResult {
+  personId: string;
+  eligible: boolean;
+  reasons: string[];
+}
+
+/** 生成调度运行请求（V2） */
+export interface CreateRunRequest {
+  trigger?: SchedulingTrigger;
+  entityId?: string;
+  horizonMinutes?: number;
+  operator?: string;
+  reason?: string;
+}
+
+/** 审批方案请求（V2） */
+export interface ApprovePlanRequest {
+  version: number;
+  snapshotVersion: string;
+  operator?: string;
+  reason?: string;
+}
+
+/** 拒绝方案请求（V2） */
+export interface RejectPlanRequest {
+  operator?: string;
+  reason?: string;
+}
+
+/** 重排方案请求（V2） */
+export interface ReplanRequest {
+  lockedConstraints: Array<{
+    taskId?: string;
+    personId?: string;
+    deviceId?: string;
+    stationId?: string;
+    zoneId?: string;
+    type?:
+      | 'LOCKED_PERSON'
+      | 'LOCKED_DEVICE'
+      | 'LOCKED_TIME'
+      | 'FORBIDDEN_ZONE'
+      | 'MIN_BATTERY';
+  }>;
+  operator?: string;
+  reason?: string;
+}
+
+/** 路由计算请求（V2） */
+export interface CalculateRouteRequest {
+  personId: string;
+  taskId: string;
+}

@@ -32,6 +32,10 @@ const FILES = {
   standalone_workbench_prod: path.join(root, 'db/migrations/standalone_005_workbench_prod.sql'),
   standalone_workbench_prod_rollback: path.join(root, 'db/migrations/standalone_005_workbench_prod.rollback.sql'),
   standalone_workbench_prod_verify: path.join(root, 'db/verify/standalone_005_verify.sql'),
+  standalone_scheduling: path.join(root, 'db/migrations/standalone_006_scheduling.sql'),
+  standalone_scheduling_rollback: path.join(root, 'db/migrations/standalone_006_scheduling.rollback.sql'),
+  standalone_scheduling_verify: path.join(root, 'db/verify/standalone_006_verify.sql'),
+  standalone_scheduling_seed: path.join(root, 'db/seed/standalone_006_scheduling_seed.sql'),
 };
 
 const PLAN_NAMES = Object.freeze(Object.keys(FILES));
@@ -43,6 +47,7 @@ const ROLLBACK_COMMANDS = new Set([
   '--rollback-standalone-runtime-role',
   '--rollback-standalone-domain',
   '--rollback-standalone-workbench-prod',
+  '--rollback-standalone-scheduling',
 ]);
 const EXECUTE_COMMANDS = new Set([
   '--apply',
@@ -67,6 +72,10 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-workbench-prod',
   '--rollback-standalone-workbench-prod',
   '--verify-standalone-workbench-prod',
+  '--apply-standalone-scheduling',
+  '--rollback-standalone-scheduling',
+  '--verify-standalone-scheduling',
+  '--seed-standalone-scheduling',
 ]);
 
 const TOKEN = '__EWOH_SCHEMA__';
@@ -140,6 +149,7 @@ function usage() {
   console.error('       run_migrations.js --apply-standalone-runtime-role | --rollback-standalone-runtime-role');
   console.error('       run_migrations.js --apply-standalone-domain | --rollback-standalone-domain | --verify-standalone-domain');
   console.error('       run_migrations.js --apply-standalone-workbench-prod | --rollback-standalone-workbench-prod | --verify-standalone-workbench-prod');
+  console.error('       run_migrations.js --apply-standalone-scheduling | --rollback-standalone-scheduling | --verify-standalone-scheduling | --seed-standalone-scheduling');
   console.error('Env: EWOH_DATABASE_URL or SUDA_DATABASE_URL, EWOH_SCHEMA, EWOH_ALLOW_DDL=1');
   console.error('Rollback also requires EWOH_ALLOW_DESTRUCTIVE_ROLLBACK=1.');
   process.exit(2);
@@ -218,6 +228,22 @@ function main() {
       return;
     }
 
+    if (command === '--verify-standalone-scheduling') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_scheduling_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      const tableCount = Number(row.ewoh_scheduling_table_count || 0);
+      const v2Columns = Number(row.ewoh_schedule_plan_v2_columns || 0);
+      const versionCol = Number(row.ewoh_schedule_plan_version_col || 0);
+      if (tableCount !== 7 || v2Columns !== 7 || versionCol !== 1) {
+        console.error(`VERIFY FAILED: expected (7,7,1), got (${tableCount},${v2Columns},${versionCol})`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: scheduling V2 tables + ewoh_schedule_plan V2 columns present');
+      }
+      return;
+    }
+
     if (['--verify', '--verify-standalone'].includes(command)) {
       const verifyFile = command === '--verify-standalone' ? FILES.standalone_verify : FILES.verify;
       const rows = await sql.unsafe(substitute(read(verifyFile), schema));
@@ -261,7 +287,10 @@ function main() {
       '--rollback-standalone-domain': 'standalone_domain_rollback',
       '--apply-standalone-workbench-prod': 'standalone_workbench_prod',
       '--rollback-standalone-workbench-prod': 'standalone_workbench_prod_rollback',
+      '--apply-standalone-scheduling': 'standalone_scheduling',
+      '--rollback-standalone-scheduling': 'standalone_scheduling_rollback',
       '--seed-standalone-admin': 'standalone_admin',
+      '--seed-standalone-scheduling': 'standalone_scheduling_seed',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {
