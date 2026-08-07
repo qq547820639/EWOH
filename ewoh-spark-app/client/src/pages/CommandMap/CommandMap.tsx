@@ -10,6 +10,7 @@ import {
   Workflow,
   Brain,
   X,
+  PanelTop,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -90,17 +91,7 @@ const TABS: TabItem[] = [
   { key: 'brain', label: '大脑建议', icon: Brain },
 ];
 
-const MODES = [
-  'production',
-  'person',
-  'exoskeleton',
-  'body_load',
-  'safety_risk',
-  'device',
-  'environment',
-  'scheduling',
-  'data_quality',
-];
+const MODES = MODE_ITEMS.map((m) => m.key);
 
 const HELP_ITEMS: Array<{ key: string; desc: string }> = [
   { key: '1-9', desc: '切换地图模式' },
@@ -121,12 +112,15 @@ const CommandMap = (): React.ReactElement => {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>('timeline');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [focusPlanId, setFocusPlanId] = useState<string | null>(null);
+  const [focusPlanPersons, setFocusPlanPersons] = useState<string[]>([]);
   const [replayMode, setReplayMode] = useState(false);
   const [replayPaused, setReplayPaused] = useState(false);
   const [replaySpeed, setReplaySpeed] = useState(1);
   const [replayTime, setReplayTime] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [panelExpanded, setPanelExpanded] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const replayTimeRef = useRef<string | null>(null);
   const handledUrlEventRef = useRef<string | null>(null);
@@ -288,6 +282,12 @@ const CommandMap = (): React.ReactElement => {
     replayTimeRef.current = replayTime;
   }, [replayTime]);
 
+  // 在调度模式地图上高亮某方案受影响人员
+  const handleViewOnMap = useCallback((personIds: string[]) => {
+    setFocusPlanPersons(personIds);
+    setMode('scheduling');
+  }, []);
+
   // 真实回放播放循环：按倍速逐快照推进
   useEffect(() => {
     if (!replayMode || replayPaused || !replaySnapshots?.length) return;
@@ -340,10 +340,25 @@ const CommandMap = (): React.ReactElement => {
 
   // 层级循环 L0 → L1 → L2 → L3 → L4 → L0
   const handleLevelToggle = useCallback(() => {
-    setLevel((prev) =>
-      prev === 'L0' ? 'L1' : prev === 'L1' ? 'L2' : prev === 'L2' ? 'L3' : prev === 'L3' ? 'L4' : 'L0',
-    );
-  }, []);
+    setLevel((prev) => {
+      const next =
+        prev === 'L0'
+          ? 'L1'
+          : prev === 'L1'
+            ? 'L2'
+            : prev === 'L2'
+              ? 'L3'
+              : prev === 'L3'
+                ? 'L4'
+                : 'L0';
+      // L3/L4 近景需先选中目标实体，无选中时回退原层级并提示，避免画面迷失
+      if ((next === 'L3' || next === 'L4') && !selectedEntityId) {
+        toast.info(`请先在地图上选中${next === 'L3' ? '一个工位' : '一名人员'}再进入近景`);
+        return prev;
+      }
+      return next;
+    });
+  }, [selectedEntityId]);
 
   // 回放切换
   const handleReplayToggle = useCallback(() => {
@@ -528,6 +543,8 @@ const CommandMap = (): React.ReactElement => {
           onSelectEntity={setSelectedEntityId}
           replayMode={replayMode}
           replayTime={replayTime}
+          focusPlanPersons={focusPlanPersons}
+          onFocusPlanPersonsConsumed={() => setFocusPlanPersons([])}
         />
 
         <EntityDetail
@@ -579,7 +596,12 @@ const CommandMap = (): React.ReactElement => {
       </div>
 
       {/* 底部标签栏 + 面板区 */}
-      <div className="h-[220px] shrink-0 flex flex-col bg-[hsl(220_14%_12%)] border-t border-white/10 lg:h-[280px]">
+      <div
+        className={cn(
+          'shrink-0 flex flex-col bg-[hsl(220_14%_12%)] border-t border-white/10',
+          panelExpanded ? 'h-[60vh]' : 'h-[220px] lg:h-[280px]',
+        )}
+      >
         <div className="flex items-center gap-1 px-3 h-9 border-b border-white/10 bg-[hsl(220_14%_14%)] overflow-x-auto">
           {TABS.map((t) => {
             const active = activeTab === t.key;
@@ -602,6 +624,23 @@ const CommandMap = (): React.ReactElement => {
               </button>
             );
           })}
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={() => setPanelExpanded((prev) => !prev)}
+            aria-pressed={panelExpanded}
+            aria-label={panelExpanded ? '收起面板' : '最大化面板'}
+            title={panelExpanded ? '收起面板' : '最大化面板'}
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-white/70 hover:text-white cursor-pointer"
+          >
+            <PanelTop
+              className={cn(
+                'w-3.5 h-3.5 transition-transform',
+                panelExpanded && 'rotate-180',
+              )}
+            />
+            {panelExpanded ? '收起' : '最大化'}
+          </button>
         </div>
 
         <div className="flex-1 min-h-0 overflow-hidden">
@@ -640,7 +679,11 @@ const CommandMap = (): React.ReactElement => {
           )}
           {activeTab === 'schedule' && (
             <React.Suspense fallback={<MapPanelFallback />}>
-              <SchedulePanel />
+              <SchedulePanel
+                focusPlanId={focusPlanId}
+                onFocusPlanConsumed={() => setFocusPlanId(null)}
+                onViewOnMap={handleViewOnMap}
+              />
             </React.Suspense>
           )}
           {activeTab === 'workbench' && (
@@ -661,13 +704,21 @@ const CommandMap = (): React.ReactElement => {
             <React.Suspense fallback={<MapPanelFallback />}>
               <TaskOrchestrationPanel
                 entities={entityList}
-                onOpenSchedule={() => setActiveTab('schedule')}
+                onOpenSchedule={(planId) => {
+                  setFocusPlanId(planId ?? null);
+                  setActiveTab('schedule');
+                }}
               />
             </React.Suspense>
           )}
           {activeTab === 'brain' && (
             <React.Suspense fallback={<MapPanelFallback />}>
-              <BrainPanel />
+              <BrainPanel
+                onSelectPlan={(planId) => {
+                  setFocusPlanId(planId);
+                  setActiveTab('schedule');
+                }}
+              />
             </React.Suspense>
           )}
         </div>

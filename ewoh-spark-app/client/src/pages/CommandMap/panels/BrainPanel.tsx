@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Brain,
   Gauge,
@@ -8,10 +8,15 @@ import {
   AlertOctagon,
   Check,
   Sparkles,
+  Loader2,
   type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { getBrainSuggestions } from '@client/src/api/gamification';
+import {
+  getBrainSuggestions,
+  applyBrainSuggestion,
+} from '@client/src/api/gamification';
+import { getCurrentOperator } from '@client/src/lib/auth';
 import type { BrainSuggestion } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { Button } from '@client/src/components/ui/button';
@@ -65,9 +70,11 @@ function confidenceColor(c: number): string {
 function SuggestionCard({
   suggestion,
   onAccept,
+  accepting,
 }: {
   suggestion: BrainSuggestion;
   onAccept: (s: BrainSuggestion) => void;
+  accepting?: boolean;
 }): React.ReactElement {
   const meta = TYPE_META[suggestion.type] ?? TYPE_META.takt_improve;
   const Icon = meta.icon;
@@ -147,29 +154,70 @@ function SuggestionCard({
           variant="outline"
           className="h-5 text-[10px] px-2"
           onClick={() => onAccept(suggestion)}
+          disabled={accepting}
         >
-          <Check className="w-3 h-3" />
-          采纳
+          {accepting ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <Check className="w-3 h-3" />
+          )}
+          {accepting ? '转化中...' : '采纳'}
         </Button>
       </div>
     </div>
   );
 }
 
-const BrainPanel = (): React.ReactElement => {
+interface BrainPanelProps {
+  onSelectPlan?: (planId: string) => void;
+}
+
+const BrainPanel = ({ onSelectPlan }: BrainPanelProps): React.ReactElement => {
+  const queryClient = useQueryClient();
   const { data: suggestions, isLoading, isError } = useQuery<BrainSuggestion[]>({
     queryKey: ['brain-suggestions'],
     queryFn: getBrainSuggestions,
     refetchInterval: 10000,
   });
 
+  const applyMutation = useMutation({
+    mutationFn: (s: BrainSuggestion) =>
+      applyBrainSuggestion({
+        type: s.type,
+        title: s.title,
+        description: s.description,
+        affectedEntities: s.affectedEntities,
+        expectedBenefit: s.expectedBenefit,
+        confidence: s.confidence,
+        operator: getCurrentOperator(),
+      }),
+    onSuccess: (res, s) => {
+      toast.success(`已采纳「${s.title}」，已生成方案 ${res.planId}`);
+      queryClient.invalidateQueries({ queryKey: ['schedule-plans'] });
+      onSelectPlan?.(res.planId);
+    },
+    onError: (err) =>
+      toast.error('采纳失败', {
+        description: err instanceof Error ? err.message : undefined,
+      }),
+  });
+
   const handleAccept = (s: BrainSuggestion) => {
-    if (s.planId) {
-      toast.success(`已采纳「${s.title}」，跳转方案 ${s.planId}`);
-    } else {
-      toast.info(`已采纳「${s.title}」`);
+    if (s.planId && onSelectPlan) {
+      onSelectPlan(s.planId);
+      toast.success(`已采纳「${s.title}」，已定位到方案 ${s.planId}`);
+      return;
     }
+    if (s.planId) {
+      toast.success(`已采纳「${s.title}」，关联方案 ${s.planId}`);
+      return;
+    }
+    // 无关联方案：转化为一条待审批方案
+    applyMutation.mutate(s);
   };
+
+  // 任一建议携带 enhancing=true 时，展示「大模型增强中」提示
+  const enhancing = (suggestions ?? []).some((s) => s.enhancing);
 
   const grouped = (suggestions ?? []).reduce<
     Record<SuggestionType, BrainSuggestion[]>
@@ -198,6 +246,13 @@ const BrainPanel = (): React.ReactElement => {
           {suggestions?.length ?? 0} 条
         </span>
       </div>
+
+      {enhancing && (
+        <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-cyan-500/20 bg-cyan-500/10 text-[10px] text-cyan-300 shrink-0">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          正在调用大模型增强建议…
+        </div>
+      )}
 
       <ScrollArea className="flex-1">
         <div className="p-3">
@@ -229,6 +284,7 @@ const BrainPanel = (): React.ReactElement => {
                           key={`${s.title}-${i}`}
                           suggestion={s}
                           onAccept={handleAccept}
+                          accepting={applyMutation.isPending}
                         />
                       ))}
                     </div>

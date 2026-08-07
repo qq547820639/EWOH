@@ -27,8 +27,6 @@
   "pages/CommandMap/CommandMap.tsx",
   "pages/CommandMap/EntityDetail.tsx",
   "pages/CommandMap/FactoryMap.tsx",
-  "pages/CommandMap/FactoryMap3D.tsx",
-  "pages/CommandMap/L3L4View.tsx",
   "pages/CommandMap/ModePanel.tsx",
   "pages/CommandMap/TopBar.tsx",
   "pages/CommandMap/panels/BrainPanel.tsx",

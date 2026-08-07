@@ -30,7 +30,7 @@ interface ModeItem {
 export const MODES: ModeItem[] = [
   { key: 'production', name: '生产', desc: '工位产出状态', icon: Factory, color: '#3b82f6' },
   { key: 'person', name: '人员', desc: '人员位置分布', icon: Users, color: '#06b6d4' },
-  { key: 'exoskeleton', name: '外骨骼', desc: '设备在线状态', icon: Cpu, color: '#8b5cf6' },
+  { key: 'exoskeleton', name: '外骨骼', desc: '外骨骼装备与佩戴', icon: Cpu, color: '#8b5cf6' },
   { key: 'body_load', name: '人体负荷', desc: '负荷健康度', icon: Activity, color: '#f59e0b' },
   { key: 'safety_risk', name: '安全风险', desc: '事件风险区', icon: AlertTriangle, color: '#ef4444' },
   { key: 'device', name: '设备', desc: '设备运行态', icon: Smartphone, color: '#10b981' },
@@ -115,7 +115,7 @@ const ModePanel = ({
           ))}
         </div>
         <p className="text-[10px] text-white/60 mt-1.5 px-0.5 leading-snug">
-          L0 基础结构 · L1 感知覆盖 · L2 全量态势 · L3 工位近景 · L4 人员跟随
+          L0 基础结构 · L1 感知/动态 · L2 全量态势 · L3 工位近景 · L4 人员跟随
         </p>
       </div>
     </div>

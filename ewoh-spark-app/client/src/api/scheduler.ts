@@ -18,6 +18,17 @@ export async function generatePlans(
   return res.data;
 }
 
+export async function generateDataDrivenPlans(
+  body?: GeneratePlansRequest,
+): Promise<SchedulePlan[]> {
+  const res = await axiosForBackend({
+    url: '/api/scheduler/plans/data-driven',
+    method: 'POST',
+    data: body ?? {},
+  });
+  return res.data;
+}
+
 export async function getPlans(status?: string): Promise<SchedulePlan[]> {
   const params: Record<string, string> = {};
   if (status) params.status = status;

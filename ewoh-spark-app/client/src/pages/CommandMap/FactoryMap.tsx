@@ -19,6 +19,9 @@ interface FactoryMapProps {
   onSelectEntity: (id: string | null) => void;
   replayMode: boolean;
   replayTime: string | null;
+  /** 调度模式：高亮某方案受影响人员（来自调度面板「在图上查看」） */
+  focusPlanPersons?: string[];
+  onFocusPlanPersonsConsumed?: () => void;
 }
 
 /** 摄像头视锥三角形顶点（yaw=0 朝右，按 yaw 旋转） */
@@ -32,6 +35,11 @@ function cameraFovPoints(x: number, y: number, yaw: number, fovDeg: number, rang
   return `${x},${y} ${p1x},${p1y} ${p2x},${p2y}`;
 }
 
+/** 设备是否为外骨骼装备（按实体名/ID 含 EXO 判断） */
+function isExoDevice(entity: SpatialEntity): boolean {
+  return /EXO|外骨骼/i.test(`${entity.name} ${entity.entityId}`);
+}
+
 /** 按 mode 计算实体填充颜色 */
 function getEntityColor(
   entity: SpatialEntity,
@@ -41,15 +49,25 @@ function getEntityColor(
   switch (mode) {
     case 'production':
       if (entity.entityType === 'workstation') {
-        if (entity.status === 'producing') return '#10b981';
-        if (entity.status === 'warning') return '#f59e0b';
-        return '#6b7280';
+        // 优先用实时工位占用率着色（与 L2 WIP/节拍逻辑一致），无实时数据时回退静态状态
+        const occ = worldState?.workstations?.find(
+          (w) => w.entityId === entity.entityId,
+        )?.occupancy;
+        if (occ == null) {
+          if (entity.status === 'producing') return '#10b981';
+          if (entity.status === 'warning') return '#f59e0b';
+          return '#6b7280';
+        }
+        if (occ < 0.4) return '#10b981';
+        if (occ < 0.7) return '#f59e0b';
+        return '#ef4444';
       }
       return '#3b82f6';
     case 'person':
       return entity.entityType === 'person' ? '#06b6d4' : '#4b5563';
     case 'exoskeleton':
-      if (entity.entityType === 'device') {
+      // 仅外骨骼装备按其在线态着色，其余设备统一灰色
+      if (entity.entityType === 'device' && isExoDevice(entity)) {
         const dev = worldState?.devices.find((d) => d.entityId === entity.entityId);
         return dev && dev.status !== 'offline' ? '#10b981' : '#6b7280';
       }
@@ -74,8 +92,9 @@ function getEntityColor(
       }
       return '#4b5563';
     case 'environment':
+      // 无真实环境数据时用中性色，避免误导
       if (entity.entityType === 'zone') {
-        return '#1e3a5f';
+        return 'rgba(34,211,238,0.25)';
       }
       return '#4b5563';
     case 'scheduling':
@@ -87,6 +106,25 @@ function getEntityColor(
     default:
       return '#3b82f6';
   }
+}
+
+/** 设备层着色：依赖 mode 决定是否区分外骨骼 */
+function getDeviceColor(
+  entity: SpatialEntity,
+  mode: string,
+  worldState: CurrentWorldState | null,
+): string {
+  if (mode === 'exoskeleton') {
+    // 外骨骼装备按在线态着色，其余设备统一灰色
+    if (!isExoDevice(entity)) return '#4b5563';
+    const dev = worldState?.devices.find((d) => d.entityId === entity.entityId);
+    return dev && dev.status !== 'offline' ? '#10b981' : '#6b7280';
+  }
+  if (mode === 'device' || mode === 'production') {
+    const dev = worldState?.devices.find((d) => d.entityId === entity.entityId);
+    return dev && dev.status !== 'offline' ? '#10b981' : '#6b7280';
+  }
+  return '#4b5563';
 }
 
 interface StaticStyle {
@@ -234,6 +272,8 @@ const FactoryMap = ({
   onSelectEntity,
   replayMode,
   replayTime,
+  focusPlanPersons = [],
+  onFocusPlanPersonsConsumed,
 }: FactoryMapProps): React.ReactElement => {
   const staticEntities = useMemo(
     () =>
@@ -289,18 +329,21 @@ const FactoryMap = ({
   const viewBox = useMemo(() => computeViewBox(entities), [entities]);
 
   // 层级 = 同一张地图上的信息密度：
-  //   L0 基础结构 | L1 +感知覆盖(摄像头/UWB) | L2 +生产节拍/安全风险等全量态势
+  //   L0 基础结构（仅静态元素，无动态人员/设备）
+  //   L1 +感知覆盖(摄像头/UWB) + 动态人员/设备
+  //   L2 +生产节拍/安全风险等全量态势
   //   L3 工位近景 | L4 人员跟随（近景模式，自动缩放定位到焦点实体）
+  const showDynamic = level !== 'L0';
   const showPerception = level === 'L1' || level === 'L2';
   const showDensity = level === 'L2';
   const isNearView = level === 'L3' || level === 'L4';
 
-  const focusType = level === 'L3' ? 'workstation' : 'person';
   const focus = useMemo(() => {
     if (!isNearView) return null;
-    const sel = selectedEntityId ? entities.find((e) => e.entityId === selectedEntityId) : null;
-    return sel ?? entities.find((e) => e.entityType === focusType) ?? null;
-  }, [isNearView, selectedEntityId, entities, focusType]);
+    // 近景必须选中目标实体，避免未选中时随机聚焦造成迷失
+    if (!selectedEntityId) return null;
+    return entities.find((e) => e.entityId === selectedEntityId) ?? null;
+  }, [isNearView, selectedEntityId, entities]);
 
   // 近景目标点：优先取动态位置，回落到静态坐标
   const targetPos = useMemo(() => {
@@ -518,17 +561,70 @@ const FactoryMap = ({
           </>
         )}
 
-        {/* 3. 调度模式：连接受影响人员（简化为顺序连线） */}
-        {mode === 'scheduling' && persons.length > 1 && (
-          <polyline
-            points={persons.map((p) => `${p.x},${p.y}`).join(' ')}
-            fill="none"
-            stroke="rgba(168,85,247,0.5)"
-            strokeWidth="2"
-            strokeDasharray="6 4"
-            pointerEvents="none"
-          />
-        )}
+        {/* 3. 调度模式：优先展示「在图上查看」方案的受影响人员连线；否则回退到选中人员的关联连线 */}
+        {showDynamic &&
+          mode === 'scheduling' &&
+          (focusPlanPersons.length > 1
+            ? (() => {
+                const focused = focusPlanPersons
+                  .map((id) => persons.find((p) => p.entityId === id))
+                  .filter((p): p is DynPoint => Boolean(p));
+                if (focused.length < 2) return null;
+                return (
+                  <g pointerEvents="none">
+                    <polyline
+                      points={focused.map((p) => `${p.x},${p.y}`).join(' ')}
+                      fill="none"
+                      stroke="rgba(168,85,247,0.6)"
+                      strokeWidth="2.5"
+                      strokeDasharray="6 4"
+                    />
+                    {focused.slice(1).map((p) => (
+                      <line
+                        key={`flink-${focused[0].entityId}-${p.entityId}`}
+                        x1={focused[0].x}
+                        y1={focused[0].y}
+                        x2={p.x}
+                        y2={p.y}
+                        stroke="rgba(168,85,247,0.3)"
+                        strokeWidth="1"
+                      />
+                    ))}
+                  </g>
+                );
+              })()
+            : persons.length > 1 && selectedEntityId
+              ? (() => {
+                  const sel = persons.find((p) => p.entityId === selectedEntityId);
+                  if (!sel) return null;
+                  const connected = [
+                    sel,
+                    ...persons.filter((p) => p.entityId !== selectedEntityId),
+                  ];
+                  return (
+                    <g pointerEvents="none">
+                      <polyline
+                        points={connected.map((p) => `${p.x},${p.y}`).join(' ')}
+                        fill="none"
+                        stroke="rgba(168,85,247,0.5)"
+                        strokeWidth="2"
+                        strokeDasharray="6 4"
+                      />
+                      {connected.slice(1).map((p) => (
+                        <line
+                          key={`link-${sel.entityId}-${p.entityId}`}
+                          x1={sel.x}
+                          y1={sel.y}
+                          x2={p.x}
+                          y2={p.y}
+                          stroke="rgba(168,85,247,0.25)"
+                          strokeWidth="1"
+                        />
+                      ))}
+                    </g>
+                  );
+                })()
+              : null)}
 
         {/* 3.5 生产模式：工位间流动虚线 + WIP 气泡 + 节拍脉冲（L2 全量态势显示） */}
         {showDensity && mode === 'production' && flowLines.map((line, i) => (
@@ -645,9 +741,9 @@ const FactoryMap = ({
         })}
 
         {/* 5. 设备层（动态） */}
-        {devices.map((d) => {
-          const online = d.status !== 'offline';
-          const fill = online ? '#10b981' : '#6b7280';
+        {showDynamic && devices.map((d) => {
+          const ent = entities.find((e) => e.entityId === d.entityId);
+          const fill = ent ? getDeviceColor(ent, mode, worldState) : '#4b5563';
           return (
             <g
               key={`dev-${d.entityId}`}
@@ -677,7 +773,7 @@ const FactoryMap = ({
         })}
 
         {/* 6. 人员层（动态） */}
-        {persons.map((p) => {
+        {showDynamic && persons.map((p) => {
           let fill = '#06b6d4';
           if (mode === 'body_load') {
             const s = p.loadScore;
@@ -696,6 +792,12 @@ const FactoryMap = ({
             if (c > 0.95) fill = '#10b981';
             else if (c >= 0.8) fill = '#f59e0b';
             else fill = '#ef4444';
+          } else if (mode === 'exoskeleton') {
+            // 佩戴外骨骼装备的人员高亮，其余人员灰显
+            const bound = p.deviceId
+              ? entities.find((e) => e.entityId === p.deviceId)
+              : null;
+            fill = bound && isExoDevice(bound) ? '#8b5cf6' : '#4b5563';
           }
           return (
             <g
@@ -821,6 +923,14 @@ const FactoryMap = ({
             {level === 'L3' ? '工位近景' : '人员跟随'}：{focus.name}
           </span>
           <span className="text-white/50">滚轮缩放 · 重置回整体</span>
+        </div>
+      )}
+      {isNearView && !focus && (
+        <div className="pointer-events-none absolute top-3 left-3 z-10 flex max-w-[70%] items-center gap-2 rounded-lg border border-white/10 bg-[hsl(220_14%_14%)]/90 px-3 py-1.5 text-xs text-white/80 shadow-xl backdrop-blur">
+          <Crosshair className="w-3.5 h-3.5 text-white/40" />
+          <span className="truncate text-white/60">
+            请先在地图上选择{level === 'L3' ? '一个工位' : '一名人员'}以进入近景
+          </span>
         </div>
       )}
 

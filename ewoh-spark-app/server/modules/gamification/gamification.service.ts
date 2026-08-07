@@ -25,6 +25,8 @@ import type {
   ExoFeedbackRequest,
   ExoFeedbackResult,
   BrainSuggestion,
+  ApplyBrainSuggestionRequest,
+  ApplyBrainSuggestionResult,
 } from '@shared/api.interface';
 
 /**
@@ -279,19 +281,53 @@ export class GamificationService {
       const planId = `ORCH-${Date.now()}-${this.randomSuffix(4)}`;
       const now = new Date();
 
-      // 1. 节拍模拟：每个已分配工位的节点 takt = 30 + random*30
-      const nodes: ProcessNode[] = req.nodes.map((n) => ({
-        ...n,
-        estimatedTakt: n.estimatedTakt ?? Number((30 + Math.random() * 30).toFixed(2)),
-      }));
+      // 1. 查询已分配工位最近 1h 平均占用，作为节拍推算依据（数据驱动，而非随机）
+      const workstationIds = req.nodes
+        .map((n) => n.assignedWorkstationId)
+        .filter((v): v is string => typeof v === 'string' && v.length > 0);
+      const occupancyByWs = new Map<string, number>();
+      if (workstationIds.length > 0) {
+        const occRows = await this.db
+          .select({
+            entityId: ewohSpatialEntity.entityId,
+            avgLoad: sql<number>`coalesce(avg(${ewohTelemetry.loadScore}), 0)::float`,
+          })
+          .from(ewohTelemetry)
+          .innerJoin(
+            ewohSpatialEntity,
+            eq(ewohSpatialEntity.entityId, ewohTelemetry.deviceId),
+          )
+          .where(
+            and(
+              inArray(ewohSpatialEntity.entityId, workstationIds),
+              gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`),
+            ),
+          )
+          .groupBy(ewohSpatialEntity.entityId);
+        for (const r of occRows) occupancyByWs.set(r.entityId, r.avgLoad ?? 0);
+      }
+
+      // 1. 节拍模拟：按工位实时占用推算 takt（占用越高节拍越慢），无数据时回退默认 30s
+      //    节拍基准 30s，占用每提升 0.1 增加 3s，封顶 60s。
+      const nodes: ProcessNode[] = req.nodes.map((n) => {
+        let takt = n.estimatedTakt;
+        let source: 'telemetry' | 'default' = 'default';
+        if (takt == null && n.assignedWorkstationId) {
+          const occ = occupancyByWs.get(n.assignedWorkstationId);
+          if (occ != null) {
+            takt = Number(Math.min(30 + occ * 30, 60).toFixed(2));
+            source = 'telemetry';
+          }
+        }
+        if (takt == null) takt = 30;
+        // 回传节拍数据来源，供前端标注「真实遥测 / 默认值」，提升演示可信度
+        return { ...n, estimatedTakt: takt, taktSource: source } as ProcessNode;
+      });
 
       const stationTakts: TaktSimulation['stationTakts'] = [];
       const stationNameMap = new Map<string, string>();
 
-      // 查询工位名称
-      const workstationIds = nodes
-        .map((n) => n.assignedWorkstationId)
-        .filter((v): v is string => typeof v === 'string' && v.length > 0);
+      // 查询工位名称（复用上方已求值的 workstationIds）
       if (workstationIds.length > 0) {
         const wsRows = await this.db
           .select({ entityId: ewohSpatialEntity.entityId, name: ewohSpatialEntity.name })
@@ -317,6 +353,7 @@ export class GamificationService {
             workstationName: stationNameMap.get(node.assignedWorkstationId) ?? node.assignedWorkstationId,
             taktSec: Number(takt.toFixed(2)),
             isBottleneck: false,
+            taktSource: node.taktSource ?? 'default',
           });
         }
       }
@@ -568,12 +605,14 @@ export class GamificationService {
   /** LLM 增强结果的进程内缓存：先返回规则建议，LLM 异步增强后回写覆盖。 */
   private brainCache: BrainSuggestion[] | null = null;
   private brainCacheAt = 0;
+  /** 标记当前是否有后台 LLM 增强正在执行（供前端展示「增强中」状态）。 */
+  private brainEnhancing = false;
 
   /**
    * 大脑建议（G3.7）。
    * 设计：同步返回规则建议（毫秒级），LLM 增强在后台异步执行并写入缓存，
    * 后续轮询（前端每 10s）命中缓存后返回增强结果。
-   * 这样避免慢 LLM（~140s）阻塞请求，也让规则建议始终立即可用。
+   * 返回前会为建议回填已存在的可审批方案 planId，打通「采纳 → 定位方案」闭环。
    */
   async getBrainSuggestions(): Promise<BrainSuggestion[]> {
     try {
@@ -586,18 +625,120 @@ export class GamificationService {
         this.logger.log(
           `getBrainSuggestions serving ${this.brainCache.length} cached (LLM) suggestions`,
         );
-        return this.brainCache;
+        return this.attachPlanIds(this.brainCache);
       }
 
       // 3. 返回规则建议，同时后台异步触发 LLM 增强并回写缓存
       void this.enrichBrainSuggestionsWithLlmAsync(suggestions);
 
       this.logger.log(`getBrainSuggestions returned ${suggestions.length} rule suggestions`);
-      return suggestions;
+      return this.attachPlanIds(
+        suggestions.map((s) => ({ ...s, enhancing: this.brainEnhancing })),
+      );
     } catch (error) {
       this.logger.error('getBrainSuggestions 失败', error);
       throw error;
     }
+  }
+
+  /**
+   * 为建议回填已存在的可审批（proposed/confirmed）方案 planId。
+   * 按建议类型映射到对应调度策略，取最近一条同策略方案关联。
+   */
+  private async attachPlanIds(suggestions: BrainSuggestion[]): Promise<BrainSuggestion[]> {
+    if (suggestions.length === 0) return suggestions;
+    try {
+      const strategyByType = this.brainStrategyMap();
+      const strategies = Array.from(
+        new Set(suggestions.map((s) => strategyByType[s.type]).filter(Boolean)),
+      );
+      if (strategies.length === 0) return suggestions;
+
+      const rows = await this.db
+        .select({
+          planId: ewohSchedulePlan.planId,
+          strategy: ewohSchedulePlan.strategy,
+          status: ewohSchedulePlan.status,
+        })
+        .from(ewohSchedulePlan)
+        .where(
+          and(
+            inArray(ewohSchedulePlan.strategy, strategies),
+            inArray(ewohSchedulePlan.status, ['proposed', 'confirmed']),
+          ),
+        )
+        .orderBy(desc(ewohSchedulePlan.createdAt));
+
+      const latestByStrategy = new Map<string, string>();
+      for (const r of rows) {
+        if (!latestByStrategy.has(r.strategy)) latestByStrategy.set(r.strategy, r.planId);
+      }
+
+      return suggestions.map((s) => {
+        const planId = latestByStrategy.get(strategyByType[s.type]);
+        return planId ? { ...s, planId } : s;
+      });
+    } catch (error) {
+      this.logger.warn(`attachPlanIds 失败：${String(error)}`);
+      return suggestions;
+    }
+  }
+
+  /** 建议类型 → 调度策略 映射（用于回填 planId 与「采纳」转化） */
+  private brainStrategyMap(): Record<BrainSuggestion['type'], string> {
+    return {
+      load_balance: 'load_balance',
+      battery_swap: 'battery_swap',
+      takt_improve: 'capacity_priority',
+      safety_intervene: 'safety_intervene',
+      bottleneck_resolve: 'capacity_priority',
+    };
+  }
+
+  /**
+   * 大脑建议「采纳」：将一条规则/LLM 建议落库为一条 proposed 调度方案，
+   * 返回 planId 供前端定位到调度面板，打通建议 → 审批闭环。
+   */
+  async applyBrainSuggestion(
+    body: ApplyBrainSuggestionRequest,
+  ): Promise<ApplyBrainSuggestionResult> {
+    const operator = body.operator ?? 'supervisor';
+    const now = new Date();
+    const planId = `BRAIN-${Date.now()}-${this.randomSuffix(4)}`;
+    const strategy = this.brainStrategyMap()[body.type] ?? 'load_balance';
+    const planName = `大脑建议-${(body.title || body.type).slice(0, 20)}`;
+
+    await this.db.insert(ewohSchedulePlan).values({
+      planId,
+      planName,
+      strategy,
+      status: 'proposed',
+      taktImprovement: 0,
+      highLoadPersons: body.type === 'load_balance' ? body.affectedEntities.length : 0,
+      lowBatteryRisk: body.type === 'battery_swap' ? body.affectedEntities.length : 0,
+      affectedPersons: body.affectedEntities.length,
+      metricsJson: {
+        affectedEntities: body.affectedEntities,
+        confidence: body.confidence,
+        expectedBenefit: body.expectedBenefit,
+        source: 'brain',
+        suggestionType: body.type,
+      } as Record<string, unknown>,
+      reason: body.description ?? body.title ?? '',
+      createdAt: now,
+    });
+
+    await this.db.insert(ewohScheduleAudit).values({
+      auditId: `AUDIT-${Date.now()}-${this.randomSuffix(4)}`,
+      planId,
+      action: 'brain_apply',
+      operator,
+      reason: `采纳大脑建议：${body.title}`,
+      createdAt: now,
+    });
+
+    this.logger.log(`applyBrainSuggestion planId=${planId} strategy=${strategy} operator=${operator}`);
+    return { planId, planName, strategy, status: 'proposed' };
   }
 
   /** 基于实时数据构造规则建议（不调用 LLM）。 */
@@ -696,13 +837,18 @@ export class GamificationService {
       });
     }
 
-    return suggestions;
+    // 为规则建议补充稳定标识，供「采纳」时定位/转化
+    return suggestions.map((s, i) => ({
+      ...s,
+      suggestionId: `SUG-${s.type}-${i}`,
+    }));
   }
 
   /** 后台异步执行 LLM 增强，成功后回写缓存（失败不影响已返回的规则建议）。 */
   private async enrichBrainSuggestionsWithLlmAsync(
     fallback: BrainSuggestion[],
   ): Promise<void> {
+    this.brainEnhancing = true;
     try {
       const telemetryRows = await this.db
         .select({
@@ -733,6 +879,8 @@ export class GamificationService {
       }
     } catch (error) {
       this.logger.warn(`getBrainSuggestions 异步增强失败：${String(error)}`);
+    } finally {
+      this.brainEnhancing = false;
     }
   }
 
@@ -784,13 +932,14 @@ export class GamificationService {
           ),
       );
       if (valid.length === 0) return fallback;
-      return valid.map((s) => ({
+      return valid.map((s, i) => ({
         type: (s.type as BrainSuggestion['type']) ?? 'bottleneck_resolve',
         title: s.title ?? '',
         description: s.description ?? '',
         affectedEntities: Array.isArray(s.affectedEntities) ? s.affectedEntities.filter((v): v is string => typeof v === 'string') : [],
         expectedBenefit: s.expectedBenefit ?? '',
         confidence: typeof s.confidence === 'number' ? Math.min(1, Math.max(0, s.confidence)) : 0.5,
+        suggestionId: `SUG-${s.type ?? 'brain'}-${i}`,
       }));
     } catch (e) {
       this.logger.warn(`getBrainSuggestions LLM 输出解析失败：${String(e)}`);

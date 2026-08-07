@@ -10,6 +10,8 @@ import type {
   ExoFeedbackRequest,
   ExoFeedbackResult,
   BrainSuggestion,
+  ApplyBrainSuggestionRequest,
+  ApplyBrainSuggestionResult,
 } from '@shared/api.interface';
 
 export async function getRole(): Promise<PlayerRoleInfo> {
@@ -67,6 +69,17 @@ export async function getBrainSuggestions(): Promise<BrainSuggestion[]> {
   const res = await axiosForBackend({
     url: '/api/gamification/brain/suggestions',
     method: 'GET',
+  });
+  return res.data;
+}
+
+export async function applyBrainSuggestion(
+  body: ApplyBrainSuggestionRequest,
+): Promise<ApplyBrainSuggestionResult> {
+  const res = await axiosForBackend({
+    url: '/api/gamification/brain/apply',
+    method: 'POST',
+    data: body,
   });
   return res.data;
 }

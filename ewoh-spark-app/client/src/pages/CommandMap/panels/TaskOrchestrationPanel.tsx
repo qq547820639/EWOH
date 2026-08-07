@@ -39,7 +39,7 @@ import {
 
 interface TaskOrchestrationPanelProps {
   entities: SpatialEntity[];
-  onOpenSchedule?: () => void;
+  onOpenSchedule?: (planId?: string) => void;
 }
 
 interface NodeEditorState {
@@ -101,6 +101,7 @@ const TaskOrchestrationPanel = ({
   const [productCode, setProductCode] = useState<string>('P-A001');
   const [quantity, setQuantity] = useState<number>(100);
   const [result, setResult] = useState<TaskOrchestrationResult | null>(null);
+  const [latestPlanId, setLatestPlanId] = useState<string | null>(null);
   const [editor, setEditor] = useState<NodeEditorState>({ open: false, node: null });
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -120,6 +121,7 @@ const TaskOrchestrationPanel = ({
     onSuccess: (data) => {
       setResult(data);
       setNodes(data.nodes ?? nodes);
+      setLatestPlanId(data.planId ?? null);
       toast.success('节拍模拟完成');
     },
     onError: () => {
@@ -351,6 +353,23 @@ const TaskOrchestrationPanel = ({
                       <span className="tabular-nums">
                         节拍 {node.estimatedTakt ?? '—'}s
                       </span>
+                      {node.taktSource && (
+                        <span
+                          className={cn(
+                            'ml-auto px-1 rounded text-[8px] leading-3',
+                            node.taktSource === 'telemetry'
+                              ? 'bg-cyan-500/20 text-cyan-300'
+                              : 'bg-white/10 text-white/50',
+                          )}
+                          title={
+                            node.taktSource === 'telemetry'
+                              ? '由工位实时遥测推算'
+                              : '使用默认节拍值'
+                          }
+                        >
+                          {node.taktSource === 'telemetry' ? '遥测' : '默认'}
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -424,7 +443,7 @@ const TaskOrchestrationPanel = ({
                     size="sm"
                     variant="outline"
                     className="h-6 text-[10px] px-2 text-cyan-400 border-cyan-500/30"
-                    onClick={() => onOpenSchedule?.()}
+                    onClick={() => onOpenSchedule?.(latestPlanId ?? undefined)}
                   >
                     发布到调度审批
                   </Button>
@@ -449,6 +468,19 @@ const TaskOrchestrationPanel = ({
                   )}
                   <span className="truncate max-w-[80px]">{s.workstationName}</span>
                   <span className="tabular-nums text-white/70">{s.taktSec}s</span>
+                  <span
+                    className={cn(
+                      'px-1 rounded text-[8px] leading-3',
+                      s.taktSource === 'telemetry'
+                        ? 'bg-cyan-500/20 text-cyan-300'
+                        : 'bg-white/10 text-white/50',
+                    )}
+                    title={
+                      s.taktSource === 'telemetry' ? '由工位实时遥测推算' : '使用默认节拍值'
+                    }
+                  >
+                    {s.taktSource === 'telemetry' ? '遥测' : '默认'}
+                  </span>
                 </div>
               ))}
             </div>
