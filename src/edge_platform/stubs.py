@@ -69,7 +69,15 @@ CREATE TABLE IF NOT EXISTS assignment (
   recommended_by TEXT,
   confirmed_by TEXT,
   confirmed_at TEXT,
-  audit_ref TEXT
+  audit_ref TEXT,
+  plan_id TEXT,
+  station_id TEXT,
+  route_json TEXT,
+  planned_start TEXT,
+  planned_end TEXT,
+  actual_start TEXT,
+  actual_end TEXT,
+  version INTEGER DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_assignment_person ON assignment(person_id);
 CREATE INDEX IF NOT EXISTS idx_assignment_status ON assignment(status);
@@ -128,6 +136,82 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_log_action_ts ON audit_log(action, ts);
 CREATE INDEX IF NOT EXISTS idx_audit_log_actor_ts ON audit_log(actor_id, ts);
 CREATE INDEX IF NOT EXISTS idx_audit_log_target ON audit_log(target_type, target_id);
+-- 指挥地图智能调度（cmd-map-edge-scheduling）新增表：幂等建表，不影响旧表
+CREATE TABLE IF NOT EXISTS task (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT UNIQUE NOT NULL,
+  task_type TEXT, priority INTEGER DEFAULT 0, status TEXT DEFAULT 'draft',
+  station_id TEXT, zone_id TEXT,
+  required_skills_json TEXT NOT NULL DEFAULT '[]',
+  required_device_capabilities_json TEXT NOT NULL DEFAULT '[]',
+  release_at TEXT, earliest_start TEXT, due_at TEXT,
+  estimated_duration_sec INTEGER DEFAULT 0,
+  predecessor_task_ids_json TEXT NOT NULL DEFAULT '[]',
+  exclusive_resource_ids_json TEXT NOT NULL DEFAULT '[]',
+  load_level REAL DEFAULT 0, safety_critical INTEGER DEFAULT 0,
+  version INTEGER DEFAULT 1, created_at TEXT, updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_task_status ON task(status);
+CREATE INDEX IF NOT EXISTS idx_task_priority ON task(priority);
+CREATE TABLE IF NOT EXISTS scheduling_request (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id TEXT UNIQUE NOT NULL,
+  trigger_type TEXT, task_ids_json TEXT NOT NULL DEFAULT '[]',
+  policy_id TEXT, world_state_version TEXT,
+  created_at TEXT, expires_at TEXT, status TEXT DEFAULT 'pending', created_by TEXT
+);
+CREATE TABLE IF NOT EXISTS scheduling_plan (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan_id TEXT UNIQUE NOT NULL,
+  request_id TEXT, version INTEGER DEFAULT 1,
+  objective_score REAL DEFAULT 0, objective_breakdown_json TEXT,
+  constraint_summary_json TEXT, world_state_version TEXT,
+  valid_until TEXT, status TEXT DEFAULT 'shadow',
+  created_at TEXT, confirmed_at TEXT, confirmed_by TEXT, confirm_reason TEXT,
+  assignments_json TEXT
+);
+CREATE TABLE IF NOT EXISTS scheduling_plan_assignment (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan_id TEXT NOT NULL, assignment_id TEXT UNIQUE NOT NULL,
+  task_id TEXT, person_id TEXT, device_id TEXT, station_id TEXT,
+  route_json TEXT, route_distance_m REAL DEFAULT 0, eta_sec INTEGER DEFAULT 0,
+  planned_start TEXT, planned_end TEXT,
+  hard_constraints_json TEXT, soft_score_json TEXT,
+  score REAL DEFAULT 0, explanation_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_plan_assignment_plan ON scheduling_plan_assignment(plan_id);
+CREATE INDEX IF NOT EXISTS idx_plan_assignment_person ON scheduling_plan_assignment(person_id);
+CREATE TABLE IF NOT EXISTS resource_reservation (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  reservation_id TEXT UNIQUE NOT NULL,
+  resource_id TEXT, assignment_id TEXT, plan_id TEXT,
+  start_at TEXT, end_at TEXT, expires_at TEXT,
+  status TEXT DEFAULT 'active', version INTEGER DEFAULT 1, created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_reservation_resource ON resource_reservation(resource_id, status);
+CREATE TABLE IF NOT EXISTS schedule_decision (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  decision_id TEXT UNIQUE NOT NULL,
+  plan_id TEXT, version INTEGER DEFAULT 1,
+  action TEXT, actor_id TEXT, reason TEXT,
+  before_json TEXT, after_json TEXT, created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_schedule_decision_plan ON schedule_decision(plan_id);
+CREATE TABLE IF NOT EXISTS schedule_feedback (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  feedback_id TEXT UNIQUE NOT NULL,
+  plan_id TEXT, assignment_id TEXT,
+  accepted INTEGER DEFAULT 0, reject_reason TEXT, operator_comment TEXT,
+  predicted_json TEXT, actual_json TEXT, created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS world_state_snapshot (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  snapshot_id TEXT UNIQUE NOT NULL,
+  timestamp TEXT,
+  persons_json TEXT, devices_json TEXT, tasks_json TEXT,
+  stations_json TEXT, assignments_json TEXT, reservations_json TEXT,
+  events_json TEXT, topology_version TEXT
+);
 """
 
 
@@ -151,6 +235,24 @@ class Storage:
     def init_db(self):
         with self._lock, self._db:
             self._db.executescript(SCHEMA)
+            self._ensure_assignment_columns()
+
+    def _ensure_assignment_columns(self):
+        """为旧库的 assignment 表补齐调度扩展列（幂等，ALTER 不存在的列会报错故先查）。"""
+        cols = {r["name"] for r in self._db.execute("PRAGMA table_info(assignment)").fetchall()}
+        additions = {
+            "plan_id": "TEXT",
+            "station_id": "TEXT",
+            "route_json": "TEXT",
+            "planned_start": "TEXT",
+            "planned_end": "TEXT",
+            "actual_start": "TEXT",
+            "actual_end": "TEXT",
+            "version": "INTEGER DEFAULT 1",
+        }
+        for name, decl in additions.items():
+            if name not in cols:
+                self._db.execute(f'ALTER TABLE assignment ADD COLUMN "{name}" {decl}')  # nosec B608 - fixed internal column list
 
     def close(self):
         self._db.close()
@@ -482,18 +584,31 @@ class Storage:
         confirmed_by=None,
         confirmed_at=None,
         audit_ref=None,
+        plan_id=None,
+        station_id=None,
+        route=None,
+        planned_start=None,
+        planned_end=None,
+        actual_start=None,
+        actual_end=None,
+        version=None,
     ):
         """派工记录 upsert（按 assignment_id）；返回最新记录字典。"""
         with self._lock, self._db:
             self._db.execute(
                 "INSERT INTO assignment (assignment_id, task_id, person_id, device_id, status,"
-                " recommended_by, confirmed_by, confirmed_at, audit_ref)"
-                " VALUES (?,?,?,?,?,?,?,?,?)"
+                " recommended_by, confirmed_by, confirmed_at, audit_ref, plan_id, station_id,"
+                " route_json, planned_start, planned_end, actual_start, actual_end, version)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
                 " ON CONFLICT(assignment_id) DO UPDATE SET"
                 " task_id=excluded.task_id, person_id=excluded.person_id,"
                 " device_id=excluded.device_id, status=excluded.status,"
                 " recommended_by=excluded.recommended_by, confirmed_by=excluded.confirmed_by,"
-                " confirmed_at=excluded.confirmed_at, audit_ref=excluded.audit_ref",
+                " confirmed_at=excluded.confirmed_at, audit_ref=excluded.audit_ref,"
+                " plan_id=excluded.plan_id, station_id=excluded.station_id,"
+                " route_json=excluded.route_json, planned_start=excluded.planned_start,"
+                " planned_end=excluded.planned_end, actual_start=excluded.actual_start,"
+                " actual_end=excluded.actual_end, version=excluded.version",
                 (
                     assignment_id,
                     task_id,
@@ -504,10 +619,18 @@ class Storage:
                     confirmed_by,
                     confirmed_at,
                     audit_ref,
+                    plan_id,
+                    station_id,
+                    self._json_dumps_maybe(route),
+                    planned_start,
+                    planned_end,
+                    actual_start,
+                    actual_end,
+                    version,
                 ),
             )
             row = self._db.execute("SELECT * FROM assignment WHERE assignment_id=?", (assignment_id,)).fetchone()
-        return dict(row)
+        return self._assignment_row(row)
 
     def list_assignments(self, person_id=None, status=None):
         """查询派工记录；可选按 person_id / status 过滤，按 id DESC。"""
@@ -522,7 +645,15 @@ class Storage:
             where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
             sql = "SELECT * FROM assignment" + where + " ORDER BY id DESC"  # nosec B608 - fixed table, parameterized clauses
             rows = self._db.execute(sql, params).fetchall()
-            return [dict(r) for r in rows]
+            return [self._assignment_row(r) for r in rows]
+
+    @staticmethod
+    def _assignment_row(row):
+        if not row:
+            return None
+        d = dict(row)
+        d["route"] = json.loads(d.pop("route_json")) if d.get("route_json") else None
+        return d
 
     def insert_model_record(self, model_id, model_type, version, status="candidate", model_card_uri=None):
         """登记一个模型版本；返回新记录字典。"""
@@ -631,6 +762,406 @@ class Storage:
             sql = "SELECT * FROM consent_record" + where + " ORDER BY id DESC"  # nosec B608 - fixed table, parameterized clauses
             rows = self._db.execute(sql, params).fetchall()
             return [dict(r) for r in rows]
+
+    # ---- 指挥地图智能调度：持久化 CRUD（cmd-map-edge-scheduling）----
+
+    def upsert_task(self, task_id, **t):
+        """任务 upsert（按 task_id）。t 可含 task_type/priority/status/station_id/zone_id/
+        required_skills/required_device_capabilities/release_at/earliest_start/due_at/
+        estimated_duration_sec/predecessor_task_ids/exclusive_resource_ids/load_level/
+        safety_critical/version/created_at/updated_at。"""
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO task (task_id, task_type, priority, status, station_id, zone_id,"
+                " required_skills_json, required_device_capabilities_json, release_at,"
+                " earliest_start, due_at, estimated_duration_sec, predecessor_task_ids_json,"
+                " exclusive_resource_ids_json, load_level, safety_critical, version, created_at, updated_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(task_id) DO UPDATE SET task_type=excluded.task_type,"
+                " priority=excluded.priority, status=excluded.status, station_id=excluded.station_id,"
+                " zone_id=excluded.zone_id, required_skills_json=excluded.required_skills_json,"
+                " required_device_capabilities_json=excluded.required_device_capabilities_json,"
+                " release_at=excluded.release_at, earliest_start=excluded.earliest_start,"
+                " due_at=excluded.due_at, estimated_duration_sec=excluded.estimated_duration_sec,"
+                " predecessor_task_ids_json=excluded.predecessor_task_ids_json,"
+                " exclusive_resource_ids_json=excluded.exclusive_resource_ids_json,"
+                " load_level=excluded.load_level, safety_critical=excluded.safety_critical,"
+                " version=excluded.version, created_at=excluded.created_at, updated_at=excluded.updated_at",
+                (
+                    task_id,
+                    t.get("task_type", ""),
+                    int(t.get("priority", 0) or 0),
+                    t.get("status", "draft"),
+                    t.get("station_id", ""),
+                    t.get("zone_id", ""),
+                    json.dumps(t.get("required_skills", []), ensure_ascii=False),
+                    json.dumps(t.get("required_device_capabilities", []), ensure_ascii=False),
+                    t.get("release_at", ""),
+                    t.get("earliest_start", ""),
+                    t.get("due_at", ""),
+                    int(t.get("estimated_duration_sec", 0) or 0),
+                    json.dumps(t.get("predecessor_task_ids", []), ensure_ascii=False),
+                    json.dumps(t.get("exclusive_resource_ids", []), ensure_ascii=False),
+                    float(t.get("load_level", 0.0) or 0.0),
+                    int(bool(t.get("safety_critical", False))),
+                    int(t.get("version", 1) or 1),
+                    t.get("created_at", ""),
+                    t.get("updated_at", ""),
+                ),
+            )
+            return self._task_row(self._db.execute("SELECT * FROM task WHERE task_id=?", (task_id,)).fetchone())
+
+    def get_task(self, task_id):
+        with self._lock:
+            return self._task_row(self._db.execute("SELECT * FROM task WHERE task_id=?", (task_id,)).fetchone())
+
+    def list_tasks(self, status=None):
+        with self._lock:
+            if status is None:
+                rows = self._db.execute("SELECT * FROM task ORDER BY priority DESC, id ASC").fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM task WHERE status=? ORDER BY priority DESC, id ASC", (status,)
+                ).fetchall()
+            return [self._task_row(r) for r in rows]
+
+    @staticmethod
+    def _task_row(row):
+        if not row:
+            return None
+        d = dict(row)
+        d["required_skills"] = json.loads(d.pop("required_skills_json") or "[]")
+        d["required_device_capabilities"] = json.loads(d.pop("required_device_capabilities_json") or "[]")
+        d["predecessor_task_ids"] = json.loads(d.pop("predecessor_task_ids_json") or "[]")
+        d["exclusive_resource_ids"] = json.loads(d.pop("exclusive_resource_ids_json") or "[]")
+        d["safety_critical"] = bool(d.get("safety_critical"))
+        return d
+
+    def upsert_scheduling_request(self, request_id, **r):
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO scheduling_request (request_id, trigger_type, task_ids_json, policy_id,"
+                " world_state_version, created_at, expires_at, status, created_by)"
+                " VALUES (?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(request_id) DO UPDATE SET trigger_type=excluded.trigger_type,"
+                " task_ids_json=excluded.task_ids_json, policy_id=excluded.policy_id,"
+                " world_state_version=excluded.world_state_version, created_at=excluded.created_at,"
+                " expires_at=excluded.expires_at, status=excluded.status, created_by=excluded.created_by",
+                (
+                    request_id,
+                    r.get("trigger_type", ""),
+                    json.dumps(r.get("task_ids", []), ensure_ascii=False),
+                    r.get("policy_id", ""),
+                    r.get("world_state_version", ""),
+                    r.get("created_at", ""),
+                    r.get("expires_at", ""),
+                    r.get("status", "pending"),
+                    r.get("created_by", ""),
+                ),
+            )
+            return self._sched_request_row(
+                self._db.execute("SELECT * FROM scheduling_request WHERE request_id=?", (request_id,)).fetchone()
+            )
+
+    def get_scheduling_request(self, request_id):
+        with self._lock:
+            return self._sched_request_row(
+                self._db.execute("SELECT * FROM scheduling_request WHERE request_id=?", (request_id,)).fetchone()
+            )
+
+    def list_scheduling_requests(self, status=None):
+        with self._lock:
+            if status is None:
+                rows = self._db.execute("SELECT * FROM scheduling_request ORDER BY id DESC").fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM scheduling_request WHERE status=? ORDER BY id DESC", (status,)
+                ).fetchall()
+            return [self._sched_request_row(r) for r in rows]
+
+    @staticmethod
+    def _sched_request_row(row):
+        if not row:
+            return None
+        d = dict(row)
+        d["task_ids"] = json.loads(d.pop("task_ids_json") or "[]")
+        return d
+
+    def save_schedule_plan(self, plan_id, **p):
+        """保存方案（含 assignments_json 快照）。p 可含 request_id/version/objective_score/
+        objective_breakdown/constraint_summary/world_state_version/valid_until/status/
+        created_at/confirmed_at/confirmed_by/confirm_reason/assignments。"""
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO scheduling_plan (plan_id, request_id, version, objective_score,"
+                " objective_breakdown_json, constraint_summary_json, world_state_version, valid_until,"
+                " status, created_at, confirmed_at, confirmed_by, confirm_reason, assignments_json)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(plan_id) DO UPDATE SET request_id=excluded.request_id,"
+                " version=excluded.version, objective_score=excluded.objective_score,"
+                " objective_breakdown_json=excluded.objective_breakdown_json,"
+                " constraint_summary_json=excluded.constraint_summary_json,"
+                " world_state_version=excluded.world_state_version, valid_until=excluded.valid_until,"
+                " status=excluded.status, created_at=excluded.created_at,"
+                " confirmed_at=excluded.confirmed_at, confirmed_by=excluded.confirmed_by,"
+                " confirm_reason=excluded.confirm_reason, assignments_json=excluded.assignments_json",
+                (
+                    plan_id,
+                    p.get("request_id", ""),
+                    int(p.get("version", 1) or 1),
+                    float(p.get("objective_score", 0.0) or 0.0),
+                    json.dumps(p.get("objective_breakdown", {}), ensure_ascii=False),
+                    json.dumps(p.get("constraint_summary", {}), ensure_ascii=False),
+                    p.get("world_state_version", ""),
+                    p.get("valid_until", ""),
+                    p.get("status", "shadow"),
+                    p.get("created_at", ""),
+                    p.get("confirmed_at", ""),
+                    p.get("confirmed_by", ""),
+                    p.get("confirm_reason", ""),
+                    json.dumps(p.get("assignments", []), ensure_ascii=False),
+                ),
+            )
+
+    def get_schedule_plan(self, plan_id):
+        with self._lock:
+            return self._schedule_plan_row(
+                self._db.execute("SELECT * FROM scheduling_plan WHERE plan_id=?", (plan_id,)).fetchone()
+            )
+
+    def list_schedule_plans(self, status=None):
+        with self._lock:
+            if status is None:
+                rows = self._db.execute("SELECT * FROM scheduling_plan ORDER BY id DESC").fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM scheduling_plan WHERE status=? ORDER BY id DESC", (status,)
+                ).fetchall()
+            return [self._schedule_plan_row(r) for r in rows]
+
+    @staticmethod
+    def _schedule_plan_row(row):
+        if not row:
+            return None
+        d = dict(row)
+        d["objective_breakdown"] = json.loads(d.pop("objective_breakdown_json") or "{}")
+        d["constraint_summary"] = json.loads(d.pop("constraint_summary_json") or "{}")
+        d["assignments"] = json.loads(d.pop("assignments_json") or "[]")
+        return d
+
+    def save_plan_assignment(self, plan_id, a):
+        """保存方案内单条排程（scheduling_plan_assignment）。a 为合并后的 dict。"""
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO scheduling_plan_assignment (plan_id, assignment_id, task_id, person_id,"
+                " device_id, station_id, route_json, route_distance_m, eta_sec, planned_start,"
+                " planned_end, hard_constraints_json, soft_score_json, score, explanation_json)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(assignment_id) DO UPDATE SET plan_id=excluded.plan_id,"
+                " task_id=excluded.task_id, person_id=excluded.person_id, device_id=excluded.device_id,"
+                " station_id=excluded.station_id, route_json=excluded.route_json,"
+                " route_distance_m=excluded.route_distance_m, eta_sec=excluded.eta_sec,"
+                " planned_start=excluded.planned_start, planned_end=excluded.planned_end,"
+                " hard_constraints_json=excluded.hard_constraints_json,"
+                " soft_score_json=excluded.soft_score_json, score=excluded.score,"
+                " explanation_json=excluded.explanation_json",
+                (
+                    plan_id,
+                    a.get("assignment_id", "") or a.get("task_id", ""),
+                    a.get("task_id", ""),
+                    a.get("person_id", ""),
+                    a.get("device_id", ""),
+                    a.get("station_id", ""),
+                    json.dumps(a.get("route", {}), ensure_ascii=False),
+                    float(a.get("route_distance_m", 0.0) or 0.0),
+                    int(a.get("eta_sec", 0) or 0),
+                    a.get("planned_start", ""),
+                    a.get("planned_end", ""),
+                    json.dumps(a.get("hard_constraint_results", []), ensure_ascii=False),
+                    json.dumps(a.get("soft_score_breakdown", {}), ensure_ascii=False),
+                    float(a.get("score", 0.0) or 0.0),
+                    json.dumps(a.get("explanation", {}), ensure_ascii=False),
+                ),
+            )
+
+    def list_plan_assignments(self, plan_id=None):
+        with self._lock:
+            if plan_id is None:
+                rows = self._db.execute("SELECT * FROM scheduling_plan_assignment ORDER BY id ASC").fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM scheduling_plan_assignment WHERE plan_id=? ORDER BY id ASC", (plan_id,)
+                ).fetchall()
+            return [self._plan_assignment_row(r) for r in rows]
+
+    @staticmethod
+    def _plan_assignment_row(row):
+        if not row:
+            return None
+        d = dict(row)
+        d["route"] = json.loads(d.pop("route_json") or "{}")
+        d["hard_constraint_results"] = json.loads(d.pop("hard_constraints_json") or "[]")
+        d["soft_score_breakdown"] = json.loads(d.pop("soft_score_json") or "{}")
+        d["explanation"] = json.loads(d.pop("explanation_json") or "{}")
+        return d
+
+    def upsert_reservation(self, reservation_id, **r):
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO resource_reservation (reservation_id, resource_id, assignment_id, plan_id,"
+                " start_at, end_at, expires_at, status, version, created_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(reservation_id) DO UPDATE SET resource_id=excluded.resource_id,"
+                " assignment_id=excluded.assignment_id, plan_id=excluded.plan_id,"
+                " start_at=excluded.start_at, end_at=excluded.end_at, expires_at=excluded.expires_at,"
+                " status=excluded.status, version=excluded.version, created_at=excluded.created_at",
+                (
+                    reservation_id,
+                    r.get("resource_id", ""),
+                    r.get("assignment_id", ""),
+                    r.get("plan_id", ""),
+                    r.get("start_at", ""),
+                    r.get("end_at", ""),
+                    r.get("expires_at", ""),
+                    r.get("status", "active"),
+                    int(r.get("version", 1) or 1),
+                    r.get("created_at", ""),
+                ),
+            )
+
+    def list_reservations(self, status=None):
+        with self._lock:
+            if status is None:
+                rows = self._db.execute("SELECT * FROM resource_reservation ORDER BY id DESC").fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM resource_reservation WHERE status=? ORDER BY id DESC", (status,)
+                ).fetchall()
+            return [dict(r) for r in rows]
+
+    def insert_schedule_decision(self, decision_id, plan_id, version, action, actor_id, reason, before, after):
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO schedule_decision (decision_id, plan_id, version, action, actor_id,"
+                " reason, before_json, after_json, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    decision_id,
+                    plan_id,
+                    int(version),
+                    action,
+                    actor_id,
+                    reason,
+                    json.dumps(before, ensure_ascii=False) if before is not None else None,
+                    json.dumps(after, ensure_ascii=False) if after is not None else None,
+                    _now(),
+                ),
+            )
+
+    def list_schedule_decisions(self, plan_id=None):
+        with self._lock:
+            if plan_id is None:
+                rows = self._db.execute("SELECT * FROM schedule_decision ORDER BY id DESC").fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM schedule_decision WHERE plan_id=? ORDER BY id DESC", (plan_id,)
+                ).fetchall()
+            out = []
+            for r in rows:
+                d = dict(r)
+                d["before"] = json.loads(d.pop("before_json")) if d.get("before_json") else None
+                d["after"] = json.loads(d.pop("after_json")) if d.get("after_json") else None
+                out.append(d)
+            return out
+
+    def upsert_schedule_feedback(self, feedback_id, **f):
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO schedule_feedback (feedback_id, plan_id, assignment_id, accepted,"
+                " reject_reason, operator_comment, predicted_json, actual_json, created_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(feedback_id) DO UPDATE SET plan_id=excluded.plan_id,"
+                " assignment_id=excluded.assignment_id, accepted=excluded.accepted,"
+                " reject_reason=excluded.reject_reason, operator_comment=excluded.operator_comment,"
+                " predicted_json=excluded.predicted_json, actual_json=excluded.actual_json,"
+                " created_at=excluded.created_at",
+                (
+                    feedback_id,
+                    f.get("plan_id", ""),
+                    f.get("assignment_id", ""),
+                    int(bool(f.get("accepted", False))),
+                    f.get("reject_reason", ""),
+                    f.get("operator_comment", ""),
+                    json.dumps(f.get("predicted", {}), ensure_ascii=False),
+                    json.dumps(f.get("actual", {}), ensure_ascii=False),
+                    _now(),
+                ),
+            )
+
+    def list_schedule_feedback(self, plan_id=None):
+        with self._lock:
+            if plan_id is None:
+                rows = self._db.execute("SELECT * FROM schedule_feedback ORDER BY id DESC").fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM schedule_feedback WHERE plan_id=? ORDER BY id DESC", (plan_id,)
+                ).fetchall()
+            out = []
+            for r in rows:
+                d = dict(r)
+                d["predicted"] = json.loads(d.pop("predicted_json") or "{}")
+                d["actual"] = json.loads(d.pop("actual_json") or "{}")
+                d["accepted"] = bool(d.get("accepted"))
+                out.append(d)
+            return out
+
+    def save_world_state_snapshot(self, snapshot_id, **s):
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO world_state_snapshot (snapshot_id, timestamp, persons_json, devices_json,"
+                " tasks_json, stations_json, assignments_json, reservations_json, events_json,"
+                " topology_version) VALUES (?,?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(snapshot_id) DO UPDATE SET timestamp=excluded.timestamp,"
+                " persons_json=excluded.persons_json, devices_json=excluded.devices_json,"
+                " tasks_json=excluded.tasks_json, stations_json=excluded.stations_json,"
+                " assignments_json=excluded.assignments_json, reservations_json=excluded.reservations_json,"
+                " events_json=excluded.events_json, topology_version=excluded.topology_version",
+                (
+                    snapshot_id,
+                    s.get("timestamp", ""),
+                    json.dumps(s.get("persons", []), ensure_ascii=False),
+                    json.dumps(s.get("devices", []), ensure_ascii=False),
+                    json.dumps(s.get("tasks", []), ensure_ascii=False),
+                    json.dumps(s.get("stations", []), ensure_ascii=False),
+                    json.dumps(s.get("assignments", []), ensure_ascii=False),
+                    json.dumps(s.get("reservations", []), ensure_ascii=False),
+                    json.dumps(s.get("events", []), ensure_ascii=False),
+                    s.get("topology_version", ""),
+                ),
+            )
+
+    def get_world_state_snapshot(self, snapshot_id):
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM world_state_snapshot WHERE snapshot_id=?", (snapshot_id,)
+            ).fetchone()
+            return self._snapshot_row(row)
+
+    def list_world_state_snapshots(self, limit=20):
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM world_state_snapshot ORDER BY id DESC LIMIT ?", (int(limit),)
+            ).fetchall()
+            return [self._snapshot_row(r) for r in rows]
+
+    @staticmethod
+    def _snapshot_row(row):
+        if not row:
+            return None
+        d = dict(row)
+        for k in ("persons_json", "devices_json", "tasks_json", "stations_json", "assignments_json",
+                  "reservations_json", "events_json"):
+            d[k.replace("_json", "")] = json.loads(d.pop(k) or "[]")
+        return d
 
     def counts(self):
         with self._lock:

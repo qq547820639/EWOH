@@ -6,7 +6,24 @@
 """
 
 import json
+import warnings
 from datetime import datetime, timedelta
+
+# ---- 兼容 Adapter（Task 6.3）----
+# 旧接口 recommend/confirm_assignment 标记 deprecated；若 server 注册了 SchedulerService，
+# 写入路径 confirm_assignment 内部走 Scheduler，否则保持旧行为（不破坏旧接口）。
+_scheduler_hook = None
+
+
+def register_scheduler_hook(scheduler):
+    """注册 SchedulerService 供旧接口适配（由 run.py 在装配调度服务后调用）。"""
+    global _scheduler_hook
+    _scheduler_hook = scheduler
+
+
+def get_scheduler_hook():
+    return _scheduler_hook
+
 
 # ---- 通用小工具 ----------------------------------------------------------
 
@@ -120,7 +137,17 @@ def person_metrics(storage, person, device):
 
 
 def recommend(storage, assignments, payload, device_online):
-    """可解释推荐。device_online: fn(device)->bool，由服务层注入掉线判定。"""
+    """可解释推荐。device_online: fn(device)->bool，由服务层注入掉线判定。
+
+    .. deprecated::
+        兼容 Adapter（Task 6.3）。新调度能力走 SchedulerService（esctl 联合调度核心），
+        本函数保留以兼容旧接口调用方，不再演进。
+    """
+    warnings.warn(
+        "services.recommend 已标记 deprecated：请改用 SchedulerService（联合调度核心）",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     skill = payload.get("required_skill", "搬运")
     zone = payload.get("zone_id", "")
     load_level = float(payload.get("load_level", 0.5) or 0)
@@ -181,7 +208,21 @@ def recommend(storage, assignments, payload, device_online):
 
 
 def confirm_assignment(storage, assignments, payload, device_online):
-    """人工确认派工：重新校验硬约束，确认记录仅保存在平台会话内。"""
+    """人工确认派工：重新校验硬约束，确认记录仅保存在平台会话内。
+
+    .. deprecated::
+        兼容 Adapter（Task 6.3）。当 SchedulerService 已注册时，内部走 Scheduler
+        （建单→生成影子方案→确认），返回结构保持 {ok, assignment} 以兼容旧调用方；
+        未注册时保持旧行为（不破坏旧接口）。
+    """
+    warnings.warn(
+        "services.confirm_assignment 已标记 deprecated：请改用 SchedulerService（联合调度核心）",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    scheduler = get_scheduler_hook()
+    if scheduler is not None:
+        return _adapter_confirm_via_scheduler(scheduler, payload)
     task_id = payload.get("task_id") or f"TASK-{datetime.now().strftime('%H%M%S')}"
     person_id = payload.get("person_id")
     confirmer = (payload.get("confirmer") or "").strip()
@@ -201,6 +242,43 @@ def confirm_assignment(storage, assignments, payload, device_online):
     }
     assignments.append(rec)
     return {"ok": True, "assignment": rec}
+
+
+def _adapter_confirm_via_scheduler(scheduler, payload):
+    """兼容 Adapter 内部实现：走 SchedulerService 建单→生成影子方案→确认。
+
+    返回结构保持旧接口 {ok, assignment}；确认失败返回 {ok: False, error, code}。
+    """
+    task_id = payload.get("task_id") or f"TASK-{datetime.now().strftime('%H%M%S')}"
+    person_id = payload.get("person_id")
+    confirmer = (payload.get("confirmer") or "").strip()
+    if not confirmer:
+        return {"ok": False, "error": "必须填写确认人（班组长或现场负责人），禁止自动派工。"}
+    try:
+        req = scheduler.create_request([task_id], "manual", "", confirmer)
+        plans = scheduler.generate_plans(req.request_id, storage=scheduler.storage)
+        if not plans:
+            return {"ok": False, "error": "未生成可行方案。", "code": "NO_PLAN"}
+        plan = plans[0]
+        # 若指定人员，优先选择该人员的方案
+        if person_id:
+            plan = next((p for p in plans if any(getattr(a, "person_id", "") == person_id for a in p.assignments)), plan)
+        scheduler.confirm(plan.plan_id, confirmer, "adapter confirm", world_state_version=None)
+        assignments_out = [
+            {
+                "task_id": a.task_id,
+                "person_id": a.person_id,
+                "confirmer": confirmer,
+                "status": "confirmed",
+                "confirmed_at": iso(datetime.now()),
+                "plan_id": plan.plan_id,
+            }
+            for a in plan.assignments
+        ]
+        return {"ok": True, "assignment": assignments_out[0] if assignments_out else {}, "plan": plan.to_dict()}
+    except Exception as e:
+        code = getattr(e, "code", None) or "SCHEDULING_ERROR"
+        return {"ok": False, "error": str(e), "code": code}
 
 
 # ---- Task 18 本地助手白名单 ----------------------------------------------
