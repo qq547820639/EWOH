@@ -66,6 +66,11 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     return this.policyService.getActivePolicy();
   }
 
+  /** 暴露策略配置（供外层组合求解器复用同一优先级/参数语义）。 */
+  async loadConfig(): Promise<SchedulingPolicyConfig> {
+    return this.policyService.getConfig();
+  }
+
   async solve(
     snapshot: WorldStateSnapshot,
     constraints: SchedulingConstraint[],
@@ -341,6 +346,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
               id: task.id,
               taskType: task.taskType,
               requiredSkills: task.requiredSkills,
+              skillMatchMode: task.skillMatchMode,
               requiredCertifications: task.requiredCertifications,
               stationId: task.stationId,
               zoneId: task.zoneId,

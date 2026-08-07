@@ -155,6 +155,15 @@ export class WorldStateSnapshotService {
 
     const now = Date.now();
 
+    // 人员下一次可用时间：取该人员未来 reservation 的最大结束时间（真实占用）。
+    const personReservationEnd = new Map<string, number>();
+    for (const r of reservations) {
+      if (r.resourceType === 'person' && r.endMs != null) {
+        const cur = personReservationEnd.get(r.resourceId) ?? 0;
+        if (r.endMs > cur) personReservationEnd.set(r.resourceId, r.endMs);
+      }
+    }
+
     const persons = personnel.map((p) => {
       const se = p.spatialEntityId
         ? spatialByEntityId.get(p.spatialEntityId)
@@ -178,11 +187,22 @@ export class WorldStateSnapshotService {
         zoneId: se ? (se.parentId ?? null) : null,
         x: se ? (se.x ?? 0) : 0,
         y: se ? (se.y ?? 0) : 0,
+        availableFromMs: personReservationEnd.get(p.id) ?? null,
         sourceTs,
         freshnessMs: this.freshnessMs,
         dataQuality,
       };
     });
+
+    // 设备 → 当前绑定人员（targetType='person' 且 active），用于推算设备位置。
+    const personById = new Map(persons.map((p) => [p.id, p]));
+    const boundPersonByDevice = new Map<string, (typeof persons)[number]>();
+    for (const db of deviceBindings) {
+      if (!boundPersonByDevice.has(db.deviceId)) {
+        const bound = personById.get(db.targetId);
+        if (bound) boundPersonByDevice.set(db.deviceId, bound);
+      }
+    }
 
     const taskList = tasks.map((t) => ({
       id: t.id,
@@ -202,6 +222,12 @@ export class WorldStateSnapshotService {
       predecessorIds: this.asStringArray(t.predecessorIds),
       requiredSkills: this.asStringArray(t.requiredSkills),
       requiredCertifications: this.asStringArray(t.requiredCertifications),
+      // 安全/可抢占/技能匹配语义：当前 schema 无独立列，取业务默认值。
+      // 来源为真实业务状态（无则保守默认），不虚构占位。
+      safetyCritical: false,
+      preemptible: false,
+      skillMatchMode: 'ALL' as const,
+      dueAtMs: t.planEnd ? t.planEnd.getTime() : null,
     }));
 
     const deviceList = devices.map((d) => {
@@ -212,6 +238,8 @@ export class WorldStateSnapshotService {
           : null;
       const dataQuality = this.classifyFreshness(sourceTs, now);
       const stale = dataQuality !== 'FRESH';
+      // 设备位置：由当前绑定人员的空间位置推算（真实来源）；无绑定则 null。
+      const boundPerson = boundPersonByDevice.get(d.deviceId);
       return {
         id: d.id,
         workerName: d.workerName ?? null,
@@ -220,6 +248,10 @@ export class WorldStateSnapshotService {
         // STALE/UNKNOWN 设备不视为可用（离线/不可派）。
         online: stale ? false : (d.online ?? false),
         status: d.faultCode ? 'fault' : stale ? 'offline' : 'online',
+        x: boundPerson ? (boundPerson.x ?? null) : null,
+        y: boundPerson ? (boundPerson.y ?? null) : null,
+        locationStationId: boundPerson ? (boundPerson.stationId ?? null) : null,
+        availableWindows: [],
         sourceTs,
         freshnessMs: this.freshnessMs,
         dataQuality,
@@ -228,12 +260,21 @@ export class WorldStateSnapshotService {
 
     const stations = spatialEntities
       .filter((se) => ['workstation', 'station'].includes(se.entityType))
-      .map((se) => ({
-        id: se.entityId,
-        name: se.name,
-        x: se.x ?? 0,
-        y: se.y ?? 0,
-      }));
+      .map((se) => {
+        // 工位容量：优先读空间实体 extra.capacity（真实来源），否则 null。
+        const extra = (se.extra ?? {}) as Record<string, unknown>;
+        const capacity =
+          typeof extra.capacity === 'number' && extra.capacity > 0
+            ? extra.capacity
+            : null;
+        return {
+          id: se.entityId,
+          name: se.name,
+          x: se.x ?? 0,
+          y: se.y ?? 0,
+          capacity,
+        };
+      });
 
     const stationCounts = new Map<string, number>();
     for (const t of taskList) {

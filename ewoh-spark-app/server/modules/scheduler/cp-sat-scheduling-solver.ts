@@ -11,6 +11,8 @@ import type {
 } from '@shared/api.interface';
 import { HeuristicSchedulingSolver } from './heuristic-scheduling-solver';
 import type { SchedulingSolver, SolveOptions } from './scheduling-solver.interface';
+import { computeEffectivePriorityScores } from './priority-engine';
+import { checkConstraintSupported } from './constraints';
 
 /** CP-SAT 求解器版本标识。 */
 const CPSAT_VERSION = 'cpsat-v1';
@@ -57,11 +59,30 @@ export class CpSatSchedulingSolver {
     opts: SolveOptions,
   ): Promise<SchedulingPlanV2> {
     const policy = opts.policy ?? (await this.heuristicSolver.loadActivePolicy());
+    const config = await this.heuristicSolver.loadConfig();
+    const nowMs = Date.now();
+    const horizonEndMs = nowMs + (opts.horizonMinutes ?? 60) * 60 * 1000;
+    // 统一优先级：CP-SAT 与 heuristic 消费同一 PriorityEngine 结果。
+    const effectiveScores = computeEffectivePriorityScores(
+      policy,
+      config,
+      snapshot,
+      constraints,
+      nowMs,
+      horizonEndMs,
+    );
 
     let response: SolverResponse | null = null;
     let reachable = false;
     try {
-      const request = this.buildRequest(snapshot, constraints, opts, policy);
+      const request = this.buildRequest(
+        snapshot,
+        constraints,
+        opts,
+        policy,
+        nowMs,
+        effectiveScores,
+      );
       response = await this.post(request);
       reachable = true;
     } catch (err) {
@@ -94,25 +115,73 @@ export class CpSatSchedulingSolver {
 
   private buildRequest(
     snapshot: WorldStateSnapshot,
-    _constraints: SchedulingConstraint[],
+    constraints: SchedulingConstraint[],
     opts: SolveOptions,
     policy: SchedulingPolicy,
+    nowMs: number,
+    effectiveScores: Map<string, number>,
   ): SolverRequest {
-    const nowMs = Date.now();
     const horizonMinutes = opts.horizonMinutes;
+
+    // ---- 约束拆解：与 heuristic 语义一致，CP-SAT 主路径同样真实执行 ----
+    const lockedPersonByTask = new Map<string, string>();
+    const lockedDeviceByTask = new Map<string, string>();
+    const lockedStationByTask = new Map<string, string>();
+    const lockedTimeByTask = new Map<string, [number, number]>();
+    const extraForbiddenZones = new Set<string>();
+    for (const c of constraints) {
+      const support = checkConstraintSupported(c);
+      if (!support.supported) {
+        continue;
+      }
+      switch (c.type) {
+        case 'LOCKED_PERSON':
+          if (c.taskId && c.personId) lockedPersonByTask.set(c.taskId, c.personId);
+          break;
+        case 'LOCKED_DEVICE':
+          if (c.taskId && c.deviceId) lockedDeviceByTask.set(c.taskId, c.deviceId);
+          break;
+        case 'LOCKED_STATION':
+          if (c.taskId && c.stationId)
+            lockedStationByTask.set(c.taskId, c.stationId);
+          break;
+        case 'LOCKED_TIME':
+          if (c.taskId && c.startMs != null && c.endMs != null)
+            lockedTimeByTask.set(c.taskId, [c.startMs, c.endMs]);
+          break;
+        case 'LOCKED_ASSIGNMENT':
+          if (c.taskId && c.personId) lockedPersonByTask.set(c.taskId, c.personId);
+          if (c.taskId && c.deviceId) lockedDeviceByTask.set(c.taskId, c.deviceId);
+          if (c.taskId && c.stationId)
+            lockedStationByTask.set(c.taskId, c.stationId);
+          break;
+        case 'FORBIDDEN_ZONE':
+          if (c.zoneId) extraForbiddenZones.add(c.zoneId);
+          break;
+        default:
+          break;
+      }
+    }
 
     const tasks = snapshot.tasks.map((t) => {
       const planStart = t.planStart ? Date.parse(t.planStart) : NaN;
       const planEnd = t.planEnd ? Date.parse(t.planEnd) : NaN;
       const earliestStartMs = Number.isFinite(planStart) ? planStart : nowMs;
-      const dueMs = Number.isFinite(planEnd) ? planEnd : null;
+      const dueMs =
+        t.dueAtMs != null
+          ? t.dueAtMs
+          : Number.isFinite(planEnd)
+            ? planEnd
+            : null;
       const durationMs =
         Number.isFinite(planStart) && Number.isFinite(planEnd)
           ? Math.max(planEnd - planStart, 1)
           : DEFAULT_DURATION_MS;
       return {
         taskId: t.id,
-        priority: this.priorityRank(t.priority),
+        // 统一优先级：来自共享 PriorityEngine（越小越紧急），禁止独立 priorityRank。
+        priority: effectiveScores.get(t.id) ?? nowMs,
+        effectivePriorityScore: effectiveScores.get(t.id) ?? null,
         earliestStartMs,
         dueMs,
         durationMs,
@@ -122,8 +191,9 @@ export class CpSatSchedulingSolver {
         candidateStationIds: t.candidateStations ?? (t.stationId ? [t.stationId] : []),
         zoneId: t.zoneId ?? null,
         predecessorIds: t.predecessorIds ?? [],
-        safetyCritical: false,
-        preemptible: false,
+        safetyCritical: t.safetyCritical ?? false,
+        preemptible: t.preemptible ?? false,
+        skillMatchMode: t.skillMatchMode ?? 'ALL',
       };
     });
 
@@ -137,7 +207,7 @@ export class CpSatSchedulingSolver {
       certifications: p.certifications ?? [],
       workload: p.loadLevel ?? 0,
       fatigue: p.fatigueLevel ?? 0,
-      availableFromMs: null,
+      availableFromMs: p.availableFromMs ?? null,
     }));
 
     const devices = snapshot.devices.map((d) => ({
@@ -146,8 +216,8 @@ export class CpSatSchedulingSolver {
       online: d.online,
       capabilities: d.capabilities ?? [],
       batteryPct: d.batteryPct ?? 100,
-      x: 0,
-      y: 0,
+      x: d.x ?? null,
+      y: d.y ?? null,
       availableFromMs: null,
     }));
 
@@ -155,7 +225,7 @@ export class CpSatSchedulingSolver {
       id: s.id,
       x: s.x,
       y: s.y,
-      capacity: 1,
+      capacity: s.capacity ?? null,
     }));
 
     const reservations = (snapshot.reservations ?? []).map((r) => ({
@@ -165,9 +235,20 @@ export class CpSatSchedulingSolver {
       endMs: r.endMs,
     }));
 
-    const forbiddenZones = (snapshot.forbiddenZones ?? []).map((f) => f.zoneId);
+    const forbiddenZones = [
+      ...new Set([
+        ...(snapshot.forbiddenZones ?? []).map((f) => f.zoneId),
+        ...Array.from(extraForbiddenZones),
+      ]),
+    ];
 
-    const frozenAssignments = this.buildFrozenAssignments(snapshot);
+    const frozenAssignments = this.buildFrozenAssignments(
+      snapshot,
+      lockedPersonByTask,
+      lockedDeviceByTask,
+      lockedStationByTask,
+      lockedTimeByTask,
+    );
 
     const baselineAssignee: Record<string, string | null> = {};
     if (opts.baselineAssignee) {
@@ -197,52 +278,66 @@ export class CpSatSchedulingSolver {
       stations,
       reservations,
       forbiddenZones,
+      // 原始约束统一透传（含 MIN_BATTERY / MAX_WORKLOAD / RESOURCE_TIME_WINDOW 等），
+      // 不支持的约束显式标记，不静默忽略。
+      constraints: constraints.map((c) => ({
+        ...c,
+        supported: checkConstraintSupported(c).supported,
+      })),
       frozenAssignments,
       baselineAssignee,
       timeLimitMs: this.timeoutMs,
     };
   }
 
-  /** 收集 executing/locked 的 assignment 作为不可移动的冻结项。 */
-  private buildFrozenAssignments(snapshot: WorldStateSnapshot): SolverRequest['frozenAssignments'] {
+  /** 收集 executing/locked 的 assignment 作为不可移动的冻结项（合并 LOCKED_* 约束）。 */
+  private buildFrozenAssignments(
+    snapshot: WorldStateSnapshot,
+    lockedPersonByTask: Map<string, string>,
+    lockedDeviceByTask: Map<string, string>,
+    lockedStationByTask: Map<string, string>,
+    lockedTimeByTask: Map<string, [number, number]>,
+  ): SolverRequest['frozenAssignments'] {
     const lockedByTask = new Map(
       (snapshot.lockedAssignments ?? []).map((l) => [l.taskId, l]),
     );
     const frozen: SolverRequest['frozenAssignments'] = [];
+    const seen = new Set<string>();
     for (const t of snapshot.tasks) {
       const locked = lockedByTask.get(t.id);
       const isExecuting = t.status === 'executing' || t.status === 'started';
-      if (!locked && !isExecuting) continue;
-      const startMs = t.planStart ? Date.parse(t.planStart) : NaN;
-      const endMs = t.planEnd ? Date.parse(t.planEnd) : NaN;
-      const s = Number.isFinite(startMs) ? startMs : Date.now();
-      const e = Number.isFinite(endMs) ? Math.max(endMs, s) : s + 1;
+      const hasLockedPerson =
+        lockedPersonByTask.has(t.id) ||
+        lockedDeviceByTask.has(t.id) ||
+        lockedStationByTask.has(t.id) ||
+        lockedTimeByTask.has(t.id);
+      if (!locked && !isExecuting && !hasLockedPerson) continue;
+      const planStart = t.planStart ? Date.parse(t.planStart) : NaN;
+      const planEnd = t.planEnd ? Date.parse(t.planEnd) : NaN;
+      const lockedTime = lockedTimeByTask.get(t.id);
+      const s = lockedTime
+        ? lockedTime[0]
+        : Number.isFinite(planStart)
+          ? planStart
+          : Date.now();
+      const e = lockedTime
+        ? lockedTime[1]
+        : Number.isFinite(planEnd)
+          ? Math.max(planEnd, s)
+          : s + 1;
+      const key = `${t.id}:${lockedPersonByTask.get(t.id) ?? locked?.personId ?? t.assigneeId ?? ''}:${lockedDeviceByTask.get(t.id) ?? locked?.deviceId ?? t.deviceId ?? ''}:${lockedStationByTask.get(t.id) ?? locked?.stationId ?? t.stationId ?? ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       frozen.push({
         taskId: t.id,
-        personId: locked?.personId ?? t.assigneeId ?? null,
-        deviceId: locked?.deviceId ?? t.deviceId ?? null,
-        stationId: locked?.stationId ?? t.stationId ?? null,
+        personId: lockedPersonByTask.get(t.id) ?? locked?.personId ?? t.assigneeId ?? null,
+        deviceId: lockedDeviceByTask.get(t.id) ?? locked?.deviceId ?? t.deviceId ?? null,
+        stationId: lockedStationByTask.get(t.id) ?? locked?.stationId ?? t.stationId ?? null,
         startMs: s,
         endMs: e,
       });
     }
     return frozen;
-  }
-
-  private priorityRank(priority: string): number {
-    switch ((priority ?? '').toLowerCase()) {
-      case 'critical':
-        return 4;
-      case 'high':
-      case 'urgent':
-        return 3;
-      case 'medium':
-        return 2;
-      case 'low':
-        return 1;
-      default:
-        return 2;
-    }
   }
 
   private async post(request: SolverRequest): Promise<SolverResponse> {

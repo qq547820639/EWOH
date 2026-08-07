@@ -1,6 +1,8 @@
 import type {
+  SchedulingConstraint,
   SchedulingPolicy,
   SchedulingPolicyConfig,
+  WorldStateSnapshot,
 } from '@shared/api.interface';
 
 /** 单个优先级影响因素（用于可解释性）。 */
@@ -161,4 +163,57 @@ export class PriorityEngine {
         return 3;
     }
   }
+}
+
+/**
+ * 统一计算快照内所有任务的有效优先级分（越小越紧急）。
+ * 供 CP-SAT 与 heuristic 两条求解路径消费同一优先级规则，禁止各自实现独立规则。
+ * - downstreamCount：前置依赖的反向阻塞计数（下游越多越紧急）。
+ * - manualBoostIds：MANUAL_BOOST 约束指定的人工加急任务。
+ */
+export function computeEffectivePriorityScores(
+  policy: SchedulingPolicy,
+  config: SchedulingPolicyConfig,
+  snapshot: WorldStateSnapshot,
+  constraints: SchedulingConstraint[],
+  now: number,
+  horizonEndMs: number,
+): Map<string, number> {
+  const engine = new PriorityEngine();
+
+  const downstreamCount = new Map<string, number>();
+  for (const t of snapshot.tasks) {
+    for (const pred of t.predecessorIds) {
+      downstreamCount.set(pred, (downstreamCount.get(pred) ?? 0) + 1);
+    }
+  }
+
+  const manualBoostIds = new Set<string>();
+  for (const c of constraints) {
+    if (
+      c.type === ('MANUAL_BOOST' as SchedulingConstraint['type']) &&
+      c.taskId
+    ) {
+      manualBoostIds.add(c.taskId);
+    }
+  }
+
+  const scores = new Map<string, number>();
+  for (const t of snapshot.tasks) {
+    const result = engine.compute(policy, {
+      task: {
+        id: t.id,
+        priority: t.priority,
+        planStart: t.planStart,
+        planEnd: t.planEnd,
+      },
+      config,
+      now,
+      horizonEndMs,
+      downstreamCount,
+      manualBoostIds,
+    });
+    scores.set(t.id, result.score);
+  }
+  return scores;
 }

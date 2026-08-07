@@ -1132,6 +1132,7 @@ export type SchedulingHardConstraintType =
   | 'SAFETY_BLOCK'
   | 'LOCKED_PERSON'
   | 'LOCKED_DEVICE'
+  | 'LOCKED_STATION'
   | 'LOCKED_TIME'
   | 'LOCKED_ASSIGNMENT';
 
@@ -1211,6 +1212,10 @@ export interface SolverRequest {
     predecessorIds: string[];
     safetyCritical: boolean;
     preemptible: boolean;
+    /** 技能匹配语义：ALL=全部必需，ANY=任一即可。缺省 ALL。 */
+    skillMatchMode?: 'ALL' | 'ANY';
+    /** 统一优先级引擎产出的有效优先级分（越小越紧急），供 CP-SAT 与 heuristic 一致消费。 */
+    effectivePriorityScore?: number;
     eligiblePersonIds?: string[];
     eligibleDeviceIds?: string[];
   }>;
@@ -1233,8 +1238,8 @@ export interface SolverRequest {
     online: boolean;
     capabilities: string[];
     batteryPct: number;
-    x: number;
-    y: number;
+    x: number | null;
+    y: number | null;
     availableFromMs: number | null;
     executingTaskIds?: string[];
   }>;
@@ -1242,7 +1247,7 @@ export interface SolverRequest {
     id: string;
     x: number;
     y: number;
-    capacity: number;
+    capacity: number | null;
     executingTaskIds?: string[];
   }>;
   reservations: Array<{
@@ -1252,6 +1257,8 @@ export interface SolverRequest {
     endMs: number;
   }>;
   forbiddenZones: string[];
+  /** 原始约束透传（hard/soft 统一序列化），供 CP-SAT Worker 消费相同语义。 */
+  constraints?: Array<Record<string, unknown>>;
   /** 冻结（executing/locked）的 assignment：求解器不可移动。 */
   frozenAssignments: Array<{
     taskId: string;
@@ -1358,6 +1365,8 @@ export interface WorldStateSnapshot {
     zoneId: string | null;
     x: number;
     y: number;
+    /** 人员下一次可用时间（epoch ms），由 reservation 推算；无保留则 null。 */
+    availableFromMs?: number | null;
     /** 数据来源时间戳（epoch ms），用于新鲜度判定。 */
     sourceTs?: number | null;
     /** 数据新鲜度阈值（ms），超过则标 STALE。 */
@@ -1387,6 +1396,14 @@ export interface WorldStateSnapshot {
     candidateStations?: string[];
     /** 资源需求量（单位数）。 */
     resourceQuantity?: number;
+    /** 安全关键任务（安全约束不得被 bypass）。缺省 false。 */
+    safetyCritical?: boolean;
+    /** 是否可抢占。缺省 false。 */
+    preemptible?: boolean;
+    /** 技能匹配语义：ALL=全部必需，ANY=任一即可。缺省 ALL。 */
+    skillMatchMode?: 'ALL' | 'ANY';
+    /** 截止时间（epoch ms，可由 planEnd 推算）。 */
+    dueAtMs?: number | null;
   }>;
   devices: Array<{
     id: string;
@@ -1397,6 +1414,13 @@ export interface WorldStateSnapshot {
     status: string | null;
     /** 设备能力（如 'exo-lift' / 'vacuum'），用于 capability 匹配。 */
     capabilities?: string[];
+    /** 设备位置（由绑定人员/空间实体推算；未知则 null）。 */
+    x?: number | null;
+    y?: number | null;
+    /** 设备所在工位 id。 */
+    locationStationId?: string | null;
+    /** 设备可用时间窗（如来自维护/排程）。 */
+    availableWindows?: Array<{ startMs: number; endMs: number }>;
     /** 数据来源时间戳（epoch ms），用于新鲜度判定。 */
     sourceTs?: number | null;
     /** 数据新鲜度阈值（ms），超过则标 STALE。 */
@@ -1409,6 +1433,8 @@ export interface WorldStateSnapshot {
     name: string;
     x: number;
     y: number;
+    /** 工位容量（可同时承接的任务数/单位数）；未知则 null。 */
+    capacity?: number | null;
   }>;
   backlog: Array<{ taskId: string; count: number }>;
   events: Array<{

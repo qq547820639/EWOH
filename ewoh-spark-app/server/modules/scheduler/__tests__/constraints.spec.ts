@@ -9,8 +9,8 @@ import type { SchedulingConstraint } from '@shared/api.interface';
 
 describe('constraints.ts', () => {
   describe('支持性检查', () => {
-    it('全部 15 个硬约束均被判定为 supported', () => {
-      expect(SUPPORTED_HARD_CONSTRAINTS).toHaveLength(15);
+    it('全部 16 个硬约束均被判定为 supported', () => {
+      expect(SUPPORTED_HARD_CONSTRAINTS).toHaveLength(16);
       for (const type of SUPPORTED_HARD_CONSTRAINTS) {
         const result = checkConstraintSupported({ type, taskId: 't1' });
         expect(result.supported).toBe(true);

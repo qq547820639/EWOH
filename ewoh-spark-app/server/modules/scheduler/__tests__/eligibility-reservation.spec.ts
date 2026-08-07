@@ -98,4 +98,53 @@ describe('EligibilityService reservation 冲突（Task 0.2）', () => {
     expect(res.reasons).not.toContain('device_reserved');
     expect(res.reasons).not.toContain('station_reserved');
   });
+
+  describe('技能匹配语义 skillMatchMode（ALL / ANY）', () => {
+    const multiSkillTask: EligibleTask = {
+      id: 't-skill',
+      taskType: 'work',
+      requiredSkills: ['laser', 'cnc'],
+      requiredCertifications: [],
+      stationId: null,
+      zoneId: null,
+      predIds: [],
+    };
+    const partialPerson: EligiblePerson = {
+      ...person,
+      skills: ['laser'], // 只具备其中一个技能
+    };
+
+    it('缺省/ALL：人员缺少任一必需技能 → missing_skill', () => {
+      const res = svc.check(
+        partialPerson,
+        multiSkillTask,
+        null,
+        makeEligibilityCtx({ candidateStartMs: 9 * 3600_000, candidateEndMs: 10 * 3600_000 }),
+      );
+      expect(res.eligible).toBe(false);
+      expect(res.reasons).toContain('missing_skill');
+    });
+
+    it('ANY：人员具备任一必需技能 → 通过', () => {
+      const res = svc.check(
+        partialPerson,
+        { ...multiSkillTask, skillMatchMode: 'ANY' },
+        null,
+        makeEligibilityCtx({ candidateStartMs: 9 * 3600_000, candidateEndMs: 10 * 3600_000 }),
+      );
+      expect(res.eligible).toBe(true);
+      expect(res.reasons).not.toContain('missing_skill');
+    });
+
+    it('ALL：人员具备全部必需技能 → 通过', () => {
+      const res = svc.check(
+        { ...person, skills: ['laser', 'cnc'] },
+        { ...multiSkillTask, skillMatchMode: 'ALL' },
+        null,
+        makeEligibilityCtx({ candidateStartMs: 9 * 3600_000, candidateEndMs: 10 * 3600_000 }),
+      );
+      expect(res.eligible).toBe(true);
+      expect(res.reasons).not.toContain('missing_skill');
+    });
+  });
 });

@@ -28,6 +28,7 @@ export const SUPPORTED_HARD_CONSTRAINTS: readonly SchedulingHardConstraintType[]
   'SAFETY_BLOCK',
   'LOCKED_PERSON',
   'LOCKED_DEVICE',
+  'LOCKED_STATION',
   'LOCKED_TIME',
   'LOCKED_ASSIGNMENT',
 ];

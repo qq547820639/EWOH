@@ -28,6 +28,8 @@ export interface EligibleTask {
   id: string;
   taskType: string;
   requiredSkills: string[];
+  /** 技能匹配语义：ALL=全部必需，ANY=任一即可。缺省 ALL。 */
+  skillMatchMode?: 'ALL' | 'ANY';
   requiredCertifications: string[];
   stationId: string | null;
   zoneId: string | null;
@@ -81,9 +83,12 @@ export class EligibilityService {
 
     // 1) 技能匹配
     if (task.requiredSkills.length > 0) {
-      const hasSkill = task.requiredSkills.some((s) =>
-        person.skills.includes(s),
-      );
+      const matchMode = task.skillMatchMode ?? 'ALL';
+      // ALL=全部必需（.every），ANY=任一即可（.some）
+      const hasSkill =
+        matchMode === 'ALL'
+          ? task.requiredSkills.every((s) => person.skills.includes(s))
+          : task.requiredSkills.some((s) => person.skills.includes(s));
       if (!hasSkill) reasons.push('missing_skill');
     }
 
