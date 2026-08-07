@@ -537,6 +537,17 @@ export const ewohSchedulePlan = pgTable("ewoh_schedule_plan", {
    */
   violationsJson: jsonb("violations_json"),
   supersededBy: varchar("superseded_by", { length: 255 }),
+  // --- Scheduling V2 full persistence (standalone_007) ---
+  /** 求解所用策略版本（对应 SchedulingPolicy.version）。 */
+  policyVersion: integer("policy_version"),
+  /** 求解器版本（对应 SchedulingPolicy.solverVersion）。 */
+  solverVersion: varchar("solver_version", { length: 100 }),
+  /** 求解时间窗（分钟）。 */
+  horizonMinutes: integer("horizon_minutes"),
+  /**
+   * @type { Record<string, unknown> }
+   */
+  scoreBreakdownJson: jsonb("score_breakdown_json"),
   // System field: Update time (auto-filled, do not modify)
   updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
@@ -1011,6 +1022,17 @@ export const ewohSchedulingPlanAssignment = pgTable("ewoh_scheduling_plan_assign
    * @type { { reasons?: string[]; alternatives?: Array<Record<string, unknown>> } }
    */
   explanationJson: jsonb("explanation_json"),
+  // --- Scheduling V2 assignment detail (standalone_007) ---
+  /** 路线 ETA（秒），来自与地图一致的 route graph。 */
+  etaSeconds: real("eta_seconds"),
+  /** 路线距离（米）。 */
+  distanceMeters: real("distance_meters"),
+  /** 路线风险摘要。 */
+  riskLevel: varchar("risk_level", { length: 50 }),
+  /**
+   * @type { Record<string, unknown> }
+   */
+  scoreBreakdownJson: jsonb("score_breakdown_json"),
   version: integer("version").notNull().default(1),
   reason: text("reason"),
   orgId: varchar("org_id", { length: 255 }),

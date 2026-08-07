@@ -1,9 +1,10 @@
-import { Injectable, Inject, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { ewohRouteNode, ewohRouteEdge } from '@server/database/schema';
+import { eq } from 'drizzle-orm';
+import { ewohRouteNode, ewohRouteEdge, ewohSpatialEntity } from '@server/database/schema';
 import type {
   Route,
   RouteGraph,
@@ -18,9 +19,38 @@ interface GraphNode {
   y: number;
 }
 
+/** 平面坐标点。 */
+export interface Point {
+  x: number;
+  y: number;
+}
+
+/**
+ * 纯函数：在给定节点集中查找离 (x, y) 欧氏距离最近的节点 id。
+ * 空图返回 null。抽成可导出纯函数便于单元测试。
+ */
+export function nearestNodeId(
+  nodes: Array<{ nodeId: string; x: number; y: number }>,
+  x: number,
+  y: number,
+): string | null {
+  if (nodes.length === 0) return null;
+  let best: string | null = null;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const n of nodes) {
+    const d = (n.x - x) ** 2 + (n.y - y) ** 2;
+    if (d < bestDist) {
+      bestDist = d;
+      best = n.nodeId;
+    }
+  }
+  return best;
+}
+
 /**
  * 路由服务：从 ewoh_route_node / ewoh_route_edge 加载路由图，
  * 使用 A* 计算最短路径（边代价叠加拥塞/风险系数，跳过阻塞边）。
+ * 起终点一律通过真实坐标解析最近节点，避免"首/末节点"盲回退。
  */
 @Injectable()
 export class RoutingService {
@@ -66,29 +96,42 @@ export class RoutingService {
   }
 
   /**
-   * 为人员到任务工位规划一条路径。
-   * 起点/终点由各自的 spatial entity 最近节点决定。
+   * 在 route graph 上求 from→to 的路径（真实路线）。
+   * 起点为离 from 最近的节点，终点为离 to 最近的节点。
+   * 找到路径 → 返回 source:'route_graph' 与真实 distance/eta/riskLevel；
+   * 找不到（无节点/起终点同点/A* 不可达）→ 返回 source:'euclidean_fallback'，
+   * feasible 由 from/to 坐标是否齐全决定。从不抛异常。
    */
-  async calculateRoute(personId: string, taskId: string): Promise<Route> {
+  async calculateRouteBetween(
+    from: Point,
+    to: Point,
+    meta?: { personId?: string; taskId?: string },
+  ): Promise<Route> {
     const graph = await this.loadGraph();
     const nodes = graph.nodes.map((n) => ({
       nodeId: n.nodeId,
       x: n.x,
       y: n.y,
     }));
+    const personId = meta?.personId ?? 'unknown';
+    const taskId = meta?.taskId ?? 'unknown';
+    const hasCoords =
+      Number.isFinite(from.x) &&
+      Number.isFinite(from.y) &&
+      Number.isFinite(to.x) &&
+      Number.isFinite(to.y);
+    const fallback = this.euclideanRoute(from, to, {
+      personId,
+      taskId,
+      feasible: hasCoords,
+    });
 
-    // 通过人员/任务关联的工位坐标定位起终点（无则回退到最近节点）。
-    const start = await this.startNodeForPerson(personId, nodes);
-    const goal = await this.goalNodeForTask(taskId, nodes);
+    const startId = nearestNodeId(nodes, from.x, from.y);
+    const goalId = nearestNodeId(nodes, to.x, to.y);
+    if (!startId || !goalId || startId === goalId) return fallback;
 
-    if (!start || !goal) {
-      throw new NotFoundException('ROUTE_NOT_FOUND');
-    }
-
-    const path = this.astar(graph, start.nodeId, goal.nodeId);
-    if (!path || path.length < 2) {
-      throw new NotFoundException('ROUTE_NOT_FOUND');
-    }
+    const path = this.astar(graph, startId, goalId);
+    if (!path || path.length < 2) return fallback;
 
     const nodeById = new Map(nodes.map((n) => [n.nodeId, n]));
     const distanceMeters = this.pathDistance(graph, path);
@@ -105,7 +148,42 @@ export class RoutingService {
         .map((nid) => nodeById.get(nid))
         .filter((n): n is GraphNode => Boolean(n))
         .map((n) => ({ x: n.x, y: n.y })),
+      source: 'route_graph',
+      riskLevel: this.routeRiskLevel(graph, path),
+      graphVersion: null,
+      calculatedAt: new Date().toISOString(),
+      feasible: true,
     };
+  }
+
+  /**
+   * 为人员到任务工位规划一条路径（按 entityId 查真实坐标）。
+   * 从 ewoh_spatial_entity 取 person/task 的 x/y，再求最近节点；
+   * 查不到坐标或不可达时按 euclidean_fallback 处理。
+   */
+  async calculateRoute(personId: string, taskId: string): Promise<Route> {
+    const [personRows, taskRows] = await Promise.all([
+      this.db
+        .select()
+        .from(ewohSpatialEntity)
+        .where(eq(ewohSpatialEntity.entityId, personId))
+        .limit(1),
+      this.db
+        .select()
+        .from(ewohSpatialEntity)
+        .where(eq(ewohSpatialEntity.entityId, taskId))
+        .limit(1),
+    ]);
+    const from = this.pointFromEntity(personRows[0]);
+    const to = this.pointFromEntity(taskRows[0]);
+    if (!from || !to) {
+      return this.euclideanRoute(from ?? { x: 0, y: 0 }, to ?? { x: 0, y: 0 }, {
+        personId,
+        taskId,
+        feasible: Boolean(from) && Boolean(to),
+      });
+    }
+    return this.calculateRouteBetween(from, to, { personId, taskId });
   }
 
   /** 返回离 (x, y) 最近的节点；空图时返回 null。 */
@@ -124,23 +202,60 @@ export class RoutingService {
     return best;
   }
 
-  /** 求人员起点的最近路由节点。 */
-  private async startNodeForPerson(
-    personId: string,
-    nodes: GraphNode[],
-  ): Promise<GraphNode | null> {
-    // 无人员坐标时回退到第一个节点（保持确定性）。
-    const fallback = nodes[0] ?? null;
-    return fallback;
+  /** 从 spatial entity 行提取坐标；无坐标时返回 null。 */
+  private pointFromEntity(
+    row?: { x?: number | null; y?: number | null },
+  ): Point | null {
+    if (!row) return null;
+    const x = row.x;
+    const y = row.y;
+    if (
+      x == null ||
+      y == null ||
+      !Number.isFinite(x) ||
+      !Number.isFinite(y)
+    ) {
+      return null;
+    }
+    return { x, y };
   }
 
-  /** 求任务目标工位的最近路由节点。 */
-  private async goalNodeForTask(
-    taskId: string,
-    nodes: GraphNode[],
-  ): Promise<GraphNode | null> {
-    const fallback = nodes[nodes.length - 1] ?? null;
-    return fallback;
+  /** 构造欧氏兜底 Route（不抛异常）。 */
+  private euclideanRoute(
+    from: Point,
+    to: Point,
+    meta: { personId: string; taskId: string; feasible: boolean },
+  ): Route {
+    const distanceMeters = Math.hypot(to.x - from.x, to.y - from.y);
+    return {
+      routeId: 'euclidean-fallback',
+      personId: meta.personId,
+      taskId: meta.taskId,
+      distanceMeters: Math.round(distanceMeters * 100) / 100,
+      etaSeconds: 0,
+      nodes: [],
+      geometry: [],
+      source: 'euclidean_fallback',
+      riskLevel: null,
+      graphVersion: null,
+      calculatedAt: new Date().toISOString(),
+      feasible: meta.feasible,
+    };
+  }
+
+  /** 沿路径取最高风险等级（high > medium > low/null）。 */
+  private routeRiskLevel(graph: RouteGraph, path: string[]): string | null {
+    const edgeByKey = new Map<string, RouteGraphEdge>();
+    for (const e of graph.edges) {
+      edgeByKey.set(`${e.fromNodeId}->${e.toNodeId}`, e);
+    }
+    let level: string | null = null;
+    for (let i = 0; i < path.length - 1; i++) {
+      const edge = edgeByKey.get(`${path[i]}->${path[i + 1]}`);
+      if (edge?.riskLevel === 'high') return 'high';
+      if (edge?.riskLevel === 'medium') level = 'medium';
+    }
+    return level;
   }
 
   /** A* 最短路径。返回节点 ID 序列（含起终点），不可达时返回 null。 */

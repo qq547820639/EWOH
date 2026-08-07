@@ -18,6 +18,7 @@ import { WorldStateSnapshotService } from './world-state.service';
 import { SolverService } from './solver.service';
 import { PlanService } from './plan.service';
 import { SchedulingPolicyService } from './scheduling-policy.service';
+import { TaskLifecycle } from './task-lifecycle';
 
 /** 影响分析结果：哪些任务需重排、哪些被冻结、原因说明。 */
 export interface ImpactAnalysis {
@@ -27,7 +28,6 @@ export interface ImpactAnalysis {
 }
 
 const FROZEN_STATUSES = new Set(['executing', 'dispatched', 'in_progress']);
-const PENDING_STATUSES = new Set(['draft', 'pending', 'queued']);
 
 /**
  * 重排协调器：对一次触发做影响分析，并据此执行一次确定性的局部/全量重排。
@@ -69,7 +69,7 @@ export class ReplanCoordinatorService {
 
     // 待处理且未冻结的任务为基础候选集。
     let candidates = snapshot.tasks.filter(
-      (t) => PENDING_STATUSES.has(t.status) && !frozenSet.has(t.id),
+      (t) => TaskLifecycle.isSchedulable(t.status) && !frozenSet.has(t.id),
     );
 
     const type = triggerType.toUpperCase();

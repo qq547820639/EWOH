@@ -177,6 +177,11 @@ export function makeSolver() {
       etaSeconds: 10,
       riskLevel: null,
       feasible: true,
+      source: 'euclidean_fallback',
+      riskCost: 0,
+      congestionCost: 0,
+      graphVersion: null,
+      calculatedAt: new Date().toISOString(),
     }),
   };
   const solver = new SolverService(
@@ -195,12 +200,16 @@ export function makeEligibilityCtx(
   return {
     now: 0,
     bookedTimeSlots: [],
+    bookedDeviceSlots: [],
+    bookedStationSlots: [],
     lockedPersonIds: [],
     forbiddenZones: [],
     minBatteryPct: 15,
     maxContinuousLoad: 0.9,
     safetyBlockedPersonIds: [],
     predecessorDone: () => true,
+    candidateStartMs: 0,
+    candidateEndMs: 0,
     ...overrides,
   };
 }

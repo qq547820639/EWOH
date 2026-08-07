@@ -25,13 +25,7 @@ import { WorldStateSnapshotService } from './world-state.service';
 import { ResourceReservationService, type ReservationInput } from './resource-reservation.service';
 import { OutboxService } from './outbox.service';
 import { TaskService } from '../task/task.service';
-
-const DISPATCHABLE_TASK_STATUSES = [
-  'pending_dispatch',
-  'dispatched',
-  'received',
-  'executing',
-];
+import { TaskLifecycle } from './task-lifecycle';
 
 /** 事务化的执行闭环：校验 → 预占 → 下发 → 审计 → 出站事件。 */
 @Injectable()
@@ -101,7 +95,7 @@ export class DispatchCoordinatorService {
           if (!task) {
             throw new NotFoundException(`Task ${a.taskId} not found`);
           }
-          if (!DISPATCHABLE_TASK_STATUSES.includes(task.status)) {
+          if (!TaskLifecycle.isDispatchable(task.status)) {
             throw new ConflictException('PLAN_TASK_NOT_DISPATCHABLE');
           }
           taskByAssignmentId.set(a.assignmentId, task);

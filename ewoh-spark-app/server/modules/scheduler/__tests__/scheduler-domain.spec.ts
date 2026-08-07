@@ -154,6 +154,11 @@ function makeSolver() {
       etaSeconds: 10,
       riskLevel: null,
       feasible: true,
+      source: 'euclidean_fallback',
+      riskCost: 0,
+      congestionCost: 0,
+      graphVersion: null,
+      calculatedAt: new Date().toISOString(),
     }),
   };
   const solver = new SolverService(
@@ -172,12 +177,16 @@ describe('EligibilityService.check', () => {
   const ctx = {
     now: 0,
     bookedTimeSlots: [],
+    bookedDeviceSlots: [],
+    bookedStationSlots: [],
     lockedPersonIds: [],
     forbiddenZones: [],
     minBatteryPct: 15,
     maxContinuousLoad: 0.9,
     safetyBlockedPersonIds: [],
     predecessorDone: () => true,
+    candidateStartMs: 0,
+    candidateEndMs: 0,
   };
 
   it('S1 技能不匹配人员不能被调度 → eligible=false 且原因含 missing_skill', () => {
@@ -581,11 +590,33 @@ describe('RoutingService A*', () => {
       // 直达 A->C 的边被阻断，A* 必须绕行
       { edgeId: 'e3', fromNodeId: 'A', toNodeId: 'C', distanceMeters: 5, expectedTimeSeconds: 5, direction: null, capacity: null, riskLevel: null, status: 'blocked', accessibleFor: [] },
     ];
+    const spatialRows = [
+      { entityId: 'person-1', x: 0, y: 0 },
+      { entityId: 'task-1', x: 5, y: 0 },
+    ];
+    let spatialIdx = 0;
     const db = {
       select: jest.fn(() => ({
-        from: jest.fn((table: unknown) =>
-          table === ewohRouteNode ? Promise.resolve(nodeRows) : Promise.resolve(edgeRows),
-        ),
+        from: jest.fn((table: unknown) => {
+          let rows: unknown[] = [];
+          if (table === ewohRouteNode) rows = nodeRows;
+          else if (table === ewohRouteEdge) rows = edgeRows;
+          else if (table === ewohSpatialEntity) {
+            // 两次查询按调用顺序返回 person-1 / task-1 各自坐标
+            rows = [spatialRows[spatialIdx % spatialRows.length]];
+            spatialIdx++;
+          }
+          // 同时满足 loadGraph 的 await(from) 与 calculateRoute 的 from().where().limit()
+          const prom = Promise.resolve(rows) as Promise<unknown[]> & {
+            where: jest.Mock;
+            limit: jest.Mock;
+          };
+          prom.where = jest.fn(() => ({
+            limit: jest.fn(() => Promise.resolve(rows)),
+          }));
+          prom.limit = jest.fn(() => Promise.resolve(rows));
+          return prom;
+        }),
       })),
     };
     const svc = new RoutingService(db as never);

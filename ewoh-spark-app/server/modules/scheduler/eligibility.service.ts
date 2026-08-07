@@ -37,6 +37,13 @@ export interface EligibilityContext {
   now: number;
   /** 本次窗口内已占用的人员时间段（personId → 区间），用于防止双重预订。 */
   bookedTimeSlots: Array<{ personId: string; start: number; end: number }>;
+  /** 本次窗口内已占用的设备时间段（deviceId → 区间），用于设备 reservation 冲突。 */
+  bookedDeviceSlots?: Array<{ deviceId: string; start: number; end: number }>;
+  /** 本次窗口内已占用的工位时间段（stationId → 区间），用于工位 reservation 冲突。 */
+  bookedStationSlots?: Array<{ stationId: string; start: number; end: number }>;
+  /** 当前候选任务的时间区间（用于 reservation 冲突判定）。 */
+  candidateStartMs: number;
+  candidateEndMs: number;
   /** 已锁定/正在执行任务的人员，不可再分配。 */
   lockedPersonIds: string[];
   /** 禁入区域列表。 */
@@ -87,12 +94,34 @@ export class EligibilityService {
     // 3) 在岗状态（人员可用）
     if (person.status !== 'available') reasons.push('person_unavailable');
 
-    // 4) 时间冲突（人员不被双重预订）
-    const conflicts = ctx.bookedTimeSlots.filter(
-      (b) => this.intervalsOverlap(b.start, b.end, ctx.now, ctx.now),
+    // 4) 时间冲突（人员不被双重预订，用候选时间区间判定）
+    const candidateStart = ctx.candidateStartMs;
+    const candidateEnd = ctx.candidateEndMs;
+    const conflicts = ctx.bookedTimeSlots.filter((b) =>
+      this.intervalsOverlap(b.start, b.end, candidateStart, candidateEnd),
     );
     if (conflicts.some((b) => b.personId === person.id))
       reasons.push('time_conflict');
+
+    // 4b) 设备 reservation 冲突
+    if (device) {
+      const deviceConflict = (ctx.bookedDeviceSlots ?? []).some(
+        (s) =>
+          s.deviceId === device.id &&
+          this.intervalsOverlap(s.start, s.end, candidateStart, candidateEnd),
+      );
+      if (deviceConflict) reasons.push('device_reserved');
+    }
+
+    // 4c) 工位 reservation 冲突
+    if (task.stationId) {
+      const stationConflict = (ctx.bookedStationSlots ?? []).some(
+        (s) =>
+          s.stationId === task.stationId &&
+          this.intervalsOverlap(s.start, s.end, candidateStart, candidateEnd),
+      );
+      if (stationConflict) reasons.push('station_reserved');
+    }
 
     // 5) 风险状态 / 已锁定人员
     if (ctx.lockedPersonIds.includes(person.id)) reasons.push('person_unavailable');

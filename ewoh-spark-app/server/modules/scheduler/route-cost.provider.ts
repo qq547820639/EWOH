@@ -10,6 +10,16 @@ export interface RouteCost {
   etaSeconds: number;
   riskLevel: string | null;
   feasible: boolean; // route graph 与欧氏兜底均不可行时为 false
+  /** 成本来源：route_graph 或 euclidean_fallback。 */
+  source: 'route_graph' | 'euclidean_fallback';
+  /** 沿路风险成本（由 riskLevel 折算）。 */
+  riskCost: number;
+  /** 拥塞成本（route graph 无拥塞明细信息时默认 0）。 */
+  congestionCost: number;
+  /** 计算所用路由图版本。 */
+  graphVersion: number | null;
+  /** 计算时间（ISO）。 */
+  calculatedAt: string;
 }
 
 /** 坐标点。 */
@@ -34,7 +44,9 @@ export class RouteCostProvider {
 
   /**
    * 估算人员到任务工位的路径成本。
-   * 优先走 route graph；失败时按欧氏距离兜底。
+   * 有 from/to 坐标时优先走 calculateRouteBetween（真实不同路线）；
+   * 否则走 calculateRoute（内部查 spatial entity 坐标，失败则欧氏兜底）。
+   * route graph 不可行时显式回退到欧氏并以 source 标记。
    */
   async estimate(
     personId: string,
@@ -42,15 +54,24 @@ export class RouteCostProvider {
     from?: Point,
     to?: Point,
   ): Promise<RouteCost> {
+    if (from && to && this.hasCoord(from) && this.hasCoord(to)) {
+      const route = await this.routingService.calculateRouteBetween(from, to, {
+        personId,
+        taskId,
+      });
+      if (route.feasible && route.source === 'route_graph') {
+        return this.fromRoute(route);
+      }
+      return this.euclidean(from, to);
+    }
+
+    // 无坐标：尝试通过 spatial entity 解析真实起终点。
     try {
       const route = await this.routingService.calculateRoute(personId, taskId);
-      return {
-        routeId: route.routeId,
-        distanceMeters: route.distanceMeters,
-        etaSeconds: route.etaSeconds,
-        riskLevel: this.riskOf(route),
-        feasible: true,
-      };
+      if (route.feasible && route.source === 'route_graph') {
+        return this.fromRoute(route);
+      }
+      return this.euclidean(from, to);
     } catch (err) {
       this.logger.warn(
         `Route graph unavailable for person=${personId} task=${taskId}, falling back to euclidean: ${(err as Error)?.message ?? err}`,
@@ -69,6 +90,22 @@ export class RouteCostProvider {
     return this.euclidean(stationA, stationB);
   }
 
+  /** 将 route graph 的 Route 转换为 RouteCost。 */
+  private fromRoute(route: Route): RouteCost {
+    return {
+      routeId: route.routeId,
+      distanceMeters: route.distanceMeters,
+      etaSeconds: route.etaSeconds,
+      riskLevel: route.riskLevel ?? null,
+      feasible: true,
+      source: 'route_graph',
+      riskCost: this.riskToCost(route.riskLevel ?? null),
+      congestionCost: 0,
+      graphVersion: route.graphVersion ?? null,
+      calculatedAt: route.calculatedAt ?? new Date().toISOString(),
+    };
+  }
+
   /** 欧氏距离估算；坐标缺失时返回不可行。 */
   private async euclidean(from?: Point, to?: Point): Promise<RouteCost> {
     if (!from || !to) {
@@ -78,6 +115,11 @@ export class RouteCostProvider {
         etaSeconds: 0,
         riskLevel: null,
         feasible: false,
+        source: 'euclidean_fallback',
+        riskCost: 0,
+        congestionCost: 0,
+        graphVersion: null,
+        calculatedAt: new Date().toISOString(),
       };
     }
     const config = await this.policy.getConfig();
@@ -90,11 +132,21 @@ export class RouteCostProvider {
       etaSeconds,
       riskLevel: null,
       feasible: true,
+      source: 'euclidean_fallback',
+      riskCost: 0,
+      congestionCost: 0,
+      graphVersion: null,
+      calculatedAt: new Date().toISOString(),
     };
   }
 
-  /** 安全读取 route graph 上的风险等级（旧版 Route 可能不含该字段）。 */
-  private riskOf(route: Route): string | null {
-    return (route as Route & { riskLevel?: string | null }).riskLevel ?? null;
+  private hasCoord(p: Point): boolean {
+    return Number.isFinite(p.x) && Number.isFinite(p.y);
+  }
+
+  private riskToCost(riskLevel: string | null): number {
+    if (riskLevel === 'high') return 2;
+    if (riskLevel === 'medium') return 1.3;
+    return 1;
   }
 }

@@ -87,6 +87,7 @@ describe('智能调度执行闭环 - 集成链路', () => {
       { solve: jest.fn(), solveVariants: jest.fn() } as unknown as SolverService,
       worldState as unknown as WorldStateSnapshotService,
       dispatchCoordinator,
+      { getActivePolicy: jest.fn(), getPolicy: jest.fn(), getConfig: jest.fn(), getConfigByVersion: jest.fn() } as never,
     );
 
     // 3) 持久化 shadow plan。
@@ -173,6 +174,7 @@ describe('智能调度执行闭环 - 集成链路', () => {
       { solve: jest.fn(), solveVariants: jest.fn() } as unknown as SolverService,
       worldState as unknown as WorldStateSnapshotService,
       { dispatch: jest.fn() } as unknown as DispatchCoordinatorService,
+      { getActivePolicy: jest.fn(), getPolicy: jest.fn(), getConfig: jest.fn(), getConfigByVersion: jest.fn() } as never,
     );
 
     await expect(

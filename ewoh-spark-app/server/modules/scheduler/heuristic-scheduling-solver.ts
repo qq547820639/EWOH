@@ -13,16 +13,13 @@ import { EligibilityService } from './eligibility.service';
 import { RoutingService } from './routing.service';
 import { RouteCostProvider, type RouteCost } from './route-cost.provider';
 import { SchedulingPolicyService } from './scheduling-policy.service';
+import { TaskLifecycle } from './task-lifecycle';
+import { PriorityEngine } from './priority-engine';
 import {
   checkConstraintSupported,
   detectDependencyCycle,
 } from './constraints';
 import type { SchedulingSolver, SolveOptions } from './scheduling-solver.interface';
-
-/** 可调度任务状态。 */
-const SCHEDULABLE_STATUSES = ['draft', 'pending', 'queued'];
-/** 已完成任务状态。 */
-const DONE_STATUSES = ['completed', 'done'];
 
 /** 内部候选方案。 */
 interface Candidate {
@@ -45,13 +42,6 @@ interface Candidate {
   alternatives: Array<Record<string, unknown>>;
 }
 
-/** 动态优先级计算缓存。 */
-interface PriorityInfo {
-  score: number;
-  urgent: boolean;
-  explanation: string[];
-}
-
 /**
  * 确定性启发式求解器（无 LLM）。
  * 输入世界状态快照 + 资格服务 + 路由成本提供者 + 版本化策略 + 锁定约束，
@@ -67,6 +57,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     private readonly routingService: RoutingService,
     private readonly routeCostProvider: RouteCostProvider,
     private readonly eligibilityService: EligibilityService,
+    private readonly priorityEngine: PriorityEngine = new PriorityEngine(),
   ) {}
 
   async solve(
@@ -154,7 +145,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     // ---- 前置任务 + 环检测 ----
     const doneTaskIds = new Set<string>(
       snapshot.tasks
-        .filter((t) => DONE_STATUSES.includes(t.status))
+        .filter((t) => TaskLifecycle.isTerminal(t.status))
         .map((t) => t.id),
     );
     const allTaskIds = snapshot.tasks.map((t) => t.id);
@@ -200,19 +191,23 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
 
     // ---- 可调度任务排序（动态优先级 + critical/urgent 硬地板） ----
     const ranked = snapshot.tasks
-      .filter((t) => SCHEDULABLE_STATUSES.includes(t.status))
+      .filter((t) => TaskLifecycle.isSchedulable(t.status))
       .filter((t) => !cycleTaskIds.has(t.id))
       .map((t) => ({
         task: t,
-        priority: this.computePriority(
-          t,
-          policy,
+        priority: this.priorityEngine.compute(policy, {
+          task: {
+            id: t.id,
+            priority: t.priority,
+            planStart: t.planStart,
+            planEnd: t.planEnd,
+          },
           config,
           now,
           horizonEndMs,
           downstreamCount,
-          manualBoostTasks,
-        ),
+          manualBoostIds: manualBoostTasks,
+        }),
       }))
       .sort((a, b) => {
         if (a.priority.urgent !== b.priority.urgent)
@@ -227,6 +222,16 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     const bookedDevice = new Map<string, number>(); // deviceId -> last end ms
     const runBookedSlots: Array<{ personId: string; start: number; end: number }> =
       [];
+    const bookedDeviceSlots: Array<{
+      deviceId: string;
+      start: number;
+      end: number;
+    }> = [];
+    const bookedStationSlots: Array<{
+      stationId: string;
+      start: number;
+      end: number;
+    }> = [];
     const assignedMinutes = new Map<string, number>(); // personId -> total assigned ms
 
     let totalWalking = 0;
@@ -291,6 +296,24 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           effectiveMinBattery,
         );
         for (const device of deviceCandidates) {
+          const travelMs = routeCost.etaSeconds * 1000;
+          const rawStartMs = lockedWindow
+            ? lockedWindow[0]
+            : earliestStartMs + travelMs;
+          const startMs = lockedWindow
+            ? lockedWindow[0]
+            : this.earliestStart(
+                rawStartMs,
+                bookedPerson.get(person.id),
+                device ? bookedDevice.get(device.id) : undefined,
+              );
+          const durationMs = lockedWindow
+            ? Math.max(lockedWindow[1] - lockedWindow[0], 1)
+            : task.planEnd && task.planStart
+              ? Date.parse(task.planEnd) - Date.parse(task.planStart)
+              : defaultDurationMs;
+          const endMs = startMs + Math.max(durationMs, 1);
+
           const eligibility = this.eligibilityService.check(
             {
               id: person.id,
@@ -322,12 +345,16 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
             {
               now,
               bookedTimeSlots: [...baseBookedSlots, ...runBookedSlots],
+              bookedDeviceSlots,
+              bookedStationSlots,
               lockedPersonIds: this.lockedPersonIdsForTask(snapshot, task.id),
               forbiddenZones: Array.from(forbiddenZones),
               minBatteryPct: effectiveMinBattery,
               maxContinuousLoad: effectiveMaxLoad,
               safetyBlockedPersonIds,
               predecessorDone: (id) => doneTaskIds.has(id),
+              candidateStartMs: startMs,
+              candidateEndMs: endMs,
             },
           );
 
@@ -337,8 +364,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
               deviceId: device ? device.id : null,
               stationId: task.stationId,
               zoneId: task.zoneId,
-              startMs: 0,
-              endMs: 0,
+              startMs,
+              endMs,
               routeId: routeCost.routeId,
               etaSeconds: routeCost.etaSeconds,
               distanceMeters: routeCost.distanceMeters,
@@ -353,24 +380,6 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
             });
             continue;
           }
-
-          const travelMs = routeCost.etaSeconds * 1000;
-          const rawStartMs = lockedWindow
-            ? lockedWindow[0]
-            : earliestStartMs + travelMs;
-          const startMs = lockedWindow
-            ? lockedWindow[0]
-            : this.earliestStart(
-                rawStartMs,
-                bookedPerson.get(person.id),
-                device ? bookedDevice.get(device.id) : undefined,
-              );
-          const durationMs = lockedWindow
-            ? Math.max(lockedWindow[1] - lockedWindow[0], 1)
-            : task.planEnd && task.planStart
-              ? Date.parse(task.planEnd) - Date.parse(task.planStart)
-              : defaultDurationMs;
-          const endMs = startMs + Math.max(durationMs, 1);
 
           const lateMs = Math.max(0, endMs - deadlineMs);
           const waitMs = Math.max(0, startMs - earliestStartMs);
@@ -445,6 +454,20 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         start: best.startMs,
         end: best.endMs,
       });
+      if (best.deviceId) {
+        bookedDeviceSlots.push({
+          deviceId: best.deviceId,
+          start: best.startMs,
+          end: best.endMs,
+        });
+      }
+      if (best.stationId) {
+        bookedStationSlots.push({
+          stationId: best.stationId,
+          start: best.startMs,
+          end: best.endMs,
+        });
+      }
       assignedMinutes.set(
         best.personId,
         (assignedMinutes.get(best.personId) ?? 0) + (best.endMs - best.startMs),
@@ -508,74 +531,6 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       violations,
       createdAt: new Date().toISOString(),
     };
-  }
-
-  /** 计算单任务动态优先级（分数越小越紧急）。 */
-  private computePriority(
-    task: WorldStateSnapshot['tasks'][number],
-    policy: SchedulingPolicy,
-    config: SchedulingPolicyConfig,
-    now: number,
-    horizonEndMs: number,
-    downstreamCount: Map<string, number>,
-    manualBoostTasks: Set<string>,
-  ): PriorityInfo {
-    const SCALE = 100;
-    const p = config.priority;
-    const explanation: string[] = [];
-    const rank = this.priorityRank(task.priority);
-    const urgent = rank === 0; // critical/urgent 硬地板
-
-    let score = rank * SCALE;
-    explanation.push(`base_priority=${task.priority}(rank=${rank})`);
-
-    // 截止风险：越接近 planEnd 越紧急。
-    const deadlineMs = task.planEnd ? Date.parse(task.planEnd) : horizonEndMs;
-    const windowMs = Math.max(horizonEndMs - now, 1);
-    const deadlineRatio = Math.max(
-      0,
-      Math.min(1, (deadlineMs - now) / windowMs),
-    );
-    const deadlineTerm = p.deadlineRiskWeight * (1 - deadlineRatio) * SCALE;
-    score += deadlineTerm;
-    if (deadlineTerm !== 0)
-      explanation.push(`deadline_risk=+${deadlineTerm.toFixed(2)}`);
-
-    // 等待老化：挂起越久越紧急。
-    if (task.planStart) {
-      const startMs = Date.parse(task.planStart);
-      if (startMs < now) {
-        const ageRatio = Math.min(1, (now - startMs) / (p.agingBaseMs || 1));
-        const waitingTerm = -p.waitingAgeWeight * ageRatio * SCALE;
-        score += waitingTerm;
-        explanation.push(`waiting_age=${waitingTerm.toFixed(2)}`);
-      }
-    }
-
-    // 事件严重度 / 截止风险标记。
-    const taskExt = task as typeof task & { deadlineAtRisk?: boolean };
-    if (taskExt.deadlineAtRisk === true) {
-      const sevTerm = -p.eventSeverityWeight * SCALE;
-      score += sevTerm;
-      explanation.push(`event_severity=${sevTerm.toFixed(2)}`);
-    }
-
-    // 下游阻塞：被越多人依赖越紧急。
-    const downstream = downstreamCount.get(task.id) ?? 0;
-    if (downstream > 0) {
-      const downTerm = -p.downstreamBlockingWeight * downstream * SCALE;
-      score += downTerm;
-      explanation.push(`downstream_blocking=${downTerm.toFixed(2)}`);
-    }
-
-    // 人工加急（MANUAL_BOOST 约束或 critical 优先级）。
-    if (manualBoostTasks.has(task.id)) {
-      const boostTerm = -p.manualBoostWeight * SCALE;
-      score += boostTerm;
-      explanation.push(`manual_boost=${boostTerm.toFixed(2)}`);
-    }
-
-    return { score, urgent, explanation };
   }
 
   /** 计算候选多目标成本（分钟归一化，total 即评分）。 */
@@ -696,20 +651,6 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     if (riskLevel === 'high') return config.highRiskFactor;
     if (riskLevel === 'medium') return config.mediumRiskFactor;
     return 1;
-  }
-
-  private priorityRank(priority: string): number {
-    switch (priority) {
-      case 'critical':
-      case 'urgent':
-        return 0;
-      case 'high':
-        return 1;
-      case 'medium':
-        return 2;
-      default:
-        return 3;
-    }
   }
 
   private candidateCompare(a: Candidate, b: Candidate): number {

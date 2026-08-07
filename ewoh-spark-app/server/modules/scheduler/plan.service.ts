@@ -29,6 +29,7 @@ import type { OrgContext } from '../shared/org-context.interceptor';
 import { SolverService, type SolverConstraint } from './solver.service';
 import { WorldStateSnapshotService } from './world-state.service';
 import { DispatchCoordinatorService } from './dispatch-coordinator.service';
+import { SchedulingPolicyService } from './scheduling-policy.service';
 
 /** 方案服务：持久化方案、审批/拒绝/下发/重排/对比。 */
 @Injectable()
@@ -42,6 +43,7 @@ export class PlanService {
     private readonly solverService: SolverService,
     private readonly worldStateSnapshotService: WorldStateSnapshotService,
     private readonly dispatchCoordinator: DispatchCoordinatorService,
+    private readonly schedulingPolicyService: SchedulingPolicyService,
   ) {}
 
   /** 持久化一个 V2 方案（ewoh_schedule_plan + 分配明细）。 */
@@ -64,6 +66,10 @@ export class PlanService {
           metricsJson: plan.metrics as unknown as Record<string, unknown>,
           baselineDeltaJson: plan.baselineDelta,
           violationsJson: plan.violations,
+          policyVersion: plan.policyVersion ?? null,
+          solverVersion: plan.solverVersion ?? null,
+          horizonMinutes: plan.horizonMinutes ?? null,
+          scoreBreakdownJson: (plan.scoreBreakdown ?? null) as unknown as Record<string, unknown> | null,
           createdAt: new Date(plan.createdAt),
         });
 
@@ -85,6 +91,10 @@ export class PlanService {
                 reasons: a.reasons,
                 alternatives: a.alternatives,
               },
+              etaSeconds: a.etaSeconds ?? null,
+              distanceMeters: a.distanceMeters ?? null,
+              riskLevel: a.riskLevel ?? null,
+              scoreBreakdownJson: (a.scoreBreakdown ?? null) as unknown as Record<string, unknown> | null,
               version: 1,
               orgId: ctx.primaryOrgId || null,
               createdBy: ctx.userId,
@@ -249,7 +259,7 @@ export class PlanService {
    */
   async replan(
     planId: string,
-    body: { lockedConstraints: SolverConstraint[]; operator?: string; reason?: string },
+    body: { lockedConstraints: SolverConstraint[]; operator?: string; reason?: string; targetPolicyVersion?: number },
     ctx: OrgContext,
   ): Promise<SchedulingPlanV2> {
     const [plan] = await this.db
@@ -263,24 +273,45 @@ export class PlanService {
     const newVersion = (plan.version ?? 1) + 1;
     const newPlanId = `${planId}-R${newVersion}`;
 
+    // 继承原方案的策略与时间窗；旧数据/缺失时回退生效策略或默认。
+    let policy:
+      | import('@shared/api.interface').SchedulingPolicy
+      | undefined;
+    let horizonMinutes = plan.horizonMinutes ?? 480;
+    let policyChangeNote: string | undefined;
+
+    if (body.targetPolicyVersion != null) {
+      policy =
+        (await this.schedulingPolicyService.getPolicy(
+          body.targetPolicyVersion,
+        )) ?? undefined;
+      if (!policy) {
+        this.logger.warn(
+          `replan targetPolicyVersion ${body.targetPolicyVersion} not found; falling back to inherited/active policy`,
+        );
+      } else {
+        horizonMinutes = (await this.schedulingPolicyService.getConfigByVersion(
+          body.targetPolicyVersion,
+        ))?.horizonMinutes ?? horizonMinutes;
+        policyChangeNote = `replan 使用显式策略版本 v${body.targetPolicyVersion}`;
+      }
+    }
+
+    if (!policy) {
+      const inherited = plan.policyVersion != null
+        ? await this.schedulingPolicyService.getPolicy(plan.policyVersion)
+        : null;
+      policy = inherited ?? (await this.schedulingPolicyService.getActivePolicy());
+    }
+
     const newPlan = await this.solverService.solve(snapshot, body.lockedConstraints, {
       planId: newPlanId,
       planName: `${plan.planName ?? planId} 重排`,
       triggerType: 'MANUAL',
       triggerEntityId: planId,
       snapshotVersion: snapshot.snapshotVersion,
-      horizonMinutes: 480,
-      policy: {
-        version: 1,
-        latenessWeight: 1,
-        walkingWeight: 1,
-        workloadBalanceWeight: 1,
-        stationWaitWeight: 1,
-        changeCostWeight: 1,
-        riskWeight: 1,
-        energyWeight: 1,
-        solverVersion: 'heuristic-v2',
-      },
+      horizonMinutes,
+      policy,
     });
     newPlan.version = newVersion;
 
@@ -319,7 +350,7 @@ export class PlanService {
           planId,
           'replan',
           body.operator || ctx.userId,
-          body.reason ?? '',
+          [body.reason ?? '', policyChangeNote ?? ''].filter(Boolean).join('; '),
           new Date(),
         );
       },
@@ -333,7 +364,9 @@ export class PlanService {
       entityId: planId,
       before: { status: plan.status, version: plan.version },
       after: { status: 'superseded', supersededBy: newPlanId },
-      reason: body.reason,
+      reason: policyChangeNote
+        ? [body.reason ?? '', policyChangeNote].filter(Boolean).join('; ')
+        : body.reason,
     });
     return newPlan;
   }
@@ -423,6 +456,10 @@ export class PlanService {
         status: (a.status ?? 'proposed') as SchedulingAssignment['status'],
         reasons: explanation.reasons ?? [],
         alternatives: explanation.alternatives ?? [],
+        etaSeconds: a.etaSeconds ?? undefined,
+        distanceMeters: a.distanceMeters ?? undefined,
+        riskLevel: a.riskLevel ?? undefined,
+        scoreBreakdown: (a.scoreBreakdownJson ?? undefined) as SchedulingAssignment['scoreBreakdown'],
       };
     });
 
@@ -436,9 +473,9 @@ export class PlanService {
         entityId: plan.triggerEntityId ?? null,
       },
       snapshotVersion: plan.snapshotVersion ?? '',
-      policyVersion: 1,
-      solverVersion: 'heuristic-v2',
-      horizonMinutes: 480,
+      policyVersion: plan.policyVersion ?? 1,
+      solverVersion: plan.solverVersion ?? 'heuristic-v2',
+      horizonMinutes: plan.horizonMinutes ?? 480,
       assignments,
       metrics: {
         lateMinutes: metrics.lateMinutes ?? 0,
@@ -447,6 +484,7 @@ export class PlanService {
         maxWorkload: metrics.maxWorkload ?? 0,
         changeCost: metrics.changeCost ?? 0,
       },
+      scoreBreakdown: (plan.scoreBreakdownJson ?? undefined) as SchedulingPlanV2['scoreBreakdown'],
       baselineDelta: (plan.baselineDeltaJson ?? {}) as Record<string, unknown>,
       violations: (plan.violationsJson ?? []) as Array<Record<string, unknown>>,
       createdAt: plan.createdAt ? plan.createdAt.toISOString() : new Date().toISOString(),

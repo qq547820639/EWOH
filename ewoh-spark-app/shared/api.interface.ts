@@ -1464,6 +1464,16 @@ export interface Route {
   etaSeconds: number;
   nodes: string[];
   geometry: Array<{ x: number; y: number }>;
+  /** 路径来源：route_graph 表示真实 route graph A*；euclidean_fallback 表示欧氏兜底。 */
+  source?: 'route_graph' | 'euclidean_fallback';
+  /** 路径风险摘要（沿路风险等级：high/medium/low）。 */
+  riskLevel?: string | null;
+  /** 计算时使用的路由图版本。 */
+  graphVersion?: number | null;
+  /** 计算时间（ISO）。 */
+  calculatedAt?: string;
+  /** 是否可行（起终点坐标齐全且可通行）。 */
+  feasible?: boolean;
 }
 
 /** 人员资格判定结果（V2） */

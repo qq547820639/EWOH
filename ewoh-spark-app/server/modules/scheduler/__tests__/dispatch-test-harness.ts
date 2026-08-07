@@ -21,6 +21,7 @@ import { AuditService } from '@server/modules/shared/audit.service';
 import { TaskService } from '@server/modules/task/task.service';
 import { PlanService } from '../plan.service';
 import { SolverService } from '../solver.service';
+import { SchedulingPolicyService } from '../scheduling-policy.service';
 import type { OrgContext } from '@server/modules/shared/org-context.interceptor';
 
 export interface FakeDbSeed {
@@ -206,6 +207,12 @@ export function makePlanService(seed: FakeDbSeed = {}) {
   const dispatchCoordinator = {
     dispatch: jest.fn(),
   };
+  const schedulingPolicyService = {
+    getActivePolicy: jest.fn(),
+    getPolicy: jest.fn(),
+    getConfig: jest.fn(),
+    getConfigByVersion: jest.fn(),
+  };
 
   const svc = new PlanService(
     db,
@@ -214,7 +221,8 @@ export function makePlanService(seed: FakeDbSeed = {}) {
     solverService as unknown as SolverService,
     worldStateSnapshotService as unknown as WorldStateSnapshotService,
     dispatchCoordinator as unknown as DispatchCoordinatorService,
+    schedulingPolicyService as unknown as SchedulingPolicyService,
   );
 
-  return { svc, db, state, mocks: { requestDatabaseContext, auditService, solverService, worldStateSnapshotService, dispatchCoordinator } };
+  return { svc, db, state, mocks: { requestDatabaseContext, auditService, solverService, worldStateSnapshotService, dispatchCoordinator, schedulingPolicyService } };
 }
