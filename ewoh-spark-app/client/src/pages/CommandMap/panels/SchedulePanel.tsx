@@ -125,7 +125,8 @@ export default function SchedulePanel({
     refetchInterval: 10000,
   });
 
-  // 聚焦到大脑建议关联的方案：展开并滚动到对应行
+  // 聚焦到大脑建议关联的方案：展开并滚动到对应行；
+  // 若当前筛选下找不到目标行（如为非 proposed 状态），自动切到「全部」筛选并提示。
   useEffect(() => {
     if (!focusPlanId || !plans) return;
     const target = plans.find((plan) => plan.planId === focusPlanId);
@@ -135,9 +136,12 @@ export default function SchedulePanel({
       window.setTimeout(() => {
         focusRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }, 50);
+    } else if (statusFilter !== undefined) {
+      toast.info('目标方案不在当前筛选，已切换到全部');
+      setStatusFilter(undefined);
     }
     onFocusPlanConsumed?.();
-  }, [focusPlanId, plans, onFocusPlanConsumed]);
+  }, [focusPlanId, plans, statusFilter, onFocusPlanConsumed]);
 
   const { data: audits } = useQuery<ScheduleAudit[]>({
     queryKey: ['schedule-audits'],
@@ -242,21 +246,20 @@ export default function SchedulePanel({
       <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10 shrink-0">
         <Button
           size="sm"
-          onClick={() => generateMutation.mutate()}
-          disabled={generateMutation.isPending}
+          onClick={() => generateAiMutation.mutate()}
+          disabled={generateAiMutation.isPending}
         >
           <Sparkles className="w-3.5 h-3.5" />
-          {generateMutation.isPending ? '生成中...' : '生成方案'}
+          {generateAiMutation.isPending ? 'AI 生成中...' : 'AI 数据驱动'}
         </Button>
         <Button
           size="sm"
           variant="outline"
-          onClick={() => generateAiMutation.mutate()}
-          disabled={generateAiMutation.isPending}
-          className="text-cyan-400 border-cyan-500/30"
+          onClick={() => generateMutation.mutate()}
+          disabled={generateMutation.isPending}
         >
           <Sparkles className="w-3.5 h-3.5" />
-          {generateAiMutation.isPending ? 'AI 生成中...' : 'AI 数据驱动'}
+          {generateMutation.isPending ? '生成中...' : '模板生成'}
         </Button>
         <div className="w-px h-4 bg-white/10" />
         <div className="flex gap-1">
@@ -305,7 +308,7 @@ export default function SchedulePanel({
                 const isExpanded = expandedId === plan.id;
                 const outputImp = getMetric(plan, 'outputImprovement');
                 const onTimeRate = getMetric(plan, 'onTimeRate');
-                const canConfirm = plan.status === 'shadow' || plan.status === 'proposed';
+                const canConfirm = plan.status === 'proposed';
                 const canDispatch = plan.status === 'confirmed';
                 return (
                   <Fragment key={plan.id}>

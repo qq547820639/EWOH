@@ -36,11 +36,6 @@ export class SchedulerController {
     return this.schedulerService.getPlans(status);
   }
 
-  @Get('plans/:planId/dispatch-status')
-  async getDispatchStatus(@Param('planId') planId: string) {
-    return this.schedulerService.getDispatchStatus(planId);
-  }
-
   @Post('plans/:planId/confirm')
   async confirmPlan(
     @Param('planId') planId: string,

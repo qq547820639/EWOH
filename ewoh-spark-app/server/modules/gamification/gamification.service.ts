@@ -848,6 +848,11 @@ export class GamificationService {
   private async enrichBrainSuggestionsWithLlmAsync(
     fallback: BrainSuggestion[],
   ): Promise<void> {
+    // 竞态守卫：已有增强在执行时直接跳过，避免前端每次轮询重复触发
+    if (this.brainEnhancing) {
+      this.logger.log('getBrainSuggestions 增强进行中，跳过本次触发');
+      return;
+    }
     this.brainEnhancing = true;
     try {
       const telemetryRows = await this.db

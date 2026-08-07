@@ -735,62 +735,6 @@ export class SchedulerService {
     }
   }
 
-  /**
-   * 查询方案下发/冲突状态（G3.5 增强）
-   */
-  async getDispatchStatus(planId: string): Promise<{
-    planId: string;
-    status: string | null;
-    conflicts: string[];
-    lastAudit: ScheduleAudit | null;
-  }> {
-    try {
-      const [plan] = await this.db
-        .select()
-        .from(ewohSchedulePlan)
-        .where(eq(ewohSchedulePlan.planId, planId))
-        .limit(1);
-
-      if (!plan) {
-        throw new NotFoundException(`Schedule plan ${planId} not found`);
-      }
-
-      // 查询最近的 dispatch 审计
-      const [lastAuditRow] = await this.db
-        .select()
-        .from(ewohScheduleAudit)
-        .where(
-          and(
-            eq(ewohScheduleAudit.planId, planId),
-            eq(ewohScheduleAudit.action, 'dispatch'),
-          ),
-        )
-        .orderBy(desc(ewohScheduleAudit.createdAt))
-        .limit(1);
-
-      // 从审计 reason 中解析冲突信息
-      let conflicts: string[] = [];
-      if (lastAuditRow?.reason && lastAuditRow.reason.includes('冲突')) {
-        const reason = lastAuditRow.reason.replace(/^下发冲突：/, '');
-        conflicts = reason
-          .split(';')
-          .map((s) => s.trim())
-          .filter(Boolean);
-      }
-
-      return {
-        planId,
-        status: plan.status ?? 'shadow',
-        conflicts,
-        lastAudit: lastAuditRow ? this.mapAudit(lastAuditRow) : null,
-      };
-    } catch (error) {
-      if (error instanceof NotFoundException) throw error;
-      this.logger.error('getDispatchStatus 失败', error);
-      throw error;
-    }
-  }
-
   private mapPlan(r: typeof ewohSchedulePlan.$inferSelect): SchedulePlan {
     return {
       id: r.id,

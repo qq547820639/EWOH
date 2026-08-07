@@ -32,6 +32,15 @@ import {
 import { Badge } from '@client/src/components/ui/badge';
 import { Button } from '@client/src/components/ui/button';
 import { ScrollArea } from '@client/src/components/ui/scroll-area';
+import { Textarea } from '@client/src/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@client/src/components/ui/dialog';
 
 interface WorkbenchPanelProps {
   onNavigate?: (tab: string) => void;
@@ -88,11 +97,19 @@ export default function WorkbenchPanel({
     refetchInterval: 10000,
   });
 
+  // 批准/驳回意见输入：目标方案 + 意见文案，留空时回退默认描述
+  const [confirmTarget, setConfirmTarget] = useState<SchedulePlan | null>(null);
+  const [confirmReason, setConfirmReason] = useState('');
+  const [rejectTarget, setRejectTarget] = useState<SchedulePlan | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
   const confirmMutation = useMutation({
     mutationFn: ({ planId, reason }: { planId: string; reason: string }) =>
       confirmPlan(planId, { reason, operator: getCurrentOperator() }),
     onSuccess: () => {
       toast.success('方案已确认');
+      setConfirmTarget(null);
+      setConfirmReason('');
       queryClient.invalidateQueries({ queryKey: ['workbench-plans-proposed'] });
       queryClient.invalidateQueries({ queryKey: ['schedule-plans'] });
     },
@@ -104,11 +121,29 @@ export default function WorkbenchPanel({
       rejectPlan(planId, { reason, operator: getCurrentOperator() }),
     onSuccess: () => {
       toast.success('方案已驳回');
+      setRejectTarget(null);
+      setRejectReason('');
       queryClient.invalidateQueries({ queryKey: ['workbench-plans-proposed'] });
       queryClient.invalidateQueries({ queryKey: ['schedule-plans'] });
     },
     onError: () => toast.error('方案驳回失败'),
   });
+
+  const handleConfirm = () => {
+    if (!confirmTarget) return;
+    confirmMutation.mutate({
+      planId: confirmTarget.planId,
+      reason: confirmReason.trim() || '班组长确认',
+    });
+  };
+
+  const handleReject = () => {
+    if (!rejectTarget) return;
+    rejectMutation.mutate({
+      planId: rejectTarget.planId,
+      reason: rejectReason.trim() || '班组长驳回',
+    });
+  };
 
   const handleMutation = useMutation({
     mutationFn: (eventId: string) =>
@@ -237,12 +272,10 @@ export default function WorkbenchPanel({
                         <Button
                           size="sm"
                           className="h-5 text-[9px] px-1.5 min-w-0"
-                          onClick={() =>
-                            confirmMutation.mutate({
-                              planId: plan.planId,
-                              reason: '班组长确认',
-                            })
-                          }
+                          onClick={() => {
+                            setConfirmTarget(plan);
+                            setConfirmReason('');
+                          }}
                           disabled={confirmMutation.isPending}
                         >
                           <Check className="w-2.5 h-2.5" />
@@ -252,12 +285,10 @@ export default function WorkbenchPanel({
                           size="sm"
                           variant="outline"
                           className="h-5 text-[9px] px-1.5 min-w-0 text-red-400 border-red-500/30"
-                          onClick={() =>
-                            rejectMutation.mutate({
-                              planId: plan.planId,
-                              reason: '班组长驳回',
-                            })
-                          }
+                          onClick={() => {
+                            setRejectTarget(plan);
+                            setRejectReason('');
+                          }}
                           disabled={rejectMutation.isPending}
                         >
                           <X className="w-2.5 h-2.5" />
@@ -372,6 +403,79 @@ export default function WorkbenchPanel({
           </Button>
         </CardContent>
       </Card>
+
+      {/* 批准意见输入 */}
+      <Dialog
+        open={!!confirmTarget}
+        onOpenChange={(open) => !open && setConfirmTarget(null)}
+      >
+        <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">批准调度方案</DialogTitle>
+            <DialogDescription className="text-white/70">
+              {confirmTarget?.planName} · {confirmTarget?.strategy}（留空使用默认描述）
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-xs text-white/60">批准意见（可选）</label>
+            <Textarea
+              value={confirmReason}
+              onChange={(e) => setConfirmReason(e.target.value)}
+              placeholder="请输入批准意见，如评估依据、特别说明..."
+              className="bg-white/5 border-white/10 text-white"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setConfirmTarget(null)}>
+              取消
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleConfirm}
+              disabled={confirmMutation.isPending}
+            >
+              {confirmMutation.isPending ? '批准中...' : '批准'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 驳回意见输入 */}
+      <Dialog
+        open={!!rejectTarget}
+        onOpenChange={(open) => !open && setRejectTarget(null)}
+      >
+        <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">驳回调度方案</DialogTitle>
+            <DialogDescription className="text-white/70">
+              {rejectTarget?.planName} · {rejectTarget?.strategy}（留空使用默认描述）
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-xs text-white/60">驳回理由（可选）</label>
+            <Textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="请输入驳回理由，便于后续调整..."
+              className="bg-white/5 border-white/10 text-white"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setRejectTarget(null)}>
+              取消
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={handleReject}
+              disabled={rejectMutation.isPending}
+            >
+              {rejectMutation.isPending ? '驳回中...' : '驳回'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

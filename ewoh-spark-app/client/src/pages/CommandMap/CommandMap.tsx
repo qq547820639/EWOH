@@ -360,6 +360,18 @@ const CommandMap = (): React.ReactElement => {
     });
   }, [selectedEntityId]);
 
+  // 侧栏/小屏直接选择层级：L3/L4 同样需先选中实体，与键盘守卫保持一致
+  const handleLevelSelect = useCallback(
+    (target: 'L0' | 'L1' | 'L2' | 'L3' | 'L4') => {
+      if ((target === 'L3' || target === 'L4') && !selectedEntityId) {
+        toast.info(`请先在地图上选中${target === 'L3' ? '一个工位' : '一名人员'}再进入近景`);
+        return;
+      }
+      setLevel(target);
+    },
+    [selectedEntityId],
+  );
+
   // 回放切换
   const handleReplayToggle = useCallback(() => {
     setReplayMode((prev) => {
@@ -531,7 +543,7 @@ const CommandMap = (): React.ReactElement => {
 
       {/* 中间三栏：左模式 / 中地图 / 右详情 */}
       <div className="relative flex-1 min-h-0 flex">
-        <ModePanel mode={mode} onModeChange={setMode} level={level} onLevelChange={setLevel} />
+        <ModePanel mode={mode} onModeChange={setMode} level={level} onLevelChange={handleLevelSelect} />
 
         <FactoryMap
           entities={entityList}
@@ -581,7 +593,7 @@ const CommandMap = (): React.ReactElement => {
               <button
                 key={l}
                 type="button"
-                onClick={() => setLevel(l)}
+                onClick={() => handleLevelSelect(l)}
                 aria-pressed={level === l}
                 aria-label={`切换到${l}层级`}
                 className={`h-7 min-w-7 rounded px-1 text-[10px] font-medium ${
@@ -599,7 +611,7 @@ const CommandMap = (): React.ReactElement => {
       <div
         className={cn(
           'shrink-0 flex flex-col bg-[hsl(220_14%_12%)] border-t border-white/10',
-          panelExpanded ? 'h-[60vh]' : 'h-[220px] lg:h-[280px]',
+          panelExpanded ? 'h-[60vh]' : 'h-[260px] lg:h-[320px]',
         )}
       >
         <div className="flex items-center gap-1 px-3 h-9 border-b border-white/10 bg-[hsl(220_14%_14%)] overflow-x-auto">
