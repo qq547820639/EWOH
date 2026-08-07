@@ -62,3 +62,44 @@ export async function visionUnderstand(input: {
   });
   return res.data;
 }
+
+export interface AiConfigStatus {
+  configured: boolean;
+  baseUrl: string;
+  model: string;
+}
+
+/** GET /api/ai/config/status — 查询全局 AI 配置状态。 */
+export async function getAiConfigStatus(): Promise<AiConfigStatus> {
+  const res = await axiosForBackend({ url: '/api/ai/config/status', method: 'GET' });
+  return res.data;
+}
+
+/** PUT /api/ai/config — 保存全局 AI 配置（供整个系统共享）。 */
+export async function saveAiConfig(input: {
+  api_key?: string;
+  base_url?: string;
+  model?: string;
+}): Promise<AiConfigStatus> {
+  const res = await axiosForBackend({ url: '/api/ai/config', method: 'PUT', data: input });
+  return res.data;
+}
+
+export interface AiChatResult {
+  ok: boolean;
+  answer: string;
+  model: string;
+  error?: string;
+  context?: string;
+}
+
+/** POST /api/ai/chat — 自然语言问答（采集系统实时上下文调用 Ark）。 */
+export async function aiChat(question: string): Promise<AiChatResult> {
+  const res = await axiosForBackend({
+    url: '/api/ai/chat',
+    method: 'POST',
+    data: { question },
+    timeout: 180000,
+  });
+  return res.data;
+}

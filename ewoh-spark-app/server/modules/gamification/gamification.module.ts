@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { GamificationController } from './gamification.controller';
 import { GamificationService } from './gamification.service';
+import { AiModule } from '../ai/ai.module';
 
 @Module({
+  imports: [AiModule],
   controllers: [GamificationController],
   providers: [GamificationService],
   exports: [GamificationService],

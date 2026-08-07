@@ -1,5 +1,6 @@
-import { Injectable, Inject, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, Optional, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
+import { ArkService } from '../ai/ark.service';
 import {
   ewohDevice,
   ewohTelemetry,
@@ -35,7 +36,10 @@ import type {
 export class GamificationService {
   private readonly logger = new Logger(GamificationService.name);
 
-  constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
+  constructor(
+    @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
+    @Optional() private readonly ark?: ArkService,
+  ) {}
 
   // ===== G3.1 玩家角色系统 =====
 
@@ -657,11 +661,79 @@ export class GamificationService {
         });
       }
 
-      this.logger.log(`getBrainSuggestions generated ${suggestions.length} suggestions`);
-      return suggestions;
+      // 调用 Ark 大模型基于真实数据生成/优化建议；无配置或失败时回落到规则建议。
+      const enriched = await this.enrichBrainSuggestionsWithLlm(
+        suggestions,
+        { telemetryRows, openEvents, lowBatteryDevices },
+      );
+
+      this.logger.log(`getBrainSuggestions generated ${enriched.length} suggestions`);
+      return enriched;
     } catch (error) {
       this.logger.error('getBrainSuggestions 失败', error);
       throw error;
+    }
+  }
+
+  /** 基于真实数据 + Ark 大模型生成/优化大脑建议；失败时保留规则建议。 */
+  private async enrichBrainSuggestionsWithLlm(
+    fallback: BrainSuggestion[],
+    data: {
+      telemetryRows: Array<{ deviceId: string; avgLoad: number | null; avgBattery: number | null }>;
+      openEvents: Array<{ eventId: string; severity: string | null; title: string | null; status: string | null }>;
+      lowBatteryDevices: Array<{ deviceId: string; workerName: string | null; batteryPct: number | null }>;
+    },
+  ): Promise<BrainSuggestion[]> {
+    if (!this.ark) return fallback;
+
+    const lines: string[] = ['【近1小时设备负荷】'];
+    for (const t of data.telemetryRows) {
+      lines.push(`  ${t.deviceId}: 平均负荷=${t.avgLoad?.toFixed(2) ?? 'N/A'}, 平均电量=${t.avgBattery?.toFixed(1) ?? 'N/A'}%`);
+    }
+    lines.push('【未结事件】');
+    for (const e of data.openEvents) {
+      lines.push(`  ${e.eventId}: 严重度=${e.severity ?? 'N/A'}, ${e.title ?? ''}`);
+    }
+    lines.push('【低电量设备】');
+    for (const d of data.lowBatteryDevices) {
+      lines.push(`  ${d.deviceId} (${d.workerName ?? ''}): 电量=${d.batteryPct ?? 'N/A'}%`);
+    }
+
+    const systemPrompt =
+      '你是工厂具身操作系统的智能大脑。基于给定的实时数据，从负荷均衡、换电、安全、节拍优化等角度给出' +
+      '结构化、可执行的改善建议。' +
+      '仅输出 JSON 数组，每项字段：type(: takt_improve|load_balance|battery_swap|safety_intervene|bottleneck_resolve), ' +
+      'title(建议标题), description(建议描述), affectedEntities(受影响实体ID数组), expectedBenefit(预期收益), confidence(0-1 置信度)。' +
+      '不要输出 markdown 代码块或其他文字。';
+    const userPrompt = `实时数据：\n${lines.join('\n')}`;
+    const result = await this.ark.ask(systemPrompt, userPrompt, { temperature: 0.4 });
+    if (!result.ok) {
+      this.logger.warn(`getBrainSuggestions LLM 不可用：${result.error}`);
+      return fallback;
+    }
+    try {
+      const parsed = JSON.parse(result.text) as Array<Partial<BrainSuggestion>>;
+      if (!Array.isArray(parsed) || parsed.length === 0) return fallback;
+      const valid = parsed.filter(
+        (s) =>
+          typeof s.title === 'string' &&
+          typeof s.description === 'string' &&
+          ['takt_improve', 'load_balance', 'battery_swap', 'safety_intervene', 'bottleneck_resolve'].includes(
+            s.type ?? '',
+          ),
+      );
+      if (valid.length === 0) return fallback;
+      return valid.map((s) => ({
+        type: (s.type as BrainSuggestion['type']) ?? 'bottleneck_resolve',
+        title: s.title ?? '',
+        description: s.description ?? '',
+        affectedEntities: Array.isArray(s.affectedEntities) ? s.affectedEntities.filter((v): v is string => typeof v === 'string') : [],
+        expectedBenefit: s.expectedBenefit ?? '',
+        confidence: typeof s.confidence === 'number' ? Math.min(1, Math.max(0, s.confidence)) : 0.5,
+      }));
+    } catch (e) {
+      this.logger.warn(`getBrainSuggestions LLM 输出解析失败：${String(e)}`);
+      return fallback;
     }
   }
 

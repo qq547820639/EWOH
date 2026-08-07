@@ -32,6 +32,7 @@ export const queryKeys = {
   systemConfigs: ['system-configs'] as const,
   aiSuggestions: ['ai-suggestions'] as const,
   aiPlans: ['ai-plans'] as const,
+  aiConfigStatus: ['ai-config-status'] as const,
   environmentSummary: ['environment-summary'] as const,
   mobileWorkbench: (personId: string) => ['mobile-workbench', personId] as const,
   mobileOrder: (orderId: string) => ['mobile-order', orderId] as const,
