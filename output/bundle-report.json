@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-06T04:48:01.746Z",
+  "generatedAt": "2026-08-07T07:33:16.315Z",
   "dist": "/Volumes/Extra/CodeProj/EWOH/ewoh-spark-app/dist/client",
   "environment": {
     "node": "v26.5.1",
@@ -9,11 +9,11 @@
     "entryScripts": [
       {
         "rel": "assets/index.js",
-        "rawKB": 566.5859375,
-        "gzipKB": 175.0869140625
+        "rawKB": 573.4794921875,
+        "gzipKB": 177.3583984375
       }
     ],
-    "totalGzipKB": 175.09,
+    "totalGzipKB": 177.36,
     "limitKB": 420,
     "toleranceKB": 40,
     "effectiveLimitKB": 460,
@@ -30,8 +30,8 @@
     "overBudget": []
   },
   "chunks": {
-    "total": 75,
-    "asyncTotal": 74,
+    "total": 144,
+    "asyncTotal": 143,
     "overRouteLimit": [],
     "top": [
       {
@@ -41,8 +41,13 @@
       },
       {
         "file": "index.js",
-        "rawKB": 566.59,
-        "gzipKB": 175.09
+        "rawKB": 573.48,
+        "gzipKB": 177.36
+      },
+      {
+        "file": "vendor-ui-BnkDLozs.js",
+        "rawKB": 578.24,
+        "gzipKB": 161.13
       },
       {
         "file": "vendor-ui-XHN4lSH7.js",
@@ -53,6 +58,16 @@
         "file": "vendor-react-DQjwAYfi.js",
         "rawKB": 290.81,
         "gzipKB": 91.49
+      },
+      {
+        "file": "vendor-react-fYYijWfB.js",
+        "rawKB": 287.47,
+        "gzipKB": 90.38
+      },
+      {
+        "file": "Devices-D0glI9qV.js",
+        "rawKB": 332.9,
+        "gzipKB": 88.85
       },
       {
         "file": "Devices-DzqBXuWp.js",
@@ -70,9 +85,24 @@
         "gzipKB": 36.8
       },
       {
+        "file": "WorkOrchestration-BJQ-BVDI.js",
+        "rawKB": 142.45,
+        "gzipKB": 36.8
+      },
+      {
         "file": "vendor-anim-Bu4TsaPj.js",
         "rawKB": 111.17,
         "gzipKB": 36.6
+      },
+      {
+        "file": "vendor-anim-G98Flrj9.js",
+        "rawKB": 111.17,
+        "gzipKB": 36.6
+      },
+      {
+        "file": "CommandMap-CPGOvOP-.js",
+        "rawKB": 60.88,
+        "gzipKB": 19.06
       },
       {
         "file": "CommandMap-CTy6rQfb.js",
@@ -80,9 +110,19 @@
         "gzipKB": 16.31
       },
       {
+        "file": "MobileWorkbench-lSDRGNxm.js",
+        "rawKB": 43.89,
+        "gzipKB": 13.77
+      },
+      {
         "file": "MobileWorkbench-DmSAFrNd.js",
         "rawKB": 43.89,
         "gzipKB": 13.77
+      },
+      {
+        "file": "RoleWorkbench-DpXOqpM5.js",
+        "rawKB": 39.48,
+        "gzipKB": 13.42
       },
       {
         "file": "RoleWorkbench-AwyKm3MS.js",
@@ -93,46 +133,6 @@
         "file": "vendor-state-DzMJQjyX.js",
         "rawKB": 37.41,
         "gzipKB": 11.31
-      },
-      {
-        "file": "RoleWorkbench-C8JoZc1G.js",
-        "rawKB": 31.84,
-        "gzipKB": 11
-      },
-      {
-        "file": "Operations-CLjYzlyR.js",
-        "rawKB": 26.27,
-        "gzipKB": 5.84
-      },
-      {
-        "file": "Scale-Cjty29Lm.js",
-        "rawKB": 23.53,
-        "gzipKB": 4.8
-      },
-      {
-        "file": "System-CxCynmb5.js",
-        "rawKB": 16.75,
-        "gzipKB": 4.25
-      },
-      {
-        "file": "TaskOrchestrationPanel-D1GKX6nQ.js",
-        "rawKB": 11.37,
-        "gzipKB": 3.86
-      },
-      {
-        "file": "ResourcePoolPanel-Dt0wymlN.js",
-        "rawKB": 10.02,
-        "gzipKB": 3.15
-      },
-      {
-        "file": "SchedulePanel-NQvVMwiz.js",
-        "rawKB": 9.46,
-        "gzipKB": 3.14
-      },
-      {
-        "file": "EventCenterPanel-DDk-iklU.js",
-        "rawKB": 7.99,
-        "gzipKB": 3
       }
     ]
   }

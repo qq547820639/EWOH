@@ -17,8 +17,79 @@
   }
   function bindLink(id) {
     if (!id) return '--';
+    var r = resolveEntity(id);
+    var label = id;
+    if (r) {
+      if (r.kind === 'entity') label = CM.esc(r.obj.name || r.obj.entity_id);
+      else if (r.kind === 'task' || r.kind === 'plan') label = id;
+      else if (r.kind === 'assignment') label = id;
+    }
+    return '<span class="cm-bind-link" data-id="' + id + '">' + CM.esc(label) + '</span>';
+  }
+
+  // ===== 调度实体解析（Phase 7.5）：Task / Plan / Assignment 不在 CM.DATA.entities 中 =====
+  function findTask(id) {
+    var list = CM.DATA.tasks || [];
+    for (var i = 0; i < list.length; i++) if (list[i] && list[i].task_id === id) return list[i];
+    return null;
+  }
+  function findPlan(id) {
+    var list = CM.DATA.plans || [];
+    for (var i = 0; i < list.length; i++) if (list[i] && list[i].plan_id === id) return list[i];
+    return null;
+  }
+  function findAssignment(id) {
+    var list = CM.DATA.assignments || [];
+    for (var i = 0; i < list.length; i++) if (list[i] && list[i].assignment_id === id) return list[i];
+    return null;
+  }
+  // 统一解析：优先空间实体，其次 Task / Assignment / Plan
+  function resolveEntity(id) {
     var e = CM.findEntity(id);
-    return '<span class="cm-bind-link" data-id="' + id + '">' + id + (e ? ' · ' + CM.esc(e.name) : '') + '</span>';
+    if (e) return { kind: 'entity', obj: e };
+    var t = findTask(id);
+    if (t) return { kind: 'task', obj: t };
+    var a = findAssignment(id);
+    if (a) return { kind: 'assignment', obj: a };
+    var p = findPlan(id);
+    if (p) return { kind: 'plan', obj: p };
+    return null;
+  }
+  // 与某 id 相关的调度记录（正式 Assignment + 方案排程 CandidateAssignment）
+  function relatedAssignments(id) {
+    var out = [];
+    (CM.DATA.assignments || []).forEach(function (a) {
+      if (a.task_id === id || a.person_id === id || a.device_id === id || a.station_id === id) {
+        out.push({ kind: '正式派工', assignment: a, plan: null });
+      }
+    });
+    (CM.DATA.plans || []).forEach(function (p) {
+      (p.assignments || []).forEach(function (a) {
+        if (a.task_id === id || a.person_id === id || a.device_id === id || a.station_id === id) {
+          out.push({ kind: '方案排程', assignment: a, plan: p });
+        }
+      });
+    });
+    return out;
+  }
+  function fmtIso(iso) {
+    if (!iso) return '--';
+    return String(iso).replace('T', ' ').slice(0, 19);
+  }
+  // 约束违反数：violations 可能是数组（后端）或数字，统一取数量
+  function violationCount(cs) {
+    if (!cs) return 0;
+    var v = cs.violations;
+    if (v == null) return 0;
+    if (Array.isArray(v)) return v.length;
+    return Number(v) || 0;
+  }
+  function statusBadge(s) {
+    if (!s) return '--';
+    var cls = ['executing', 'dispatched', 'received', 'normal', 'open'].indexOf(s) >= 0 ? 'success' :
+              ['exception', 'expired', 'fault', 'closed'].indexOf(s) >= 0 ? 'danger' :
+              ['pending_review', 'pending_dispatch', 'shadow', 'simulating', 'paused', 'warning'].indexOf(s) >= 0 ? 'warning' : 'muted';
+    return '<span class="cm-badge cm-badge-' + cls + '">' + CM.esc(s) + '</span>';
   }
 
   // 简单 SVG 风险趋势迷你图：基于事件历史与负荷推断（非医学诊断）
@@ -74,12 +145,18 @@
       if (!host) return;
       var id = CM.state.selectedId;
       if (!id) {
-        host.innerHTML = '<div class="cm-empty">点击地图实体查看唯一 ID、父级空间、坐标、朝向、边界框、状态、来源、置信度、更新时间与版本。</div>';
+        host.innerHTML = '<div class="cm-empty">点击地图实体查看唯一 ID、父级空间、坐标、朝向、边界框、状态、来源、置信度、更新时间与版本；调度对象（任务/方案/派工）展示关联关系。</div>';
         return;
       }
-      var e = CM.findEntity(id);
-      if (!e) { host.innerHTML = '<div class="cm-empty">未找到实体 ' + CM.esc(id) + '</div>'; return; }
+      var r = resolveEntity(id);
+      if (!r) { host.innerHTML = '<div class="cm-empty">未找到实体或调度对象 ' + CM.esc(id) + '</div>'; return; }
 
+      // 调度对象（Task / Assignment / Plan）走独立渲染
+      if (r.kind === 'task') { this._renderTask(host, r.obj); return; }
+      if (r.kind === 'assignment') { this._renderAssignment(host, r.obj); return; }
+      if (r.kind === 'plan') { this._renderPlan(host, r.obj); return; }
+
+      var e = r.obj;
       var html = '<div class="cm-entity-head">' +
         '<div class="cm-entity-title">' + CM.esc(e.name || e.entity_id) +
         '<span class="cm-entity-type">' + CM.esc(e.entity_type) + '</span></div>' +
@@ -106,6 +183,8 @@
       html += this._extras(e);
       // 绑定关系
       html += this._binding(e);
+      // 调度关系（Task/Person/Device/Station/Assignment）
+      html += this._schedRelations(id);
 
       host.innerHTML = html;
       host.querySelectorAll('.cm-bind-link').forEach(function (lnk) {
@@ -190,6 +269,135 @@
           '</div>';
       }
       return '';
+    },
+
+    // ===== Phase 7.5：调度关系展示 =====
+    // 空间实体（Person/Device/Station/Task 引用）→ 相关 Assignment/方案排程
+    _schedRelations: function (id) {
+      var rels = relatedAssignments(id);
+      var html = '<div class="cm-field-group"><div class="cm-field-group-title">调度关系（Assignment / 方案排程）</div>';
+      if (rels.length === 0) {
+        html += '<div class="cm-empty">暂无相关调度记录。</div>';
+      } else {
+        html += '<div class="cm-sc-rlist">';
+        rels.forEach(function (it) {
+          var a = it.assignment;
+          var planRef = it.plan ? bindLink(it.plan.plan_id) : (a.plan_id ? bindLink(a.plan_id) : '--');
+          html += '<div class="cm-rrel">' +
+            '<div class="cm-rrel-head">' +
+              '<span class="cm-badge cm-badge-info">' + CM.esc(it.kind) + '</span>' +
+              '<span class="cm-mono">' + CM.esc(a.task_id || '--') + '</span>' +
+              statusBadge(a.status) +
+            '</div>' +
+            '<div class="cm-rrel-row">' +
+              '<span>人 ' + bindLink(a.person_id) + '</span>' +
+              '<span>设 ' + bindLink(a.device_id) + '</span>' +
+              '<span>工位 ' + bindLink(a.station_id) + '</span>' +
+            '</div>' +
+            '<div class="cm-rrel-row">' +
+              '<span>开始 ' + CM.esc(fmtIso(a.planned_start)) + '</span>' +
+              '<span>结束 ' + CM.esc(fmtIso(a.planned_end)) + '</span>' +
+            '</div>' +
+            '<div class="cm-rrel-row">' +
+              '<span>方案 ' + planRef + '</span>' +
+              (a.assignment_id ? '<span>派工 ' + bindLink(a.assignment_id) + '</span>' : '') +
+            '</div>' +
+          '</div>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+      return html;
+    },
+
+    // Task 对象渲染
+    _renderTask: function (host, t) {
+      var skills = (t.required_skills || []).join('、') || '--';
+      var caps = (t.required_device_capabilities || []).join('、') || '--';
+      var preds = (t.predecessor_task_ids || []).join('、') || '--';
+      var html = '<div class="cm-entity-head">' +
+        '<div class="cm-entity-title">' + CM.esc(t.task_id) +
+        '<span class="cm-entity-type">task</span></div>' +
+        '<div class="cm-entity-id">' + CM.esc(t.task_id) + '</div>' +
+        '</div>';
+      html += '<div class="cm-field-group"><div class="cm-field-group-title">任务字段</div>';
+      html += row('任务类型', CM.esc(t.task_type || '--'));
+      html += row('优先级', CM.esc(t.priority != null ? 'P' + t.priority : '--'), t.priority != null && t.priority >= 2 ? 'cm-conf-high' : '');
+      html += row('状态', statusBadge(t.status));
+      html += row('工位', bindLink(t.station_id));
+      html += row('区域', bindLink(t.zone_id));
+      html += row('技能', CM.esc(skills));
+      html += row('设备能力', CM.esc(caps));
+      html += row('装载负荷', CM.esc(t.load_level != null ? t.load_level.toFixed(2) : '--'));
+      html += row('安全关键', t.safety_critical ? '<span class="cm-badge cm-badge-danger">是</span>' : '否');
+      html += row('预计时长', CM.esc(t.estimated_duration_sec != null ? Math.round(t.estimated_duration_sec / 60) + ' 分' : '--'));
+      html += row('最早开始', CM.esc(fmtIso(t.earliest_start)));
+      html += row('截止时间', CM.esc(fmtIso(t.due_at)));
+      html += row('前置任务', CM.esc(preds));
+      html += row('版本', 'v' + (t.version != null ? t.version : '--'), 'cm-mono');
+      html += '</div>';
+      html += this._schedRelations(t.task_id);
+      host.innerHTML = html;
+      this._bindLinks(host);
+    },
+
+    // Assignment 对象渲染
+    _renderAssignment: function (host, a) {
+      var html = '<div class="cm-entity-head">' +
+        '<div class="cm-entity-title">' + CM.esc(a.assignment_id) +
+        '<span class="cm-entity-type">assignment</span></div>' +
+        '<div class="cm-entity-id">' + CM.esc(a.assignment_id) + '</div>' +
+        '</div>';
+      html += '<div class="cm-field-group"><div class="cm-field-group-title">派工记录</div>';
+      html += row('任务', bindLink(a.task_id));
+      html += row('方案', bindLink(a.plan_id));
+      html += row('人员', bindLink(a.person_id));
+      html += row('设备', bindLink(a.device_id));
+      html += row('工位', bindLink(a.station_id));
+      html += row('状态', statusBadge(a.status));
+      html += row('计划开始', CM.esc(fmtIso(a.planned_start)), 'cm-mono');
+      html += row('计划结束', CM.esc(fmtIso(a.planned_end)), 'cm-mono');
+      html += row('实际开始', CM.esc(fmtIso(a.actual_start)), 'cm-mono');
+      html += row('实际结束', CM.esc(fmtIso(a.actual_end)), 'cm-mono');
+      html += row('版本', 'v' + (a.version != null ? a.version : '--'), 'cm-mono');
+      html += '</div>';
+      html += this._schedRelations(a.assignment_id);
+      host.innerHTML = html;
+      this._bindLinks(host);
+    },
+
+    // Plan 对象渲染
+    _renderPlan: function (host, p) {
+      var cs = p.constraint_summary || {};
+      var ob = p.objective_breakdown || {};
+      var html = '<div class="cm-entity-head">' +
+        '<div class="cm-entity-title">' + CM.esc(p.plan_id) +
+        '<span class="cm-entity-type">plan</span></div>' +
+        '<div class="cm-entity-id">' + CM.esc(p.plan_id) + '</div>' +
+        '</div>';
+      html += '<div class="cm-field-group"><div class="cm-field-group-title">方案字段</div>';
+      html += row('状态', statusBadge(p.status));
+      html += row('请求', bindLink(p.request_id));
+      html += row('版本', 'v' + (p.version != null ? p.version : '--'), 'cm-mono');
+      html += row('世界状态', CM.esc(p.world_state_version || '--'), 'cm-mono');
+      html += row('目标分', CM.esc(p.objective_score != null ? Number(p.objective_score).toFixed(2) : '--'));
+      html += row('创建时间', CM.esc(fmtIso(p.created_at)), 'cm-mono');
+      html += row('有效期', CM.esc(fmtIso(p.valid_until)), 'cm-mono');
+      html += row('确认人', CM.esc(p.confirmed_by || '--'));
+      html += row('确认理由', CM.esc(p.confirm_reason || '--'));
+      html += row('任务/已派', CM.esc((cs.total_tasks != null ? cs.total_tasks : '--') + ' / ' + (cs.assigned != null ? cs.assigned : '--')));
+      html += row('违反', CM.esc(violationCount(cs)));
+      html += row('准时', CM.esc(ob.on_time_score != null ? Number(ob.on_time_score).toFixed(2) : '--'));
+      html += '</div>';
+      html += this._schedRelations(p.plan_id);
+      host.innerHTML = html;
+      this._bindLinks(host);
+    },
+
+    _bindLinks: function (host) {
+      host.querySelectorAll('.cm-bind-link').forEach(function (lnk) {
+        lnk.addEventListener('click', function () { CM.selectEntity(lnk.dataset.id); });
+      });
     },
 
     // 异步加载人员画像（Task 16）：技能/动作分布/指标/最近事件/建议/数据质量

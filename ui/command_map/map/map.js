@@ -100,13 +100,13 @@
         }
         return { dim: 0.35 };
       case 'scheduling':
-        if (t === 'route') return { color: '#a855f7', label: '调度路线' };
+        if (t === 'route') return { color: '#a855f7', label: '物流通道' };
         if (t === 'person') {
-          var aff = CM.DATA.plans.some(function (p) {
-            return p.metrics && p.metrics.affected_persons &&
-                   p.metrics.affected_persons.indexOf(entity.entity_id) >= 0;
+          // 受影响人员 = 当前可见调度方案/派工中出现的 person_id 集合（非旧的 affected_persons）
+          var aff = schedAssignments().some(function (a) {
+            return a.person_id === entity.entity_id;
           });
-          return { color: aff ? '#a855f7' : '#6b7280', ring: aff, label: aff ? '受影响' : '' };
+          return { color: aff ? '#a855f7' : '#6b7280', ring: aff, label: aff ? '调度中' : '' };
         }
         if (t === 'station') return { dim: 0.5 };
         return { dim: 0.4 };
@@ -127,6 +127,70 @@
   }
 
   function dimOpacity(s) { return s && typeof s.dim === 'number' ? s.dim : (s && s.dim ? 0.4 : 1); }
+
+  // ===== 调度路线辅助（Phase 4.2 / 7.3） =====
+  // 格式 ETA 秒 → mm:ss
+  function fmtEta(sec) {
+    sec = Math.round(Number(sec) || 0);
+    var m = Math.floor(sec / 60), s = sec % 60;
+    return m + ':' + String(s).padStart(2, '0');
+  }
+  // 从 CM.DATA.tasks 读任务优先级
+  function taskPriority(taskId) {
+    if (!taskId) return null;
+    var t = null;
+    for (var i = 0; i < CM.DATA.tasks.length; i++) {
+      if (CM.DATA.tasks[i] && CM.DATA.tasks[i].task_id === taskId) { t = CM.DATA.tasks[i]; break; }
+    }
+    return (t && t.priority != null) ? t.priority : null;
+  }
+  // 依据 CM.state.scheduleView 取当前可见的调度 assignment 列表
+  function schedAssignments() {
+    var view = CM.state.scheduleView;
+    if (view === 'current') return CM.DATA.assignments || [];
+    var plans = CM.DATA.plans || [];
+    var statuses = view === 'confirmed' ? ['approved'] : ['pending_review', 'shadow', 'simulating'];
+    var out = [];
+    plans.forEach(function (p) {
+      if (p && statuses.indexOf(p.status) >= 0 && Array.isArray(p.assignments)) {
+        out = out.concat(p.assignments);
+      }
+    });
+    return out;
+  }
+  // 从 assignment.route 提取几何点（兼容 geometry 的 {x,y} / [x,y]，或 nodes 的 entity pose）
+  function routePoints(assign) {
+    var route = (assign && assign.route) || {};
+    var geo = route.geometry;
+    var pts = [];
+    if (Array.isArray(geo)) {
+      for (var i = 0; i < geo.length; i++) {
+        var g = geo[i];
+        if (Array.isArray(g) && g.length >= 2) {
+          pts.push({ x: Number(g[0]), y: Number(g[1]) });
+        } else if (g && typeof g === 'object') {
+          if (g.x != null && g.y != null) pts.push({ x: Number(g.x), y: Number(g.y) });
+          else if (Array.isArray(g.coordinates) && g.coordinates.length >= 2) {
+            pts.push({ x: Number(g.coordinates[0]), y: Number(g.coordinates[1]) });
+          }
+        }
+      }
+    }
+    if (pts.length === 0 && Array.isArray(route.nodes)) {
+      route.nodes.forEach(function (nid) {
+        var e = CM.findEntity(nid);
+        if (e && e.pose) pts.push({ x: e.pose.x, y: e.pose.y });
+      });
+    }
+    return pts;
+  }
+  // 语义标签：优先展示真实方案 Plan 状态，否则回退样本字段
+  function planStatusText(p) {
+    if (!p) return '--';
+    var map = { shadow: '影子', simulating: '仿真', pending_review: '待审批', approved: '已批准',
+                dispatched: '已派工', expired: '已过期', archived: '已归档' };
+    return map[p.status] || p.status;
+  }
 
   CM.map = {
     render: function () {
@@ -225,8 +289,11 @@
       // 环境模式下额外叠加热力图（Task 22）
       if (mode === 'environment') svg.appendChild(this._envHeatmap());
 
-      // 调度模式下叠加预测轨迹层（Task 22）
-      if (mode === 'scheduling') svg.appendChild(this._predictionLayer());
+      // 调度模式：叠加短时趋势层 + 真实调度路线层
+      if (mode === 'scheduling') {
+        svg.appendChild(this._trendLayer());
+        svg.appendChild(this._scheduleRouteLayer(mode));
+      }
 
       // 点击委托（仅绑定一次）
       if (!svg._cmBound) {
@@ -238,6 +305,7 @@
       }
 
       this._legend(mode);
+      this._bindScheduleView();
     },
 
     _zone: function (z, mode) {
@@ -349,9 +417,9 @@
       return g;
     },
 
-    // 预测轨迹层（Task 22）：按人员朝向 yaw 延伸出 30px 虚线作为短期预测路径
-    // 仅在调度模式下显示，标明"预测"而非真实轨迹
-    _predictionLayer: function () {
+    // 短时运动趋势层（Phase 7.3）：按人员朝向 yaw 延伸出 30px 虚线，
+    // 仅表示"短时运动趋势（非调度路线）"，不作为控制依据。
+    _trendLayer: function () {
       var g = el('g', { 'pointer-events': 'none' });
       CM.DATA.entities.filter(function (e) { return e.entity_type === 'person'; }).forEach(function (p) {
         var rad = (p.pose.yaw || 0) * Math.PI / 180;
@@ -361,9 +429,84 @@
           stroke: '#a855f7', 'stroke-width': 1.5, 'stroke-dasharray': '2 3', opacity: 0.7 }));
         g.appendChild(el('circle', { cx: x2, cy: y2, r: 2.5, fill: '#a855f7', opacity: 0.7 }));
       });
-      // 标注
-      g.appendChild(txt(8, 14, '预测轨迹（基于朝向，仅短期推断，不作为控制依据）', 'cm-map-modelabel'));
+      // 标注：明确与真实调度路线区分
+      g.appendChild(txt(8, 14, '短时运动趋势（基于朝向，非调度路线）', 'cm-map-modelabel'));
       return g;
+    },
+
+    // 真实调度路线层（Phase 4.2 / 7.3）：依据 CM.state.scheduleView 渲染真实 Plan/Assignment 路线
+    _scheduleRouteLayer: function (mode) {
+      var g = el('g', { 'pointer-events': 'none', opacity: 0.95 });
+      var assigns = schedAssignments();
+      var view = CM.state.scheduleView;
+      var color = view === 'current' ? '#10b981' : view === 'confirmed' ? '#3b82f6' : '#a855f7';
+      assigns.forEach(function (a) {
+        var pts = routePoints(a);
+        var person = a.person_id ? CM.findEntity(a.person_id) : null;
+        var startPt = (person && person.pose) ? { x: person.pose.x, y: person.pose.y } : (pts[0] || null);
+        var endEnt = a.station_id ? CM.findEntity(a.station_id) : null;
+        var endPt = (endEnt && endEnt.pose) ? { x: endEnt.pose.x, y: endEnt.pose.y } : (pts[pts.length - 1] || null);
+
+        // 路线：有几何点用紫色实线 polyline，否则起点→终点虚线
+        if (pts.length >= 2) {
+          g.appendChild(el('polyline', {
+            points: pts.map(function (p) { return p.x + ',' + p.y; }).join(' '),
+            fill: 'none', stroke: color, 'stroke-width': 2.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'
+          }));
+        } else if (startPt && endPt && (startPt.x !== endPt.x || startPt.y !== endPt.y)) {
+          g.appendChild(el('line', {
+            x1: startPt.x, y1: startPt.y, x2: endPt.x, y2: endPt.y,
+            stroke: color, 'stroke-width': 2.5, 'stroke-dasharray': '6 3'
+          }));
+        }
+        // 起点圆
+        if (startPt) g.appendChild(el('circle', {
+          cx: startPt.x, cy: startPt.y, r: 4, fill: color, stroke: '#0d1117', 'stroke-width': 1
+        }));
+        // 终点工位标记
+        if (endPt) {
+          g.appendChild(el('circle', { cx: endPt.x, cy: endPt.y, r: 6, fill: 'none', stroke: color, 'stroke-width': 2 }));
+          g.appendChild(el('rect', { x: endPt.x - 3, y: endPt.y - 3, width: 6, height: 6, fill: color }));
+        }
+        // 人员当前位置：移动方向箭头 + ETA/任务ID/优先级/status 标注
+        if (person && person.pose) {
+          var rad = (person.pose.yaw || 0) * Math.PI / 180;
+          var ax = person.pose.x + Math.cos(rad) * 18, ay = person.pose.y + Math.sin(rad) * 18;
+          g.appendChild(el('line', {
+            x1: person.pose.x, y1: person.pose.y, x2: ax, y2: ay,
+            stroke: color, 'stroke-width': 2, 'marker-end': 'url(#cm-arrow)'
+          }));
+          var eta = (a.eta_sec != null) ? fmtEta(a.eta_sec) :
+                    (a.route && a.route.eta_sec != null) ? fmtEta(a.route.eta_sec) : '';
+          var pri = taskPriority(a.task_id);
+          var status = a.status || '';
+          var parts = [];
+          if (a.task_id) parts.push('T:' + a.task_id);
+          if (pri != null) parts.push('P' + pri);
+          if (eta) parts.push(eta);
+          if (status) parts.push(status);
+          if (parts.length) g.appendChild(txt(person.pose.x, person.pose.y - 16, parts.join(' '), 'cm-map-schedlabel'));
+        }
+      });
+      var viewLabel = view === 'current' ? '真实调度路线（已派工 Assignment）' :
+                      view === 'confirmed' ? '真实调度路线（已批准方案）' : '真实调度路线（待审方案）';
+      g.appendChild(txt(8, 26, viewLabel, 'cm-map-modelabel'));
+      return g;
+    },
+
+    // 绑定调度视图切换控件（Current/Proposed/Confirmed）
+    _bindScheduleView: function () {
+      var host = document.getElementById('map-legend');
+      if (!host) return;
+      var self = this;
+      host.querySelectorAll('[data-schedview]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var v = b.dataset.schedview;
+          if (CM.state.scheduleView === v) return;
+          CM.state.scheduleView = v;
+          CM.map.render();
+        });
+      });
     },
 
     // L1 2.5D：摄像头视锥（半透明三角形 + 摄像头图标 + 高度标识）
@@ -443,14 +586,33 @@
       else if (mode === 'production') items = [['#10b981', '生产中'], ['#f59e0b', '积压告警'], ['#6b7280', '空闲']];
       else if (mode === 'safety_risk') items = [['#ef4444', '风险事件/禁区/高负荷'], ['#8b5cf6', '传感器冲突（可标记现场事实）'], ['#6b7280', '正常']];
       else if (mode === 'environment') items = [['#ef4444', '噪声>70dB/高温'], ['#f59e0b', '噪声60–70dB'], ['#10b981', '噪声<60dB']];
-      else if (mode === 'scheduling') items = [['#a855f7', '调度路线/受影响人员/预测轨迹'], ['#475569', '物流通道']];
+      else if (mode === 'scheduling') {
+        // 真实调度路线 / 已派工 / 待审方案 / 短时趋势 区分
+        var sv = CM.state.scheduleView;
+        items = [
+          ['#a855f7', '受影响人员'],
+          [sv === 'current' ? '#10b981' : '#a855f7', sv === 'current' ? '已派工路线' : '待审方案路线'],
+          ['#10b981', '当前视图（已派工）'],
+          ['#3b82f6', '已批准方案'],
+          ['#a855f7', '待审方案'],
+          ['#475569', '物流通道']
+        ];
+        // 顶部小切换控件：Current / Proposed / Confirmed
+        toggle = '<span class="cm-schedview-toggle">' +
+          '<button class="cm-btn cm-schedview-btn' + (sv === 'current' ? ' active' : '') + '" data-schedview="current">Current</button>' +
+          '<button class="cm-btn cm-schedview-btn' + (sv === 'proposed' ? ' active' : '') + '" data-schedview="proposed">Proposed</button>' +
+          '<button class="cm-btn cm-schedview-btn' + (sv === 'confirmed' ? ' active' : '') + '" data-schedview="confirmed">Confirmed</button>' +
+          '</span>';
+      }
       else items = [['#06b6d4', '人员'], ['#8b5cf6', '外骨骼设备'], ['#3b82f6', '工位'], ['#475569', '绑定关系']];
       items.push(['#60a5fa', '选中实体']);
       if (CM.state.mapLevel === 'L1') {
         items.push(['#22d3ee', '摄像头视锥']);
         items.push(['#3b82f6', 'UWB 覆盖范围']);
       }
-      var html = items.map(function (it) {
+      // 调度模式：在切换控件下方接图例项；控件与图例同排
+      var toggleHtml = toggle || '';
+      var html = toggleHtml + items.map(function (it) {
         return '<span class="cm-legend-item"><span class="cm-legend-swatch" style="background:' + it[0] + '"></span>' + it[1] + '</span>';
       }).join('');
       var dsTag = CM.state.dataSource === 'backend' ? 'LIVE 后端' : '离线样本';

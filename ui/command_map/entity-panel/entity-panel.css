@@ -28,3 +28,28 @@
 
 .cm-bind-link { color: var(--accent-2); cursor: pointer; text-decoration: underline dotted; }
 .cm-bind-link:hover { color: var(--accent); }
+
+/* ===== Phase 7.5: 调度关系列表 ===== */
+.cm-sc-rlist { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.cm-rrel {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--info);
+  border-radius: 4px;
+  padding: 6px 8px;
+  background: var(--panel-2);
+}
+.cm-rrel-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 3px;
+}
+.cm-rrel-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--muted);
+  margin: 2px 0;
+}

@@ -34,8 +34,8 @@
 - [x] Task 3.2: `GET /api/resources/state` 输出统一资源状态
 
 ## Phase 4 — 真实空间匹配
-- [ ] Task 4.1: 接入 `spatial.topology.shortest_path` 计算真实 route/distance/ETA；travel_distance 优先拓扑路径距离，无拓扑退化到空间距离
-- [ ] Task 4.2: 地图展示 Plan 真实路径（非 yaw 虚线冒充）
+- [x] Task 4.1: 接入 `spatial.topology.shortest_path` 计算真实 route/distance/ETA；travel_distance 优先拓扑路径距离，无拓扑退化到空间距离
+- [x] Task 4.2: 地图展示 Plan 真实路径（非 yaw 虚线冒充）
 
 ## Phase 5 — 实时同步
 - [x] Task 5.1: `GET /api/command-map/stream`（SSE）推送 resource.updated/telemetry.updated/task.created/task.updated/assignment.updated/schedule.proposed/schedule.confirmed/schedule.expired/schedule.conflict/event.opened/event.closed；事件带 event_id/event_type/entity_id/version/source_ts/server_ts
@@ -47,16 +47,16 @@
 - [x] Task 6.3: `services.recommend/confirm_assignment` 改为兼容 Adapter（内部走 Scheduler，标记 deprecated），旧接口行为不破坏
 
 ## Phase 7 — 前端改造
-- [ ] Task 7.1: `assets/app.js` — 新增 fetchTasks/fetchScheduleRequests/fetchPlans/fetchAssignments/confirmPlan/rejectPlan/replan/stream events；backend 可用时调度数据全部来自 backend；SAMPLE_DATA 仅 offline/demo
-- [ ] Task 7.2: `scenario-panel/` — 真实 SchedulePlan 审批（状态/版本/world_state_version/有效期/完整 assignments：task/person/device/station/start/end/route/distance/ETA/score/explanation；方案比较 on-time/late/travel/high-load/changeover/utilization/unassigned/conflicts/stability；操作 Confirm/Reject/Replan/Pin/Override/Freeze）
-- [ ] Task 7.3: `map/map.js` — scheduling 模式展示人员当前位置/目标工位/真实调度路线/移动方向/ETA/任务ID/优先级/person/device/assignment status；切换 Current Assignments/Proposed Plan/Confirmed Plan；yaw 短虚线仅作短时趋势
-- [ ] Task 7.4: `workbench/` — 高优先级未派任务/待确认 Plan/冲突 Plan/过期 Plan/异常 Assignment/需人工 replan
-- [ ] Task 7.5: `entity-panel/` — 点击 Task/Person/Device/Station/Assignment 展示相关调度关系
+- [x] Task 7.1: `assets/app.js` — 新增 fetchTasks/fetchScheduleRequests/fetchPlans/fetchAssignments/confirmPlan/rejectPlan/replan/stream events；backend 可用时调度数据全部来自 backend；SAMPLE_DATA 仅 offline/demo
+- [x] Task 7.2: `scenario-panel/` — 真实 SchedulePlan 审批（状态/版本/world_state_version/有效期/完整 assignments：task/person/device/station/start/end/route/distance/ETA/score/explanation；方案比较 on-time/late/travel/high-load/changeover/utilization/unassigned/conflicts/stability；操作 Confirm/Reject/Replan/Pin/Override/Freeze）
+- [x] Task 7.3: `map/map.js` — scheduling 模式展示人员当前位置/目标工位/真实调度路线/移动方向/ETA/任务ID/优先级/person/device/assignment status；切换 Current Assignments/Proposed Plan/Confirmed Plan；yaw 短虚线仅作短时趋势
+- [x] Task 7.4: `workbench/` — 高优先级未派任务/待确认 Plan/冲突 Plan/过期 Plan/异常 Assignment/需人工 replan
+- [x] Task 7.5: `entity-panel/` — 点击 Task/Person/Device/Station/Assignment 展示相关调度关系
 
 ## Phase 8 — 测试 + 质量
-- [ ] Task 8.1: 新增 `src/edge_platform/tests/test_scheduling.py`（unittest）覆盖：Domain（Task/Plan 状态机、ResourceState、Reservation、version conflict）、Constraint（技能/工位授权/设备兼容/离线/禁区/班次/休息/时间冲突/重复占用/station capacity）、Routing（shortest path/distance/unreachable/fallback）、Scheduling（单任务单资源/多任务多资源/高优先级优先/deadline/资源不足/依赖/aging/时间重叠）、HITL（SHADOW 不可执行/确认带 actor+reason/旧版本不可确认/资源变化不可确认/Reject 不可执行）、Replan（device offline/person unavailable/插单/冲突/冻结）、API（create task/create request/get plan/confirm/reject/replan/assignment lifecycle/409 stale）
-- [ ] Task 8.2: 运行 `make test`、`make test-contract`、`make lint`，修复本次改动引入的失败；原有 scheduler 测试不退化
-- [ ] Task 8.3: 端到端手测：建单→generate→Top-3→confirm→Reservation→Assignment→feedback 闭环可用（`python tools/run_demo.py --no-browser` + curl）
+- [x] Task 8.1: 新增 `src/edge_platform/tests/test_scheduling.py`（unittest）覆盖：Domain（Task/Plan 状态机、ResourceState、Reservation、version conflict）、Constraint（技能/工位授权/设备兼容/离线/禁区/班次/休息/时间冲突/重复占用/station capacity）、Routing（shortest path/distance/unreachable/fallback）、Scheduling（单任务单资源/多任务多资源/高优先级优先/deadline/资源不足/依赖/aging/时间重叠）、HITL（SHADOW 不可执行/确认带 actor+reason/旧版本不可确认/资源变化不可确认/Reject 不可执行）、Replan（device offline/person unavailable/插单/冲突/冻结）、API（create task/create request/get plan/confirm/reject/replan/assignment lifecycle/409 stale）
+- [x] Task 8.2: 运行 `make test`、`make test-contract`、`make lint`，修复本次改动引入的失败；原有 scheduler 测试不退化
+- [x] Task 8.3: 端到端手测：建单→generate→Top-3→confirm→Reservation→Assignment→feedback 闭环可用（`python tools/run_demo.py --no-browser` + curl）
 
 # Task Dependencies
 - Task 1.x 依赖 Task 0.1（模型）

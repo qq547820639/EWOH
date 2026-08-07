@@ -235,6 +235,9 @@
 
   // 运行时数据：默认深拷贝 sample，启动时被 backend 数据覆盖
   CM.DATA = JSON.parse(JSON.stringify(CM.SAMPLE_DATA));
+  // 调度专属运行时数据（backend 可用时由 refreshScheduling 填充）
+  CM.DATA.tasks = [];
+  CM.DATA.scheduleRequests = [];
 
   // ===== runtime state =====
   CM.state = {
@@ -257,7 +260,15 @@
     // 缓存事件详情（按 event_id）
     eventDetailCache: {},
     // 缓存回放时序数据（按 device_id）
-    replayCache: {}
+    replayCache: {},
+    // 调度视图（'current' 已派工 | 'proposed' 待审方案 | 'confirmed' 已批准方案）
+    scheduleView: 'proposed',
+    // 世界状态版本（resources/state.now 或 plan.world_state_version）
+    worldStateVersion: '',
+    // 统一资源状态（GET /api/resources/state → items）
+    resourceState: [],
+    // 资源版本表（resource_id -> version，用于 SSE 版本过滤）
+    resourceVersions: {}
   };
 
   // ===== CM.api：backend HTTP 客户端 =====
@@ -553,8 +564,9 @@
       // 派工记录（backend 仅返回会话级 assignments）
       CM.DATA.assignments = payload.assignments || [];
 
-      // plans 保持样本（backend 无对应端点；scenario-panel 会本地生成扩展方案）
-      CM.DATA.plans = JSON.parse(JSON.stringify(CM.SAMPLE_DATA.plans));
+      // 调度相关数据（plans/tasks/scheduleRequests）不在此处理：
+      // 由 refreshScheduling() 单独从 backend 拉取并写入。
+      // SAMPLE_DATA.plans 仅当 dataSource==='sample' 时使用（离线 demo）。
 
       CM.state.dataSource = 'backend';
     }
@@ -585,7 +597,8 @@
         rules: rulesResp.items || [], assignments: assignsResp.items || []
       });
       CM.state.backendStatus = status;
-      return status;
+      // 拉取调度数据（plans/assignments/requests/tasks）写入 CM.DATA
+      return refreshScheduling().then(function () { return status; });
     }
 
     // 仅刷新动态实体（每 2 秒轮询）
@@ -618,6 +631,8 @@
         models: CM.DATA.models, rules: CM.DATA.rules,
         assignments: CM.DATA.assignments
       });
+      // 轻量刷新调度数据（plans/assignments/requests/tasks）
+      return refreshScheduling();
     }
 
     // 拉取人员画像详情（按需）
@@ -669,6 +684,138 @@
       });
     }
 
+    // ===== 智能调度 API（Phase 7.1） =====
+
+    async function fetchTasks(status) {
+      var r = await getJSON('/api/tasks', { status: status || '' });
+      return (r && r.items) || [];
+    }
+
+    async function createTask(payload) {
+      return postJSON('/api/tasks', payload || {});
+    }
+
+    async function fetchScheduleRequests() {
+      var r = await getJSON('/api/scheduling/requests', {});
+      return (r && r.items) || [];
+    }
+
+    async function createScheduleRequest(taskIds, triggerType, policyId, createdBy) {
+      return postJSON('/api/scheduling/requests', {
+        task_ids: taskIds || [],
+        trigger_type: triggerType || 'manual',
+        policy_id: policyId || '',
+        created_by: createdBy || 'operator'
+      });
+    }
+
+    async function generatePlans(requestId) {
+      return postJSON('/api/scheduling/plans', { request_id: requestId });
+    }
+
+    async function fetchPlans(status) {
+      var r = await getJSON('/api/scheduling/plans', { status: status || '' });
+      return (r && r.items) || [];
+    }
+
+    async function fetchPlan(planId) {
+      var r = await getJSON('/api/scheduling/plans/' + encodeURIComponent(planId), {});
+      return (r && r.plan) || null;
+    }
+
+    async function confirmPlan(planId, actorId, reason, worldStateVersion) {
+      return postJSON('/api/scheduling/plans/' + encodeURIComponent(planId) + '/confirm', {
+        actor_id: actorId, reason: reason, world_state_version: worldStateVersion || ''
+      });
+    }
+
+    async function rejectPlan(planId, actorId, reason) {
+      return postJSON('/api/scheduling/plans/' + encodeURIComponent(planId) + '/reject', {
+        actor_id: actorId, reason: reason || ''
+      });
+    }
+
+    async function replanPlan(planId, actorId, reason) {
+      return postJSON('/api/scheduling/plans/' + encodeURIComponent(planId) + '/replan', {
+        actor_id: actorId, reason: reason || '', trigger_type: 'manual'
+      });
+    }
+
+    async function fetchAssignments() {
+      var r = await getJSON('/api/assignments', {});
+      return (r && r.items) || [];
+    }
+
+    async function updateAssignmentStatus(id, action, body) {
+      return postJSON('/api/assignments/' + encodeURIComponent(id) + '/' + action, body || {});
+    }
+
+    async function fetchResourcesState() {
+      // 兼容两种响应形态：{"resources":[...]} 与 {"items":[...]}
+      var r = await getJSON('/api/resources/state', {});
+      var items = (r && (r.resources || r.items)) || [];
+      return { items: items, now: (r && r.now) || '', version: (r && r.version) || 0 };
+    }
+
+    // 拉取调度相关数据（plans/assignments/requests/tasks）并写入 CM.DATA
+    async function refreshScheduling() {
+      var results = await Promise.all([
+        fetchPlans('').catch(function () { return []; }),
+        fetchAssignments().catch(function () { return []; }),
+        fetchScheduleRequests().catch(function () { return []; }),
+        fetchTasks('').catch(function () { return []; })
+      ]);
+      CM.DATA.plans = results[0];
+      CM.DATA.assignments = results[1];
+      CM.DATA.scheduleRequests = results[2];
+      CM.DATA.tasks = results[3];
+      return { plans: results[0], assignments: results[1], requests: results[2], tasks: results[3] };
+    }
+
+    // 对单个计划做操作后局部刷新（避免整页轮询）
+    async function refreshPlan(planId) {
+      try {
+        var p = await fetchPlan(planId);
+        if (p) {
+          var idx = -1;
+          for (var i = 0; i < CM.DATA.plans.length; i++) {
+            if (CM.DATA.plans[i].plan_id === planId) { idx = i; break; }
+          }
+          if (idx >= 0) CM.DATA.plans[idx] = p; else CM.DATA.plans.push(p);
+        }
+      } catch (e) {}
+      return refreshScheduling();
+    }
+
+    // 用 EventSource 连接 /api/command-map/stream，按 event_type 分发到 handlers
+    function openEventStream(handlers) {
+      if (typeof EventSource === 'undefined') return null;
+      var url = buildURL('/api/command-map/stream', {});
+      var es;
+      try { es = new EventSource(url); } catch (e) { return null; }
+      var types = ['resource.updated', 'telemetry.updated', 'task.created', 'task.updated',
+        'assignment.updated', 'schedule.proposed', 'schedule.confirmed',
+        'schedule.expired', 'schedule.conflict', 'event.opened', 'event.closed'];
+      function handleData(raw) {
+        var ev = null;
+        try { ev = JSON.parse(raw.data); } catch (e) { return; }
+        if (handlers && handlers.dispatch) handlers.dispatch(ev);
+        var fn = handlers && handlers[ev.event_type];
+        if (fn) fn(ev);
+      }
+      // 命名事件（服务端以 event: 行区分类型）
+      types.forEach(function (t) {
+        es.addEventListener(t, handleData);
+      });
+      // 兜底：无 event 行的默认消息
+      es.onmessage = handleData;
+      es.onerror = function () {
+        // EventSource 自动重连；这里仅做一次兜底刷新，避免离线时反复请求
+        if (handlers && handlers.onerror) handlers.onerror();
+      };
+      return es;
+    }
+
     // 本地助手问答
     async function query(question) {
       return postJSON('/api/query', { question: question });
@@ -699,7 +846,24 @@
       confirmTask: confirmTask,
       query: query,
       fetchAudit: fetchAudit,
-      reset: reset
+      reset: reset,
+      // 智能调度 API（Phase 7.1）
+      fetchTasks: fetchTasks,
+      createTask: createTask,
+      fetchScheduleRequests: fetchScheduleRequests,
+      createScheduleRequest: createScheduleRequest,
+      generatePlans: generatePlans,
+      fetchPlans: fetchPlans,
+      fetchPlan: fetchPlan,
+      confirmPlan: confirmPlan,
+      rejectPlan: rejectPlan,
+      replanPlan: replanPlan,
+      fetchAssignments: fetchAssignments,
+      updateAssignmentStatus: updateAssignmentStatus,
+      fetchResourcesState: fetchResourcesState,
+      refreshScheduling: refreshScheduling,
+      refreshPlan: refreshPlan,
+      openEventStream: openEventStream
     };
   })();
 
@@ -796,6 +960,70 @@
     if (tabId === 'scenario' && CM.scenarioPanel) CM.scenarioPanel.render();
     if (tabId === 'workbench' && CM.workbench) CM.workbench.render();
     if (tabId === 'admin' && CM.admin) CM.admin.render();
+    // 切到调度相关面板时，从 backend 拉取最新方案后再渲染
+    if ((tabId === 'scenario' || tabId === 'workbench') && CM.state.dataSource === 'backend') {
+      CM.api.refreshScheduling().then(function () {
+        if (tabId === 'scenario' && CM.scenarioPanel) CM.scenarioPanel.render();
+        if (tabId === 'workbench' && CM.workbench) CM.workbench.render();
+      }).catch(function () {});
+    }
+  };
+
+  // ===== SSE 事件分发 + 数据刷新（Phase 5.2：轮询 fallback + version 过滤） =====
+  // EventSource 断开时自动重连；若 EventSource 不可用（file:// 或后端无该端点），
+  // 前端继续走现有 2 秒轮询，页面始终可用。
+  CM._dispatchStreamEvent = function (ev) {
+    if (!ev || !ev.event_type) return;
+    var et = ev.event_type;
+    var entityId = ev.entity_id;
+    var ver = ev.version;
+    // 版本过滤：resource.updated 只接受比当前更新的版本
+    if (et === 'resource.updated') {
+      if (entityId && ver != null) {
+        var cur = CM.state.resourceVersions[entityId];
+        if (cur != null && ver <= cur) return; // 旧事件，忽略
+        CM.state.resourceVersions[entityId] = ver;
+      }
+      CM._refreshResourceState();
+      return;
+    }
+    if (et === 'assignment.updated') { CM._refreshAssignments(); return; }
+    if (et === 'task.created' || et === 'task.updated') { CM._refreshTasks(); return; }
+    if (et === 'schedule.proposed' || et === 'schedule.confirmed' ||
+        et === 'schedule.expired' || et === 'schedule.conflict') {
+      CM._refreshSchedulingData();
+      return;
+    }
+    // event.opened / event.closed / telemetry.updated 由现有 2 秒轮询覆盖
+  };
+
+  CM._refreshSchedulingData = function () {
+    if (CM.state.dataSource !== 'backend') return Promise.resolve();
+    return CM.api.refreshScheduling().then(function () {
+      CM.rerenderAll();
+    }).catch(function () {});
+  };
+  CM._refreshResourceState = function () {
+    if (CM.state.dataSource !== 'backend') return Promise.resolve();
+    return CM.api.fetchResourcesState().then(function (r) {
+      CM.state.resourceState = r.items;
+      if (r.now) CM.state.worldStateVersion = r.now;
+      CM.rerenderAll();
+    }).catch(function () {});
+  };
+  CM._refreshAssignments = function () {
+    if (CM.state.dataSource !== 'backend') return Promise.resolve();
+    return CM.api.fetchAssignments().then(function (asn) {
+      CM.DATA.assignments = asn;
+      CM.rerenderAll();
+    }).catch(function () {});
+  };
+  CM._refreshTasks = function () {
+    if (CM.state.dataSource !== 'backend') return Promise.resolve();
+    return CM.api.fetchTasks('').then(function (tasks) {
+      CM.DATA.tasks = tasks;
+      CM.rerenderAll();
+    }).catch(function () {});
   };
 
   // 全量重渲（数据刷新后调用）
@@ -981,6 +1209,10 @@
     // 尝试连接 backend；失败回退 sample data
     CM.api.bootstrap().then(function () {
       console.log('[CM] backend 数据加载成功');
+      CM.state.dataSource = 'backend';
+      // 拉取一次统一资源状态 + 建立 SSE 实时流（Phase 5）
+      CM._refreshResourceState();
+      CM.api.openEventStream({ dispatch: function (ev) { CM._dispatchStreamEvent(ev); } });
       CM.rerenderAll();
       // 每 2 秒轮询动态实体（spec：状态端到端更新不超过 2 秒）
       setInterval(function () {

@@ -262,7 +262,16 @@ def _adapter_confirm_via_scheduler(scheduler, payload):
         plan = plans[0]
         # 若指定人员，优先选择该人员的方案
         if person_id:
-            plan = next((p for p in plans if any(getattr(a, "person_id", "") == person_id for a in p.assignments)), plan)
+            plan = next(
+                (
+                    p
+                    for p in plans
+                    if any(
+                        getattr(a, "person_id", "") == person_id for a in p.assignments
+                    )
+                ),
+                plan,
+            )
         scheduler.confirm(plan.plan_id, confirmer, "adapter confirm", world_state_version=None)
         assignments_out = [
             {

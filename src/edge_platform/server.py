@@ -355,7 +355,8 @@ def make_handler(ctx):
                 if p == "/api/tasks":
                     return self.api_tasks()
                 if p == "/api/scheduling/requests":
-                    return self.send_json({"items": [r.to_dict() for r in ctx.scheduler.list_requests()] if ctx.scheduler else []})
+                    items = [r.to_dict() for r in ctx.scheduler.list_requests()] if ctx.scheduler else []
+                    return self.send_json({"items": items})
                 if p == "/api/scheduling/plans":
                     return self.api_scheduling_plans()
                 if p == "/api/assignments":
@@ -483,13 +484,21 @@ def make_handler(ctx):
                 if p.startswith("/api/scheduling/plans/") and p.endswith("/replan"):
                     return self.api_replan_plan(p[len("/api/scheduling/plans/") : -len("/replan")], payload)
                 if p.startswith("/api/assignments/") and p.endswith("/start"):
-                    return self.api_assignment_status(p[len("/api/assignments/") : -len("/start")], "executing", payload)
+                    return self.api_assignment_status(
+                        p[len("/api/assignments/") : -len("/start")], "executing", payload
+                    )
                 if p.startswith("/api/assignments/") and p.endswith("/pause"):
-                    return self.api_assignment_status(p[len("/api/assignments/") : -len("/pause")], "paused", payload)
+                    return self.api_assignment_status(
+                        p[len("/api/assignments/") : -len("/pause")], "paused", payload
+                    )
                 if p.startswith("/api/assignments/") and p.endswith("/complete"):
-                    return self.api_assignment_status(p[len("/api/assignments/") : -len("/complete")], "completed", payload)
+                    return self.api_assignment_status(
+                        p[len("/api/assignments/") : -len("/complete")], "completed", payload
+                    )
                 if p.startswith("/api/assignments/") and p.endswith("/cancel"):
-                    return self.api_assignment_status(p[len("/api/assignments/") : -len("/cancel")], "cancelled", payload)
+                    return self.api_assignment_status(
+                        p[len("/api/assignments/") : -len("/cancel")], "cancelled", payload
+                    )
                 if p.startswith("/api/assignments/") and p.endswith("/override"):
                     return self.api_assignment_override(p[len("/api/assignments/") : -len("/override")], payload)
                 self._post_audit_pending = False  # 404 不审计
@@ -1250,7 +1259,7 @@ def make_handler(ctx):
                         continue
                     data = json.dumps(event, ensure_ascii=False)
                     try:
-                        self.wfile.write(f"event: {event['event_type']}\ndata: {data}\n\n".encode("utf-8"))
+                        self.wfile.write(f"event: {event['event_type']}\ndata: {data}\n\n".encode())
                         self.wfile.flush()
                     except Exception:
                         break
@@ -1282,7 +1291,12 @@ def make_handler(ctx):
             v = payload.get(key)
             if v is None:
                 return None
-            if key in ("required_skills", "required_device_capabilities", "predecessor_task_ids", "exclusive_resource_ids"):
+            if key in (
+                "required_skills",
+                "required_device_capabilities",
+                "predecessor_task_ids",
+                "exclusive_resource_ids",
+            ):
                 return list(v) if isinstance(v, list) else []
             if key in ("priority", "estimated_duration_sec"):
                 try:

@@ -130,6 +130,23 @@
 .cm-wb-event-detail { font-size: 11px; color: var(--text); line-height: 1.5; }
 .cm-wb-event-actions { flex-shrink: 0; }
 
+/* ===== Section F: 需人工重排汇总 ===== */
+.cm-wb-replan {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.cm-wb-replan-line {
+  font-size: 11px;
+  color: var(--text);
+  padding: 6px 8px;
+  background: var(--bg-2);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: var(--radius-sm);
+}
+.cm-wb-replan-line b { font-family: var(--mono); color: var(--danger); }
+
 /* ===== Section D: 快速操作 + 安全红线 ===== */
 .cm-wb-actions {
   display: flex;

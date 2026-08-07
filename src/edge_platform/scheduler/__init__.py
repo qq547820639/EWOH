@@ -90,7 +90,6 @@ from .orchestrator import (
 from .planner import Planner
 from .priority import EffectivePriorityCalculator
 from .replanner import Replanner
-from .resources import ResourceStateService
 from .repository import (
     SchedulingRepository,
     VersionConflictError,
@@ -99,6 +98,7 @@ from .reservation import (
     ReservationConflictError,
     ReservationService,
 )
+from .resources import ResourceStateService
 from .route_planner import (
     EuclideanRoutePlanner,
     GraphRoutePlanner,

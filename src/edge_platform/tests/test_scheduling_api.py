@@ -31,20 +31,20 @@ from edge_platform.scheduler.events import EventBus  # noqa: E402
 
 def _build_ctx(storage):
     """复用 run.build_scheduler 的装配逻辑，构建带调度服务的 Context。"""
-    from edge_platform.scheduler.repository import SchedulingRepository
     from edge_platform.scheduler import (
         EffectivePriorityCalculator,
         GreedyOptimizer,
         Planner,
         ReservationService,
         ResourceStateService,
+        SchedulerService,
         Scorer,
         ScoringWeights,
-        SchedulerService,
         WeightAuditLog,
         WorldStateService,
         build_route_planner,
     )
+    from edge_platform.scheduler.repository import SchedulingRepository
 
     repository = SchedulingRepository(storage)
     event_bus = EventBus()
