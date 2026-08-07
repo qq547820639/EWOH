@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body } from '@nestjs/common';
 import { AiService } from './ai.service';
+import { ArkService } from './ark.service';
 import { Roles } from '../shared/roles.decorator';
 
 const EDGE_PLATFORM_URL = (process.env.EDGE_PLATFORM_URL || 'http://127.0.0.1:8765').replace(/\/+$/, '');
@@ -7,7 +8,43 @@ const EDGE_PLATFORM_URL = (process.env.EDGE_PLATFORM_URL || 'http://127.0.0.1:87
 @Controller('api/ai')
 @Roles('dispatcher', 'global_admin')
 export class AiController {
-  constructor(private readonly aiService: AiService) {}
+  constructor(
+    private readonly aiService: AiService,
+    private readonly arkService: ArkService,
+  ) {}
+
+  /** GET /api/ai/config/status — 查询全局 AI 配置是否可用（不返回密钥本值）。 */
+  @Get('config/status')
+  async configStatus() {
+    const cfg = await this.arkService.getConfig();
+    return {
+      configured: Boolean(cfg.apiKey),
+      baseUrl: cfg.baseUrl,
+      model: cfg.model,
+    };
+  }
+
+  /** PUT /api/ai/config — 保存全局 AI 配置（供整个系统共享）。成功时不返回密钥本值。 */
+  @Put('config')
+  async saveConfig(@Body() body: { api_key?: string; base_url?: string; model?: string }) {
+    const saved = await this.arkService.saveConfig(body);
+    return {
+      ok: true,
+      configured: Boolean(saved.apiKey),
+      baseUrl: saved.baseUrl,
+      model: saved.model,
+    };
+  }
+
+  /** POST /api/ai/chat — 自然语言问答（采集系统实时上下文调用 Ark）。 */
+  @Post('chat')
+  chat(@Body() body: { question?: string }) {
+    const question = (body.question ?? '').trim();
+    if (!question) {
+      return { ok: false, answer: '', model: '', error: 'question 不能为空。' };
+    }
+    return this.aiService.chatWithContext(question);
+  }
 
   @Get('snapshot-version')
   snapshotVersion() {

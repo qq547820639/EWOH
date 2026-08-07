@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ban, BrainCircuit, CheckCircle2, Database, FlaskConical, Loader2, Plus, Radar, Search, Undo2 } from 'lucide-react';
-import { visionUnderstand, type VisionUnderstandResult } from '../../api/ai';
+import { visionUnderstand, saveAiConfig, type VisionUnderstandResult } from '../../api/ai';
 import {
   evaluateFeatureFlags,
   listSystemConfigs,
@@ -185,6 +185,26 @@ const System = (): React.ReactElement => {
         ok: false,
         error: error instanceof Error ? error.message : '连接失败',
       });
+    },
+  });
+
+  const [aiSaveMsg, setAiSaveMsg] = useState<string | null>(null);
+  const saveConfig = useMutation({
+    mutationFn: () =>
+      saveAiConfig({
+        api_key: aiApiKey.trim(),
+        base_url: aiBaseUrl.trim(),
+        model: aiModel.trim(),
+      }),
+    onSuccess: (result) => {
+      setAiSaveMsg(
+        result.configured
+          ? `已保存全局 AI 配置（模型 ${result.model}），整个系统将使用该配置。`
+          : '已保存，但尚未配置 API Key，系统将回落到服务端环境变量。',
+      );
+    },
+    onError: (error) => {
+      setAiSaveMsg(`保存失败：${error instanceof Error ? error.message : '未知错误'}`);
     },
   });
 
@@ -530,9 +550,10 @@ const System = (): React.ReactElement => {
           </span>
         </div>
         <p className="mt-2 text-xs leading-relaxed text-[hsl(218_10%_42%)]">
-          配置接入大模型能力（默认演示使用视觉理解模型，可识别并描述图片内容）。
+          在此配置接入大模型的全局密钥（API Key / Base URL / 模型）。保存后，整个系统（AI 决策中心、大脑建议、
+          自然语言问答、视觉理解）将统一使用该配置。
           API Key 留空时使用服务端环境变量 <code className="font-mono">EWOH_ARK_API_KEY</code> 配置的演示密钥；
-          填入你自己的密钥后点击“测试连接”即可验证。
+          填入你自己的密钥后点击“保存配置”即可全局生效，点击“测试连接”可验证。
         </p>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
@@ -594,7 +615,25 @@ const System = (): React.ReactElement => {
             )}
             测试连接
           </button>
+          <button
+            type="button"
+            disabled={saveConfig.isPending}
+            onClick={() => saveConfig.mutate()}
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[hsl(262_83%_58%)] px-4 text-sm font-medium text-[hsl(262_83%_58%)] disabled:opacity-50"
+          >
+            {saveConfig.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Database className="h-4 w-4" />
+            )}
+            保存配置
+          </button>
         </div>
+        {aiSaveMsg && (
+          <p className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs leading-relaxed text-sky-800">
+            {aiSaveMsg}
+          </p>
+        )}
         {aiResult && (
           <div
             className={`mt-3 rounded-lg border p-3 text-xs leading-relaxed ${

@@ -13,6 +13,7 @@ import OnlineStatusBadge from './app-shell/OnlineStatusBadge';
 import PageSkeleton from './app-shell/PageSkeleton';
 import PendingInbox from './app-shell/PendingInbox';
 import RecentAccessMenu from './app-shell/RecentAccessMenu';
+import AiAssistant from './app-shell/AiAssistant';
 import { useOfflineSnapshot } from './app-shell/useOfflineSnapshot';
 import OnboardingQuickStart from './OnboardingQuickStart';
 import { prefetchRoute } from '../lib/routePrefetch';
@@ -201,6 +202,7 @@ const Layout = () => {
           </div>
           <AppBreadcrumb pathname={location.pathname} />
           <div className="ml-auto flex items-center gap-1.5">
+            <AiAssistant />
             <GlobalSearchCommand navGroups={navGroups} />
             <RecentAccessMenu pathname={location.pathname} />
             <FavoriteViewsMenu pathname={location.pathname} />
