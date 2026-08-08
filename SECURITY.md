@@ -31,6 +31,21 @@ EWOH 平台是**只读监督与风险分析平台**，不参与设备实时安�
 决策权与安全责任在设备控制器与现场操作人员。CI 中以 grep 守护对这些关键
 符号进行最低限度检查，但正式审查仍需人工（见 `.github/workflows/security.yml`）。
 
+### 多租户隔离边界（Batch 11 补充）
+
+数据库隔离采用「RLS 白名单 + 应用层 org 过滤」双策略：
+
+- **RLS 覆盖表**（50+ 业务表）：`ewoh_org_visible(org_id)` 策略强制行级隔离
+  （standalone_001_schema.sql 动态白名单）。
+- **全局共享表（非 RLS）**：以下调度 V2 运行时表**按设计全局共享**，不按 org 隔离：
+  - `ewoh_world_state_snapshot`：快照版本全局唯一（WS-YYYYMMDD-NNNN），跨 org 引用
+  - `ewoh_outbox`：SSE 事件全局序列（前端按组织订阅）
+  - `ewoh_assignment_event` / `ewoh_replan_trigger` / `ewoh_scheduling_run` 等：
+    含 `org_id` 列但靠**应用层过滤**隔离（如 `listRuns` 按 actor.primaryOrgId 过滤）。
+- **风险提示**：调度 V2 读路径必须显式 org 过滤（新增查询以 `toOrgContext` 的
+  primaryOrgId 为条件）；补 RLS 覆盖需重新设计快照/事件 org 边界（见
+  `docs/decisions/OPEN-DECISIONS.md`）。
+
 ## 支持的版本策略
 
 | 版本    | 状态         | 说明                                   |

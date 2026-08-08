@@ -6,6 +6,17 @@
 ## [Unreleased]
 
 ### Added
+- **智能调度 v0.7 第四批（Batch 10-11，调度闭环 + 前端结构 + 工程治理资产）**：
+  - **影子评估自动化**：事件驱动 run 每 10 次自动对比候选策略（listVersions 找到 v+1）与活跃策略，
+    结果写审计（scheduler.policy.shadow_eval），不激活任何候选（仅观测）。
+  - **地图模式状态机**：新增 `map-mode-machine.ts` 纯函数模块（mode/level/replay 三态转换规则 +
+    副作用映射），CommandMap 消费（handleViewOnMap 经状态机计算含 L3 联动）。
+  - **地图着色纯函数抽取**：`entityColors.ts`（isExoDevice/getEntityColor/getDeviceColor/
+    priorityLevelColor/resourceStatusColor），消除 FactoryMap 内联重复（走读 M 项）。
+  - **工程治理资产**：`docs/decisions/OPEN-DECISIONS.md`（4 未决项：任务写路径接线/RLS 覆盖/
+    CP-SAT 启用/lark-cli 异步化）；ADR-001（权重收敛）/ADR-002（事件驱动重排）/ADR-003（CP-SAT worker）；
+    SECURITY.md 补充多租户隔离边界（RLS 白名单 vs 全局共享表）；verify 期望值来源注释；
+    CI 增加 OpenAPI 路由零漂移门禁步骤。
 - **智能调度 v0.7 第三批（Batch 8 剩余 + G5，边缘运行时与治理收敛）**：
   - **遥测帧格式对齐（H2 修复）**：新增 `edge/modeling/frame_adapter.py` 纯函数转换
     （分组帧 entity_id/event_time/pose/load → 扁平 device_id/timestamp/telemetry），

@@ -144,6 +144,9 @@ jobs:
       - name: 单一事实源证据清单生成与漂移校验（truth-check）
         run: make truth-check
 
+      - name: OpenAPI 路由零漂移门禁（Batch 11.5：controller ↔ openapi/ewoh.yaml）
+        run: node scripts/audit-openapi-routes.js
+
       - name: NestJS 生产构建（跳过交互式插件初始化）
         run: EWOH_SKIP_PLUGIN_INIT=1 npm run build:prod
         working-directory: ewoh-spark-app

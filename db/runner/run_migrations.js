@@ -271,6 +271,8 @@ function main() {
       const tableCount = Number(row.ewoh_workbench_persist_table_count || 0);
       const orgColumns = Number(row.workbench_org_columns || 0);
       const defaultUq = Number(row.saved_views_default_uq || 0);
+      // 期望值来源：standalone_005_verify.sql 自述（2 张新表 / 6 个 org_id 列 / 1 个默认视图唯一索引），
+      // 与迁移 005 的结构契约一致（非漂移源，自包含验证）。
       if (tableCount !== 2 || orgColumns !== 6 || defaultUq !== 1) {
         console.error(`VERIFY FAILED: expected (2,6,1), got (${tableCount},${orgColumns},${defaultUq})`);
         process.exitCode = 1;
@@ -300,6 +302,7 @@ function main() {
       const row = rows[0] || {};
       const columns = Number(row.ewoh_scheduling_feedback_columns || 0);
       const indexes = Number(row.ewoh_scheduling_feedback_indexes || 0);
+      // 期望值来源：standalone_010_verify.sql 自述（feedback 表 16 列 / 4 索引）。
       if (columns !== 16 || indexes !== 4) {
         console.error(`VERIFY FAILED: expected (16,4), got (${columns},${indexes})`);
         process.exitCode = 1;
@@ -316,6 +319,7 @@ function main() {
       const tableCount = Number(row.ewoh_scheduling_table_count || 0);
       const v2Columns = Number(row.ewoh_schedule_plan_v2_columns || 0);
       const versionCol = Number(row.ewoh_schedule_plan_version_col || 0);
+      // 期望值来源：standalone_006_verify.sql 自述（7 张 V2 表 / 7 个 V2 列 / 1 个 version 列）。
       if (tableCount !== 7 || v2Columns !== 7 || versionCol !== 1) {
         console.error(`VERIFY FAILED: expected (7,7,1), got (${tableCount},${v2Columns},${versionCol})`);
         process.exitCode = 1;
