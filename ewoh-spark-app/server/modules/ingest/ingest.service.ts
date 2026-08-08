@@ -21,6 +21,8 @@ import type {
 import { RuleEngineService } from '../rule-engine/rule-engine.service';
 import { MesService } from '../mes/mes.service';
 import { SensorIngestService } from './sensor-ingest.service';
+import { ReplanCoordinatorService } from '../scheduler/replan-coordinator.service';
+import type { OrgContext } from '../shared/org-context.interceptor';
 
 /**
  * Ingestion 服务（真机接入网关 - 皮肤+肢体数据汇聚）
@@ -54,13 +56,15 @@ export class IngestService {
     private readonly ruleEngine: RuleEngineService,
     private readonly mesService: MesService,
     private readonly sensorIngest: SensorIngestService,
+    // v0.7 B1：设备故障/离线转换 → DEVICE_OFFLINE 局部重排（事件驱动调度闭环）。
+    private readonly replanCoordinator: ReplanCoordinatorService,
   ) {}
 
   // ===== 外骨骼数据接入 =====
 
-  /** 单帧外骨骼数据接入 */
-  async ingestExoskeleton(frame: ExoskeletonFrameDto): Promise<IngestResponse> {
-    return this.processOneFrame(frame);
+  /** 单帧外骨骼数据接入（v0.7 B1：ctx 供设备离线重排定位租户） */
+  async ingestExoskeleton(frame: ExoskeletonFrameDto, ctx?: OrgContext): Promise<IngestResponse> {
+    return this.processOneFrame(frame, ctx);
   }
 
   /**
@@ -74,7 +78,10 @@ export class IngestService {
    *  5. 逐帧规则评估（RuleEngine 写事件，保留逐条语义）。
    * 每帧 DB 往返从 ~3 降到 ~1（规则评估）。
    */
-  async ingestExoskeletonBatch(frames: ExoskeletonFrameDto[]): Promise<BatchIngestResponse> {
+  async ingestExoskeletonBatch(
+    frames: ExoskeletonFrameDto[],
+    ctx?: OrgContext,
+  ): Promise<BatchIngestResponse> {
     const list = frames.slice(0, IngestService.BATCH_LIMIT);
 
     // 1. 批量解析 entity_id / raw_ref / device_id（纯计算）
@@ -168,9 +175,13 @@ export class IngestService {
       telemetryRows.push(row);
       acceptedIdx.push({ parsedIdx: i, telemetryRow: row });
 
-      // upsert device（批量收集后统一落库）
+      // upsert device（批量收集后统一落库；v0.7 B1：首次出现故障码的设备触发离线重排）
       const deviceId = p.deviceId;
       if (deviceId && !deviceUpserts.has(deviceId)) {
+        const newFaultCode = p.frame.device?.fault_code ?? p.frame.fault_code ?? null;
+        if (newFaultCode) {
+          this.detectFaultTransition(deviceId, newFaultCode, ctx);
+        }
         deviceUpserts.set(
           deviceId,
           this.mapDeviceRow(p.frame, deviceId, p.sourceType, now, p.rawRef),
@@ -319,7 +330,10 @@ export class IngestService {
   }
 
   /** 处理单帧（字段映射 + 质量校验 + 落库 + 规则评估） */
-  private async processOneFrame(frame: ExoskeletonFrameDto): Promise<IngestResponse> {
+  private async processOneFrame(
+    frame: ExoskeletonFrameDto,
+    ctx?: OrgContext,
+  ): Promise<IngestResponse> {
     const sourceType: DataSourceType = frame.source_type ?? 'real';
     const recordId = frame.record_id ?? randomUUID();
     const rawRef = frame.raw_ref ?? this.computeRawRef(frame);
@@ -422,8 +436,8 @@ export class IngestService {
       dataQuality,
     };
 
-    // 5. upsert ewoh_device
-    await this.upsertDevice(frame, deviceId, sourceType, now, rawRef);
+    // 5. upsert ewoh_device（v0.7 B1：传入 ctx 以支持设备离线重排）
+    await this.upsertDevice(frame, deviceId, sourceType, now, rawRef, ctx);
 
     // 6. 写入 ewoh_telemetry
     let eventsTriggered = 0;
@@ -602,8 +616,18 @@ export class IngestService {
     sourceType: DataSourceType,
     now: Date,
     rawRef: string,
+    ctx?: OrgContext,
   ): Promise<void> {
     try {
+      // v0.7 B1：检测设备状态转换（正常 → 故障/离线）。
+      // 若设备此前正常（无故障码且在线）而本帧携带故障码 → 触发 DEVICE_OFFLINE 局部重排。
+      // fire-and-forget：重排失败经 ReplanCoordinator 熔断（run 置 failed + 日志），
+      // 绝不阻断 ingest 主链路（真机数据接入优先）。
+      const newFaultCode = frame.device?.fault_code ?? frame.fault_code ?? null;
+      if (newFaultCode) {
+        await this.detectFaultTransition(deviceId, newFaultCode, ctx);
+      }
+
       await this.db
         .insert(ewohDevice)
         .values({
@@ -639,6 +663,80 @@ export class IngestService {
     } catch (error) {
       this.logger.error(`upsert 设备失败 ${deviceId}`, error);
     }
+  }
+
+  /**
+   * v0.7 B1：判定设备是否发生"正常 → 故障/离线"状态转换（纯函数，公开供测试）。
+   * 此前正常 = 无故障码（null/空）且在线；新帧携带故障码 → 转换发生。
+   */
+  static isFaultTransition(
+    existingFaultCode: string | null | undefined,
+    existingOnline: boolean | number | null | undefined,
+    newFaultCode: string | null | undefined,
+  ): boolean {
+    if (!newFaultCode) return false;
+    const wasNormal =
+      existingFaultCode == null || existingFaultCode === ''
+        ? existingOnline === true || existingOnline === 1
+        : false;
+    return wasNormal;
+  }
+
+  /**
+   * v0.7 B1：检测设备正常 → 故障/离线状态转换，命中则触发 DEVICE_OFFLINE 局部重排。
+   * 查询设备既有 faultCode/online：此前正常（无故障码且在线）而新帧携带故障码 → 转换发生。
+   * fire-and-forget：不 await（真机数据接入优先），异常由 ReplanCoordinator 熔断兜底。
+   */
+  private async detectFaultTransition(
+    deviceId: string,
+    newFaultCode: string,
+    ctx?: OrgContext,
+  ): Promise<void> {
+    let wasNormal = false;
+    try {
+      const [existing] = await this.db
+        .select({ faultCode: ewohDevice.faultCode, online: ewohDevice.online })
+        .from(ewohDevice)
+        .where(eq(ewohDevice.deviceId, deviceId))
+        .limit(1);
+      wasNormal = IngestService.isFaultTransition(
+        existing?.faultCode,
+        existing?.online,
+        newFaultCode,
+      );
+    } catch (_) {
+      // 查询失败不阻断（设备可能首次接入，无既有行 → 不算转换）
+    }
+    if (wasNormal) {
+      this.logger.warn(
+        `device ${deviceId} transitioned to fault/offline (faultCode=${newFaultCode}), triggering DEVICE_OFFLINE replan`,
+      );
+      this.fireDeviceOfflineReplan(deviceId, ctx);
+    }
+  }
+
+  /**
+   * v0.7 B1：设备离线/故障转换 → DEVICE_OFFLINE 局部重排（fire-and-forget）。
+   * 依赖 SchedulerModule 导出的 ReplanCoordinatorService（依赖图无循环）；
+   * 重排的幂等/冷却由 TriggerService 保证，失败自动熔断不阻断事件源。
+   */
+  private fireDeviceOfflineReplan(deviceId: string, ctx?: OrgContext): void {
+    const orgCtx: OrgContext = ctx ?? {
+      userId: 'ingest',
+      primaryOrgId: process.env.EWOH_INGEST_ORG_ID?.trim() || '',
+      accessibleOrgIds: process.env.EWOH_INGEST_ORG_ID?.trim()
+        ? [process.env.EWOH_INGEST_ORG_ID.trim()]
+        : [],
+      isGlobalAdmin: false,
+    };
+    // fire-and-forget：不 await（真机数据接入优先），异常已被 ReplanCoordinator 熔断兜底。
+    Promise.resolve(
+      this.replanCoordinator.handleTrigger('DEVICE_OFFLINE', deviceId, orgCtx),
+    ).catch((e) => {
+      this.logger.error(
+        `DEVICE_OFFLINE replan for ${deviceId} failed: ${(e as Error).message}`,
+      );
+    });
   }
 
   /** 数据质量告警事件（entity 不存在等） */

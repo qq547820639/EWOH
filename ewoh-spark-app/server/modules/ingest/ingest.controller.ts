@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Body,
+  Req,
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
@@ -41,14 +42,19 @@ export class IngestController {
   constructor(private readonly ingestService: IngestService) {}
 
   @Post('exoskeleton')
-  async ingestExoskeleton(@Body() frame: ExoskeletonFrameDto): Promise<IngestResponse> {
+  async ingestExoskeleton(
+    @Body() frame: ExoskeletonFrameDto,
+    @Req() request: { userContext?: { userId: string; primaryOrgId: string; accessibleOrgIds: string[]; isGlobalAdmin: boolean } },
+  ): Promise<IngestResponse> {
     this.validateExoskeletonFrame(frame);
-    return this.ingestService.ingestExoskeleton(frame);
+    // v0.7 B1：透传 IngestGuard 挂载的租户上下文（供设备离线重排使用）
+    return this.ingestService.ingestExoskeleton(frame, request.userContext as never);
   }
 
   @Post('exoskeleton/batch')
   async ingestExoskeletonBatch(
     @Body() body: ExoskeletonFrameDto[] | { frames: ExoskeletonFrameDto[] },
+    @Req() request: { userContext?: { userId: string; primaryOrgId: string; accessibleOrgIds: string[]; isGlobalAdmin: boolean } },
   ): Promise<BatchIngestResponse> {
     const frames = Array.isArray(body) ? body : body?.frames ?? [];
     if (frames.length === 0) {
@@ -58,7 +64,8 @@ export class IngestController {
       throw new BadRequestException('批量上限 100 条');
     }
     for (const f of frames) this.validateExoskeletonFrame(f);
-    return this.ingestService.ingestExoskeletonBatch(frames);
+    // v0.7 B1：透传租户上下文（批量帧的设备离线重排）
+    return this.ingestService.ingestExoskeletonBatch(frames, request.userContext as never);
   }
 
   @Post('environment')
