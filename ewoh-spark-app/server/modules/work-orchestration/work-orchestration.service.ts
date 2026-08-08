@@ -199,6 +199,22 @@ export class WorkOrchestrationService {
     @Optional() private readonly domainPersistence?: DomainPersistenceService,
   ) {}
 
+  /**
+   * P2-WorkOrchestration SSOT：Durable（DB）写路径的前提校验。
+   *
+   * 当 `domainPersistence` 未注入时，Durable 写操作不得静默回退到
+   * filesystem/in-memory 双 SSOT——生产必须显式失败。开发态若确实需要
+   * filesystem 路径，应调用非 Durable 方法（显式选择），而非静默降级。
+   */
+  private assertDurableReady(): void {
+    if (!this.domainPersistence) {
+      throw new ConflictException(
+        'Durable persistence unavailable: DomainPersistenceService not injected. ' +
+          'Production requires DB-backed work-orchestration writes; do not fall back to filesystem.',
+      );
+    }
+  }
+
   getGraph(): WorkGraph {
     return this.indexer().indexWorkGraph(this.artifactsDir(), {
       root: this.repoRoot(),
@@ -471,7 +487,7 @@ export class WorkOrchestrationService {
     reason?: string;
     actor?: string;
   }) {
-    if (!this.domainPersistence) return this.applyGitSync(body);
+    if (!this.domainPersistence) { this.assertDurableReady(); }
     if (!this.isWritable()) {
       throw new BadRequestException('EWOH_WORK_WRITABLE is not enabled');
     }
@@ -662,7 +678,7 @@ export class WorkOrchestrationService {
     actor: { userId: string; primaryOrgId: string } | undefined,
   ) {
     if (!this.domainPersistence) {
-      return this.acquireResource(resourceId, body, actor);
+      this.assertDurableReady();
     }
     // The static resource catalog is only used for the kind-based double-confirmation
     // heuristic. The durable lock is a generic domain primitive and must accept
@@ -716,7 +732,7 @@ export class WorkOrchestrationService {
     actor: { userId: string; primaryOrgId: string; isGlobalAdmin?: boolean } | undefined,
   ) {
     if (!this.domainPersistence) {
-      return this.releaseResource(resourceId, actor);
+      this.assertDurableReady();
     }
     const orgId = actor?.primaryOrgId ?? 'default';
     const result = await this.domainPersistence.releaseLock({
@@ -887,7 +903,7 @@ export class WorkOrchestrationService {
     },
     actor: { userId: string; primaryOrgId: string } | undefined,
   ) {
-    if (!this.domainPersistence) return this.createHandoff(body, actor);
+    if (!this.domainPersistence) { this.assertDurableReady(); }
     if (!body.fromActor?.trim() || !body.toActor?.trim() || !body.scope?.trim()) {
       throw new BadRequestException('fromActor, toActor, and scope are required');
     }
@@ -934,7 +950,7 @@ export class WorkOrchestrationService {
     body: { status: 'accepted' | 'rejected' | 'closed'; reason?: string },
     actor: { userId: string; primaryOrgId: string } | undefined,
   ) {
-    if (!this.domainPersistence) return this.updateHandoffStatus(handoffId, body, actor);
+    if (!this.domainPersistence) { this.assertDurableReady(); }
     if (!/^HO-[A-Za-z0-9-]+$/.test(handoffId)) {
       throw new NotFoundException(`Handoff ${handoffId} not found`);
     }

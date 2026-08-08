@@ -700,20 +700,62 @@ describe('WorkOrchestrationService durable (DB-backed) paths', () => {
     expect(session.persisted).toBe('postgres');
   });
 
-  it('durable lock methods fall back to the legacy file path when DB persistence is absent', async () => {
+  it('durable lock methods fail closed when DB persistence is absent (P2 SSOT: no silent filesystem fallback)', async () => {
+    // 安全语义（P2-WorkOrchestration SSOT）：Durable 写操作在 DomainPersistence
+    // 未注入时必须显式失败，不得静默回退到 filesystem/in-memory 双 SSOT。
     const service = new WorkOrchestrationService();
     const resource = service.getResources()[0];
-    const lock = await service.acquireResourceDurable(
-      resource.resourceId,
-      { purpose: 'test', confirm: true },
-      { userId: 'user-1', primaryOrgId: 'org-1' },
-    );
-    expect(lock.active).toBe(true);
-    const released = await service.releaseResourceDurable(resource.resourceId, {
-      userId: 'user-1',
-      primaryOrgId: 'org-1',
-      isGlobalAdmin: true,
-    });
-    expect(released.released).toBe(true);
+    await expect(
+      service.acquireResourceDurable(
+        resource.resourceId,
+        { purpose: 'test', confirm: true },
+        { userId: 'user-1', primaryOrgId: 'org-1' },
+      ),
+    ).rejects.toThrow('Durable persistence unavailable');
+    await expect(
+      service.releaseResourceDurable(resource.resourceId, {
+        userId: 'user-1',
+        primaryOrgId: 'org-1',
+        isGlobalAdmin: true,
+      }),
+    ).rejects.toThrow('Durable persistence unavailable');
+  });
+
+  it('P2-WorkOrchestration SSOT：无 DomainPersistence 注入时 Durable 写路径 fail-closed', async () => {
+    // 模拟 production 下 DB 持久化不可用（未注入）——写操作必须显式失败，
+    // 不得静默回退到 filesystem/in-memory 双 SSOT。
+    const service = new WorkOrchestrationService();
+    await expect(
+      service.acquireResourceDurable(
+        'res-1',
+        { purpose: 'test', confirm: true },
+        { userId: 'user-1', primaryOrgId: 'org-1' },
+      ),
+    ).rejects.toThrow('Durable persistence unavailable');
+
+    await expect(
+      service.releaseResourceDurable('res-1', {
+        userId: 'user-1',
+        primaryOrgId: 'org-1',
+        isGlobalAdmin: true,
+      }),
+    ).rejects.toThrow('Durable persistence unavailable');
+
+    await expect(
+      service.createHandoffDurable(
+        {
+          fromActor: 'a',
+          toActor: 'b',
+          scope: 'x',
+        },
+        { userId: 'user-1', primaryOrgId: 'org-1' },
+      ),
+    ).rejects.toThrow('Durable persistence unavailable');
+  });
+
+  it('P2-WorkOrchestration SSOT：只读 fallback（getResources）不失败（合理降级）', async () => {
+    const service = new WorkOrchestrationService();
+    const res = service.getResources();
+    expect(Array.isArray(res)).toBe(true);
   });
 });
