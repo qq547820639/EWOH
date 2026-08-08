@@ -5489,6 +5489,28 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scheduler/resources/state:
+    get:
+      tags:
+        - scheduler
+      summary: Unified resource state projection (ResourceProjection SSOT)
+      description: >
+        Authoritative resource state for persons/devices/stations, hydrated with
+        real reservations and availability windows. Map / ResourcePool / Scheduler
+        / Dispatch must consume this single source of truth (P1-CMAP-002).
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ResourceState'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scheduler/conflicts:
     get:
       tags:
@@ -9890,6 +9912,118 @@ components:
           type: object
           additionalProperties: true
       required: []
+      additionalProperties: false
+    ResourceState:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum:
+            - person
+            - device
+            - station
+            - tool
+            - material
+            - vehicle
+        status:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        certifications:
+          type: array
+          items:
+            type: string
+        location:
+          type: object
+          properties:
+            stationId:
+              type: string
+              nullable: true
+            zoneId:
+              type: string
+              nullable: true
+            x:
+              type: number
+            y:
+              type: number
+          required: []
+          additionalProperties: false
+        availableWindows:
+          type: array
+          items:
+            type: object
+            properties:
+              startMs:
+                type: integer
+              endMs:
+                type: integer
+            required: []
+            additionalProperties: false
+        reservations:
+          type: array
+          items:
+            type: object
+            properties:
+              reservationId:
+                type: string
+              startMs:
+                type: integer
+              endMs:
+                type: integer
+            required: []
+            additionalProperties: false
+        telemetry:
+          type: object
+          properties:
+            batteryPct:
+              type: number
+              nullable: true
+            loadLevel:
+              type: number
+              nullable: true
+            fatigueLevel:
+              type: number
+              nullable: true
+            healthStatus:
+              type: string
+              nullable: true
+          required: []
+          additionalProperties: false
+        sourceTs:
+          type: integer
+          nullable: true
+        freshnessMs:
+          type: integer
+          nullable: true
+        dataQuality:
+          type: string
+          enum:
+            - FRESH
+            - STALE
+            - UNKNOWN
+        currentTask:
+          type: string
+          nullable: true
+        team:
+          type: string
+          nullable: true
+        shift:
+          type: string
+          nullable: true
+        updatedAt:
+          type: integer
+          nullable: true
+        version:
+          type: integer
+      required:
+        - id
+        - type
+        - status
+        - version
       additionalProperties: false
     ConflictsListResponse:
       type: object

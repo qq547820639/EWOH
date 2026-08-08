@@ -14,6 +14,7 @@ import {
 import { interval, map, merge, type Observable } from 'rxjs';
 import { SchedulerService } from './scheduler.service';
 import { SchedulerStreamService } from './scheduler-stream.service';
+import { ResourceProjectionService } from './resource-projection.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import type {
   GeneratePlansRequest,
@@ -33,7 +34,18 @@ export class SchedulerController {
   constructor(
     private readonly schedulerService: SchedulerService,
     private readonly schedulerStreamService: SchedulerStreamService,
+    private readonly resourceProjectionService: ResourceProjectionService,
   ) {}
+
+  /**
+   * P1-CMAP-002：统一资源状态权威投影（ResourceProjection SSOT）。
+   * map / ResourcePool / Scheduler / Dispatch 应统一从此消费；
+   * 前端 ResourcePool 不得自行拼装 SpatialEntity/DeviceInfo 作为正式资源状态。
+   */
+  @Get('resources/state')
+  async getUnifiedResourceState() {
+    return this.resourceProjectionService.getUnifiedResourceState();
+  }
 
   /**
    * @deprecated 请改用 V2 接口 POST /api/scheduler/runs

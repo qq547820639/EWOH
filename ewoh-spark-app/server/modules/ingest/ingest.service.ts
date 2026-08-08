@@ -10,7 +10,7 @@ import {
   ewohSchedulePlan,
   ewohEnvironment,
 } from '@server/database/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, inArray } from 'drizzle-orm';
 import type {
   ExoskeletonFrameDto,
   EnvironmentFrameDto,
@@ -62,16 +62,259 @@ export class IngestService {
     return this.processOneFrame(frame);
   }
 
-  /** 批量外骨骼数据接入（≤100 条） */
+  /**
+   * 批量外骨骼数据接入（≤100 条）。
+   *
+   * P1-INGEST-001：由逐帧串行（每帧 ≥3 次 DB 往返）改为批量预检 + 批量落库：
+   *  1. 批量 entity 存在性查询（一次 IN）；
+   *  2. 批量 raw_ref 幂等查询（一次 IN）；
+   *  3. 逐帧映射为 telemetryRow（纯计算，无 DB）；
+   *  4. 批量 insert telemetry（一次 INSERT ... VALUES）；
+   *  5. 逐帧规则评估（RuleEngine 写事件，保留逐条语义）。
+   * 每帧 DB 往返从 ~3 降到 ~1（规则评估）。
+   */
   async ingestExoskeletonBatch(frames: ExoskeletonFrameDto[]): Promise<BatchIngestResponse> {
     const list = frames.slice(0, IngestService.BATCH_LIMIT);
-    const results: IngestResponse[] = [];
-    for (const frame of list) {
-      results.push(await this.processOneFrame(frame));
+
+    // 1. 批量解析 entity_id / raw_ref / device_id（纯计算）
+    const parsed = list.map((frame) => ({
+      frame,
+      entityId: frame.entity_id ?? frame.device_id ?? '',
+      deviceId: frame.device_id ?? frame.entity_id ?? '',
+      rawRef: frame.raw_ref ?? this.computeRawRef(frame),
+      sourceType: (frame.source_type ?? 'real') as DataSourceType,
+      recordId: frame.record_id ?? randomUUID(),
+    }));
+
+    // 2. 批量 entity 存在性预检
+    const entityIds = Array.from(
+      new Set(parsed.map((p) => p.entityId).filter((id) => !!id)),
+    );
+    const existingEntityIds = new Set<string>();
+    if (entityIds.length > 0) {
+      try {
+        const rows = await this.db
+          .select({ entityId: ewohSpatialEntity.entityId })
+          .from(ewohSpatialEntity)
+          .where(inArray(ewohSpatialEntity.entityId, entityIds));
+        for (const r of rows) existingEntityIds.add(r.entityId);
+      } catch (error) {
+        this.logger.warn(
+          `批量 entity 预检失败（fail-open）：${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
+
+    // 3. 批量 raw_ref 幂等预检
+    const rawRefs = parsed.map((p) => p.rawRef).filter(Boolean);
+    const existingRawRefs = new Set<string>();
+    if (rawRefs.length > 0) {
+      try {
+        const rows = await this.db
+          .select({ rawRef: ewohTelemetry.rawRef })
+          .from(ewohTelemetry)
+          .where(inArray(ewohTelemetry.rawRef, rawRefs));
+        for (const r of rows) existingRawRefs.add(r.rawRef);
+      } catch (error) {
+        this.logger.warn(
+          `批量 raw_ref 预检失败（fail-open）：${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    // 4. 逐帧：质量评估 + 字段映射（纯计算）；批量插入
+    const results: IngestResponse[] = [];
+    const now = new Date();
+    const telemetryRows: Array<typeof ewohTelemetry.$inferInsert> = [];
+    const deviceUpserts = new Map<string, typeof ewohDevice.$inferInsert>();
+    const acceptedIdx: Array<{ parsedIdx: number; telemetryRow: (typeof ewohTelemetry.$inferInsert) }> = [];
+
+    for (let i = 0; i < parsed.length; i++) {
+      const p = parsed[i];
+      if (p.entityId && !existingEntityIds.has(p.entityId)) {
+        // 写告警事件（批量路径仅对缺失 entity 写一次事件，避免批量风暴）
+        await this.fireDataQualityEvent(
+          p.deviceId,
+          p.sourceType,
+          p.recordId,
+          'ENTITY_NOT_FOUND',
+          `entity_id ${p.entityId} 不存在`,
+          { entity_id: p.entityId },
+        );
+        results.push({
+          accepted: false,
+          skipped: false,
+          record_id: p.recordId,
+          data_quality: 'invalid',
+          events_triggered: 1,
+          error: `entity_id ${p.entityId} 不存在`,
+        });
+        continue;
+      }
+      if (p.rawRef && existingRawRefs.has(p.rawRef)) {
+        results.push({
+          accepted: false,
+          skipped: true,
+          record_id: p.recordId,
+          data_quality: 'good',
+          events_triggered: 0,
+        });
+        continue;
+      }
+
+      const dataQuality = this.assessQuality(p.frame);
+      const row = this.mapExoskeletonRow(p.frame, p.deviceId, p.sourceType, p.recordId, p.rawRef, dataQuality, now);
+      telemetryRows.push(row);
+      acceptedIdx.push({ parsedIdx: i, telemetryRow: row });
+
+      // upsert device（批量收集后统一落库）
+      const deviceId = p.deviceId;
+      if (deviceId && !deviceUpserts.has(deviceId)) {
+        deviceUpserts.set(
+          deviceId,
+          this.mapDeviceRow(p.frame, deviceId, p.sourceType, now, p.rawRef),
+        );
+      }
+      results.push({
+        accepted: true,
+        skipped: false,
+        record_id: p.recordId,
+        data_quality: dataQuality,
+        events_triggered: 0, // 规则评估后补记
+      });
+    }
+
+    // 5. 批量 upsert devices（一次）
+    if (deviceUpserts.size > 0) {
+      try {
+        await this.db
+          .insert(ewohDevice)
+          .values(Array.from(deviceUpserts.values()))
+          .onConflictDoUpdate({
+            target: ewohDevice.deviceId,
+            set: {
+              online: true,
+              lastTelemetryAt: now,
+              lastRawRef: undefined,
+            },
+          });
+      } catch (error) {
+        this.logger.warn(`批量 upsert 设备失败：${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    // 6. 批量 insert telemetry（一次 INSERT）
+    if (telemetryRows.length > 0) {
+      try {
+        await this.db.insert(ewohTelemetry).values(telemetryRows);
+      } catch (error) {
+        this.logger.error(
+          `批量写入遥测失败 rows=${telemetryRows.length}：${error instanceof Error ? error.message : String(error)}`,
+        );
+        // 单帧失败语义：标记对应行为未接受
+        for (const entry of acceptedIdx) {
+          const idx = entry.parsedIdx;
+          results[idx] = {
+            accepted: false,
+            skipped: false,
+            record_id: parsed[idx].recordId,
+            data_quality: 'invalid',
+            events_triggered: 0,
+            error: '写入失败',
+          };
+        }
+        telemetryRows.length = 0;
+        acceptedIdx.length = 0;
+      }
+    }
+
+    // 7. 逐帧规则评估（RuleEngine 写事件，保留逐条语义）
+    for (const entry of acceptedIdx) {
+      const idx = entry.parsedIdx;
+      const row = entry.telemetryRow;
+      try {
+        const triggered = await this.ruleEngine.evaluate({
+          deviceId: parsed[idx].deviceId,
+          pitchDeg: row.pitchDeg,
+          loadScore: row.loadScore,
+          batteryPct: row.batteryPct,
+          sourceType: parsed[idx].sourceType,
+          recordId: parsed[idx].recordId,
+          dataQuality: row.dataQuality,
+          packetLossPct: row.packetLossPct,
+        });
+        results[idx] = { ...results[idx], events_triggered: triggered };
+      } catch (error) {
+        this.logger.warn(`规则评估失败 device=${parsed[idx].deviceId}：${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
     const accepted = results.filter((r) => r.accepted).length;
     const skipped = results.filter((r) => r.skipped).length;
     return { total: list.length, accepted, skipped, results };
+  }
+
+  /** 字段映射 → ewoh_telemetry 行（纯计算，供单帧/批量共用）。 */
+  private mapExoskeletonRow(
+    frame: ExoskeletonFrameDto,
+    deviceId: string,
+    sourceType: DataSourceType,
+    recordId: string,
+    rawRef: string,
+    dataQuality: DataQuality,
+    now: Date,
+  ): typeof ewohTelemetry.$inferInsert {
+    const eventTime = new Date(frame.event_time);
+    return {
+      deviceId,
+      ts: eventTime,
+      pitchDeg: frame.pose?.trunk_pitch_deg ?? frame.pitch_deg ?? null,
+      loadScore: this.normalizeLoadScore(
+        frame.load?.cumulative_load_score ?? frame.load_score ?? frame.load?.assist_level,
+      ),
+      fatigueTrend: frame.fatigue_trend ?? null,
+      batteryPct: frame.device?.battery_pct ?? frame.battery_pct ?? null,
+      qualityStatus: frame.quality?.status ?? frame.quality_status ?? null,
+      sourceType,
+      recordId,
+      ingestedAt: now,
+      rawRef,
+      jointAngles: (frame.pose?.joint_angles_deg ?? frame.joint_angles ?? null) as Record<string, number> | null,
+      angularVelocityDps: this.numericValue(frame.pose?.angular_velocity_dps ?? frame.angular_velocity_dps),
+      assistLevel: this.numericValue(frame.load?.assist_level ?? frame.assist_level),
+      torqueNm: this.numericValue(frame.load?.torque_nm ?? frame.torque_nm),
+      cumulativeLoadScore: this.numericValue(frame.load?.cumulative_load_score ?? frame.cumulative_load_score),
+      temperatureC: frame.device?.temperature_c ?? frame.temperature_c ?? null,
+      faultCode: frame.device?.fault_code ?? frame.fault_code ?? null,
+      packetLossPct: frame.quality?.packet_loss_pct ?? frame.packet_loss_pct ?? 0,
+      dataConfidence: frame.quality?.confidence ?? frame.data_confidence ?? 1.0,
+      dataQuality,
+    };
+  }
+
+  /** 字段映射 → ewoh_device 行（纯计算）。 */
+  private mapDeviceRow(
+    frame: ExoskeletonFrameDto,
+    deviceId: string,
+    sourceType: DataSourceType,
+    now: Date,
+    rawRef: string,
+  ): typeof ewohDevice.$inferInsert {
+    return {
+      deviceId,
+      workerName: frame.worker_name ?? null,
+      deviceModel: frame.device_model ?? null,
+      batteryPct: frame.device?.battery_pct ?? frame.battery_pct ?? 100,
+      online: true,
+      lastTelemetryAt: now,
+      sourceType,
+      firmwareVersion: frame.firmware_version ?? null,
+      hardwareVersion: frame.hardware_version ?? null,
+      protocolVersion: frame.protocol_version ?? null,
+      temperatureC: frame.device?.temperature_c ?? frame.temperature_c ?? null,
+      faultCode: frame.device?.fault_code ?? frame.fault_code ?? null,
+      lastRawRef: rawRef,
+    };
   }
 
   /** 处理单帧（字段映射 + 质量校验 + 落库 + 规则评估） */

@@ -16,7 +16,7 @@ import {
 import { toast } from 'sonner';
 // @deprecated 兼容路径：仅用于“AI 评估”展示，不再是调度写入路径。
 import { allocateResources } from '@client/src/api/gamification';
-import { replan } from '@client/src/api/scheduler';
+import { getUnifiedResourceState, replan } from '@client/src/api/scheduler';
 import { getDevices } from '@client/src/api/dashboard';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import { getCurrentOperator } from '@client/src/lib/auth';
@@ -29,6 +29,7 @@ import type {
   ResourceAllocationResult,
   AllocationEvaluation,
   SchedulingConstraint,
+  ResourceState,
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { Button } from '@client/src/components/ui/button';
@@ -114,6 +115,7 @@ function buildResourceItems(
   entities: SpatialEntity[],
   worldState: CurrentWorldState | null,
   deviceInfos: DeviceInfo[] | undefined,
+  resourceStates: ResourceState[] = [],
 ): { persons: ResourceItem[]; devices: ResourceItem[]; workstations: ResourceItem[] } {
   const persons: ResourceItem[] = [];
   const devices: ResourceItem[] = [];
@@ -121,6 +123,14 @@ function buildResourceItems(
   const workstationIds = new Set(
     entities.filter((e) => e.entityType === 'workstation').map((e) => e.entityId),
   );
+
+  // P1-CMAP-002：后端 ResourceProjection 是正式资源状态的权威来源；
+  // 本地仅保留坐标/展示字段作为 ViewModel，状态字段以投影为准。
+  const stateByResourceId = new Map<string, ResourceState>();
+  for (const rs of resourceStates) {
+    stateByResourceId.set(rs.id, rs);
+    stateByResourceId.set(rs.id.toLowerCase(), rs);
+  }
 
   const assignedWorkstation = (entity: SpatialEntity, parentId?: string | null): string | null => {
     const candidate = parentId ?? entity.parentId;
@@ -130,13 +140,19 @@ function buildResourceItems(
   for (const e of entities) {
     if (e.entityType === 'person') {
       const p = worldState?.persons.find((x) => x.entityId === e.entityId);
+      const rs = stateByResourceId.get(e.entityId) ?? stateByResourceId.get(e.entityId.toLowerCase());
       persons.push({
         entityId: e.entityId,
         name: e.name,
         type: 'person',
         assignedWorkstationId: assignedWorkstation(e),
-        loadScore: p?.loadScore ?? null,
-        status: p?.status ?? e.status ?? 'idle',
+        loadScore: rs?.telemetry?.loadLevel ?? p?.loadScore ?? null,
+        status:
+          rs?.status === 'RESERVED' || rs?.status === 'BUSY'
+            ? rs.status.toLowerCase()
+            : rs?.status
+              ? rs.status.toLowerCase()
+              : (p?.status ?? e.status ?? 'idle'),
       });
     } else if (e.entityType === 'device') {
       const d = worldState?.devices.find((x) => x.entityId === e.entityId);
@@ -145,14 +161,21 @@ function buildResourceItems(
       );
       const extraBattery =
         typeof e.extra?.batteryPct === 'number' ? (e.extra.batteryPct as number) : null;
-      const batteryPct = info?.batteryPct ?? extraBattery ?? null;
+      const rs = stateByResourceId.get(e.entityId) ?? stateByResourceId.get(e.entityId.toLowerCase());
+      const batteryPct = rs?.telemetry?.batteryPct ?? info?.batteryPct ?? extraBattery ?? null;
       devices.push({
         entityId: e.entityId,
         name: e.name,
         type: 'device',
         assignedWorkstationId: assignedWorkstation(e, info?.parentId),
         batteryPct,
-        status: info ? (info.online ? 'online' : 'offline') : d?.status ?? e.status ?? 'online',
+        status: rs?.status
+          ? rs.status.toLowerCase()
+          : info
+            ? info.online
+              ? 'online'
+              : 'offline'
+            : (d?.status ?? e.status ?? 'online'),
       });
     } else if (e.entityType === 'workstation') {
       const w = worldState?.workstations.find((x) => x.entityId === e.entityId);
@@ -387,9 +410,21 @@ const ResourcePoolPanel = ({
     refetchInterval: 30000,
   });
 
+  /**
+   * P1-CMAP-002：统一资源状态权威投影（ResourceProjection SSOT）。
+   * 后端 /api/scheduler/resources/state 是正式资源状态（available/reserved/busy/
+   * offline/battery/load/location/reservation/currentTask/dataQuality）的唯一来源；
+   * 本地 buildResourceItems 仅作为视觉 ViewModel（位置/展示字段）叠加层。
+   */
+  const { data: resourceStates } = useQuery<ResourceState[]>({
+    queryKey: queryKeys.schedulerResourceState,
+    queryFn: getUnifiedResourceState,
+    refetchInterval: 15000,
+  });
+
   const { persons, devices, workstations } = useMemo(
-    () => buildResourceItems(entities, worldState, deviceInfos),
-    [entities, worldState, deviceInfos],
+    () => buildResourceItems(entities, worldState, deviceInfos, resourceStates ?? []),
+    [entities, worldState, deviceInfos, resourceStates],
   );
 
   const [allocations, setAllocations] = useState<

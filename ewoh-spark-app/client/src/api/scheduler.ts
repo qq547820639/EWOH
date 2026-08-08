@@ -27,6 +27,7 @@ import type {
   SchedulingPolicyConfig,
   SchedulingPolicyVersionSummary,
   SchedulingPolicyComparison,
+  ResourceState,
 } from '@shared/api.interface';
 
 export async function generatePlans(
@@ -261,6 +262,18 @@ export async function getTaskCandidates(
 ): Promise<TaskCandidatesResponse> {
   const res = await axiosForBackend({
     url: `/api/scheduler/tasks/${taskId}/candidates`,
+    method: 'GET',
+  });
+  return res.data;
+}
+
+/**
+ * P1-CMAP-002：统一资源状态权威投影（ResourceProjection SSOT）。
+ * 前端 ResourcePool / Map 不得自行拼装 SpatialEntity/DeviceInfo 作为正式资源状态。
+ */
+export async function getUnifiedResourceState(): Promise<ResourceState[]> {
+  const res = await axiosForBackend({
+    url: '/api/scheduler/resources/state',
     method: 'GET',
   });
   return res.data;

@@ -20,10 +20,10 @@ See `00-baseline.md` for the status vocabulary.
 | P1-SCHED-004 | P1 | VERIFIED | commit 4 | 2026-08-08 | Dispatch fallback 时长 = policy.defaultTaskDurationMs |
 | P1-ROUTE-001 | P1 | VERIFIED | commit 4 | 2026-08-08 | euclidean ETA = distance / walkingSpeed；3 个新测试 |
 | P1-ROUTE-002 | P1 | VERIFIED | commit 4 | 2026-08-08 | RouteCostProvider 已为唯一出口，确认无改动 |
-| P1-WORLD-001 | P1 | OPEN | | | |
-| P1-INGEST-001 | P1 | OPEN | | | |
-| P1-CMAP-001 | P1 | OPEN | | | |
-| P1-CMAP-002 | P1 | OPEN | | | |
-| P1-CMAP-003 | P1 | OPEN | | | |
+| P1-WORLD-001 | P1 | VERIFIED | commit 6 | 2026-08-08 | getCurrentState 改 DISTINCT ON(entity_id) |
+| P1-INGEST-001 | P1 | VERIFIED | commit 6 | 2026-08-08 | batch 批量预检+批量 insert；4 个回归测试 |
+| P1-CMAP-001 | P1 | VERIFIED | commit 6 | 2026-08-08 | 写链已收敛 V2；gamification 标注 deprecated |
+| P1-CMAP-002 | P1 | VERIFIED | commit 6 | 2026-08-08 | /api/scheduler/resources/state 暴露 + ResourcePool 消费投影 |
+| P1-CMAP-003 | P1 | VERIFIED | commit 6 | 2026-08-08 | SSE/polling 分工明确；保留 poll fallback |
 | P2-SHARED-001 | P2 | OPEN | | | |
 | P2-WORK-001 | P2 | OPEN | | | |

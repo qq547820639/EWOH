@@ -8075,6 +8075,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scheduler/resources/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Unified resource state projection (ResourceProjection SSOT)
+         * @description Authoritative resource state for persons/devices/stations, hydrated with real reservations and availability windows. Map / ResourcePool / Scheduler / Dispatch must consume this single source of truth (P1-CMAP-002).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ResourceState"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scheduler/conflicts": {
         parameters: {
             query?: never;
@@ -12364,6 +12405,44 @@ export interface components {
             data?: {
                 [key: string]: unknown;
             };
+        };
+        ResourceState: {
+            id: string;
+            /** @enum {string} */
+            type: "person" | "device" | "station" | "tool" | "material" | "vehicle";
+            status: string;
+            capabilities?: string[];
+            certifications?: string[];
+            location?: {
+                stationId?: string | null;
+                zoneId?: string | null;
+                x?: number;
+                y?: number;
+            };
+            availableWindows?: {
+                startMs?: number;
+                endMs?: number;
+            }[];
+            reservations?: {
+                reservationId?: string;
+                startMs?: number;
+                endMs?: number;
+            }[];
+            telemetry?: {
+                batteryPct?: number | null;
+                loadLevel?: number | null;
+                fatigueLevel?: number | null;
+                healthStatus?: string | null;
+            };
+            sourceTs?: number | null;
+            freshnessMs?: number | null;
+            /** @enum {string} */
+            dataQuality?: "FRESH" | "STALE" | "UNKNOWN";
+            currentTask?: string | null;
+            team?: string | null;
+            shift?: string | null;
+            updatedAt?: number | null;
+            version: number;
         };
         ConflictsListResponse: {
             conflicts?: components["schemas"]["SchedulingConflict"][];

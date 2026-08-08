@@ -202,3 +202,141 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
+
+// ---------- P1-INGEST-001：batch 回归测试 ----------
+
+/**
+ * 支持批量路径的 mock db。
+ *
+ * 批量预检代码形如：
+ *   await this.db.select({...}).from(t).where(inArray(col, values))
+ * drizzle 的查询对象可被 await 解析为数组；mock 按调用顺序返回：
+ *   第 1 次 where → existingEntities 查询结果；
+ *   第 2 次 where → existingRawRefs 查询结果。
+ * insert(telemetry).values(rows) 记录多行批量插入。
+ */
+function createBatchDb(opts: {
+  existingEntities: string[];
+  existingRawRefs: string[];
+}) {
+  const insertCalls: Array<{ table: unknown; rows: unknown[] }> = [];
+  let whereCall = 0;
+  const db = {
+    select: jest.fn(() => ({
+      from: jest.fn(() => ({
+        where: jest.fn(() => {
+          const callIdx = whereCall++;
+          const result =
+            callIdx === 0
+              ? opts.existingEntities.map((entityId) => ({ entityId }))
+              : opts.existingRawRefs.map((rawRef) => ({ rawRef }));
+          return Promise.resolve(result) as unknown as {
+            limit: unknown;
+            then: unknown;
+          };
+        }),
+      })),
+    })),
+    insert: jest.fn((table: unknown) => ({
+      values: jest.fn((rows: unknown[]) => {
+        insertCalls.push({ table, rows: Array.isArray(rows) ? rows : [rows] });
+        return {
+          onConflictDoUpdate: jest.fn().mockResolvedValue([]),
+          returning: jest.fn().mockResolvedValue([]),
+        };
+      }),
+    })),
+  };
+  return { db, insertCalls };
+}
+
+function makeFrame(overrides: Record<string, unknown> = {}) {
+  return {
+    entity_id: 'EXO-BATCH-1',
+    event_time: new Date().toISOString(),
+    source_type: 'real',
+    device: { battery_pct: 88 },
+    ...overrides,
+  } as never;
+}
+
+describe('IngestService batch（P1-INGEST-001 回归）', () => {
+  it('批量帧单次 insert telemetry（batch insert 而不是逐帧插入）', async () => {
+    const { db, insertCalls } = createBatchDb({
+      existingEntities: ['EXO-BATCH-1'],
+      existingRawRefs: [],
+    });
+    const service = new IngestService(db as never, createRuleEngine() as unknown as never);
+
+    const result = await service.ingestExoskeletonBatch([
+      makeFrame({ entity_id: 'EXO-BATCH-1' }),
+      makeFrame({ entity_id: 'EXO-BATCH-1' }),
+      makeFrame({ entity_id: 'EXO-BATCH-1' }),
+    ]);
+
+    expect(result.total).toBe(3);
+    expect(result.accepted).toBe(3);
+    // telemetry 应为一次批量 insert（rows.length === 3）
+    const telemetryInsert = insertCalls.find((c) => c.table === ewohTelemetry);
+    expect(telemetryInsert?.rows).toHaveLength(3);
+  });
+
+  it('批量重复 raw_ref 被跳过（skipped=true）', async () => {
+    const { db, insertCalls } = createBatchDb({
+      existingEntities: ['EXO-BATCH-1'],
+      existingRawRefs: ['dup-raw-ref'],
+    });
+    const service = new IngestService(db as never, createRuleEngine() as unknown as never);
+
+    const result = await service.ingestExoskeletonBatch([
+      makeFrame({ entity_id: 'EXO-BATCH-1', raw_ref: 'dup-raw-ref' }),
+      makeFrame({ entity_id: 'EXO-BATCH-1', raw_ref: 'new-raw-ref' }),
+    ]);
+
+    expect(result.total).toBe(2);
+    expect(result.skipped).toBe(1);
+    const telemetryInsert = insertCalls.find((c) => c.table === ewohTelemetry);
+    expect(telemetryInsert?.rows).toHaveLength(1);
+    expect((telemetryInsert?.rows[0] as Record<string, unknown>)?.rawRef).toBe('new-raw-ref');
+  });
+
+  it('批量时钟漂移帧标 invalid（quality 记录，行为与单帧一致）', async () => {
+    const future = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 超前 10min
+    const { db, insertCalls } = createBatchDb({
+      existingEntities: ['EXO-BATCH-1'],
+      existingRawRefs: [],
+    });
+    const service = new IngestService(db as never, createRuleEngine() as unknown as never);
+
+    const result = await service.ingestExoskeletonBatch([
+      makeFrame({ entity_id: 'EXO-BATCH-1', event_time: future }),
+    ]);
+
+    expect(result.total).toBe(1);
+    // 与单帧一致：时钟漂移帧仍入库，但 data_quality=invalid
+    expect(result.results[0].data_quality).toBe('invalid');
+    const telemetryInsert = insertCalls.find((c) => c.table === ewohTelemetry);
+    expect((telemetryInsert?.rows[0] as Record<string, unknown>)?.dataQuality).toBe('invalid');
+  });
+
+  it('部分无效 batch（entity 不存在）→ 该帧 rejected，其余 accepted', async () => {
+    const { db, insertCalls } = createBatchDb({
+      existingEntities: ['EXO-BATCH-1'],
+      existingRawRefs: [],
+    });
+    const service = new IngestService(db as never, createRuleEngine() as unknown as never);
+
+    const result = await service.ingestExoskeletonBatch([
+      makeFrame({ entity_id: 'EXO-BATCH-MISSING' }),
+      makeFrame({ entity_id: 'EXO-BATCH-1' }),
+    ]);
+
+    expect(result.total).toBe(2);
+    expect(result.accepted).toBe(1);
+    expect(result.results[0].accepted).toBe(false);
+    expect(result.results[0].error).toContain('不存在');
+    expect(result.results[1].accepted).toBe(true);
+    const telemetryInsert = insertCalls.find((c) => c.table === ewohTelemetry);
+    expect(telemetryInsert?.rows).toHaveLength(1);
+  });
+});

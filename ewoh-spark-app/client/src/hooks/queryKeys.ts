@@ -42,6 +42,8 @@ export const queryKeys = {
   schedulerConflicts: (filters?: ConflictsListRequest) => ['scheduler', 'conflicts', filters ?? {}] as const,
   /** 单个调度冲突详情（V2）。 */
   schedulerConflict: (conflictId: string) => ['scheduler-conflict', conflictId] as const,
+  /** P1-CMAP-002：统一资源状态权威投影（ResourceProjection SSOT）。 */
+  schedulerResourceState: ['scheduler-resource-state'] as const,
   /** 当前生效调度策略 + 配置（Task 6）。 */
   schedulerPolicy: ['scheduler-policy'] as const,
   /** 全部策略版本列表（Task 6）。 */

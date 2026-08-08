@@ -61,18 +61,18 @@ export class WorldService {
         ...workstationEntities.map((w) => w.entityId),
       ];
 
-      // 取每个 entity 的最新 world_state（按 ts desc 取首条）
+      // 取每个 entity 的最新 world_state：优先在数据库内用 DISTINCT ON 完成
+      // （P1-WORLD-001：避免把全部历史拉回 Node 去重）。
+      // PostgreSQL 支持 DISTINCT ON(entity_id) + ORDER BY entity_id, ts DESC。
       const latestStatesMap = new Map<string, WorldStateRow>();
       if (allEntityIds.length > 0) {
         const states = await this.db
-          .select()
+          .selectDistinctOn([ewohWorldState.entityId])
           .from(ewohWorldState)
           .where(inArray(ewohWorldState.entityId, allEntityIds))
-          .orderBy(desc(ewohWorldState.ts));
+          .orderBy(ewohWorldState.entityId, desc(ewohWorldState.ts));
         for (const s of states) {
-          if (!latestStatesMap.has(s.entityId)) {
-            latestStatesMap.set(s.entityId, s);
-          }
+          latestStatesMap.set(s.entityId, s);
         }
       }
 
