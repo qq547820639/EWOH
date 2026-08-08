@@ -650,7 +650,10 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       snapshotVersion: opts.snapshotVersion,
       policyVersion: policy.version,
       solverVersion: policy.solverVersion,
-      // 启发式路径也暴露目标值与耗时，保证 UI 在 HEURISTIC/FALLBACK/UNAVAILABLE 下仍可展示。
+      // Phase C：heuristic 作为当前 Production Canonical Solver，状态如实标记为
+      // HEURISTIC；当作为 CP-SAT fallback 时由 CpSatSchedulingSolver 覆盖为
+      // UNAVAILABLE/FALLBACK，绝不把 heuristic 结果冒充 CP-SAT 成功。
+      solverStatus: 'HEURISTIC',
       objective: planScore.total,
       scoreBreakdown: planScore,
       solveDurationMs: Math.max(Date.now() - now, 0),

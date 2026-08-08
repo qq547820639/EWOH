@@ -1256,6 +1256,7 @@ export interface PlanOverrideResponse {
 export type SolverStatus =
   | 'OPTIMAL'
   | 'FEASIBLE'
+  | 'HEURISTIC'
   | 'FALLBACK'
   | 'INFEASIBLE'
   | 'TIMEOUT'
