@@ -211,6 +211,25 @@ export class WorldStateSnapshotService {
       }
     }
 
+    // 工位列表（v0.7 A1：提前计算，供任务 candidateStations 派生使用）。
+    const stations = spatialEntities
+      .filter((se) => ['workstation', 'station'].includes(se.entityType))
+      .map((se) => {
+        // 工位容量：优先读空间实体 extra.capacity（真实来源），否则 null。
+        const extra = (se.extra ?? {}) as Record<string, unknown>;
+        const capacity =
+          typeof extra.capacity === 'number' && extra.capacity > 0
+            ? extra.capacity
+            : null;
+        return {
+          id: se.entityId,
+          name: se.name,
+          x: se.x ?? 0,
+          y: se.y ?? 0,
+          capacity,
+        };
+      });
+
     const taskList = tasks.map((t) => ({
       id: t.id,
       title: t.title,
@@ -229,12 +248,25 @@ export class WorldStateSnapshotService {
       predecessorIds: this.asStringArray(t.predecessorIds),
       requiredSkills: this.asStringArray(t.requiredSkills),
       requiredCertifications: this.asStringArray(t.requiredCertifications),
-      // 安全/可抢占/技能匹配语义：当前 schema 无独立列，取业务默认值。
-      // 来源为真实业务状态（无则保守默认），不虚构占位。
-      safetyCritical: false,
+      // v0.7 智能调度增强（A1）：安全/可抢占/技能匹配语义从已有字段派生，不再恒 false。
+      // 注：ewohProductionTask 表当前无独立列（schema.ts 为自动生成文件，不改），
+      // 故从 taskType 白名单派生 safetyCritical（重体力/搬运类），保守默认 false；
+      // 待 DB 迁移加列后应改为读取真实业务字段。
+      safetyCritical: this.deriveSafetyCritical(t.taskType),
       preemptible: false,
       skillMatchMode: 'ALL' as const,
       dueAtMs: t.planEnd ? t.planEnd.getTime() : null,
+      // v0.7 智能调度增强（A1）：生产影响度从 priority 语义派生（urgent/critical 高影响产线节拍）。
+      // 缺省 0 保持向后兼容；PriorityEngine 的 productionImpact 因子由此真实生效。
+      productionImpact: this.deriveProductionImpact(t.priority),
+      // v0.7 智能调度增强（A1）：候选工位 = 任务所在 zone 内的所有工位（真实空间拓扑推导），
+      // 无 zone/无工位时回退任务自身 stationId，支持资源就近分配。
+      candidateStations: this.deriveCandidateStations(
+        t.spatialEntityId,
+        spatialByEntityId,
+        stations,
+        spatialEntities,
+      ),
     }));
 
     const deviceList = devices.map((d) => {
@@ -264,24 +296,6 @@ export class WorldStateSnapshotService {
         dataQuality,
       };
     });
-
-    const stations = spatialEntities
-      .filter((se) => ['workstation', 'station'].includes(se.entityType))
-      .map((se) => {
-        // 工位容量：优先读空间实体 extra.capacity（真实来源），否则 null。
-        const extra = (se.extra ?? {}) as Record<string, unknown>;
-        const capacity =
-          typeof extra.capacity === 'number' && extra.capacity > 0
-            ? extra.capacity
-            : null;
-        return {
-          id: se.entityId,
-          name: se.name,
-          x: se.x ?? 0,
-          y: se.y ?? 0,
-          capacity,
-        };
-      });
 
     const stationCounts = new Map<string, number>();
     for (const t of taskList) {
@@ -505,6 +519,81 @@ export class WorldStateSnapshotService {
     return Array.isArray(v)
       ? (v as string[]).filter((x): x is string => typeof x === 'string')
       : [];
+  }
+
+  /**
+   * v0.7 A1：从任务类型派生安全关键语义（重体力/搬运类），保守默认 false。
+   * 仅作白名单匹配，未命中的任务绝不被误判为安全关键（避免误阻断）。
+   */
+  private deriveSafetyCritical(taskType: string): boolean {
+    const criticalTypes = [
+      'lift',
+      'carry',
+      'heavy_lift',
+      'material_handling',
+      '搬运',
+      '重体力',
+      '物料搬运',
+      'lifting',
+    ];
+    const t = (taskType ?? '').toLowerCase();
+    return criticalTypes.some((k) => t.includes(k.toLowerCase()));
+  }
+
+  /**
+   * v0.7 A1：从优先级语义派生生产影响度 0..1（越高越影响产线节拍）。
+   * urgent/critical 视为最高影响；缺省 0 保持向后兼容。
+   */
+  private deriveProductionImpact(priority: string): number {
+    switch ((priority ?? '').toLowerCase()) {
+      case 'urgent':
+      case 'critical':
+        return 1.0;
+      case 'high':
+        return 0.7;
+      case 'medium':
+        return 0.4;
+      case 'low':
+        return 0.1;
+      default:
+        return 0;
+    }
+  }
+
+  /**
+   * v0.7 A1：推导候选工位 = 任务所在 zone（父区域）内的所有工位。
+   * 任务绑定工位可解析到父区域 → 返回该区域内全部工位（就近分配候选）；
+   * 无 zone 但任务绑定工位本身是工位 → 回退 [stationId]；
+   * 均不可解析 → 空数组（求解器回退到无候选约束）。
+   */
+  private deriveCandidateStations(
+    spatialEntityId: string | null,
+    spatialByEntityId: Map<string, { entityId: string; entityType: string | null; parentId: string | null }>,
+    stations: Array<{ id: string }>,
+    allSpatialEntities: Array<{ entityId: string; entityType: string | null; parentId: string | null }>,
+  ): string[] {
+    if (!spatialEntityId) return [];
+    const se = spatialByEntityId.get(spatialEntityId);
+    if (!se) return [];
+    // 任务绑定工位本身就是 station → 直接回退。
+    if (['workstation', 'station'].includes(se.entityType)) {
+      return [se.entityId];
+    }
+    // 任务绑定的是区域/设备 → 取其父区域（zone）内的所有工位。
+    const zoneId = se.parentId ?? se.entityId;
+    const zone = spatialByEntityId.get(zoneId);
+    const zoneChildren = zone
+      ? allSpatialEntities.filter((s) => s.parentId === zoneId)
+      : allSpatialEntities.filter((s) => s.entityId === zoneId);
+    const inZone = zoneChildren
+      .filter((s) => ['workstation', 'station'].includes(s.entityType))
+      .map((s) => s.entityId);
+    if (inZone.length > 0) return inZone;
+    // 兜底：绑定工位自身（若在 stations 中）。
+    if (stations.some((s) => s.id === spatialEntityId)) {
+      return [spatialEntityId];
+    }
+    return [];
   }
 
   /** djb2 字符串哈希。 */

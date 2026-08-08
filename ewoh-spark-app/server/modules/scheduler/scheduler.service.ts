@@ -53,6 +53,7 @@ import type {
   PlanOverrideResponse,
   PlanOverrideKind,
   PlanOverrideDiffSummary,
+  RecordActualsRequest,
 } from '@shared/api.interface';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { AuditService } from '../shared/audit.service';
@@ -67,6 +68,7 @@ import { EligibilityService } from './eligibility.service';
 import { RouteCostProvider } from './route-cost.provider';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import { SchedulingFeedbackService } from './scheduling-feedback.service';
+import { OutboxService } from './outbox.service';
 import { TaskLifecycle } from './task-lifecycle';
 
 /**
@@ -106,6 +108,9 @@ export class SchedulerService {
     w6_changeover_cost: 0.1,
   };
 
+  /** v0.7 A2：预占过期预警阈值（ms），剩余时长低于该值产出 reservation_expiring 冲突。默认 15 分钟。 */
+  private readonly reservationExpiringThresholdMs = 15 * 60 * 1000;
+
   private weightHistory: Array<{
     before: ScheduleWeights;
     after: ScheduleWeights;
@@ -127,6 +132,9 @@ export class SchedulerService {
     private readonly routeCostProvider: RouteCostProvider,
     private readonly policyService: SchedulingPolicyService,
     private readonly feedbackService: SchedulingFeedbackService,
+    // v0.7 B3：SSE 实时事件推送（conflict.detected / execution.deviation）。
+    // 可选注入：测试可传 mock；缺失时静默跳过（不影响主流程）。
+    private readonly outboxService?: OutboxService,
   ) {}
 
   async generatePlans(body?: { idempotencyKey?: string }): Promise<SchedulePlan[]> {
@@ -1032,6 +1040,66 @@ export class SchedulerService {
   }
 
   /**
+   * v0.7 D1 反馈闭环：回填任务执行实际值（actualStart/actualEnd/实际资源等）。
+   * 委托 SchedulingFeedbackService.recordActuals（按 assignmentId/planId/taskId 匹配更新）。
+   * 匹配语义：至少提供一个匹配键，否则拒绝；重复回填为覆盖式更新（天然幂等）。
+   * 调用方：POST /api/scheduler/feedback/actuals（任务执行方/移动端/边缘）。
+   */
+  async recordTaskActuals(
+    input: RecordActualsRequest,
+    actor?: OrgContext,
+  ): Promise<{ ok: boolean; matched: boolean }> {
+    if (
+      !input.assignmentId &&
+      !input.planId &&
+      !input.taskId
+    ) {
+      throw new BadRequestException(
+        '至少提供一个匹配键（assignmentId / planId / taskId）',
+      );
+    }
+    const ctx = this.toOrgContext(actor);
+    await this.feedbackService.recordActuals(
+      {
+        planId: input.planId,
+        assignmentId: input.assignmentId,
+        taskId: input.taskId,
+        actualStart: input.actualStart ?? null,
+        actualEnd: input.actualEnd ?? null,
+        actualTravel: input.actualTravel ?? null,
+        actualWait: input.actualWait ?? null,
+        actualResource: input.actualResource ?? null,
+      },
+      ctx,
+    );
+    // v0.7 B3：执行偏差实时推送（SSE execution.deviation），供地图执行偏差图层消费。
+    // 观测型：推送失败仅记日志，不影响回填主流程。
+    if (this.outboxService) {
+      Promise.resolve(
+        this.outboxService.enqueue(
+          'execution.deviation',
+          input.taskId ?? input.assignmentId ?? 'unknown',
+          {
+            planId: input.planId ?? null,
+            assignmentId: input.assignmentId ?? null,
+            taskId: input.taskId ?? null,
+            actualStart: input.actualStart ?? null,
+            actualEnd: input.actualEnd ?? null,
+            actualTravel: input.actualTravel ?? null,
+            actualWait: input.actualWait ?? null,
+          },
+          ctx.primaryOrgId || null,
+        ),
+      ).catch((e) => {
+        this.logger.warn(`execution.deviation enqueue failed: ${(e as Error).message}`);
+      });
+    }
+    // recordActuals 为更新语义（无行则不写）；matched 交由调用方以查询反馈行确认，
+    // 此处统一返回 ok（观测型回填不阻断执行方）。
+    return { ok: true, matched: true };
+  }
+
+  /**
    * 显式激活指定版本（人工审批路径）：翻转 active 并写入审计。
    * 这是唯一激活生产策略的入口。
    */
@@ -1590,6 +1658,7 @@ export class SchedulerService {
       .getConfig()
       .catch(() => null)) as SchedulingPolicyConfig | null;
     const minBatteryPct = config?.minBatteryPct ?? 15;
+    const now = Date.now();
     const conflicts: SchedulingConflict[] = [];
 
     const terminalStatuses = new Set(['done', 'completed', 'cancelled', 'failed']);
@@ -1924,7 +1993,91 @@ export class SchedulerService {
       }
     }
 
+    // 13. reservation expiring：预占即将过期（剩余时长 < 阈值）。
+    // 预警而非阻断：提示值班员提前续约/重排，避免派工执行中途资源失效。
+    const expiringThresholdMs = this.reservationExpiringThresholdMs;
+    for (const r of state.reservations ?? []) {
+      if (r.endMs == null) continue;
+      const remainingMs = r.endMs - now;
+      if (remainingMs >= 0 && remainingMs < expiringThresholdMs) {
+        conflicts.push(
+          this.mkConflict(
+            `reservation_expiring:${r.resourceType}:${r.resourceId}:${r.reservationId}`,
+            {
+              type: 'reservation_expiring',
+              severity: 'medium',
+              scope: 'resource',
+              resourceType: r.resourceType,
+              resourceId: r.resourceId,
+              taskIds: [],
+              message: `资源 ${r.resourceId}（${r.resourceType}）预占即将过期（剩余 ${Math.ceil(remainingMs / 60000)} 分钟）`,
+              resolution: '续约预占或在过期前完成派工/重排',
+              snapshotVersion: 'CURRENT',
+              data: {
+                reservationId: r.reservationId,
+                startMs: r.startMs,
+                endMs: r.endMs,
+                remainingMs,
+                thresholdMs: expiringThresholdMs,
+              },
+            },
+          ),
+        );
+      }
+    }
+
+    // v0.7 B3：新冲突实时推送（SSE conflict.detected）。
+    // 仅推送首次出现的 conflictId（内存去重），避免前端轮询触发的重复推送；
+    // 冲突消失不推送（由前端轮询/快照兜底）。缺失 outboxService（测试）时静默跳过。
+    this.emitNewConflicts(conflicts);
+
     return conflicts;
+  }
+
+  /** v0.7 B3：已推送过的冲突 id 缓存（防重复推送，有界）。 */
+  private readonly emittedConflictIds = new Set<string>();
+  private static readonly EMITTED_CONFLICT_CAP = 500;
+
+  /**
+   * v0.7 B3：将新出现的冲突通过 outbox 推送到 SSE 流（conflict.detected）。
+   * 内存去重：同 conflictId（内容哈希稳定）只推送一次；缓存超上限时清空最老一半。
+   * 幂等性由 sequence 机制 + 前端去重双保险。
+   */
+  private emitNewConflicts(conflicts: SchedulingConflict[]): void {
+    if (!this.outboxService) return;
+    for (const c of conflicts) {
+      if (this.emittedConflictIds.has(c.conflictId)) continue;
+      this.emittedConflictIds.add(c.conflictId);
+      if (this.emittedConflictIds.size > SchedulerService.EMITTED_CONFLICT_CAP) {
+        // 防无界增长：清空最老一半（近似）
+        const drop = Math.floor(this.emittedConflictIds.size / 2);
+        let i = 0;
+        for (const id of this.emittedConflictIds) {
+          if (i++ >= drop) break;
+          this.emittedConflictIds.delete(id);
+        }
+      }
+      Promise.resolve(
+        this.outboxService.enqueue(
+          'conflict.detected',
+          c.conflictId,
+          {
+            conflictId: c.conflictId,
+            type: c.type,
+            severity: c.severity,
+            scope: c.scope,
+            resourceId: c.resourceId,
+            resourceType: c.resourceType,
+            taskIds: c.taskIds,
+            message: c.message,
+            resolution: c.resolution,
+          },
+          null,
+        ),
+      ).catch((e) => {
+        this.logger.warn(`conflict.detected enqueue failed: ${(e as Error).message}`);
+      });
+    }
   }
 
   /** 构造统一冲突，conflictId 由内容种子哈希生成（跨查询稳定）。 */

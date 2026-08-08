@@ -81,67 +81,91 @@ export class ReplanCoordinatorService {
       return { run: null, plans: [], debounced: true };
     }
 
-    // 重排必须基于最新世界状态：always 在此刻重新构建快照，
-    // 绝不复用旧 plan/snapshot 的 snapshotVersion。新方案绑定 snapshot.snapshotVersion。
-    const snapshot = await this.worldStateSnapshotService.buildSnapshot(ctx);
-    const impact = this.impactAnalyzer.analyze(snapshot, {
-      eventType: triggerType,
-      entityId,
-    });
-    this.logger.debug(impact.reason);
+    try {
+      // 重排必须基于最新世界状态：always 在此刻重新构建快照，
+      // 绝不复用旧 plan/snapshot 的 snapshotVersion。新方案绑定 snapshot.snapshotVersion。
+      const snapshot = await this.worldStateSnapshotService.buildSnapshot(ctx);
+      const impact = this.impactAnalyzer.analyze(snapshot, {
+        eventType: triggerType,
+        entityId,
+      });
+      this.logger.debug(impact.reason);
 
-    // 局部重排子图 = 受影响任务 ∪ 冻结任务；无关任务不进入求解输入 → 天然不 churn。
-    const affectedSet = new Set(impact.affectedTaskIds);
-    const frozenSet = new Set(impact.frozenTaskIds);
-    const partialSnapshot: WorldStateSnapshot = {
-      ...snapshot,
-      tasks: snapshot.tasks.filter(
-        (t) => affectedSet.has(t.id) || frozenSet.has(t.id),
-      ),
-    };
+      // 局部重排子图 = 受影响任务 ∪ 冻结任务；无关任务不进入求解输入 → 天然不 churn。
+      const affectedSet = new Set(impact.affectedTaskIds);
+      const frozenSet = new Set(impact.frozenTaskIds);
+      const partialSnapshot: WorldStateSnapshot = {
+        ...snapshot,
+        tasks: snapshot.tasks.filter(
+          (t) => affectedSet.has(t.id) || frozenSet.has(t.id),
+        ),
+      };
 
-    // baselineAssignee：当前分配作为 churn/stability 罚项基线，避免已排任务被无谓移动。
-    const baselineAssignee = new Map<string, string | null>();
-    for (const t of snapshot.tasks) {
-      if (t.assigneeId) {
-        if (baselineAssignee.has(t.id)) continue;
-        baselineAssignee.set(t.id, t.assigneeId);
+      // baselineAssignee：当前分配作为 churn/stability 罚项基线，避免已排任务被无谓移动。
+      const baselineAssignee = new Map<string, string | null>();
+      for (const t of snapshot.tasks) {
+        if (t.assigneeId) {
+          if (baselineAssignee.has(t.id)) continue;
+          baselineAssignee.set(t.id, t.assigneeId);
+        }
       }
+      for (const la of snapshot.lockedAssignments) {
+        baselineAssignee.set(la.taskId, la.personId);
+      }
+
+      // 执行中/已锁定分配由 snapshot.lockedAssignments 承载，
+      // 求解器据此将 executing/dispatched/in_progress 任务冻结为不可移动项。
+      const plans = await this.solverService.solveVariants(partialSnapshot, [], {
+        planId: run.runId,
+        triggerType,
+        triggerEntityId: run.triggerEntityId,
+        snapshotVersion: snapshot.snapshotVersion,
+        horizonMinutes: 480,
+        baselineAssignee,
+      });
+
+      for (const plan of plans) {
+        await this.planService.persistPlan(plan, ctx);
+      }
+
+      await this.requestDatabaseContext.runInTransaction(
+        buildGucSettings(ctx),
+        async () => {
+          await this.db
+            .update(ewohSchedulingRun)
+            .set({
+              status: 'succeeded',
+              snapshotVersion: snapshot.snapshotVersion,
+              planIds: plans.map((p) => p.planId),
+            })
+            .where(eq(ewohSchedulingRun.runId, run.runId));
+        },
+      );
+
+      return { run, plans, debounced: false };
+    } catch (e) {
+      // v0.7 A2 熔断：触发链路任一步失败，将已登记的 run 置为 failed（而非永远卡 queued），
+      // 记录错误信息供审计；不向上抛导致调用链断裂（事件触发方不因重排失败而失败）。
+      this.logger.error(
+        `handleTrigger(${triggerType}, ${entityId ?? '-'}) failed: ${(e as Error).message}`,
+      );
+      try {
+        await this.requestDatabaseContext.runInTransaction(
+          buildGucSettings(ctx),
+          async () => {
+            // 注：ewohSchedulingRun 无 failureReason 列（schema.ts 自动生成，不改），
+            // 失败原因经日志记录；run 置 failed 防止卡在 queued。
+            await this.db
+              .update(ewohSchedulingRun)
+              .set({ status: 'failed' })
+              .where(eq(ewohSchedulingRun.runId, run.runId));
+          },
+        );
+      } catch (inner) {
+        this.logger.error(`failed to mark run ${run.runId} as failed: ${(inner as Error).message}`);
+      }
+      return { run: null, plans: [], debounced: false };
     }
-    for (const la of snapshot.lockedAssignments) {
-      baselineAssignee.set(la.taskId, la.personId);
-    }
-
-    // 执行中/已锁定分配由 snapshot.lockedAssignments 承载，
-    // 求解器据此将 executing/dispatched/in_progress 任务冻结为不可移动项。
-    const plans = await this.solverService.solveVariants(partialSnapshot, [], {
-      planId: run.runId,
-      triggerType,
-      triggerEntityId: run.triggerEntityId,
-      snapshotVersion: snapshot.snapshotVersion,
-      horizonMinutes: 480,
-      baselineAssignee,
-    });
-
-    for (const plan of plans) {
-      await this.planService.persistPlan(plan, ctx);
-    }
-
-    await this.requestDatabaseContext.runInTransaction(
-      buildGucSettings(ctx),
-      async () => {
-        await this.db
-          .update(ewohSchedulingRun)
-          .set({
-            status: 'succeeded',
-            snapshotVersion: snapshot.snapshotVersion,
-            planIds: plans.map((p) => p.planId),
-          })
-          .where(eq(ewohSchedulingRun.runId, run.runId));
-      },
-    );
-
-    return { run, plans, debounced: false };
   }
 
   /**

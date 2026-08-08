@@ -618,6 +618,24 @@ export interface SchedulingFeedbackResource {
   stationId?: string | null;
 }
 
+/**
+ * 回填任务执行实际值请求（v0.7 D1 反馈闭环）。
+ * 由任务执行方（移动端/边缘/外部系统）在任务 start / complete 时提交，
+ * 调度侧按 assignmentId/planId/taskId 匹配 feedback 行回填 actual 数据。
+ * 匹配语义：至少提供一个匹配键；重复回填为覆盖式更新（天然幂等）。
+ */
+export interface RecordActualsRequest {
+  /** 派工分配 id（优先级最高匹配键）。 */
+  assignmentId?: string;
+  planId?: string;
+  taskId?: string;
+  actualStart?: string | null;
+  actualEnd?: string | null;
+  actualTravel?: number | null;
+  actualWait?: number | null;
+  actualResource?: SchedulingFeedbackResource | null;
+}
+
 export interface SchedulingFeedback {
   feedbackId: string;
   runId: string | null;
@@ -846,7 +864,9 @@ export type SchedulingConflictType =
   | 'safety_block'
   | 'blocked_route'
   | 'stale_plan'
-  | 'reservation_conflict';
+  | 'reservation_conflict'
+  /** v0.7 A2：预占即将过期（倒计时 < 阈值），需提前续约/重排，避免执行中断。 */
+  | 'reservation_expiring';
 
 export interface SchedulingConflict {
   /** 稳定冲突 id（基于内容哈希，跨查询一致）。 */

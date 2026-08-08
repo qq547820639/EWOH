@@ -15,6 +15,7 @@ import { interval, map, merge, type Observable } from 'rxjs';
 import { SchedulerService } from './scheduler.service';
 import { SchedulerStreamService } from './scheduler-stream.service';
 import { ResourceProjectionService } from './resource-projection.service';
+import { ReplanCoordinatorService } from './replan-coordinator.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import type {
   GeneratePlansRequest,
@@ -26,6 +27,8 @@ import type {
   ReplanRequest,
   CalculateRouteRequest,
   PlanOverrideRequest,
+  SchedulingEventRequest,
+  RecordActualsRequest,
   SchedulingPolicyConfig,
 } from '@shared/api.interface';
 
@@ -35,6 +38,7 @@ export class SchedulerController {
     private readonly schedulerService: SchedulerService,
     private readonly schedulerStreamService: SchedulerStreamService,
     private readonly resourceProjectionService: ResourceProjectionService,
+    private readonly replanCoordinatorService: ReplanCoordinatorService,
   ) {}
 
   /**
@@ -145,6 +149,46 @@ export class SchedulerController {
     @Req() request: { userContext?: OrgContext },
   ) {
     return this.schedulerService.createRun(body, request.userContext);
+  }
+
+  /**
+   * v0.7 B2 事件驱动智能重排：注入真实业务事件（设备离线 / 路线阻断 / 安全事件等），
+   * 触发 ReplanCoordinator 局部重排（影响分析 → 冻结无关任务 → 求解 → 持久化 → 熔断）。
+   *
+   * 与 POST /runs 的区别：
+   * - /runs 是"手动/全量"调度（MANUAL 或任意 trigger 走全量求解）；
+   * - /events 是"事件驱动/局部"调度：仅重排受影响任务，无关任务不 churn。
+   *
+   * 幂等与冷却由 TriggerService 保证（同 triggerKey 去重 + 冷却窗口去抖，跨进程可靠）；
+   * 失败时 ReplanCoordinator 将 run 置为 failed 并记录日志，不抛错阻断事件源。
+   */
+  @Post('events')
+  async injectSchedulingEvent(
+    @Body() body: SchedulingEventRequest,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    if (!body?.trigger) {
+      throw new BadRequestException('trigger is required');
+    }
+    return this.replanCoordinatorService.handleTrigger(
+      body.trigger,
+      body.entityId ?? null,
+      request.userContext,
+    );
+  }
+
+  /**
+   * v0.7 D1 反馈闭环：回填任务执行实际值（actualStart/actualEnd/实际资源等）。
+   * 由任务执行方（移动端/边缘/外部系统）在任务 start / complete 时调用，
+   * 按 assignmentId/planId/taskId 匹配 feedback 行回填，重复提交为覆盖式更新（幂等）。
+   * 观测型回填：不改变任何调度行为，仅驱动 planned-vs-actual KPI 与策略影子评估。
+   */
+  @Post('feedback/actuals')
+  async recordTaskActuals(
+    @Body() body: RecordActualsRequest,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.schedulerService.recordTaskActuals(body, request.userContext);
   }
 
   /**

@@ -5107,6 +5107,74 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scheduler/events:
+    post:
+      tags:
+        - scheduler
+      summary: Inject scheduling event (v0.7 B2) - event-driven partial replan
+      description: >-
+        Ingest / MES / edge bridge event source endpoint. Accepts a real business
+        event (device offline, route blocked, safety event, etc.) and triggers a
+        ReplanCoordinator partial replan (impact analysis -> freeze unrelated tasks
+        -> solve -> persist -> circuit breaker). Idempotency and cooldown are
+        guaranteed by TriggerService (same triggerKey dedup + cooldown window,
+        cross-process reliable). On failure the run is marked failed and logged;
+        the event source is never blocked.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchedulingEventRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateRunResponse'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/feedback/actuals:
+    post:
+      tags:
+        - scheduler
+      summary: Record task execution actuals (v0.7 D1) - feedback loop
+      description: >-
+        Task executor (mobile / edge / external system) endpoint. Called on task
+        start / complete to backfill actual execution values (actualStart /
+        actualEnd / actual travel / wait / resource) matched by assignmentId /
+        planId / taskId. Repeated submission is an overwrite update (idempotent
+        by nature). Observational only - never changes scheduling behavior;
+        drives planned-vs-actual KPIs and policy shadow evaluation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordActualsRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  matched:
+                    type: boolean
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scheduler/runs:
     post:
       tags:
@@ -9753,6 +9821,69 @@ components:
           nullable: true
         createdAt:
           type: string
+      required: []
+      additionalProperties: false
+    SchedulingEventRequest:
+      type: object
+      properties:
+        trigger:
+          type: string
+          description: >-
+            Scheduling trigger type (13 types: MANUAL / TASK_CREATED /
+            TASK_UPDATED / PERSON_UNAVAILABLE / DEVICE_OFFLINE /
+            DEVICE_LOW_BATTERY / BOTTLENECK_DETECTED / DEADLINE_AT_RISK /
+            SAFETY_EVENT / ZONE_RESTRICTED / ROUTE_BLOCKED / ROUTE_CONGESTED /
+            RESERVATION_CONFLICT)
+        entityId:
+          type: string
+          description: Event-related entity id (device / route edge / person / zone); null means global trigger
+        operator:
+          type: string
+          description: Operator or system identifier (written to audit)
+        reason:
+          type: string
+          description: Event description (written to audit)
+      required:
+        - trigger
+      additionalProperties: false
+    RecordActualsRequest:
+      type: object
+      properties:
+        assignmentId:
+          type: string
+          description: Dispatch assignment id (highest priority match key)
+        planId:
+          type: string
+        taskId:
+          type: string
+        actualStart:
+          type: string
+          nullable: true
+          description: ISO timestamp of actual start
+        actualEnd:
+          type: string
+          nullable: true
+          description: ISO timestamp of actual end
+        actualTravel:
+          type: number
+          nullable: true
+          description: Actual travel distance (meters)
+        actualWait:
+          type: number
+          nullable: true
+          description: Actual station wait (minutes)
+        actualResource:
+          type: object
+          properties:
+            personId:
+              type: string
+              nullable: true
+            deviceId:
+              type: string
+              nullable: true
+            stationId:
+              type: string
+              nullable: true
       required: []
       additionalProperties: false
     CreateRunRequest:

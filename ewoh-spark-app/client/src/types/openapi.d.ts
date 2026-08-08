@@ -7491,6 +7491,101 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scheduler/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inject scheduling event (v0.7 B2) - event-driven partial replan
+         * @description Ingest / MES / edge bridge event source endpoint. Accepts a real business event (device offline, route blocked, safety event, etc.) and triggers a ReplanCoordinator partial replan (impact analysis -> freeze unrelated tasks -> solve -> persist -> circuit breaker). Idempotency and cooldown are guaranteed by TriggerService (same triggerKey dedup + cooldown window, cross-process reliable). On failure the run is marked failed and logged; the event source is never blocked.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SchedulingEventRequest"];
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreateRunResponse"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/feedback/actuals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record task execution actuals (v0.7 D1) - feedback loop
+         * @description Task executor (mobile / edge / external system) endpoint. Called on task start / complete to backfill actual execution values (actualStart / actualEnd / actual travel / wait / resource) matched by assignmentId / planId / taskId. Repeated submission is an overwrite update (idempotent by nature). Observational only - never changes scheduling behavior; drives planned-vs-actual KPIs and policy shadow evaluation.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RecordActualsRequest"];
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            ok?: boolean;
+                            matched?: boolean;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scheduler/runs": {
         parameters: {
             query?: never;
@@ -12414,6 +12509,35 @@ export interface components {
             orgId?: string | null;
             error?: string | null;
             createdAt?: string;
+        };
+        SchedulingEventRequest: {
+            /** @description Scheduling trigger type (13 types: MANUAL / TASK_CREATED / TASK_UPDATED / PERSON_UNAVAILABLE / DEVICE_OFFLINE / DEVICE_LOW_BATTERY / BOTTLENECK_DETECTED / DEADLINE_AT_RISK / SAFETY_EVENT / ZONE_RESTRICTED / ROUTE_BLOCKED / ROUTE_CONGESTED / RESERVATION_CONFLICT) */
+            trigger: string;
+            /** @description Event-related entity id (device / route edge / person / zone); null means global trigger */
+            entityId?: string;
+            /** @description Operator or system identifier (written to audit) */
+            operator?: string;
+            /** @description Event description (written to audit) */
+            reason?: string;
+        };
+        RecordActualsRequest: {
+            /** @description Dispatch assignment id (highest priority match key) */
+            assignmentId?: string;
+            planId?: string;
+            taskId?: string;
+            /** @description ISO timestamp of actual start */
+            actualStart?: string | null;
+            /** @description ISO timestamp of actual end */
+            actualEnd?: string | null;
+            /** @description Actual travel distance (meters) */
+            actualTravel?: number | null;
+            /** @description Actual station wait (minutes) */
+            actualWait?: number | null;
+            actualResource?: {
+                personId?: string | null;
+                deviceId?: string | null;
+                stationId?: string | null;
+            };
         };
         CreateRunRequest: {
             trigger?: string;

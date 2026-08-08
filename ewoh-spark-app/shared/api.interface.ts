@@ -1174,6 +1174,23 @@ export interface CreateRunRequest {
   reason?: string;
 }
 
+/**
+ * 调度事件注入请求（v0.7 B2 事件驱动智能重排）。
+ * 供 ingest / MES / 边缘 bridge 等事件源调用：注入真实业务事件（设备离线、
+ * 路线阻断、安全事件等），触发 ReplanCoordinator 局部重排（影响分析 + 冻结无关任务 + 熔断）。
+ * 幂等与冷却由 TriggerService 保证（跨进程可靠）。
+ */
+export interface SchedulingEventRequest {
+  /** 事件触发的调度重排类型（13 类 SchedulingTrigger 之一）。 */
+  trigger: SchedulingTrigger;
+  /** 事件关联实体 id（设备/路由边/人员/区域），可空表示全局触发。 */
+  entityId?: string;
+  /** 操作者（M2M 调用可传系统标识，写入审计）。 */
+  operator?: string;
+  /** 事件说明（写入审计，便于溯源）。 */
+  reason?: string;
+}
+
 /** 查询调度运行历史请求（V2） */
 export interface ListRunsRequest {
   /** 按运行状态过滤（queued/running/succeeded/failed）。 */
