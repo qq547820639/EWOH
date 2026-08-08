@@ -36,7 +36,7 @@ function runSyncAllToFeishu() {
 // 启动时加载飞书配置 + 首次同步 3 台预置设备到多维表格 + 启动事件状态轮询（失败不阻断）
 const feishuConfig = feishu.loadConfig();
 if (feishuConfig) {
-  console.log(`[feishu] 配置已加载，chat_id=${feishuConfig.chat_id}, base_token=${feishuConfig.base_token}`);
+  console.log(`[feishu] 配置已加载，chat_id=${feishuConfig.chat_id}（base_token 已加载，不打印敏感值）`);
   for (const dev of dbm.listDevices(db)) {
     Promise.resolve(sync.syncDevice(dev)).catch((e) =>
       console.error('[feishu] 首次设备同步失败:', e.message)
