@@ -2,6 +2,7 @@ import { Module, OnApplicationBootstrap } from '@nestjs/common';
 import { IngestController } from './ingest.controller';
 import { IngestService } from './ingest.service';
 import { IngestGuard } from './ingest.guard';
+import { SensorIngestService } from './sensor-ingest.service';
 import { RuleEngineModule } from '../rule-engine/rule-engine.module';
 import { MesModule } from '../mes/mes.module';
 
@@ -16,7 +17,7 @@ import { MesModule } from '../mes/mes.module';
 @Module({
   imports: [RuleEngineModule, MesModule],
   controllers: [IngestController],
-  providers: [IngestService, IngestGuard],
+  providers: [IngestService, IngestGuard, SensorIngestService],
 })
 export class IngestModule implements OnApplicationBootstrap {
   onApplicationBootstrap(): void {

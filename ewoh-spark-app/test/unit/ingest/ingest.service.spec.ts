@@ -47,6 +47,16 @@ function createMesService() {
   };
 }
 
+/** P1-Ingest decomposition：SensorIngestService mock（environment/camera/spatial/location）。 */
+function createSensorIngest() {
+  return {
+    ingestEnvironment: jest.fn().mockResolvedValue({ accepted: true, record_id: 'env-1' }),
+    ingestCamera: jest.fn().mockResolvedValue({ accepted: true, record_id: 'cam-1' }),
+    ingestSpatialScan: jest.fn().mockResolvedValue({ accepted: true, record_id: 'scan-1' }),
+    ingestLocation: jest.fn().mockResolvedValue({ accepted: true, record_id: 'loc-1' }),
+  };
+}
+
 describe('IngestService canonical UnifiedExoFrame mapping', () => {
   it('maps nested pose/load/device/quality fields into telemetry and device rows', async () => {
     const { db, insertRows } = createIngestDb([[{}], []]);
@@ -55,6 +65,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
       db as never,
       ruleEngine as unknown as never,
       createMesService() as unknown as never,
+      createSensorIngest() as unknown as never,
     );
 
     const result = await service.ingestExoskeleton({
@@ -120,6 +131,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
       db as never,
       createRuleEngine() as unknown as never,
       createMesService() as unknown as never,
+      createSensorIngest() as unknown as never,
     );
 
     await service.ingestExoskeleton({
@@ -144,6 +156,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
       db as never,
       createRuleEngine() as unknown as never,
       createMesService() as unknown as never,
+      createSensorIngest() as unknown as never,
     );
 
     const result = await service.ingestExoskeleton({
@@ -166,6 +179,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
       db as never,
       createRuleEngine() as unknown as never,
       createMesService() as unknown as never,
+      createSensorIngest() as unknown as never,
     );
 
     const result = await service.ingestExoskeleton({
@@ -187,6 +201,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
       db as never,
       createRuleEngine() as unknown as never,
       createMesService() as unknown as never,
+      createSensorIngest() as unknown as never,
     );
 
     const result = await service.ingestExoskeleton({
@@ -206,6 +221,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
       {} as never,
       createRuleEngine() as unknown as never,
       createMesService() as unknown as never,
+      createSensorIngest() as unknown as never,
     );;
 
     await expect(
@@ -279,7 +295,8 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       existingEntities: ['EXO-BATCH-1'],
       existingRawRefs: [],
     });
-    const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never);
+    const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never,
+      createSensorIngest() as unknown as never);
 
     const result = await service.ingestExoskeletonBatch([
       makeFrame({ entity_id: 'EXO-BATCH-1' }),
@@ -303,7 +320,8 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       existingEntities: ['EXO-BATCH-1'],
       existingRawRefs: ['dup-raw-ref'],
     });
-    const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never);
+    const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never,
+      createSensorIngest() as unknown as never);
 
     const result = await service.ingestExoskeletonBatch([
       makeFrame({ entity_id: 'EXO-BATCH-1', raw_ref: 'dup-raw-ref' }),
@@ -323,7 +341,8 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       existingEntities: ['EXO-BATCH-1'],
       existingRawRefs: [],
     });
-    const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never);
+    const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never,
+      createSensorIngest() as unknown as never);
 
     const result = await service.ingestExoskeletonBatch([
       makeFrame({ entity_id: 'EXO-BATCH-1', event_time: future }),
@@ -341,7 +360,8 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       existingEntities: ['EXO-BATCH-1'],
       existingRawRefs: [],
     });
-    const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never);
+    const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never,
+      createSensorIngest() as unknown as never);
 
     const result = await service.ingestExoskeletonBatch([
       makeFrame({ entity_id: 'EXO-BATCH-MISSING' }),
@@ -367,6 +387,7 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       db as never,
       createRuleEngine() as unknown as never,
       mes as unknown as never,
+      createSensorIngest() as unknown as never,
     );
 
     const result = await service.ingestMes({
@@ -398,6 +419,7 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       db as never,
       createRuleEngine() as unknown as never,
       mes as unknown as never,
+      createSensorIngest() as unknown as never,
     );
 
     const result = await service.ingestMes({ order_id: 'WO-MES-2' });
