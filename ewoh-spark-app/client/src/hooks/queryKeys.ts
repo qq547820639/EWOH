@@ -21,6 +21,14 @@ export const queryKeys = {
   deviceBindings: (deviceId?: string) => ['device-bindings', deviceId ?? 'none'] as const,
   replaySnapshots: ['world-replay'] as const,
   schedulerPlans: (status?: string) => ['scheduler-plans', status ?? 'all'] as const,
+  /** 当前活跃的调度方案列表（V2），由 createRun 结果 + SSE 事件流写入缓存维护。 */
+  schedulerActivePlans: ['scheduler-active-plans'] as const,
+  /** 单个方案详情（V2）。 */
+  schedulerPlan: (planId: string) => ['scheduler-plan', planId] as const,
+  /** 单个调度运行记录（V2）。 */
+  schedulerRun: (runId: string) => ['scheduler-run', runId] as const,
+  /** 单个任务的候选资源（V2，后端资格判定 + 路径可行性计算）。 */
+  schedulerTaskCandidates: (taskId: string) => ['scheduler-task-candidates', taskId] as const,
   commandCenter: ['command-center'] as const,
   digitalWorld: ['digital-world'] as const,
   personnel: (query?: PersonnelQuery) => ['personnel', query ?? {}] as const,

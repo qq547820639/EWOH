@@ -5,6 +5,7 @@ import {
   BadRequestException,
   NotFoundException,
   ConflictException,
+  Optional,
 } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -30,6 +31,7 @@ import { SolverService, type SolverConstraint } from './solver.service';
 import { WorldStateSnapshotService } from './world-state.service';
 import { DispatchCoordinatorService } from './dispatch-coordinator.service';
 import { SchedulingPolicyService } from './scheduling-policy.service';
+import { SchedulingFeedbackService } from './scheduling-feedback.service';
 
 /** 方案服务：持久化方案、审批/拒绝/下发/重排/对比。 */
 @Injectable()
@@ -44,6 +46,7 @@ export class PlanService {
     private readonly worldStateSnapshotService: WorldStateSnapshotService,
     private readonly dispatchCoordinator: DispatchCoordinatorService,
     private readonly schedulingPolicyService: SchedulingPolicyService,
+    @Optional() private readonly feedbackService?: SchedulingFeedbackService,
   ) {}
 
   /** 持久化一个 V2 方案（ewoh_schedule_plan + 分配明细）。 */
@@ -190,10 +193,25 @@ export class PlanService {
       after: { status: 'approved' },
       reason: body.reason,
     });
+    this.recordAcceptanceFeedback(planId, true, ctx);
     return this.getPlan(planId);
   }
 
-  /** 拒绝方案。 */
+  /** 观测型：记录审批验收反馈。失败仅记日志，不影响审批流程。 */
+  private recordAcceptanceFeedback(
+    planId: string,
+    accepted: boolean,
+    ctx: OrgContext,
+  ): void {
+    if (!this.feedbackService) return;
+    this.feedbackService
+      .recordAcceptance(planId, accepted, ctx)
+      .catch((err) => {
+        this.logger.warn(
+          `scheduling feedback acceptance skipped for plan ${planId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+  }
   async rejectPlan(
     planId: string,
     body: { operator?: string; reason?: string },

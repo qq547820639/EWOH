@@ -105,9 +105,15 @@ export class CpSatSchedulingSolver {
 
     // 否则回退到启发式：Worker 可达但结果不可用 → FALLBACK；不可达 → UNAVAILABLE。
     const fallbackStatus: SolverStatus = reachable ? 'FALLBACK' : 'UNAVAILABLE';
-    this.logger.warn(`回退到启发式求解器（solverStatus=${fallbackStatus}）`);
+    const fallbackReason = reachable
+      ? `CP-SAT worker 返回非最优/不可用状态（${response?.solverStatus ?? 'unknown'}），回退启发式`
+      : `CP-SAT worker 不可达（${this.workerUrl}），回退启发式`;
+    this.logger.warn(
+      `回退到启发式求解器（solverStatus=${fallbackStatus}）：${fallbackReason}`,
+    );
     const plan = await this.heuristicSolver.solve(snapshot, constraints, opts);
     plan.solverStatus = fallbackStatus;
+    plan.fallbackReason = fallbackReason;
     return plan;
   }
 

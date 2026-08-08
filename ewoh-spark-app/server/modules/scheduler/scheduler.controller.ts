@@ -177,6 +177,11 @@ export class SchedulerController {
     return this.schedulerService.comparePlansV2(planId, otherPlanId);
   }
 
+  @Get('tasks/:id/candidates')
+  async getTaskCandidates(@Param('id') id: string) {
+    return this.schedulerService.getTaskCandidates(id);
+  }
+
   @Get('routes')
   async getRoutes() {
     return this.schedulerService.getRoutes();

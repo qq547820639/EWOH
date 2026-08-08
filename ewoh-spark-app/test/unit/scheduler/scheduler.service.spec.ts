@@ -79,6 +79,9 @@ describe('SchedulerService confirmPlan', () => {
       undefined as never,
       undefined as never,
       undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
     );
 
     const error = await service
@@ -151,6 +154,9 @@ describe('SchedulerService confirmPlan', () => {
       db,
       context as never,
       audit as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
       undefined as never,
       undefined as never,
       undefined as never,
@@ -235,6 +241,9 @@ describe('SchedulerService generatePlans idempotency', () => {
       undefined as never,
       undefined as never,
       undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
     );
 
     const result = await service.generatePlans({ idempotencyKey: 'key-1' });
@@ -288,6 +297,9 @@ describe('SchedulerService updateWeights', () => {
       undefined as never,
       undefined as never,
       undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
     );
 
     const result = await service.updateWeights(
@@ -335,6 +347,9 @@ describe('SchedulerService updateWeights', () => {
       { insert } as never,
       context as never,
       audit as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
       undefined as never,
       undefined as never,
       undefined as never,

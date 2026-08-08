@@ -1330,6 +1330,14 @@ export interface ResourceState {
   freshnessMs?: number | null;
   /** 数据质量：FRESH / STALE / UNKNOWN。 */
   dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
+  /** 当前任务 id（person/device 有背衬列时填充，无则 null，不虚构）。 */
+  currentTask?: string | null;
+  /** 班组（person 有 team_name 列，其余资源无则 null）。 */
+  team?: string | null;
+  /** 班次（无对应背衬列时为 null）。 */
+  shift?: string | null;
+  /** 最近更新时间（epoch ms）。 */
+  updatedAt?: number | null;
   version: number;
 }
 
@@ -1404,6 +1412,8 @@ export interface WorldStateSnapshot {
     skillMatchMode?: 'ALL' | 'ANY';
     /** 截止时间（epoch ms，可由 planEnd 推算）。 */
     dueAtMs?: number | null;
+    /** 生产影响度 0..1（越高越影响产线节拍，越小 score 越紧急）。缺省 0，向后兼容可选。 */
+    productionImpact?: number;
   }>;
   devices: Array<{
     id: string;
@@ -1553,6 +1563,8 @@ export interface SchedulingPlanV2 {
   solverVersion: string;
   /** 实际使用的求解器状态（CP-SAT / fallback / infeasible 等）。 */
   solverStatus?: SolverStatus;
+  /** 回退/降级原因（如 worker 不可达、超时、返回非最优），供 UI 展示 HEURISTIC/FALLBACK 等。 */
+  fallbackReason?: string;
   /** 求解耗时（ms）。 */
   solveDurationMs?: number;
   /** 目标函数值（求解器输出，可解释）。 */
@@ -1567,6 +1579,57 @@ export interface SchedulingPlanV2 {
   baselineDelta: Record<string, unknown>;
   violations: Array<Record<string, unknown>>;
   createdAt: string;
+}
+
+/** 调度反馈（SchedulingFeedback，Task 7）：观测型 planned-vs-actual 执行数据，仅用于离线评估/参数对比/回归，不参与生产调度。 */
+export interface SchedulingFeedbackResource {
+  personId?: string | null;
+  deviceId?: string | null;
+  stationId?: string | null;
+}
+
+export interface SchedulingFeedback {
+  feedbackId: string;
+  runId: string | null;
+  planId: string;
+  taskId: string | null;
+  assignmentId: string | null;
+  plannedStart: string | null;
+  actualStart: string | null;
+  plannedEnd: string | null;
+  actualEnd: string | null;
+  plannedTravel: number | null;
+  actualTravel: number | null;
+  plannedWait: number | null;
+  actualWait: number | null;
+  originalResource: SchedulingFeedbackResource | null;
+  actualResource: SchedulingFeedbackResource | null;
+  replanCount: number;
+  conflictCount: number;
+  overrideCount: number;
+  solverRuntime: number | null;
+  solverFallback: boolean;
+  /** 审批结果：approved=true，rejected=false，未决=null。 */
+  accepted: boolean | null;
+  ts: string;
+}
+
+/** 由 ewoh_scheduling_feedback 派生的调度 KPI（离线评估）。 */
+export interface SchedulingFeedbackKpis {
+  totalFeedback: number;
+  accepted: number;
+  rejected: number;
+  pendingAcceptance: number;
+  /** accepted / (accepted + rejected)，无已决数据时为 0。 */
+  acceptanceRate: number;
+  /** overrideCount>0 的反馈行占比。 */
+  overrideRate: number;
+  /** solverFallback=true 的反馈行占比。 */
+  fallbackRate: number;
+  /** 反馈行 solver_runtime 均值（ms）。 */
+  solverRuntimeMs: number;
+  replanCount: number;
+  conflictCount: number;
 }
 
 /** 调度策略权重（V2） */
@@ -1712,6 +1775,47 @@ export interface EligibilityResult {
   personId: string;
   eligible: boolean;
   reasons: string[];
+}
+
+/** 单个任务候选资源（人员×设备），由候选资源端点返回。 */
+export interface TaskCandidateResource {
+  personId: string;
+  personName: string;
+  deviceId: string | null;
+  stationId: string | null;
+  /** 是否通过资格与路径可行性综合判定。 */
+  eligible: boolean;
+  /** 到任务工位的估算耗时（秒）。 */
+  etaSeconds: number;
+  /** 到任务工位的估算距离（米）。 */
+  distanceMeters: number;
+  /** 技能是否满足任务要求。 */
+  skillMatch: boolean;
+  /** 人员当前负荷（0-1）。 */
+  workload: number;
+  /** 设备电量百分比；纯手工作业（无设备）时为 null。 */
+  batteryPct: number | null;
+  /** 是否存在时间/设备/工位 reservation 冲突。 */
+  reservationConflict: boolean;
+  /** 候选评分（越小越优；不可行/不合格为 Infinity），供 UI 排序。 */
+  score: number;
+  /** 排除原因（来自资格判定 + 路径可行性，如 missing_skill / route_infeasible）。 */
+  reasons: string[];
+}
+
+/** 候选资源端点响应。 */
+export interface TaskCandidatesResponse {
+  taskId: string;
+  taskTitle: string | null;
+  taskStatus: string | null;
+  /** 任务已分配/锁定（仍返回候选，但标记当前受让人）。 */
+  assigned: boolean;
+  lockedAssigneeId: string | null;
+  lockedDeviceId: string | null;
+  /** 当前策略求解器版本。 */
+  solverVersion: string;
+  candidates: TaskCandidateResource[];
+  generatedAt: string;
 }
 
 /** 生成调度运行请求（V2） */

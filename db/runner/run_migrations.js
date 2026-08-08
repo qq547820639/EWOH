@@ -36,6 +36,12 @@ const FILES = {
   standalone_scheduling_rollback: path.join(root, 'db/migrations/standalone_006_scheduling.rollback.sql'),
   standalone_scheduling_verify: path.join(root, 'db/verify/standalone_006_verify.sql'),
   standalone_scheduling_seed: path.join(root, 'db/seed/standalone_006_scheduling_seed.sql'),
+  standalone_reservation_conflict: path.join(root, 'db/migrations/standalone_009_reservation_conflict.sql'),
+  standalone_reservation_conflict_rollback: path.join(root, 'db/migrations/standalone_009_reservation_conflict.rollback.sql'),
+  standalone_reservation_conflict_verify: path.join(root, 'db/verify/standalone_009_verify.sql'),
+  standalone_scheduling_feedback: path.join(root, 'db/migrations/standalone_010_scheduling_feedback.sql'),
+  standalone_scheduling_feedback_rollback: path.join(root, 'db/migrations/standalone_010_scheduling_feedback.rollback.sql'),
+  standalone_scheduling_feedback_verify: path.join(root, 'db/verify/standalone_010_verify.sql'),
 };
 
 const PLAN_NAMES = Object.freeze(Object.keys(FILES));
@@ -48,6 +54,8 @@ const ROLLBACK_COMMANDS = new Set([
   '--rollback-standalone-domain',
   '--rollback-standalone-workbench-prod',
   '--rollback-standalone-scheduling',
+  '--rollback-standalone-reservation-conflict',
+  '--rollback-standalone-scheduling-feedback',
 ]);
 const EXECUTE_COMMANDS = new Set([
   '--apply',
@@ -76,6 +84,12 @@ const EXECUTE_COMMANDS = new Set([
   '--rollback-standalone-scheduling',
   '--verify-standalone-scheduling',
   '--seed-standalone-scheduling',
+  '--apply-standalone-reservation-conflict',
+  '--rollback-standalone-reservation-conflict',
+  '--verify-standalone-reservation-conflict',
+  '--apply-standalone-scheduling-feedback',
+  '--rollback-standalone-scheduling-feedback',
+  '--verify-standalone-scheduling-feedback',
 ]);
 
 const TOKEN = '__EWOH_SCHEMA__';
@@ -150,6 +164,8 @@ function usage() {
   console.error('       run_migrations.js --apply-standalone-domain | --rollback-standalone-domain | --verify-standalone-domain');
   console.error('       run_migrations.js --apply-standalone-workbench-prod | --rollback-standalone-workbench-prod | --verify-standalone-workbench-prod');
   console.error('       run_migrations.js --apply-standalone-scheduling | --rollback-standalone-scheduling | --verify-standalone-scheduling | --seed-standalone-scheduling');
+  console.error('       run_migrations.js --apply-standalone-reservation-conflict | --rollback-standalone-reservation-conflict | --verify-standalone-reservation-conflict');
+  console.error('       run_migrations.js --apply-standalone-scheduling-feedback | --rollback-standalone-scheduling-feedback | --verify-standalone-scheduling-feedback');
   console.error('Env: EWOH_DATABASE_URL or SUDA_DATABASE_URL, EWOH_SCHEMA, EWOH_ALLOW_DDL=1');
   console.error('Rollback also requires EWOH_ALLOW_DESTRUCTIVE_ROLLBACK=1.');
   process.exit(2);
@@ -228,6 +244,35 @@ function main() {
       return;
     }
 
+    if (command === '--verify-standalone-reservation-conflict') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_reservation_conflict_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      const guard = Number(row.reservation_no_overlap_guard || 0);
+      if (guard !== 1) {
+        console.error(`VERIFY FAILED: expected reservation_no_overlap_guard=1, got ${guard}`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: reservation no-overlap exclusion constraint present');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-scheduling-feedback') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_scheduling_feedback_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      const columns = Number(row.ewoh_scheduling_feedback_columns || 0);
+      const indexes = Number(row.ewoh_scheduling_feedback_indexes || 0);
+      if (columns !== 16 || indexes !== 4) {
+        console.error(`VERIFY FAILED: expected (16,4), got (${columns},${indexes})`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: scheduling feedback table + indexes present');
+      }
+      return;
+    }
+
     if (command === '--verify-standalone-scheduling') {
       const rows = await sql.unsafe(substitute(read(FILES.standalone_scheduling_verify), schema));
       console.log(JSON.stringify(rows, null, 2));
@@ -291,6 +336,10 @@ function main() {
       '--rollback-standalone-scheduling': 'standalone_scheduling_rollback',
       '--seed-standalone-admin': 'standalone_admin',
       '--seed-standalone-scheduling': 'standalone_scheduling_seed',
+      '--apply-standalone-reservation-conflict': 'standalone_reservation_conflict',
+      '--rollback-standalone-reservation-conflict': 'standalone_reservation_conflict_rollback',
+      '--apply-standalone-scheduling-feedback': 'standalone_scheduling_feedback',
+      '--rollback-standalone-scheduling-feedback': 'standalone_scheduling_feedback_rollback',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {

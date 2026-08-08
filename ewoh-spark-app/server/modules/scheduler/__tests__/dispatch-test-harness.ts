@@ -11,6 +11,8 @@ import {
   ewohProductionTask,
   ewohAssignmentEvent,
   ewohScheduleAudit,
+  ewohResourceReservation,
+  ewohSchedulingFeedback,
 } from '@server/database/schema';
 import { DispatchCoordinatorService } from '../dispatch-coordinator.service';
 import { RequestDatabaseContext } from '@server/database/request-database-context';
@@ -39,6 +41,8 @@ export interface FakeDbState {
   events: Array<Record<string, unknown>>;
   audits: Array<Record<string, unknown>>;
   constraints: Array<Record<string, unknown>>;
+  reservations: Array<Record<string, unknown>>;
+  feedback: Array<Record<string, unknown>>;
 }
 
 /** 构造一个可 await 且带 where/limit/orderBy 链的最小查询对象。 */
@@ -59,6 +63,8 @@ export function makeFakeDb(seed: FakeDbSeed = {}) {
     events: [],
     audits: [],
     constraints: [],
+    reservations: [],
+    feedback: [],
   };
 
   const rowsOf = (table: unknown) => {
@@ -69,6 +75,8 @@ export function makeFakeDb(seed: FakeDbSeed = {}) {
     if (table === ewohSchedulingPlanAssignment) return state.assignments;
     if (table === ewohProductionTask) return Array.from(state.tasks.values());
     if (table === ewohSchedulingConstraint) return state.constraints;
+    if (table === ewohResourceReservation) return state.reservations;
+    if (table === ewohSchedulingFeedback) return state.feedback;
     return [];
   };
 
@@ -88,6 +96,8 @@ export function makeFakeDb(seed: FakeDbSeed = {}) {
           else if (table === ewohAssignmentEvent) state.events.push(row);
           else if (table === ewohScheduleAudit) state.audits.push(row);
           else if (table === ewohSchedulingConstraint) state.constraints.push(row);
+          else if (table === ewohResourceReservation) state.reservations.push(row);
+          else if (table === ewohSchedulingFeedback) state.feedback.push(row);
         }
         return {
           returning: () => Promise.resolve(arr.length ? [arr[0]] : []),
@@ -114,6 +124,10 @@ export function makeFakeDb(seed: FakeDbSeed = {}) {
           if (table === ewohProductionTask) {
             for (const t of state.tasks.values()) Object.assign(t, patch);
             return { returning: () => Promise.resolve([...state.tasks.values()]) };
+          }
+          if (table === ewohSchedulingFeedback) {
+            for (const f of state.feedback) Object.assign(f, patch);
+            return { returning: () => Promise.resolve([...state.feedback]) };
           }
           return { returning: () => Promise.resolve([]) };
         },

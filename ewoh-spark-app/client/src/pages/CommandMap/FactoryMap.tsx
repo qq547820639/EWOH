@@ -11,6 +11,7 @@ import type {
   CurrentWorldState,
   SchedulingPlanV2,
   RouteGraph,
+  TaskCandidatesResponse,
 } from '@shared/api.interface';
 import { fitLabel, truncateLabel } from './labels';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
@@ -30,6 +31,10 @@ interface FactoryMapProps {
   onFocusPlanPersonsConsumed?: () => void;
   /** 调度方案路由叠加层：shadow 方案虚线、已审批/已下发实线、预测人员位置、目标工位、拥堵/阻断边 */
   planOverlay?: { plan: SchedulingPlanV2 | null; routeGraph?: RouteGraph | null };
+  /** 智能调度驾驶舱：选中任务的候选资源（后端返回，只读展示）。 */
+  candidates?: TaskCandidatesResponse | null;
+  /** 智能调度驾驶舱：当前选中的任务（用于在图上高亮其候选人员）。 */
+  selectedTaskId?: string | null;
 }
 
 /** 摄像头视锥三角形顶点（yaw=0 朝右，按 yaw 旋转） */
@@ -139,6 +144,49 @@ interface StaticStyle {
   fill: string;
   stroke: string;
   dash?: string;
+}
+
+/** 后端 priority.level 的触点颜色（智能调度驾驶舱徽标用，展示层映射）。 */
+function priorityLevelColor(level?: string): string {
+  switch (level) {
+    case 'urgent':
+    case 'critical':
+      return '#ef4444';
+    case 'high':
+      return '#f97316';
+    case 'medium':
+    case 'normal':
+      return '#f59e0b';
+    case 'low':
+      return '#3b82f6';
+    default:
+      return '#a855f7';
+  }
+}
+
+/** 资源可用性层：将后端 status 值映射为展示色（available/busy/unavailable/offline/fault/stale 等）。 */
+function resourceStatusColor(status?: string): string {
+  switch (status) {
+    case 'offline':
+    case 'unavailable':
+    case 'fault':
+    case 'faulted':
+      return '#ef4444';
+    case 'busy':
+    case 'occupied':
+    case 'executing':
+      return '#f97316';
+    case 'reserved':
+      return '#f59e0b';
+    case 'stale':
+      return '#6b7280';
+    case 'idle':
+    case 'available':
+    case 'online':
+    case 'ready':
+    default:
+      return '#34d399';
+  }
 }
 
 function getStaticStyle(type: string): StaticStyle {
@@ -283,6 +331,8 @@ const FactoryMap = ({
   focusPlanPersons = [],
   onFocusPlanPersonsConsumed,
   planOverlay,
+  candidates = null,
+  selectedTaskId = null,
 }: FactoryMapProps): React.ReactElement => {
   const staticEntities = useMemo(
     () =>
@@ -310,6 +360,38 @@ const FactoryMap = ({
 
   const persons = useMemo(() => mergePersons(entities, worldState), [entities, worldState]);
   const devices = useMemo(() => mergeDevices(entities, worldState), [entities, worldState]);
+
+  // 智能调度驾驶舱：任务优先级徽标（后端 decisionTrace.priority，展示用，不本地复算）。
+  const priorityMarkers = useMemo(() => {
+    const plan = planOverlay?.plan;
+    if (!plan) return [];
+    const stationOf = (id: string | null) => {
+      if (!id) return null;
+      const w = workstations.find((x) => x.entityId === id);
+      if (w) return { x: w.x, y: w.y };
+      const s = entities.find((x) => x.entityId === id);
+      return s ? { x: s.x, y: s.y } : null;
+    };
+    return plan.assignments
+      .map((a) => {
+        const p = a.decisionTrace?.priority;
+        if (!p) return null;
+        const point = stationOf(a.stationId);
+        return point ? { assignment: a, priority: p, point } : null;
+      })
+      .filter((x): x is NonNullable<typeof x> => Boolean(x));
+  }, [planOverlay, workstations, entities]);
+
+  // 智能调度驾驶舱：将候选的人员 entityId/姓名 匹配到地图人员坐标（尽力匹配，无则不渲染圆环）。
+  const candidateFocus = useMemo(() => {
+    if (!selectedTaskId || !candidates) return null;
+    const byId = new Map(persons.map((p) => [p.entityId, p]));
+    const byName = new Map(persons.map((p) => [p.name, p]));
+    return candidates.candidates.map((c) => ({
+      candidate: c,
+      point: byId.get(c.personId) ?? byName.get(c.personName) ?? null,
+    }));
+  }, [selectedTaskId, candidates, persons]);
 
   // 生产模式：工位间流动连线（按 x 坐标排序模拟产线流向）
   const flowLines = useMemo(() => {
@@ -779,6 +861,66 @@ const FactoryMap = ({
             );
           })()}
 
+        {/* 3.7 智能调度驾驶舱：任务优先级徽标 + 候选人员高亮（纯后端数据，只读展示） */}
+        {mode === 'scheduling' && planOverlay?.plan && priorityMarkers.length > 0 && (
+          <g pointerEvents="none">
+            {priorityMarkers.map(({ assignment, priority, point }) => (
+              <g key={`iprio-${assignment.assignmentId}`}>
+                <circle
+                  cx={point.x}
+                  cy={point.y}
+                  r={11}
+                  fill="none"
+                  stroke={priorityLevelColor(priority.level)}
+                  strokeWidth={1.5}
+                  strokeDasharray="3 3"
+                  opacity={0.85}
+                />
+                <text
+                  x={point.x}
+                  y={point.y - 15}
+                  textAnchor="middle"
+                  fill={priorityLevelColor(priority.level)}
+                  fontSize="8"
+                  fontWeight="bold"
+                >
+                  {priority.score.toFixed(1)}
+                </text>
+              </g>
+            ))}
+          </g>
+        )}
+        {candidateFocus && candidateFocus.length > 0 && (
+          <g pointerEvents="none">
+            {candidateFocus.map(({ candidate, point }) => {
+              if (!point) return null;
+              const color = candidate.eligible ? '#10b981' : '#ef4444';
+              return (
+                <circle
+                  key={`icand-${candidate.personId}-${candidate.deviceId ?? 'none'}`}
+                  cx={point.x}
+                  cy={point.y}
+                  r={12}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={2}
+                  strokeDasharray="4 3"
+                  opacity={candidate.eligible ? 0.9 : 0.5}
+                >
+                  {candidate.eligible && (
+                    <animate
+                      attributeName="r"
+                      values="10;15;10"
+                      dur="1.2s"
+                      repeatCount="indefinite"
+                    />
+                  )}
+                </circle>
+              );
+            })}
+          </g>
+        )}
+
         {/* 3.5 生产模式：工位间流动虚线 + WIP 气泡 + 节拍脉冲（L2 全量态势显示） */}
         {showDensity && mode === 'production' && flowLines.map((line, i) => (
           <g key={`flow-${i}`}>
@@ -903,6 +1045,31 @@ const FactoryMap = ({
               onClick={() => onSelectEntity(d.entityId)}
               style={{ cursor: 'pointer' }}
             >
+              {/* 资源可用性层：调度模式下用后端 status 渲染状态环（展示用，不本地判定） */}
+              {mode === 'scheduling' && (
+                <>
+                  <circle
+                    cx={d.x}
+                    cy={d.y}
+                    r={9}
+                    fill="none"
+                    stroke={resourceStatusColor(d.status)}
+                    strokeWidth={1.5}
+                    opacity={0.9}
+                    pointerEvents="none"
+                  />
+                  <text
+                    x={d.x}
+                    y={d.y + 15}
+                    textAnchor="middle"
+                    fill={resourceStatusColor(d.status)}
+                    fontSize="8"
+                    pointerEvents="none"
+                  >
+                    {d.status}
+                  </text>
+                </>
+              )}
               <circle
                 cx={d.x}
                 cy={d.y}
@@ -958,6 +1125,31 @@ const FactoryMap = ({
               onClick={() => onSelectEntity(p.entityId)}
               style={{ cursor: 'pointer' }}
             >
+              {/* 资源可用性层：调度模式下用后端 status 渲染状态环（展示用，不本地判定） */}
+              {mode === 'scheduling' && (
+                <>
+                  <circle
+                    cx={p.x}
+                    cy={p.y}
+                    r={10}
+                    fill="none"
+                    stroke={resourceStatusColor(p.status)}
+                    strokeWidth={1.5}
+                    opacity={0.9}
+                    pointerEvents="none"
+                  />
+                  <text
+                    x={p.x}
+                    y={p.y + 16}
+                    textAnchor="middle"
+                    fill={resourceStatusColor(p.status)}
+                    fontSize="8"
+                    pointerEvents="none"
+                  >
+                    {p.status}
+                  </text>
+                </>
+              )}
               <circle
                 cx={p.x}
                 cy={p.y}

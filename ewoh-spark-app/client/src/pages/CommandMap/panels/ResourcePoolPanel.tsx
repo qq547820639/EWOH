@@ -14,7 +14,9 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
+// @deprecated 兼容路径：仅用于“AI 评估”展示，不再是调度写入路径。
 import { allocateResources } from '@client/src/api/gamification';
+import { replan } from '@client/src/api/scheduler';
 import { getDevices } from '@client/src/api/dashboard';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import { getCurrentOperator } from '@client/src/lib/auth';
@@ -26,6 +28,7 @@ import type {
   ResourceAllocationRequest,
   ResourceAllocationResult,
   AllocationEvaluation,
+  SchedulingConstraint,
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { Button } from '@client/src/components/ui/button';
@@ -43,6 +46,8 @@ import {
 interface ResourcePoolPanelProps {
   entities: SpatialEntity[];
   worldState: CurrentWorldState | null;
+  /** 当前活动方案 ID（V2）。手动资源操作会作为 SchedulingConstraint 提交，触发对该方案的重排。 */
+  planId?: string | null;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -294,6 +299,9 @@ function EvaluationPanel({
         <div className="flex items-center gap-1.5 text-xs text-white/80">
           <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
           AI 评估
+          <Badge className="text-[9px] px-1 py-0 text-white/60 bg-white/10 border-white/10">
+            已废弃·只读
+          </Badge>
         </div>
         <Badge className={cn('text-[9px] px-1.5 py-0', overallBadgeClass(ev.overall))}>
           {overallIcon(ev.overall)}
@@ -371,6 +379,7 @@ function EvaluationPanel({
 const ResourcePoolPanel = ({
   entities,
   worldState,
+  planId,
 }: ResourcePoolPanelProps): React.ReactElement => {
   const { data: deviceInfos } = useQuery<DeviceInfo[]>({
     queryKey: queryKeys.devices(),
@@ -390,6 +399,10 @@ const ResourcePoolPanel = ({
     null,
   );
 
+  /**
+   * @deprecated 兼容评估路径：仅用于“AI 评估”展示，不再是授权的调度写入路径。
+   * 正式的调度写入路径为 handleCommit → replan（SchedulingConstraint + V2 重排）。
+   */
   const allocateMutation = useMutation({
     mutationFn: (body: ResourceAllocationRequest) => allocateResources(body),
     onSuccess: (data) => {
@@ -402,6 +415,25 @@ const ResourcePoolPanel = ({
     },
   });
 
+  /**
+   * 正式调度写入路径：把手动分配/锁定操作转换为 SchedulingConstraint，
+   * 提交到现有 V2 replan 机制（复用 solver + SchedulingConstraint 架构，不另建第二套调度器）。
+   */
+  const replanMutation = useMutation({
+    mutationFn: (body: {
+      constraints: SchedulingConstraint[];
+      operator?: string;
+      reason?: string;
+    }) => replan(planId!, { lockedConstraints: body.constraints, operator: body.operator, reason: body.reason }),
+    onSuccess: () => {
+      toast.success('约束已提交，重排完成');
+      setAllocations({});
+    },
+    onError: () => {
+      toast.error('重排失败');
+    },
+  });
+
   const handlePickTarget = (entityId: string, targetId: string) => {
     setAllocations((prev) => ({
       ...prev,
@@ -409,7 +441,41 @@ const ResourcePoolPanel = ({
     }));
   };
 
+  /** 将手动分配目标转换为求解器可执行的锁定约束（LOCKED_PERSON / LOCKED_DEVICE + 目标工位）。 */
+  const buildLockConstraints = (): SchedulingConstraint[] => {
+    const personIds = new Set(persons.map((p) => p.entityId));
+    const deviceIds = new Set(devices.map((d) => d.entityId));
+    const constraints: SchedulingConstraint[] = [];
+    for (const [entityId, v] of Object.entries(allocations)) {
+      if (personIds.has(entityId)) {
+        constraints.push({ type: 'LOCKED_PERSON', personId: entityId, stationId: v.targetId });
+      } else if (deviceIds.has(entityId)) {
+        constraints.push({ type: 'LOCKED_DEVICE', deviceId: entityId, stationId: v.targetId });
+      }
+    }
+    return constraints;
+  };
+
+  /** 正式调度写入：提交约束并触发 V2 重排。 */
   const handleCommit = () => {
+    if (!planId) {
+      toast.error('请先在调度工作台选择活动方案');
+      return;
+    }
+    const constraints = buildLockConstraints();
+    if (constraints.length === 0) {
+      toast.error('请先选择分配目标');
+      return;
+    }
+    replanMutation.mutate({
+      constraints,
+      operator: getCurrentOperator(),
+      reason: '资源池手动分配（SchedulingConstraint）',
+    });
+  };
+
+  /** @deprecated 兼容评估：仅演示 AI 评估，不写入调度。 */
+  const handleLegacyEvaluate = () => {
     const list = Object.entries(allocations).map(([entityId, v]) => ({
       entityId,
       targetType: v.targetType as 'person' | 'device',
@@ -473,10 +539,23 @@ const ResourcePoolPanel = ({
           variant="outline"
           className="h-6 text-[10px] px-2"
           onClick={handleCommit}
-          disabled={allocateMutation.isPending || Object.keys(allocations).length === 0}
+          disabled={replanMutation.isPending || Object.keys(allocations).length === 0}
+          title={planId ? undefined : '请先在调度工作台选择活动方案'}
         >
           <Sparkles className="w-3 h-3" />
-          {allocateMutation.isPending ? '提交中...' : `提交分配 (${Object.keys(allocations).length})`}
+          {replanMutation.isPending
+            ? '重排中...'
+            : `提交约束并重排 (${Object.keys(allocations).length})`}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 text-[10px] px-2 text-white/50"
+          onClick={handleLegacyEvaluate}
+          disabled={allocateMutation.isPending || Object.keys(allocations).length === 0}
+          title="已废弃：仅用于 AI 评估展示，不再写入调度"
+        >
+          评估/兼容
         </Button>
       </div>
 

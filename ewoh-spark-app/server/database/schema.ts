@@ -1223,6 +1223,49 @@ export const ewohReplanTrigger = pgTable("ewoh_replan_trigger", {
   index("idx_ewoh_replan_trigger_org_type").on(table.orgId, table.triggerType),
 ]);
 
+/** 调度反馈（SchedulingFeedback，Task 7）：观测型 planned-vs-actual 执行数据，仅用于离线评估/参数对比/回归，不参与生产调度。 */
+export const ewohSchedulingFeedback = pgTable("ewoh_scheduling_feedback", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  feedbackId: varchar("feedback_id", { length: 255 }).notNull().unique(),
+  runId: varchar("run_id", { length: 255 }),
+  planId: varchar("plan_id", { length: 255 }).notNull(),
+  taskId: varchar("task_id", { length: 255 }),
+  assignmentId: varchar("assignment_id", { length: 255 }),
+  plannedStart: customTimestamptz("planned_start", { precision: 3 }),
+  actualStart: customTimestamptz("actual_start", { precision: 3 }),
+  plannedEnd: customTimestamptz("planned_end", { precision: 3 }),
+  actualEnd: customTimestamptz("actual_end", { precision: 3 }),
+  plannedTravel: real("planned_travel"),
+  actualTravel: real("actual_travel"),
+  plannedWait: real("planned_wait"),
+  actualWait: real("actual_wait"),
+  /**
+   * @type { { personId?: string | null; deviceId?: string | null; stationId?: string | null } | null }
+   */
+  originalResourceJson: jsonb("original_resource_json"),
+  /**
+   * @type { { personId?: string | null; deviceId?: string | null; stationId?: string | null } | null }
+   */
+  actualResourceJson: jsonb("actual_resource_json"),
+  replanCount: integer("replan_count").notNull().default(0),
+  conflictCount: integer("conflict_count").notNull().default(0),
+  overrideCount: integer("override_count").notNull().default(0),
+  solverRuntime: real("solver_runtime"),
+  solverFallback: boolean("solver_fallback").notNull().default(false),
+  /** 审批结果：true=approved, false=rejected, null=未决。 */
+  accepted: boolean("accepted"),
+  ts: customTimestamptz("ts", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  orgId: varchar("org_id", { length: 255 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("ewoh_scheduling_feedback_feedback_id_key").on(table.feedbackId),
+  index("idx_ewoh_scheduling_feedback_plan").on(table.planId),
+  index("idx_ewoh_scheduling_feedback_assignment").on(table.assignmentId),
+  index("idx_ewoh_scheduling_feedback_task").on(table.taskId),
+  index("idx_ewoh_scheduling_feedback_ts").on(table.ts),
+]);
+
 // table aliases
 export const ewohAiSuggestionTable = ewohAiSuggestion;
 export const ewohDeviceTable = ewohDevice;
@@ -1264,3 +1307,4 @@ export const ewohResourceReservationTable = ewohResourceReservation;
 export const ewohOutboxTable = ewohOutbox;
 export const ewohSchedulingPolicyTable = ewohSchedulingPolicy;
 export const ewohReplanTriggerTable = ewohReplanTrigger;
+export const ewohSchedulingFeedbackTable = ewohSchedulingFeedback;

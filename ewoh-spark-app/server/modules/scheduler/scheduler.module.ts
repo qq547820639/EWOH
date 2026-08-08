@@ -17,6 +17,7 @@ import { ReplanCoordinatorService } from './replan-coordinator.service';
 import { SchedulerStreamService } from './scheduler-stream.service';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { SchedulerMetricsController } from './scheduler-metrics.controller';
+import { SchedulingFeedbackService } from './scheduling-feedback.service';
 import { TaskModule } from '../task/task.module';
 
 @Module({
@@ -24,6 +25,7 @@ import { TaskModule } from '../task/task.module';
   controllers: [SchedulerController, SchedulerMetricsController],
   providers: [
     SchedulerMetricsService,
+    SchedulingFeedbackService,
     SchedulerService,
     WorldStateSnapshotService,
     TriggerService,
@@ -42,6 +44,7 @@ import { TaskModule } from '../task/task.module';
   ],
   exports: [
     SchedulerMetricsService,
+    SchedulingFeedbackService,
     WorldStateSnapshotService,
     TriggerService,
     RoutingService,

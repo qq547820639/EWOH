@@ -319,3 +319,70 @@ describe('Task 0.6 Replan 继承真实策略', () => {
     expect(state.audits[0].reason).toContain('v9');
   });
 });
+
+describe('Task 3: 手动资源操作 → SchedulingConstraint 触发重排', () => {
+  it('提交 LOCKED_PERSON 约束触发重排，约束传给 solver 且新方案遵守锁定', async () => {
+    const { svc, mocks, state } = makePlanServiceWith({
+      plans: [
+        {
+          planId: 'PLAN-SRC',
+          planName: 'src',
+          strategy: 'scheduling_v2',
+          status: 'shadow',
+          version: 2,
+          snapshotVersion: 'WS-1',
+          policyVersion: 7,
+          solverVersion: 'heuristic-v2',
+          horizonMinutes: 360,
+        },
+      ],
+      assignments: [],
+      tasks: [],
+    });
+
+    const inheritedPolicy = makePolicy(7);
+    mocks.schedulingPolicyService.getPolicy.mockResolvedValue(inheritedPolicy);
+    mocks.worldStateSnapshotService.buildSnapshot.mockResolvedValue({
+      snapshotVersion: 'WS-LATEST',
+    });
+    // 求解器收到 LOCKED_PERSON 后产出 personId=p2 的方案（遵守锁定）。
+    const lockedPlan: SchedulingPlanV2 = {
+      ...fullPlan(),
+      planId: 'PLAN-SRC-R3',
+      version: 3,
+    };
+    lockedPlan.assignments = [{ ...fullAssignment(), personId: 'p2' }];
+    mocks.solverService.solve.mockResolvedValue(lockedPlan);
+
+    const result = await svc.replan(
+      'PLAN-SRC',
+      {
+        lockedConstraints: [{ type: 'LOCKED_PERSON', taskId: 'T-1', personId: 'p2' }],
+        operator: 'u1',
+        reason: '资源池手动分配',
+      },
+      testOrgContext(),
+    );
+
+    // 1) 约束被传给 solver（而非二次调度路径）。
+    const constraintsPassed = mocks.solverService.solve.mock.calls[0][1];
+    expect(constraintsPassed).toEqual([
+      expect.objectContaining({ type: 'LOCKED_PERSON', taskId: 'T-1', personId: 'p2' }),
+    ]);
+
+    // 2) 新方案遵守锁定。
+    expect(result.planId).toBe('PLAN-SRC-R3');
+    expect(result.assignments[0].personId).toBe('p2');
+
+    // 3) 约束被落库为 scheduling_constraint（personId 存于 valueJson）。
+    const persisted = state.constraints.find(
+      (c) =>
+        (c as { type?: string }).type === 'LOCKED_PERSON' &&
+        (c.valueJson as { personId?: string } | undefined)?.personId === 'p2',
+    );
+    expect(persisted).toBeDefined();
+    expect(persisted!.type).toBe('LOCKED_PERSON');
+    expect(persisted!.active).toBe(true);
+    expect((persisted!.valueJson as { personId?: string }).personId).toBe('p2');
+  });
+});

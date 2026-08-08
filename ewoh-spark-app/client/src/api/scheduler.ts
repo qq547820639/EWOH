@@ -14,6 +14,7 @@ import type {
   RouteGraph,
   Route,
   CalculateRouteRequest,
+  TaskCandidatesResponse,
 } from '@shared/api.interface';
 
 export async function generatePlans(
@@ -114,6 +115,20 @@ export async function getRun(runId: string): Promise<SchedulingRun | null> {
   return res.data;
 }
 
+/**
+ * 获取当前「活跃方案」列表（V2）。
+ *
+ * 说明：V2 后端未提供独立的“活跃方案”列表端点，活跃方案由两部分维护——
+ * 1) `createRun` 的返回结果（新生成的方案）写入 React Query 缓存；
+ * 2) 调度 SSE 事件流（`/api/scheduler/v2/stream`）按 sequence 增量同步。
+ * 因此本函数在首次加载时返回空列表作为初始态，具体方案数据经上述通道进入
+ * `queryKeys.schedulerActivePlans` 缓存，供界面读取。
+ */
+export async function getActivePlans(): Promise<SchedulingPlanV2[]> {
+  const cached = await Promise.resolve<SchedulingPlanV2[]>([]);
+  return cached;
+}
+
 /** 获取完整方案（含分配明细）。 */
 export async function getPlan(planId: string): Promise<SchedulingPlanV2> {
   const res = await axiosForBackend({ url: `/api/scheduler/plans/${planId}`, method: 'GET' });
@@ -187,6 +202,21 @@ export async function comparePlans(
 /** 获取路由图（节点 + 边）。 */
 export async function getRoutes(): Promise<RouteGraph> {
   const res = await axiosForBackend({ url: '/api/scheduler/routes', method: 'GET' });
+  return res.data;
+}
+
+/**
+ * 获取某任务的候选资源（人员×设备），由后端资格判定 + 路径可行性计算。
+ *
+ * 说明：前端仅展示后端返回的候选/排除原因，不自行复算资格或优先级。
+ */
+export async function getTaskCandidates(
+  taskId: string,
+): Promise<TaskCandidatesResponse> {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/tasks/${taskId}/candidates`,
+    method: 'GET',
+  });
   return res.data;
 }
 

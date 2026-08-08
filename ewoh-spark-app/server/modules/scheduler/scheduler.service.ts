@@ -32,6 +32,8 @@ import type {
   RejectPlanRequest,
   ReplanRequest,
   CalculateRouteRequest,
+  TaskCandidatesResponse,
+  TaskCandidateResource,
 } from '@shared/api.interface';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { AuditService } from '../shared/audit.service';
@@ -42,6 +44,10 @@ import { TriggerService } from './trigger.service';
 import { SolverService } from './solver.service';
 import { PlanService } from './plan.service';
 import { RoutingService } from './routing.service';
+import { EligibilityService } from './eligibility.service';
+import { RouteCostProvider } from './route-cost.provider';
+import { SchedulingPolicyService } from './scheduling-policy.service';
+import { TaskLifecycle } from './task-lifecycle';
 
 /**
  * NOTE: ewoh_schedule_audit has no before_json/after_json columns in the
@@ -79,6 +85,9 @@ export class SchedulerService {
     private readonly solverService: SolverService,
     private readonly planService: PlanService,
     private readonly routingService: RoutingService,
+    private readonly eligibilityService: EligibilityService,
+    private readonly routeCostProvider: RouteCostProvider,
+    private readonly policyService: SchedulingPolicyService,
   ) {}
 
   async generatePlans(body?: { idempotencyKey?: string }): Promise<SchedulePlan[]> {
@@ -872,6 +881,191 @@ export class SchedulerService {
 
   async calculateRouteV2(body: CalculateRouteRequest): Promise<Route> {
     return this.routingService.calculateRoute(body.personId, body.taskId);
+  }
+
+  /**
+   * 任务候选资源：为指定任务返回可派人员×设备的资格/路径评估列表。
+   * 复用现有 EligibilityService 与 RouteCostProvider（不重复实现规则）。
+   * 任务已分配/锁定仍返回候选，但标记 assigned 与当前受让人。
+   */
+  async getTaskCandidates(taskId: string): Promise<TaskCandidatesResponse> {
+    const state = await this.worldStateSnapshotService.getCurrentWorldState();
+    const task = state.tasks.find((t) => t.id === taskId);
+    if (!task) throw new NotFoundException(`Task ${taskId} not found`);
+
+    const policy = await this.policyService.getActivePolicy();
+    const config = await this.policyService.getConfig();
+    const now = Date.now();
+
+    const stationById = new Map(state.stations.map((s) => [s.id, s]));
+    const taskStation = task.stationId ? stationById.get(task.stationId) : undefined;
+    const taskPoint = taskStation
+      ? { x: taskStation.x, y: taskStation.y }
+      : undefined;
+
+    const doneTaskIds = new Set<string>(
+      state.tasks
+        .filter((t) => TaskLifecycle.isTerminal(t.status))
+        .map((t) => t.id),
+    );
+
+    const bookedTimeSlots = (state.reservations ?? [])
+      .filter((r) => r.resourceType === 'person')
+      .map((r) => ({ personId: r.resourceId, start: r.startMs, end: r.endMs }));
+    const bookedDeviceSlots = (state.reservations ?? [])
+      .filter((r) => r.resourceType === 'device')
+      .map((r) => ({ deviceId: r.resourceId, start: r.startMs, end: r.endMs }));
+    const bookedStationSlots = (state.reservations ?? [])
+      .filter((r) => r.resourceType === 'station')
+      .map((r) => ({ stationId: r.resourceId, start: r.startMs, end: r.endMs }));
+
+    const forbiddenZones = (state.forbiddenZones ?? []).map((f) => f.zoneId);
+    const safetyBlockedPersonIds = state.safetyBlockedPersonIds ?? [];
+
+    const candidateStartMs = task.planStart ? Date.parse(task.planStart) : now;
+    const candidateEndMs = task.planEnd
+      ? Date.parse(task.planEnd)
+      : now + (config.defaultTaskDurationMs ?? 1_800_000);
+
+    const lockedByTask = (state.lockedAssignments ?? []).find(
+      (la) => la.taskId === taskId,
+    );
+    const assigned = Boolean(task.assigneeId || lockedByTask?.personId);
+    const lockedAssigneeId = task.assigneeId ?? lockedByTask?.personId ?? null;
+    const lockedDeviceId = task.deviceId ?? lockedByTask?.deviceId ?? null;
+
+    const requiredCaps = task.requiredDeviceCapabilities ?? [];
+    // 设备候选：全部设备（资格判定负责 battery/offline/capability 排除）+ 无能力要求时的纯手工(null)。
+    const deviceCandidates: Array<(typeof state.devices)[number] | null> = [
+      ...state.devices,
+    ];
+    if (requiredCaps.length === 0) deviceCandidates.push(null);
+
+    const lockedPersonIds = Array.from(
+      new Set(
+        (state.lockedAssignments ?? [])
+          .filter((la) => la.taskId !== taskId)
+          .map((la) => la.personId ?? '')
+          .filter(Boolean),
+      ),
+    );
+
+    const candidates: TaskCandidateResource[] = [];
+
+    for (const person of state.persons) {
+      const personStation = person.stationId
+        ? stationById.get(person.stationId)
+        : undefined;
+      const personPoint = personStation
+        ? { x: personStation.x, y: personStation.y }
+        : { x: person.x, y: person.y };
+
+      const routeCost = await this.routeCostProvider.estimate(
+        person.id,
+        task.id,
+        personPoint,
+        taskPoint,
+      );
+      const routeInfeasible = routeCost.feasible === false;
+
+      for (const device of deviceCandidates) {
+        const eligibility = this.eligibilityService.check(
+          {
+            id: person.id,
+            status: person.status,
+            skills: person.skills,
+            certifications: person.certifications,
+            stationId: person.stationId,
+            loadLevel: person.loadLevel,
+            fatigueLevel: person.fatigueLevel,
+            healthStatus: person.healthStatus,
+          },
+          {
+            id: task.id,
+            taskType: task.taskType,
+            requiredSkills: task.requiredSkills,
+            skillMatchMode: task.skillMatchMode,
+            requiredCertifications: task.requiredCertifications,
+            stationId: task.stationId,
+            zoneId: task.zoneId,
+            predIds: task.predecessorIds,
+            requiredDeviceCapabilities: requiredCaps,
+          },
+          device
+            ? {
+                id: device.id,
+                batteryPct: device.batteryPct,
+                online: device.online,
+                status: device.status,
+                capabilities: device.capabilities ?? [],
+              }
+            : null,
+          {
+            now,
+            bookedTimeSlots,
+            bookedDeviceSlots,
+            bookedStationSlots,
+            lockedPersonIds,
+            forbiddenZones,
+            minBatteryPct: config.minBatteryPct,
+            maxContinuousLoad: config.maxContinuousLoad,
+            safetyBlockedPersonIds,
+            predecessorDone: (id) => doneTaskIds.has(id),
+            candidateStartMs,
+            candidateEndMs,
+          },
+        );
+
+        const reasons = [...eligibility.reasons];
+        if (routeInfeasible) reasons.push('route_infeasible');
+
+        const eligible = eligibility.eligible && !routeInfeasible;
+        const reservationConflict = eligibility.reasons.some((r) =>
+          ['time_conflict', 'device_reserved', 'station_reserved'].includes(r),
+        );
+        const skillMatch = !eligibility.reasons.includes('missing_skill');
+        const score = eligible
+          ? routeCost.etaSeconds + person.loadLevel * 60
+          : Number.POSITIVE_INFINITY;
+
+        candidates.push({
+          personId: person.id,
+          personName: person.name,
+          deviceId: device ? device.id : null,
+          stationId: task.stationId,
+          eligible,
+          etaSeconds: routeCost.etaSeconds,
+          distanceMeters: routeCost.distanceMeters,
+          skillMatch,
+          workload: person.loadLevel,
+          batteryPct: device ? device.batteryPct : null,
+          reservationConflict,
+          score,
+          reasons,
+        });
+      }
+    }
+
+    candidates.sort((a, b) => {
+      if (a.eligible !== b.eligible) return a.eligible ? -1 : 1;
+      if (a.score !== b.score) return a.score - b.score;
+      if (a.personId !== b.personId) return a.personId < b.personId ? -1 : 1;
+      const da = a.deviceId ?? '';
+      const db = b.deviceId ?? '';
+      return da < db ? -1 : da > db ? 1 : 0;
+    });
+
+    return {
+      taskId: task.id,
+      taskTitle: task.title ?? null,
+      taskStatus: task.status ?? null,
+      assigned,
+      lockedAssigneeId,
+      lockedDeviceId,
+      solverVersion: policy.solverVersion,
+      candidates,
+      generatedAt: new Date().toISOString(),
+    };
   }
 
   private toOrgContext(actor?: OrgContext): OrgContext {

@@ -16,7 +16,7 @@ import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { getEntities } from '../../api/spatial';
 import { createReplayItem, getReplay, getWorldState } from '../../api/world';
-import { getRoutes } from '../../api/scheduler';
+import { getRoutes, getTaskCandidates } from '../../api/scheduler';
 import {
   getOverview,
   getEvents,
@@ -37,6 +37,7 @@ import type {
   PersonnelInfo,
   SchedulingPlanV2,
   RouteGraph,
+  TaskCandidatesResponse,
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { queryKeys } from '@client/src/hooks/queryKeys';
@@ -70,6 +71,7 @@ const WorkbenchPanel = React.lazy(() => import('./panels/WorkbenchPanel'));
 const ResourcePoolPanel = React.lazy(() => import('./panels/ResourcePoolPanel'));
 const TaskOrchestrationPanel = React.lazy(() => import('./panels/TaskOrchestrationPanel'));
 const BrainPanel = React.lazy(() => import('./panels/BrainPanel'));
+const IntelligenceLayers = React.lazy(() => import('./panels/IntelligenceLayers'));
 
 /** 懒加载 chunk 加载期间的轻量占位，避免空白闪烁。 */
 const MapPanelFallback = () => (
@@ -129,6 +131,9 @@ const CommandMap = (): React.ReactElement => {
   const [focusPlanId, setFocusPlanId] = useState<string | null>(null);
   const [focusPlanPersons, setFocusPlanPersons] = useState<string[]>([]);
   const [activePlan, setActivePlan] = useState<SchedulingPlanV2 | null>(null);
+  // 智能调度驾驶舱：选中的任务（用于拉取后端候选资源）与驾驶舱面板显隐。
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [showIntelligence, setShowIntelligence] = useState(false);
   const [replayMode, setReplayMode] = useState(false);
   const [replayPaused, setReplayPaused] = useState(false);
   const [replaySpeed, setReplaySpeed] = useState(1);
@@ -288,6 +293,26 @@ const CommandMap = (): React.ReactElement => {
     refetchInterval: 30000,
     staleTime: QUERY_STALE_TIME_MS,
   });
+
+  // 智能调度驾驶舱：选中任务时拉取后端候选资源（只读展示，不本地复算资格）。
+  const { data: candidates } = useQuery<TaskCandidatesResponse | null>({
+    queryKey: queryKeys.schedulerTaskCandidates(selectedTaskId ?? 'none'),
+    queryFn: () =>
+      selectedTaskId ? getTaskCandidates(selectedTaskId) : Promise.resolve<TaskCandidatesResponse | null>(null),
+    enabled: !!selectedTaskId && mode === 'scheduling',
+    staleTime: QUERY_STALE_TIME_MS,
+  });
+
+  // 离开调度模式或清空方案时，重置任务选择与驾驶舱面板。
+  useEffect(() => {
+    if (mode !== 'scheduling') {
+      setSelectedTaskId(null);
+      setShowIntelligence(false);
+    }
+  }, [mode]);
+  useEffect(() => {
+    if (!activePlan) setSelectedTaskId(null);
+  }, [activePlan]);
 
   const entityList = entities ?? [];
   const state = worldState ?? null;
@@ -609,7 +634,37 @@ const CommandMap = (): React.ReactElement => {
           focusPlanPersons={focusPlanPersons}
           onFocusPlanPersonsConsumed={() => setFocusPlanPersons([])}
           planOverlay={{ plan: activePlan, routeGraph: routeGraph ?? null }}
+          candidates={candidates ?? null}
+          selectedTaskId={selectedTaskId}
         />
+
+        {/* 智能调度驾驶舱：开关 + 叠加层（仅调度模式且有方案时展示后端数据图层） */}
+        {mode === 'scheduling' && activePlan && (
+          <button
+            type="button"
+            onClick={() => setShowIntelligence((v) => !v)}
+            className="absolute right-2 top-14 z-40 flex items-center gap-1 rounded-md border border-white/10 bg-[hsl(220_14%_14%)]/95 px-2 py-1.5 text-[10px] text-white/80 shadow-lg hover:bg-white/10"
+            title="智能调度驾驶舱图层"
+          >
+            <Brain className="w-3.5 h-3.5 text-violet-400" />
+            智能调度{selectedTaskId ? ' ⚠候选' : ''}
+          </button>
+        )}
+        {mode === 'scheduling' && showIntelligence && (
+          <div className="absolute right-2 top-24 bottom-2 z-40 w-[320px]">
+            <React.Suspense fallback={<MapPanelFallback />}>
+              <IntelligenceLayers
+                plan={activePlan}
+                entities={entityList}
+                worldState={displayWorldState}
+                candidates={candidates ?? null}
+                selectedTaskId={selectedTaskId}
+                onSelectTask={setSelectedTaskId}
+                onClose={() => setShowIntelligence(false)}
+              />
+            </React.Suspense>
+          </div>
+        )}
 
         <EntityDetail
           entityId={selectedEntityId}
@@ -764,7 +819,11 @@ const CommandMap = (): React.ReactElement => {
           )}
           {activeTab === 'resource' && (
             <React.Suspense fallback={<MapPanelFallback />}>
-              <ResourcePoolPanel entities={entityList} worldState={state} />
+              <ResourcePoolPanel
+                entities={entityList}
+                worldState={state}
+                planId={activePlan?.planId ?? null}
+              />
             </React.Suspense>
           )}
           {activeTab === 'orchestration' && (

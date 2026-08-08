@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Sparkles,
   Check,
@@ -15,6 +15,8 @@ import dayjs from 'dayjs';
 import { toast } from 'sonner';
 import {
   createRun,
+  getActivePlans,
+  getPlan,
   approvePlan,
   rejectPlanV2,
   dispatchPlanV2,
@@ -22,6 +24,8 @@ import {
   comparePlans,
 } from '@client/src/api/scheduler';
 import { getCurrentOperator } from '@client/src/lib/auth';
+import { queryKeys } from '@client/src/hooks/queryKeys';
+import { useSchedulerStream } from '@client/src/hooks/useSchedulerStream';
 import type {
   SchedulingPlanV2,
   SchedulingAssignment,
@@ -186,7 +190,10 @@ export default function SchedulePanel({
   onSelectPlan,
   personnel = [],
 }: SchedulePanelProps) {
-  const [plans, setPlans] = useState<SchedulingPlanV2[]>([]);
+  const queryClient = useQueryClient();
+  // 订阅调度 SSE：将服务端事件增量写入 React Query 缓存（活跃方案/详情）。
+  useSchedulerStream();
+
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
   const [approveTarget, setApproveTarget] = useState<SchedulingPlanV2 | null>(null);
@@ -199,6 +206,34 @@ export default function SchedulePanel({
   const [comparePlanId, setComparePlanId] = useState<string>('');
   const [compareResult, setCompareResult] = useState<Record<string, unknown> | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+
+  // 活跃方案列表：来自 React Query 缓存（createRun 结果 + SSE 事件流维护）。
+  const { data: plansData } = useQuery<SchedulingPlanV2[]>({
+    queryKey: queryKeys.schedulerActivePlans,
+    queryFn: getActivePlans,
+  });
+  const plans = plansData ?? [];
+
+  // 深链/聚焦恢复：从服务端拉取目标方案并写入活跃列表缓存。
+  const { data: deepLinkPlan } = useQuery<SchedulingPlanV2 | null>({
+    queryKey: queryKeys.schedulerPlan(focusPlanId ?? 'none'),
+    queryFn: () => (focusPlanId ? getPlan(focusPlanId) : Promise.resolve(null)),
+    enabled: !!focusPlanId,
+  });
+
+  useEffect(() => {
+    if (!deepLinkPlan || !focusPlanId) return;
+    queryClient.setQueryData<SchedulingPlanV2[]>(queryKeys.schedulerActivePlans, (prev) => {
+      const list = prev ?? [];
+      const idx = list.findIndex((p) => p.planId === deepLinkPlan.planId);
+      if (idx >= 0) {
+        const next = [...list];
+        next[idx] = deepLinkPlan;
+        return next;
+      }
+      return [...list, deepLinkPlan];
+    });
+  }, [deepLinkPlan, focusPlanId, queryClient]);
 
   const selectedPlan = useMemo(
     () => plans.find((p) => p.planId === selectedPlanId) ?? null,
@@ -223,8 +258,8 @@ export default function SchedulePanel({
 
   const appendPlans = (newPlans: SchedulingPlanV2[]) => {
     if (!newPlans || newPlans.length === 0) return;
-    setPlans((prev) => {
-      const merged = [...prev, ...newPlans];
+    queryClient.setQueryData<SchedulingPlanV2[]>(queryKeys.schedulerActivePlans, (prev) => {
+      const merged = [...(prev ?? []), ...newPlans];
       const seen = new Set<string>();
       return merged.filter((p) => (seen.has(p.planId) ? false : (seen.add(p.planId), true)));
     });
@@ -256,7 +291,9 @@ export default function SchedulePanel({
   });
 
   const refreshPlan = (plan: SchedulingPlanV2) => {
-    setPlans((prev) => prev.map((p) => (p.planId === plan.planId ? plan : p)));
+    queryClient.setQueryData<SchedulingPlanV2[]>(queryKeys.schedulerActivePlans, (prev) =>
+      (prev ?? []).map((p) => (p.planId === plan.planId ? plan : p)),
+    );
     setSelectedPlanId(plan.planId);
   };
 

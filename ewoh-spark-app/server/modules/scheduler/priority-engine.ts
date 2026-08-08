@@ -24,7 +24,14 @@ export interface PriorityResult {
 
 /** 计算优先级所需的输入。 */
 export interface PriorityInput {
-  task: { id: string; priority: string; planStart?: string | null; planEnd?: string | null };
+  task: {
+    id: string;
+    priority: string;
+    planStart?: string | null;
+    planEnd?: string | null;
+    /** 生产影响度 0..1（越高越影响产线节拍，越小 score 越紧急）。缺省 0。 */
+    productionImpact?: number;
+  };
   config: SchedulingPolicyConfig;
   now: number;
   horizonEndMs: number;
@@ -39,8 +46,8 @@ const SCALE = 100;
  * 分数约定：越小越紧急。
  * - base：按 priority 等级映射到档位 × SCALE。
  * - deadline：越接近 planEnd 越紧急（修正：不再反向加分）。
- * - waiting age / event severity / downstream / manual boost：均为负项，缩小 score 提升紧急度。
- */
+ * - waiting age / event severity / production impact / downstream / manual boost：均为负项，缩小 score 提升紧急度。
+ * 注意：安全关键（SAFETY_BLOCK）是硬约束，由求解器在校验阶段强制阻断，不参与 score，任何优先级因子均不可覆盖。 */
 export class PriorityEngine {
   compute(policy: SchedulingPolicy, input: PriorityInput): PriorityResult {
     const p = input.config.priority;
@@ -96,6 +103,23 @@ export class PriorityEngine {
         });
         explanation.push(`waiting_age=${waitingTerm.toFixed(2)}`);
       }
+    }
+
+    // 生产影响度：越影响产线节拍越紧急（负项，缩小 score）。
+    const productionImpact = Math.max(
+      0,
+      Math.min(1, input.task.productionImpact ?? 0),
+    );
+    if (productionImpact > 0) {
+      const piTerm = -p.productionImpactWeight * productionImpact * SCALE;
+      score += piTerm;
+      factors.push({
+        name: 'production_impact',
+        weight: p.productionImpactWeight,
+        value: productionImpact,
+        term: piTerm,
+      });
+      explanation.push(`production_impact=${piTerm.toFixed(2)}`);
     }
 
     // 事件严重度 / 截止风险标记。
@@ -206,6 +230,7 @@ export function computeEffectivePriorityScores(
         priority: t.priority,
         planStart: t.planStart,
         planEnd: t.planEnd,
+        productionImpact: t.productionImpact,
       },
       config,
       now,

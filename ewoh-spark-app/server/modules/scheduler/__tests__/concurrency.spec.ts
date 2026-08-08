@@ -8,7 +8,14 @@ import {
   baseSolveOpts,
   makeSolver,
 } from './scheduler-test-helpers';
-import { makeDispatchCoordinator, testOrgContext } from './dispatch-test-harness';
+import {
+  makeDispatchCoordinator,
+  makeFakeDb,
+  testOrgContext,
+} from './dispatch-test-harness';
+import { ResourceReservationService } from '../resource-reservation.service';
+import { RequestDatabaseContext } from '@server/database/request-database-context';
+import type { ReservationInput } from '../resource-reservation.service';
 
 describe('并发 / 竞争测试', () => {
   it('两份 plan 同时 dispatch 只允许一份成功（CAS 抛 PLAN_CONCURRENT_DISPATCH）', async () => {
@@ -157,5 +164,95 @@ describe('并发 / 竞争测试', () => {
     );
     // 拒绝后方案状态未被改变（保持 approved）。
     expect(state.plans.get('PLAN-STALE')?.status).toBe('approved');
+  });
+
+  it('dispatch 时为分配并发起工位预占（station），预占冲突使整体下发失败 RESOURCE_CONFLICT', async () => {
+    const { svc, mocks } = makeDispatchCoordinator({
+      forcePlanApproved: true,
+      plans: [
+        {
+          planId: 'PLAN-STATION',
+          planName: 'p',
+          strategy: 'scheduling_v2',
+          status: 'approved',
+          version: 1,
+          snapshotVersion: 'WS-1',
+        },
+      ],
+      assignments: [
+        {
+          assignmentId: 'ASG-ST',
+          planId: 'PLAN-STATION',
+          taskId: 'TASK-1',
+          personId: 'p1',
+          stationId: 'ST1',
+          plannedStart: new Date(1_000_000),
+          plannedEnd: new Date(2_000_000),
+          status: 'approved',
+        },
+      ],
+      tasks: [{ id: 'TASK-1', status: 'pending_dispatch', version: 1 }],
+    });
+
+    let reserveInputs: ReservationInput[] = [];
+    mocks.reservationService.reserve.mockImplementation(
+      async (_planId, _assignmentId, _taskId, inputs) => {
+        reserveInputs = inputs;
+        throw new ConflictException('RESOURCE_CONFLICT');
+      },
+    );
+
+    // 预占阶段把 stationId 以 resourceType='station' 传入保留服务。
+    await expect(
+      svc.dispatch('PLAN-STATION', testOrgContext()),
+    ).rejects.toThrow('RESOURCE_CONFLICT');
+
+    const station = reserveInputs.find((i) => i.resourceType === 'station');
+    expect(station).toBeDefined();
+    expect(station!.resourceId).toBe('ST1');
+    expect(reserveInputs.map((i) => i.resourceType)).toEqual(
+      expect.arrayContaining(['person', 'station']),
+    );
+  });
+
+  it('同一工位重叠时间窗二次预占 → 第二次 RESOURCE_CONFLICT，DB 无重叠预占', async () => {
+    const { db, state } = makeFakeDb();
+    const requestDatabaseContext = {
+      runInTransaction: jest.fn(async (_guc: unknown, cb: () => Promise<void>) => {
+        await cb();
+      }),
+    };
+    const reservationSvc = new ResourceReservationService(
+      db,
+      requestDatabaseContext as unknown as RequestDatabaseContext,
+    );
+    const ctx = testOrgContext();
+
+    // 第一次：工位 ST1 在 [1000, 2000] 预占成功。
+    await reservationSvc.reserve(
+      'PLAN-1',
+      'ASG-1',
+      'TASK-1',
+      [{ resourceType: 'station', resourceId: 'ST1', startMs: 1000, endMs: 2000 }],
+      ctx,
+    );
+
+    // 第二次：不同方案/任务，同一工位 ST1 重叠窗口 [1500, 2500] → 冲突。
+    await expect(
+      reservationSvc.reserve(
+        'PLAN-2',
+        'ASG-2',
+        'TASK-2',
+        [{ resourceType: 'station', resourceId: 'ST1', startMs: 1500, endMs: 2500 }],
+        ctx,
+      ),
+    ).rejects.toThrow('RESOURCE_CONFLICT');
+
+    // DB 中工位 ST1 仅存在一条活跃预占，无重叠。
+    const stationReservations = state.reservations.filter(
+      (r) => r.resourceType === 'station' && r.resourceId === 'ST1',
+    );
+    expect(stationReservations).toHaveLength(1);
+    expect(stationReservations[0].status).toBe('reserved');
   });
 });

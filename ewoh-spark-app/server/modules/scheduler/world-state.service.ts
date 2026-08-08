@@ -62,6 +62,13 @@ export class WorldStateSnapshotService {
     return snapshot;
   }
 
+  /** 汇总当前世界状态（不持久化快照）。供只读查询（如候选资源）复用同一真实状态。 */
+  async getCurrentWorldState(): Promise<
+    Omit<WorldStateSnapshot, 'snapshotVersion' | 'ts'>
+  > {
+    return this.collectState();
+  }
+
   async getSnapshot(
     snapshotVersion: string,
   ): Promise<WorldStateSnapshot | null> {

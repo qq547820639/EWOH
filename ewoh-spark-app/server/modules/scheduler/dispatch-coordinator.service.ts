@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
   ConflictException,
+  Optional,
 } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -26,6 +27,7 @@ import { ResourceReservationService, type ReservationInput } from './resource-re
 import { OutboxService } from './outbox.service';
 import { TaskService } from '../task/task.service';
 import { TaskLifecycle } from './task-lifecycle';
+import { SchedulingFeedbackService } from './scheduling-feedback.service';
 
 /** 事务化的执行闭环：校验 → 预占 → 下发 → 审计 → 出站事件。 */
 @Injectable()
@@ -40,6 +42,7 @@ export class DispatchCoordinatorService {
     private readonly outboxService: OutboxService,
     private readonly auditService: AuditService,
     private readonly taskService: TaskService,
+    @Optional() private readonly feedbackService?: SchedulingFeedbackService,
   ) {}
 
   /**
@@ -116,7 +119,7 @@ export class DispatchCoordinatorService {
           throw new ConflictException('PLAN_CONCURRENT_DISPATCH');
         }
 
-        // 6. 预占资源（person + device）。
+        // 6. 预占资源（person + device + station）。
         for (const a of assignments) {
           const startMs = a.plannedStart
             ? a.plannedStart.getTime()
@@ -137,6 +140,14 @@ export class DispatchCoordinatorService {
             inputs.push({
               resourceType: 'device',
               resourceId: a.deviceId,
+              startMs,
+              endMs,
+            });
+          }
+          if (a.stationId) {
+            inputs.push({
+              resourceType: 'station',
+              resourceId: a.stationId,
               startMs,
               endMs,
             });
@@ -230,6 +241,17 @@ export class DispatchCoordinatorService {
         outboxEventIds.push(planEvt.id);
       },
     );
+
+    // 观测型：记录 planned 基线反馈。失败不影响下发（仅记录日志）。
+    if (this.feedbackService) {
+      try {
+        await this.feedbackService.recordBaseline(planId, undefined, ctx);
+      } catch (err) {
+        this.logger.warn(
+          `scheduling feedback baseline skipped for plan ${planId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
 
     return {
       planId,

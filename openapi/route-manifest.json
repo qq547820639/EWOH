@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-07T14:48:50.131Z",
+  "generatedAt": "2026-08-08T00:04:07.823Z",
   "spec": "openapi/ewoh.yaml",
   "controllerKeys": [
     "DELETE /api/dashboard/devices/{deviceId}/bindings",
@@ -101,11 +101,14 @@
     "GET /api/scale/templates/{id}",
     "GET /api/scheduler/audit",
     "GET /api/scheduler/metrics",
+    "GET /api/scheduler/metrics/feedback",
+    "GET /api/scheduler/metrics/feedback/rows",
     "GET /api/scheduler/plans",
     "GET /api/scheduler/plans/{planId}",
     "GET /api/scheduler/plans/{planId}/compare/{otherPlanId}",
     "GET /api/scheduler/routes",
     "GET /api/scheduler/runs/{runId}",
+    "GET /api/scheduler/tasks/{id}/candidates",
     "GET /api/scheduler/weights",
     "GET /api/simulator/status",
     "GET /api/spatial/entities",
@@ -564,7 +567,7 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 287,
+  "controllerOperations": 290,
   "specOperations": 272,
   "documentedControllerOperations": 271,
   "undocumented": [
@@ -576,6 +579,16 @@
     {
       "method": "GET",
       "path": "/api/scheduler/metrics",
+      "file": "ewoh-spark-app/server/modules/scheduler/scheduler-metrics.controller.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scheduler/metrics/feedback",
+      "file": "ewoh-spark-app/server/modules/scheduler/scheduler-metrics.controller.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scheduler/metrics/feedback/rows",
       "file": "ewoh-spark-app/server/modules/scheduler/scheduler-metrics.controller.ts"
     },
     {
@@ -596,6 +609,11 @@
     {
       "method": "GET",
       "path": "/api/scheduler/runs/{runId}",
+      "file": "ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scheduler/tasks/{id}/candidates",
       "file": "ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts"
     },
     {
