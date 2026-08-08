@@ -70,6 +70,8 @@ services:
       DATABASE_URL: postgresql://ewoh_api:${EWOH_API_DATABASE_PASSWORD:?EWOH_API_DATABASE_PASSWORD must be set}@postgres:5432/ewoh
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      # P1-INGEST-002：生产必须配置接入密钥；缺失时 IngestGuard fail-closed + 启动失败
+      INGEST_API_KEY: ${INGEST_API_KEY:?INGEST_API_KEY must be set for production}
       DB_POOL_MAX: 20
       BODY_LIMIT: 1mb
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}
