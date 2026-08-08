@@ -928,6 +928,32 @@ export class SchedulerService {
   }
 
   /**
+   * P0-1 Active Plan 权威查询：返回当前所有非终态方案（shadow/proposed/
+   * draft/approved/dispatched/executing），按创建时间倒序。
+   *
+   * 前端页面刷新 / SSE resync / 多终端必须从此处重新拉取权威方案，
+   * SSE 仅作为增量更新机制，不作为唯一状态源。
+   */
+  async getActivePlans(): Promise<SchedulingPlanV2[]> {
+    const rows = await this.db
+      .select()
+      .from(ewohSchedulePlan)
+      .where(inArray(ewohSchedulePlan.status, SchedulerService.ACTIVE_PLAN_STATUSES))
+      .orderBy(desc(ewohSchedulePlan.createdAt));
+    const plans = await Promise.all(
+      rows.map((p) =>
+        this.planService.getPlan(p.planId).catch((err) => {
+          this.logger.warn(
+            `getActivePlans: 活跃方案 ${p.planId} 读取失败，已跳过: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          return null;
+        }),
+      ),
+    );
+    return plans.filter((p): p is SchedulingPlanV2 => p !== null);
+  }
+
+  /**
    * 返回 map 与调度共享的当前权威世界状态快照。
    * 复用 WorldStateSnapshotService.getCurrentWorldState() 的真实当前状态（不持久化、不虚构），
    * 以 snapshotVersion='CURRENT' + 当前 ts 包装为 WorldStateSnapshot。

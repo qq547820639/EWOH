@@ -5196,6 +5196,29 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scheduler/active-plans:
+    get:
+      tags:
+        - scheduler
+      summary: List active scheduling plans (authoritative, non-terminal)
+      description: >
+        P0-1: returns all non-terminal plans (shadow/proposed/draft/approved/
+        dispatched/executing) from the database as the authoritative list.
+        Frontend refresh / SSE resync must load from this endpoint; SSE is
+        incremental only.
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SchedulePlanV2'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scheduler/snapshot:
     get:
       tags:

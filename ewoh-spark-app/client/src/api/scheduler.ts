@@ -64,17 +64,17 @@ export async function getSnapshot(): Promise<WorldStateSnapshot> {
 }
 
 /**
- * 获取当前「活跃方案」列表（V2）。
+ * P0-1：获取服务端权威活跃方案列表（非终态：shadow/approved/dispatched/executing）。
  *
- * 说明：V2 后端未提供独立的“活跃方案”列表端点，活跃方案由两部分维护——
- * 1) `createRun` 的返回结果（新生成的方案）写入 React Query 缓存；
- * 2) 调度 SSE 事件流（`/api/scheduler/v2/stream`）按 sequence 增量同步。
- * 因此本函数在首次加载时返回空列表作为初始态，具体方案数据经上述通道进入
- * `queryKeys.schedulerActivePlans` 缓存，供界面读取。
+ * 页面刷新 / SSE gap resync / 多终端必须从此端点拉取权威方案；SSE 事件流
+ * （`/api/scheduler/v2/stream`）仅作为增量更新机制，不作为唯一状态源。
  */
 export async function getActivePlans(): Promise<SchedulingPlanV2[]> {
-  const cached = await Promise.resolve<SchedulingPlanV2[]>([]);
-  return cached;
+  const res = await axiosForBackend({
+    url: '/api/scheduler/active-plans',
+    method: 'GET',
+  });
+  return res.data;
 }
 
 /** 获取完整方案（含分配明细）。 */

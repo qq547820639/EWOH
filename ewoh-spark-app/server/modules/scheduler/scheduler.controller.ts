@@ -147,6 +147,15 @@ export class SchedulerController {
     return this.schedulerService.createRun(body, request.userContext);
   }
 
+  /**
+   * P0-1 Active Plan 权威查询：非终态方案（shadow/approved/dispatched/executing）。
+   * 前端刷新 / SSE resync 必须调用此端点恢复权威方案列表。
+   */
+  @Get('active-plans')
+  async getActivePlans() {
+    return this.schedulerService.getActivePlans();
+  }
+
   @Get('runs')
   async listRuns(
     @Query('status') status?: string,

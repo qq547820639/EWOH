@@ -194,6 +194,43 @@ describe('Task 1: GET /api/scheduler/runs 分页运行历史 + 活跃方案', ()
   });
 });
 
+describe('P0-1: GET /api/scheduler/active-plans 服务端权威活跃方案', () => {
+  it('返回所有非终态方案（含 shadow/approved/dispatched/executing），且状态可恢复', async () => {
+    const { svc } = makeSvc({
+      runs: [],
+      plans: [
+        planRow({ planId: 'PLAN-1', status: 'shadow', createdAt: new Date('2026-08-01T00:00:00.000Z') }),
+        planRow({ planId: 'PLAN-2', status: 'approved', createdAt: new Date('2026-08-02T00:00:00.000Z') }),
+        planRow({ planId: 'PLAN-3', status: 'executing', createdAt: new Date('2026-08-03T00:00:00.000Z') }),
+      ],
+    });
+    const active = await svc.getActivePlans();
+    // getActivePlans 不按 status 过滤（mock 的 where 无状态语义），返回全部 seed；
+    // 关键断言：能从 DB 恢复方案且状态完整（页面刷新场景）。
+    expect(active.length).toBe(3);
+    const statuses = active.map((p) => p.status).sort();
+    expect(statuses).toEqual(['approved', 'executing', 'shadow']);
+  });
+
+  it('单个方案读取失败被跳过而不中断整体（resync 容错）', async () => {
+    const { svc, mocks } = makeSvc({
+      runs: [],
+      plans: [
+        planRow({ planId: 'PLAN-OK', status: 'shadow' }),
+        planRow({ planId: 'PLAN-BROKEN', status: 'approved' }),
+      ],
+    });
+    // 强制 getPlan 对 PLAN-BROKEN 抛错（如分配/快照数据缺失）
+    mocks.planService.getPlan.mockImplementation(async (planId: string) => {
+      if (planId === 'PLAN-BROKEN') throw new Error('orphan plan detail');
+      return { planId, status: 'shadow', createdAt: new Date() } as unknown as SchedulingPlanV2;
+    });
+    const active = await svc.getActivePlans();
+    // 失败方案被跳过，整体不中断；可恢复的方案仍在
+    expect(active.map((p) => p.planId)).toEqual(['PLAN-OK']);
+  });
+});
+
 describe('Task 1: GET /api/scheduler/snapshot 当前权威世界状态', () => {
   it('复用 getCurrentWorldState 的真实状态，包装为 WorldStateSnapshot（CURRENT + ts）', async () => {
     const { svc, mocks } = makeSvc({ runs: [], plans: [] });

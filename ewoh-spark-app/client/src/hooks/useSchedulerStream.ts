@@ -102,9 +102,11 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
   // 用于在 connect 内部自引用（重连）时绕过 TDZ。
   const connectRef = useRef<() => void>(() => undefined);
 
-  /** 全量重同步：放弃增量，拉取相关查询的最新数据。 */
+  /** 全量重同步：放弃增量，从后端拉取权威状态（P0-1）。 */
   const triggerResync = useCallback(() => {
-    // 只失效「详情/运行」这类有真实端点的查询；活跃列表由事件流增量重建。
+    // 活跃方案列表有权威端点（GET /api/scheduler/active-plans），resync 时必须
+    // 失效以重新拉取，保证与数据库完全一致；SSE 仅作增量。
+    queryClient.invalidateQueries({ queryKey: ['scheduler-active-plans'] });
     // 使用前缀匹配，使所有 ['scheduler-plan', planId] / ['scheduler-run', runId] 都失效。
     queryClient.invalidateQueries({ queryKey: ['scheduler-plan'] });
     queryClient.invalidateQueries({ queryKey: ['scheduler-run'] });

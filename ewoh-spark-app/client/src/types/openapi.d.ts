@@ -7603,6 +7603,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scheduler/active-plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active scheduling plans (authoritative, non-terminal)
+         * @description P0-1: returns all non-terminal plans (shadow/proposed/draft/approved/ dispatched/executing) from the database as the authoritative list. Frontend refresh / SSE resync must load from this endpoint; SSE is incremental only.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulePlanV2"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scheduler/snapshot": {
         parameters: {
             query?: never;
