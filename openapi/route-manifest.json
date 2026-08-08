@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-08T04:05:06.347Z",
+  "generatedAt": "2026-08-08T05:53:05.859Z",
   "spec": "openapi/ewoh.yaml",
   "controllerKeys": [
     "DELETE /api/dashboard/devices/{deviceId}/bindings",
@@ -99,6 +99,7 @@
     "GET /api/scale/scenario-packs",
     "GET /api/scale/templates",
     "GET /api/scale/templates/{id}",
+    "GET /api/scheduler/active-plans",
     "GET /api/scheduler/audit",
     "GET /api/scheduler/conflicts",
     "GET /api/scheduler/conflicts/{id}",
@@ -108,6 +109,7 @@
     "GET /api/scheduler/plans",
     "GET /api/scheduler/plans/{planId}",
     "GET /api/scheduler/plans/{planId}/compare/{otherPlanId}",
+    "GET /api/scheduler/plans/{planId}/constraints",
     "GET /api/scheduler/policy",
     "GET /api/scheduler/policy/versions",
     "GET /api/scheduler/policy/versions/{version}/compare",
@@ -266,6 +268,7 @@
     "POST /api/scale/templates/{id}/diff-preview",
     "POST /api/scale/templates/{id}/install",
     "POST /api/scale/templates/{id}/state",
+    "POST /api/scheduler/constraints/{constraintId}/deactivate",
     "POST /api/scheduler/plans",
     "POST /api/scheduler/plans/data-driven",
     "POST /api/scheduler/plans/{planId}/approve",
@@ -402,6 +405,7 @@
     "GET /api/scale/scenario-packs",
     "GET /api/scale/templates",
     "GET /api/scale/templates/{id}",
+    "GET /api/scheduler/active-plans",
     "GET /api/scheduler/audit",
     "GET /api/scheduler/conflicts",
     "GET /api/scheduler/conflicts/{id}",
@@ -411,6 +415,7 @@
     "GET /api/scheduler/plans",
     "GET /api/scheduler/plans/{planId}",
     "GET /api/scheduler/plans/{planId}/compare/{otherPlanId}",
+    "GET /api/scheduler/plans/{planId}/constraints",
     "GET /api/scheduler/policy",
     "GET /api/scheduler/policy/versions",
     "GET /api/scheduler/policy/versions/{version}/compare",
@@ -569,6 +574,7 @@
     "POST /api/scale/templates/{id}/diff-preview",
     "POST /api/scale/templates/{id}/install",
     "POST /api/scale/templates/{id}/state",
+    "POST /api/scheduler/constraints/{constraintId}/deactivate",
     "POST /api/scheduler/plans",
     "POST /api/scheduler/plans/data-driven",
     "POST /api/scheduler/plans/{planId}/approve",
@@ -607,9 +613,9 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 301,
-  "specOperations": 301,
-  "documentedControllerOperations": 301,
+  "controllerOperations": 304,
+  "specOperations": 304,
+  "documentedControllerOperations": 304,
   "undocumented": [],
   "unimplemented": []
 }
