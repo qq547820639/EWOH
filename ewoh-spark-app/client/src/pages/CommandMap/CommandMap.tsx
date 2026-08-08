@@ -52,6 +52,7 @@ import {
 } from './replay';
 import TopBar from './TopBar';
 import ModePanel, { MODES as MODE_ITEMS } from './ModePanel';
+import { isValidMode, transitionMode } from './map-mode-machine';
 import FactoryMap from './FactoryMap';
 import EntityDetail from './EntityDetail';
 import AlertToast from '../../components/AlertToast';
@@ -370,8 +371,18 @@ const CommandMap = (): React.ReactElement => {
   // 在调度模式地图上高亮某方案受影响人员
   const handleViewOnMap = useCallback((personIds: string[]) => {
     setFocusPlanPersons(personIds);
-    setMode('scheduling');
-  }, []);
+    // v0.7 Batch10.3：经状态机计算调度模式转换（含层级联动 L3）
+    const next = transitionMode(
+      { mode: isValidMode(mode) ? mode : 'production', level, replay: { active: replayMode, paused: replayPaused } },
+      'scheduling',
+    );
+    if (next) {
+      setMode(next.state.mode);
+      setLevel(next.state.level);
+    } else {
+      setMode('scheduling');
+    }
+  }, [mode, level, replayMode, replayPaused]);
 
   // 真实回放播放循环：按倍速逐快照推进
   useEffect(() => {
