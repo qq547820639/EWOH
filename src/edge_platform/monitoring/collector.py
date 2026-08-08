@@ -55,6 +55,8 @@ class MetricsCollector:
         # 业务级：派工推荐/采纳
         self._recommend_count = 0
         self._confirmed_count = 0
+        # P0-EDGE-005：事件总线 handler 异常
+        self._bus_handler_errors_total = 0
         # 设备级（由 server 在生成快照前注入最新值）
         self._device_stats = {
             "online_count": 0,
@@ -110,6 +112,12 @@ class MetricsCollector:
         """记录一次人工确认派工。"""
         with self._lock:
             self._confirmed_count += 1
+
+    # ---- P0-EDGE-005：事件总线 handler 异常 ----
+    def record_bus_handler_error(self, stream, handler_name=""):
+        """记录一次事件总线 handler 异常（event_bus_handler_errors_total）。"""
+        with self._lock:
+            self._bus_handler_errors_total += 1
 
     # ---- 设备级 / 系统级：由 server 注入 ----
     def set_device_stats(self, online_count, offline_count, avg_packet_loss_pct=0.0, low_battery_count=0):
@@ -193,6 +201,8 @@ class MetricsCollector:
             "assignment_adoption_rate": round(adoption, 4),
             "recommendation_count": recommend_count,
             "confirmed_count": confirmed_count,
+            # P0-EDGE-005
+            "event_bus_handler_errors_total": self._bus_handler_errors_total,
         }
 
     def reset(self):
@@ -207,6 +217,7 @@ class MetricsCollector:
             self._event_close_hours.clear()
             self._recommend_count = 0
             self._confirmed_count = 0
+            self._bus_handler_errors_total = 0
             self._device_stats = {
                 "online_count": 0,
                 "offline_count": 0,

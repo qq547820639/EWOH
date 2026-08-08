@@ -460,7 +460,7 @@ class PipelineTest(unittest.TestCase):
         open_evts = [e for e in self.storage.events.values() if e["status"] == "open"]
         self.assertEqual(len(open_evts), 1)
         self.assertEqual(open_evts[0]["event_code"], "POSTURE_BEND_LONG")
-        self.assertEqual(len(self.bus.published.get("event", [])), 1)
+        self.assertEqual(len(self.bus.published.get("events", [])), 1)
 
     def test_model_path_when_registered(self):
         # 注册一个以真实特征训练的模型 → 走模型路径，is_rule=False
@@ -533,7 +533,7 @@ class EventEngineTest(unittest.TestCase):
         self.assertEqual(ev["data_quality"], "good")
         self.assertEqual(got["status"], "open")
         self.assertEqual(got["trigger"]["rule_version"], "risk-rule-v1.0")
-        self.assertEqual(len(self.bus.published.get("event", [])), 1)
+        self.assertEqual(len(self.bus.published.get("events", [])), 1)
 
     def test_close_event(self):
         evt = self.engine.handle_draft(self._draft())

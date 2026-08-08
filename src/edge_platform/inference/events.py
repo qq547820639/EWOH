@@ -15,6 +15,8 @@
 - 事件可经 get_event 取回，含完整 trigger/evidence/handling；开/关均 publish 'event'。
 """
 
+from edge_platform.runtime.protocols import STREAM_EVENTS
+
 from . import ms_to_ts, new_id, ts_to_ms
 
 # 证据分段配额（合计 200）
@@ -170,7 +172,7 @@ class EventEngine:
         }
         self.storage.insert_event(evt)
         self._open[(evt["event_code"], evt["device_id"])] = evt["event_id"]
-        self.bus.publish("event", evt)
+        self.bus.publish(STREAM_EVENTS, evt)
         return evt
 
     def _close(self, draft):
@@ -199,7 +201,7 @@ class EventEngine:
         }
         self.storage.update_event_status(eid, "closed", handling)
         evt = self.storage.get_event(eid)
-        self.bus.publish("event", evt)
+        self.bus.publish(STREAM_EVENTS, evt)
         return evt
 
     # ---- Task 22: 同设备多事件码聚合（保守实现） ----

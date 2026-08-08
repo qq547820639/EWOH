@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""EWOH 平台入口：按依赖契约装配真实模块；真实模块未就绪时回退到 stub（仅联调前自测/演示）。
+"""EWOH 平台入口：按 RuntimeMode 装配运行时（P0-EDGE-001/002）。
+
+运行模式（EWOH_RUNTIME_MODE，默认 development）：
+- production：只允许真实组件；真实装配失败 → log ERROR + 退出非零；
+  绝不允许回退 stub / simulator。
+- development：默认真实组件；需要 stub 必须显式配置 EWOH_ALLOW_STUB=1。
+- simulation：显式 stub + simulator（--stub 等价）。
 
 用法：
   python -m edge_platform.run [--host 127.0.0.1] [--port 8765] [--db demo.db] [--stub]
@@ -17,51 +23,31 @@ except (AttributeError, ValueError):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 支持 python src/edge_platform/run.py 直接运行
 
-from edge_platform import server, stubs
+from edge_platform import server
 from edge_platform.config import Settings
 from edge_platform.monitoring import MetricsCollector
+from edge_platform.runtime.bootstrap import (
+    RuntimeFactory,
+    resolve_runtime_mode,
+)
 
 
 def build_components(db_path, force_stub, adapter_ports, metrics):
-    """优先装配真实 edge/inference/collection 模块；缺失时回退 stub。"""
-    if not force_stub:
-        try:
-            from edge.bus import Bus
-            from edge.manager import AdapterManager
-            from edge.storage import Storage
-            from inference.model import ModelRegistry
-            from inference.pipeline import InferencePipeline
-            from inference.rules import RuleEngine
+    """按运行模式装配 Edge 运行时组件（真实组件优先，禁止静默 stub）。
 
-            storage = Storage(db_path)
-            storage.init_db()
-            bus = Bus()
-            registry = ModelRegistry(Path(db_path).parent / "models")
-            rules = RuleEngine("risk-rule-v0.2", {})
-            pipeline = InferencePipeline(storage, bus, registry, rules, metrics_collector=metrics)
-            manager = AdapterManager(storage, bus, adapter_ports)
-            manager.start()
-            pipeline.start()
-            print("[EWOH] 真实模块装配完成（适配层+推理管线已启动）")
-            return storage, bus, pipeline, registry, rules, manager, None
-        except ImportError as e:
-            print(f"[EWOH] 真实模块未就绪（{e}），回退到 stub 模式")
-    storage = stubs.Storage(db_path)
-    stubs.seed_base(storage)
-    bus = stubs.Bus()
-    registry = stubs.ModelRegistry(Path(db_path).parent / "models")
-    rules = stubs.RuleEngine("risk-rule-stub-0.1", {})
-    pipeline = stubs.InferencePipeline(storage, bus, registry, rules, metrics_collector=metrics)
-    manager = stubs.AdapterManager(storage, bus)
-    manager.start()
-    sim = stubs.DemoSimulator(storage)
-    sim.start()
-    print("[EWOH] stub 模式：数据源为 simulated（仅工程自测，不作为真机验收依据）")
-    return storage, bus, pipeline, registry, rules, manager, sim
+    返回 (components, mode)：
+    - components：RuntimeComponents（含 storage/bus/pipeline/.../simulator）
+    - mode：production/development/simulation
+    """
+
+    mode = resolve_runtime_mode(force_simulation=force_stub)
+    factory = RuntimeFactory(db_path=db_path, adapter_ports=adapter_ports, metrics=metrics)
+    components = factory.assemble(mode)
+    return components, mode
 
 
 def build_scheduler(storage, repository, event_bus):
-    """装配智能调度闭环组件（Phase 3/5/6 接线）。
+    """装配智能调度闭环组件（Phase 3/5/6 接线，保持既有实现）。
 
     返回 (scheduler, resource_state_service)：
     - WorldStateService：聚合数据构建世界状态快照；
@@ -127,13 +113,19 @@ def main():
     ap.add_argument("--host", default=settings.host)
     ap.add_argument("--port", type=int, default=settings.port)
     ap.add_argument("--db", default=settings.db_path)
-    ap.add_argument("--stub", action="store_true", help="强制使用 stub（跳过真实模块）")
+    ap.add_argument("--stub", action="store_true", help="等价 EWOH_RUNTIME_MODE=simulation（显式 stub）")
     args = ap.parse_args()
     # Task 33：创建可注入 MetricsCollector 单例，传入 pipeline 与 server
     metrics = MetricsCollector()
-    storage, bus, pipeline, registry, rules, manager, sim = build_components(
-        args.db, args.stub, settings.adapter_ports, metrics
-    )
+    components, mode = build_components(args.db, args.stub, settings.adapter_ports, metrics)
+    storage = components.storage
+    bus = components.bus
+    pipeline = components.pipeline
+    registry = components.registry
+    rules = components.rules
+    manager = components.manager
+    sim = components.simulator
+
     # storage 就绪后绑定到 collector，用于 snapshot() 派生 db_counts / open_event_count
     metrics.bind_storage(storage)
     # 智能调度持久化仓储：调度数据落库，服务重启后不丢失（Phase 2，API 接线留到 Phase 6）
@@ -170,6 +162,7 @@ def main():
     )
     httpd = server.build_server((args.host, args.port), ctx)
     print(f"[EWOH] 平台运行于 http://{args.host}:{int(args.port)} （无公网依赖，可离线演示）")
+    print(f"[EWOH] runtime mode: {mode}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

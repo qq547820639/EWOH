@@ -17,14 +17,23 @@
   拒绝授权的 person 的帧不进入推理（不入库、不发布、记录审计日志）。
 """
 
+import logging
 import threading
 import time
 from collections import deque
 from datetime import datetime, timezone
 
+from edge_platform.runtime.protocols import (
+    STREAM_DEVICE_STATUS,
+    STREAM_INFERENCE,
+    STREAM_TELEMETRY,
+)
+
 from . import SAMPLE_HZ, STEP_SEC, WINDOW_SEC, new_id
 from .events import EventEngine
 from .features import extract_features
+
+logger = logging.getLogger("ewoh.inference.pipeline")
 
 WINDOW_SIZE = WINDOW_SEC * SAMPLE_HZ  # 40
 STEP_SIZE = STEP_SEC * SAMPLE_HZ  # 20
@@ -384,7 +393,7 @@ class InferencePipeline:
             "source_type": window[-1].get("source_type"),
         }
         self.storage.insert_inference(res)
-        self.bus.publish("inference", res)
+        self.bus.publish(STREAM_INFERENCE, res)
         # Task 33：记录推理指标到 MetricsCollector（若已注入）
         if self._metrics is not None:
             try:
@@ -416,15 +425,41 @@ class InferencePipeline:
 
     # ---- 后台消费（可选；测试可直接调 handle_*） ----
     def start(self):
-        """订阅 telemetry / device_status 并后台消费（daemon 线程）。"""
+        """订阅 telemetry / device_status 并后台消费（daemon 线程）。
 
-        def loop(q, fn):
-            while True:
-                fn(q.get())
+        统一 Bus 契约（P0-EDGE-003）：使用 handler 回调语义
+        ``subscribe(stream, handler) -> sub_id``，不再使用 queue 语义。
+        保留 daemon 线程消费，避免阻塞发布方。
+        """
 
-        for topic, fn in (("telemetry", self.handle_telemetry), ("device_status", self.handle_device_status)):
-            t = threading.Thread(
-                target=loop, args=(self.bus.subscribe(topic), fn), daemon=True, name=f"inference-{topic}"
-            )
+        def make_consumer(stream, fn):
+            import queue as _queue
+
+            q = _queue.Queue()
+
+            def enqueue(msg):
+                q.put(msg)
+
+            def loop():
+                while True:
+                    try:
+                        msg = q.get(timeout=0.5)
+                    except _queue.Empty:
+                        continue
+                    try:
+                        fn(msg)
+                    except Exception:
+                        logger.error(
+                            "inference consumer failed stream=%s handler=%s",
+                            stream,
+                            getattr(fn, "__name__", "?"),
+                            exc_info=True,
+                        )
+
+            self.bus.subscribe(stream, enqueue)
+            t = threading.Thread(target=loop, daemon=True, name=f"inference-{stream}")
             t.start()
             self._threads.append(t)
+
+        make_consumer(STREAM_TELEMETRY, self.handle_telemetry)
+        make_consumer(STREAM_DEVICE_STATUS, self.handle_device_status)

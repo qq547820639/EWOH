@@ -98,6 +98,9 @@ class Settings:
         self.data_retention_days = _get_int("EWOH_DATA_RETENTION_DAYS", 30)
         # ---- 日志 ----
         self.log_level = os.environ.get("EWOH_LOG_LEVEL", "INFO")
+        # ---- 运行时模式（P0-EDGE-002）----
+        # production / development / simulation；详见 edge_platform.runtime.bootstrap
+        self.runtime_mode = os.environ.get("EWOH_RUNTIME_MODE", "development")
         # ---- 身份与权限 ----
         self.auth_backend = os.environ.get("EWOH_AUTH_BACKEND", "offline")
         self.oidc_issuer = os.environ.get("EWOH_OIDC_ISSUER", "")

@@ -3,17 +3,17 @@
 # 开发环境推荐以进程方式运行（make run），docker-compose 用于试点部署。
 # 代码采用 src/ 布局，运行入口通过 PYTHONPATH=src 解析 edge_platform 包。
 
-.PHONY: run run-stub demo test test-contract connector-tck aas-tck rego-tck cross-tenant-tck pilot-readiness lint lint-fix security format clean help
+.PHONY: run run-stub demo test test-contract production-smoke connector-tck aas-tck rego-tck cross-tenant-tck pilot-readiness lint lint-fix security format clean help
 
 PYTHON ?= python3
 
 help:  ## 显示所有可用目标
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
-run:  ## 启动平台（装配真实模块，缺失时回退 stub）
+run:  ## 启动平台（development：默认真实组件；stub 需显式 EWOH_ALLOW_STUB=1 或 --stub）
 	PYTHONPATH=src $(PYTHON) -m edge_platform.run
 
-run-stub:  ## 强制以 stub 模式启动（仅工程自测，不作为真机验收依据）
+run-stub:  ## 显式 simulation 模式（仅工程自测，不作为真机验收依据）
 	PYTHONPATH=src $(PYTHON) -m edge_platform.run --stub
 
 demo:  ## 一键演示：启动 stub 平台并自动打开指挥地图（Ctrl-C 停止）
@@ -24,6 +24,9 @@ test:  ## 运行 unittest 测试套件
 
 test-contract:  ## 运行契约测试（tests/，需 pytest；也可用 unittest 运行）
 	PYTHONPATH=src $(PYTHON) -m pytest tests/ -q
+
+production-smoke:  ## P0-EDGE-006：Production Runtime Assembly 门禁（真实装配 + no-stub + Bus 契约）
+	PYTHONPATH=src $(PYTHON) -m pytest tests/test_production_assembly.py tests/test_bus_contract.py -q
 
 connector-tck:  ## 运行连接器 TCK（Manifest/配置/健康/脱敏/乱序补传）
 	PYTHONPATH=src $(PYTHON) scripts/connector-tck.py

@@ -468,7 +468,17 @@ class ExoSemanticTest(unittest.TestCase):
 # ---------- 消息总线 ----------
 class MessageBusTest(unittest.TestCase):
     def test_streams(self):
-        self.assertEqual(STREAMS, ("telemetry", "state", "events", "assets"))
+        # P0-EDGE-004：生产使用的全部 stream 必须被 Bus 支持（统一 StreamName 定义）
+        from edge_platform.runtime.protocols import ALL_STREAMS
+
+        self.assertEqual(STREAMS, ALL_STREAMS)
+        self.assertIn("telemetry", STREAMS)
+        self.assertIn("state", STREAMS)
+        self.assertIn("events", STREAMS)
+        self.assertIn("assets", STREAMS)
+        self.assertIn("inference", STREAMS)
+        self.assertIn("device_status", STREAMS)
+        self.assertIn("world_state", STREAMS)
         bus = MessageBus()
         self.assertEqual(set(bus.streams), set(STREAMS))
 
