@@ -60,7 +60,8 @@ EWOH 定位为**只读监督、风险分析与受控工作流系统**：平台�
 | **设备接入与采集** | 外骨骼（NY-EXO-A1 等）、环境传感器、摄像头结构化检测、MES/ERP 工单等多源数据接入；支持 Modbus、OPC UA、Sparkplug B、Webhook 等连接器与 TCK 契约测试。 |
 | **实时推理与规则** | 滑动窗口特征提取、动作分类（stand/walk/bend/lift/carry/unknown）、疲劳/姿态风险规则、数据质量分级与 unknown 六路触发（低置信度/歧义/固件未验证/分布外/传感器缺失等）。 |
 | **事件与告警** | 规则触发风险事件，含证据窗口、严重度分级（L1-L3）、处置闭环（确认/解决/升级）、事件因果链与审计。 |
-| **智能调度（Scheduler V2）** | 世界状态快照 → 优先级 → 资格 → 路径 → 求解器 → 方案 → 人工审批 → 资源预约 → 派工 → SSE 实时推送；支持人工覆盖（锁定/排除/偏好/加急/调时）与局部重排。 |
+| **智能调度（Scheduler V2）** | 世界状态快照（版本化）→ 优先级（含生产影响）→ 资格（硬约束）→ 路径 → 求解器 → 方案 → 人工审批 → 资源预约 → 派工 → SSE 实时推送；支持人工覆盖/约束生命周期（锁定/排除/偏好/加急/调时）、策略版本化与影子评估、局部重排与调度反馈 KPI。 |
+| **Command Map 智能调度驾驶舱** | 统一 Resource State（person/device/station 权威投影，含水合预约/可用窗口/当前任务/班次/freshness）、候选资源接口、冲突中心、plan 对比与执行偏差、前端 Scheduler SSE（lastEventId/缺口 resync/轮询兜底）。 |
 | **数字世界与回放** | Current World State（人员/设备/工位实时位置与状态）、时间轴回放、事件上下文（前后快照）、从回放派生 Issue/Task/Evidence。 |
 | **多租户与安全** | JWT 认证、基于角色的访问控制（RBAC）、组织树、PostgreSQL 行级安全（RLS）+ 请求级事务 GUC，数据库层强制组织隔离。 |
 | **规模化工厂复制** | 工厂模板、连接器、场景包、字段映射资产目录；onboarding 检查、差异预览、影子运行、Fleet 升级/回滚。 |
@@ -121,7 +122,8 @@ EWOH
 
 - **Production Canonical Solver = `HeuristicSchedulingSolver`**（Scheduler V2，确定性贪心 + 多目标评分）。
 - **CP-SAT 为 OPTIONAL / EXPERIMENTAL**：未部署 OR-Tools，不生产启用；不可用时 `solverStatus=UNAVAILABLE` 并显式回退 heuristic，绝不冒充 CP-SAT 成功。
-- 每个正式方案均记录 `solverVersion / solverStatus / fallbackReason / snapshotVersion / policyVersion`。
+- **Parity / Fidelity 现状**：CP-SAT 与 heuristic 已对齐约束语义（真实 `safetyCritical/preemptible/skillMatchMode`、device 位置、station capacity 透传，无占位值）、人工约束（`SchedulingConstraint[]`）完整映射、统一消费共享 `PriorityEngine` 的 `effectivePriorityScore`、技能匹配显式 `skillMatchMode: ALL|ANY`。
+- 每个正式方案均记录 `solverVersion / solverStatus / fallbackReason / snapshotVersion / policyVersion`；`solverStatus` 取值 `OPTIMAL / FEASIBLE / HEURISTIC / FALLBACK / TIMEOUT / UNAVAILABLE`。
 
 ---
 
@@ -238,7 +240,7 @@ Schema 唯一事实源为 `db/migrations/standalone_*`；`server/database/schema
 
 ## 五、API 接口文档
 
-完整 OpenAPI 契约见 [openapi/ewoh.yaml](openapi/ewoh.yaml)（301 条路径，`node scripts/audit-openapi-routes.js` 保证与 NestJS 路由零漂移）。以下为主要端点速查。
+完整 OpenAPI 契约见 [openapi/ewoh.yaml](openapi/ewoh.yaml)（304 条路径，`node scripts/audit-openapi-routes.js` 保证与 NestJS 路由零漂移）。以下为主要端点速查。
 
 ### 5.1 Python Edge API（本地）
 
@@ -274,13 +276,22 @@ Schema 唯一事实源为 `db/migrations/standalone_*`；`server/database/schema
 | `POST /api/ingest/*` | 外骨骼/环境/摄像头/MES/空间扫描/定位接入（需 `X-Ingest-Key`） |
 | `GET /api/dashboard/*` | 总览 KPI、设备、事件统计 |
 | `POST /api/scheduler/runs` | 触发调度运行并生成方案 |
+| `GET /api/scheduler/runs` `/api/scheduler/runs/{runId}` `/api/scheduler/active-plans` | run/plan 历史与活跃方案列表 |
+| `GET /api/scheduler/snapshot` | 地图与调度器共用权威运营状态（freshness/dataQuality/entityVersion/reservations） |
 | `GET /api/scheduler/plans/{id}` | 方案详情（含 DecisionTrace） |
 | `POST /api/scheduler/plans/{id}/approve` `/dispatch` `/reject` `/replan` | 审批/派工/驳回/重排 |
-| `POST /api/scheduler/plans/{id}/overrides` | 人工覆盖（锁定/排除/偏好/加急/调时） |
-| `GET /api/scheduler/conflicts` | 统一调度冲突 |
+| `POST /api/scheduler/plans/{id}/overrides` | 人工覆盖（Lock/Exclude/Boost/Preferred/Adjust → 约束 + 重排 + before/after diff） |
+| `GET /api/scheduler/plans/{id}/constraints` | 方案关联约束 |
+| `GET /api/scheduler/plans/{id}/compare/{otherPlanId}` | Plan 对比（assignment/路线/延期/负荷） |
+| `GET /api/scheduler/tasks/{id}/candidates` | 候选资源（person/device/station + ETA/skill/workload/冲突/排除原因） |
+| `GET /api/scheduler/conflicts` `/api/scheduler/conflicts/{id}` | 统一调度冲突列表与详情 |
+| `GET /api/scheduler/policy` `/api/scheduler/policy/versions` | 调度策略与版本化（影子评估，人工激活） |
+| `GET /api/scheduler/metrics` `/api/scheduler/metrics/feedback` | 调度指标与 planned-vs-actual 反馈 KPI |
+| `GET /api/scheduler/routes` `POST /api/scheduler/routes/calculate` | 路由（RouteGraph/ETA） |
 | `GET /api/scheduler/resources/state` | 资源状态权威投影（ResourceProjection SSOT） |
+| `GET /api/scheduler/weights` | 调度权重（可调） |
 | `GET /api/scheduler/v2/stream` | SSE 调度事件流（Bearer 认证） |
-| `GET /api/scheduler/policy` | 当前调度策略与配置 |
+| `GET /api/scheduler/audit` | 调度审计 |
 | `GET /api/audit` | 审计日志 |
 | `GET /health/live` `/health/ready` | 存活与就绪（ready 校验数据库可达） |
 | `GET /metrics` | Prometheus 指标 |
@@ -379,6 +390,7 @@ Edge 提供 `POST /api/reset`（清空 simulated/controlled_test 数据）。生
 
 | 版本 | 关键内容 |
 | ---- | -------- |
+| `Unreleased` | Command Map 智能调度驾驶舱（统一 Resource State / 候选资源 / 冲突中心 / plan 对比 / 前端 SSE）、调度闭环（人工覆盖→约束+重排、策略版本化与影子评估、调度反馈 KPI）、CP-SAT 与 heuristic parity/fidelity、PriorityEngine 生产影响、RoleWorkbench 生产化（数据库级列表/保存视图/导出任务）、代码深化与 UX 闭环（设计系统/统一时间线/性能预算/离线幂等/Service Worker/上传安全） |
 | `0.6.0-rc4` | 当前候选：Edge 生产装配 fail-fast、EventBus 统一、Feishu 验签/Simulator 默认关、Ingest fail-closed、Scheduler V2 收敛、World State DB 侧查询、Contract 驱动状态机、CommandMap V2 写链、资源状态 SSOT、安全错误脱敏 |
 | `0.6.0-rc1/2/3` | Standalone 云侧、RLS 多租户、Work Orchestration、规模化工厂复制逐步落地 |
 | `V0.5` | 演示原型（已由 `src/edge_platform` 取代，冻结于 `delivery/06_Demo_Prototype`） |
