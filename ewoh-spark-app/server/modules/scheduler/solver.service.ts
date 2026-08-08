@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import type {
   SchedulingConstraint,
   SchedulingPlanV2,
@@ -48,7 +48,7 @@ export class SolverService {
     routingService: RoutingService,
     routeCostProvider: RouteCostProvider,
     eligibilityService: EligibilityService,
-    cpSatConfig?: CpSatSolverConfig,
+    @Optional() cpSatConfig?: CpSatSolverConfig,
   ) {
     this.heuristicSolver = new HeuristicSchedulingSolver(
       policyService,
