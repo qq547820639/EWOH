@@ -11,7 +11,10 @@ import type {
 } from '@shared/api.interface';
 import { HeuristicSchedulingSolver } from './heuristic-scheduling-solver';
 import type { SchedulingSolver, SolveOptions } from './scheduling-solver.interface';
-import { computeEffectivePriorityScores } from './priority-engine';
+import {
+  computeEffectivePriorityResults,
+  type PriorityResult,
+} from './priority-engine';
 import { checkConstraintSupported } from './constraints';
 
 /** CP-SAT 求解器版本标识。 */
@@ -62,8 +65,8 @@ export class CpSatSchedulingSolver {
     const config = await this.heuristicSolver.loadConfig();
     const nowMs = Date.now();
     const horizonEndMs = nowMs + (opts.horizonMinutes ?? 60) * 60 * 1000;
-    // 统一优先级：CP-SAT 与 heuristic 消费同一 PriorityEngine 结果。
-    const effectiveScores = computeEffectivePriorityScores(
+    // 统一优先级：CP-SAT 与 heuristic 消费同一 PriorityEngine 结果（含完整解释）。
+    const priorityResults = computeEffectivePriorityResults(
       policy,
       config,
       snapshot,
@@ -71,6 +74,8 @@ export class CpSatSchedulingSolver {
       nowMs,
       horizonEndMs,
     );
+    const effectiveScores = new Map<string, number>();
+    for (const [id, r] of priorityResults) effectiveScores.set(id, r.score);
 
     let response: SolverResponse | null = null;
     let reachable = false;
@@ -100,7 +105,14 @@ export class CpSatSchedulingSolver {
       this.logger.log(
         `使用 CP-SAT 求解器（${response.solverStatus}），objective=${response.objective}`,
       );
-      return this.buildCpsatPlan(response, snapshot, constraints, opts, policy);
+      return this.buildCpsatPlan(
+        response,
+        snapshot,
+        constraints,
+        opts,
+        policy,
+        priorityResults,
+      );
     }
 
     // 否则回退到启发式：Worker 可达但结果不可用 → FALLBACK；不可达 → UNAVAILABLE。
@@ -376,10 +388,11 @@ export class CpSatSchedulingSolver {
     constraints: SchedulingConstraint[],
     opts: SolveOptions,
     policy: SchedulingPolicy,
+    priorityResults: Map<string, PriorityResult>,
   ): Promise<SchedulingPlanV2> {
     // 复用启发式产生方案外壳（metrics / scoreBreakdown / baselineDelta 等），再叠入 CP-SAT 结果。
     const shell = await this.heuristicSolver.solve(snapshot, constraints, opts);
-    const assignments = this.toAssignments(response, opts, policy);
+    const assignments = this.toAssignments(response, opts, policy, priorityResults);
     return {
       ...shell,
       solverVersion: CPSAT_VERSION,
@@ -396,43 +409,78 @@ export class CpSatSchedulingSolver {
     response: SolverResponse,
     opts: SolveOptions,
     policy: SchedulingPolicy,
+    priorityResults: Map<string, PriorityResult>,
   ): SchedulingAssignment[] {
-    return response.assignments.map((a) => ({
-      assignmentId: `ASG-CPSAT-${opts.planId}-${a.taskId}`,
-      taskId: a.taskId,
-      personId: a.personId,
-      deviceId: a.deviceId,
-      stationId: a.stationId,
-      zoneId: null,
-      plannedStart: a.startMs != null ? new Date(a.startMs).toISOString() : null,
-      plannedEnd: a.endMs != null ? new Date(a.endMs).toISOString() : null,
-      routeId: null,
-      status: 'proposed' as const,
-      reasons: a.reasons ?? [],
-      alternatives: a.rejectedAlternatives ?? [],
-      decisionTrace: {
-        taskId: a.taskId,
-        selected: {
-          personId: a.personId,
-          deviceId: a.deviceId,
-          stationId: a.stationId,
-        },
-        priority: { level: 'computed', score: 0, factors: [] },
-        candidates: [],
-        selectedReason: a.reasons ?? [],
-        rejectedAlternatives: (a.rejectedAlternatives ?? []).map((r) => ({
+    return response.assignments.map((a) => {
+      const pri = priorityResults.get(a.taskId);
+      // P0-SCHED-002：禁止伪造 DecisionTrace。无真实 priority 结果时显式标记
+      // UNKNOWN/UNAVAILABLE，不得填 0/[] 冒充真实计算。
+      const priority =
+        pri != null
+          ? {
+              level: String(pri.level),
+              score: pri.score,
+              factors: pri.factors.map((f) => ({
+                key: f.name,
+                label: f.name,
+                value: f.term,
+              })),
+            }
+          : { level: 'UNKNOWN', score: null, factors: [] };
+      const rejectedAlternatives = (a.rejectedAlternatives ?? []).map((r) => ({
+        personId: (r.personId as string | null) ?? null,
+        deviceId: (r.deviceId as string | null) ?? null,
+        stationId: (r.stationId as string | null) ?? null,
+        reason: Array.isArray(r.reason)
+          ? (r.reason as string[])
+          : typeof r.reason === 'string'
+            ? [r.reason as string]
+            : [],
+      }));
+      // 候选：CP-SAT worker 返回的被拒候选 + 被选中项。无 rejectedAlternatives
+      // 数据时不填 0/[] 冒充，保留空数组并让 selectedReason 说明实际依据。
+      const candidates = [
+        ...(a.rejectedAlternatives ?? []).map((r) => ({
           personId: (r.personId as string | null) ?? null,
           deviceId: (r.deviceId as string | null) ?? null,
-          reason: Array.isArray(r.reason)
+          stationId: (r.stationId as string | null) ?? null,
+          score: null,
+          reasons: Array.isArray(r.reason)
             ? (r.reason as string[])
             : typeof r.reason === 'string'
               ? [r.reason as string]
               : [],
         })),
-        policyVersion: policy.version,
-        solverVersion: CPSAT_VERSION,
-        snapshotVersion: opts.snapshotVersion,
-      },
-    }));
+      ];
+      return {
+        assignmentId: `ASG-CPSAT-${opts.planId}-${a.taskId}`,
+        taskId: a.taskId,
+        personId: a.personId,
+        deviceId: a.deviceId,
+        stationId: a.stationId,
+        zoneId: null,
+        plannedStart: a.startMs != null ? new Date(a.startMs).toISOString() : null,
+        plannedEnd: a.endMs != null ? new Date(a.endMs).toISOString() : null,
+        routeId: null,
+        status: 'proposed' as const,
+        reasons: a.reasons ?? [],
+        alternatives: a.rejectedAlternatives ?? [],
+        decisionTrace: {
+          taskId: a.taskId,
+          selected: {
+            personId: a.personId,
+            deviceId: a.deviceId,
+            stationId: a.stationId,
+          },
+          priority,
+          candidates,
+          selectedReason: a.reasons ?? [],
+          rejectedAlternatives,
+          policyVersion: policy.version,
+          solverVersion: CPSAT_VERSION,
+          snapshotVersion: opts.snapshotVersion,
+        },
+      };
+    });
   }
 }

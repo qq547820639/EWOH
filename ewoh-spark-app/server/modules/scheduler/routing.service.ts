@@ -5,6 +5,7 @@ import {
 } from '@lark-apaas/fullstack-nestjs-core';
 import { eq } from 'drizzle-orm';
 import { ewohRouteNode, ewohRouteEdge, ewohSpatialEntity } from '@server/database/schema';
+import { SchedulingPolicyService } from './scheduling-policy.service';
 import type {
   Route,
   RouteGraph,
@@ -58,6 +59,7 @@ export class RoutingService {
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
+    private readonly policyService: SchedulingPolicyService,
   ) {}
 
   /** 加载完整路由图。 */
@@ -120,7 +122,7 @@ export class RoutingService {
       Number.isFinite(from.y) &&
       Number.isFinite(to.x) &&
       Number.isFinite(to.y);
-    const fallback = this.euclideanRoute(from, to, {
+    const fallback = await this.euclideanRoute(from, to, {
       personId,
       taskId,
       feasible: hasCoords,
@@ -186,6 +188,22 @@ export class RoutingService {
     return this.calculateRouteBetween(from, to, { personId, taskId });
   }
 
+  /** P1-ROUTE-001：读取统一行走速度（policy），用于欧氏兜底 ETA 计算。 */
+  private async walkingSpeedMps(): Promise<number> {
+    try {
+      const config = this.policyService
+        ? await this.policyService.getConfig()
+        : undefined;
+      const speed = config?.walkingSpeedMps;
+      if (typeof speed === 'number' && speed > 0) return speed;
+    } catch (err) {
+      this.logger.warn(
+        `policy walkingSpeed unavailable, using 1.0 m/s fallback: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    return 1.0;
+  }
+
   /** 返回离 (x, y) 最近的节点；空图时返回 null。 */
   async nearestNode(x: number, y: number): Promise<RouteGraphNode | null> {
     const graph = await this.loadGraph();
@@ -220,19 +238,22 @@ export class RoutingService {
     return { x, y };
   }
 
-  /** 构造欧氏兜底 Route（不抛异常）。 */
-  private euclideanRoute(
+  /** 构造欧氏兜底 Route（不抛异常）。P1-ROUTE-001：ETA 必须由距离/速度计算，禁止返回 0。 */
+  private async euclideanRoute(
     from: Point,
     to: Point,
     meta: { personId: string; taskId: string; feasible: boolean },
-  ): Route {
+  ): Promise<Route> {
     const distanceMeters = Math.hypot(to.x - from.x, to.y - from.y);
+    const speed = await this.walkingSpeedMps();
+    const etaSeconds =
+      distanceMeters > 0 && speed > 0 ? distanceMeters / speed : 0;
     return {
       routeId: 'euclidean-fallback',
       personId: meta.personId,
       taskId: meta.taskId,
       distanceMeters: Math.round(distanceMeters * 100) / 100,
-      etaSeconds: 0,
+      etaSeconds: Math.round(etaSeconds),
       nodes: [],
       geometry: [],
       source: 'euclidean_fallback',

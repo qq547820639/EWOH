@@ -28,6 +28,7 @@ import { OutboxService } from './outbox.service';
 import { TaskService } from '../task/task.service';
 import { TaskLifecycle } from './task-lifecycle';
 import { SchedulingFeedbackService } from './scheduling-feedback.service';
+import { SchedulingPolicyService } from './scheduling-policy.service';
 
 /** 事务化的执行闭环：校验 → 预占 → 下发 → 审计 → 出站事件。 */
 @Injectable()
@@ -43,7 +44,29 @@ export class DispatchCoordinatorService {
     private readonly auditService: AuditService,
     private readonly taskService: TaskService,
     @Optional() private readonly feedbackService?: SchedulingFeedbackService,
+    @Optional() private readonly policyService?: SchedulingPolicyService,
   ) {}
+
+  /**
+   * P1-SCHED-004：统一默认任务时长来源（SchedulingPolicyConfig.defaultTaskDurationMs）。
+   * Solver / Plan / Reservation / Dispatch 共享同一值，禁止各层硬编码不同默认。
+   */
+  private async resolveDefaultDurationMs(): Promise<number> {
+    try {
+      const config = this.policyService
+        ? await this.policyService.getConfig()
+        : undefined;
+      const configured = config?.defaultTaskDurationMs;
+      if (typeof configured === 'number' && configured > 0) {
+        return configured;
+      }
+    } catch (err) {
+      this.logger.warn(
+        `policy default duration unavailable, using 30min fallback: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    return 1_800_000; // 与 SchedulingPolicyService 默认一致（30 分钟）
+  }
 
   /**
    * 原子下发：所有 DB 写入在单个事务内完成，任一步失败整体回滚。
@@ -64,6 +87,10 @@ export class DispatchCoordinatorService {
     await this.worldStateSnapshotService.assertFreshForApprove(
       plan.snapshotVersion ?? '',
     );
+
+    // P1-SCHED-004：统一默认时长（与 Solver/Policy 一致），仅在 assignment 缺失
+    // plannedEnd 时作为兜底，避免 1h 硬编码与 solver 30min 不一致。
+    const fallbackDurationMs = await this.resolveDefaultDurationMs();
 
     const outboxEventIds: string[] = [];
     const taskIds: string[] = [];
@@ -126,7 +153,7 @@ export class DispatchCoordinatorService {
             : Date.now();
           const endMs = a.plannedEnd
             ? a.plannedEnd.getTime()
-            : startMs + 3600_000;
+            : startMs + fallbackDurationMs;
           const inputs: ReservationInput[] = [];
           if (a.personId) {
             inputs.push({

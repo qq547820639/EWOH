@@ -1599,7 +1599,8 @@ export interface DecisionTrace {
   /** 任务动态优先级信息。 */
   priority: {
     level: string;
-    score: number;
+    /** 真实优先级分；无法获得时可为 null（禁止伪造 0 冒充真实计算，P0-SCHED-002）。 */
+    score: number | null;
     factors: Array<{ key: string; label: string; value: number }>;
   };
   /** 参与评分的候选（person/device 组合）。 */
@@ -1607,7 +1608,8 @@ export interface DecisionTrace {
     personId: string | null;
     deviceId: string | null;
     stationId: string | null;
-    score: number;
+    /** 候选评分；无法获得时可为 null。 */
+    score: number | null;
     reasons: string[];
   }>;
   selectedReason: string[];
@@ -1615,6 +1617,7 @@ export interface DecisionTrace {
   rejectedAlternatives: Array<{
     personId: string | null;
     deviceId: string | null;
+    stationId?: string | null;
     reason: string[];
   }>;
   policyVersion: number;

@@ -619,7 +619,9 @@ describe('RoutingService A*', () => {
         }),
       })),
     };
-    const svc = new RoutingService(db as never);
+    const svc = new RoutingService(db as never, {
+      getConfig: jest.fn().mockResolvedValue({ walkingSpeedMps: 1.0 }),
+    } as never);
 
     const route = await svc.calculateRoute('person-1', 'task-1');
 

@@ -195,14 +195,19 @@ export class PriorityEngine {
  * - downstreamCount：前置依赖的反向阻塞计数（下游越多越紧急）。
  * - manualBoostIds：MANUAL_BOOST 约束指定的人工加急任务。
  */
-export function computeEffectivePriorityScores(
+/**
+ * 统一计算快照内所有任务的完整优先级结果（含 score / factors / level / explanation）。
+ * 供 CP-SAT 与 heuristic 两条求解路径消费同一优先级规则与解释，禁止各自实现独立规则
+ * 或产生伪造的 0/[] 占位（P0-SCHED-002）。
+ */
+export function computeEffectivePriorityResults(
   policy: SchedulingPolicy,
   config: SchedulingPolicyConfig,
   snapshot: WorldStateSnapshot,
   constraints: SchedulingConstraint[],
   now: number,
   horizonEndMs: number,
-): Map<string, number> {
+): Map<string, PriorityResult> {
   const engine = new PriorityEngine();
 
   const downstreamCount = new Map<string, number>();
@@ -222,7 +227,7 @@ export function computeEffectivePriorityScores(
     }
   }
 
-  const scores = new Map<string, number>();
+  const results = new Map<string, PriorityResult>();
   for (const t of snapshot.tasks) {
     const result = engine.compute(policy, {
       task: {
@@ -238,7 +243,29 @@ export function computeEffectivePriorityScores(
       downstreamCount,
       manualBoostIds,
     });
-    scores.set(t.id, result.score);
+    results.set(t.id, result);
   }
+  return results;
+}
+
+/** 便捷封装：仅返回 score 映射（保持既有调用方兼容）。 */
+export function computeEffectivePriorityScores(
+  policy: SchedulingPolicy,
+  config: SchedulingPolicyConfig,
+  snapshot: WorldStateSnapshot,
+  constraints: SchedulingConstraint[],
+  now: number,
+  horizonEndMs: number,
+): Map<string, number> {
+  const results = computeEffectivePriorityResults(
+    policy,
+    config,
+    snapshot,
+    constraints,
+    now,
+    horizonEndMs,
+  );
+  const scores = new Map<string, number>();
+  for (const [id, r] of results) scores.set(id, r.score);
   return scores;
 }

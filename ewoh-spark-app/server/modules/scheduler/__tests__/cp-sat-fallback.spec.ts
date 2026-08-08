@@ -139,4 +139,24 @@ describe('CP-SAT 求解器回退（fallback）', () => {
       'cpsat-selected',
     ]);
   });
+
+  it('CP-SAT 路径 DecisionTrace 使用真实 priority（P0-SCHED-002：禁止 0/[] 占位）', async () => {
+    const { solver } = makeSolver({
+      workerUrl: 'http://127.0.0.1:8000',
+      timeoutMs: 50,
+      fetch: stubFetchReturning(OPTIMAL_RESPONSE),
+    });
+    const plan = await solver.solve(snapshot, [], opts);
+    const dt = plan.assignments[0].decisionTrace;
+
+    expect(dt).toBeDefined();
+    // priority 必须来自真实 PriorityEngine（score 为 number 且非占位 0/空）
+    expect(dt?.priority.score).not.toBeNull();
+    expect(typeof dt?.priority.score).toBe('number');
+    expect(dt?.priority.level).toBeDefined();
+    expect((dt?.priority.factors ?? []).length).toBeGreaterThan(0);
+    // 候选必须来自真实 worker 返回（被拒候选），不得为空数组冒充"无候选"
+    expect((dt?.candidates ?? []).length).toBeGreaterThan(0);
+    expect((dt?.rejectedAlternatives ?? []).length).toBeGreaterThan(0);
+  });
 });

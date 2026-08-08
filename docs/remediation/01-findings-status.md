@@ -14,12 +14,12 @@ See `00-baseline.md` for the status vocabulary.
 | P0-SEC-001 | P0 | IN_PROGRESS | | | Feishu webhook 验签待实施 |
 | P0-SEC-002 | P0 | IN_PROGRESS | | | Feishu simulator 默认关闭待实施 |
 | P0-SEC-003 | P0 | IN_PROGRESS | | | Feishu CORS allowlist 待实施 |
-| P0-SCHED-001 | P0 | OPEN | | | |
-| P0-SCHED-002 | P0 | OPEN | | | |
-| P1-SCHED-003 | P1 | OPEN | | | |
-| P1-SCHED-004 | P1 | OPEN | | | |
-| P1-ROUTE-001 | P1 | OPEN | | | |
-| P1-ROUTE-002 | P1 | OPEN | | | |
+| P0-SCHED-001 | P0 | VERIFIED | commit 4 | 2026-08-08 | CP-SAT 默认 UNAVAILABLE，fallback 显式标记，四态测试通过 |
+| P0-SCHED-002 | P0 | VERIFIED | commit 4 | 2026-08-08 | DecisionTrace 使用真实 PriorityEngine 结果；占位 0/[] 已移除 |
+| P1-SCHED-003 | P1 | OPEN | | | Policy magic numbers 集中化（部分已随 P1-SCHED-004 收敛） |
+| P1-SCHED-004 | P1 | VERIFIED | commit 4 | 2026-08-08 | Dispatch fallback 时长 = policy.defaultTaskDurationMs |
+| P1-ROUTE-001 | P1 | VERIFIED | commit 4 | 2026-08-08 | euclidean ETA = distance / walkingSpeed；3 个新测试 |
+| P1-ROUTE-002 | P1 | VERIFIED | commit 4 | 2026-08-08 | RouteCostProvider 已为唯一出口，确认无改动 |
 | P1-WORLD-001 | P1 | OPEN | | | |
 | P1-INGEST-001 | P1 | OPEN | | | |
 | P1-CMAP-001 | P1 | OPEN | | | |
