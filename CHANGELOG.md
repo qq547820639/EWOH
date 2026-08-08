@@ -6,6 +6,40 @@
 ## [Unreleased]
 
 ### Added
+- **智能调度 v0.7（四批增量，指挥地图 → 智能调度驾驶舱）**：
+  - **任务派生建模**（`world-state.service.ts`）：`productionImpact`（priority 映射 urgent=1.0→low=0.1）、
+    `safetyCritical`（taskType 白名单）、`candidateStations`（空间拓扑推导）从既有字段派生，无 schema 变更；
+    PriorityEngine 生产影响因子首次真实生效。
+  - **冲突增强**：新增第 13 类 `reservation_expiring`（预占 15min 倒计时预警）；
+    `buildConflicts` 新冲突经 outbox 推送 `conflict.detected` SSE（内存去重防轮询重复推送）。
+  - **事件驱动智能重排**：`POST /api/scheduler/events`（局部重排：影响分析→冻结无关任务→子图求解→熔断）；
+    `POST /api/scheduler/feedback/actuals`（执行实际值回填，覆盖式更新幂等，回填后推送 `execution.deviation` SSE）；
+    ingest 设备故障/离线转换自动触发 `DEVICE_OFFLINE` 重排（fire-and-forget，熔断不阻断真机接入）；
+    `ReplanCoordinator.handleTrigger` 失败熔断（run 置 failed 不再卡 queued）。
+  - **前端智能交互**（CommandMap）：新增「冲突中心」（13 类过滤/严重度排序/建议处置/三态）与「人工覆盖」
+    （LOCK/EXCLUDE/PREFER/BOOST/LOCK_TIME → 重排 → before/after diff）；`useSchedulerStream` 消费
+    `conflict.detected`/`execution.deviation` 实时刷新。
+  - **OpenAPI 同步**：304 → 306 条路径零漂移；客户端 TS 类型重生成。
+- **飞书侧车生产级加固 v1.1.0**（`ewoh-feishu-app`）：
+  - **API 统一鉴权**：写操作 fail-closed（token 未配置 → 503，不匹配 → 401），Bearer/X-API-Key 双格式，常量时间比较。
+  - **SQLite 落盘持久化**：默认文件库（WAL + busy_timeout）替代 `:memory:`，进程退出数据保留。
+  - **webhook 业务幂等**：`webhook_dedup` 表 `(event_id, action_type)` 唯一约束，重复投递返回 `duplicated:true`；
+    失败回滚可重试；closed 事件禁止再处置（409）。
+  - **签名协议修复**：HMAC 时间戳按飞书协议用秒级字符串（原毫秒导致 encrypt_key 校验永远失败）。
+  - **规则单一事实源**：规则引擎从 DB 加载（阈值可运行时调参）。
+  - **启动不阻塞**：飞书集成延迟至 HTTP 就绪后初始化（lark-cli 不再阻塞 listen）。
+- **AI 接入修复**：`ark.service.ts` 配置保存改用全局哨兵 org_id（原 INSERT 缺 org_id → NULL →
+  `ON CONFLICT` 永不触发 → 无限插行且读取常拿到旧行，AI 接入整体失效）；`getConfig` 按哨兵精确读取 + 排序。
+
+### Fixed
+- **AI 接入失效**：`saveConfig` 未提供 `org_id` 列 → NULL → PG 唯一索引视 NULL 互不相等 →
+  `ON CONFLICT (org_id, config_key)` 永不触发，每次保存插入新行；`getConfig` 无 org 过滤 + 无排序读取不确定行。
+  修复为显式全局哨兵 `GLOBAL_ORG_SENTINEL`（固定 UUID）+ 按哨兵过滤 + `_updated_at desc` 排序。
+- **Feishu webhook 签名**：HMAC source 使用毫秒时间戳（协议要求秒字符串），配置 encrypt_key 时签名永远不匹配。
+- **Feishu 事件处置接口无鉴权**：`/api/events/:id/handle` 等写端点全站无鉴权，任何人可改事件状态。
+- **Feishu 数据丢失**：SQLite `:memory:` 进程退出数据全丢，与 30s 全量同步设计矛盾。
+- **调度 run 卡死**：`handleTrigger` 失败时 run 永远停留在 queued；现置为 failed 并记录日志。
+
 - **角色工作台生产化深化与真实数据闭环**（`deepen-roleworkbench-production`）：
   - **数据库级列表查询**：`RoleWorkbenchService.getWorkbenchList` 改为真实 PostgreSQL 查询
     （参数化 WHERE 含强制 `org_id` / ORDER BY / LIMIT），删除 `.limit(5000)` 全表内存读取；
