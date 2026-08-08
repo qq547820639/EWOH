@@ -2,6 +2,8 @@
   "base_token": "REPLACE_WITH_FEISHU_BASE_TOKEN",
   "base_url": "https://<tenant>.feishu.cn/base/REPLACE_WITH_FEISHU_BASE_TOKEN",
   "chat_id": "oc_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "verification_token": "REPLACE_WITH_FEISHU_VERIFICATION_TOKEN",
+  "encrypt_key": "REPLACE_WITH_FEISHU_ENCRYPT_KEY",
   "tables": {
     "devices": "tblxxxxxxxxxxxxxxxx",
     "telemetry": "tblxxxxxxxxxxxxxxxx",

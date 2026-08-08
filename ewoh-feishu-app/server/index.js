@@ -1,5 +1,11 @@
 // server/index.js — 应用入口
-// 初始化 DB → 挂载中间件与 /api 路由 → 启动模拟器（每秒生成遥测 + 评估规则）→ 监听端口
+// 初始化 DB → 挂载中间件与 /api 路由 → 按配置启动模拟器 → 监听端口
+//
+// 安全（P0-SEC-001/002/003）：
+//   - Webhook 写操作（acknowledge/resolve/escalate）必须验签（token + timestamp + replay）；
+//   - Simulator 默认关闭（FEISHU_SIMULATOR_ENABLED=false）；NODE_ENV=production 时强制禁用，
+//     除非同时设置 ALLOW_SIMULATOR_IN_PRODUCTION=true；
+//   - CORS 使用显式 allowlist（FEISHU_CORS_ORIGINS），禁止 wildcard + credentials。
 
 const path = require('path');
 const express = require('express');
@@ -12,6 +18,7 @@ const { createApiRouter } = require('./api');
 const feishu = require('./feishu');
 const sync = require('./sync');
 const events = require('./events');
+const security = require('./security');
 
 // 初始化数据库（建表 + 预置设备/规则）
 const db = dbm.initDatabase();
@@ -52,8 +59,31 @@ if (feishuConfig) {
 
 // 创建 Express 应用
 const app = express();
-app.use(cors());
-app.use(express.json());
+
+// P0-SEC-003：CORS 显式 allowlist。默认仅本地开发源；配置 FEISHU_CORS_ORIGINS 指定。
+function resolveCorsOrigins() {
+  const raw = (process.env.FEISHU_CORS_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (raw.includes('*')) {
+    throw new Error('FEISHU_CORS_ORIGINS 不得包含 *（与 credentials 冲突）');
+  }
+  // 默认：仅本地前端（端口 3000 由本服务自身 + 常见本地端口）
+  const defaults = ['http://localhost:3000', 'http://127.0.0.1:3000'];
+  const origins = raw.length > 0 ? raw : defaults;
+  console.log(`[cors] 允许来源: ${origins.join(', ')}`);
+  return origins;
+}
+app.use(
+  cors({
+    origin: resolveCorsOrigins(),
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'X-Lark-Signature'],
+    credentials: true,
+  })
+);
+app.use(express.json({ limit: process.env.FEISHU_BODY_LIMIT || '1mb' }));
 
 // 静态文件（前端）
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -66,32 +96,61 @@ app.get('/', (req, res) => {
   res.json({ name: 'EWOH 外骨骼监督平台', status: 'running', api: '/api/status' });
 });
 
-// 启动模拟器：每帧生成遥测后立即评估规则，触发的事件写入 events 表
-startSimulator(db, (frame) => {
-  try {
-    // 遥测帧入缓冲区（5s 批量同步到多维表格，不每帧调 lark-cli）
-    sync.syncTelemetry(frame);
-    const newEvents = evaluateRules(db, frame);
-    if (newEvents.length > 0) {
-      for (const ev of newEvents) {
-        console.log(`[rules] 触发事件 ${ev.event_code} [${ev.event_type}] 设备=${ev.device_id} event_id=${ev.event_id}`);
-      }
+// ---- 模拟器（P0-SEC-002）：默认关闭 ----
+function simulatorEnabled() {
+  const raw = (process.env.FEISHU_SIMULATOR_ENABLED || '').trim().toLowerCase();
+  const enabled = raw === 'true' || raw === '1' || raw === 'yes';
+  if (!enabled) return false;
+  const isProd = (process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+  if (isProd) {
+    const allow = (process.env.ALLOW_SIMULATOR_IN_PRODUCTION || '').trim().toLowerCase();
+    if (allow !== 'true' && allow !== '1') {
+      console.error('[simulator] NODE_ENV=production 且未设置 ALLOW_SIMULATOR_IN_PRODUCTION=true，拒绝启动模拟器');
+      return false;
     }
-  } catch (e) {
-    console.error('[rules] 评估出错:', e.message);
+    console.warn('[simulator] 警告：production 环境显式允许模拟器（ALLOW_SIMULATOR_IN_PRODUCTION=true）');
   }
-});
+  return true;
+}
+
+if (simulatorEnabled()) {
+  // 启动模拟器：每帧生成遥测后立即评估规则，触发的事件写入 events 表
+  startSimulator(db, (frame) => {
+    try {
+      // 遥测帧入缓冲区（5s 批量同步到多维表格，不每帧调 lark-cli）
+      sync.syncTelemetry(frame);
+      const newEvents = evaluateRules(db, frame);
+      if (newEvents.length > 0) {
+        for (const ev of newEvents) {
+          console.log(`[rules] 触发事件 ${ev.event_code} [${ev.event_type}] 设备=${ev.device_id} event_id=${ev.event_id}`);
+        }
+      }
+    } catch (e) {
+      console.error('[rules] 评估出错:', e.message);
+    }
+  });
+} else {
+  console.log('[simulator] 模拟器未启用（FEISHU_SIMULATOR_ENABLED 未开启）');
+}
 
 // 飞书卡片按钮回调端点（挂在根 app，不在 /api 路由下）
-// payload: { open_id, action: { value: { action_type, event_id } } }
+// payload 支持事件订阅信封 { header: { token, event_id, create_time }, event: {...} }
+// 或旧格式 { open_id, action: { value: { action_type, event_id } } }
 app.post('/webhook/card', (req, res) => {
-  try {
-    const body = req.body || {};
-    const openId = body.open_id || (body.operator && body.operator.open_id) || 'unknown';
-    const value = (body.action && body.action.value) || {};
-    const actionType = value.action_type;
-    const eventId = value.event_id;
+  const body = req.body || {};
+  const value = (body.action && body.action.value) || {};
+  const actionType = value.action_type;
+  const eventId = value.event_id || (body.header && body.header.event_id);
 
+  // P0-SEC-001：验签（token + timestamp + 签名 + 重放保护）——写操作必须通过
+  const result = security.verifyWebhookRequest(req);
+  if (!result.ok) {
+    security.auditWebhook(db, req, result, actionType, eventId);
+    return res.status(401).json({ ok: false, error: result.error, code: result.code });
+  }
+  security.auditWebhook(db, req, { ok: true }, actionType, eventId);
+
+  try {
     if (!actionType || !eventId) {
       return res.json({ ok: false, error: 'missing action_type or event_id' });
     }
@@ -107,6 +166,7 @@ app.post('/webhook/card', (req, res) => {
     const cfg = feishu.getConfig();
     const chatId = cfg && cfg.chat_id;
     const messageId = event.evidence && event.evidence.feishu_message_id;
+    const openId = body.open_id || (body.operator && body.operator.open_id) || 'unknown';
 
     let label;
     if (actionType === 'acknowledge') {
