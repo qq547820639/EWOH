@@ -101,6 +101,9 @@ class Settings:
         # ---- 运行时模式（P0-EDGE-002）----
         # production / development / simulation；详见 edge_platform.runtime.bootstrap
         self.runtime_mode = os.environ.get("EWOH_RUNTIME_MODE", "development")
+        # ---- CORS（P0-Edge-Security）----
+        # 逗号分隔的显式 Origin allowlist；production 必须配置，未命中不回送 CORS 头。
+        self.cors_origins = _parse_roles(os.environ.get("EWOH_CORS_ORIGINS", ""))
         # ---- 身份与权限 ----
         self.auth_backend = os.environ.get("EWOH_AUTH_BACKEND", "offline")
         self.oidc_issuer = os.environ.get("EWOH_OIDC_ISSUER", "")

@@ -40,9 +40,27 @@ SOURCE_LABELS = {"real": "REAL DEVICE", "controlled_test": "受控数据", "simu
 MAX_BODY_BYTES = 1 * 1024 * 1024  # POST body 限制 1MB
 DEFAULT_LIMIT = 100  # 列表端点默认分页大小
 
+# P0-Edge-Security：production 下 POST 写操作必须认证；以下为认证类公共端点白名单
+PUBLIC_POST_PATHS = frozenset(
+    {
+        "/api/auth/login",
+        "/api/auth/refresh",
+    }
+)
+
 
 def now_iso():
     return services.iso(datetime.now())
+
+
+def _log_internal_error(method, path, request_id, exc):
+    """内部异常日志（P0-Edge-Security）：详情只进日志，外部响应保持脱敏。"""
+    import traceback
+
+    print(
+        f"[EWOH] internal_error method={method} path={path} request_id={request_id} "
+        f"exc_type={exc.__class__.__name__} exc={exc!r}\n{traceback.format_exc()}"
+    )
 
 
 parse_ts = services.parse_ts
@@ -51,24 +69,36 @@ parse_ts = services.parse_ts
 def get_actor_from_request(handler):
     """从 Authorization header 解析 Bearer token 得到操作人身份。
 
-    auth 模块未就绪时降级为 anonymous，保证平台在离线/演示场景可用。
-    未携带 token 或解析失败一律返回 "anonymous"，不强制认证。
+    返回：
+    - 有效会话 → user_id
+    - 未认证：
+      - production：返回 None（调用方必须 fail-closed，禁止 anonymous 降级）；
+      - development/simulation：返回 "anonymous"（离线/演示场景可用）。
+
+    P0-Edge-Security：生产环境不允许 anonymous fallback。
     """
     auth = (handler.headers.get("Authorization", "") or "").strip()
     if not auth.startswith("Bearer "):
-        return "anonymous"
+        return _anonymous_or_none()
     token = auth[len("Bearer ") :].strip()
     if not token:
-        return "anonymous"
+        return _anonymous_or_none()
     sm = _get_session_manager()
     if sm is None:
-        return "anonymous"
+        return _anonymous_or_none()
     try:
         session = sm.verify(token)
         if session is not None:
             return session.user_id
     except Exception:
         pass
+    return _anonymous_or_none()
+
+
+def _anonymous_or_none():
+    """production 未认证返回 None（fail-closed）；development/simulation 返回 anonymous。"""
+    if Settings.load().runtime_mode == "production":
+        return None
     return "anonymous"
 
 
@@ -193,13 +223,27 @@ def make_handler(ctx):
                 self._request_id = inbound or uuid.uuid4().hex[:8]
             super().send_response(code, message)
             self.send_header("X-Request-ID", self._request_id)
-            # CORS：指挥地图前端（ui/command_map）与 backend 跨端口部署时允许跨域，
-            # 仅当请求携带 Origin 时回送（边缘平台本地部署，不构成公网风险）
+            # CORS（P0-Edge-Security）：production 必须使用显式 allowlist，
+            # 未命中 allowlist 的 Origin 一律不回送 CORS 头（fail-closed）。
+            # development/simulation 保留 echo 便于本地跨端口联调，但打印警告。
             origin = self.headers.get("Origin") if self.headers else None
             if origin:
-                self.send_header("Access-Control-Allow-Origin", origin)
-                self.send_header("Access-Control-Allow-Credentials", "true")
-                self.send_header("Vary", "Origin")
+                mode = Settings.load().runtime_mode
+                allowlist = Settings.load().cors_origins
+                if mode == "production":
+                    if allowlist and origin in allowlist:
+                        self.send_header("Access-Control-Allow-Origin", origin)
+                        self.send_header("Access-Control-Allow-Credentials", "true")
+                        self.send_header("Vary", "Origin")
+                    # 未命中：不发送任何 CORS 头，浏览器同源策略阻止跨域读写
+                else:
+                    print(
+                        "[EWOH] CORS 开发回退：echo Origin（仅限 development/simulation，"
+                        "production 必须配置 EWOH_CORS_ORIGINS allowlist）"
+                    )
+                    self.send_header("Access-Control-Allow-Origin", origin)
+                    self.send_header("Access-Control-Allow-Credentials", "true")
+                    self.send_header("Vary", "Origin")
 
         # ---- 基础工具 ----
         def _flush_post_audit(self):
@@ -414,8 +458,12 @@ def make_handler(ctx):
                     return self._new_error("not_found", "路径不存在", 404)
             except BrokenPipeError:
                 return
-            except Exception as e:  # 统一错误出口，避免泄露内部细节
-                return self.send_json({"error": "请求处理失败", "detail": str(e)}, 500)
+            except Exception as e:  # 统一错误出口：内部日志记录详情，外部响应脱敏（P0-Edge-Security）
+                _log_internal_error("GET", p, self._request_id, e)
+                return self.send_json(
+                    {"error": {"code": "internal_error", "message": "请求处理失败", "request_id": self._request_id}},
+                    500,
+                )
             return super().do_GET()
 
         # ---- POST 路由 ----
@@ -436,6 +484,13 @@ def make_handler(ctx):
             self._post_audit_pending = True
             self._audit_target_type = "api"
             self._audit_target_id = None
+            # P0-Edge-Security：production 下所有写操作（POST/PATCH）必须认证，
+            # 公共端点白名单豁免。未认证 → 401（fail-closed，禁止 anonymous 写）。
+            if Settings.load().runtime_mode == "production":
+                actor = self._actor()
+                if actor is None and p not in PUBLIC_POST_PATHS:
+                    self._post_audit_pending = False
+                    return self._new_error("unauthorized", "production 写操作必须携带有效 Bearer token", 401)
             try:
                 if p == "/api/event/status":
                     self.api_event_status(payload)
@@ -518,7 +573,8 @@ def make_handler(ctx):
                         resp = cpsat_solver.solve(SolverRequest.from_dict(payload))
                         return self.send_json({"ok": True, "response": resp.to_dict()})
                     except Exception as e:
-                        return self._new_error("solver_error", str(e), 500)
+                        _log_internal_error("POST", p, self._request_id, e)
+                        return self._new_error("solver_error", "求解器调用失败", 500)
                 self._post_audit_pending = False  # 404 不审计
                 return self.send_json({"error": "not found"}, 404)
             except BrokenPipeError:
@@ -532,7 +588,11 @@ def make_handler(ctx):
                     target_id=getattr(self, "_audit_target_id", None),
                     result="error",
                 )
-                return self.send_json({"error": "请求处理失败", "detail": str(e)}, 500)
+                _log_internal_error("POST", p, self._request_id, e)
+                return self.send_json(
+                    {"error": {"code": "internal_error", "message": "请求处理失败", "request_id": self._request_id}},
+                    500,
+                )
 
         def do_HEAD(self):
             self._request_id = None  # keep-alive 复用实例时重置请求 ID
