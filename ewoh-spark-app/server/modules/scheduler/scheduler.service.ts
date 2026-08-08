@@ -1097,7 +1097,53 @@ export class SchedulerService {
       );
     }
 
+    // v0.7 Batch10.2：影子评估自动化——每 N 次事件驱动 run 后自动对比候选策略与活跃策略
+    // （复用 comparePolicyVersion 的 KPI + param delta，仅观测不改活跃策略）。
+    // await 保证评估在响应前完成（观测型，失败仅记日志不阻断）。
+    await this.maybeRunShadowEvaluation(ctx);
+
     return { ...primary, cascaded };
+  }
+
+  /** 事件驱动 run 计数器（影子评估节流）。 */
+  private eventRunCounter = 0;
+  /** 每 N 次事件驱动 run 触发一次影子评估。 */
+  private static readonly SHADOW_EVAL_INTERVAL = 10;
+
+  /**
+   * v0.7 Batch10.2：影子评估自动化。
+   * 每 SHADOW_EVAL_INTERVAL 次事件驱动 run，自动调用 comparePolicyVersion（候选 vs 活跃），
+   * 结果写入审计日志（观测型，不激活任何候选策略）。失败仅记日志不阻断主流程。
+   */
+  private async maybeRunShadowEvaluation(ctx: OrgContext): Promise<void> {
+    this.eventRunCounter += 1;
+    if (this.eventRunCounter % SchedulerService.SHADOW_EVAL_INTERVAL !== 0) return;
+    if (!this.policyService) return;
+    try {
+      const active = await this.policyService.getConfig().catch(() => null);
+      if (!active) return;
+      // 候选 = 活跃版本 + 1（若有注册的未激活版本）；无则跳过。
+      const candidates = await this.policyService.listVersions().catch(() => []);
+      const pending = candidates.find((v) => v.configVersion === active.configVersion + 1);
+      if (!pending) return;
+      const comparison = await this.comparePolicyVersion(pending.configVersion, ctx);
+      this.logger.log(
+        `[shadow-eval] run#${this.eventRunCounter} candidate v${pending.configVersion} vs active v${active.configVersion}: ` +
+          `acceptance=${comparison.feedbackKpis?.acceptanceRate ?? '-'}% verdict=${comparison.verdict}`,
+      );
+      await this.auditService.appendAuditLog({
+        actorId: 'shadow-eval',
+        orgId: ctx.primaryOrgId,
+        action: 'scheduler.policy.shadow_eval',
+        entityType: 'scheduling_policy',
+        entityId: String(pending.configVersion),
+        before: { configVersion: active.configVersion },
+        after: { candidateVersion: pending.configVersion, verdict: comparison.verdict },
+        reason: 'automatic shadow evaluation (Batch 10.2)',
+      });
+    } catch (e) {
+      this.logger.warn(`shadow evaluation failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   /**
