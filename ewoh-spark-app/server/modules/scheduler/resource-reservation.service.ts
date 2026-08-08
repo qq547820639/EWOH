@@ -76,23 +76,37 @@ export class ResourceReservationService {
           }
 
           const reservationId = `RSV-${Date.now()}-${this.randomSuffix()}`;
-          const [row] = await this.db
-            .insert(ewohResourceReservation)
-            .values({
-              reservationId,
-              resourceType: input.resourceType,
-              resourceId: input.resourceId,
-              assignmentId: assignmentId ?? null,
-              planId,
-              taskId: taskId ?? null,
-              startMs: input.startMs,
-              endMs: input.endMs,
-              status: 'reserved',
-              version: 1,
-              orgId: ctx.primaryOrgId || null,
-              createdBy: ctx.userId,
-            })
-            .returning();
+          let row: { reservationId: string; resourceType: string; resourceId: string; startMs: number; endMs: number } | undefined;
+          try {
+            [row] = await this.db
+              .insert(ewohResourceReservation)
+              .values({
+                reservationId,
+                resourceType: input.resourceType,
+                resourceId: input.resourceId,
+                assignmentId: assignmentId ?? null,
+                planId,
+                taskId: taskId ?? null,
+                startMs: input.startMs,
+                endMs: input.endMs,
+                status: 'reserved',
+                version: 1,
+                orgId: ctx.primaryOrgId || null,
+                createdBy: ctx.userId,
+              })
+              .returning();
+          } catch (error) {
+            // P0-5：数据库层 EXCLUDE 约束（standalone_009 no_overlap）在并发插入
+            // 时抛 exclusion_violation（23P01）。应用层 check-then-insert 是快速路径，
+            // DB 约束是硬后盾——将原生错误统一转 409 RESOURCE_CONFLICT，避免 500。
+            const code = (error as { code?: string })?.code;
+            if (code === '23P01' || code === '23505' || code === '23514') {
+              throw new ConflictException(
+                `RESOURCE_CONFLICT: resource ${input.resourceType}:${input.resourceId} already reserved in overlapping window`,
+              );
+            }
+            throw error;
+          }
 
           results.push({
             reservationId: row.reservationId,
