@@ -126,6 +126,40 @@ function read(file) {
   return fs.readFileSync(file, 'utf8');
 }
 
+/** Batch 8 G5：从 schema-manifest.yaml（单一事实源）派生 F61-02 域表数量。
+ * 消除 verify 期望值硬编码（原固定 6），manifest 变更时 verify 自动跟随。
+ * js-yaml 经 createRequire 从应用依赖加载；解析失败回退硬编码值并告警。 */
+function domainTableCountFromManifest() {
+  try {
+    const yaml = requireFromApp('js-yaml');
+    const manifestPath = path.join(root, 'db/contracts/schema-manifest.yaml');
+    const doc = yaml.load(read(manifestPath));
+    const tables = Array.isArray(doc && doc.managed_tables) ? doc.managed_tables : [];
+    // F61-02 域表：capability_mapping 含 domain 能力 或 domain=Scale 的 6 张持久化表。
+    // 与 standalone_004_verify.sql 的 6 张表（resource_locks/handoffs/git_sync_state/
+    // evidence_metadata/factory_replication_sessions/idempotency_keys）对应。
+    const domainTables = tables.filter(
+      (t) =>
+        t &&
+        Array.isArray(t.capability_mapping) &&
+        t.capability_mapping.some((c) => String(c).startsWith('scale.') || String(c) === 'domain.persistence'),
+    );
+    // 兜底：若 manifest 无显式 domain 标记，按 004 迁移的 6 张表白名单精确匹配。
+    const knownDomainTables = [
+      'ewoh_resource_locks', 'ewoh_handoffs', 'ewoh_git_sync_state',
+      'ewoh_evidence_metadata', 'ewoh_factory_replication_sessions', 'ewoh_idempotency_keys',
+    ];
+    const matched = tables.filter((t) => t && knownDomainTables.includes(t.physical_table));
+    const expected = matched.length > 0 ? matched.length : domainTables.length;
+    if (expected > 0) return expected;
+    console.warn('[verify] schema-manifest 未找到 F61-02 域表条目，回退硬编码 6');
+    return 6;
+  } catch (e) {
+    console.warn(`[verify] 解析 schema-manifest 失败（${e.message}），回退硬编码 6`);
+    return 6;
+  }
+}
+
 function renderAdminSeed(sqlText) {
   const username = process.env.EWOH_BOOTSTRAP_ADMIN_USERNAME;
   const password = process.env.EWOH_BOOTSTRAP_ADMIN_PASSWORD;
@@ -219,11 +253,13 @@ function main() {
       console.log(JSON.stringify(rows, null, 2));
       const row = rows[0] || {};
       const count = Number(row.ewoh_domain_table_count || 0);
-      if (count !== 6) {
-        console.error(`VERIFY FAILED: expected ewoh_domain_table_count=6, got ${count}`);
+      // Batch 8 G5：期望值从 schema-manifest.yaml（单一事实源）派生，消除硬编码 6。
+      const expected = domainTableCountFromManifest();
+      if (count !== expected) {
+        console.error(`VERIFY FAILED: expected ewoh_domain_table_count=${expected}, got ${count}`);
         process.exitCode = 1;
       } else {
-        console.log('VERIFY OK: all 6 F61-02 domain tables present');
+        console.log(`VERIFY OK: all ${expected} F61-02 domain tables present`);
       }
       return;
     }

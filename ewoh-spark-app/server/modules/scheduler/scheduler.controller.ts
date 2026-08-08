@@ -204,14 +204,19 @@ export class SchedulerController {
     @Query('pageSize') pageSize?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Req() request: { userContext?: OrgContext } = { userContext: undefined },
   ) {
-    return this.schedulerService.listRuns({
-      status,
-      page: page ? Number(page) : undefined,
-      pageSize: pageSize ? Number(pageSize) : undefined,
-      from,
-      to,
-    });
+    return this.schedulerService.listRuns(
+      {
+        status,
+        page: page ? Number(page) : undefined,
+        pageSize: pageSize ? Number(pageSize) : undefined,
+        from,
+        to,
+      },
+      // Batch 8 RLS 缓解：传入租户上下文，listRuns 按 org 过滤运行历史。
+      request.userContext,
+    );
   }
 
   @Get('runs/:runId')

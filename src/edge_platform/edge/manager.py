@@ -15,6 +15,7 @@ import threading
 import time
 
 from edge_platform.edge.adapters.base import BaseAdapter
+from edge_platform.edge.modeling.frame_adapter import is_grouped_frame, unified_to_telemetry_row
 from edge_platform.runtime.protocols import STREAM_TELEMETRY, EventBusProtocol, StorageProtocol
 
 logger = logging.getLogger("ewoh.edge.manager")
@@ -124,8 +125,11 @@ class AdapterManager:
             if msg is None:
                 continue
             try:
-                self.storage.insert_telemetry(msg)
-                self.bus.publish(STREAM_TELEMETRY, msg)
+                # Batch 8.4（H2 修复）：统一语义帧（分组格式）→ 存储扁平格式。
+                # 兼容双格式：分组帧转换后写入，扁平帧（旧连接器产出）直接透传。
+                row = unified_to_telemetry_row(msg) if is_grouped_frame(msg) else msg
+                self.storage.insert_telemetry(row)
+                self.bus.publish(STREAM_TELEMETRY, row)
             except Exception:
                 logger.exception("adapter %s frame persistence failed", getattr(adapter, "device_id", "?"))
 

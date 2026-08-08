@@ -2,6 +2,10 @@
 -- Schema placeholder: __EWOH_SCHEMA__
 -- Re-entrant: CREATE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS / DROP POLICY IF EXISTS.
 -- No physical foreign keys. RLS is org-scoped; direct DML is revoked from user roles.
+--
+-- DEPRECATED（Batch 8.2 裁定）：本文件为 legacy 基线，与 standalone_001_schema.sql 重叠。
+-- 唯一事实源为 db/migrations/standalone_00*.sql（README 明示）。
+-- 保留仅供旧部署环境回滚/兼容；新增迁移一律走 standalone 链，本文件冻结不再更新。
 
 CREATE SCHEMA IF NOT EXISTS __EWOH_SCHEMA__;
 SELECT set_config('search_path', '__EWOH_SCHEMA__, pg_temp', false);

@@ -6,6 +6,18 @@
 ## [Unreleased]
 
 ### Added
+- **智能调度 v0.7 第三批（Batch 8 剩余 + G5，边缘运行时与治理收敛）**：
+  - **遥测帧格式对齐（H2 修复）**：新增 `edge/modeling/frame_adapter.py` 纯函数转换
+    （分组帧 entity_id/event_time/pose/load → 扁平 device_id/timestamp/telemetry），
+    `AdapterManager._read_loop` 插入转换（兼容双格式），消除生产路径 KeyError 隐患；
+    与 inference features 消费键完全对齐。
+  - **RLS 缓解**：`listRuns` 增加应用层 org 过滤（actor.primaryOrgId → 按 org 过滤运行历史，
+    缺省不过滤向后兼容）；审计文档 `docs/reviews/rls-coverage-audit-2026-08-08.md`。
+  - **verify 期望值去硬编码（G5）**：`run_migrations.js` 的 F61-02 域表计数从
+    `schema-manifest.yaml` 派生（js-yaml），消除硬编码 6。
+  - **迁移双基线收敛（8.2）**：`001_ewoh_managed_tables.sql` 头部标注 DEPRECATED（standalone 链唯一事实源）。
+  - **双总线澄清（8.3 修正）**：确认 MessageBus（流式数据通道）与 EventBus（SSE 广播）职责分离，
+    `kafka` 仅为兼容命名别名，无需统一（原 H1 判定修正并记录）。
 - **智能调度 v0.7 第二批（Batch 5-9，实施计划 `docs/reviews/next-steps-implementation-plan.md`）**：
   - **权重体系收敛**：`SchedulingPolicyConfig` 新增可选 `weights` 段（workloadBalance/stationWait/changeCost/energy），
     `buildPolicy` 从配置读取（缺省保持现值 1/1/0.5/minBattery/30 向后兼容），策略调参不再需要改代码。

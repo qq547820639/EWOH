@@ -886,7 +886,7 @@ export class SchedulerService {
    * - total：满足过滤条件的运行总条数（用于分页）。
    * 复用现有 db（drizzle）与 planService.getPlan，不引入并行调度器。
    */
-  async listRuns(params: ListRunsRequest = {}): Promise<ListRunsResponse> {
+  async listRuns(params: ListRunsRequest = {}, actor?: OrgContext): Promise<ListRunsResponse> {
     const page = Math.max(1, params.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 20));
 
@@ -900,6 +900,12 @@ export class SchedulerService {
     if (params.to && !Number.isNaN(Date.parse(params.to))) {
       conditions.push(lte(ewohSchedulingRun.createdAt, new Date(params.to)));
     }
+    // Batch 8 RLS 缓解：应用层 org 过滤补强（ewohSchedulingRun 有 org_id 列但不在 RLS 白名单）。
+    // actor 携带 primaryOrgId 时按 org 过滤（与写路径 GUC 语义一致）；缺省不过滤（向后兼容）。
+    const orgFilter = actor?.primaryOrgId
+      ? eq(ewohSchedulingRun.orgId, actor.primaryOrgId)
+      : undefined;
+    if (orgFilter) conditions.push(orgFilter);
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
     const [countRows, runRows, activePlanRows] = await Promise.all([

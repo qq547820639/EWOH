@@ -28,11 +28,12 @@ const DEFAULT_FRESHNESS_MS = 5 * 60 * 1000;
 @Injectable()
 export class WorldStateSnapshotService {
   private readonly logger = new Logger(WorldStateSnapshotService.name);
-  private readonly freshnessMs = DEFAULT_FRESHNESS_MS;
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly requestDatabaseContext: RequestDatabaseContext,
+    // 资源数据新鲜度阈值（ms）：可注入覆盖（测试用短阈值验证 STALE 语义），缺省 5min。
+    private readonly freshnessMs: number = DEFAULT_FRESHNESS_MS,
   ) {}
 
   /**
