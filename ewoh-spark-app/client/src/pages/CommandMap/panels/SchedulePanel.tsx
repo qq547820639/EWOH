@@ -26,6 +26,7 @@ import {
 import { getCurrentOperator } from '@client/src/lib/auth';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import { useSchedulerStream } from '@client/src/hooks/useSchedulerStream';
+import { isNonAuthoritativePlan } from './schedule-panel-demo';
 import type {
   SchedulingPlanV2,
   SchedulingAssignment,
@@ -281,7 +282,21 @@ export default function SchedulePanel({
       }
     },
     onError: (err) => {
-      // 后端不可用 → Demo 兜底
+      // P1-5：生产构建禁止自动创建 Demo 调度方案（Demo 不可审批/派工，会污染状态）。
+      // 仅开发/演示构建允许兜底；生产展示明确 degraded 状态，保留最后一次权威方案。
+      const buildMeta = (import.meta as unknown as {
+        env?: { DEV?: boolean; PROD?: boolean; MODE?: string };
+      }).env;
+      const isProdBuild = Boolean(buildMeta?.PROD) || buildMeta?.MODE === 'production';
+      const isDemoBuild = Boolean(buildMeta?.DEV) || buildMeta?.MODE?.includes('demo');
+      if (isProdBuild && !isDemoBuild) {
+        toast.error('调度引擎不可用', {
+          description: err instanceof Error ? err.message : undefined,
+        });
+        setIsDemo(true); // 进入 degraded 展示（无 Demo 方案）
+        return;
+      }
+      // 开发/演示构建：Demo 兜底（明确标注 demo，不影响真实数据）
       toast.warning('后端调度引擎不可用，已加载演示方案', {
         description: err instanceof Error ? err.message : undefined,
       });
@@ -386,11 +401,19 @@ export default function SchedulePanel({
 
   const handleApprove = () => {
     if (!approveTarget) return;
+    if (isNonAuthoritativePlan(approveTarget)) {
+      toast.error('演示方案不可审批（仅用于展示）');
+      return;
+    }
     approveMutation.mutate({ plan: approveTarget, reason: approveReason.trim() });
   };
 
   const handleReject = () => {
     if (!rejectTarget) return;
+    if (isNonAuthoritativePlan(rejectTarget)) {
+      toast.error('演示方案不可驳回（仅用于展示）');
+      return;
+    }
     if (!rejectReason.trim()) {
       toast.error('请填写驳回理由');
       return;
@@ -647,7 +670,13 @@ export default function SchedulePanel({
                   size="sm"
                   variant="outline"
                   className="h-6 text-[10px] px-2 text-cyan-400 border-cyan-500/30"
-                  onClick={() => dispatchMutation.mutate(selectedPlan)}
+                  onClick={() => {
+                    if (isNonAuthoritativePlan(selectedPlan)) {
+                      toast.error('演示方案不可下发（仅用于展示）');
+                      return;
+                    }
+                    dispatchMutation.mutate(selectedPlan);
+                  }}
                   disabled={selectedPlan.status !== 'approved' || dispatchMutation.isPending}
                 >
                   <Send className="w-3 h-3" />
