@@ -25,5 +25,5 @@ See `00-baseline.md` for the status vocabulary.
 | P1-CMAP-001 | P1 | VERIFIED | commit 6 | 2026-08-08 | 写链已收敛 V2；gamification 标注 deprecated |
 | P1-CMAP-002 | P1 | VERIFIED | commit 6 | 2026-08-08 | /api/scheduler/resources/state 暴露 + ResourcePool 消费投影 |
 | P1-CMAP-003 | P1 | VERIFIED | commit 6 | 2026-08-08 | SSE/polling 分工明确；保留 poll fallback |
-| P2-SHARED-001 | P2 | OPEN | | | |
-| P2-WORK-001 | P2 | OPEN | | | |
+| P2-SHARED-001 | P2 | IN_PROGRESS | commit 9 | 2026-08-08 | shared/index.ts barrel 已建（零 importer 改动）；域拆分待下迭代 |
+| P2-WORK-001 | P2 | DEFERRED | | | 结构性重构风险高；WorkOrchestration 1549+864 行职责拆分为下迭代专项（保持现有能力不破坏） |
