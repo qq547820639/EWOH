@@ -88,10 +88,13 @@ export class ResourceProjectionService {
       } | null);
       const pRes = resFor('person', p.id);
       const sourceTs = p.updatedAt ? p.updatedAt.getTime() : null;
+      const dataQuality = this.classifyFreshness(sourceTs, now);
       return {
         id: p.id,
         type: 'person',
-        status: p.status ?? 'available',
+        // 数据过时（STALE/UNKNOWN）时不得显示为可派工：与调度 world-state 语义一致。
+        status:
+          dataQuality === 'FRESH' ? (p.status ?? 'available') : 'unavailable',
         capabilities: Array.isArray(p.skills) ? (p.skills as string[]) : [],
         certifications: Array.isArray(p.certifications)
           ? (p.certifications as string[])
@@ -121,7 +124,7 @@ export class ResourceProjectionService {
         updatedAt: sourceTs,
         sourceTs,
         freshnessMs: DEFAULT_FRESHNESS_MS,
-        dataQuality: this.classifyFreshness(sourceTs, now),
+        dataQuality,
         version: p.version ?? 1,
       };
     });
@@ -139,10 +142,16 @@ export class ResourceProjectionService {
         : d.updatedAt
           ? d.updatedAt.getTime()
           : null;
+      const deviceDataQuality = this.classifyFreshness(sourceTs, now);
       return {
         id: d.id,
         type: 'device',
-        status: d.faultCode ? 'fault' : 'online',
+        // 数据过时（STALE/UNKNOWN）→ 视为离线；faultCode 存在 → fault（优先）。
+        status: d.faultCode
+          ? 'fault'
+          : deviceDataQuality === 'FRESH'
+            ? 'online'
+            : 'offline',
         capabilities: d.deviceModel ? [d.deviceModel] : [],
         certifications: [],
         location: {
@@ -170,7 +179,7 @@ export class ResourceProjectionService {
         updatedAt: sourceTs,
         sourceTs,
         freshnessMs: DEFAULT_FRESHNESS_MS,
-        dataQuality: this.classifyFreshness(sourceTs, now),
+        dataQuality: deviceDataQuality,
         version: 1,
       };
     });
@@ -182,10 +191,16 @@ export class ResourceProjectionService {
       .map((se) => {
         const sRes = resFor('station', se.entityId);
         const sourceTs = se.updatedAt ? se.updatedAt.getTime() : null;
+        const stationDataQuality = this.classifyFreshness(sourceTs, now);
         return {
           id: se.entityId,
           type: 'station',
-          status: 'available',
+          // 禁止虚构：无数据（STALE/UNKNOWN）→ unavailable；FRESH 时取真实状态
+          // （空间实体的 status 列，如 active），否则 unavailable 而非臆造 available。
+          status:
+            stationDataQuality === 'FRESH'
+              ? (se.status ?? 'available')
+              : 'unavailable',
           capabilities: [se.entityType],
           certifications: [],
           location: {
@@ -213,7 +228,7 @@ export class ResourceProjectionService {
           updatedAt: sourceTs,
           sourceTs,
           freshnessMs: DEFAULT_FRESHNESS_MS,
-          dataQuality: this.classifyFreshness(sourceTs, now),
+          dataQuality: stationDataQuality,
           version: se.version ?? 1,
         };
       });

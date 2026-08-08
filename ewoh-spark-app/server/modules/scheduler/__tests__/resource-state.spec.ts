@@ -195,6 +195,37 @@ describe('ResourceProjectionService（统一资源状态聚合器）', () => {
     expect(byId('P-FRESH').freshnessMs).toBe(5 * 60 * 1000);
   });
 
+  it('数据过时（STALE/UNKNOWN）不得虚构 available：person/device/station 标 unavailable/offline', async () => {
+    const now = Date.now();
+    const svc = makeSvc(
+      [
+        personRow({ id: 'P-OLD', updatedAt: new Date(now - 6 * 60 * 1000) }),
+        personRow({ id: 'P-NEW', updatedAt: new Date(now) }),
+      ],
+      [
+        deviceRow({ id: 'D-OLD', deviceId: 'D-OLD', lastTelemetryAt: new Date(now - 6 * 60 * 1000) }),
+        deviceRow({ id: 'D-NEW', deviceId: 'D-NEW', lastTelemetryAt: new Date(now) }),
+      ],
+      [
+        stationRow({ id: 'S-OLD', entityId: 'ST-OLD', updatedAt: new Date(now - 6 * 60 * 1000) }),
+        stationRow({ id: 'S-NEW', entityId: 'ST-NEW', updatedAt: new Date(now) }),
+      ],
+      [],
+    );
+    const states = await svc.getUnifiedResourceState();
+    const byId = (id: string) => states.find((s) => s.id === id)!;
+    // person：STALE → unavailable，不虚构 available
+    expect(byId('P-OLD').status).toBe('unavailable');
+    expect(byId('P-NEW').status).toBe('available');
+    // device：STALE → offline
+    expect(byId('D-OLD').status).toBe('offline');
+    expect(byId('D-NEW').status).toBe('online');
+    // station：STALE → unavailable，不虚构 available（station id = entityId）
+    expect(byId('ST-OLD').status).toBe('unavailable');
+    expect(byId('ST-NEW').status).toBe('active');
+  });
+
+
   it('可选字段：team 来自真实 team_name，currentTask/shift 无背衬列故为 null', async () => {
     const svc = makeSvc([personRow()], [deviceRow()], [], []);
     const states = await svc.getUnifiedResourceState();

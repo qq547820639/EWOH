@@ -16,12 +16,12 @@ import {
 import dayjs from 'dayjs';
 import { toast } from 'sonner';
 import { getOverview, getEvents, handleEvent } from '@client/src/api/dashboard';
-import { getPlans, confirmPlan, rejectPlan } from '@client/src/api/scheduler';
+import { getActivePlans, approvePlan, rejectPlanV2 } from '@client/src/api/scheduler';
 import { getCurrentOperator } from '@client/src/lib/auth';
 import type {
   OverviewStats,
   EventInfo,
-  SchedulePlan,
+  SchedulingPlanV2,
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import {
@@ -92,40 +92,58 @@ export default function WorkbenchPanel({
     refetchInterval: 5000,
   });
 
-  const { data: proposedPlans } = useQuery<SchedulePlan[]>({
-    queryKey: ['workbench-plans-proposed'],
-    queryFn: () => getPlans('proposed'),
+  // P1-CMAP-001：正式写链仅走 Scheduler V2。V2 待审批方案 = shadow 状态
+  // （createRun 生成），approve/reject 均走 V2 端点。
+  const { data: proposedPlans } = useQuery<SchedulingPlanV2[]>({
+    queryKey: ['workbench-plans-pending'],
+    queryFn: () => getActivePlans(),
     refetchInterval: 10000,
+    select: (plans) => plans.filter((p) => p.status === 'shadow'),
   });
 
   // 批准/驳回意见输入：目标方案 + 意见文案，留空时回退默认描述
-  const [confirmTarget, setConfirmTarget] = useState<SchedulePlan | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<SchedulingPlanV2 | null>(null);
   const [confirmReason, setConfirmReason] = useState('');
-  const [rejectTarget, setRejectTarget] = useState<SchedulePlan | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<SchedulingPlanV2 | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
   const confirmMutation = useMutation({
-    mutationFn: ({ planId, reason }: { planId: string; reason: string }) =>
-      confirmPlan(planId, { reason, operator: getCurrentOperator() }),
+    mutationFn: ({
+      planId,
+      version,
+      snapshotVersion,
+      reason,
+    }: {
+      planId: string;
+      version: number;
+      snapshotVersion: string;
+      reason: string;
+    }) =>
+      approvePlan(planId, {
+        version,
+        snapshotVersion,
+        reason,
+        operator: getCurrentOperator(),
+      }),
     onSuccess: () => {
-      toast.success('方案已确认');
+      toast.success('方案已批准');
       setConfirmTarget(null);
       setConfirmReason('');
-      queryClient.invalidateQueries({ queryKey: ['workbench-plans-proposed'] });
-      queryClient.invalidateQueries({ queryKey: ['schedule-plans'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench-plans-pending'] });
+      queryClient.invalidateQueries({ queryKey: ['scheduler-active-plans'] });
     },
-    onError: () => toast.error('方案确认失败'),
+    onError: () => toast.error('方案批准失败'),
   });
 
   const rejectMutation = useMutation({
     mutationFn: ({ planId, reason }: { planId: string; reason: string }) =>
-      rejectPlan(planId, { reason, operator: getCurrentOperator() }),
+      rejectPlanV2(planId, { reason, operator: getCurrentOperator() }),
     onSuccess: () => {
       toast.success('方案已驳回');
       setRejectTarget(null);
       setRejectReason('');
-      queryClient.invalidateQueries({ queryKey: ['workbench-plans-proposed'] });
-      queryClient.invalidateQueries({ queryKey: ['schedule-plans'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench-plans-pending'] });
+      queryClient.invalidateQueries({ queryKey: ['scheduler-active-plans'] });
     },
     onError: () => toast.error('方案驳回失败'),
   });
@@ -134,7 +152,9 @@ export default function WorkbenchPanel({
     if (!confirmTarget) return;
     confirmMutation.mutate({
       planId: confirmTarget.planId,
-      reason: confirmReason.trim() || '班组长确认',
+      version: confirmTarget.version,
+      snapshotVersion: confirmTarget.snapshotVersion,
+      reason: confirmReason.trim() || '班组长批准',
     });
   };
 
@@ -257,15 +277,15 @@ export default function WorkbenchPanel({
               <div className="space-y-1.5">
                 {proposedPlans.map((plan) => (
                   <div
-                    key={plan.id}
+                    key={plan.planId}
                     className="p-2 rounded bg-white/5 border border-white/5"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-[10px] font-medium text-white/90 truncate">
                         {plan.planName}
-                        {plan.taktImprovement > 0 && (
+                        {plan.solverStatus && (
                           <span className="ml-1 text-cyan-400">
-                            节拍+{plan.taktImprovement}%
+                            solver:{plan.solverStatus.toLowerCase()}
                           </span>
                         )}
                       </div>
@@ -298,7 +318,9 @@ export default function WorkbenchPanel({
                       </div>
                     </div>
                     <div className="text-[9px] text-white/60 mt-0.5 line-clamp-2">
-                      {plan.reason ?? '—'}
+                      {plan.violations && plan.violations.length > 0
+                        ? `violations: ${plan.violations.length}`
+                        : 'V2 方案（可批准）'}
                     </div>
                   </div>
                 ))}
@@ -414,7 +436,7 @@ export default function WorkbenchPanel({
           <DialogHeader>
             <DialogTitle className="text-white">批准调度方案</DialogTitle>
             <DialogDescription className="text-white/70">
-              {confirmTarget?.planName} · {confirmTarget?.strategy}（留空使用默认描述）
+              {confirmTarget?.planName}（V2 方案，批准后须下发）（留空使用默认描述）
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -450,7 +472,7 @@ export default function WorkbenchPanel({
           <DialogHeader>
             <DialogTitle className="text-white">驳回调度方案</DialogTitle>
             <DialogDescription className="text-white/70">
-              {rejectTarget?.planName} · {rejectTarget?.strategy}（留空使用默认描述）
+              {rejectTarget?.planName}（V2 方案，驳回后归档）（留空使用默认描述）
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
