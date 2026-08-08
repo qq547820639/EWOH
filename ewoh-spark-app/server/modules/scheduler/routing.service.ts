@@ -57,6 +57,14 @@ export function nearestNodeId(
 export class RoutingService {
   private readonly logger = new Logger(RoutingService.name);
 
+  /** P1-SCHED-003：路由边代价系数缓存（来自 versioned policy）。 */
+  private edgeFactors: {
+    congestedFactor: number;
+    blockedFactor: number;
+    highRiskFactor: number;
+    mediumRiskFactor: number;
+  } | null = null;
+
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly policyService: SchedulingPolicyService,
@@ -132,6 +140,8 @@ export class RoutingService {
     const goalId = nearestNodeId(nodes, to.x, to.y);
     if (!startId || !goalId || startId === goalId) return fallback;
 
+    // P1-SCHED-003：路由边代价系数与 policy 对齐（每次计算刷新，避免陈旧）
+    await this.refreshEdgeFactors();
     const path = this.astar(graph, startId, goalId);
     if (!path || path.length < 2) return fallback;
 
@@ -340,15 +350,57 @@ export class RoutingService {
     return null;
   }
 
-  /** 边代价 = 距离 × 拥塞系数 × 风险系数。 */
+  /** P1-SCHED-003：从 versioned policy 刷新边代价系数（失败时保留上次值，绝不阻断路由）。 */
+  private async refreshEdgeFactors(): Promise<void> {
+    try {
+      const config = this.policyService
+        ? await this.policyService.getConfig()
+        : undefined;
+      if (!config) return;
+      this.edgeFactors = {
+        congestedFactor:
+          typeof config.congestedFactor === 'number' && config.congestedFactor > 0
+            ? config.congestedFactor
+            : 1.5,
+        blockedFactor:
+          typeof config.blockedFactor === 'number' && config.blockedFactor > 0
+            ? config.blockedFactor
+            : 2,
+        highRiskFactor:
+          typeof config.highRiskFactor === 'number' && config.highRiskFactor > 0
+            ? config.highRiskFactor
+            : 2,
+        mediumRiskFactor:
+          typeof config.mediumRiskFactor === 'number' && config.mediumRiskFactor > 0
+            ? config.mediumRiskFactor
+            : 1.3,
+      };
+    } catch (err) {
+      this.logger.warn(
+        `policy route factors unavailable, using cached: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /** 边代价 = 距离 × 拥塞系数 × 风险系数（系数来自 versioned policy，P1-SCHED-003）。 */
   private edgeCost(edge: RouteGraphEdge): number {
+    const f = this.edgeFactors ?? {
+      congestedFactor: 1.5,
+      blockedFactor: 2,
+      highRiskFactor: 2,
+      mediumRiskFactor: 1.3,
+    };
     const congestion =
-      edge.status === 'congested' ? 1.5 : edge.status === 'open' ? 1 : 2;
+      edge.status === 'congested'
+        ? f.congestedFactor
+        : edge.status === 'open'
+          ? 1
+          : f.blockedFactor;
     const risk =
       edge.riskLevel === 'high'
-        ? 2
+        ? f.highRiskFactor
         : edge.riskLevel === 'medium'
-          ? 1.3
+          ? f.mediumRiskFactor
           : 1;
     return Math.max(edge.distanceMeters, 1) * congestion * risk;
   }

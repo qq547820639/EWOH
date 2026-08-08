@@ -34,6 +34,29 @@ jobs:
       - name: 运行仓库级契约测试
         run: make test-contract
 
+      - name: P0-EDGE-006 Production Runtime Assembly 门禁（真实装配 + no-stub + Bus 契约）
+        # 防止「unit tests 通过但 Production Runtime 只能跑 Stub」：
+        # 真实装配不 mock，断言无 stub 组件、production 装配失败 fail-fast、
+        # EventBus 唯一 handler 契约、生产 stream 全部登记。
+        run: make production-smoke
+
+      - name: P0-EDGE-002 禁止静默 Stub 冒烟（production 模式真实启动并校验 rule_version）
+        run: |
+          set -e
+          EWOH_RUNTIME_MODE=production timeout 60 python3 run.py --port 8876 --db /tmp/ewoh_prod_smoke.db &
+          PID=$!
+          sleep 6
+          RULES=$(curl -s http://127.0.0.1:8876/api/status | python3 -c 'import json,sys;print(json.load(sys.stdin).get("rule_version",""))' || true)
+          echo "rule_version=$RULES"
+          if [ "$RULES" != "risk-rule-v0.2" ]; then
+            echo "::error::production 模式未装配真实 RuleEngine（rule_version=$RULES）——疑似静默 stub"
+            kill $PID 2>/dev/null || true
+            exit 1
+          fi
+          echo "OK: production 真实装配（rule_version=risk-rule-v0.2）"
+          kill $PID 2>/dev/null || true
+          rm -f /tmp/ewoh_prod_smoke.db*
+
       - name: Edge 节点断连/乱序/重放/去重门禁（SequenceBuffer + Mesh bridge + Sparkplug session）
         # 显式门禁：SequenceBuffer 乱序/重复/补传/窗口拒绝，edge bridge 失败批缓冲与
         # 重试，Sparkplug session 序列缺口/重复检测。完整覆盖已并入 make test-contract，
