@@ -82,6 +82,8 @@ function getEvent(db, event_id) {
 }
 
 // 处置事件：action ∈ acknowledge / resolve / escalate / comment
+// v1.1.0 加固：状态转换边界校验 —— 已关闭（closed）事件不可再 acknowledge/resolve/escalate，
+// 防止 webhook 重放或重复投递把已闭环事件"翻新"。comment 始终允许（仅追加评论语义）。
 function handleEvent(db, event_id, { handler_id, action, comment }) {
   const event = getEvent(db, event_id);
   if (!event) return null;
@@ -89,6 +91,11 @@ function handleEvent(db, event_id, { handler_id, action, comment }) {
   const validActions = ['acknowledge', 'resolve', 'escalate', 'comment'];
   if (!validActions.includes(action)) {
     throw new Error(`invalid action: ${action}`);
+  }
+
+  // 边界校验：closed 事件禁止任何状态变更动作（comment 除外）
+  if (event.status === 'closed' && action !== 'comment') {
+    throw new Error(`event already closed: cannot ${action}`);
   }
 
   let status = event.status;

@@ -1,8 +1,19 @@
 // server/db.js — 数据库初始化与 CRUD
-// 使用 better-sqlite3 同步 API，内存数据库（:memory:），进程退出即释放
+// 使用 better-sqlite3 同步 API。
+//
+// v1.1.0 加固（设计决策 D2）：
+//   - 默认使用文件数据库 `data/ewoh-feishu.db`（WAL 模式 + busy_timeout），进程退出后数据持久化，
+//     与「30s 全量同步 + 飞书回写」设计一致；`:memory:` 仅保留给测试/显式配置（EWOH_DB_PATH=:memory:）。
+//   - 自动创建数据目录；建表使用 IF NOT EXISTS，可重复执行（幂等）。
+//   - 新增 webhook_dedup 表：webhook 业务幂等（见 D3），以 (event_id, action_type) 唯一约束防重复处置。
 
 const Database = require('better-sqlite3');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
+// 默认数据文件路径（相对应用根目录）
+const DEFAULT_DB_REL_PATH = path.join('data', 'ewoh-feishu.db');
 
 // 建表 SQL（IF NOT EXISTS 保证可重复执行）
 const SCHEMA_SQL = `
@@ -79,6 +90,20 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
+
+-- v1.1.0 D3：webhook 业务幂等表。
+-- 以 (event_id, action_type) 为唯一键：同一事件同一处置动作只允许执行一次，
+-- 重复投递（网络重试 / 飞书重推）直接命中唯一约束，返回"已处理"，不重复改状态。
+CREATE TABLE IF NOT EXISTS webhook_dedup (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id TEXT NOT NULL,
+  action_type TEXT NOT NULL,
+  processed_at TEXT NOT NULL,
+  actor_id TEXT,
+  result TEXT,                      -- JSON
+  UNIQUE (event_id, action_type)
+);
+CREATE INDEX IF NOT EXISTS idx_dedup_event ON webhook_dedup(event_id);
 `;
 
 // 预置设备数据
@@ -88,34 +113,82 @@ const SEED_DEVICES = [
   { device_id: 'EXO-003', worker_name: '工人王五', device_model: 'EXO-Lite S2', firmware_version: '1.9.3', battery_pct: 14 },
 ];
 
-// 预置规则数据（与 rules.js 引擎配置保持一致）
+// 预置规则数据（规则引擎唯一事实源；rules.js 从本表读取配置并兜底使用默认常量）
+// v1.1.0 D5：阈值参数（value / threshold_sec / cooldown_sec / op）全部收敛到 config，
+// rules.js 不再硬编码第二份，消除双源漂移。
 const SEED_RULES = [
   {
     rule_id: 'R001', rule_version: 1, enabled: 1, severity: 'high',
     description: '深弯腰持续过久：pitch > 45° 持续 ≥10s',
-    config: { event_code: 'POSTURE_BEND_LONG', event_type: 'L1', param: 'pitch_deg', op: '>', value: 45, threshold_sec: 10, cooldown_sec: 30 },
+    config: {
+      event_code: 'POSTURE_BEND_LONG', event_type: 'L1',
+      title: '深弯腰持续过久', description: 'pitch > 45° 持续 ≥10s，存在腰部损伤风险',
+      param: 'pitch_deg', op: '>', value: 45, threshold_sec: 10, cooldown_sec: 30,
+    },
   },
   {
     rule_id: 'R002', rule_version: 1, enabled: 1, severity: 'medium',
     description: '持续高负荷：torque > 20Nm 持续 ≥8s',
-    config: { event_code: 'LOAD_CONTINUOUS', event_type: 'L2', param: 'torque_nm', op: '>', value: 20, threshold_sec: 8, cooldown_sec: 30 },
+    config: {
+      event_code: 'LOAD_CONTINUOUS', event_type: 'L2',
+      title: '持续高负荷', description: 'torque > 20Nm 持续 ≥8s，助力系统负荷过高',
+      param: 'torque_nm', op: '>', value: 20, threshold_sec: 8, cooldown_sec: 30,
+    },
   },
   {
     rule_id: 'R003', rule_version: 1, enabled: 1, severity: 'high',
     description: '电量过低：battery < 15%',
-    config: { event_code: 'LOW_BATTERY', event_type: 'L1', param: 'battery_pct', op: '<', value: 15, threshold_sec: 0, cooldown_sec: 60 },
+    config: {
+      event_code: 'LOW_BATTERY', event_type: 'L1',
+      title: '电量过低', description: 'battery < 15%，设备即将断电',
+      param: 'battery_pct', op: '<', value: 15, threshold_sec: 0, cooldown_sec: 60,
+    },
   },
   {
     rule_id: 'R004', rule_version: 1, enabled: 1, severity: 'high',
     description: '传感器降级：quality_status != good 持续 ≥5s',
-    config: { event_code: 'SENSOR_DEGRADED', event_type: 'L1', param: 'quality_status', op: '!=', value: 'good', threshold_sec: 5, cooldown_sec: 30 },
+    config: {
+      event_code: 'SENSOR_DEGRADED', event_type: 'L1',
+      title: '传感器降级', description: 'quality_status != good 持续 ≥5s，数据可信度下降',
+      param: 'quality_status', op: '!=', value: 'good', threshold_sec: 5, cooldown_sec: 30,
+    },
   },
 ];
 
-// 打开数据库连接（内存数据库，内存库不支持 WAL，使用默认内存日志）
-function createDatabase() {
-  const db = new Database(':memory:');
+// 解析数据库路径：
+//  - 显式传入 dbPath（如 ':memory:' 或绝对/相对路径）→ 直接使用；
+//  - 未传入 → 读取 EWOH_DB_PATH 环境变量，缺省为 data/ewoh-feishu.db；
+//  - 返回 { dbPath, isMemory }，文件库自动确保父目录存在。
+function resolveDbPath(dbPath) {
+  const p = dbPath || process.env.EWOH_DB_PATH || DEFAULT_DB_REL_PATH;
+  const isMemory = p === ':memory:';
+  if (!isMemory && !path.isAbsolute(p)) {
+    // 相对路径基于应用根目录（server/ 的上级）解析，保证无论从仓库根还是 app 目录启动都一致
+    const resolved = path.resolve(__dirname, '..', p);
+    return { dbPath: resolved, isMemory, original: p };
+  }
+  return { dbPath: p, isMemory, original: p };
+}
+
+// 打开数据库连接
+//  - 文件库：WAL 模式 + busy_timeout（防并发写锁），返回 db；
+//  - 内存库（:memory:）：仅测试/显式配置，使用默认内存日志（WAL 不适用于内存库）。
+function createDatabase(dbPath) {
+  const { dbPath: resolvedPath, isMemory } = resolveDbPath(dbPath);
+
+  if (!isMemory) {
+    const dir = path.dirname(resolvedPath);
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  const db = new Database(resolvedPath);
   db.pragma('foreign_keys = ON');
+  if (!isMemory) {
+    // WAL：读写并发友好，崩溃恢复安全（better-sqlite3 同步 API 下防多进程写竞争）
+    db.pragma('journal_mode = WAL');
+    // busy_timeout：多进程/多连接写竞争时等待而非立即报 SQLITE_BUSY
+    db.pragma('busy_timeout = 5000');
+  }
   return db;
 }
 
@@ -154,8 +227,8 @@ function seedData(db) {
 }
 
 // 一站式初始化：建表 + 预置数据，返回 db
-function initDatabase() {
-  const db = createDatabase();
+function initDatabase(dbPath) {
+  const db = createDatabase(dbPath);
   initSchema(db);
   seedData(db);
   return db;
@@ -269,6 +342,60 @@ function countAudit(db, { action } = {}) {
   return db.prepare('SELECT COUNT(*) AS c FROM audit_log').get().c;
 }
 
+// ============ webhook 业务幂等（v1.1.0 D3）============
+
+// 尝试登记一次 webhook 处置（幂等）。
+// 返回 { duplicated: boolean, row }：
+//   - duplicated=false：首次登记成功，调用方应继续执行处置；
+//   - duplicated=true：该 (event_id, action_type) 已处理过，调用方应直接返回"已处理"。
+// 依赖 events 表的 event_id 唯一约束 + webhook_dedup 的 (event_id, action_type) 唯一约束，
+// 同一事件同一动作不可能被执行两次。
+function tryAcquireWebhookDedup(db, { event_id, action_type, actor_id, result }) {
+  if (!event_id || !action_type) {
+    return { duplicated: false, row: null, error: 'missing event_id or action_type' };
+  }
+  const now = new Date().toISOString();
+  const processedAt = now;
+  try {
+    db.prepare(
+      `INSERT INTO webhook_dedup (event_id, action_type, processed_at, actor_id, result)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(event_id, action_type, processedAt, actor_id || null, JSON.stringify(result || {}));
+    return { duplicated: false, row: { event_id, action_type, processed_at: processedAt } };
+  } catch (e) {
+    // SQLITE_CONSTRAINT_UNIQUE：重复投递 → 返回已处理标记
+    if (String(e.code || e.message).includes('UNIQUE')) {
+      const row = db.prepare(
+        'SELECT * FROM webhook_dedup WHERE event_id = ? AND action_type = ?'
+      ).get(event_id, action_type);
+      return { duplicated: true, row: row || null };
+    }
+    throw e;
+  }
+}
+
+// 查询是否已处理过（只读，不登记）
+function hasWebhookProcessed(db, eventId, actionType) {
+  const row = db.prepare(
+    'SELECT * FROM webhook_dedup WHERE event_id = ? AND action_type = ?'
+  ).get(eventId, actionType);
+  return !!row;
+}
+
+// 更新幂等记录结果（处置成功后标记 done；供审计与幂等命中溯源）
+function updateWebhookDedupResult(db, eventId, actionType, result) {
+  db.prepare(
+    'UPDATE webhook_dedup SET result = ? WHERE event_id = ? AND action_type = ?'
+  ).run(JSON.stringify(result || {}), eventId, actionType);
+}
+
+// 删除幂等记录（处置失败时调用，允许重试）
+function deleteWebhookDedup(db, eventId, actionType) {
+  db.prepare(
+    'DELETE FROM webhook_dedup WHERE event_id = ? AND action_type = ?'
+  ).run(eventId, actionType);
+}
+
 // ============ 系统统计 ============
 
 function getSystemStats(db) {
@@ -309,6 +436,8 @@ module.exports = {
   SCHEMA_SQL,
   SEED_DEVICES,
   SEED_RULES,
+  DEFAULT_DB_REL_PATH,
+  resolveDbPath,
   createDatabase,
   initSchema,
   seedData,
@@ -330,6 +459,11 @@ module.exports = {
   insertAudit,
   listAudit,
   countAudit,
+  // webhook 幂等
+  tryAcquireWebhookDedup,
+  hasWebhookProcessed,
+  updateWebhookDedupResult,
+  deleteWebhookDedup,
   // 统计
   getSystemStats,
   // 工具

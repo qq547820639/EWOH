@@ -1,11 +1,14 @@
 {
   "name": "ewoh-feishu-app",
-  "version": "1.0.0",
-  "description": "EWOH外骨骼作业监督平台 — 飞书版全栈应用",
+  "version": "1.1.0",
+  "description": "EWOH外骨骼作业监督平台 — 飞书版全栈应用（v1.1.0 生产级加固：API 鉴权 + SQLite 持久化 + webhook 幂等）",
   "main": "server/index.js",
   "scripts": {
     "dev": "node server/index.js",
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "test": "node --test test/",
+    "test:unit": "node --test test/security.test.js test/auth.test.js test/db.test.js",
+    "test:integration": "node --test test/integration.test.js"
   },
   "dependencies": {
     "express": "^4.18.2",

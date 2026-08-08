@@ -1,14 +1,20 @@
 // server/rules.js — 规则引擎
 // 4 条规则，每帧遥测到达时评估，维护状态机实现「持续门槛 + 冷却」防抖
 // 条件持续达门槛 → 触发事件；条件恢复 → 自动关闭对应开启事件
+//
+// v1.1.0 加固（设计决策 D5）：
+//   - 规则配置（阈值/持续门槛/冷却/标题/描述）以 DB `rules` 表为唯一事实源，
+//     rules.js 不再硬编码第二份配置，消除双源漂移；
+//   - DEFAULT_RULES 仅为「DB 表为空时」的兜底默认值（seed 之后不会触发）；
+//   - 每条规则评估前从 DB 读取当前启用状态与最新参数，支持运行时调参。
 
 const events = require('./events');
 const dbm = require('./db');
 const feishu = require('./feishu');
 const sync = require('./sync');
 
-// 规则引擎配置（与 db.js 预置规则保持一致，作为评估逻辑的唯一真源）
-const RULES = [
+// 兜底默认规则（仅当 DB rules 表为空时使用；seedData 会写入等价的 4 条）
+const DEFAULT_RULES = [
   {
     rule_id: 'R001', event_code: 'POSTURE_BEND_LONG', event_type: 'L1', severity: 'high',
     title: '深弯腰持续过久', description: 'pitch > 45° 持续 ≥10s，存在腰部损伤风险',
@@ -45,15 +51,44 @@ function getState(eventCode, deviceId) {
   return s;
 }
 
-// 通用条件求值
+// 从 DB 加载规则配置（唯一事实源）。DB 空时回退 DEFAULT_RULES。
+// 返回规范化数组：[{ rule_id, event_code, event_type, severity, title, description, param, op, value, threshold_sec, cooldown_sec, enabled }]
+function loadRules(db) {
+  const rows = dbm.listRules(db);
+  if (!rows || rows.length === 0) {
+    return DEFAULT_RULES.map((r) => ({ ...r, enabled: true }));
+  }
+  const rules = [];
+  for (const r of rows) {
+    const cfg = r.config || {};
+    const base = DEFAULT_RULES.find((d) => d.event_code === cfg.event_code) || {};
+    rules.push({
+      rule_id: r.rule_id,
+      event_code: cfg.event_code || base.event_code,
+      event_type: cfg.event_type || base.event_type || 'L2',
+      severity: r.severity || base.severity || 'medium',
+      title: cfg.title || base.title || cfg.event_code,
+      description: cfg.description || base.description || '',
+      param: cfg.param || base.param,
+      op: cfg.op || base.op || '>',
+      value: cfg.value !== undefined ? cfg.value : base.value,
+      threshold_sec: cfg.threshold_sec !== undefined ? cfg.threshold_sec : (base.threshold_sec !== undefined ? base.threshold_sec : 0),
+      cooldown_sec: cfg.cooldown_sec !== undefined ? cfg.cooldown_sec : (base.cooldown_sec !== undefined ? base.cooldown_sec : 0),
+      enabled: r.enabled !== false,
+    });
+  }
+  return rules;
+}
+
+// 通用条件求值（数值比较容错：非数字一律 false；字符串按 === / !== 比较）
 function evalCondition(telemetry, rule) {
   const val = telemetry[rule.param];
   if (val === undefined || val === null) return false;
   switch (rule.op) {
-    case '>': return val > rule.value;
-    case '<': return val < rule.value;
-    case '>=': return val >= rule.value;
-    case '<=': return val <= rule.value;
+    case '>': return typeof val === 'number' && val > rule.value;
+    case '<': return typeof val === 'number' && val < rule.value;
+    case '>=': return typeof val === 'number' && val >= rule.value;
+    case '<=': return typeof val === 'number' && val <= rule.value;
     case '!=': return val !== rule.value;
     case '==': return val === rule.value;
     default: return false;
@@ -68,19 +103,12 @@ function evaluateRules(db, telemetry) {
   const deviceId = telemetry.device_id;
   const nowMs = Date.now();
 
-  // 一次性读取规则启用状态，避免每条规则重复查询
-  const dbRules = dbm.listRules(db);
-  const enabledMap = new Map();
-  for (const r of dbRules) {
-    if (r.config && r.config.event_code) {
-      enabledMap.set(r.config.event_code, r.enabled !== false);
-    }
-  }
+  // 从 DB 加载规则（唯一事实源，含启用状态与最新参数）
+  const rules = loadRules(db);
 
-  for (const rule of RULES) {
-    // 数据库中标记为禁用则跳过并重置状态
-    const enabled = enabledMap.get(rule.event_code);
-    if (enabled === false) {
+  for (const rule of rules) {
+    // 禁用则跳过并重置状态
+    if (rule.enabled === false) {
       const s = getState(rule.event_code, deviceId);
       s.condition_met = false;
       s.condition_start_ts = null;
@@ -185,7 +213,8 @@ function resetState() {
 }
 
 module.exports = {
-  RULES,
+  DEFAULT_RULES,
+  loadRules,
   evaluateRules,
   evalCondition,
   resetState,

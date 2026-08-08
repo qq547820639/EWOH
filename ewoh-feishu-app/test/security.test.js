@@ -99,12 +99,62 @@ test('invalid signature rejected when encrypt key configured', () => {
 test('valid signature accepted when encrypt key configured', () => {
   process.env.FEISHU_ENCRYPT_KEY = 'test-encrypt-key';
   const body = makeValidBody();
-  const timestamp = security.extractTimestamp(body);
+  // v1.1.0 D4：签名使用秒级时间戳（extractSignatureTimestamp）
+  const timestamp = security.extractSignatureTimestamp(body);
   const nonce = '';
   const expected = crypto
     .createHmac('sha256', 'test-encrypt-key')
     .update(`${timestamp}${nonce}test-encrypt-key`)
     .digest('base64');
+  const result = security.verifyWebhookRequest(
+    makeReq(body, { 'x-lark-signature': expected })
+  );
+  assert.strictEqual(result.ok, true);
+  delete process.env.FEISHU_ENCRYPT_KEY;
+});
+
+// v1.1.0 D4：签名时间戳必须为秒级字符串（飞书 HMAC 协议），毫秒参与会签名不匹配
+test('D4: signature uses seconds-level timestamp (Feishu HMAC protocol)', () => {
+  process.env.FEISHU_ENCRYPT_KEY = 'test-encrypt-key';
+  const body = makeValidBody();
+
+  // extractSignatureTimestamp 应从 ISO create_time 得到秒级字符串
+  const tsSec = security.extractSignatureTimestamp(body);
+  assert.strictEqual(typeof tsSec, 'string');
+  assert.ok(/^\d{10}$/.test(tsSec), `秒级时间戳应为 10 位数字，实际: ${tsSec}`);
+  // 与毫秒的 floor 关系
+  const ms = Date.parse(body.header.create_time);
+  assert.strictEqual(Number(tsSec), Math.floor(ms / 1000), '应为毫秒时间戳的秒级截断');
+
+  // 用秒级时间戳构造签名 → 校验通过
+  const source = `${tsSec}${''}test-encrypt-key`;
+  const expected = crypto.createHmac('sha256', 'test-encrypt-key').update(source).digest('base64');
+  const result = security.verifyWebhookRequest(
+    makeReq(body, { 'x-lark-signature': expected })
+  );
+  assert.strictEqual(result.ok, true, '秒级时间戳签名应通过');
+
+  // 若用毫秒时间戳构造签名 → 校验失败（旧 bug 复现验证）
+  const wrongSource = `${ms}${''}test-encrypt-key`;
+  const wrongSig = crypto.createHmac('sha256', 'test-encrypt-key').update(wrongSource).digest('base64');
+  const result2 = security.verifyWebhookRequest(
+    makeReq(body, { 'x-lark-signature': wrongSig })
+  );
+  assert.strictEqual(result2.ok, false, '毫秒时间戳签名应被拒绝（协议不兼容）');
+  delete process.env.FEISHU_ENCRYPT_KEY;
+});
+
+test('D4: body.timestamp 秒字符串直接用于签名（不再 ×1000）', () => {
+  process.env.FEISHU_ENCRYPT_KEY = 'test-encrypt-key';
+  const body = makeValidBody({ header: { event_id: `evt-${crypto.randomUUID()}`, token: 'test-verification-token' } });
+  body.timestamp = String(Math.floor(Date.now() / 1000)); // 秒字符串（飞书事件订阅标准字段）
+  delete body.header.create_time;
+
+  const tsSec = security.extractSignatureTimestamp(body);
+  assert.strictEqual(tsSec, body.timestamp, '秒字符串应原样使用，不得 ×1000');
+
+  const source = `${tsSec}${''}test-encrypt-key`;
+  const expected = crypto.createHmac('sha256', 'test-encrypt-key').update(source).digest('base64');
   const result = security.verifyWebhookRequest(
     makeReq(body, { 'x-lark-signature': expected })
   );

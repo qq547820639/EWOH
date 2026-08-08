@@ -326,10 +326,11 @@ function stopEventStatusPolling() {
 // ============ 全量同步（定时触发）============
 
 // 将本地 SQLite 全量数据同步到飞书多维表格：
-// - 设备：全部 upsert
-// - 事件：最近 50 条 upsert
-// - 遥测：最近 100 条 upsert
-// 每条记录用 baseRecordCreate 写入；单条失败只 console.error，不阻断后续
+// - 设备：全部 upsert（search + update/create 复用 syncDevice 的按 device_id 去重逻辑）
+// - 事件：最近 50 条 upsert（复用 syncEventCreate / syncEventUpdate 的按 event_id 去重逻辑）
+// - 遥测：最近 100 条走批量 batch-create（复用 baseRecordBatchCreate，一次 API 调用）
+// v1.1.0 加固（D6）：v1.0 对设备/事件逐条 baseRecordCreate 会无限追加重复记录，
+// 且遥测逐条 create 高频调用。现全部收敛为 upsert/批量语义，降低 API 频率与数据漂移。
 async function syncAllToFeishu(db) {
   const synced = { devices: 0, events: 0, telemetry: 0 };
   const cfg = feishu.getConfig();
@@ -337,24 +338,13 @@ async function syncAllToFeishu(db) {
     console.error('[sync] syncAllToFeishu: 未加载到飞书配置，跳过');
     return { ok: false, error: 'no config', synced };
   }
-  const tableDevices = cfg.tables.devices;
-  const tableEvents = cfg.tables.events;
-  const tableTelemetry = cfg.tables.telemetry;
 
-  // ---- 设备：SELECT * FROM devices ----
+  // ---- 设备：全部 upsert ----
   try {
     const devices = db.prepare('SELECT * FROM devices').all();
     for (const dev of devices || []) {
       try {
-        const fields = {
-          [DEVICE_FIELDS.device_id]: dev.device_id,
-          [DEVICE_FIELDS.worker_name]: dev.worker_name || '',
-          [DEVICE_FIELDS.device_model]: dev.device_model || '',
-          [DEVICE_FIELDS.battery_pct]: dev.battery_pct != null ? Number(dev.battery_pct) : null,
-          [DEVICE_FIELDS.online]: !!dev.online,
-          [DEVICE_FIELDS.last_telemetry_at]: feishu.fmtDateTime(dev.last_telemetry_at),
-        };
-        const r = feishu.baseRecordCreate(tableDevices, fields);
+        const r = await syncDevice(dev);
         if (r && r.ok) synced.devices++;
         else console.error(`[sync] 全量同步-设备失败 ${dev.device_id}:`, r && r.error);
       } catch (e) {
@@ -365,11 +355,19 @@ async function syncAllToFeishu(db) {
     console.error('[sync] 全量同步-读取设备失败:', e.message);
   }
 
-  // ---- 事件：最近 50 条 ----
+  // ---- 事件：最近 50 条 upsert（先查飞书是否已有 → 有则 update，无则 create）----
   try {
-    const events = db.prepare('SELECT * FROM events ORDER BY created_at DESC LIMIT 50').all();
-    for (const ev of events || []) {
+    const evs = db.prepare('SELECT * FROM events ORDER BY created_at DESC LIMIT 50').all();
+    for (const ev of evs || []) {
       try {
+        const tableId = cfg.tables.events;
+        const existing = feishu.baseRecordSearch(tableId, {
+          filter: { field: EVENT_FIELDS.event_id, value: ev.event_id },
+          limit: 5,
+        });
+        const match = existing.find(
+          (r) => feishu.getRecordField(r, EVENT_FIELDS.event_id) === ev.event_id
+        );
         const fields = {
           [EVENT_FIELDS.event_id]: ev.event_id,
           [EVENT_FIELDS.device_id]: ev.device_id || '',
@@ -381,7 +379,9 @@ async function syncAllToFeishu(db) {
           [EVENT_FIELDS.created_at]: feishu.fmtDateTime(ev.created_at),
         };
         if (ev.handler_action) fields[EVENT_FIELDS.handler_action] = ev.handler_action;
-        const r = feishu.baseRecordCreate(tableEvents, fields);
+        const r = match
+          ? feishu.baseRecordUpdate(tableId, match.record_id, fields)
+          : feishu.baseRecordCreate(tableId, fields);
         if (r && r.ok) synced.events++;
         else console.error(`[sync] 全量同步-事件失败 ${ev.event_id}:`, r && r.error);
       } catch (e) {
@@ -392,26 +392,21 @@ async function syncAllToFeishu(db) {
     console.error('[sync] 全量同步-读取事件失败:', e.message);
   }
 
-  // ---- 遥测：最近 100 条 ----
-  // 遥测表字段顺序复用 TELEMETRY_BATCH_FIELDS：设备ID/时间戳/俯仰角/扭矩/电量/质量状态
+  // ---- 遥测：最近 100 条批量写入（一次 batch-create API 调用）----
   try {
     const rows = db.prepare('SELECT * FROM telemetry ORDER BY ts DESC LIMIT 100').all();
-    for (const t of rows || []) {
-      try {
-        const fields = {
-          [TELEMETRY_BATCH_FIELDS[0]]: t.device_id,
-          [TELEMETRY_BATCH_FIELDS[1]]: feishu.fmtDateTime(t.ts),
-          [TELEMETRY_BATCH_FIELDS[2]]: t.pitch_deg != null ? Number(t.pitch_deg) : null,
-          [TELEMETRY_BATCH_FIELDS[3]]: t.torque_nm != null ? Number(t.torque_nm) : null,
-          [TELEMETRY_BATCH_FIELDS[4]]: t.battery_pct != null ? Number(t.battery_pct) : null,
-          [TELEMETRY_BATCH_FIELDS[5]]: t.quality_status || '',
-        };
-        const r = feishu.baseRecordCreate(tableTelemetry, fields);
-        if (r && r.ok) synced.telemetry++;
-        else console.error(`[sync] 全量同步-遥测失败 ${t.device_id}@${t.ts}:`, r && r.error);
-      } catch (e) {
-        console.error(`[sync] 全量同步-遥测异常 ${t.device_id}@${t.ts}:`, e.message);
-      }
+    if (rows && rows.length > 0) {
+      const batchRows = rows.map((t) => [
+        t.device_id,
+        feishu.fmtDateTime(t.ts),
+        t.pitch_deg != null ? Number(t.pitch_deg) : null,
+        t.torque_nm != null ? Number(t.torque_nm) : null,
+        t.battery_pct != null ? Number(t.battery_pct) : null,
+        t.quality_status || '',
+      ]);
+      const r = feishu.baseRecordBatchCreate(cfg.tables.telemetry, TELEMETRY_BATCH_FIELDS, batchRows);
+      if (r && r.ok) synced.telemetry = batchRows.length;
+      else console.error('[sync] 全量同步-遥测批量失败:', r && r.error);
     }
   } catch (e) {
     console.error('[sync] 全量同步-读取遥测失败:', e.message);

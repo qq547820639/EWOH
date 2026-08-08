@@ -15,6 +15,7 @@ const dbm = require('./db');
 const { startSimulator, stopSimulator } = require('./simulator');
 const { evaluateRules } = require('./rules');
 const { createApiRouter } = require('./api');
+const { apiAuth } = require('./auth');
 const feishu = require('./feishu');
 const sync = require('./sync');
 const events = require('./events');
@@ -33,28 +34,33 @@ function runSyncAllToFeishu() {
   );
 }
 
-// 启动时加载飞书配置 + 首次同步 3 台预置设备到多维表格 + 启动事件状态轮询（失败不阻断）
-const feishuConfig = feishu.loadConfig();
-if (feishuConfig) {
-  console.log(`[feishu] 配置已加载，chat_id=${feishuConfig.chat_id}（base_token 已加载，不打印敏感值）`);
-  for (const dev of dbm.listDevices(db)) {
-    Promise.resolve(sync.syncDevice(dev)).catch((e) =>
-      console.error('[feishu] 首次设备同步失败:', e.message)
-    );
+// 飞书集成初始化（v1.1.0 加固：延迟到 HTTP 服务启动后执行，避免 lark-cli 同步调用阻塞 listen）
+// feishu.loadConfig 与 sync.syncDevice 内部走 spawnSync 调用 lark-cli，无授权环境可能长时间阻塞；
+// 先起服务、再后台初始化集成，保证 API 始终可用（集成失败仅降级，不影响平台本体）。
+function initFeishuIntegration() {
+  // 启动时加载飞书配置 + 首次同步 3 台预置设备到多维表格 + 启动事件状态轮询（失败不阻断）
+  const feishuConfig = feishu.loadConfig();
+  if (feishuConfig) {
+    console.log(`[feishu] 配置已加载，chat_id=${feishuConfig.chat_id}（base_token 已加载，不打印敏感值）`);
+    for (const dev of dbm.listDevices(db)) {
+      Promise.resolve(sync.syncDevice(dev)).catch((e) =>
+        console.error('[feishu] 首次设备同步失败:', e.message)
+      );
+    }
+    // 启动飞书侧事件状态变更轮询（每 60s 拉取 handled/closed 记录回写本地）
+    try {
+      sync.startEventStatusPolling(db);
+    } catch (e) {
+      console.error('[feishu] 启动事件状态轮询失败:', e.message);
+    }
+    // 全量数据定时同步：启动时立即跑一次，之后每 30s 跑一次
+    runSyncAllToFeishu();
+    syncAllTimer = setInterval(runSyncAllToFeishu, SYNC_ALL_INTERVAL_MS);
+    if (syncAllTimer.unref) syncAllTimer.unref();
+    console.log(`[sync] 全量同步定时器已启动，间隔 ${SYNC_ALL_INTERVAL_MS}ms`);
+  } else {
+    console.warn('[feishu] 未加载到配置，飞书集成将降级（仅 console.error，不阻断）');
   }
-  // 启动飞书侧事件状态变更轮询（每 60s 拉取 handled/closed 记录回写本地）
-  try {
-    sync.startEventStatusPolling(db);
-  } catch (e) {
-    console.error('[feishu] 启动事件状态轮询失败:', e.message);
-  }
-  // 全量数据定时同步：启动时立即跑一次，之后每 30s 跑一次
-  runSyncAllToFeishu();
-  syncAllTimer = setInterval(runSyncAllToFeishu, SYNC_ALL_INTERVAL_MS);
-  if (syncAllTimer.unref) syncAllTimer.unref();
-  console.log(`[sync] 全量同步定时器已启动，间隔 ${SYNC_ALL_INTERVAL_MS}ms`);
-} else {
-  console.warn('[feishu] 未加载到配置，飞书集成将降级（仅 console.error，不阻断）');
 }
 
 // 创建 Express 应用
@@ -88,8 +94,8 @@ app.use(express.json({ limit: process.env.FEISHU_BODY_LIMIT || '1mb' }));
 // 静态文件（前端）
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// 挂载 /api 路由
-app.use('/api', createApiRouter(db));
+// 挂载 /api 路由（v1.1.0 D1：统一鉴权中间件，写操作 fail-closed）
+app.use('/api', apiAuth, createApiRouter(db));
 
 // 根路径健康检查
 app.get('/', (req, res) => {
@@ -155,6 +161,23 @@ app.post('/webhook/card', (req, res) => {
       return res.json({ ok: false, error: 'missing action_type or event_id' });
     }
 
+    // v1.1.0 D3：业务幂等 —— 同一事件同一处置动作只执行一次。
+    // 飞书卡片回调对同一事件可能重复推送（不同 event_id 的卡片回调、网络重试等），
+    // 幂等键 (event_id, action_type) 由 webhook_dedup 表唯一约束保证。
+    const dedup = dbm.tryAcquireWebhookDedup(db, {
+      event_id: eventId,
+      action_type: actionType,
+      actor_id: body.open_id || (body.operator && body.operator.open_id) || 'unknown',
+      result: { status: 'processing' },
+    });
+    if (dedup.error) {
+      return res.json({ ok: false, error: dedup.error });
+    }
+    if (dedup.duplicated) {
+      // 已处理过：返回幂等命中（200），不重复执行处置动作
+      return res.json({ ok: true, duplicated: true, event_id: eventId, action: actionType });
+    }
+
     const event = events.getEvent(db, eventId);
     if (!event) {
       return res.json({ ok: false, error: `event not found: ${eventId}` });
@@ -169,23 +192,34 @@ app.post('/webhook/card', (req, res) => {
     const openId = body.open_id || (body.operator && body.operator.open_id) || 'unknown';
 
     let label;
-    if (actionType === 'acknowledge') {
-      events.handleEvent(db, eventId, { handler_id: openId, action: 'acknowledge' });
-      label = '已确认';
-    } else if (actionType === 'resolve') {
-      events.handleEvent(db, eventId, { handler_id: openId, action: 'resolve' });
-      label = '已解决';
-    } else if (actionType === 'escalate') {
-      try {
-        feishu.createApproval(event);
-      } catch (e) {
-        console.error('[webhook] createApproval 失败:', e.message);
+    try {
+      if (actionType === 'acknowledge') {
+        events.handleEvent(db, eventId, { handler_id: openId, action: 'acknowledge' });
+        label = '已确认';
+      } else if (actionType === 'resolve') {
+        events.handleEvent(db, eventId, { handler_id: openId, action: 'resolve' });
+        label = '已解决';
+      } else if (actionType === 'escalate') {
+        try {
+          feishu.createApproval(event);
+        } catch (e) {
+          console.error('[webhook] createApproval 失败:', e.message);
+        }
+        events.handleEvent(db, eventId, { handler_id: openId, action: 'escalate' });
+        label = '已上报（审批中）';
+      } else {
+        dbm.deleteWebhookDedup(db, eventId, actionType);
+        return res.status(400).json({ ok: false, error: `unknown action_type: ${actionType}` });
       }
-      events.handleEvent(db, eventId, { handler_id: openId, action: 'escalate' });
-      label = '已上报（审批中）';
-    } else {
-      return res.json({ ok: false, error: `unknown action_type: ${actionType}` });
+    } catch (e) {
+      // 处置失败：删除幂等记录，允许重试（否则会永久拦截）
+      dbm.deleteWebhookDedup(db, eventId, actionType);
+      const isClosedViolation = String(e.message || '').includes('already closed');
+      return res.status(isClosedViolation ? 409 : 400).json({ ok: false, error: e.message });
     }
+
+    // 处置成功：更新幂等记录结果（审计/溯源）
+    dbm.updateWebhookDedupResult(db, eventId, actionType, { status: 'done', label, at: new Date().toISOString() });
 
     // 更新原卡片为"已处置"状态（best-effort，失败靠跟进消息兜底）
     try {
@@ -209,16 +243,19 @@ app.post('/webhook/card', (req, res) => {
 
     res.json({ ok: true });
   } catch (e) {
+    // 兜底：未知异常不记录 dedup（下次可重试），仅记录错误
     console.error('[webhook] /webhook/card 处理异常:', e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-// 监听端口
+// 监听端口（先启动 HTTP，飞书集成延迟到 setImmediate 执行，不阻塞服务可用性）
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {
   console.log(`[EWOH] 后端服务已启动: http://localhost:${PORT}`);
   console.log(`[EWOH] API 状态: http://localhost:${PORT}/api/status`);
+  // v1.1.0：HTTP 就绪后再初始化飞书集成（lark-cli 同步调用不阻塞 listen）
+  setImmediate(initFeishuIntegration);
 });
 
 // 优雅退出：停止模拟器 → 停止轮询 → flush 遥测缓冲 → 关闭 HTTP → 关闭 DB

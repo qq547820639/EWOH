@@ -120,13 +120,33 @@ function isReplay(eventId) {
   return false;
 }
 
-/** 校验签名（X-Lark-Signature = base64(hmac_sha256(encrypt_key, timestamp + nonce + encrypt_key))）。 */
+/** 提取签名用时间戳（秒级字符串，飞书 HMAC 协议要求）。
+ * 飞书规范：X-Lark-Signature = base64(hmac_sha256(encrypt_key, `${timestamp}${nonce}${encrypt_key}`))，
+ * 其中 timestamp 为秒级 Unix 时间戳字符串（十位数字）。
+ * v1.1.0 修复（D4）：旧代码用毫秒数参与 HMAC，配置 encrypt_key 时签名永远不匹配。
+ */
+function extractSignatureTimestamp(body) {
+  const header = (body && body.header) || {};
+  // 优先：header.create_time（ISO 字符串）→ 转秒
+  if (header.create_time) {
+    const ms = Date.parse(header.create_time);
+    if (!Number.isNaN(ms)) return String(Math.floor(ms / 1000));
+  }
+  // 次优：body.timestamp（秒字符串，飞书事件订阅标准字段）
+  if (body && body.timestamp !== undefined && body.timestamp !== null) {
+    const n = Number(body.timestamp);
+    if (Number.isFinite(n)) return String(Math.floor(n)); // 已是秒，不再 ×1000
+  }
+  return null;
+}
+
+/** 校验签名（X-Lark-Signature = base64(hmac_sha256(encrypt_key, timestampSec + nonce + encrypt_key))）。 */
 function verifySignature(body, headers) {
   const encryptKey = getEncryptKey();
   if (!encryptKey) return true; // 未配置 Encrypt Key 时依赖 token + timestamp（文档化降级）
   const signature = headers['x-lark-signature'] || headers['X-Lark-Signature'];
   if (!signature) return false;
-  const timestamp = extractTimestamp(body);
+  const timestamp = extractSignatureTimestamp(body);
   const nonce = (body && body.nonce) || (body && body.header && body.header.nonce) || '';
   if (timestamp == null) return false;
   const source = `${timestamp}${nonce}${encryptKey}`;
@@ -201,6 +221,7 @@ module.exports = {
   verifyWebhookRequest,
   auditWebhook,
   extractTimestamp,
+  extractSignatureTimestamp,
   extractEventId,
   isReplay,
   getVerificationToken,
