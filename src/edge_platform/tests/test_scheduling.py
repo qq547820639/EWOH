@@ -282,6 +282,60 @@ class DomainTests(unittest.TestCase):
             repo.update_task("T1", 1, priority=5)
 
 
+class HydrateFromRepositoryTests(unittest.TestCase):
+    """P1（上线验收发现）：重启后从 repository 恢复已持久化调度状态。"""
+
+    def test_hydrate_restores_persisted_requests_and_plans(self):
+        import tempfile
+
+        from edge_platform.edge.storage import Storage
+
+        tmp = tempfile.mkdtemp(prefix="ewoh_hydrate_")
+        s = Storage(f"{tmp}/hydrate.db")
+        repo = SchedulingRepository(s)
+        # 模拟上次运行已持久化的请求 + 方案
+        s.upsert_scheduling_request(
+            "REQMW-PERSISTED-1",
+            trigger_type="manual",
+            task_ids=["T1"],
+            created_by="leader",
+            status="pending",
+        )
+        s.save_schedule_plan(
+            "PLN-PERSISTED-1",
+            request_id="REQMW-PERSISTED-1",
+            version=1,
+            status="approved",
+            assignments=[],
+        )
+        # 新 SchedulerService（模拟重启），repository 注入但内存为空
+        from edge_platform.scheduler.events import EventBus
+
+        scheduler = SchedulerService(
+            world_state_service=WorldStateService(),
+            planner=Planner(
+                optimizer=_make_optimizer(),
+                route_planner=build_route_planner(None),
+                world_state_service=WorldStateService(),
+            ),
+            reservation_service=ReservationService(),
+            storage=s,
+            repository=repo,
+            event_bus=EventBus(),
+        )
+        self.assertEqual(scheduler.list_plans(), [])
+        self.assertEqual(scheduler.list_requests(), [])
+        # hydrate 后恢复
+        scheduler.hydrate_from_repository()
+        plans = scheduler.list_plans()
+        reqs = scheduler.list_requests()
+        self.assertEqual(len(plans), 1)
+        self.assertEqual(plans[0].plan_id, "PLN-PERSISTED-1")
+        self.assertEqual(plans[0].status, "approved")
+        self.assertEqual(len(reqs), 1)
+        self.assertEqual(reqs[0].request_id, "REQMW-PERSISTED-1")
+
+
 # ---------------------------------------------------------------------------
 # 2. 硬约束
 # ---------------------------------------------------------------------------

@@ -142,6 +142,10 @@ def main():
     event_bus = EventBus()
     # Phase 3/6：装配智能调度闭环服务 + 统一资源状态服务
     scheduler, resource_state_service = build_scheduler(storage, scheduling_repository, event_bus)
+    # P1（上线验收发现）：从 repository 恢复已持久化的调度状态（approved plan 等），
+    # 使进程重启后调度闭环可继续，而不是丢失内存态。
+    if scheduling_repository is not None:
+        scheduler.hydrate_from_repository()
     # Task 6.3：注册调度服务到旧接口 Adapter（services.recommend/confirm_assignment）
     from edge_platform import services
 

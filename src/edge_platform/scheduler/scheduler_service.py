@@ -130,6 +130,34 @@ class SchedulerService:
 
     # ---- 持久化（repository 注入后启用；为 None 时保持纯内存、向后兼容） ----
 
+    def hydrate_from_repository(self):
+        """启动时从 repository 恢复已持久化的调度状态到内存。
+
+        P1（上线验收发现）：此前 plan/request/assignment/reservation 仅存内存 +
+        落盘，但重启后不加载，导致 approved plan 在 API 重启后不可见/不可继续派工。
+        本方法把磁盘上已持久化的对象重新装入 _requests/_plans/_assignments/
+        _feedback，使调度闭环在进程重启后仍可继续。
+        """
+        if self.repository is None:
+            return
+        from .models import SchedulePlan, ScheduleRequestMW
+
+        # 恢复请求
+        for d in self.repository.list_requests() or []:
+            try:
+                req = ScheduleRequestMW(**{k: v for k, v in d.items() if k != "id"})
+                self._requests[req.request_id] = req
+            except Exception:
+                continue
+        # 恢复方案（含 assignments）
+        for d in self.repository.list_plans() or []:
+            try:
+                plan = SchedulePlan(**{k: v for k, v in d.items() if k != "id"})
+                plan.assignments = d.get("assignments") or []
+                self._plans[plan.plan_id] = plan
+            except Exception:
+                continue
+
     def _persist_request(self, req):
         if self.repository is None:
             return
