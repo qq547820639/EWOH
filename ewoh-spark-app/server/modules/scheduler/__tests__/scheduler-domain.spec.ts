@@ -800,7 +800,9 @@ describe('WorldStateSnapshotService.isPlanStale / 资源新鲜度（Task C/D）'
       personnel: [{ id: 'p1', name: 'p1', status: 'available', updatedAt: new Date(Date.now() - 10_000) }],
       devices: [{ id: 'd1', online: true, batteryPct: 100, lastTelemetryAt: new Date(Date.now() - 10_000), updatedAt: new Date() }],
     });
-    const svc = new WorldStateSnapshotService(db as never, { runInTransaction: jest.fn() } as never, 1000);
+    const svc = new WorldStateSnapshotService(db as never, { runInTransaction: jest.fn() } as never);
+    // 测试专用：覆盖 freshnessMs 字段（短阈值 1s 验证 STALE；字段非构造参数，避免 Nest DI 崩溃）
+    (svc as unknown as { freshnessMs: number }).freshnessMs = 1000;
     const state = (await (svc as unknown as { collectState(): Promise<WorldStateSnapshot> }).collectState()) as WorldStateSnapshot;
     expect(state.persons[0].dataQuality).toBe('STALE');
     expect(state.persons[0].status).toBe('unavailable');
@@ -812,7 +814,8 @@ describe('WorldStateSnapshotService.isPlanStale / 资源新鲜度（Task C/D）'
     const { db } = makeWorldDb(null, {
       personnel: [{ id: 'p1', name: 'p1', status: 'available', updatedAt: null }],
     });
-    const svc = new WorldStateSnapshotService(db as never, { runInTransaction: jest.fn() } as never, 1000);
+    const svc = new WorldStateSnapshotService(db as never, { runInTransaction: jest.fn() } as never);
+    (svc as unknown as { freshnessMs: number }).freshnessMs = 1000;
     const state = (await (svc as unknown as { collectState(): Promise<WorldStateSnapshot> }).collectState()) as WorldStateSnapshot;
     expect(state.persons[0].dataQuality).toBe('UNKNOWN');
     expect(state.persons[0].status).toBe('unavailable');

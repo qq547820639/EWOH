@@ -32,9 +32,11 @@ export class WorldStateSnapshotService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly requestDatabaseContext: RequestDatabaseContext,
-    // 资源数据新鲜度阈值（ms）：可注入覆盖（测试用短阈值验证 STALE 语义），缺省 5min。
-    private readonly freshnessMs: number = DEFAULT_FRESHNESS_MS,
   ) {}
+  // 资源数据新鲜度阈值（ms）。必须为类字段而非构造参数：
+  // Nest DI 会将构造参数按类型 token 解析，原始类型 number 无法注入 → 启动崩溃
+  // （此前误改构造参数导致 standalone 启动失败，见 Batch 12 修复）。
+  private readonly freshnessMs = DEFAULT_FRESHNESS_MS;
 
   /**
    * 基于实时的 ewoh 表状态构建并持久化一个世界状态快照。

@@ -56,7 +56,9 @@ export function isSpaFallbackPath(path: string): boolean {
 
 export async function bootstrapStandalone(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(StandaloneAppModule, {
-    abortOnError: false,
+    // v0.7 修复：生产环境 DI/装配失败必须 fail-fast（原硬编码 false 导致
+    // freshnessMs 类装配错误被静默、服务半初始化仍监听端口）。开发模式保留容错。
+    abortOnError: process.env.NODE_ENV !== 'development',
   });
 
   app.enableCors({
