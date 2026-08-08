@@ -6,6 +6,20 @@
 ## [Unreleased]
 
 ### Added
+- **智能调度 v0.7 第二批（Batch 5-9，实施计划 `docs/reviews/next-steps-implementation-plan.md`）**：
+  - **权重体系收敛**：`SchedulingPolicyConfig` 新增可选 `weights` 段（workloadBalance/stationWait/changeCost/energy），
+    `buildPolicy` 从配置读取（缺省保持现值 1/1/0.5/minBattery/30 向后兼容），策略调参不再需要改代码。
+  - **SSE 去重有界化**：`seenEventIds` 改 LRU（5000 上限，超限淘汰最老一半），消除长期运行内存无界增长。
+  - **设备能力匹配**：设备 `capabilities` 从型号派生（EXO-Pro → exo-lift）、任务 `requiredDeviceCapabilities`
+    从 taskType 派生（搬运类 → exo-lift），资格/求解器能力约束首次真实生效。
+  - **事件驱动级联**：`injectSchedulingEvent` service 层入口（事件 → 局部重排 → 世界状态路由/预占冲突
+    scoped 级联重排，冷却去抖防风暴）；metrics 埋点（recordRun/recordFallback）。
+  - **SAFETY_EVENT 派工熔断**：派工涉及安全阻断（L2/L3 open）人员/设备 → `SAFETY_BLOCK_DISPATCH` 拒绝下发。
+  - **前端深化**：`execution.deviation` 事件失效 worldState（地图位置近实时）；冲突中心"定位地图"按钮
+    （选中实体+收起面板）；覆盖面板候选资源选择器（按评分/技能/负荷排序，不可行候选含排除原因）。
+  - **CP-SAT Worker 部署就绪**：`src/edge_platform/scheduler/cpsat/worker.py`（纯标准库 HTTP worker，
+    POST /api/scheduler/v2/solve + health 探针）+ `deploy/cloud/Dockerfile.cpsat` + compose `cpsat` 可选服务；
+    ortools 缺失时如实返回 UNAVAILABLE 由云侧回退 heuristic。
 - **智能调度 v0.7（四批增量，指挥地图 → 智能调度驾驶舱）**：
   - **任务派生建模**（`world-state.service.ts`）：`productionImpact`（priority 映射 urgent=1.0→low=0.1）、
     `safetyCritical`（taskType 白名单）、`candidateStations`（空间拓扑推导）从既有字段派生，无 schema 变更；
@@ -15,6 +29,7 @@
   - **事件驱动智能重排**：`POST /api/scheduler/events`（局部重排：影响分析→冻结无关任务→子图求解→熔断）；
     `POST /api/scheduler/feedback/actuals`（执行实际值回填，覆盖式更新幂等，回填后推送 `execution.deviation` SSE）；
     ingest 设备故障/离线转换自动触发 `DEVICE_OFFLINE` 重排（fire-and-forget，熔断不阻断真机接入）；
+
     `ReplanCoordinator.handleTrigger` 失败熔断（run 置 failed 不再卡 queued）。
   - **前端智能交互**（CommandMap）：新增「冲突中心」（13 类过滤/严重度排序/建议处置/三态）与「人工覆盖」
     （LOCK/EXCLUDE/PREFER/BOOST/LOCK_TIME → 重排 → before/after diff）；`useSchedulerStream` 消费
