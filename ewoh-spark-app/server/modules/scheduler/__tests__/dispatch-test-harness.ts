@@ -30,6 +30,8 @@ export interface FakeDbSeed {
   plans?: Array<Record<string, unknown>>;
   assignments?: Array<Record<string, unknown>>;
   tasks?: Array<Record<string, unknown>>;
+  /** P0-2：持久化调度约束（ewoh_scheduling_constraint）。 */
+  constraints?: Array<Record<string, unknown>>;
   /** 为 true 时方案 select 恒返回 approved，用于并发 CAS 测试。 */
   forcePlanApproved?: boolean;
 }
@@ -62,7 +64,7 @@ export function makeFakeDb(seed: FakeDbSeed = {}) {
     tasks: new Map((seed.tasks ?? []).map((t) => [String(t.id), { ...t }])),
     events: [],
     audits: [],
-    constraints: [],
+    constraints: (seed.constraints ?? []).map((c) => ({ ...c })),
     reservations: [],
     feedback: [],
   };

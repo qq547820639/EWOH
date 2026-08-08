@@ -17,7 +17,7 @@ import {
   ewohSchedulingPlanAssignment,
   ewohSchedulingConstraint,
 } from '@server/database/schema';
-import { eq, asc } from 'drizzle-orm';
+import { eq, asc, and } from 'drizzle-orm';
 import type {
   SchedulingPlanV2,
   SchedulingAssignment,
@@ -273,6 +273,108 @@ export class PlanService {
   }
 
   /**
+   * P0-2 约束生命周期：加载指定方案仍生效（active=true）的持久化约束，
+   * 反序列化为 SchedulingConstraint，供查询与重排继承。
+   */
+  async listPlanConstraints(
+    planId: string,
+  ): Promise<import('@shared/api.interface').SchedulingConstraint[]> {
+    const rows = await this.db
+      .select()
+      .from(ewohSchedulingConstraint)
+      .where(
+        and(eq(ewohSchedulingConstraint.planId, planId), eq(ewohSchedulingConstraint.active, true)),
+      )
+      .orderBy(asc(ewohSchedulingConstraint.createdAt));
+    return rows.map((r) => {
+      const v = (r.valueJson ?? {}) as Record<string, unknown>;
+      return {
+        id: r.constraintId,
+        type: r.type as import('@shared/api.interface').SchedulingConstraint['type'],
+        taskId: r.taskId ?? undefined,
+        personId: v.personId as string | undefined,
+        deviceId: v.deviceId as string | undefined,
+        stationId: v.stationId as string | undefined,
+        zoneId: v.zoneId as string | undefined,
+        startMs: v.startMs as number | undefined,
+        endMs: v.endMs as number | undefined,
+        operator: v.operator as string | undefined,
+        reason: v.reason as string | undefined,
+        validFrom: v.validFrom as number | undefined,
+        expiresAt: v.expiresAt as number | undefined,
+        snapshotVersion: v.snapshotVersion as string | undefined,
+        hard: true,
+      } as import('@shared/api.interface').SchedulingConstraint;
+    });
+  }
+
+  /**
+   * P0-2 约束继承：重排时合并「当前方案仍生效的持久化人工约束」与「请求新约束」。
+   *
+   * 人工 LOCK/EXCLUDE/PREFER 等不得因为下一次普通 replan 传入 [] 而消失。
+   */
+  async loadEffectiveConstraints(
+    planId: string,
+    requestConstraints: import('@shared/api.interface').SchedulingConstraint[],
+  ): Promise<import('@shared/api.interface').SchedulingConstraint[]> {
+    const inherited = await this.listPlanConstraints(planId);
+    // 请求约束优先（operator 来源显式标注）；同类型同目标时请求覆盖继承
+    const merged = [...requestConstraints];
+    for (const c of inherited) {
+      const alreadyRequested = merged.some(
+        (rc) => rc.type === c.type && rc.taskId === c.taskId && rc.personId === c.personId,
+      );
+      if (!alreadyRequested) merged.push(c);
+    }
+    return merged;
+  }
+
+  /**
+   * P0-2 解除人工约束：将约束标记为 inactive（软删除），并写审计。
+   * 约束解除后下一次 replan 不再继承它。
+   */
+  async deactivateConstraint(
+    constraintId: string,
+    actor: OrgContext,
+    reason = '',
+  ): Promise<{ ok: boolean; constraintId: string }> {
+    const [row] = await this.db
+      .select()
+      .from(ewohSchedulingConstraint)
+      .where(eq(ewohSchedulingConstraint.constraintId, constraintId))
+      .limit(1);
+    if (!row) throw new NotFoundException(`Constraint ${constraintId} not found`);
+    await this.requestDatabaseContext.runInTransaction(
+      buildGucSettings(actor),
+      async () => {
+        await this.db
+          .update(ewohSchedulingConstraint)
+          .set({ active: false, updatedAt: new Date() })
+          .where(eq(ewohSchedulingConstraint.constraintId, constraintId));
+        await this.db.insert(ewohScheduleAudit).values({
+          auditId: `AUDIT-${Date.now()}-${this.randomSuffix()}`,
+          planId: row.planId ?? undefined,
+          action: 'constraint.deactivate',
+          operator: actor.userId,
+          reason: reason || `deactivate constraint ${constraintId}`,
+          createdAt: new Date(),
+        });
+      },
+    );
+    await this.auditService.appendAuditLog({
+      actorId: actor.userId,
+      orgId: actor.primaryOrgId,
+      action: 'scheduler.constraint.deactivate',
+      entityType: 'scheduling_constraint',
+      entityId: constraintId,
+      before: { active: true },
+      after: { active: false },
+      reason: reason || undefined,
+    });
+    return { ok: true, constraintId };
+  }
+
+  /**
    * 重排：接受锁定约束，落库为 scheduling_constraint，
    * 基于最新快照重跑求解器，冻结 executing/locked 任务，产出新版方案。
    */
@@ -323,7 +425,14 @@ export class PlanService {
       policy = inherited ?? (await this.schedulingPolicyService.getActivePolicy());
     }
 
-    const newPlan = await this.solverService.solve(snapshot, body.lockedConstraints, {
+    // P0-2 约束继承：合并「当前方案仍生效的持久化人工约束」与请求约束。
+    // 人工 LOCK/EXCLUDE/PREFER 不得因为普通 replan 传入 [] 而消失。
+    const effectiveConstraints = await this.loadEffectiveConstraints(
+      planId,
+      body.lockedConstraints as import('@shared/api.interface').SchedulingConstraint[],
+    );
+
+    const newPlan = await this.solverService.solve(snapshot, effectiveConstraints, {
       planId: newPlanId,
       planName: `${plan.planName ?? planId} 重排`,
       triggerType: 'MANUAL',
@@ -339,19 +448,28 @@ export class PlanService {
     await this.requestDatabaseContext.runInTransaction(
       buildGucSettings(ctx),
       async () => {
-        // 落库锁定约束
-        if (body.lockedConstraints.length > 0) {
+        // P0-2：落库本次新增的有效约束（含请求约束；继承的约束已在原 plan 下，
+        // 保持原 constraintId 以便后续解除与审计追溯——此处仅落库新请求项）。
+        if (effectiveConstraints.length > 0) {
           await this.db.insert(ewohSchedulingConstraint).values(
-            body.lockedConstraints.map((c, i) => ({
-              constraintId: `CON-${Date.now()}-${i}`,
+            effectiveConstraints.map((c, i) => ({
+              constraintId:
+                c.id ?? `CON-${Date.now()}-${i}-${this.randomSuffix()}`,
               planId: newPlanId,
               taskId: c.taskId ?? null,
-              type: c.type ?? 'LOCKED_PERSON',
+              type: c.type,
               valueJson: {
-                personId: c.personId,
-                deviceId: c.deviceId,
-                stationId: c.stationId,
-                zoneId: c.zoneId,
+                personId: c.personId ?? null,
+                deviceId: c.deviceId ?? null,
+                stationId: c.stationId ?? null,
+                zoneId: c.zoneId ?? null,
+                startMs: c.startMs ?? null,
+                endMs: c.endMs ?? null,
+                operator: c.operator ?? ctx.userId,
+                reason: c.reason ?? null,
+                validFrom: c.validFrom ?? null,
+                expiresAt: c.expiresAt ?? null,
+                snapshotVersion: c.snapshotVersion ?? snapshot.snapshotVersion,
               },
               active: true,
               createdBy: ctx.userId,

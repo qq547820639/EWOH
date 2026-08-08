@@ -188,6 +188,26 @@ export class SchedulerController {
     return this.schedulerService.getPlanDetail(planId);
   }
 
+  /** P0-2：查询方案仍生效的持久化人工约束。 */
+  @Get('plans/:planId/constraints')
+  async getPlanConstraints(@Param('planId') planId: string) {
+    return this.schedulerService.listPlanConstraintsV2(planId);
+  }
+
+  /** P0-2：解除一条人工约束（软删除 + 审计；解除后下次 replan 不再继承）。 */
+  @Post('constraints/:constraintId/deactivate')
+  async deactivateConstraint(
+    @Param('constraintId') constraintId: string,
+    @Body() body: { operator?: string; reason?: string },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.schedulerService.deactivateConstraintV2(
+      constraintId,
+      request.userContext,
+      body?.reason,
+    );
+  }
+
   @Post('plans/:planId/approve')
   async approvePlan(
     @Param('planId') planId: string,

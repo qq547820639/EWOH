@@ -5259,6 +5259,75 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scheduler/plans/{planId}/constraints:
+    get:
+      tags:
+        - scheduler
+      summary: List active persistent constraints for a plan (P0-2)
+      description: >
+        Returns constraints still active for the plan. Replan inherits these,
+        so manual LOCK/EXCLUDE/PREFER are not lost on a normal replan with [].
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SchedulingConstraint'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/constraints/{constraintId}/deactivate:
+    post:
+      tags:
+        - scheduler
+      summary: Deactivate a manual constraint (soft delete + audit, P0-2)
+      parameters:
+        - name: constraintId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                operator:
+                  type: string
+                reason:
+                  type: string
+              required: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  constraintId:
+                    type: string
+                required: []
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scheduler/plans/{planId}/approve:
     post:
       tags:

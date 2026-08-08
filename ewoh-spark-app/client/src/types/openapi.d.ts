@@ -7723,6 +7723,100 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scheduler/plans/{planId}/constraints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active persistent constraints for a plan (P0-2)
+         * @description Returns constraints still active for the plan. Replan inherits these, so manual LOCK/EXCLUDE/PREFER are not lost on a normal replan with [].
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    planId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulingConstraint"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/constraints/{constraintId}/deactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Deactivate a manual constraint (soft delete + audit, P0-2) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    constraintId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        operator?: string;
+                        reason?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            ok?: boolean;
+                            constraintId?: string;
+                        };
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scheduler/plans/{planId}/approve": {
         parameters: {
             query?: never;

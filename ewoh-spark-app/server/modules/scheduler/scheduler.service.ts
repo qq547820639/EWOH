@@ -1127,6 +1127,24 @@ export class SchedulerService {
     )}）；请结合反馈 KPI 决策，本结果仅为只读 shadow 对比。`;
   }
 
+  /** P0-2：查询方案仍生效的持久化人工约束。 */
+  async listPlanConstraintsV2(planId: string) {
+    return this.planService.listPlanConstraints(planId);
+  }
+
+  /** P0-2：解除一条人工约束（软删除 + 审计）。 */
+  async deactivateConstraintV2(
+    constraintId: string,
+    actor?: OrgContext,
+    reason = '',
+  ) {
+    return this.planService.deactivateConstraint(
+      constraintId,
+      this.toOrgContext(actor),
+      reason,
+    );
+  }
+
   async approvePlanV2(
     planId: string,
     body: ApprovePlanRequest,
