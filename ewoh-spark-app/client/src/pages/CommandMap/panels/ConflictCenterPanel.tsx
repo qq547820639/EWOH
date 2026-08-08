@@ -20,6 +20,7 @@ import {
   Loader2,
   RefreshCw,
   Factory,
+  MapPin,
 } from 'lucide-react';
 import { useSchedulerConflicts } from '@client/src/hooks/useSchedulerConflicts';
 import { TYPE_META, sortConflicts } from './conflict-panel-logic';
@@ -63,11 +64,14 @@ interface ConflictCenterPanelProps {
   initialType?: SchedulingConflictType;
   /** 可选：点击"重排"回调（由父组件决定跳转调度方案面板）。 */
   onReplan?: (conflict: SchedulingConflict) => void;
+  /** v0.7 Batch7.2：点击资源定位地图实体（父组件选中实体并聚焦）。 */
+  onLocateEntity?: (entityId: string | null) => void;
 }
 
 export function ConflictCenterPanel({
   initialType,
   onReplan,
+  onLocateEntity,
 }: ConflictCenterPanelProps): React.ReactElement {
   const [typeFilter, setTypeFilter] = useState<SchedulingConflictType | undefined>(initialType);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -188,6 +192,23 @@ export function ConflictCenterPanel({
                               >
                                 <RefreshCw className="w-3 h-3 mr-1" />
                                 触发重排
+                              </Button>
+                            </div>
+                          )}
+                          {/* v0.7 Batch7.2：定位地图实体（资源 id 存在时） */}
+                          {onLocateEntity && c.resourceId && (
+                            <div className="pt-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs border-white/20 text-white/80 hover:bg-white/10"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onLocateEntity(c.resourceId);
+                                }}
+                              >
+                                <MapPin className="w-3 h-3 mr-1" />
+                                定位地图
                               </Button>
                             </div>
                           )}

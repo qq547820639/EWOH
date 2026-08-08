@@ -720,6 +720,16 @@ export interface SchedulingPolicyConfig {
     manualBoostWeight: number;
     agingBaseMs: number;
   };
+  /**
+   * v0.7 Batch5.1：求解器目标权重（可选，缺省回退 buildPolicy 的既有默认值，
+   * 保证旧配置向后兼容）。全量可配后策略调参不再需要改代码。
+   */
+  weights?: {
+    workloadBalance?: number;
+    stationWait?: number;
+    changeCost?: number;
+    energy?: number;
+  };
 }
 
 export interface SchedulingPolicyVersionSummary {

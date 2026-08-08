@@ -248,6 +248,9 @@ export class WorldStateSnapshotService {
       predecessorIds: this.asStringArray(t.predecessorIds),
       requiredSkills: this.asStringArray(t.requiredSkills),
       requiredCertifications: this.asStringArray(t.requiredCertifications),
+      // v0.7 Batch5.3：任务设备能力需求从 taskType 派生（重体力/搬运 → exo-lift），
+      // 与设备 capabilities 匹配形成能力约束；未命中返回空数组（无能力要求）。
+      requiredDeviceCapabilities: this.deriveRequiredDeviceCapabilities(t.taskType),
       // v0.7 智能调度增强（A1）：安全/可抢占/技能匹配语义从已有字段派生，不再恒 false。
       // 注：ewohProductionTask 表当前无独立列（schema.ts 为自动生成文件，不改），
       // 故从 taskType 白名单派生 safetyCritical（重体力/搬运类），保守默认 false；
@@ -284,6 +287,9 @@ export class WorldStateSnapshotService {
         workerName: d.workerName ?? null,
         deviceModel: d.deviceModel ?? null,
         batteryPct: d.batteryPct ?? 100,
+        // v0.7 Batch5.3：设备能力从型号派生（exo-lift 等），供资格/求解器能力匹配。
+        // 注：schema 无 capabilities 列（自动生成不改），型号白名单派生保守缺省空数组。
+        capabilities: this.deriveDeviceCapabilities(d.deviceModel),
         // STALE/UNKNOWN 设备不视为可用（离线/不可派）。
         online: stale ? false : (d.online ?? false),
         status: d.faultCode ? 'fault' : stale ? 'offline' : 'online',
@@ -512,6 +518,43 @@ export class WorldStateSnapshotService {
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}${m}${day}`;
+  }
+
+  /**
+   * v0.7 Batch5.3：从任务类型派生设备能力需求（重体力/搬运类 → exo-lift）。
+   * 与 safetyCritical 白名单同源语义；未命中返回空数组（无能力要求）。
+   */
+  private deriveRequiredDeviceCapabilities(taskType: string): string[] {
+    const t = (taskType ?? '').toLowerCase();
+    if (
+      t.includes('lift') ||
+      t.includes('carry') ||
+      t.includes('heavy') ||
+      t.includes('handling') ||
+      t.includes('搬运') ||
+      t.includes('重体力') ||
+      t.includes('物料')
+    ) {
+      return ['exo-lift'];
+    }
+    return [];
+  }
+
+  /**
+   * v0.7 Batch5.3：从设备型号派生能力集合（exo-lift 等），供资格/求解器能力匹配。
+   * 型号白名单匹配，未命中返回空数组（视为无能力声明，不误判）。
+   */
+  private deriveDeviceCapabilities(deviceModel: string | null): string[] {
+    const m = (deviceModel ?? '').toLowerCase();
+    if (!m) return [];
+    const caps: string[] = [];
+    if (m.includes('exo') || m.includes('pro') || m.includes('外骨骼')) {
+      caps.push('exo-lift');
+    }
+    if (m.includes('lite')) caps.push('exo-lite');
+    if (m.includes('vacuum') || m.includes('吸')) caps.push('vacuum');
+    if (m.includes('crane') || m.includes('吊')) caps.push('crane');
+    return caps;
   }
 
   /** jsonb 数组列可能以 unknown 返回；安全地规整为 string[]。 */

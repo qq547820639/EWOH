@@ -88,6 +88,36 @@ export class DispatchCoordinatorService {
       plan.snapshotVersion ?? '',
     );
 
+    // v0.7 Batch6.3 SAFETY_EVENT 派工熔断：方案基于最新世界状态时，
+    // 若任何派工涉及被安全事件阻断（L2/L3 open）的人员/设备 → 拒绝下发。
+    // 安全阻断不可被人工覆盖绕过（与求解器 SAFETY_BLOCK 硬约束同源语义）。
+    {
+      const current = await this.worldStateSnapshotService.getCurrentWorldState();
+      const blockedPersons = new Set(current.safetyBlockedPersonIds ?? []);
+      const blockedDevices = new Set(current.safetyBlockedDeviceIds ?? []);
+      if (blockedPersons.size > 0 || blockedDevices.size > 0) {
+        const assignments = await this.db
+          .select()
+          .from(ewohSchedulingPlanAssignment)
+          .where(
+            and(
+              eq(ewohSchedulingPlanAssignment.planId, planId),
+              eq(ewohSchedulingPlanAssignment.status, 'approved'),
+            ),
+          );
+        const blocked = assignments.filter(
+          (a) =>
+            (a.personId && blockedPersons.has(a.personId)) ||
+            (a.deviceId && blockedDevices.has(a.deviceId)),
+        );
+        if (blocked.length > 0) {
+          throw new ConflictException(
+            `SAFETY_BLOCK_DISPATCH: ${blocked.length} assignment(s) reference safety-blocked resources`,
+          );
+        }
+      }
+    }
+
     // P1-SCHED-004：统一默认时长（与 Solver/Policy 一致），仅在 assignment 缺失
     // plannedEnd 时作为兜底，避免 1h 硬编码与 solver 30min 不一致。
     const fallbackDurationMs = await this.resolveDefaultDurationMs();

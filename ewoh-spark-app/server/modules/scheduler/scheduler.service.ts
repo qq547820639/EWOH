@@ -54,6 +54,7 @@ import type {
   PlanOverrideKind,
   PlanOverrideDiffSummary,
   RecordActualsRequest,
+  SchedulingEventRequest,
 } from '@shared/api.interface';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { AuditService } from '../shared/audit.service';
@@ -69,6 +70,8 @@ import { RouteCostProvider } from './route-cost.provider';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import { SchedulingFeedbackService } from './scheduling-feedback.service';
 import { OutboxService } from './outbox.service';
+import { ReplanCoordinatorService } from './replan-coordinator.service';
+import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { TaskLifecycle } from './task-lifecycle';
 
 /**
@@ -135,6 +138,12 @@ export class SchedulerService {
     // v0.7 B3：SSE 实时事件推送（conflict.detected / execution.deviation）。
     // 可选注入：测试可传 mock；缺失时静默跳过（不影响主流程）。
     private readonly outboxService?: OutboxService,
+    // v0.7 Batch6.1：事件驱动级联重排（dispatchStateTriggers）。
+    // 可选注入：测试可传 mock；缺失时事件仅做局部重排不级联。
+    private readonly replanCoordinatorService?: ReplanCoordinatorService,
+    // v0.7 Batch6.4：调度可观测指标（recordRun/recordFallback）。
+    // 可选注入：测试可传 mock；缺失时静默跳过。
+    private readonly metricsService?: SchedulerMetricsService,
   ) {}
 
   async generatePlans(body?: { idempotencyKey?: string }): Promise<SchedulePlan[]> {
@@ -1037,6 +1046,52 @@ export class SchedulerService {
       verdict: this.buildVerdict(paramDeltas),
       readOnly: true,
     };
+  }
+
+  /**
+   * v0.7 Batch6.1 事件驱动智能重排（service 层入口，取代 controller 直连）。
+   * 1. 事件 → ReplanCoordinator 局部重排（影响分析 → 冻结无关任务 → 子图求解 → 熔断）；
+   * 2. 级联：基于最新世界状态检查路由阻断/拥塞/预占冲突，逐条触发 scoped 重排
+   *    （TriggerService 冷却去抖 + 幂等去重天然防风暴）。
+   * 缺失 replanCoordinatorService（测试/降级）时返回空结果。
+   */
+  async injectSchedulingEvent(
+    body: SchedulingEventRequest,
+    actor?: OrgContext,
+  ): Promise<{ run: SchedulingRun | null; plans: SchedulingPlanV2[]; debounced: boolean; cascaded: string[] }> {
+    const ctx = this.toOrgContext(actor);
+    if (!this.replanCoordinatorService) {
+      return { run: null, plans: [], debounced: true, cascaded: [] };
+    }
+    const primary = await this.replanCoordinatorService.handleTrigger(
+      body.trigger,
+      body.entityId ?? null,
+      ctx,
+    );
+
+    // v0.7 Batch6.4：事件驱动调度可观测埋点（成功/回退/级联数）。
+    if (this.metricsService) {
+      this.metricsService.recordRun({
+        durationMs: 0, // 事件驱动路径耗时由 handleTrigger 内部测量，此处仅计数
+        feasible: !primary.debounced,
+        solverStatus: primary.run?.status ?? 'debounced',
+      });
+      if (primary.debounced) this.metricsService.recordFallback();
+    }
+
+    // 级联：事件处理后，世界状态中的路由/预占问题自动触发 scoped 重排。
+    let cascaded: string[] = [];
+    try {
+      const state = await this.worldStateSnapshotService.buildSnapshot(ctx);
+      const dispatched = await this.replanCoordinatorService.dispatchStateTriggers(state, ctx);
+      cascaded = dispatched.map((d) => d.triggerType);
+    } catch (e) {
+      this.logger.warn(
+        `cascade state triggers failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+
+    return { ...primary, cascaded };
   }
 
   /**

@@ -50,6 +50,10 @@ describe('智能调度执行闭环 - 集成链路', () => {
     const worldState = {
       assertFreshForApprove: jest.fn().mockResolvedValue(undefined),
       buildSnapshot: jest.fn().mockResolvedValue(snapshot),
+      getCurrentWorldState: jest.fn().mockResolvedValue({
+        safetyBlockedPersonIds: [],
+        safetyBlockedDeviceIds: [],
+      }),
     };
     const auditService = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const reservationService = {

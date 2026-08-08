@@ -216,3 +216,61 @@ describe('v0.7 A1: 任务派生字段（productionImpact / safetyCritical / cand
     expect(state.tasks[0].candidateStations).toEqual([]);
   });
 });
+
+describe('v0.7 Batch5.3: 设备能力与任务能力需求派生', () => {
+  it('EXO-Pro 型号设备 → capabilities 含 exo-lift；普通任务无能力需求', async () => {
+    const svc = makeSvc({
+      personnel: [],
+      device: [
+        { id: 'd1', deviceId: 'EXO-001', deviceModel: 'EXO-Pro X1', online: true, batteryPct: 80 },
+      ],
+      task: [taskRow({ id: 't1', taskType: 'inspection' })],
+      spatial: [],
+      event: [],
+      routeNode: [],
+      routeEdge: [],
+      reservation: [],
+      binding: [],
+    });
+    const state = await (svc as unknown as { getCurrentWorldState(): Promise<{ devices: Array<Record<string, unknown>>; tasks: Array<Record<string, unknown>> }> })
+      .getCurrentWorldState();
+    expect(state.devices[0].capabilities).toContain('exo-lift');
+    expect(state.tasks[0].requiredDeviceCapabilities).toEqual([]);
+  });
+
+  it('搬运任务 → requiredDeviceCapabilities 含 exo-lift（能力匹配生效）', async () => {
+    const svc = makeSvc({
+      personnel: [],
+      device: [],
+      task: [taskRow({ id: 't1', taskType: 'material_handling' })],
+      spatial: [],
+      event: [],
+      routeNode: [],
+      routeEdge: [],
+      reservation: [],
+      binding: [],
+    });
+    const state = await (svc as unknown as { getCurrentWorldState(): Promise<{ tasks: Array<Record<string, unknown>> }> })
+      .getCurrentWorldState();
+    expect(state.tasks[0].requiredDeviceCapabilities).toEqual(['exo-lift']);
+  });
+
+  it('未知型号设备 → capabilities 空数组（不误判）', async () => {
+    const svc = makeSvc({
+      personnel: [],
+      device: [
+        { id: 'd1', deviceId: 'UNKNOWN-1', deviceModel: 'custom-rig', online: true, batteryPct: 80 },
+      ],
+      task: [],
+      spatial: [],
+      event: [],
+      routeNode: [],
+      routeEdge: [],
+      reservation: [],
+      binding: [],
+    });
+    const state = await (svc as unknown as { getCurrentWorldState(): Promise<{ devices: Array<Record<string, unknown>> }> })
+      .getCurrentWorldState();
+    expect(state.devices[0].capabilities).toEqual([]);
+  });
+});

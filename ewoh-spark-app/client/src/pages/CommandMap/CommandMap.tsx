@@ -825,6 +825,13 @@ const CommandMap = (): React.ReactElement => {
                   // 冲突 → 跳转调度方案面板并触发一次手动重排视野
                   setActiveTab('schedule');
                 }}
+                // v0.7 Batch7.2：点击资源 → 选中地图实体并退出面板聚焦地图
+                onLocateEntity={(entityId) => {
+                  if (entityId) {
+                    setSelectedEntityId(entityId);
+                    setPanelExpanded(false);
+                  }
+                }}
               />
             </React.Suspense>
           )}

@@ -271,16 +271,20 @@ export class SchedulingPolicyService {
     config: SchedulingPolicyConfig,
     version: number,
   ): SchedulingPolicy {
+    // v0.7 Batch5.1：目标权重从配置读取（缺省保持既有默认值，向后兼容）。
+    // 旧配置无 weights 段 → workloadBalance=1 / stationWait=1 / changeCost=0.5 /
+    // energy=minBatteryPct/30，与历史行为完全一致。
+    const w = config.weights ?? {};
     return {
       version,
       solverVersion: DEFAULT_SOLVER_VERSION,
       latenessWeight: config.priority.deadlineRiskWeight * 3,
       walkingWeight: config.euclideanDistanceWeight,
-      workloadBalanceWeight: 1,
-      stationWaitWeight: 1,
-      changeCostWeight: 0.5,
+      workloadBalanceWeight: w.workloadBalance ?? 1,
+      stationWaitWeight: w.stationWait ?? 1,
+      changeCostWeight: w.changeCost ?? 0.5,
       riskWeight: config.highRiskFactor / 2,
-      energyWeight: config.minBatteryPct / 30,
+      energyWeight: w.energy ?? config.minBatteryPct / 30,
     };
   }
 }

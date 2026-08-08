@@ -170,6 +170,9 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
         if (typeof pid === 'string') {
           queryClient.invalidateQueries({ queryKey: queryKeys.schedulerPlan(pid) });
         }
+        // v0.7 Batch7.1：执行变化 → 失效世界状态（地图实体位置提前刷新，
+        // 等效"近实时"，2s 轮询作为兜底保底；避免直接改 FactoryMap 渲染链的高风险）。
+        queryClient.invalidateQueries({ queryKey: queryKeys.worldState });
       }
     },
     [queryClient, triggerResync],

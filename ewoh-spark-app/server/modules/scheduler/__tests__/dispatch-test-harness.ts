@@ -154,6 +154,11 @@ export function makeDispatchCoordinator(seed: FakeDbSeed = {}) {
   };
   const worldStateSnapshotService = {
     assertFreshForApprove: jest.fn().mockResolvedValue(undefined),
+    // v0.7 Batch6.3 SAFETY 熔断：默认无阻断资源（空集）
+    getCurrentWorldState: jest.fn().mockResolvedValue({
+      safetyBlockedPersonIds: [],
+      safetyBlockedDeviceIds: [],
+    }),
   };
   const reservationService = {
     reserve: jest.fn().mockResolvedValue([]),
@@ -219,6 +224,10 @@ export function makePlanService(seed: FakeDbSeed = {}) {
   const worldStateSnapshotService = {
     assertFreshForApprove: jest.fn().mockResolvedValue(undefined),
     buildSnapshot: jest.fn(),
+    getCurrentWorldState: jest.fn().mockResolvedValue({
+      safetyBlockedPersonIds: [],
+      safetyBlockedDeviceIds: [],
+    }),
   };
   const dispatchCoordinator = {
     dispatch: jest.fn(),

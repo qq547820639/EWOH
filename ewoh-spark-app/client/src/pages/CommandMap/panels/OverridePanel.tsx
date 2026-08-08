@@ -20,13 +20,14 @@ import {
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { getActivePlans } from '@client/src/api/scheduler';
+import { getActivePlans, getTaskCandidates } from '@client/src/api/scheduler';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import { usePlanOverrides } from '@client/src/hooks/usePlanOverrides';
 import type {
   PlanOverrideAction,
   PlanOverrideKind,
   SchedulingPlanV2,
+  TaskCandidateResource,
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { Button } from '@client/src/components/ui/button';
@@ -92,6 +93,15 @@ export function OverridePanel({ planId: externalPlanId }: OverridePanelProps): R
   );
 
   const kindMeta = OVERRIDE_KINDS.find((k) => k.kind === kind);
+
+  // v0.7 Batch7.3：目标任务选定后拉取候选资源（评分/技能/负荷排序），供目标人员选择。
+  const { data: candidates } = useQuery({
+    queryKey: queryKeys.schedulerTaskCandidates(taskId),
+    queryFn: () => getTaskCandidates(taskId),
+    enabled: Boolean(taskId) && kindMeta?.needsTarget === 'person',
+    staleTime: 30_000,
+  });
+  const candidateOptions: TaskCandidateResource[] = candidates?.candidates ?? [];
 
   function buildAction(): PlanOverrideAction | null {
     if (!taskId) {
@@ -220,17 +230,53 @@ export function OverridePanel({ planId: externalPlanId }: OverridePanelProps): R
             {kindMeta && <p className="text-[11px] text-white/45">{kindMeta.description}</p>}
           </div>
 
-          {/* 目标人员（仅 person 类动作） */}
+          {/* 目标人员（仅 person 类动作）——v0.7 Batch7.3：候选资源选择器 */}
           {kindMeta?.needsTarget === 'person' && (
             <div className="space-y-1.5">
-              <label className="text-xs text-white/60">目标人员</label>
-              <input
-                aria-label="目标人员 ID"
-                value={targetPersonId}
-                onChange={(e) => setTargetPersonId(e.target.value)}
-                placeholder="输入人员 ID（如 p-001）"
-                className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
-              />
+              <label className="text-xs text-white/60">
+                目标人员
+                {candidateOptions.length > 0 && (
+                  <span className="text-white/35 ml-1">（按评分排序，含技能/负荷）</span>
+                )}
+              </label>
+              {candidateOptions.length > 0 ? (
+                <select
+                  aria-label="选择目标人员（候选）"
+                  value={targetPersonId}
+                  onChange={(e) => setTargetPersonId(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 focus:outline-none focus:border-white/30"
+                >
+                  <option value="">请选择候选人员</option>
+                  {candidateOptions
+                    .filter((c) => c.eligible)
+                    .map((c) => (
+                      <option key={c.personId} value={c.personId} className="bg-[hsl(220_14%_14%)]">
+                        {c.personName}（{c.personId.slice(0, 8)} · 技能
+                        {c.skillMatch ? '✓' : '✗'} · 负荷 {Math.round(c.workload * 100)}% ·{' '}
+                        {Math.round(c.distanceMeters)}m · 评分 {c.score.toFixed(1)}）
+                      </option>
+                    ))}
+                  {candidateOptions.filter((c) => !c.eligible).length > 0 && (
+                    <optgroup label="不可行候选（含排除原因）">
+                      {candidateOptions
+                        .filter((c) => !c.eligible)
+                        .map((c) => (
+                          <option key={c.personId} value={c.personId} className="bg-[hsl(220_14%_14%)]">
+                            {c.personName}（{c.reasons.slice(0, 2).join('/')}）
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
+                </select>
+              ) : (
+                <input
+                  aria-label="目标人员 ID"
+                  value={targetPersonId}
+                  onChange={(e) => setTargetPersonId(e.target.value)}
+                  placeholder="输入人员 ID（如 p-001）"
+                  className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
+                />
+              )}
             </div>
           )}
 

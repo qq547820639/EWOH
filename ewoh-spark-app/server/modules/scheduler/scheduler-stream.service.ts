@@ -27,10 +27,26 @@ export class SchedulerStreamService {
   private readonly logger = new Logger(SchedulerStreamService.name);
   private readonly subject = new Subject<SchedulingEvent>();
   private lastSequence = 0;
+  /** v0.7 Batch5.2：去重 Set 有界化（LRU 上限），防止长期运行内存无界增长。 */
   private readonly seenEventIds = new Set<string>();
+  private static readonly SEEN_CAP = 5000;
   private timer: NodeJS.Timeout | null = null;
 
   constructor(private readonly outboxService: OutboxService) {}
+
+  /** 记录已推送事件 id（有界去重：超上限淘汰最老一半）。 */
+  private rememberEventId(id: string): void {
+    this.seenEventIds.add(id);
+    if (this.seenEventIds.size > SchedulerStreamService.SEEN_CAP) {
+      // 防无界增长：清空最老一半（Set 保持插入序，近似 LRU）。
+      const drop = Math.floor(this.seenEventIds.size / 2);
+      let i = 0;
+      for (const oldId of this.seenEventIds) {
+        if (i++ >= drop) break;
+        this.seenEventIds.delete(oldId);
+      }
+    }
+  }
 
   /** 读取最近 limit 条事件并映射为 SchedulingEvent。 */
   async snapshot(limit: number): Promise<SchedulingEvent[]> {
@@ -95,7 +111,7 @@ export class SchedulerStreamService {
         const e = events[i];
         if (e.sequence > this.lastSequence && !this.seenEventIds.has(e.id)) {
           this.lastSequence = e.sequence;
-          this.seenEventIds.add(e.id);
+          this.rememberEventId(e.id);
           this.subject.next(this.toEvent(e));
         }
       }

@@ -152,8 +152,9 @@ export class SchedulerController {
   }
 
   /**
-   * v0.7 B2 事件驱动智能重排：注入真实业务事件（设备离线 / 路线阻断 / 安全事件等），
-   * 触发 ReplanCoordinator 局部重排（影响分析 → 冻结无关任务 → 求解 → 持久化 → 熔断）。
+   * v0.7 B2/Batch6.1 事件驱动智能重排：注入真实业务事件（设备离线 / 路线阻断 / 安全事件等）。
+   * - 事件 → 局部重排（影响分析 → 冻结无关任务 → 求解 → 持久化 → 熔断）；
+   * - 级联 → 基于最新世界状态检查路由/预占冲突并 scoped 重排（冷却去抖防风暴）。
    *
    * 与 POST /runs 的区别：
    * - /runs 是"手动/全量"调度（MANUAL 或任意 trigger 走全量求解）；
@@ -170,11 +171,7 @@ export class SchedulerController {
     if (!body?.trigger) {
       throw new BadRequestException('trigger is required');
     }
-    return this.replanCoordinatorService.handleTrigger(
-      body.trigger,
-      body.entityId ?? null,
-      request.userContext,
-    );
+    return this.schedulerService.injectSchedulingEvent(body, request.userContext);
   }
 
   /**
