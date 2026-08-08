@@ -103,6 +103,7 @@ function makeScheduler(seed: Parameters<typeof makeFakeDb>[0]) {
     routeCostProvider as unknown as RouteCostProvider,
     schedulingPolicyService,
     { deriveKpis: jest.fn() } as unknown as SchedulingFeedbackService,
+    { enqueue: jest.fn() } as never,
   );
 
   return { schedulerService, planService, db, state, snapshot, mocks: { policy, auditService, requestDatabaseContext } };

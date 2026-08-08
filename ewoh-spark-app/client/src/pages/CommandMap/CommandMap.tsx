@@ -11,6 +11,8 @@ import {
   Brain,
   X,
   PanelTop,
+  TriangleAlert,
+  SlidersHorizontal,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -67,6 +69,9 @@ import {
 const TimelinePanel = React.lazy(() => import('./panels/TimelinePanel'));
 const EventCenterPanel = React.lazy(() => import('./panels/EventCenterPanel'));
 const SchedulePanel = React.lazy(() => import('./panels/SchedulePanel'));
+// v0.7 A3：统一冲突中心 / 人工覆盖中心（接线已有 useSchedulerConflicts / usePlanOverrides hook）
+const ConflictCenterPanel = React.lazy(() => import('./panels/ConflictCenterPanel'));
+const OverridePanel = React.lazy(() => import('./panels/OverridePanel'));
 const WorkbenchPanel = React.lazy(() => import('./panels/WorkbenchPanel'));
 const ResourcePoolPanel = React.lazy(() => import('./panels/ResourcePoolPanel'));
 const TaskOrchestrationPanel = React.lazy(() => import('./panels/TaskOrchestrationPanel'));
@@ -90,6 +95,10 @@ const TABS: TabItem[] = [
   { key: 'timeline', label: '时间轴', icon: Clock },
   { key: 'events', label: '事件中心', icon: AlertCircle },
   { key: 'schedule', label: '调度方案', icon: GitBranch },
+  // v0.7 A3：统一冲突中心（消费 GET /api/scheduler/conflicts）
+  { key: 'conflicts', label: '冲突中心', icon: TriangleAlert },
+  // v0.7 A3：人工覆盖中心（消费 POST /plans/:id/overrides）
+  { key: 'override', label: '人工覆盖', icon: SlidersHorizontal },
   { key: 'workbench', label: '班组长工作台', icon: Hammer },
   { key: 'resource', label: '资源池', icon: Users },
   { key: 'orchestration', label: '任务编排', icon: Workflow },
@@ -806,6 +815,23 @@ const CommandMap = (): React.ReactElement => {
                 onSelectPlan={setActivePlan}
                 personnel={personnel ?? []}
               />
+            </React.Suspense>
+          )}
+          {/* v0.7 A3：统一冲突中心（消费 /api/scheduler/conflicts） */}
+          {activeTab === 'conflicts' && (
+            <React.Suspense fallback={<MapPanelFallback />}>
+              <ConflictCenterPanel
+                onReplan={(conflict) => {
+                  // 冲突 → 跳转调度方案面板并触发一次手动重排视野
+                  setActiveTab('schedule');
+                }}
+              />
+            </React.Suspense>
+          )}
+          {/* v0.7 A3：人工覆盖中心（消费 /plans/:id/overrides） */}
+          {activeTab === 'override' && (
+            <React.Suspense fallback={<MapPanelFallback />}>
+              <OverridePanel planId={activePlan?.planId ?? null} />
             </React.Suspense>
           )}
           {activeTab === 'workbench' && (

@@ -100,6 +100,7 @@ function makeSvc(state: Record<string, unknown>, plans: Array<Record<string, unk
     routeCostProvider as never,
     policyService as never,
     { deriveKpis: jest.fn() } as unknown as SchedulingFeedbackService,
+    { enqueue: jest.fn() } as never,
   );
 
   return { svc, mocks: { worldStateSnapshotService, policyService } };
@@ -239,5 +240,64 @@ describe('Task 2: GET /api/scheduler/conflicts/:id 冲突详情', () => {
   it('冲突不存在时抛 NotFoundException', async () => {
     const { svc } = makeSvc({});
     await expect(svc.getConflictDetail('CFL-nonexistent')).rejects.toThrow('Conflict CFL-nonexistent not found');
+  });
+});
+
+describe('v0.7 A2: reservation_expiring 预占过期预警', () => {
+  it('预占剩余时长低于阈值（15min）→ 产出 reservation_expiring 冲突', async () => {
+    const { svc } = makeSvc({
+      reservations: [
+        {
+          reservationId: 'R1',
+          resourceId: 'p1',
+          resourceType: 'person',
+          startMs: Date.now() - 20 * 60 * 1000,
+          endMs: Date.now() + 5 * 60 * 1000, // 剩余 5 分钟 < 15 分钟阈值
+        },
+      ],
+    });
+
+    const res = await svc.listConflicts({});
+    const expiring = res.conflicts.filter((c) => c.type === 'reservation_expiring');
+    expect(expiring.length).toBe(1);
+    expect(expiring[0].severity).toBe('medium');
+    expect(expiring[0].data.remainingMs).toBeLessThan(15 * 60 * 1000);
+    expect(expiring[0].data.thresholdMs).toBe(15 * 60 * 1000);
+  });
+
+  it('预占剩余时长充足（> 阈值）→ 不产出 reservation_expiring', async () => {
+    const { svc } = makeSvc({
+      reservations: [
+        {
+          reservationId: 'R2',
+          resourceId: 'p1',
+          resourceType: 'person',
+          startMs: Date.now() - 60 * 1000,
+          endMs: Date.now() + 60 * 60 * 1000, // 剩余 1 小时
+        },
+      ],
+    });
+
+    const res = await svc.listConflicts({});
+    const expiring = res.conflicts.filter((c) => c.type === 'reservation_expiring');
+    expect(expiring.length).toBe(0);
+  });
+
+  it('已过期预占（endMs < now）不重复预警（归 reservation_conflict 语义域）', async () => {
+    const { svc } = makeSvc({
+      reservations: [
+        {
+          reservationId: 'R3',
+          resourceId: 'p1',
+          resourceType: 'person',
+          startMs: Date.now() - 60 * 60 * 1000,
+          endMs: Date.now() - 30 * 60 * 1000, // 已过期
+        },
+      ],
+    });
+
+    const res = await svc.listConflicts({});
+    const expiring = res.conflicts.filter((c) => c.type === 'reservation_expiring');
+    expect(expiring.length).toBe(0);
   });
 });

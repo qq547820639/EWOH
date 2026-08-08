@@ -168,6 +168,7 @@ function makeScheduler(
     {} as never,
     policyService,
     feedbackService as unknown as SchedulingFeedbackService,
+    { enqueue: jest.fn() } as never,
   );
   return { svc, auditService, policyService, feedbackService };
 }

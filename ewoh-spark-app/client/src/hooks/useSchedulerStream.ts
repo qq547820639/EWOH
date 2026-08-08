@@ -159,6 +159,18 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
         const runId = event.entityId;
         if (runId) queryClient.invalidateQueries({ queryKey: queryKeys.schedulerRun(runId) });
       }
+
+      // v0.7 B3：新冲突实时推送 → 失效冲突查询（冲突中心立即刷新）。
+      if (type === 'conflict.detected') {
+        queryClient.invalidateQueries({ queryKey: queryKeys.schedulerConflicts() });
+      }
+      // v0.7 B3：执行偏差回填 → 失效方案详情（地图执行偏差图层数据更新）。
+      if (type === 'execution.deviation') {
+        const pid = (event.payload as Record<string, unknown>)?.planId;
+        if (typeof pid === 'string') {
+          queryClient.invalidateQueries({ queryKey: queryKeys.schedulerPlan(pid) });
+        }
+      }
     },
     [queryClient, triggerResync],
   );

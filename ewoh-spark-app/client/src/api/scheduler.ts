@@ -23,6 +23,7 @@ import type {
   SchedulingPolicyVersionSummary,
   SchedulingPolicyComparison,
   ResourceState,
+  SchedulingEventRequest,
 } from '@shared/api.interface';
 
 // ===== Scheduling V2 (智能调度工作台) =====
@@ -35,6 +36,22 @@ export async function createRun(
     url: '/api/scheduler/runs',
     method: 'POST',
     data: body ?? {},
+  });
+  return res.data;
+}
+
+/**
+ * v0.7 B2 事件驱动智能重排：注入真实业务事件（设备离线/路线阻断/安全事件等），
+ * 触发 ReplanCoordinator 局部重排（仅重排受影响任务，无关任务不 churn）。
+ * 幂等与冷却由后端 TriggerService 保证；失败自动熔断不抛错阻断事件源。
+ */
+export async function injectSchedulingEvent(
+  body: SchedulingEventRequest,
+): Promise<{ run: SchedulingRun | null; plans: SchedulingPlanV2[]; debounced: boolean }> {
+  const res = await axiosForBackend({
+    url: '/api/scheduler/events',
+    method: 'POST',
+    data: body,
   });
   return res.data;
 }

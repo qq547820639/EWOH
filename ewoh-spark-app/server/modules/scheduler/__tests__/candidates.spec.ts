@@ -62,6 +62,7 @@ function makeScheduler(overrides: {
     routeCostProvider as never,
     policy as never,
     { deriveKpis: jest.fn() } as unknown as SchedulingFeedbackService,
+    { enqueue: jest.fn() } as never,
   );
   return { service, routeCostProvider };
 }

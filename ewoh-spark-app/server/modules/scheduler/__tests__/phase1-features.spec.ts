@@ -242,6 +242,7 @@ describe('Task 1.7 废弃 legacy scheduler/plans API', () => {
       schedulerService as unknown as import('../scheduler.service').SchedulerService,
       stream as unknown as import('../scheduler-stream.service').SchedulerStreamService,
       { getUnifiedResourceState: jest.fn().mockResolvedValue([]) } as never,
+      { handleTrigger: jest.fn() } as never,
     );
     return { ctrl, schedulerService };
   }
@@ -278,6 +279,7 @@ describe('Task 1.7 废弃 legacy scheduler/plans API', () => {
       schedulerService,
       stream as unknown as import('../scheduler-stream.service').SchedulerStreamService,
       { getUnifiedResourceState: jest.fn().mockResolvedValue([]) } as never,
+      { handleTrigger: jest.fn() } as never,
     );
     const run: any = await ctrl.createRun({}, { userContext: testOrgContext() });
     expect(run).toEqual({ runId: 'R1' });
