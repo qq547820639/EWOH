@@ -25,6 +25,9 @@ test:  ## 运行 unittest 测试套件
 test-contract:  ## 运行契约测试（tests/，需 pytest；也可用 unittest 运行）
 	PYTHONPATH=src $(PYTHON) -m pytest tests/ -q
 
+contract-state-machine:  ## P1-contract：校验 Python 状态机与 contracts/state-machines/*.yaml 一致
+	PYTHONPATH=src $(PYTHON) -m pytest tests/test_state_machine_contract.py -q
+
 production-smoke:  ## P0-EDGE-006：Production Runtime Assembly 门禁（真实装配 + no-stub + Bus 契约）
 	PYTHONPATH=src $(PYTHON) -m pytest tests/test_production_assembly.py tests/test_bus_contract.py -q
 

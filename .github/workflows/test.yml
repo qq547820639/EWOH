@@ -34,6 +34,10 @@ jobs:
       - name: 运行仓库级契约测试
         run: make test-contract
 
+      - name: P1-contract 状态机一致性门禁（Python models vs contracts/state-machines）
+        # contract 为可执行 source：Python TASK/PLAN_TRANSITIONS 不得与 YAML 漂移
+        run: make contract-state-machine
+
       - name: P0-EDGE-006 Production Runtime Assembly 门禁（真实装配 + no-stub + Bus 契约）
         # 防止「unit tests 通过但 Production Runtime 只能跑 Stub」：
         # 真实装配不 mock，断言无 stub 组件、production 装配失败 fail-fast、
