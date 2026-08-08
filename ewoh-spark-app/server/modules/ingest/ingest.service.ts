@@ -7,7 +7,6 @@ import {
   ewohEvent,
   ewohSpatialEntity,
   ewohWorldState,
-  ewohSchedulePlan,
   ewohEnvironment,
 } from '@server/database/schema';
 import { eq, and, sql, inArray } from 'drizzle-orm';
@@ -22,6 +21,7 @@ import type {
   DataSourceType,
 } from '@shared/api.interface';
 import { RuleEngineService } from '../rule-engine/rule-engine.service';
+import { MesService } from '../mes/mes.service';
 
 /**
  * Ingestion 服务（真机接入网关 - 皮肤+肢体数据汇聚）
@@ -53,6 +53,7 @@ export class IngestService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly ruleEngine: RuleEngineService,
+    private readonly mesService: MesService,
   ) {}
 
   // ===== 外骨骼数据接入 =====
@@ -545,30 +546,35 @@ export class IngestService {
 
   // ===== MES 工单接入 =====
 
+  /**
+   * ADR-004：MES 工单不再直接写 scheduling 表。
+   * 转发到 canonical MesService.createWorkOrder（ewoh_schedule_task + step），
+   * MES 到 Scheduling V2 的衔接由调度侧显式触发（SchedulerService.createRun），
+   * Ingest 层不生成任何 scheduling truth。
+   *
+   * @deprecated 兼容路径：保留 HTTP 入口，语义改为「创建 MES 工单」而非「写调度方案」。
+   */
   async ingestMes(order: MesOrderDto): Promise<IngestResponse> {
-    const sourceType: DataSourceType = order.source_type ?? 'real';
     const recordId = order.record_id ?? randomUUID();
-    const now = new Date();
     try {
-      // MES 工单 → ewoh_schedule_plan（strategy='mes_order'，status='proposed'）
-      const planId = `MES-${order.order_id}`;
-      await this.db
-        .insert(ewohSchedulePlan)
-        .values({
-          planId,
-          planName: `MES工单 ${order.order_id}`,
-          strategy: 'mes_order',
-          status: 'proposed',
-          reason: `产品编码: ${order.product_code ?? '-'}，数量: ${order.quantity ?? 0}`,
-          createdAt: now,
-        })
-        .onConflictDoUpdate({
-          target: ewohSchedulePlan.planId,
-          set: {
-            reason: `产品编码: ${order.product_code ?? '-'}，数量: ${order.quantity ?? 0}，状态: ${order.status ?? '-'}`,
-            updatedAt: now,
-          },
-        });
+      await this.mesService.createWorkOrder(
+        {
+          orderId: order.order_id,
+          title: `MES工单 ${order.order_id}`,
+          productCode: order.product_code,
+          orderQty: order.quantity,
+          priority: order.priority ?? 'medium',
+          planStart: order.planned_start,
+          planEnd: order.planned_end,
+          steps: [
+            {
+              name: 'MES 工单默认工序',
+              instruction: `产品编码: ${order.product_code ?? '-'}，数量: ${order.quantity ?? 0}`,
+            },
+          ],
+        },
+        { userId: 'ingest', primaryOrgId: '' },
+      );
       return {
         accepted: true,
         skipped: false,
@@ -577,7 +583,7 @@ export class IngestService {
         events_triggered: 0,
       };
     } catch (error) {
-      this.logger.error(`写入 MES 工单失败 order=${order.order_id}`, error);
+      this.logger.error(`创建 MES 工单失败 order=${order.order_id}`, error);
       return {
         accepted: false,
         skipped: false,

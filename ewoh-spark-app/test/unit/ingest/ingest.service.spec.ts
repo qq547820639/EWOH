@@ -40,6 +40,13 @@ function createRuleEngine() {
   };
 }
 
+/** ADR-004：MesService mock（ingestMes 转发到 createWorkOrder）。 */
+function createMesService() {
+  return {
+    createWorkOrder: jest.fn().mockResolvedValue({ workOrder: { scheduleTaskId: 'WO-TEST' }, steps: [], materials: [] }),
+  };
+}
+
 describe('IngestService canonical UnifiedExoFrame mapping', () => {
   it('maps nested pose/load/device/quality fields into telemetry and device rows', async () => {
     const { db, insertRows } = createIngestDb([[{}], []]);
@@ -47,6 +54,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
     const service = new IngestService(
       db as never,
       ruleEngine as unknown as never,
+      createMesService() as unknown as never,
     );
 
     const result = await service.ingestExoskeleton({
@@ -111,6 +119,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
     const service = new IngestService(
       db as never,
       createRuleEngine() as unknown as never,
+      createMesService() as unknown as never,
     );
 
     await service.ingestExoskeleton({
@@ -134,6 +143,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
     const service = new IngestService(
       db as never,
       createRuleEngine() as unknown as never,
+      createMesService() as unknown as never,
     );
 
     const result = await service.ingestExoskeleton({
@@ -155,6 +165,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
     const service = new IngestService(
       db as never,
       createRuleEngine() as unknown as never,
+      createMesService() as unknown as never,
     );
 
     const result = await service.ingestExoskeleton({
@@ -175,6 +186,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
     const service = new IngestService(
       db as never,
       createRuleEngine() as unknown as never,
+      createMesService() as unknown as never,
     );
 
     const result = await service.ingestExoskeleton({
@@ -193,7 +205,8 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
     const service = new IngestService(
       {} as never,
       createRuleEngine() as unknown as never,
-    );
+      createMesService() as unknown as never,
+    );;
 
     await expect(
       service.ingestExoskeleton({
@@ -266,7 +279,7 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       existingEntities: ['EXO-BATCH-1'],
       existingRawRefs: [],
     });
-    const service = new IngestService(db as never, createRuleEngine() as unknown as never);
+    const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never);
 
     const result = await service.ingestExoskeletonBatch([
       makeFrame({ entity_id: 'EXO-BATCH-1' }),
@@ -290,7 +303,7 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       existingEntities: ['EXO-BATCH-1'],
       existingRawRefs: ['dup-raw-ref'],
     });
-    const service = new IngestService(db as never, createRuleEngine() as unknown as never);
+    const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never);
 
     const result = await service.ingestExoskeletonBatch([
       makeFrame({ entity_id: 'EXO-BATCH-1', raw_ref: 'dup-raw-ref' }),
@@ -310,7 +323,7 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       existingEntities: ['EXO-BATCH-1'],
       existingRawRefs: [],
     });
-    const service = new IngestService(db as never, createRuleEngine() as unknown as never);
+    const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never);
 
     const result = await service.ingestExoskeletonBatch([
       makeFrame({ entity_id: 'EXO-BATCH-1', event_time: future }),
@@ -328,7 +341,7 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       existingEntities: ['EXO-BATCH-1'],
       existingRawRefs: [],
     });
-    const service = new IngestService(db as never, createRuleEngine() as unknown as never);
+    const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never);
 
     const result = await service.ingestExoskeletonBatch([
       makeFrame({ entity_id: 'EXO-BATCH-MISSING' }),
@@ -342,5 +355,53 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
     expect(result.results[1].accepted).toBe(true);
     const telemetryInsert = insertCalls.find((c) => c.table === ewohTelemetry);
     expect(telemetryInsert?.rows).toHaveLength(1);
+  });
+
+  it('ADR-004：ingestMes 转发到 canonical MesService，不再写 scheduling 表', async () => {
+    const { db, insertCalls } = createBatchDb({
+      existingEntities: [],
+      existingRawRefs: [],
+    });
+    const mes = createMesService();
+    const service = new IngestService(
+      db as never,
+      createRuleEngine() as unknown as never,
+      mes as unknown as never,
+    );
+
+    const result = await service.ingestMes({
+      order_id: 'WO-MES-1',
+      product_code: 'P-1',
+      quantity: 10,
+      priority: 'high',
+    });
+
+    expect(result.accepted).toBe(true);
+    // 不再写 ewoh_schedule_plan（无任何 insert 落到 scheduling 表）
+    expect(insertCalls.length).toBe(0);
+    // 转发到 MesService.createWorkOrder
+    expect(mes.createWorkOrder).toHaveBeenCalledTimes(1);
+    const body = mes.createWorkOrder.mock.calls[0][0];
+    expect(body.orderId).toBe('WO-MES-1');
+    expect(body.productCode).toBe('P-1');
+    expect(body.orderQty).toBe(10);
+    expect(body.priority).toBe('high');
+    expect(body.steps.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('ADR-004：ingestMes 转发失败 → accepted=false（不静默成功）', async () => {
+    const { db } = createBatchDb({ existingEntities: [], existingRawRefs: [] });
+    const mes = {
+      createWorkOrder: jest.fn().mockRejectedValue(new Error('mes down')),
+    };
+    const service = new IngestService(
+      db as never,
+      createRuleEngine() as unknown as never,
+      mes as unknown as never,
+    );
+
+    const result = await service.ingestMes({ order_id: 'WO-MES-2' });
+    expect(result.accepted).toBe(false);
+    expect(result.data_quality).toBe('invalid');
   });
 });
