@@ -18,8 +18,8 @@ describe('constraints.ts', () => {
       }
     });
 
-    it('全部 6 个软约束均被判定为 supported', () => {
-      expect(SUPPORTED_SOFT_CONSTRAINTS).toHaveLength(6);
+    it('全部 9 个软约束均被判定为 supported', () => {
+      expect(SUPPORTED_SOFT_CONSTRAINTS).toHaveLength(9);
       for (const type of SUPPORTED_SOFT_CONSTRAINTS) {
         const result = checkConstraintSupported({ type, taskId: 't1' });
         expect(result.supported).toBe(true);

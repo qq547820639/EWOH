@@ -33,7 +33,7 @@ export const SUPPORTED_HARD_CONSTRAINTS: readonly SchedulingHardConstraintType[]
   'LOCKED_ASSIGNMENT',
 ];
 
-/** 求解器应用的软约束集合（全部 6 个，贡献到目标评分）。 */
+/** 求解器应用的软约束集合（全部 9 个，贡献到目标评分）。 */
 export const SUPPORTED_SOFT_CONSTRAINTS: readonly SchedulingSoftConstraintType[] = [
   'MIN_TRAVEL_TIME',
   'BALANCE_WORKLOAD',
@@ -41,6 +41,9 @@ export const SUPPORTED_SOFT_CONSTRAINTS: readonly SchedulingSoftConstraintType[]
   'MIN_WAIT',
   'PREFER_SAME_TEAM',
   'PREFER_NEARBY_RESOURCE',
+  'EXCLUDED_RESOURCE',
+  'PREFERRED_RESOURCE',
+  'MANUAL_BOOST',
 ];
 
 /** 启发式求解器暂未实现的硬约束（当前为空，为未来约束预留）。 */

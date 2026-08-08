@@ -1,5 +1,10 @@
 import type { ApiNamespace } from '../api/namespaces';
-import type { DeviceSearchQuery, PersonnelQuery } from '@shared/api.interface';
+import type {
+  DeviceSearchQuery,
+  PersonnelQuery,
+  ListRunsRequest,
+  ConflictsListRequest,
+} from '@shared/api.interface';
 
 export const queryKeys = {
   org: (orgId: string) => ['org', orgId] as const,
@@ -27,8 +32,22 @@ export const queryKeys = {
   schedulerPlan: (planId: string) => ['scheduler-plan', planId] as const,
   /** 单个调度运行记录（V2）。 */
   schedulerRun: (runId: string) => ['scheduler-run', runId] as const,
+  /** 调度运行历史分页列表 + 活跃方案（V2）。 */
+  schedulerRuns: (filters?: ListRunsRequest) => ['scheduler', 'runs', filters ?? {}] as const,
+  /** map 与调度共享的当前世界状态快照（V2）。 */
+  schedulerSnapshot: ['scheduler', 'snapshot'] as const,
   /** 单个任务的候选资源（V2，后端资格判定 + 路径可行性计算）。 */
   schedulerTaskCandidates: (taskId: string) => ['scheduler-task-candidates', taskId] as const,
+  /** 统一调度冲突列表（V2 冲突中心 / 命令图冲突面板）。 */
+  schedulerConflicts: (filters?: ConflictsListRequest) => ['scheduler', 'conflicts', filters ?? {}] as const,
+  /** 单个调度冲突详情（V2）。 */
+  schedulerConflict: (conflictId: string) => ['scheduler-conflict', conflictId] as const,
+  /** 当前生效调度策略 + 配置（Task 6）。 */
+  schedulerPolicy: ['scheduler-policy'] as const,
+  /** 全部策略版本列表（Task 6）。 */
+  schedulerPolicyVersions: ['scheduler-policy-versions'] as const,
+  /** 候选策略版本 vs 生效版本的 shadow 对比（Task 6）。 */
+  schedulerPolicyComparison: (version: number) => ['scheduler-policy', 'compare', version] as const,
   commandCenter: ['command-center'] as const,
   digitalWorld: ['digital-world'] as const,
   personnel: (query?: PersonnelQuery) => ['personnel', query ?? {}] as const,

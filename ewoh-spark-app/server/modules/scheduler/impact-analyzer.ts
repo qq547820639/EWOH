@@ -13,6 +13,7 @@ export type ImpactType =
   | 'RESERVATION_CONFLICT'
   | 'PLAN_STALE'
   | 'ROUTE_BLOCKED'
+  | 'ROUTE_CONGESTED'
   | 'DEVICE_OFFLINE'
   | 'DEVICE_LOW_BATTERY'
   | 'PERSON_UNAVAILABLE'
@@ -66,6 +67,13 @@ const IMPACT_META: Record<ImpactType, Omit<ImpactResult, 'affectedTaskIds' | 'de
     type: 'ROUTE_BLOCKED',
     severity: 'high',
     classification: 'hard_conflict',
+    recommendedAction: 'replan_partial',
+    canAutoReplan: true,
+  },
+  ROUTE_CONGESTED: {
+    type: 'ROUTE_CONGESTED',
+    severity: 'medium',
+    classification: 'soft_deviation',
     recommendedAction: 'replan_partial',
     canAutoReplan: true,
   },
@@ -168,6 +176,7 @@ export class ImpactAnalyzer {
           break;
         }
         case 'ROUTE_BLOCKED':
+        case 'ROUTE_CONGESTED':
           candidates = candidates.filter((t) => t.zoneId === entityId);
           break;
         case 'RESERVATION_CONFLICT':

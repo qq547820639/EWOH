@@ -14,7 +14,7 @@ import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 
-/** 支持的 10 种调度触发类型。 */
+/** 支持的触发类型（含路由/预占扩展）。 */
 export const SCHEDULING_TRIGGER_TYPES: SchedulingTrigger[] = [
   'MANUAL',
   'TASK_CREATED',
@@ -26,6 +26,9 @@ export const SCHEDULING_TRIGGER_TYPES: SchedulingTrigger[] = [
   'DEADLINE_AT_RISK',
   'SAFETY_EVENT',
   'ZONE_RESTRICTED',
+  'ROUTE_BLOCKED',
+  'ROUTE_CONGESTED',
+  'RESERVATION_CONFLICT',
 ];
 
 /**

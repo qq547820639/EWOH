@@ -1,5 +1,6 @@
 import { SchedulerService } from '../scheduler.service';
 import { EligibilityService } from '../eligibility.service';
+import { SchedulingFeedbackService } from '../scheduling-feedback.service';
 import {
   person as seedPerson,
   task as seedTask,
@@ -60,6 +61,7 @@ function makeScheduler(overrides: {
     new EligibilityService(),
     routeCostProvider as never,
     policy as never,
+    { deriveKpis: jest.fn() } as unknown as SchedulingFeedbackService,
   );
   return { service, routeCostProvider };
 }

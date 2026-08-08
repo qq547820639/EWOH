@@ -1114,7 +1114,10 @@ export type SchedulingTrigger =
   | 'BOTTLENECK_DETECTED'
   | 'DEADLINE_AT_RISK'
   | 'SAFETY_EVENT'
-  | 'ZONE_RESTRICTED';
+  | 'ZONE_RESTRICTED'
+  | 'ROUTE_BLOCKED'
+  | 'ROUTE_CONGESTED'
+  | 'RESERVATION_CONFLICT';
 
 /** 世界状态快照（V2） */
 /** 硬约束类型（求解器必须真实执行，否则返回 UNSUPPORTED_CONSTRAINT）。 */
@@ -1143,7 +1146,10 @@ export type SchedulingSoftConstraintType =
   | 'MIN_CHANGE'
   | 'MIN_WAIT'
   | 'PREFER_SAME_TEAM'
-  | 'PREFER_NEARBY_RESOURCE';
+  | 'PREFER_NEARBY_RESOURCE'
+  | 'EXCLUDED_RESOURCE'
+  | 'PREFERRED_RESOURCE'
+  | 'MANUAL_BOOST';
 
 /** 统一调度约束：接口接受的所有约束都必须被求解器执行或显式拒绝。 */
 export interface SchedulingConstraint {
@@ -1161,6 +1167,82 @@ export interface SchedulingConstraint {
   /** LOCKED_TIME / MIN_BATTERY 等参数。 */
   value?: number;
   hard?: boolean;
+  /** 约束操作者（人工干预来源）。 */
+  operator?: string;
+  /** 人工干预原因。 */
+  reason?: string;
+  /** 生效起始时间（epoch ms），为空表示立即生效。 */
+  validFrom?: number;
+  /** 失效时间（epoch ms），为空表示持续生效。 */
+  expiresAt?: number;
+  /** 关联方案的快照版本（人工 override 时继承自被覆盖方案）。 */
+  snapshotVersion?: string;
+}
+
+/** 人工覆盖动作类型（BrainPanel / 资源池 / 命令图人工干预）。 */
+export type PlanOverrideKind =
+  | 'LOCK_PERSON'
+  | 'LOCK_DEVICE'
+  | 'LOCK_STATION'
+  | 'LOCK_TIME'
+  | 'LOCK_ASSIGNMENT'
+  | 'EXCLUDE_RESOURCE'
+  | 'PREFER_RESOURCE'
+  | 'BOOST'
+  | 'ADJUST_TIME';
+
+/** 单个手工覆盖动作：由服务转换为 SchedulingConstraint 并触发 V2 重排。 */
+export interface PlanOverrideAction {
+  kind: PlanOverrideKind;
+  taskId: string;
+  personId?: string;
+  deviceId?: string;
+  stationId?: string;
+  zoneId?: string;
+  /** ADJUST_TIME / LOCK_TIME 的调整后时间窗（epoch ms）。 */
+  startMs?: number;
+  endMs?: number;
+  reason?: string;
+  validFrom?: number;
+  expiresAt?: number;
+}
+
+/** 应用人工覆盖请求（POST /plans/:planId/overrides）。 */
+export interface PlanOverrideRequest {
+  actions: PlanOverrideAction[];
+  operator?: string;
+  reason?: string;
+}
+
+/** 覆盖前后方案差异摘要。 */
+export interface PlanOverrideDiffSummary {
+  /** 分配发生变化（换人或换时机）的任务 id。 */
+  changedTaskIds: string[];
+  /** 新方案新增分配的任务 id。 */
+  addedTaskIds: string[];
+  /** 新方案移除分配的任务 id。 */
+  removedTaskIds: string[];
+  /** 指标增量（after - before）。 */
+  metricsDelta: {
+    lateMinutes: number;
+    walkingMeters: number;
+    stationWaitMinutes: number;
+    maxWorkload: number;
+    changeCost: number;
+  };
+}
+
+/** 应用人工覆盖响应：before/after 完整方案 + 差异汇总 + 落库约束。 */
+export interface PlanOverrideResponse {
+  /** 覆盖后新方案 id（＝重排产出的新方案）。 */
+  planId: string;
+  operator: string;
+  reason?: string;
+  /** 已转换为 SchedulingConstraint 并落库的约束。 */
+  appliedConstraints: SchedulingConstraint[];
+  before: SchedulingPlanV2;
+  after: SchedulingPlanV2;
+  diff: PlanOverrideDiffSummary;
 }
 
 /**
@@ -1677,6 +1759,35 @@ export interface SchedulingPolicyConfig {
   };
 }
 
+/** 调度策略版本列表项（Task 6：命令图调度闭环，候选策略注册/对比/激活）。 */
+export interface SchedulingPolicyVersionSummary {
+  configVersion: number;
+  active: boolean;
+  updatedBy: string | null;
+  createdAt: string;
+}
+
+/**
+ * 候选策略版本 vs 当前生效版本的 shadow 对比结果（Task 6，只读）。
+ * 仅用于离线评估（反馈 KPI + 目标权重对比），绝不激活任何版本。
+ */
+export interface SchedulingPolicyComparison {
+  candidateVersion: number;
+  activeVersion: number;
+  /** 反馈驱动的离线 KPI 评估基础（由 SchedulingFeedback 派生）。 */
+  feedbackKpis: SchedulingFeedbackKpis;
+  /** 候选与生效版本的参数差异（仅含相异字段，键为 config 标量字段或 priority.* 子字段）。 */
+  paramDeltas: Record<string, { active: unknown; candidate: unknown }>;
+  /** 基于求解目标权重（buildPolicy）的归一化 composite objective 估计。 */
+  objective: {
+    active: number;
+    candidate: number;
+  };
+  verdict: string;
+  /** 恒为 true：本接口为 shadow/只读，绝不修改生产策略。 */
+  readOnly: true;
+}
+
 /** 下发结果（V2 DispatchCoordinator）。 */
 export interface DispatchCoordinatorResult {
   planId: string;
@@ -1827,6 +1938,29 @@ export interface CreateRunRequest {
   reason?: string;
 }
 
+/** 查询调度运行历史请求（V2） */
+export interface ListRunsRequest {
+  /** 按运行状态过滤（queued/running/succeeded/failed）。 */
+  status?: string;
+  /** 页码（从 1 开始）。 */
+  page?: number;
+  /** 每页条数。 */
+  pageSize?: number;
+  /** 起始时间过滤（ISO 字符串，按 createdAt）。 */
+  from?: string;
+  /** 结束时间过滤（ISO 字符串，按 createdAt）。 */
+  to?: string;
+}
+
+/** 查询调度运行历史响应（V2）：运行记录分页 + 当前活跃方案列表。 */
+export interface ListRunsResponse {
+  runs: SchedulingRun[];
+  plans: SchedulingPlanV2[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 /** 审批方案请求（V2） */
 export interface ApprovePlanRequest {
   version: number;
@@ -1852,4 +1986,60 @@ export interface ReplanRequest {
 export interface CalculateRouteRequest {
   personId: string;
   taskId: string;
+}
+
+/** 调度冲突严重度。 */
+export type ConflictSeverity = 'critical' | 'high' | 'medium' | 'low';
+
+/** 调度冲突作用域。 */
+export type SchedulingConflictScope = 'task' | 'resource' | 'plan' | 'route' | 'global';
+
+/** 统一调度冲突类型（命令图冲突面板 / 冲突中心）。 */
+export type SchedulingConflictType =
+  | 'double_booking'
+  | 'resource_stale'
+  | 'person_unavailable'
+  | 'device_offline'
+  | 'low_battery'
+  | 'predecessor_violation'
+  | 'station_capacity'
+  | 'forbidden_zone'
+  | 'safety_block'
+  | 'blocked_route'
+  | 'stale_plan'
+  | 'reservation_conflict';
+
+/** 统一调度冲突（V2）：由真实世界状态/预占/方案聚合推导，不虚构。 */
+export interface SchedulingConflict {
+  /** 稳定冲突 id（基于内容哈希，跨查询一致）。 */
+  conflictId: string;
+  type: SchedulingConflictType;
+  severity: ConflictSeverity;
+  scope: SchedulingConflictScope;
+  resourceId: string | null;
+  resourceType: string | null;
+  taskIds: string[];
+  message: string;
+  /** 建议处置动作（改派 / 释放预占 / 绕行 / 重排等），无则 null。 */
+  resolution: string | null;
+  /** ISO 时间戳。 */
+  createdAt: string;
+  /** 冲突所基于的快照版本；当前实时状态为 'CURRENT'。 */
+  snapshotVersion: string | null;
+  /** 附加证据（预占 id、电量、状态等）。 */
+  data?: Record<string, unknown>;
+}
+
+/** 查询调度冲突请求（V2）。 */
+export interface ConflictsListRequest {
+  type?: SchedulingConflictType;
+  severity?: ConflictSeverity;
+  scope?: SchedulingConflictScope;
+  resourceId?: string;
+}
+
+/** 查询调度冲突响应（V2）。 */
+export interface ConflictsListResponse {
+  conflicts: SchedulingConflict[];
+  total: number;
 }

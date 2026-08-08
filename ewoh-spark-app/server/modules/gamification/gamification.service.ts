@@ -1,6 +1,7 @@
 import { Injectable, Inject, Optional, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { ArkService } from '../ai/ark.service';
+import { SchedulerService } from '../scheduler/scheduler.service';
 import {
   ewohDevice,
   ewohTelemetry,
@@ -41,6 +42,7 @@ export class GamificationService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     @Optional() private readonly ark?: ArkService,
+    private readonly schedulerService?: SchedulerService,
   ) {}
 
   // ===== G3.1 玩家角色系统 =====
@@ -703,30 +705,26 @@ export class GamificationService {
     body: ApplyBrainSuggestionRequest,
   ): Promise<ApplyBrainSuggestionResult> {
     const operator = body.operator ?? 'supervisor';
-    const now = new Date();
-    const planId = `BRAIN-${Date.now()}-${this.randomSuffix(4)}`;
     const strategy = this.brainStrategyMap()[body.type] ?? 'load_balance';
     const planName = `大脑建议-${(body.title || body.type).slice(0, 20)}`;
 
-    await this.db.insert(ewohSchedulePlan).values({
-      planId,
-      planName,
-      strategy,
-      status: 'proposed',
-      taktImprovement: 0,
-      highLoadPersons: body.type === 'load_balance' ? body.affectedEntities.length : 0,
-      lowBatteryRisk: body.type === 'battery_swap' ? body.affectedEntities.length : 0,
-      affectedPersons: body.affectedEntities.length,
-      metricsJson: {
-        affectedEntities: body.affectedEntities,
-        confidence: body.confidence,
-        expectedBenefit: body.expectedBenefit,
-        source: 'brain',
-        suggestionType: body.type,
-      } as Record<string, unknown>,
-      reason: body.description ?? body.title ?? '',
-      createdAt: now,
+    // 通过 Scheduling V2 内核生成 run + plan（Task 3.3：不再把方案直写 legacy 表、绕过 Scheduler）。
+    if (!this.schedulerService) {
+      throw new BadRequestException('调度内核不可用，无法采纳大脑建议');
+    }
+    const { run, plans, debounced } = await this.schedulerService.createRun({
+      trigger: 'MANUAL',
+      entityId: body.type ? `brain:${body.type}` : undefined,
+      reason: body.title,
     });
+    if (debounced || !run || plans.length === 0) {
+      this.logger.warn(
+        `applyBrainSuggestion 触发被去抖合并（type=${body.type}），未生成新方案`,
+      );
+      throw new BadRequestException('调度已在进行中，请稍后再试');
+    }
+    const plan = plans[0];
+    const planId = plan.planId;
 
     await this.db.insert(ewohScheduleAudit).values({
       auditId: `AUDIT-${Date.now()}-${this.randomSuffix(4)}`,
@@ -734,11 +732,11 @@ export class GamificationService {
       action: 'brain_apply',
       operator,
       reason: `采纳大脑建议：${body.title}`,
-      createdAt: now,
+      createdAt: new Date(),
     });
 
     this.logger.log(`applyBrainSuggestion planId=${planId} strategy=${strategy} operator=${operator}`);
-    return { planId, planName, strategy, status: 'proposed' };
+    return { planId, planName, strategy, status: plan.status };
   }
 
   /** 基于实时数据构造规则建议（不调用 LLM）。 */

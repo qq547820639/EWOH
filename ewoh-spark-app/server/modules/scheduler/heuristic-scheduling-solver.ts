@@ -43,6 +43,9 @@ interface Candidate {
   alternatives: Array<Record<string, unknown>>;
 }
 
+/** PREFERRED_RESOURCE 软性偏好折算的分值（分钟，越小越优）。 */
+const PREFERENCE_BONUS_MINUTES = 30;
+
 /**
  * 确定性启发式求解器（无 LLM）。
  * 输入世界状态快照 + 资格服务 + 路由成本提供者 + 版本化策略 + 锁定约束，
@@ -102,6 +105,39 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     let minBatteryOverride: number | null = null;
     let maxLoadOverride: number | null = null;
 
+    // 人工资源排除/偏好（EXCLUDED_RESOURCE / PREFERRED_RESOURCE，软约束）。
+    // 记录 taskId -> Set<resourceId>；taskId 为空时视为全局排除/偏好。
+    const excludedPersonByTask = new Map<string, Set<string>>();
+    const excludedDeviceByTask = new Map<string, Set<string>>();
+    const excludedStationByTask = new Map<string, Set<string>>();
+    const preferredPersonByTask = new Map<string, Set<string>>();
+    const preferredDeviceByTask = new Map<string, Set<string>>();
+    const preferredStationByTask = new Map<string, Set<string>>();
+    const excludedPersonGlobal = new Set<string>();
+    const excludedDeviceGlobal = new Set<string>();
+    const excludedStationGlobal = new Set<string>();
+    const preferredPersonGlobal = new Set<string>();
+    const preferredDeviceGlobal = new Set<string>();
+    const preferredStationGlobal = new Set<string>();
+
+    const addPerTask = (
+      map: Map<string, Set<string>>,
+      globalSet: Set<string>,
+      taskId: string | undefined,
+      resourceId: string,
+    ) => {
+      if (taskId) {
+        let s = map.get(taskId);
+        if (!s) {
+          s = new Set();
+          map.set(taskId, s);
+        }
+        s.add(resourceId);
+      } else {
+        globalSet.add(resourceId);
+      }
+    };
+
     for (const c of constraints) {
       const support = checkConstraintSupported(c);
       if (!support.supported) {
@@ -138,14 +174,21 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         case 'MAX_WORKLOAD':
           if (c.value != null) maxLoadOverride = c.value;
           break;
+        case 'EXCLUDED_RESOURCE':
+          if (c.personId) addPerTask(excludedPersonByTask, excludedPersonGlobal, c.taskId, c.personId);
+          if (c.deviceId) addPerTask(excludedDeviceByTask, excludedDeviceGlobal, c.taskId, c.deviceId);
+          if (c.stationId) addPerTask(excludedStationByTask, excludedStationGlobal, c.taskId, c.stationId);
+          break;
+        case 'PREFERRED_RESOURCE':
+          if (c.personId) addPerTask(preferredPersonByTask, preferredPersonGlobal, c.taskId, c.personId);
+          if (c.deviceId) addPerTask(preferredDeviceByTask, preferredDeviceGlobal, c.taskId, c.deviceId);
+          if (c.stationId) addPerTask(preferredStationByTask, preferredStationGlobal, c.taskId, c.stationId);
+          break;
         default:
           break;
       }
-      // MANUAL_BOOST 作为软性人工加急（约束类型为演进预留，可能不在联合中）。
-      if (
-        (c.type === ('MANUAL_BOOST' as SchedulingConstraint['type'])) &&
-        c.taskId
-      ) {
+      // MANUAL_BOOST 作为软性人工加急（约束类型已进入软约束联合）。
+      if (c.type === 'MANUAL_BOOST' && c.taskId) {
         manualBoostTasks.add(c.taskId);
       }
     }
@@ -282,7 +325,13 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       const candidates: Candidate[] = [];
 
       const candidatePersons = snapshot.persons.filter((p) =>
-        this.personMatchesLock(p.id, task.id, lockedPersonByTask),
+        this.personMatchesLock(p.id, task.id, lockedPersonByTask) &&
+        !this.isExcludedResource(
+          task.id,
+          p.id,
+          excludedPersonByTask,
+          excludedPersonGlobal,
+        ),
       );
 
       for (const person of candidatePersons) {
@@ -311,6 +360,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           lockedDeviceByTask,
           effectiveMinBattery,
           task.requiredDeviceCapabilities,
+          excludedDeviceByTask,
+          excludedDeviceGlobal,
         );
         for (const device of deviceCandidates) {
           const travelMs = routeCost.etaSeconds * 1000;
@@ -424,6 +475,25 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
             riskMs,
             energyPenalty,
           );
+
+          // 人工偏好（PREFERRED_RESOURCE）：命中偏好资源时降低候选成本（软性加分）。
+          const preferred =
+            this.isPreferredResource(
+              task.id,
+              person.id,
+              preferredPersonByTask,
+              preferredPersonGlobal,
+            ) ||
+            (device != null &&
+              this.isPreferredResource(
+                task.id,
+                device.id,
+                preferredDeviceByTask,
+                preferredDeviceGlobal,
+              ));
+          if (preferred) {
+            score.total = Math.max(0, score.total - PREFERENCE_BONUS_MINUTES);
+          }
 
           const reasons = [
             ...priority.explanation,
@@ -680,6 +750,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     locked: Map<string, string>,
     minBatteryPct: number,
     requiredCapabilities?: string[],
+    excludedPerTask?: Map<string, Set<string>>,
+    excludedGlobal?: Set<string>,
   ): Array<WorldStateSnapshot['devices'][number] | null> {
     const lockedDevice = locked.get(taskId);
     if (lockedDevice) {
@@ -691,7 +763,13 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       (d) =>
         d.online &&
         d.batteryPct >= minBatteryPct &&
-        caps.every((cap) => (d.capabilities ?? []).includes(cap)),
+        caps.every((cap) => (d.capabilities ?? []).includes(cap)) &&
+        !this.isExcludedResource(
+          taskId,
+          d.id,
+          excludedPerTask ?? new Map(),
+          excludedGlobal ?? new Set(),
+        ),
     );
     // 任务要求设备能力时：仅返回具备全部能力的设备，绝不回退到纯手工作业（null）。
     // 无能力要求时允许 null（人员纯手工作业）。
@@ -700,6 +778,26 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       : onlineDevices.length > 0
         ? onlineDevices
         : [null];
+  }
+
+  /** 判断资源是否被 EXCLUDED_RESOURCE 排除（命中任务级或全局排除集）。 */
+  private isExcludedResource(
+    taskId: string,
+    resourceId: string,
+    perTask: Map<string, Set<string>>,
+    globalSet: Set<string>,
+  ): boolean {
+    return globalSet.has(resourceId) || perTask.get(taskId)?.has(resourceId) === true;
+  }
+
+  /** 判断资源是否被 PREFERRED_RESOURCE 标记为偏好（命中任务级或全局偏好集）。 */
+  private isPreferredResource(
+    taskId: string,
+    resourceId: string,
+    perTask: Map<string, Set<string>>,
+    globalSet: Set<string>,
+  ): boolean {
+    return globalSet.has(resourceId) || perTask.get(taskId)?.has(resourceId) === true;
   }
 
   private earliestStart(

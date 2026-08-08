@@ -17,8 +17,9 @@ import {
   ewohTelemetry,
   ewohEvent,
   ewohSchedulingRun,
+  ewohSchedulingConstraint,
 } from '@server/database/schema';
-import { eq, desc, and, sql, gte, inArray } from 'drizzle-orm';
+import { eq, desc, and, sql, gte, lte, inArray, type SQL } from 'drizzle-orm';
 import type {
   SchedulePlan,
   ScheduleAudit,
@@ -34,6 +35,24 @@ import type {
   CalculateRouteRequest,
   TaskCandidatesResponse,
   TaskCandidateResource,
+  ListRunsRequest,
+  ListRunsResponse,
+  WorldStateSnapshot,
+  SchedulingConflict,
+  SchedulingConflictType,
+  ConflictSeverity,
+  SchedulingConflictScope,
+  ConflictsListRequest,
+  ConflictsListResponse,
+  SchedulingPolicyConfig,
+  SchedulingPolicy,
+  SchedulingPolicyVersionSummary,
+  SchedulingPolicyComparison,
+  SchedulingConstraint,
+  PlanOverrideRequest,
+  PlanOverrideResponse,
+  PlanOverrideKind,
+  PlanOverrideDiffSummary,
 } from '@shared/api.interface';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { AuditService } from '../shared/audit.service';
@@ -47,6 +66,7 @@ import { RoutingService } from './routing.service';
 import { EligibilityService } from './eligibility.service';
 import { RouteCostProvider } from './route-cost.provider';
 import { SchedulingPolicyService } from './scheduling-policy.service';
+import { SchedulingFeedbackService } from './scheduling-feedback.service';
 import { TaskLifecycle } from './task-lifecycle';
 
 /**
@@ -58,6 +78,24 @@ import { TaskLifecycle } from './task-lifecycle';
 @Injectable()
 export class SchedulerService {
   private readonly logger = new Logger(SchedulerService.name);
+
+  /** 视为"活跃"（非终态）的方案状态，用于列出当前待处理/已批准的方案。 */
+  private static readonly ACTIVE_PLAN_STATUSES = [
+    'draft',
+    'shadow',
+    'proposed',
+    'approved',
+    'dispatched',
+    'executing',
+  ];
+
+  /** 可接受人工覆盖并重排的方案状态（已下发/执行/终态/审核中不重排）。 */
+  private static readonly REPLANNABLE_PLAN_STATUSES = new Set([
+    'draft',
+    'shadow',
+    'proposed',
+    'approved',
+  ]);
 
   private weights: ScheduleWeights = {
     w1_output: 0.25,
@@ -88,6 +126,7 @@ export class SchedulerService {
     private readonly eligibilityService: EligibilityService,
     private readonly routeCostProvider: RouteCostProvider,
     private readonly policyService: SchedulingPolicyService,
+    private readonly feedbackService: SchedulingFeedbackService,
   ) {}
 
   async generatePlans(body?: { idempotencyKey?: string }): Promise<SchedulePlan[]> {
@@ -820,21 +859,246 @@ export class SchedulerService {
       .where(eq(ewohSchedulingRun.runId, runId))
       .limit(1);
     if (!row) return null;
+    return this.mapRun(row);
+  }
+
+  /**
+   * 分页查询调度运行历史 + 返回当前活跃方案列表。
+   * - runs：按过滤器（status / from / to）分页的 SchedulingRun 记录；
+   * - plans：状态为非终态的活跃方案（proposed/shadow/draft/approved/dispatched/executing）；
+   * - total：满足过滤条件的运行总条数（用于分页）。
+   * 复用现有 db（drizzle）与 planService.getPlan，不引入并行调度器。
+   */
+  async listRuns(params: ListRunsRequest = {}): Promise<ListRunsResponse> {
+    const page = Math.max(1, params.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 20));
+
+    const conditions: SQL[] = [];
+    if (params.status) {
+      conditions.push(eq(ewohSchedulingRun.status, params.status));
+    }
+    if (params.from && !Number.isNaN(Date.parse(params.from))) {
+      conditions.push(gte(ewohSchedulingRun.createdAt, new Date(params.from)));
+    }
+    if (params.to && !Number.isNaN(Date.parse(params.to))) {
+      conditions.push(lte(ewohSchedulingRun.createdAt, new Date(params.to)));
+    }
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [countRows, runRows, activePlanRows] = await Promise.all([
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(ewohSchedulingRun)
+        .where(whereClause),
+      this.db
+        .select()
+        .from(ewohSchedulingRun)
+        .where(whereClause)
+        .orderBy(desc(ewohSchedulingRun.createdAt))
+        .limit(pageSize)
+        .offset((page - 1) * pageSize),
+      this.db
+        .select()
+        .from(ewohSchedulePlan)
+        .where(inArray(ewohSchedulePlan.status, SchedulerService.ACTIVE_PLAN_STATUSES))
+        .orderBy(desc(ewohSchedulePlan.createdAt)),
+    ]);
+
+    const runs = runRows.map((r) => this.mapRun(r));
+    const plans = (
+      await Promise.all(
+        activePlanRows.map((p) =>
+          this.planService.getPlan(p.planId).catch((err) => {
+            this.logger.warn(
+              `listRuns: 活跃方案 ${p.planId} 读取失败，已跳过: ${err instanceof Error ? err.message : String(err)}`,
+            );
+            return null;
+          }),
+        ),
+      )
+    ).filter((p): p is SchedulingPlanV2 => p !== null);
+
     return {
-      runId: row.runId,
-      triggerType: row.triggerType ?? 'MANUAL',
-      triggerEntityId: row.triggerEntityId ?? null,
-      status: (row.status ?? 'queued') as SchedulingRun['status'],
-      snapshotVersion: row.snapshotVersion ?? null,
-      planIds: (row.planIds as string[] | null) ?? [],
-      orgId: row.orgId ?? null,
-      error: row.error ?? null,
-      createdAt: row.createdAt ? row.createdAt.toISOString() : '',
+      runs,
+      plans,
+      total: countRows[0]?.count ?? 0,
+      page,
+      pageSize,
+    };
+  }
+
+  /**
+   * 返回 map 与调度共享的当前权威世界状态快照。
+   * 复用 WorldStateSnapshotService.getCurrentWorldState() 的真实当前状态（不持久化、不虚构），
+   * 以 snapshotVersion='CURRENT' + 当前 ts 包装为 WorldStateSnapshot。
+   */
+  async getSnapshot(): Promise<WorldStateSnapshot> {
+    const state = await this.worldStateSnapshotService.getCurrentWorldState();
+    return {
+      ...state,
+      snapshotVersion: 'CURRENT',
+      ts: new Date().toISOString(),
     };
   }
 
   async getPlanDetail(planId: string): Promise<SchedulingPlanV2> {
     return this.planService.getPlan(planId);
+  }
+
+  // ===== SchedulingPolicy versioning (Task 6: 命令图调度闭环) =====
+
+  /** 返回当前生效策略 + 配置（只读）。 */
+  async getPolicy(): Promise<{ policy: SchedulingPolicy; config: SchedulingPolicyConfig }> {
+    const [policy, config] = await Promise.all([
+      this.policyService.getActivePolicy(),
+      this.policyService.getConfig(),
+    ]);
+    return { policy, config };
+  }
+
+  /** 列出全部策略版本（含 active 标志、操作人、创建时间）。 */
+  async listPolicyVersions(): Promise<SchedulingPolicyVersionSummary[]> {
+    return this.policyService.listVersions();
+  }
+
+  /** 注册一个候选策略版本（inactive，绝不自动激活）。 */
+  async registerPolicyVersion(
+    config: SchedulingPolicyConfig,
+    actor?: OrgContext,
+  ): Promise<SchedulingPolicyConfig> {
+    const ctx = this.toOrgContext(actor);
+    return this.policyService.registerCandidatePolicy(
+      config,
+      ctx.primaryOrgId || null,
+      ctx.userId,
+    );
+  }
+
+  /**
+   * shadow/只读对比：候选版本 vs 当前生效版本。
+   * 由 Feedback 派生 KPI 进行离线评估 + 目标权重对比，不激活任何版本。
+   */
+  async comparePolicyVersion(
+    configVersion: number,
+    actor?: OrgContext,
+  ): Promise<SchedulingPolicyComparison> {
+    const ctx = this.toOrgContext(actor);
+    const [activeConfig, candidateConfig, feedbackKpis] = await Promise.all([
+      this.policyService.getConfig(),
+      this.policyService.getConfigByVersion(configVersion),
+      this.feedbackService.deriveKpis(),
+    ]);
+    if (!candidateConfig) {
+      throw new NotFoundException(
+        `Scheduling policy version ${configVersion} not found`,
+      );
+    }
+    const paramDeltas = this.buildConfigParamDeltas(activeConfig, candidateConfig);
+    return {
+      candidateVersion: configVersion,
+      activeVersion: activeConfig.configVersion,
+      feedbackKpis,
+      paramDeltas,
+      objective: this.estimateObjective(activeConfig, candidateConfig),
+      verdict: this.buildVerdict(paramDeltas),
+      readOnly: true,
+    };
+  }
+
+  /**
+   * 显式激活指定版本（人工审批路径）：翻转 active 并写入审计。
+   * 这是唯一激活生产策略的入口。
+   */
+  async activatePolicyVersion(
+    configVersion: number,
+    actor?: OrgContext,
+  ): Promise<{ config: SchedulingPolicyConfig }> {
+    const ctx = this.toOrgContext(actor);
+    const config = await this.policyService.activatePolicyVersion(
+      configVersion,
+      ctx.primaryOrgId || null,
+      ctx.userId,
+    );
+    await this.auditService.appendAuditLog({
+      actorId: ctx.userId,
+      orgId: ctx.primaryOrgId,
+      action: 'scheduler.policy.activate',
+      entityType: 'scheduling_policy',
+      entityId: String(configVersion),
+      before: { configVersion },
+      after: { configVersion, active: true },
+      reason: 'manual approval activation (Task 6)',
+    });
+    return { config };
+  }
+
+  /** 计算候选 vs 生效配置的标量与 priority 子字段差异。 */
+  private buildConfigParamDeltas(
+    active: SchedulingPolicyConfig,
+    candidate: SchedulingPolicyConfig,
+  ): Record<string, { active: unknown; candidate: unknown }> {
+    const deltas: Record<string, { active: unknown; candidate: unknown }> = {};
+    const scalarKeys: (keyof SchedulingPolicyConfig)[] = [
+      'minBatteryPct',
+      'maxContinuousLoad',
+      'defaultTaskDurationMs',
+      'horizonMinutes',
+      'walkingSpeedMps',
+      'euclideanDistanceWeight',
+      'congestedFactor',
+      'blockedFactor',
+      'highRiskFactor',
+      'mediumRiskFactor',
+      'triggerCooldownMs',
+    ];
+    for (const k of scalarKeys) {
+      if (active[k] !== candidate[k]) {
+        deltas[k] = { active: active[k], candidate: candidate[k] };
+      }
+    }
+    const priorityKeys: (keyof SchedulingPolicyConfig['priority'])[] = [
+      'deadlineRiskWeight',
+      'waitingAgeWeight',
+      'eventSeverityWeight',
+      'productionImpactWeight',
+      'downstreamBlockingWeight',
+      'manualBoostWeight',
+      'agingBaseMs',
+    ];
+    for (const k of priorityKeys) {
+      if (active.priority[k] !== candidate.priority[k]) {
+        deltas[`priority.${k}`] = {
+          active: active.priority[k],
+          candidate: candidate.priority[k],
+        };
+      }
+    }
+    return deltas;
+  }
+
+  /** 基于求解目标权重（与 buildPolicy 一致）的归一化 composite objective 估计。 */
+  private estimateObjective(
+    active: SchedulingPolicyConfig,
+    candidate: SchedulingPolicyConfig,
+  ): { active: number; candidate: number } {
+    const score = (c: SchedulingPolicyConfig): number =>
+      c.priority.deadlineRiskWeight * 3 +
+      c.euclideanDistanceWeight +
+      c.highRiskFactor / 2 +
+      c.minBatteryPct / 30;
+    return { active: score(active), candidate: score(candidate) };
+  }
+
+  private buildVerdict(
+    deltas: Record<string, { active: unknown; candidate: unknown }>,
+  ): string {
+    const changed = Object.keys(deltas);
+    if (changed.length === 0) {
+      return '候选版本与生效版本参数完全一致，无实际变更。';
+    }
+    return `候选版本相对生效版本存在 ${changed.length} 项参数差异（${changed.join(
+      ', ',
+    )}）；请结合反馈 KPI 决策，本结果仅为只读 shadow 对比。`;
   }
 
   async approvePlanV2(
@@ -866,6 +1130,189 @@ export class SchedulerService {
     actor?: OrgContext,
   ): Promise<SchedulingPlanV2> {
     return this.planService.replan(planId, body, this.toOrgContext(actor));
+  }
+
+  /** 人工覆盖动作 → 约束类型映射。 */
+  private static readonly OVERRIDE_KIND_TO_TYPE: Record<
+    PlanOverrideKind,
+    SchedulingConstraint['type']
+  > = {
+    LOCK_PERSON: 'LOCKED_PERSON',
+    LOCK_DEVICE: 'LOCKED_DEVICE',
+    LOCK_STATION: 'LOCKED_STATION',
+    LOCK_TIME: 'LOCKED_TIME',
+    LOCK_ASSIGNMENT: 'LOCKED_ASSIGNMENT',
+    EXCLUDE_RESOURCE: 'EXCLUDED_RESOURCE',
+    PREFER_RESOURCE: 'PREFERRED_RESOURCE',
+    BOOST: 'MANUAL_BOOST',
+    ADJUST_TIME: 'LOCKED_TIME',
+  };
+
+  /**
+   * 应用人工覆盖（Task 3：cmd-map-scheduling-closed-loop）。
+   * 将一组手工操作转换为 SchedulingConstraint 并落库 + 审计，
+   * 通过既有 V2 重排通道（planService.replan）产出新方案，
+   * 返回覆盖前后方案的 before/after 差异摘要。
+   */
+  async applyOverrides(
+    planId: string,
+    body: PlanOverrideRequest,
+    actor?: OrgContext,
+  ): Promise<PlanOverrideResponse> {
+    const ctx = this.toOrgContext(actor);
+    const operator = body.operator || ctx.userId;
+
+    // 1. 校验方案存在且处于可重排状态。
+    const [plan] = await this.db
+      .select()
+      .from(ewohSchedulePlan)
+      .where(eq(ewohSchedulePlan.planId, planId))
+      .limit(1);
+    if (!plan) throw new NotFoundException(`Plan ${planId} not found`);
+    if (!SchedulerService.REPLANNABLE_PLAN_STATUSES.has(plan.status ?? '')) {
+      throw new ConflictException('PLAN_NOT_REPLANNABLE');
+    }
+
+    // 2. 将覆盖动作转换为 SchedulingConstraint（富化 operator/reason/validFrom/expiresAt/snapshotVersion）。
+    const constraints = this.actionsToConstraints(body.actions, {
+      operator,
+      reason: body.reason,
+      snapshotVersion: plan.snapshotVersion ?? '',
+    });
+
+    // 3. 落库约束 + 审计（复用 ewoh_scheduling_constraint / ewoh_schedule_audit / appendAuditLog 模式）。
+    await this.requestDatabaseContext.runInTransaction(
+      buildGucSettings(ctx),
+      async () => {
+        if (constraints.length > 0) {
+          await this.db.insert(ewohSchedulingConstraint).values(
+            constraints.map((c) => ({
+              constraintId: c.id ?? `CON-${Date.now()}-${this.randomSuffix()}`,
+              planId,
+              taskId: c.taskId ?? null,
+              type: c.type,
+              valueJson: {
+                personId: c.personId ?? null,
+                deviceId: c.deviceId ?? null,
+                stationId: c.stationId ?? null,
+                zoneId: c.zoneId ?? null,
+                startMs: c.startMs ?? null,
+                endMs: c.endMs ?? null,
+                operator: c.operator ?? null,
+                reason: c.reason ?? null,
+                validFrom: c.validFrom ?? null,
+                expiresAt: c.expiresAt ?? null,
+                snapshotVersion: c.snapshotVersion ?? null,
+              },
+              active: true,
+              createdBy: ctx.userId,
+            })),
+          );
+        }
+        await this.db.insert(ewohScheduleAudit).values({
+          auditId: `AUDIT-${Date.now()}-${this.randomSuffix()}`,
+          planId,
+          action: 'override.apply',
+          operator,
+          reason: body.reason ?? '',
+          createdAt: new Date(),
+        });
+      },
+    );
+
+    await this.auditService.appendAuditLog({
+      actorId: operator,
+      orgId: ctx.primaryOrgId,
+      action: 'scheduler.plan.override',
+      entityType: 'schedule_plan',
+      entityId: planId,
+      before: { status: plan.status, version: plan.version },
+      after: { overrideCount: constraints.length, supersededBy: `${planId}-R${(plan.version ?? 1) + 1}` },
+      reason: body.reason,
+    });
+
+    // 4. 触发重排（复用既有 V2 求解通道，不新建求解路径）。
+    const before = await this.planService.getPlan(planId);
+    const after = await this.planService.replan(
+      planId,
+      { lockedConstraints: constraints, operator, reason: body.reason },
+      ctx,
+    );
+
+    // 5. 返回 before/after 差异摘要。
+    return {
+      planId: after.planId,
+      operator,
+      reason: body.reason,
+      appliedConstraints: constraints,
+      before,
+      after,
+      diff: this.buildPlanDiff(before, after),
+    };
+  }
+
+  /** 将人工覆盖动作转换为统一 SchedulingConstraint。 */
+  private actionsToConstraints(
+    actions: PlanOverrideRequest['actions'],
+    meta: { operator: string; reason?: string; snapshotVersion: string },
+  ): SchedulingConstraint[] {
+    return actions.map((a, i) => {
+      const type = SchedulerService.OVERRIDE_KIND_TO_TYPE[a.kind];
+      return {
+        id: `CON-${Date.now()}-${i}-${this.randomSuffix()}`,
+        type,
+        taskId: a.taskId,
+        personId: a.personId,
+        deviceId: a.deviceId,
+        stationId: a.stationId,
+        zoneId: a.zoneId,
+        startMs: a.startMs,
+        endMs: a.endMs,
+        operator: meta.operator,
+        reason: a.reason ?? meta.reason,
+        validFrom: a.validFrom,
+        expiresAt: a.expiresAt,
+        snapshotVersion: meta.snapshotVersion,
+      };
+    });
+  }
+
+  /** 计算覆盖前后方案差异（分配增删改 + 指标增量）。 */
+  private buildPlanDiff(
+    before: SchedulingPlanV2,
+    after: SchedulingPlanV2,
+  ): PlanOverrideDiffSummary {
+    const aByTask = new Map(before.assignments.map((x) => [x.taskId, x]));
+    const bByTask = new Map(after.assignments.map((x) => [x.taskId, x]));
+    const changedTaskIds: string[] = [];
+    const addedTaskIds: string[] = [];
+    const removedTaskIds: string[] = [];
+    for (const taskId of new Set([...aByTask.keys(), ...bByTask.keys()])) {
+      const x = aByTask.get(taskId);
+      const y = bByTask.get(taskId);
+      if (!x) addedTaskIds.push(taskId);
+      else if (!y) removedTaskIds.push(taskId);
+      else if (
+        x.personId !== y.personId ||
+        x.deviceId !== y.deviceId ||
+        x.plannedStart !== y.plannedStart
+      ) {
+        changedTaskIds.push(taskId);
+      }
+    }
+    return {
+      changedTaskIds,
+      addedTaskIds,
+      removedTaskIds,
+      metricsDelta: {
+        lateMinutes: after.metrics.lateMinutes - before.metrics.lateMinutes,
+        walkingMeters: after.metrics.walkingMeters - before.metrics.walkingMeters,
+        stationWaitMinutes:
+          after.metrics.stationWaitMinutes - before.metrics.stationWaitMinutes,
+        maxWorkload: after.metrics.maxWorkload - before.metrics.maxWorkload,
+        changeCost: after.metrics.changeCost - before.metrics.changeCost,
+      },
+    };
   }
 
   async comparePlansV2(
@@ -1068,6 +1515,395 @@ export class SchedulerService {
     };
   }
 
+  // ===== Conflict aggregation (V2) =====
+
+  /**
+   * 从真实世界状态 / 预占 / 活跃方案聚合统一调度冲突列表。
+   * 仅返回真实/可推导冲突；无冲突时返回空列表，不虚构。
+   */
+  async listConflicts(params: ConflictsListRequest = {}): Promise<ConflictsListResponse> {
+    let conflicts = await this.buildConflicts();
+    if (params.type) conflicts = conflicts.filter((c) => c.type === params.type);
+    if (params.severity) conflicts = conflicts.filter((c) => c.severity === params.severity);
+    if (params.scope) conflicts = conflicts.filter((c) => c.scope === params.scope);
+    if (params.resourceId) conflicts = conflicts.filter((c) => c.resourceId === params.resourceId);
+    conflicts.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return { conflicts, total: conflicts.length };
+  }
+
+  /** 返回单个冲突详情；冲突在当前真实数据中不再存在时抛 NotFoundException。 */
+  async getConflictDetail(conflictId: string): Promise<SchedulingConflict> {
+    const { conflicts } = await this.listConflicts({});
+    const found = conflicts.find((c) => c.conflictId === conflictId);
+    if (!found) throw new NotFoundException(`Conflict ${conflictId} not found`);
+    return found;
+  }
+
+  /** 从当前世界状态 / 预占 / 活跃方案推导全部真实冲突。 */
+  private async buildConflicts(): Promise<SchedulingConflict[]> {
+    const state = await this.worldStateSnapshotService.getCurrentWorldState();
+    const config = (await this.policyService
+      .getConfig()
+      .catch(() => null)) as SchedulingPolicyConfig | null;
+    const minBatteryPct = config?.minBatteryPct ?? 15;
+    const conflicts: SchedulingConflict[] = [];
+
+    const terminalStatuses = new Set(['done', 'completed', 'cancelled', 'failed']);
+    const affectedTasks = state.tasks.filter((t) => !terminalStatuses.has(t.status));
+
+    const taskIdsFor = (kind: 'person' | 'device', id: string): string[] =>
+      affectedTasks
+        .filter((t) => (kind === 'person' ? t.assigneeId === id : t.deviceId === id))
+        .map((t) => t.id);
+
+    // 1. double booking：同一资源时间窗重叠的预占。
+    const resByKey = new Map<string, typeof state.reservations>();
+    for (const r of state.reservations ?? []) {
+      const key = `${r.resourceType}:${r.resourceId}`;
+      const list = resByKey.get(key) ?? [];
+      list.push(r);
+      resByKey.set(key, list);
+    }
+    for (const [key, list] of resByKey) {
+      const sorted = [...list].sort((a, b) => a.startMs - b.startMs);
+      for (let i = 0; i < sorted.length; i++) {
+        for (let j = i + 1; j < sorted.length; j++) {
+          const a = sorted[i];
+          const b = sorted[j];
+          if (a.startMs < b.endMs && b.startMs < a.endMs) {
+            const [resourceType, resourceId] = key.split(':');
+            conflicts.push(
+              this.mkConflict(
+                `double_booking:${key}:${a.reservationId}:${b.reservationId}`,
+                {
+                  type: 'double_booking',
+                  severity: 'critical',
+                  scope: 'resource',
+                  resourceType,
+                  resourceId,
+                  taskIds: [],
+                  message: `资源 ${resourceId}（${resourceType}）存在重叠预占：${a.reservationId} 与 ${b.reservationId}`,
+                  resolution: '释放其中一条预占或调整时间窗',
+                  snapshotVersion: 'CURRENT',
+                  data: {
+                    reservationIds: [a.reservationId, b.reservationId],
+                    overlapStartMs: Math.max(a.startMs, b.startMs),
+                    overlapEndMs: Math.min(a.endMs, b.endMs),
+                  },
+                },
+              ),
+            );
+          }
+        }
+      }
+    }
+
+    // 2. resource stale：STALE / UNKNOWN 数据不被视为可信。
+    for (const p of state.persons) {
+      if (p.dataQuality === 'STALE' || p.dataQuality === 'UNKNOWN') {
+        conflicts.push(
+          this.mkConflict(`resource_stale:person:${p.id}`, {
+            type: 'resource_stale',
+            severity: 'medium',
+            scope: 'resource',
+            resourceType: 'person',
+            resourceId: p.id,
+            taskIds: taskIdsFor('person', p.id),
+            message: `人员 ${p.name ?? p.id} 数据陈旧（${p.dataQuality}）`,
+            resolution: '等待遥测更新或人工确认状态',
+            snapshotVersion: 'CURRENT',
+            data: { dataQuality: p.dataQuality },
+          }),
+        );
+      }
+    }
+    for (const d of state.devices) {
+      if (d.dataQuality === 'STALE' || d.dataQuality === 'UNKNOWN') {
+        conflicts.push(
+          this.mkConflict(`resource_stale:device:${d.id}`, {
+            type: 'resource_stale',
+            severity: 'medium',
+            scope: 'resource',
+            resourceType: 'device',
+            resourceId: d.id,
+            taskIds: taskIdsFor('device', d.id),
+            message: `设备 ${d.id} 数据陈旧（${d.dataQuality}）`,
+            resolution: '等待遥测更新确认状态',
+            snapshotVersion: 'CURRENT',
+            data: { dataQuality: d.dataQuality },
+          }),
+        );
+      }
+    }
+
+    // 3. person unavailable：数据新鲜但状态不可用。
+    for (const p of state.persons) {
+      if (p.dataQuality === 'FRESH' && p.status === 'unavailable') {
+        conflicts.push(
+          this.mkConflict(`person_unavailable:${p.id}`, {
+            type: 'person_unavailable',
+            severity: 'high',
+            scope: 'resource',
+            resourceType: 'person',
+            resourceId: p.id,
+            taskIds: taskIdsFor('person', p.id),
+            message: `人员 ${p.name ?? p.id} 当前不可用`,
+            resolution: '改派其他人员或等待其恢复',
+            snapshotVersion: 'CURRENT',
+            data: { status: p.status },
+          }),
+        );
+      }
+    }
+
+    // 4. device offline。
+    for (const d of state.devices) {
+      if (d.online === false || d.status === 'offline') {
+        conflicts.push(
+          this.mkConflict(`device_offline:${d.id}`, {
+            type: 'device_offline',
+            severity: 'high',
+            scope: 'resource',
+            resourceType: 'device',
+            resourceId: d.id,
+            taskIds: taskIdsFor('device', d.id),
+            message: `设备 ${d.id} 离线`,
+            resolution: '检查设备连接或改派其他设备',
+            snapshotVersion: 'CURRENT',
+            data: { status: d.status },
+          }),
+        );
+      }
+    }
+
+    // 5. low battery。
+    for (const d of state.devices) {
+      if (d.batteryPct < minBatteryPct) {
+        conflicts.push(
+          this.mkConflict(`low_battery:${d.id}`, {
+            type: 'low_battery',
+            severity: 'medium',
+            scope: 'resource',
+            resourceType: 'device',
+            resourceId: d.id,
+            taskIds: taskIdsFor('device', d.id),
+            message: `设备 ${d.id} 电量 ${d.batteryPct}% 低于阈值 ${minBatteryPct}%`,
+            resolution: '安排设备充电或换电',
+            snapshotVersion: 'CURRENT',
+            data: { batteryPct: d.batteryPct, minBatteryPct },
+          }),
+        );
+      }
+    }
+
+    // 6. blocked route：路段状态非 open。
+    for (const r of state.routeStatus ?? []) {
+      if (r.status !== 'open') {
+        conflicts.push(
+          this.mkConflict(`blocked_route:${r.edgeId}`, {
+            type: 'blocked_route',
+            severity: 'high',
+            scope: 'route',
+            resourceType: 'route',
+            resourceId: r.edgeId,
+            taskIds: [],
+            message: `路段 ${r.edgeId} 不可通行（${r.status}）`,
+            resolution: '求解时排除该路段并绕行',
+            snapshotVersion: 'CURRENT',
+            data: { status: r.status, riskLevel: r.riskLevel },
+          }),
+        );
+      }
+    }
+
+    // 7. forbidden zone：受限制区域 + 安全事件派生区域。
+    for (const z of state.forbiddenZones ?? []) {
+      const zoneTaskIds = affectedTasks
+        .filter((t) => t.zoneId === z.zoneId)
+        .map((t) => t.id);
+      conflicts.push(
+        this.mkConflict(`forbidden_zone:${z.zoneId}`, {
+          type: 'forbidden_zone',
+          severity: 'critical',
+          scope: 'route',
+          resourceType: 'zone',
+          resourceId: z.zoneId,
+          taskIds: zoneTaskIds,
+          message: `区域 ${z.zoneId} 被禁止进入（${z.reason}）`,
+          resolution: '取消该区域任务或人工介入',
+          snapshotVersion: 'CURRENT',
+          data: { reason: z.reason },
+        }),
+      );
+    }
+
+    // 8. safety block：安全事件触发的禁用人员/设备。
+    for (const pid of state.safetyBlockedPersonIds ?? []) {
+      conflicts.push(
+        this.mkConflict(`safety_block:person:${pid}`, {
+          type: 'safety_block',
+          severity: 'critical',
+          scope: 'resource',
+          resourceType: 'person',
+          resourceId: pid,
+          taskIds: taskIdsFor('person', pid),
+          message: `人员 ${pid} 因安全事件被禁止作业`,
+          resolution: '确认安全事件消除后人工恢复',
+          snapshotVersion: 'CURRENT',
+          data: {},
+        }),
+      );
+    }
+    for (const did of state.safetyBlockedDeviceIds ?? []) {
+      conflicts.push(
+        this.mkConflict(`safety_block:device:${did}`, {
+          type: 'safety_block',
+          severity: 'critical',
+          scope: 'resource',
+          resourceType: 'device',
+          resourceId: did,
+          taskIds: taskIdsFor('device', did),
+          message: `设备 ${did} 因安全事件被禁止启用`,
+          resolution: '确认安全事件消除后人工恢复',
+          snapshotVersion: 'CURRENT',
+          data: {},
+        }),
+      );
+    }
+
+    // 9. predecessor violation：前置任务未完成仍被调度。
+    const statusById = new Map(state.tasks.map((t) => [t.id, t.status]));
+    for (const t of affectedTasks) {
+      const pendingPreds = (t.predecessorIds ?? []).filter(
+        (pid) => !terminalStatuses.has(statusById.get(pid) ?? ''),
+      );
+      if (pendingPreds.length > 0) {
+        conflicts.push(
+          this.mkConflict(`predecessor_violation:${t.id}`, {
+            type: 'predecessor_violation',
+            severity: 'high',
+            scope: 'task',
+            resourceType: null,
+            resourceId: null,
+            taskIds: [t.id],
+            message: `任务 ${t.id} 的前置任务（${pendingPreds.join(', ')}）尚未完成`,
+            resolution: '等待前置任务完成或调整依赖',
+            snapshotVersion: 'CURRENT',
+            data: { predecessorIds: pendingPreds },
+          }),
+        );
+      }
+    }
+
+    // 10. station capacity：工位任务数量超过容量。
+    const backlogCountById = new Map<string, number>();
+    for (const b of state.backlog ?? []) backlogCountById.set(b.taskId, b.count);
+    for (const s of state.stations ?? []) {
+      if (s.capacity == null) continue;
+      const count = backlogCountById.get(s.id) ?? 0;
+      if (count > s.capacity) {
+        conflicts.push(
+          this.mkConflict(`station_capacity:${s.id}`, {
+            type: 'station_capacity',
+            severity: 'medium',
+            scope: 'resource',
+            resourceType: 'station',
+            resourceId: s.id,
+            taskIds: [],
+            message: `工位 ${s.name ?? s.id} 任务数 ${count} 超过容量 ${s.capacity}`,
+            resolution: '向其他空闲工位分流任务',
+            snapshotVersion: 'CURRENT',
+            data: { capacity: s.capacity, count },
+          }),
+        );
+      }
+    }
+
+    // 11. stale plan：活跃方案基于已过期的快照。
+    const activePlans = await this.db
+      .select()
+      .from(ewohSchedulePlan)
+      .where(inArray(ewohSchedulePlan.status, SchedulerService.ACTIVE_PLAN_STATUSES));
+    for (const p of activePlans) {
+      if (!p.snapshotVersion) continue;
+      const stale = await this.worldStateSnapshotService.isPlanStale(p.snapshotVersion);
+      if (stale) {
+        conflicts.push(
+          this.mkConflict(`stale_plan:${p.planId}`, {
+            type: 'stale_plan',
+            severity: 'medium',
+            scope: 'plan',
+            resourceType: null,
+            resourceId: null,
+            taskIds: [],
+            message: `方案 ${p.planId} 基于的快照 ${p.snapshotVersion} 已过期`,
+            resolution: '基于最新快照重新运行调度生成新方案',
+            snapshotVersion: p.snapshotVersion,
+            data: { snapshotVersion: p.snapshotVersion, status: p.status },
+          }),
+        );
+      }
+    }
+
+    // 12. reservation conflict：预占的资源当前离线/数据陈旧（预占不可用资源）。
+    for (const r of state.reservations ?? []) {
+      const offline =
+        r.resourceType === 'device' &&
+        state.devices.find((d) => d.id === r.resourceId)?.online === false;
+      const stale =
+        r.resourceType === 'person'
+          ? state.persons.find((p) => p.id === r.resourceId)?.dataQuality !== 'FRESH'
+          : r.resourceType === 'device'
+            ? state.devices.find((d) => d.id === r.resourceId)?.dataQuality !== 'FRESH'
+            : false;
+      if (offline || stale) {
+        conflicts.push(
+          this.mkConflict(`reservation_conflict:${r.resourceType}:${r.resourceId}:${r.reservationId}`, {
+            type: 'reservation_conflict',
+            severity: 'high',
+            scope: 'resource',
+            resourceType: r.resourceType,
+            resourceId: r.resourceId,
+            taskIds: [],
+            message: `资源 ${r.resourceId}（${r.resourceType}）存在预占但当前不可用`,
+            resolution: '释放该预占并改派可用资源',
+            snapshotVersion: 'CURRENT',
+            data: {
+              reservationId: r.reservationId,
+              startMs: r.startMs,
+              endMs: r.endMs,
+              offline,
+              stale,
+            },
+          }),
+        );
+      }
+    }
+
+    return conflicts;
+  }
+
+  /** 构造统一冲突，conflictId 由内容种子哈希生成（跨查询稳定）。 */
+  private mkConflict(
+    seed: string,
+    input: Omit<SchedulingConflict, 'conflictId' | 'createdAt'>,
+  ): SchedulingConflict {
+    return {
+      conflictId: `CFL-${this.hash(seed)}`,
+      createdAt: new Date().toISOString(),
+      ...input,
+    };
+  }
+
+  /** djb2 字符串哈希（生成稳定冲突 id）。 */
+  private hash(str: string): number {
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) {
+      h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+    }
+    return h >>> 0;
+  }
+
   private toOrgContext(actor?: OrgContext): OrgContext {
     return {
       userId: actor?.userId ?? 'system',
@@ -1077,6 +1913,22 @@ export class SchedulerService {
         actor?.accessibleOrgIds ??
         (actor?.primaryOrgId ? [actor.primaryOrgId] : []),
       isGlobalAdmin: actor?.isGlobalAdmin ?? false,
+    };
+  }
+
+  private mapRun(
+    r: typeof ewohSchedulingRun.$inferSelect,
+  ): SchedulingRun {
+    return {
+      runId: r.runId,
+      triggerType: r.triggerType ?? 'MANUAL',
+      triggerEntityId: r.triggerEntityId ?? null,
+      status: (r.status ?? 'queued') as SchedulingRun['status'],
+      snapshotVersion: r.snapshotVersion ?? null,
+      planIds: (r.planIds as string[] | null) ?? [],
+      orgId: r.orgId ?? null,
+      error: r.error ?? null,
+      createdAt: r.createdAt ? r.createdAt.toISOString() : '',
     };
   }
 

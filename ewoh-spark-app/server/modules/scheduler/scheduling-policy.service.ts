@@ -1,11 +1,15 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger, NotFoundException } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import { eq, desc } from 'drizzle-orm';
 import { ewohSchedulingPolicy } from '@server/database/schema';
-import type { SchedulingPolicy, SchedulingPolicyConfig } from '@shared/api.interface';
+import type {
+  SchedulingPolicy,
+  SchedulingPolicyConfig,
+  SchedulingPolicyVersionSummary,
+} from '@shared/api.interface';
 
 /** 求解器版本：同一策略版本 + 求解器版本可确定性重放。 */
 const DEFAULT_SOLVER_VERSION = 'heuristic-v2';
@@ -145,6 +149,81 @@ export class SchedulingPolicyService {
       );
       throw err;
     }
+  }
+
+  /**
+   * 列出全部策略版本（含 active 标志、操作人、创建时间），按 configVersion 降序。
+   * 供命令图「策略版本」面板展示当前生效版本与候选版本。
+   */
+  async listVersions(): Promise<SchedulingPolicyVersionSummary[]> {
+    const rows = await this.db
+      .select()
+      .from(ewohSchedulingPolicy)
+      .orderBy(desc(ewohSchedulingPolicy.configVersion));
+    return rows.map((r) => ({
+      configVersion: r.configVersion,
+      active: r.active,
+      updatedBy: r.updatedBy ?? null,
+      createdAt: r.createdAt ? r.createdAt.toISOString() : '',
+    }));
+  }
+
+  /**
+   * 注册一个候选策略版本（Task 6）。
+   * 以新 configVersion 持久化为 active=false 的新行，**绝不**自动激活。
+   * 只有显式调用 activatePolicyVersion（人工审批）才会翻转生产策略。
+   */
+  async registerCandidatePolicy(
+    config: SchedulingPolicyConfig,
+    orgId: string | null,
+    updatedBy: string,
+  ): Promise<SchedulingPolicyConfig> {
+    const nextVersion = await this.computeNextVersion();
+    const toSave: SchedulingPolicyConfig = {
+      ...config,
+      configVersion: nextVersion,
+    };
+    await this.db.insert(ewohSchedulingPolicy).values({
+      configVersion: nextVersion,
+      configJson: toSave as unknown as typeof toSave,
+      active: false,
+      orgId,
+      updatedBy,
+    });
+    this.logger.log(
+      `registered candidate scheduling policy v${nextVersion} by ${updatedBy} (inactive)`,
+    );
+    return toSave;
+  }
+
+  /**
+   * 激活指定版本（Task 6）：将目标行 active=true，其余行 active=false。
+   * 这是唯一翻转生产策略的路径，调用方负责人工审批与审计。
+   */
+  async activatePolicyVersion(
+    configVersion: number,
+    orgId: string | null,
+    updatedBy: string,
+  ): Promise<SchedulingPolicyConfig> {
+    const row = await this.findByVersion(configVersion);
+    if (!row) {
+      throw new NotFoundException(
+        `Scheduling policy version ${configVersion} not found`,
+      );
+    }
+    // 1) 解除当前生效版本。
+    await this.db
+      .update(ewohSchedulingPolicy)
+      .set({ active: false })
+      .where(eq(ewohSchedulingPolicy.active, true));
+    // 2) 激活目标版本。
+    await this.db
+      .update(ewohSchedulingPolicy)
+      .set({ active: true, updatedBy, orgId, updatedAt: new Date() })
+      .where(eq(ewohSchedulingPolicy.configVersion, configVersion));
+    this.logger.log(`activated scheduling policy v${configVersion} by ${updatedBy}`);
+    const config = this.parseConfig(row.configJson);
+    return { ...config, configVersion };
   }
 
   /** 查询当前生效行（active=true 最新一条）。 */

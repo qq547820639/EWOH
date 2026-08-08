@@ -4614,6 +4614,103 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/ai/config/status:
+    get:
+      tags:
+        - ai
+      summary: AI configuration status
+      description: Returns whether AI is configured (never returns secret key values).
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiConfigStatus'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/ai/config:
+    put:
+      tags:
+        - ai
+      summary: Save global AI configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiConfigRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiConfigStatus'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/ai/chat:
+    post:
+      tags:
+        - ai
+      summary: AI natural-language chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiChatRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiChatResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/ai/vision/understand:
+    post:
+      tags:
+        - ai
+      summary: AI vision understanding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiVisionRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiVisionResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/audit:
     get:
       tags:
@@ -4913,31 +5010,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         InternalError:
           $ref: '#/components/responses/InternalError'
-  /api/scheduler/plans/{planId}/dispatch-status:
-    get:
-      tags:
-        - scheduler
-      summary: Schedule plan dispatch status
-      parameters:
-        - name: planId
-          in: path
-          required: true
-          description: Schedule plan id
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DispatchStatus'
-        Unauthorized:
-          $ref: '#/components/responses/Unauthorized'
-        NotFound:
-          $ref: '#/components/responses/NotFound'
-        InternalError:
-          $ref: '#/components/responses/InternalError'
   /api/scheduler/plans/{planId}/confirm:
     post:
       tags:
@@ -5033,6 +5105,596 @@ paths:
           $ref: '#/components/responses/BadRequest'
         Unauthorized:
           $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/runs:
+    post:
+      tags:
+        - scheduler
+      summary: Create scheduling run (V2)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRunRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateRunResponse'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - scheduler
+      summary: List scheduling runs (V2)
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListRunsResponse'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/runs/{runId}:
+    get:
+      tags:
+        - scheduler
+      summary: Get scheduling run detail (V2)
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleRun'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/snapshot:
+    get:
+      tags:
+        - scheduler
+      summary: Get current scheduling world snapshot (V2)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorldStateSnapshot'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/plans/{planId}:
+    get:
+      tags:
+        - scheduler
+      summary: Get schedule plan detail (V2)
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulePlanV2'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/plans/{planId}/approve:
+    post:
+      tags:
+        - scheduler
+      summary: Approve schedule plan (V2)
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovePlanRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulePlanV2'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/plans/{planId}/dispatch:
+    post:
+      tags:
+        - scheduler
+      summary: Dispatch schedule plan (V2)
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulePlanV2'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/plans/{planId}/reject:
+    post:
+      tags:
+        - scheduler
+      summary: Reject schedule plan (V2)
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectPlanRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulePlanV2'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/plans/{planId}/replan:
+    post:
+      tags:
+        - scheduler
+      summary: Replan schedule plan (V2)
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplanRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulePlanV2'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/plans/{planId}/compare/{otherPlanId}:
+    get:
+      tags:
+        - scheduler
+      summary: Compare schedule plans (V2)
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: otherPlanId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanCompareResult'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/plans/{planId}/overrides:
+    post:
+      tags:
+        - scheduler
+      summary: Apply manual plan overrides (V2)
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanOverrideRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanOverrideResponse'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/tasks/{id}/candidates:
+    get:
+      tags:
+        - scheduler
+      summary: Get task candidate resources (V2)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskCandidatesResponse'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/routes:
+    get:
+      tags:
+        - scheduler
+      summary: Get route graph (V2)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteGraph'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/routes/calculate:
+    post:
+      tags:
+        - scheduler
+      summary: Calculate route (V2)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalculateRouteRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Route'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/conflicts:
+    get:
+      tags:
+        - scheduler
+      summary: List scheduling conflicts (V2)
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: resourceId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConflictsListResponse'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/conflicts/{id}:
+    get:
+      tags:
+        - scheduler
+      summary: Get scheduling conflict detail (V2)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulingConflict'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/policy:
+    get:
+      tags:
+        - scheduler
+      summary: Get active scheduling policy and config
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulingPolicyDetail'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/policy/versions:
+    get:
+      tags:
+        - scheduler
+      summary: List scheduling policy versions
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyVersionList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - scheduler
+      summary: Register candidate scheduling policy version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterPolicyVersionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulingPolicyConfig'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/policy/versions/{version}/compare:
+    get:
+      tags:
+        - scheduler
+      summary: Compare candidate vs active policy version (shadow read-only)
+      parameters:
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulingPolicyComparison'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/policy/versions/{version}/activate:
+    post:
+      tags:
+        - scheduler
+      summary: Activate scheduling policy version
+      parameters:
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivatePolicyVersionResponse'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/metrics:
+    get:
+      tags:
+        - scheduler
+      summary: Scheduler Prometheus text metrics
+      responses:
+        '200':
+          description: Prometheus text metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/metrics/feedback:
+    get:
+      tags:
+        - scheduler
+      summary: Derive scheduling feedback KPIs
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulingFeedbackKpis'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/metrics/feedback/rows:
+    get:
+      tags:
+        - scheduler
+      summary: List scheduling feedback rows
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulingFeedbackList'
         InternalError:
           $ref: '#/components/responses/InternalError'
   /api/gamification/role:
@@ -5185,6 +5847,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BrainSuggestionList'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/gamification/brain/apply:
+    post:
+      tags:
+        - gamification
+      summary: Apply brain suggestion to a schedule plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyBrainSuggestionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplyBrainSuggestionResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
         Unauthorized:
           $ref: '#/components/responses/Unauthorized'
         Forbidden:
@@ -8817,6 +9505,760 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/EventChainNode'
+    AiConfigStatus:
+      type: object
+      properties:
+        configured:
+          type: boolean
+        baseUrl:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+      required: []
+      additionalProperties: false
+    AiConfigRequest:
+      type: object
+      properties:
+        api_key:
+          type: string
+        base_url:
+          type: string
+        model:
+          type: string
+      required: []
+      additionalProperties: false
+    AiChatRequest:
+      type: object
+      properties:
+        question:
+          type: string
+      required: []
+      additionalProperties: false
+    AiChatResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        answer:
+          type: string
+        model:
+          type: string
+        error:
+          type: string
+          nullable: true
+        context:
+          type: string
+          nullable: true
+      required: []
+      additionalProperties: false
+    AiVisionRequest:
+      type: object
+      properties:
+        image_url:
+          type: string
+        question:
+          type: string
+        api_key:
+          type: string
+        base_url:
+          type: string
+        model:
+          type: string
+      required: []
+      additionalProperties: false
+    AiVisionResult:
+      type: object
+      properties:
+        status:
+          type: integer
+      required: []
+      additionalProperties: true
+    ApplyBrainSuggestionRequest:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        affectedEntities:
+          type: array
+          items:
+            type: string
+        expectedBenefit:
+          type: string
+        confidence:
+          type: number
+        operator:
+          type: string
+      required:
+        - type
+        - title
+        - affectedEntities
+      additionalProperties: false
+    ApplyBrainSuggestionResult:
+      type: object
+      properties:
+        planId:
+          type: string
+        planName:
+          type: string
+        strategy:
+          type: string
+        status:
+          type: string
+      required: []
+      additionalProperties: false
+    ScheduleRun:
+      type: object
+      properties:
+        runId:
+          type: string
+        triggerType:
+          type: string
+        triggerEntityId:
+          type: string
+          nullable: true
+        status:
+          type: string
+        snapshotVersion:
+          type: string
+          nullable: true
+        planIds:
+          type: array
+          items:
+            type: string
+        orgId:
+          type: string
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+      required: []
+      additionalProperties: false
+    CreateRunRequest:
+      type: object
+      properties:
+        trigger:
+          type: string
+        entityId:
+          type: string
+        horizonMinutes:
+          type: integer
+        operator:
+          type: string
+        reason:
+          type: string
+      required: []
+      additionalProperties: false
+    CreateRunResponse:
+      type: object
+      properties:
+        run:
+          $ref: '#/components/schemas/ScheduleRun'
+        plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchedulePlanV2'
+        debounced:
+          type: boolean
+      required: []
+      additionalProperties: false
+    SchedulePlanV2:
+      type: object
+      properties:
+        planId:
+          type: string
+        planName:
+          type: string
+        version:
+          type: integer
+        status:
+          type: string
+        trigger:
+          type: object
+          additionalProperties: true
+        snapshotVersion:
+          type: string
+        policyVersion:
+          type: integer
+        solverVersion:
+          type: string
+        solverStatus:
+          type: string
+        horizonMinutes:
+          type: integer
+        assignments:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        metrics:
+          type: object
+          additionalProperties: true
+        baselineDelta:
+          type: object
+          additionalProperties: true
+        violations:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        createdAt:
+          type: string
+      required: []
+      additionalProperties: true
+    ListRunsResponse:
+      type: object
+      properties:
+        runs:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleRun'
+        plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchedulePlanV2'
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+      required: []
+      additionalProperties: false
+    ApprovePlanRequest:
+      type: object
+      properties:
+        version:
+          type: integer
+        snapshotVersion:
+          type: string
+        operator:
+          type: string
+        reason:
+          type: string
+      required: []
+      additionalProperties: false
+    RejectPlanRequest:
+      type: object
+      properties:
+        operator:
+          type: string
+        reason:
+          type: string
+      required: []
+      additionalProperties: false
+    ReplanRequest:
+      type: object
+      properties:
+        lockedConstraints:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchedulingConstraint'
+        operator:
+          type: string
+        reason:
+          type: string
+      required: []
+      additionalProperties: false
+    CalculateRouteRequest:
+      type: object
+      properties:
+        personId:
+          type: string
+        taskId:
+          type: string
+      required:
+        - personId
+        - taskId
+      additionalProperties: false
+    PlanCompareResult:
+      type: object
+      additionalProperties: true
+    Route:
+      type: object
+      properties:
+        routeId:
+          type: string
+        personId:
+          type: string
+        taskId:
+          type: string
+        distanceMeters:
+          type: number
+        etaSeconds:
+          type: number
+        nodes:
+          type: array
+          items:
+            type: string
+        geometry:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        source:
+          type: string
+        riskLevel:
+          type: string
+          nullable: true
+      required: []
+      additionalProperties: true
+    RouteGraph:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        edges:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required: []
+      additionalProperties: true
+    TaskCandidatesResponse:
+      type: object
+      properties:
+        taskId:
+          type: string
+        taskTitle:
+          type: string
+          nullable: true
+        taskStatus:
+          type: string
+          nullable: true
+        assigned:
+          type: boolean
+        lockedAssigneeId:
+          type: string
+          nullable: true
+        lockedDeviceId:
+          type: string
+          nullable: true
+        solverVersion:
+          type: string
+        candidates:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        generatedAt:
+          type: string
+      required: []
+      additionalProperties: true
+    SchedulingConflict:
+      type: object
+      properties:
+        conflictId:
+          type: string
+        type:
+          type: string
+        severity:
+          type: string
+        scope:
+          type: string
+        resourceId:
+          type: string
+          nullable: true
+        resourceType:
+          type: string
+          nullable: true
+        taskIds:
+          type: array
+          items:
+            type: string
+        message:
+          type: string
+        resolution:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        snapshotVersion:
+          type: string
+          nullable: true
+        data:
+          type: object
+          additionalProperties: true
+      required: []
+      additionalProperties: false
+    ConflictsListResponse:
+      type: object
+      properties:
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchedulingConflict'
+        total:
+          type: integer
+      required: []
+      additionalProperties: false
+    SchedulingConstraint:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        taskId:
+          type: string
+        personId:
+          type: string
+        deviceId:
+          type: string
+        stationId:
+          type: string
+        zoneId:
+          type: string
+        teamId:
+          type: string
+        startMs:
+          type: integer
+        endMs:
+          type: integer
+        value:
+          type: number
+        hard:
+          type: boolean
+        operator:
+          type: string
+        reason:
+          type: string
+        validFrom:
+          type: integer
+        expiresAt:
+          type: integer
+        snapshotVersion:
+          type: string
+      required: []
+      additionalProperties: true
+    PlanOverrideAction:
+      type: object
+      properties:
+        kind:
+          type: string
+        taskId:
+          type: string
+        personId:
+          type: string
+        deviceId:
+          type: string
+        stationId:
+          type: string
+        zoneId:
+          type: string
+        startMs:
+          type: integer
+        endMs:
+          type: integer
+        reason:
+          type: string
+        validFrom:
+          type: integer
+        expiresAt:
+          type: integer
+      required:
+        - kind
+        - taskId
+      additionalProperties: true
+    PlanOverrideRequest:
+      type: object
+      properties:
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanOverrideAction'
+        operator:
+          type: string
+        reason:
+          type: string
+      required:
+        - actions
+      additionalProperties: false
+    PlanOverrideDiffSummary:
+      type: object
+      properties:
+        changedTaskIds:
+          type: array
+          items:
+            type: string
+        addedTaskIds:
+          type: array
+          items:
+            type: string
+        removedTaskIds:
+          type: array
+          items:
+            type: string
+        metricsDelta:
+          type: object
+          additionalProperties: true
+      required: []
+      additionalProperties: false
+    PlanOverrideResponse:
+      type: object
+      properties:
+        planId:
+          type: string
+        operator:
+          type: string
+        reason:
+          type: string
+        appliedConstraints:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchedulingConstraint'
+        before:
+          $ref: '#/components/schemas/SchedulePlanV2'
+        after:
+          $ref: '#/components/schemas/SchedulePlanV2'
+        diff:
+          $ref: '#/components/schemas/PlanOverrideDiffSummary'
+      required: []
+      additionalProperties: false
+    SchedulingPolicy:
+      type: object
+      properties:
+        version:
+          type: integer
+        latenessWeight:
+          type: number
+        walkingWeight:
+          type: number
+        workloadBalanceWeight:
+          type: number
+        stationWaitWeight:
+          type: number
+        changeCostWeight:
+          type: number
+        riskWeight:
+          type: number
+        energyWeight:
+          type: number
+        solverVersion:
+          type: string
+      required: []
+      additionalProperties: false
+    SchedulingPolicyConfig:
+      type: object
+      properties:
+        configVersion:
+          type: integer
+        minBatteryPct:
+          type: number
+        maxContinuousLoad:
+          type: number
+        defaultTaskDurationMs:
+          type: integer
+        horizonMinutes:
+          type: integer
+        walkingSpeedMps:
+          type: number
+        euclideanDistanceWeight:
+          type: number
+        congestedFactor:
+          type: number
+        blockedFactor:
+          type: number
+        highRiskFactor:
+          type: number
+        mediumRiskFactor:
+          type: number
+        triggerCooldownMs:
+          type: integer
+        priority:
+          type: object
+          additionalProperties: true
+      required: []
+      additionalProperties: true
+    SchedulingPolicyDetail:
+      type: object
+      properties:
+        policy:
+          $ref: '#/components/schemas/SchedulingPolicy'
+        config:
+          $ref: '#/components/schemas/SchedulingPolicyConfig'
+      required: []
+      additionalProperties: false
+    SchedulingPolicyVersionSummary:
+      type: object
+      properties:
+        configVersion:
+          type: integer
+        active:
+          type: boolean
+        updatedBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+      required: []
+      additionalProperties: false
+    PolicyVersionList:
+      type: array
+      items:
+        $ref: '#/components/schemas/SchedulingPolicyVersionSummary'
+    RegisterPolicyVersionRequest:
+      type: object
+      properties:
+        config:
+          $ref: '#/components/schemas/SchedulingPolicyConfig'
+        operator:
+          type: string
+      required:
+        - config
+      additionalProperties: false
+    SchedulingPolicyComparison:
+      type: object
+      properties:
+        candidateVersion:
+          type: integer
+        activeVersion:
+          type: integer
+        feedbackKpis:
+          $ref: '#/components/schemas/SchedulingFeedbackKpis'
+        paramDeltas:
+          type: object
+          additionalProperties: true
+        objective:
+          type: object
+          additionalProperties: true
+        verdict:
+          type: string
+        readOnly:
+          type: boolean
+      required: []
+      additionalProperties: false
+    ActivatePolicyVersionResponse:
+      type: object
+      properties:
+        config:
+          $ref: '#/components/schemas/SchedulingPolicyConfig'
+      required: []
+      additionalProperties: false
+    SchedulingFeedbackKpis:
+      type: object
+      properties:
+        totalFeedback:
+          type: integer
+        accepted:
+          type: integer
+        rejected:
+          type: integer
+        pendingAcceptance:
+          type: integer
+        acceptanceRate:
+          type: number
+        overrideRate:
+          type: number
+        fallbackRate:
+          type: number
+        solverRuntimeMs:
+          type: number
+        replanCount:
+          type: integer
+        conflictCount:
+          type: integer
+      required: []
+      additionalProperties: false
+    SchedulingFeedback:
+      type: object
+      properties:
+        feedbackId:
+          type: string
+        runId:
+          type: string
+          nullable: true
+        planId:
+          type: string
+        taskId:
+          type: string
+          nullable: true
+        assignmentId:
+          type: string
+          nullable: true
+        plannedStart:
+          type: string
+          nullable: true
+        actualStart:
+          type: string
+          nullable: true
+        replanCount:
+          type: integer
+        conflictCount:
+          type: integer
+        overrideCount:
+          type: integer
+        solverRuntime:
+          type: number
+          nullable: true
+        solverFallback:
+          type: boolean
+        accepted:
+          type: boolean
+          nullable: true
+        ts:
+          type: string
+      required: []
+      additionalProperties: true
+    SchedulingFeedbackList:
+      type: array
+      items:
+        $ref: '#/components/schemas/SchedulingFeedback'
+    WorldStateSnapshot:
+      type: object
+      properties:
+        snapshotVersion:
+          type: string
+        ts:
+          type: string
+        worldVersion:
+          type: integer
+        entityVersions:
+          type: object
+          additionalProperties:
+            type: integer
+        reservations:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        persons:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        devices:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        tasks:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        stations:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        zones:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required: []
+      additionalProperties: true
     SchedulePlan:
       type: object
       properties:

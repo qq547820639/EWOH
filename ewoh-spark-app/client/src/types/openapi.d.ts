@@ -6732,6 +6732,180 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai/config/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * AI configuration status
+         * @description Returns whether AI is configured (never returns secret key values).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AiConfigStatus"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save global AI configuration */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AiConfigRequest"];
+                };
+            };
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AiConfigStatus"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** AI natural-language chat */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AiChatRequest"];
+                };
+            };
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AiChatResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/vision/understand": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** AI vision understanding */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AiVisionRequest"];
+                };
+            };
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AiVisionResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/audit": {
         parameters: {
             query?: never;
@@ -7163,48 +7337,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/scheduler/plans/{planId}/dispatch-status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Schedule plan dispatch status */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description Schedule plan id */
-                    planId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Successful response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["DispatchStatus"];
-                    };
-                };
-                Unauthorized: components["responses"]["Unauthorized"];
-                NotFound: components["responses"]["NotFound"];
-                InternalError: components["responses"]["InternalError"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/scheduler/plans/{planId}/confirm": {
         parameters: {
             query?: never;
@@ -7352,6 +7484,971 @@ export interface paths {
                 InternalError: components["responses"]["InternalError"];
             };
         };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List scheduling runs (V2) */
+        get: {
+            parameters: {
+                query?: {
+                    status?: string;
+                    page?: number;
+                    pageSize?: number;
+                    from?: string;
+                    to?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ListRunsResponse"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /** Create scheduling run (V2) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateRunRequest"];
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreateRunResponse"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/runs/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get scheduling run detail (V2) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    runId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ScheduleRun"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get current scheduling world snapshot (V2) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorldStateSnapshot"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/plans/{planId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get schedule plan detail (V2) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    planId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulePlanV2"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/plans/{planId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve schedule plan (V2) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    planId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ApprovePlanRequest"];
+                };
+            };
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulePlanV2"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                Conflict: components["responses"]["Conflict"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/plans/{planId}/dispatch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dispatch schedule plan (V2) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    planId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulePlanV2"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                Conflict: components["responses"]["Conflict"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/plans/{planId}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject schedule plan (V2) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    planId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RejectPlanRequest"];
+                };
+            };
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulePlanV2"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/plans/{planId}/replan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Replan schedule plan (V2) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    planId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReplanRequest"];
+                };
+            };
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulePlanV2"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/plans/{planId}/compare/{otherPlanId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Compare schedule plans (V2) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    planId: string;
+                    otherPlanId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlanCompareResult"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/plans/{planId}/overrides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply manual plan overrides (V2) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    planId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PlanOverrideRequest"];
+                };
+            };
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlanOverrideResponse"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/tasks/{id}/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get task candidate resources (V2) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskCandidatesResponse"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/routes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get route graph (V2) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RouteGraph"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/routes/calculate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Calculate route (V2) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CalculateRouteRequest"];
+                };
+            };
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Route"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/conflicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List scheduling conflicts (V2) */
+        get: {
+            parameters: {
+                query?: {
+                    type?: string;
+                    severity?: string;
+                    scope?: string;
+                    resourceId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConflictsListResponse"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/conflicts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get scheduling conflict detail (V2) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulingConflict"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get active scheduling policy and config */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulingPolicyDetail"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/policy/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List scheduling policy versions */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PolicyVersionList"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /** Register candidate scheduling policy version */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RegisterPolicyVersionRequest"];
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulingPolicyConfig"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/policy/versions/{version}/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Compare candidate vs active policy version (shadow read-only) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    version: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulingPolicyComparison"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/policy/versions/{version}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activate scheduling policy version */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    version: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ActivatePolicyVersionResponse"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Scheduler Prometheus text metrics */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Prometheus text metrics */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": string;
+                    };
+                };
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/metrics/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Derive scheduling feedback KPIs */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulingFeedbackKpis"];
+                    };
+                };
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/metrics/feedback/rows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List scheduling feedback rows */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulingFeedbackList"];
+                    };
+                };
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -7614,6 +8711,50 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/gamification/brain/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply brain suggestion to a schedule plan */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ApplyBrainSuggestionRequest"];
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApplyBrainSuggestionResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -11040,6 +12181,372 @@ export interface components {
             createdAt?: string;
         };
         EventChain: components["schemas"]["EventChainNode"][];
+        AiConfigStatus: {
+            configured?: boolean;
+            baseUrl?: string | null;
+            model?: string | null;
+        };
+        AiConfigRequest: {
+            api_key?: string;
+            base_url?: string;
+            model?: string;
+        };
+        AiChatRequest: {
+            question?: string;
+        };
+        AiChatResult: {
+            ok?: boolean;
+            answer?: string;
+            model?: string;
+            error?: string | null;
+            context?: string | null;
+        };
+        AiVisionRequest: {
+            image_url?: string;
+            question?: string;
+            api_key?: string;
+            base_url?: string;
+            model?: string;
+        };
+        AiVisionResult: {
+            status?: number;
+        } & {
+            [key: string]: unknown;
+        };
+        ApplyBrainSuggestionRequest: {
+            type: string;
+            title: string;
+            description?: string;
+            affectedEntities: string[];
+            expectedBenefit?: string;
+            confidence?: number;
+            operator?: string;
+        };
+        ApplyBrainSuggestionResult: {
+            planId?: string;
+            planName?: string;
+            strategy?: string;
+            status?: string;
+        };
+        ScheduleRun: {
+            runId?: string;
+            triggerType?: string;
+            triggerEntityId?: string | null;
+            status?: string;
+            snapshotVersion?: string | null;
+            planIds?: string[];
+            orgId?: string | null;
+            error?: string | null;
+            createdAt?: string;
+        };
+        CreateRunRequest: {
+            trigger?: string;
+            entityId?: string;
+            horizonMinutes?: number;
+            operator?: string;
+            reason?: string;
+        };
+        CreateRunResponse: {
+            run?: components["schemas"]["ScheduleRun"];
+            plans?: components["schemas"]["SchedulePlanV2"][];
+            debounced?: boolean;
+        };
+        SchedulePlanV2: {
+            planId?: string;
+            planName?: string;
+            version?: number;
+            status?: string;
+            trigger?: {
+                [key: string]: unknown;
+            };
+            snapshotVersion?: string;
+            policyVersion?: number;
+            solverVersion?: string;
+            solverStatus?: string;
+            horizonMinutes?: number;
+            assignments?: {
+                [key: string]: unknown;
+            }[];
+            metrics?: {
+                [key: string]: unknown;
+            };
+            baselineDelta?: {
+                [key: string]: unknown;
+            };
+            violations?: {
+                [key: string]: unknown;
+            }[];
+            createdAt?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        ListRunsResponse: {
+            runs?: components["schemas"]["ScheduleRun"][];
+            plans?: components["schemas"]["SchedulePlanV2"][];
+            total?: number;
+            page?: number;
+            pageSize?: number;
+        };
+        ApprovePlanRequest: {
+            version?: number;
+            snapshotVersion?: string;
+            operator?: string;
+            reason?: string;
+        };
+        RejectPlanRequest: {
+            operator?: string;
+            reason?: string;
+        };
+        ReplanRequest: {
+            lockedConstraints?: components["schemas"]["SchedulingConstraint"][];
+            operator?: string;
+            reason?: string;
+        };
+        CalculateRouteRequest: {
+            personId: string;
+            taskId: string;
+        };
+        PlanCompareResult: {
+            [key: string]: unknown;
+        };
+        Route: {
+            routeId?: string;
+            personId?: string;
+            taskId?: string;
+            distanceMeters?: number;
+            etaSeconds?: number;
+            nodes?: string[];
+            geometry?: {
+                [key: string]: unknown;
+            }[];
+            source?: string;
+            riskLevel?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        RouteGraph: {
+            nodes?: {
+                [key: string]: unknown;
+            }[];
+            edges?: {
+                [key: string]: unknown;
+            }[];
+        } & {
+            [key: string]: unknown;
+        };
+        TaskCandidatesResponse: {
+            taskId?: string;
+            taskTitle?: string | null;
+            taskStatus?: string | null;
+            assigned?: boolean;
+            lockedAssigneeId?: string | null;
+            lockedDeviceId?: string | null;
+            solverVersion?: string;
+            candidates?: {
+                [key: string]: unknown;
+            }[];
+            generatedAt?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        SchedulingConflict: {
+            conflictId?: string;
+            type?: string;
+            severity?: string;
+            scope?: string;
+            resourceId?: string | null;
+            resourceType?: string | null;
+            taskIds?: string[];
+            message?: string;
+            resolution?: string | null;
+            createdAt?: string;
+            snapshotVersion?: string | null;
+            data?: {
+                [key: string]: unknown;
+            };
+        };
+        ConflictsListResponse: {
+            conflicts?: components["schemas"]["SchedulingConflict"][];
+            total?: number;
+        };
+        SchedulingConstraint: {
+            id?: string;
+            type?: string;
+            taskId?: string;
+            personId?: string;
+            deviceId?: string;
+            stationId?: string;
+            zoneId?: string;
+            teamId?: string;
+            startMs?: number;
+            endMs?: number;
+            value?: number;
+            hard?: boolean;
+            operator?: string;
+            reason?: string;
+            validFrom?: number;
+            expiresAt?: number;
+            snapshotVersion?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        PlanOverrideAction: {
+            kind: string;
+            taskId: string;
+            personId?: string;
+            deviceId?: string;
+            stationId?: string;
+            zoneId?: string;
+            startMs?: number;
+            endMs?: number;
+            reason?: string;
+            validFrom?: number;
+            expiresAt?: number;
+        } & {
+            [key: string]: unknown;
+        };
+        PlanOverrideRequest: {
+            actions: components["schemas"]["PlanOverrideAction"][];
+            operator?: string;
+            reason?: string;
+        };
+        PlanOverrideDiffSummary: {
+            changedTaskIds?: string[];
+            addedTaskIds?: string[];
+            removedTaskIds?: string[];
+            metricsDelta?: {
+                [key: string]: unknown;
+            };
+        };
+        PlanOverrideResponse: {
+            planId?: string;
+            operator?: string;
+            reason?: string;
+            appliedConstraints?: components["schemas"]["SchedulingConstraint"][];
+            before?: components["schemas"]["SchedulePlanV2"];
+            after?: components["schemas"]["SchedulePlanV2"];
+            diff?: components["schemas"]["PlanOverrideDiffSummary"];
+        };
+        SchedulingPolicy: {
+            version?: number;
+            latenessWeight?: number;
+            walkingWeight?: number;
+            workloadBalanceWeight?: number;
+            stationWaitWeight?: number;
+            changeCostWeight?: number;
+            riskWeight?: number;
+            energyWeight?: number;
+            solverVersion?: string;
+        };
+        SchedulingPolicyConfig: {
+            configVersion?: number;
+            minBatteryPct?: number;
+            maxContinuousLoad?: number;
+            defaultTaskDurationMs?: number;
+            horizonMinutes?: number;
+            walkingSpeedMps?: number;
+            euclideanDistanceWeight?: number;
+            congestedFactor?: number;
+            blockedFactor?: number;
+            highRiskFactor?: number;
+            mediumRiskFactor?: number;
+            triggerCooldownMs?: number;
+            priority?: {
+                [key: string]: unknown;
+            };
+        } & {
+            [key: string]: unknown;
+        };
+        SchedulingPolicyDetail: {
+            policy?: components["schemas"]["SchedulingPolicy"];
+            config?: components["schemas"]["SchedulingPolicyConfig"];
+        };
+        SchedulingPolicyVersionSummary: {
+            configVersion?: number;
+            active?: boolean;
+            updatedBy?: string | null;
+            createdAt?: string;
+        };
+        PolicyVersionList: components["schemas"]["SchedulingPolicyVersionSummary"][];
+        RegisterPolicyVersionRequest: {
+            config: components["schemas"]["SchedulingPolicyConfig"];
+            operator?: string;
+        };
+        SchedulingPolicyComparison: {
+            candidateVersion?: number;
+            activeVersion?: number;
+            feedbackKpis?: components["schemas"]["SchedulingFeedbackKpis"];
+            paramDeltas?: {
+                [key: string]: unknown;
+            };
+            objective?: {
+                [key: string]: unknown;
+            };
+            verdict?: string;
+            readOnly?: boolean;
+        };
+        ActivatePolicyVersionResponse: {
+            config?: components["schemas"]["SchedulingPolicyConfig"];
+        };
+        SchedulingFeedbackKpis: {
+            totalFeedback?: number;
+            accepted?: number;
+            rejected?: number;
+            pendingAcceptance?: number;
+            acceptanceRate?: number;
+            overrideRate?: number;
+            fallbackRate?: number;
+            solverRuntimeMs?: number;
+            replanCount?: number;
+            conflictCount?: number;
+        };
+        SchedulingFeedback: {
+            feedbackId?: string;
+            runId?: string | null;
+            planId?: string;
+            taskId?: string | null;
+            assignmentId?: string | null;
+            plannedStart?: string | null;
+            actualStart?: string | null;
+            replanCount?: number;
+            conflictCount?: number;
+            overrideCount?: number;
+            solverRuntime?: number | null;
+            solverFallback?: boolean;
+            accepted?: boolean | null;
+            ts?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        SchedulingFeedbackList: components["schemas"]["SchedulingFeedback"][];
+        WorldStateSnapshot: {
+            snapshotVersion?: string;
+            ts?: string;
+            worldVersion?: number;
+            entityVersions?: {
+                [key: string]: number;
+            };
+            reservations?: {
+                [key: string]: unknown;
+            }[];
+            persons?: {
+                [key: string]: unknown;
+            }[];
+            devices?: {
+                [key: string]: unknown;
+            }[];
+            tasks?: {
+                [key: string]: unknown;
+            }[];
+            stations?: {
+                [key: string]: unknown;
+            }[];
+            zones?: {
+                [key: string]: unknown;
+            }[];
+        } & {
+            [key: string]: unknown;
+        };
         SchedulePlan: {
             id?: string;
             planId?: string;

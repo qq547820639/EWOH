@@ -24,6 +24,8 @@ import type {
   RejectPlanRequest,
   ReplanRequest,
   CalculateRouteRequest,
+  PlanOverrideRequest,
+  SchedulingPolicyConfig,
 } from '@shared/api.interface';
 
 @Controller('api/scheduler')
@@ -133,9 +135,31 @@ export class SchedulerController {
     return this.schedulerService.createRun(body, request.userContext);
   }
 
+  @Get('runs')
+  async listRuns(
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.schedulerService.listRuns({
+      status,
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+      from,
+      to,
+    });
+  }
+
   @Get('runs/:runId')
   async getRun(@Param('runId') runId: string) {
     return this.schedulerService.getRun(runId);
+  }
+
+  @Get('snapshot')
+  async getSnapshot() {
+    return this.schedulerService.getSnapshot();
   }
 
   @Get('plans/:planId')
@@ -169,6 +193,16 @@ export class SchedulerController {
     return this.schedulerService.replanV2(planId, body, request.userContext);
   }
 
+  /** 应用人工覆盖（锁定/排除/偏好/加急/调时）并触发 V2 重排，返回 before/after 差异。 */
+  @Post('plans/:planId/overrides')
+  async applyOverrides(
+    @Param('planId') planId: string,
+    @Body() body: PlanOverrideRequest,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.schedulerService.applyOverrides(planId, body, request.userContext);
+  }
+
   @Get('plans/:planId/compare/:otherPlanId')
   async comparePlans(
     @Param('planId') planId: string,
@@ -190,6 +224,79 @@ export class SchedulerController {
   @Post('routes/calculate')
   async calculateRoute(@Body() body: CalculateRouteRequest) {
     return this.schedulerService.calculateRouteV2(body);
+  }
+
+  @Get('conflicts')
+  async listConflicts(
+    @Query('type') type?: string,
+    @Query('severity') severity?: string,
+    @Query('scope') scope?: string,
+    @Query('resourceId') resourceId?: string,
+  ) {
+    return this.schedulerService.listConflicts({
+      type,
+      severity,
+      scope,
+      resourceId,
+    } as never);
+  }
+
+  @Get('conflicts/:id')
+  async getConflict(@Param('id') id: string) {
+    return this.schedulerService.getConflictDetail(id);
+  }
+
+  // ===== SchedulingPolicy versioning (Task 6: 命令图调度闭环) =====
+
+  /** 返回当前生效策略 + 配置（只读）。 */
+  @Get('policy')
+  async getPolicy() {
+    return this.schedulerService.getPolicy();
+  }
+
+  /** 列出全部策略版本（含 active 标志、操作人、创建时间）。 */
+  @Get('policy/versions')
+  async listPolicyVersions() {
+    return this.schedulerService.listPolicyVersions();
+  }
+
+  /** 注册候选策略版本（inactive，绝不自动激活）。 */
+  @Post('policy/versions')
+  async registerPolicyVersion(
+    @Body() body: { config: SchedulingPolicyConfig; operator?: string },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    if (!body?.config) {
+      throw new BadRequestException('config is required');
+    }
+    return this.schedulerService.registerPolicyVersion(
+      body.config,
+      request.userContext,
+    );
+  }
+
+  /** shadow/只读对比：候选版本 vs 当前生效版本（反馈 KPI + 目标权重）。 */
+  @Get('policy/versions/:version/compare')
+  async comparePolicyVersion(
+    @Param('version') version: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.schedulerService.comparePolicyVersion(
+      this.parsePolicyVersion(version),
+      request.userContext,
+    );
+  }
+
+  /** 显式激活指定版本（唯一生产策略翻转路径，需人工审批 + 审计）。 */
+  @Post('policy/versions/:version/activate')
+  async activatePolicyVersion(
+    @Param('version') version: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.schedulerService.activatePolicyVersion(
+      this.parsePolicyVersion(version),
+      request.userContext,
+    );
   }
 
   // ===== Scheduling 实时事件流（SSE）=====
@@ -217,6 +324,15 @@ export class SchedulerController {
         ),
       ),
     );
+  }
+
+  /** 解析并校验策略版本号（正整数）。 */
+  private parsePolicyVersion(version: string): number {
+    const v = Number(version);
+    if (!Number.isInteger(v) || v <= 0) {
+      throw new BadRequestException('invalid policy version');
+    }
+    return v;
   }
 
   /**

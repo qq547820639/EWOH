@@ -43,6 +43,7 @@ import { TaskModule } from '../task/task.module';
     SchedulerStreamService,
   ],
   exports: [
+    SchedulerService,
     SchedulerMetricsService,
     SchedulingFeedbackService,
     WorldStateSnapshotService,

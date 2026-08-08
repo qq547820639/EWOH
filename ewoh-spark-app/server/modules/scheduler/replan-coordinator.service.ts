@@ -143,4 +143,60 @@ export class ReplanCoordinatorService {
 
     return { run, plans, debounced: false };
   }
+
+  /**
+   * 将世界状态中的路由阻断/拥塞与资源预占冲突转译为重排触发输入，
+   * 逐条复用 handleTrigger 触发 scoped 重排（复用现有内核，不并行调度器）。
+   * - 路由：routeStatus 中 blocked/congested 的边 → ROUTE_BLOCKED / ROUTE_CONGESTED。
+   * - 预占：同一资源时间窗重叠的活跃预占 → RESERVATION_CONFLICT（scoped 到冲突资源）。
+   * 返回实际派发并创建运行的触发列表。
+   */
+  async dispatchStateTriggers(
+    snapshot: WorldStateSnapshot,
+    ctx: OrgContext,
+  ): Promise<Array<{ triggerType: string; entityId: string }>> {
+    const dispatched: Array<{ triggerType: string; entityId: string }> = [];
+
+    // 1) 路由阻断 / 拥塞。
+    for (const r of snapshot.routeStatus) {
+      if (r.status === 'blocked') {
+        const run = await this.handleTrigger('ROUTE_BLOCKED', r.edgeId, ctx);
+        if (run.run) {
+          dispatched.push({ triggerType: 'ROUTE_BLOCKED', entityId: r.edgeId });
+        }
+      } else if (r.status === 'congested') {
+        const run = await this.handleTrigger('ROUTE_CONGESTED', r.edgeId, ctx);
+        if (run.run) {
+          dispatched.push({ triggerType: 'ROUTE_CONGESTED', entityId: r.edgeId });
+        }
+      }
+    }
+
+    // 2) 资源预占冲突：同一资源时间窗重叠的活跃预占 → scoped 重排。
+    const reserved = snapshot.reservations;
+    for (let i = 0; i < reserved.length; i++) {
+      for (let j = i + 1; j < reserved.length; j++) {
+        const a = reserved[i];
+        const b = reserved[j];
+        const sameResource =
+          a.resourceType === b.resourceType && a.resourceId === b.resourceId;
+        const overlap = a.startMs < b.endMs && b.startMs < a.endMs;
+        if (sameResource && overlap) {
+          const run = await this.handleTrigger(
+            'RESERVATION_CONFLICT',
+            a.resourceId,
+            ctx,
+          );
+          if (run.run) {
+            dispatched.push({
+              triggerType: 'RESERVATION_CONFLICT',
+              entityId: a.resourceId,
+            });
+          }
+        }
+      }
+    }
+
+    return dispatched;
+  }
 }
