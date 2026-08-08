@@ -75,14 +75,26 @@ test('missing timestamp rejected', () => {
   assert.strictEqual(result.code, 'WEBHOOK_MISSING_TIMESTAMP');
 });
 
-test('replayed request rejected', () => {
+test('replayed request rejected after markReplayHandled', () => {
   const body = makeValidBody();
-  // 第一次通过
-  assert.strictEqual(security.verifyWebhookRequest(makeReq(body)).ok, true);
-  // 第二次（同 event_id）→ replay
+  // v1.1.1 新语义：验证通过不自动标记；业务成功后显式 markReplayHandled
+  const first = security.verifyWebhookRequest(makeReq(body));
+  assert.strictEqual(first.ok, true);
+  // 未标记前：重复请求仍可通过（合法重试不被 401 拦截）
+  const retry = security.verifyWebhookRequest(makeReq(body));
+  assert.strictEqual(retry.ok, true, '业务成功前允许重试');
+
+  // 业务成功后标记 → 同 event_id 再次请求被拒
+  security.markReplayHandled(first.eventId);
   const result = security.verifyWebhookRequest(makeReq(body));
   assert.strictEqual(result.ok, false);
   assert.strictEqual(result.code, 'WEBHOOK_REPLAY');
+});
+
+test('markReplayHandled 无 eventId 安全', () => {
+  security.markReplayHandled(null);
+  security.markReplayHandled('');
+  assert.strictEqual(security.isReplay(null), false);
 });
 
 test('invalid signature rejected when encrypt key configured', () => {

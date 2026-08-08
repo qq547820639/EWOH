@@ -128,6 +128,20 @@ def main():
 
     # storage 就绪后绑定到 collector，用于 snapshot() 派生 db_counts / open_event_count
     metrics.bind_storage(storage)
+
+    # v0.7 修复（走读发现）：真实模式（production/development）下适配器采集与推理管线
+    # 从未启动 —— manager.start()/pipeline.start() 仅在 simulation 路径被调用，
+    # 导致遥测→推理→事件闭环静默失效（数据只读不增）。此处显式启动：
+    # - manager.start()：启动已注册适配器的后台读取线程（写 storage + bus）；
+    # - pipeline.start()：订阅 STREAM_TELEMETRY，启动推理/规则/事件链路。
+    # 真实装配下启动失败 → fail-fast（不静默降级，与 production 装配语义一致）。
+    if mode != "simulation":
+        if hasattr(manager, "start") and callable(manager.start):
+            manager.start()
+        if hasattr(pipeline, "start") and callable(pipeline.start):
+            pipeline.start()
+        print("[EWOH] 真实模式：适配器采集与推理管线已启动")
+
     # 智能调度持久化仓储：调度数据落库，服务重启后不丢失（Phase 2，API 接线留到 Phase 6）
     scheduling_repository = None
     try:

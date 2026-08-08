@@ -100,8 +100,16 @@ function extractEventId(body) {
 
 function isReplay(eventId) {
   if (!eventId) return false;
-  if (recentEventIds.has(eventId)) return true;
-  // 清理过期
+  return recentEventIds.has(eventId);
+}
+
+/** 记录已成功处理的事件 id（重放窗口内防重放）。
+ * v1.1.1 修复：仅业务处理成功后标记。此前"验证通过即标记"会导致
+ * 业务失败（unknown action / already closed / not found）后 30 分钟内的
+ * 合法重试被 WEBHOOK_REPLAY 401 拦截（应返回业务幂等结果而非 401）。 */
+function markReplayHandled(eventId) {
+  if (!eventId) return;
+  // 清理过期（保持窗口有界）
   const cutoff = nowMs() - REPLAY_WINDOW_MS;
   while (recentTimestamps.length && recentTimestamps[0].ts < cutoff) {
     recentEventIds.delete(recentTimestamps[0].id);
@@ -117,7 +125,6 @@ function isReplay(eventId) {
   }
   recentEventIds.add(eventId);
   recentTimestamps.push({ ts: nowMs(), id: eventId });
-  return false;
 }
 
 /** 提取签名用时间戳（秒级字符串，飞书 HMAC 协议要求）。
@@ -193,13 +200,13 @@ function verifyWebhookRequest(req) {
     return { ok: false, code: 'WEBHOOK_INVALID_SIGNATURE', error: 'invalid signature' };
   }
 
-  // 4. 重放保护
+  // 4. 重放保护（只检查不标记：标记延迟到业务成功后，避免失败重试被 401 拦截）
   const eventId = extractEventId(body);
   if (eventId && isReplay(eventId)) {
     return { ok: false, code: 'WEBHOOK_REPLAY', error: 'replayed request' };
   }
 
-  return { ok: true };
+  return { ok: true, eventId };
 }
 
 /** 记录一次 webhook 验证结果到审计表（失败也记录，便于溯源）。 */
@@ -224,6 +231,7 @@ module.exports = {
   extractSignatureTimestamp,
   extractEventId,
   isReplay,
+  markReplayHandled,
   getVerificationToken,
   getEncryptKey,
 };

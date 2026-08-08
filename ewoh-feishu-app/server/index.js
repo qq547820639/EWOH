@@ -241,6 +241,9 @@ app.post('/webhook/card', (req, res) => {
       console.error('[webhook] sendFollowupMessage 失败:', e.message);
     }
 
+    // v1.1.1：业务处置成功后标记重放已处理（失败时允许合法重试，不被 401 拦截）
+    security.markReplayHandled(eventId);
+
     res.json({ ok: true });
   } catch (e) {
     // 兜底：未知异常不记录 dedup（下次可重试），仅记录错误
