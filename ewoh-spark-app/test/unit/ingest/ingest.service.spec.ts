@@ -276,9 +276,13 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
 
     expect(result.total).toBe(3);
     expect(result.accepted).toBe(3);
-    // telemetry 应为一次批量 insert（rows.length === 3）
-    const telemetryInsert = insertCalls.find((c) => c.table === ewohTelemetry);
-    expect(telemetryInsert?.rows).toHaveLength(3);
+    // telemetry 应为一次批量 insert（rows.length === 3），而非逐帧 3 次单行 insert
+    const telemetryInserts = insertCalls.filter((c) => c.table === ewohTelemetry);
+    expect(telemetryInserts).toHaveLength(1);
+    expect(telemetryInserts[0]?.rows).toHaveLength(3);
+    // devices 也应单次 upsert
+    const deviceInserts = insertCalls.filter((c) => c.table === ewohDevice);
+    expect(deviceInserts).toHaveLength(1);
   });
 
   it('批量重复 raw_ref 被跳过（skipped=true）', async () => {
