@@ -120,7 +120,11 @@ class GreedyOptimizer(Optimizer):
         return start.isoformat(timespec="milliseconds"), end.isoformat(timespec="milliseconds")
 
     def solve(self, world_state, tasks, candidates, policy):
-        """贪心求解。candidates 为 {task_id: [Candidate,...]}；缺省时由 generator 生成。"""
+        """贪心求解。candidates 为 {task_id: [Candidate,...]}；缺省时由 generator 生成。
+
+        从 world_state.persons 填充 HardConstraints 的技能注册表，确保真实人员技能
+        参与硬约束判定（P0：此前默认空 registry 导致真实数据下技能约束恒失败）。
+        """
         persons = list(getattr(world_state, "persons", []) or [])
         devices = list(getattr(world_state, "devices", []) or [])
         person_by_id = {}
@@ -128,6 +132,30 @@ class GreedyOptimizer(Optimizer):
             pid = p.get("person_id") if isinstance(p, dict) else getattr(p, "person_id", None)
             if pid:
                 person_by_id[pid] = p
+
+        # 若调用方未注入 skills_registry，从真实世界状态构建（P0 修复）
+        if not getattr(self.constraints, "skills_registry", None):
+            skills_registry = {}
+            for p in persons:
+                pid = p.get("person_id") if isinstance(p, dict) else getattr(p, "person_id", None)
+                if not pid:
+                    continue
+                skills = []
+                if isinstance(p, dict):
+                    raw = p.get("skills", p.get("skills_json", []))
+                else:
+                    raw = getattr(p, "skills", None) or getattr(p, "skills_json", None) or []
+                if isinstance(raw, str):
+                    try:
+                        import json
+
+                        raw = json.loads(raw)
+                    except (ValueError, TypeError):
+                        raw = []
+                if isinstance(raw, (list, tuple, set)):
+                    skills = [str(s) for s in raw]
+                skills_registry[pid] = set(skills)
+            self.constraints.skills_registry = skills_registry
 
         assignments = []
         violations = []

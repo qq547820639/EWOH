@@ -489,6 +489,8 @@ def make_handler(ctx):
                     return self.api_create_scheduling_request(payload)
                 if p.startswith("/api/scheduling/plans/") and p.endswith("/confirm"):
                     return self.api_confirm_plan(p[len("/api/scheduling/plans/") : -len("/confirm")], payload)
+                if p.startswith("/api/scheduling/plans/") and p.endswith("/execute"):
+                    return self.api_execute_plan(p[len("/api/scheduling/plans/") : -len("/execute")], payload)
                 if p.startswith("/api/scheduling/plans/") and p.endswith("/reject"):
                     return self.api_reject_plan(p[len("/api/scheduling/plans/") : -len("/reject")], payload)
                 if p.startswith("/api/scheduling/plans/") and p.endswith("/replan"):
@@ -1472,6 +1474,25 @@ def make_handler(ctx):
 
         def api_confirm_plan(self, plan_id, payload):
             return self._plan_action(plan_id, "confirm", payload)
+
+        def api_execute_plan(self, plan_id, payload):
+            """POST /api/scheduling/plans/{id}/execute — 已批准方案正式派工。
+
+            生成 Assignment（status=dispatched）并将方案标记 dispatched；
+            非 approved 状态抛 ILLEGAL_STATE（未经确认不得执行）。
+            """
+            if ctx.scheduler is None:
+                return self._new_error("not_ready", "调度服务未启用", 503)
+            try:
+                assignments = ctx.scheduler.execute(plan_id)
+            except KeyError:
+                return self._new_error("not_found", "方案不存在", 404)
+            except Exception as e:
+                code = getattr(e, "code", None) or "INVALID_REQUEST"
+                return self._new_error(code, str(e), 409)
+            return self.send_json(
+                {"ok": True, "assignments": [a.to_dict() for a in assignments]}
+            )
 
         def api_reject_plan(self, plan_id, payload):
             return self._plan_action(plan_id, "reject", payload)

@@ -250,11 +250,12 @@ class SchedulingApiTest(unittest.TestCase):
         tid, data = self._create_request()
         pid = data["plans"][0]["plan_id"]
         self.fx.post(f"/api/scheduling/plans/{pid}/confirm", {"actor_id": "leader1", "reason": "确认派工"})
-        # execute -> create assignments (先确认后，经由 confirm 并未直接派工；需执行)
-        # 直接通过 SchedulerService.execute 派工
-        assignments = self.fx.ctx.scheduler.execute(pid)
-        self.assertGreaterEqual(len(assignments), 1)
-        asn_id = assignments[0].assignment_id
+        # execute 通过 HTTP 端点派工（生成 Assignment，status=dispatched）
+        code, res = self.fx.post(f"/api/scheduling/plans/{pid}/execute", {"actor_id": "leader1"})
+        self.assertEqual(code, 200, res)
+        self.assertIn("assignments", res)
+        self.assertGreaterEqual(len(res["assignments"]), 1)
+        asn_id = res["assignments"][0]["assignment_id"]
         # list assignments
         code, items = self.fx.get("/api/assignments")
         self.assertEqual(code, 200)
@@ -275,9 +276,17 @@ class SchedulingApiTest(unittest.TestCase):
         code, err = self.fx.post(f"/api/assignments/{asn_id}/cancel", {"actor_id": "leader1"})
         self.assertEqual(code, 409)
         # override
-        asn2 = assignments[0]
-        code, res = self.fx.post(f"/api/assignments/{asn2.assignment_id}/override", {"actor_id": "leader1", "status": "executing"})
+        code, res = self.fx.post(f"/api/assignments/{asn_id}/override", {"actor_id": "leader1", "status": "executing"})
         self.assertEqual(code, 200)
+
+    def test_execute_rejects_unapproved_plan(self):
+        """未确认的方案不可执行（仅 PLAN_APPROVED 可派工）。"""
+        tid, data = self._create_request()
+        pid = data["plans"][0]["plan_id"]
+        # shadow 状态直接 execute -> 409 ILLEGAL_STATE
+        code, err = self.fx.post(f"/api/scheduling/plans/{pid}/execute", {"actor_id": "leader1"})
+        self.assertEqual(code, 409, err)
+        self.assertEqual(err["error"]["code"], "ILLEGAL_STATE")
 
 
 class CommandMapStreamTest(unittest.TestCase):
