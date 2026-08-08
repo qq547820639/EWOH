@@ -13,8 +13,19 @@ import { ewohSchedulerConfig } from '@server/database/schema';
  *
  * 所有需要真实调用大模型的功能（AI 决策、大脑建议、自然语言问答）统一走本服务，
  * 保证"系统级别共享同一份 AI 配置"。
+ *
+ * v0.7 修复（AI 接入坏掉根因）：
+ *   - 旧 saveConfig 未提供 org_id 列 → 写入 org_id=NULL；
+ *     PostgreSQL 中 NULL 在唯一索引里彼此不相等 → ON CONFLICT (org_id, config_key)
+ *     永不触发 → 每次保存都 INSERT 新行、从不 UPDATE → 读取 limit 1 可能拿到旧行/空行。
+ *   - 修复：显式写入全局哨兵 org_id（GLOBAL_ORG_SENTINEL，固定 UUID），
+ *     ON CONFLICT 恢复正常 upsert 语义；getConfig 按哨兵 + config_key 精确读取。
  */
 export const ARK_CONFIG_KEY = 'ai.provider.ark';
+
+/** 全局配置哨兵 org_id：AI 配置为系统级共享（不按租户隔离），
+ *  用固定 UUID 占位而非 NULL，保证唯一索引与 ON CONFLICT 正常工作。 */
+export const GLOBAL_ORG_SENTINEL = '00000000-0000-0000-0000-000000000000';
 
 const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3';
 const DEFAULT_MODEL = 'doubao-seed-2-1-pro-260628';
@@ -43,8 +54,16 @@ export class ArkService {
     let dbModel = '';
     if (this.db) {
       try {
+        // v0.7 修复：按全局哨兵 org_id + config_key 精确读取（旧版无 org 过滤 + 无排序，
+        // NULL 行 + limit 1 会读到不确定的旧行/空行）。
         const rows = await this.db.execute(
-          sql`select config_value from public.ewoh_scheduler_config where config_key = ${ARK_CONFIG_KEY} limit 1`,
+          sql`
+            select config_value from public.ewoh_scheduler_config
+            where config_key = ${ARK_CONFIG_KEY}
+              and org_id = ${GLOBAL_ORG_SENTINEL}::uuid
+            order by _updated_at desc
+            limit 1
+          `,
         );
         const row = rows?.[0];
         if (row?.config_value && typeof row.config_value === 'object') {
@@ -84,10 +103,12 @@ export class ArkService {
       base_url: input.base_url?.trim() || current.baseUrl,
       model: input.model?.trim() || current.model,
     };
+    // v0.7 修复：显式提供 org_id（全局哨兵）而非依赖列默认值（默认可能为 NULL）。
+    // 旧版未写 org_id → NULL → ON CONFLICT (org_id, config_key) 永不冲突 → 无限插入新行。
     await this.db.execute(
       sql`
-        insert into public.ewoh_scheduler_config (config_key, config_value, updated_by)
-        values (${ARK_CONFIG_KEY}, ${JSON.stringify(next)}::jsonb, 'system-admin')
+        insert into public.ewoh_scheduler_config (org_id, config_key, config_value, updated_by)
+        values (${GLOBAL_ORG_SENTINEL}::uuid, ${ARK_CONFIG_KEY}, ${JSON.stringify(next)}::jsonb, 'system-admin')
         on conflict (org_id, config_key)
         do update set config_value = excluded.config_value, updated_by = excluded.updated_by, _updated_at = now()
       `,
