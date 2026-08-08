@@ -1,0 +1,20 @@
+# CP-SAT 求解 Worker 镜像（Batch 9 部署准备）
+# 独立容器：安装 ortools 后提供 /api/scheduler/v2/solve。
+# 未安装 ortools 时 worker 仍可启动并返回 UNAVAILABLE（云侧安全回退 heuristic）。
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# 复制边缘平台源码（仅 cpsat 相关模块 + contract）
+COPY src/edge_platform/ /app/edge_platform/
+
+# ortools 为唯一运行依赖（约 200MB）；如需最小镜像可拆分层
+RUN pip install --no-cache-dir "ortools>=9.8" || echo "ortools 安装失败（worker 将以 UNAVAILABLE 模式运行）"
+
+EXPOSE 8000
+
+# 健康检查：worker 存活 + 求解器可用性
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=4)"
+
+CMD ["python", "-m", "edge_platform.scheduler.cpsat.worker", "--host", "0.0.0.0", "--port", "8000"]

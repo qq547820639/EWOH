@@ -99,6 +99,23 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # v0.7 Batch9: CP-SAT 求解 Worker（可选，启用后 api 的 solverStatus 可达 OPTIMAL）。
+  # 未部署时 api 自动回退 heuristic（solverStatus=FALLBACK/UNAVAILABLE），不影响主流程。
+  # 启用：docker compose up -d cpsat，并将 api 的 CPSAT_WORKER_URL 指向本服务。
+  cpsat:
+    build:
+      context: ../..
+      dockerfile: deploy/cloud/Dockerfile.cpsat
+    profiles: [optional]
+    ports:
+      - '8000:8000'
+    healthcheck:
+      test: ['CMD', 'python', '-c', "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
 volumes:
   ewoh-pgdata:
   ewoh-redis-data:
