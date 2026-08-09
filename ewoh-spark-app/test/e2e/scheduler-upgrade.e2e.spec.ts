@@ -85,11 +85,18 @@ if (!e2eConfig) {
     beforeAll(async () => {
       owner = await connectOwner(e2eConfig.ownerDatabaseUrl);
       fixture = await createE2EFixture(owner);
-      // 清空 runtime 库触发记录：避免 MANUAL 冷却（30s）跨运行/跨场景 debounce。
+      // 清空 runtime 库调度事实：避免 MANUAL 冷却跨运行 debounce + 历史快照/
+      // reservation 残留导致 PLAN_STALE（world-state 全库收集，跨 fixture 数据
+      // 会使快照新鲜度判定不一致）。E2E 必须从干净基线开始。
       try {
         const postgres = (await import('postgres')).default;
         const runtime = postgres(e2eConfig.runtimeDatabaseUrl, { max: 1 });
         await runtime.unsafe('DELETE FROM ewoh_replan_trigger');
+        await runtime.unsafe('DELETE FROM ewoh_scheduling_execution');
+        await runtime.unsafe('DELETE FROM ewoh_scheduling_plan_assignment');
+        await runtime.unsafe('DELETE FROM ewoh_schedule_plan');
+        await runtime.unsafe('DELETE FROM ewoh_resource_reservation');
+        await runtime.unsafe('DELETE FROM ewoh_world_state_snapshot');
         await runtime.end();
       } catch {
         // 清理失败不阻断测试（触发类型可避开冷却）。

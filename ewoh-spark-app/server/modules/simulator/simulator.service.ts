@@ -120,6 +120,21 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
     if (this.running) {
       return this.getStatus();
     }
+    // E2E/确定性环境禁用开关：模拟器持续改写世界状态（device telemetry/位置），
+    // 会使世界快照新鲜度校验（entityVersions 严格一致）必然失败（PLAN_STALE）。
+    if (process.env.EWOH_SIMULATOR_DISABLED === '1') {
+      this.logger.log('Simulator disabled via EWOH_SIMULATOR_DISABLED=1');
+      return {
+        running: false,
+        startedAt: null,
+        tickCount: 0,
+        lastTickAt: null,
+        deviceCount: 0,
+        personCount: 0,
+        eventCount: 0,
+        simulationErrorCount: 0,
+      };
+    }
     try {
       await this.loadInitialState();
       this.running = true;

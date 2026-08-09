@@ -32,6 +32,11 @@ export async function startE2EApp(
   process.env.REFRESH_TOKEN_EXPIRES_IN = config.refreshTokenExpiresIn;
   process.env.RATE_LIMIT_MAX = config.rateLimitMax;
   process.env.EWOH_SIMULATOR_ORG_ID = simulatorOrgId;
+  // E2E 确定性：模拟器持续改写世界状态会使快照新鲜度校验（entityVersions 严格
+  // 一致）必然失败（PLAN_STALE）。E2E 关闭模拟器，用 fixture 数据保证可复现。
+  if (process.env.EWOH_SIMULATOR_DISABLED == null) {
+    process.env.EWOH_SIMULATOR_DISABLED = '1';
+  }
   process.env.HOST = '127.0.0.1';
   process.env.PORT = '0';
   process.env.NODE_ENV = 'test';

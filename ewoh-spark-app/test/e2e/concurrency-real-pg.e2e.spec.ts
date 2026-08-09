@@ -39,18 +39,23 @@ describe('Scheduler 并发/故障 E2E（真实 PostgreSQL）', () => {
     }
     owner = await connectOwner(e2eConfig.ownerDatabaseUrl);
     fixture = await createE2EFixture(owner);
-    // 清空触发记录避免 MANUAL 冷却跨场景 debounce。
+    // 清空触发记录 + 调度事实（干净基线；world-state 全库收集需避免跨 fixture 残留）。
     try {
       const postgres = (await import('postgres')).default;
       const runtime = postgres(e2eConfig.runtimeDatabaseUrl, { max: 1 });
       await runtime.unsafe('DELETE FROM ewoh_replan_trigger');
+      await runtime.unsafe('DELETE FROM ewoh_scheduling_execution');
+      await runtime.unsafe('DELETE FROM ewoh_scheduling_plan_assignment');
+      await runtime.unsafe('DELETE FROM ewoh_schedule_plan');
+      await runtime.unsafe('DELETE FROM ewoh_resource_reservation');
+      await runtime.unsafe('DELETE FROM ewoh_world_state_snapshot');
       await runtime.end();
     } catch {
       // 清理失败不阻断
     }
     handle = await startE2EApp(e2eConfig, fixture.orgA.id);
     baseUrl = handle.baseUrl;
-    const loginRes = await login(baseUrl, 'admin', process.env.EWOH_E2E_ADMIN_PASS || 'Admin@123456');
+    const loginRes = await login(baseUrl, 'admin', process.env.EWOH_E2E_ADMIN_PASS || 'admin-password');
     expect(loginRes.status).toBe(201);
     token = loginRes.body.accessToken;
   }, 60_000);

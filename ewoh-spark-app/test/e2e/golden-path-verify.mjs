@@ -11,7 +11,7 @@ import http from 'node:http';
 
 const BASE = process.env.EWOH_E2E_BACKEND_URL || 'http://127.0.0.1:3100';
 const ADMIN_USER = process.env.EWOH_E2E_ADMIN_USER || 'admin';
-const ADMIN_PASS = process.env.EWOH_E2E_ADMIN_PASS || 'Admin@123456';
+const ADMIN_PASS = process.env.EWOH_E2E_ADMIN_PASS || 'admin-password';
 
 function request(method, path, body, token) {
   return new Promise((resolve, reject) => {

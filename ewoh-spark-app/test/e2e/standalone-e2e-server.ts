@@ -23,6 +23,8 @@ async function bootstrap(): Promise<void> {
   process.env.REFRESH_TOKEN_EXPIRES_IN = '7d';
   process.env.RATE_LIMIT_MAX = '100000';
   process.env.EWOH_SIMULATOR_ORG_ID = process.env.EWOH_E2E_SIM_ORG ?? 'org-sim-e2e';
+  // E2E 确定性：关闭模拟器避免世界状态被持续改写导致 PLAN_STALE。
+  if (process.env.EWOH_SIMULATOR_DISABLED == null) process.env.EWOH_SIMULATOR_DISABLED = '1';
   process.env.HOST = '127.0.0.1';
   process.env.PORT = String(PORT);
   process.env.NODE_ENV = 'test';
