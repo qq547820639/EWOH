@@ -26,6 +26,14 @@ class SolverTask:
     preemptible: bool = True
     eligiblePersonIds: Optional[List[str]] = None
     eligibleDeviceIds: Optional[List[str]] = None
+    # P0-2：与 Nest `SolverRequest.tasks` 对齐——技能匹配语义（ALL=全部必需，
+    # ANY=任一即可；证书/能力无 ANY 语义，保持 all）。缺省 ALL 向后兼容。
+    skillMatchMode: str = "ALL"
+    # P0-2：统一优先级引擎产出的有效优先级分（Nest 透传；求解器当前仅记录，不参与目标）。
+    effectivePriorityScore: Optional[float] = None
+    # P0-3：硬性最晚完成时间（epoch ms；None=无硬截止）。与 dueMs（软 lateness）
+    # 分离：dueMs 超时仅罚 lateness，mustFinishByMs 违反则任务不可分配。
+    mustFinishByMs: Optional[int] = None
 
 
 @dataclass
@@ -102,6 +110,24 @@ class SolverWeights:
 
 
 @dataclass
+class CandidateCost:
+    """P0-4：任务 × 候选资源的权威路径成本（由 Nest TravelCostService 矩阵层计算并透传）。
+
+    worker 内**禁止**自行用坐标算欧氏距离——坐标可能 UNKNOWN（null），
+    欧氏距离会把缺失坐标当作 0,0 产生虚假成本。无矩阵数据时该候选
+    不参与 travel 目标（fail-safe），而不是回退到坐标计算。
+    """
+
+    taskId: str
+    personId: str
+    stationId: Optional[str] = None
+    distanceMeters: float = 0.0
+    etaSeconds: float = 0.0
+    dataQuality: str = "UNKNOWN"
+    fallbackReason: Optional[str] = None
+
+
+@dataclass
 class SolverRequest:
     requestId: str
     snapshotVersion: str
@@ -121,6 +147,9 @@ class SolverRequest:
     # 安全硬约束：这些 person/device 完全不可指派（候选层硬过滤，fail-closed）。
     safetyBlockedPersonIds: List[str] = field(default_factory=list)
     safetyBlockedDeviceIds: List[str] = field(default_factory=list)
+    # P0-4：权威路径成本矩阵（Nest TravelCostService 计算后透传）。
+    # worker 只用此矩阵的 distanceMeters/etaSeconds 参与 travel 目标，绝不自行算欧氏。
+    candidateCosts: List[CandidateCost] = field(default_factory=list)
     timeLimitMs: int = 10_000
 
     @classmethod
@@ -150,6 +179,9 @@ class SolverRequest:
             },
             safetyBlockedPersonIds=list(data.get("safetyBlockedPersonIds", []) or []),
             safetyBlockedDeviceIds=list(data.get("safetyBlockedDeviceIds", []) or []),
+            candidateCosts=[
+                CandidateCost(**c) for c in (data.get("candidateCosts", []) or [])
+            ],
             timeLimitMs=int(data.get("timeLimitMs", 10_000)),
         )
 

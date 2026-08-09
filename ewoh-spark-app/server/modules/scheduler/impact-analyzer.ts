@@ -176,9 +176,15 @@ export class ImpactAnalyzer {
           break;
         }
         case 'ROUTE_BLOCKED':
-        case 'ROUTE_CONGESTED':
-          candidates = candidates.filter((t) => t.zoneId === entityId);
+        case 'ROUTE_CONGESTED': {
+          // P0-6：route edge → task 反查（route graph edgeId 与 zoneId 是两套 ID 体系，
+          // 旧实现用 t.zoneId === entityId 匹配 edgeId 属错配，永远圈不中任务）。
+          // 索引来自 world-state 构建快照时的 routeEdgeTaskIndex（node.stationId ↔ task.stationId）。
+          const affectedByEdge =
+            snapshot.routeEdgeTaskIndex?.[entityId] ?? [];
+          candidates = candidates.filter((t) => affectedByEdge.includes(t.id));
           break;
+        }
         case 'RESERVATION_CONFLICT':
           candidates = candidates.filter(
             (t) => t.deviceId === entityId || t.assigneeId === entityId,

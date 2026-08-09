@@ -10,6 +10,7 @@ import type {
   WorldStateSnapshot,
 } from '@shared/api.interface';
 import { HeuristicSchedulingSolver } from './heuristic-scheduling-solver';
+import { SchedulingObjectiveEvaluator } from './scheduling-objective-evaluator.service';
 import type { TravelCostService } from './travel-cost.service';
 import type { SchedulerMetricsService } from './scheduler-metrics.service';
 import type { SchedulingSolver, SolveOptions } from './scheduling-solver.interface';
@@ -52,6 +53,8 @@ export class CpSatSchedulingSolver {
     config: CpSatSolverConfig = {},
     private readonly travelCostService?: TravelCostService,
     private readonly metricsService?: SchedulerMetricsService,
+    // P0-5：统一目标评估器（默认自建；测试可注入替身）。
+    private readonly objectiveEvaluator: SchedulingObjectiveEvaluator = new SchedulingObjectiveEvaluator(),
   ) {
     this.logger = config.logger ?? new Logger(CpSatSchedulingSolver.name);
     this.workerUrl =
@@ -94,6 +97,21 @@ export class CpSatSchedulingSolver {
       | undefined;
     // P4-GEOM：taskId → (candidateKey → geometry)，CP-SAT assignment 装配时恢复真实路线。
     let geometryIndex: Map<string, Map<string, Array<{ x: number; y: number }>>> | undefined;
+    // P0-4：taskId → 候选权威 RouteCost（distanceMeters/etaSeconds），透传 worker 参与 travel 目标。
+    let candidateCostsByTask:
+      | Map<
+          string,
+          Array<{
+            taskId: string;
+            personId: string;
+            stationId: string | null;
+            distanceMeters: number;
+            etaSeconds: number;
+            dataQuality: string;
+            fallbackReason: string | null;
+          }>
+        >
+      | undefined;
     let eligibilityMatrixFailed = false;
     if (
       this.travelCostService &&
@@ -102,8 +120,10 @@ export class CpSatSchedulingSolver {
     ) {
       try {
         eligibleByTask = await this.travelCostService.buildEligibilityMatrix(snapshot);
-        // P4-GEOM：按 eligible 候选构建 geometry 索引（与求解请求同源 RouteCost）。
+        // P4-GEOM + P0-4：按 eligible 候选构建 geometry 索引与权威 cost 矩阵
+        //（与求解请求同源 RouteCost；cost 由矩阵层计算，worker 不再自行算欧氏）。
         geometryIndex = new Map();
+        candidateCostsByTask = new Map();
         for (const [taskId, elig] of eligibleByTask) {
           const task = snapshot.tasks.find((t) => t.id === taskId);
           if (!task) continue;
@@ -111,13 +131,32 @@ export class CpSatSchedulingSolver {
           try {
             const matrix = await this.travelCostService.buildMatrix(snapshot, task, candidates);
             const byKey = new Map<string, Array<{ x: number; y: number }>>();
+            const costs: Array<{
+              taskId: string;
+              personId: string;
+              stationId: string | null;
+              distanceMeters: number;
+              etaSeconds: number;
+              dataQuality: string;
+              fallbackReason: string | null;
+            }> = [];
             for (const c of matrix.candidates) {
               if (!c.feasible) continue;
               byKey.set(`${c.personId ?? 'any'}|${c.deviceId ?? 'any'}|${c.stationId ?? 'any'}`, c.geometry ?? []);
+              costs.push({
+                taskId,
+                personId: c.personId ?? 'any',
+                stationId: c.stationId,
+                distanceMeters: c.distanceMeters,
+                etaSeconds: c.etaSeconds,
+                dataQuality: c.dataQuality,
+                fallbackReason: c.fallbackReason ?? null,
+              });
             }
             geometryIndex.set(taskId, byKey);
+            candidateCostsByTask.set(taskId, costs);
           } catch {
-            // 单个 task 几何不可用不影响主流程（地图回退起终点直线）
+            // 单个 task 几何/成本不可用不影响主流程（worker 对缺失 cost 候选 fail-safe 跳过 travel 项）
           }
         }
       } catch (err) {
@@ -160,6 +199,7 @@ export class CpSatSchedulingSolver {
         nowMs,
         effectiveScores,
         eligibleByTask,
+        candidateCostsByTask,
       );
       response = await this.post(request);
       reachable = true;
@@ -199,6 +239,7 @@ export class CpSatSchedulingSolver {
         policy,
         priorityResults,
         geometryIndex,
+        candidateCostsByTask,
       );
     }
 
@@ -226,6 +267,18 @@ export class CpSatSchedulingSolver {
     nowMs: number,
     effectiveScores: Map<string, number>,
     eligibleByTask?: Map<string, { personIds: string[]; deviceIds: string[] }>,
+    candidateCostsByTask?: Map<
+      string,
+      Array<{
+        taskId: string;
+        personId: string;
+        stationId: string | null;
+        distanceMeters: number;
+        etaSeconds: number;
+        dataQuality: string;
+        fallbackReason: string | null;
+      }>
+    >,
   ): SolverRequest {
     const horizonMinutes = opts.horizonMinutes;
 
@@ -274,12 +327,13 @@ export class CpSatSchedulingSolver {
       const planStart = t.planStart ? Date.parse(t.planStart) : NaN;
       const planEnd = t.planEnd ? Date.parse(t.planEnd) : NaN;
       const earliestStartMs = Number.isFinite(planStart) ? planStart : nowMs;
-      const dueMs =
-        t.dueAtMs != null
-          ? t.dueAtMs
-          : Number.isFinite(planEnd)
-            ? planEnd
-            : null;
+      // P0-3：due/lateness 语义分离——
+      //   dueMs = t.dueAtMs（纯 SOFT，超时仅罚 lateness）；
+      //   mustFinishByMs = t.latestFinishMs（HARD，违反则任务不可分配）。
+      // 不再把 planEnd 当作 due（旧实现导致任务因无法满足 planEnd 全部未分配，
+      // 且 lateness 软项被硬约束钳制恒 0）。
+      const dueMs = t.dueAtMs != null ? t.dueAtMs : null;
+      const mustFinishByMs = t.latestFinishMs != null ? t.latestFinishMs : null;
       const durationMs =
         Number.isFinite(planStart) && Number.isFinite(planEnd)
           ? Math.max(planEnd - planStart, 1)
@@ -291,6 +345,7 @@ export class CpSatSchedulingSolver {
         effectivePriorityScore: effectiveScores.get(t.id) ?? null,
         earliestStartMs,
         dueMs,
+        mustFinishByMs,
         durationMs,
         requiredSkills: t.requiredSkills ?? [],
         requiredCertifications: t.requiredCertifications ?? [],
@@ -402,6 +457,9 @@ export class CpSatSchedulingSolver {
         ...c,
         supported: checkConstraintSupported(c).supported,
       })),
+      // P0-4：权威 RouteCost 矩阵透传（矩阵层已算过 cost；worker 只消费此矩阵，
+      // 禁止 worker 内用坐标算欧氏距离）。
+      candidateCosts: Array.from((candidateCostsByTask ?? new Map()).values()).flat(),
       frozenAssignments,
       baselineAssignee,
       timeLimitMs: this.timeoutMs,
@@ -494,20 +552,101 @@ export class CpSatSchedulingSolver {
     policy: SchedulingPolicy,
     priorityResults: Map<string, PriorityResult>,
     geometryIndex?: Map<string, Map<string, Array<{ x: number; y: number }>>>,
+    candidateCostsByTask?: Map<
+      string,
+      Array<{
+        taskId: string;
+        personId: string;
+        stationId: string | null;
+        distanceMeters: number;
+        etaSeconds: number;
+        dataQuality: string;
+        fallbackReason: string | null;
+      }>
+    >,
   ): Promise<SchedulingPlanV2> {
-    // 复用启发式产生方案外壳（metrics / scoreBreakdown / baselineDelta 等），再叠入 CP-SAT 结果。
-    const shell = await this.heuristicSolver.solve(snapshot, constraints, opts);
+    // P0-5：metrics / scoreBreakdown / baselineDelta 由统一评估器基于 **CP-SAT 自己的
+    // assignments** 计算——旧实现复用 heuristic shell（heuristic assignments 的 metrics），
+    // 属 CP-SAT assignment 配 Heuristic metrics，已修复。objective/objectiveBreakdown
+    // 保留 worker 返回值（权威）。
     const assignments = this.toAssignments(response, opts, policy, priorityResults, geometryIndex);
+    const evaluated = this.objectiveEvaluator.evaluate({
+      snapshot,
+      assignments,
+      policy,
+      constraints,
+      baseline: opts.baselineAssignee,
+      horizonMinutes: opts.horizonMinutes ?? 60,
+      nowMs: Date.now(),
+      candidateCostsByTask: this.toEvaluatorCostIndex(candidateCostsByTask),
+    });
     return {
-      ...shell,
+      planId: opts.planId,
+      planName: opts.planName,
+      version: 1,
+      status: 'shadow',
+      trigger: { type: opts.triggerType, entityId: opts.triggerEntityId },
+      snapshotVersion: opts.snapshotVersion,
+      policyVersion: policy.version,
       solverVersion: CPSAT_VERSION,
       solverStatus: response.solverStatus,
       solveDurationMs: response.solveDurationMs,
       objective: response.objective,
       objectiveBreakdown: response.objectiveBreakdown,
+      horizonMinutes: opts.horizonMinutes ?? 60,
       assignments,
+      metrics: evaluated.metrics,
+      scoreBreakdown: evaluated.scoreBreakdown,
+      baselineDelta: evaluated.baselineDelta,
       violations: response.hardViolations ?? [],
+      createdAt: new Date().toISOString(),
     };
+  }
+
+  /** P0-4/P0-5：把 candidateCosts 展平为评估器可查的 (taskId → 候选成本) 索引。 */
+  private toEvaluatorCostIndex(
+    candidateCostsByTask?: Map<
+      string,
+      Array<{
+        taskId: string;
+        personId: string;
+        stationId: string | null;
+        distanceMeters: number;
+        etaSeconds: number;
+        dataQuality: string;
+        fallbackReason: string | null;
+      }>
+    >,
+  ): Map<
+    string,
+    Array<{
+      personId: string;
+      stationId: string | null;
+      distanceMeters: number;
+      etaSeconds: number;
+    }>
+  > {
+    const index = new Map<
+      string,
+      Array<{
+        personId: string;
+        stationId: string | null;
+        distanceMeters: number;
+        etaSeconds: number;
+      }>
+    >();
+    for (const [taskId, costs] of candidateCostsByTask ?? new Map()) {
+      index.set(
+        taskId,
+        costs.map((c) => ({
+          personId: c.personId,
+          stationId: c.stationId,
+          distanceMeters: c.distanceMeters,
+          etaSeconds: c.etaSeconds,
+        })),
+      );
+    }
+    return index;
   }
 
   private toAssignments(

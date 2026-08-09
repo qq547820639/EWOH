@@ -18,16 +18,19 @@ import {
 describe('ImpactAnalyzer 扩展触发类型（Task 5.1/5.2）', () => {
   const analyzer = new ImpactAnalyzer();
 
-  it('ROUTE_BLOCKED：仅影响阻断边所在区域的任务，hard_conflict 且可自动重排', () => {
+  it('ROUTE_BLOCKED：仅影响使用阻断边（edge）的任务，hard_conflict 且可自动重排', () => {
+    // P0-6：edgeId（route graph 体系）与 zoneId（空间区域体系）是两套 ID——
+    // 影响域按 edge → task 索引（routeEdgeTaskIndex）裁剪，而非 zoneId 匹配。
     const snapshot = buildSnapshot({
       tasks: [
-        { ...seedTask({ id: 't-zone' }), zoneId: 'z-route' },
-        { ...seedTask({ id: 't-other' }), zoneId: 'z-other' },
+        { ...seedTask({ id: 't-zone' }), zoneId: 'z-route', stationId: 'S1' },
+        { ...seedTask({ id: 't-other' }), zoneId: 'z-other', stationId: 'S2' },
       ],
+      routeEdgeTaskIndex: { 'edge-1': ['t-zone'] },
     });
     const result = analyzer.analyze(snapshot, {
       eventType: 'ROUTE_BLOCKED',
-      entityId: 'z-route',
+      entityId: 'edge-1',
     });
     expect(result.affectedTaskIds).toEqual(['t-zone']);
     expect(result.affectedTaskIds).not.toContain('t-other');
@@ -36,16 +39,17 @@ describe('ImpactAnalyzer 扩展触发类型（Task 5.1/5.2）', () => {
     expect(result.canAutoReplan).toBe(true);
   });
 
-  it('ROUTE_CONGESTED：soft_deviation + replan_partial，影响域按区域裁剪', () => {
+  it('ROUTE_CONGESTED：soft_deviation + replan_partial，影响域按 edge 裁剪', () => {
     const snapshot = buildSnapshot({
       tasks: [
-        { ...seedTask({ id: 't-zone' }), zoneId: 'z-route' },
-        { ...seedTask({ id: 't-other' }), zoneId: 'z-other' },
+        { ...seedTask({ id: 't-zone' }), zoneId: 'z-route', stationId: 'S1' },
+        { ...seedTask({ id: 't-other' }), zoneId: 'z-other', stationId: 'S2' },
       ],
+      routeEdgeTaskIndex: { 'edge-1': ['t-zone'] },
     });
     const result = analyzer.analyze(snapshot, {
       eventType: 'ROUTE_CONGESTED',
-      entityId: 'z-route',
+      entityId: 'edge-1',
     });
     expect(result.type).toBe('ROUTE_CONGESTED');
     expect(result.affectedTaskIds).toEqual(['t-zone']);

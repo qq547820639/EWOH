@@ -4,7 +4,7 @@ import {
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import { ewohResourceReservation } from '@server/database/schema';
-import { and, eq, gt, inArray, lt } from 'drizzle-orm';
+import { and, eq, gt, inArray, lt, sql } from 'drizzle-orm';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -20,6 +20,11 @@ export interface ReservationInput {
   resourceId: string;
   startMs: number;
   endMs: number;
+  /**
+   * P0-7：station 资源容量（ewoh_workstation.capacity / 快照 station.capacity）。
+   * 缺省 1（向后兼容：与旧二值占用语义一致）。person/device 恒为 1，忽略本字段。
+   */
+  capacity?: number;
 }
 
 export interface ReservationResult {
@@ -43,8 +48,29 @@ export class ResourceReservationService {
   ) {}
 
   /**
-   * 在单个事务内为指定资源时间窗预占。若任一资源在重叠时间窗内已有
-   * reserved/active 占用，则抛 RESOURCE_CONFLICT，整个事务回滚。
+   * P0-7：资源容量。person/device 等非 station 资源恒 1（二值占用）；
+   * station 读调用方传入的 capacity（来自 ewoh_workstation / 快照 station.capacity），
+   * 缺省 1 向后兼容。
+   */
+  private capacityFor(input: ReservationInput): number {
+    if (input.resourceType === 'station') {
+      return typeof input.capacity === 'number' && input.capacity > 0
+        ? Math.floor(input.capacity)
+        : 1;
+    }
+    return 1;
+  }
+
+  /**
+   * 在单个事务内为指定资源时间窗预占。
+   * 冲突语义（P0-7）：
+   *   - person/device：二值占用（重叠即冲突，capacity=1）；
+   *   - station：**容量感知**——同资源同时间窗内已占用计数 < capacity 才放行
+   *     （capacity=1 与旧二值语义一致；capacity>1 允许多个重叠任务，与求解器
+   *     AddCumulative 一致）。
+   * 并发：station 通过 pg_advisory_xact_lock（资源 id 哈希）在事务内串行化
+   * check-then-insert，避免"双方都计数通过后同时插入"竞态；DB EXCLUDE 约束
+   * （standalone_022 起）仅覆盖 person/device 作为硬后盾。
    */
   async reserve(
     planId: string,
@@ -58,7 +84,19 @@ export class ResourceReservationService {
       buildGucSettings(ctx),
       async () => {
         for (const input of inputs) {
-          const conflicts = await this.db
+          const capacity = this.capacityFor(input);
+          // P0-7：station 容量计数需要事务级串行化（替代被移除的 station EXCLUDE）。
+          // 无 execute 的测试替身/降级环境跳过锁，仍走计数（计数为快速路径）。
+          if (input.resourceType === 'station') {
+            try {
+              await this.db.execute(
+                sql`SELECT pg_advisory_xact_lock(hashtext(${input.resourceId}))`,
+              );
+            } catch {
+              // 无 execute 能力的环境跳过 advisory lock（单测替身/只读副本）
+            }
+          }
+          const overlapping = await this.db
             .select({ id: ewohResourceReservation.id })
             .from(ewohResourceReservation)
             .where(
@@ -69,9 +107,8 @@ export class ResourceReservationService {
                 lt(ewohResourceReservation.startMs, input.endMs),
                 gt(ewohResourceReservation.endMs, input.startMs),
               ),
-            )
-            .limit(1);
-          if (conflicts.length > 0) {
+            );
+          if (overlapping.length >= capacity) {
             throw new ConflictException('RESOURCE_CONFLICT');
           }
 
@@ -121,9 +158,48 @@ export class ResourceReservationService {
     return results;
   }
 
+  /**
+   * P0-7：下发前 station 容量预检（dispatch 快速失败，fail-fast）。
+   * 与 reserve() 的容量计数语义一致（count < capacity 放行）；
+   * reserve() 内的计数仍是事务内的权威校验，本方法用于 dispatch 阶段尽早暴露
+   * 容量不足，避免走到事务中段才失败。person/device 由 DB EXCLUDE 硬后盾保证，
+   * 无需预检。
+   */
+  async assertStationCapacityAvailable(
+    inputs: ReservationInput[],
+    ctx: OrgContext,
+  ): Promise<void> {
+    const stationInputs = inputs.filter((i) => i.resourceType === 'station');
+    if (stationInputs.length === 0) return;
+    await this.requestDatabaseContext.runInTransaction(
+      buildGucSettings(ctx),
+      async () => {
+        for (const input of stationInputs) {
+          const capacity = this.capacityFor(input);
+          const overlapping = await this.db
+            .select({ id: ewohResourceReservation.id })
+            .from(ewohResourceReservation)
+            .where(
+              and(
+                eq(ewohResourceReservation.resourceType, input.resourceType),
+                eq(ewohResourceReservation.resourceId, input.resourceId),
+                inArray(ewohResourceReservation.status, [...ACTIVE_STATUSES]),
+                lt(ewohResourceReservation.startMs, input.endMs),
+                gt(ewohResourceReservation.endMs, input.startMs),
+              ),
+            );
+          if (overlapping.length >= capacity) {
+            throw new ConflictException(
+              `STATION_CAPACITY: station ${input.resourceId} already at capacity ${capacity}`,
+            );
+          }
+        }
+      },
+    );
+  }
+
   /** 释放某方案下的全部预占，返回受影响行数。 */
-  async releaseForPlan(planId: string, ctx: OrgContext): Promise<number> {
-    let count = 0;
+  async releaseForPlan(planId: string, ctx: OrgContext): Promise<number> {    let count = 0;
     await this.requestDatabaseContext.runInTransaction(
       buildGucSettings(ctx),
       async () => {

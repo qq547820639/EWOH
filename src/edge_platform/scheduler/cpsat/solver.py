@@ -41,6 +41,40 @@ except Exception:  # noqa: BLE001 - 任何导入失败都视为不可用
 MINUTE = 60_000
 
 
+def person_has_required_skills(
+    person_skills, required_skills, match_mode: str = "ALL"
+) -> bool:
+    """P0-2：技能匹配纯函数（可脱离 ortools 单测）。
+
+    ALL=全部必需（.every）；ANY=任一即可（.some）。空需求恒 True。
+    证书（certifications）无 ANY 语义，保持 all（调用方单独处理）。
+    """
+    if not required_skills:
+        return True
+    if match_mode == "ANY":
+        return any(s in person_skills for s in required_skills)
+    return all(s in person_skills for s in required_skills)
+
+
+def travel_cost_for_candidate(candidate_costs, task_id, person_id, station_id):
+    """P0-4：从权威 RouteCost 矩阵取候选 travel 距离（米）。
+
+    矩阵由 Nest TravelCostService 计算后透传；无矩阵数据返回 None——该项
+    **不参与目标**（fail-safe），绝不在 worker 内用坐标算欧氏距离（坐标可能
+    UNKNOWN，欧氏会把缺失坐标当作 0,0 产生虚假成本）。
+    """
+    if not candidate_costs:
+        return None
+    for cc in candidate_costs:
+        if (
+            cc.taskId == task_id
+            and cc.personId == person_id
+            and cc.stationId == station_id
+        ):
+            return float(cc.distanceMeters or 0.0)
+    return None
+
+
 def _fixed_interval_bounds(s_ms, e_ms):
     """把毫秒起止规整为一致的 (start, size, end) 分钟三元组。
 
@@ -177,7 +211,9 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
             if p.status != "available":
                 rejected.append({"personId": p.id, "reason": ["person_unavailable"]})
                 continue
-            if not all(s in p.skills for s in t.requiredSkills):
+            if not person_has_required_skills(
+                p.skills, t.requiredSkills, t.skillMatchMode or "ALL"
+            ):
                 rejected.append({"personId": p.id, "reason": ["missing_skill"]})
                 continue
             if not all(c in p.certifications for c in t.requiredCertifications):
@@ -316,12 +352,17 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         model.Add(sum(presence[t.taskId].values()) == 0).OnlyEnforceIf(av.Not())
         assigned_by_task[t.taskId] = av
 
-    # 3) 时间窗：end <= due（仅当任务被分配时生效——无法满足 due 的任务如实未分配）。
+    # 3) P0-3：时间窗语义分离——
+    #    dueMs 是**软**截止（仅计入 lateness 罚项，见目标函数；超时允许但 penalty），
+    #    不再作为硬约束（旧实现把 due 当硬约束，导致 lateness 被钳制恒 0，且
+    #    planEnd 被当作 due 传入时任务会因无法满足 planEnd 而全部未分配）。
+    #    mustFinishByMs 是**硬**截止（违反则任务不可分配——OnlyEnforceIf(assigned)
+    #    保证无法满足的任务如实进入 unassigned，而不是使整个模型 INFEASIBLE）。
     for t in request.tasks:
         if t.taskId in frozen_by_task or t.taskId not in end_min:
             continue
-        if t.dueMs:
-            model.Add(end_min[t.taskId] <= t.dueMs // MINUTE).OnlyEnforceIf(
+        if t.mustFinishByMs:
+            model.Add(end_min[t.taskId] <= t.mustFinishByMs // MINUTE).OnlyEnforceIf(
                 assigned_by_task[t.taskId]
             )
 
@@ -402,20 +443,23 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         model.AddMaxEquality(wait, [0, start_min[t.taskId] - earliest])
         terms.append(w.stationWait * wait)
 
-    # travel：按被选候选的欧氏距离加权（近似，真实路线由控制面传入）。
-    # P0：坐标 UNKNOWN(null) 的 person/station 不参与 travel 计算（禁止 0,0 伪坐标
-    # 产生的虚假距离）；此类候选已被资格矩阵排除，此处为双保险。
+    # travel：P0-4 权威 RouteCost 矩阵（Nest TravelCostService 计算后透传）。
+    # worker 内**禁止**自行用坐标算欧氏距离——坐标可能 UNKNOWN(null)，欧氏会把
+    # 缺失坐标当作 0,0 产生虚假成本。矩阵缺失时该项不参与目标（fail-safe），
+    # 绝不回退到坐标计算。矩阵键：(taskId, personId, stationId)。
+
     for t in request.tasks:
         if t.taskId in frozen_by_task or not presence.get(t.taskId):
             continue
         for (pi, di, si), present in presence[t.taskId].items():
             p = request.persons[pi]
-            if si != -1:
-                st = request.stations[si]
-                if p.x is None or p.y is None or st.x is None or st.y is None:
-                    continue
-                dist_m = int(((p.x - st.x) ** 2 + (p.y - st.y) ** 2) ** 0.5)
-                terms.append(w.travel * dist_m * present)
+            st = request.stations[si] if si != -1 else None
+            dist_m = travel_cost_for_candidate(
+                request.candidateCosts, t.taskId, p.id, st.id if st else None
+            )
+            if dist_m is None:
+                continue
+            terms.append(w.travel * dist_m * present)
 
     # churn/stability：baseline 里不同 person 被选中 → 惩罚。
     for t in request.tasks:

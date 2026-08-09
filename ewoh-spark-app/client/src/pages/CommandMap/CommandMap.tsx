@@ -727,7 +727,11 @@ const CommandMap = (): React.ReactElement => {
               preserveAspectRatio="xMidYMid meet"
               aria-hidden="true"
             >
-              <SchedulerLayersOverlay state={schedulerState} />
+              <SchedulerLayersOverlay
+                state={schedulerState}
+                // P0-8：Plan 层与 SchedulePanel 共享同一选中方案（lifted 到 CommandMap 级）。
+                selectedPlanId={activePlan?.planId ?? null}
+              />
               {showCompare && compareVm && (
                 <PlanCompareLayer
                   vm={compareVm}

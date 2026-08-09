@@ -259,6 +259,11 @@ export interface SolverRequest {
     skillMatchMode?: 'ALL' | 'ANY';
     /** 统一优先级引擎产出的有效优先级分（越小越紧急），供 CP-SAT 与 heuristic 一致消费。 */
     effectivePriorityScore?: number;
+    /**
+     * P0-3：硬性最晚完成时间（epoch ms；null=无硬截止）。与 dueMs（软 lateness）
+     * 分离：dueMs 超时仅罚 lateness；mustFinishByMs 违反则任务不可分配（unassigned）。
+     */
+    mustFinishByMs?: number | null;
     eligiblePersonIds?: string[];
     eligibleDeviceIds?: string[];
   }>;
@@ -307,6 +312,20 @@ export interface SolverRequest {
   forbiddenZones: string[];
   /** 原始约束透传（hard/soft 统一序列化），供 CP-SAT Worker 消费相同语义。 */
   constraints?: Array<Record<string, unknown>>;
+  /**
+   * P0-4：权威 RouteCost 矩阵（Task×候选 的 distanceMeters/etaSeconds，由
+   * TravelCostService 矩阵层计算后透传）。Worker 只消费本矩阵参与 travel 目标，
+   * 禁止在 worker 内用坐标算欧氏距离（坐标可能 UNKNOWN）。
+   */
+  candidateCosts?: Array<{
+    taskId: string;
+    personId: string;
+    stationId: string | null;
+    distanceMeters: number;
+    etaSeconds: number;
+    dataQuality: string;
+    fallbackReason?: string | null;
+  }>;
   /** 冻结（executing/locked）的 assignment：求解器不可移动。 */
   frozenAssignments: Array<{
     taskId: string;
@@ -559,6 +578,14 @@ export interface WorldStateSnapshot {
     status: string;
     riskLevel: string | null;
   }>;
+  /**
+   * P0-6：路由边 → 受影响任务索引（edgeId → taskIds）。
+   * 由世界状态构建时从 route node.stationId ↔ task.stationId 推导（边连接的工位上的任务）。
+   * 供 ROUTE_BLOCKED / ROUTE_CONGESTED 影响分析使用——edgeId 是 route graph 体系，
+   * 与 zoneId（空间区域体系）是两套 ID，旧实现用 zoneId 匹配 edgeId 属错配。
+   * 可选字段（向后兼容）：旧快照缺失时影响分析按"无已知受影响任务"处理（fail-safe）。
+   */
+  routeEdgeTaskIndex?: Record<string, string[]>;
   forbiddenZones: Array<{ zoneId: string; reason: string }>;
   lockedAssignments: Array<{
     taskId: string;

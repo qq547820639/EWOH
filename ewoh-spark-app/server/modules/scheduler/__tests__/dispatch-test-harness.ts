@@ -162,6 +162,8 @@ export function makeDispatchCoordinator(seed: FakeDbSeed = {}) {
   };
   const reservationService = {
     reserve: jest.fn().mockResolvedValue([]),
+    // P0-7：dispatch 前 station 容量预检。
+    assertStationCapacityAvailable: jest.fn().mockResolvedValue(undefined),
   };
   const outboxService = {
     enqueue: jest.fn().mockResolvedValue({

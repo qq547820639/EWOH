@@ -381,6 +381,36 @@ export class WorldStateSnapshotService {
       riskLevel: e.riskLevel ?? null,
     }));
 
+    // P0-6：路由边 → 受影响任务索引（edgeId → taskIds）。
+    // route graph 边连接 route node；node.stationId 指向工位；任务落在工位。
+    // 由 "边连接的工位上的任务" 推导受影响集合——edgeId 与 zoneId 是两套 ID 体系，
+    // 旧影响分析用 zoneId 匹配 edgeId 属错配（ROUTE_BLOCKED 永远圈不中任务）。
+    // 若 route node 无 stationId 关联，则该边无已知受影响任务（fail-safe，不误伤）。
+    const routeEdgeTaskIndex: Record<string, string[]> = {};
+    {
+      const stationByEdge = new Map<string, Set<string>>();
+      const stationById = new Map<string, string>(); // stationId → nodeId（仅需存在性）
+      for (const n of routeNodes) {
+        if (n.stationId) stationById.set(n.stationId, n.nodeId);
+      }
+      for (const e of routeEdges) {
+        const stationIds = new Set<string>();
+        const fromNode = routeNodes.find((n) => n.nodeId === e.fromNodeId);
+        const toNode = routeNodes.find((n) => n.nodeId === e.toNodeId);
+        if (fromNode?.stationId) stationIds.add(fromNode.stationId);
+        if (toNode?.stationId) stationIds.add(toNode.stationId);
+        if (stationIds.size > 0) stationByEdge.set(e.edgeId, stationIds);
+      }
+      for (const t of taskList) {
+        if (!t.stationId) continue;
+        for (const [edgeId, stationIds] of stationByEdge) {
+          if (stationIds.has(t.stationId)) {
+            (routeEdgeTaskIndex[edgeId] ??= []).push(t.id);
+          }
+        }
+      }
+    }
+
     const forbiddenZones = spatialEntities
       .filter((se) => se.entityType === 'restricted_zone')
       .map((se) => ({ zoneId: se.entityId, reason: 'restricted_zone' }));
@@ -572,6 +602,8 @@ export class WorldStateSnapshotService {
       backlog,
       events: eventList,
       routeStatus,
+      // P0-6：edgeId → 受影响任务索引（供 ROUTE_BLOCKED/ROUTE_CONGESTED 影响分析）。
+      routeEdgeTaskIndex,
       forbiddenZones,
       lockedAssignments,
     };

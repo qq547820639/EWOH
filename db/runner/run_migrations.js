@@ -79,6 +79,9 @@ const FILES = {
   standalone_sse_envelope: path.join(root, 'db/migrations/standalone_021_sse_envelope.sql'),
   standalone_sse_envelope_rollback: path.join(root, 'db/migrations/standalone_021_sse_envelope.rollback.sql'),
   standalone_sse_envelope_verify: path.join(root, 'db/verify/standalone_021_sse_envelope.verify.sql'),
+  standalone_reservation_capacity: path.join(root, 'db/migrations/standalone_022_reservation_capacity.sql'),
+  standalone_reservation_capacity_rollback: path.join(root, 'db/migrations/standalone_022_reservation_capacity.rollback.sql'),
+  standalone_reservation_capacity_verify: path.join(root, 'db/verify/standalone_022_reservation_capacity.verify.sql'),
 };
 
 const PLAN_NAMES = Object.freeze(Object.keys(FILES));
@@ -104,6 +107,7 @@ const ROLLBACK_COMMANDS = new Set([
   '--rollback-standalone-kpi-replay',
   '--rollback-standalone-policy-lifecycle',
   '--rollback-standalone-sse-envelope',
+  '--rollback-standalone-reservation-capacity',
 ]);
 const EXECUTE_COMMANDS = new Set([
   '--apply',
@@ -175,6 +179,9 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-sse-envelope',
   '--rollback-standalone-sse-envelope',
   '--verify-standalone-sse-envelope',
+  '--apply-standalone-reservation-capacity',
+  '--rollback-standalone-reservation-capacity',
+  '--verify-standalone-reservation-capacity',
 ]);
 
 const TOKEN = '__EWOH_SCHEMA__';
@@ -291,6 +298,7 @@ function usage() {
   console.error('       run_migrations.js --apply-standalone-policy-weights | --rollback-standalone-policy-weights | --verify-standalone-policy-weights');
   console.error('       run_migrations.js --apply-standalone-conflict-lifecycle | --rollback-standalone-conflict-lifecycle | --verify-standalone-conflict-lifecycle');
   console.error('       run_migrations.js --apply-standalone-task-requirement | --rollback-standalone-task-requirement | --verify-standalone-task-requirement');
+  console.error('       run_migrations.js --apply-standalone-reservation-capacity | --rollback-standalone-reservation-capacity | --verify-standalone-reservation-capacity');
   console.error('Env: EWOH_DATABASE_URL or SUDA_DATABASE_URL, EWOH_SCHEMA, EWOH_ALLOW_DDL=1');
   console.error('Rollback also requires EWOH_ALLOW_DESTRUCTIVE_ROLLBACK=1.');
   process.exit(2);
@@ -323,7 +331,7 @@ function main() {
     console.error('EWOH_DATABASE_URL or SUDA_DATABASE_URL is required.');
     process.exit(2);
   }
-  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod', '--verify-standalone-outbox-sequence', '--verify-standalone-domain-columns', '--verify-standalone-route-cost-matrix', '--verify-standalone-policy-weights', '--verify-standalone-conflict-lifecycle', '--verify-standalone-task-requirement', '--verify-standalone-scheduling-tables-fix', '--verify-standalone-execution-feedback', '--verify-standalone-kpi-replay', '--verify-standalone-policy-lifecycle', '--verify-standalone-sse-envelope'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
+  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod', '--verify-standalone-outbox-sequence', '--verify-standalone-domain-columns', '--verify-standalone-route-cost-matrix', '--verify-standalone-policy-weights', '--verify-standalone-conflict-lifecycle', '--verify-standalone-task-requirement', '--verify-standalone-scheduling-tables-fix', '--verify-standalone-execution-feedback', '--verify-standalone-kpi-replay', '--verify-standalone-policy-lifecycle', '--verify-standalone-sse-envelope', '--verify-standalone-reservation-capacity'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
     console.error('EWOH_ALLOW_DDL=1 is required for --apply and --rollback.');
     process.exit(2);
   }
@@ -548,6 +556,25 @@ function main() {
       return;
     }
 
+    if (command === '--verify-standalone-reservation-capacity') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_reservation_capacity_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const last = Array.isArray(rows) ? rows[rows.length - 1] : rows;
+      const row = (Array.isArray(last) ? last[0] : last) || {};
+      // DO 块内 RAISE EXCEPTION 会整体抛错；此处对返回行做防御断言。
+      // 期望：表存在=1、person/device 过滤约束存在=1、旧的未过滤约束已移除=0。
+      const tableOk = Number(row.reservation_table_exists || 0) === 1;
+      const guardOk = Number(row.person_device_guard || 0) === 1;
+      const oldDropped = Number(row.old_binary_guard_dropped || 0) === 0;
+      if (!tableOk || !guardOk || !oldDropped) {
+        console.error(`VERIFY FAILED: reservation capacity guard misconfigured (${JSON.stringify(row)})`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: person/device scoped exclusion present; station capacity left to app layer');
+      }
+      return;
+    }
+
     if (command === '--verify-standalone-policy-weights') {
       const rows = await sql.unsafe(substitute(read(FILES.standalone_policy_weights_verify), schema));
       console.log(JSON.stringify(rows, null, 2));
@@ -688,6 +715,8 @@ function main() {
       '--rollback-standalone-policy-lifecycle': 'standalone_policy_lifecycle_rollback',
       '--apply-standalone-sse-envelope': 'standalone_sse_envelope',
       '--rollback-standalone-sse-envelope': 'standalone_sse_envelope_rollback',
+      '--apply-standalone-reservation-capacity': 'standalone_reservation_capacity',
+      '--rollback-standalone-reservation-capacity': 'standalone_reservation_capacity_rollback',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {

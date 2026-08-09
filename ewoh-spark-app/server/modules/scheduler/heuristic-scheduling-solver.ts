@@ -3,7 +3,6 @@ import type {
   DecisionTrace,
   SchedulingAssignment,
   SchedulingConstraint,
-  SchedulingPlanMetrics,
   SchedulingPlanV2,
   SchedulingPolicy,
   SchedulingPolicyConfig,
@@ -22,6 +21,7 @@ import {
   detectDependencyCycle,
 } from './constraints';
 import type { SchedulingSolver, SolveOptions } from './scheduling-solver.interface';
+import { SchedulingObjectiveEvaluator } from './scheduling-objective-evaluator.service';
 
 /** 内部候选方案。 */
 interface Candidate {
@@ -66,6 +66,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     private readonly eligibilityService: EligibilityService,
     private readonly priorityEngine: PriorityEngine = new PriorityEngine(),
     private readonly metricsService?: SchedulerMetricsService,
+    // P0-5：统一目标评估器（默认自建；测试可注入替身）。
+    private readonly objectiveEvaluator: SchedulingObjectiveEvaluator = new SchedulingObjectiveEvaluator(),
   ) {}
 
   /** 暴露当前激活策略（供外层组合求解器构建请求权重时复用同一策略）。 */
@@ -210,6 +212,19 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         .filter((t) => TaskLifecycle.isTerminal(t.status))
         .map((t) => t.id),
     );
+    // P0-1：frozen/executing/locked 前置任务有已知结束时间（与 CP-SAT frozen interval
+    // 语义一致）：后继可排在其 planEnd 之后，而不是视为 pending 完全跳过。
+    // 来源：snapshot.lockedAssignments + 执行中状态任务的 planEnd。
+    const frozenPredEndMs = new Map<string, number>();
+    for (const t of snapshot.tasks) {
+      const isExecutingOrLocked =
+        TaskLifecycle.isExecuting(t.status) ||
+        t.status === 'dispatched' ||
+        (snapshot.lockedAssignments ?? []).some((la) => la.taskId === t.id);
+      if (!isExecutingOrLocked) continue;
+      const planEnd = t.planEnd ? Date.parse(t.planEnd) : NaN;
+      if (Number.isFinite(planEnd)) frozenPredEndMs.set(t.id, planEnd);
+    }
     const allTaskIds = snapshot.tasks.map((t) => t.id);
     const predecessorOf = (taskId: string): string[] => {
       const t = snapshot.tasks.find((x) => x.id === taskId);
@@ -302,22 +317,54 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       start: number;
       end: number;
     }> = [];
-    const assignedMinutes = new Map<string, number>(); // personId -> total assigned ms
-
-    let totalWalking = 0;
-    let totalLateMs = 0;
-    let totalWaitMs = 0;
-    let totalChange = 0;
 
     for (const { task, priority } of ranked) {
-      const deadlineMs = task.planEnd ? Date.parse(task.planEnd) : horizonEndMs;
-      const earliestStartMs = Math.max(
+      // P0-3：due/lateness 语义分离（与 CP-SAT 一致：due 软、mustFinishBy 硬）。
+      // softDeadlineMs 仅用于 lateness 软目标（超时允许但 penalty）；优先读
+      // dueAtMs，其次 planEnd（向后兼容），最后 horizonEndMs（永不 late）。
+      const softDeadlineMs =
+        task.dueAtMs != null
+          ? task.dueAtMs
+          : task.planEnd
+            ? Date.parse(task.planEnd)
+            : horizonEndMs;
+      // mustFinishByMs 为硬截止：候选 endMs 违反则不可分配（与 CP-SAT OnlyEnforceIf 语义一致）。
+      const mustFinishByMs = task.latestFinishMs != null ? task.latestFinishMs : null;
+      let earliestStartMs = Math.max(
         now,
         task.planStart ? Date.parse(task.planStart) : now,
       );
 
+      // P0-1：predecessor 显式时间约束——后继 earliestStart >= 每个已安排/冻结前置的结束时间。
+      // 旧实现只检查 doneTaskIds（完成集合），跨人员并行场景下后继可能排到前置结束之前。
+      const predEndTimesMs: number[] = [];
+      for (const p of task.predecessorIds ?? []) {
+        if (frozenPredEndMs.has(p)) {
+          predEndTimesMs.push(frozenPredEndMs.get(p)!);
+          continue;
+        }
+        if (!doneTaskIds.has(p)) continue; // 其余未完成前置在 predPending 分支处理
+        const predAsg = assignments.find((a) => a.taskId === p);
+        if (predAsg?.plannedEnd) {
+          const e = Date.parse(predAsg.plannedEnd);
+          if (Number.isFinite(e)) predEndTimesMs.push(e);
+        } else {
+          const predTask = snapshot.tasks.find((x) => x.id === p);
+          if (predTask?.planEnd) {
+            const e = Date.parse(predTask.planEnd);
+            if (Number.isFinite(e)) predEndTimesMs.push(e);
+          }
+        }
+      }
+      if (predEndTimesMs.length > 0) {
+        earliestStartMs = Math.max(earliestStartMs, ...predEndTimesMs);
+      }
+
       // 前置任务未全部完成 → 记 violation 并跳过。
-      const predPending = task.predecessorIds.some((p) => !doneTaskIds.has(p));
+      // P0-1：frozen/executing/locked 前置视为"已知结束时间"，不再计入 pending。
+      const predPending = (task.predecessorIds ?? []).some(
+        (p) => !doneTaskIds.has(p) && !frozenPredEndMs.has(p),
+      );
       if (predPending) {
         violations.push({
           taskId: task.id,
@@ -399,6 +446,33 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
               : defaultDurationMs;
           const endMs = startMs + Math.max(durationMs, 1);
 
+          // P0-3：mustFinishBy 硬检查——候选 endMs 违反硬截止则不可分配
+          // （与 CP-SAT OnlyEnforceIf(assigned) 语义一致：无法满足的任务如实 unassigned）。
+          if (mustFinishByMs != null && endMs > mustFinishByMs) {
+            hardRejectCount += 1;
+            candidates.push({
+              personId: person.id,
+              deviceId: device ? device.id : null,
+              stationId: task.stationId,
+              zoneId: task.zoneId,
+              startMs,
+              endMs,
+              routeId: routeCost.routeId,
+              etaSeconds: routeCost.etaSeconds,
+              distanceMeters: routeCost.distanceMeters,
+              riskLevel: routeCost.riskLevel,
+              routeGeometry: routeCost.geometry ?? [],
+              waitMs: 0,
+              lateMs: 0,
+              changeCost: 0,
+              cost: Number.POSITIVE_INFINITY,
+              scoreBreakdown: this.zeroBreakdown(),
+              reasons: ['must_finish_by_violation'],
+              alternatives: [{ reasons: ['must_finish_by_violation'] }],
+            });
+            continue;
+          }
+
           const eligibility = this.eligibilityService.check(
             {
               id: person.id,
@@ -440,7 +514,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
               minBatteryPct: effectiveMinBattery,
               maxContinuousLoad: effectiveMaxLoad,
               safetyBlockedPersonIds,
-              predecessorDone: (id) => doneTaskIds.has(id),
+              predecessorDone: (id) =>
+                doneTaskIds.has(id) || frozenPredEndMs.has(id),
               candidateStartMs: startMs,
               candidateEndMs: endMs,
             },
@@ -471,7 +546,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
             continue;
           }
 
-          const lateMs = Math.max(0, endMs - deadlineMs);
+          const lateMs = Math.max(0, endMs - softDeadlineMs);
           const waitMs = Math.max(0, startMs - earliestStartMs);
           const baselineAssignee = opts.baselineAssignee?.get(task.id);
           const changeCost =
@@ -547,9 +622,14 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       const best = feasible[0];
 
       if (!best) {
+        const mustFinishByViolated = candidates.some((c) =>
+          c.reasons.includes('must_finish_by_violation'),
+        );
         violations.push({
           taskId: task.id,
-          reason: 'no_eligible_resource',
+          reason: mustFinishByViolated
+            ? 'must_finish_by_violation'
+            : 'no_eligible_resource',
           type: 'infeasible',
           alternatives: candidates.map((c) => ({ reasons: c.reasons })),
         });
@@ -578,14 +658,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           end: best.endMs,
         });
       }
-      assignedMinutes.set(
-        best.personId,
-        (assignedMinutes.get(best.personId) ?? 0) + (best.endMs - best.startMs),
-      );
-      totalWalking += best.distanceMeters;
-      totalLateMs += best.lateMs;
-      totalWaitMs += best.waitMs;
-      totalChange += best.changeCost;
+      // P0-5：metrics 由 SchedulingObjectiveEvaluator 统一计算（见 solve 末尾），
+      // 此处不再累积内部计数（避免 CP-SAT/heuristic 双源不一致）。
 
       // 选中 + 未选候选的决策轨迹（可解释）。
       const decisionTrace: DecisionTrace = {
@@ -645,21 +719,18 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       doneTaskIds.add(task.id);
     }
 
-    const maxWorkload = Math.max(
-      0,
-      ...Array.from(assignedMinutes.values()),
-    );
-    const metrics: SchedulingPlanMetrics = {
-      lateMinutes: Math.round(totalLateMs / 60000),
-      walkingMeters: Math.round(totalWalking),
-      stationWaitMinutes: Math.round(totalWaitMs / 60000),
-      maxWorkload: Math.round(maxWorkload / 60000),
-      changeCost: totalChange,
-    };
-
-    const planScore = this.aggregateBreakdown(
-      assignments.map((a) => a.scoreBreakdown),
-    );
+    // P0-5：metrics / scoreBreakdown / objective / baselineDelta 由统一评估器计算
+    //（评估器与求解器无关：同一 snapshot+assignments → 同一输出，CP-SAT 与 heuristic
+    // 共用同一套评估语义，禁止 CP-SAT assignment 配 heuristic metrics）。
+    const evaluated = this.objectiveEvaluator.evaluate({
+      snapshot,
+      assignments,
+      policy,
+      constraints,
+      baseline: opts.baselineAssignee,
+      horizonMinutes,
+      nowMs: now,
+    });
 
     // Phase 2 / P2-T3：Solver 可观测埋点（候选数 / 硬约束拒绝数；失败仅记日志，不影响求解）。
     if (this.metricsService) {
@@ -686,13 +757,13 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       // HEURISTIC；当作为 CP-SAT fallback 时由 CpSatSchedulingSolver 覆盖为
       // UNAVAILABLE/FALLBACK，绝不把 heuristic 结果冒充 CP-SAT 成功。
       solverStatus: 'HEURISTIC',
-      objective: planScore.total,
-      scoreBreakdown: planScore,
+      objective: evaluated.objective,
+      scoreBreakdown: evaluated.scoreBreakdown,
       solveDurationMs: Math.max(Date.now() - now, 0),
       horizonMinutes,
       assignments,
-      metrics,
-      baselineDelta: this.computeBaselineDelta(metrics, snapshot),
+      metrics: evaluated.metrics,
+      baselineDelta: evaluated.baselineDelta,
       violations,
       createdAt: new Date().toISOString(),
     };
@@ -743,24 +814,6 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       energyCost: 0,
       total: 0,
     };
-  }
-
-  private aggregateBreakdown(
-    items: Array<ScoreBreakdown | undefined>,
-  ): ScoreBreakdown {
-    const sum = this.zeroBreakdown();
-    for (const item of items) {
-      if (!item) continue;
-      sum.lateness += item.lateness;
-      sum.travel += item.travel;
-      sum.workloadBalance += item.workloadBalance;
-      sum.stationWait += item.stationWait;
-      sum.changeCost += item.changeCost;
-      sum.risk += item.risk;
-      sum.energyCost += item.energyCost;
-      sum.total += item.total;
-    }
-    return sum;
   }
 
   private personMatchesLock(
@@ -867,20 +920,5 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     const da = a.deviceId ?? '';
     const db = b.deviceId ?? '';
     return da < db ? -1 : da > db ? 1 : 0;
-  }
-
-  private computeBaselineDelta(
-    metrics: SchedulingPlanMetrics,
-    snapshot: WorldStateSnapshot,
-  ): Record<string, unknown> {
-    const baselineLate = snapshot.tasks
-      .filter((t) => t.planEnd && Date.parse(t.planEnd) < Date.now())
-      .length;
-    return {
-      lateMinutesDelta: metrics.lateMinutes - baselineLate,
-      walkingMetersDelta: metrics.walkingMeters,
-      stationWaitMinutesDelta: metrics.stationWaitMinutes,
-      maxWorkloadDelta: metrics.maxWorkload,
-    };
   }
 }

@@ -27,12 +27,11 @@ describe('P0-5 Reservation 并发可靠性', () => {
     const db = {
       select: jest.fn(() => ({
         from: jest.fn(() => ({
-          where: jest.fn(() => ({
-            limit: jest.fn().mockResolvedValue([{ id: 'existing' }]),
-          })),
+          where: jest.fn().mockResolvedValue([{ id: 'existing' }]),
         })),
       })),
       insert: jest.fn(),
+      execute: jest.fn().mockResolvedValue(undefined),
     };
     const svc = new ResourceReservationService(db as never, makeContext() as never);
     await expect(
@@ -46,9 +45,7 @@ describe('P0-5 Reservation 并发可靠性', () => {
     const db = {
       select: jest.fn(() => ({
         from: jest.fn(() => ({
-          where: jest.fn(() => ({
-            limit: jest.fn().mockResolvedValue([]), // 预检无冲突（并发竞态窗口）
-          })),
+          where: jest.fn().mockResolvedValue([]), // 预检无冲突（并发竞态窗口）
         })),
       })),
       insert: jest.fn(() => ({
@@ -58,6 +55,7 @@ describe('P0-5 Reservation 并发可靠性', () => {
           throw err;
         }),
       })),
+      execute: jest.fn().mockResolvedValue(undefined),
     };
     const svc = new ResourceReservationService(db as never, makeContext() as never);
     await expect(
@@ -74,9 +72,7 @@ describe('P0-5 Reservation 并发可靠性', () => {
     const db = {
       select: jest.fn(() => ({
         from: jest.fn(() => ({
-          where: jest.fn(() => ({
-            limit: jest.fn().mockResolvedValue([]), // 双方预检都通过（竞态窗口）
-          })),
+          where: jest.fn().mockResolvedValue([]), // 双方预检都通过（竞态窗口）
         })),
       })),
       insert: jest.fn(() => ({
@@ -90,6 +86,7 @@ describe('P0-5 Reservation 并发可靠性', () => {
           return { returning: jest.fn().mockResolvedValue([{ reservationId: 'RSV-1', resourceType: 'device', resourceId: 'D1', startMs: 1000, endMs: 2000 }]) };
         }),
       })),
+      execute: jest.fn().mockResolvedValue(undefined),
     };
     const svc = new ResourceReservationService(db as never, makeContext() as never);
     const input: ReservationInput = { resourceType: 'device', resourceId: 'D1', startMs: 1000, endMs: 2000 };

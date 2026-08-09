@@ -91,10 +91,14 @@ export class DispatchCoordinatorService {
     // v0.7 Batch6.3 SAFETY_EVENT 派工熔断：方案基于最新世界状态时，
     // 若任何派工涉及被安全事件阻断（L2/L3 open）的人员/设备 → 拒绝下发。
     // 安全阻断不可被人工覆盖绕过（与求解器 SAFETY_BLOCK 硬约束同源语义）。
+    // P0-7：同时从当前世界状态读取工位容量（station.capacity），供预占容量感知。
+    const currentWorld = await this.worldStateSnapshotService.getCurrentWorldState();
+    const stationCapacityById = new Map<string, number>(
+      (currentWorld.stations ?? []).map((s) => [s.id, s.capacity ?? 1]),
+    );
     {
-      const current = await this.worldStateSnapshotService.getCurrentWorldState();
-      const blockedPersons = new Set(current.safetyBlockedPersonIds ?? []);
-      const blockedDevices = new Set(current.safetyBlockedDeviceIds ?? []);
+      const blockedPersons = new Set(currentWorld.safetyBlockedPersonIds ?? []);
+      const blockedDevices = new Set(currentWorld.safetyBlockedDeviceIds ?? []);
       if (blockedPersons.size > 0 || blockedDevices.size > 0) {
         const assignments = await this.db
           .select()
@@ -121,6 +125,40 @@ export class DispatchCoordinatorService {
     // P1-SCHED-004：统一默认时长（与 Solver/Policy 一致），仅在 assignment 缺失
     // plannedEnd 时作为兜底，避免 1h 硬编码与 solver 30min 不一致。
     const fallbackDurationMs = await this.resolveDefaultDurationMs();
+
+    // P0-7：下发前 station 容量预检（fail-fast，与求解器/预占容量语义一致）。
+    {
+      const assignments = await this.db
+        .select()
+        .from(ewohSchedulingPlanAssignment)
+        .where(
+          and(
+            eq(ewohSchedulingPlanAssignment.planId, planId),
+            eq(ewohSchedulingPlanAssignment.status, 'approved'),
+          ),
+        );
+      const stationInputs: ReservationInput[] = [];
+      for (const a of assignments) {
+        if (!a.stationId) continue;
+        const startMs = a.plannedStart ? a.plannedStart.getTime() : Date.now();
+        const endMs = a.plannedEnd
+          ? a.plannedEnd.getTime()
+          : startMs + fallbackDurationMs;
+        stationInputs.push({
+          resourceType: 'station',
+          resourceId: a.stationId,
+          startMs,
+          endMs,
+          capacity: stationCapacityById.get(a.stationId) ?? 1,
+        });
+      }
+      if (stationInputs.length > 0) {
+        await this.reservationService.assertStationCapacityAvailable(
+          stationInputs,
+          ctx,
+        );
+      }
+    }
 
     const outboxEventIds: string[] = [];
     const taskIds: string[] = [];
@@ -207,6 +245,8 @@ export class DispatchCoordinatorService {
               resourceId: a.stationId,
               startMs,
               endMs,
+              // P0-7：容量感知预占（station 允许多个重叠任务，count < capacity）。
+              capacity: stationCapacityById.get(a.stationId) ?? 1,
             });
           }
           if (inputs.length > 0) {

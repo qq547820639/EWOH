@@ -97,6 +97,13 @@ async function main() {
   run(`${NODE} ${RUNNER} --apply-standalone-task-requirement`);
   run(`${NODE} ${RUNNER} --verify-standalone-task-requirement`);
 
+  console.log('\n=== 5b. 022 reservation capacity：apply → verify → rollback → re-apply → verify（P0-7）===');
+  run(`${NODE} ${RUNNER} --apply-standalone-reservation-capacity`);
+  run(`${NODE} ${RUNNER} --verify-standalone-reservation-capacity`);
+  run(`${NODE} ${RUNNER} --rollback-standalone-reservation-capacity`);
+  run(`${NODE} ${RUNNER} --apply-standalone-reservation-capacity`);
+  run(`${NODE} ${RUNNER} --verify-standalone-reservation-capacity`);
+
   console.log('\n=== 6. backfill 数据验证（016）===');
   const backfillCheck = execSync(
     `${PG_DIR}/bin/psql -p ${PG_PORT} -U postgres -d ${DB_NAME} -t -A -c "SELECT count(*) FROM ${SCHEMA}.ewoh_production_task WHERE required_device_capabilities IS NULL;"`,

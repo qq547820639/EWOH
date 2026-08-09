@@ -6,9 +6,22 @@
  */
 import React from 'react';
 import type { CommandMapAggregate } from '../hooks/useCommandMapSchedulerState';
+import type { SchedulingPlanV2 } from '@shared/api.interface';
 
 interface LayerProps {
   state: CommandMapAggregate;
+}
+
+/** P0-8：Plan 层选中方案选择（纯函数，node 可测）。
+ * 只使用 selectedPlanId 定位方案——**不再回退 plans[0]**。
+ * 无选中/未知 id → null（不渲染错误方案；与 SchedulePanel 同源共享同一 planId）。
+ */
+export function selectPlanForLayer(
+  plans: CommandMapAggregate['plans'],
+  selectedPlanId: string | null | undefined,
+): SchedulingPlanV2 | null {
+  if (!selectedPlanId) return null;
+  return plans.find((p) => p.planId === selectedPlanId) ?? null;
 }
 
 /** 实体坐标（snapshot 的 person/device/station 已带 x/y）。 */
@@ -135,9 +148,12 @@ export function ReservationLayer({ state }: LayerProps): React.ReactElement | nu
   );
 }
 
-/** Plan 层：方案分配连线（task → person），数据来自 active plans 首个方案。 */
-export function PlanLayer({ state }: LayerProps): React.ReactElement | null {
-  const plan = state.plans[0];
+/** Plan 层：方案分配连线（task → person），数据来自选中的方案（P0-8：不再 plans[0]）。 */
+export function PlanLayer({
+  state,
+  selectedPlanId,
+}: LayerProps & { selectedPlanId?: string | null }): React.ReactElement | null {
+  const plan = selectPlanForLayer(state.plans, selectedPlanId);
   if (!plan) return EMPTY;
   return (
     <g data-layer="plan">
@@ -241,14 +257,18 @@ export function RiskLayer({ state }: LayerProps): React.ReactElement | null {
  * 多图层组合渲染（P0）：工厂 Base 恒在底层，其余按 activeLayers 全量叠加。
  * 同时开启 Resource + Route + Plan + Conflict 是调度驾驶舱的正常使用场景。
  */
-export function SchedulerLayersOverlay({ state }: LayerProps): React.ReactElement | null {
+export function SchedulerLayersOverlay({
+  state,
+  selectedPlanId,
+}: LayerProps & { selectedPlanId?: string | null }): React.ReactElement | null {
   const active = new Set(state.ui.activeLayers);
   const layers: React.ReactElement[] = [<BaseLayer key="base" state={state} />];
   if (active.has('task')) layers.push(<TaskLayer key="task" state={state} />);
   if (active.has('resource')) layers.push(<ResourceLayer key="resource" state={state} />);
   if (active.has('availability')) layers.push(<AvailabilityLayer key="availability" state={state} />);
   if (active.has('reservation')) layers.push(<ReservationLayer key="reservation" state={state} />);
-  if (active.has('plan')) layers.push(<PlanLayer key="plan" state={state} />);
+  if (active.has('plan'))
+    layers.push(<PlanLayer key="plan" state={state} selectedPlanId={selectedPlanId} />);
   if (active.has('route')) layers.push(<RouteLayer key="route" state={state} />);
   if (active.has('conflict')) layers.push(<ConflictLayer key="conflict" state={state} />);
   if (active.has('risk')) layers.push(<RiskLayer key="risk" state={state} />);
