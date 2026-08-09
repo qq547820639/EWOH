@@ -328,6 +328,9 @@ export class TravelCostService {
       forbiddenZone,
       risk: cost.riskCost,
       energy: 0,
+      // P4-GEOM：routeCostId（deterministic）+ 路径几何（与 Solver/地图同源 RouteCost）。
+      routeCostId: `RC-${cand.personId ?? 'any'}-${cand.deviceId ?? 'any'}-${cand.stationId ?? 'any'}`,
+      geometry: cost.geometry ?? [],
       routeCostMode: cost.source,
       fallbackReason: cost.fallbackReason,
       dataQuality: cost.dataQuality,

@@ -142,6 +142,12 @@ export class SchedulerStreamService {
         typeof payload.occurredAt === 'string'
           ? payload.occurredAt
           : new Date().toISOString(),
+      // P4-SSE：统一 envelope（orgId + correlationId；correlation 从 payload 或事件本身透传）。
+      orgId: (e as { orgId?: string | null }).orgId ?? null,
+      correlationId:
+        typeof payload.correlationId === 'string'
+          ? payload.correlationId
+          : null,
       sourceTs: e.createdAt,
       serverTs: new Date().toISOString(),
     };

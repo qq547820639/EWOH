@@ -89,6 +89,66 @@ export class SchedulerMetricsService {
     this.inc('replan_total');
   }
 
+  // ---- Phase 4 / P4-OBS：生产可观测扩展（§二十四指标清单） ----
+
+  /** 记录一次执行状态转换（execution.started/updated/completed/deviation 等）。 */
+  recordExecutionTransition(status: string): void {
+    this.inc(`scheduler_execution_transition_total{status="${status}"}`);
+  }
+
+  /** 记录一次执行偏差（execution deviation，带类型）。 */
+  recordExecutionDeviation(deviationType?: string | null): void {
+    this.inc(
+      deviationType
+        ? `scheduler_execution_deviation_total{type="${deviationType}"}`
+        : 'scheduler_execution_deviation_total',
+    );
+  }
+
+  /** 记录一次 SSE gap（Last-Event-ID 缺口触发 resync）。 */
+  recordSseGap(reason?: string): void {
+    this.inc(reason ? `scheduler_sse_gap_total{reason="${reason}"}` : 'scheduler_sse_gap_total');
+  }
+
+  /** 记录一次 dispatch 成功/失败。 */
+  recordDispatch(ok: boolean): void {
+    this.inc(ok ? 'scheduler_dispatch_total' : 'scheduler_dispatch_failure_total');
+  }
+
+  /** 记录一次冲突产生（带类型）。 */
+  recordConflictDetected(type?: string): void {
+    this.inc(
+      type
+        ? `scheduler_conflict_total{type="${type}"}`
+        : 'scheduler_conflict_total',
+    );
+  }
+
+  /** 记录一次 Policy 事件（replay/shadow/activation）。 */
+  recordPolicyEvent(kind: 'replay' | 'shadow' | 'activation' | 'gate'): void {
+    this.inc(`scheduler_policy_${kind}_total`);
+  }
+
+
+  /** 记录一次 infeasible 求解结果。 */
+  recordInfeasible(): void {
+    this.inc('scheduler_solver_infeasible_total');
+  }
+
+  /** 记录一次 optimal 求解结果。 */
+  recordOptimal(): void {
+    this.inc('scheduler_solver_optimal_total');
+  }
+
+  /** 记录求解延迟（ms，直方图）。 */
+  recordSolverLatencyMs(ms: number): void {
+    this.gauges.set('scheduler_solver_latency_ms_last', ms);
+    for (const b of this.durationBucketsMs) {
+      if (ms <= b) this.inc(`scheduler_solver_latency_ms_bucket{le="${b}"}`);
+    }
+    this.inc('scheduler_solver_latency_ms_bucket{le="+Inf"}');
+  }
+
   /** 记录一次资源预约冲突。 */
   recordReservationConflict(): void {
     this.inc('reservation_conflict_total');

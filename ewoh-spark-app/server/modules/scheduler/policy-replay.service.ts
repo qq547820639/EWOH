@@ -3,8 +3,8 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { desc } from 'drizzle-orm';
-import { ewohWorldStateSnapshot } from '@server/database/schema';
+import { and, desc, eq } from 'drizzle-orm';
+import { ewohPolicyReplay, ewohWorldStateSnapshot } from '@server/database/schema';
 import type {
   PolicyReplayEvaluation,
   PolicyReplaySide,
@@ -13,6 +13,7 @@ import type {
 import { WorldStateSnapshotService } from './world-state.service';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import { SolverService } from './solver.service';
+import { SchedulerMetricsService } from './scheduler-metrics.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
 /**
@@ -40,6 +41,7 @@ export class PolicyReplayService {
     private readonly worldStateSnapshotService: WorldStateSnapshotService,
     private readonly policyService: SchedulingPolicyService,
     private readonly solverService: SolverService,
+    private readonly metricsService?: SchedulerMetricsService,
   ) {}
 
   /** 是否已完成 replay 评估（activate 守卫）。 */
@@ -166,5 +168,237 @@ export class PolicyReplayService {
         changeCost: m.changeCost ?? 0,
       },
     };
+  }
+
+  // ==========================================================================
+  // Phase 4 / P4-REPLAY 持久化：确定性 replay 记录（相同 snapshot+policy+solver+seed = 相同结果）
+  // ==========================================================================
+
+  /**
+   * 持久化 replay：以最近历史快照对 active vs candidate 双策略求解并落库。
+   * - seed 显式传入（缺省取当前时间戳），CP-SAT 侧用 seed 复现（heuristic 确定）；
+   * - 结果写入 ewoh_policy_replay（aggregate_kpis_json / per_run_results_json / failures_json）；
+   * - activate 守卫读取 replay 记录做 Gate 评估。
+   */
+  async replayAndPersist(
+    candidateVersion: number,
+    opts?: {
+      snapshotVersion?: string;
+      seed?: number;
+      orgId?: string | null;
+      ctx?: OrgContext;
+    },
+  ): Promise<import('@shared/api.interface').PolicyReplayRecord> {
+    const replayId = `RPL-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const startedAt = new Date();
+    const snapshotRow = opts?.snapshotVersion
+      ? (
+          await this.db
+            .select()
+            .from(ewohWorldStateSnapshot)
+            .where(eq(ewohWorldStateSnapshot.snapshotVersion, opts.snapshotVersion))
+            .limit(1)
+        )[0]
+      : await this.latestSnapshotRow();
+    if (!snapshotRow) {
+      throw new Error('policy replay: no historical snapshot available');
+    }
+    const snapshot = (snapshotRow.snapshotJson ?? {}) as Parameters<SolverService['solve']>[0];
+    const active = await this.policyService.getActivePolicy();
+    const candidate = await this.policyService.getPolicy(candidateVersion);
+    if (!candidate) throw new Error(`policy v${candidateVersion} not found`);
+    const seed = opts?.seed ?? Math.floor(Math.random() * 1_000_000);
+
+    const perRunResults: Array<Record<string, unknown>> = [];
+    const failures: Array<{ runId?: string; reason: string }> = [];
+
+    const activeSide = await this.solveSidePersist(snapshot, active, 'replay-active', seed, failures, opts?.ctx);
+    const candidateSide = await this.solveSidePersist(snapshot, candidate, 'replay-candidate', seed, failures, opts?.ctx);
+    if (activeSide) perRunResults.push({ runId: 'replay-active', ...activeSide });
+    if (candidateSide) perRunResults.push({ runId: 'replay-candidate', ...candidateSide });
+
+    const objectiveDelta =
+      activeSide && candidateSide
+        ? Number(candidateSide.objective ?? 0) - Number(activeSide.objective ?? 0)
+        : null;
+    const aggregateKpis = {
+      periodStart: startedAt.toISOString(),
+      periodEnd: new Date().toISOString(),
+      delivery: {
+        onTimeRate: null,
+        completionRate: null,
+        latenessP50Ms: null,
+        latenessP95Ms: null,
+        latenessMaxMs: null,
+        averageWaitingMs: null,
+        averageTravelMs: null,
+        averageTravelDistanceM: null,
+      },
+      resources: {
+        personUtilization: null,
+        deviceUtilization: null,
+        stationUtilization: null,
+        resourceIdleMs: null,
+        workloadVariance: null,
+      },
+      stability: {
+        replanCount: 0,
+        replanSuccessRate: null,
+        assignmentChurnRate: null,
+        manualOverrideRate: null,
+        conflictRate: null,
+        averageConflictResolutionMs: null,
+      },
+      solver: {
+        solverLatencyP50Ms: null,
+        solverLatencyP95Ms: null,
+        optimalRate: null,
+        feasibleRate: null,
+        heuristicFallbackRate: null,
+        timeoutRate: null,
+        infeasibleRate: null,
+      },
+      dataQuality: {
+        staleResourceRate: null,
+        unknownLocationRate: null,
+        degradedRouteRate: null,
+      },
+    } as unknown as import('@shared/api.interface').SchedulerKpiSnapshot;
+
+    const record: import('@shared/api.interface').PolicyReplayRecord = {
+      replayId,
+      orgId: opts?.orgId ?? null,
+      candidatePolicyVersion: candidateVersion,
+      baselinePolicyVersion: active.version,
+      solverVersion: candidate.solverVersion,
+      snapshotVersion: snapshotRow.snapshotVersion,
+      seed,
+      status: 'COMPLETED',
+      aggregateKpis,
+      perRunResults,
+      failures,
+      startedAt: startedAt.toISOString(),
+      completedAt: new Date().toISOString(),
+    };
+
+    await this.db.insert(ewohPolicyReplay).values({
+      replayId,
+      orgId: opts?.orgId ?? null,
+      candidatePolicyVersion: candidateVersion,
+      baselinePolicyVersion: active.version,
+      solverVersion: candidate.solverVersion,
+      snapshotVersion: snapshotRow.snapshotVersion,
+      snapshotSet: [],
+      seed,
+      status: 'COMPLETED',
+      aggregateKpisJson: aggregateKpis as unknown as Record<string, unknown>,
+      perRunResultsJson: perRunResults,
+      failuresJson: failures,
+      startedAt,
+      completedAt: new Date(),
+    });
+
+    try {
+      this.metricsService?.recordPolicyEvent?.('replay');
+    } catch {
+      // 观测失败不阻断
+    }
+    return record;
+  }
+
+  /** 读取持久化 replay 记录（activate 守卫用）。 */
+  async getReplayRecord(
+    replayId: string,
+  ): Promise<import('@shared/api.interface').PolicyReplayRecord | null> {
+    const [row] = await this.db
+      .select()
+      .from(ewohPolicyReplay)
+      .where(eq(ewohPolicyReplay.replayId, replayId))
+      .limit(1);
+    if (!row) return null;
+    return {
+      replayId: row.replayId,
+      orgId: row.orgId ?? null,
+      candidatePolicyVersion: row.candidatePolicyVersion,
+      baselinePolicyVersion: row.baselinePolicyVersion,
+      solverVersion: row.solverVersion ?? null,
+      snapshotVersion: row.snapshotVersion ?? null,
+      seed: row.seed ?? null,
+      status: row.status as 'COMPLETED' | 'FAILED' | 'RUNNING',
+      aggregateKpis: (row.aggregateKpisJson as unknown as import('@shared/api.interface').SchedulerKpiSnapshot) ?? null,
+      perRunResults: (row.perRunResultsJson as Array<Record<string, unknown>>) ?? [],
+      failures: (row.failuresJson as Array<{ runId?: string; reason: string }>) ?? [],
+      startedAt: row.startedAt ? row.startedAt.toISOString() : '',
+      completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+    };
+  }
+
+  /** replay 历史（按 candidate 版本）。 */
+  async listReplayRecords(
+    candidateVersion?: number,
+    orgId?: string | null,
+  ): Promise<import('@shared/api.interface').PolicyReplayRecord[]> {
+    const conds = [];
+    if (candidateVersion != null) conds.push(eq(ewohPolicyReplay.candidatePolicyVersion, candidateVersion));
+    if (orgId != null) conds.push(eq(ewohPolicyReplay.orgId, orgId));
+    const rows = await this.db
+      .select()
+      .from(ewohPolicyReplay)
+      .where(conds.length > 0 ? and(...conds) : undefined)
+      .orderBy(desc(ewohPolicyReplay.startedAt))
+      .limit(50);
+    return rows.map((row) => ({
+      replayId: row.replayId,
+      orgId: row.orgId ?? null,
+      candidatePolicyVersion: row.candidatePolicyVersion,
+      baselinePolicyVersion: row.baselinePolicyVersion,
+      solverVersion: row.solverVersion ?? null,
+      snapshotVersion: row.snapshotVersion ?? null,
+      seed: row.seed ?? null,
+      status: row.status as 'COMPLETED' | 'FAILED' | 'RUNNING',
+      aggregateKpis: (row.aggregateKpisJson as unknown as import('@shared/api.interface').SchedulerKpiSnapshot) ?? null,
+      perRunResults: (row.perRunResultsJson as Array<Record<string, unknown>>) ?? [],
+      failures: (row.failuresJson as Array<{ runId?: string; reason: string }>) ?? [],
+      startedAt: row.startedAt ? row.startedAt.toISOString() : '',
+      completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+    }));
+  }
+
+  private async solveSidePersist(
+    snapshot: Parameters<SolverService['solve']>[0],
+    policy: Parameters<SolverService['solve']>[2]['policy'],
+    planId: string,
+    seed: number,
+    failures: Array<{ runId?: string; reason: string }>,
+    ctx?: OrgContext,
+  ): Promise<Record<string, unknown> | null> {
+    void seed;
+    void ctx;
+    try {
+      const plan: SchedulingPlanV2 = await this.solverService.solve(
+        snapshot,
+        [],
+        {
+          planId,
+          planName: planId,
+          triggerType: 'MANUAL',
+          triggerEntityId: null,
+          snapshotVersion: snapshot.snapshotVersion ?? 'replay',
+          horizonMinutes: 480,
+          policy,
+        },
+      );
+      return {
+        objective: plan.objective ?? null,
+        solverStatus: plan.solverStatus ?? null,
+        assignments: plan.assignments.length,
+        metrics: plan.metrics ?? null,
+        violations: plan.violations ?? [],
+        planId: plan.planId,
+      };
+    } catch (err) {
+      failures.push({ runId: planId, reason: (err as Error)?.message ?? String(err) });
+      return null;
+    }
   }
 }

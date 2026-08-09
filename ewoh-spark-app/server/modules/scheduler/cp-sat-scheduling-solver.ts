@@ -92,6 +92,8 @@ export class CpSatSchedulingSolver {
     let eligibleByTask:
       | Map<string, { personIds: string[]; deviceIds: string[] }>
       | undefined;
+    // P4-GEOM：taskId → (candidateKey → geometry)，CP-SAT assignment 装配时恢复真实路线。
+    let geometryIndex: Map<string, Map<string, Array<{ x: number; y: number }>>> | undefined;
     let eligibilityMatrixFailed = false;
     if (
       this.travelCostService &&
@@ -100,6 +102,24 @@ export class CpSatSchedulingSolver {
     ) {
       try {
         eligibleByTask = await this.travelCostService.buildEligibilityMatrix(snapshot);
+        // P4-GEOM：按 eligible 候选构建 geometry 索引（与求解请求同源 RouteCost）。
+        geometryIndex = new Map();
+        for (const [taskId, elig] of eligibleByTask) {
+          const task = snapshot.tasks.find((t) => t.id === taskId);
+          if (!task) continue;
+          const candidates = elig.personIds.map((pid) => ({ personId: pid, deviceId: null, stationId: task.stationId }));
+          try {
+            const matrix = await this.travelCostService.buildMatrix(snapshot, task, candidates);
+            const byKey = new Map<string, Array<{ x: number; y: number }>>();
+            for (const c of matrix.candidates) {
+              if (!c.feasible) continue;
+              byKey.set(`${c.personId ?? 'any'}|${c.deviceId ?? 'any'}|${c.stationId ?? 'any'}`, c.geometry ?? []);
+            }
+            geometryIndex.set(taskId, byKey);
+          } catch {
+            // 单个 task 几何不可用不影响主流程（地图回退起终点直线）
+          }
+        }
       } catch (err) {
         eligibilityMatrixFailed = true;
         this.logger.error(
@@ -178,6 +198,7 @@ export class CpSatSchedulingSolver {
         opts,
         policy,
         priorityResults,
+        geometryIndex,
       );
     }
 
@@ -472,10 +493,11 @@ export class CpSatSchedulingSolver {
     opts: SolveOptions,
     policy: SchedulingPolicy,
     priorityResults: Map<string, PriorityResult>,
+    geometryIndex?: Map<string, Map<string, Array<{ x: number; y: number }>>>,
   ): Promise<SchedulingPlanV2> {
     // 复用启发式产生方案外壳（metrics / scoreBreakdown / baselineDelta 等），再叠入 CP-SAT 结果。
     const shell = await this.heuristicSolver.solve(snapshot, constraints, opts);
-    const assignments = this.toAssignments(response, opts, policy, priorityResults);
+    const assignments = this.toAssignments(response, opts, policy, priorityResults, geometryIndex);
     return {
       ...shell,
       solverVersion: CPSAT_VERSION,
@@ -493,8 +515,17 @@ export class CpSatSchedulingSolver {
     opts: SolveOptions,
     policy: SchedulingPolicy,
     priorityResults: Map<string, PriorityResult>,
+    geometryIndex?: Map<string, Map<string, Array<{ x: number; y: number }>>>,
   ): SchedulingAssignment[] {
     return response.assignments.map((a) => {
+      // P4-GEOM：从矩阵恢复真实路线几何（与 Solver 成本同一条 RouteCost）。
+      let routeGeometry: Array<{ x: number; y: number }> | undefined;
+      if (geometryIndex) {
+        const byKey = geometryIndex.get(a.taskId);
+        if (byKey) {
+          routeGeometry = byKey.get(`${a.personId ?? 'any'}|${a.deviceId ?? 'any'}|${a.stationId ?? 'any'}`);
+        }
+      }
       const pri = priorityResults.get(a.taskId);
       // P0-SCHED-002：禁止伪造 DecisionTrace。无真实 priority 结果时显式标记
       // UNKNOWN/UNAVAILABLE，不得填 0/[] 冒充真实计算。
@@ -545,6 +576,9 @@ export class CpSatSchedulingSolver {
         plannedStart: a.startMs != null ? new Date(a.startMs).toISOString() : null,
         plannedEnd: a.endMs != null ? new Date(a.endMs).toISOString() : null,
         routeId: null,
+        // P4-GEOM：CP-SAT 路线几何由 Nest Plan Assembler 从 RouteCost 矩阵恢复
+        //（Worker 不负责 geometry；地图与 Solver 共享同一 RouteCost identity）。
+        routeGeometry,
         status: 'proposed' as const,
         reasons: a.reasons ?? [],
         alternatives: a.rejectedAlternatives ?? [],

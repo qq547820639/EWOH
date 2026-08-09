@@ -75,6 +75,7 @@ import { SchedulingFeedbackService } from './scheduling-feedback.service';
 import { OutboxService } from './outbox.service';
 import { ReplanCoordinatorService } from './replan-coordinator.service';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
+import { ExecutionService } from './execution.service';
 import { ConflictService } from './conflict.service';
 import { PolicyReplayService } from './policy-replay.service';
 import { TaskLifecycle } from './task-lifecycle';
@@ -144,6 +145,8 @@ export class SchedulerService {
     // 可选注入：模块生产路径始终注入；旧单测未注入时 compare 回退参数 delta 估算，
     // activate 守卫视作未评估。
     private readonly policyReplayService?: PolicyReplayService,
+    // Phase 4 / P4-EXEC：正式执行领域（可选注入，旧单测未注入时静默跳过）。
+    private readonly executionService?: ExecutionService,
   ) {}
 
   async generatePlans(body?: { idempotencyKey?: string }): Promise<SchedulePlan[]> {
@@ -965,7 +968,37 @@ export class SchedulerService {
     planId: string,
     actor?: OrgContext,
   ): Promise<SchedulingPlanV2> {
-    return this.planService.dispatchPlan(planId, this.toOrgContext(actor));
+    const plan = await this.planService.dispatchPlan(planId, this.toOrgContext(actor));
+    // P4-EXEC：dispatch 后建立 Execution 记录（planned 事实；actual 由执行反馈回填）。
+    if (this.executionService) {
+      try {
+        await this.executionService.createFromPlan(
+          {
+            planId: plan.planId,
+            runId: (plan as { runId?: string | null }).runId ?? null,
+            snapshotVersion: plan.snapshotVersion ?? null,
+            policyVersion: plan.policyVersion ?? null,
+            solverVersion: plan.solverVersion ?? null,
+          },
+          plan.assignments.map((a) => ({
+            assignmentId: a.assignmentId,
+            taskId: a.taskId,
+            personId: a.personId ?? null,
+            deviceId: a.deviceId ?? null,
+            stationId: a.stationId ?? null,
+            plannedStart: a.plannedStart ?? null,
+            plannedEnd: a.plannedEnd ?? null,
+            etaSeconds: a.etaSeconds,
+            distanceMeters: a.distanceMeters,
+          })),
+          this.toOrgContext(actor).primaryOrgId ?? null,
+          actor,
+        );
+      } catch (err) {
+        this.logger.warn(`execution record creation failed: ${(err as Error)?.message ?? err}`);
+      }
+    }
+    return plan;
   }
 
   async replanV2(
@@ -2039,4 +2072,27 @@ export class SchedulerService {
     }
     return s;
   }
+  // ==========================================================================
+  // Phase 4 门面：Execution / KPI / Replay / Preview / Policy Lifecycle
+  // （薄转发；实现细节在各应用服务，避免 SchedulerService 膨胀）
+  // ==========================================================================
+
+  /** 执行领域：更新 Execution（含 deviation 派生 + 事件）。 */
+  async executionUpdate(
+    assignmentId: string,
+    body: import('@shared/api.interface').ExecutionUpdateRequest,
+    actor?: OrgContext,
+  ): Promise<import('@shared/api.interface').SchedulingExecution> {
+    if (!this.executionService) throw new Error('executionService not injected');
+    return this.executionService.update(assignmentId, body, this.toOrgContext(actor).primaryOrgId ?? null);
+  }
+
+  /** 执行领域：查询。 */
+  async executionList(
+    query: { planId?: string; taskId?: string; status?: string; limit?: number; offset?: number },
+  ): Promise<import('@shared/api.interface').ExecutionListResponse> {
+    if (!this.executionService) throw new Error('executionService not injected');
+    return this.executionService.list(query);
+  }
+
 }

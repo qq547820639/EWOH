@@ -15,6 +15,8 @@ export interface OutboxEnqueueOpts {
   snapshotVersion?: string | null;
   planId?: string | null;
   occurredAt?: string | null;
+  // Phase 4 / P4-SSE：统一 Envelope 关联 ID（run/plan/execution/policy 全链路）。
+  correlationId?: string | null;
 }
 
 /** Outbox：可靠领域事件，先写 outbox 再发布，保证 dispatch 与事件一致。 */
@@ -44,6 +46,7 @@ export class OutboxService {
     if (opts?.snapshotVersion != null) envelopePayload.snapshotVersion = opts.snapshotVersion;
     if (opts?.planId != null) envelopePayload.planId = opts.planId;
     if (opts?.occurredAt != null) envelopePayload.occurredAt = opts.occurredAt;
+    if (opts?.correlationId != null) envelopePayload.correlationId = opts.correlationId;
     const insertValues: typeof ewohOutbox.$inferInsert = {
       eventId,
       eventType,
@@ -53,6 +56,7 @@ export class OutboxService {
       status: 'pending',
       payloadJson: envelopePayload,
       orgId,
+      correlationId: opts?.correlationId ?? null,
     };
     if (sequence !== undefined) {
       insertValues.sequence = sequence;

@@ -20,6 +20,12 @@ import { SchedulerStreamService } from './scheduler-stream.service';
 import { ResourceProjectionService } from './resource-projection.service';
 import { ReplanCoordinatorService } from './replan-coordinator.service';
 import { ConflictService } from './conflict.service';
+import { KpiService } from './kpi.service';
+import { PlanCompareService } from './plan-compare.service';
+import { ConflictPreviewService } from './conflict-preview.service';
+import { ShadowPolicyService } from './shadow-policy.service';
+import { PolicyActivationService } from './policy-activation.service';
+import { PolicyReplayService } from './policy-replay.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import type {
   GeneratePlansRequest,
@@ -50,6 +56,13 @@ export class SchedulerController {
     private readonly resourceProjectionService: ResourceProjectionService,
     private readonly replanCoordinatorService: ReplanCoordinatorService,
     private readonly conflictService: ConflictService,
+    // Phase 4：执行 / KPI / Compare / Preview / Shadow / Activation（薄门面）
+    private readonly kpiService: KpiService,
+    private readonly planCompareService: PlanCompareService,
+    private readonly conflictPreviewService: ConflictPreviewService,
+    private readonly shadowPolicyService: ShadowPolicyService,
+    private readonly policyActivationService: PolicyActivationService,
+    private readonly policyReplayService: PolicyReplayService,
   ) {}
 
   /**
@@ -273,14 +286,6 @@ export class SchedulerController {
     @Req() request: { userContext?: OrgContext },
   ) {
     return this.schedulerService.applyOverrides(planId, body, request.userContext);
-  }
-
-  @Get('plans/:planId/compare/:otherPlanId')
-  async comparePlans(
-    @Param('planId') planId: string,
-    @Param('otherPlanId') otherPlanId: string,
-  ) {
-    return this.schedulerService.comparePlansV2(planId, otherPlanId);
   }
 
   @Get('tasks/:id/candidates')
@@ -559,4 +564,183 @@ export class SchedulerController {
       data,
     };
   }
+  // ==========================================================================
+  // Phase 4 / P4-EXEC：Execution Feedback
+  // ==========================================================================
+
+  @Post('executions/:assignmentId/update')
+  async updateExecution(
+    @Param('assignmentId') assignmentId: string,
+    @Body() body: import('@shared/api.interface').ExecutionUpdateRequest,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.schedulerService.executionUpdate(assignmentId, body, request.userContext);
+  }
+
+  @Get('executions')
+  async listExecutions(
+    @Query('planId') planId?: string,
+    @Query('taskId') taskId?: string,
+    @Query('status') status?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.schedulerService.executionList({
+      planId,
+      taskId,
+      status,
+      limit: limit ? Number(limit) : undefined,
+      offset: offset ? Number(offset) : undefined,
+    });
+  }
+
+  // ==========================================================================
+  // Phase 4 / P4-KPI：生产指标
+  // ==========================================================================
+
+  @Get('kpi')
+  async getKpi(@Query('persist') persist?: string) {
+    return this.kpiService.aggregate({
+      persist: persist === '1',
+    });
+  }
+
+  // ==========================================================================
+  // Phase 4 / P4-COMPARE：Plan Compare（权威 Diff）
+  // ==========================================================================
+
+  @Get('plans/:planId/compare/:otherPlanId')
+  async comparePlansV2(
+    @Param('planId') planId: string,
+    @Param('otherPlanId') otherPlanId: string,
+  ) {
+    const [baseline, candidate] = await Promise.all([
+      this.schedulerService.getPlanDetail(planId),
+      this.schedulerService.getPlanDetail(otherPlanId),
+    ]);
+    return this.planCompareService.compare(baseline, candidate);
+  }
+
+  // ==========================================================================
+  // Phase 4 / P4-PREVIEW：Conflict Preview Replan（readonly）
+  // ==========================================================================
+
+  @Post('conflicts/:id/actions/preview')
+  async previewConflictAction(
+    @Param('id') conflictId: string,
+    @Body() body: import('@shared/api.interface').ConflictPreviewRequest,
+  ) {
+    const conflict = await this.conflictService.getConflictDetail(conflictId);
+    return this.conflictPreviewService.preview(
+      conflictId,
+      {
+        type: conflict.type,
+        scope: conflict.scope,
+        resourceId: conflict.resourceId,
+        taskIds: conflict.taskIds,
+        message: conflict.message,
+      },
+      null,
+      body.action,
+    );
+  }
+
+  // ==========================================================================
+  // Phase 4 / P4-REPLAY：Policy Replay（持久化 + deterministic）
+  // ==========================================================================
+
+  @Post('policy/replay')
+  async replayPolicy(
+    @Body() body: import('@shared/api.interface').PolicyReplayRequest,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.policyReplayService.replayAndPersist(body.candidatePolicyVersion, {
+      snapshotVersion: body.snapshotVersion,
+      seed: body.seed,
+      orgId: request.userContext?.primaryOrgId ?? null,
+      ctx: request.userContext,
+    });
+  }
+
+  @Get('policy/replay')
+  async listReplays(
+    @Query('candidatePolicyVersion') candidateVersion?: string,
+    @Query('orgId') orgId?: string,
+  ) {
+    return this.policyReplayService.listReplayRecords(
+      candidateVersion ? Number(candidateVersion) : undefined,
+      orgId ?? null,
+    );
+  }
+
+  // ==========================================================================
+  // Phase 4 / P4-SHADOW：Shadow Policy + Shadow Plan
+  // ==========================================================================
+
+  @Post('policy/:version/shadow')
+  async enableShadow(
+    @Param('version') version: string,
+    @Body() body: { operator?: string; reason?: string },
+  ) {
+    await this.shadowPolicyService.setStatus(Number(version), 'SHADOW', body.operator);
+    return { ok: true, status: 'SHADOW', policyVersion: Number(version) };
+  }
+
+  @Post('policy/:version/shadow/plan')
+  async generateShadowPlan(
+    @Param('version') version: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.shadowPolicyService.generateShadowPlan(Number(version), request.userContext);
+  }
+
+  // ==========================================================================
+  // Phase 4 / P4-GATE：Human-gated Activation + Rollback
+  // ==========================================================================
+
+  @Post('policy/:version/gate')
+  async evaluateGate(
+    @Param('version') version: string,
+    @Body() body: { replayId?: string },
+  ) {
+    return this.policyActivationService.evaluateGate(Number(version), body.replayId ?? null);
+  }
+
+  @Post('policy/:version/activate')
+  async activatePolicy(
+    @Param('version') version: string,
+    @Body() body: {
+      operator: string;
+      reason?: string;
+      replayId?: string;
+      gateResult?: import('@shared/api.interface').PolicyGateEvaluation | null;
+    },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.policyActivationService.activate(Number(version), {
+      operator: body.operator ?? request.userContext?.userId ?? 'system',
+      reason: body.reason,
+      replayId: body.replayId,
+      gateResult: body.gateResult ?? null,
+      orgId: request.userContext?.primaryOrgId ?? null,
+    }, request.userContext);
+  }
+
+  @Post('policy/activations/:activationId/rollback')
+  async rollbackPolicy(
+    @Param('activationId') activationId: string,
+    @Body() body: { operator: string; reason?: string },
+  ) {
+    return this.policyActivationService.rollback(
+      activationId,
+      body.operator ?? 'system',
+      body.reason,
+    );
+  }
+
+  @Get('policy/activations')
+  async listActivations(@Query('orgId') orgId?: string) {
+    return this.policyActivationService.listActivations(orgId ?? null);
+  }
+
 }

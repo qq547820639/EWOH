@@ -20,6 +20,12 @@ import { SchedulerMetricsController } from './scheduler-metrics.controller';
 import { SchedulingFeedbackService } from './scheduling-feedback.service';
 import { ConflictService } from './conflict.service';
 import { PolicyReplayService } from './policy-replay.service';
+import { ExecutionService } from './execution.service';
+import { KpiService } from './kpi.service';
+import { PlanCompareService } from './plan-compare.service';
+import { ConflictPreviewService } from './conflict-preview.service';
+import { ShadowPolicyService } from './shadow-policy.service';
+import { PolicyActivationService } from './policy-activation.service';
 import { TaskSchedulingBridge } from './task-scheduling.bridge';
 import { TaskModule } from '../task/task.module';
 
@@ -47,6 +53,12 @@ import { TaskModule } from '../task/task.module';
     SchedulerStreamService,
     ConflictService,
     PolicyReplayService,
+    ExecutionService,
+    KpiService,
+    PlanCompareService,
+    ConflictPreviewService,
+    ShadowPolicyService,
+    PolicyActivationService,
   ],
   exports: [
     SchedulerService,
@@ -66,6 +78,12 @@ import { TaskModule } from '../task/task.module';
     ResourceReservationService,
     ConflictService,
     PolicyReplayService,
+    ExecutionService,
+    KpiService,
+    PlanCompareService,
+    ConflictPreviewService,
+    ShadowPolicyService,
+    PolicyActivationService,
   ],
 })
 export class SchedulerModule {}

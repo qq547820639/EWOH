@@ -155,6 +155,11 @@ export class PlanService {
       .limit(1);
     if (!plan) throw new NotFoundException(`Plan ${planId} not found`);
 
+    // P4-SHADOW：Shadow Plan 服务端 hard guard——不可 approve（不靠前端隐藏按钮）。
+    if (plan.isShadow) {
+      throw new ConflictException('SHADOW_PLAN_GUARD: shadow plan cannot be approved');
+    }
+
     if (plan.version !== body.version) {
       throw new ConflictException('PLAN_STALE');
     }
@@ -273,6 +278,15 @@ export class PlanService {
     planId: string,
     ctx: OrgContext,
   ): Promise<SchedulingPlanV2> {
+    // P4-SHADOW：Shadow Plan 服务端 hard guard——不可 dispatch（不靠前端隐藏按钮）。
+    const [planRow] = await this.db
+      .select()
+      .from(ewohSchedulePlan)
+      .where(eq(ewohSchedulePlan.planId, planId))
+      .limit(1);
+    if (planRow?.isShadow) {
+      throw new ConflictException('SHADOW_PLAN_GUARD: shadow plan cannot be dispatched');
+    }
     await this.dispatchCoordinator.dispatch(planId, ctx);
     return this.getPlan(planId);
   }
