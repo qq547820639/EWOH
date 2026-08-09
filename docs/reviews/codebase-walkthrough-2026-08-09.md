@@ -313,4 +313,34 @@ EWOH_DATA_RETENTION_DAYS（默认 30）；SECURITY.md 分级：高频遥测 7-30
 
 ---
 
+## 10. 收尾闭环（2026-08-09 下午，全权授权一次性迭代）
+
+修复后收尾：**10 个提交已 push origin/main（6dc14b5..90cc747）**，QA 最终判定 NoOne。新增闭环项：
+
+| 项 | 内容 | 验证 |
+|---|---|---|
+| ortools 真实求解闭环 | managed Python 3.13 venv 安装 ortools 9.15.6755；reservation 时间窗/F1 非整分钟/整窗预约等真实求解 | 15 passed, 1 skipped |
+| F-HORIZON×2 | ① 整窗预约时求解器"窗外空转派工"→ end_min<=horizon；② 该约束无条件生效致视野外任务整体 INFEASIBLE 连坐 → assigned boolvar + OnlyEnforceIf(assigned)（due 同族一并修）+ end 域改 [lo+dur, hi+dur]（恒非空）。极端 180min/1000min 视野外任务均 OPTIMAL+unassigned | 10 例探针全过，不连坐 |
+| P1-1 双事件总线关闭 | P0-EDGE-003 修订为双总线职责（MessageBus 数据通道 handler 回调 / SchedulerEventBus SSE 广播 queue 语义 / kafka 兼容别名 / 云侧 Outbox 不在范围）；bus.py/events.py docstring 同步 | audit-repo-facts 39/39 |
+| P1-2 飞书异步化 | lark-cli spawnSync→async execFile + 并发上限 4 + 熔断（≥5 失败暂停 30s）；5 文件调用链 async 化 | 45/45 测试 + QA 动态探针（信号量/超时/熔断/重试实测生效） |
+| P2 清理 | listConflicts 类型化（satisfies DTO）、base-token env 单测×2、RLS 审计 docstring 局限声明、.gitignore 补 demo.db*/models//output/ | 全量回归绿 |
+| deprecated 001 评估 | 保留（standalone.yml CI 引用 --plan 默认），移除会破坏 CI | 结论记录 |
+
+**提交清单**（git log 6dc14b5..90cc747）：24c02fa fix(edge) / e2d03db fix(scheduler) / 7f20a02 fix(ingest) / 977819e fix(feishu) / 6d2ae0d docs(governance) / e04409f fix(cpsat) horizon-bound / 4adfc35 refactor(feishu) async lark-cli / 3fc908c docs(contracts) 双总线职责 / 844740e chore(cleanup) / 90cc747 fix(cpsat) horizon/due only when assigned。
+
+**最终遗留（低风险，不阻塞）**：standalone_011 迁移真实 apply/verify 待 CI（本机无 psql/initdb/brew postgres，SQL 已静态审查+runner 登记完整）；规则引擎单一事实源、@lark-apaas 依赖策略等架构项标注 1.0 后。
+
+### 10.1 第三轮收尾（2026-08-09 晚，全权授权）
+
+| 项 | 内容 | 验证 |
+|---|---|---|
+| SSE Last-Event-ID 增量续传接线 | ① server：`stream()` 读 `Last-Event-ID` 头（outbox sequence，SSE 事件 `id` 字段改为承载 sequence）→ 有值且无缺口先重放增量事件再接实时流（缓冲防丢/防乱序）；缺口/超前先发 `resync` 事件（data 含 currentSequence/reason）；无头（首次连接）行为与历史一致。② client：重连携带 `Last-Event-ID`；收到 `resync` → 重置游标为 currentSequence + 全量重同步（invalidate active-plans/plan/run）。③ replaySince 现为受控缺口检测调用（RLS allowlist 注释同步），openapi v2/stream description 补续传说明 | 新增 6 例 controller 接线 spec 全过；scheduler 目录 37 suites 全绿 |
+| 飞书异步化提交测试 | 假 lark-cli 脚本 + `__test` 测试钩子（reset/注入配置，缩短冷却期）；覆盖并发上限（8 并行峰值 ≤4）、超时（25s→20s 硬超时）、熔断（第 6 次 fast-fail 不启子进程）、user→bot 重试（恰好 2 次调用） | node --test 45+4 全绿 |
+| maxBuffer 文案 | execFile ENOBUFS 与"启动失败"分支区分，输出 `lark-cli output exceeded maxBuffer (16MB)` | code review |
+| standalone_011 结论 | 本机无 psql/initdb/brew postgres → 实跑不可行，保持"待 CI"标注 | 结论记录 |
+
+**提交清单**（本轮）：见 git log（feat(scheduler) SSE last-event-id / test(feishu) async coverage / fix(feishu) ENOBUFS / docs(reviews) final closure）。
+
+---
+
 *报告完。架构级走读：高见远；代码级走读：寇豆码；修复：寇豆码；QA 回归：严过关；汇总编排：齐活林。*
