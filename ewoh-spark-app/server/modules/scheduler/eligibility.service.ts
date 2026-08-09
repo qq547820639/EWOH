@@ -11,6 +11,8 @@ export interface EligiblePerson {
   loadLevel: number;
   fatigueLevel: number;
   healthStatus: string | null;
+  /** T03 / P1-2：证书到期信息（[{ name, expiresAtMs }]；expiresAtMs<now 视为过期）。 */
+  certificationExpiry?: Array<{ name: string; expiresAtMs: number | null }> | null;
 }
 
 /** 参与资格判定的设备描述。 */
@@ -36,6 +38,10 @@ export interface EligibleTask {
   predIds: string[];
   /** 设备能力需求（如 'exo-lift' / 'vacuum'），缺失任一能力则设备不可用。 */
   requiredDeviceCapabilities?: string[];
+  /** T03 / P1-2：工位能力需求（task.requiredStationCapabilities ⊆ station.capabilities）。 */
+  requiredStationCapabilities?: string[];
+  /** T03 / P1-3：候选工位集合（station 决策变量；不在集合内的工位不可选）。 */
+  candidateStations?: string[];
 }
 
 /** 资格判定上下文（软/硬约束参数）。 */
@@ -62,6 +68,14 @@ export interface EligibilityContext {
   safetyBlockedPersonIds: string[];
   /** 前置任务是否已完成。 */
   predecessorDone: (taskId: string) => boolean;
+  /** T03 / P1-4：当前评估的候选工位（station 决策变量；缺省回退 task.stationId）。 */
+  candidateStationId?: string | null;
+  /** T03 / P1-3：候选工位容量（stationId → capacity）；null 表示无容量信息。 */
+  stationCapacityById?: Map<string, number | null>;
+  /** T03 / P1-3：候选工位能力（stationId → capabilities[]）。 */
+  stationCapabilitiesById?: Map<string, string[]>;
+  /** T03 / P1-3：候选工位已占用（stationId → 时间区间），用于容量计数。 */
+  bookedStationCounts?: Map<string, number>;
 }
 
 /**
@@ -92,8 +106,34 @@ export class EligibilityService {
       if (!hasSkill) reasons.push('missing_skill');
     }
 
-    // 2) 资质认证
+    // 1b) 证书到期（T03 / P1-2）：requiredCertifications 命中已过期证书 → cert_expired。
     if (task.requiredCertifications.length > 0) {
+      const certOk = task.requiredCertifications.every((c) =>
+        person.certifications.includes(c),
+      );
+      if (!certOk) reasons.push('missing_certification');
+      else {
+        const expired = (person.certificationExpiry ?? []).some(
+          (e) =>
+            e.expiresAtMs != null &&
+            e.expiresAtMs < ctx.now &&
+            task.requiredCertifications.includes(e.name),
+        );
+        if (expired) reasons.push('cert_expired');
+      }
+    }
+
+    // 1c) 健康检查（T03 / P1-2）：healthStatus blocked 类状态 → health_blocked。
+    if (
+      person.healthStatus === 'blocked' ||
+      person.healthStatus === 'injured' ||
+      person.healthStatus === 'unavailable'
+    ) {
+      reasons.push('health_blocked');
+    }
+
+    // 2) 资质认证（证书存在性；1b 已处理过期）
+    if (task.requiredCertifications.length > 0 && !reasons.includes('cert_expired')) {
       const certOk = task.requiredCertifications.every((c) =>
         person.certifications.includes(c),
       );
@@ -122,14 +162,50 @@ export class EligibilityService {
       if (deviceConflict) reasons.push('device_reserved');
     }
 
-    // 4c) 工位 reservation 冲突
-    if (task.stationId) {
+    // 4c) 工位 reservation 冲突（针对候选工位，station 决策变量场景）
+    const stationId = ctx.candidateStationId ?? task.stationId ?? null;
+    if (stationId) {
       const stationConflict = (ctx.bookedStationSlots ?? []).some(
         (s) =>
-          s.stationId === task.stationId &&
+          s.stationId === stationId &&
           this.intervalsOverlap(s.start, s.end, candidateStart, candidateEnd),
       );
       if (stationConflict) reasons.push('station_reserved');
+    }
+
+    // 4d) T03 / P1-3：候选工位范围（candidateStations 非空且候选工位不在其中 → 拒绝）。
+    if (
+      stationId &&
+      Array.isArray(task.candidateStations) &&
+      task.candidateStations.length > 0 &&
+      !task.candidateStations.includes(stationId)
+    ) {
+      reasons.push('not_in_candidate_stations');
+    }
+
+    // 4e) T03 / P1-3：station capability（requiredStationCapabilities ⊆ station.capabilities）。
+    if (
+      stationId &&
+      Array.isArray(task.requiredStationCapabilities) &&
+      task.requiredStationCapabilities.length > 0
+    ) {
+      const caps = ctx.stationCapabilitiesById?.get(stationId) ?? [];
+      const missing = task.requiredStationCapabilities.filter((c) => !caps.includes(c));
+      if (missing.length > 0) reasons.push('station_capability_mismatch');
+    }
+
+    // 4f) T03 / P1-3：station 容量硬校验（同一时间窗内重叠任务数 ≥ capacity →
+    // station_capacity_exceeded）。与 eligibility bookedStationSlots 语义一致（同时段任务数）。
+    if (stationId && ctx.stationCapacityById?.has(stationId)) {
+      const capacity = ctx.stationCapacityById.get(stationId) ?? null;
+      if (capacity != null && capacity >= 0) {
+        const overlapCount = (ctx.bookedStationSlots ?? []).filter(
+          (s) =>
+            s.stationId === stationId &&
+            this.intervalsOverlap(s.start, s.end, candidateStart, candidateEnd),
+        ).length;
+        if (overlapCount >= capacity) reasons.push('station_capacity_exceeded');
+      }
     }
 
     // 5) 风险状态 / 已锁定人员

@@ -9,8 +9,8 @@ import type { SchedulingConstraint } from '@shared/api.interface';
 
 describe('constraints.ts', () => {
   describe('支持性检查', () => {
-    it('全部 16 个硬约束均被判定为 supported', () => {
-      expect(SUPPORTED_HARD_CONSTRAINTS).toHaveLength(16);
+    it('全部 19 个硬约束均被判定为 supported（T03/P1-3：+STATION_CAPABILITY/+STATION_CAPACITY/EXCLUDED_RESOURCE 重分类）', () => {
+      expect(SUPPORTED_HARD_CONSTRAINTS).toHaveLength(19);
       for (const type of SUPPORTED_HARD_CONSTRAINTS) {
         const result = checkConstraintSupported({ type, taskId: 't1' });
         expect(result.supported).toBe(true);
@@ -18,8 +18,8 @@ describe('constraints.ts', () => {
       }
     });
 
-    it('全部 9 个软约束均被判定为 supported', () => {
-      expect(SUPPORTED_SOFT_CONSTRAINTS).toHaveLength(9);
+    it('全部 13 个软约束均被判定为 supported（T03/P1-3：+SETUP_COST/CHANGEOVER_COST/STATION_QUEUE_BALANCE/PRODUCTION_IMPACT_PREFERENCE/FATIGUE_BALANCE，EXCLUDED_RESOURCE 移出）', () => {
+      expect(SUPPORTED_SOFT_CONSTRAINTS).toHaveLength(13);
       for (const type of SUPPORTED_SOFT_CONSTRAINTS) {
         const result = checkConstraintSupported({ type, taskId: 't1' });
         expect(result.supported).toBe(true);

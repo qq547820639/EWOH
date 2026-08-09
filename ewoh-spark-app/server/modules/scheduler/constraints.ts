@@ -13,7 +13,7 @@ import {
   SchedulingSoftConstraintType,
 } from '@shared/api.interface';
 
-/** 启发式求解器真实执行的硬约束集合（当前全部 15 个，倾向从严）。 */
+/** 启发式求解器真实执行的硬约束集合（T03/P1-3：+STATION_CAPABILITY/+STATION_CAPACITY/重分类 EXCLUDED_RESOURCE）。 */
 export const SUPPORTED_HARD_CONSTRAINTS: readonly SchedulingHardConstraintType[] = [
   'REQUIRED_SKILL',
   'REQUIRED_CERTIFICATION',
@@ -31,9 +31,16 @@ export const SUPPORTED_HARD_CONSTRAINTS: readonly SchedulingHardConstraintType[]
   'LOCKED_STATION',
   'LOCKED_TIME',
   'LOCKED_ASSIGNMENT',
+  // T03 / P1-3（需求 #7 对齐）：
+  // EXCLUDED_RESOURCE 由 soft 重分类为 hard——求解器以 isExcludedResource 硬过滤实现。
+  'EXCLUDED_RESOURCE',
+  // 工位能力：task.requiredStationCapabilities ⊆ station.capabilities（eligibility 检查）。
+  'STATION_CAPABILITY',
+  // 工位容量：station 同时段任务数 ≤ capacity（eligibility/候选层硬校验）。
+  'STATION_CAPACITY',
 ];
 
-/** 求解器应用的软约束集合（全部 9 个，贡献到目标评分）。 */
+/** 求解器应用的软约束集合（T03/P1-3：去掉 EXCLUDED_RESOURCE（重分类 hard），+5 新软类型）。 */
 export const SUPPORTED_SOFT_CONSTRAINTS: readonly SchedulingSoftConstraintType[] = [
   'MIN_TRAVEL_TIME',
   'BALANCE_WORKLOAD',
@@ -41,9 +48,14 @@ export const SUPPORTED_SOFT_CONSTRAINTS: readonly SchedulingSoftConstraintType[]
   'MIN_WAIT',
   'PREFER_SAME_TEAM',
   'PREFER_NEARBY_RESOURCE',
-  'EXCLUDED_RESOURCE',
   'PREFERRED_RESOURCE',
   'MANUAL_BOOST',
+  // T03 / P1-3（需求 #7 软目标对齐；映射 policy.weights）：
+  'SETUP_COST',
+  'CHANGEOVER_COST',
+  'STATION_QUEUE_BALANCE',
+  'PRODUCTION_IMPACT_PREFERENCE',
+  'FATIGUE_BALANCE',
 ];
 
 /** 启发式求解器暂未实现的硬约束（当前为空，为未来约束预留）。 */
