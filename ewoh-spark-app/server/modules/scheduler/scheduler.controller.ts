@@ -30,6 +30,10 @@ import type {
   SchedulingEventRequest,
   RecordActualsRequest,
   SchedulingPolicyConfig,
+  ConflictsListRequest,
+  SchedulingConflictType,
+  ConflictSeverity,
+  SchedulingConflictScope,
 } from '@shared/api.interface';
 
 @Controller('api/scheduler')
@@ -315,9 +319,9 @@ export class SchedulerController {
 
   @Get('conflicts')
   async listConflicts(
-    @Query('type') type?: string,
-    @Query('severity') severity?: string,
-    @Query('scope') scope?: string,
+    @Query('type') type?: SchedulingConflictType,
+    @Query('severity') severity?: ConflictSeverity,
+    @Query('scope') scope?: SchedulingConflictScope,
     @Query('resourceId') resourceId?: string,
   ) {
     return this.schedulerService.listConflicts({
@@ -325,7 +329,7 @@ export class SchedulerController {
       severity,
       scope,
       resourceId,
-    } as never);
+    } satisfies ConflictsListRequest);
   }
 
   @Get('conflicts/:id')
