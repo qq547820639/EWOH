@@ -11,6 +11,19 @@ export type ScheduleStrategy =
   | 'capacity_priority'
   | 'load_balance';
 
+// ============================================================================
+// Command Map 增量（Phase 0 / P0-3，05 §6）：坐标类型统一
+// ============================================================================
+
+/** 坐标类型（P0-3：FACTORY_CARTESIAN / WGS84 / UNKNOWN，禁止混用与 0,0 冒泡）。 */
+export type CoordinateType = 'FACTORY_CARTESIAN' | 'WGS84' | 'UNKNOWN';
+
+/** 坐标判别联合（向后兼容保留 ResourceState.location.x/y 别名）。 */
+export type CoordinateReference =
+  | { type: 'FACTORY_CARTESIAN'; x: number; y: number; floorId: string | null }
+  | { type: 'WGS84'; lat: number; lng: number }
+  | { type: 'UNKNOWN' };
+
 export type SchedulePlanStatus =
   | 'shadow'
   | 'proposed'
@@ -106,7 +119,12 @@ export type SchedulingHardConstraintType =
   | 'LOCKED_DEVICE'
   | 'LOCKED_STATION'
   | 'LOCKED_TIME'
-  | 'LOCKED_ASSIGNMENT';
+  | 'LOCKED_ASSIGNMENT'
+  // --- Command Map 增量（Phase 1 / P1-3，05 §6；仅新增成员，旧成员不动） ---
+  /** 工位能力：task.requiredStationCapabilities ⊆ station.capabilities。 */
+  | 'STATION_CAPABILITY'
+  /** 工位容量：station 同时段任务数 ≤ capacity。 */
+  | 'STATION_CAPACITY';
 
 export type SchedulingSoftConstraintType =
   | 'MIN_TRAVEL_TIME'
@@ -117,7 +135,18 @@ export type SchedulingSoftConstraintType =
   | 'PREFER_NEARBY_RESOURCE'
   | 'EXCLUDED_RESOURCE'
   | 'PREFERRED_RESOURCE'
-  | 'MANUAL_BOOST';
+  | 'MANUAL_BOOST'
+  // --- Command Map 增量（Phase 1 / P1-3，05 §6；仅新增成员，旧成员不动） ---
+  /** 换型准备成本（映射 policy.weights.station）。 */
+  | 'SETUP_COST'
+  /** 换产成本（映射 policy.weights.change）。 */
+  | 'CHANGEOVER_COST'
+  /** 工位队列均衡（映射 policy.weights.station）。 */
+  | 'STATION_QUEUE_BALANCE'
+  /** 生产影响偏好（映射 productionImpact 因子）。 */
+  | 'PRODUCTION_IMPACT_PREFERENCE'
+  /** 疲劳均衡（映射 policy.weights.workload）。 */
+  | 'FATIGUE_BALANCE';
 
 export interface SchedulingConstraint {
   id?: string;
@@ -144,6 +173,19 @@ export interface SchedulingConstraint {
   expiresAt?: number;
   /** 关联方案的快照版本（人工 override 时继承自被覆盖方案）。 */
   snapshotVersion?: string;
+  // --- Command Map 增量（Phase 0 / P0-2，05 §4/§6；真实列，向后兼容） ---
+  /** 生效起始（真实列 valid_from_ms，epoch ms；null=立即生效）。 */
+  validFromMs?: number | null;
+  /** 失效时间（真实列 expires_at_ms，epoch ms；求解前过滤依据）。 */
+  expiresAtMs?: number | null;
+  /** 租户隔离（真实列 org_id；null=全局约束）。 */
+  orgId?: string | null;
+  /** 约束来源：manual / system / auto（审计区分 operator/system context）。 */
+  source?: 'manual' | 'system' | 'auto' | string | null;
+  /** 软删除时间（真实列 deactivated_at，ISO）。 */
+  deactivatedAt?: string | null;
+  /** 软删除操作人（真实列 deactivated_by）。 */
+  deactivatedBy?: string | null;
 }
 
 export type PlanOverrideKind =
@@ -420,6 +462,9 @@ export interface ResourceState {
   queue?: string[] | null;
   /** 派生字段标记：本投影中这些字段来自派生而非真实列。 */
   derived?: string[];
+  // --- Command Map 增量（Phase 0 / P0-3）：坐标判别联合（可选，向后兼容） ---
+  /** 坐标引用（FACTORY_CARTESIAN/WGS84/UNKNOWN）。旧 x/y 别名保留：笛卡尔时填充，其余 null。 */
+  coordinate?: CoordinateReference;
 }
 
 export interface WorldStateSnapshot {
@@ -471,6 +516,8 @@ export interface WorldStateSnapshot {
     freshnessMs?: number | null;
     /** 数据质量：FRESH / STALE / UNKNOWN（STALE/UNKNOWN 不被视为可用）。 */
     dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
+    // --- Command Map 增量（Phase 0 / P0-3）：坐标判别联合（可选） ---
+    coordinate?: CoordinateReference;
   }>;
   tasks: Array<{
     id: string;
@@ -552,6 +599,8 @@ export interface WorldStateSnapshot {
     dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
     /** 派生字段标记（如 capabilities 来自型号白名单兜底）。 */
     derived?: string[];
+    // --- Command Map 增量（Phase 0 / P0-3）：坐标判别联合（可选） ---
+    coordinate?: CoordinateReference;
   }>;
   stations: Array<{
     id: string;
@@ -565,6 +614,8 @@ export interface WorldStateSnapshot {
     queue?: string[];
     /** 工位可用窗口（available_windows 列）。 */
     availableWindows?: Array<{ startMs: number; endMs: number }>;
+    // --- Command Map 增量（Phase 0 / P0-3）：坐标判别联合（可选） ---
+    coordinate?: CoordinateReference;
   }>;
   backlog: Array<{ taskId: string; count: number }>;
   events: Array<{
@@ -711,6 +762,11 @@ export interface SchedulingPlanV2 {
   scoreBreakdown?: ScoreBreakdown;
   /** 目标权重快照（Phase 2 / P2-T2）：persistPlan 落库实际使用的 8 权重，保证确定性 replay。 */
   weights?: ObjectiveWeights;
+  // --- Command Map 增量（Phase 0 / P0-2）：计划约束快照（确定性 replay + 审计） ---
+  /** 求解所用 effective constraints 快照（standalone_023 constraints_json）。 */
+  constraints?: SchedulingConstraint[];
+  /** constraints 稳定哈希（SHA-256；replay 校验）。 */
+  effectiveConstraintsHash?: string | null;
   baselineDelta: Record<string, unknown>;
   violations: Array<Record<string, unknown>>;
   createdAt: string;
@@ -873,6 +929,13 @@ export interface SchedulingPolicyConfig {
     changeCost?: number;
     energy?: number;
   };
+  // --- Command Map 增量（Phase 1 / P1-4，05 §3.9/G3；可选，向后兼容） ---
+  /** 人工偏好折算分值（分钟，默认 30；替代 solver 内 magic number）。 */
+  preferenceBonusMinutes?: number;
+  /** 换型准备时间（分钟，station/changeover 成本入评分）。 */
+  setupMinutes?: number;
+  /** 工位容量硬校验开关（默认 true；false 回退基线行为）。 */
+  stationCapacityEnforced?: boolean;
 }
 
 export interface SchedulingPolicyVersionSummary {
@@ -1091,6 +1154,96 @@ export interface TaskCandidateResource {
   score: number;
   /** 排除原因（来自资格判定 + 路径可行性，如 missing_skill / route_infeasible）。 */
   reasons: string[];
+  // --- Command Map 增量（Phase 1 / P1-2，05 §6；可选字段，向后兼容） ---
+  /** 结构化拒绝原因（与 solver 共享同一枚举；eligible=false 时非空）。 */
+  rejectReasons?: CandidateRejectReason[];
+  /** 候选评分分解（可解释；不可行候选为 null/全 0）。 */
+  scoreBreakdown?: ScoreBreakdown | null;
+  /** 工位维度候选明细（station 决策变量，P1-4）。 */
+  stationOptions?: Array<{
+    stationId: string;
+    capacity: number | null;
+    queueLength: number;
+    feasible: boolean;
+    reasons: string[];
+  }>;
+  /** 可行时间窗（epoch ms 区间）。 */
+  timeWindows?: Array<{ startMs: number; endMs: number }>;
+}
+
+// ============================================================================
+// Command Map 增量（Phase 1 / P1-2，05 §3.7）：Candidate Engine
+// ============================================================================
+
+/** 结构化候选拒绝原因（端点与求解器共享同一枚举）。 */
+export type CandidateRejectReason =
+  | 'missing_skill'
+  | 'missing_certification'
+  | 'cert_expired'
+  | 'person_unavailable'
+  | 'health_blocked'
+  | 'device_offline'
+  | 'battery_low'
+  | 'missing_device_capability'
+  | 'station_capability_mismatch'
+  | 'station_capacity_exceeded'
+  | 'station_reserved'
+  | 'device_reserved'
+  | 'time_conflict'
+  | 'zone_forbidden'
+  | 'predecessor_pending'
+  | 'safety_blocked'
+  | 'must_finish_by_violation'
+  | 'route_infeasible'
+  | 'not_in_candidate_stations';
+
+/** 候选评估（Task×Person×Device×Station×时间窗 → hard 是否满足 + 可解释拒绝）。 */
+export interface CandidateEvaluation {
+  personId: string;
+  deviceId: string | null;
+  stationId: string | null;
+  startMs: number;
+  endMs: number;
+  /** hard 全部满足才 true（不满足则不进 solver feasible set 但可解释）。 */
+  eligible: boolean;
+  /** 结构化拒绝原因（eligible=true 时为空数组）。 */
+  rejectReasons: CandidateRejectReason[];
+  /** 评分分解（eligible=false 时 total=Infinity）。 */
+  scoreBreakdown: ScoreBreakdown;
+  /** 路径成本（无可行路径为 null）。 */
+  routeCost: CandidateRouteCost | null;
+  /** 是否命中人工偏好资源（软加分项，P1-4）。 */
+  preferred?: boolean;
+  /** 是否发生工位换型（station 决策，P1-4）。 */
+  changeover?: boolean;
+  /** 该候选的软成本明细（可解释，P1-7）。 */
+  softCosts?: Record<string, number>;
+}
+
+// ============================================================================
+// Command Map 增量（Phase 1 / P1-8，05 §3.13）：Override Preview
+// ============================================================================
+
+/** Override Preview 响应（纯计算，不落库不触发正式重排）。 */
+export interface OverridePreviewResponse {
+  planId: string;
+  readonly: true;
+  /** 受影响 assignment/task id。 */
+  affectedAssignments: string[];
+  /** 预览引入的新冲突（conflictId/type/message）。 */
+  conflictsIntroduced: Array<{ conflictId: string; type: string; message: string }>;
+  /** 迟到增量（分钟，after-before）。 */
+  latenessDeltaMinutes: number;
+  /** 路程增量（分钟，after-before）。 */
+  travelDeltaMinutes: number;
+  /** 最大负荷增量（after-before）。 */
+  workloadDelta: number;
+  /** 工位等待增量（分钟，after-before）。 */
+  stationWaitDeltaMinutes: number;
+  /** 改派任务数（churn）。 */
+  planChurn: number;
+  /** 候选方案 id（PREVIEW-*，未持久化）。 */
+  candidatePlanId: string;
 }
 
 export interface TaskCandidatesResponse {

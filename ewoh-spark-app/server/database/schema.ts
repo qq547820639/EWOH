@@ -619,6 +619,14 @@ export const ewohSchedulePlan = pgTable("ewoh_schedule_plan", {
   isShadow: boolean("is_shadow").notNull().default(false),
   /** 生成该 Shadow Plan 的策略版本。 */
   shadowPolicyVersion: integer("shadow_policy_version"),
+  // --- Command Map 增量 (standalone_023, Phase 0 / P0-2) ---
+  /**
+   * 求解所用 effective constraints 快照（确定性 replay + 审计）。
+   * @type { Array<Record<string, unknown>> }
+   */
+  constraintsJson: jsonb("constraints_json").notNull().default([]),
+  /** constraints 稳定哈希（键排序 JSON 序列化 → SHA-256；replay 校验）。 */
+  effectiveConstraintsHash: varchar("effective_constraints_hash", { length: 64 }),
   // System field: Update time (auto-filled, do not modify)
   updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
@@ -626,6 +634,7 @@ export const ewohSchedulePlan = pgTable("ewoh_schedule_plan", {
   index("idx_ewoh_schedule_plan_status").on(table.status),
   index("idx_ewoh_schedule_plan_snapshot").on(table.snapshotVersion),
   index("idx_ewoh_schedule_plan_trigger").on(table.triggerType, table.triggerEntityId),
+  index("idx_schedule_plan_constraint_hash").on(table.effectiveConstraintsHash),
 ]);
 
 export const ewohEventChain = pgTable("ewoh_event_chain", {
@@ -701,6 +710,11 @@ export const ewohSpatialEntity = pgTable("ewoh_spatial_entity", {
    */
   availableWindows: jsonb("available_windows").default([]),
   orgId: varchar("org_id", { length: 255 }),
+  // --- Command Map 增量 (standalone_023, Phase 0 / P0-3) ---
+  /** 坐标类型：FACTORY_CARTESIAN / WGS84 / UNKNOWN。 */
+  coordinateType: varchar("coordinate_type", { length: 20 }).notNull().default("FACTORY_CARTESIAN"),
+  /** FACTORY_CARTESIAN 楼层标识（WGS84 为 null）。 */
+  floorId: varchar("floor_id", { length: 100 }),
   // System field: Creation time (auto-filled, do not modify)
   createdAt: customTimestamptz("_created_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   // System field: Update time (auto-filled, do not modify)
@@ -891,6 +905,9 @@ export const ewohDevice = pgTable("ewoh_device", {
    * @type { Array<{ startMs: number; endMs: number }> }
    */
   availableWindows: jsonb("available_windows").default([]),
+  // --- Command Map 增量 (standalone_023, Phase 0 / P0-3) ---
+  /** 设备位置坐标类型：FACTORY_CARTESIAN / WGS84 / UNKNOWN（location_lat/lng 语义）。 */
+  locationCoordinateType: varchar("location_coordinate_type", { length: 20 }).notNull().default("FACTORY_CARTESIAN"),
   // System field: Creation time (auto-filled, do not modify)
   createdAt: customTimestamptz("_created_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   // System field: Update time (auto-filled, do not modify)
@@ -1173,11 +1190,26 @@ export const ewohSchedulingConstraint = pgTable("ewoh_scheduling_constraint", {
   createdBy: varchar("created_by", { length: 255 }),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // --- Command Map 增量 (standalone_023, Phase 0 / P0-2) ---
+  /** 约束生效起始（epoch ms；null=立即生效）。 */
+  validFromMs: bigint("valid_from_ms", { mode: "number" }),
+  /** 约束失效时间（epoch ms；求解前过滤依据）。 */
+  expiresAtMs: bigint("expires_at_ms", { mode: "number" }),
+  /** 租户隔离（RLS + 应用层过滤；null=全局约束）。 */
+  orgId: varchar("org_id", { length: 255 }),
+  /** 约束来源：manual / system / auto（审计区分 operator/system context）。 */
+  source: varchar("source", { length: 20 }).notNull().default("manual"),
+  /** 软删除时间（显式 deactivate 时写）。 */
+  deactivatedAt: customTimestamptz("deactivated_at", { precision: 6 }),
+  /** 软删除操作人。 */
+  deactivatedBy: varchar("deactivated_by", { length: 255 }),
 }, (table) => [
   uniqueIndex("ewoh_scheduling_constraint_constraint_id_key").on(table.constraintId),
   index("idx_ewoh_scheduling_constraint_plan").on(table.planId),
   index("idx_ewoh_scheduling_constraint_task").on(table.taskId),
   index("idx_ewoh_scheduling_constraint_type").on(table.type),
+  index("idx_constraint_org_active").on(table.orgId, table.active),
+  index("idx_constraint_expiry").on(table.expiresAtMs),
 ]);
 
 export const ewohWorldStateSnapshot = pgTable("ewoh_world_state_snapshot", {

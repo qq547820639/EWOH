@@ -5793,6 +5793,83 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scheduler/conflicts/reconcile:
+    post:
+      tags:
+        - scheduler
+      summary: Reconcile scheduling conflicts explicitly (write path)
+      description: >
+        Phase 1 / P1-5 (G5). Explicitly re-derive conflicts and merge with
+        persisted lifecycle rows (INSERT/UPDATE + SSE + audit). GET /conflicts
+        is read-only; use this endpoint to trigger the write reconcile
+        (e.g. frontend "reconcile now" button or polling job).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                operator:
+                  type: string
+                  description: Actor identifier (falls back to user context)
+      responses:
+        '200':
+          description: Reconcile result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  reconciledCount:
+                    type: integer
+                  conflicts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SchedulingConflict'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/plans/{planId}/overrides/preview:
+    post:
+      tags:
+        - scheduler
+      summary: Preview override impact before applying (read-only, 7 deltas)
+      description: >
+        Phase 1 / P1-8. Pure computation: same snapshot + request constraints
+        solved to a PREVIEW-* candidate plan (never persisted, never dispatched),
+        compared against baseline. Returns affectedAssignments /
+        conflictsIntroduced / latenessDeltaMinutes / travelDeltaMinutes /
+        workloadDelta / stationWaitDeltaMinutes / planChurn. Safety-critical
+        tasks are guarded (SAFETY_CRITICAL_LOCKED) — preview never changes them.
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanOverrideRequest'
+      responses:
+        '200':
+          description: Override preview result (read-only)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OverridePreviewResponse'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scheduler/policy:
     get:
       tags:
@@ -10650,6 +10727,53 @@ components:
           type: integer
       required: []
       additionalProperties: false
+    OverridePreviewResponse:
+      type: object
+      properties:
+        planId:
+          type: string
+        readonly:
+          type: boolean
+          const: true
+        affectedAssignments:
+          type: array
+          items:
+            type: string
+        conflictsIntroduced:
+          type: array
+          items:
+            type: object
+            properties:
+              conflictId:
+                type: string
+              type:
+                type: string
+              message:
+                type: string
+        latenessDeltaMinutes:
+          type: number
+        travelDeltaMinutes:
+          type: number
+        workloadDelta:
+          type: number
+        stationWaitDeltaMinutes:
+          type: number
+        planChurn:
+          type: integer
+        candidatePlanId:
+          type: string
+      required:
+        - planId
+        - readonly
+        - affectedAssignments
+        - conflictsIntroduced
+        - latenessDeltaMinutes
+        - travelDeltaMinutes
+        - workloadDelta
+        - stationWaitDeltaMinutes
+        - planChurn
+        - candidatePlanId
+      additionalProperties: false
     SchedulingConstraint:
       type: object
       properties:
@@ -10686,6 +10810,23 @@ components:
         expiresAt:
           type: integer
         snapshotVersion:
+          type: string
+        validFromMs:
+          type: integer
+          description: Constraint effective start (epoch ms; standalone_023)
+        expiresAtMs:
+          type: integer
+          description: Constraint expiry (epoch ms; filtered before solving)
+        orgId:
+          type: string
+          description: Tenant isolation (null = global)
+        source:
+          type: string
+          description: manual | system | auto
+        deactivatedAt:
+          type: string
+          format: date-time
+        deactivatedBy:
           type: string
       required: []
       additionalProperties: true

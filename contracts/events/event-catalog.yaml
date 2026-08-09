@@ -22,6 +22,26 @@ x-event-types:
   - FleetUpgradeStarted
   - FleetRollbackCompleted
   - AuditEntryAppended
+  # --- Command Map 智能调度升级（Phase 0/1，05 §3.5 P0-5 事件目录草案） ---
+  - WorldEntityUpdated
+  - ResourceStateChanged
+  - RunCreated
+  - RunSucceeded
+  - RunFailed
+  - PlanCreated
+  - PlanUpdated
+  - PlanApproved
+  - PlanRejected
+  - PlanDispatched
+  - AssignmentDispatched
+  - ConflictDetected
+  - ConflictAcknowledged
+  - ConflictResolved
+  - ConflictSuppressed
+  - ReplanCompleted
+  - ExecutionDeviation
+  - PolicyActivated
+  - PolicyRolledBack
 channels:
   device.birth:
     publish:
@@ -75,6 +95,83 @@ channels:
     publish:
       message:
         $ref: '#/components/messages/AuditEntryAppended'
+  # --- Command Map 智能调度升级（Phase 0/1） ---
+  world.entity.updated:
+    publish:
+      message:
+        $ref: '#/components/messages/WorldEntityUpdated'
+  resource.state.changed:
+    publish:
+      message:
+        $ref: '#/components/messages/ResourceStateChanged'
+  run.created:
+    publish:
+      message:
+        $ref: '#/components/messages/RunCreated'
+  run.succeeded:
+    publish:
+      message:
+        $ref: '#/components/messages/RunSucceeded'
+  run.failed:
+    publish:
+      message:
+        $ref: '#/components/messages/RunFailed'
+  plan.created:
+    publish:
+      message:
+        $ref: '#/components/messages/PlanCreated'
+  plan.updated:
+    publish:
+      message:
+        $ref: '#/components/messages/PlanUpdated'
+  plan.approved:
+    publish:
+      message:
+        $ref: '#/components/messages/PlanApproved'
+  plan.rejected:
+    publish:
+      message:
+        $ref: '#/components/messages/PlanRejected'
+  plan.dispatched:
+    publish:
+      message:
+        $ref: '#/components/messages/PlanDispatched'
+  assignment.dispatched:
+    publish:
+      message:
+        $ref: '#/components/messages/AssignmentDispatched'
+  conflict.detected:
+    publish:
+      message:
+        $ref: '#/components/messages/ConflictDetected'
+  conflict.acknowledged:
+    publish:
+      message:
+        $ref: '#/components/messages/ConflictAcknowledged'
+  conflict.resolved:
+    publish:
+      message:
+        $ref: '#/components/messages/ConflictResolved'
+  conflict.suppressed:
+    publish:
+      message:
+        $ref: '#/components/messages/ConflictSuppressed'
+  replan.completed:
+    publish:
+      message:
+        $ref: '#/components/messages/ReplanCompleted'
+  execution.deviation:
+    publish:
+      message:
+        $ref: '#/components/messages/ExecutionDeviation'
+  policy.activated:
+    publish:
+      message:
+        $ref: '#/components/messages/PolicyActivated'
+  policy.rolled_back:
+    publish:
+      message:
+        $ref: '#/components/messages/PolicyRolledBack'
 components:
   messages:
     DeviceBirth:
@@ -518,4 +615,555 @@ components:
           - auditId
           - action
           - hash
+          - occurredAt
+    # =====================================================================
+    # Command Map 智能调度升级（Phase 0/1）— Scheduler Event Envelope 消息
+    # 统一 envelope：eventId / sequence / orgId / eventType / entityType /
+    # entityId / occurredAt / snapshotVersion / entityVersion / correlationId / payload。
+    # 全部事件带 orgId（组织隔离），SSE 订阅端按 orgId 过滤（05 §3.5）。
+    # =====================================================================
+    WorldEntityUpdated:
+      name: WorldEntityUpdated
+      title: World Entity Updated
+      summary: A world-state entity (person/device/station/task/route/zone) changed.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.world.entity_updated
+        source: ewoh:///organizations/{orgId}/world/{entityType}/{entityId}
+        subject: world/{entityType}/{entityId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          entityVersion: { type: integer }
+          snapshotVersion: { type: string }
+          correlationId: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - entityId
+          - occurredAt
+    ResourceStateChanged:
+      name: ResourceStateChanged
+      title: Resource State Changed
+      summary: The unified resource projection changed (freshness/telemetry/availability).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.resource.state_changed
+        source: ewoh:///organizations/{orgId}/resources/{resourceType}/{resourceId}
+        subject: resources/{resourceType}/{resourceId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          snapshotVersion: { type: string }
+          dataQuality: { type: string, enum: [FRESH, STALE, UNKNOWN] }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - entityId
+          - occurredAt
+    RunCreated:
+      name: RunCreated
+      title: Scheduling Run Created
+      summary: A scheduling run was queued.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.run.created
+        source: ewoh:///organizations/{orgId}/runs/{runId}
+        subject: runs/{runId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          runId: { type: string }
+          triggerType: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - runId
+          - occurredAt
+    RunSucceeded:
+      name: RunSucceeded
+      title: Scheduling Run Succeeded
+      summary: A scheduling run completed successfully with plan output.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.run.succeeded
+        source: ewoh:///organizations/{orgId}/runs/{runId}
+        subject: runs/{runId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          runId: { type: string }
+          snapshotVersion: { type: string }
+          planIds:
+            type: array
+            items: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - runId
+          - occurredAt
+    RunFailed:
+      name: RunFailed
+      title: Scheduling Run Failed
+      summary: A scheduling run failed (reason recorded for audit).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.run.failed
+        source: ewoh:///organizations/{orgId}/runs/{runId}
+        subject: runs/{runId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          runId: { type: string }
+          failureReason: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - runId
+          - occurredAt
+    PlanCreated:
+      name: PlanCreated
+      title: Scheduling Plan Created
+      summary: A scheduling plan (V2) was persisted.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.plan.created
+        source: ewoh:///organizations/{orgId}/plans/{planId}
+        subject: plans/{planId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          planId: { type: string }
+          snapshotVersion: { type: string }
+          policyVersion: { type: integer }
+          solverVersion: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - planId
+          - occurredAt
+    PlanUpdated:
+      name: PlanUpdated
+      title: Scheduling Plan Updated
+      summary: A scheduling plan changed (version/status/metrics).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.plan.updated
+        source: ewoh:///organizations/{orgId}/plans/{planId}
+        subject: plans/{planId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          planId: { type: string }
+          status: { type: string }
+          version: { type: integer }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - planId
+          - occurredAt
+    PlanApproved:
+      name: PlanApproved
+      title: Scheduling Plan Approved
+      summary: A plan was approved (version + snapshot freshness validated).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.plan.approved
+        source: ewoh:///organizations/{orgId}/plans/{planId}
+        subject: plans/{planId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          planId: { type: string }
+          approvedBy: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - planId
+          - occurredAt
+    PlanRejected:
+      name: PlanRejected
+      title: Scheduling Plan Rejected
+      summary: A plan was rejected.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.plan.rejected
+        source: ewoh:///organizations/{orgId}/plans/{planId}
+        subject: plans/{planId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          planId: { type: string }
+          rejectedBy: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - planId
+          - occurredAt
+    PlanDispatched:
+      name: PlanDispatched
+      title: Scheduling Plan Dispatched
+      summary: A plan was atomically dispatched (reservation + dispatch).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.plan.dispatched
+        source: ewoh:///organizations/{orgId}/plans/{planId}
+        subject: plans/{planId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          planId: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - planId
+          - occurredAt
+    AssignmentDispatched:
+      name: AssignmentDispatched
+      title: Assignment Dispatched
+      summary: A single assignment was dispatched.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.assignment.dispatched
+        source: ewoh:///organizations/{orgId}/plans/{planId}/assignments/{assignmentId}
+        subject: assignments/{assignmentId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          assignmentId: { type: string }
+          planId: { type: string }
+          taskId: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - assignmentId
+          - occurredAt
+    ConflictDetected:
+      name: ConflictDetected
+      title: Conflict Detected
+      summary: A scheduling conflict was derived and persisted OPEN.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.conflict.detected
+        source: ewoh:///organizations/{orgId}/conflicts/{conflictId}
+        subject: conflicts/{conflictId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          conflictId: { type: string }
+          type: { type: string }
+          severity: { type: string }
+          status: { type: string }
+          snapshotVersion: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - conflictId
+          - occurredAt
+    ConflictAcknowledged:
+      name: ConflictAcknowledged
+      title: Conflict Acknowledged
+      summary: A conflict was acknowledged (OPEN → ACKNOWLEDGED).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.conflict.acknowledged
+        source: ewoh:///organizations/{orgId}/conflicts/{conflictId}
+        subject: conflicts/{conflictId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          conflictId: { type: string }
+          acknowledgedBy: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - conflictId
+          - occurredAt
+    ConflictResolved:
+      name: ConflictResolved
+      title: Conflict Resolved
+      summary: A conflict was resolved (manual or auto_cleared).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.conflict.resolved
+        source: ewoh:///organizations/{orgId}/conflicts/{conflictId}
+        subject: conflicts/{conflictId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          conflictId: { type: string }
+          resolution: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - conflictId
+          - occurredAt
+    ConflictSuppressed:
+      name: ConflictSuppressed
+      title: Conflict Suppressed
+      summary: A conflict was suppressed until a deadline.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.conflict.suppressed
+        source: ewoh:///organizations/{orgId}/conflicts/{conflictId}
+        subject: conflicts/{conflictId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          conflictId: { type: string }
+          suppressUntil: { type: string, format: date-time }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - conflictId
+          - occurredAt
+    ReplanCompleted:
+      name: ReplanCompleted
+      title: Replan Completed
+      summary: A scoped replan completed with a new plan.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.replan.completed
+        source: ewoh:///organizations/{orgId}/runs/{runId}
+        subject: replans/{runId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          runId: { type: string }
+          triggerType: { type: string }
+          planId: { type: string }
+          snapshotVersion: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - runId
+          - occurredAt
+    ExecutionDeviation:
+      name: ExecutionDeviation
+      title: Execution Deviation
+      summary: An execution deviation was recorded (START_DELAY/PERSON_CHANGED/...).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.execution.deviation
+        source: ewoh:///organizations/{orgId}/executions/{executionId}
+        subject: executions/{executionId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          executionId: { type: string }
+          deviationType: { type: string }
+          deviationReason: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - executionId
+          - occurredAt
+    PolicyActivated:
+      name: PolicyActivated
+      title: Policy Activated
+      summary: A scheduling policy version was activated (only production flip path).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.policy.activated
+        source: ewoh:///organizations/{orgId}/policy/{policyVersion}
+        subject: policy/{policyVersion}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          policyVersion: { type: integer }
+          activatedBy: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - policyVersion
+          - occurredAt
+    PolicyRolledBack:
+      name: PolicyRolledBack
+      title: Policy Rolled Back
+      summary: A scheduling policy activation was rolled back.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.policy.rolled_back
+        source: ewoh:///organizations/{orgId}/policy/{policyVersion}
+        subject: policy/{policyVersion}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sequence: { type: integer }
+          eventType: { type: string }
+          entityType: { type: string }
+          entityId: { type: string }
+          policyVersion: { type: integer }
+          rolledBackBy: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - policyVersion
           - occurredAt

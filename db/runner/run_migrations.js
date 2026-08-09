@@ -82,6 +82,9 @@ const FILES = {
   standalone_reservation_capacity: path.join(root, 'db/migrations/standalone_022_reservation_capacity.sql'),
   standalone_reservation_capacity_rollback: path.join(root, 'db/migrations/standalone_022_reservation_capacity.rollback.sql'),
   standalone_reservation_capacity_verify: path.join(root, 'db/verify/standalone_022_reservation_capacity.verify.sql'),
+  standalone_scheduler_incremental: path.join(root, 'db/migrations/standalone_023_scheduler_incremental.sql'),
+  standalone_scheduler_incremental_rollback: path.join(root, 'db/migrations/standalone_023_scheduler_incremental.rollback.sql'),
+  standalone_scheduler_incremental_verify: path.join(root, 'db/verify/standalone_023_scheduler_incremental.verify.sql'),
 };
 
 const PLAN_NAMES = Object.freeze(Object.keys(FILES));
@@ -108,6 +111,7 @@ const ROLLBACK_COMMANDS = new Set([
   '--rollback-standalone-policy-lifecycle',
   '--rollback-standalone-sse-envelope',
   '--rollback-standalone-reservation-capacity',
+  '--rollback-standalone-scheduler-incremental',
 ]);
 const EXECUTE_COMMANDS = new Set([
   '--apply',
@@ -182,6 +186,9 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-reservation-capacity',
   '--rollback-standalone-reservation-capacity',
   '--verify-standalone-reservation-capacity',
+  '--apply-standalone-scheduler-incremental',
+  '--rollback-standalone-scheduler-incremental',
+  '--verify-standalone-scheduler-incremental',
 ]);
 
 const TOKEN = '__EWOH_SCHEMA__';
@@ -299,6 +306,7 @@ function usage() {
   console.error('       run_migrations.js --apply-standalone-conflict-lifecycle | --rollback-standalone-conflict-lifecycle | --verify-standalone-conflict-lifecycle');
   console.error('       run_migrations.js --apply-standalone-task-requirement | --rollback-standalone-task-requirement | --verify-standalone-task-requirement');
   console.error('       run_migrations.js --apply-standalone-reservation-capacity | --rollback-standalone-reservation-capacity | --verify-standalone-reservation-capacity');
+  console.error('       run_migrations.js --apply-standalone-scheduler-incremental | --rollback-standalone-scheduler-incremental | --verify-standalone-scheduler-incremental');
   console.error('Env: EWOH_DATABASE_URL or SUDA_DATABASE_URL, EWOH_SCHEMA, EWOH_ALLOW_DDL=1');
   console.error('Rollback also requires EWOH_ALLOW_DESTRUCTIVE_ROLLBACK=1.');
   process.exit(2);
@@ -331,7 +339,7 @@ function main() {
     console.error('EWOH_DATABASE_URL or SUDA_DATABASE_URL is required.');
     process.exit(2);
   }
-  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod', '--verify-standalone-outbox-sequence', '--verify-standalone-domain-columns', '--verify-standalone-route-cost-matrix', '--verify-standalone-policy-weights', '--verify-standalone-conflict-lifecycle', '--verify-standalone-task-requirement', '--verify-standalone-scheduling-tables-fix', '--verify-standalone-execution-feedback', '--verify-standalone-kpi-replay', '--verify-standalone-policy-lifecycle', '--verify-standalone-sse-envelope', '--verify-standalone-reservation-capacity'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
+  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod', '--verify-standalone-outbox-sequence', '--verify-standalone-domain-columns', '--verify-standalone-route-cost-matrix', '--verify-standalone-policy-weights', '--verify-standalone-conflict-lifecycle', '--verify-standalone-task-requirement', '--verify-standalone-scheduling-tables-fix', '--verify-standalone-execution-feedback', '--verify-standalone-kpi-replay', '--verify-standalone-policy-lifecycle', '--verify-standalone-sse-envelope', '--verify-standalone-reservation-capacity', '--verify-standalone-scheduler-incremental'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
     console.error('EWOH_ALLOW_DDL=1 is required for --apply and --rollback.');
     process.exit(2);
   }
@@ -575,6 +583,28 @@ function main() {
       return;
     }
 
+    if (command === '--verify-standalone-scheduler-incremental') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_scheduler_incremental_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const last = Array.isArray(rows) ? rows[rows.length - 1] : rows;
+      const row = (Array.isArray(last) ? last[0] : last) || {};
+      // 期望：constraint 新列=6 / constraint 索引=2 / plan 新列=2 / spatial 新列=2 /
+      // device 新列=1 / RLS policy=1（DO 块内 RAISE EXCEPTION 会整体抛错；此处防御断言）。
+      const ok = Number(row.constraint_new_cols || 0) >= 6
+        && Number(row.constraint_indexes || 0) >= 2
+        && Number(row.plan_new_cols || 0) >= 2
+        && Number(row.spatial_new_cols || 0) >= 2
+        && Number(row.device_new_cols || 0) >= 1
+        && Number(row.rls_policies || 0) === 1;
+      if (!ok) {
+        console.error(`VERIFY FAILED: scheduler incremental columns/policies misconfigured (${JSON.stringify(row)})`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: scheduler incremental columns + indexes + RLS policy present');
+      }
+      return;
+    }
+
     if (command === '--verify-standalone-policy-weights') {
       const rows = await sql.unsafe(substitute(read(FILES.standalone_policy_weights_verify), schema));
       console.log(JSON.stringify(rows, null, 2));
@@ -717,6 +747,8 @@ function main() {
       '--rollback-standalone-sse-envelope': 'standalone_sse_envelope_rollback',
       '--apply-standalone-reservation-capacity': 'standalone_reservation_capacity',
       '--rollback-standalone-reservation-capacity': 'standalone_reservation_capacity_rollback',
+      '--apply-standalone-scheduler-incremental': 'standalone_scheduler_incremental',
+      '--rollback-standalone-scheduler-incremental': 'standalone_scheduler_incremental_rollback',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {
