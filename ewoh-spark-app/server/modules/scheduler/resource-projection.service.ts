@@ -477,6 +477,8 @@ export class ResourceProjectionService {
           capacity,
           queue: this.asStringArray(se.queue),
           availableWindows: this.parseWindows(se.availableWindows),
+          // P1-3：工位基础能力（空间实体类型；供 requiredStationCapabilities 匹配）。
+          capabilities: se.entityType ? [se.entityType] : [],
           coordinate: this.toCoordinateFromSpatial(se),
         };
       });
