@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Added
+- **智能调度闭环补全（任务写路径接线 + 事件节流基础设施）**：
+  - **任务写路径自动重排（10.1 关闭）**：TaskService 新增 `onTaskEvent` 回调注册表（task 模块零依赖，
+    保持依赖叶子），TaskSchedulingBridge（scheduler 模块）注册回调 → `injectSchedulingEvent`
+    （TASK_CREATED/TASK_UPDATED），fire-and-forget 不阻塞任务写路径；复用冷却去抖/级联/SAFETY 熔断。
+  - **outbox 节流入队 `enqueueThrottled`（C4）**：合并窗口内同 eventType+entityId 的 pending 事件
+    仅覆盖 payload（最终态合并），不新增行——resource.state_changed 等高频事件的事件风暴防护基础设施；
+    合并不更新 sequence（无 SSE 缺口副作用），跨实体独立窗口。
+  - 测试：task-scheduling-bridge（4）+ outbox-throttled（2）
+
 ### Fixed
 - **运行时可用性收尾（走读报告 M1-M4 + L1-L3 全闭环）**：
   - **飞书 M1**：lark-cli spawnSync 加 20s 硬超时（防挂死永久阻塞事件循环），超时走 SIGTERM 错误路径。

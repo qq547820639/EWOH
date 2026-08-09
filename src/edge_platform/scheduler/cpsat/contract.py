@@ -93,6 +93,10 @@ class SolverWeights:
     risk: float = 1.0
     energyRisk: float = 1.0
     churn: float = 1.0
+    # A2 修复：未分配惩罚（每个可分配任务未分配时的软惩罚）。
+    # 缺少该项时最小化目标的最优解 = 全部留空（presence 全 0，objective=0），
+    # 求解器会诚实地什么都不做。默认 1000 使分配优先于所有常规软目标。
+    unassignedPenalty: float = 1000.0
 
 
 @dataclass

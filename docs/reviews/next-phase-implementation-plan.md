@@ -66,7 +66,7 @@
 
 | 步骤 | 内容 | 影响范围 | 验证门禁 |
 |------|------|----------|----------|
-| 10.1 | **TASK_CREATED/UPDATED 接线**：TaskService 创建/更新后 fire-and-forget 调 `injectSchedulingEvent`（可选注入，避免 TaskModule→SchedulerModule 循环？**需验证依赖图**：TaskModule 是叶子，SchedulerModule imports TaskModule——反向注入会成环。**裁定**：在 TaskController 层注入，或经事件注入端点 HTTP 调用） | task 模块 + 事件注入 | type:check + jest |
+| 10.1 | **TASK_CREATED/UPDATED 接线**：~~TaskService 创建/更新后 fire-and-forget 调 `injectSchedulingEvent`（循环依赖待验证）~~ **✅ 已实施（2026-08-09）**：TaskService 暴露 `onTaskEvent` 回调注册表（task 模块零依赖，保持叶子）+ TaskSchedulingBridge（scheduler 模块）注册回调 → `injectSchedulingEvent`（TASK_CREATED/TASK_UPDATED），fire-and-forget 不阻塞写路径；复用冷却去抖/级联/SAFETY 熔断 | task 模块 + scheduler 桥 | type:check + jest（task-scheduling-bridge 4 例） |
 | 10.2 | **影子评估自动化**：SchedulerService 每 N 次 run 后调用 comparePolicyVersion（已有）→ 落评估记录 | scheduler.service + 测试 | jest（policy-version） |
 | 10.3 | **CommandMap 状态机化**：mode/level/replayMode 三态收敛为 useReducer（消除手写 effect 联动） | CommandMap.tsx | type:check + 前端测试 |
 | 10.4 | **FactoryMap 分层拆分**：拆 StaticLayer/EntityLayer/ScheduleOverlay（只拆渲染函数，不改变行为） | FactoryMap.tsx | type:check + 视觉回归 |
@@ -92,10 +92,10 @@
 
 | 项 | 前置条件 |
 |----|----------|
-| CP-SAT worker 生产部署 | 服务器环境（docker compose -f deploy/cloud/docker-compose.standalone.yml --profile optional up -d cpsat） |
+| CP-SAT worker 生产部署 | 服务器环境（docker compose -f deploy/cloud/docker-compose.standalone.yml --profile optional up -d cpsat）。**2026-08-09 前置验证已完成**：A2 真实求解验证发现并修复"未分配惩罚缺失 → OPTIMAL 但零派工"缺陷（SolverWeights.unassignedPenalty 默认 1000），真实求解 fixture 测试 2 例（有 ortools 跑、无则 skip）+ worker 端到端 OPTIMAL+真实分配 |
 | 移动端回填接入 | 移动端排期（recordActuals 端点已就绪） |
 | 飞书真实联调 | lark-cli 授权 + Base 表权限 |
-| resource.state_changed SSE | 节流方案设计（合并窗口）后实施 |
+| resource.state_changed SSE | 节流方案设计（合并窗口）后实施。**2026-08-09 节流基础设施已交付**：`OutboxService.enqueueThrottled`（合并窗口内同 eventType+entityId 覆盖 payload 最终态，不新增行；合并不更新 sequence 防 SSE 缺口误判），契约测试 2 例；检测源（资源状态对比）与前端实时层待产品设计 |
 | 飞书多实例 | 部署规模决策（PostgreSQL/Redis） |
 
 ---

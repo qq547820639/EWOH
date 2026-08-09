@@ -282,6 +282,16 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
     w = request.weights
     terms: List[object] = []
 
+    # A2 修复：未分配惩罚（每个可分配任务未分配时计入大惩罚）。
+    # 缺此项时最小化目标的最优解 = 全部留空（presence 全 0，objective=0）——
+    # 求解器"诚实"地什么都不做，部署后 OPTIMAL 却零派工。此项使分配优先于所有常规软目标。
+    for t in request.tasks:
+        if t.taskId in frozen_by_task or not presence.get(t.taskId):
+            continue
+        missed = model.NewBoolVar(f"missed_{t.taskId}")
+        model.Add(sum(presence[t.taskId].values()) == 1 - missed)
+        terms.append(w.unassignedPenalty * missed)
+
     # lateness：max(0, end - due)。
     for t in request.tasks:
         if t.taskId in frozen_by_task or t.taskId not in end_min or not t.dueMs:
