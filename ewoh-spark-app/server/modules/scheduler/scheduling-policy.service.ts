@@ -68,6 +68,11 @@ const DEFAULT_CONFIG: SchedulingPolicyConfig = {
     manualBoostWeight: 1,
     agingBaseMs: 3_600_000,
   },
+  // T03 / P1-4（G3）：魔法数入策略——preferenceBonusMinutes 仅存在于默认配置常量，
+  // 不再散落 solver 代码。
+  preferenceBonusMinutes: 30,
+  setupMinutes: 15,
+  stationCapacityEnforced: true,
 };
 
 /**
@@ -288,9 +293,42 @@ export class SchedulingPolicyService {
     return max + 1;
   }
 
-  /** 解析 jsonb 为 SchedulingPolicyConfig。 */
+  /** 解析 jsonb 为 SchedulingPolicyConfig（T03：runtime validation，缺省回退默认值）。 */
   private parseConfig(configJson: unknown): SchedulingPolicyConfig {
-    return configJson as SchedulingPolicyConfig;
+    if (!configJson || typeof configJson !== 'object') return DEFAULT_CONFIG;
+    const c = configJson as Partial<SchedulingPolicyConfig>;
+    // 仅透传合法字段；缺失/非法回退默认（绝不 as unknown as 逃逸类型检查）。
+    return {
+      configVersion: this.num(c.configVersion, DEFAULT_CONFIG.configVersion),
+      minBatteryPct: this.num(c.minBatteryPct, DEFAULT_CONFIG.minBatteryPct),
+      maxContinuousLoad: this.num(c.maxContinuousLoad, DEFAULT_CONFIG.maxContinuousLoad),
+      defaultTaskDurationMs: this.num(c.defaultTaskDurationMs, DEFAULT_CONFIG.defaultTaskDurationMs),
+      horizonMinutes: this.num(c.horizonMinutes, DEFAULT_CONFIG.horizonMinutes),
+      walkingSpeedMps: this.num(c.walkingSpeedMps, DEFAULT_CONFIG.walkingSpeedMps),
+      euclideanDistanceWeight: this.num(c.euclideanDistanceWeight, DEFAULT_CONFIG.euclideanDistanceWeight),
+      congestedFactor: this.num(c.congestedFactor, DEFAULT_CONFIG.congestedFactor),
+      blockedFactor: this.num(c.blockedFactor, DEFAULT_CONFIG.blockedFactor),
+      highRiskFactor: this.num(c.highRiskFactor, DEFAULT_CONFIG.highRiskFactor),
+      mediumRiskFactor: this.num(c.mediumRiskFactor, DEFAULT_CONFIG.mediumRiskFactor),
+      triggerCooldownMs: this.num(c.triggerCooldownMs, DEFAULT_CONFIG.triggerCooldownMs),
+      priority: {
+        deadlineRiskWeight: this.num(c.priority?.deadlineRiskWeight, DEFAULT_CONFIG.priority.deadlineRiskWeight),
+        waitingAgeWeight: this.num(c.priority?.waitingAgeWeight, DEFAULT_CONFIG.priority.waitingAgeWeight),
+        eventSeverityWeight: this.num(c.priority?.eventSeverityWeight, DEFAULT_CONFIG.priority.eventSeverityWeight),
+        productionImpactWeight: this.num(c.priority?.productionImpactWeight, DEFAULT_CONFIG.priority.productionImpactWeight),
+        downstreamBlockingWeight: this.num(c.priority?.downstreamBlockingWeight, DEFAULT_CONFIG.priority.downstreamBlockingWeight),
+        manualBoostWeight: this.num(c.priority?.manualBoostWeight, DEFAULT_CONFIG.priority.manualBoostWeight),
+        agingBaseMs: this.num(c.priority?.agingBaseMs, DEFAULT_CONFIG.priority.agingBaseMs),
+      },
+      weights: (c.weights ?? undefined) as SchedulingPolicyConfig['weights'],
+      // T03 / P1-4：魔法数入策略透传（缺省默认常量）。
+      preferenceBonusMinutes: this.num(c.preferenceBonusMinutes, DEFAULT_CONFIG.preferenceBonusMinutes),
+      setupMinutes: this.num(c.setupMinutes, DEFAULT_CONFIG.setupMinutes),
+      stationCapacityEnforced:
+        c.stationCapacityEnforced === undefined
+          ? DEFAULT_CONFIG.stationCapacityEnforced
+          : Boolean(c.stationCapacityEnforced),
+    };
   }
 
   /**

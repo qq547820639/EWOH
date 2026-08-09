@@ -28,6 +28,8 @@ import { ShadowPolicyService } from './shadow-policy.service';
 import { PolicyActivationService } from './policy-activation.service';
 import { TaskSchedulingBridge } from './task-scheduling.bridge';
 import { ConstraintLoaderService } from './constraint-loader.service';
+import { CandidateEngineService } from './candidate-engine.service';
+import { OverridePreviewService } from './override-preview.service';
 import { TaskModule } from '../task/task.module';
 
 @Module({
@@ -61,6 +63,8 @@ import { TaskModule } from '../task/task.module';
     ShadowPolicyService,
     PolicyActivationService,
     ConstraintLoaderService,
+    CandidateEngineService,
+    OverridePreviewService,
   ],
   exports: [
     SchedulerService,
@@ -87,6 +91,8 @@ import { TaskModule } from '../task/task.module';
     ShadowPolicyService,
     PolicyActivationService,
     ConstraintLoaderService,
+    CandidateEngineService,
+    OverridePreviewService,
   ],
 })
 export class SchedulerModule {}

@@ -124,7 +124,9 @@ export type SchedulingHardConstraintType =
   /** 工位能力：task.requiredStationCapabilities ⊆ station.capabilities。 */
   | 'STATION_CAPABILITY'
   /** 工位容量：station 同时段任务数 ≤ capacity。 */
-  | 'STATION_CAPACITY';
+  | 'STATION_CAPACITY'
+  /** EXCLUDED_RESOURCE 重分类为 hard（实现集为准；soft 联合保留以兼容旧调用方）。 */
+  | 'EXCLUDED_RESOURCE';
 
 export type SchedulingSoftConstraintType =
   | 'MIN_TRAVEL_TIME'
@@ -254,6 +256,8 @@ export interface PlanOverrideResponse {
   before: SchedulingPlanV2;
   after: SchedulingPlanV2;
   diff: PlanOverrideDiffSummary;
+  /** T04 / P1-8：指向候选 preview id（可选；纯计算预览不持久化）。 */
+  preview?: string | null;
 }
 
 export type SolverStatus =
@@ -614,6 +618,8 @@ export interface WorldStateSnapshot {
     queue?: string[];
     /** 工位可用窗口（available_windows 列）。 */
     availableWindows?: Array<{ startMs: number; endMs: number }>;
+    /** 工位能力（P1-3：requiredStationCapabilities 匹配；来源为空间实体 entityType 基础能力）。 */
+    capabilities?: string[];
     // --- Command Map 增量（Phase 0 / P0-3）：坐标判别联合（可选） ---
     coordinate?: CoordinateReference;
   }>;
@@ -724,6 +730,26 @@ export interface DecisionTrace {
   policyVersion: number;
   solverVersion: string;
   snapshotVersion: string;
+  // --- Command Map 增量（Phase 1 / P1-7，05 §3.12；可解释调度富化） ---
+  /** 硬约束拒绝的候选（结构化原因；不进 feasible set 但可解释）。 */
+  rejectedHard?: Array<{
+    personId: string | null;
+    deviceId: string | null;
+    stationId: string | null;
+    rejectReasons: string[];
+  }>;
+  /** 本次求解执行的硬约束集合。 */
+  hardConstraints?: string[];
+  /** 选中候选的软成本明细。 */
+  softCosts?: Record<string, number>;
+  /** 目标权重快照（确定性 replay）。 */
+  weightsSnapshot?: Record<string, number>;
+  /** 工位决策贡献（P1-4）。 */
+  stationContribution?: {
+    stationId: string | null;
+    queueLength: number;
+    changeover: boolean;
+  };
 }
 
 export interface SchedulingPlanMetrics {

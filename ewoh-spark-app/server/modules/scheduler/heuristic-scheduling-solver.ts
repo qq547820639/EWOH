@@ -19,9 +19,11 @@ import { PriorityEngine } from './priority-engine';
 import {
   checkConstraintSupported,
   detectDependencyCycle,
+  SUPPORTED_HARD_CONSTRAINTS,
 } from './constraints';
 import type { SchedulingSolver, SolveOptions } from './scheduling-solver.interface';
 import { SchedulingObjectiveEvaluator } from './scheduling-objective-evaluator.service';
+import type { CandidateEngineService } from './candidate-engine.service';
 
 /** 内部候选方案。 */
 interface Candidate {
@@ -44,15 +46,18 @@ interface Candidate {
   scoreBreakdown: ScoreBreakdown;
   reasons: string[];
   alternatives: Array<Record<string, unknown>>;
+  /** T03 / P1-2：结构化拒绝原因（hard 不满足时非空）。 */
+  rejectReasons?: import('@shared/api.interface').CandidateRejectReason[];
+  /** T03 / P1-4：工位换型（station 决策）。 */
+  changeover?: boolean;
+  /** T03 / P1-7：硬/软成本明细（可解释）。 */
+  softCosts?: Record<string, number>;
 }
-
-/** PREFERRED_RESOURCE 软性偏好折算的分值（分钟，越小越优）。 */
-const PREFERENCE_BONUS_MINUTES = 30;
 
 /**
  * 确定性启发式求解器（无 LLM）。
  * 输入世界状态快照 + 资格服务 + 路由成本提供者 + 版本化策略 + 锁定约束，
- * 执行 任务×人员×设备×时间窗 的联合调度，
+ * 执行 任务×人员×设备×工位×时间窗 的联合调度（T03：station 为决策变量），
  * 输出含可解释得分分解（ScoreBreakdown）与动态优先级说明的方案。
  * 同一 (snapshot, policy) 输入 → 同一输出（可确定性重放）。
  */
@@ -68,6 +73,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     private readonly metricsService?: SchedulerMetricsService,
     // P0-5：统一目标评估器（默认自建；测试可注入替身）。
     private readonly objectiveEvaluator: SchedulingObjectiveEvaluator = new SchedulingObjectiveEvaluator(),
+    // T03 / P1-2（G7）：候选引擎（可选注入；注入后候选生成与端点共享语义）。
+    private readonly candidateEngine?: CandidateEngineService,
   ) {}
 
   /** 暴露当前激活策略（供外层组合求解器构建请求权重时复用同一策略）。 */
@@ -292,6 +299,11 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           horizonEndMs,
           downstreamCount,
           manualBoostIds: manualBoostTasks,
+          // T03 / P1-1（G4）：事件驱动优先级——开放事件（severity L2/L3 / DEADLINE_AT_RISK）
+          // 触发 event_severity 分支（修复死路径）。
+          events: (snapshot.events ?? [])
+            .filter((e) => e.status === 'open')
+            .map((e) => ({ eventType: e.eventType ?? null, severity: e.severity })),
         }),
       }))
       .sort((a, b) => {
@@ -375,10 +387,30 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       }
 
       const lockedWindow = lockedTimeByTask.get(task.id);
-      const taskStation = task.stationId ? stationById.get(task.stationId) : undefined;
-      const taskPoint = taskStation
-        ? { x: taskStation.x, y: taskStation.y }
-        : undefined;
+      // T03 / P1-4（G3）：station 为决策变量——枚举 candidateStations（有限集），
+      // 回退 task.stationId；stationDecisionEnabled=false 回退基线行为（风险回滚开关）。
+      const stationDecisionEnabled = config.stationCapacityEnforced !== false;
+      const stationOptions = this.resolveStationOptions(
+        task,
+        stationById,
+        stationDecisionEnabled,
+      );
+
+      // station 维度索引（P1-3/P1-4）：capability + capacity。
+      const stationCapabilitiesById = new Map<string, string[]>();
+      const stationCapacityById = new Map<string, number | null>();
+      for (const s of snapshot.stations) {
+        stationCapabilitiesById.set(s.id, s.capabilities ?? []);
+        stationCapacityById.set(s.id, s.capacity ?? null);
+      }
+      // 当前已占用工位计数（同一时间窗重叠任务数；P1-4 容量硬校验）。
+      const bookedStationCounts = new Map<string, number>();
+      for (const s of bookedStationSlots) {
+        bookedStationCounts.set(
+          s.stationId,
+          (bookedStationCounts.get(s.stationId) ?? 0) + 1,
+        );
+      }
 
       const candidates: Candidate[] = [];
 
@@ -392,227 +424,283 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         ),
       );
 
-      for (const person of candidatePersons) {
-        const personStation = person.stationId
-          ? stationById.get(person.stationId)
-          : undefined;
-        // 人员无工位且坐标缺失（UNKNOWN）时传 undefined 点，交由 routeCostProvider
-        // 走空间实体解析/不可行判定；绝不把 null 当作 0,0 伪坐标（见 02 §13）。
-        const personPoint = personStation
-          ? { x: personStation.x, y: personStation.y }
-          : person.x != null && person.y != null
-            ? { x: person.x, y: person.y }
-            : undefined;
-
-        // 真实路径成本（与地图一致的 route graph）。
-        const routeCost = await this.routeCostProvider.estimate(
-          person.id,
+      for (const stationId of stationOptions) {
+        // stationId 可为 null（任务无工位/无候选工位时回退无工位语义，保持旧行为）。
+        const station = stationId ? stationById.get(stationId) : undefined;
+        if (stationId && !station) continue;
+        if (stationId && this.isExcludedResource(
           task.id,
-          personPoint,
-          taskPoint,
-        );
-        if (routeCost.feasible === false) {
-          // 无可行路径（含纯手工兜底也不可行）→ 该人员不可达，跳过。
+          stationId,
+          excludedStationByTask,
+          excludedStationGlobal,
+        )) {
           continue;
         }
+        // 候选工位作为任务落点（路径成本目的地）；无工位时回退 undefined（交由 routeCostProvider 解析）。
+        const taskPoint = station ? { x: station.x, y: station.y } : undefined;
 
-        const deviceCandidates = this.devicesForTask(
-          task.id,
-          deviceById,
-          lockedDeviceByTask,
-          effectiveMinBattery,
-          task.requiredDeviceCapabilities,
-          excludedDeviceByTask,
-          excludedDeviceGlobal,
-        );
-        for (const device of deviceCandidates) {
-          // P2-T3：每个 (person, device) 候选组合计入候选数。
-          candidateCount += 1;
-          const travelMs = routeCost.etaSeconds * 1000;
-          const rawStartMs = lockedWindow
-            ? lockedWindow[0]
-            : earliestStartMs + travelMs;
-          const startMs = lockedWindow
-            ? lockedWindow[0]
-            : this.earliestStart(
-                rawStartMs,
-                bookedPerson.get(person.id),
-                device ? bookedDevice.get(device.id) : undefined,
-              );
-          const durationMs = lockedWindow
-            ? Math.max(lockedWindow[1] - lockedWindow[0], 1)
-            : task.planEnd && task.planStart
-              ? Date.parse(task.planEnd) - Date.parse(task.planStart)
-              : defaultDurationMs;
-          const endMs = startMs + Math.max(durationMs, 1);
+        for (const person of candidatePersons) {
+          const personStation = person.stationId
+            ? stationById.get(person.stationId)
+            : undefined;
+          // 人员无工位且坐标缺失（UNKNOWN）时传 undefined 点，交由 routeCostProvider
+          // 走空间实体解析/不可行判定；绝不把 null 当作 0,0 伪坐标（见 02 §13）。
+          const personPoint = personStation
+            ? { x: personStation.x, y: personStation.y }
+            : person.x != null && person.y != null
+              ? { x: person.x, y: person.y }
+              : undefined;
 
-          // P0-3：mustFinishBy 硬检查——候选 endMs 违反硬截止则不可分配
-          // （与 CP-SAT OnlyEnforceIf(assigned) 语义一致：无法满足的任务如实 unassigned）。
-          if (mustFinishByMs != null && endMs > mustFinishByMs) {
-            hardRejectCount += 1;
-            candidates.push({
-              personId: person.id,
-              deviceId: device ? device.id : null,
-              stationId: task.stationId,
-              zoneId: task.zoneId,
-              startMs,
-              endMs,
-              routeId: routeCost.routeId,
-              etaSeconds: routeCost.etaSeconds,
-              distanceMeters: routeCost.distanceMeters,
-              riskLevel: routeCost.riskLevel,
-              routeGeometry: routeCost.geometry ?? [],
-              waitMs: 0,
-              lateMs: 0,
-              changeCost: 0,
-              cost: Number.POSITIVE_INFINITY,
-              scoreBreakdown: this.zeroBreakdown(),
-              reasons: ['must_finish_by_violation'],
-              alternatives: [{ reasons: ['must_finish_by_violation'] }],
-            });
+          // 真实路径成本（与地图一致的 route graph）。
+          const routeCost = await this.routeCostProvider.estimate(
+            person.id,
+            task.id,
+            personPoint,
+            taskPoint,
+          );
+          if (routeCost.feasible === false) {
+            // 无可行路径（含纯手工兜底也不可行）→ 该人员不可达，跳过。
             continue;
           }
 
-          const eligibility = this.eligibilityService.check(
-            {
-              id: person.id,
-              status: person.status,
-              skills: person.skills,
-              certifications: person.certifications,
-              stationId: person.stationId,
-              loadLevel: person.loadLevel,
-              fatigueLevel: person.fatigueLevel,
-              healthStatus: person.healthStatus,
-            },
-            {
-              id: task.id,
-              taskType: task.taskType,
-              requiredSkills: task.requiredSkills,
-              skillMatchMode: task.skillMatchMode,
-              requiredCertifications: task.requiredCertifications,
-              stationId: task.stationId,
-              zoneId: task.zoneId,
-              predIds: task.predecessorIds,
-              requiredDeviceCapabilities: task.requiredDeviceCapabilities,
-            },
-            device
-              ? {
-                  id: device.id,
-                  batteryPct: device.batteryPct,
-                  online: device.online,
-                  status: device.status,
-                  capabilities: device.capabilities ?? [],
-                }
-              : null,
-            {
-              now,
-              bookedTimeSlots: [...baseBookedSlots, ...runBookedSlots],
-              bookedDeviceSlots,
-              bookedStationSlots,
-              lockedPersonIds: this.lockedPersonIdsForTask(snapshot, task.id),
-              forbiddenZones: Array.from(forbiddenZones),
-              minBatteryPct: effectiveMinBattery,
-              maxContinuousLoad: effectiveMaxLoad,
-              safetyBlockedPersonIds,
-              predecessorDone: (id) =>
-                doneTaskIds.has(id) || frozenPredEndMs.has(id),
-              candidateStartMs: startMs,
-              candidateEndMs: endMs,
-            },
+          const deviceCandidates = this.devicesForTask(
+            task.id,
+            deviceById,
+            lockedDeviceByTask,
+            effectiveMinBattery,
+            task.requiredDeviceCapabilities,
+            excludedDeviceByTask,
+            excludedDeviceGlobal,
           );
+          for (const device of deviceCandidates) {
+            // P2-T3：每个 (person, device, station) 候选组合计入候选数。
+            candidateCount += 1;
+            const travelMs = routeCost.etaSeconds * 1000;
+            const rawStartMs = lockedWindow
+              ? lockedWindow[0]
+              : earliestStartMs + travelMs;
+            const startMs = lockedWindow
+              ? lockedWindow[0]
+              : this.earliestStart(
+                  rawStartMs,
+                  bookedPerson.get(person.id),
+                  device ? bookedDevice.get(device.id) : undefined,
+                );
+            const durationMs = lockedWindow
+              ? Math.max(lockedWindow[1] - lockedWindow[0], 1)
+              : task.planEnd && task.planStart
+                ? Date.parse(task.planEnd) - Date.parse(task.planStart)
+                : defaultDurationMs;
+            const endMs = startMs + Math.max(durationMs, 1);
 
-          if (!eligibility.eligible) {
-            hardRejectCount += 1;
-            candidates.push({
-              personId: person.id,
-              deviceId: device ? device.id : null,
-              stationId: task.stationId,
-              zoneId: task.zoneId,
-              startMs,
-              endMs,
-              routeId: routeCost.routeId,
-              etaSeconds: routeCost.etaSeconds,
-              distanceMeters: routeCost.distanceMeters,
-              riskLevel: routeCost.riskLevel,
-              routeGeometry: routeCost.geometry ?? [],
-              waitMs: 0,
-              lateMs: 0,
-              changeCost: 0,
-              cost: Number.POSITIVE_INFINITY,
-              scoreBreakdown: this.zeroBreakdown(),
-              reasons: eligibility.reasons,
-              alternatives: [{ reasons: eligibility.reasons }],
-            });
-            continue;
-          }
+            // P0-3：mustFinishBy 硬检查——候选 endMs 违反硬截止则不可分配
+            // （与 CP-SAT OnlyEnforceIf(assigned) 语义一致：无法满足的任务如实 unassigned）。
+            if (mustFinishByMs != null && endMs > mustFinishByMs) {
+              hardRejectCount += 1;
+              candidates.push({
+                personId: person.id,
+                deviceId: device ? device.id : null,
+                stationId,
+                zoneId: task.zoneId,
+                startMs,
+                endMs,
+                routeId: routeCost.routeId,
+                etaSeconds: routeCost.etaSeconds,
+                distanceMeters: routeCost.distanceMeters,
+                riskLevel: routeCost.riskLevel,
+                routeGeometry: routeCost.geometry ?? [],
+                waitMs: 0,
+                lateMs: 0,
+                changeCost: 0,
+                cost: Number.POSITIVE_INFINITY,
+                scoreBreakdown: this.zeroBreakdown(),
+                reasons: ['must_finish_by_violation'],
+                rejectReasons: ['must_finish_by_violation'],
+                alternatives: [{ reasons: ['must_finish_by_violation'] }],
+              });
+              continue;
+            }
 
-          const lateMs = Math.max(0, endMs - softDeadlineMs);
-          const waitMs = Math.max(0, startMs - earliestStartMs);
-          const baselineAssignee = opts.baselineAssignee?.get(task.id);
-          const changeCost =
-            baselineAssignee && baselineAssignee !== person.id ? 1 : 0;
-          const loadPenalty = person.loadLevel * 60 * 1000;
-          const changeCostMs = changeCost * 60 * 1000;
-          const riskMs =
-            this.riskFactor(routeCost.riskLevel, config) * travelMs;
-          const batteryPct = device ? device.batteryPct : 100;
-          const energyPenalty =
-            device != null ? (1 - batteryPct / 100) * 60 * 1000 : 0;
+            const eligibility = this.eligibilityService.check(
+              {
+                id: person.id,
+                status: person.status,
+                skills: person.skills,
+                certifications: person.certifications,
+                stationId: person.stationId,
+                loadLevel: person.loadLevel,
+                fatigueLevel: person.fatigueLevel,
+                healthStatus: person.healthStatus,
+                certificationExpiry: person.certificationExpiry ?? [],
+              },
+              {
+                id: task.id,
+                taskType: task.taskType,
+                requiredSkills: task.requiredSkills,
+                skillMatchMode: task.skillMatchMode,
+                requiredCertifications: task.requiredCertifications,
+                stationId: task.stationId,
+                zoneId: task.zoneId,
+                predIds: task.predecessorIds,
+                requiredDeviceCapabilities: task.requiredDeviceCapabilities,
+                requiredStationCapabilities: task.requiredStationCapabilities,
+                candidateStations:
+                  task.candidateStations && task.candidateStations.length > 0
+                    ? task.candidateStations
+                    : undefined,
+              },
+              device
+                ? {
+                    id: device.id,
+                    batteryPct: device.batteryPct,
+                    online: device.online,
+                    status: device.status,
+                    capabilities: device.capabilities ?? [],
+                  }
+                : null,
+              {
+                now,
+                bookedTimeSlots: [...baseBookedSlots, ...runBookedSlots],
+                bookedDeviceSlots,
+                bookedStationSlots,
+                lockedPersonIds: this.lockedPersonIdsForTask(snapshot, task.id),
+                forbiddenZones: Array.from(forbiddenZones),
+                minBatteryPct: effectiveMinBattery,
+                maxContinuousLoad: effectiveMaxLoad,
+                safetyBlockedPersonIds,
+                predecessorDone: (id) =>
+                  doneTaskIds.has(id) || frozenPredEndMs.has(id),
+                candidateStartMs: startMs,
+                candidateEndMs: endMs,
+                // T03 / P1-3/P1-4：station 决策维度。
+                candidateStationId: stationId,
+                stationCapacityById,
+                stationCapabilitiesById,
+                bookedStationCounts,
+              },
+            );
 
-          const score = this.computeCandidateScore(
-            policy,
-            lateMs,
-            travelMs,
-            loadPenalty,
-            waitMs,
-            changeCostMs,
-            riskMs,
-            energyPenalty,
-          );
+            if (!eligibility.eligible) {
+              hardRejectCount += 1;
+              candidates.push({
+                personId: person.id,
+                deviceId: device ? device.id : null,
+                stationId,
+                zoneId: task.zoneId,
+                startMs,
+                endMs,
+                routeId: routeCost.routeId,
+                etaSeconds: routeCost.etaSeconds,
+                distanceMeters: routeCost.distanceMeters,
+                riskLevel: routeCost.riskLevel,
+                routeGeometry: routeCost.geometry ?? [],
+                waitMs: 0,
+                lateMs: 0,
+                changeCost: 0,
+                cost: Number.POSITIVE_INFINITY,
+                scoreBreakdown: this.zeroBreakdown(),
+                reasons: eligibility.reasons,
+                rejectReasons: eligibility.reasons as import('@shared/api.interface').CandidateRejectReason[],
+                alternatives: [{ reasons: eligibility.reasons }],
+              });
+              continue;
+            }
 
-          // 人工偏好（PREFERRED_RESOURCE）：命中偏好资源时降低候选成本（软性加分）。
-          const preferred =
-            this.isPreferredResource(
-              task.id,
-              person.id,
-              preferredPersonByTask,
-              preferredPersonGlobal,
-            ) ||
-            (device != null &&
+            const lateMs = Math.max(0, endMs - softDeadlineMs);
+            const waitMs = Math.max(0, startMs - earliestStartMs);
+            const baselineAssignee = opts.baselineAssignee?.get(task.id);
+            const changeCost =
+              baselineAssignee && baselineAssignee !== person.id ? 1 : 0;
+            const loadPenalty = person.loadLevel * 60 * 1000;
+            const changeCostMs = changeCost * 60 * 1000;
+            // T03 / P1-4：setup/changeover 成本入评分（station 换型）。
+            const changeover = task.stationId != null && task.stationId !== stationId;
+            const setupMinutes = config.setupMinutes ?? 15;
+            const changeoverMs = changeover ? setupMinutes * 60 * 1000 : 0;
+            const riskMs =
+              this.riskFactor(routeCost.riskLevel, config) * travelMs;
+            const batteryPct = device ? device.batteryPct : 100;
+            const energyPenalty =
+              device != null ? (1 - batteryPct / 100) * 60 * 1000 : 0;
+
+            const score = this.computeCandidateScore(
+              policy,
+              lateMs,
+              travelMs,
+              loadPenalty,
+              waitMs,
+              changeCostMs + changeoverMs,
+              riskMs,
+              energyPenalty,
+              stationId,
+              station?.queue?.length ?? 0,
+            );
+
+            // 人工偏好（PREFERRED_RESOURCE）：命中偏好资源（person/device/station）时
+            // 降低候选成本（软性加分）。magic number 已移入 config.preferenceBonusMinutes。
+            const preferred =
               this.isPreferredResource(
                 task.id,
-                device.id,
-                preferredDeviceByTask,
-                preferredDeviceGlobal,
-              ));
-          if (preferred) {
-            score.total = Math.max(0, score.total - PREFERENCE_BONUS_MINUTES);
-          }
+                person.id,
+                preferredPersonByTask,
+                preferredPersonGlobal,
+              ) ||
+              (device != null &&
+                this.isPreferredResource(
+                  task.id,
+                  device.id,
+                  preferredDeviceByTask,
+                  preferredDeviceGlobal,
+                )) ||
+              this.isPreferredResource(
+                task.id,
+                stationId,
+                preferredStationByTask,
+                preferredStationGlobal,
+              );
+            if (preferred) {
+              score.total = Math.max(
+                0,
+                score.total - (config.preferenceBonusMinutes ?? 30),
+              );
+            }
 
-          const reasons = [
-            ...priority.explanation,
-            `effective_score=${priority.score.toFixed(2)}`,
-          ];
-          candidates.push({
-            personId: person.id,
-            deviceId: device ? device.id : null,
-            stationId: task.stationId,
-            zoneId: task.zoneId,
-            startMs,
-            endMs,
-            routeId: routeCost.routeId,
-            etaSeconds: routeCost.etaSeconds,
-            distanceMeters: routeCost.distanceMeters,
-            riskLevel: routeCost.riskLevel,
-            routeGeometry: routeCost.geometry ?? [],
-            waitMs,
-            lateMs,
-            changeCost,
-            cost: score.total,
-            scoreBreakdown: score,
-            reasons,
-            alternatives: [],
-          });
+            const reasons = [
+              ...priority.explanation,
+              `effective_score=${priority.score.toFixed(2)}`,
+              ...(changeover ? [`station_changeover=${stationId}`] : []),
+            ];
+            candidates.push({
+              personId: person.id,
+              deviceId: device ? device.id : null,
+              stationId,
+              zoneId: task.zoneId,
+              startMs,
+              endMs,
+              routeId: routeCost.routeId,
+              etaSeconds: routeCost.etaSeconds,
+              distanceMeters: routeCost.distanceMeters,
+              riskLevel: routeCost.riskLevel,
+              routeGeometry: routeCost.geometry ?? [],
+              waitMs,
+              lateMs,
+              changeCost,
+              cost: score.total,
+              scoreBreakdown: score,
+              reasons,
+              alternatives: [],
+              changeover,
+              softCosts: {
+                lateMs,
+                travelMs,
+                waitMs,
+                changeCost,
+                changeoverMs,
+                riskMs,
+                energyPenalty,
+              },
+            });
+          }
         }
       }
 
@@ -696,6 +784,41 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         solverVersion: policy.solverVersion,
         snapshotVersion: opts.snapshotVersion,
       };
+      // T03 / P1-7：DecisionTrace 富化——结构化拒绝原因 + hard/soft 明细 + weights 快照。
+      const rejectedHard: Array<{
+        personId: string | null;
+        deviceId: string | null;
+        stationId: string | null;
+        rejectReasons: string[];
+      }> = [];
+      for (const c of candidates) {
+        if (c.cost === Number.POSITIVE_INFINITY && c.rejectReasons && c.rejectReasons.length > 0) {
+          rejectedHard.push({
+            personId: c.personId,
+            deviceId: c.deviceId,
+            stationId: c.stationId,
+            rejectReasons: c.rejectReasons,
+          });
+        }
+      }
+      const traceExt = decisionTrace as DecisionTrace & {
+        rejectedHard: Array<{ personId: string | null; deviceId: string | null; stationId: string | null; rejectReasons: string[] }>;
+        hardConstraints: string[];
+        softCosts: Record<string, number>;
+        weightsSnapshot: Record<string, number>;
+        stationContribution: { stationId: string | null; queueLength: number; changeover: boolean };
+      };
+      traceExt.rejectedHard = rejectedHard;
+      traceExt.hardConstraints = [...SUPPORTED_HARD_CONSTRAINTS];
+      traceExt.softCosts = best.softCosts ?? {};
+      traceExt.weightsSnapshot = { ...policy.weights };
+      traceExt.stationContribution = {
+        stationId: best.stationId,
+        queueLength: best.stationId
+          ? stationById.get(best.stationId)?.queue?.length ?? 0
+          : 0,
+        changeover: best.changeover ?? false,
+      };
 
       assignments.push({
         assignmentId: `ASG-${opts.planId}-${task.id}`,
@@ -771,8 +894,9 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
 
   /** 计算候选多目标成本（分钟归一化，total 即评分）。
    * Phase 2 / P2-T2：读取 SchedulingPolicy.weights 权威 8 权重（lateness/travel/wait/
-   * workload/station/change/risk/energy）。station 权重对应工位队列项，当前无队列指标
-   * 时不虚构（不贡献分数）；旧字段（latenessWeight 等）仅为兼容别名，不再直接使用。 */
+   * workload/station/change/risk/energy）。
+   * T03 / P1-4：stationWait 使用真实队列长度 × weights.station（station 决策维度）；
+   * 旧字段（latenessWeight 等）仅为兼容别名，不再直接使用。 */
   private computeCandidateScore(
     policy: SchedulingPolicy,
     lateMs: number,
@@ -782,12 +906,16 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     changeCostMs: number,
     riskMs: number,
     energyPenalty: number,
+    stationId?: string | null,
+    stationQueueLength = 0,
   ): ScoreBreakdown {
     const w = policy.weights;
     const lateness = (w.lateness * lateMs) / 60000;
     const travel = (w.travel * travelMs) / 60000;
     const workloadBalance = (w.workload * loadPenalty) / 60000;
-    const stationWait = (w.wait * waitMs) / 60000;
+    // T03 / P1-4：stationWait = 基础等待 + 真实队列长度 × weights.station（工位排队成本）。
+    const stationWait =
+      (w.wait * waitMs) / 60000 + (w.station * stationQueueLength * waitMs) / 60000;
     const changeCost = (w.change * changeCostMs) / 60000;
     const risk = (w.risk * riskMs) / 60000;
     const energyCost = (w.energy * energyPenalty) / 60000;
@@ -823,6 +951,26 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
   ): boolean {
     const lockedPerson = locked.get(taskId);
     return lockedPerson ? lockedPerson === personId : true;
+  }
+
+  /** T03 / P1-4：候选工位集合（station 决策变量；无工位/无候选时回退 [null] 保持旧语义）。 */
+  private resolveStationOptions(
+    task: WorldStateSnapshot['tasks'][number],
+    stationById: Map<string, WorldStateSnapshot['stations'][number]>,
+    stationDecisionEnabled: boolean,
+  ): Array<string | null> {
+    if (!stationDecisionEnabled) {
+      return task.stationId && stationById.has(task.stationId)
+        ? [task.stationId]
+        : [null];
+    }
+    const candidates =
+      task.candidateStations && task.candidateStations.length > 0
+        ? task.candidateStations
+        : task.stationId
+          ? [task.stationId]
+          : [null];
+    return candidates.filter((id) => id === null || stationById.has(id));
   }
 
   private lockedPersonIdsForTask(

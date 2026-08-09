@@ -133,4 +133,43 @@ describe('PriorityEngine（Task 0.4）', () => {
     expect(criticalImp).toHaveProperty('factors');
     expect(criticalImp).toHaveProperty('explanation');
   });
+
+  // ========================================================================
+  // T03 / P1-1（G4）：event_severity 分支真实触发 + policyVersion 输出
+  // ========================================================================
+
+  it('开放 L2/L3 事件 → event_severity factor 出现（死路径修复）', () => {
+    const r = engine.compute(policy, {
+      task: { id: 'e1', priority: 'medium', planEnd: new Date(now + 3600_000).toISOString() },
+      config,
+      now,
+      horizonEndMs,
+      downstreamCount: new Map(),
+      manualBoostIds: new Set(),
+      events: [{ eventType: 'DEVICE_OFFLINE', severity: 'L2' }],
+    });
+    const sev = r.factors.find((f) => f.name === 'event_severity');
+    expect(sev).toBeDefined();
+    expect(r.explanation.some((e) => e.startsWith('event_severity='))).toBe(true);
+    // L1 不触发；DEADLINE_AT_RISK 触发。
+    const l1 = engine.compute(policy, {
+      task: { id: 'e2', priority: 'medium' },
+      config, now, horizonEndMs, downstreamCount: new Map(), manualBoostIds: new Set(),
+      events: [{ eventType: 'X', severity: 'L1' }],
+    });
+    expect(l1.factors.some((f) => f.name === 'event_severity')).toBe(false);
+    const deadline = engine.compute(policy, {
+      task: { id: 'e3', priority: 'medium' },
+      config, now, horizonEndMs, downstreamCount: new Map(), manualBoostIds: new Set(),
+      events: [{ eventType: 'DEADLINE_AT_RISK', severity: 'L1' }],
+    });
+    expect(deadline.factors.some((f) => f.name === 'event_severity')).toBe(true);
+  });
+
+  it('policyVersion 输出（可审计）且同一输入两次计算一致（确定性）', () => {
+    const a = compute({ id: 'd1', priority: 'high' });
+    const b = compute({ id: 'd1', priority: 'high' });
+    expect(a.policyVersion).toBe(policy.version);
+    expect(a).toEqual(b);
+  });
 });

@@ -1,6 +1,6 @@
 {
   "name": "station-capacity",
-  "description": "工位 S1 容量 1，2 个任务都落在 S1 → 确定性重放下行为一致（容量约束由调度器冲突检测层执行，求解器记录确定性）。",
+  "description": "工位 S1 容量 1，2 个任务都落在 S1 → T03/P1-4 容量硬校验（同时段重叠任务数 ≤ capacity）：求解器将任务顺序排布（t1→t2 串行）使二者均可分配；容量语义仅拒绝同时段重叠。",
   "solverVersion": "heuristic-v2",
   "weights": { "lateness": 3, "travel": 1, "wait": 1, "workload": 1, "station": 1, "change": 0.5, "risk": 1, "energy": 0.5 },
   "snapshot": {

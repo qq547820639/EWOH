@@ -20,6 +20,8 @@ export interface PriorityResult {
   factors: PriorityFactor[];
   explanation: string[];
   urgent: boolean;
+  /** T03 / P1-1（G4）：本次计算所用策略版本（可审计）。 */
+  policyVersion: number;
 }
 
 /** 计算优先级所需的输入。 */
@@ -37,6 +39,10 @@ export interface PriorityInput {
   horizonEndMs: number;
   downstreamCount: Map<string, number>;
   manualBoostIds: Set<string>;
+  /** T03 / P1-1（G4）：开放事件（open 且 severity L2/L3 或 DEADLINE_AT_RISK → deadlineAtRisk=true）。 */
+  events?: Array<{ eventType: string | null; severity: string }>;
+  /** 显式截止风险标记（事件驱动推导结果；缺省由 events 推导）。 */
+  deadlineAtRisk?: boolean;
 }
 
 const SCALE = 100;
@@ -122,11 +128,19 @@ export class PriorityEngine {
       explanation.push(`production_impact=${piTerm.toFixed(2)}`);
     }
 
-    // 事件严重度 / 截止风险标记。
+    // 事件严重度 / 截止风险标记（T03 / P1-1 G4：死路径修复——从 events 推导 deadlineAtRisk）。
+    // 开放（status=open）且 severity L2/L3 或 eventType=DEADLINE_AT_RISK 的事件触发。
     const taskExt = input.task as typeof input.task & {
       deadlineAtRisk?: boolean;
     };
-    if (taskExt.deadlineAtRisk === true) {
+    const eventRisky = (input.events ?? []).some(
+      (e) =>
+        (e.severity === 'L2' || e.severity === 'L3') ||
+        e.eventType === 'DEADLINE_AT_RISK',
+    );
+    const deadlineAtRisk =
+      taskExt.deadlineAtRisk === true || eventRisky;
+    if (deadlineAtRisk) {
       const sevTerm = -p.eventSeverityWeight * SCALE;
       score += sevTerm;
       factors.push({
@@ -171,6 +185,7 @@ export class PriorityEngine {
       factors,
       explanation,
       urgent,
+      policyVersion: policy.version,
     };
   }
 
@@ -228,6 +243,10 @@ export function computeEffectivePriorityResults(
   }
 
   const results = new Map<string, PriorityResult>();
+  // T03 / P1-1（G4）：事件驱动优先级——开放事件（status=open）传入引擎推导 deadlineAtRisk。
+  const openEvents = (snapshot.events ?? [])
+    .filter((e) => e.status === 'open')
+    .map((e) => ({ eventType: e.eventType ?? null, severity: e.severity }));
   for (const t of snapshot.tasks) {
     const result = engine.compute(policy, {
       task: {
@@ -242,6 +261,7 @@ export function computeEffectivePriorityResults(
       horizonEndMs,
       downstreamCount,
       manualBoostIds,
+      events: openEvents,
     });
     results.set(t.id, result);
   }

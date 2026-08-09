@@ -80,6 +80,7 @@ import { ConflictService } from './conflict.service';
 import { PolicyReplayService } from './policy-replay.service';
 import { TaskLifecycle } from './task-lifecycle';
 import { ConstraintLoaderService } from './constraint-loader.service';
+import { CandidateEngineService } from './candidate-engine.service';
 
 /**
  * NOTE: ewoh_schedule_audit has no before_json/after_json columns in the
@@ -150,6 +151,8 @@ export class SchedulerService {
     private readonly executionService?: ExecutionService,
     // T02 / P0-2：持久化人工约束唯一加载入口（可选注入；缺失时回退空约束，兼容旧单测）。
     private readonly constraintLoaderService?: ConstraintLoaderService,
+    // T03 / P1-2（G7）：候选引擎（可选注入；注入后 getTaskCandidates 委托富化响应）。
+    private readonly candidateEngineService?: CandidateEngineService,
   ) {}
 
   async generatePlans(body?: { idempotencyKey?: string }): Promise<SchedulePlan[]> {
@@ -1135,6 +1138,8 @@ export class SchedulerService {
       before,
       after,
       diff: this.buildPlanDiff(before, after),
+      // T04 / P1-8：可选 preview 引用（纯计算预览 id；本流程无预览候选时置 null）。
+      preview: null,
     };
   }
 
@@ -1301,11 +1306,14 @@ export class SchedulerService {
   }
 
   /**
-   * 任务候选资源：为指定任务返回可派人员×设备的资格/路径评估列表。
-   * 复用现有 EligibilityService 与 RouteCostProvider（不重复实现规则）。
-   * 任务已分配/锁定仍返回候选，但标记 assigned 与当前受让人。
+   * 任务候选资源：为指定任务返回可派人员×设备×工位的资格/路径评估列表。
+   * T03 / P1-2（G7）：注入 CandidateEngineService 时委托其富化响应（rejectReasons /
+   * scoreBreakdown / stationOptions / timeWindows）；未注入回退旧逻辑（兼容旧单测）。
    */
   async getTaskCandidates(taskId: string): Promise<TaskCandidatesResponse> {
+    if (this.candidateEngineService) {
+      return this.candidateEngineService.evaluateTaskCandidates(taskId);
+    }
     const state = await this.worldStateSnapshotService.getCurrentWorldState();
     const task = state.tasks.find((t) => t.id === taskId);
     if (!task) throw new NotFoundException(`Task ${taskId} not found`);

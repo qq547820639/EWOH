@@ -11,6 +11,7 @@ import { RouteCostProvider } from './route-cost.provider';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import type { SchedulerMetricsService } from './scheduler-metrics.service';
 import { HeuristicSchedulingSolver } from './heuristic-scheduling-solver';
+import type { CandidateEngineService } from './candidate-engine.service';
 import {
   CpSatSchedulingSolver,
   type CpSatSolverConfig,
@@ -51,6 +52,8 @@ export class SolverService {
     eligibilityService: EligibilityService,
     @Optional() cpSatConfig?: CpSatSolverConfig,
     @Optional() private readonly metricsService?: SchedulerMetricsService,
+    // T03 / P1-2（G7）：候选引擎（可选注入；注入后 heuristic 候选生成与端点共享语义）。
+    @Optional() private readonly candidateEngine?: CandidateEngineService,
   ) {
     this.heuristicSolver = new HeuristicSchedulingSolver(
       policyService,
@@ -59,6 +62,8 @@ export class SolverService {
       eligibilityService,
       undefined,
       metricsService,
+      undefined,
+      candidateEngine,
     );
     this.cpSatSolver = new CpSatSchedulingSolver(
       this.heuristicSolver,
