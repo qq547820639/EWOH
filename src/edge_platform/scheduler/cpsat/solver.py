@@ -293,6 +293,16 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         if t.dueMs:
             model.Add(end_min[t.taskId] <= t.dueMs // MINUTE)
 
+    # 3b) 计划视野：非冻结任务必须在 horizon 内完成（end <= horizon_min）。
+    #     缺此项时 start/end 变量上界允许排到 horizon 边界（start=horizon_min，
+    #     end=horizon_min+dur），求解器可把任务排到视野之外以规避整窗预约的
+    #     no-overlap（如预约覆盖 [0,horizon] 时把任务排在 [horizon, horizon+1]，
+    #     产生"窗外空转派工"）。约束后任务必须在视野内真实落位或如实未分配。
+    for t in request.tasks:
+        if t.taskId in frozen_by_task or t.taskId not in end_min:
+            continue
+        model.Add(end_min[t.taskId] <= horizon_min)
+
     # 4) reservation：预约建模为资源上的 fixed interval（与 frozen 任务一致），
     #    加入 interval_by_resource 后由下方 AddNoOverlap 统一约束——
     #    任务区间与预约区间不得重叠（可排在其前或其后），而非"存在任意预约即禁止分配"。
