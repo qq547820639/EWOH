@@ -25,6 +25,12 @@ export interface CandidateExplainItem {
   distanceMeters: number;
   /** 排除原因（后端 reasons）。 */
   reasons: string[];
+  /** 结构化拒绝原因（后端 rejectReasons，透传不重算；eligible=false 时非空）。 */
+  rejectReasons: string[];
+  /** 评分分解（后端 scoreBreakdown，透传不重算；不可行候选为 null）。 */
+  scoreBreakdown: TaskCandidateResource['scoreBreakdown'];
+  /** 工位维度候选明细（后端 stationOptions，透传不重算）。 */
+  stationOptions: TaskCandidateResource['stationOptions'];
   /** 是否当前锁定受让人（后端 lockedAssigneeId）。 */
   isLockedAssignee: boolean;
 }
@@ -63,6 +69,9 @@ export function candidateExplainVM(res: TaskCandidatesResponse): CandidateExplai
     etaSeconds: c.etaSeconds ?? 0,
     distanceMeters: c.distanceMeters ?? 0,
     reasons: Array.isArray(c.reasons) ? c.reasons : [],
+    rejectReasons: Array.isArray(c.rejectReasons) ? c.rejectReasons : [],
+    scoreBreakdown: c.scoreBreakdown ?? null,
+    stationOptions: Array.isArray(c.stationOptions) ? c.stationOptions : [],
     isLockedAssignee: Boolean(res.lockedAssigneeId) && c.personId === res.lockedAssigneeId,
   }));
 

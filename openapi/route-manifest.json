@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-09T10:36:48.118Z",
+  "generatedAt": "2026-08-09T17:32:52.063Z",
   "spec": "openapi/ewoh.yaml",
   "controllerKeys": [
     "DELETE /api/dashboard/devices/{deviceId}/bindings",
@@ -272,6 +272,7 @@
     "POST /api/scale/templates/{id}/diff-preview",
     "POST /api/scale/templates/{id}/install",
     "POST /api/scale/templates/{id}/state",
+    "POST /api/scheduler/conflicts/reconcile",
     "POST /api/scheduler/conflicts/{id}/acknowledge",
     "POST /api/scheduler/conflicts/{id}/actions/preview",
     "POST /api/scheduler/conflicts/{id}/resolve",
@@ -285,6 +286,7 @@
     "POST /api/scheduler/plans/{planId}/confirm",
     "POST /api/scheduler/plans/{planId}/dispatch",
     "POST /api/scheduler/plans/{planId}/overrides",
+    "POST /api/scheduler/plans/{planId}/overrides/preview",
     "POST /api/scheduler/plans/{planId}/reject",
     "POST /api/scheduler/plans/{planId}/replan",
     "POST /api/scheduler/policy/activations/{activationId}/rollback",
@@ -750,6 +752,7 @@
     "POST /api/scale/templates/{id}/diff-preview",
     "POST /api/scale/templates/{id}/install",
     "POST /api/scale/templates/{id}/state",
+    "POST /api/scheduler/conflicts/reconcile",
     "POST /api/scheduler/conflicts/{id}/acknowledge",
     "POST /api/scheduler/conflicts/{id}/actions/preview",
     "POST /api/scheduler/conflicts/{id}/resolve",
@@ -763,6 +766,7 @@
     "POST /api/scheduler/plans/{planId}/confirm",
     "POST /api/scheduler/plans/{planId}/dispatch",
     "POST /api/scheduler/plans/{planId}/overrides",
+    "POST /api/scheduler/plans/{planId}/overrides/preview",
     "POST /api/scheduler/plans/{planId}/reject",
     "POST /api/scheduler/plans/{planId}/replan",
     "POST /api/scheduler/policy/activations/{activationId}/rollback",
@@ -800,9 +804,9 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 319,
-  "specOperations": 476,
-  "documentedControllerOperations": 319,
+  "controllerOperations": 321,
+  "specOperations": 478,
+  "documentedControllerOperations": 321,
   "undocumented": [],
   "unimplemented": []
 }

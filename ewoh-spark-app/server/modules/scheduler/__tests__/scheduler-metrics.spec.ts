@@ -99,4 +99,20 @@ describe('SchedulerMetricsService（Phase 3.2 可观测指标）', () => {
     expect(text).toMatch(/scheduler_plan_churn_total 3/);
     expect(text).toMatch(/scheduler_partial_replan_affected 5/);
   });
+
+  it('P1-4：station_decision / changeover 指标正确记录（T05 埋点）', () => {
+    metrics.recordStationDecision(4);
+    metrics.recordChangeover(2);
+    metrics.recordChangeover(1);
+
+    const s = metrics.snapshot();
+    expect(s['scheduler_station_decision_total']).toBe(4);
+    expect(s['scheduler_changeover_total']).toBe(3);
+
+    const text = metrics.renderMetrics();
+    expect(text).toContain('# TYPE scheduler_station_decision_total counter');
+    expect(text).toContain('# TYPE scheduler_changeover_total counter');
+    expect(text).toMatch(/scheduler_station_decision_total 4/);
+    expect(text).toMatch(/scheduler_changeover_total 3/);
+  });
 });

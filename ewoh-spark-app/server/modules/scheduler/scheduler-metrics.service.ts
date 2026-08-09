@@ -171,6 +171,16 @@ export class SchedulerMetricsService {
     this.inc('scheduler_hard_reject_total', count);
   }
 
+  /** 记录 station 决策命中次数（P1-4：station 作为决策变量被枚举并命中）。 */
+  recordStationDecision(count = 1): void {
+    this.inc('scheduler_station_decision_total', count);
+  }
+
+  /** 记录 changeover 次数（P1-4：任务实际被派往非默认工位产生换产成本）。 */
+  recordChangeover(count = 1): void {
+    this.inc('scheduler_changeover_total', count);
+  }
+
   /** 记录最近一次局部重排的影响任务数（gauge）。 */
   recordPartialReplanAffected(count: number): void {
     this.gauges.set('scheduler_partial_replan_affected', count);
@@ -248,6 +258,8 @@ export class SchedulerMetricsService {
     for (const [name, help] of [
       ['scheduler_hard_reject_total', '硬约束拒绝候选累计（缺失技能/证书/能力等）'],
       ['scheduler_plan_churn_total', '方案 churn 累计（相对基线改派任务数）'],
+      ['scheduler_station_decision_total', 'station 决策命中累计（P1-4）'],
+      ['scheduler_changeover_total', 'changeover 换产次数累计（P1-4）'],
     ] as Array<[string, string]>) {
       lines.push(`# HELP ${name} ${help}`);
       lines.push(`# TYPE ${name} counter`);

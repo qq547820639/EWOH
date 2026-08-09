@@ -18,6 +18,7 @@ import type {
   SchedulingConflict,
   PlanOverrideRequest,
   PlanOverrideResponse,
+  OverridePreviewResponse,
   SchedulingPolicy,
   SchedulingPolicyConfig,
   SchedulingPolicyVersionSummary,
@@ -179,6 +180,23 @@ export async function applyPlanOverrides(
   return res.data;
 }
 
+/**
+ * T04 / P1-8：覆盖影响预览（纯计算，不落库不重排）。
+ * 返回 7 项 delta（affectedAssignments / conflictsIntroduced / lateness / travel /
+ * workload / stationWait / planChurn），前端"预览后确认"使用。
+ */
+export async function previewOverrides(
+  planId: string,
+  body: PlanOverrideRequest,
+): Promise<OverridePreviewResponse> {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/plans/${planId}/overrides/preview`,
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}
+
 /** 对比两个方案（分配与指标差异）。 */
 export async function comparePlans(
   planId: string,
@@ -247,6 +265,22 @@ export async function getConflicts(
     url: '/api/scheduler/conflicts',
     method: 'GET',
     params: query,
+  });
+  return res.data;
+}
+
+/**
+ * T04 / P1-5（G5）：显式触发冲突归并（写路径；GET /conflicts 为纯读）。
+ * 供"立即归并"按钮/轮询任务使用；返回归并后冲突列表与计数。
+ */
+export async function reconcileConflicts(): Promise<{
+  ok: boolean;
+  reconciledCount: number;
+  conflicts: SchedulingConflict[];
+}> {
+  const res = await axiosForBackend({
+    url: '/api/scheduler/conflicts/reconcile',
+    method: 'POST',
   });
   return res.data;
 }
