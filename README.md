@@ -240,7 +240,7 @@ Schema 唯一事实源为 `db/migrations/standalone_*`；`server/database/schema
 
 ## 五、API 接口文档
 
-完整 OpenAPI 契约见 [openapi/ewoh.yaml](openapi/ewoh.yaml)（304 条路径，`node scripts/audit-openapi-routes.js` 保证与 NestJS 路由零漂移）。以下为主要端点速查。
+完整 OpenAPI 契约见 [openapi/ewoh.yaml](openapi/ewoh.yaml)（307 条控制器路由，`node scripts/audit-openapi-routes.js` 保证与 NestJS 路由零漂移；审计覆盖 openapi/ewoh.yaml + openapi/work-orchestration.yaml 双 spec，spec 条目共 461 条、去重后 307 条）。以下为主要端点速查。
 
 ### 5.1 Python Edge API（本地）
 

@@ -4990,7 +4990,12 @@ paths:
     post:
       tags:
         - scheduler
-      summary: Generate data-driven schedule plans
+      summary: Generate data-driven schedule plans (deprecated)
+      description: |
+        遗留演示路径（generatePlans）：KEEP/CAP/BAL 三方案的 taktImprovement /
+        output_rate / move_distance / affectedPersons 等指标为【合成数据，仅供演示】，
+        不代表真实调度结果。真实调度请使用 SolverService（CP-SAT / heuristic）。
+      deprecated: true
       requestBody:
         required: false
         content:
@@ -5877,6 +5882,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SchedulingFeedbackList'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/v2/stream:
+    get:
+      tags:
+        - scheduler
+      summary: Subscribe to scheduling event stream (SSE)
+      description: |
+        Server-Sent Events 实时订阅调度事件流（scheduling.event），附带 15s 心跳
+        （heartbeat）防止连接超时。事件 data 为 OutboxEvent JSON；sequence 单调递增，
+        客户端可按 sequence 重放（listSince）。
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: SSE stream (text/event-stream)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
         InternalError:
           $ref: '#/components/responses/InternalError'
   /api/gamification/role:

@@ -18,6 +18,8 @@ const HTTP_DECORATORS = new Map([
   ['Delete', 'DELETE'],
   ['Options', 'OPTIONS'],
   ['Head', 'HEAD'],
+  // SSE 端点是 HTTP GET + text/event-stream（如 scheduler.controller.ts @Sse('v2/stream')）
+  ['Sse', 'GET'],
 ]);
 
 function parseArgs(argv) {
