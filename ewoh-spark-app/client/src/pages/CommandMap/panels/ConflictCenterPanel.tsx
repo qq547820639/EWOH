@@ -23,6 +23,7 @@ import {
   MapPin,
   Eye,
   Ban,
+  Play,
 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -78,12 +79,15 @@ interface ConflictCenterPanelProps {
   onReplan?: (conflict: SchedulingConflict) => void;
   /** v0.7 Batch7.2：点击资源定位地图实体（父组件选中实体并聚焦）。 */
   onLocateEntity?: (entityId: string | null) => void;
+  /** Phase 4 / P4-PREVIEW：打开冲突处置工作台（Preview Replan）。 */
+  onPreview?: (conflict: SchedulingConflict) => void;
 }
 
 export function ConflictCenterPanel({
   initialType,
   onReplan,
   onLocateEntity,
+  onPreview,
 }: ConflictCenterPanelProps): React.ReactElement {
   const [typeFilter, setTypeFilter] = useState<SchedulingConflictType | undefined>(initialType);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -285,6 +289,22 @@ export function ConflictCenterPanel({
                                   </Button>
                                 );
                               })}
+                            </div>
+                          )}
+                          {onPreview && (
+                            <div className="pt-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onPreview(c);
+                                }}
+                              >
+                                <Play className="w-3 h-3 mr-1" />
+                                预览重排
+                              </Button>
                             </div>
                           )}
                           {onReplan && (

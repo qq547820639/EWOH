@@ -91,6 +91,7 @@ const IntelligenceLayers = React.lazy(() => import('./panels/IntelligenceLayers'
 const IntelligenceWorkspace = React.lazy(() => import('./panels/IntelligenceWorkspace'));
 const PlanComparePanel = React.lazy(() => import('./panels/PlanComparePanel'));
 const PlanDiffDrawer = React.lazy(() => import('./panels/PlanDiffDrawer'));
+const ConflictPreviewPanel = React.lazy(() => import('./panels/ConflictPreviewPanel'));
 
 /** 懒加载 chunk 加载期间的轻量占位，避免空白闪烁。 */
 const MapPanelFallback = () => (
@@ -166,6 +167,9 @@ const CommandMap = (): React.ReactElement => {
   // Phase 4 / P4-COMPARE：Plan Compare UI state（三模式 + 聚焦）。
   const [showCompare, setShowCompare] = useState(false);
   const [compareUi, setCompareUi] = useState<PlanCompareUiState>(DEFAULT_PLAN_COMPARE_UI);
+  // Phase 4 / P4-PREVIEW：冲突处置工作台（预览冲突 + 地图 diff）。
+  const [previewConflict, setPreviewConflict] = useState<import('@shared/api.interface').SchedulingConflict | null>(null);
+  const [previewResult, setPreviewResult] = useState<import('@shared/api.interface').ConflictPreviewResult | null>(null);
   const [replayMode, setReplayMode] = useState(false);
   const [replayPaused, setReplayPaused] = useState(false);
   // Phase 3 / P3-T3：聚合状态 Hook（React Query 权威数据 + SSE 增量 + 本地 UI state）。
@@ -739,6 +743,14 @@ const CommandMap = (): React.ReactElement => {
                     .filter((x): x is { taskId: string; point: { x: number; y: number } } => x != null)}
                 />
               )}
+              {previewConflict && previewResult?.diff && (
+                <PlanCompareLayer
+                  vm={planCompareMapVM(previewResult.diff, 'DIFF', schedulerState.snapshot ?? null)}
+                  focusedTaskId={null}
+                  onFocusTask={() => undefined}
+                  unchangedTaskIds={[]}
+                />
+              )}
             </svg>
           );
         })()}
@@ -976,6 +988,31 @@ const CommandMap = (): React.ReactElement => {
                     setSelectedEntityId(entityId);
                     setPanelExpanded(false);
                   }
+                }}
+                // Phase 4 / P4-PREVIEW：打开冲突处置工作台（Preview Replan + 地图 Diff）
+                onPreview={(conflict) => {
+                  setPreviewConflict(conflict);
+                  setPreviewResult(null);
+                }}
+              />
+            </React.Suspense>
+          )}
+          {/* Phase 4 / P4-PREVIEW：冲突处置工作台（覆盖式） */}
+          {previewConflict && (
+            <React.Suspense fallback={<MapPanelFallback />}>
+              <ConflictPreviewPanel
+                conflict={previewConflict}
+                onClose={() => {
+                  setPreviewConflict(null);
+                  setPreviewResult(null);
+                }}
+                onPreviewDiff={(r) => setPreviewResult(r)}
+                onApply={(conflict) => {
+                  // Human Apply：关闭预览并跳转调度面板执行正式 replan（新方案生成 + 审批）。
+                  setPreviewConflict(null);
+                  setPreviewResult(null);
+                  setActiveTab('schedule');
+                  toast.info(`冲突 ${conflict.conflictId} 已确认处置，请在方案面板审批新方案`);
                 }}
               />
             </React.Suspense>
