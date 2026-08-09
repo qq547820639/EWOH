@@ -31,21 +31,26 @@ export class OutboxService {
     sequence?: number,
     opts?: OutboxEnqueueOpts,
   ): Promise<OutboxEvent> {
-    const seq = sequence ?? (await this.nextSequence());
+    // B1 修复：sequence 未显式传入时不再用 SELECT MAX+1 计算（非原子），
+    // 省略该字段由 DB DEFAULT（ewoh_outbox_sequence_seq）原子生成，RETURNING 取回真实值。
+    // 显式传 sequence 的兼容路径保留（调用方仍可覆盖）。
     const eventId = `EVT-${Date.now()}-${this.randomSuffix()}`;
+    const insertValues: typeof ewohOutbox.$inferInsert = {
+      eventId,
+      eventType,
+      entityId,
+      entityType: opts?.entityType ?? null,
+      entityVersion: opts?.entityVersion ?? null,
+      status: 'pending',
+      payloadJson: payload,
+      orgId,
+    };
+    if (sequence !== undefined) {
+      insertValues.sequence = sequence;
+    }
     const [row] = await this.db
       .insert(ewohOutbox)
-      .values({
-        eventId,
-        eventType,
-        entityId,
-        entityType: opts?.entityType ?? null,
-        entityVersion: opts?.entityVersion ?? null,
-        sequence: seq,
-        status: 'pending',
-        payloadJson: payload,
-        orgId,
-      })
+      .values(insertValues)
       .returning();
 
     return this.toEvent(row);
@@ -94,14 +99,6 @@ export class OutboxService {
       return this.toEvent(updated);
     }
     return this.enqueue(eventType, entityId, payload, orgId, undefined, opts);
-  }
-
-  /** 下一个 sequence（当前最大 sequence + 1）。 */
-  async nextSequence(): Promise<number> {
-    const [row] = await this.db
-      .select({ m: max(ewohOutbox.sequence) })
-      .from(ewohOutbox);
-    return (row?.m ?? 0) + 1;
   }
 
   /** 当前最大 sequence（无事件时为 0）。 */

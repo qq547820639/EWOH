@@ -1180,7 +1180,10 @@ export const ewohOutbox = pgTable("ewoh_outbox", {
   entityId: varchar("entity_id", { length: 255 }).notNull(),
   entityType: varchar("entity_type", { length: 100 }),
   entityVersion: integer("entity_version"),
-  sequence: bigint("sequence", { mode: "number" }).notNull().default(0),
+  // F2 修复：DB DEFAULT 与迁移 standalone_011_outbox_sequence.sql 对齐
+  // （nextval('ewoh_outbox_sequence_seq')），避免 drizzle-kit push 把默认值改回 0
+  // 破坏 sequence 原子生成。
+  sequence: bigint("sequence", { mode: "number" }).notNull().default(sql`nextval('ewoh_outbox_sequence_seq')`),
   status: varchar("status", { length: 50 }).notNull().default('pending'),
   payloadJson: jsonb("payload_json"),
   orgId: varchar("org_id", { length: 255 }),

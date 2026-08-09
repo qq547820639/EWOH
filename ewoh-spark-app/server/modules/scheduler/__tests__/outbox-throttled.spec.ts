@@ -41,7 +41,14 @@ function makeOutbox(rows: Row[], whereFilter?: (r: Row) => boolean) {
     insert: () => ({
       values: (v: any) => ({
         returning: async () => {
-          const row: Row = { id: `id-${++seq}`, ...v, payloadJson: v.payloadJson, sequence: v.sequence };
+          // B1：真实 DB 中 sequence 未显式传入时由 ewoh_outbox_sequence_seq DEFAULT 生成；
+          // fake db 模拟该行为（v.sequence 为 undefined 时自增生成）。
+          const row: Row = {
+            id: `id-${++seq}`,
+            ...v,
+            payloadJson: v.payloadJson,
+            sequence: v.sequence ?? seq,
+          };
           rows.push(row);
           return [row];
         },
@@ -49,7 +56,6 @@ function makeOutbox(rows: Row[], whereFilter?: (r: Row) => boolean) {
     }),
   };
   const svc = new OutboxService(db as never);
-  (svc as any).nextSequence = async () => seq + 1;
   (svc as any).randomSuffix = () => 'x';
   return { svc, rows };
 }
@@ -97,5 +103,24 @@ describe('C4 enqueueThrottled 合并窗口节流', () => {
     );
     expect(rows.length).toBe(before + 1); // 新增
     expect(out.entityId).toBe('res-1');
+  });
+});
+
+describe('B1 enqueue sequence 由 DB DEFAULT 生成（原子，替代 SELECT MAX+1）', () => {
+  it('不传 sequence → 省略该字段（fake db 模拟 DB DEFAULT 生成）', async () => {
+    const { svc, rows } = makeOutbox([], () => false);
+    const before = rows.length;
+    const out = await svc.enqueue('test.type', 'e-1', { k: 1 }, 'org1');
+    expect(rows.length).toBe(before + 1);
+    expect(out.sequence).toBeGreaterThan(0); // DB DEFAULT 生成了真实 sequence
+    expect(out.entityId).toBe('e-1');
+    expect(out.eventType).toBe('test.type');
+  });
+
+  it('显式传 sequence → 兼容路径保留（不覆盖调用方指定值）', async () => {
+    const { svc, rows } = makeOutbox([], () => false);
+    const out = await svc.enqueue('test.type', 'e-2', { k: 2 }, 'org1', 42);
+    expect(out.sequence).toBe(42);
+    expect(rows).toHaveLength(1);
   });
 });

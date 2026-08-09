@@ -42,6 +42,9 @@ const FILES = {
   standalone_scheduling_feedback: path.join(root, 'db/migrations/standalone_010_scheduling_feedback.sql'),
   standalone_scheduling_feedback_rollback: path.join(root, 'db/migrations/standalone_010_scheduling_feedback.rollback.sql'),
   standalone_scheduling_feedback_verify: path.join(root, 'db/verify/standalone_010_verify.sql'),
+  standalone_outbox_sequence: path.join(root, 'db/migrations/standalone_011_outbox_sequence.sql'),
+  standalone_outbox_sequence_rollback: path.join(root, 'db/migrations/standalone_011_outbox_sequence.rollback.sql'),
+  standalone_outbox_sequence_verify: path.join(root, 'db/verify/standalone_011_verify.sql'),
 };
 
 const PLAN_NAMES = Object.freeze(Object.keys(FILES));
@@ -56,6 +59,7 @@ const ROLLBACK_COMMANDS = new Set([
   '--rollback-standalone-scheduling',
   '--rollback-standalone-reservation-conflict',
   '--rollback-standalone-scheduling-feedback',
+  '--rollback-standalone-outbox-sequence',
 ]);
 const EXECUTE_COMMANDS = new Set([
   '--apply',
@@ -90,6 +94,9 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-scheduling-feedback',
   '--rollback-standalone-scheduling-feedback',
   '--verify-standalone-scheduling-feedback',
+  '--apply-standalone-outbox-sequence',
+  '--rollback-standalone-outbox-sequence',
+  '--verify-standalone-outbox-sequence',
 ]);
 
 const TOKEN = '__EWOH_SCHEMA__';
@@ -200,6 +207,7 @@ function usage() {
   console.error('       run_migrations.js --apply-standalone-scheduling | --rollback-standalone-scheduling | --verify-standalone-scheduling | --seed-standalone-scheduling');
   console.error('       run_migrations.js --apply-standalone-reservation-conflict | --rollback-standalone-reservation-conflict | --verify-standalone-reservation-conflict');
   console.error('       run_migrations.js --apply-standalone-scheduling-feedback | --rollback-standalone-scheduling-feedback | --verify-standalone-scheduling-feedback');
+  console.error('       run_migrations.js --apply-standalone-outbox-sequence | --rollback-standalone-outbox-sequence | --verify-standalone-outbox-sequence');
   console.error('Env: EWOH_DATABASE_URL or SUDA_DATABASE_URL, EWOH_SCHEMA, EWOH_ALLOW_DDL=1');
   console.error('Rollback also requires EWOH_ALLOW_DESTRUCTIVE_ROLLBACK=1.');
   process.exit(2);
@@ -232,7 +240,7 @@ function main() {
     console.error('EWOH_DATABASE_URL or SUDA_DATABASE_URL is required.');
     process.exit(2);
   }
-  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
+  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod', '--verify-standalone-outbox-sequence'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
     console.error('EWOH_ALLOW_DDL=1 is required for --apply and --rollback.');
     process.exit(2);
   }
@@ -329,6 +337,22 @@ function main() {
       return;
     }
 
+    if (command === '--verify-standalone-outbox-sequence') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_outbox_sequence_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      const exists = Number(row.outbox_sequence_exists || 0);
+      const hasDefault = Number(row.outbox_sequence_default || 0);
+      // 期望值来源：standalone_011_verify.sql 自述（序列存在 1 / sequence 列 DEFAULT 使用序列 1）。
+      if (exists !== 1 || hasDefault !== 1) {
+        console.error(`VERIFY FAILED: expected (1,1), got (${exists},${hasDefault})`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: outbox sequence exists and ewoh_outbox.sequence DEFAULT uses it');
+      }
+      return;
+    }
+
     if (['--verify', '--verify-standalone'].includes(command)) {
       const verifyFile = command === '--verify-standalone' ? FILES.standalone_verify : FILES.verify;
       const rows = await sql.unsafe(substitute(read(verifyFile), schema));
@@ -380,6 +404,8 @@ function main() {
       '--rollback-standalone-reservation-conflict': 'standalone_reservation_conflict_rollback',
       '--apply-standalone-scheduling-feedback': 'standalone_scheduling_feedback',
       '--rollback-standalone-scheduling-feedback': 'standalone_scheduling_feedback_rollback',
+      '--apply-standalone-outbox-sequence': 'standalone_outbox_sequence',
+      '--rollback-standalone-outbox-sequence': 'standalone_outbox_sequence_rollback',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {

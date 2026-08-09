@@ -147,6 +147,10 @@ export class SchedulerService {
   ) {}
 
   async generatePlans(body?: { idempotencyKey?: string }): Promise<SchedulePlan[]> {
+    // ⚠️ 遗留演示路径（data-driven 方案生成器）：KEEP/CAP/BAL 三方案的
+    // taktImprovement / output_rate / move_distance / affectedPersons 等指标为
+    // 【合成数据，仅供演示】，不代表真实调度结果。真实调度请走 SolverService
+    // （CP-SAT / heuristic），本函数保留仅为兼容旧接口与演示驾驶舱。
     try {
       const idempotencyKey = body?.idempotencyKey?.trim();
       const idBase = idempotencyKey
@@ -230,7 +234,7 @@ export class SchedulerService {
             move_distance: 0,
             changeover: 0,
           },
-          reason: `维持当前人员分配与任务安排，作为基线对照。当前未结事件 ${openEvents} 项，高负荷人员 ${highLoadDevices} 人，低电量设备 ${lowBatteryDevices} 台。`,
+          reason: `【合成数据，仅供演示】维持当前人员分配与任务安排，作为基线对照。当前未结事件 ${openEvents} 项，高负荷人员 ${highLoadDevices} 人，低电量设备 ${lowBatteryDevices} 台。`,
           createdAt: new Date(),
         },
         {
@@ -251,7 +255,7 @@ export class SchedulerService {
             changeover: 2,
           },
           reason:
-            '将高产能人员调配到关键工位，预计节拍提升 8.5%，产量提升 12%。受影响 2 人，需注意负荷上升。',
+            '【合成数据，仅供演示】将高产能人员调配到关键工位，预计节拍提升 8.5%，产量提升 12%。受影响 2 人，需注意负荷上升。',
           createdAt: new Date(),
         },
         {
@@ -272,7 +276,7 @@ export class SchedulerService {
             changeover: 3,
           },
           reason:
-            '重新均衡人员负荷，将高负荷人员任务部分转移给低负荷人员，预计平均负荷下降 15%，高风险事件减少。受影响 3 人。',
+            '【合成数据，仅供演示】重新均衡人员负荷，将高负荷人员任务部分转移给低负荷人员，预计平均负荷下降 15%，高风险事件减少。受影响 3 人。',
           createdAt: new Date(),
         },
       ];
