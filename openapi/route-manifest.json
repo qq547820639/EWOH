@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-09T09:18:52.003Z",
+  "generatedAt": "2026-08-09T10:36:48.118Z",
   "spec": "openapi/ewoh.yaml",
   "controllerKeys": [
     "DELETE /api/dashboard/devices/{deviceId}/bindings",

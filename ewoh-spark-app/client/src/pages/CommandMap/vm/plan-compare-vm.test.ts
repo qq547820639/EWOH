@@ -17,6 +17,7 @@ function diff(taskId: string, changeTypes: PlanAssignmentDiff['changeTypes']): P
       deviceId: null,
       stationId: 'ST-1',
       plannedStart: '2026-08-09T10:00:00Z',
+      plannedEnd: '2026-08-09T11:00:00Z',
       etaSeconds: 120,
       distanceMeters: 300,
     },
@@ -26,6 +27,7 @@ function diff(taskId: string, changeTypes: PlanAssignmentDiff['changeTypes']): P
       deviceId: null,
       stationId: 'ST-2',
       plannedStart: '2026-08-09T10:05:00Z',
+      plannedEnd: '2026-08-09T11:05:00Z',
       etaSeconds: 180,
       distanceMeters: 450,
     },
@@ -41,7 +43,22 @@ const result: PlanCompareResult = {
     diff('T-1', ['PERSON_CHANGED', 'STATION_CHANGED']),
     diff('T-2', ['TIME_CHANGED']),
   ],
-  changeTypeCounts: { PERSON_CHANGED: 1, STATION_CHANGED: 1, TIME_CHANGED: 1 },
+  changeTypeCounts: {
+    ADDED: 0,
+    REMOVED: 0,
+    PERSON_CHANGED: 1,
+    DEVICE_CHANGED: 0,
+    STATION_CHANGED: 1,
+    TIME_CHANGED: 1,
+    ROUTE_CHANGED: 0,
+    ETA_CHANGED: 0,
+    DISTANCE_CHANGED: 0,
+    WORKLOAD_CHANGED: 0,
+    LATENESS_CHANGED: 0,
+    RISK_CHANGED: 0,
+    CONFLICT_CHANGED: 0,
+    CHURN: 0,
+  },
   churn: 3,
   aggregate: {},
 };
@@ -73,8 +90,8 @@ describe('planCompareMapVM', () => {
           taskId: 'T-X',
           changeTypes: ['STATION_CHANGED'],
           reasons: [],
-          before: { taskId: 'T-X', personId: null, deviceId: null, stationId: 'GHOST-1', plannedStart: null },
-          after: { taskId: 'T-X', personId: null, deviceId: null, stationId: 'GHOST-2', plannedStart: null },
+          before: { taskId: 'T-X', personId: null, deviceId: null, stationId: 'GHOST-1', plannedStart: null, plannedEnd: null },
+          after: { taskId: 'T-X', personId: null, deviceId: null, stationId: 'GHOST-2', plannedStart: null, plannedEnd: null },
         },
       ],
     };
@@ -102,7 +119,9 @@ describe('planCompareMapVM', () => {
     expect(vm.removedCount).toBe(1);
     expect(vm.changedCount).toBe(2);
     expect(vm.churn).toBe(3);
-    expect(vm.changeTypeCounts).toEqual({ PERSON_CHANGED: 1, STATION_CHANGED: 1, TIME_CHANGED: 1 });
+    expect(vm.changeTypeCounts.PERSON_CHANGED).toBe(1);
+    expect(vm.changeTypeCounts.STATION_CHANGED).toBe(1);
+    expect(vm.changeTypeCounts.TIME_CHANGED).toBe(1);
   });
 });
 
