@@ -1,8 +1,12 @@
 // server/feishu.js — 飞书集成模块
 // 通过 lark-cli 子进程调用飞书 OpenAPI，封装消息卡片 / 多维表格 / 审批 / 文档四类能力
 // 所有调用 try/catch 容错，失败只 console.error 不抛出（不阻断主流程）
+//
+// P1-2（2026-08-09）：larkCli 由 spawnSync 改为异步 execFile（20s 超时 + SIGTERM 回收，
+// maxBuffer 16MB 语义不变），调用链全部 async 化，消除请求路径对事件循环的同步阻塞；
+// 增加并发上限（MAX_CONCURRENT=4，手写信号量）与熔断（连续失败 ≥5 次暂停 30s）。
 
-const { spawnSync } = require('child_process');
+const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -29,73 +33,160 @@ function getConfig() {
   return config;
 }
 
-// ============ 核心 lark-cli 封装 ============
+// ============ 核心 lark-cli 封装（P1-2 异步化）============
 
-// 用 spawnSync 调用 lark-cli，args 是字符串数组；自动追加 --as user|bot
-// input 为 stdin 字符串（可选）；返回 { ok, data, error }，解析 JSON 输出
-function larkCli(args, { input, asBot = false } = {}) {
-  const fullArgs = args.concat(['--as', asBot ? 'bot' : 'user']);
-  try {
-    const res = spawnSync(LARK_BIN, fullArgs, {
-      input: input != null ? input : undefined,
-      encoding: 'utf8',
-      maxBuffer: 16 * 1024 * 1024,
-      // M1 修复：20s 硬超时，防止 lark-cli 挂死时 spawnSync 永久阻塞事件循环
-      //（同步子进程在超时前无法中断，超时后由 SIGTERM 回收并走超时错误路径）。
-      timeout: 20000,
-    });
-    if (res.error) {
-      console.error('[feishu] lark-cli 启动失败:', res.error.message);
-      return { ok: false, data: null, error: res.error.message };
-    }
-    if (res.signal === 'SIGTERM' && res.status === null) {
-      console.error(`[feishu] lark-cli 超时（>20s）: ${fullArgs.slice(0, 3).join(' ')}`);
-      return { ok: false, data: null, error: 'lark-cli timeout (>20s)' };
-    }
-    const stdout = (res.stdout || '').trim();
-    const stderr = (res.stderr || '').trim();
+// 并发上限：同一时刻最多 MAX_CONCURRENT 个 lark-cli 子进程
+const MAX_CONCURRENT = 4;
+// 熔断：连续失败 ≥ BREAKER_THRESHOLD 次后暂停 BREAKER_COOLDOWN_MS
+const BREAKER_THRESHOLD = 5;
+const BREAKER_COOLDOWN_MS = 30000;
 
-    // 优先尝试解析 stdout 中的 JSON 信封 {ok, data, error}
-    let parsed = null;
-    if (stdout) {
-      try { parsed = JSON.parse(stdout); } catch (_) { parsed = null; }
-    }
+let activeCliCalls = 0;
+const cliWaitQueue = [];
+let consecutiveCliFailures = 0;
+let breakerOpenUntil = 0;
 
-    if (res.status !== 0) {
-      if (parsed && parsed.ok === false) {
-        console.error('[feishu] lark-cli 调用失败:', JSON.stringify(parsed.error));
-        return { ok: false, data: null, error: parsed.error || `exit ${res.status}` };
-      }
-      console.error(`[feishu] lark-cli 退出码 ${res.status}: ${(stderr || stdout).slice(0, 300)}`);
-      return { ok: false, data: null, error: stderr || `exit ${res.status}` };
-    }
+// 获取并发槽位（满时排队等待，不阻塞事件循环）
+function acquireCliSlot() {
+  if (activeCliCalls < MAX_CONCURRENT) {
+    activeCliCalls += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    cliWaitQueue.push(resolve);
+  });
+}
 
-    if (!parsed) {
-      // 非 JSON 输出（理论上加 --json 不会出现，兜底处理）
-      console.error('[feishu] lark-cli 输出非 JSON:', stdout.slice(0, 200));
-      return { ok: false, data: null, error: 'non-json output' };
-    }
+// 释放并发槽位并唤醒下一个等待者
+function releaseCliSlot() {
+  activeCliCalls -= 1;
+  const next = cliWaitQueue.shift();
+  if (next) next();
+}
 
-    if (typeof parsed === 'object' && 'ok' in parsed) {
-      if (parsed.ok) {
-        return { ok: true, data: parsed.data != null ? parsed.data : parsed, error: null };
-      }
-      console.error('[feishu] lark-cli 返回错误:', JSON.stringify(parsed.error));
-      return { ok: false, data: null, error: parsed.error || 'unknown' };
-    }
-    // 直接返回原始数据
-    return { ok: true, data: parsed, error: null };
-  } catch (e) {
-    console.error('[feishu] larkCli 异常:', e.message);
-    return { ok: false, data: null, error: e.message };
+// 记录一次调用结果并驱动熔断状态机
+function recordCliResult(ok) {
+  if (ok) {
+    consecutiveCliFailures = 0;
+    return;
+  }
+  consecutiveCliFailures += 1;
+  if (consecutiveCliFailures >= BREAKER_THRESHOLD) {
+    breakerOpenUntil = Date.now() + BREAKER_COOLDOWN_MS;
+    console.error(
+      `[feishu] lark-cli 连续失败 ${consecutiveCliFailures} 次，熔断 ${BREAKER_COOLDOWN_MS / 1000}s`
+    );
   }
 }
 
-// identity 默认 user，失败时尝试 bot 重试一次
-function larkCliRetry(args, opts = {}) {
-  let r = larkCli(args, { ...opts, asBot: false });
+// 解析 stdout JSON 信封（失败返回 null）
+function parseCliJson(stdout) {
+  if (!stdout) return null;
+  try {
+    return JSON.parse(stdout);
+  } catch (_) {
+    return null;
+  }
+}
+
+// 执行一次 lark-cli 子进程（异步；20s 超时由 execFile timeout 触发 SIGTERM 回收）
+function runLarkCliProcess(args, { input, asBot }) {
+  const fullArgs = args.concat(['--as', asBot ? 'bot' : 'user']);
+  return new Promise((resolve) => {
+    execFile(
+      LARK_BIN,
+      fullArgs,
+      {
+        input: input != null ? input : undefined,
+        encoding: 'utf8',
+        maxBuffer: 16 * 1024 * 1024,
+        // P1-2：保留 20s 硬超时语义，超时后 execFile 以 SIGTERM 回收子进程
+        timeout: 20000,
+        windowsHide: true,
+      },
+      (err, stdout, stderr) => {
+        // 超时：execFile 以 err.signal === 'SIGTERM' 表示（进程已被回收）
+        if (err && err.signal === 'SIGTERM') {
+          console.error(`[feishu] lark-cli 超时（>20s）: ${fullArgs.slice(0, 3).join(' ')}`);
+          resolve({ ok: false, data: null, error: 'lark-cli timeout (>20s)' });
+          return;
+        }
+        // 启动失败（找不到二进制/无权限等）：err.code 为非数字字符串（ENOENT/EACCES/...）
+        if (err && typeof err.code !== 'number') {
+          console.error('[feishu] lark-cli 启动失败:', err.message);
+          resolve({ ok: false, data: null, error: err.message });
+          return;
+        }
+        // 非零退出码：err.code 为数字
+        if (err && typeof err.code === 'number') {
+          const parsed = parseCliJson(stdout);
+          if (parsed && parsed.ok === false) {
+            console.error('[feishu] lark-cli 调用失败:', JSON.stringify(parsed.error));
+            resolve({ ok: false, data: null, error: parsed.error || `exit ${err.code}` });
+            return;
+          }
+          console.error(
+            `[feishu] lark-cli 退出码 ${err.code}: ${(stderr || stdout || '').slice(0, 300)}`
+          );
+          resolve({ ok: false, data: null, error: (stderr || '').trim() || `exit ${err.code}` });
+          return;
+        }
+        if (err) {
+          console.error('[feishu] lark-cli 异常:', err.message);
+          resolve({ ok: false, data: null, error: err.message });
+          return;
+        }
+        const out = (stdout || '').trim();
+        const parsed = parseCliJson(out);
+        if (!parsed) {
+          // 非 JSON 输出（理论上加 --json 不会出现，兜底处理）
+          console.error('[feishu] lark-cli 输出非 JSON:', out.slice(0, 200));
+          resolve({ ok: false, data: null, error: 'non-json output' });
+          return;
+        }
+        if (typeof parsed === 'object' && 'ok' in parsed) {
+          if (parsed.ok) {
+            resolve({ ok: true, data: parsed.data != null ? parsed.data : parsed, error: null });
+            return;
+          }
+          console.error('[feishu] lark-cli 返回错误:', JSON.stringify(parsed.error));
+          resolve({ ok: false, data: null, error: parsed.error || 'unknown' });
+          return;
+        }
+        // 直接返回原始数据
+        resolve({ ok: true, data: parsed, error: null });
+      }
+    );
+  });
+}
+
+// 用异步 execFile 调用 lark-cli，args 是字符串数组；自动追加 --as user|bot
+// input 为 stdin 字符串（可选）；返回 Promise<{ ok, data, error }>，解析 JSON 输出
+async function larkCli(args, { input, asBot = false } = {}) {
+  // 熔断打开：直接快速失败，不再启动子进程
+  const now = Date.now();
+  if (breakerOpenUntil > now) {
+    const waitSec = Math.ceil((breakerOpenUntil - now) / 1000);
+    console.error(
+      `[feishu] lark-cli 熔断中（连续失败 ${consecutiveCliFailures} 次，${waitSec}s 后重试）`
+    );
+    return { ok: false, data: null, error: `circuit breaker open (retry in ${waitSec}s)` };
+  }
+  await acquireCliSlot();
+  try {
+    const r = await runLarkCliProcess(args, { input, asBot });
+    recordCliResult(r.ok);
+    return r;
+  } finally {
+    releaseCliSlot();
+  }
+}
+
+// identity 默认 user，失败时尝试 bot 重试一次（异步）
+async function larkCliRetry(args, opts = {}) {
+  let r = await larkCli(args, { ...opts, asBot: false });
   if (!r.ok) {
-    r = larkCli(args, { ...opts, asBot: true });
+    r = await larkCli(args, { ...opts, asBot: true });
   }
   return r;
 }
@@ -250,15 +341,15 @@ function buildHandledCard(event, actionLabel) {
 
 // ============ IM 消息 ============
 
-// 发送告警卡片到群聊，返回 { message_id, error }
-function sendAlertCard(chatId, event) {
+// 发送告警卡片到群聊，返回 Promise<{ message_id, error }>
+async function sendAlertCard(chatId, event) {
   const cfg = getConfig();
   if (!cfg || !chatId || !event) {
     return { message_id: null, error: 'invalid args' };
   }
   const card = buildAlertCard(event);
   // im +messages-send 的 --content 不支持 stdin，直接作为参数传入（卡片 JSON 较小）
-  const r = larkCliRetry(
+  const r = await larkCliRetry(
     ['im', '+messages-send', '--chat-id', chatId, '--msg-type', 'interactive', '--content', JSON.stringify(card), '--json']
   );
   if (!r.ok) return { message_id: null, error: r.error };
@@ -270,10 +361,10 @@ function sendAlertCard(chatId, event) {
 }
 
 // 更新已发送卡片（best-effort：lark-cli 无原生消息更新命令，走 api 逃生口；失败由跟进消息兜底）
-function updateCardMessage(messageId, card) {
+async function updateCardMessage(messageId, card) {
   if (!messageId || !card) return { ok: false, error: 'invalid args' };
   const body = { content: JSON.stringify(card), msg_type: 'interactive' };
-  const r = larkCliRetry(
+  const r = await larkCliRetry(
     ['api', 'PATCH', `/open-apis/im/v1/messages/${messageId}`, '--data', '-', '--json'],
     { input: JSON.stringify(body) }
   );
@@ -283,13 +374,13 @@ function updateCardMessage(messageId, card) {
   return { ok: r.ok, error: r.error };
 }
 
-// 发送跟进文本消息，返回 { message_id, error }
-function sendFollowupMessage(chatId, text) {
+// 发送跟进文本消息，返回 Promise<{ message_id, error }>
+async function sendFollowupMessage(chatId, text) {
   const cfg = getConfig();
   if (!cfg || !chatId || !text) {
     return { message_id: null, error: 'invalid args' };
   }
-  const r = larkCliRetry(
+  const r = await larkCliRetry(
     ['im', '+messages-send', '--chat-id', chatId, '--msg-type', 'text', '--content', JSON.stringify({ text }), '--json']
   );
   if (!r.ok) return { message_id: null, error: r.error };
@@ -305,11 +396,11 @@ function sendFollowupMessage(chatId, text) {
 // 注意：base 命令的 --json 不支持 stdin，直接作为参数值传入（字段映射较小，无 argv 长度问题）
 // C1 修复：base_token 优先从环境变量 FEISHU_BASE_TOKEN 注入（避免凭据落入配置文件与命令行参数）；
 // 为空时直接失败（不传空参数）。
-function baseRecordCreate(tableId, fields) {
+async function baseRecordCreate(tableId, fields) {
   const cfg = getConfig();
   const baseToken = process.env.FEISHU_BASE_TOKEN || (cfg && cfg.base_token);
   if (!baseToken || !tableId || !fields) return { ok: false, error: 'invalid args' };
-  const r = larkCliRetry(
+  const r = await larkCliRetry(
     ['base', '+record-upsert', '--base-token', baseToken, '--table-id', tableId, '--json', JSON.stringify(fields)]
   );
   const recordId = deepFind(r.data, ['record_id']) || deepFind(r.data, ['record', 'record_id']) || deepFind(r.data, ['data', 'record', 'record_id']);
@@ -317,22 +408,22 @@ function baseRecordCreate(tableId, fields) {
 }
 
 // 更新记录（upsert 带 record-id 即更新）
-function baseRecordUpdate(tableId, recordId, fields) {
+async function baseRecordUpdate(tableId, recordId, fields) {
   const cfg = getConfig();
   const baseToken = process.env.FEISHU_BASE_TOKEN || (cfg && cfg.base_token);
   if (!baseToken || !tableId || !recordId || !fields) return { ok: false, error: 'invalid args' };
-  const r = larkCliRetry(
+  const r = await larkCliRetry(
     ['base', '+record-upsert', '--base-token', baseToken, '--table-id', tableId, '--record-id', recordId, '--json', JSON.stringify(fields)]
   );
   return { ok: r.ok, record_id: recordId, error: r.error };
 }
 
-// 按字段查记录：filter = { field, value }，返回 [{ record_id, fields }]
-function baseRecordSearch(tableId, { filter, limit } = {}) {
+// 按字段查记录：filter = { field, value }，返回 Promise<[{ record_id, fields }]>
+async function baseRecordSearch(tableId, { filter, limit } = {}) {
   const cfg = getConfig();
   const baseToken = process.env.FEISHU_BASE_TOKEN || (cfg && cfg.base_token);
   if (!baseToken || !tableId || !filter || !filter.field) return [];
-  const r = larkCliRetry(
+  const r = await larkCliRetry(
     ['base', '+record-search', '--base-token', baseToken, '--table-id', tableId,
      '--keyword', String(filter.value), '--search-field', filter.field,
      '--limit', String(limit || 10), '--format', 'json']
@@ -342,7 +433,7 @@ function baseRecordSearch(tableId, { filter, limit } = {}) {
 }
 
 // 批量创建记录：fieldsList 为字段名数组，rows 为 [[v1,v2,...], ...]
-function baseRecordBatchCreate(tableId, fieldsList, rows) {
+async function baseRecordBatchCreate(tableId, fieldsList, rows) {
   const cfg = getConfig();
   const baseToken = process.env.FEISHU_BASE_TOKEN || (cfg && cfg.base_token);
   if (!baseToken || !tableId || !Array.isArray(fieldsList) || !Array.isArray(rows) || rows.length === 0) {
@@ -350,7 +441,7 @@ function baseRecordBatchCreate(tableId, fieldsList, rows) {
   }
   const body = { fields: fieldsList, rows };
   // base --json 不支持 stdin，直接传参；遥测批量 JSON 较小（每 5s ~15 行），无长度问题
-  const r = larkCliRetry(
+  const r = await larkCliRetry(
     ['base', '+record-batch-create', '--base-token', baseToken, '--table-id', tableId, '--json', JSON.stringify(body)]
   );
   return { ok: r.ok, count: rows.length, error: r.error };
@@ -359,8 +450,8 @@ function baseRecordBatchCreate(tableId, fieldsList, rows) {
 // ============ 审批 ============
 
 // 创建飞书审批实例（简化版：原生审批需要 approval_code，本地未配置时降级为群聊消息）
-// 返回 { approval_id, status }
-function createApproval(event) {
+// 返回 Promise<{ approval_id, status }>
+async function createApproval(event) {
   const cfg = getConfig();
   const chatId = cfg && cfg.chat_id;
   const eventId = (event && event.event_id) || '-';
@@ -379,7 +470,7 @@ function createApproval(event) {
       }),
     },
   };
-  const r = larkCliRetry(
+  const r = await larkCliRetry(
     ['approval', 'instances', 'create', '--data', '-', '--yes', '--json'],
     { input: JSON.stringify(body) }
   );
@@ -391,7 +482,7 @@ function createApproval(event) {
   // 降级：发送"待审批"消息到群聊
   console.error('[feishu] 原生审批创建失败，降级为群聊消息通知');
   if (chatId) {
-    sendFollowupMessage(
+    await sendFollowupMessage(
       chatId,
       `⚠️ 事件上报审批（降级为消息通知）\n` +
       `事件ID: ${eventId}\n` +
@@ -439,15 +530,15 @@ function buildReportMarkdown(stats, eventList, ts) {
   return md;
 }
 
-// 创建飞书文档（班次报告），返回 { url, doc_token, error }
-function createReportDoc(stats, eventList) {
+// 创建飞书文档（班次报告），返回 Promise<{ url, doc_token, error }>
+async function createReportDoc(stats, eventList) {
   const cfg = getConfig();
   if (!cfg) return { url: null, doc_token: null, error: 'no config' };
   const ts = fmtDateTime(new Date().toISOString());
   const title = `EWOH班次报告 ${ts}`;
   const md = buildReportMarkdown(stats, eventList, ts);
   // docs +create 支持 --content - 从 stdin 读取 markdown，一次性创建带正文文档
-  const r = larkCliRetry(
+  const r = await larkCliRetry(
     ['docs', '+create', '--title', title, '--doc-format', 'markdown', '--content', '-', '--json'],
     { input: md }
   );

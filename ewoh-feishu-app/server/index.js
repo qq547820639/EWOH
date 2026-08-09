@@ -34,9 +34,9 @@ function runSyncAllToFeishu() {
   );
 }
 
-// 飞书集成初始化（v1.1.0 加固：延迟到 HTTP 服务启动后执行，避免 lark-cli 同步调用阻塞 listen）
-// feishu.loadConfig 与 sync.syncDevice 内部走 spawnSync 调用 lark-cli，无授权环境可能长时间阻塞；
-// 先起服务、再后台初始化集成，保证 API 始终可用（集成失败仅降级，不影响平台本体）。
+// 飞书集成初始化（v1.1.0 加固：延迟到 HTTP 服务启动后执行，避免 lark-cli 调用阻塞 listen）
+// P1-2（2026-08-09）：larkCli 已异步化（execFile + 并发上限 + 熔断），不再同步阻塞事件循环；
+// 仍保持"先起服务、再后台初始化集成"，保证 API 始终可用（集成失败仅降级，不影响平台本体）。
 function initFeishuIntegration() {
   // 启动时加载飞书配置 + 首次同步 3 台预置设备到多维表格 + 启动事件状态轮询（失败不阻断）
   const feishuConfig = feishu.loadConfig();
@@ -144,7 +144,7 @@ if (simulatorEnabled()) {
 // L1 对齐：旧格式 { open_id, action: {...} } 已不再支持——写操作必须通过验签
 //（token/timestamp/签名/重放四道校验），旧格式缺少 header.token 必然 401，
 // 不提供无验签的旧格式兼容路径（P0-SEC-001 安全边界）。
-app.post('/webhook/card', (req, res) => {
+app.post('/webhook/card', async (req, res) => {
   const body = req.body || {};
   const value = (body.action && body.action.value) || {};
   const actionType = value.action_type;
@@ -203,7 +203,7 @@ app.post('/webhook/card', (req, res) => {
         label = '已解决';
       } else if (actionType === 'escalate') {
         try {
-          feishu.createApproval(event);
+          await feishu.createApproval(event);
         } catch (e) {
           console.error('[webhook] createApproval 失败:', e.message);
         }
@@ -226,7 +226,7 @@ app.post('/webhook/card', (req, res) => {
     // 更新原卡片为"已处置"状态（best-effort，失败靠跟进消息兜底）
     try {
       const card = feishu.buildHandledCard(event, label);
-      feishu.updateCardMessage(messageId, card);
+      await feishu.updateCardMessage(messageId, card);
     } catch (e) {
       console.error('[webhook] updateCardMessage 失败:', e.message);
     }
@@ -234,7 +234,7 @@ app.post('/webhook/card', (req, res) => {
     // 发送跟进文本消息到群聊
     try {
       if (chatId) {
-        feishu.sendFollowupMessage(
+        await feishu.sendFollowupMessage(
           chatId,
           `✅ 事件处置通知\n事件: ${event.title || '-'}\n设备: ${event.device_id}\n处置人: ${openId}\n结果: ${label}`
         );

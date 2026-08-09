@@ -178,7 +178,7 @@ function createApiRouter(db) {
   }));
 
   // -------- 飞书班次报告 --------
-  router.get('/feishu/report', wrap((req, res) => {
+  router.get('/feishu/report', wrap(async (req, res) => {
     const stats = dbm.getSystemStats(db);
     const { rows: eventList } = events.listEvents(db, { limit: 200 });
     // 处置率
@@ -187,7 +187,7 @@ function createApiRouter(db) {
     const handleRate = total > 0 ? Math.round((handled / total) * 100) : 0;
     const reportStats = { ...stats, handle_rate: handleRate, generated_at: new Date().toISOString() };
 
-    const doc = feishu.createReportDoc(reportStats, eventList);
+    const doc = await feishu.createReportDoc(reportStats, eventList);
     if (doc.error) {
       console.error('[api] 生成班次报告失败:', doc.error);
     }

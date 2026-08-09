@@ -170,16 +170,21 @@ function evaluateRules(db, telemetry) {
             // 补充 worker_name 供卡片展示（events 表不存该字段）
             const dev = dbm.getDevice(db, deviceId);
             if (dev) ev.worker_name = dev.worker_name;
-            const card = feishu.sendAlertCard(cfg.chat_id, ev);
-            if (card.message_id) {
-              // 将 message_id 回写事件 evidence，便于卡片回调时定位更新
-              const cur = events.getEvent(db, ev.event_id);
-              const evidence = (cur && cur.evidence) || {};
-              evidence.feishu_message_id = card.message_id;
-              db.prepare('UPDATE events SET evidence = ?, updated_at = ? WHERE event_id = ?')
-                .run(JSON.stringify(evidence), new Date().toISOString(), ev.event_id);
-              ev.feishu_message_id = card.message_id;
-            }
+            // P1-2：sendAlertCard 已异步化；evaluateRules 为同步路径，fire-and-forget
+            //（不阻塞模拟器循环），卡片 message_id 回写在 .then 中完成
+            Promise.resolve(feishu.sendAlertCard(cfg.chat_id, ev))
+              .then((card) => {
+                if (card && card.message_id) {
+                  // 将 message_id 回写事件 evidence，便于卡片回调时定位更新
+                  const cur = events.getEvent(db, ev.event_id);
+                  const evidence = (cur && cur.evidence) || {};
+                  evidence.feishu_message_id = card.message_id;
+                  db.prepare('UPDATE events SET evidence = ?, updated_at = ? WHERE event_id = ?')
+                    .run(JSON.stringify(evidence), new Date().toISOString(), ev.event_id);
+                  ev.feishu_message_id = card.message_id;
+                }
+              })
+              .catch((e) => console.error('[rules] sendAlertCard 失败:', e.message));
           }
           // 同步事件记录到多维表格（fire-and-forget，不阻塞模拟器循环）
           Promise.resolve(sync.syncEventCreate(ev)).catch((e) =>

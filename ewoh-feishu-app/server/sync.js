@@ -57,7 +57,7 @@ async function syncDevice(device) {
     };
 
     // 先按 device_id 查找已有记录
-    const existing = feishu.baseRecordSearch(tableId, {
+    const existing = await feishu.baseRecordSearch(tableId, {
       filter: { field: DEVICE_FIELDS.device_id, value: device.device_id },
       limit: 5,
     });
@@ -66,10 +66,10 @@ async function syncDevice(device) {
     );
 
     if (match) {
-      const r = feishu.baseRecordUpdate(tableId, match.record_id, fields);
+      const r = await feishu.baseRecordUpdate(tableId, match.record_id, fields);
       return { ok: r.ok, action: 'update', record_id: match.record_id, error: r.error };
     }
-    const r = feishu.baseRecordCreate(tableId, fields);
+    const r = await feishu.baseRecordCreate(tableId, fields);
     return { ok: r.ok, action: 'create', record_id: r.record_id, error: r.error };
   } catch (e) {
     console.error('[sync] syncDevice 失败:', e.message);
@@ -100,7 +100,7 @@ async function syncEventCreate(event) {
     if (event.handler_action) {
       fields[EVENT_FIELDS.handler_action] = event.handler_action;
     }
-    const r = feishu.baseRecordCreate(tableId, fields);
+    const r = await feishu.baseRecordCreate(tableId, fields);
     return { ok: r.ok, record_id: r.record_id, error: r.error };
   } catch (e) {
     console.error('[sync] syncEventCreate 失败:', e.message);
@@ -116,7 +116,7 @@ async function syncEventUpdate(eventId, status, handlerAction) {
       return { ok: false, error: 'invalid args or config' };
     }
     const tableId = cfg.tables.events;
-    const existing = feishu.baseRecordSearch(tableId, {
+    const existing = await feishu.baseRecordSearch(tableId, {
       filter: { field: EVENT_FIELDS.event_id, value: eventId },
       limit: 5,
     });
@@ -130,7 +130,7 @@ async function syncEventUpdate(eventId, status, handlerAction) {
     const fields = {};
     if (status) fields[EVENT_FIELDS.status] = status;
     if (handlerAction) fields[EVENT_FIELDS.handler_action] = handlerAction;
-    const r = feishu.baseRecordUpdate(tableId, match.record_id, fields);
+    const r = await feishu.baseRecordUpdate(tableId, match.record_id, fields);
     return { ok: r.ok, record_id: match.record_id, error: r.error };
   } catch (e) {
     console.error('[sync] syncEventUpdate 失败:', e.message);
@@ -183,7 +183,7 @@ async function flushTelemetry() {
   try {
     const cfg = feishu.getConfig();
     if (!cfg || !cfg.tables) return { ok: false, error: 'no config' };
-    const r = feishu.baseRecordBatchCreate(cfg.tables.telemetry, TELEMETRY_BATCH_FIELDS, rows);
+    const r = await feishu.baseRecordBatchCreate(cfg.tables.telemetry, TELEMETRY_BATCH_FIELDS, rows);
     if (r.ok) {
       // 成功后移除已发送的行（可能有并发新增，只移除本次发送的条数）
       telemetryBuffer.splice(0, rows.length);
@@ -254,7 +254,7 @@ async function pollFeishuEventStatusChanges(db) {
       logic: 'and',
       conditions: [['状态', 'intersects', ['handled', 'closed']]],
     });
-    const r = feishu.larkCli([
+    const r = await feishu.larkCli([
       'base', '+record-search',
       '--base-token', cfg.base_token,
       '--table-id', tableId,
@@ -374,7 +374,7 @@ async function syncAllToFeishu(db) {
     for (const ev of evs || []) {
       try {
         const tableId = cfg.tables.events;
-        const existing = feishu.baseRecordSearch(tableId, {
+        const existing = await feishu.baseRecordSearch(tableId, {
           filter: { field: EVENT_FIELDS.event_id, value: ev.event_id },
           limit: 5,
         });
@@ -393,8 +393,8 @@ async function syncAllToFeishu(db) {
         };
         if (ev.handler_action) fields[EVENT_FIELDS.handler_action] = ev.handler_action;
         const r = match
-          ? feishu.baseRecordUpdate(tableId, match.record_id, fields)
-          : feishu.baseRecordCreate(tableId, fields);
+          ? await feishu.baseRecordUpdate(tableId, match.record_id, fields)
+          : await feishu.baseRecordCreate(tableId, fields);
         if (r && r.ok) synced.events++;
         else console.error(`[sync] 全量同步-事件失败 ${ev.event_id}:`, r && r.error);
       } catch (e) {
@@ -417,7 +417,7 @@ async function syncAllToFeishu(db) {
         t.battery_pct != null ? Number(t.battery_pct) : null,
         t.quality_status || '',
       ]);
-      const r = feishu.baseRecordBatchCreate(cfg.tables.telemetry, TELEMETRY_BATCH_FIELDS, batchRows);
+      const r = await feishu.baseRecordBatchCreate(cfg.tables.telemetry, TELEMETRY_BATCH_FIELDS, batchRows);
       if (r && r.ok) synced.telemetry = batchRows.length;
       else console.error('[sync] 全量同步-遥测批量失败:', r && r.error);
     }
