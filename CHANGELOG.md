@@ -5,6 +5,19 @@
 
 ## [Unreleased]
 
+### Fixed
+- **运行时可用性收尾（走读报告 M1-M4 + L1-L3 全闭环）**：
+  - **飞书 M1**：lark-cli spawnSync 加 20s 硬超时（防挂死永久阻塞事件循环），超时走 SIGTERM 错误路径。
+  - **飞书 M2**：flushTelemetry 失败保留 buffer 重试（此前失败即清空 → 遥测数据丢失），
+    成功移除已发送行 + 5000 条上限裁剪防无界增长；新增回归测试 2 例。
+  - **边缘 M3**：`/api/status` 按 `_running` 状态如实报告（此前对象存在即报 healthy，未启动的
+    inference/manager 冒充健康）；pipeline 补运行状态标记。
+  - **边缘 L2**：演示 token 24h 过期 + 登录惰性清理（此前永不过期内存缓慢增长）。
+  - **边缘 L3**：5 处静默 `except Exception: pass` 补日志（会话校验/body 排空/审计/模型信息/埋点）。
+  - **飞书 L1**：卡片回调注释诚实化——仅支持事件订阅信封，旧格式 `{open_id, action}` 缺
+    header.token 必然 401（安全边界，不提供无验签兼容路径）。
+  - **M4**：legacy 入口启动打印装配差异警告（缺 12 模块 + metrics/ratelimit），引导 standalone。
+
 ### Added
 - **智能调度 v0.7 第四批（Batch 10-11，调度闭环 + 前端结构 + 工程治理资产）**：
   - **影子评估自动化**：事件驱动 run 每 10 次自动对比候选策略（listVersions 找到 v+1）与活跃策略，

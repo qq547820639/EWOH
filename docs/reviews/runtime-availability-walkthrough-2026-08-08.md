@@ -100,20 +100,22 @@ if mode != "simulation":
 
 ## 五、代码质量问题分级清单（修复后剩余）
 
-### 中（建议后续处理）
-| # | 问题 | 位置 | 影响 |
-|---|------|------|------|
-| M1 | 飞书 spawnSync 同步子进程阻塞事件循环（30s 全量同步/60s 轮询/报告生成时 API 卡顿） | feishu.js:39 | 可用性受损 |
-| M2 | 飞书 flushTelemetry 失败即清空 buffer，遥测同步数据丢失无重试 | sync.js:172-192 | 数据丢失 |
-| M3 | 边缘 server.py api_status 吞组件异常，inference/manager 异常仍报 healthy | server.py:56-63 | 健康检查误报 |
-| M4 | legacy 与 standalone 装配漂移（legacy 缺 RateLimitGuard/Tracing/Metrics + 12 个模块） | app.module.ts | 双入口行为不一致 |
+> **2026-08-09 更新：M1-M4 + L1-L3 已全部闭环**（见下方修复记录），本清单由"剩余"转为"已处理"存档。
 
-### 低
-| # | 问题 | 位置 |
-|---|------|------|
-| L1 | 飞书旧格式卡片回调 `{open_id, action}` 声明支持但验签必 401（需 create_time） | security.js:76-87 vs index.js:147 |
-| L2 | 边缘开发模式登录 token 永不过期（内存缓慢增长） | server.py:204 |
-| L3 | 多处 `except Exception: pass` 掩盖故障（会话校验/body 排空/审计失败） | server.py 多处 |
+### 中（已处理）
+| # | 问题 | 位置 | 修复 |
+|---|------|------|------|
+| M1 | 飞书 spawnSync 同步子进程阻塞事件循环 | feishu.js:39 | ✅ spawnSync 加 20s 硬超时 + SIGTERM 超时错误路径（防 lark-cli 挂死永久阻塞；webhook 调用本就 fire-and-forget） |
+| M2 | 飞书 flushTelemetry 失败即清空 buffer，遥测数据丢失 | sync.js | ✅ 失败保留 buffer 头部重试、成功移除已发送行、5000 条上限裁剪；回归测试 2 例（失败保留/成功清空） |
+| M3 | 边缘 api_status 吞组件异常仍报 healthy | server.py | ✅ `_svc_health` 按 `_running` 状态如实报告（对象存在未启动 = not_running/rules_only）；pipeline 补 `_running` 标记 |
+| M4 | legacy 与 standalone 装配漂移（缺 12 模块） | app.module.ts | ✅ legacy 入口启动打 deprecation 警告引导 standalone（不改装配，避免破坏兼容入口） |
+
+### 低（已处理）
+| # | 问题 | 位置 | 修复 |
+|---|------|------|------|
+| L1 | 飞书旧格式卡片回调声明支持但验签必 401 | index.js:147 | ✅ 注释诚实化：仅支持事件订阅信封，旧格式缺 header.token 必然 401（安全边界不提供无验签兼容） |
+| L2 | 边缘开发模式 token 永不过期 | server.py:204 | ✅ 演示 token 24h 过期 + 登录时惰性清理（login/refresh/me 三处校验 exp） |
+| L3 | 多处 `except Exception: pass` 掩盖故障 | server.py | ✅ 5 处静默 pass 补日志（会话校验/body 排空/审计/模型信息/埋点），保留降级语义不阻断业务 |
 
 ---
 

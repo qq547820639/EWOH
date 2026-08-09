@@ -29,6 +29,11 @@ async function bootstrapLegacy() {
   await app.listen(port, host);
   logger.log(`Server running on ${host}:${port}`);
   logger.log(`API endpoints ready at http://${host}:${port}/api`);
+  // M4 提示：legacy 装配是兼容入口（缺 RateLimitGuard/Tracing 级联 12 个模块），
+  // 新功能与治理只进 standalone。生产建议 EWOH_DEPLOY_TARGET=standalone。
+  logger.warn(
+    'Legacy mode: assembly differs from standalone (missing 12 modules + metrics/ratelimit guarantees). Use EWOH_DEPLOY_TARGET=standalone for full feature set.',
+  );
 }
 
 export type BootstrapMode = 'standalone' | 'legacy';

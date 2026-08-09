@@ -90,8 +90,8 @@ def get_actor_from_request(handler):
         session = sm.verify(token)
         if session is not None:
             return session.user_id
-    except Exception:
-        pass
+    except Exception as e:  # L3：认证异常按匿名处理（安全降级），但记录日志便于诊断
+        print(f"[EWOH] session verify failed (fallback anonymous): {e!r}")
     return _anonymous_or_none()
 
 
@@ -203,6 +203,20 @@ def make_handler(ctx):
         # Task 16 演示用 token 存储（auth 模块未就绪时使用）；auth 就绪后由其管理
         _tokens = {}  # type: ignore[var-annotated]
         _tokens_lock = threading.Lock()
+        # L2 修复：演示 token 有效期（auth 模块未就绪的降级路径），24h 过期 + 登录时惰性清理，
+        # 消除"token 永不过期 + 内存缓慢增长"。
+        _TOKEN_TTL = 24 * 3600
+
+        @classmethod
+        def _demo_token_cleanup(cls, force=False):
+            """清理过期演示 token（force=True 全量扫描；否则每次登录顺带清理 1 次）。"""
+            now = time.time()
+            with cls._tokens_lock:
+                expired = [k for k, v in cls._tokens.items() if v.get("exp", 0) <= now]
+                for k in expired:
+                    del cls._tokens[k]
+            if expired:
+                print(f"[EWOH] demo token cleanup removed {len(expired)} expired")
 
         def translate_path(self, path):
             parsed = urlparse(path).path
@@ -298,8 +312,8 @@ def make_handler(ctx):
                         if not chunk:
                             break
                         remaining -= len(chunk)
-                except Exception:
-                    pass
+                except Exception as e:  # L3：排空失败（连接可能已断），记录后继续抛 413
+                    print(f"[EWOH] drain oversized body failed: {e!r}")
                 raise ValueError("请求体超过 1MB 限制")
             try:
                 return json.loads(self.rfile.read(n).decode("utf-8") or "{}")
@@ -350,8 +364,8 @@ def make_handler(ctx):
                     request_id=getattr(self, "_request_id", None),
                     source_ip=self.client_address[0] if self.client_address else None,
                 )
-            except Exception:
-                pass
+            except Exception as e:  # L3：审计失败不阻断业务，但记录便于诊断
+                print(f"[EWOH] audit append failed (non-blocking): {e!r}")
 
         # ---- GET 路由 ----
         def do_GET(self):
@@ -624,6 +638,19 @@ def make_handler(ctx):
             self.end_headers()
 
         # ---- API 实现 ----
+        @staticmethod
+        def _svc_health(svc, rules):
+            """组件健康判定：对象存在且已 start（_running=True）才算 healthy。
+
+            M3 修复：此前只检查对象存在（未启动仍报 healthy），导致健康检查误报。
+            rules_only：推理服务未启动但规则引擎可用（设计内降级）。
+            """
+            if svc is None:
+                return "not_running" if rules is None else "rules_only"
+            if getattr(svc, "_running", False) is True:
+                return "healthy"
+            return "not_running" if rules is None else "rules_only"
+
         def api_status(self):
             try:
                 counts = ctx.storage.counts()
@@ -644,14 +671,15 @@ def make_handler(ctx):
                         "versions": ctx.registry.versions(),
                         "mode": "model" if ctx.registry.active() else "rules_only",
                     }
-                except Exception:
-                    pass
+                except Exception as e:  # L3：模型信息获取失败不报错，但记录
+                    print(f"[EWOH] model registry info failed: {e!r}")
             services_health = {
                 "gateway": "healthy",  # 本 HTTP 网关
                 "database": "healthy" if db_ok else "down",  # SQLite 持久层
-                "inference": "healthy" if ctx.pipeline else ("rules_only" if ctx.rules else "unknown"),
+                # M3 修复：如实报告运行状态（对象存在但未 start = 非 healthy），不再吞组件异常冒充健康
+                "inference": self._svc_health(ctx.pipeline, ctx.rules),
                 "assistant": "healthy",  # 本地白名单助手，无外部依赖
-                "adapters": "healthy" if ctx.manager else "not_running",
+                "adapters": self._svc_health(ctx.manager, None),
             }
             return {
                 "offline": True,
@@ -938,8 +966,8 @@ def make_handler(ctx):
                         try:
                             hours = max(0.0, (t1 - t0).total_seconds() / 3600.0)
                             ctx.metrics.record_event_close(hours)
-                        except Exception:
-                            pass
+                        except Exception as e:  # L3：埋点失败不阻断事件关闭，但记录
+                            print(f"[EWOH] metrics.record_event_close failed: {e!r}")
             ctx.storage.update_event_status(eid, status, handling)
             return self.send_json({"ok": True, "event": services.norm_event(ctx.storage.get_event(eid))})
 
@@ -1046,11 +1074,12 @@ def make_handler(ctx):
                 session = sm.verify(token)
                 user = {"user_id": session.user_id, "username": username, "role": session.role}
                 return self.send_json({"token": token, "user": user})
-            # auth 模块未就绪：演示用简单 token
+            # auth 模块未就绪：演示用简单 token（L2：24h 过期 + 惰性清理）
+            self._demo_token_cleanup()
             token = uuid.uuid4().hex
             user = {"user_id": username, "username": username, "role": "admin"}
             with self._tokens_lock:
-                self._tokens[token] = user
+                self._tokens[token] = {"user": user, "exp": time.time() + self._TOKEN_TTL}
             return self.send_json({"token": token, "user": user})
 
         def api_auth_refresh(self):
@@ -1074,13 +1103,14 @@ def make_handler(ctx):
                 self._audit_target_type = "auth"
                 self._audit_target_id = session.user_id
                 return self.send_json({"token": new_token, "user": user})
-            # fallback：演示用 token 旋转
+            # fallback：演示用 token 旋转（L2：校验过期 + 新 token 带新 exp）
             with self._tokens_lock:
-                user = self._tokens.get(token)
-                if user is None:
+                entry = self._tokens.get(token)
+                if entry is None or entry.get("exp", 0) <= time.time():
                     return self._new_error("unauthorized", "token 无效或已过期", 401)
+                user = entry.get("user")
                 new_token = uuid.uuid4().hex
-                self._tokens[new_token] = user
+                self._tokens[new_token] = {"user": user, "exp": time.time() + self._TOKEN_TTL}
                 del self._tokens[token]
             self._audit_target_type = "auth"
             self._audit_target_id = user.get("user_id") or user.get("username")
@@ -1097,12 +1127,12 @@ def make_handler(ctx):
                 if session is None:
                     return self._new_error("unauthorized", "token 无效或已过期", 401)
                 return self.send_json({"user": {"user_id": session.user_id, "role": session.role}})
-            # fallback：演示用 token
+            # fallback：演示用 token（L2：校验过期）
             with self._tokens_lock:
-                user = self._tokens.get(token)
-            if not user:
+                entry = self._tokens.get(token)
+            if not entry or entry.get("exp", 0) <= time.time():
                 return self._new_error("unauthorized", "token 无效或已过期", 401)
-            return self.send_json({"user": user})
+            return self.send_json({"user": entry.get("user")})
 
         def api_device_detail(self, device_id):
             """GET /api/devices/{device_id} — 单设备详情。"""

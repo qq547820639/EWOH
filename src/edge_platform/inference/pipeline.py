@@ -119,6 +119,8 @@ class InferencePipeline:
         self._model = None  # 活动模型缓存（按版本失效）
         self._model_ver = None
         self._threads = []
+        # M3 修复：运行状态标记（start 置 True，供 /api/status 如实报告推理管线健康度）
+        self._running = False
         # Task 33：可注入 MetricsCollector，记录每次推理耗时/标签/异常
         self._metrics = metrics_collector
         # Task 31：可注入 ConsentManager（None = 不检查授权，保持向后兼容）
@@ -431,6 +433,9 @@ class InferencePipeline:
         ``subscribe(stream, handler) -> sub_id``，不再使用 queue 语义。
         保留 daemon 线程消费，避免阻塞发布方。
         """
+        if self._running:
+            return
+        self._running = True
 
         def make_consumer(stream, fn):
             import queue as _queue
