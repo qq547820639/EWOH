@@ -14,7 +14,7 @@ import {
   MessageEvent,
   Logger,
 } from '@nestjs/common';
-import { interval, map, merge, Observable } from 'rxjs';
+import { filter, interval, map, merge, Observable } from 'rxjs';
 import { SchedulerService } from './scheduler.service';
 import { SchedulerStreamService } from './scheduler-stream.service';
 import { ResourceProjectionService } from './resource-projection.service';
@@ -440,12 +440,19 @@ export class SchedulerController {
    * - 重放查询失败 → 降级为纯实时订阅，不阻断 SSE 连接。
    */
   @Sse('v2/stream')
-  stream(@Headers('last-event-id') lastEventIdHeader?: string): Observable<MessageEvent> {
+  stream(
+    @Headers('last-event-id') lastEventIdHeader?: string,
+    @Req() request?: { userContext?: OrgContext },
+  ): Observable<MessageEvent> {
     this.schedulerStreamService.start().catch(() => undefined);
+    // P4-SSE：组织隔离——订阅者仅收到本 org 事件 + 全局事件（orgId null）。
+    const viewerOrgId = request?.userContext?.primaryOrgId ?? null;
 
     // 实时事件 + 心跳。
     const live$ = merge(
       this.schedulerStreamService.events().pipe(
+        // P4-SSE：org 隔离（全局事件放行）。
+        filter((event) => !viewerOrgId || event.orgId == null || event.orgId === viewerOrgId),
         map(
           (event): MessageEvent => ({
             type: 'scheduling.event',
@@ -488,7 +495,7 @@ export class SchedulerController {
       });
 
       this.schedulerStreamService
-        .replaySince(lastEventId, lastEventId)
+        .replaySince(lastEventId, lastEventId, viewerOrgId)
         .then((result) => {
           if (result.resyncNeeded) {
             // 缺口/客户端超前 → 通知客户端放弃增量、全量重同步。

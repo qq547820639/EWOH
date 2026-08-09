@@ -48,10 +48,12 @@ export class SchedulerStreamService {
     }
   }
 
-  /** 读取最近 limit 条事件并映射为 SchedulingEvent。 */
-  async snapshot(limit: number): Promise<SchedulingEvent[]> {
+  /** 读取最近 limit 条事件并映射为 SchedulingEvent（可选 orgId 过滤：null=全局事件+该 org）。 */
+  async snapshot(limit: number, orgId?: string | null): Promise<SchedulingEvent[]> {
     const events = await this.outboxService.listLatest(limit);
-    return events.map((e) => this.toEvent(e));
+    return events
+      .map((e) => this.toEvent(e))
+      .filter((e) => (orgId ? e.orgId == null || e.orgId === orgId : true));
   }
 
   /**
@@ -63,6 +65,7 @@ export class SchedulerStreamService {
   async replaySince(
     sinceSequence: number,
     lastEventId?: number,
+    orgId?: string | null,
   ): Promise<ReplayResult> {
     const latest = await this.outboxService.latestSequence();
     const base = Math.max(sinceSequence, 0);
@@ -82,6 +85,10 @@ export class SchedulerStreamService {
     }
 
     let events = rows.map((e) => this.toEvent(e));
+    // P4-SSE：组织隔离——非全局事件仅放行本 org。
+    if (orgId) {
+      events = events.filter((e) => e.orgId == null || e.orgId === orgId);
+    }
     // Last-Event-ID 幂等过滤：丢弃 sequence <= lastEventId 的重复事件。
     if (lastEventId != null) {
       events = events.filter((e) => e.sequence > lastEventId);

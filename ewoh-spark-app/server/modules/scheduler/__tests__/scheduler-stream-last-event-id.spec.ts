@@ -88,7 +88,7 @@ describe('SchedulerController SSE Last-Event-ID 增量续传（P2 收尾）', ()
     await flush();
 
     // 重放增量事件先到达（sequence 升序），无 resync。
-    expect(streamSvc.replaySince).toHaveBeenCalledWith(5, 5);
+    expect(streamSvc.replaySince).toHaveBeenCalledWith(5, 5, null);
     expect(collected.some((m) => m.type === 'resync')).toBe(false);
     expect(schedulingEvents(collected).map((e) => e.sequence)).toEqual([6, 7]);
 
@@ -116,7 +116,7 @@ describe('SchedulerController SSE Last-Event-ID 增量续传（P2 收尾）', ()
     const sub = controller.stream('5').subscribe((m) => collected.push(m));
     await flush();
 
-    expect(streamSvc.replaySince).toHaveBeenCalledWith(5, 5);
+    expect(streamSvc.replaySince).toHaveBeenCalledWith(5, 5, null);
     const resync = collected.find((m) => m.type === 'resync');
     expect(resync).toBeDefined();
     const data = JSON.parse(String(resync?.data)) as { currentSequence: number; reason: string };
@@ -197,5 +197,35 @@ describe('SchedulerController SSE Last-Event-ID 增量续传（P2 收尾）', ()
     expect(streamSvc.start).toHaveBeenCalledTimes(2);
     sub1.unsubscribe();
     sub2.unsubscribe();
+  });
+
+  it('e) org 隔离：订阅者只收到本 org 事件 + 全局事件（orgId null），异 org 事件被过滤', async () => {
+    const { controller, streamSvc, subject } = makeHarness();
+    const received: SchedulingEvent[] = [];
+    // 带 userContext（ORG-A）订阅。
+    const sub = controller
+      .stream(undefined, { userContext: { primaryOrgId: 'ORG-A', userId: 'u1', roles: [] } } as never)
+      .subscribe((m) => {
+        if (m.type === 'scheduling.event') received.push(JSON.parse(String(m.data)) as SchedulingEvent);
+      });
+    await flush();
+    // 推：全局事件（orgId null）+ ORG-A 事件 + ORG-B 事件。
+    subject.next(makeEvent(1, { orgId: null }));
+    subject.next(makeEvent(2, { orgId: 'ORG-A' }));
+    subject.next(makeEvent(3, { orgId: 'ORG-B' }));
+    await flush();
+    expect(received.map((e) => e.sequence)).toEqual([1, 2]); // ORG-B 被过滤
+    sub.unsubscribe();
+  });
+
+  it('f) replaySince 透传 viewerOrgId（增量续传同样 org 隔离）', async () => {
+    const { controller, streamSvc } = makeHarness();
+    streamSvc.replaySince.mockResolvedValue({ events: [], resyncNeeded: false, gap: false, currentSequence: 5 });
+    const sub = controller
+      .stream('3', { userContext: { primaryOrgId: 'ORG-A', userId: 'u1', roles: [] } } as never)
+      .subscribe(() => undefined);
+    await flush();
+    expect(streamSvc.replaySince).toHaveBeenCalledWith(3, 3, 'ORG-A');
+    sub.unsubscribe();
   });
 });
