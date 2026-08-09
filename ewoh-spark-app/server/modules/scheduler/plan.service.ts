@@ -17,7 +17,7 @@ import {
   ewohSchedulingPlanAssignment,
   ewohSchedulingConstraint,
 } from '@server/database/schema';
-import { eq, asc, and } from 'drizzle-orm';
+import { eq, asc, and, isNull, or, gte } from 'drizzle-orm';
 import type {
   SchedulingPlanV2,
   SchedulingAssignment,
@@ -32,6 +32,7 @@ import { WorldStateSnapshotService } from './world-state.service';
 import { DispatchCoordinatorService } from './dispatch-coordinator.service';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import { SchedulingFeedbackService } from './scheduling-feedback.service';
+import { ConstraintLoaderService } from './constraint-loader.service';
 
 /** 方案服务：持久化方案、审批/拒绝/下发/重排/对比。 */
 @Injectable()
@@ -47,6 +48,8 @@ export class PlanService {
     private readonly dispatchCoordinator: DispatchCoordinatorService,
     private readonly schedulingPolicyService: SchedulingPolicyService,
     @Optional() private readonly feedbackService?: SchedulingFeedbackService,
+    // T02 / P0-2：持久化人工约束唯一加载入口（可选注入；缺失时回退旧逻辑，兼容旧单测）。
+    private readonly constraintLoaderService?: ConstraintLoaderService,
   ) {}
 
   /** 持久化一个 V2 方案（ewoh_schedule_plan + 分配明细）。 */
@@ -75,6 +78,9 @@ export class PlanService {
           scoreBreakdownJson: (plan.scoreBreakdown ?? null) as unknown as Record<string, unknown> | null,
           // Phase 2 / P2-T2：实际投放的 8 权重快照（确定性 replay）。
           weightsJson: plan.weights ?? null,
+          // T02 / P0-2：求解所用 effective constraints 快照 + 稳定哈希（standalone_023）。
+          constraintsJson: (plan.constraints ?? []) as unknown as Record<string, unknown>[],
+          effectiveConstraintsHash: plan.effectiveConstraintsHash ?? null,
           createdAt: new Date(plan.createdAt),
         });
 
@@ -292,8 +298,10 @@ export class PlanService {
   }
 
   /**
-   * P0-2 约束生命周期：加载指定方案仍生效（active=true）的持久化约束，
+   * P0-2 约束生命周期：加载指定方案仍生效（active=true 且未过期）的持久化约束，
    * 反序列化为 SchedulingConstraint，供查询与重排继承。
+   * T02：读真实列 valid_from_ms/expires_at_ms/org_id/source/deactivated_at/deactivated_by，
+   * 过期约束（expires_at_ms != null AND expires_at_ms < now）视为失效（不参与求解）。
    */
   async listPlanConstraints(
     planId: string,
@@ -302,7 +310,14 @@ export class PlanService {
       .select()
       .from(ewohSchedulingConstraint)
       .where(
-        and(eq(ewohSchedulingConstraint.planId, planId), eq(ewohSchedulingConstraint.active, true)),
+        and(
+          eq(ewohSchedulingConstraint.planId, planId),
+          eq(ewohSchedulingConstraint.active, true),
+          or(
+            isNull(ewohSchedulingConstraint.expiresAtMs),
+            gte(ewohSchedulingConstraint.expiresAtMs, Date.now()),
+          ),
+        ),
       )
       .orderBy(asc(ewohSchedulingConstraint.createdAt));
     return rows.map((r) => {
@@ -319,8 +334,15 @@ export class PlanService {
         endMs: v.endMs as number | undefined,
         operator: v.operator as string | undefined,
         reason: v.reason as string | undefined,
-        validFrom: v.validFrom as number | undefined,
-        expiresAt: v.expiresAt as number | undefined,
+        validFrom: (v.validFrom as number | undefined) ?? (r.validFromMs ?? undefined),
+        expiresAt: (v.expiresAt as number | undefined) ?? (r.expiresAtMs ?? undefined),
+        // T02：真实列（standalone_023）。
+        validFromMs: r.validFromMs ?? null,
+        expiresAtMs: r.expiresAtMs ?? null,
+        orgId: r.orgId ?? null,
+        source: (r.source ?? 'manual') as import('@shared/api.interface').SchedulingConstraint['source'],
+        deactivatedAt: r.deactivatedAt ? r.deactivatedAt.toISOString() : null,
+        deactivatedBy: r.deactivatedBy ?? null,
         snapshotVersion: v.snapshotVersion as string | undefined,
         hard: true,
       } as import('@shared/api.interface').SchedulingConstraint;
@@ -331,11 +353,21 @@ export class PlanService {
    * P0-2 约束继承：重排时合并「当前方案仍生效的持久化人工约束」与「请求新约束」。
    *
    * 人工 LOCK/EXCLUDE/PREFER 等不得因为下一次普通 replan 传入 [] 而消失。
+   * T02：委托 ConstraintLoaderService.loadForPlan（org + active + 有效期过滤统一入口）；
+   * 未注入 loader（旧单测）时回退本类旧逻辑（listPlanConstraints + 合并）。
    */
   async loadEffectiveConstraints(
     planId: string,
     requestConstraints: import('@shared/api.interface').SchedulingConstraint[],
+    ctx?: OrgContext,
   ): Promise<import('@shared/api.interface').SchedulingConstraint[]> {
+    if (this.constraintLoaderService) {
+      return this.constraintLoaderService.loadForPlan(
+        planId,
+        requestConstraints,
+        ctx ?? { userId: 'system', primaryOrgId: '', role: 'system', accessibleOrgIds: [], isGlobalAdmin: false },
+      );
+    }
     const inherited = await this.listPlanConstraints(planId);
     // 请求约束优先（operator 来源显式标注）；同类型同目标时请求覆盖继承
     const merged = [...requestConstraints];
@@ -449,6 +481,7 @@ export class PlanService {
     const effectiveConstraints = await this.loadEffectiveConstraints(
       planId,
       body.lockedConstraints as import('@shared/api.interface').SchedulingConstraint[],
+      ctx,
     );
 
     // Phase 3 / P3-T4：安全关键任务禁止被重排改变分配/时间（硬校验）。
@@ -464,6 +497,12 @@ export class PlanService {
       policy,
     });
     newPlan.version = newVersion;
+
+    // T02 / P0-2：计划约束快照（确定性 replay + 审计）——落库求解所用 constraints + 稳定哈希。
+    newPlan.constraints = effectiveConstraints;
+    newPlan.effectiveConstraintsHash = this.constraintLoaderService
+      ? this.constraintLoaderService.hashConstraints(effectiveConstraints)
+      : null;
 
     await this.persistPlan(newPlan, ctx);
 
@@ -646,6 +685,9 @@ export class PlanService {
       },
       scoreBreakdown: (plan.scoreBreakdownJson ?? undefined) as SchedulingPlanV2['scoreBreakdown'],
       weights: (plan.weightsJson ?? undefined) as SchedulingPlanV2['weights'],
+      // T02 / P0-2：计划约束快照（确定性 replay + 审计）。
+      constraints: (plan.constraintsJson ?? []) as SchedulingPlanV2['constraints'],
+      effectiveConstraintsHash: plan.effectiveConstraintsHash ?? null,
       baselineDelta: (plan.baselineDeltaJson ?? {}) as Record<string, unknown>,
       violations: (plan.violationsJson ?? []) as Array<Record<string, unknown>>,
       createdAt: plan.createdAt ? plan.createdAt.toISOString() : new Date().toISOString(),
