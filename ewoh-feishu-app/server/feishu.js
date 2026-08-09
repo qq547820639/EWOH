@@ -36,10 +36,12 @@ function getConfig() {
 // ============ 核心 lark-cli 封装（P1-2 异步化）============
 
 // 并发上限：同一时刻最多 MAX_CONCURRENT 个 lark-cli 子进程
-const MAX_CONCURRENT = 4;
 // 熔断：连续失败 ≥ BREAKER_THRESHOLD 次后暂停 BREAKER_COOLDOWN_MS
-const BREAKER_THRESHOLD = 5;
-const BREAKER_COOLDOWN_MS = 30000;
+// 说明：以下三项用 let 而非 const，仅为 node --test 测试钩子（__test）可注入
+// 配置（如缩短冷却期），生产路径默认值不变。
+let MAX_CONCURRENT = 4;
+let BREAKER_THRESHOLD = 5;
+let BREAKER_COOLDOWN_MS = 30000;
 
 let activeCliCalls = 0;
 const cliWaitQueue = [];
@@ -196,6 +198,39 @@ async function larkCliRetry(args, opts = {}) {
   }
   return r;
 }
+
+// ============ 测试钩子（node --test 用；生产路径不受影响）============
+// 允许测试重置/注入并发与熔断配置（如缩短 30s 冷却期），避免真实时间拖慢测试。
+const __test = {
+  reset() {
+    activeCliCalls = 0;
+    cliWaitQueue.length = 0;
+    consecutiveCliFailures = 0;
+    breakerOpenUntil = 0;
+    MAX_CONCURRENT = 4;
+    BREAKER_THRESHOLD = 5;
+    BREAKER_COOLDOWN_MS = 30000;
+  },
+  setMaxConcurrent(n) {
+    MAX_CONCURRENT = n;
+  },
+  setBreakerThreshold(n) {
+    BREAKER_THRESHOLD = n;
+  },
+  setBreakerCooldownMs(n) {
+    BREAKER_COOLDOWN_MS = n;
+  },
+  getState() {
+    return {
+      activeCliCalls,
+      consecutiveCliFailures,
+      breakerOpenUntil,
+      MAX_CONCURRENT,
+      BREAKER_THRESHOLD,
+      BREAKER_COOLDOWN_MS,
+    };
+  },
+};
 
 // ============ 工具函数 ============
 
@@ -566,6 +601,7 @@ async function createReportDoc(stats, eventList) {
 module.exports = {
   larkCli,
   larkCliRetry,
+  __test,
   loadConfig,
   getConfig,
   fmtDateTime,
