@@ -47,6 +47,7 @@ const ALLOWLIST: Record<string, string> = {
     'sequence 键全局事件日志（SSE 轮询/快照）。org 隔离为受控调用：供 SchedulerStreamService 轮询推送与快照读取，不跨 org 列表暴露',
   'world-state.service.ts::getSnapshot': 'snapshotVersion 全局唯一版本键查询（快照按版本存取）',
   'world-state.service.ts::nextSnapshotVersion': '版本号派生 prefix 匹配，不暴露业务行',
+  'policy-replay.service.ts::latestSnapshotRow': '最新历史快照键查询（全局时间序首行，供 shadow replay 评估，不暴露业务行/列表）',
   'trigger.service.ts::getTriggerByKey': 'triggerKey 全局唯一幂等键查询',
   'scheduler.service.ts::getRun': 'runId 全局唯一主键查询',
 };

@@ -14,6 +14,13 @@
 - 权重变更必须走 scoring.WeightAuditLog 正式流程（记录前后值/操作人/原因/时间），
   本模块不直接调用 Scorer.set_weights，仅产出建议供人工审议。
 
+Phase 4 策略闭环（P4-T2，control-plane 侧）：
+- 学习/参数校准产出若需进入调度策略，只能经控制面 `registerCandidatePolicy`
+  （shadow=true / active=false）进入候选池，绝不直接修改生产 policy；
+- 候选策略须先完成 shadow replay 评估（历史快照 × active/candidate 双策略求解对比）
+  并经人工审批（approver+reason + 审计）方可 activate；
+- 本模块保持"仅产出建议"职责，不调用任何 policy 写入接口。
+
 数据来源：Scheduler.feedback(request_id, actual_outcome) 已记录执行结果回流；
 本模块据此聚合跨请求统计、评估采纳率与指标改善、产出参数校准建议。
 

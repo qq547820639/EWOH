@@ -78,4 +78,25 @@ describe('SchedulerMetricsService（Phase 3.2 可观测指标）', () => {
     expect(text).toContain('scheduler_solver_timeout_total 0');
     expect(text).toBeTruthy();
   });
+
+  it('P2-T3：候选数/硬拒绝/影响数/churn 指标正确记录', () => {
+    metrics.recordCandidateCount(12);
+    metrics.recordHardReject(3);
+    metrics.recordPartialReplanAffected(5);
+    metrics.recordPlanChurn(2);
+    metrics.recordPlanChurn(1);
+
+    const s = metrics.snapshot();
+    expect(s['scheduler_candidate_count']).toBe(12);
+    expect(s['scheduler_hard_reject_total']).toBe(3);
+    expect(s['scheduler_partial_replan_affected']).toBe(5);
+    expect(s['scheduler_plan_churn_total']).toBe(3);
+
+    const text = metrics.renderMetrics();
+    expect(text).toContain('# TYPE scheduler_candidate_count gauge');
+    expect(text).toMatch(/scheduler_candidate_count 12/);
+    expect(text).toMatch(/scheduler_hard_reject_total 3/);
+    expect(text).toMatch(/scheduler_plan_churn_total 3/);
+    expect(text).toMatch(/scheduler_partial_replan_affected 5/);
+  });
 });

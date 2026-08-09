@@ -23,6 +23,7 @@ function makeController(opts: {
     {} as never,
     {} as never,
     {} as unknown as ReplanCoordinatorService,
+    {} as never, // conflictService
   );
   return { controller, schedulerService };
 }

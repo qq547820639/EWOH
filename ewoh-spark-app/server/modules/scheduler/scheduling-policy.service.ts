@@ -6,6 +6,7 @@ import {
 import { eq, desc } from 'drizzle-orm';
 import { ewohSchedulingPolicy } from '@server/database/schema';
 import type {
+  ObjectiveWeights,
   SchedulingPolicy,
   SchedulingPolicyConfig,
   SchedulingPolicyVersionSummary,
@@ -14,17 +15,34 @@ import type {
 /** 求解器版本：同一策略版本 + 求解器版本可确定性重放。 */
 const DEFAULT_SOLVER_VERSION = 'heuristic-v2';
 
+/**
+ * 默认目标权重常量（Phase 2 / P2-T2）：weights_json 缺失时的兜底，不再魔法数派生。
+ * 与历史默认一致（lateness=deadlineRisk*3=3 / travel=euclidean=1 / wait=1 / workload=1 /
+ * station=1 / change=0.5 / risk=highRisk/2=1 / energy=minBattery/30=0.5）。
+ */
+const DEFAULT_OBJECTIVE_WEIGHTS: ObjectiveWeights = {
+  lateness: 3,
+  travel: 1,
+  wait: 1,
+  workload: 1,
+  station: 1,
+  change: 0.5,
+  risk: 1,
+  energy: 0.5,
+};
+
 /** 无生效策略时的硬编码默认策略（消除 magic numbers 的兜底）。 */
 const DEFAULT_POLICY: SchedulingPolicy = {
   version: 1,
   solverVersion: DEFAULT_SOLVER_VERSION,
-  latenessWeight: 3,
-  walkingWeight: 1,
-  workloadBalanceWeight: 1,
-  stationWaitWeight: 1,
-  changeCostWeight: 0.5,
-  riskWeight: 1,
-  energyWeight: 0.5,
+  weights: DEFAULT_OBJECTIVE_WEIGHTS,
+  latenessWeight: DEFAULT_OBJECTIVE_WEIGHTS.lateness,
+  walkingWeight: DEFAULT_OBJECTIVE_WEIGHTS.travel,
+  workloadBalanceWeight: DEFAULT_OBJECTIVE_WEIGHTS.workload,
+  stationWaitWeight: DEFAULT_OBJECTIVE_WEIGHTS.wait,
+  changeCostWeight: DEFAULT_OBJECTIVE_WEIGHTS.change,
+  riskWeight: DEFAULT_OBJECTIVE_WEIGHTS.risk,
+  energyWeight: DEFAULT_OBJECTIVE_WEIGHTS.energy,
 };
 
 /** 无生效配置时的硬编码默认配置。 */
@@ -76,7 +94,7 @@ export class SchedulingPolicyService {
       return DEFAULT_POLICY;
     }
     const config = this.parseConfig(row.configJson);
-    return this.buildPolicy(config, row.configVersion);
+    return this.buildPolicy(config, row.configVersion, row.weightsJson);
   }
 
   /**
@@ -96,7 +114,15 @@ export class SchedulingPolicyService {
     const row = await this.findByVersion(configVersion);
     if (!row) return null;
     const config = this.parseConfig(row.configJson);
-    return this.buildPolicy(config, row.configVersion);
+    return this.buildPolicy(config, row.configVersion, row.weightsJson);
+  }
+
+  /** 读取指定版本的 active 状态（Phase 4 / P4-T2：activate 守卫）。不存在返回 null。 */
+  async getPolicyVersionStatus(
+    configVersion: number,
+  ): Promise<{ configVersion: number; active: boolean } | null> {
+    const row = await this.findByVersion(configVersion);
+    return row ? { configVersion: row.configVersion, active: row.active } : null;
   }
 
   /** 读取指定 configVersion 的配置。不存在返回 null。 */
@@ -133,6 +159,8 @@ export class SchedulingPolicyService {
       await this.db.insert(ewohSchedulingPolicy).values({
         configVersion: nextVersion,
         configJson: toSave as unknown as typeof toSave,
+        // Phase 2 / P2-T2：8 权重权威列（与 configJson.weights 并行，双写保持兼容）。
+        weightsJson: toSave.weights ?? null,
         active: true,
         orgId,
         updatedBy,
@@ -186,6 +214,8 @@ export class SchedulingPolicyService {
     await this.db.insert(ewohSchedulingPolicy).values({
       configVersion: nextVersion,
       configJson: toSave as unknown as typeof toSave,
+      // Phase 2 / P2-T2：8 权重权威列（双写保持兼容）。
+      weightsJson: toSave.weights ?? null,
       active: false,
       orgId,
       updatedBy,
@@ -264,27 +294,73 @@ export class SchedulingPolicyService {
   }
 
   /**
-   * 基于配置构建 SchedulingPolicy：目标权重取自配置（归一化、互不相同），
+   * 解析 8 权重权威对象（Phase 2 / P2-T2）。
+   * 优先级：ewoh_scheduling_policy.weights_json 列（权威）> config.weights 完整 8 项 >
+   * 旧配置子集（workloadBalance/stationWait/changeCost/energy）兼容映射 > 默认常量。
+   * 不再魔法数派生（去掉 deadlineRiskWeight*3 / highRiskFactor/2 / minBatteryPct/30 之类）。
+   */
+  private resolveWeights(
+    config: SchedulingPolicyConfig,
+    weightsJson: unknown = null,
+  ): ObjectiveWeights {
+    const w = weightsJson ?? config.weights;
+    if (w && typeof w === 'object' && 'lateness' in w) {
+      const full = w as ObjectiveWeights;
+      return {
+        lateness: this.num(full.lateness, DEFAULT_OBJECTIVE_WEIGHTS.lateness),
+        travel: this.num(full.travel, DEFAULT_OBJECTIVE_WEIGHTS.travel),
+        wait: this.num(full.wait, DEFAULT_OBJECTIVE_WEIGHTS.wait),
+        workload: this.num(full.workload, DEFAULT_OBJECTIVE_WEIGHTS.workload),
+        station: this.num(full.station, DEFAULT_OBJECTIVE_WEIGHTS.station),
+        change: this.num(full.change, DEFAULT_OBJECTIVE_WEIGHTS.change),
+        risk: this.num(full.risk, DEFAULT_OBJECTIVE_WEIGHTS.risk),
+        energy: this.num(full.energy, DEFAULT_OBJECTIVE_WEIGHTS.energy),
+      };
+    }
+    // 旧配置子集兼容映射（向后兼容）。
+    const legacy = (w ?? {}) as {
+      workloadBalance?: number;
+      stationWait?: number;
+      changeCost?: number;
+      energy?: number;
+    };
+    return {
+      lateness: DEFAULT_OBJECTIVE_WEIGHTS.lateness,
+      travel: DEFAULT_OBJECTIVE_WEIGHTS.travel,
+      wait: this.num(legacy.stationWait, DEFAULT_OBJECTIVE_WEIGHTS.wait),
+      workload: this.num(legacy.workloadBalance, DEFAULT_OBJECTIVE_WEIGHTS.workload),
+      station: DEFAULT_OBJECTIVE_WEIGHTS.station,
+      change: this.num(legacy.changeCost, DEFAULT_OBJECTIVE_WEIGHTS.change),
+      risk: DEFAULT_OBJECTIVE_WEIGHTS.risk,
+      energy: this.num(legacy.energy, DEFAULT_OBJECTIVE_WEIGHTS.energy),
+    };
+  }
+
+  private num(v: unknown, fallback: number): number {
+    return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+  }
+
+  /**
+   * 基于配置构建 SchedulingPolicy：8 权重权威对象 + 旧字段兼容别名，
    * version 与配置版本绑定，solverVersion 固定。
    */
   private buildPolicy(
     config: SchedulingPolicyConfig,
     version: number,
+    weightsJson?: unknown,
   ): SchedulingPolicy {
-    // v0.7 Batch5.1：目标权重从配置读取（缺省保持既有默认值，向后兼容）。
-    // 旧配置无 weights 段 → workloadBalance=1 / stationWait=1 / changeCost=0.5 /
-    // energy=minBatteryPct/30，与历史行为完全一致。
-    const w = config.weights ?? {};
+    const weights = this.resolveWeights(config, weightsJson);
     return {
       version,
       solverVersion: DEFAULT_SOLVER_VERSION,
-      latenessWeight: config.priority.deadlineRiskWeight * 3,
-      walkingWeight: config.euclideanDistanceWeight,
-      workloadBalanceWeight: w.workloadBalance ?? 1,
-      stationWaitWeight: w.stationWait ?? 1,
-      changeCostWeight: w.changeCost ?? 0.5,
-      riskWeight: config.highRiskFactor / 2,
-      energyWeight: w.energy ?? config.minBatteryPct / 30,
+      weights,
+      latenessWeight: weights.lateness,
+      walkingWeight: weights.travel,
+      workloadBalanceWeight: weights.workload,
+      stationWaitWeight: weights.wait,
+      changeCostWeight: weights.change,
+      riskWeight: weights.risk,
+      energyWeight: weights.energy,
     };
   }
 }

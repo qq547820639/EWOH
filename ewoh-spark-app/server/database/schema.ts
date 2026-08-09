@@ -176,6 +176,38 @@ export const ewohProductionTask = pgTable("ewoh_production_task", {
    * @type { string[] }
    */
   requiredCertifications: jsonb("required_certifications"),
+  // --- 调度领域模型新列 (standalone_012_domain_columns, Phase 1 / P1-T1) ---
+  /** 基础优先级（业务真实值，不再从 title/taskType 猜测）。 */
+  basePriority: varchar("base_priority", { length: 50 }),
+  /** 最早开始时间（epoch ms）。 */
+  earliestStartMs: bigint("earliest_start_ms", { mode: 'number' }),
+  /** 最晚完成时间（epoch ms）。 */
+  latestFinishMs: bigint("latest_finish_ms", { mode: 'number' }),
+  /** 安全关键任务真实标记（替代 deriveSafetyCritical 白名单派生）。 */
+  safetyCritical: boolean("safety_critical").notNull().default(false),
+  /** 是否可抢占（替代固定 false）。 */
+  preemptible: boolean("preemptible").notNull().default(false),
+  /** 技能匹配语义 ALL/ANY（缺省 ALL）。 */
+  skillMatchMode: varchar("skill_match_mode", { length: 10 }).default('ALL'),
+  /** 生产影响度 0..1（替代 deriveProductionImpact）。 */
+  productionImpact: real("production_impact").default(0),
+  /** 下游影响度 0..1。 */
+  downstreamImpact: real("downstream_impact").default(0),
+  /**
+   * 工位能力需求（jsonb string[]）。
+   * @type { string[] }
+   */
+  requiredStationCapabilities: jsonb("required_station_capabilities").default([]),
+  /**
+   * 偏好资源（jsonb string[]）。
+   * @type { string[] }
+   */
+  preferredResources: jsonb("preferred_resources").default([]),
+  /**
+   * 排除资源（jsonb string[]）。
+   * @type { string[] }
+   */
+  excludedResources: jsonb("excluded_resources").default([]),
   /** 业务版本：每次关键修改自增，用于快照新鲜度判断。 */
   version: integer("version").default(1),
   // System field: Creation time (auto-filled, do not modify)
@@ -400,6 +432,19 @@ export const ewohPersonnel = pgTable("ewoh_personnel", {
    */
   currentLoad: jsonb("current_load"),
   spatialEntityId: varchar("spatial_entity_id", { length: 255 }),
+  // --- 调度领域模型新列 (standalone_012_domain_columns, Phase 1 / P1-T1) ---
+  /** 班次。 */
+  shift: varchar("shift", { length: 100 }),
+  /** 当前负载 0..1（currentLoad jsonb 之外的独立数值列）。 */
+  workload: real("workload"),
+  /** 当前任务 id。 */
+  currentTaskId: varchar("current_task_id", { length: 255 }),
+  /**
+   * 证书到期平行列（决策 D-A）：对象数组 [{ name, expiresAtMs }]，与 certifications string[] 并行，
+   * 不破坏现有 API 形状；资格判定读取该列。
+   * @type { Array<{ name: string; expiresAtMs: number | null }> }
+   */
+  certificationExpiry: jsonb("certification_expiry").default([]),
   // System field: Creation time (auto-filled, do not modify)
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   // System field: Creator (auto-filled, do not modify)
@@ -414,6 +459,7 @@ export const ewohPersonnel = pgTable("ewoh_personnel", {
   index("idx_ewoh_personnel_org").on(table.orgId),
   index("idx_ewoh_personnel_status").on(table.status),
   uniqueIndex("ewoh_personnel_employee_no_key").on(table.employeeNo),
+  index("idx_ewoh_personnel_current_task").on(table.currentTaskId),
 ]);
 
 export const ewohOrganization = pgTable("ewoh_organization", {
@@ -548,6 +594,11 @@ export const ewohSchedulePlan = pgTable("ewoh_schedule_plan", {
    * @type { Record<string, unknown> }
    */
   scoreBreakdownJson: jsonb("score_breakdown_json"),
+  /**
+   * 方案实际使用的目标权重快照（standalone_014_policy_weights，Phase 2 / P2-T2；确定性 replay）。
+   * @type { { lateness: number; travel: number; wait: number; workload: number; station: number; change: number; risk: number; energy: number } | null }
+   */
+  weightsJson: jsonb("weights_json"),
   // System field: Update time (auto-filled, do not modify)
   updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
@@ -616,6 +667,19 @@ export const ewohSpatialEntity = pgTable("ewoh_spatial_entity", {
   confidence: real("confidence").default(1.0),
   version: integer("version").default(1),
   extra: jsonb("extra"),
+  // --- 调度领域模型新列 (standalone_012_domain_columns, Phase 1 / P1-T1) ---
+  /** 工位容量（替代 extra.capacity 非正式字段）。 */
+  capacity: integer("capacity"),
+  /**
+   * 工位队列（jsonb string[]）。
+   * @type { string[] }
+   */
+  queue: jsonb("queue").default([]),
+  /**
+   * 工位可用窗口（jsonb [{ startMs, endMs }]）。
+   * @type { Array<{ startMs: number; endMs: number }> }
+   */
+  availableWindows: jsonb("available_windows").default([]),
   orgId: varchar("org_id", { length: 255 }),
   // System field: Creation time (auto-filled, do not modify)
   createdAt: customTimestamptz("_created_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -787,6 +851,26 @@ export const ewohDevice = pgTable("ewoh_device", {
   temperatureC: real("temperature_c"),
   faultCode: varchar("fault_code", { length: 100 }),
   lastRawRef: varchar("last_raw_ref", { length: 128 }),
+  // --- 调度领域模型新列 (standalone_012_domain_columns, Phase 1 / P1-T1) ---
+  /**
+   * 真实能力集合（jsonb string[]，替代型号白名单派生）。
+   * @type { string[] }
+   */
+  capabilities: jsonb("capabilities").default([]),
+  /** 设备自身位置（毫米坐标，替代借用人员坐标）。 */
+  locationLat: real("location_lat"),
+  locationLng: real("location_lng"),
+  /** 位置更新时间。 */
+  locationUpdatedAt: customTimestamptz("location_updated_at", { precision: 6 }),
+  /** 位置置信度 0..1。 */
+  locationConfidence: real("location_confidence").default(0),
+  /** 遥测更新时间。 */
+  telemetryUpdatedAt: customTimestamptz("telemetry_updated_at", { precision: 6 }),
+  /**
+   * 设备可用窗口（jsonb [{ startMs, endMs }]，替代恒空）。
+   * @type { Array<{ startMs: number; endMs: number }> }
+   */
+  availableWindows: jsonb("available_windows").default([]),
   // System field: Creation time (auto-filled, do not modify)
   createdAt: customTimestamptz("_created_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   // System field: Update time (auto-filled, do not modify)
@@ -995,6 +1079,8 @@ export const ewohSchedulingRun = pgTable("ewoh_scheduling_run", {
    */
   planIds: jsonb("plan_ids"),
   error: text("error"),
+  /** 失败原因（替代仅日志，供审计追溯；standalone_012_domain_columns）。 */
+  failureReason: text("failure_reason"),
   orgId: varchar("org_id", { length: 255 }),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -1082,6 +1168,76 @@ export const ewohWorldStateSnapshot = pgTable("ewoh_world_state_snapshot", {
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   uniqueIndex("ewoh_world_state_snapshot_snapshot_version_key").on(table.snapshotVersion),
+]);
+
+// --- Conflict Lifecycle 持久化 (standalone_013, Phase 3 / P3-T1) ---
+
+export const ewohSchedulingConflict = pgTable("ewoh_scheduling_conflict", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  /** 内容种子哈希稳定 id（跨推导归并键）。 */
+  conflictId: varchar("conflict_id", { length: 255 }).notNull().unique(),
+  type: varchar("type", { length: 50 }).notNull(),
+  severity: varchar("severity", { length: 20 }).notNull(),
+  scope: varchar("scope", { length: 20 }).notNull(),
+  /** OPEN/ACKNOWLEDGED/RESOLVED/SUPPRESSED。 */
+  status: varchar("status", { length: 20 }).notNull().default('OPEN'),
+  /**
+   * @type { string[] }
+   */
+  taskIds: jsonb("task_ids").notNull().default([]),
+  /**
+   * @type { string[] }
+   */
+  resourceIds: jsonb("resource_ids").notNull().default([]),
+  resourceId: varchar("resource_id", { length: 255 }),
+  resourceType: varchar("resource_type", { length: 50 }),
+  planId: varchar("plan_id", { length: 255 }),
+  snapshotVersion: varchar("snapshot_version", { length: 255 }),
+  message: text("message").notNull(),
+  resolution: varchar("resolution", { length: 255 }),
+  /**
+   * @type { Record<string, unknown> }
+   */
+  data: jsonb("data"),
+  detectedAt: customTimestamptz("detected_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  acknowledgedBy: varchar("acknowledged_by", { length: 255 }),
+  acknowledgedAt: customTimestamptz("acknowledged_at", { precision: 6 }),
+  resolvedBy: varchar("resolved_by", { length: 255 }),
+  resolvedAt: customTimestamptz("resolved_at", { precision: 6 }),
+  suppressUntil: customTimestamptz("suppress_until", { precision: 6 }),
+  orgId: varchar("org_id", { length: 255 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("ewoh_scheduling_conflict_conflict_id_key").on(table.conflictId),
+  index("idx_ewoh_scheduling_conflict_status").on(table.status, table.detectedAt),
+  index("idx_ewoh_scheduling_conflict_type").on(table.type),
+  index("idx_ewoh_scheduling_conflict_org").on(table.orgId),
+  index("idx_ewoh_scheduling_conflict_plan").on(table.planId),
+]);
+
+// --- RouteCostMatrix 落库缓存 (standalone_015, Phase 2 / P2-T1, 决策 D-D) ---
+export const ewohRouteCostMatrix = pgTable("ewoh_route_cost_matrix", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  matrixId: varchar("matrix_id", { length: 255 }).notNull().unique(),
+  taskId: varchar("task_id", { length: 255 }).notNull(),
+  snapshotVersion: varchar("snapshot_version", { length: 255 }).notNull(),
+  policyVersion: integer("policy_version"),
+  solverVersion: varchar("solver_version", { length: 100 }),
+  /**
+   * CandidateRouteCost[] jsonb 数组。
+   * @type { Array<Record<string, unknown>> }
+   */
+  candidatesJson: jsonb("candidates_json").notNull().default([]),
+  generatedAt: customTimestamptz("generated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  orgId: varchar("org_id", { length: 255 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("ewoh_route_cost_matrix_matrix_id_key").on(table.matrixId),
+  uniqueIndex("uq_ewoh_route_cost_matrix_task_snapshot").on(table.taskId, table.snapshotVersion),
+  index("idx_ewoh_route_cost_matrix_task").on(table.taskId),
+  index("idx_ewoh_route_cost_matrix_snapshot").on(table.snapshotVersion),
 ]);
 
 export const ewohRouteNode = pgTable("ewoh_route_node", {
@@ -1200,6 +1356,11 @@ export const ewohSchedulingPolicy = pgTable("ewoh_scheduling_policy", {
   id: uuid("id").primaryKey().defaultRandom(),
   configVersion: integer("config_version").notNull(),
   configJson: jsonb("config_json").notNull(),
+  /**
+   * 完整 8 权重权威对象（standalone_014_policy_weights，Phase 2 / P2-T2；缺省用默认常量）。
+   * @type { { lateness: number; travel: number; wait: number; workload: number; station: number; change: number; risk: number; energy: number } | null }
+   */
+  weightsJson: jsonb("weights_json"),
   active: boolean("active").notNull().default(true),
   orgId: varchar("org_id", { length: 255 }),
   updatedBy: varchar("updated_by", { length: 255 }),

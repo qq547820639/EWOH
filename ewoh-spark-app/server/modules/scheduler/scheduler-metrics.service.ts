@@ -99,6 +99,28 @@ export class SchedulerMetricsService {
     this.inc('manual_override_total');
   }
 
+  // ---- Phase 2 / P2-T3：Solver 可观测扩展 ----
+
+  /** 记录最近一次求解的候选数量（gauge）。 */
+  recordCandidateCount(count: number): void {
+    this.gauges.set('scheduler_candidate_count', count);
+  }
+
+  /** 记录一次硬约束拒绝（缺失技能/证书/能力等不可派候选）。 */
+  recordHardReject(count = 1): void {
+    this.inc('scheduler_hard_reject_total', count);
+  }
+
+  /** 记录最近一次局部重排的影响任务数（gauge）。 */
+  recordPartialReplanAffected(count: number): void {
+    this.gauges.set('scheduler_partial_replan_affected', count);
+  }
+
+  /** 记录一次方案 churn（相对基线改派的任务数）。 */
+  recordPlanChurn(count: number): void {
+    this.inc('scheduler_plan_churn_total', count);
+  }
+
   /** 测试用：清空全部指标。 */
   reset(): void {
     this.counters.clear();
@@ -154,6 +176,31 @@ export class SchedulerMetricsService {
     lines.push('# HELP scheduler_feasible_ratio 最近一次调度运行的可分配率（1=全部可分配）');
     lines.push('# TYPE scheduler_feasible_ratio gauge');
     lines.push(`scheduler_feasible_ratio ${this.gauges.get('scheduler_feasible_ratio') ?? 0}`);
+
+    // ---- Phase 2 / P2-T3 gauges ----
+    for (const name of ['scheduler_candidate_count', 'scheduler_partial_replan_affected']) {
+      lines.push(`# HELP ${name} 最近一次求解的候选数 / 局部重排影响任务数（gauge）`);
+      lines.push(`# TYPE ${name} gauge`);
+      lines.push(`${name} ${this.gauges.get(name) ?? 0}`);
+    }
+
+    // ---- Phase 2 / P2-T3 counters ----
+    for (const [name, help] of [
+      ['scheduler_hard_reject_total', '硬约束拒绝候选累计（缺失技能/证书/能力等）'],
+      ['scheduler_plan_churn_total', '方案 churn 累计（相对基线改派任务数）'],
+    ] as Array<[string, string]>) {
+      lines.push(`# HELP ${name} ${help}`);
+      lines.push(`# TYPE ${name} counter`);
+      const variants = [...this.counters.entries()].filter(([k]) => k.startsWith(name));
+      if (variants.length === 0) {
+        lines.push(`${name} 0`);
+      } else {
+        for (const [key, val] of variants) {
+          const rest = key.includes('{') ? key.slice(key.indexOf('{')) : '';
+          lines.push(`${name}${rest} ${val}`);
+        }
+      }
+    }
 
     // histogram
     lines.push(`# HELP ${this.histogramName} 调度运行耗时分布（ms）`);

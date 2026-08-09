@@ -11,6 +11,10 @@ import type { OutboxEvent } from '@shared/api.interface';
 export interface OutboxEnqueueOpts {
   entityType?: string;
   entityVersion?: number;
+  // Phase 3 / P3-T2：SSE envelope 透传字段（snapshotVersion/planId/occurredAt）。
+  snapshotVersion?: string | null;
+  planId?: string | null;
+  occurredAt?: string | null;
 }
 
 /** Outbox：可靠领域事件，先写 outbox 再发布，保证 dispatch 与事件一致。 */
@@ -35,6 +39,11 @@ export class OutboxService {
     // 省略该字段由 DB DEFAULT（ewoh_outbox_sequence_seq）原子生成，RETURNING 取回真实值。
     // 显式传 sequence 的兼容路径保留（调用方仍可覆盖）。
     const eventId = `EVT-${Date.now()}-${this.randomSuffix()}`;
+    // Phase 3 / P3-T2：envelope 透传字段写入 payload（SSE 端从 payload 读取）。
+    const envelopePayload: Record<string, unknown> = { ...payload };
+    if (opts?.snapshotVersion != null) envelopePayload.snapshotVersion = opts.snapshotVersion;
+    if (opts?.planId != null) envelopePayload.planId = opts.planId;
+    if (opts?.occurredAt != null) envelopePayload.occurredAt = opts.occurredAt;
     const insertValues: typeof ewohOutbox.$inferInsert = {
       eventId,
       eventType,
@@ -42,7 +51,7 @@ export class OutboxService {
       entityType: opts?.entityType ?? null,
       entityVersion: opts?.entityVersion ?? null,
       status: 'pending',
-      payloadJson: payload,
+      payloadJson: envelopePayload,
       orgId,
     };
     if (sequence !== undefined) {

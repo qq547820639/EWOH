@@ -5,6 +5,7 @@ import {
   BadRequestException,
   NotFoundException,
   ConflictException,
+  Optional,
 } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -72,6 +73,8 @@ import { SchedulingFeedbackService } from './scheduling-feedback.service';
 import { OutboxService } from './outbox.service';
 import { ReplanCoordinatorService } from './replan-coordinator.service';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
+import { ConflictService } from './conflict.service';
+import { PolicyReplayService } from './policy-replay.service';
 import { TaskLifecycle } from './task-lifecycle';
 
 /**
@@ -144,6 +147,14 @@ export class SchedulerService {
     // v0.7 Batch6.4：调度可观测指标（recordRun/recordFallback）。
     // 可选注入：测试可传 mock；缺失时静默跳过。
     private readonly metricsService?: SchedulerMetricsService,
+    // Phase 3 / P3-T1：冲突生命周期服务（推导+落库+状态机）。
+    // 可选注入：模块生产路径始终注入；旧单测未注入时回退到本文件遗留的
+    // 内存推导（buildConflicts），保证公开 API 与既有测试兼容。
+    private readonly conflictService?: ConflictService,
+    // Phase 4 / P4-T2：Shadow Policy 真实 replay（历史快照 × 双策略求解对比）。
+    // 可选注入：模块生产路径始终注入；旧单测未注入时 compare 回退参数 delta 估算，
+    // activate 守卫视作未评估。
+    private readonly policyReplayService?: PolicyReplayService,
   ) {}
 
   async generatePlans(body?: { idempotencyKey?: string }): Promise<SchedulePlan[]> {
@@ -1029,7 +1040,9 @@ export class SchedulerService {
 
   /**
    * shadow/只读对比：候选版本 vs 当前生效版本。
-   * 由 Feedback 派生 KPI 进行离线评估 + 目标权重对比，不激活任何版本。
+   * Phase 4 / P4-T2：优先以历史 snapshot 真实 replay（active vs candidate 双策略求解，
+   * 对比 objective/KPI，结果附加于 comparison.replay）；无历史快照时回退
+   * param delta + 估算。绝不激活任何版本。
    */
   async comparePolicyVersion(
     configVersion: number,
@@ -1047,7 +1060,7 @@ export class SchedulerService {
       );
     }
     const paramDeltas = this.buildConfigParamDeltas(activeConfig, candidateConfig);
-    return {
+    const comparison: SchedulingPolicyComparison = {
       candidateVersion: configVersion,
       activeVersion: activeConfig.configVersion,
       feedbackKpis,
@@ -1056,6 +1069,21 @@ export class SchedulerService {
       verdict: this.buildVerdict(paramDeltas),
       readOnly: true,
     };
+    // Phase 4 / P4-T2：真实 replay（失败仅记日志，不阻断旧评估路径）。
+    if (this.policyReplayService) {
+      try {
+        comparison.replay = await this.policyReplayService.evaluate(
+          configVersion,
+          ctx,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `policy replay failed (v${configVersion}): ${(err as Error)?.message ?? err}`,
+        );
+        comparison.replay = null;
+      }
+    }
+    return comparison;
   }
 
   /**
@@ -1212,27 +1240,60 @@ export class SchedulerService {
 
   /**
    * 显式激活指定版本（人工审批路径）：翻转 active 并写入审计。
-   * 这是唯一激活生产策略的入口。
+   * Phase 4 / P4-T2 守卫：
+   *   - body 必须带 approver + reason（无则 400）；
+   *   - 仅允许 shadow 候选（active=false）且已完成 replay 评估的策略 activate；
+   *   - 已激活版本不可重复 activate（409）。
    */
   async activatePolicyVersion(
     configVersion: number,
+    body: { approver?: string; reason?: string },
     actor?: OrgContext,
   ): Promise<{ config: SchedulingPolicyConfig }> {
     const ctx = this.toOrgContext(actor);
+    // 守卫 0/1：approver + reason 必须来自请求 body（审批要件，不静默回退 ctx）。
+    const approver = body?.approver?.trim() ?? '';
+    const reason = body?.reason?.trim() ?? '';
+
+    if (!approver) {
+      throw new BadRequestException('APPROVER_REQUIRED: 激活策略必须提供 approver');
+    }
+    if (!reason) {
+      throw new BadRequestException('REASON_REQUIRED: 激活策略必须提供 reason');
+    }
+
+    // 守卫 2：版本存在且为 shadow 候选（active=false），不可重复 activate。
+    const status = await this.policyService.getPolicyVersionStatus(configVersion);
+    if (!status) {
+      throw new NotFoundException(
+        `Scheduling policy version ${configVersion} not found`,
+      );
+    }
+    if (status.active) {
+      throw new ConflictException('POLICY_ALREADY_ACTIVE');
+    }
+
+    // 守卫 3：已完成 replay 评估（shadow → 评估 → activate 闭环）。
+    if (!this.policyReplayService?.isEvaluated(configVersion)) {
+      throw new ConflictException(
+        'POLICY_NOT_EVALUATED: 候选策略须先完成 shadow replay 评估',
+      );
+    }
+
     const config = await this.policyService.activatePolicyVersion(
       configVersion,
       ctx.primaryOrgId || null,
-      ctx.userId,
+      approver,
     );
     await this.auditService.appendAuditLog({
-      actorId: ctx.userId,
+      actorId: approver,
       orgId: ctx.primaryOrgId,
       action: 'scheduler.policy.activate',
       entityType: 'scheduling_policy',
       entityId: String(configVersion),
-      before: { configVersion },
+      before: { configVersion, active: false },
       after: { configVersion, active: true },
-      reason: 'manual approval activation (Task 6)',
+      reason,
     });
     return { config };
   }
@@ -1369,6 +1430,8 @@ export class SchedulerService {
     PREFER_RESOURCE: 'PREFERRED_RESOURCE',
     BOOST: 'MANUAL_BOOST',
     ADJUST_TIME: 'LOCKED_TIME',
+    // Phase 3 / P3-T4：换资源 = 锁定新的 person/device/station（LOCKED_ASSIGNMENT 组合语义）。
+    CHANGE_RESOURCE: 'LOCKED_ASSIGNMENT',
   };
 
   /**
@@ -1481,13 +1544,17 @@ export class SchedulerService {
   ): SchedulingConstraint[] {
     return actions.map((a, i) => {
       const type = SchedulerService.OVERRIDE_KIND_TO_TYPE[a.kind];
+      // Phase 3 / P3-T4：CHANGE_RESOURCE 优先读 changeResource 目标（新 assignee）。
+      const personId = a.changeResource?.personId ?? a.personId;
+      const deviceId = a.changeResource?.deviceId ?? a.deviceId;
+      const stationId = a.changeResource?.stationId ?? a.stationId;
       return {
         id: `CON-${Date.now()}-${i}-${this.randomSuffix()}`,
         type,
         taskId: a.taskId,
-        personId: a.personId,
-        deviceId: a.deviceId,
-        stationId: a.stationId,
+        personId,
+        deviceId,
+        stationId,
         zoneId: a.zoneId,
         startMs: a.startMs,
         endMs: a.endMs,
@@ -1626,9 +1693,13 @@ export class SchedulerService {
       const personStation = person.stationId
         ? stationById.get(person.stationId)
         : undefined;
+      // 人员无工位且坐标缺失（UNKNOWN）时传 undefined 点，交由 routeCostProvider
+      // 走空间实体解析/不可行判定；绝不把 null 当作 0,0 伪坐标（见 02 §13）。
       const personPoint = personStation
         ? { x: personStation.x, y: personStation.y }
-        : { x: person.x, y: person.y };
+        : person.x != null && person.y != null
+          ? { x: person.x, y: person.y }
+          : undefined;
 
       const routeCost = await this.routeCostProvider.estimate(
         person.id,
@@ -1743,8 +1814,13 @@ export class SchedulerService {
   /**
    * 从真实世界状态 / 预占 / 活跃方案聚合统一调度冲突列表。
    * 仅返回真实/可推导冲突；无冲突时返回空列表，不虚构。
+   * Phase 3 / P3-T1：生产路径委托 ConflictService（推导+落库+生命周期）；
+   * 未注入 ConflictService（旧单测）时回退本文件遗留内存推导。
    */
   async listConflicts(params: ConflictsListRequest = {}): Promise<ConflictsListResponse> {
+    if (this.conflictService) {
+      return this.conflictService.listConflicts(params);
+    }
     let conflicts = await this.buildConflicts();
     if (params.type) conflicts = conflicts.filter((c) => c.type === params.type);
     if (params.severity) conflicts = conflicts.filter((c) => c.severity === params.severity);
@@ -1756,6 +1832,9 @@ export class SchedulerService {
 
   /** 返回单个冲突详情；冲突在当前真实数据中不再存在时抛 NotFoundException。 */
   async getConflictDetail(conflictId: string): Promise<SchedulingConflict> {
+    if (this.conflictService) {
+      return this.conflictService.getConflictDetail(conflictId);
+    }
     const { conflicts } = await this.listConflicts({});
     const found = conflicts.find((c) => c.conflictId === conflictId);
     if (!found) throw new NotFoundException(`Conflict ${conflictId} not found`);
@@ -2236,6 +2315,7 @@ export class SchedulerService {
       planIds: (r.planIds as string[] | null) ?? [],
       orgId: r.orgId ?? null,
       error: r.error ?? null,
+      failureReason: r.failureReason ?? null,
       createdAt: r.createdAt ? r.createdAt.toISOString() : '',
     };
   }

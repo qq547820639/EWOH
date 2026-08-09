@@ -1,0 +1,4 @@
+# EWOH CP-SAT Worker 依赖锁定（Phase 2 / P2-T3）
+# 固定 OR-Tools 版本，保证同 SolverRequest + SOLVER_VERSION 可确定性重放。
+# 安装：pip install -r requirements.txt
+ortools==9.11.4210

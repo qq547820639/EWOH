@@ -8436,6 +8436,165 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scheduler/conflicts/{id}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acknowledge a scheduling conflict (OPEN -> ACKNOWLEDGED)
+         * @description Phase 3 / P3-T1 conflict lifecycle. Records acknowledgedBy/At, writes audit action=conflict.acknowledge, emits SSE conflict.acknowledged.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @description Actor identifier (falls back to user context) */
+                        operator?: string;
+                        /** @description Acknowledge reason (audited) */
+                        reason?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Acknowledged conflict */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulingConflict"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/conflicts/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve a scheduling conflict (-> RESOLVED)
+         * @description Phase 3 / P3-T1 conflict lifecycle. Manual resolve; automatic auto_cleared resolution is written by reconcile. Emits SSE conflict.resolved and audits action=conflict.resolve.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        operator?: string;
+                        reason?: string;
+                        /** @description Resolution note (defaults to existing/fresh) */
+                        resolution?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Resolved conflict */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulingConflict"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/conflicts/{id}/suppress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suppress a scheduling conflict (-> SUPPRESSED)
+         * @description Phase 3 / P3-T1 conflict lifecycle. No SSE/alert while suppressed; expires back to OPEN after suppressUntilMs (default 24h). Audits action=conflict.suppress and emits SSE conflict.suppressed.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        operator?: string;
+                        reason?: string;
+                        /** @description Suppress until epoch ms (default now + 24h) */
+                        suppressUntilMs?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Suppressed conflict */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulingConflict"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scheduler/policy": {
         parameters: {
             query?: never;
@@ -8589,7 +8748,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Activate scheduling policy version */
+        /**
+         * Activate scheduling policy version
+         * @description P4-T2 guarded activate: only a shadow policy that has completed replay evaluation can be activated, and the body MUST carry approver + reason (otherwise 400 APPROVER_REQUIRED / REASON_REQUIRED). Writes audit action=policy.activate.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -8599,7 +8761,16 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description Approving actor (required) */
+                        approver: string;
+                        /** @description Activation reason (required, audited) */
+                        reason: string;
+                    };
+                };
+            };
             responses: {
                 /** @description Successful response */
                 200: {

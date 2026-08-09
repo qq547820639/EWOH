@@ -1,10 +1,11 @@
-// panels/OverridePanel.tsx — 人工覆盖中心（v0.7 A3 智能调度接线）
+// panels/OverridePanel.tsx — 人工覆盖中心（v0.7 A3 智能调度接线 + Phase 3 / P3-T4 完备化）
 //
 // 消费 `usePlanOverrides`（POST /plans/:planId/overrides）：
-// 将人工干预（锁定资源 / 排除资源 / 偏好资源 / 加急 / 调时）转换为调度约束，
-// 触发 V2 重排并展示 before/after diff。覆盖动作的合法性由后端校验（SAFETY_BLOCK 不可绕过）。
+// 将人工干预（锁定资源 / 排除资源 / 偏好资源 / 更换资源 / 加急 / 调时）转换为调度约束，
+// 触发 V2 重排并展示 before/after diff（经 planDiffVM 差分展示）。
+// reason + operator 必填（写审计）；SAFETY_BLOCK 等安全硬约束由后端校验。
 //
-// 交互链：选择方案 → 选择任务 → 选择动作类型 → 选择目标资源/时间 → 提交 → 展示 diff。
+// 交互链：选择方案 → 选择任务 → 选择动作类型 → 选择目标资源/时间 → 填写 operator+reason → 提交 → 展示 diff。
 
 import { useMemo, useState } from 'react';
 import {
@@ -17,12 +18,16 @@ import {
   Loader2,
   AlertTriangle,
   CheckCircle2,
+  Cpu,
+  Factory,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { getActivePlans, getTaskCandidates } from '@client/src/api/scheduler';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import { usePlanOverrides } from '@client/src/hooks/usePlanOverrides';
+import { getCurrentOperator } from '@client/src/lib/auth';
+import { planDiffVM } from '../vm/planDiffVM';
 import type {
   PlanOverrideAction,
   PlanOverrideKind,
@@ -34,19 +39,23 @@ import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
 import { ScrollArea } from '@client/src/components/ui/scroll-area';
 
-/** 覆盖动作定义（六类，对应后端 PlanOverrideKind 子集）。 */
+/** 覆盖动作定义（九类，对应后端 PlanOverrideKind 子集，Phase 3 / P3-T4 新增换资源/锁定设备/工位/调时）。 */
 const OVERRIDE_KINDS: Array<{
   kind: PlanOverrideKind;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   description: string;
-  needsTarget: 'person' | 'station' | 'none';
+  needsTarget: 'person' | 'device' | 'station' | 'time' | 'none';
 }> = [
   { kind: 'LOCK_PERSON', label: '锁定人员', icon: Lock, description: '固定该任务的人员分配（重排不可更换）', needsTarget: 'person' },
+  { kind: 'LOCK_DEVICE', label: '锁定设备', icon: Cpu, description: '固定该任务的设备分配', needsTarget: 'device' },
+  { kind: 'LOCK_STATION', label: '锁定工位', icon: Factory, description: '固定该任务的工位分配', needsTarget: 'station' },
   { kind: 'EXCLUDE_RESOURCE', label: '排除资源', icon: XCircle, description: '禁止为该任务分配指定资源', needsTarget: 'person' },
   { kind: 'PREFER_RESOURCE', label: '偏好资源', icon: Star, description: '优先分配指定资源（软约束）', needsTarget: 'person' },
+  { kind: 'CHANGE_RESOURCE', label: '更换资源', icon: GitCompareArrows, description: '将任务改派给指定人员（LOCKED_ASSIGNMENT）', needsTarget: 'person' },
   { kind: 'BOOST', label: '加急', icon: Zap, description: '提升该任务优先级（缩小 score）', needsTarget: 'none' },
-  { kind: 'LOCK_TIME', label: '锁定时间', icon: Clock, description: '固定计划时间窗（重排不可挪动）', needsTarget: 'none' },
+  { kind: 'LOCK_TIME', label: '锁定时间', icon: Clock, description: '固定计划时间窗（重排不可挪动）', needsTarget: 'time' },
+  { kind: 'ADJUST_TIME', label: '调整时间', icon: Clock, description: '调整计划时间窗（epoch ms 起止）', needsTarget: 'time' },
 ];
 
 interface OverridePanelProps {
@@ -67,13 +76,18 @@ export function OverridePanel({ planId: externalPlanId }: OverridePanelProps): R
   const [taskId, setTaskId] = useState<string>('');
   const [kind, setKind] = useState<PlanOverrideKind>('LOCK_PERSON');
   const [targetPersonId, setTargetPersonId] = useState<string>('');
+  const [targetDeviceId, setTargetDeviceId] = useState<string>('');
+  const [targetStationId, setTargetStationId] = useState<string>('');
+  const [startMs, setStartMs] = useState<string>('');
+  const [endMs, setEndMs] = useState<string>('');
+  const [operator, setOperator] = useState<string>(getCurrentOperator());
   const [reason, setReason] = useState<string>('');
   const [result, setResult] = useState<{
     planId: string;
     changed: string[];
     added: string[];
     removed: string[];
-    metrics: Record<string, number>;
+    metrics: Record<string, number> | null;
   } | null>(null);
 
   const overrideMutation = usePlanOverrides(planId);
@@ -104,6 +118,14 @@ export function OverridePanel({ planId: externalPlanId }: OverridePanelProps): R
   const candidateOptions: TaskCandidateResource[] = candidates?.candidates ?? [];
 
   function buildAction(): PlanOverrideAction | null {
+    if (!operator.trim()) {
+      toast.error('请填写操作人（operator）');
+      return null;
+    }
+    if (!reason.trim()) {
+      toast.error('请填写操作原因（写入审计，必填）');
+      return null;
+    }
     if (!taskId) {
       toast.error('请先选择要覆盖的任务');
       return null;
@@ -112,11 +134,32 @@ export function OverridePanel({ planId: externalPlanId }: OverridePanelProps): R
       toast.error('请选择目标人员');
       return null;
     }
+    if (kindMeta?.needsTarget === 'device' && !targetDeviceId) {
+      toast.error('请输入目标设备 ID');
+      return null;
+    }
+    if (kindMeta?.needsTarget === 'station' && !targetStationId) {
+      toast.error('请输入目标工位 ID');
+      return null;
+    }
+    if (kindMeta?.needsTarget === 'time' && (!startMs || !endMs)) {
+      toast.error('请输入调整后时间窗（epoch ms 起止）');
+      return null;
+    }
     return {
       kind,
       taskId,
       personId: kindMeta?.needsTarget === 'person' ? targetPersonId : undefined,
-      reason: reason || undefined,
+      deviceId: kindMeta?.needsTarget === 'device' ? targetDeviceId : undefined,
+      stationId: kindMeta?.needsTarget === 'station' ? targetStationId : undefined,
+      // Phase 3 / P3-T4：换资源使用 changeResource 字段（后端优先读此字段）。
+      changeResource:
+        kind === 'CHANGE_RESOURCE'
+          ? { personId: targetPersonId || undefined }
+          : undefined,
+      startMs: kindMeta?.needsTarget === 'time' && startMs ? Number(startMs) : undefined,
+      endMs: kindMeta?.needsTarget === 'time' && endMs ? Number(endMs) : undefined,
+      reason,
     };
   }
 
@@ -124,16 +167,18 @@ export function OverridePanel({ planId: externalPlanId }: OverridePanelProps): R
     const action = buildAction();
     if (!action || !planId) return;
     overrideMutation.mutate(
-      { actions: [action], reason: reason || undefined },
+      { actions: [action], operator, reason },
       {
         onSuccess: (res) => {
           toast.success('覆盖已生效，已触发重排');
+          // Phase 3 / P3-T3：经 planDiffVM 差分展示 before/after。
+          const diff = planDiffVM(res.before, res.after);
           setResult({
             planId: res.planId,
-            changed: res.diff.changedTaskIds,
-            added: res.diff.addedTaskIds,
-            removed: res.diff.removedTaskIds,
-            metrics: res.diff.metricsDelta,
+            changed: diff.changedAssignments.map((d) => d.taskId),
+            added: diff.addedTaskIds,
+            removed: diff.removedTaskIds,
+            metrics: diff.metricsDelta,
           });
         },
         onError: (e) => {
@@ -280,14 +325,79 @@ export function OverridePanel({ planId: externalPlanId }: OverridePanelProps): R
             </div>
           )}
 
+          {/* 目标设备（仅 device 类动作）——Phase 3 / P3-T4 */}
+          {kindMeta?.needsTarget === 'device' && (
+            <div className="space-y-1.5">
+              <label className="text-xs text-white/60">目标设备 ID</label>
+              <input
+                aria-label="目标设备 ID"
+                value={targetDeviceId}
+                onChange={(e) => setTargetDeviceId(e.target.value)}
+                placeholder="输入设备 ID（如 D-001）"
+                className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
+              />
+            </div>
+          )}
+
+          {/* 目标工位（仅 station 类动作）——Phase 3 / P3-T4 */}
+          {kindMeta?.needsTarget === 'station' && (
+            <div className="space-y-1.5">
+              <label className="text-xs text-white/60">目标工位 ID</label>
+              <input
+                aria-label="目标工位 ID"
+                value={targetStationId}
+                onChange={(e) => setTargetStationId(e.target.value)}
+                placeholder="输入工位 ID（如 S1）"
+                className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
+              />
+            </div>
+          )}
+
+          {/* 时间窗（仅 time 类动作）——Phase 3 / P3-T4 */}
+          {kindMeta?.needsTarget === 'time' && (
+            <div className="space-y-1.5">
+              <label className="text-xs text-white/60">调整后时间窗（epoch ms）</label>
+              <div className="flex gap-1.5">
+                <input
+                  aria-label="开始时间 ms"
+                  value={startMs}
+                  onChange={(e) => setStartMs(e.target.value)}
+                  placeholder="startMs"
+                  inputMode="numeric"
+                  className="w-1/2 bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
+                />
+                <input
+                  aria-label="结束时间 ms"
+                  value={endMs}
+                  onChange={(e) => setEndMs(e.target.value)}
+                  placeholder="endMs"
+                  inputMode="numeric"
+                  className="w-1/2 bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* 操作人（必填，写审计）——Phase 3 / P3-T4 */}
+          <div className="space-y-1.5">
+            <label className="text-xs text-white/60">操作人（必填）</label>
+            <input
+              aria-label="操作人"
+              value={operator}
+              onChange={(e) => setOperator(e.target.value)}
+              placeholder="输入操作人（写审计）"
+              className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
+            />
+          </div>
+
           {/* 原因 */}
           <div className="space-y-1.5">
-            <label className="text-xs text-white/60">原因（写入审计）</label>
+            <label className="text-xs text-white/60">原因（必填，写入审计）</label>
             <textarea
               aria-label="覆盖原因"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="说明人工干预原因（可选）"
+              placeholder="说明人工干预原因（必填）"
               rows={2}
               className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30 resize-none"
             />

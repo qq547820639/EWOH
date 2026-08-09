@@ -45,6 +45,18 @@ const FILES = {
   standalone_outbox_sequence: path.join(root, 'db/migrations/standalone_011_outbox_sequence.sql'),
   standalone_outbox_sequence_rollback: path.join(root, 'db/migrations/standalone_011_outbox_sequence.rollback.sql'),
   standalone_outbox_sequence_verify: path.join(root, 'db/verify/standalone_011_verify.sql'),
+  standalone_domain_columns: path.join(root, 'db/migrations/standalone_012_domain_columns.sql'),
+  standalone_domain_columns_rollback: path.join(root, 'db/migrations/standalone_012_domain_columns.rollback.sql'),
+  standalone_domain_columns_verify: path.join(root, 'db/verify/standalone_012_domain_columns.verify.sql'),
+  standalone_route_cost_matrix: path.join(root, 'db/migrations/standalone_015_route_cost_matrix.sql'),
+  standalone_route_cost_matrix_rollback: path.join(root, 'db/migrations/standalone_015_route_cost_matrix.rollback.sql'),
+  standalone_route_cost_matrix_verify: path.join(root, 'db/verify/standalone_015_route_cost_matrix.verify.sql'),
+  standalone_policy_weights: path.join(root, 'db/migrations/standalone_014_policy_weights.sql'),
+  standalone_policy_weights_rollback: path.join(root, 'db/migrations/standalone_014_policy_weights.rollback.sql'),
+  standalone_policy_weights_verify: path.join(root, 'db/verify/standalone_014_policy_weights.verify.sql'),
+  standalone_conflict_lifecycle: path.join(root, 'db/migrations/standalone_013_conflict_lifecycle.sql'),
+  standalone_conflict_lifecycle_rollback: path.join(root, 'db/migrations/standalone_013_conflict_lifecycle.rollback.sql'),
+  standalone_conflict_lifecycle_verify: path.join(root, 'db/verify/standalone_013_conflict_lifecycle.verify.sql'),
 };
 
 const PLAN_NAMES = Object.freeze(Object.keys(FILES));
@@ -60,6 +72,10 @@ const ROLLBACK_COMMANDS = new Set([
   '--rollback-standalone-reservation-conflict',
   '--rollback-standalone-scheduling-feedback',
   '--rollback-standalone-outbox-sequence',
+  '--rollback-standalone-domain-columns',
+  '--rollback-standalone-route-cost-matrix',
+  '--rollback-standalone-policy-weights',
+  '--rollback-standalone-conflict-lifecycle',
 ]);
 const EXECUTE_COMMANDS = new Set([
   '--apply',
@@ -97,6 +113,18 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-outbox-sequence',
   '--rollback-standalone-outbox-sequence',
   '--verify-standalone-outbox-sequence',
+  '--apply-standalone-domain-columns',
+  '--rollback-standalone-domain-columns',
+  '--verify-standalone-domain-columns',
+  '--apply-standalone-route-cost-matrix',
+  '--rollback-standalone-route-cost-matrix',
+  '--verify-standalone-route-cost-matrix',
+  '--apply-standalone-policy-weights',
+  '--rollback-standalone-policy-weights',
+  '--verify-standalone-policy-weights',
+  '--apply-standalone-conflict-lifecycle',
+  '--rollback-standalone-conflict-lifecycle',
+  '--verify-standalone-conflict-lifecycle',
 ]);
 
 const TOKEN = '__EWOH_SCHEMA__';
@@ -208,6 +236,10 @@ function usage() {
   console.error('       run_migrations.js --apply-standalone-reservation-conflict | --rollback-standalone-reservation-conflict | --verify-standalone-reservation-conflict');
   console.error('       run_migrations.js --apply-standalone-scheduling-feedback | --rollback-standalone-scheduling-feedback | --verify-standalone-scheduling-feedback');
   console.error('       run_migrations.js --apply-standalone-outbox-sequence | --rollback-standalone-outbox-sequence | --verify-standalone-outbox-sequence');
+  console.error('       run_migrations.js --apply-standalone-domain-columns | --rollback-standalone-domain-columns | --verify-standalone-domain-columns');
+  console.error('       run_migrations.js --apply-standalone-route-cost-matrix | --rollback-standalone-route-cost-matrix | --verify-standalone-route-cost-matrix');
+  console.error('       run_migrations.js --apply-standalone-policy-weights | --rollback-standalone-policy-weights | --verify-standalone-policy-weights');
+  console.error('       run_migrations.js --apply-standalone-conflict-lifecycle | --rollback-standalone-conflict-lifecycle | --verify-standalone-conflict-lifecycle');
   console.error('Env: EWOH_DATABASE_URL or SUDA_DATABASE_URL, EWOH_SCHEMA, EWOH_ALLOW_DDL=1');
   console.error('Rollback also requires EWOH_ALLOW_DESTRUCTIVE_ROLLBACK=1.');
   process.exit(2);
@@ -240,7 +272,7 @@ function main() {
     console.error('EWOH_DATABASE_URL or SUDA_DATABASE_URL is required.');
     process.exit(2);
   }
-  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod', '--verify-standalone-outbox-sequence'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
+  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod', '--verify-standalone-outbox-sequence', '--verify-standalone-domain-columns', '--verify-standalone-route-cost-matrix', '--verify-standalone-policy-weights', '--verify-standalone-conflict-lifecycle'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
     console.error('EWOH_ALLOW_DDL=1 is required for --apply and --rollback.');
     process.exit(2);
   }
@@ -353,6 +385,86 @@ function main() {
       return;
     }
 
+    if (command === '--verify-standalone-conflict-lifecycle') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_conflict_lifecycle_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      const columns = Number(row.conflict_columns || 0);
+      const indexes = Number(row.conflict_indexes || 0);
+      const statusDefault = Number(row.conflict_status_default || 0);
+      // 期望值来源：standalone_013_conflict_lifecycle.verify.sql 自述（19 列 / 4 索引 / 1 默认 OPEN）。
+      if (columns !== 19 || indexes !== 4 || statusDefault !== 1) {
+        console.error(`VERIFY FAILED: expected (19,4,1), got (${columns},${indexes},${statusDefault})`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: conflict lifecycle table + status default OPEN present');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-policy-weights') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_policy_weights_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      const policyCol = Number(row.policy_weights_json || 0);
+      const planCol = Number(row.plan_weights_json || 0);
+      // 期望值来源：standalone_014_policy_weights.verify.sql 自述（policy=1 / plan=1）。
+      if (policyCol !== 1 || planCol !== 1) {
+        console.error(`VERIFY FAILED: expected (1,1), got (${policyCol},${planCol})`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: policy + plan weights_json columns present');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-route-cost-matrix') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_route_cost_matrix_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      const columns = Number(row.route_cost_matrix_columns || 0);
+      const indexes = Number(row.route_cost_matrix_indexes || 0);
+      const uq = Number(row.route_cost_matrix_uq || 0);
+      // 期望值来源：standalone_015_route_cost_matrix.verify.sql 自述（11 列 / 3 索引 / 1 唯一键）。
+      if (columns !== 11 || indexes !== 3 || uq !== 1) {
+        console.error(`VERIFY FAILED: expected (11,3,1), got (${columns},${indexes},${uq})`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: route cost matrix cache table + unique key present');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-domain-columns') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_domain_columns_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      const taskCols = Number(row.task_domain_columns || 0);
+      const personnelCols = Number(row.personnel_domain_columns || 0);
+      const deviceCols = Number(row.device_domain_columns || 0);
+      const spatialCols = Number(row.spatial_domain_columns || 0);
+      const runFailure = Number(row.run_failure_reason || 0);
+      const safetyDefault = Number(row.safety_critical_default || 0);
+      const preemptibleDefault = Number(row.preemptible_default || 0);
+      const skillModeDefault = Number(row.skill_match_mode_default || 0);
+      const impactDefault = Number(row.production_impact_default || 0);
+      // 期望值来源：standalone_012_domain_columns.verify.sql 自述（(11,4,7,3,1,1,1,1,1)）。
+      if (
+        taskCols !== 11 || personnelCols !== 4 || deviceCols !== 7 ||
+        spatialCols !== 3 || runFailure !== 1 ||
+        safetyDefault !== 1 || preemptibleDefault !== 1 ||
+        skillModeDefault !== 1 || impactDefault !== 1
+      ) {
+        console.error(
+          `VERIFY FAILED: expected (11,4,7,3,1,1,1,1,1), got (${taskCols},${personnelCols},${deviceCols},${spatialCols},${runFailure},${safetyDefault},${preemptibleDefault},${skillModeDefault},${impactDefault})`,
+        );
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: domain-model columns present with correct defaults');
+      }
+      return;
+    }
+
     if (['--verify', '--verify-standalone'].includes(command)) {
       const verifyFile = command === '--verify-standalone' ? FILES.standalone_verify : FILES.verify;
       const rows = await sql.unsafe(substitute(read(verifyFile), schema));
@@ -406,6 +518,14 @@ function main() {
       '--rollback-standalone-scheduling-feedback': 'standalone_scheduling_feedback_rollback',
       '--apply-standalone-outbox-sequence': 'standalone_outbox_sequence',
       '--rollback-standalone-outbox-sequence': 'standalone_outbox_sequence_rollback',
+      '--apply-standalone-domain-columns': 'standalone_domain_columns',
+      '--rollback-standalone-domain-columns': 'standalone_domain_columns_rollback',
+      '--apply-standalone-route-cost-matrix': 'standalone_route_cost_matrix',
+      '--rollback-standalone-route-cost-matrix': 'standalone_route_cost_matrix_rollback',
+      '--apply-standalone-policy-weights': 'standalone_policy_weights',
+      '--rollback-standalone-policy-weights': 'standalone_policy_weights_rollback',
+      '--apply-standalone-conflict-lifecycle': 'standalone_conflict_lifecycle',
+      '--rollback-standalone-conflict-lifecycle': 'standalone_conflict_lifecycle_rollback',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {

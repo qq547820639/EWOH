@@ -20,6 +20,7 @@ import type { WorldStateSnapshot } from '@shared/api.interface';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { deriveDeviceCapabilities } from './device-capabilities';
 
 /** 资源数据新鲜度阈值（ms）：sourceTs 距今超过该值则标 STALE。 */
 const DEFAULT_FRESHNESS_MS = 5 * 60 * 1000;
@@ -195,85 +196,104 @@ export class WorldStateSnapshotService {
         fatigueLevel: fatigue.fatigueLevel ?? 0,
         stationId: p.spatialEntityId ?? null,
         zoneId: se ? (se.parentId ?? null) : null,
-        x: se ? (se.x ?? 0) : 0,
-        y: se ? (se.y ?? 0) : 0,
+        // 坐标缺失 → 显式 UNKNOWN（null），禁止用 0 冒充真实坐标。
+        x: se ? (se.x ?? null) : null,
+        y: se ? (se.y ?? null) : null,
         availableFromMs: personReservationEnd.get(p.id) ?? null,
+        shift: p.shift ?? null,
+        workload: p.workload ?? null,
+        currentTaskId: p.currentTaskId ?? null,
+        certificationExpiry: this.parseCertificationExpiry(p.certificationExpiry),
         sourceTs,
         freshnessMs: this.freshnessMs,
         dataQuality,
       };
     });
 
-    // 设备 → 当前绑定人员（targetType='person' 且 active），用于推算设备位置。
-    const personById = new Map(persons.map((p) => [p.id, p]));
-    const boundPersonByDevice = new Map<string, (typeof persons)[number]>();
-    for (const db of deviceBindings) {
-      if (!boundPersonByDevice.has(db.deviceId)) {
-        const bound = personById.get(db.targetId);
-        if (bound) boundPersonByDevice.set(db.deviceId, bound);
-      }
-    }
+    // 设备 → 当前绑定人员（targetType='person' 且 active）。
+    // 注：设备位置不再借用人员坐标（见 01 §4.1），绑定仅用于安全事件影响链。
 
     // 工位列表（v0.7 A1：提前计算，供任务 candidateStations 派生使用）。
     const stations = spatialEntities
       .filter((se) => ['workstation', 'station'].includes(se.entityType))
       .map((se) => {
-        // 工位容量：优先读空间实体 extra.capacity（真实来源），否则 null。
-        const extra = (se.extra ?? {}) as Record<string, unknown>;
+        // 工位容量：读 capacity 列（真实来源，替代 extra.capacity 非正式字段），否则 null。
         const capacity =
-          typeof extra.capacity === 'number' && extra.capacity > 0
-            ? extra.capacity
-            : null;
+          typeof se.capacity === 'number' && se.capacity > 0 ? se.capacity : null;
         return {
           id: se.entityId,
           name: se.name,
           x: se.x ?? 0,
           y: se.y ?? 0,
           capacity,
+          queue: this.asStringArray(se.queue),
+          availableWindows: this.parseWindows(se.availableWindows),
         };
       });
 
-    const taskList = tasks.map((t) => ({
-      id: t.id,
-      title: t.title,
-      taskType: t.taskType,
-      priority: t.priority,
-      status: t.status,
-      assigneeId: t.assigneeId ?? null,
-      deviceId: t.deviceId ?? null,
-      stationId: t.spatialEntityId ?? null,
-      zoneId: t.spatialEntityId
-        ? (spatialByEntityId.get(t.spatialEntityId)?.parentId ?? null)
-        : null,
-      planStart: t.planStart ? t.planStart.toISOString() : null,
-      planEnd: t.planEnd ? t.planEnd.toISOString() : null,
-      progress: t.progress ?? 0,
-      predecessorIds: this.asStringArray(t.predecessorIds),
-      requiredSkills: this.asStringArray(t.requiredSkills),
-      requiredCertifications: this.asStringArray(t.requiredCertifications),
-      // v0.7 Batch5.3：任务设备能力需求从 taskType 派生（重体力/搬运 → exo-lift），
-      // 与设备 capabilities 匹配形成能力约束；未命中返回空数组（无能力要求）。
-      requiredDeviceCapabilities: this.deriveRequiredDeviceCapabilities(t.taskType),
-      // v0.7 智能调度增强（A1）：安全/可抢占/技能匹配语义从已有字段派生，不再恒 false。
-      // 注：ewohProductionTask 表当前无独立列（schema.ts 为自动生成文件，不改），
-      // 故从 taskType 白名单派生 safetyCritical（重体力/搬运类），保守默认 false；
-      // 待 DB 迁移加列后应改为读取真实业务字段。
-      safetyCritical: this.deriveSafetyCritical(t.taskType),
-      preemptible: false,
-      skillMatchMode: 'ALL' as const,
-      dueAtMs: t.planEnd ? t.planEnd.getTime() : null,
-      // v0.7 智能调度增强（A1）：生产影响度从 priority 语义派生（urgent/critical 高影响产线节拍）。
-      // 缺省 0 保持向后兼容；PriorityEngine 的 productionImpact 因子由此真实生效。
-      productionImpact: this.deriveProductionImpact(t.priority),
-      // v0.7 智能调度增强（A1）：候选工位 = 任务所在 zone 内的所有工位（真实空间拓扑推导），
-      // 无 zone/无工位时回退任务自身 stationId，支持资源就近分配。
-      candidateStations: this.deriveCandidateStations(
-        t.spatialEntityId,
-        spatialByEntityId,
-        stations,
-        spatialEntities,
-      ),
-    }));
+    const taskList = tasks.map((t) => {
+      // 派生字段标记：本快照中这些字段来自派生而非真实列（P1-T2）。
+      const derived: string[] = [];
+
+      // safetyCritical：新列优先；列无值才派生并带 derived 标记（替代白名单直接猜测）。
+      const safetyCritical = t.safetyCritical ?? this.deriveSafetyCritical(t.taskType);
+      if (t.safetyCritical == null) derived.push('safetyCritical');
+      // preemptible：新列优先（替代固定 false）。
+      const preemptible = t.preemptible ?? false;
+      if (t.preemptible == null) derived.push('preemptible');
+      // skillMatchMode：新列优先（替代固定 'ALL'）；运行时规整为 'ALL'|'ANY'。
+      const skillMatchMode: 'ALL' | 'ANY' = t.skillMatchMode === 'ANY' ? 'ANY' : 'ALL';
+      if (t.skillMatchMode == null) derived.push('skillMatchMode');
+      // productionImpact：新列优先；列无值才按 priority 派生并带标记。
+      const productionImpact = t.productionImpact ?? this.deriveProductionImpact(t.priority);
+      if (t.productionImpact == null) derived.push('productionImpact');
+      // requiredDeviceCapabilities：无独立列，始终由 taskType 派生（标记 derived）。
+      derived.push('requiredDeviceCapabilities');
+
+      return {
+        id: t.id,
+        title: t.title,
+        taskType: t.taskType,
+        priority: t.priority,
+        status: t.status,
+        assigneeId: t.assigneeId ?? null,
+        deviceId: t.deviceId ?? null,
+        stationId: t.spatialEntityId ?? null,
+        zoneId: t.spatialEntityId
+          ? (spatialByEntityId.get(t.spatialEntityId)?.parentId ?? null)
+          : null,
+        planStart: t.planStart ? t.planStart.toISOString() : null,
+        planEnd: t.planEnd ? t.planEnd.toISOString() : null,
+        progress: t.progress ?? 0,
+        predecessorIds: this.asStringArray(t.predecessorIds),
+        requiredSkills: this.asStringArray(t.requiredSkills),
+        requiredCertifications: this.asStringArray(t.requiredCertifications),
+        // 设备能力需求由 taskType 派生（重体力/搬运 → exo-lift），与设备 capabilities 匹配。
+        requiredDeviceCapabilities: this.deriveRequiredDeviceCapabilities(t.taskType),
+        safetyCritical,
+        preemptible,
+        skillMatchMode,
+        dueAtMs: t.planEnd ? t.planEnd.getTime() : null,
+        productionImpact,
+        // P1-T2：领域新列透传（有值取真实值，无值显式 null/空数组，绝不伪造）。
+        basePriority: t.basePriority ?? null,
+        earliestStartMs: t.earliestStartMs ?? null,
+        latestFinishMs: t.latestFinishMs ?? null,
+        downstreamImpact: t.downstreamImpact ?? null,
+        requiredStationCapabilities: this.asStringArray(t.requiredStationCapabilities),
+        preferredResources: this.asStringArray(t.preferredResources),
+        excludedResources: this.asStringArray(t.excludedResources),
+        // v0.7 智能调度增强（A1）：候选工位 = 任务所在 zone 内的所有工位（真实空间拓扑推导），
+        // 无 zone/无工位时回退任务自身 stationId，支持资源就近分配。
+        candidateStations: this.deriveCandidateStations(
+          t.spatialEntityId,
+          spatialByEntityId,
+          stations,
+          spatialEntities,
+        ),
+        derived,
+      };
+    });
 
     const deviceList = devices.map((d) => {
       const sourceTs = d.lastTelemetryAt
@@ -283,26 +303,39 @@ export class WorldStateSnapshotService {
           : null;
       const dataQuality = this.classifyFreshness(sourceTs, now);
       const stale = dataQuality !== 'FRESH';
-      // 设备位置：由当前绑定人员的空间位置推算（真实来源）；无绑定则 null。
-      const boundPerson = boundPersonByDevice.get(d.deviceId);
+      const derived: string[] = [];
+      // 能力：真实列优先（SSOT，消除两处语义不一致）；列无值才按型号白名单派生并标记。
+      const columnCaps = this.asStringArray(d.capabilities);
+      const capabilities =
+        columnCaps.length > 0 ? columnCaps : deriveDeviceCapabilities(d.deviceModel);
+      if (columnCaps.length === 0) derived.push('capabilities');
+      // 位置：设备自身 location_lat/lng（真实遥测）；缺失则显式 UNKNOWN(null)，
+      // 绝不借用人员坐标（见 01 §4.1）。
+      const lat = d.locationLat ?? null;
+      const lng = d.locationLng ?? null;
+      const hasDeviceLocation = lat != null && lng != null;
+      // 设备自身空间实体（entityId=deviceId），用于解析所在工位（parentId）。
+      const deviceSe = d.deviceId ? spatialByEntityId.get(d.deviceId) : undefined;
       return {
         id: d.id,
         workerName: d.workerName ?? null,
         deviceModel: d.deviceModel ?? null,
         batteryPct: d.batteryPct ?? 100,
-        // v0.7 Batch5.3：设备能力从型号派生（exo-lift 等），供资格/求解器能力匹配。
-        // 注：schema 无 capabilities 列（自动生成不改），型号白名单派生保守缺省空数组。
-        capabilities: this.deriveDeviceCapabilities(d.deviceModel),
+        capabilities,
         // STALE/UNKNOWN 设备不视为可用（离线/不可派）。
         online: stale ? false : (d.online ?? false),
         status: d.faultCode ? 'fault' : stale ? 'offline' : 'online',
-        x: boundPerson ? (boundPerson.x ?? null) : null,
-        y: boundPerson ? (boundPerson.y ?? null) : null,
-        locationStationId: boundPerson ? (boundPerson.stationId ?? null) : null,
-        availableWindows: [],
+        x: hasDeviceLocation ? lat : null,
+        y: hasDeviceLocation ? lng : null,
+        locationStationId: deviceSe ? (deviceSe.parentId ?? null) : null,
+        availableWindows: this.parseWindows(d.availableWindows),
+        locationConfidence: hasDeviceLocation ? (d.locationConfidence ?? null) : null,
+        locationUpdatedAt: d.locationUpdatedAt ? d.locationUpdatedAt.getTime() : null,
+        telemetryUpdatedAt: d.telemetryUpdatedAt ? d.telemetryUpdatedAt.getTime() : null,
         sourceTs,
         freshnessMs: this.freshnessMs,
         dataQuality,
+        derived,
       };
     });
 
@@ -428,6 +461,10 @@ export class WorldStateSnapshotService {
         y: p.y,
         skills: p.skills,
         certifications: p.certifications,
+        shift: p.shift,
+        workload: p.workload,
+        currentTaskId: p.currentTaskId,
+        certificationExpiry: p.certificationExpiry,
       });
     }
     for (const t of taskList) {
@@ -441,6 +478,17 @@ export class WorldStateSnapshotService {
         predecessorIds: t.predecessorIds,
         requiredSkills: t.requiredSkills,
         requiredCertifications: t.requiredCertifications,
+        basePriority: t.basePriority,
+        earliestStartMs: t.earliestStartMs,
+        latestFinishMs: t.latestFinishMs,
+        safetyCritical: t.safetyCritical,
+        preemptible: t.preemptible,
+        skillMatchMode: t.skillMatchMode,
+        productionImpact: t.productionImpact,
+        downstreamImpact: t.downstreamImpact,
+        requiredStationCapabilities: t.requiredStationCapabilities,
+        preferredResources: t.preferredResources,
+        excludedResources: t.excludedResources,
       });
     }
     for (const d of deviceList) {
@@ -448,6 +496,12 @@ export class WorldStateSnapshotService {
         batteryPct: d.batteryPct,
         online: d.online,
         status: d.status,
+        capabilities: d.capabilities,
+        x: d.x,
+        y: d.y,
+        locationStationId: d.locationStationId,
+        locationConfidence: d.locationConfidence,
+        telemetryUpdatedAt: d.telemetryUpdatedAt,
       });
     }
     for (const r of routeStatus) {
@@ -461,6 +515,9 @@ export class WorldStateSnapshotService {
         name: s.name,
         x: s.x,
         y: s.y,
+        capacity: s.capacity,
+        queue: s.queue,
+        availableWindows: s.availableWindows,
       });
     }
     for (const fz of forbiddenZones) {
@@ -543,28 +600,50 @@ export class WorldStateSnapshotService {
     return [];
   }
 
-  /**
-   * v0.7 Batch5.3：从设备型号派生能力集合（exo-lift 等），供资格/求解器能力匹配。
-   * 型号白名单匹配，未命中返回空数组（视为无能力声明，不误判）。
-   */
-  private deriveDeviceCapabilities(deviceModel: string | null): string[] {
-    const m = (deviceModel ?? '').toLowerCase();
-    if (!m) return [];
-    const caps: string[] = [];
-    if (m.includes('exo') || m.includes('pro') || m.includes('外骨骼')) {
-      caps.push('exo-lift');
-    }
-    if (m.includes('lite')) caps.push('exo-lite');
-    if (m.includes('vacuum') || m.includes('吸')) caps.push('vacuum');
-    if (m.includes('crane') || m.includes('吊')) caps.push('crane');
-    return caps;
-  }
-
   /** jsonb 数组列可能以 unknown 返回；安全地规整为 string[]。 */
   private asStringArray(v: unknown): string[] {
     return Array.isArray(v)
       ? (v as string[]).filter((x): x is string => typeof x === 'string')
       : [];
+  }
+
+  /**
+   * 解析 jsonb 可用窗口列（[{ startMs, endMs }]）；非法条目丢弃（runtime validation，
+   * 禁止 as unknown as 逃避类型检查）。无值/非数组返回空数组。
+   */
+  private parseWindows(v: unknown): Array<{ startMs: number; endMs: number }> {
+    if (!Array.isArray(v)) return [];
+    const out: Array<{ startMs: number; endMs: number }> = [];
+    for (const item of v) {
+      if (this.isWindow(item)) out.push({ startMs: item.startMs, endMs: item.endMs });
+    }
+    return out;
+  }
+
+  /** 可用窗口条目形状守卫。 */
+  private isWindow(v: unknown): v is { startMs: number; endMs: number } {
+    if (typeof v !== 'object' || v === null) return false;
+    const rec = v as Record<string, unknown>;
+    return typeof rec.startMs === 'number' && typeof rec.endMs === 'number';
+  }
+
+  /**
+   * 解析证书到期平行列（[{ name, expiresAtMs }]，决策 D-A）。
+   * 无值/非数组返回空数组；name 缺失的条目丢弃。
+   */
+  private parseCertificationExpiry(
+    v: unknown,
+  ): Array<{ name: string; expiresAtMs: number | null }> {
+    if (!Array.isArray(v)) return [];
+    const out: Array<{ name: string; expiresAtMs: number | null }> = [];
+    for (const item of v) {
+      if (typeof item !== 'object' || item === null) continue;
+      const rec = item as Record<string, unknown>;
+      const name = typeof rec.name === 'string' ? rec.name : '';
+      const expiresAtMs = typeof rec.expiresAtMs === 'number' ? rec.expiresAtMs : null;
+      if (name) out.push({ name, expiresAtMs });
+    }
+    return out;
   }
 
   /**

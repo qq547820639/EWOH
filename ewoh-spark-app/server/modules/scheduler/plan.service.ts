@@ -73,6 +73,8 @@ export class PlanService {
           solverVersion: plan.solverVersion ?? null,
           horizonMinutes: plan.horizonMinutes ?? null,
           scoreBreakdownJson: (plan.scoreBreakdown ?? null) as unknown as Record<string, unknown> | null,
+          // Phase 2 / P2-T2：实际投放的 8 权重快照（确定性 replay）。
+          weightsJson: plan.weights ?? null,
           createdAt: new Date(plan.createdAt),
         });
 
@@ -139,6 +141,7 @@ export class PlanService {
 
   /**
    * 审批方案：校验 version + snapshotVersion，过期则抛 PLAN_STALE。
+   * Phase 3 / P3-T4：若方案会改变安全关键任务的当前执行/锁定分配 → 拒绝 SAFETY_CRITICAL_LOCKED。
    */
   async approvePlan(
     planId: string,
@@ -158,6 +161,8 @@ export class PlanService {
     await this.worldStateSnapshotService.assertFreshForApprove(
       body.snapshotVersion,
     );
+    // Phase 3 / P3-T4：方案不得改变安全关键任务的锁定分配。
+    await this.assertNoSafetyCriticalChange(planId, 'approve', [], ctx);
 
     const op = body.operator || ctx.userId;
     const now = new Date();
@@ -432,6 +437,9 @@ export class PlanService {
       body.lockedConstraints as import('@shared/api.interface').SchedulingConstraint[],
     );
 
+    // Phase 3 / P3-T4：安全关键任务禁止被重排改变分配/时间（硬校验）。
+    await this.assertNoSafetyCriticalChange(planId, 'replan', effectiveConstraints, ctx);
+
     const newPlan = await this.solverService.solve(snapshot, effectiveConstraints, {
       planId: newPlanId,
       planName: `${plan.planName ?? planId} 重排`,
@@ -623,6 +631,7 @@ export class PlanService {
         changeCost: metrics.changeCost ?? 0,
       },
       scoreBreakdown: (plan.scoreBreakdownJson ?? undefined) as SchedulingPlanV2['scoreBreakdown'],
+      weights: (plan.weightsJson ?? undefined) as SchedulingPlanV2['weights'],
       baselineDelta: (plan.baselineDeltaJson ?? {}) as Record<string, unknown>,
       violations: (plan.violationsJson ?? []) as Array<Record<string, unknown>>,
       createdAt: plan.createdAt ? plan.createdAt.toISOString() : new Date().toISOString(),
@@ -636,5 +645,76 @@ export class PlanService {
       s += chars[Math.floor(Math.random() * chars.length)];
     }
     return s;
+  }
+
+  /**
+   * Phase 3 / P3-T4：安全关键任务硬校验。
+   * - replan：若入站约束会改变 safetyCritical 任务的分配（person/device/station）或时间窗，
+   *   且与当前方案分配不一致 → 拒绝 SAFETY_CRITICAL_LOCKED（含原因字段）。
+   * - approve：若方案会改变当前执行/锁定（snapshot.lockedAssignments）的 safetyCritical
+   *   任务分配 → 拒绝 SAFETY_CRITICAL_LOCKED。
+   * 快照无 safetyCritical 任务或操作不改变分配/时间时通过（不阻断正常重排/审批）。
+   */
+  private async assertNoSafetyCriticalChange(
+    planId: string,
+    operation: 'approve' | 'replan',
+    constraints: import('@shared/api.interface').SchedulingConstraint[],
+    ctx: OrgContext,
+  ): Promise<void> {
+    const snapshot = await this.worldStateSnapshotService.buildSnapshot(ctx);
+    const tasks = Array.isArray(snapshot.tasks) ? snapshot.tasks : [];
+    const safetyCriticalTasks = new Set(
+      tasks.filter((t) => t.safetyCritical === true).map((t) => t.id),
+    );
+    if (safetyCriticalTasks.size === 0) return;
+
+    const plan = await this.getPlan(planId);
+    const currentByTask = new Map(
+      plan.assignments.map((a) => [a.taskId, a]),
+    );
+    const nowMs = (t?: string | null): number | null => {
+      const ms = t ? Date.parse(t) : NaN;
+      return Number.isFinite(ms) ? ms : null;
+    };
+
+    if (operation === 'replan') {
+      for (const c of constraints) {
+        if (!c.taskId || !safetyCriticalTasks.has(c.taskId)) continue;
+        const cur = currentByTask.get(c.taskId);
+        if (!cur) continue;
+        const changed =
+          (c.personId != null && c.personId !== cur.personId) ||
+          (c.deviceId != null && c.deviceId !== cur.deviceId) ||
+          (c.stationId != null && c.stationId !== cur.stationId) ||
+          (c.startMs != null && c.startMs !== nowMs(cur.plannedStart)) ||
+          (c.endMs != null && c.endMs !== nowMs(cur.plannedEnd));
+        if (changed) {
+          throw new ConflictException(
+            `SAFETY_CRITICAL_LOCKED: task ${c.taskId} 为安全关键任务，禁止通过重排改变其分配/时间`,
+          );
+        }
+      }
+      return;
+    }
+
+    // approve：方案不得改变执行/锁定中的 safetyCritical 任务分配。
+    const lockedByTask = new Map(
+      (snapshot.lockedAssignments ?? []).map((l) => [l.taskId, l]),
+    );
+    for (const tid of safetyCriticalTasks) {
+      const locked = lockedByTask.get(tid);
+      if (!locked) continue;
+      const planned = currentByTask.get(tid);
+      if (!planned) continue;
+      const changed =
+        (locked.personId != null && planned.personId !== locked.personId) ||
+        (locked.deviceId != null && planned.deviceId !== locked.deviceId) ||
+        (locked.stationId != null && planned.stationId !== locked.stationId);
+      if (changed) {
+        throw new ConflictException(
+          `SAFETY_CRITICAL_LOCKED: task ${tid} 为安全关键任务，方案不得改变其执行/锁定分配`,
+        );
+      }
+    }
   }
 }

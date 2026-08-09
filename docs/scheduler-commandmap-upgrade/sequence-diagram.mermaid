@@ -1,0 +1,40 @@
+sequenceDiagram
+  participant Ext as 外部/任务/事件源
+  participant Trig as TriggerService
+  participant WS as WorldStateSnapshotService
+  participant IA as ImpactAnalyzer/ReplanCoordinator
+  participant Sol as SolverService
+  participant Cps as CpSatSchedulingSolver
+  participant Wkr as Python cpsat/worker.py
+  participant Heu as HeuristicSchedulingSolver
+  participant Plan as PlanCommandService
+  participant Dis as DispatchCoordinatorService
+  participant Fb as SchedulingFeedbackService
+  participant Out as OutboxService/SSE
+
+  Ext->>Trig: evaluate(triggerType, entityId, ctx)
+  Trig->>Trig: 幂等 triggerKey + 冷却去抖 → 创建 run(queued)
+  Trig->>WS: buildSnapshot(ctx)
+  WS-->>Trig: WorldStateSnapshot(WS-YYYYMMDD-NNNN)
+  Trig->>IA: analyze(snapshot, event) → affected/frozen/descendant
+  IA-->>Trig: partial snapshot（affected ∪ frozen）+ baselineAssignee
+  Trig->>Sol: solveVariants(partialSnapshot, constraints, opts)
+  Sol->>Cps: solve(snapshot, constraints, opts)
+  Cps->>Wkr: POST /api/scheduler/v2/solve (SolverRequest JSON)
+  alt CP-SAT 可用
+    Wkr-->>Cps: SolverResponse(OPTIMAL/FEASIBLE)
+  else 不可用/非最优/超时
+    Cps->>Heu: fallback → solverStatus=FALLBACK/UNAVAILABLE + fallbackReason
+    Heu-->>Cps: SchedulingPlanV2(HEURISTIC)
+  end
+  Cps-->>Sol: plan A/B/C（DecisionTrace + ScoreBreakdown + baselineDelta.variant）
+  Sol-->>Trig: plans[]
+  Trig->>Plan: persistPlan(plan, ctx) → ewoh_schedule_plan + assignments + audit
+  Trig->>Trig: run → succeeded（snapshotVersion + planIds + failure_reason）
+  Out->>Out: outbox enqueue（plan.created 等，envelope 含 snapshotVersion/planId/occurredAt）
+  Plan->>Plan: approvePlanV2（校验 plan.version + snapshotVersion 新鲜度 → PLAN_STALE）
+  Plan->>Dis: dispatchPlanV2（CAS 幂等守卫 + safetyCritical 前置校验）
+  Dis->>Dis: reservation（DB EXCLUDE 背板）→ 任务状态转换 → outbox(assignment.dispatched/plan.dispatched) → audit
+  Dis->>Fb: recordBaseline(planId)（planned 基线：start/end/travel(eta)/wait）
+  Ext->>Fb: recordTaskActuals(actualStart/End/Travel/Wait/Resource)（幂等覆盖）
+  Fb->>Fb: deriveKpis()（on-time rate/mean·P95 lateness/travel/workload/churn/conflict rate/replan success/fallback rate）

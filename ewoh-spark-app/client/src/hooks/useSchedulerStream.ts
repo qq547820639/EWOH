@@ -102,11 +102,14 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
   // 用于在 connect 内部自引用（重连）时绕过 TDZ。
   const connectRef = useRef<() => void>(() => undefined);
 
-  /** 全量重同步：放弃增量，从后端拉取权威状态（P0-1）。 */
+  /** 全量重同步：放弃增量，从后端拉取权威状态（P0-1 / P3-T2）。 */
   const triggerResync = useCallback(() => {
-    // 活跃方案列表有权威端点（GET /api/scheduler/active-plans），resync 时必须
-    // 失效以重新拉取，保证与数据库完全一致；SSE 仅作增量。
+    // 权威端点并行失效重建：活跃方案 / 世界快照 / 资源投影 / 冲突 / 方案详情 / 运行。
+    // 缺口内状态不猜测，一律从后端权威数据恢复。
     queryClient.invalidateQueries({ queryKey: ['scheduler-active-plans'] });
+    queryClient.invalidateQueries({ queryKey: ['scheduler-snapshot'] });
+    queryClient.invalidateQueries({ queryKey: ['scheduler-resource-state'] });
+    queryClient.invalidateQueries({ queryKey: ['scheduler-conflicts'] });
     // 使用前缀匹配，使所有 ['scheduler-plan', planId] / ['scheduler-run', runId] 都失效。
     queryClient.invalidateQueries({ queryKey: ['scheduler-plan'] });
     queryClient.invalidateQueries({ queryKey: ['scheduler-run'] });

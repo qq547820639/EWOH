@@ -148,6 +148,7 @@ export class TriggerService {
       planIds: (r.planIds as string[] | null) ?? [],
       orgId: r.orgId ?? null,
       error: r.error ?? null,
+      failureReason: r.failureReason ?? null,
       createdAt: r.createdAt ? r.createdAt.toISOString() : new Date().toISOString(),
     };
   }

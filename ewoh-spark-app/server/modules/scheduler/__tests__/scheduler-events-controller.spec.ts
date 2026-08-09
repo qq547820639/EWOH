@@ -23,6 +23,7 @@ function makeController(opts: {
     {} as never, // schedulerStreamService
     {} as never, // resourceProjectionService
     {} as never, // replanCoordinatorService（controller 不再直连）
+    {} as never, // conflictService
   );
   return { controller, schedulerService };
 }

@@ -217,20 +217,32 @@ function reconcile(rootDir) {
   const totalComputed = managedCount;
   const additionalCountDetail = additionalCount > 0 ? `; additional_hardened ${additionalCount} (separate, not counted)` : '';
 
-  const changelogClaimed = changelog?.match(/(\d+)\s*→\s*(\d+)/);
-  const changelogTo = changelogClaimed?.[2];
-  const claimed =
-    changelogTo && Number(changelogTo) === totalComputed
-      ? totalComputed
-      : changelogTo
-        ? Number(changelogTo)
-        : 0;
+  // 仅匹配「受管表 N → M」口径行（如「ewoh_asset_package，受管表 48 → 57。」），
+  // 排除 OpenAPI「304 → 306 条路径」等非表口径的箭头行，避免误把路径数当受管表数。
+  const changelogTo = (() => {
+    if (!changelog) return undefined;
+    for (const line of changelog.split('\n')) {
+      if (line.includes('条路径')) continue;
+      if (!line.includes('受管表')) continue;
+      const m = line.match(/(\d+)\s*→\s*(\d+)/);
+      if (m) return m[2];
+    }
+    return undefined;
+  })();
   const stateClaimed = stateJson?.verification_state?.['postgres_ddl_rls_gate']
     ? String(stateJson.verification_state['postgres_ddl_rls_gate']).match(/(\d+)\s*managed tables/)?.[1]
     : null;
   const releaseClaimed = releaseManifest?.evidence?.postgres_gate
     ? String(releaseManifest.evidence.postgres_gate).match(/(\d+)\s*managed tables/)?.[1]
     : null;
+  // CHANGELOG 无表口径行时 fallback 到 state.json / release-manifest 的数值。
+  const claimedSource = changelogTo ?? stateClaimed ?? releaseClaimed;
+  const claimed =
+    claimedSource && Number(claimedSource) === totalComputed
+      ? totalComputed
+      : claimedSource
+        ? Number(claimedSource)
+        : 0;
 
   const dbConsistent =
     totalComputed === claimed &&
@@ -243,7 +255,7 @@ function reconcile(rootDir) {
     detail:
       `computed=${totalComputed} (managed ${managedCount}=new ${schemaNew}+altered ${schemaAltered}+` +
       `mapped-existing ${schemaMappedExisting}${additionalCountDetail}); ` +
-      `claimed: changelog=${changelogTo ?? 'n/a'} (48->51), state.json=${stateClaimed ?? 'n/a'}, ` +
+      `claimed: changelog=${changelogTo ?? 'n/a'}, state.json=${stateClaimed ?? 'n/a'}, ` +
       `release-manifest=${releaseClaimed ?? 'n/a'}`,
   });
   if (!dbConsistent) {

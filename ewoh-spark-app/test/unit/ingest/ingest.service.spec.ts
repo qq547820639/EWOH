@@ -57,6 +57,13 @@ function createSensorIngest() {
   };
 }
 
+/** v0.7 B1：ReplanCoordinatorService mock（IngestService 构造参数 #5，设备离线局部重排）。 */
+function createReplanCoordinator() {
+  return {
+    handleTrigger: jest.fn().mockResolvedValue({ ok: true, runId: 'RUN-REPLAN' }),
+  };
+}
+
 describe('IngestService canonical UnifiedExoFrame mapping', () => {
   it('maps nested pose/load/device/quality fields into telemetry and device rows', async () => {
     const { db, insertRows } = createIngestDb([[{}], []]);
@@ -66,6 +73,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
       ruleEngine as unknown as never,
       createMesService() as unknown as never,
       createSensorIngest() as unknown as never,
+      createReplanCoordinator() as unknown as never,
     );
 
     const result = await service.ingestExoskeleton({
@@ -132,6 +140,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
       createRuleEngine() as unknown as never,
       createMesService() as unknown as never,
       createSensorIngest() as unknown as never,
+      createReplanCoordinator() as unknown as never,
     );
 
     await service.ingestExoskeleton({
@@ -157,6 +166,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
       createRuleEngine() as unknown as never,
       createMesService() as unknown as never,
       createSensorIngest() as unknown as never,
+      createReplanCoordinator() as unknown as never,
     );
 
     const result = await service.ingestExoskeleton({
@@ -180,6 +190,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
       createRuleEngine() as unknown as never,
       createMesService() as unknown as never,
       createSensorIngest() as unknown as never,
+      createReplanCoordinator() as unknown as never,
     );
 
     const result = await service.ingestExoskeleton({
@@ -202,6 +213,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
       createRuleEngine() as unknown as never,
       createMesService() as unknown as never,
       createSensorIngest() as unknown as never,
+      createReplanCoordinator() as unknown as never,
     );
 
     const result = await service.ingestExoskeleton({
@@ -222,6 +234,7 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
       createRuleEngine() as unknown as never,
       createMesService() as unknown as never,
       createSensorIngest() as unknown as never,
+      createReplanCoordinator() as unknown as never,
     );;
 
     await expect(
@@ -296,7 +309,8 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       existingRawRefs: [],
     });
     const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never,
-      createSensorIngest() as unknown as never);
+      createSensorIngest() as unknown as never,
+      createReplanCoordinator() as unknown as never);
 
     const result = await service.ingestExoskeletonBatch([
       makeFrame({ entity_id: 'EXO-BATCH-1' }),
@@ -321,7 +335,8 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       existingRawRefs: ['dup-raw-ref'],
     });
     const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never,
-      createSensorIngest() as unknown as never);
+      createSensorIngest() as unknown as never,
+      createReplanCoordinator() as unknown as never);
 
     const result = await service.ingestExoskeletonBatch([
       makeFrame({ entity_id: 'EXO-BATCH-1', raw_ref: 'dup-raw-ref' }),
@@ -342,7 +357,8 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       existingRawRefs: [],
     });
     const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never,
-      createSensorIngest() as unknown as never);
+      createSensorIngest() as unknown as never,
+      createReplanCoordinator() as unknown as never);
 
     const result = await service.ingestExoskeletonBatch([
       makeFrame({ entity_id: 'EXO-BATCH-1', event_time: future }),
@@ -361,7 +377,8 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       existingRawRefs: [],
     });
     const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never,
-      createSensorIngest() as unknown as never);
+      createSensorIngest() as unknown as never,
+      createReplanCoordinator() as unknown as never);
 
     const result = await service.ingestExoskeletonBatch([
       makeFrame({ entity_id: 'EXO-BATCH-MISSING' }),
@@ -388,14 +405,18 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       createRuleEngine() as unknown as never,
       mes as unknown as never,
       createSensorIngest() as unknown as never,
+      createReplanCoordinator() as unknown as never,
     );
 
-    const result = await service.ingestMes({
-      order_id: 'WO-MES-1',
-      product_code: 'P-1',
-      quantity: 10,
-      priority: 'high',
-    });
+    const result = await service.ingestMes(
+      {
+        order_id: 'WO-MES-1',
+        product_code: 'P-1',
+        quantity: 10,
+        priority: 'high',
+      },
+      { userId: 'ingest', primaryOrgId: 'ORG-1' },
+    );
 
     expect(result.accepted).toBe(true);
     // 不再写 ewoh_schedule_plan（无任何 insert 落到 scheduling 表）
@@ -420,9 +441,13 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       createRuleEngine() as unknown as never,
       mes as unknown as never,
       createSensorIngest() as unknown as never,
+      createReplanCoordinator() as unknown as never,
     );
 
-    const result = await service.ingestMes({ order_id: 'WO-MES-2' });
+    const result = await service.ingestMes(
+      { order_id: 'WO-MES-2' },
+      { userId: 'ingest', primaryOrgId: 'ORG-1' },
+    );
     expect(result.accepted).toBe(false);
     expect(result.data_quality).toBe('invalid');
   });

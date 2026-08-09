@@ -36,7 +36,10 @@ import { AuditService } from '@server/modules/shared/audit.service';
 import type { PlanOverrideResponse } from '@shared/api.interface';
 
 /** 构造 SchedulerService + PlanService + 真实求解器（CP-SAT 失败回退启发式）+ 内存 fake DB。 */
-function makeScheduler(seed: Parameters<typeof makeFakeDb>[0]) {
+function makeScheduler(
+  seed: Parameters<typeof makeFakeDb>[0],
+  snapshotOverrides: Parameters<typeof buildSnapshot>[0] = {},
+) {
   const { db, state } = makeFakeDb(seed);
   const requestDatabaseContext = {
     runInTransaction: jest.fn(async (_guc: unknown, cb: () => Promise<void>) => {
@@ -62,6 +65,7 @@ function makeScheduler(seed: Parameters<typeof makeFakeDb>[0]) {
       }),
     ],
     devices: [device({ id: 'd1' })],
+    ...snapshotOverrides,
   });
 
   const worldStateSnapshotService = {
@@ -165,7 +169,7 @@ describe('applyOverrides（人工覆盖闭环）', () => {
     );
   });
 
-  it('覆盖动作 → 约束类型映射覆盖全部 9 种 kind', async () => {
+  it('覆盖动作 → 约束类型映射覆盖全部 10 种 kind（含 CHANGE_RESOURCE）', async () => {
     const kinds = [
       'LOCK_PERSON',
       'LOCK_DEVICE',
@@ -176,6 +180,7 @@ describe('applyOverrides（人工覆盖闭环）', () => {
       'PREFER_RESOURCE',
       'BOOST',
       'ADJUST_TIME',
+      'CHANGE_RESOURCE',
     ] as const;
     const actions = kinds.map((kind) => ({ kind, taskId: 't1' }));
     const { schedulerService } = makeScheduler({ plans: [seedPlan()] });
@@ -190,6 +195,260 @@ describe('applyOverrides（人工覆盖闭环）', () => {
     expect(types).toContain('EXCLUDED_RESOURCE');
     expect(types).toContain('PREFERRED_RESOURCE');
     expect(types).toContain('MANUAL_BOOST');
+    expect(types).toContain('LOCKED_ASSIGNMENT');
+  });
+
+  it('P3-T4: CHANGE_RESOURCE → LOCKED_ASSIGNMENT 约束（新 assignee）且 replan 继承', async () => {
+    const { schedulerService, state } = makeScheduler({ plans: [seedPlan()] });
+
+    const res: PlanOverrideResponse = await schedulerService.applyOverrides(
+      'P1',
+      {
+        actions: [
+          {
+            kind: 'CHANGE_RESOURCE',
+            taskId: 't1',
+            changeResource: { personId: 'p2', deviceId: 'd1' },
+            reason: '更换人员',
+          },
+        ],
+        operator: 'op1',
+        reason: 'change resource',
+      },
+      testOrgContext(),
+    );
+
+    // 约束类型 = LOCKED_ASSIGNMENT，携带新 assignee。
+    expect(res.appliedConstraints[0].type).toBe('LOCKED_ASSIGNMENT');
+    expect(res.appliedConstraints[0].personId).toBe('p2');
+    expect(res.appliedConstraints[0].deviceId).toBe('d1');
+
+    // 重排产出新方案且锁定生效：t1 分配给 p2。
+    expect(res.after.planId).toBe('P1-R2');
+    const t1 = res.after.assignments.find((a) => a.taskId === 't1');
+    expect(t1?.personId).toBe('p2');
+
+    // 约束已落库（audit 含 reason+operator；约束 reason 取动作级 reason）。
+    expect(state.constraints.length).toBeGreaterThan(0);
+    const persisted = state.constraints[0] as Record<string, unknown>;
+    expect((persisted.valueJson as Record<string, unknown>).operator).toBe('op1');
+    expect((persisted.valueJson as Record<string, unknown>).reason).toBe('更换人员');
+  });
+
+  it('P3-T4: safetyCritical 任务被 override 改变分配 → 拒绝 SAFETY_CRITICAL_LOCKED', async () => {
+    const { schedulerService } = makeScheduler(
+      {
+        plans: [seedPlan()],
+        assignments: [
+          {
+            planId: 'P1', taskId: 't1', personId: 'p1', deviceId: 'd1',
+            stationId: 'S1', plannedStart: new Date('2026-08-09T00:00:00.000Z'),
+            plannedEnd: new Date('2026-08-09T00:30:00.000Z'), status: 'proposed',
+          },
+        ],
+      },
+      {
+        tasks: [
+          {
+            ...task({
+              id: 't1',
+              taskType: 'work',
+              priority: 'medium',
+              status: 'pending',
+              requiredSkills: ['work'],
+            }),
+            safetyCritical: true,
+          },
+        ],
+      },
+    );
+
+    await expect(
+      schedulerService.applyOverrides(
+        'P1',
+        {
+          actions: [
+            { kind: 'CHANGE_RESOURCE', taskId: 't1', changeResource: { personId: 'p2' } },
+          ],
+          operator: 'op1',
+          reason: '尝试更换安全任务人员',
+        },
+        testOrgContext(),
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining('SAFETY_CRITICAL_LOCKED'),
+    });
+  });
+
+  it('P3-T4: safetyCritical 任务保持原分配（不改变）→ 重排通过', async () => {
+    const { schedulerService } = makeScheduler(
+      {
+        plans: [seedPlan()],
+        assignments: [
+          {
+            planId: 'P1', taskId: 't1', personId: 'p1', deviceId: 'd1',
+            stationId: 'S1', plannedStart: new Date('2026-08-09T00:00:00.000Z'),
+            plannedEnd: new Date('2026-08-09T00:30:00.000Z'), status: 'proposed',
+          },
+        ],
+      },
+      {
+        tasks: [
+          {
+            ...task({
+              id: 't1',
+              taskType: 'work',
+              priority: 'medium',
+              status: 'pending',
+              requiredSkills: ['work'],
+            }),
+            safetyCritical: true,
+          },
+        ],
+      },
+    );
+
+    // 锁定到当前分配（p1/d1 不变）→ 允许。
+    const res = await schedulerService.applyOverrides(
+      'P1',
+      {
+        actions: [
+          { kind: 'LOCK_PERSON', taskId: 't1', personId: 'p1' },
+        ],
+        operator: 'op1',
+        reason: '保持安全任务原分配',
+      },
+      testOrgContext(),
+    );
+    expect(res.after.planId).toBe('P1-R2');
+  });
+
+  it('P3-T4: approve 改变执行/锁定中的 safetyCritical 任务分配 → 拒绝 SAFETY_CRITICAL_LOCKED', async () => {
+    const { planService } = makeScheduler(
+      {
+        plans: [seedPlan('proposed')],
+        assignments: [
+          {
+            planId: 'P1', taskId: 't1', personId: 'p2', deviceId: 'd1',
+            stationId: 'S1', plannedStart: new Date('2026-08-09T00:00:00.000Z'),
+            plannedEnd: new Date('2026-08-09T00:30:00.000Z'), status: 'proposed',
+          },
+        ],
+      },
+      {
+        tasks: [
+          {
+            ...task({
+              id: 't1',
+              taskType: 'work',
+              priority: 'medium',
+              status: 'pending',
+              requiredSkills: ['work'],
+            }),
+            safetyCritical: true,
+          },
+        ],
+        lockedAssignments: [
+          { taskId: 't1', personId: 'p1', deviceId: null, stationId: null },
+        ],
+      },
+    );
+
+    await expect(
+      planService.approvePlan(
+        'P1',
+        { version: 1, snapshotVersion: 'WS-TEST-0001', operator: 'op1', reason: 'approve' },
+        testOrgContext(),
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining('SAFETY_CRITICAL_LOCKED'),
+    });
+  });
+
+  it('P3-T4 边界：非 safetyCritical 任务 override 更换资源 → 不被 SAFETY_CRITICAL_LOCKED 拦截', async () => {
+    const { schedulerService } = makeScheduler(
+      {
+        plans: [seedPlan()],
+        assignments: [
+          {
+            planId: 'P1', taskId: 't1', personId: 'p1', deviceId: 'd1',
+            stationId: 'S1', plannedStart: new Date('2026-08-09T00:00:00.000Z'),
+            plannedEnd: new Date('2026-08-09T00:30:00.000Z'), status: 'proposed',
+          },
+        ],
+      },
+      {
+        tasks: [
+          {
+            ...task({
+              id: 't1',
+              taskType: 'work',
+              priority: 'medium',
+              status: 'pending',
+              requiredSkills: ['work'],
+            }),
+            safetyCritical: false,
+          },
+        ],
+      },
+    );
+
+    // 非 safetyCritical：CHANGE_RESOURCE 应正常执行（不被硬校验拦截）。
+    const res = await schedulerService.applyOverrides(
+      'P1',
+      {
+        actions: [
+          { kind: 'CHANGE_RESOURCE', taskId: 't1', changeResource: { personId: 'p2' } },
+        ],
+        operator: 'op1',
+        reason: '普通任务换人',
+      },
+      testOrgContext(),
+    );
+    expect(res.after.planId).toBe('P1-R2');
+  });
+
+  it('P3-T4 边界：approve 时 version 不匹配 → PLAN_STALE（快照新鲜但版本过期）', async () => {
+    const { planService } = makeScheduler(
+      {
+        plans: [seedPlan('proposed')],
+        assignments: [
+          {
+            planId: 'P1', taskId: 't1', personId: 'p1', deviceId: 'd1',
+            stationId: 'S1', plannedStart: new Date('2026-08-09T00:00:00.000Z'),
+            plannedEnd: new Date('2026-08-09T00:30:00.000Z'), status: 'proposed',
+          },
+        ],
+      },
+      {
+        tasks: [
+          {
+            ...task({
+              id: 't1',
+              taskType: 'work',
+              priority: 'medium',
+              status: 'pending',
+              requiredSkills: ['work'],
+            }),
+            safetyCritical: false,
+          },
+        ],
+      },
+    );
+
+    // 方案当前 version=1，审批携带错误 version=99 → PLAN_STALE。
+    await expect(
+      planService.approvePlan(
+        'P1',
+        { version: 99, snapshotVersion: 'WS-TEST-0001', operator: 'op1', reason: 'approve' },
+        testOrgContext(),
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining('PLAN_STALE'),
+    });
   });
 
   it('方案不存在 → NotFoundException', async () => {

@@ -193,4 +193,47 @@ describe('RoutingService.calculateRouteBetween（真实路线）', () => {
     expect(route.source).toBe('euclidean_fallback');
     expect(route.feasible).toBe(false);
   });
+
+  it('P2-T1：坐标缺失 → fallbackReason=coords_unknown / dataQuality=UNKNOWN（绝不 0,0 伪坐标）', async () => {
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn(() => ({
+            limit: jest.fn(() => Promise.resolve([])),
+          })),
+        })),
+      })),
+    };
+    const svc = new RoutingService(db as never, { getConfig: jest.fn().mockResolvedValue({ walkingSpeedMps: 1.0 }) } as never);
+    const route = await svc.calculateRoute('p-no-coords', 't-no-coords');
+    expect(route.feasible).toBe(false);
+    expect(route.fallbackReason).toBe('coords_unknown');
+    expect(route.dataQuality).toBe('UNKNOWN');
+  });
+
+  it('P2-T1：route graph 不可达（无节点）→ fallbackReason=no_route_edge / dataQuality=FRESH', async () => {
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => Promise.resolve([])),
+      })),
+    };
+    const svc = new RoutingService(db as never, { getConfig: jest.fn().mockResolvedValue({ walkingSpeedMps: 1.0 }) } as never);
+    const route = await svc.calculateRouteBetween({ x: 0, y: 0 }, { x: 5, y: 5 });
+    expect(route.source).toBe('euclidean_fallback');
+    expect(route.feasible).toBe(true);
+    expect(route.fallbackReason).toBe('no_route_edge');
+    expect(route.dataQuality).toBe('FRESH');
+  });
+
+  it('P2-T1：route graph 走通 → fallbackReason=null / dataQuality=FRESH', async () => {
+    const svc = new RoutingService(makeDb() as never, { getConfig: jest.fn().mockResolvedValue({ walkingSpeedMps: 1.0 }) } as never);
+    const route = await svc.calculateRouteBetween(
+      { x: 0, y: 0 },
+      { x: 5, y: 0 },
+      { personId: 'p1', taskId: 't1' },
+    );
+    expect(route.source).toBe('route_graph');
+    expect(route.fallbackReason).toBeNull();
+    expect(route.dataQuality).toBe('FRESH');
+  });
 });

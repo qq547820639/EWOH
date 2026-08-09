@@ -13,6 +13,7 @@ import {
   ResourceReservationService,
   type ReservationResult,
 } from './resource-reservation.service';
+import { deriveDeviceCapabilities } from './device-capabilities';
 
 /** 数据新鲜度阈值（ms）：sourceTs 距今超过该值则标 STALE。 */
 const DEFAULT_FRESHNESS_MS = 5 * 60 * 1000;
@@ -95,15 +96,14 @@ export class ResourceProjectionService {
         // 数据过时（STALE/UNKNOWN）时不得显示为可派工：与调度 world-state 语义一致。
         status:
           dataQuality === 'FRESH' ? (p.status ?? 'available') : 'unavailable',
-        capabilities: Array.isArray(p.skills) ? (p.skills as string[]) : [],
-        certifications: Array.isArray(p.certifications)
-          ? (p.certifications as string[])
-          : [],
+        capabilities: this.asStringArray(p.skills),
+        certifications: this.asStringArray(p.certifications),
         location: {
           stationId: p.spatialEntityId ?? null,
           zoneId: se ? (se.parentId ?? null) : null,
-          x: se ? (se.x ?? 0) : 0,
-          y: se ? (se.y ?? 0) : 0,
+          // 坐标缺失 → 显式 UNKNOWN(null)，禁止用 0 冒充真实坐标。
+          x: se ? (se.x ?? null) : null,
+          y: se ? (se.y ?? null) : null,
         },
         availableWindows: this.computeAvailabilityWindows(pRes, now),
         reservations: pRes.map((r) => ({
@@ -117,10 +117,17 @@ export class ResourceProjectionService {
           fatigueLevel: load?.fatigueLevel ?? null,
           healthStatus: p.healthStatus ?? null,
         },
-        // ewohPersonnel 无"当前任务"列，team 取真实 team_name 列，班次无列故为 null。
-        currentTask: null,
+        // 领域新列（P1-T3）：shift / workload / currentTask 有背衬列才填充，无则 null。
+        currentTask: p.currentTaskId ?? null,
         team: p.teamName ?? null,
-        shift: null,
+        shift: p.shift ?? null,
+        workload: p.workload ?? null,
+        certificationExpiry: this.parseCertificationExpiry(p.certificationExpiry),
+        locationConfidence: null,
+        locationUpdatedAt: null,
+        telemetryUpdatedAt: null,
+        capacity: null,
+        queue: null,
         updatedAt: sourceTs,
         sourceTs,
         freshnessMs: DEFAULT_FRESHNESS_MS,
@@ -143,6 +150,15 @@ export class ResourceProjectionService {
           ? d.updatedAt.getTime()
           : null;
       const deviceDataQuality = this.classifyFreshness(sourceTs, now);
+      const derived: string[] = [];
+      // 能力：与 world-state 统一读 ewoh_device.capabilities 列（SSOT，消除 [deviceModel]
+      // 裸串语义不一致）；列无值才按型号白名单派生并标记 derived。
+      const columnCaps = this.asStringArray(d.capabilities);
+      const capabilities =
+        columnCaps.length > 0 ? columnCaps : deriveDeviceCapabilities(d.deviceModel);
+      if (columnCaps.length === 0) derived.push('capabilities');
+      // 位置：设备自身 location_lat/lng（真实遥测）；缺失则显式 UNKNOWN(null)，绝不借人员坐标。
+      const hasDeviceLocation = d.locationLat != null && d.locationLng != null;
       return {
         id: d.id,
         type: 'device',
@@ -152,13 +168,13 @@ export class ResourceProjectionService {
           : deviceDataQuality === 'FRESH'
             ? 'online'
             : 'offline',
-        capabilities: d.deviceModel ? [d.deviceModel] : [],
+        capabilities,
         certifications: [],
         location: {
           stationId: se ? (se.parentId ?? null) : null,
           zoneId: parentSe ? (parentSe.parentId ?? null) : null,
-          x: se ? (se.x ?? 0) : 0,
-          y: se ? (se.y ?? 0) : 0,
+          x: d.locationLat ?? null,
+          y: d.locationLng ?? null,
         },
         availableWindows: this.computeAvailabilityWindows(dRes, now),
         reservations: dRes.map((r) => ({
@@ -176,11 +192,20 @@ export class ResourceProjectionService {
         currentTask: null,
         team: null,
         shift: null,
+        workload: null,
+        certificationExpiry: null,
+        // 字段级位置/遥测明细（P1-T3）：有背衬列才填充。
+        locationConfidence: hasDeviceLocation ? (d.locationConfidence ?? null) : null,
+        locationUpdatedAt: d.locationUpdatedAt ? d.locationUpdatedAt.getTime() : null,
+        telemetryUpdatedAt: d.telemetryUpdatedAt ? d.telemetryUpdatedAt.getTime() : null,
+        capacity: null,
+        queue: null,
         updatedAt: sourceTs,
         sourceTs,
         freshnessMs: DEFAULT_FRESHNESS_MS,
         dataQuality: deviceDataQuality,
         version: 1,
+        derived,
       };
     });
 
@@ -206,8 +231,8 @@ export class ResourceProjectionService {
           location: {
             stationId: se.entityId,
             zoneId: se.parentId ?? null,
-            x: se.x ?? 0,
-            y: se.y ?? 0,
+            x: se.x ?? null,
+            y: se.y ?? null,
           },
           availableWindows: this.computeAvailabilityWindows(sRes, now),
           reservations: sRes.map((r) => ({
@@ -221,10 +246,17 @@ export class ResourceProjectionService {
             fatigueLevel: null,
             healthStatus: null,
           },
-          // ewohSpatialEntity 无 currentTask / team / shift 背衬列，一律 null。
+          // 领域新列（P1-T3）：station 投影补 capacity/queue；其余无背衬列一律 null。
           currentTask: null,
           team: null,
           shift: null,
+          workload: null,
+          certificationExpiry: null,
+          locationConfidence: null,
+          locationUpdatedAt: null,
+          telemetryUpdatedAt: null,
+          capacity: se.capacity ?? null,
+          queue: this.asStringArray(se.queue),
           updatedAt: sourceTs,
           sourceTs,
           freshnessMs: DEFAULT_FRESHNESS_MS,
@@ -278,5 +310,31 @@ export class ResourceProjectionService {
     if (sourceTs == null) return 'UNKNOWN';
     if (now - sourceTs > DEFAULT_FRESHNESS_MS) return 'STALE';
     return 'FRESH';
+  }
+
+  /** jsonb 数组列可能以 unknown 返回；安全地规整为 string[]（runtime validation）。 */
+  private asStringArray(v: unknown): string[] {
+    return Array.isArray(v)
+      ? (v as string[]).filter((x): x is string => typeof x === 'string')
+      : [];
+  }
+
+  /**
+   * 解析证书到期平行列（[{ name, expiresAtMs }]，决策 D-A）。
+   * 无值/非数组返回空数组；name 缺失的条目丢弃。
+   */
+  private parseCertificationExpiry(
+    v: unknown,
+  ): Array<{ name: string; expiresAtMs: number | null }> {
+    if (!Array.isArray(v)) return [];
+    const out: Array<{ name: string; expiresAtMs: number | null }> = [];
+    for (const item of v) {
+      if (typeof item !== 'object' || item === null) continue;
+      const rec = item as Record<string, unknown>;
+      const name = typeof rec.name === 'string' ? rec.name : '';
+      const expiresAtMs = typeof rec.expiresAtMs === 'number' ? rec.expiresAtMs : null;
+      if (name) out.push({ name, expiresAtMs });
+    }
+    return out;
   }
 }

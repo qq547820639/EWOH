@@ -8,7 +8,7 @@ import { RoutingService } from './routing.service';
 import { SolverService } from './solver.service';
 import { PlanService } from './plan.service';
 import { SchedulingPolicyService } from './scheduling-policy.service';
-import { RouteCostProvider } from './route-cost.provider';
+import { TravelCostService } from './travel-cost.service';
 import { DispatchCoordinatorService } from './dispatch-coordinator.service';
 import { ResourceReservationService } from './resource-reservation.service';
 import { OutboxService } from './outbox.service';
@@ -18,6 +18,8 @@ import { SchedulerStreamService } from './scheduler-stream.service';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { SchedulerMetricsController } from './scheduler-metrics.controller';
 import { SchedulingFeedbackService } from './scheduling-feedback.service';
+import { ConflictService } from './conflict.service';
+import { PolicyReplayService } from './policy-replay.service';
 import { TaskSchedulingBridge } from './task-scheduling.bridge';
 import { TaskModule } from '../task/task.module';
 
@@ -34,7 +36,7 @@ import { TaskModule } from '../task/task.module';
     EligibilityService,
     RoutingService,
     SchedulingPolicyService,
-    RouteCostProvider,
+    TravelCostService,
     SolverService,
     PlanService,
     DispatchCoordinatorService,
@@ -43,6 +45,8 @@ import { TaskModule } from '../task/task.module';
     ResourceProjectionService,
     ReplanCoordinatorService,
     SchedulerStreamService,
+    ConflictService,
+    PolicyReplayService,
   ],
   exports: [
     SchedulerService,
@@ -52,7 +56,7 @@ import { TaskModule } from '../task/task.module';
     TriggerService,
     RoutingService,
     SchedulingPolicyService,
-    RouteCostProvider,
+    TravelCostService,
     SolverService,
     PlanService,
     ReplanCoordinatorService,
@@ -60,6 +64,8 @@ import { TaskModule } from '../task/task.module';
     SchedulerStreamService,
     OutboxService,
     ResourceReservationService,
+    ConflictService,
+    PolicyReplayService,
   ],
 })
 export class SchedulerModule {}

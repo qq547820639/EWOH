@@ -9,6 +9,7 @@ import { EligibilityService } from './eligibility.service';
 import { RoutingService } from './routing.service';
 import { RouteCostProvider } from './route-cost.provider';
 import { SchedulingPolicyService } from './scheduling-policy.service';
+import type { SchedulerMetricsService } from './scheduler-metrics.service';
 import { HeuristicSchedulingSolver } from './heuristic-scheduling-solver';
 import {
   CpSatSchedulingSolver,
@@ -49,14 +50,23 @@ export class SolverService {
     routeCostProvider: RouteCostProvider,
     eligibilityService: EligibilityService,
     @Optional() cpSatConfig?: CpSatSolverConfig,
+    @Optional() private readonly metricsService?: SchedulerMetricsService,
   ) {
     this.heuristicSolver = new HeuristicSchedulingSolver(
       policyService,
       routingService,
       routeCostProvider,
       eligibilityService,
+      undefined,
+      metricsService,
     );
-    this.cpSatSolver = new CpSatSchedulingSolver(this.heuristicSolver, cpSatConfig);
+    this.cpSatSolver = new CpSatSchedulingSolver(
+      this.heuristicSolver,
+      cpSatConfig,
+      // P2-T1：routeCostProvider 即 TravelCostService（兼容别名），供矩阵可行性过滤。
+      routeCostProvider,
+      metricsService,
+    );
   }
 
   /** 用三种策略权重预设生成方案 A/B/C（权重来自版本化 SchedulingPolicy，乘预设缩放系数）。 */
@@ -113,6 +123,18 @@ export class SolverService {
     for (const profile of profiles) {
       const variantPolicy: SchedulingPolicy = {
         ...base,
+        // Phase 2 / P2-T2：8 权重权威缩放（weights 与兼容旧字段同步缩放）。
+        weights: {
+          lateness: base.weights.lateness * (profile.scale.latenessWeight ?? 1),
+          travel: base.weights.travel * (profile.scale.walkingWeight ?? 1),
+          wait: base.weights.wait,
+          workload:
+            base.weights.workload * (profile.scale.workloadBalanceWeight ?? 1),
+          station: base.weights.station,
+          change: base.weights.change * (profile.scale.changeCostWeight ?? 1),
+          risk: base.weights.risk,
+          energy: base.weights.energy,
+        },
         latenessWeight: base.latenessWeight * (profile.scale.latenessWeight ?? 1),
         walkingWeight: base.walkingWeight * (profile.scale.walkingWeight ?? 1),
         workloadBalanceWeight:
@@ -155,11 +177,63 @@ export class SolverService {
     constraints: SolverConstraint[],
     opts: SolveOptions,
   ): Promise<SchedulingPlanV2> {
-    return this.cpSatSolver.solve(
+    const started = Date.now();
+    const plan = await this.cpSatSolver.solve(
       snapshot,
       this.toSchedulingConstraints(constraints),
       opts,
     );
+    // Phase 2 / P2-T3：Solver 可观测埋点（churn / 局部重排影响数；失败仅记日志）。
+    if (this.metricsService) {
+      try {
+        const churn = this.computeChurn(plan, opts);
+        if (churn > 0) this.metricsService.recordPlanChurn(churn);
+        if (opts.triggerType && opts.triggerType !== 'MANUAL') {
+          const affected = this.affectedTaskCount(snapshot, opts);
+          this.metricsService.recordPartialReplanAffected(affected);
+        }
+        this.metricsService.recordRun({
+          durationMs: Math.max(Date.now() - started, 0),
+          feasible:
+            plan.assignments.length >=
+            snapshot.tasks.filter(
+              (t) => !['completed', 'cancelled'].includes(t.status),
+            ).length,
+          solverVersion: plan.solverVersion,
+          solverStatus: plan.solverStatus,
+        });
+      } catch (err) {
+        this.logger.warn(
+          `solver metrics recording failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    return plan;
+  }
+
+  /** 计算方案相对基线的 churn（改派/新增/移除的任务数）。 */
+  private computeChurn(
+    plan: SchedulingPlanV2,
+    opts: SolveOptions,
+  ): number {
+    const baseline = opts.baselineAssignee ?? new Map<string, string | null>();
+    const assignedByTask = new Map(plan.assignments.map((a) => [a.taskId, a]));
+    let churn = 0;
+    for (const taskId of new Set([...baseline.keys(), ...assignedByTask.keys()])) {
+      const prev = baseline.get(taskId);
+      const cur = assignedByTask.get(taskId)?.personId ?? null;
+      if (prev !== cur) churn += 1;
+    }
+    return churn;
+  }
+
+  /** 局部重排影响任务数（来自影响分析的 affected 语义，无则按快照任务数近似）。 */
+  private affectedTaskCount(
+    snapshot: WorldStateSnapshot,
+    opts: SolveOptions,
+  ): number {
+    void opts;
+    return snapshot.tasks.length;
   }
 
   /** 将遗留的开放字符串约束转换为统一 SchedulingConstraint。 */

@@ -51,6 +51,7 @@ function makeHarness(): ControllerHarness {
     streamSvc as unknown as SchedulerStreamService,
     {} as never,
     {} as never,
+    {} as never, // conflictService
   );
   return { controller, streamSvc, subject };
 }

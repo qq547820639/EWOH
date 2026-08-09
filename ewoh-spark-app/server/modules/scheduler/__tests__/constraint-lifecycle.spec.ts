@@ -113,4 +113,86 @@ describe('P0-2 约束生命周期', () => {
     const { svc } = makePlanService({ constraints: [] });
     await expect(svc.deactivateConstraint('NOPE', testOrgContext())).rejects.toThrow('not found');
   });
+
+  it('P3-T4: replan 改变 safetyCritical 任务分配 → 拒绝 SAFETY_CRITICAL_LOCKED；保持原分配 → 通过', async () => {
+    const { svc, mocks } = makePlanService({
+      plans: [
+        {
+          id: 'id-1', planId: 'PLAN-1', planName: 'base', status: 'proposed',
+          version: 1, snapshotVersion: 'WS-1', policyVersion: 1, solverVersion: 'heuristic-v2',
+          horizonMinutes: 480, createdAt: new Date(), updatedAt: new Date(),
+        },
+      ],
+      assignments: [
+        {
+          planId: 'PLAN-1', taskId: 't-safety', personId: 'p1', deviceId: 'd1',
+          stationId: 'S1', plannedStart: new Date('2026-08-09T00:00:00.000Z'),
+          plannedEnd: new Date('2026-08-09T00:30:00.000Z'), status: 'proposed',
+        },
+      ],
+    });
+    mocks.worldState.buildSnapshot.mockResolvedValue({
+      snapshotVersion: 'WS-1', ts: new Date().toISOString(), worldVersion: 1,
+      entityVersions: {}, reservations: [], backlog: [], events: [], routeStatus: [],
+      forbiddenZones: [], lockedAssignments: [], safetyBlockedPersonIds: [],
+      persons: [], devices: [], stations: [],
+      tasks: [
+        {
+          id: 't-safety', title: 't-safety', taskType: 'work', priority: 'medium',
+          status: 'pending', assigneeId: null, deviceId: null, stationId: 'S1',
+          zoneId: 'Z1', planStart: null, planEnd: null, progress: 0,
+          predecessorIds: [], requiredSkills: ['work'], requiredCertifications: [],
+          safetyCritical: true,
+        },
+      ],
+    });
+    mocks.solver.solve.mockResolvedValue({
+      planId: 'PLAN-1-R2',
+      planName: 'base 重排',
+      version: 2,
+      status: 'shadow',
+      snapshotVersion: 'WS-1',
+      trigger: { type: 'MANUAL', entityId: 'PLAN-1' },
+      solverVersion: 'heuristic-v2',
+      policyVersion: 1,
+      horizonMinutes: 480,
+      assignments: [],
+      metrics: {},
+      scoreBreakdown: undefined,
+      weights: undefined,
+      baselineDelta: {},
+      violations: [],
+      createdAt: new Date().toISOString(),
+    });
+
+    // 改变 safetyCritical 任务分配 → 拒绝。
+    await expect(
+      svc.replan(
+        'PLAN-1',
+        {
+          lockedConstraints: [
+            { type: 'LOCKED_PERSON', taskId: 't-safety', personId: 'p2' },
+          ],
+          operator: 'op1',
+        },
+        testOrgContext(),
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining('SAFETY_CRITICAL_LOCKED'),
+    });
+
+    // 保持原分配（p1 不变）→ 通过（solver 被调用）。
+    await svc.replan(
+      'PLAN-1',
+      {
+        lockedConstraints: [
+          { type: 'LOCKED_PERSON', taskId: 't-safety', personId: 'p1' },
+        ],
+        operator: 'op1',
+      },
+      testOrgContext(),
+    );
+    expect(mocks.solver.solve).toHaveBeenCalled();
+  });
 });

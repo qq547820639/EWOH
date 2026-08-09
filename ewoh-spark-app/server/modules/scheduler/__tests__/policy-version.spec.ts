@@ -142,6 +142,7 @@ const baseFeedbackKpis: SchedulingFeedbackKpis = {
 function makeScheduler(
   policyDb: PostgresJsDatabase,
   feedbackKpis: SchedulingFeedbackKpis = baseFeedbackKpis,
+  replayMock?: { isEvaluated: jest.Mock; evaluate: jest.Mock },
 ) {
   const requestDatabaseContext = {
     runInTransaction: jest.fn(async (_guc: unknown, cb: () => Promise<void>) => {
@@ -155,6 +156,12 @@ function makeScheduler(
   const feedbackService = {
     deriveKpis: jest.fn().mockResolvedValue(feedbackKpis),
   };
+  // Phase 4 / P4-T2：replay 评估 mock（默认视为已评估，供激活守卫通过；新守卫测试可覆盖）。
+  const policyReplay =
+    replayMock ?? {
+      isEvaluated: jest.fn().mockReturnValue(true),
+      evaluate: jest.fn().mockResolvedValue(null),
+    };
   const svc = new SchedulerService(
     policyDb,
     requestDatabaseContext as unknown as RequestDatabaseContext,
@@ -169,8 +176,12 @@ function makeScheduler(
     policyService,
     feedbackService as unknown as SchedulingFeedbackService,
     { enqueue: jest.fn() } as never,
+    undefined,
+    undefined,
+    undefined,
+    policyReplay as never,
   );
-  return { svc, auditService, policyService, feedbackService };
+  return { svc, auditService, policyService, feedbackService, policyReplay };
 }
 
 describe('SchedulingPolicy 版本闭环（Task 6）', () => {
@@ -272,7 +283,7 @@ describe('SchedulingPolicy 版本闭环（Task 6）', () => {
     expect(v2?.active).toBe(false);
   });
 
-  it('activate 翻转 active 并解除前一版本 + 写入审计', async () => {
+  it('activate 翻转 active 并解除前一版本 + 写入审计（P4-T2：需 approver+reason 且已评估）', async () => {
     const config = defaultConfig();
     const { db, policies } = makePolicyDb(seedPolicyRows(config, 1));
     const { svc, auditService } = makeScheduler(db);
@@ -282,7 +293,10 @@ describe('SchedulingPolicy 版本闭环（Task 6）', () => {
       horizonMinutes: 720,
     });
 
-    const { config: activated } = await svc.activatePolicyVersion(2);
+    const { config: activated } = await svc.activatePolicyVersion(
+      2,
+      { approver: 'op1', reason: '人工审批激活' },
+    );
     expect(activated.configVersion).toBe(2);
 
     const v1 = policies.find((p) => p.configVersion === 1);
@@ -293,12 +307,14 @@ describe('SchedulingPolicy 版本闭环（Task 6）', () => {
     const active = await svc.getPolicy();
     expect(active.config.configVersion).toBe(2);
 
-    // 审计已写入。
+    // 审计已写入（含 approver + reason）。
     expect(auditService.appendAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'scheduler.policy.activate',
         entityId: '2',
         entityType: 'scheduling_policy',
+        actorId: 'op1',
+        reason: '人工审批激活',
       }),
     );
   });
@@ -332,8 +348,206 @@ describe('SchedulingPolicy 版本闭环（Task 6）', () => {
     await expect(svc.comparePolicyVersion(99)).rejects.toBeInstanceOf(
       NotFoundException,
     );
-    await expect(svc.activatePolicyVersion(99)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      svc.activatePolicyVersion(99, { approver: 'op1', reason: 'x' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('P4-T2: Shadow Policy 真实 replay + guarded activate', () => {
+  it('comparePolicyVersion 无历史快照 → replay=null（回退参数 delta 估算，不伪造）', async () => {
+    const config = defaultConfig();
+    const { db } = makePolicyDb(seedPolicyRows(config, 1));
+    const { svc, policyReplay } = makeScheduler(db);
+    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 });
+    policyReplay.evaluate.mockResolvedValue(null);
+
+    const comparison = await svc.comparePolicyVersion(2);
+    expect(comparison.replay).toBeNull();
+    expect(comparison.paramDeltas['horizonMinutes']).toBeDefined();
+  });
+
+  it('有历史快照 + solver mock → comparePolicyVersion 附带真实 replay（objective/KPI 对比可复现）', async () => {
+    const config = defaultConfig();
+    const { db } = makePolicyDb(seedPolicyRows(config, 1));
+    const replay = {
+      snapshotVersion: 'WS-HIST-0001',
+      solverVersion: 'heuristic-v2',
+      active: {
+        objective: 12,
+        assignmentCount: 3,
+        unassignedCount: 0,
+        metrics: { lateMinutes: 2, walkingMeters: 100, stationWaitMinutes: 1, maxWorkload: 3, changeCost: 0.5 },
+      },
+      candidate: {
+        objective: 9,
+        assignmentCount: 3,
+        unassignedCount: 0,
+        metrics: { lateMinutes: 1, walkingMeters: 80, stationWaitMinutes: 1, maxWorkload: 3, changeCost: 0.5 },
+      },
+      objectiveDelta: -3,
+      verdict: 'candidate_better' as const,
+    };
+    const { svc, policyReplay } = makeScheduler(db, baseFeedbackKpis, {
+      isEvaluated: jest.fn().mockReturnValue(true),
+      evaluate: jest.fn().mockResolvedValue(replay),
+    });
+    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 });
+
+    const comparison = await svc.comparePolicyVersion(2);
+    expect(comparison.replay).toEqual(replay);
+    expect(comparison.replay!.objectiveDelta).toBe(-3);
+    expect(comparison.replay!.verdict).toBe('candidate_better');
+    // 旧字段保持兼容。
+    expect(comparison.candidateVersion).toBe(2);
+    expect(comparison.feedbackKpis).toEqual(baseFeedbackKpis);
+  });
+
+  it('activate 无 approver → 拒绝 400（APPROVER_REQUIRED）', async () => {
+    const config = defaultConfig();
+    const { db } = makePolicyDb(seedPolicyRows(config, 1));
+    const { svc } = makeScheduler(db);
+    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 });
+    await expect(
+      svc.activatePolicyVersion(2, { reason: 'x' }),
+    ).rejects.toThrow('APPROVER_REQUIRED');
+    await expect(
+      svc.activatePolicyVersion(2, { approver: '', reason: 'x' }),
+    ).rejects.toThrow('APPROVER_REQUIRED');
+  });
+
+  it('activate 无 reason → 拒绝 400（REASON_REQUIRED）', async () => {
+    const config = defaultConfig();
+    const { db } = makePolicyDb(seedPolicyRows(config, 1));
+    const { svc } = makeScheduler(db);
+    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 });
+    await expect(
+      svc.activatePolicyVersion(2, { approver: 'op1', reason: '' }),
+    ).rejects.toThrow('REASON_REQUIRED');
+  });
+
+  it('未完成 replay 评估 → 拒绝 409（POLICY_NOT_EVALUATED）', async () => {
+    const config = defaultConfig();
+    const { db } = makePolicyDb(seedPolicyRows(config, 1));
+    const { svc } = makeScheduler(db, baseFeedbackKpis, {
+      isEvaluated: jest.fn().mockReturnValue(false),
+      evaluate: jest.fn().mockResolvedValue(null),
+    });
+    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 });
+    await expect(
+      svc.activatePolicyVersion(2, { approver: 'op1', reason: 'x' }),
+    ).rejects.toThrow('POLICY_NOT_EVALUATED');
+  });
+
+  it('已激活版本不可重复 activate → 拒绝 409（POLICY_ALREADY_ACTIVE）', async () => {
+    const config = defaultConfig();
+    const { db } = makePolicyDb(seedPolicyRows(config, 1));
+    const { svc } = makeScheduler(db);
+    await expect(
+      svc.activatePolicyVersion(1, { approver: 'op1', reason: 'x' }),
+    ).rejects.toThrow('POLICY_ALREADY_ACTIVE');
+  });
+});
+
+describe('P2-T2: Solver Objective 8 权重版本化', () => {
+  function makePolicyDbWithConfig(config: SchedulingPolicyConfig, weightsJson?: unknown) {
+    const rows = [
+      {
+        configVersion: 1,
+        configJson: config,
+        weightsJson: weightsJson ?? null,
+        active: true,
+        orgId: 'org1',
+        updatedBy: 'admin',
+        createdAt: new Date('2026-08-08T00:00:00.000Z'),
+        updatedAt: new Date('2026-08-08T00:00:00.000Z'),
+      },
+    ];
+    const { db } = makePolicyDb(rows);
+    return new SchedulingPolicyService(db);
+  }
+
+  it('旧配置无 weights → 8 权重用默认常量（不再魔法数派生，向后兼容）', async () => {
+    const policyService = makePolicyDbWithConfig(defaultConfig());
+    const policy = await policyService.getActivePolicy();
+    expect(policy.weights).toEqual({
+      lateness: 3,
+      travel: 1,
+      wait: 1,
+      workload: 1,
+      station: 1,
+      change: 0.5,
+      risk: 1,
+      energy: 0.5,
+    });
+    // 旧字段兼容别名 = 权威权重。
+    expect(policy.latenessWeight).toBe(3);
+    expect(policy.walkingWeight).toBe(1);
+    expect(policy.stationWaitWeight).toBe(1);
+    expect(policy.changeCostWeight).toBe(0.5);
+  });
+
+  it('config.weights 完整 8 项 → 权威权重直接采用', async () => {
+    const config: SchedulingPolicyConfig = {
+      ...defaultConfig(),
+      weights: {
+        lateness: 5,
+        travel: 2,
+        wait: 3,
+        workload: 4,
+        station: 2,
+        change: 1,
+        risk: 6,
+        energy: 0.1,
+      },
+    };
+    const policyService = makePolicyDbWithConfig(config);
+    const policy = await policyService.getActivePolicy();
+    expect(policy.weights).toEqual({
+      lateness: 5,
+      travel: 2,
+      wait: 3,
+      workload: 4,
+      station: 2,
+      change: 1,
+      risk: 6,
+      energy: 0.1,
+    });
+  });
+
+  it('weights_json 列优先于 config.weights（权威存储）', async () => {
+    const config: SchedulingPolicyConfig = {
+      ...defaultConfig(),
+      weights: { lateness: 1, travel: 1, wait: 1, workload: 1, station: 1, change: 1, risk: 1, energy: 1 },
+    };
+    const policyService = makePolicyDbWithConfig(config, {
+      lateness: 9,
+      travel: 8,
+      wait: 7,
+      workload: 6,
+      station: 5,
+      change: 4,
+      risk: 3,
+      energy: 2,
+    });
+    const policy = await policyService.getActivePolicy();
+    expect(policy.weights.lateness).toBe(9);
+    expect(policy.weights.energy).toBe(2);
+  });
+
+  it('旧配置子集（workloadBalance/stationWait/changeCost/energy）→ 兼容映射补齐默认', async () => {
+    const config: SchedulingPolicyConfig = {
+      ...defaultConfig(),
+      weights: { workloadBalance: 4, stationWait: 5, changeCost: 2, energy: 0.7 },
+    };
+    const policyService = makePolicyDbWithConfig(config);
+    const policy = await policyService.getActivePolicy();
+    expect(policy.weights.workload).toBe(4);
+    expect(policy.weights.wait).toBe(5);
+    expect(policy.weights.change).toBe(2);
+    expect(policy.weights.energy).toBe(0.7);
+    // 缺失项用默认常量。
+    expect(policy.weights.lateness).toBe(3);
+    expect(policy.weights.station).toBe(1);
   });
 });

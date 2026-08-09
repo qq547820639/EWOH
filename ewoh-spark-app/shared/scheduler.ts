@@ -155,7 +155,9 @@ export type PlanOverrideKind =
   | 'EXCLUDE_RESOURCE'
   | 'PREFER_RESOURCE'
   | 'BOOST'
-  | 'ADJUST_TIME';
+  | 'ADJUST_TIME'
+  /** Phase 3 / P3-T4：更换分配资源（person/device/station）→ LOCKED_ASSIGNMENT 约束。 */
+  | 'CHANGE_RESOURCE';
 
 export interface PlanOverrideAction {
   kind: PlanOverrideKind;
@@ -167,6 +169,11 @@ export interface PlanOverrideAction {
   /** ADJUST_TIME / LOCK_TIME 的调整后时间窗（epoch ms）。 */
   startMs?: number;
   endMs?: number;
+  /**
+   * CHANGE_RESOURCE 的目标资源（Phase 3 / P3-T4）。
+   * 与 personId/deviceId/stationId 并存（兼容旧调用方）；actionsToConstraints 优先读本字段。
+   */
+  changeResource?: { personId?: string; deviceId?: string; stationId?: string };
   reason?: string;
   validFrom?: number;
   expiresAt?: number;
@@ -348,7 +355,7 @@ export interface ResourceState {
   status: string;
   capabilities: string[];
   certifications: string[];
-  location: { stationId: string | null; zoneId: string | null; x: number; y: number };
+  location: { stationId: string | null; zoneId: string | null; x: number | null; y: number | null };
   availableWindows: Array<{ startMs: number; endMs: number }>;
   reservations: Array<{ reservationId: string; startMs: number; endMs: number }>;
   telemetry: {
@@ -367,11 +374,28 @@ export interface ResourceState {
   currentTask?: string | null;
   /** 班组（person 有 team_name 列，其余资源无则 null）。 */
   team?: string | null;
-  /** 班次（无对应背衬列时为 null）。 */
+  /** 班次（person 有 shift 列，其余资源无则 null）。 */
   shift?: string | null;
   /** 最近更新时间（epoch ms）。 */
   updatedAt?: number | null;
   version: number;
+  // --- 领域模型新列（Phase 1 / P1-T3，standalone_012_domain_columns） ---
+  /** 人员负载 0..1（ewoh_personnel.workload 列；无则 null）。 */
+  workload?: number | null;
+  /** 证书到期信息（ewoh_personnel.certification_expiry 平行列，决策 D-A；无则 null）。 */
+  certificationExpiry?: Array<{ name: string; expiresAtMs: number | null }> | null;
+  /** 位置置信度 0..1（device 来自 location_confidence 列；person/station 无则 null）。 */
+  locationConfidence?: number | null;
+  /** 位置更新时间（epoch ms，device 来自 location_updated_at；无则 null）。 */
+  locationUpdatedAt?: number | null;
+  /** 遥测更新时间（epoch ms，device 来自 telemetry_updated_at；无则 null）。 */
+  telemetryUpdatedAt?: number | null;
+  /** 工位容量（station 来自 capacity 列；其余 null）。 */
+  capacity?: number | null;
+  /** 工位队列（station 来自 queue 列；其余 null）。 */
+  queue?: string[] | null;
+  /** 派生字段标记：本投影中这些字段来自派生而非真实列。 */
+  derived?: string[];
 }
 
 export interface WorldStateSnapshot {
@@ -404,10 +428,19 @@ export interface WorldStateSnapshot {
     fatigueLevel: number;
     stationId: string | null;
     zoneId: string | null;
-    x: number;
-    y: number;
+    /** 人员坐标；空间实体缺失时显式 UNKNOWN（null），禁止用 0 冒充真实坐标。 */
+    x: number | null;
+    y: number | null;
     /** 人员下一次可用时间（epoch ms），由 reservation 推算；无保留则 null。 */
     availableFromMs?: number | null;
+    /** 班次（ewoh_personnel.shift 列；无则 null）。 */
+    shift?: string | null;
+    /** 当前负载 0..1（ewoh_personnel.workload 列；无则 null）。 */
+    workload?: number | null;
+    /** 当前任务 id（ewoh_personnel.current_task_id 列；无则 null）。 */
+    currentTaskId?: string | null;
+    /** 证书到期信息（ewoh_personnel.certification_expiry 平行列，决策 D-A；无则 null）。 */
+    certificationExpiry?: Array<{ name: string; expiresAtMs: number | null }> | null;
     /** 数据来源时间戳（epoch ms），用于新鲜度判定。 */
     sourceTs?: number | null;
     /** 数据新鲜度阈值（ms），超过则标 STALE。 */
@@ -447,6 +480,23 @@ export interface WorldStateSnapshot {
     dueAtMs?: number | null;
     /** 生产影响度 0..1（越高越影响产线节拍，越小 score 越紧急）。缺省 0，向后兼容可选。 */
     productionImpact?: number;
+    // --- 领域模型新列（Phase 1 / P1-T2，standalone_012_domain_columns） ---
+    /** 基础优先级（ewoh_production_task.base_priority 列；无则 null）。 */
+    basePriority?: string | null;
+    /** 最早开始时间（epoch ms，earliest_start_ms 列；无则 null）。 */
+    earliestStartMs?: number | null;
+    /** 最晚完成时间（epoch ms，latest_finish_ms 列；无则 null）。 */
+    latestFinishMs?: number | null;
+    /** 下游影响度 0..1（downstream_impact 列；无则 null）。 */
+    downstreamImpact?: number | null;
+    /** 工位能力需求（required_station_capabilities 列）。 */
+    requiredStationCapabilities?: string[];
+    /** 偏好资源（preferred_resources 列）。 */
+    preferredResources?: string[];
+    /** 排除资源（excluded_resources 列）。 */
+    excludedResources?: string[];
+    /** 派生字段标记：本快照中这些字段来自派生而非真实列（如 safetyCritical/preemptible/...）。 */
+    derived?: string[];
   }>;
   devices: Array<{
     id: string;
@@ -457,27 +507,39 @@ export interface WorldStateSnapshot {
     status: string | null;
     /** 设备能力（如 'exo-lift' / 'vacuum'），用于 capability 匹配。 */
     capabilities?: string[];
-    /** 设备位置（由绑定人员/空间实体推算；未知则 null）。 */
+    /** 设备位置 x（location_lat 列；缺失则显式 UNKNOWN=null，绝不借用人员坐标）。 */
     x?: number | null;
     y?: number | null;
-    /** 设备所在工位 id。 */
+    /** 设备所在工位 id（设备自身空间实体 parentId 解析，未知则 null）。 */
     locationStationId?: string | null;
-    /** 设备可用时间窗（如来自维护/排程）。 */
+    /** 设备可用时间窗（available_windows 列；无则空数组）。 */
     availableWindows?: Array<{ startMs: number; endMs: number }>;
+    /** 位置置信度 0..1（location_confidence 列；无位置则 null）。 */
+    locationConfidence?: number | null;
+    /** 位置更新时间（epoch ms，location_updated_at 列；无则 null）。 */
+    locationUpdatedAt?: number | null;
+    /** 遥测更新时间（epoch ms，telemetry_updated_at 列；无则 null）。 */
+    telemetryUpdatedAt?: number | null;
     /** 数据来源时间戳（epoch ms），用于新鲜度判定。 */
     sourceTs?: number | null;
     /** 数据新鲜度阈值（ms），超过则标 STALE。 */
     freshnessMs?: number | null;
     /** 数据质量：FRESH / STALE / UNKNOWN（STALE/UNKNOWN 不被视为可用）。 */
     dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
+    /** 派生字段标记（如 capabilities 来自型号白名单兜底）。 */
+    derived?: string[];
   }>;
   stations: Array<{
     id: string;
     name: string;
     x: number;
     y: number;
-    /** 工位容量（可同时承接的任务数/单位数）；未知则 null。 */
+    /** 工位容量（capacity 列，替代 extra.capacity 非正式字段）；未知则 null。 */
     capacity?: number | null;
+    /** 工位队列（queue 列）。 */
+    queue?: string[];
+    /** 工位可用窗口（available_windows 列）。 */
+    availableWindows?: Array<{ startMs: number; endMs: number }>;
   }>;
   backlog: Array<{ taskId: string; count: number }>;
   events: Array<{
@@ -509,6 +571,8 @@ export interface SchedulingRun {
   planIds: string[];
   orgId: string | null;
   error: string | null;
+  /** 失败原因（ewoh_scheduling_run.failure_reason 列，替代仅日志；无则 null）。 */
+  failureReason?: string | null;
   createdAt: string;
 }
 
@@ -607,6 +671,8 @@ export interface SchedulingPlanV2 {
   metrics: SchedulingPlanMetrics;
   /** 方案级目标评分分解（可解释）。 */
   scoreBreakdown?: ScoreBreakdown;
+  /** 目标权重快照（Phase 2 / P2-T2）：persistPlan 落库实际使用的 8 权重，保证确定性 replay。 */
+  weights?: ObjectiveWeights;
   baselineDelta: Record<string, unknown>;
   violations: Array<Record<string, unknown>>;
   createdAt: string;
@@ -677,6 +743,35 @@ export interface SchedulingFeedbackKpis {
   solverRuntimeMs: number;
   replanCount: number;
   conflictCount: number;
+  // --- Phase 4 / P4-T1 扩展（02 文档公式；输入缺省时显式 null 标注缺数据，不伪造） ---
+  /** 按时完成率：actualEnd<=plannedEnd 的行数 / 有 planned+actual end 的行数；无数据 null。 */
+  onTimeRate?: number | null;
+  /** 迟到均值（ms，actualEnd - plannedEnd）；无数据 null。 */
+  meanLatenessMs?: number | null;
+  /** 迟到 P95（ms）；无数据 null。 */
+  p95LatenessMs?: number | null;
+  /** 总行程时间（ms，Σ plannedTravel[etaSeconds] * 1000）；无数据 null。 */
+  totalTravelMs?: number | null;
+  /** 人员间任务数不均衡（max per-person 任务数 - min）；少于 2 人数据 null。 */
+  workloadImbalance?: number | null;
+  /** 方案 churn（Σ replanCount，重排次数代理）；无数据 null。 */
+  planChurn?: number | null;
+  /** 冲突率（Σ conflictCount / totalFeedback，每方案平均冲突数）；total=0 null。 */
+  conflictRate?: number | null;
+  /** 重排成功率（replanCount>0 且 accepted=true / replanCount>0）；无重排数据 null。 */
+  replanSuccessRate?: number | null;
+}
+
+/** 求解目标 8 权重（02 §11.1：W_lateness/W_travel/W_wait/W_workload/W_station/W_change/W_risk/W_energy）。 */
+export interface ObjectiveWeights {
+  lateness: number;
+  travel: number;
+  wait: number;
+  workload: number;
+  station: number;
+  change: number;
+  risk: number;
+  energy: number;
 }
 
 export interface SchedulingPolicy {
@@ -690,6 +785,12 @@ export interface SchedulingPolicy {
   energyWeight: number;
   /** 求解器版本，保证同版本可确定性重放。 */
   solverVersion: string;
+  /**
+   * 目标权重权威对象（Phase 2 / P2-T2）：8 项完整权重，来自 ewoh_scheduling_policy.weights_json；
+   * 缺省时用默认常量（消除 buildPolicy 魔法数派生）。旧字段（latenessWeight/walkingWeight 等）
+   * 保留为兼容别名，内部统一读取本字段。
+   */
+  weights: ObjectiveWeights;
 }
 
 export interface SchedulingPolicyConfig {
@@ -723,8 +824,12 @@ export interface SchedulingPolicyConfig {
   /**
    * v0.7 Batch5.1：求解器目标权重（可选，缺省回退 buildPolicy 的既有默认值，
    * 保证旧配置向后兼容）。全量可配后策略调参不再需要改代码。
+   *
+   * Phase 2 / P2-T2 权威化：完整 8 权重对象（lateness/travel/wait/workload/station/
+   * change/risk/energy）。旧配置若只含 workloadBalance/stationWait/changeCost/energy
+   * 子集，缺失项以默认常量补齐（向后兼容，不再魔法数派生）。
    */
-  weights?: {
+  weights?: ObjectiveWeights | {
     workloadBalance?: number;
     stationWait?: number;
     changeCost?: number;
@@ -754,6 +859,34 @@ export interface SchedulingPolicyComparison {
   verdict: string;
   /** 恒为 true：本接口为 shadow/只读，绝不修改生产策略。 */
   readOnly: true;
+  // --- Phase 4 / P4-T2：真实历史 snapshot replay 评估（无历史快照时为 null） ---
+  replay?: PolicyReplayEvaluation | null;
+}
+
+/** Phase 4 / P4-T2：Shadow Policy 真实 replay 结果（历史快照 × active/candidate 双策略求解对比）。 */
+export interface PolicyReplayEvaluation {
+  /** 使用的历史快照版本。 */
+  snapshotVersion: string;
+  /** 求解器版本（确定性重放保证同版本可复现）。 */
+  solverVersion: string;
+  active: PolicyReplaySide;
+  candidate: PolicyReplaySide;
+  /** candidate.objective - active.objective（负=候选更优）。 */
+  objectiveDelta: number;
+  verdict: 'active_better' | 'candidate_better' | 'equivalent' | 'no_data';
+}
+
+export interface PolicyReplaySide {
+  objective: number;
+  assignmentCount: number;
+  unassignedCount: number;
+  metrics: {
+    lateMinutes: number;
+    walkingMeters: number;
+    stationWaitMinutes: number;
+    maxWorkload: number;
+    changeCost: number;
+  };
 }
 
 export interface SchedulingEvent {
@@ -769,6 +902,13 @@ export interface SchedulingEvent {
   entityType?: string;
   /** 该实体在触发时的版本。 */
   entityVersion?: number;
+  // --- SSE envelope 增强（Phase 3 / P3-T2，02 §7.1；兼容旧字段） ---
+  /** 关联快照版本（无则 null）。 */
+  snapshotVersion?: string | null;
+  /** 关联方案 id（无则 null）。 */
+  planId?: string | null;
+  /** 业务发生时间（ISO；无则取 serverTs）。 */
+  occurredAt?: string | null;
 }
 
 export interface RouteGraphNode {
@@ -817,6 +957,61 @@ export interface Route {
   calculatedAt?: string;
   /** 是否可行（起终点坐标齐全且可通行）。 */
   feasible?: boolean;
+  // --- RouteCost 明细（Phase 2 / P2-T1，02 §10） ---
+  /** 回退原因（euclidean_fallback 时必填）。coords_unknown=坐标缺失；no_route_edge=图不可达；graph_unavailable=图加载失败。 */
+  fallbackReason?: 'coords_unknown' | 'no_route_edge' | 'graph_unavailable' | null;
+  /** 数据质量：FRESH / STALE / UNKNOWN（坐标或图新鲜度）。 */
+  dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
+}
+
+/** 欧氏兜底回退原因（02 §10：Euclidean 仅显式 fallback）。 */
+export type RouteCostFallbackReason =
+  | 'no_route_edge'
+  | 'coords_unknown'
+  | 'graph_unavailable'
+  | 'infeasible';
+
+/** 路径成本数据质量（02 §13：未知/缺失字段必须显式标记）。 */
+export type RouteCostDataQuality = 'FRESH' | 'STALE' | 'UNKNOWN';
+
+/** 单个候选的路径成本明细（RouteCostMatrix 条目）。 */
+export interface CandidateRouteCost {
+  personId: string | null;
+  deviceId: string | null;
+  stationId: string | null;
+  /** 估算耗时（秒）。 */
+  etaSeconds: number;
+  /** 估算距离（米）。 */
+  distanceMeters: number;
+  /** 拥塞系数（≥1；无拥塞明细默认 1）。 */
+  congestion: number;
+  /** 路径是否被 blocked 边阻断（矩阵层显式标记，读 routeStatus）。 */
+  blocked: boolean;
+  /** 候选/任务是否穿越禁入区（矩阵层显式标记，读 forbiddenZones）。 */
+  forbiddenZone: boolean;
+  /** 沿路最高风险折算。 */
+  risk: number;
+  /** 能量消耗（无数据为 0，不伪造）。 */
+  energy: number;
+  /** 成本模式：route_graph 或显式 euclidean_fallback。 */
+  routeCostMode: 'route_graph' | 'euclidean_fallback';
+  /** 回退原因（route_graph 时为 null；euclidean_fallback 必须带原因）。 */
+  fallbackReason: RouteCostFallbackReason | null;
+  /** 数据质量：FRESH / STALE / UNKNOWN（坐标/图新鲜度）。 */
+  dataQuality: RouteCostDataQuality;
+  /** 是否可行（坐标齐全且可通行）；false 时 eta/distance 仅供参考。 */
+  feasible: boolean;
+}
+
+/** 任务 × 候选的 RouteCostMatrix（02 §10；决策 D-D 落库缓存，支撑确定性 replay）。 */
+export interface RouteCostMatrix {
+  matrixId: string;
+  snapshotVersion: string;
+  policyVersion: number;
+  solverVersion: string;
+  taskId: string;
+  candidates: CandidateRouteCost[];
+  generatedAt: string;
 }
 
 export interface TaskCandidateResource {
@@ -878,6 +1073,13 @@ export type SchedulingConflictType =
   /** v0.7 A2：预占即将过期（倒计时 < 阈值），需提前续约/重排，避免执行中断。 */
   | 'reservation_expiring';
 
+/** 冲突生命周期状态（02 §6.1 状态机）。 */
+export type ConflictLifecycleStatus =
+  | 'OPEN'
+  | 'ACKNOWLEDGED'
+  | 'RESOLVED'
+  | 'SUPPRESSED';
+
 export interface SchedulingConflict {
   /** 稳定冲突 id（基于内容哈希，跨查询一致）。 */
   conflictId: string;
@@ -896,6 +1098,23 @@ export interface SchedulingConflict {
   snapshotVersion: string | null;
   /** 附加证据（预占 id、电量、状态等）。 */
   data?: Record<string, unknown>;
+  // --- Conflict Lifecycle（Phase 3 / P3-T1，02 §6；旧字段向后兼容） ---
+  /** 生命周期状态（缺省推导态为 OPEN）。 */
+  status?: ConflictLifecycleStatus;
+  /** 首次检测时间（ISO）。 */
+  detectedAt?: string | null;
+  /** 确认人（acknowledge）。 */
+  acknowledgedBy?: string | null;
+  /** 确认时间（ISO）。 */
+  acknowledgedAt?: string | null;
+  /** 解决人（resolve / 自动 auto_cleared 为 system）。 */
+  resolvedBy?: string | null;
+  /** 解决时间（ISO）。 */
+  resolvedAt?: string | null;
+  /** 抑制截止时间（ISO；到期自动回 OPEN）。 */
+  suppressUntil?: string | null;
+  /** 关联方案 id（无则 null）。 */
+  planId?: string | null;
 }
 
 export interface ConflictsListRequest {

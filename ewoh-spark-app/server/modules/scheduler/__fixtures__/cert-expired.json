@@ -1,0 +1,26 @@
+{
+  "name": "cert-expired",
+  "description": "任务要求证书 cert-a，人员无该证书（到期/缺失）→ 不可派。",
+  "solverVersion": "heuristic-v2",
+  "weights": { "lateness": 3, "travel": 1, "wait": 1, "workload": 1, "station": 1, "change": 0.5, "risk": 1, "energy": 0.5 },
+  "snapshot": {
+    "snapshotVersion": "WS-FIXTURE-CERT-EXPIRED",
+    "persons": [
+      { "id": "p1", "name": "p1", "status": "available", "skills": ["work"], "certifications": [], "loadLevel": 0, "fatigueLevel": 0, "stationId": "S1", "zoneId": "Z1", "x": 0, "y": 0 }
+    ],
+    "tasks": [
+      { "id": "t1", "title": "t1", "taskType": "work", "priority": "medium", "status": "pending", "assigneeId": null, "deviceId": null, "stationId": "S1", "zoneId": "Z1", "planStart": null, "planEnd": null, "progress": 0, "predecessorIds": [], "requiredSkills": ["work"], "requiredCertifications": ["cert-a"] }
+    ],
+    "devices": [
+      { "id": "d1", "workerName": null, "deviceModel": null, "batteryPct": 100, "online": true, "status": "online", "capabilities": [] }
+    ],
+    "stations": [
+      { "id": "S1", "name": "S1", "x": 0, "y": 0, "capacity": 2 }
+    ]
+  },
+  "expected": {
+    "assignedTaskIds": [],
+    "unassignedTaskIds": ["t1"],
+    "routeInfeasible": false
+  }
+}

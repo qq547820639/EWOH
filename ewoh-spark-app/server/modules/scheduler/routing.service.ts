@@ -110,7 +110,8 @@ export class RoutingService {
    * 起点为离 from 最近的节点，终点为离 to 最近的节点。
    * 找到路径 → 返回 source:'route_graph' 与真实 distance/eta/riskLevel；
    * 找不到（无节点/起终点同点/A* 不可达）→ 返回 source:'euclidean_fallback'，
-   * feasible 由 from/to 坐标是否齐全决定。从不抛异常。
+   * feasible 由 from/to 坐标是否齐全决定，并携带 fallbackReason / dataQuality
+   * （P2-T1：coords_unknown→UNKNOWN；no_route_edge→FRESH）。从不抛异常。
    */
   async calculateRouteBetween(
     from: Point,
@@ -134,6 +135,8 @@ export class RoutingService {
       personId,
       taskId,
       feasible: hasCoords,
+      fallbackReason: hasCoords ? 'no_route_edge' : 'coords_unknown',
+      dataQuality: hasCoords ? 'FRESH' : 'UNKNOWN',
     });
 
     const startId = nearestNodeId(nodes, from.x, from.y);
@@ -165,13 +168,16 @@ export class RoutingService {
       graphVersion: null,
       calculatedAt: new Date().toISOString(),
       feasible: true,
+      fallbackReason: null,
+      dataQuality: 'FRESH',
     };
   }
 
   /**
    * 为人员到任务工位规划一条路径（按 entityId 查真实坐标）。
    * 从 ewoh_spatial_entity 取 person/task 的 x/y，再求最近节点；
-   * 查不到坐标或不可达时按 euclidean_fallback 处理。
+   * 查不到坐标 → 显式不可行（feasible=false、fallbackReason=coords_unknown、
+   * dataQuality=UNKNOWN），绝不返回 0,0 伪坐标（见 02 §10 修复点）。
    */
   async calculateRoute(personId: string, taskId: string): Promise<Route> {
     const [personRows, taskRows] = await Promise.all([
@@ -189,10 +195,12 @@ export class RoutingService {
     const from = this.pointFromEntity(personRows[0]);
     const to = this.pointFromEntity(taskRows[0]);
     if (!from || !to) {
-      return this.euclideanRoute(from ?? { x: 0, y: 0 }, to ?? { x: 0, y: 0 }, {
+      return this.euclideanRoute(from, to, {
         personId,
         taskId,
         feasible: Boolean(from) && Boolean(to),
+        fallbackReason: 'coords_unknown',
+        dataQuality: 'UNKNOWN',
       });
     }
     return this.calculateRouteBetween(from, to, { personId, taskId });
@@ -248,13 +256,24 @@ export class RoutingService {
     return { x, y };
   }
 
-  /** 构造欧氏兜底 Route（不抛异常）。P1-ROUTE-001：ETA 必须由距离/速度计算，禁止返回 0。 */
+  /** 构造欧氏兜底 Route（不抛异常）。P1-ROUTE-001：ETA 必须由距离/速度计算，禁止返回 0。
+   * P2-T1：坐标缺失时显式不可行（fallbackReason=coords_unknown / dataQuality=UNKNOWN），
+   * 绝不把 0,0 当作真实坐标参与计算。 */
   private async euclideanRoute(
-    from: Point,
-    to: Point,
-    meta: { personId: string; taskId: string; feasible: boolean },
+    from: Point | null,
+    to: Point | null,
+    meta: {
+      personId: string;
+      taskId: string;
+      feasible: boolean;
+      fallbackReason: Route['fallbackReason'];
+      dataQuality: Route['dataQuality'];
+    },
   ): Promise<Route> {
-    const distanceMeters = Math.hypot(to.x - from.x, to.y - from.y);
+    const distanceMeters =
+      from && to && Number.isFinite(from.x) && Number.isFinite(to.x)
+        ? Math.hypot(to.x - from.x, to.y - from.y)
+        : 0;
     const speed = await this.walkingSpeedMps();
     const etaSeconds =
       distanceMeters > 0 && speed > 0 ? distanceMeters / speed : 0;
@@ -271,6 +290,8 @@ export class RoutingService {
       graphVersion: null,
       calculatedAt: new Date().toISOString(),
       feasible: meta.feasible,
+      fallbackReason: meta.fallbackReason,
+      dataQuality: meta.dataQuality,
     };
   }
 

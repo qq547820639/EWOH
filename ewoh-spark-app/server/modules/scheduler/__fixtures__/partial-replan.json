@@ -1,0 +1,35 @@
+{
+  "name": "partial-replan",
+  "description": "局部重排：求解器只收到受影响+冻结任务子图（t-affected/t-exec），无关任务 t-other 不进入求解。",
+  "solverVersion": "heuristic-v2",
+  "weights": { "lateness": 3, "travel": 1, "wait": 1, "workload": 1, "station": 1, "change": 0.5, "risk": 1, "energy": 0.5 },
+  "snapshot": {
+    "snapshotVersion": "WS-FIXTURE-PARTIAL-REPLAN",
+    "persons": [
+      { "id": "p1", "name": "p1", "status": "available", "skills": ["work"], "certifications": [], "loadLevel": 0, "fatigueLevel": 0, "stationId": "S1", "zoneId": "Z1", "x": 0, "y": 0 },
+      { "id": "p2", "name": "p2", "status": "available", "skills": ["work"], "certifications": [], "loadLevel": 0, "fatigueLevel": 0, "stationId": "S1", "zoneId": "Z1", "x": 5, "y": 0 }
+    ],
+    "tasks": [
+      { "id": "t-affected", "title": "t-affected", "taskType": "work", "priority": "medium", "status": "pending", "assigneeId": null, "deviceId": null, "stationId": "S1", "zoneId": "Z1", "planStart": null, "planEnd": null, "progress": 0, "predecessorIds": [], "requiredSkills": ["work"], "requiredCertifications": [] },
+      { "id": "t-exec", "title": "t-exec", "taskType": "work", "priority": "medium", "status": "executing", "assigneeId": "p1", "deviceId": null, "stationId": "S1", "zoneId": "Z1", "planStart": null, "planEnd": null, "progress": 50, "predecessorIds": [], "requiredSkills": ["work"], "requiredCertifications": [] },
+      { "id": "t-other", "title": "t-other", "taskType": "work", "priority": "medium", "status": "pending", "assigneeId": null, "deviceId": null, "stationId": "S2", "zoneId": "Z2", "planStart": null, "planEnd": null, "progress": 0, "predecessorIds": [], "requiredSkills": ["work"], "requiredCertifications": [] }
+    ],
+    "devices": [
+      { "id": "d1", "workerName": null, "deviceModel": null, "batteryPct": 100, "online": true, "status": "online", "capabilities": [] }
+    ],
+    "stations": [
+      { "id": "S1", "name": "S1", "x": 0, "y": 0, "capacity": 2 },
+      { "id": "S2", "name": "S2", "x": 10, "y": 0, "capacity": 2 }
+    ],
+    "lockedAssignments": [
+      { "taskId": "t-exec", "personId": "p1", "deviceId": null, "stationId": "S1" }
+    ]
+  },
+  "expected": {
+    "assignedTaskIds": ["t-affected"],
+    "unassignedTaskIds": [],
+    "frozenTaskId": "t-exec",
+    "excludedTaskId": "t-other",
+    "routeInfeasible": false
+  }
+}

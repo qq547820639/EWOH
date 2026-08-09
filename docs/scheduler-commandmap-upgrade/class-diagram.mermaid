@@ -1,0 +1,194 @@
+classDiagram
+  class WorldStateSnapshot {
+    +string snapshotVersion
+    +number worldVersion
+    +Map entityVersions
+    +Person[] persons
+    +Task[] tasks
+    +Device[] devices
+    +Station[] stations
+    +Reservation[] reservations
+    +ForbiddenZone[] forbiddenZones
+    +LockedAssignment[] lockedAssignments
+  }
+  class Task {
+    +string id
+    +string basePriority
+    +number earliestStartMs
+    +number latestFinishMs
+    +boolean safetyCritical
+    +boolean preemptible
+    +string skillMatchMode
+    +number productionImpact
+    +number downstreamImpact
+    +string[] requiredSkills
+    +string[] requiredCertifications
+    +string[] requiredDeviceCapabilities
+    +string[] requiredStationCapabilities
+    +string[] preferredResources
+    +string[] excludedResources
+  }
+  class Resource {
+    +string id
+    +string status
+    +string shift
+    +Window[] availableWindows
+    +string[] skills
+    +Cert[] certifications
+    +string[] capabilities
+    +number batteryPct
+    +number workload
+    +string currentTaskId
+    +Reservation[] reservations
+    +Location location
+    +number locationConfidence
+    +number telemetryUpdatedAt
+    +string dataQuality
+  }
+  class Station {
+    +string id
+    +number capacity
+    +string[] capabilities
+    +Window[] availableWindows
+    +string[] queue
+    +string zoneId
+  }
+  class SchedulingConflict {
+    +string conflictId
+    +ConflictType type
+    +ConflictSeverity severity
+    +ConflictStatus status
+    +string[] taskIds
+    +string[] resourceIds
+    +string planId
+    +string snapshotVersion
+    +string detectedAt
+    +string acknowledgedBy
+    +string acknowledgedAt
+    +string resolvedBy
+    +string resolvedAt
+    +string resolution
+    +string suppressUntil
+  }
+  class SchedulingEvent {
+    +string eventId
+    +string eventType
+    +number sequence
+    +string snapshotVersion
+    +string planId
+    +string occurredAt
+  }
+  class RouteCostMatrix {
+    +string matrixId
+    +string snapshotVersion
+    +string taskId
+    +CandidateRouteCost[] candidates
+  }
+  class CandidateRouteCost {
+    +string personId
+    +string deviceId
+    +number etaSeconds
+    +number distanceMeters
+    +number congestion
+    +boolean blocked
+    +boolean forbiddenZone
+    +number risk
+    +number energy
+    +string routeCostMode
+    +string fallbackReason
+    +string dataQuality
+  }
+  class SchedulingPolicy {
+    +number version
+    +string solverVersion
+    +ObjectiveWeights weights
+    +boolean shadow
+  }
+
+  class TriggerService {
+    +evaluate(type, entityId, ctx) SchedulingRun
+  }
+  class WorldStateSnapshotService {
+    +buildSnapshot(ctx) WorldStateSnapshot
+    +isSnapshotFresh(version) boolean
+    +assertFreshForApprove(version)
+  }
+  class ImpactAnalyzer {
+    +analyze(snapshot, event) ImpactResult
+  }
+  class ReplanCoordinatorService {
+    +handleTrigger(type, entityId, ctx) RunResult
+    +dispatchStateTriggers(snapshot, ctx)
+  }
+  class TravelCostService {
+    +buildMatrix(snapshot, task, candidates) RouteCostMatrix
+  }
+  class EligibilityService {
+    +check(person, task, device, ctx) EligibilityResult
+  }
+  class SolverService {
+    +solveVariants(snapshot, constraints, opts) SchedulingPlanV2[]
+    +solve(snapshot, constraints, opts) SchedulingPlanV2
+  }
+  class CpSatSchedulingSolver {
+    +solve(snapshot, constraints, opts) SchedulingPlanV2
+  }
+  class HeuristicSchedulingSolver {
+    +solve(snapshot, constraints, opts) SchedulingPlanV2
+  }
+  class PlanCommandService {
+    +persistPlan(plan, ctx)
+    +approvePlan(planId, body, ctx)
+    +dispatchPlan(planId, ctx)
+    +replan(planId, body, ctx)
+    +applyOverrides(planId, body, ctx)
+  }
+  class PlanQueryService {
+    +getActivePlans() SchedulingPlanV2[]
+    +getPlanDetail(planId) SchedulingPlanV2
+    +comparePlans(a, b) PlanDiff
+  }
+  class ConflictService {
+    +derive(snapshot) SchedulingConflict[]
+    +persist(conflicts, ctx)
+    +acknowledge(id, actor, reason)
+    +resolve(id, actor, reason, resolution)
+    +suppress(id, actor, reason, until)
+  }
+  class ResourceProjectionService {
+    +getUnifiedResourceState() ResourceState[]
+  }
+  class DispatchCoordinatorService {
+    +dispatch(planId, ctx) DispatchResult
+  }
+  class SchedulingFeedbackService {
+    +recordBaseline(planId, ctx)
+    +recordActuals(body, ctx)
+    +deriveKpis() SchedulingFeedbackKpis
+  }
+  class SchedulerStreamService {
+    +replaySince(seq, lastId) ReplayResult
+    +events() Observable
+  }
+  class SchedulingPolicyService {
+    +getActivePolicy() SchedulingPolicy
+    +registerCandidatePolicy(config, orgId, by)
+    +activatePolicyVersion(version, orgId, by)
+    +shadowCompare(version) SchedulingPolicyComparison
+  }
+
+  TriggerService --> WorldStateSnapshotService
+  ReplanCoordinatorService --> ImpactAnalyzer
+  ReplanCoordinatorService --> SolverService
+  SolverService --> CpSatSchedulingSolver
+  SolverService --> HeuristicSchedulingSolver
+  CpSatSchedulingSolver --> TravelCostService
+  HeuristicSchedulingSolver --> EligibilityService
+  HeuristicSchedulingSolver --> TravelCostService
+  PlanCommandService --> PlanQueryService
+  PlanCommandService --> DispatchCoordinatorService
+  ConflictService --> ResourceProjectionService
+  ConflictService --> SchedulerStreamService
+  SchedulingFeedbackService --> DispatchCoordinatorService
+  SchedulingPolicyService --> SolverService
+  WorldStateSnapshotService --> SchedulingPolicyService

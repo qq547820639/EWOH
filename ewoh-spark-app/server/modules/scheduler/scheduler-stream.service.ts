@@ -124,15 +124,24 @@ export class SchedulerStreamService {
   }
 
   private toEvent(e: OutboxEvent): SchedulingEvent {
+    const payload = e.payload ?? {};
     return {
       eventId: e.id,
       eventType: e.eventType,
       entityId: e.entityId,
       version: 1,
       sequence: e.sequence,
-      payload: e.payload,
+      payload,
       entityType: e.entityType,
       entityVersion: e.entityVersion,
+      // Phase 3 / P3-T2：envelope 增强（snapshotVersion/planId/occurredAt），从 outbox payload 透传。
+      snapshotVersion:
+        typeof payload.snapshotVersion === 'string' ? payload.snapshotVersion : null,
+      planId: typeof payload.planId === 'string' ? payload.planId : null,
+      occurredAt:
+        typeof payload.occurredAt === 'string'
+          ? payload.occurredAt
+          : new Date().toISOString(),
       sourceTs: e.createdAt,
       serverTs: new Date().toISOString(),
     };

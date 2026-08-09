@@ -14,6 +14,7 @@ import { EligibilityService } from './eligibility.service';
 import { RoutingService } from './routing.service';
 import { RouteCostProvider, type RouteCost } from './route-cost.provider';
 import { SchedulingPolicyService } from './scheduling-policy.service';
+import type { SchedulerMetricsService } from './scheduler-metrics.service';
 import { TaskLifecycle } from './task-lifecycle';
 import { PriorityEngine } from './priority-engine';
 import {
@@ -62,6 +63,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     private readonly routeCostProvider: RouteCostProvider,
     private readonly eligibilityService: EligibilityService,
     private readonly priorityEngine: PriorityEngine = new PriorityEngine(),
+    private readonly metricsService?: SchedulerMetricsService,
   ) {}
 
   /** 暴露当前激活策略（供外层组合求解器构建请求权重时复用同一策略）。 */
@@ -93,6 +95,10 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     const safetyBlockedPersonIds = snapshotExt.safetyBlockedPersonIds ?? [];
 
     const violations: Array<Record<string, unknown>> = [];
+
+    // ---- Phase 2 / P2-T3：Solver 可观测（候选数 / 硬约束拒绝数） ----
+    let candidateCount = 0;
+    let hardRejectCount = 0;
 
     // ---- 约束支持性检查 + 拆解可执行约束 ----
     const lockedPersonByTask = new Map<string, string>();
@@ -338,9 +344,13 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         const personStation = person.stationId
           ? stationById.get(person.stationId)
           : undefined;
+        // 人员无工位且坐标缺失（UNKNOWN）时传 undefined 点，交由 routeCostProvider
+        // 走空间实体解析/不可行判定；绝不把 null 当作 0,0 伪坐标（见 02 §13）。
         const personPoint = personStation
           ? { x: personStation.x, y: personStation.y }
-          : { x: person.x, y: person.y };
+          : person.x != null && person.y != null
+            ? { x: person.x, y: person.y }
+            : undefined;
 
         // 真实路径成本（与地图一致的 route graph）。
         const routeCost = await this.routeCostProvider.estimate(
@@ -364,6 +374,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           excludedDeviceGlobal,
         );
         for (const device of deviceCandidates) {
+          // P2-T3：每个 (person, device) 候选组合计入候选数。
+          candidateCount += 1;
           const travelMs = routeCost.etaSeconds * 1000;
           const rawStartMs = lockedWindow
             ? lockedWindow[0]
@@ -430,6 +442,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           );
 
           if (!eligibility.eligible) {
+            hardRejectCount += 1;
             candidates.push({
               personId: person.id,
               deviceId: device ? device.id : null,
@@ -641,6 +654,18 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       assignments.map((a) => a.scoreBreakdown),
     );
 
+    // Phase 2 / P2-T3：Solver 可观测埋点（候选数 / 硬约束拒绝数；失败仅记日志，不影响求解）。
+    if (this.metricsService) {
+      try {
+        this.metricsService.recordCandidateCount(candidateCount);
+        if (hardRejectCount > 0) this.metricsService.recordHardReject(hardRejectCount);
+      } catch (err) {
+        this.logger.warn(
+          `metrics recording failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     return {
       planId: opts.planId,
       planName: opts.planName,
@@ -666,7 +691,10 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     };
   }
 
-  /** 计算候选多目标成本（分钟归一化，total 即评分）。 */
+  /** 计算候选多目标成本（分钟归一化，total 即评分）。
+   * Phase 2 / P2-T2：读取 SchedulingPolicy.weights 权威 8 权重（lateness/travel/wait/
+   * workload/station/change/risk/energy）。station 权重对应工位队列项，当前无队列指标
+   * 时不虚构（不贡献分数）；旧字段（latenessWeight 等）仅为兼容别名，不再直接使用。 */
   private computeCandidateScore(
     policy: SchedulingPolicy,
     lateMs: number,
@@ -677,13 +705,14 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     riskMs: number,
     energyPenalty: number,
   ): ScoreBreakdown {
-    const lateness = (policy.latenessWeight * lateMs) / 60000;
-    const travel = (policy.walkingWeight * travelMs) / 60000;
-    const workloadBalance = (policy.workloadBalanceWeight * loadPenalty) / 60000;
-    const stationWait = (policy.stationWaitWeight * waitMs) / 60000;
-    const changeCost = (policy.changeCostWeight * changeCostMs) / 60000;
-    const risk = (policy.riskWeight * riskMs) / 60000;
-    const energyCost = (policy.energyWeight * energyPenalty) / 60000;
+    const w = policy.weights;
+    const lateness = (w.lateness * lateMs) / 60000;
+    const travel = (w.travel * travelMs) / 60000;
+    const workloadBalance = (w.workload * loadPenalty) / 60000;
+    const stationWait = (w.wait * waitMs) / 60000;
+    const changeCost = (w.change * changeCostMs) / 60000;
+    const risk = (w.risk * riskMs) / 60000;
+    const energyCost = (w.energy * energyPenalty) / 60000;
     return {
       lateness,
       travel,

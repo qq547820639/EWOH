@@ -14,6 +14,9 @@ interface Row {
   createdAt: Date;
   payloadJson: any;
   sequence: number;
+  entityType?: string | null;
+  entityVersion?: number | null;
+  orgId?: string | null;
 }
 
 /** fake db：where 按注入的过滤函数模拟（真实 DB 的 eventType/entityId/status/createdAt 条件）。 */
@@ -122,5 +125,40 @@ describe('B1 enqueue sequence 由 DB DEFAULT 生成（原子，替代 SELECT MAX
     const out = await svc.enqueue('test.type', 'e-2', { k: 2 }, 'org1', 42);
     expect(out.sequence).toBe(42);
     expect(rows).toHaveLength(1);
+  });
+});
+
+describe('P3-T2: enqueue 透传 SSE envelope 字段（snapshotVersion/planId/occurredAt）', () => {
+  it('opts 携带 envelope 字段 → 写入 payload（SSE 端从 payload 读取）', async () => {
+    const { svc, rows } = makeOutbox([], () => false);
+    const occurred = '2026-08-09T10:00:00.000Z';
+    await svc.enqueue(
+      'conflict.detected',
+      'CFL-1',
+      { conflictId: 'CFL-1', type: 'device_offline' },
+      'org1',
+      undefined,
+      {
+        entityType: 'conflict',
+        snapshotVersion: 'WS-20260809-0001',
+        planId: 'PLAN-A',
+        occurredAt: occurred,
+      },
+    );
+    const row = rows[0];
+    expect(row.payloadJson).toEqual({
+      conflictId: 'CFL-1',
+      type: 'device_offline',
+      snapshotVersion: 'WS-20260809-0001',
+      planId: 'PLAN-A',
+      occurredAt: occurred,
+    });
+    expect(row.entityType).toBe('conflict');
+  });
+
+  it('opts 未携带 envelope 字段 → payload 保持原样（不注入 null）', async () => {
+    const { svc, rows } = makeOutbox([], () => false);
+    await svc.enqueue('plan.created', 'PLAN-1', { planId: 'PLAN-1' }, 'org1');
+    expect(rows[0].payloadJson).toEqual({ planId: 'PLAN-1' });
   });
 });

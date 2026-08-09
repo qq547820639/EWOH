@@ -9,7 +9,8 @@
   risk / energyRisk / schedule instability（churn）。
 
 依赖与真实边界：
-- 生产环境需安装 `ortools`（`pip install ortools`）。
+- 生产环境需安装 `ortools`（`pip install -r requirements.txt`，固定 `ortools==9.11.4210`，
+  Phase 2 / P2-T3 版本锁定，保证确定性重放）。
 - 若未安装，`solve()` 返回 solverStatus="UNAVAILABLE"，由控制面安全回退到
   HeuristicSchedulingSolver——绝不把 fallback 描述为 CP-SAT 成功。
 - 本 worker 只产出任务建议/方案/Assignment，不写入任何设备实时安全控制参数。
@@ -25,6 +26,8 @@ from typing import Dict, List, Optional
 
 from .contract import SolverRequest, SolverResponse, SolverAssignmentResult
 
+# 求解器版本标识（与 NestJS CpSatSchedulingSolver.CPSAT_VERSION 对齐）。
+# Phase 2 / P2-T3：OR-Tools 固定版本见同目录 requirements.txt（ortools==9.11.4210）。
 SOLVER_VERSION = "cpsat-v1"
 
 try:  # pragma: no cover - 依赖探测

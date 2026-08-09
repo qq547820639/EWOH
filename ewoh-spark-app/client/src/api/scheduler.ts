@@ -251,6 +251,45 @@ export async function getConflictDetail(
   return res.data;
 }
 
+/** Phase 3 / P3-T1：确认冲突（OPEN → ACKNOWLEDGED）。 */
+export async function acknowledgeConflict(
+  conflictId: string,
+  body: { operator: string; reason: string },
+): Promise<SchedulingConflict> {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/conflicts/${conflictId}/acknowledge`,
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}
+
+/** Phase 3 / P3-T1：解决冲突（→ RESOLVED；resolution 可选）。 */
+export async function resolveConflict(
+  conflictId: string,
+  body: { operator: string; reason: string; resolution?: string },
+): Promise<SchedulingConflict> {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/conflicts/${conflictId}/resolve`,
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}
+
+/** Phase 3 / P3-T1：抑制冲突（→ SUPPRESSED；suppressUntilMs 可选，缺省 24h）。 */
+export async function suppressConflict(
+  conflictId: string,
+  body: { operator: string; reason: string; suppressUntilMs?: number },
+): Promise<SchedulingConflict> {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/conflicts/${conflictId}/suppress`,
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}
+
 // ===== SchedulingPolicy 版本闭环 (Task 6) =====
 
 /** 返回当前生效策略 + 配置（只读）。 */

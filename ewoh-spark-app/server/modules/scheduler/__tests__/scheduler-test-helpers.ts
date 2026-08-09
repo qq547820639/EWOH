@@ -124,6 +124,17 @@ export function defaultPolicy(): SchedulingPolicy {
     riskWeight: 1,
     energyWeight: 1,
     solverVersion: 'heuristic-v2',
+    // Phase 2 / P2-T2：权威 8 权重（与旧字段一致，全 1）。
+    weights: {
+      lateness: 1,
+      travel: 1,
+      wait: 1,
+      workload: 1,
+      station: 1,
+      change: 1,
+      risk: 1,
+      energy: 1,
+    },
   };
 }
 

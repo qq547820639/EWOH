@@ -58,6 +58,8 @@ import EntityDetail from './EntityDetail';
 import AlertToast from '../../components/AlertToast';
 import DataStates from '../../components/DataStates';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
+import { useCommandMapSchedulerState } from './hooks/useCommandMapSchedulerState';
+import { SchedulerLayersOverlay, computeAggregateViewBox } from './layers/SchedulerLayers';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
 import {
   collectQueryErrors,
@@ -146,6 +148,8 @@ const CommandMap = (): React.ReactElement => {
   const [showIntelligence, setShowIntelligence] = useState(false);
   const [replayMode, setReplayMode] = useState(false);
   const [replayPaused, setReplayPaused] = useState(false);
+  // Phase 3 / P3-T3：聚合状态 Hook（React Query 权威数据 + SSE 增量 + 本地 UI state）。
+  const schedulerState = useCommandMapSchedulerState();
   const [replaySpeed, setReplaySpeed] = useState(1);
   const [replayTime, setReplayTime] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
@@ -657,6 +661,21 @@ const CommandMap = (): React.ReactElement => {
           candidates={candidates ?? null}
           selectedTaskId={selectedTaskId}
         />
+
+        {/* Phase 3 / P3-T3：纯视觉叠加层（conflict/risk/reservation/availability 等，数据来自 hook 聚合状态） */}
+        {mode === 'scheduling' && (() => {
+          const vb = computeAggregateViewBox(schedulerState);
+          return (
+            <svg
+              className="absolute inset-0 w-full h-full pointer-events-none"
+              viewBox={`${vb.minX} ${vb.minY} ${vb.w} ${vb.h}`}
+              preserveAspectRatio="xMidYMid meet"
+              aria-hidden="true"
+            >
+              <SchedulerLayersOverlay state={schedulerState} />
+            </svg>
+          );
+        })()}
 
         {/* 智能调度驾驶舱：开关 + 叠加层（仅调度模式且有方案时展示后端数据图层） */}
         {mode === 'scheduling' && activePlan && (

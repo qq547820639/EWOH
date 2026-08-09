@@ -15,7 +15,13 @@ describe('route-role.policy: FALLBACK 角色映射完整性', () => {
 
   it('FALLBACK 表所有映射非空且含有效角色', () => {
     for (const [controller, roles] of Object.entries(FALLBACK_CONTROLLER_ROLES)) {
-      expect(roles.length, `${controller} 应有角色`).toBeGreaterThan(0);
+      // jest expect 仅接受 1 个参数；角色非空断言失败时附 controller 名便于定位。
+      const message = `${controller} 应有角色`;
+      try {
+        expect(roles.length).toBeGreaterThan(0);
+      } catch (err) {
+        throw new Error(`${message}: ${(err as Error).message}`);
+      }
     }
   });
 

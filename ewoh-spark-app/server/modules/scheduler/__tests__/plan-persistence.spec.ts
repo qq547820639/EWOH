@@ -87,6 +87,7 @@ function makePolicy(version: number): SchedulingPolicy {
     riskWeight: 1,
     energyWeight: 0.5,
     solverVersion: 'heuristic-v2',
+    weights: { lateness: 3, travel: 1, wait: 1, workload: 1, station: 1, change: 0.5, risk: 1, energy: 0.5 },
   };
 }
 

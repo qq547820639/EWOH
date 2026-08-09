@@ -10,6 +10,8 @@ import type {
   WorldStateSnapshot,
 } from '@shared/api.interface';
 import { HeuristicSchedulingSolver } from './heuristic-scheduling-solver';
+import type { TravelCostService } from './travel-cost.service';
+import type { SchedulerMetricsService } from './scheduler-metrics.service';
 import type { SchedulingSolver, SolveOptions } from './scheduling-solver.interface';
 import {
   computeEffectivePriorityResults,
@@ -48,6 +50,8 @@ export class CpSatSchedulingSolver {
   constructor(
     private readonly heuristicSolver: HeuristicSchedulingSolver,
     config: CpSatSolverConfig = {},
+    private readonly travelCostService?: TravelCostService,
+    private readonly metricsService?: SchedulerMetricsService,
   ) {
     this.logger = config.logger ?? new Logger(CpSatSchedulingSolver.name);
     this.workerUrl =
@@ -79,6 +83,26 @@ export class CpSatSchedulingSolver {
 
     let response: SolverResponse | null = null;
     let reachable = false;
+    // P2-T1：候选可行性矩阵（TravelCostService SSOT）——只有矩阵判定 feasible 的
+    // person/device 候选才进入求解请求（eligiblePersonIds/eligibleDeviceIds）；
+    // 缺坐标候选在矩阵层已被排除（绝不把 UNKNOWN 坐标当作 0,0 伪坐标送入 Worker）。
+    // 矩阵构建失败仅降级为不过滤（不阻断求解），并记日志。
+    let eligibleByTask:
+      | Map<string, { personIds: string[]; deviceIds: string[] }>
+      | undefined;
+    if (
+      this.travelCostService &&
+      typeof (this.travelCostService as TravelCostService).buildEligibilityMatrix ===
+        'function'
+    ) {
+      try {
+        eligibleByTask = await this.travelCostService.buildEligibilityMatrix(snapshot);
+      } catch (err) {
+        this.logger.warn(
+          `eligibility matrix build failed; using unfiltered request: ${(err as Error)?.message ?? err}`,
+        );
+      }
+    }
     try {
       const request = this.buildRequest(
         snapshot,
@@ -87,6 +111,7 @@ export class CpSatSchedulingSolver {
         policy,
         nowMs,
         effectiveScores,
+        eligibleByTask,
       );
       response = await this.post(request);
       reachable = true;
@@ -94,6 +119,19 @@ export class CpSatSchedulingSolver {
       this.logger.warn(
         `CP-SAT worker 不可达（${this.workerUrl}）：${(err as Error)?.message ?? err}`,
       );
+      // Phase 2 / P2-T3：Solver 可观测埋点（fallback / timeout；失败仅记日志）。
+      if (this.metricsService) {
+        try {
+          this.metricsService.recordFallback();
+          if (err instanceof Error && /abort|timeout/i.test(err.message)) {
+            this.metricsService.recordSolverTimeout();
+          }
+        } catch (metricsErr) {
+          this.logger.warn(
+            `solver fallback metrics recording failed: ${metricsErr instanceof Error ? metricsErr.message : String(metricsErr)}`,
+          );
+        }
+      }
       reachable = false;
     }
 
@@ -138,6 +176,7 @@ export class CpSatSchedulingSolver {
     policy: SchedulingPolicy,
     nowMs: number,
     effectiveScores: Map<string, number>,
+    eligibleByTask?: Map<string, { personIds: string[]; deviceIds: string[] }>,
   ): SolverRequest {
     const horizonMinutes = opts.horizonMinutes;
 
@@ -182,6 +221,7 @@ export class CpSatSchedulingSolver {
     }
 
     const tasks = snapshot.tasks.map((t) => {
+      const eligible = eligibleByTask?.get(t.id);
       const planStart = t.planStart ? Date.parse(t.planStart) : NaN;
       const planEnd = t.planEnd ? Date.parse(t.planEnd) : NaN;
       const earliestStartMs = Number.isFinite(planStart) ? planStart : nowMs;
@@ -212,6 +252,9 @@ export class CpSatSchedulingSolver {
         safetyCritical: t.safetyCritical ?? false,
         preemptible: t.preemptible ?? false,
         skillMatchMode: t.skillMatchMode ?? 'ALL',
+        // P2-T1：矩阵判定 feasible 的候选才允许进入求解请求（缺坐标候选已被矩阵层排除）。
+        eligiblePersonIds: eligible?.personIds,
+        eligibleDeviceIds: eligible?.deviceIds,
       };
     });
 
@@ -219,8 +262,10 @@ export class CpSatSchedulingSolver {
       id: p.id,
       status: p.status,
       locationStationId: p.stationId ?? null,
-      x: p.x,
-      y: p.y,
+      // CP-SAT Worker 数值契约要求 number：坐标 UNKNOWN(null) 时保守映射 0，
+      // 仅存在于求解器请求边界（Worker 输入），快照/API 层仍为 null（见 P1-T2）。
+      x: p.x ?? 0,
+      y: p.y ?? 0,
       skills: p.skills ?? [],
       certifications: p.certifications ?? [],
       workload: p.loadLevel ?? 0,
@@ -280,15 +325,19 @@ export class CpSatSchedulingSolver {
       solverVersion: CPSAT_VERSION,
       horizonMinutes,
       nowMs,
+      // Phase 2 / P2-T2：权重来自 SchedulingPolicy.weights 权威 8 权重。
+      // Worker 契约字段映射：travel←weights.travel；workloadBalance←weights.workload；
+      // stationWait←weights.wait；changeCost←weights.change；energyRisk←weights.energy；
+      // churn←weights.change（churn/stability 罚项与变更罚共用同一权重）。
       weights: {
-        lateness: policy.latenessWeight,
-        travel: policy.walkingWeight,
-        workloadBalance: policy.workloadBalanceWeight,
-        stationWait: policy.stationWaitWeight,
-        changeCost: policy.changeCostWeight,
-        risk: policy.riskWeight,
-        energyRisk: policy.energyWeight,
-        churn: policy.changeCostWeight,
+        lateness: policy.weights.lateness,
+        travel: policy.weights.travel,
+        workloadBalance: policy.weights.workload,
+        stationWait: policy.weights.wait,
+        changeCost: policy.weights.change,
+        risk: policy.weights.risk,
+        energyRisk: policy.weights.energy,
+        churn: policy.weights.change,
       },
       tasks,
       persons,

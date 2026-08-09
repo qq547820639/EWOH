@@ -105,6 +105,70 @@ describe('SchedulerStreamService 重放与缺口恢复（Task 2.1）', () => {
   });
 });
 
+describe('P3-T2: SSE envelope 强化（snapshotVersion/planId/occurredAt 透传）', () => {
+  function makeOutbox(overrides: Partial<Record<'latestSequence' | 'listSince' | 'listLatest', jest.Mock>>) {
+    return {
+      latestSequence: overrides.latestSequence ?? jest.fn().mockResolvedValue(0),
+      listSince: overrides.listSince ?? jest.fn().mockResolvedValue([]),
+      listLatest: overrides.listLatest ?? jest.fn().mockResolvedValue([]),
+    };
+  }
+
+  it('envelope 携带 snapshotVersion/planId/occurredAt，且与 outbox payload 一致（id 仍为 sequence）', async () => {
+    const occurred = '2026-08-09T10:00:00.000Z';
+    const outboxEvent: OutboxEvent = {
+      id: 'evt-9',
+      eventType: 'conflict.detected',
+      entityId: 'CFL-123',
+      payload: {
+        conflictId: 'CFL-123',
+        snapshotVersion: 'WS-20260809-0001',
+        planId: 'PLAN-A',
+        occurredAt: occurred,
+      },
+      status: 'published',
+      sequence: 9,
+      createdAt: '2026-08-09T10:00:01.000Z',
+    };
+    const outbox = makeOutbox({
+      latestSequence: jest.fn().mockResolvedValue(9),
+      listSince: jest.fn().mockResolvedValue([outboxEvent]),
+    });
+    const svc = new SchedulerStreamService(outbox as never);
+    const result = await svc.replaySince(8);
+    const e = result.events[0];
+    // envelope 新字段与 outbox payload 一致。
+    expect(e.snapshotVersion).toBe('WS-20260809-0001');
+    expect(e.planId).toBe('PLAN-A');
+    expect(e.occurredAt).toBe(occurred);
+    // id/sequence 语义不变（Last-Event-ID 续传依赖）。
+    expect(e.sequence).toBe(9);
+    expect(result.currentSequence).toBe(9);
+  });
+
+  it('payload 无 envelope 字段 → snapshotVersion/planId 为 null，occurredAt 有兜底', async () => {
+    const outboxEvent: OutboxEvent = {
+      id: 'evt-10',
+      eventType: 'plan.created',
+      entityId: 'PLAN-1',
+      payload: {},
+      status: 'published',
+      sequence: 10,
+      createdAt: '2026-08-09T10:00:01.000Z',
+    };
+    const outbox = makeOutbox({
+      latestSequence: jest.fn().mockResolvedValue(10),
+      listSince: jest.fn().mockResolvedValue([outboxEvent]),
+    });
+    const svc = new SchedulerStreamService(outbox as never);
+    const result = await svc.replaySince(9);
+    const e = result.events[0];
+    expect(e.snapshotVersion).toBeNull();
+    expect(e.planId).toBeNull();
+    expect(e.occurredAt).toEqual(expect.any(String));
+  });
+});
+
 /* ===== Task 2.2: ImpactAnalyzer 统一异常 + 局部重排 ===== */
 
 describe('ImpactAnalyzer 统一异常分类（Task 2.2.1/2.2.2）', () => {

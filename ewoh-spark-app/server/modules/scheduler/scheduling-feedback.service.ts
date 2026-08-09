@@ -88,6 +88,24 @@ export class SchedulingFeedbackService {
       ctx ?? { userId: 'system', primaryOrgId: orgId ?? '' },
     );
 
+    // Phase 4 / P4-T1：plannedWait 语义——同 person 的连续任务，wait = start - 前一任务 end
+    // （clamp ≥0）；无前任务（该人员首任务）→ 0（调度起点无等待，非伪造）。按 plannedStart 升序计算。
+    const personSeq = new Map<string, { endMs: number }>();
+    const sortedAssignments = [...assignments].sort((x, y) => {
+      const xs = x.plannedStart ? x.plannedStart.getTime() : 0;
+      const ys = y.plannedStart ? y.plannedStart.getTime() : 0;
+      return xs - ys;
+    });
+    const waitByAssignment = new Map<string, number>();
+    for (const a of sortedAssignments) {
+      if (!a.assignmentId || !a.plannedStart || !a.personId) continue;
+      const startMs = a.plannedStart.getTime();
+      const prev = personSeq.get(a.personId);
+      const waitMs = prev ? Math.max(startMs - prev.endMs, 0) : 0;
+      waitByAssignment.set(a.assignmentId, waitMs);
+      if (a.plannedEnd) personSeq.set(a.personId, { endMs: a.plannedEnd.getTime() });
+    }
+
     let written = 0;
     await this.requestDatabaseContext.runInTransaction(gucSettings, async () => {
       const targets = assignments.length > 0 ? assignments : [null];
@@ -104,9 +122,10 @@ export class SchedulingFeedbackService {
 
         const plannedStart = a?.plannedStart ?? null;
         const plannedEnd = a?.plannedEnd ?? null;
-        // planned travel/wait：优先来自 assignment 的路线 ETA/距离或扩展字段。
-        const plannedTravel = a?.distanceMeters ?? null;
-        const plannedWait = null;
+        // Phase 4 / P4-T1 语义修复：plannedTravel 记录 ETA 时间语义（etaSeconds），
+        // 而非 distanceMeters；plannedWait 按同 person 前一任务 end 计算（不再恒 null）。
+        const plannedTravel = a?.etaSeconds ?? null;
+        const plannedWait = assignmentId ? waitByAssignment.get(assignmentId) ?? null : null;
 
         // 幂等：同一 assignment 已存在则回填 planned 基线，否则新增。
         const [existing] = assignmentId
@@ -255,7 +274,11 @@ export class SchedulingFeedbackService {
     return rows.map((r) => this.toFeedback(r));
   }
 
-  /** 由反馈表派生调度 KPI（acceptanceRate / overrideRate / fallbackRate / solverRuntime）。 */
+  /**
+   * 由反馈表派生调度 KPI（acceptanceRate / overrideRate / fallbackRate / solverRuntime +
+   * Phase 4 / P4-T1 扩展：on-time rate / mean+P95 lateness / total travel / workload imbalance /
+   * plan churn / conflict rate / replan success rate）。输入缺省时显式 null 标注缺数据，不伪造。
+   */
   async deriveKpis(): Promise<SchedulingFeedbackKpis> {
     const rows = await this.db.select().from(ewohSchedulingFeedback);
     const total = rows.length;
@@ -282,6 +305,66 @@ export class SchedulingFeedbackService {
     }
 
     const decided = accepted + rejected;
+
+    // ---- Phase 4 / P4-T1：扩展 KPI（缺失数据显式 null） ----
+    // on-time / lateness：需 plannedEnd + actualEnd 成对。
+    const lateness: number[] = [];
+    let onTime = 0;
+    for (const r of rows) {
+      if (!r.plannedEnd || !r.actualEnd) continue;
+      const ms = r.actualEnd.getTime() - r.plannedEnd.getTime();
+      lateness.push(ms);
+      if (ms <= 0) onTime += 1;
+    }
+    const onTimeRate =
+      lateness.length > 0 ? onTime / lateness.length : null;
+    const sortedLateness = [...lateness].sort((a, b) => a - b);
+    const meanLatenessMs =
+      sortedLateness.length > 0
+        ? sortedLateness.reduce((s, v) => s + v, 0) / sortedLateness.length
+        : null;
+    const p95LatenessMs =
+      sortedLateness.length > 0
+        ? sortedLateness[Math.min(
+            Math.ceil(sortedLateness.length * 0.95) - 1,
+            sortedLateness.length - 1,
+          )]
+        : null;
+
+    // total travel：plannedTravel 为 etaSeconds 语义 → ms。
+    const travelSeconds = rows
+      .map((r) => r.plannedTravel)
+      .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+    const totalTravelMs =
+      travelSeconds.length > 0
+        ? travelSeconds.reduce((s, v) => s + v, 0) * 1000
+        : null;
+
+    // workload imbalance：同 person 的任务数 max-min（>=2 人数据才有意义）。
+    const perPerson = new Map<string, number>();
+    for (const r of rows) {
+      const pid = (r.originalResourceJson as { personId?: string | null } | null)?.personId;
+      if (!pid) continue;
+      perPerson.set(pid, (perPerson.get(pid) ?? 0) + 1);
+    }
+    const personCounts = [...perPerson.values()];
+    const workloadImbalance =
+      personCounts.length >= 2
+        ? Math.max(...personCounts) - Math.min(...personCounts)
+        : null;
+
+    // plan churn：Σ replanCount（重排次数代理）。
+    const planChurn = replanCount > 0 ? replanCount : null;
+
+    // conflict rate：Σ conflictCount / totalFeedback（每方案平均冲突数）。
+    const conflictRate = total > 0 ? conflictCount / total : null;
+
+    // replan success rate：重排过的行中 accepted=true 占比。
+    const replanRows = rows.filter((r) => (r.replanCount ?? 0) > 0);
+    const replanAccepted = replanRows.filter((r) => r.accepted === true).length;
+    const replanSuccessRate =
+      replanRows.length > 0 ? replanAccepted / replanRows.length : null;
+
     return {
       totalFeedback: total,
       accepted,
@@ -293,6 +376,14 @@ export class SchedulingFeedbackService {
       solverRuntimeMs: runtimeCount > 0 ? runtimeSum / runtimeCount : 0,
       replanCount,
       conflictCount,
+      onTimeRate,
+      meanLatenessMs,
+      p95LatenessMs,
+      totalTravelMs,
+      workloadImbalance,
+      planChurn,
+      conflictRate,
+      replanSuccessRate,
     };
   }
 

@@ -246,3 +246,136 @@ describe('ResourceProjectionService（统一资源状态聚合器）', () => {
     expect(persons[0].type).toBe('person');
   });
 });
+
+describe('P1-T3: ResourceProjection SSOT 收敛（领域字段补齐 + 双源一致性）', () => {
+  function makeSvc(
+    personnelRows: unknown[],
+    deviceRows: unknown[],
+    spatialRows: unknown[],
+    reservations: ReservationResult[] = [],
+  ) {
+    const reservationService = {
+      listActive: jest.fn().mockResolvedValue(reservations),
+    };
+    const db = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn((t: unknown) => {
+          if (t === ewohPersonnel) return Promise.resolve(personnelRows);
+          if (t === ewohDevice) return Promise.resolve(deviceRows);
+          if (t === ewohSpatialEntity) return Promise.resolve(spatialRows);
+          return Promise.resolve([]);
+        }),
+      }),
+    };
+    return new ResourceProjectionService(db as never, reservationService as never);
+  }
+
+  it('device capabilities 与 world-state 统一读列：列有值取真实值；列无值按型号派生并标记 derived', async () => {
+    const svc = makeSvc(
+      [],
+      [
+        deviceRow({ id: 'D1', deviceId: 'D1', deviceModel: 'EXO-Pro X1', capabilities: ['crane'] }),
+        deviceRow({ id: 'D2', deviceId: 'D2', deviceModel: 'EXO-Pro X1', capabilities: [] }),
+        deviceRow({ id: 'D3', deviceId: 'D3', deviceModel: 'EXO-Pro X1' }),
+      ],
+      [],
+    );
+    const states = await svc.getUnifiedResourceState();
+    const byId = (id: string) => states.find((s) => s.id === id)!;
+    // 列有值 → 真实值优先（不再 [deviceModel] 裸串）
+    expect(byId('D1').capabilities).toEqual(['crane']);
+    expect((byId('D1').derived ?? []).includes('capabilities')).toBe(false);
+    // 列空数组 → 型号派生 + derived 标记
+    expect(byId('D2').capabilities).toEqual(['exo-lift']);
+    expect((byId('D2').derived ?? []).includes('capabilities')).toBe(true);
+    // 列缺失（undefined）→ 型号派生 + derived 标记
+    expect(byId('D3').capabilities).toEqual(['exo-lift']);
+    expect((byId('D3').derived ?? []).includes('capabilities')).toBe(true);
+  });
+
+  it('station 投影补 capacity/queue（读列）', async () => {
+    const svc = makeSvc(
+      [],
+      [],
+      [stationRow({ id: 'S1', entityId: 'ST-01', capacity: 5, queue: ['t1', 't2'] })],
+    );
+    const states = await svc.getUnifiedResourceState();
+    const station = states.find((s) => s.type === 'station')!;
+    expect(station.capacity).toBe(5);
+    expect(station.queue).toEqual(['t1', 't2']);
+  });
+
+  it('person 投影补 shift/workload/currentTask/certificationExpiry（读列）', async () => {
+    const svc = makeSvc(
+      [
+        personRow({
+          id: 'P1',
+          shift: 'A班',
+          workload: 0.4,
+          currentTaskId: 'T1',
+          certificationExpiry: [{ name: 'cert-a', expiresAtMs: 1234 }],
+        }),
+      ],
+      [],
+      [],
+    );
+    const states = await svc.getUnifiedResourceState();
+    const person = states.find((s) => s.id === 'P1')!;
+    expect(person.shift).toBe('A班');
+    expect(person.workload).toBe(0.4);
+    expect(person.currentTask).toBe('T1');
+    expect(person.certificationExpiry).toEqual([{ name: 'cert-a', expiresAtMs: 1234 }]);
+  });
+
+  it('device 位置/遥测字段级明细：locationConfidence/locationUpdatedAt/telemetryUpdatedAt', async () => {
+    const t = Date.now();
+    const svc = makeSvc(
+      [],
+      [
+        deviceRow({
+          id: 'D1', deviceId: 'D1',
+          locationLat: 500, locationLng: 600, locationConfidence: 0.9,
+          locationUpdatedAt: new Date(t), telemetryUpdatedAt: new Date(t),
+        }),
+        deviceRow({ id: 'D2', deviceId: 'D2' }), // 无位置
+      ],
+      [],
+    );
+    const states = await svc.getUnifiedResourceState();
+    const byId = (id: string) => states.find((s) => s.id === id)!;
+    expect(byId('D1').location.x).toBe(500);
+    expect(byId('D1').location.y).toBe(600);
+    expect(byId('D1').locationConfidence).toBe(0.9);
+    expect(byId('D1').locationUpdatedAt).toBe(t);
+    expect(byId('D1').telemetryUpdatedAt).toBe(t);
+    // 无位置 → 坐标 UNKNOWN(null) 而非 0，置信度也 null
+    expect(byId('D2').location.x).toBeNull();
+    expect(byId('D2').location.y).toBeNull();
+    expect(byId('D2').locationConfidence).toBeNull();
+  });
+
+  it('person/station 坐标缺失 → UNKNOWN(null) 而非 0（未知字段显式 null）', async () => {
+    const svc = makeSvc(
+      [personRow({ id: 'P1', spatialEntityId: null })],
+      [],
+      [stationRow({ id: 'S1', entityId: 'ST-01', x: null, y: null })],
+    );
+    const states = await svc.getUnifiedResourceState();
+    const person = states.find((s) => s.id === 'P1')!;
+    const station = states.find((s) => s.type === 'station')!;
+    expect(person.location.x).toBeNull();
+    expect(person.location.y).toBeNull();
+    expect(station.location.x).toBeNull();
+    expect(station.location.y).toBeNull();
+  });
+
+  it('person 无背衬列字段（capacity/queue/locationConfidence/telemetryUpdatedAt）为 null，不虚构', async () => {
+    const svc = makeSvc([personRow()], [], []);
+    const states = await svc.getUnifiedResourceState();
+    const person = states.find((s) => s.id === 'P1')!;
+    expect(person.capacity).toBeNull();
+    expect(person.queue).toBeNull();
+    expect(person.locationConfidence).toBeNull();
+    expect(person.telemetryUpdatedAt).toBeNull();
+  });
+});

@@ -18,6 +18,7 @@ import { SchedulerService } from './scheduler.service';
 import { SchedulerStreamService } from './scheduler-stream.service';
 import { ResourceProjectionService } from './resource-projection.service';
 import { ReplanCoordinatorService } from './replan-coordinator.service';
+import { ConflictService } from './conflict.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import type {
   GeneratePlansRequest,
@@ -47,6 +48,7 @@ export class SchedulerController {
     private readonly schedulerStreamService: SchedulerStreamService,
     private readonly resourceProjectionService: ResourceProjectionService,
     private readonly replanCoordinatorService: ReplanCoordinatorService,
+    private readonly conflictService: ConflictService,
   ) {}
 
   /**
@@ -328,7 +330,7 @@ export class SchedulerController {
     @Query('scope') scope?: SchedulingConflictScope,
     @Query('resourceId') resourceId?: string,
   ) {
-    return this.schedulerService.listConflicts({
+    return this.conflictService.listConflicts({
       type,
       severity,
       scope,
@@ -338,7 +340,54 @@ export class SchedulerController {
 
   @Get('conflicts/:id')
   async getConflict(@Param('id') id: string) {
-    return this.schedulerService.getConflictDetail(id);
+    return this.conflictService.getConflictDetail(id);
+  }
+
+  /** OPEN → ACKNOWLEDGED（人工确认，记录 acknowledgedBy/At + 审计 + SSE）。 */
+  @Post('conflicts/:id/acknowledge')
+  async acknowledgeConflict(
+    @Param('id') id: string,
+    @Body() body: { operator?: string; reason?: string },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.conflictService.acknowledge(
+      id,
+      body?.operator ?? '',
+      body?.reason ?? '',
+      request.userContext,
+    );
+  }
+
+  /** OPEN/ACKNOWLEDGED/SUPPRESSED → RESOLVED（人工 resolve；自动消除走 reconcile）。 */
+  @Post('conflicts/:id/resolve')
+  async resolveConflict(
+    @Param('id') id: string,
+    @Body() body: { operator?: string; reason?: string; resolution?: string },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.conflictService.resolve(
+      id,
+      body?.operator ?? '',
+      body?.reason ?? '',
+      body?.resolution ?? '',
+      request.userContext,
+    );
+  }
+
+  /** OPEN/ACKNOWLEDGED → SUPPRESSED（suppressUntilMs 内不再告警/推 SSE，到期自动回 OPEN）。 */
+  @Post('conflicts/:id/suppress')
+  async suppressConflict(
+    @Param('id') id: string,
+    @Body() body: { operator?: string; reason?: string; suppressUntilMs?: number },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.conflictService.suppress(
+      id,
+      body?.operator ?? '',
+      body?.reason ?? '',
+      body?.suppressUntilMs,
+      request.userContext,
+    );
   }
 
   // ===== SchedulingPolicy versioning (Task 6: 命令图调度闭环) =====
@@ -382,14 +431,16 @@ export class SchedulerController {
     );
   }
 
-  /** 显式激活指定版本（唯一生产策略翻转路径，需人工审批 + 审计）。 */
+  /** 显式激活指定版本（唯一生产策略翻转路径，需人工审批 approver+reason + 审计；P4-T2 guarded）。 */
   @Post('policy/versions/:version/activate')
   async activatePolicyVersion(
     @Param('version') version: string,
+    @Body() body: { approver?: string; reason?: string },
     @Req() request: { userContext?: OrgContext },
   ) {
     return this.schedulerService.activatePolicyVersion(
       this.parsePolicyVersion(version),
+      body ?? {},
       request.userContext,
     );
   }

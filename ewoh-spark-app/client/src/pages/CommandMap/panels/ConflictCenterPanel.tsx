@@ -21,8 +21,20 @@ import {
   RefreshCw,
   Factory,
   MapPin,
+  Eye,
+  Ban,
 } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { useSchedulerConflicts } from '@client/src/hooks/useSchedulerConflicts';
+import {
+  acknowledgeConflict,
+  resolveConflict,
+  suppressConflict,
+} from '@client/src/api/scheduler';
+import { queryKeys } from '@client/src/hooks/queryKeys';
+import { getCurrentOperator } from '@client/src/lib/auth';
+import { conflictVM, conflictStatusLabel, type ConflictAction } from '../vm/conflictVM';
 import { TYPE_META, sortConflicts } from './conflict-panel-logic';
 import type { SchedulingConflict, SchedulingConflictType } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
@@ -83,6 +95,61 @@ export function ConflictCenterPanel({
 
   // 按严重度排序：高 → 中 → 低（同严重度保持后端顺序）。
   const sorted = useMemo(() => sortConflicts(conflicts), [conflicts]);
+
+  // Phase 3 / P3-T1：生命周期展示模型（status/actions 来自后端，前端按状态机映射操作）。
+  const lifecycle = useMemo(() => conflictVM(conflicts), [conflicts]);
+  const lifecycleById = useMemo(
+    () => new Map(lifecycle.items.map((i) => [i.conflictId, i])),
+    [lifecycle],
+  );
+
+  const queryClient = useQueryClient();
+
+  const lifecycleMutation = useMutation({
+    mutationFn: async (params: {
+      conflictId: string;
+      action: ConflictAction;
+      operator: string;
+      reason: string;
+    }) => {
+      if (params.action === 'acknowledge') {
+        return acknowledgeConflict(params.conflictId, { operator: params.operator, reason: params.reason });
+      }
+      if (params.action === 'resolve') {
+        return resolveConflict(params.conflictId, { operator: params.operator, reason: params.reason });
+      }
+      return suppressConflict(params.conflictId, { operator: params.operator, reason: params.reason });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.schedulerConflicts() });
+      toast.success('冲突状态已更新');
+    },
+    onError: (e) => {
+      toast.error(`操作失败：${e instanceof Error ? e.message : '未知错误'}`);
+    },
+  });
+
+  /** 执行生命周期操作：reason/operator 必填（沿用审计要求）。 */
+  function runLifecycleAction(conflict: SchedulingConflict, action: ConflictAction): void {
+    const operator = getCurrentOperator();
+    const reason = window.prompt(`请输入操作原因（${action}，必填）：`, '');
+    if (!reason || !reason.trim()) {
+      toast.error('操作原因必填');
+      return;
+    }
+    lifecycleMutation.mutate({ conflictId: conflict.conflictId, action, operator, reason });
+  }
+
+  const ACTION_LABEL: Record<ConflictAction, string> = {
+    acknowledge: '确认',
+    resolve: '解决',
+    suppress: '抑制',
+  };
+  const ACTION_ICON: Record<ConflictAction, React.ComponentType<{ className?: string }>> = {
+    acknowledge: Eye,
+    resolve: CheckCircle2,
+    suppress: Ban,
+  };
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -148,6 +215,17 @@ export function ConflictCenterPanel({
               const label = TYPE_META[c.type]?.label ?? c.type;
               const Icon = TYPE_ICONS[c.type] ?? CircleAlert;
               const isExpanded = expandedId === c.conflictId;
+              const lc = lifecycleById.get(c.conflictId);
+              const status = lc?.status ?? 'OPEN';
+              const actions = lc?.actions ?? [];
+              const statusClass =
+                status === 'OPEN'
+                  ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                  : status === 'ACKNOWLEDGED'
+                    ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                    : status === 'RESOLVED'
+                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                      : 'bg-slate-500/15 text-slate-400 border-slate-500/30';
               return (
                 <li key={c.conflictId}>
                   <button
@@ -162,6 +240,10 @@ export function ConflictCenterPanel({
                         <span className="text-xs font-medium text-white/90">{label}</span>
                         <Badge className={cn('border text-[10px]', SEVERITY_CLASS[c.severity] ?? '')}>
                           {SEVERITY_LABEL[c.severity] ?? c.severity}
+                        </Badge>
+                        {/* Phase 3 / P3-T1：生命周期状态徽标 */}
+                        <Badge className={cn('border text-[10px]', statusClass)}>
+                          {conflictStatusLabel(status)}
                         </Badge>
                         {c.resourceId && (
                           <span className="text-[10px] text-white/40 font-mono">{c.resourceId}</span>
@@ -178,7 +260,33 @@ export function ConflictCenterPanel({
                           <p className="text-[10px] text-white/35">
                             冲突 ID：{c.conflictId} · 快照：{c.snapshotVersion ?? 'CURRENT'}
                             {c.taskIds.length > 0 && ` · 任务：${c.taskIds.length} 个`}
+                            {c.detectedAt && ` · 检测：${new Date(c.detectedAt).toLocaleString()}`}
+                            {c.suppressUntil && ` · 抑制至：${new Date(c.suppressUntil).toLocaleString()}`}
                           </p>
+                          {/* Phase 3 / P3-T1：生命周期操作（按状态机可用操作） */}
+                          {actions.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {actions.map((action) => {
+                                const ActionIcon = ACTION_ICON[action];
+                                return (
+                                  <Button
+                                    key={action}
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={lifecycleMutation.isPending}
+                                    className="text-xs border-white/20 text-white/80 hover:bg-white/10"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      runLifecycleAction(c, action);
+                                    }}
+                                  >
+                                    <ActionIcon className="w-3 h-3 mr-1" />
+                                    {ACTION_LABEL[action]}
+                                  </Button>
+                                );
+                              })}
+                            </div>
+                          )}
                           {onReplan && (
                             <div className="pt-1">
                               <Button

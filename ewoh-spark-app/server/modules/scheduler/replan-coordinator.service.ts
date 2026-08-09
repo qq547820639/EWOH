@@ -145,19 +145,18 @@ export class ReplanCoordinatorService {
       return { run, plans, debounced: false };
     } catch (e) {
       // v0.7 A2 熔断：触发链路任一步失败，将已登记的 run 置为 failed（而非永远卡 queued），
-      // 记录错误信息供审计；不向上抛导致调用链断裂（事件触发方不因重排失败而失败）。
+      // 记录失败原因到 failure_reason 列供审计（P1-T2，替代仅日志）；不向上抛导致调用链断裂。
+      const message = (e as Error).message ?? String(e);
       this.logger.error(
-        `handleTrigger(${triggerType}, ${entityId ?? '-'}) failed: ${(e as Error).message}`,
+        `handleTrigger(${triggerType}, ${entityId ?? '-'}) failed: ${message}`,
       );
       try {
         await this.requestDatabaseContext.runInTransaction(
           buildGucSettings(ctx),
           async () => {
-            // 注：ewohSchedulingRun 无 failureReason 列（schema.ts 自动生成，不改），
-            // 失败原因经日志记录；run 置 failed 防止卡在 queued。
             await this.db
               .update(ewohSchedulingRun)
-              .set({ status: 'failed' })
+              .set({ status: 'failed', failureReason: message })
               .where(eq(ewohSchedulingRun.runId, run.runId));
           },
         );

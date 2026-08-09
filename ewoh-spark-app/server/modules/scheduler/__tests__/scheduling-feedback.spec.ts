@@ -45,6 +45,8 @@ describe('SchedulingFeedbackService（Task 7 调度反馈，planned vs actual）
           plannedStart: new Date('2026-08-08T08:00:00.000Z'),
           plannedEnd: new Date('2026-08-08T08:30:00.000Z'),
           distanceMeters: 120,
+          // Phase 4 / P4-T1：plannedTravel 记录 ETA 时间语义（etaSeconds）。
+          etaSeconds: 240,
         },
       ],
     };
@@ -66,7 +68,10 @@ describe('SchedulingFeedbackService（Task 7 调度反馈，planned vs actual）
     expect(row.taskId).toBe(taskId);
     expect(row.plannedStart).toEqual(new Date('2026-08-08T08:00:00.000Z'));
     expect(row.plannedEnd).toEqual(new Date('2026-08-08T08:30:00.000Z'));
-    expect(row.plannedTravel).toBe(120);
+    // Phase 4 / P4-T1 语义修复：plannedTravel=etaSeconds（240s）；plannedWait 不再恒 null
+    // （无前任务 → 0，调度起点无等待）。
+    expect(row.plannedTravel).toBe(240);
+    expect(row.plannedWait).toBe(0);
     expect(row.originalResourceJson).toEqual({
       personId: 'p1',
       deviceId: 'd1',
@@ -114,6 +119,17 @@ describe('SchedulingFeedbackService（Task 7 调度反馈，planned vs actual）
     expect(kpis.solverRuntimeMs).toBe(250);
     expect(kpis.replanCount).toBe(0);
     expect(kpis.conflictCount).toBe(0);
+
+    // Phase 4 / P4-T1 扩展 KPI：planned 08:30 vs actual 08:35 → lateness +300000ms。
+    expect(kpis.onTimeRate).toBe(0);
+    expect(kpis.meanLatenessMs).toBe(300_000);
+    expect(kpis.p95LatenessMs).toBe(300_000);
+    expect(kpis.totalTravelMs).toBe(240 * 1000);
+    // 单人员数据 → workloadImbalance null（缺数据不伪造）；无重排 → planChurn/replanSuccessRate null。
+    expect(kpis.workloadImbalance).toBeNull();
+    expect(kpis.planChurn).toBeNull();
+    expect(kpis.conflictRate).toBe(0);
+    expect(kpis.replanSuccessRate).toBeNull();
 
     // 5) 离线评估视图。
     const rows = await svc.listForPlan(planId);
