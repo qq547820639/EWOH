@@ -142,6 +142,8 @@ async function syncEventUpdate(eventId, status, handlerAction) {
 
 const telemetryBuffer = [];
 let telemetryFlushTimer = null;
+// M2 修复：buffer 软上限。写入失败时保留行用于重试，超限只丢弃最老（防内存无界增长）。
+const TELEMETRY_BUFFER_MAX = 5000;
 
 // 将单帧遥测推入缓冲区；满 5 秒后批量写入多维表格
 function syncTelemetry(telemetry) {
@@ -168,25 +170,36 @@ function syncTelemetry(telemetry) {
   if (telemetryFlushTimer.unref) telemetryFlushTimer.unref();
 }
 
-// 主动 flush（用于退出时或定时触发）：批量 base +record-batch-create，清空 buffer
+// 主动 flush（用于退出时或定时触发）：批量 base +record-batch-create
+// M2 修复：写入失败时保留行（放回 buffer 头部），下一轮定时 flush 重试；
+// 仅成功后移除已发送行。超限只裁剪最老（TELEMETRY_BUFFER_MAX）。
 async function flushTelemetry() {
   if (telemetryFlushTimer) {
     clearTimeout(telemetryFlushTimer);
     telemetryFlushTimer = null;
   }
   if (telemetryBuffer.length === 0) return { ok: true, count: 0 };
-  const rows = telemetryBuffer.slice();
-  telemetryBuffer.length = 0;
+  const rows = telemetryBuffer.slice(0, TELEMETRY_BUFFER_MAX);
   try {
     const cfg = feishu.getConfig();
     if (!cfg || !cfg.tables) return { ok: false, error: 'no config' };
     const r = feishu.baseRecordBatchCreate(cfg.tables.telemetry, TELEMETRY_BATCH_FIELDS, rows);
-    if (!r.ok) {
-      console.error('[sync] 遥测批量写入失败:', r.error);
+    if (r.ok) {
+      // 成功后移除已发送的行（可能有并发新增，只移除本次发送的条数）
+      telemetryBuffer.splice(0, rows.length);
+      return { ok: true, count: rows.length };
     }
-    return { ok: r.ok, count: rows.length, error: r.error };
+    console.error('[sync] 遥测批量写入失败（保留待重试）:', r.error);
+    // 失败：不丢弃；超限只裁剪最老
+    if (telemetryBuffer.length > TELEMETRY_BUFFER_MAX) {
+      telemetryBuffer.splice(0, telemetryBuffer.length - TELEMETRY_BUFFER_MAX);
+    }
+    return { ok: false, count: rows.length, error: r.error };
   } catch (e) {
-    console.error('[sync] flushTelemetry 异常:', e.message);
+    console.error('[sync] flushTelemetry 异常（保留待重试）:', e.message);
+    if (telemetryBuffer.length > TELEMETRY_BUFFER_MAX) {
+      telemetryBuffer.splice(0, telemetryBuffer.length - TELEMETRY_BUFFER_MAX);
+    }
     return { ok: false, error: e.message, count: rows.length };
   }
 }

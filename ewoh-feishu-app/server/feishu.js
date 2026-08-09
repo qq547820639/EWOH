@@ -40,10 +40,17 @@ function larkCli(args, { input, asBot = false } = {}) {
       input: input != null ? input : undefined,
       encoding: 'utf8',
       maxBuffer: 16 * 1024 * 1024,
+      // M1 修复：20s 硬超时，防止 lark-cli 挂死时 spawnSync 永久阻塞事件循环
+      //（同步子进程在超时前无法中断，超时后由 SIGTERM 回收并走超时错误路径）。
+      timeout: 20000,
     });
     if (res.error) {
       console.error('[feishu] lark-cli 启动失败:', res.error.message);
       return { ok: false, data: null, error: res.error.message };
+    }
+    if (res.signal === 'SIGTERM' && res.status === null) {
+      console.error(`[feishu] lark-cli 超时（>20s）: ${fullArgs.slice(0, 3).join(' ')}`);
+      return { ok: false, data: null, error: 'lark-cli timeout (>20s)' };
     }
     const stdout = (res.stdout || '').trim();
     const stderr = (res.stderr || '').trim();

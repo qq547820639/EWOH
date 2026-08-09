@@ -140,8 +140,10 @@ if (simulatorEnabled()) {
 }
 
 // 飞书卡片按钮回调端点（挂在根 app，不在 /api 路由下）
-// payload 支持事件订阅信封 { header: { token, event_id, create_time }, event: {...} }
-// 或旧格式 { open_id, action: { value: { action_type, event_id } } }
+// payload 仅支持事件订阅信封 { header: { token, event_id, create_time }, event: {...} }
+// L1 对齐：旧格式 { open_id, action: {...} } 已不再支持——写操作必须通过验签
+//（token/timestamp/签名/重放四道校验），旧格式缺少 header.token 必然 401，
+// 不提供无验签的旧格式兼容路径（P0-SEC-001 安全边界）。
 app.post('/webhook/card', (req, res) => {
   const body = req.body || {};
   const value = (body.action && body.action.value) || {};
