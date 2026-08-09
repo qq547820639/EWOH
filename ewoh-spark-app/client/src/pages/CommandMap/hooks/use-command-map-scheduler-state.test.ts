@@ -37,7 +37,7 @@ describe('buildCommandMapState（聚合选择器）', () => {
           createdAt: '', snapshotVersion: 'CURRENT', status: 'OPEN',
         },
       ],
-      ui: { ...DEFAULT_UI_STATE, selectedTaskId: 't1', activeLayer: 'conflict', panelMode: 'conflict' },
+      ui: { ...DEFAULT_UI_STATE, selectedTaskId: 't1', activeLayers: ['conflict'], panelMode: 'conflict' },
       loading: false,
       hasError: false,
     });
@@ -47,7 +47,7 @@ describe('buildCommandMapState（聚合选择器）', () => {
     expect(state.conflicts.total).toBe(1);
     expect(state.conflicts.openCount).toBe(1);
     expect(state.ui.selectedTaskId).toBe('t1');
-    expect(state.ui.activeLayer).toBe('conflict');
+    expect(state.ui.activeLayers).toContain('conflict');
     expect(state.loading).toBe(false);
     expect(state.hasError).toBe(false);
   });

@@ -17,6 +17,16 @@ import { fitLabel, truncateLabel } from './labels';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
 import { getEntityColor, getDeviceColor, priorityLevelColor, resourceStatusColor, isExoDevice } from './entityColors';
 
+/** P0：ETA 格式化（后端秒 → 分:秒 / 分钟）；缺失返回空串（不前端估算）。 */
+function formatEta(etaSeconds: number): string {
+  if (!Number.isFinite(etaSeconds) || etaSeconds < 0) return '';
+  const total = Math.round(etaSeconds);
+  if (total < 60) return `${total}s`;
+  const min = Math.floor(total / 60);
+  const sec = total % 60;
+  return sec > 0 ? `${min}m${sec}s` : `${min}m`;
+}
+
 interface FactoryMapProps {
   entities: SpatialEntity[];
   worldState: CurrentWorldState | null;
@@ -673,22 +683,32 @@ const FactoryMap = ({
                     </g>
                   );
                 })}
-                {/* 分配路由：人员 → 目标工位；shadow=虚线，approved/dispatched=实线 */}
+                {/* 分配路由：人员 → 目标工位；shadow=虚线，approved/dispatched=实线。
+                    P0：优先渲染后端 RouteCost 几何（routeGeometry polyline，与 Solver 同源），
+                    无几何时才回退起终点直线（仅视觉占位，不冒充权威路线）。 */}
                 {plan.assignments.map((a) => {
                   const from = personCoord(a.personId);
                   const to = stationCoord(a.stationId);
-                  if (!from || !to) return null;
+                  const geom = a.routeGeometry;
+                  const pts =
+                    Array.isArray(geom) && geom.length >= 2
+                      ? geom
+                      : from && to
+                        ? [from, to]
+                        : null;
+                  if (!pts) return null;
+                  const polylinePoints = pts.map((p) => `${p.x},${p.y}`).join(' ');
                   return (
-                    <line
+                    <polyline
                       key={`aro-${a.assignmentId}`}
-                      x1={from.x}
-                      y1={from.y}
-                      x2={to.x}
-                      y2={to.y}
+                      points={polylinePoints}
+                      fill="none"
                       stroke={routeColor}
                       strokeWidth={2}
                       strokeDasharray={dash}
                       opacity={0.85}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
                     />
                   );
                 })}
@@ -720,6 +740,18 @@ const FactoryMap = ({
                           strokeWidth={1}
                           strokeDasharray={dash}
                         />
+                      )}
+                      {/* P0：ETA 标注（后端权威值；缺失时不展示，不前端估算） */}
+                      {typeof a.etaSeconds === 'number' && (
+                        <text
+                          x={to.x + 10}
+                          y={to.y - 6}
+                          fontSize={10}
+                          fill={routeColor}
+                          style={{ paintOrder: 'stroke', stroke: 'rgba(0,0,0,0.55)', strokeWidth: 2 }}
+                        >
+                          {formatEta(a.etaSeconds)}
+                        </text>
                       )}
                     </g>
                   );

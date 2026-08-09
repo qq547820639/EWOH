@@ -352,6 +352,8 @@ export class TravelCostService {
       calculatedAt: route.calculatedAt ?? new Date().toISOString(),
       fallbackReason: null,
       dataQuality: route.dataQuality ?? 'FRESH',
+      // P0：真实 A* 路径几何透传（Route.geometry），供地图与批量候选端点使用。
+      geometry: Array.isArray(route.geometry) ? route.geometry : [],
     };
   }
 
@@ -402,6 +404,11 @@ export class TravelCostService {
       calculatedAt: new Date().toISOString(),
       fallbackReason: meta?.fallbackReason ?? 'no_route_edge',
       dataQuality: meta?.dataQuality ?? 'FRESH',
+      // P0：显式 degraded fallback 的直线几何（起→终点两点），与 feasible=true 语义一致。
+      geometry: [
+        { x: from!.x as number, y: from!.y as number },
+        { x: to!.x as number, y: to!.y as number },
+      ],
     };
   }
 
@@ -478,4 +485,9 @@ export interface RouteCost {
   fallbackReason: RouteCostFallbackReason | null;
   /** 数据质量（P2-T1）：FRESH / STALE / UNKNOWN。 */
   dataQuality: RouteCostDataQuality;
+  /**
+   * 路径几何（P0）：route_graph 为真实 A* 折线路径；euclidean 为起终点两点。
+   * 地图渲染与 Solver 使用同一几何，禁止前端自行连直线。
+   */
+  geometry?: Array<{ x: number; y: number }>;
 }

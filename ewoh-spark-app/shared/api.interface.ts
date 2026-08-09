@@ -1274,6 +1274,11 @@ export interface RouteCandidateCost {
   blocked: boolean;
   /** 禁入区（硬约束：feasible=false）。 */
   forbiddenZone: boolean;
+  /**
+   * 路径几何（P0）：route_graph 为真实 A* 折线；euclidean 为起终点两点；
+   * 无坐标/不可行为空数组。地图渲染与 Solver 同源，禁止前端连直线。
+   */
+  geometry?: Array<{ x: number; y: number }>;
 }
 
 /** 批量候选路由评估响应。 */

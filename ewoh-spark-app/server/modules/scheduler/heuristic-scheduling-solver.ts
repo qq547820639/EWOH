@@ -35,6 +35,8 @@ interface Candidate {
   etaSeconds: number;
   distanceMeters: number;
   riskLevel: string | null;
+  /** P0：路径几何（route_graph A* / euclidean 两点），与地图同源。 */
+  routeGeometry?: Array<{ x: number; y: number }>;
   waitMs: number;
   lateMs: number;
   changeCost: number;
@@ -266,6 +268,9 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
             priority: t.priority,
             planStart: t.planStart,
             planEnd: t.planEnd,
+            // P0：透传生产影响因子——heuristic 与 CP-SAT 消费同一 PriorityEngine 完整输入，
+            // 避免 productionImpact 因子在 heuristic 路径静默失效（结果不一致）。
+            productionImpact: t.productionImpact,
           },
           config,
           now,
@@ -454,6 +459,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
               etaSeconds: routeCost.etaSeconds,
               distanceMeters: routeCost.distanceMeters,
               riskLevel: routeCost.riskLevel,
+              routeGeometry: routeCost.geometry ?? [],
               waitMs: 0,
               lateMs: 0,
               changeCost: 0,
@@ -523,6 +529,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
             etaSeconds: routeCost.etaSeconds,
             distanceMeters: routeCost.distanceMeters,
             riskLevel: routeCost.riskLevel,
+            routeGeometry: routeCost.geometry ?? [],
             waitMs,
             lateMs,
             changeCost,

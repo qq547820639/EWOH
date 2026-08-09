@@ -1250,6 +1250,8 @@ export class SchedulerService {
           dataQuality: cost.dataQuality,
           blocked: routeBlocked,
           forbiddenZone: inForbiddenZone,
+          // P0：路径几何透传（route_graph 真实 A* / euclidean 两点），与 Solver 同源。
+          geometry: cost.geometry ?? [],
         });
       }
       return { data: { taskId: body.taskId, candidates } };

@@ -596,6 +596,11 @@ export interface SchedulingAssignment {
   etaSeconds?: number;
   /** 路线距离（米）。 */
   distanceMeters?: number;
+  /**
+   * 路径几何（P0）：route_graph 为真实 A* 折线；euclidean 为起终点两点。
+   * 地图渲染与 Solver 使用同一 RouteCost 几何，禁止前端自行连直线。
+   */
+  routeGeometry?: Array<{ x: number; y: number }>;
   /** 路线风险摘要。 */
   riskLevel?: string | null;
   status: AssignmentStatus;

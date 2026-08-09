@@ -35,7 +35,11 @@ export interface CommandMapUIState {
   selectedTaskId: string | null;
   selectedResourceId: string | null;
   selectedPlanId: string | null;
-  activeLayer: CommandMapLayer;
+  /**
+   * 多图层组合（P0）：可同时开启 Resource+Route+Plan+Conflict 等（调度驾驶舱
+   * 正常使用场景）；base 恒为底层不在此列。空数组 = 仅 base。
+   */
+  activeLayers: CommandMapLayer[];
   panelMode: PanelMode;
   viewport: Viewport;
 }
@@ -55,7 +59,7 @@ export const DEFAULT_UI_STATE: CommandMapUIState = {
   selectedTaskId: null,
   selectedResourceId: null,
   selectedPlanId: null,
-  activeLayer: 'base',
+  activeLayers: [],
   panelMode: 'none',
   viewport: { x: 0, y: 0, scale: 1 },
 };

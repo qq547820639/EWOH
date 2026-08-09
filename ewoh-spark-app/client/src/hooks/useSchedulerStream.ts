@@ -104,12 +104,15 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
 
   /** 全量重同步：放弃增量，从后端拉取权威状态（P0-1 / P3-T2）。 */
   const triggerResync = useCallback(() => {
-    // 权威端点并行失效重建：活跃方案 / 世界快照 / 资源投影 / 冲突 / 方案详情 / 运行。
-    // 缺口内状态不猜测，一律从后端权威数据恢复。
+    // 权威端点并行失效重建：活跃方案 / 世界快照 / 资源投影 / 冲突 / 方案详情 / 运行 / 路由。
+    // P0：routes 纳入 resync——route.changed 事件缺口后必须重拉路由图与路由成本，
+    // 否则地图路线与 Solver 使用的 RouteCost 不一致（缺口内状态不猜测，一律权威恢复）。
     queryClient.invalidateQueries({ queryKey: ['scheduler-active-plans'] });
     queryClient.invalidateQueries({ queryKey: ['scheduler-snapshot'] });
     queryClient.invalidateQueries({ queryKey: ['scheduler-resource-state'] });
     queryClient.invalidateQueries({ queryKey: ['scheduler-conflicts'] });
+    queryClient.invalidateQueries({ queryKey: ['scheduler-routes'] });
+    queryClient.invalidateQueries({ queryKey: ['schedule-route-graph'] });
     // 使用前缀匹配，使所有 ['scheduler-plan', planId] / ['scheduler-run', runId] 都失效。
     queryClient.invalidateQueries({ queryKey: ['scheduler-plan'] });
     queryClient.invalidateQueries({ queryKey: ['scheduler-run'] });

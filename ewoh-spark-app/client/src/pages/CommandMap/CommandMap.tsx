@@ -129,7 +129,10 @@ interface PlanAssignmentExplanation {
   reasons: string[];
   alternatives: Array<Record<string, unknown>>;
   stationId: string | null;
+  /** 后端权威路线距离（km，Solver 同源 RouteCost）；无则 undefined。 */
   routeDistanceM?: number;
+  /** 后端权威路线 ETA（秒）；无则 undefined。 */
+  routeEtaSeconds?: number;
   plannedStart: string | null;
   plannedEnd: string | null;
 }
@@ -342,22 +345,27 @@ const CommandMap = (): React.ReactElement => {
     };
     for (const a of activePlan.assignments) {
       if (!a.personId) continue;
-      const from = posOf(a.personId);
-      const to = posOf(a.stationId);
+      // P0：路线距离/ETA 使用后端权威值（Solver 同源 RouteCost），
+      // 禁止前端 Math.hypot 复算权威距离；缺失时显式 undefined（不猜测）。
       const routeDistanceM =
-        from && to ? Math.hypot(to.x - from.x, to.y - from.y) / 1000 : undefined;
+        typeof a.distanceMeters === 'number'
+          ? a.distanceMeters / 1000
+          : undefined;
+      const routeEtaSeconds =
+        typeof a.etaSeconds === 'number' ? a.etaSeconds : undefined;
       map.set(a.personId, {
         taskId: a.taskId,
         reasons: a.reasons,
         alternatives: a.alternatives,
         stationId: a.stationId,
         routeDistanceM,
+        routeEtaSeconds,
         plannedStart: a.plannedStart,
         plannedEnd: a.plannedEnd,
       });
     }
     return map;
-  }, [activePlan, entityList]);
+  }, [activePlan]);
 
   // 回放模式下用最近快照替换实时世界状态
   const replayWorldState = useMemo(() => {

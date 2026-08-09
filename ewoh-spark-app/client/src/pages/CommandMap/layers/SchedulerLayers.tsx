@@ -237,19 +237,21 @@ export function RiskLayer({ state }: LayerProps): React.ReactElement | null {
   );
 }
 
-/** 按 activeLayer 选择要渲染的叠加层（工厂 Base 始终渲染）。 */
+/**
+ * 多图层组合渲染（P0）：工厂 Base 恒在底层，其余按 activeLayers 全量叠加。
+ * 同时开启 Resource + Route + Plan + Conflict 是调度驾驶舱的正常使用场景。
+ */
 export function SchedulerLayersOverlay({ state }: LayerProps): React.ReactElement | null {
-  const layer = state.ui.activeLayer;
-  const layers: React.ReactElement[] = [];
-  if (layer === 'base') layers.push(<BaseLayer key="base" state={state} />);
-  if (layer === 'task') layers.push(<TaskLayer key="task" state={state} />);
-  if (layer === 'resource') layers.push(<ResourceLayer key="resource" state={state} />);
-  if (layer === 'availability') layers.push(<AvailabilityLayer key="availability" state={state} />);
-  if (layer === 'reservation') layers.push(<ReservationLayer key="reservation" state={state} />);
-  if (layer === 'plan') layers.push(<PlanLayer key="plan" state={state} />);
-  if (layer === 'route') layers.push(<RouteLayer key="route" state={state} />);
-  if (layer === 'conflict') layers.push(<ConflictLayer key="conflict" state={state} />);
-  if (layer === 'risk') layers.push(<RiskLayer key="risk" state={state} />);
+  const active = new Set(state.ui.activeLayers);
+  const layers: React.ReactElement[] = [<BaseLayer key="base" state={state} />];
+  if (active.has('task')) layers.push(<TaskLayer key="task" state={state} />);
+  if (active.has('resource')) layers.push(<ResourceLayer key="resource" state={state} />);
+  if (active.has('availability')) layers.push(<AvailabilityLayer key="availability" state={state} />);
+  if (active.has('reservation')) layers.push(<ReservationLayer key="reservation" state={state} />);
+  if (active.has('plan')) layers.push(<PlanLayer key="plan" state={state} />);
+  if (active.has('route')) layers.push(<RouteLayer key="route" state={state} />);
+  if (active.has('conflict')) layers.push(<ConflictLayer key="conflict" state={state} />);
+  if (active.has('risk')) layers.push(<RiskLayer key="risk" state={state} />);
   return <>{layers}</>;
 }
 
