@@ -22,7 +22,7 @@
  *   - POST /api/scheduler/plans/:planId/approve （body: version + snapshotVersion + operator + reason）
  *   - POST /api/scheduler/plans/:planId/dispatch
  *   - GET  /api/scheduler/conflicts             （冲突列表，含 status 生命周期字段）
- *   - POST /api/scheduler/plans/:planId/replan  （body: triggerType + triggerEntityId + constraints）
+ *   - POST /api/scheduler/plans/:planId/replan  （body: trigger + entityId + constraints）
  *   - POST /api/scheduler/plans/:planId/overrides（body: actions + operator + reason）
  *   - GET  /api/scheduler/plans/:planId/compare/:otherPlanId （plan diff VM）
  *   - POST /api/scheduler/routes/calculate      （route cost 更新；body: taskId + candidates）
@@ -85,10 +85,20 @@ if (!e2eConfig) {
     beforeAll(async () => {
       owner = await connectOwner(e2eConfig.ownerDatabaseUrl);
       fixture = await createE2EFixture(owner);
+      // 清空 runtime 库触发记录：避免 MANUAL 冷却（30s）跨运行/跨场景 debounce。
+      try {
+        const postgres = (await import('postgres')).default;
+        const runtime = postgres(e2eConfig.runtimeDatabaseUrl, { max: 1 });
+        await runtime.unsafe('DELETE FROM ewoh_replan_trigger');
+        await runtime.end();
+      } catch {
+        // 清理失败不阻断测试（触发类型可避开冷却）。
+      }
       handle = await startE2EApp(e2eConfig, fixture.orgA.id);
       baseUrl = handle.baseUrl;
       const loginRes = await login(baseUrl, 'admin', 'admin-password');
-      expect(loginRes.status).toBe(200);
+      // NestJS POST 默认 201（与 ewoh-http E2E 的 login 断言一致）。
+      expect(loginRes.status).toBe(201);
       token = loginRes.body.accessToken;
     }, 120_000);
 
@@ -112,7 +122,7 @@ if (!e2eConfig) {
           headers: makeHeaders(token),
           body: JSON.stringify({
             strategy: 'scheduling_v2',
-            triggerType: 'MANUAL',
+            trigger: 'MANUAL',
             reason: `E2E-A ${runId}`,
           }),
         },
@@ -137,9 +147,8 @@ if (!e2eConfig) {
         },
       );
       expect(approve.status).toBe(200);
-      expect((approve.body as { data: { status: string } }).data.status).toBe(
-        'approved',
-      );
+      // approvePlanV2 直接返回 SchedulingPlanV2（无 data 包装）。
+      expect((approve.body as { status: string }).status).toBe('approved');
 
       // 3) dispatch（幂等：重复 dispatch 第二次应被拒 PLAN_CONCURRENT_DISPATCH/状态已变）。
       const dispatch = await apiRequest(
@@ -160,7 +169,7 @@ if (!e2eConfig) {
       );
       expect(conflicts.status).toBe(200);
 
-      // 局部重排：triggerType=DEVICE_OFFLINE + triggerEntityId=<deviceId>。
+      // 局部重排：trigger=DEVICE_OFFLINE + entityId=<deviceId>。
       // 期望：仅受影响任务进入求解子图；执行中/锁定任务冻结（frozen）。
       const replan = await apiRequest<SchedulingRunResponse>(
         baseUrl,
@@ -170,8 +179,8 @@ if (!e2eConfig) {
           headers: makeHeaders(token),
           body: JSON.stringify({
             strategy: 'scheduling_v2',
-            triggerType: 'DEVICE_OFFLINE',
-            triggerEntityId: `DEV-${runId}`,
+            trigger: 'DEVICE_OFFLINE',
+            entityId: `DEV-${runId}`,
             reason: 'E2E-B device offline replan',
           }),
         },
@@ -226,7 +235,7 @@ if (!e2eConfig) {
           headers: makeHeaders(token),
           body: JSON.stringify({
             strategy: 'scheduling_v2',
-            triggerType: 'MANUAL',
+            trigger: 'MANUAL',
             reason: 'E2E-D locked assignment replan',
           }),
         },
@@ -236,14 +245,14 @@ if (!e2eConfig) {
     });
 
     it('E: stale snapshot approve 被拒（version/snapshotVersion 校验）', async () => {
-      // 1) 先创建一个方案。
+      // 1) 先创建一个方案（用 TASK_CREATED 触发，避开 MANUAL 30s 冷却去抖）。
       const run = await apiRequest<SchedulingRunResponse>(
         baseUrl,
         '/api/scheduler/runs',
         {
           method: 'POST',
           headers: makeHeaders(token),
-          body: JSON.stringify({ strategy: 'scheduling_v2', triggerType: 'MANUAL' }),
+          body: JSON.stringify({ strategy: 'scheduling_v2', trigger: 'TASK_CREATED' }),
         },
       );
       const plan = run.body.plans?.[0];

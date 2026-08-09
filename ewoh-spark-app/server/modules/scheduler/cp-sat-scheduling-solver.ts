@@ -86,10 +86,13 @@ export class CpSatSchedulingSolver {
     // P2-T1：候选可行性矩阵（TravelCostService SSOT）——只有矩阵判定 feasible 的
     // person/device 候选才进入求解请求（eligiblePersonIds/eligibleDeviceIds）；
     // 缺坐标候选在矩阵层已被排除（绝不把 UNKNOWN 坐标当作 0,0 伪坐标送入 Worker）。
-    // 矩阵构建失败仅降级为不过滤（不阻断求解），并记日志。
+    // P0：矩阵构建失败 → fail-closed。禁止把未过滤候选送入 Worker（会静默绕过
+    // 安全/资格/路由硬约束），也不得把 fail-open 结果当作正常求解——
+    // 直接回退启发式并显式标记 degraded/fallback，绝不伪装 OPTIMAL。
     let eligibleByTask:
       | Map<string, { personIds: string[]; deviceIds: string[] }>
       | undefined;
+    let eligibilityMatrixFailed = false;
     if (
       this.travelCostService &&
       typeof (this.travelCostService as TravelCostService).buildEligibilityMatrix ===
@@ -98,10 +101,35 @@ export class CpSatSchedulingSolver {
       try {
         eligibleByTask = await this.travelCostService.buildEligibilityMatrix(snapshot);
       } catch (err) {
-        this.logger.warn(
-          `eligibility matrix build failed; using unfiltered request: ${(err as Error)?.message ?? err}`,
+        eligibilityMatrixFailed = true;
+        this.logger.error(
+          `eligibility matrix build failed; fail-closed → degraded heuristic fallback: ${(err as Error)?.message ?? err}`,
         );
+        if (this.metricsService) {
+          try {
+            this.metricsService.recordFallback();
+          } catch {
+            // 指标记录失败不影响主路径
+          }
+        }
       }
+    }
+    if (eligibilityMatrixFailed) {
+      const degraded = await this.heuristicSolver.solve(snapshot, constraints, opts);
+      return {
+        ...degraded,
+        solverStatus:
+          degraded.solverStatus === 'OPTIMAL' ? 'HEURISTIC' : degraded.solverStatus,
+        fallbackReason: 'eligibility_matrix_build_failed',
+        baselineDelta: {
+          ...(degraded.baselineDelta ?? {}),
+          degraded: {
+            reason: 'eligibility_matrix_build_failed',
+            detail:
+              '资格/路由可行性矩阵构建失败，已 fail-closed 回退启发式求解（未使用未过滤候选，无安全/资格绕过）',
+          },
+        },
+      };
     }
     try {
       const request = this.buildRequest(
@@ -262,10 +290,11 @@ export class CpSatSchedulingSolver {
       id: p.id,
       status: p.status,
       locationStationId: p.stationId ?? null,
-      // CP-SAT Worker 数值契约要求 number：坐标 UNKNOWN(null) 时保守映射 0，
-      // 仅存在于求解器请求边界（Worker 输入），快照/API 层仍为 null（见 P1-T2）。
-      x: p.x ?? 0,
-      y: p.y ?? 0,
+      // P0：坐标 UNKNOWN 显式 null 直传 Worker（禁止 0,0 伪坐标）。
+      // 无坐标人员已被资格矩阵排除出所有任务候选（eligiblePersonIds 不含），
+      // Worker 对 null 坐标不做 travel 计算（见 worker solver.py）。
+      x: p.x ?? null,
+      y: p.y ?? null,
       skills: p.skills ?? [],
       certifications: p.certifications ?? [],
       workload: p.loadLevel ?? 0,
@@ -286,8 +315,9 @@ export class CpSatSchedulingSolver {
 
     const stations = snapshot.stations.map((s) => ({
       id: s.id,
-      x: s.x,
-      y: s.y,
+      // P0：工位坐标 UNKNOWN 显式 null（不再映射 0,0）。
+      x: s.x ?? null,
+      y: s.y ?? null,
       capacity: s.capacity ?? null,
     }));
 
@@ -354,6 +384,10 @@ export class CpSatSchedulingSolver {
       frozenAssignments,
       baselineAssignee,
       timeLimitMs: this.timeoutMs,
+      // P0：安全硬约束直达 Worker——safety blocked 的 person/device 在候选生成层
+      // 被硬过滤（fail-closed），不依赖权重或启发式偏好，且拒绝理由可解释。
+      safetyBlockedPersonIds: snapshot.safetyBlockedPersonIds ?? [],
+      safetyBlockedDeviceIds: snapshot.safetyBlockedDeviceIds ?? [],
     };
   }
 

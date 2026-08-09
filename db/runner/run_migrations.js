@@ -33,6 +33,10 @@ const FILES = {
   standalone_workbench_prod_rollback: path.join(root, 'db/migrations/standalone_005_workbench_prod.rollback.sql'),
   standalone_workbench_prod_verify: path.join(root, 'db/verify/standalone_005_verify.sql'),
   standalone_scheduling: path.join(root, 'db/migrations/standalone_006_scheduling.sql'),
+  standalone_scheduling_persistence: path.join(root, 'db/migrations/standalone_007_scheduling_persistence.sql'),
+  standalone_scheduling_persistence_rollback: path.join(root, 'db/migrations/standalone_007_scheduling_persistence.rollback.sql'),
+  standalone_phase2_realtime: path.join(root, 'db/migrations/standalone_008_phase2_realtime.sql'),
+  standalone_phase2_realtime_rollback: path.join(root, 'db/migrations/standalone_008_phase2_realtime.rollback.sql'),
   standalone_scheduling_rollback: path.join(root, 'db/migrations/standalone_006_scheduling.rollback.sql'),
   standalone_scheduling_verify: path.join(root, 'db/verify/standalone_006_verify.sql'),
   standalone_scheduling_seed: path.join(root, 'db/seed/standalone_006_scheduling_seed.sql'),
@@ -57,6 +61,12 @@ const FILES = {
   standalone_conflict_lifecycle: path.join(root, 'db/migrations/standalone_013_conflict_lifecycle.sql'),
   standalone_conflict_lifecycle_rollback: path.join(root, 'db/migrations/standalone_013_conflict_lifecycle.rollback.sql'),
   standalone_conflict_lifecycle_verify: path.join(root, 'db/verify/standalone_013_conflict_lifecycle.verify.sql'),
+  standalone_task_requirement: path.join(root, 'db/migrations/standalone_016_task_requirement.sql'),
+  standalone_task_requirement_rollback: path.join(root, 'db/migrations/standalone_016_task_requirement.rollback.sql'),
+  standalone_task_requirement_verify: path.join(root, 'db/verify/standalone_016_task_requirement.verify.sql'),
+  standalone_scheduling_tables_fix: path.join(root, 'db/migrations/standalone_017_scheduling_tables_fix.sql'),
+  standalone_scheduling_tables_fix_rollback: path.join(root, 'db/migrations/standalone_017_scheduling_tables_fix.rollback.sql'),
+  standalone_scheduling_tables_fix_verify: path.join(root, 'db/verify/standalone_017_scheduling_tables_fix.verify.sql'),
 };
 
 const PLAN_NAMES = Object.freeze(Object.keys(FILES));
@@ -76,6 +86,8 @@ const ROLLBACK_COMMANDS = new Set([
   '--rollback-standalone-route-cost-matrix',
   '--rollback-standalone-policy-weights',
   '--rollback-standalone-conflict-lifecycle',
+  '--rollback-standalone-task-requirement',
+  '--rollback-standalone-scheduling-tables-fix',
 ]);
 const EXECUTE_COMMANDS = new Set([
   '--apply',
@@ -104,6 +116,10 @@ const EXECUTE_COMMANDS = new Set([
   '--rollback-standalone-scheduling',
   '--verify-standalone-scheduling',
   '--seed-standalone-scheduling',
+  '--apply-standalone-scheduling-persistence',
+  '--rollback-standalone-scheduling-persistence',
+  '--apply-standalone-phase2-realtime',
+  '--rollback-standalone-phase2-realtime',
   '--apply-standalone-reservation-conflict',
   '--rollback-standalone-reservation-conflict',
   '--verify-standalone-reservation-conflict',
@@ -125,6 +141,12 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-conflict-lifecycle',
   '--rollback-standalone-conflict-lifecycle',
   '--verify-standalone-conflict-lifecycle',
+  '--apply-standalone-task-requirement',
+  '--rollback-standalone-task-requirement',
+  '--verify-standalone-task-requirement',
+  '--apply-standalone-scheduling-tables-fix',
+  '--rollback-standalone-scheduling-tables-fix',
+  '--verify-standalone-scheduling-tables-fix',
 ]);
 
 const TOKEN = '__EWOH_SCHEMA__';
@@ -240,6 +262,7 @@ function usage() {
   console.error('       run_migrations.js --apply-standalone-route-cost-matrix | --rollback-standalone-route-cost-matrix | --verify-standalone-route-cost-matrix');
   console.error('       run_migrations.js --apply-standalone-policy-weights | --rollback-standalone-policy-weights | --verify-standalone-policy-weights');
   console.error('       run_migrations.js --apply-standalone-conflict-lifecycle | --rollback-standalone-conflict-lifecycle | --verify-standalone-conflict-lifecycle');
+  console.error('       run_migrations.js --apply-standalone-task-requirement | --rollback-standalone-task-requirement | --verify-standalone-task-requirement');
   console.error('Env: EWOH_DATABASE_URL or SUDA_DATABASE_URL, EWOH_SCHEMA, EWOH_ALLOW_DDL=1');
   console.error('Rollback also requires EWOH_ALLOW_DESTRUCTIVE_ROLLBACK=1.');
   process.exit(2);
@@ -272,7 +295,7 @@ function main() {
     console.error('EWOH_DATABASE_URL or SUDA_DATABASE_URL is required.');
     process.exit(2);
   }
-  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod', '--verify-standalone-outbox-sequence', '--verify-standalone-domain-columns', '--verify-standalone-route-cost-matrix', '--verify-standalone-policy-weights', '--verify-standalone-conflict-lifecycle'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
+  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod', '--verify-standalone-outbox-sequence', '--verify-standalone-domain-columns', '--verify-standalone-route-cost-matrix', '--verify-standalone-policy-weights', '--verify-standalone-conflict-lifecycle', '--verify-standalone-task-requirement', '--verify-standalone-scheduling-tables-fix'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
     console.error('EWOH_ALLOW_DDL=1 is required for --apply and --rollback.');
     process.exit(2);
   }
@@ -402,6 +425,41 @@ function main() {
       return;
     }
 
+    if (command === '--verify-standalone-task-requirement') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_task_requirement_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const last = Array.isArray(rows) ? rows[rows.length - 1] : rows;
+      const row = (Array.isArray(last) ? last[0] : last) || {};
+      const nullRows = Number(row.null_required_device_capability_rows || 0);
+      // verify.sql 内 DO 块失败会整体抛错；此处额外断言 backfill 无 NULL 残留。
+      if (nullRows > 0) {
+        console.error(`VERIFY FAILED: ${nullRows} rows have NULL required_device_capabilities`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: TaskRequirement columns + backfill complete');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-scheduling-tables-fix') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_scheduling_tables_fix_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      // 多语句执行返回结果数组；主查询是最后一条（DO 块无返回行）。
+      const last = Array.isArray(rows) ? rows[rows.length - 1] : rows;
+      const row = (Array.isArray(last) ? last[0] : last) || {};
+      const ok = Number(row.outbox_key_cols || 0) >= 5
+        && Number(row.reservation_key_cols || 0) >= 5
+        && Number(row.policy_key_cols || 0) >= 4
+        && Number(row.replan_trigger_key_cols || 0) >= 4;
+      if (!ok) {
+        console.error(`VERIFY FAILED: scheduling tables missing key columns (${JSON.stringify(row)})`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: scheduling tables (outbox/reservation/policy) present with key columns');
+      }
+      return;
+    }
+
     if (command === '--verify-standalone-policy-weights') {
       const rows = await sql.unsafe(substitute(read(FILES.standalone_policy_weights_verify), schema));
       console.log(JSON.stringify(rows, null, 2));
@@ -512,6 +570,10 @@ function main() {
       '--rollback-standalone-scheduling': 'standalone_scheduling_rollback',
       '--seed-standalone-admin': 'standalone_admin',
       '--seed-standalone-scheduling': 'standalone_scheduling_seed',
+      '--apply-standalone-scheduling-persistence': 'standalone_scheduling_persistence',
+      '--rollback-standalone-scheduling-persistence': 'standalone_scheduling_persistence_rollback',
+      '--apply-standalone-phase2-realtime': 'standalone_phase2_realtime',
+      '--rollback-standalone-phase2-realtime': 'standalone_phase2_realtime_rollback',
       '--apply-standalone-reservation-conflict': 'standalone_reservation_conflict',
       '--rollback-standalone-reservation-conflict': 'standalone_reservation_conflict_rollback',
       '--apply-standalone-scheduling-feedback': 'standalone_scheduling_feedback',
@@ -526,6 +588,10 @@ function main() {
       '--rollback-standalone-policy-weights': 'standalone_policy_weights_rollback',
       '--apply-standalone-conflict-lifecycle': 'standalone_conflict_lifecycle',
       '--rollback-standalone-conflict-lifecycle': 'standalone_conflict_lifecycle_rollback',
+      '--apply-standalone-task-requirement': 'standalone_task_requirement',
+      '--rollback-standalone-task-requirement': 'standalone_task_requirement_rollback',
+      '--apply-standalone-scheduling-tables-fix': 'standalone_scheduling_tables_fix',
+      '--rollback-standalone-scheduling-tables-fix': 'standalone_scheduling_tables_fix_rollback',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {

@@ -1,14 +1,14 @@
 # EWOH managed schema manifest
-version: "1.0"
-generated: "2026-08-03"
+version: "1.1"
+generated: "2026-08-09"
 source:
   data_contract: ".codex/artifacts/contracts/data-contract.md"
   security_contract: ".codex/artifacts/contracts/security-contract.md"
 managed_package:
   new_group_count: 36
   frozen_alter_count: 12
-  managed_count: 57
-  physical_create_count: 44
+  managed_count: 69
+  physical_create_count: 56
   mapped_existing_count_in_group: 1
 notes:
   - "Authoritative plan table 77 lists 38 logical new names under the label \"36 new tables\"."
@@ -452,3 +452,87 @@ additional_hardened_existing_tables:
     org_id_policy: "NOT NULL"
     status: "mapped-existing"
     capability_mapping: ["task.production_legacy"]
+  - domain: "Scheduling"
+    logical_name: "ewoh_scheduling_run"
+    physical_table: "ewoh_scheduling_run"
+    business_key_columns: ["org_id","run_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scheduler.run"]
+  - domain: "Scheduling"
+    logical_name: "ewoh_scheduling_plan_assignment"
+    physical_table: "ewoh_scheduling_plan_assignment"
+    business_key_columns: ["org_id","assignment_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scheduler.assignment"]
+  - domain: "Scheduling"
+    logical_name: "ewoh_scheduling_constraint"
+    physical_table: "ewoh_scheduling_constraint"
+    business_key_columns: ["org_id","constraint_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scheduler.constraint"]
+  - domain: "Scheduling"
+    logical_name: "ewoh_scheduling_policy"
+    physical_table: "ewoh_scheduling_policy"
+    business_key_columns: ["org_id","version"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scheduler.policy"]
+  - domain: "Scheduling"
+    logical_name: "ewoh_world_state_snapshot"
+    physical_table: "ewoh_world_state_snapshot"
+    business_key_columns: ["org_id","snapshot_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scheduler.snapshot"]
+  - domain: "Scheduling"
+    logical_name: "ewoh_scheduling_conflict"
+    physical_table: "ewoh_scheduling_conflict"
+    business_key_columns: ["org_id","conflict_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scheduler.conflict"]
+  - domain: "Scheduling"
+    logical_name: "ewoh_route_cost_matrix"
+    physical_table: "ewoh_route_cost_matrix"
+    business_key_columns: ["org_id","matrix_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scheduler.route_cost"]
+  - domain: "Scheduling"
+    logical_name: "ewoh_scheduling_feedback"
+    physical_table: "ewoh_scheduling_feedback"
+    business_key_columns: ["org_id","feedback_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scheduler.feedback"]
+  - domain: "Scheduling"
+    logical_name: "ewoh_route_node"
+    physical_table: "ewoh_route_node"
+    business_key_columns: ["org_id","node_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scheduler.route_node"]
+  - domain: "Scheduling"
+    logical_name: "ewoh_route_edge"
+    physical_table: "ewoh_route_edge"
+    business_key_columns: ["org_id","edge_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scheduler.route_edge"]
+  - domain: "Scheduling"
+    logical_name: "ewoh_assignment_event"
+    physical_table: "ewoh_assignment_event"
+    business_key_columns: ["org_id","event_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scheduler.event"]
+  - domain: "Scheduling"
+    logical_name: "ewoh_outbox"
+    physical_table: "ewoh_outbox"
+    business_key_columns: ["org_id","outbox_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scheduler.outbox"]

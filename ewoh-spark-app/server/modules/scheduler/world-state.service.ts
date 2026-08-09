@@ -223,8 +223,9 @@ export class WorldStateSnapshotService {
         return {
           id: se.entityId,
           name: se.name,
-          x: se.x ?? 0,
-          y: se.y ?? 0,
+          // P0：坐标缺失显式 null（禁止 0,0 伪坐标；无坐标工位不参与定位决策）。
+          x: se.x ?? null,
+          y: se.y ?? null,
           capacity,
           queue: this.asStringArray(se.queue),
           availableWindows: this.parseWindows(se.availableWindows),
@@ -247,8 +248,28 @@ export class WorldStateSnapshotService {
       // productionImpact：新列优先；列无值才按 priority 派生并带标记。
       const productionImpact = t.productionImpact ?? this.deriveProductionImpact(t.priority);
       if (t.productionImpact == null) derived.push('productionImpact');
-      // requiredDeviceCapabilities：无独立列，始终由 taskType 派生（标记 derived）。
-      derived.push('requiredDeviceCapabilities');
+      // requiredDeviceCapabilities：P1-TREQ 真实列优先（TaskRequirement 业务事实）。
+      // 列值为空数组时按 taskType 白名单派生（backfill 兼容旧数据）并标记 derived；
+      // 写入真实值的行标记 authoritative（derived[] 可区分）。
+      const rawDeviceCaps = this.asStringArray(t.requiredDeviceCapabilities);
+      const deviceCaps =
+        rawDeviceCaps.length > 0
+          ? rawDeviceCaps
+          : this.deriveRequiredDeviceCapabilities(t.taskType);
+      if (rawDeviceCaps.length === 0) derived.push('requiredDeviceCapabilities');
+      // candidateStations：P1-TREQ 真实列优先（TaskRequirement 业务事实）；
+      // 列无值则回退空间拓扑派生（zone 内工位/任务自身工位）并标记 derived。
+      const rawCandidateStations = this.asStringArray(t.candidateStations);
+      const candidateStations =
+        rawCandidateStations.length > 0
+          ? rawCandidateStations
+          : this.deriveCandidateStations(
+              t.spatialEntityId,
+              spatialByEntityId,
+              stations,
+              spatialEntities,
+            );
+      if (rawCandidateStations.length === 0) derived.push('candidateStations');
 
       return {
         id: t.id,
@@ -268,8 +289,13 @@ export class WorldStateSnapshotService {
         predecessorIds: this.asStringArray(t.predecessorIds),
         requiredSkills: this.asStringArray(t.requiredSkills),
         requiredCertifications: this.asStringArray(t.requiredCertifications),
-        // 设备能力需求由 taskType 派生（重体力/搬运 → exo-lift），与设备 capabilities 匹配。
-        requiredDeviceCapabilities: this.deriveRequiredDeviceCapabilities(t.taskType),
+        // P1-TREQ：设备能力需求——真实列优先（TaskRequirement 业务事实），
+        // 列无值才回退 taskType 白名单派生（backfill 兼容，derived[] 标记）。
+        // P1-TREQ：设备能力需求——真实列优先（TaskRequirement 业务事实），
+        // 列无值才回退 taskType 白名单派生（backfill 兼容，derived[] 标记）。
+        requiredDeviceCapabilities: deviceCaps,
+        // P1-TREQ：候选工位——真实列优先，无值回退空间拓扑派生（derived[] 标记）。
+        candidateStations,
         safetyCritical,
         preemptible,
         skillMatchMode,
@@ -283,14 +309,6 @@ export class WorldStateSnapshotService {
         requiredStationCapabilities: this.asStringArray(t.requiredStationCapabilities),
         preferredResources: this.asStringArray(t.preferredResources),
         excludedResources: this.asStringArray(t.excludedResources),
-        // v0.7 智能调度增强（A1）：候选工位 = 任务所在 zone 内的所有工位（真实空间拓扑推导），
-        // 无 zone/无工位时回退任务自身 stationId，支持资源就近分配。
-        candidateStations: this.deriveCandidateStations(
-          t.spatialEntityId,
-          spatialByEntityId,
-          stations,
-          spatialEntities,
-        ),
         derived,
       };
     });

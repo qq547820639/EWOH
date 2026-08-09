@@ -1564,7 +1564,8 @@ def make_handler(ctx):
                 return self._new_error("not_found", "方案不存在", 404)
             except Exception as e:
                 code = getattr(e, "code", None) or "INVALID_REQUEST"
-                return self._new_error(code, str(e), 409)
+                status = 403 if code == "SCHEDULING_READ_ONLY" else 409
+                return self._new_error(code, str(e), status)
             return self.send_json({"ok": True, "plan": plan.to_dict()})
 
         def api_confirm_plan(self, plan_id, payload):
@@ -1584,7 +1585,8 @@ def make_handler(ctx):
                 return self._new_error("not_found", "方案不存在", 404)
             except Exception as e:
                 code = getattr(e, "code", None) or "INVALID_REQUEST"
-                return self._new_error(code, str(e), 409)
+                status = 403 if code == "SCHEDULING_READ_ONLY" else 409
+                return self._new_error(code, str(e), status)
             return self.send_json(
                 {"ok": True, "assignments": [a.to_dict() for a in assignments]}
             )
@@ -1615,6 +1617,9 @@ def make_handler(ctx):
                 return self._new_error("not_found", "派工不存在", 404)
             except ValueError as e:
                 return self._new_error("ILLEGAL_STATE", str(e), 409)
+            except RuntimeError as e:
+                code = getattr(e, "code", None) or "INTERNAL"
+                return self._new_error(code, str(e), 403 if code == "SCHEDULING_READ_ONLY" else 500)
             return self.send_json({"ok": True, "assignment": a.to_dict()})
 
         def api_assignment_override(self, assignment_id, payload):
@@ -1630,6 +1635,9 @@ def make_handler(ctx):
                 return self._new_error("not_found", "派工不存在", 404)
             except ValueError as e:
                 return self._new_error("ILLEGAL_STATE", str(e), 409)
+            except RuntimeError as e:
+                code = getattr(e, "code", None) or "INTERNAL"
+                return self._new_error(code, str(e), 403 if code == "SCHEDULING_READ_ONLY" else 500)
             return self.send_json({"ok": True, "assignment": a.to_dict()})
 
     return Handler

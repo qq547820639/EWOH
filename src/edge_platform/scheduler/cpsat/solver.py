@@ -147,6 +147,11 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
     frozen_device_ids = {f.deviceId for f in request.frozenAssignments if f.deviceId}
     frozen_station_ids = {f.stationId for f in request.frozenAssignments if f.stationId}
 
+    # P0：安全硬约束——safety blocked 的 person/device 在候选生成层硬过滤
+    # （fail-closed，不依赖权重/启发式偏好），并记录可解释拒绝理由。
+    safety_blocked_persons = set(request.safetyBlockedPersonIds or [])
+    safety_blocked_devices = set(request.safetyBlockedDeviceIds or [])
+
     horizon_end = request.nowMs + request.horizonMinutes * MINUTE
     horizon_min = (horizon_end - request.nowMs) // MINUTE
 
@@ -164,6 +169,9 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         for pi, p in enumerate(request.persons):
             if p.id in frozen_person_ids:
                 continue
+            if p.id in safety_blocked_persons:
+                rejected.append({"personId": p.id, "reason": ["safety_blocked"]})
+                continue
             if allowed_person_ids is not None and p.id not in allowed_person_ids:
                 continue
             if p.status != "available":
@@ -180,6 +188,9 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
             if t.requiredDeviceCapabilities:
                 for di, d in enumerate(request.devices):
                     if d.id in frozen_device_ids:
+                        continue
+                    if d.id in safety_blocked_devices:
+                        rejected.append({"personId": p.id, "deviceId": d.id, "reason": ["device_safety_blocked"]})
                         continue
                     if allowed_device_ids is not None and d.id not in allowed_device_ids:
                         continue
@@ -346,10 +357,19 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         )
 
     # 5) forbidden zone：任务 zone 在禁入区 → 无候选（已在候选层处理，此处兜底）。
-    # 6) 资源 no-overlap。
+    # 6) 资源 no-overlap / 工位容量约束。
+    #    P0：工位 capacity > 1 时用 cumulative 约束（最多 capacity 个任务同时占用），
+    #    不可用 AddNoOverlap（那会错误强制单任务独占）；capacity<=1 走 AddNoOverlap。
     for key, ivs in interval_by_resource.items():
-        if len(ivs) > 1:
-            model.AddNoOverlap(ivs)
+        if len(ivs) <= 1:
+            continue
+        if key.startswith("s:"):
+            station = station_by_id.get(key[2:])
+            capacity = station.capacity if station and station.capacity else 1
+            if capacity and capacity > 1:
+                model.AddCumulative(ivs, [1] * len(ivs), capacity)
+                continue
+        model.AddNoOverlap(ivs)
 
     # ---- 目标函数（软目标，最小化，分钟单位）----
     w = request.weights
@@ -383,6 +403,8 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         terms.append(w.stationWait * wait)
 
     # travel：按被选候选的欧氏距离加权（近似，真实路线由控制面传入）。
+    # P0：坐标 UNKNOWN(null) 的 person/station 不参与 travel 计算（禁止 0,0 伪坐标
+    # 产生的虚假距离）；此类候选已被资格矩阵排除，此处为双保险。
     for t in request.tasks:
         if t.taskId in frozen_by_task or not presence.get(t.taskId):
             continue
@@ -390,6 +412,8 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
             p = request.persons[pi]
             if si != -1:
                 st = request.stations[si]
+                if p.x is None or p.y is None or st.x is None or st.y is None:
+                    continue
                 dist_m = int(((p.x - st.x) ** 2 + (p.y - st.y) ** 2) ** 0.5)
                 terms.append(w.travel * dist_m * present)
 

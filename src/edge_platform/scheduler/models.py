@@ -332,7 +332,7 @@ class SchedulePlan:
             self.created_at = now_iso()
 
     def to_dict(self):
-        return {
+        d = {
             "plan_id": self.plan_id,
             "request_id": self.request_id,
             "version": self.version,
@@ -351,6 +351,15 @@ class SchedulePlan:
             "confirmed_by": self.confirmed_by,
             "confirm_reason": self.confirm_reason,
         }
+        # P0-SCHED-OWNERSHIP：advisory 方案显式标记（Edge 建议 ≠ 云端正式方案），
+        # 调用方/UI 必须把它呈现为"建议"，不得展示为正式 approved/dispatched。
+        if getattr(self, "advisory", False):
+            d["advisory"] = True
+            d["advisory_note"] = (
+                "Edge advisory 建议（connected production：正式调度归 NestJS 控制面），"
+                "非云端正式方案"
+            )
+        return d
 
 
 @dataclass

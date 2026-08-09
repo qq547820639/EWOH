@@ -33,8 +33,10 @@ class SolverPerson:
     id: str
     status: str
     locationStationId: Optional[str]
-    x: float
-    y: float
+    # 坐标 UNKNOWN 时显式 None（禁止 0,0 伪坐标）。None 坐标的人员不会参与
+    # travel 目标计算；其候选资格由 eligiblePersonIds（矩阵层）先行过滤。
+    x: Optional[float] = None
+    y: Optional[float] = None
     skills: List[str] = field(default_factory=list)
     certifications: List[str] = field(default_factory=list)
     workload: float = 0.0
@@ -50,8 +52,8 @@ class SolverDevice:
     online: bool
     capabilities: List[str] = field(default_factory=list)
     batteryPct: float = 100.0
-    x: float = 0.0
-    y: float = 0.0
+    x: Optional[float] = None
+    y: Optional[float] = None
     availableFromMs: Optional[int] = None
     executingTaskIds: List[str] = field(default_factory=list)
 
@@ -59,8 +61,8 @@ class SolverDevice:
 @dataclass
 class SolverStation:
     id: str
-    x: float = 0.0
-    y: float = 0.0
+    x: Optional[float] = None
+    y: Optional[float] = None
     capacity: int = 1
     executingTaskIds: List[str] = field(default_factory=list)
 
@@ -116,6 +118,9 @@ class SolverRequest:
     forbiddenZones: List[str] = field(default_factory=list)
     frozenAssignments: List[FrozenAssignment] = field(default_factory=list)
     baselineAssignee: Dict[str, Optional[str]] = field(default_factory=dict)
+    # 安全硬约束：这些 person/device 完全不可指派（候选层硬过滤，fail-closed）。
+    safetyBlockedPersonIds: List[str] = field(default_factory=list)
+    safetyBlockedDeviceIds: List[str] = field(default_factory=list)
     timeLimitMs: int = 10_000
 
     @classmethod
@@ -143,6 +148,8 @@ class SolverRequest:
                 k: (v if v is not None else None)
                 for k, v in (data.get("baselineAssignee", {}) or {}).items()
             },
+            safetyBlockedPersonIds=list(data.get("safetyBlockedPersonIds", []) or []),
+            safetyBlockedDeviceIds=list(data.get("safetyBlockedDeviceIds", []) or []),
             timeLimitMs=int(data.get("timeLimitMs", 10_000)),
         )
 

@@ -1,4 +1,5 @@
 import {
+  HttpCode,
   Controller,
   Get,
   Post,
@@ -73,11 +74,6 @@ export class SchedulerController {
     );
   }
 
-  @Post('plans/data-driven')
-  async generateDataDrivenPlans(@Body() body?: GeneratePlansRequest) {
-    return this.schedulerService.getDataDrivenPlans();
-  }
-
   /**
    * @deprecated 请改用 V2 接口 GET /api/scheduler/runs/:runId 或 GET /api/scheduler/plans/:planId
    */
@@ -126,29 +122,6 @@ export class SchedulerController {
   @Get('audit')
   async getAudit(@Query('planId') planId?: string) {
     return this.schedulerService.getAudit(planId);
-  }
-
-  @Get('weights')
-  async getWeights() {
-    return this.schedulerService.getWeights();
-  }
-
-  @Put('weights')
-  async updateWeights(
-    @Body()
-    body: {
-      weights: ScheduleWeights;
-      operator?: string;
-      reason?: string;
-    },
-    @Req() request: { userContext?: OrgContext },
-  ) {
-    return this.schedulerService.updateWeights(
-      body.weights,
-      body.operator,
-      body.reason,
-      request.userContext,
-    );
   }
 
   // ===== Scheduling V2 endpoints =====
@@ -265,6 +238,7 @@ export class SchedulerController {
   }
 
   @Post('plans/:planId/approve')
+  @HttpCode(200)
   async approvePlan(
     @Param('planId') planId: string,
     @Body() body: ApprovePlanRequest,
@@ -274,6 +248,7 @@ export class SchedulerController {
   }
 
   @Post('plans/:planId/dispatch')
+  @HttpCode(200)
   async dispatchPlan(
     @Param('planId') planId: string,
     @Req() request: { userContext?: OrgContext },
@@ -319,6 +294,7 @@ export class SchedulerController {
   }
 
   @Post('routes/calculate')
+  @HttpCode(200)
   async calculateRoute(@Body() body: CalculateRouteRequest) {
     return this.schedulerService.calculateRouteV2(body);
   }

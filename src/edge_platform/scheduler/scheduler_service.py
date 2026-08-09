@@ -53,6 +53,17 @@ class IllegalStateError(ValueError):
     code = "ILLEGAL_STATE"
 
 
+class AdvisoryOnlyError(RuntimeError):
+    """Edge 处于 advisory 模式（connected production / development 默认）：
+
+    调度写权限归 NestJS 控制面，Edge 拒绝 confirm/execute/replan/写库，
+    避免 split-brain、double dispatch 与 policy divergence。
+    仅在 simulation 模式或显式 EWOH_EDGE_SCHEDULING_WRITE=1 时可写。
+    """
+
+    code = "SCHEDULING_READ_ONLY"
+
+
 def _serialize_task(task):
     """把任务对象/dict 序列化为 dict（dict 原样返回）。"""
     if isinstance(task, dict):
@@ -96,7 +107,17 @@ def shortest_task_path(from_state, to_state):
 
 
 class SchedulerService:
-    """联合调度闭环编排服务。"""
+    """联合调度闭环编排服务。
+
+    Ownership 语义（P0-SCHED-OWNERSHIP）：
+    - advisory_only=True（connected production / development 默认）：
+      Edge 只产出 advisory 建议，confirm/execute/replan/set_assignment_status/
+      feedback 写路径一律拒绝（AdvisoryOnlyError），绝不写正式 plan/task/
+      assignment/reservation——避免与 NestJS 控制面 split-brain / double dispatch。
+      生成方案（generate_plans）保持可用，但方案与响应带 advisory 标记。
+    - advisory_only=False（simulation / EWOH_EDGE_SCHEDULING_WRITE=1）：
+      允许完整模拟闭环（仅限仿真环境或显式授权）。
+    """
 
     def __init__(
         self,
@@ -108,6 +129,7 @@ class SchedulerService:
         replanner=None,
         repository=None,
         event_bus=None,
+        advisory_only=False,
     ):
         self.world_state_service = world_state_service
         self.planner = planner
@@ -117,10 +139,63 @@ class SchedulerService:
         self.replanner = replanner or Replanner(planner)
         self.repository = repository
         self.event_bus = event_bus
+        self.advisory_only = bool(advisory_only)
         self._requests = {}
         self._plans = {}
         self._assignments = {}
         self._feedback = {}
+
+    # ---- ownership guard ----
+
+    def _assert_writable(self):
+        """正式写路径守卫：advisory 模式禁止 confirm/execute/replan 等正式写操作。
+
+        注意：advisory 模式下 generate_plans 仍被允许（内存态 advisory 建议），
+        仅落库被 _persist_* 跳过；本守卫拦截的是"正式事实变更"路径。
+        """
+        if self.advisory_only:
+            raise AdvisoryOnlyError(
+                "Edge 处于 advisory 模式（connected production）："
+                "调度写权限归 NestJS 控制面，Edge 不得 confirm/execute/replan/写库"
+            )
+
+    def advisory_plan(self, plan):
+        """把方案标记为 advisory（不可被误认为正式 approved/dispatched plan）。"""
+        plan.advisory = True
+        return plan
+
+    def reconcile_from_cloud(self):
+        """恢复连接后的 reconcile 机制（P0-SCHED-OWNERSHIP）：
+
+        - advisory 模式下：丢弃本地全部内存调度状态（pending plans/requests/
+          assignments/reservations）与持久化的 Edge 本地调度记录——云端 NestJS
+          是唯一事实来源，本地状态一律失效，防止陈旧建议被继续使用；
+        - 非 advisory（simulation）模式：仅清空内存（模拟数据无需保留）。
+        """
+        self._requests.clear()
+        self._plans.clear()
+        self._assignments.clear()
+        self._feedback.clear()
+        if self.repository is not None:
+            try:
+                for plan in self.repository.list_plans() or []:
+                    plan_id = plan.get("plan_id")
+                    if plan_id:
+                        self.storage.delete_schedule_plan(plan_id) if hasattr(
+                            self.storage, "delete_schedule_plan"
+                        ) else None
+            except Exception as e:  # noqa: BLE001 - reconcile 失败不阻断启动
+                logger.warning("reconcile_from_cloud: 清理本地方案失败: %s", e)
+        self._publish(
+            "schedule.reconciled",
+            entity_id="cloud",
+            version=1,
+            payload={
+                "reason": "cloud reconnected; edge local scheduling state discarded",
+                "advisory_only": self.advisory_only,
+            },
+        )
+        return {"discarded": True, "advisory_only": self.advisory_only}
 
     def _publish(self, event_type, entity_id="", version=1, payload=None):
         """把事件发布到事件总线（SSE 实时同步，Phase 5）。未注入总线则忽略。"""
@@ -171,25 +246,40 @@ class SchedulerService:
     def _persist_request(self, req):
         if self.repository is None:
             return
+        if self.advisory_only:
+            logger.info("advisory 模式：跳过调度请求落库（request=%s）", getattr(req, "request_id", "?"))
+            return
         self.repository.save_request(req)
 
     def _persist_plan(self, plan):
         if self.repository is None:
+            return
+        if self.advisory_only:
+            logger.info("advisory 模式：跳过方案落库（plan=%s，advisory 建议不写正式事实）", getattr(plan, "plan_id", "?"))
             return
         self.repository.save_plan(plan)
 
     def _persist_assignment(self, a):
         if self.repository is None:
             return
+        if self.advisory_only:
+            logger.info("advisory 模式：跳过派工落库（assignment=%s）", getattr(a, "assignment_id", "?"))
+            return
         self.repository.save_assignment(a)
 
     def _persist_feedback(self, fb):
         if self.repository is None:
             return
+        if self.advisory_only:
+            logger.info("advisory 模式：跳过反馈落库（feedback=%s）", getattr(fb, "feedback_id", "?"))
+            return
         self.repository.save_feedback(fb)
 
     def _persist_reservation(self, res):
         if self.repository is None:
+            return
+        if self.advisory_only:
+            logger.info("advisory 模式：跳过预约落库（reservation=%s）", getattr(res, "reservation_id", "?"))
             return
         self.repository.save_reservation(res)
 
@@ -198,10 +288,16 @@ class SchedulerService:
             return
         if snapshot is None:
             return
+        if self.advisory_only:
+            logger.info("advisory 模式：跳过快照落库")
+            return
         self.repository.save_snapshot(snapshot)
 
     def _record_decision(self, plan, action, actor_id, reason):
         if self.repository is None:
+            return
+        if self.advisory_only:
+            logger.info("advisory 模式：跳过决策审计落库（plan=%s action=%s）", getattr(plan, "plan_id", "?"), action)
             return
         version = getattr(plan, "version", 1) or 1
         self.repository.record_decision(
@@ -269,6 +365,10 @@ class SchedulerService:
             plan.request_id = req.request_id
             plan._world_snapshot = snapshot
             plan._all_tasks = tasks
+            # P0-SCHED-OWNERSHIP：advisory 模式下方案显式标记 advisory=true，
+            # 调用方/API 层必须把它展示为"建议"，绝不可呈现为正式 approved/dispatched。
+            if self.advisory_only:
+                plan.advisory = True
             self._plans[plan.plan_id] = plan
             self._persist_plan(plan)
             self._persist_snapshot(plan._world_snapshot)
@@ -295,7 +395,10 @@ class SchedulerService:
         """确认方案：校验理由、状态、世界状态新鲜度，并为每个 assignment 做预约。
 
         成功后 plan.status=PLAN_APPROVED，写入 confirmed_at/by/reason；写审计。
+        P0-SCHED-OWNERSHIP：advisory 模式（connected production）下拒绝——
+        正式审批归 NestJS 控制面。
         """
+        self._assert_writable()
         plan = self._get_plan(plan_id)
         if not reason or not str(reason).strip():
             raise ValueError("确认必须填写理由（spec：班组长确认时必须填写理由）")
@@ -394,7 +497,11 @@ class SchedulerService:
 
     def execute(self, plan_id):
         """仅 PLAN_APPROVED 可执行 → 生成正式 Assignment（status=dispatched），
-        标记 PLAN_DISPATCHED；非 approved 抛异常（未确认不得执行）。"""
+        标记 PLAN_DISPATCHED；非 approved 抛异常（未确认不得执行）。
+        P0-SCHED-OWNERSHIP：advisory 模式（connected production）下拒绝——
+        正式派工归 NestJS 控制面，避免 double dispatch。
+        """
+        self._assert_writable()
         plan = self._get_plan(plan_id)
         if plan.status != PLAN_APPROVED:
             raise IllegalStateError(
@@ -442,7 +549,12 @@ class SchedulerService:
     # ---- 反馈 / 重排 ----
 
     def feedback(self, plan_id, actual_outcome):
-        """记录执行结果回流（ScheduleFeedback），供学习闭环使用。"""
+        """记录执行结果回流（ScheduleFeedback），供学习闭环使用。
+
+        P0-SCHED-OWNERSHIP：advisory 模式（connected production）下拒绝——
+        执行反馈事实由 NestJS 控制面统一落库（ewohSchedulingFeedback）。
+        """
+        self._assert_writable()
         plan = self._get_plan(plan_id)
         predicted = {}
         for a in plan.assignments:
@@ -461,7 +573,12 @@ class SchedulerService:
         return fb
 
     def replan(self, plan_id, trigger_type, actor_id, reason):
-        """局部重调度：冻结 executing/locked 分配，生成新版本方案（version+1）。"""
+        """局部重调度：冻结 executing/locked 分配，生成新版本方案（version+1）。
+
+        P0-SCHED-OWNERSHIP：advisory 模式（connected production）下拒绝——
+        重排写路径归 NestJS 控制面。
+        """
+        self._assert_writable()
         plan = self._get_plan(plan_id)
         frozen = [
             a for a in self._assignments.values()
@@ -544,7 +661,11 @@ class SchedulerService:
         cancelled 等）；非法转换由 validate_task_transition 拒绝。
 
         force=True：人工 override，跳过状态机校验直接落地（仅在 override 场景使用）。
+
+        P0-SCHED-OWNERSHIP：advisory 模式（connected production）下拒绝——
+        执行状态更新由 NestJS 控制面经 execution feedback 统一收集。
         """
+        self._assert_writable()
         from .models import validate_task_transition
 
         a = self.get_assignment(assignment_id)

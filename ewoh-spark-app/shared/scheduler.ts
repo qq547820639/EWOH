@@ -266,8 +266,9 @@ export interface SolverRequest {
     id: string;
     status: string;
     locationStationId: string | null;
-    x: number;
-    y: number;
+    /** 坐标 UNKNOWN 时显式 null（禁止 0,0 伪坐标；此类人员已被资格矩阵排除出候选）。 */
+    x: number | null;
+    y: number | null;
     skills: string[];
     certifications: string[];
     workload: number;
@@ -288,11 +289,15 @@ export interface SolverRequest {
   }>;
   stations: Array<{
     id: string;
-    x: number;
-    y: number;
+    /** 坐标 UNKNOWN 时显式 null（禁止 0,0 伪坐标）。 */
+    x: number | null;
+    y: number | null;
     capacity: number | null;
     executingTaskIds?: string[];
   }>;
+  /** 安全硬约束：这些 person/device 在本次求解中完全不可指派（fail-closed，Worker 硬过滤）。 */
+  safetyBlockedPersonIds?: string[];
+  safetyBlockedDeviceIds?: string[];
   reservations: Array<{
     resourceId: string;
     resourceType: string;
@@ -532,8 +537,9 @@ export interface WorldStateSnapshot {
   stations: Array<{
     id: string;
     name: string;
-    x: number;
-    y: number;
+    /** 坐标 UNKNOWN 时显式 null（禁止 0,0 伪坐标；无坐标工位不参与定位决策）。 */
+    x: number | null;
+    y: number | null;
     /** 工位容量（capacity 列，替代 extra.capacity 非正式字段）；未知则 null。 */
     capacity?: number | null;
     /** 工位队列（queue 列）。 */

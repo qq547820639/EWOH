@@ -34,12 +34,38 @@ def _to_dict(obj):
     return dict(obj)
 
 
-class SchedulingRepository:
-    """调度持久化仓储：封装 Storage 的调度 CRUD，并实现乐观锁。"""
+class ReadonlyModeError(RuntimeError):
+    """仓储处于只读模式（connected production / development 默认）：
 
-    def __init__(self, storage):
+    禁止任何调度领域写（plan/task/assignment/reservation/feedback/snapshot），
+    防止 Edge 与 NestJS 控制面 split-brain、double dispatch 与 policy divergence。
+    """
+
+    code = "SCHEDULING_READ_ONLY"
+
+
+class SchedulingRepository:
+    """调度持久化仓储：封装 Storage 的调度 CRUD，并实现乐观锁。
+
+    readonly=True（connected production / development 默认）：所有写方法
+    （save_*/update_*/record_decision）抛 ReadonlyModeError，只保留读取能力，
+    供 Edge advisory 模式读取历史状态。simulation 模式（或显式
+    EWOH_EDGE_SCHEDULING_WRITE=1）传 readonly=False 启用完整写。
+    """
+
+    def __init__(self, storage, readonly=False):
         """保存 storage 引用（stubs.Storage 或真实 edge.storage）。"""
         self.storage = storage
+        self.readonly = bool(readonly)
+
+    # ---- ownership guard ----
+
+    def _assert_writable(self):
+        if self.readonly:
+            raise ReadonlyModeError(
+                "Edge 调度仓储处于只读模式（connected production）："
+                "禁止写 plan/task/assignment/reservation/feedback"
+            )
 
     # ---- 通用对象→dict ----
 
@@ -51,6 +77,7 @@ class SchedulingRepository:
 
     def save_task(self, task):
         """保存任务（Task 对象或 dict），返回保存后的 dict。"""
+        self._assert_writable()
         d = dict(self._as_dict(task))
         return self.storage.upsert_task(d.pop("task_id"), **d)
 
@@ -66,6 +93,7 @@ class SchedulingRepository:
 
     def save_request(self, req):
         """保存调度请求（ScheduleRequestMW 对象或 dict），返回 dict。"""
+        self._assert_writable()
         d = dict(self._as_dict(req))
         return self.storage.upsert_scheduling_request(d.pop("request_id"), **d)
 
@@ -81,6 +109,7 @@ class SchedulingRepository:
 
     def save_plan(self, plan):
         """保存方案（SchedulePlan 对象或 dict）：先存方案主表，再逐条存 assignments。"""
+        self._assert_writable()
         d = dict(self._as_dict(plan))
         plan_id = d.pop("plan_id")
         self.storage.save_schedule_plan(plan_id, **d)
@@ -105,6 +134,7 @@ class SchedulingRepository:
 
     def save_reservation(self, res):
         """保存预约（Reservation 对象或 dict）。"""
+        self._assert_writable()
         d = dict(self._as_dict(res))
         self.storage.upsert_reservation(d.pop("reservation_id"), **d)
         return d
@@ -117,6 +147,7 @@ class SchedulingRepository:
 
     def record_decision(self, plan_id, version, action, actor_id, reason, before, after):
         """记录一次调度决策（approve/reject/confirm 等），返回 decision_id。"""
+        self._assert_writable()
         decision_id = new_id("DEC")
         self.storage.insert_schedule_decision(
             decision_id, plan_id, version, action, actor_id, reason, before, after
@@ -131,6 +162,7 @@ class SchedulingRepository:
 
     def save_feedback(self, fb):
         """保存执行反馈（ScheduleFeedback 对象或 dict）。"""
+        self._assert_writable()
         d = dict(self._as_dict(fb))
         self.storage.upsert_schedule_feedback(d.pop("feedback_id"), **d)
         return d
@@ -143,6 +175,7 @@ class SchedulingRepository:
 
     def save_snapshot(self, snap):
         """保存世界状态快照（WorldStateSnapshot 对象或 dict）。"""
+        self._assert_writable()
         d = dict(self._as_dict(snap))
         self.storage.save_world_state_snapshot(d.pop("snapshot_id"), **d)
         return d
@@ -159,6 +192,7 @@ class SchedulingRepository:
 
     def save_assignment(self, assignment):
         """保存正式派工记录（Assignment 对象或 dict），返回最新记录 dict。"""
+        self._assert_writable()
         d = self._as_dict(assignment)
         return self.storage.upsert_assignment(
             assignment_id=d["assignment_id"],
@@ -183,6 +217,7 @@ class SchedulingRepository:
 
         匹配则把 version 自增并合并 fields 后 upsert，返回保存后的 dict。
         """
+        self._assert_writable()
         current = self.storage.get_task(task_id)
         current_version = int(current["version"]) if current else 0
         if current is None or current_version != int(expected_version):
@@ -198,6 +233,7 @@ class SchedulingRepository:
 
         匹配则把 version 自增并合并 fields 后 upsert。
         """
+        self._assert_writable()
         current = self._get_reservation_raw(reservation_id)
         current_version = int(current["version"]) if current else 0
         if current is None or current_version != int(expected_version):

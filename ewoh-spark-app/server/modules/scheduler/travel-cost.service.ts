@@ -310,8 +310,9 @@ export class TravelCostService {
     hasBlockedEdge: boolean,
     forbiddenZone: boolean,
   ): CandidateRouteCost {
-    // blocked 标记：route graph 因 blocked 边不可达而走 euclidean 兜底时显式标记；
-    // euclidean 直线距离仍可作为成本估算（feasible=true），但矩阵层必须暴露阻断事实。
+    // blocked 标记：route graph 因 blocked 边不可达而走 euclidean 兜底时显式标记。
+    // P0：blocked 属于硬约束语义——不可达即不可行，feasible 必须为 false，
+    // 不允许把阻断路线当作可用成本估算送入求解器（避免安全/时效风险）。
     const blocked =
       cost.source === 'euclidean_fallback' &&
       hasBlockedEdge &&
@@ -330,7 +331,7 @@ export class TravelCostService {
       routeCostMode: cost.source,
       fallbackReason: cost.fallbackReason,
       dataQuality: cost.dataQuality,
-      feasible: cost.feasible && !forbiddenZone,
+      feasible: cost.feasible && !forbiddenZone && !blocked,
     };
   }
 

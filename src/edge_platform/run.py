@@ -12,6 +12,7 @@
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -46,7 +47,7 @@ def build_components(db_path, force_stub, adapter_ports, metrics):
     return components, mode
 
 
-def build_scheduler(storage, repository, event_bus):
+def build_scheduler(storage, repository, event_bus, mode="production", advisory_only=True):
     """装配智能调度闭环组件（Phase 3/5/6 接线，保持既有实现）。
 
     返回 (scheduler, resource_state_service)：
@@ -56,7 +57,16 @@ def build_scheduler(storage, repository, event_bus):
     - Planner：Top-K 影子方案（GreedyOptimizer 实现）；
     - SchedulerService：请求→快照→生成→确认→派工→反馈闭环；
     - ResourceStateService：统一实时资源状态（GET /api/resources/state）。
+
+    Ownership（P0-SCHED-OWNERSHIP）：
+    - connected production / development 默认：advisory_only=True —— Edge 只产出
+      advisory 建议，confirm/execute/replan/写库被拒绝，正式调度写权限唯一归
+      NestJS 控制面（避免 split-brain / double dispatch / policy divergence）；
+    - simulation：advisory_only=False —— 允许 Edge 完整模拟闭环；
+    - 显式 EWOH_EDGE_SCHEDULING_WRITE=1（仅限 development/本地联调）可强制可写。
     """
+    import os
+
     from edge_platform.scheduler import (
         EffectivePriorityCalculator,
         GreedyOptimizer,
@@ -70,6 +80,12 @@ def build_scheduler(storage, repository, event_bus):
         WorldStateService,
         build_route_planner,
     )
+
+    effective_advisory = bool(advisory_only)
+    if mode == "simulation":
+        effective_advisory = False
+    elif os.environ.get("EWOH_EDGE_SCHEDULING_WRITE") == "1":
+        effective_advisory = False
 
     world_state_service = WorldStateService()
     # 拓扑：storage 提供 get_topology 则用拓扑路径，否则退化空间距离
@@ -102,8 +118,14 @@ def build_scheduler(storage, repository, event_bus):
         storage=storage,
         repository=repository,
         event_bus=event_bus,
+        advisory_only=effective_advisory,
     )
     resource_state_service = ResourceStateService()
+    if effective_advisory:
+        print(
+            "[EWOH] 调度 ownership: Edge 仅 advisory（connected production，"
+            "正式调度写权限归 NestJS 控制面）"
+        )
     return scheduler, resource_state_service
 
 
@@ -142,12 +164,18 @@ def main():
             pipeline.start()
         print("[EWOH] 真实模式：适配器采集与推理管线已启动")
 
-    # 智能调度持久化仓储：调度数据落库，服务重启后不丢失（Phase 2，API 接线留到 Phase 6）
+    # 智能调度持久化仓储：调度数据落库，服务重启后不丢失（Phase 2，API 接线留到 Phase 6）。
+    # P0-SCHED-OWNERSHIP：connected production（production/development）下仓储只读
+    # （readonly=True）——Edge 不得写正式 plan/task/assignment/reservation；
+    # simulation 模式（或 EWOH_EDGE_SCHEDULING_WRITE=1）才启用完整写。
     scheduling_repository = None
+    repository_readonly = mode != "simulation" and os.environ.get(
+        "EWOH_EDGE_SCHEDULING_WRITE"
+    ) != "1"
     try:
         from edge_platform.scheduler.repository import SchedulingRepository
 
-        scheduling_repository = SchedulingRepository(storage)
+        scheduling_repository = SchedulingRepository(storage, readonly=repository_readonly)
     except ImportError:
         scheduling_repository = None
     # Phase 5：实时事件总线（支撑 SSE /api/command-map/stream）
@@ -155,7 +183,10 @@ def main():
 
     event_bus = EventBus()
     # Phase 3/6：装配智能调度闭环服务 + 统一资源状态服务
-    scheduler, resource_state_service = build_scheduler(storage, scheduling_repository, event_bus)
+    # （advisory_only 由 build_scheduler 依据 mode/环境变量解析）
+    scheduler, resource_state_service = build_scheduler(
+        storage, scheduling_repository, event_bus, mode=mode
+    )
     # P1（上线验收发现）：从 repository 恢复已持久化的调度状态（approved plan 等），
     # 使进程重启后调度闭环可继续，而不是丢失内存态。
     if scheduling_repository is not None:
