@@ -1,6 +1,7 @@
 {
   "_comment_v1_1_0": "本文件仅含飞书集成凭据（Base/卡片/审批）。安全凭证（API 鉴权 token、webhook 验签 token、encrypt key）通过环境变量注入，不落盘（见 README）",
   "base_token": "REPLACE_WITH_FEISHU_BASE_TOKEN",
+  "_comment_base_token": "C1：生产环境应使用环境变量 FEISHU_BASE_TOKEN 注入 base_token，避免凭据落入配置文件与命令行参数（lark-cli 暂不支持 env 直读时，argv 暴露问题依赖 lark-cli 后续支持；服务端已优先读取 FEISHU_BASE_TOKEN，本字段作为回退）",
   "base_url": "https://<tenant>.feishu.cn/base/REPLACE_WITH_FEISHU_BASE_TOKEN",
   "chat_id": "oc_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
   "verification_token": "REPLACE_WITH_FEISHU_VERIFICATION_TOKEN",

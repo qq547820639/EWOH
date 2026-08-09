@@ -54,6 +54,7 @@ node server/index.js
 | `FEISHU_WEBHOOK_TOLERANCE_SEC` | 否 | `300` | webhook 时间戳容忍窗口（秒） |
 | `FEISHU_SIMULATOR_ENABLED` | 否 | `false` | 设备模拟器开关；`NODE_ENV=production` 下需 `ALLOW_SIMULATOR_IN_PRODUCTION=true` 双开关 |
 | `FEISHU_CORS_ORIGINS` | 否 | 本地源 | CORS 白名单（逗号分隔），禁止 `*` |
+| `FEISHU_BASE_TOKEN` | 生产建议 | 空 | **C1 修复** 多维表格 base_token，生产环境应通过环境变量注入（服务端优先读取），避免凭据落入配置文件与命令行参数（lark-cli 暂不支持 env 直读时，argv 暴露问题依赖 lark-cli 后续支持，本项为缓解措施；配置文件的 `base_token` 字段保留为回退） |
 | `PORT` | 否 | `3000` | 服务端口 |
 | `LARK_CLI` | 飞书集成 | `lark-cli` | lark-cli 可执行文件路径 |
 

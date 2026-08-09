@@ -303,11 +303,14 @@ function sendFollowupMessage(chatId, text) {
 
 // 创建记录（upsert 无 record-id 即创建），fields 为 {字段名: CellValue}
 // 注意：base 命令的 --json 不支持 stdin，直接作为参数值传入（字段映射较小，无 argv 长度问题）
+// C1 修复：base_token 优先从环境变量 FEISHU_BASE_TOKEN 注入（避免凭据落入配置文件与命令行参数）；
+// 为空时直接失败（不传空参数）。
 function baseRecordCreate(tableId, fields) {
   const cfg = getConfig();
-  if (!cfg || !tableId || !fields) return { ok: false, error: 'invalid args' };
+  const baseToken = process.env.FEISHU_BASE_TOKEN || (cfg && cfg.base_token);
+  if (!baseToken || !tableId || !fields) return { ok: false, error: 'invalid args' };
   const r = larkCliRetry(
-    ['base', '+record-upsert', '--base-token', cfg.base_token, '--table-id', tableId, '--json', JSON.stringify(fields)]
+    ['base', '+record-upsert', '--base-token', baseToken, '--table-id', tableId, '--json', JSON.stringify(fields)]
   );
   const recordId = deepFind(r.data, ['record_id']) || deepFind(r.data, ['record', 'record_id']) || deepFind(r.data, ['data', 'record', 'record_id']);
   return { ok: r.ok, record_id: recordId || null, error: r.error };
@@ -316,9 +319,10 @@ function baseRecordCreate(tableId, fields) {
 // 更新记录（upsert 带 record-id 即更新）
 function baseRecordUpdate(tableId, recordId, fields) {
   const cfg = getConfig();
-  if (!cfg || !tableId || !recordId || !fields) return { ok: false, error: 'invalid args' };
+  const baseToken = process.env.FEISHU_BASE_TOKEN || (cfg && cfg.base_token);
+  if (!baseToken || !tableId || !recordId || !fields) return { ok: false, error: 'invalid args' };
   const r = larkCliRetry(
-    ['base', '+record-upsert', '--base-token', cfg.base_token, '--table-id', tableId, '--record-id', recordId, '--json', JSON.stringify(fields)]
+    ['base', '+record-upsert', '--base-token', baseToken, '--table-id', tableId, '--record-id', recordId, '--json', JSON.stringify(fields)]
   );
   return { ok: r.ok, record_id: recordId, error: r.error };
 }
@@ -326,9 +330,10 @@ function baseRecordUpdate(tableId, recordId, fields) {
 // 按字段查记录：filter = { field, value }，返回 [{ record_id, fields }]
 function baseRecordSearch(tableId, { filter, limit } = {}) {
   const cfg = getConfig();
-  if (!cfg || !tableId || !filter || !filter.field) return [];
+  const baseToken = process.env.FEISHU_BASE_TOKEN || (cfg && cfg.base_token);
+  if (!baseToken || !tableId || !filter || !filter.field) return [];
   const r = larkCliRetry(
-    ['base', '+record-search', '--base-token', cfg.base_token, '--table-id', tableId,
+    ['base', '+record-search', '--base-token', baseToken, '--table-id', tableId,
      '--keyword', String(filter.value), '--search-field', filter.field,
      '--limit', String(limit || 10), '--format', 'json']
   );
@@ -339,13 +344,14 @@ function baseRecordSearch(tableId, { filter, limit } = {}) {
 // 批量创建记录：fieldsList 为字段名数组，rows 为 [[v1,v2,...], ...]
 function baseRecordBatchCreate(tableId, fieldsList, rows) {
   const cfg = getConfig();
-  if (!cfg || !tableId || !Array.isArray(fieldsList) || !Array.isArray(rows) || rows.length === 0) {
+  const baseToken = process.env.FEISHU_BASE_TOKEN || (cfg && cfg.base_token);
+  if (!baseToken || !tableId || !Array.isArray(fieldsList) || !Array.isArray(rows) || rows.length === 0) {
     return { ok: false, error: 'invalid args' };
   }
   const body = { fields: fieldsList, rows };
   // base --json 不支持 stdin，直接传参；遥测批量 JSON 较小（每 5s ~15 行），无长度问题
   const r = larkCliRetry(
-    ['base', '+record-batch-create', '--base-token', cfg.base_token, '--table-id', tableId, '--json', JSON.stringify(body)]
+    ['base', '+record-batch-create', '--base-token', baseToken, '--table-id', tableId, '--json', JSON.stringify(body)]
   );
   return { ok: r.ok, count: rows.length, error: r.error };
 }
