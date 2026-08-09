@@ -190,7 +190,7 @@ EWOH_DATA_RETENTION_DAYS（默认 30）；SECURITY.md 分级：高频遥测 7-30
 
 | # | 位置 | 问题 | 来源 |
 |---|---|---|---|
-| P1-1 | `edge/scheduler/events.py:31` vs `edge/bus.py:121` | **双事件总线并存违反 P0-EDGE-003 契约**：scheduler 总线仍用 queue 语义，SSE 端点依赖；统一到 MessageBus 或修订契约 | 工程师 |
+| P1-1 | `edge/scheduler/events.py:31` vs `edge/bus.py:121` | **双事件总线并存违反 P0-EDGE-003 契约**：scheduler 总线仍用 queue 语义，SSE 端点依赖 → **已关闭（2026-08-09）**：修订契约为双总线职责（数据通道 handler 回调 + SSE 广播通道 queue 语义，见 docs/remediation/02-week1.md P0-EDGE-003） | 工程师 |
 | P1-2 | `feishu.js:36-92` + `index.js:204-244` | 请求路径 **spawnSync 同步子进程阻塞事件循环**（最长 20s+retry 40s），飞书 API 慢时服务卡死；改异步 spawn + 并发上限 + 熔断 | 工程师 |
 | P1-3 | `outbox.service.ts:100-105` | **nextSequence 非原子**（SELECT MAX+1，无唯一约束）→ 并发 enqueue 得相同 sequence，破坏 SSE 连续性不变量；用 DB 序列/RETURNING 或唯一约束+重试 | 工程师 |
 | P1-4 | `cpsat/solver.py:255-273` | CP-SAT **reservation 硬约束未按时间窗重叠判定**（任意预约即置 0），且从未在 ortools 环境跑 fixture 验证；需补时间窗判定 + 单测 + parity 固化 CI | 工程师/架构师 |
@@ -246,7 +246,7 @@ EWOH_DATA_RETENTION_DAYS（默认 30）；SECURITY.md 分级：高频遥测 7-30
 3. collection/ 模块导入统一为 `edge_platform.inference`（消除潜伏炸弹）
 
 **P1（建议下一迭代）**
-4. 统一事件总线（scheduler/events.py 迁到正式契约，或修订契约承认 queue 语义）
+4. ~~统一事件总线~~（已关闭 2026-08-09：修订契约为双总线职责——数据通道 handler + SSE 广播通道 queue，见 docs/remediation/02-week1.md P0-EDGE-003）
 5. 飞书 lark-cli 改异步 spawn + 并发上限 + 超时熔断；base_token 改 stdin/env
 6. outbox nextSequence 原子化（DB 序列或唯一约束+重试）
 7. CP-SAT：装 ortools 补 fixture 验证；reservation 按时间窗重叠判定；补单测

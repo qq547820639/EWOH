@@ -1,14 +1,18 @@
 """进程内消息总线（pub/sub + 环形缓冲），Task 9。
 
-统一契约（P0-EDGE-003）——全仓唯一正式契约，所有调用方（Inference / Event
-Engine / Scheduler / World Model / Test）必须一致使用：
+数据通道正式契约（P0-EDGE-003，2026-08-09 修订为双总线职责）：本类 MessageBus
+是**流式数据通道**，承载遥测/推理/世界状态等数据流，所有数据通道调用方
+（Inference / Event Engine / Scheduler / World Model / Test）必须一致使用：
 
 - ``publish(stream, message)``：向流追加消息并同步通知订阅者；
 - ``subscribe(stream, handler)``：注册回调，返回 subscription_id（str）；
 - ``unsubscribe(stream, subscription_id)``：取消订阅；
 - ``tail(stream, n)`` / ``range(stream, start_ts, end_ts)``：读取最近/区间消息。
 
-禁止任何调用方假设 queue 语义（如 ``subscribe(topic) -> queue``）。
+**禁止**任何数据通道调用方假设 queue 语义（如 ``subscribe(topic) -> queue``）。
+queue 语义仅允许用于 SSE 广播通道——见 ``edge_platform.scheduler.events.EventBus``
+（SchedulerEventBus，独立类，SSE 多连接各自消费；``kafka`` 为历史兼容别名）。
+云侧 OutboxService（先写后发的可靠领域事件）不在本契约范围。
 
 流（Stream）名称统一引用 ``edge_platform.runtime.protocols`` 的 ``STREAM_*``
 常量（P0-EDGE-004），业务代码不得使用裸字符串 topic。生产新增流必须先登记到

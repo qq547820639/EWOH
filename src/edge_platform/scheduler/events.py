@@ -21,7 +21,12 @@ from edge_platform.spatial import new_id, now_iso
 
 
 class EventBus:
-    """进程内事件总线：subscribe 返回队列，publish 广播给匹配订阅者。"""
+    """进程内事件总线：subscribe 返回队列，publish 广播给匹配订阅者。
+
+    SSE 广播通道（P0-EDGE-003 双总线职责）：queue 语义仅允许用于本 SSE 广播
+    通道（多个 SSE 连接各自消费）；数据通道必须使用 MessageBus handler 回调语义
+    （见 edge/bus.py）。``kafka``（run.py 注入）为本总线的历史兼容命名别名。
+    """
 
     def __init__(self, max_backlog=1000):
         self._lock = threading.Lock()

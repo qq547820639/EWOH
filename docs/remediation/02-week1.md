@@ -23,10 +23,23 @@
   显式 `EWOH_ALLOW_STUB=1` 才允许 stub，simulation 显式 stub。
 - **Result**：production 装配失败实测抛错；无任何静默回退路径。
 
-## Finding: P0-EDGE-003 统一 MessageBus 契约
+## Finding: P0-EDGE-003 统一 MessageBus 契约（双总线职责，2026-08-09 修订）
 
-- **Fix**：唯一正式契约 = handler 回调（`subscribe(stream, handler)->sub_id`）；`stubs.Bus`
-  对齐为同一契约；`InferencePipeline.start()` 改为 handler 语义。
+- **Fix（原始）**：数据通道唯一正式契约 = handler 回调（`subscribe(stream, handler)->sub_id`）；
+  `stubs.Bus` 对齐为同一契约；`InferencePipeline.start()` 改为 handler 语义。
+- **双总线职责（2026-08-09 契约修订，P1-1 关闭）**：全仓存在两条职责不同的总线，
+  均属正式契约，按通道类型选择语义：
+  1. `MessageBus`（`edge/bus.py`）：**流式数据通道**，`publish/subscribe(stream, handler)`
+     回调语义——承载遥测/推理数据流（STREAM_* 常量，见 P0-EDGE-004）。
+  2. `SchedulerEventBus`（`edge/scheduler/events.py`）：**调度事件 SSE 广播通道**，
+     queue 语义（多个 SSE 连接各自消费；慢消费者丢弃最旧事件不阻塞发布者）；
+     `kafka` 为历史兼容命名别名（`run.py` 注入 `kafka=event_bus`，`server.py`
+     `self.kafka = kafka if kafka is not None else event_bus`），并非独立第三方消息系统。
+  3. 云侧 `OutboxService`（ewoh-spark-app）：可靠领域事件（先写后发，outbox 表 +
+     DB 序列）不在本契约范围。
+  **语义规则**：queue 语义仅允许用于 SSE 广播通道；数据通道必须使用 handler 回调语义。
+  禁止在数据流（telemetry/inference/world_state）上使用 queue 语义；禁止在 SSE 广播
+  通道上假设 handler 回调。
 - **Tests**：`tests/test_bus_contract.py`（含 stub/real 契约一致性）。
 
 ## Finding: P0-EDGE-004 统一 Stream / Topic
@@ -59,5 +72,6 @@
 
 ## Remaining Risks
 - `edge_to_spark.py` bridge 仍是独立脚本（真机接入未在本次改动范围，保持原状）。
-- 调度/SSE 的 `scheduler/events.py EventBus` 是独立 SSE 事件总线（queue 语义），
-  与 edge MessageBus（handler 语义）职责不同，均保留；文档已注明两者边界。
+- 调度/SSE 的 `scheduler/events.py EventBus` 是独立 SSE 事件总线（queue 语义，仅允许
+  用于 SSE 广播通道），与 edge MessageBus（handler 语义，数据通道）职责不同，均保留；
+  两者边界已在 P0-EDGE-003 契约中明确（见上）。

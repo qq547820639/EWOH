@@ -7,7 +7,7 @@ See `00-baseline.md` for the status vocabulary.
 | -- | --- | ------ | -------- | ----------- | ----- |
 | P0-EDGE-001 | P0 | VERIFIED | commit 1 | 2026-08-08 | 真实装配通过 runtime/bootstrap；run.py 顶层 import 已修复；edge/storage.py+manager.py 已建 |
 | P0-EDGE-002 | P0 | VERIFIED | commit 1 | 2026-08-08 | RuntimeMode production/development/simulation；production 失败 fail-fast 实测 |
-| P0-EDGE-003 | P0 | VERIFIED | commit 1 | 2026-08-08 | 唯一 handler 契约；stubs.Bus 对齐；协议测试通过 |
+| P0-EDGE-003 | P0 | VERIFIED | commit 1 | 2026-08-09 | 双总线职责契约（2026-08-09 修订）：数据通道 handler 回调 + SSE 广播通道 queue 语义；stubs.Bus 对齐；协议测试通过 |
 | P0-EDGE-004 | P0 | VERIFIED | commit 1 | 2026-08-08 | ALL_STREAMS 统一；inference/device_status/world_state 已登记 |
 | P0-EDGE-005 | P0 | VERIFIED | commit 1 | 2026-08-08 | 异常记录 logger + event_bus_handler_errors_total metric |
 | P0-EDGE-006 | P0 | VERIFIED | commit 1 | 2026-08-08 | tests/test_production_assembly.py 5 passed；Makefile production-smoke；CI 门禁已加 |
