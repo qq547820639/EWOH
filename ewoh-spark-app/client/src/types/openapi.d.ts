@@ -7303,7 +7303,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate data-driven schedule plans */
+        /**
+         * Generate data-driven schedule plans (deprecated)
+         * @deprecated
+         * @description 遗留演示路径（generatePlans）：KEEP/CAP/BAL 三方案的 taktImprovement /
+         *     output_rate / move_distance / affectedPersons 等指标为【合成数据，仅供演示】，
+         *     不代表真实调度结果。真实调度请使用 SolverService（CP-SAT / heuristic）。
+         */
         post: {
             parameters: {
                 query?: never;
@@ -8716,6 +8722,55 @@ export interface paths {
                         "application/json": components["schemas"]["SchedulingFeedbackList"];
                     };
                 };
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/v2/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Subscribe to scheduling event stream (SSE)
+         * @description Server-Sent Events 实时订阅调度事件流（scheduling.event），附带 15s 心跳
+         *     （heartbeat）防止连接超时。事件 data 为 OutboxEvent JSON；sequence 单调递增，
+         *     客户端可按 sequence 重放（listSince）。
+         *
+         *     Last-Event-ID 增量续传：客户端断线重连时携带 `Last-Event-ID` 请求头（值为
+         *     最后收到的 outbox sequence，即 SSE 事件 `id` 字段），服务端先重放缺失事件再接入
+         *     实时流；若检测到 sequence 缺口或客户端超前，先发送 `resync` 事件（data 含
+         *     `currentSequence`/`reason`），客户端应放弃增量、拉取权威快照后重新订阅。
+         *     首次连接（无该请求头）为纯实时订阅，不做重放。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description SSE stream (text/event-stream) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/event-stream": string;
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
                 InternalError: components["responses"]["InternalError"];
             };
         };

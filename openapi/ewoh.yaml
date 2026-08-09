@@ -5893,6 +5893,12 @@ paths:
         Server-Sent Events 实时订阅调度事件流（scheduling.event），附带 15s 心跳
         （heartbeat）防止连接超时。事件 data 为 OutboxEvent JSON；sequence 单调递增，
         客户端可按 sequence 重放（listSince）。
+
+        Last-Event-ID 增量续传：客户端断线重连时携带 `Last-Event-ID` 请求头（值为
+        最后收到的 outbox sequence，即 SSE 事件 `id` 字段），服务端先重放缺失事件再接入
+        实时流；若检测到 sequence 缺口或客户端超前，先发送 `resync` 事件（data 含
+        `currentSequence`/`reason`），客户端应放弃增量、拉取权威快照后重新订阅。
+        首次连接（无该请求头）为纯实时订阅，不做重放。
       security:
         - BearerAuth: []
       responses:

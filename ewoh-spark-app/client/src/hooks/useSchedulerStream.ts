@@ -113,6 +113,32 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
     onResyncRef.current?.();
   }, [queryClient]);
 
+  /**
+   * 处理服务端 resync 事件：放弃旧增量基线，触发全量重同步并重置续传游标。
+   * - 以服务器权威 currentSequence 为新基线：缺口内事件由全量重拉恢复，
+   *   之后到达的实时事件（sequence > currentSequence）继续增量处理；
+   * - lastEventIdRef 重置为当前基线，确保下次重连不再携带旧 id（避免重复 resync）。
+   */
+  const handleResync = useCallback(
+    (data: string) => {
+      try {
+        const payload = JSON.parse(data) as { currentSequence?: number; reason?: string };
+        const current =
+          typeof payload.currentSequence === 'number'
+            ? payload.currentSequence
+            : lastSequenceRef.current;
+        lastSequenceRef.current = current;
+        lastEventIdRef.current = String(current);
+        triggerResync();
+      } catch {
+        // 无法解析的 resync 事件也按全量重同步兜底。
+        lastEventIdRef.current = null;
+        triggerResync();
+      }
+    },
+    [triggerResync],
+  );
+
   /** 处理单个调度事件 → 写入缓存。 */
   const handleEvent = useCallback(
     (event: SchedulingEvent) => {
@@ -122,13 +148,14 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
       // 缺口检测：跳过了中间事件，增量无法安全续接 → 全量重同步。
       if (lastSequenceRef.current > 0 && event.sequence > lastSequenceRef.current + 1) {
         lastSequenceRef.current = event.sequence;
-        lastEventIdRef.current = event.eventId;
+        lastEventIdRef.current = String(event.sequence);
         triggerResync();
         return;
       }
 
       lastSequenceRef.current = event.sequence;
-      lastEventIdRef.current = event.eventId;
+      // Last-Event-ID 续传游标 = outbox sequence（与 SSE id 字段一致，重连时原样回传）。
+      lastEventIdRef.current = String(event.sequence);
 
       const type = event.eventType ?? '';
       // 由事件类型推断受影响的 planId。
@@ -207,6 +234,10 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
     const token = getAccessToken();
     const headers: Record<string, string> = { Accept: 'text/event-stream' };
     if (token) headers.Authorization = `Bearer ${token}`;
+    // P2 收尾：SSE 增量续传——断线重连携带 Last-Event-ID（outbox sequence），
+    // 服务端据此重放缺失事件；首次连接（null）行为与历史一致（全量订阅）。
+    // 同源部署下自定义 header 无 CORS 预检问题。
+    if (lastEventIdRef.current) headers['Last-Event-ID'] = lastEventIdRef.current;
 
     setStatus('connecting');
 
@@ -247,8 +278,14 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
                 setStatus('live');
               }
               if (!parsed.data) continue;
+              // 任意带 id 的事件（scheduling.event / resync）都推进续传游标。
+              if (parsed.id) lastEventIdRef.current = parsed.id;
               if (parsed.event === 'heartbeat') {
-                if (parsed.id) lastEventIdRef.current = parsed.id;
+                continue;
+              }
+              if (parsed.event === 'resync') {
+                // 服务端判定缺口/客户端超前：放弃增量、走全量重同步（P2 收尾）。
+                handleResync(parsed.data);
                 continue;
               }
               if (parsed.event === 'scheduling.event') {
@@ -285,7 +322,7 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
       }, reconnectIntervalMs);
       void reason;
     }
-  }, [handleEvent, maxConsecutiveErrors, reconnectIntervalMs, startPolling, stopPolling]);
+  }, [handleEvent, handleResync, maxConsecutiveErrors, reconnectIntervalMs, startPolling, stopPolling]);
 
   connectRef.current = connect;
 

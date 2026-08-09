@@ -8,10 +8,12 @@ import {
   Query,
   BadRequestException,
   Req,
+  Headers,
   Sse,
   MessageEvent,
+  Logger,
 } from '@nestjs/common';
-import { interval, map, merge, type Observable } from 'rxjs';
+import { interval, map, merge, Observable } from 'rxjs';
 import { SchedulerService } from './scheduler.service';
 import { SchedulerStreamService } from './scheduler-stream.service';
 import { ResourceProjectionService } from './resource-projection.service';
@@ -38,6 +40,8 @@ import type {
 
 @Controller('api/scheduler')
 export class SchedulerController {
+  private readonly logger = new Logger(SchedulerController.name);
+
   constructor(
     private readonly schedulerService: SchedulerService,
     private readonly schedulerStreamService: SchedulerStreamService,
@@ -392,16 +396,30 @@ export class SchedulerController {
 
   // ===== Scheduling 实时事件流（SSE）=====
 
-  /** SSE：订阅调度事件流，附带 15s 心跳防止连接超时。 */
+  /**
+   * SSE：订阅调度事件流，附带 15s 心跳防止连接超时。
+   *
+   * Last-Event-ID 增量续传（P2 收尾）：
+   * - 首次连接（无 Last-Event-ID 头）→ 纯实时订阅（与历史行为完全一致，无重放）。
+   * - 带 Last-Event-ID（outbox sequence）→ 先经 replaySince 重放缺失事件再接入实时流：
+   *   - 无缺口 → 按 sequence 升序先发重放增量事件（scheduling.event），再接实时事件，避免乱序；
+   *   - 有缺口/客户端超前 → 先发一个 resync 事件（data 含 currentSequence/reason），
+   *     客户端据此走全量重同步，再接入实时流。
+   * - 重放查询失败 → 降级为纯实时订阅，不阻断 SSE 连接。
+   */
   @Sse('v2/stream')
-  stream(): Observable<MessageEvent> {
+  stream(@Headers('last-event-id') lastEventIdHeader?: string): Observable<MessageEvent> {
     this.schedulerStreamService.start().catch(() => undefined);
-    return merge(
+
+    // 实时事件 + 心跳。
+    const live$ = merge(
       this.schedulerStreamService.events().pipe(
         map(
           (event): MessageEvent => ({
             type: 'scheduling.event',
-            id: event.eventId,
+            // SSE id 字段承载 outbox sequence：客户端断线重连时原样回传
+            // Last-Event-ID，服务端据此增量续传。
+            id: String(event.sequence),
             data: JSON.stringify(event),
           }),
         ),
@@ -415,6 +433,76 @@ export class SchedulerController {
         ),
       ),
     );
+
+    const lastEventId = this.parseLastEventId(lastEventIdHeader);
+    if (lastEventId == null) {
+      // 首次连接（无 Last-Event-ID）：全量订阅，与现状完全一致。
+      return live$;
+    }
+
+    // Last-Event-ID 增量续传：重放事件必须先于实时事件（避免乱序）。
+    // 缓冲方案：重放查询期间实时事件先入 pending，重放完成后按序补发，
+    // 避免 concat 订阅时序造成的重放窗口丢事件。
+    return new Observable<MessageEvent>((subscriber) => {
+      const pending: MessageEvent[] = [];
+      let preludeDone = false;
+      const liveSub = live$.subscribe({
+        next: (message) => {
+          if (preludeDone) subscriber.next(message);
+          else pending.push(message);
+        },
+        error: (err) => subscriber.error(err),
+        complete: () => subscriber.complete(),
+      });
+
+      this.schedulerStreamService
+        .replaySince(lastEventId, lastEventId)
+        .then((result) => {
+          if (result.resyncNeeded) {
+            // 缺口/客户端超前 → 通知客户端放弃增量、全量重同步。
+            subscriber.next({
+              type: 'resync',
+              id: String(result.currentSequence),
+              data: JSON.stringify({
+                currentSequence: result.currentSequence,
+                reason: result.gap ? 'gap detected' : 'client ahead of server',
+              }),
+            });
+          } else {
+            // 正常 → 先发重放增量事件（sequence 升序），再接实时流。
+            for (const event of result.events) {
+              subscriber.next({
+                type: 'scheduling.event',
+                id: String(event.sequence),
+                data: JSON.stringify(event),
+              });
+            }
+          }
+          preludeDone = true;
+          for (const message of pending) subscriber.next(message);
+          pending.length = 0;
+        })
+        .catch((err: unknown) => {
+          // 重放查询失败：降级为纯实时订阅，不阻断 SSE 连接。
+          this.logger.error(
+            'SSE replaySince failed, fallback to live stream',
+            err instanceof Error ? err.stack : String(err),
+          );
+          preludeDone = true;
+          for (const message of pending) subscriber.next(message);
+          pending.length = 0;
+        });
+
+      return () => liveSub.unsubscribe();
+    });
+  }
+
+  /** 解析 SSE Last-Event-ID 头为 outbox sequence；缺失/非法返回 null（按首次连接处理）。 */
+  private parseLastEventId(value: string | undefined): number | null {
+    if (value == null || value === '') return null;
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 0) return null;
+    return n;
   }
 
   /** 解析并校验策略版本号（正整数）。 */

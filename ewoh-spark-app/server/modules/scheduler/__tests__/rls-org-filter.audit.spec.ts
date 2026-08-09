@@ -42,9 +42,9 @@ const ALLOWLIST: Record<string, string> = {
     '去重查找按 eventType+entityId 全局唯一键命中同实体 pending 行（org 不变），非列表暴露',
   'outbox.service.ts::latestSequence': '聚合 max(sequence)，不返回业务行',
   'outbox.service.ts::listSince':
-    'sequence 键全局事件日志（SSE 重放）。org 隔离为已知缺口：SSE replaySince 接线不在本次修复范围',
+    'sequence 键全局事件日志（SSE 重放）。org 隔离为受控缺口检测调用：controller stream() 仅在带 Last-Event-ID 时经 replaySince 调用，按 sequence 增量重放/缺口检测（不回放业务行到跨租户列表；resync 场景由客户端走权威快照）',
   'outbox.service.ts::listLatest':
-    'sequence 键全局事件日志（SSE 轮询/快照）。org 隔离为已知缺口：SSE replaySince 接线不在本次修复范围',
+    'sequence 键全局事件日志（SSE 轮询/快照）。org 隔离为受控调用：供 SchedulerStreamService 轮询推送与快照读取，不跨 org 列表暴露',
   'world-state.service.ts::getSnapshot': 'snapshotVersion 全局唯一版本键查询（快照按版本存取）',
   'world-state.service.ts::nextSnapshotVersion': '版本号派生 prefix 匹配，不暴露业务行',
   'trigger.service.ts::getTriggerByKey': 'triggerKey 全局唯一幂等键查询',
