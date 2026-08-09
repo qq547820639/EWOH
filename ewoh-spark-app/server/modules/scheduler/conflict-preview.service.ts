@@ -3,11 +3,13 @@ import type {
   ConflictPreviewResult,
   SchedulingPlanV2,
 } from '@shared/api.interface';
+import type { OrgContext } from '../shared/org-context.interceptor';
 import { PlanService } from './plan.service';
 import { SolverService } from './solver.service';
 import { PlanCompareService } from './plan-compare.service';
 import { WorldStateSnapshotService } from './world-state.service';
 import { ReplanCoordinatorService } from './replan-coordinator.service';
+import { ConstraintLoaderService } from './constraint-loader.service';
 
 /**
  * Conflict Preview Replan（Phase 4 / P4-PREVIEW）。
@@ -28,6 +30,8 @@ export class ConflictPreviewService {
     private readonly planCompareService: PlanCompareService,
     private readonly worldStateSnapshotService: WorldStateSnapshotService,
     private readonly replanCoordinator: ReplanCoordinatorService,
+    // T02 / P0-2：约束加载（可选注入；缺失时回退空约束，兼容旧单测）。
+    private readonly constraintLoaderService?: ConstraintLoaderService,
   ) {}
 
   /**
@@ -48,6 +52,7 @@ export class ConflictPreviewService {
     },
     baselinePlanId?: string | null,
     action?: string,
+    ctx?: OrgContext,
   ): Promise<ConflictPreviewResult> {
     // 1) 世界快照 + 影响分析（复用 ReplanCoordinator 的 ImpactAnalyzer 语义）
     const snapshot = await this.worldStateSnapshotService.buildSnapshot(undefined as never);
@@ -69,11 +74,19 @@ export class ConflictPreviewService {
     }
 
     // 3) 候选方案（预览求解：同一快照 + 受影响任务约束；不持久化、不 dispatch）
+    // P0-2（G2）：预览求解同样加载约束（继承 baseline 方案的人工 LOCK/EXCLUDE）。
     const candidatePlanId = `PREVIEW-${conflictId}-${Date.now()}`;
     let candidatePlan: SchedulingPlanV2 | null = null;
     let previewError: string | null = null;
     try {
-      const plans = await this.solverService.solveVariants(snapshot, [], {
+      const previewConstraints = this.constraintLoaderService
+        ? await this.constraintLoaderService.loadForPlan(
+            baselinePlanId ?? '',
+            [],
+            ctx ?? { userId: 'system', primaryOrgId: '', role: 'system', accessibleOrgIds: [], isGlobalAdmin: false },
+          )
+        : [];
+      const plans = await this.solverService.solveVariants(snapshot, previewConstraints, {
         planId: candidatePlanId,
         planName: `preview-${conflict.type}`,
         triggerType: conflict.type,

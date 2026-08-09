@@ -27,6 +27,7 @@ import { ConflictPreviewService } from './conflict-preview.service';
 import { ShadowPolicyService } from './shadow-policy.service';
 import { PolicyActivationService } from './policy-activation.service';
 import { TaskSchedulingBridge } from './task-scheduling.bridge';
+import { ConstraintLoaderService } from './constraint-loader.service';
 import { TaskModule } from '../task/task.module';
 
 @Module({
@@ -59,6 +60,7 @@ import { TaskModule } from '../task/task.module';
     ConflictPreviewService,
     ShadowPolicyService,
     PolicyActivationService,
+    ConstraintLoaderService,
   ],
   exports: [
     SchedulerService,
@@ -84,6 +86,7 @@ import { TaskModule } from '../task/task.module';
     ConflictPreviewService,
     ShadowPolicyService,
     PolicyActivationService,
+    ConstraintLoaderService,
   ],
 })
 export class SchedulerModule {}

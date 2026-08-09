@@ -19,6 +19,7 @@ import { SolverService } from './solver.service';
 import { PlanService } from './plan.service';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import { ImpactAnalyzer } from './impact-analyzer';
+import { ConstraintLoaderService } from './constraint-loader.service';
 
 /** 影响分析结果：哪些任务需重排、哪些被冻结、原因说明。 */
 export interface ImpactAnalysis {
@@ -44,6 +45,8 @@ export class ReplanCoordinatorService {
     private readonly solverService: SolverService,
     private readonly planService: PlanService,
     private readonly policyService: SchedulingPolicyService,
+    // T02 / P0-2：持久化人工约束唯一加载入口（可选注入；缺失时回退空约束，兼容旧单测）。
+    private readonly constraintLoaderService?: ConstraintLoaderService,
   ) {}
 
   /**
@@ -115,7 +118,11 @@ export class ReplanCoordinatorService {
 
       // 执行中/已锁定分配由 snapshot.lockedAssignments 承载，
       // 求解器据此将 executing/dispatched/in_progress 任务冻结为不可移动项。
-      const plans = await this.solverService.solveVariants(partialSnapshot, [], {
+      // P0-2（G2）：事件驱动/局部重排同样加载全局 active 约束（LOCK/EXCLUDE 不丢）。
+      const constraints = this.constraintLoaderService
+        ? await this.constraintLoaderService.loadGlobalActive(ctx)
+        : [];
+      const plans = await this.solverService.solveVariants(partialSnapshot, constraints, {
         planId: run.runId,
         triggerType,
         triggerEntityId: run.triggerEntityId,
