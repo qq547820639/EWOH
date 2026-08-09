@@ -45,7 +45,18 @@ self.addEventListener('fetch',(e)=>{const r=e.request;if(r.method!=='GET')return
  * 可变内容的 SW 服务器：可切换 sw.js 的版本/契约，托管一个极简 app shell。
  * 每个实例独占端口，避免跨测试的 SW/Cache 状态污染。
  */
-function createSwServer({ version = 'v1', contract = '1.0.0' } = {}) {
+
+/** SW 测试服务器句柄（显式返回类型：修复 Playwright 类型环境下 TS2339 unknown）。 */
+interface SwTestServer {
+  baseUrl: string;
+  setSw(opts: { version?: string; contract?: string }): void;
+  close(): Promise<void>;
+}
+
+function createSwServer({
+  version = 'v1',
+  contract = '1.0.0',
+} = {}): Promise<SwTestServer> {
   let currentVersion = version;
   let currentContract = contract;
   const server = http.createServer((req, res) => {
