@@ -85,11 +85,16 @@ export class IngestController {
   }
 
   @Post('mes')
-  async ingestMes(@Body() order: MesOrderDto): Promise<IngestResponse> {
+  async ingestMes(
+    @Body() order: MesOrderDto,
+    @Req() request: { userContext?: { userId: string; primaryOrgId: string; accessibleOrgIds: string[]; isGlobalAdmin: boolean } },
+  ): Promise<IngestResponse> {
     if (!order.order_id) {
       throw new BadRequestException('order_id 必填');
     }
-    return this.ingestService.ingestMes(order);
+    // B4 修复：透传 IngestGuard 挂载的租户上下文（primaryOrgId），
+    // 缺失时由 service 显式失败，不静默写全局。
+    return this.ingestService.ingestMes(order, request.userContext as never);
   }
 
   @Post('spatial-scan')

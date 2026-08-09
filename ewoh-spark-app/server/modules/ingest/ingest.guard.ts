@@ -104,10 +104,15 @@ export class IngestGuard implements CanActivate {
     const now = Date.now();
     const windowStart = now - IngestGuard.WINDOW_MS;
     const arr = this.hits.get(ip) ?? [];
-    // 清理过期记录
+    // B3 修复：fresh 过滤后若为空则删除该 IP 的 key（过期 IP 不再保留空数组条目，
+    // 避免 Map 无限增长），否则 set 保留窗口记录；超限 return false 前同样按此规则维护。
     const fresh = arr.filter((t) => t > windowStart);
-    if (fresh.length >= IngestGuard.RATE_LIMIT) {
+    if (fresh.length === 0) {
+      this.hits.delete(ip);
+    } else {
       this.hits.set(ip, fresh);
+    }
+    if (fresh.length >= IngestGuard.RATE_LIMIT) {
       return false;
     }
     fresh.push(now);

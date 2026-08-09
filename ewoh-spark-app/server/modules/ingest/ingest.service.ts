@@ -499,8 +499,22 @@ export class IngestService {
    *
    * @deprecated 兼容路径：保留 HTTP 入口，语义改为「创建 MES 工单」而非「写调度方案」。
    */
-  async ingestMes(order: MesOrderDto): Promise<IngestResponse> {
+  async ingestMes(order: MesOrderDto, ctx?: OrgContext): Promise<IngestResponse> {
     const recordId = order.record_id ?? randomUUID();
+    const orgId = ctx?.primaryOrgId?.trim();
+    // B4 修复：不再硬编码 primaryOrgId=''（空 org 在 RLS 下行为不确定）。
+    // 从 IngestGuard 挂载的 userContext 取 primaryOrgId；上下文缺失时显式失败，
+    // 绝不静默写全局。
+    if (!orgId) {
+      return {
+        accepted: false,
+        skipped: false,
+        record_id: recordId,
+        data_quality: 'invalid',
+        events_triggered: 0,
+        error: '租户上下文缺失，拒绝写入（不静默写全局）',
+      };
+    }
     try {
       await this.mesService.createWorkOrder(
         {
@@ -518,7 +532,7 @@ export class IngestService {
             },
           ],
         },
-        { userId: 'ingest', primaryOrgId: '' },
+        { userId: 'ingest', primaryOrgId: orgId },
       );
       return {
         accepted: true,
