@@ -7,6 +7,7 @@ import type {
   OrganizationInfo,
   PersonnelInfo,
   SpatialEntity,
+  DecisionTrace,
 } from '@shared/api.interface';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
 import { resolveEntityDetailData } from './entityDetailData';
@@ -32,6 +33,10 @@ interface PlanExplanation {
   alternatives: Array<Record<string, unknown>>;
   stationId: string | null;
   routeDistanceM?: number;
+  /** 后端权威路线 ETA（秒）。 */
+  routeEtaSeconds?: number;
+  /** P0：后端 DecisionTrace。 */
+  decisionTrace?: DecisionTrace | null;
   plannedStart: string | null;
   plannedEnd: string | null;
 }
@@ -315,6 +320,57 @@ const EntityDetail = ({
                     <div className="text-[11px] text-white/40">—</div>
                   )}
                 </div>
+                {/* P0：DecisionTrace——展示后端计算的优先级分解/版本/被拒替代，禁止前端复算 */}
+                {exp.decisionTrace && (
+                  <>
+                    <div className="pt-2 text-[10px] text-white/60 uppercase tracking-wide">
+                      决策溯源
+                    </div>
+                    <Row
+                      label="优先级"
+                      value={`${exp.decisionTrace.priority.level}${
+                        exp.decisionTrace.priority.score != null
+                          ? ` (score ${exp.decisionTrace.priority.score.toFixed(1)})`
+                          : ''
+                      }`}
+                    />
+                    {exp.decisionTrace.priority.factors.length > 0 && (
+                      <div className="space-y-0.5">
+                        {exp.decisionTrace.priority.factors.map((f, i) => (
+                          <div key={i} className="flex items-start gap-1 text-[11px] text-white/70">
+                            <span className="text-white/30">·</span>
+                            <span>
+                              {f.label}: {f.value.toFixed(3)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <Row label="策略版本" value={String(exp.decisionTrace.policyVersion)} />
+                    <Row label="求解器" value={exp.decisionTrace.solverVersion} />
+                    <Row label="快照版本" value={exp.decisionTrace.snapshotVersion} />
+                    {exp.routeEtaSeconds != null && (
+                      <Row label="路线 ETA" value={`${exp.routeEtaSeconds.toFixed(0)}s`} />
+                    )}
+                    {exp.decisionTrace.rejectedAlternatives.length > 0 && (
+                      <>
+                        <div className="pt-1 text-[10px] text-white/60 uppercase tracking-wide">
+                          被拒替代（{exp.decisionTrace.rejectedAlternatives.length}）
+                        </div>
+                        <div className="space-y-0.5">
+                          {exp.decisionTrace.rejectedAlternatives.map((alt, i) => (
+                            <div key={i} className="text-[11px] text-white/60">
+                              {alt.personId ?? '—'}
+                              {Array.isArray(alt.reason) && alt.reason.length > 0
+                                ? ` — ${alt.reason.join(', ')}`
+                                : ''}
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
               </div>
             );
           })()}

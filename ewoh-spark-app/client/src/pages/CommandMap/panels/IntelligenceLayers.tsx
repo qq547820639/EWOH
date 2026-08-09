@@ -21,6 +21,7 @@ import type {
   CurrentWorldState,
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
+import { candidateExplainVM, type CandidateExplainItem } from '../vm/candidateExplainVM';
 import { Badge } from '@client/src/components/ui/badge';
 
 /**
@@ -247,7 +248,69 @@ type AssignmentRecord = Record<string, unknown> & {
   actualEndMs?: number | null;
 };
 
-/** 候选资源面板：展示后端返回的候选并高亮合格项（含 ETA/距离/排除原因）。 */
+function CandidateRow({ item }: { item: CandidateExplainItem }) {
+  return (
+    <div
+      className={cn(
+        'rounded border px-2 py-1',
+        item.eligible
+          ? 'border-emerald-500/30 bg-emerald-500/10'
+          : 'border-red-500/20 bg-white/5 opacity-85',
+      )}
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] text-white/90 font-medium">{item.personName}</span>
+        <Badge
+          className={cn(
+            'text-[8px] px-1',
+            item.eligible
+              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+              : 'bg-red-500/20 text-red-400 border-red-500/30',
+          )}
+        >
+          {item.eligible ? '合格' : '排除'}
+        </Badge>
+        {item.eligible && item.rank != null && (
+          <Badge className="text-[8px] px-1 bg-violet-500/20 text-violet-300 border-violet-500/30">
+            #{item.rank}
+          </Badge>
+        )}
+        {item.isLockedAssignee && (
+          <Badge className="text-[8px] px-1 bg-sky-500/20 text-sky-300 border-sky-500/30">
+            锁定受让人
+          </Badge>
+        )}
+        {item.skillMatch && (
+          <Badge className="text-[8px] px-1 bg-blue-500/20 text-blue-400 border-blue-500/30">
+            技能匹配
+          </Badge>
+        )}
+        {item.reservationConflict && (
+          <Badge className="text-[8px] px-1 bg-amber-500/20 text-amber-400 border-amber-500/30">
+            占用冲突
+          </Badge>
+        )}
+      </div>
+      <div className="mt-0.5 text-[9px] text-white/60">
+        {item.eligible && item.rank != null && (
+          <span className="mr-1.5 text-violet-300">评分 {item.score.toFixed(1)}</span>
+        )}
+        ETA {item.etaSeconds.toFixed(0)}s · {item.distanceMeters.toFixed(0)}m · 负荷{' '}
+        {(item.workload * 100).toFixed(0)}%{item.batteryPct != null && ` · 电量 ${item.batteryPct.toFixed(0)}%`}
+      </div>
+      {item.reasons.length > 0 && (
+        <div className="mt-0.5 text-[9px] text-white/45">
+          {item.reasons.map((r, j) => (
+            <div key={j}>· {r}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 候选资源面板（P0）：candidateExplainVM 统一展示模型——合格按评分排序（带 rank），
+ *  排除分组显示硬约束原因；locked/preferred 状态透传后端字段，前端不判资格。 */
 function CandidatesList({
   candidates,
   selectedTaskId,
@@ -261,60 +324,21 @@ function CandidatesList({
   if (!candidates) {
     return <div className="text-[10px] text-white/40">候选加载中…</div>;
   }
-  const list: TaskCandidateResource[] = candidates.candidates ?? [];
-  if (list.length === 0) {
+  const vm = candidateExplainVM(candidates);
+  if (vm.eligible.length === 0 && vm.rejected.length === 0) {
     return <div className="text-[10px] text-white/40">后端未返回候选资源</div>;
   }
   return (
     <div className="space-y-1">
       <div className="text-[9px] text-white/50">
-        {candidates.taskTitle ?? candidates.taskId} · 求解器 {candidates.solverVersion}
+        {candidates.taskTitle ?? candidates.taskId} · 求解器 {candidates.solverVersion} ·{' '}
+        {vm.eligibleCount} 合格 / {vm.rejectedCount} 排除
       </div>
-      {list.map((c, i) => (
-        <div
-          key={`${c.personId}-${c.deviceId ?? 'none'}-${i}`}
-          className={cn(
-            'rounded border px-2 py-1',
-            c.eligible
-              ? 'border-emerald-500/30 bg-emerald-500/10'
-              : 'border-white/10 bg-white/5 opacity-80',
-          )}
-        >
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-white/90 font-medium">{c.personName}</span>
-            <Badge
-              className={cn(
-                'text-[8px] px-1',
-                c.eligible
-                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                  : 'bg-red-500/20 text-red-400 border-red-500/30',
-              )}
-            >
-              {c.eligible ? '合格' : '排除'}
-            </Badge>
-            {c.skillMatch && (
-              <Badge className="text-[8px] px-1 bg-blue-500/20 text-blue-400 border-blue-500/30">
-                技能匹配
-              </Badge>
-            )}
-            {c.reservationConflict && (
-              <Badge className="text-[8px] px-1 bg-amber-500/20 text-amber-400 border-amber-500/30">
-                占用冲突
-              </Badge>
-            )}
-          </div>
-          <div className="mt-0.5 text-[9px] text-white/60">
-            ETA {c.etaSeconds.toFixed(0)}s · {(c.distanceMeters ?? 0).toFixed(0)}m · 负荷{' '}
-            {(c.workload * 100).toFixed(0)}%{c.batteryPct != null && ` · 电量 ${c.batteryPct.toFixed(0)}%`}
-          </div>
-          {c.reasons.length > 0 && (
-            <div className="mt-0.5 text-[9px] text-white/45">
-              {c.reasons.map((r, j) => (
-                <div key={j}>· {r}</div>
-              ))}
-            </div>
-          )}
-        </div>
+      {vm.eligible.map((c) => (
+        <CandidateRow key={`${c.personId}-${c.deviceId ?? 'none'}-ok`} item={c} />
+      ))}
+      {vm.rejected.map((c) => (
+        <CandidateRow key={`${c.personId}-${c.deviceId ?? 'none'}-no`} item={c} />
       ))}
     </div>
   );

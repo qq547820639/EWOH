@@ -40,6 +40,7 @@ import type {
   SchedulingPlanV2,
   RouteGraph,
   TaskCandidatesResponse,
+  DecisionTrace,
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { queryKeys } from '@client/src/hooks/queryKeys';
@@ -135,6 +136,8 @@ interface PlanAssignmentExplanation {
   routeEtaSeconds?: number;
   plannedStart: string | null;
   plannedEnd: string | null;
+  /** P0：后端 DecisionTrace（priority 分解/约束证据/版本），前端只展示不计算。 */
+  decisionTrace?: DecisionTrace | null;
 }
 
 const CommandMap = (): React.ReactElement => {
@@ -362,6 +365,9 @@ const CommandMap = (): React.ReactElement => {
         routeEtaSeconds,
         plannedStart: a.plannedStart,
         plannedEnd: a.plannedEnd,
+        // P0：DecisionTrace 透传（priority 分解/被拒替代/策略与求解器版本），
+        // 前端只展示后端计算值，禁止自行复算。
+        decisionTrace: a.decisionTrace ?? null,
       });
     }
     return map;
