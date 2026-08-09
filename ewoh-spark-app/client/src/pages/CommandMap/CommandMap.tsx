@@ -14,6 +14,7 @@ import {
   TriangleAlert,
   SlidersHorizontal,
   Activity,
+  GitCompareArrows,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -62,6 +63,11 @@ import DataStates from '../../components/DataStates';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useCommandMapSchedulerState } from './hooks/useCommandMapSchedulerState';
 import { SchedulerLayersOverlay, computeAggregateViewBox } from './layers/SchedulerLayers';
+import { PlanCompareLayer } from './layers/PlanCompareLayer';
+import { planCompareMapVM, extractUnchangedTasks, DEFAULT_PLAN_COMPARE_UI, type PlanCompareUiState } from './vm/planCompareVM';
+import { useQuery as useQueryCompare } from '@tanstack/react-query';
+import { comparePlansV2, getActivePlans } from '@client/src/api/scheduler';
+import type { PlanCompareResult } from '@shared/api.interface';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
 import {
   collectQueryErrors,
@@ -83,6 +89,8 @@ const TaskOrchestrationPanel = React.lazy(() => import('./panels/TaskOrchestrati
 const BrainPanel = React.lazy(() => import('./panels/BrainPanel'));
 const IntelligenceLayers = React.lazy(() => import('./panels/IntelligenceLayers'));
 const IntelligenceWorkspace = React.lazy(() => import('./panels/IntelligenceWorkspace'));
+const PlanComparePanel = React.lazy(() => import('./panels/PlanComparePanel'));
+const PlanDiffDrawer = React.lazy(() => import('./panels/PlanDiffDrawer'));
 
 /** 懒加载 chunk 加载期间的轻量占位，避免空白闪烁。 */
 const MapPanelFallback = () => (
@@ -155,10 +163,36 @@ const CommandMap = (): React.ReactElement => {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [showIntelligence, setShowIntelligence] = useState(false);
   const [showWorkspace, setShowWorkspace] = useState(false);
+  // Phase 4 / P4-COMPARE：Plan Compare UI state（三模式 + 聚焦）。
+  const [showCompare, setShowCompare] = useState(false);
+  const [compareUi, setCompareUi] = useState<PlanCompareUiState>(DEFAULT_PLAN_COMPARE_UI);
   const [replayMode, setReplayMode] = useState(false);
   const [replayPaused, setReplayPaused] = useState(false);
   // Phase 3 / P3-T3：聚合状态 Hook（React Query 权威数据 + SSE 增量 + 本地 UI state）。
   const schedulerState = useCommandMapSchedulerState();
+
+  // Phase 4 / P4-COMPARE：对比结果（后端权威 diff）+ 地图 VM。
+  const compareResultQuery = useQueryCompare<PlanCompareResult | null>({
+    queryKey: ['scheduler-compare', compareUi.baselinePlanId, compareUi.candidatePlanId],
+    queryFn: async () => {
+      if (!compareUi.baselinePlanId || !compareUi.candidatePlanId || compareUi.baselinePlanId === compareUi.candidatePlanId) {
+        return null;
+      }
+      return comparePlansV2(compareUi.baselinePlanId, compareUi.candidatePlanId);
+    },
+    enabled: showCompare && !!compareUi.baselinePlanId && !!compareUi.candidatePlanId,
+  });
+  const compareResult = compareResultQuery.data ?? null;
+  const compareVm = useMemo(() => {
+    if (!compareResult) return null;
+    const vm = planCompareMapVM(compareResult, compareUi.mode, schedulerState.snapshot ?? null);
+    // 未变化任务（候选方案中未触及的 assignment）作低干扰上下文。
+    if (compareUi.mode === 'DIFF' && compareResult.candidatePlanId) {
+      const cand = schedulerState.plans?.find((p) => p.planId === compareResult.candidatePlanId);
+      if (cand) vm.unchangedTaskIds = extractUnchangedTasks(compareResult, cand.assignments);
+    }
+    return vm;
+  }, [compareResult, compareUi.mode, schedulerState]);
   const [replaySpeed, setReplaySpeed] = useState(1);
   const [replayTime, setReplayTime] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
@@ -690,6 +724,21 @@ const CommandMap = (): React.ReactElement => {
               aria-hidden="true"
             >
               <SchedulerLayersOverlay state={schedulerState} />
+              {showCompare && compareVm && (
+                <PlanCompareLayer
+                  vm={compareVm}
+                  focusedTaskId={compareUi.focusedTaskId}
+                  onFocusTask={(taskId) => setCompareUi((u) => ({ ...u, focusedTaskId: taskId }))}
+                  unchangedTaskIds={compareVm.unchangedTaskIds}
+                  unchangedPoints={compareVm.unchangedTaskIds
+                    .map((tid) => {
+                      const st = schedulerState.snapshot?.stations.find((s) => s.id === tid);
+                      const pt = st ? { x: st.x, y: st.y } : null;
+                      return pt ? { taskId: tid, point: pt } : null;
+                    })
+                    .filter((x): x is { taskId: string; point: { x: number; y: number } } => x != null)}
+                />
+              )}
             </svg>
           );
         })()}
@@ -738,6 +787,37 @@ const CommandMap = (): React.ReactElement => {
               <IntelligenceWorkspace />
             </React.Suspense>
           </div>
+        )}
+        {mode === 'scheduling' && (
+          <button
+            type="button"
+            onClick={() => setShowCompare((v) => !v)}
+            className="absolute right-2 top-[6.5rem] z-40 flex items-center gap-1 rounded-md border border-white/10 bg-[hsl(220_14%_14%)]/95 px-2 py-1.5 text-[10px] text-white/80 shadow-lg hover:bg-white/10"
+            title="Plan Compare：基线/候选/差异三模式"
+          >
+            <GitCompareArrows className="w-3.5 h-3.5 text-emerald-400" />
+            {showCompare ? '关闭对比' : '方案对比'}
+          </button>
+        )}
+        {mode === 'scheduling' && showCompare && (
+          <div className="absolute left-2 top-1/2 -translate-y-1/2 z-40">
+            <React.Suspense fallback={<MapPanelFallback />}>
+              <PlanComparePanel
+                ui={compareUi}
+                onUiChange={setCompareUi}
+                onOpenDiff={(taskId) => setCompareUi((u) => ({ ...u, focusedTaskId: taskId }))}
+              />
+            </React.Suspense>
+          </div>
+        )}
+        {mode === 'scheduling' && showCompare && compareUi.focusedTaskId && compareResult && (
+          <React.Suspense fallback={null}>
+            <PlanDiffDrawer
+              entry={compareVm?.entries.find((e) => e.taskId === compareUi.focusedTaskId) ?? null}
+              diff={compareResult.diffByTask.find((d) => d.taskId === compareUi.focusedTaskId) ?? null}
+              onClose={() => setCompareUi((u) => ({ ...u, focusedTaskId: null }))}
+            />
+          </React.Suspense>
         )}
 
         <EntityDetail
