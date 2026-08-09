@@ -108,6 +108,13 @@ describe('PolicyActivationService（P4-GATE：Human-gated Activation）', () => 
             if (call === 1) return Promise.resolve([{ configVersion: 2, status: 'SHADOW', active: false }]);
             return Promise.resolve([{ configVersion: 1, status: 'ACTIVE', active: true }]);
           }),
+          orderBy: jest.fn(() => ({
+            limit: jest.fn(() => {
+              call += 1;
+              if (call === 1) return Promise.resolve([{ configVersion: 2, status: 'SHADOW', active: false }]);
+              return Promise.resolve([{ configVersion: 1, status: 'ACTIVE', active: true }]);
+            }),
+          })),
         })),
       })),
     }));
@@ -126,5 +133,61 @@ describe('PolicyActivationService（P4-GATE：Human-gated Activation）', () => 
     expect(record.beforeVersion).toBe(1);
     expect(record.rollbackTarget).toBe(1);
     expect(record.operator).toBe('admin');
+  });
+
+  it('activate：带 orgId 时全局策略（org_id IS NULL）也算当前 ACTIVE 并被归档（真实缺陷回归）', async () => {
+    const { db } = makeDb();
+    const dbAny = db as never as { select: jest.Mock; insert: jest.Mock; update: jest.Mock };
+    // candidate = SHADOW；全局策略 org_id=NULL active=true（orgId 过滤必须包含 NULL）。
+    let call = 0;
+    // 记录 where 条件数量：首次=candidate 查询（1 个条件），二次=activeRow 查询（orgId 时含 isNull → 条件数 >= 2）。
+    const whereConds: number[] = [];
+    dbAny.select.mockImplementation(() => ({
+      from: jest.fn(() => ({
+        where: jest.fn((conds: unknown[]) => {
+          whereConds.push(Array.isArray(conds) ? conds.length : 0);
+          return {
+            limit: jest.fn(() => {
+              call += 1;
+              if (call === 1) return Promise.resolve([{ configVersion: 2, status: 'SHADOW', active: false }]);
+              // 全局策略（org_id NULL）命中 activeRow。
+              return Promise.resolve([{ configVersion: 1, status: 'ACTIVE', active: true }]);
+            }),
+            orderBy: jest.fn(() => ({
+              limit: jest.fn(() => {
+                call += 1;
+                if (call === 1) return Promise.resolve([{ configVersion: 2, status: 'SHADOW', active: false }]);
+                // 全局策略（org_id NULL）命中 activeRow。
+                return Promise.resolve([{ configVersion: 1, status: 'ACTIVE', active: true }]);
+              }),
+            })),
+          };
+        }),
+      })),
+    }));
+    dbAny.insert.mockImplementation(() => ({
+      values: jest.fn(() => Promise.resolve(undefined)),
+    }));
+    dbAny.update.mockImplementation(() => ({
+      set: jest.fn(() => ({
+        where: jest.fn(() => Promise.resolve(undefined)),
+      })),
+    }));
+    const svc = new PolicyActivationService(db, replayService, kpiService, metrics, outbox);
+    const gatePassed: PolicyGateEvaluation = {
+      passed: true,
+      checks: [],
+      replayId: null,
+      shadowEvaluation: { shadowRuns: 0, shadowConflicts: 0, safetyViolations: 0, blockedRouteAssignments: 0, fallbackRate: null, conflictRate: null },
+    };
+    const record = await svc.activate(2, {
+      operator: 'admin',
+      gateResult: gatePassed,
+      orgId: 'ORG-1',
+    });
+    expect(record.beforeVersion).toBe(1); // 全局 ACTIVE 被识别为 before
+    expect(record.rollbackTarget).toBe(1);
+    // 防回归：orgId 激活必须执行到 activeRow 查询（第 2 次 select）——全局策略可被识别。
+    expect(whereConds.length).toBeGreaterThanOrEqual(2);
   });
 });

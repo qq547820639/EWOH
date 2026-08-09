@@ -3,7 +3,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { ewohPolicyActivation, ewohSchedulingPolicy } from '@server/database/schema';
 import type {
   PolicyActivationRecord,
@@ -227,15 +227,23 @@ export class PolicyActivationService {
       );
     }
 
+    // 当前 ACTIVE 判定：该 org 的策略 + 全局策略（org_id IS NULL）均算候选，
+    // 否则激活时全局策略（org_id=NULL）无法被归档（P1 遗留 ACTIVE）。
     const [activeRow] = await this.db
       .select()
       .from(ewohSchedulingPolicy)
       .where(
         and(
           eq(ewohSchedulingPolicy.active, true),
-          opts.orgId ? eq(ewohSchedulingPolicy.orgId, opts.orgId) : undefined,
+          opts.orgId
+            ? or(
+                eq(ewohSchedulingPolicy.orgId, opts.orgId),
+                isNull(ewohSchedulingPolicy.orgId),
+              )
+            : undefined,
         ),
       )
+      .orderBy(desc(ewohSchedulingPolicy.configVersion))
       .limit(1);
     const beforeVersion = activeRow?.configVersion ?? null;
     const rollbackTarget = beforeVersion;
