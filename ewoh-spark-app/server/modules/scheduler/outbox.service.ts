@@ -4,7 +4,7 @@ import {
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import { ewohOutbox } from '@server/database/schema';
-import { asc, desc, eq, gt, max } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, max } from 'drizzle-orm';
 import type { OutboxEvent } from '@shared/api.interface';
 
 /** 入队可选的实体元数据（用于 SSE 缺口判定与影响分析的事件分类）。 */
@@ -49,6 +49,51 @@ export class OutboxService {
       .returning();
 
     return this.toEvent(row);
+  }
+
+  /**
+   * 节流入队（合并窗口，C4：resource.state_changed 等高频事件的事件风暴防护）。
+   *
+   * 语义：窗口 windowMs 内，同一 eventType + entityId 的 pending 事件只保留一条，
+   * 后续变化仅覆盖 payload（最终态合并），不新增 outbox 行。
+   *
+   * 边界（务实裁定）：
+   * - 合并时不更新 sequence → SSE 轮询只推送首条（提示变化），客户端最终态走 snapshot 重拉；
+   *   避免 sequence 跳变触发 replaySince 缺口误判（gap=false 依赖 sequence 严格连续）。
+   * - 窗口按首次落地 createdAt 计算，连续高频事件持续合并直到安静 windowMs 后落地下一条。
+   * - 跨实体（不同 entityId / eventType）互不影响。
+   */
+  async enqueueThrottled(
+    eventType: string,
+    entityId: string,
+    payload: Record<string, unknown>,
+    orgId: string | null,
+    windowMs = 5_000,
+    opts?: OutboxEnqueueOpts,
+  ): Promise<OutboxEvent> {
+    const cutoff = new Date(Date.now() - windowMs);
+    const [existing] = await this.db
+      .select()
+      .from(ewohOutbox)
+      .where(
+        and(
+          eq(ewohOutbox.eventType, eventType),
+          eq(ewohOutbox.entityId, entityId),
+          eq(ewohOutbox.status, 'pending'),
+          gte(ewohOutbox.createdAt, cutoff),
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      // 窗口命中：覆盖 payload 为最终态（保持 sequence 不变，无缺口副作用）
+      const [updated] = await this.db
+        .update(ewohOutbox)
+        .set({ payloadJson: payload })
+        .where(eq(ewohOutbox.id, existing.id))
+        .returning();
+      return this.toEvent(updated);
+    }
+    return this.enqueue(eventType, entityId, payload, orgId, undefined, opts);
   }
 
   /** 下一个 sequence（当前最大 sequence + 1）。 */

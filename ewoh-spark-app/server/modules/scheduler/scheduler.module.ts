@@ -18,6 +18,7 @@ import { SchedulerStreamService } from './scheduler-stream.service';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { SchedulerMetricsController } from './scheduler-metrics.controller';
 import { SchedulingFeedbackService } from './scheduling-feedback.service';
+import { TaskSchedulingBridge } from './task-scheduling.bridge';
 import { TaskModule } from '../task/task.module';
 
 @Module({
@@ -26,6 +27,7 @@ import { TaskModule } from '../task/task.module';
   providers: [
     SchedulerMetricsService,
     SchedulingFeedbackService,
+    TaskSchedulingBridge,
     SchedulerService,
     WorldStateSnapshotService,
     TriggerService,

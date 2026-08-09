@@ -1,6 +1,7 @@
 import {
   Injectable,
   Inject,
+  Logger,
   NotFoundException,
   BadRequestException,
   ConflictException,
@@ -26,6 +27,16 @@ export interface CreateTaskDto {
   planStart?: string;
   planEnd?: string;
 }
+
+// A1（任务写路径事件接线）：TaskModule 保持依赖叶子（不 import SchedulerModule），
+// 通过回调注册表把任务写事件暴露给调度侧。TaskSchedulingBridge（scheduler 模块）
+// 在启动时注册回调 → injectSchedulingEvent，避免 TaskModule→SchedulerModule 循环依赖。
+export type TaskEventTrigger = 'TASK_CREATED' | 'TASK_UPDATED';
+export type TaskEventListener = (
+  taskId: string,
+  trigger: TaskEventTrigger,
+  actor?: OrgContext,
+) => void;
 
 export function nextTaskStatus(current: string, action: string): string | null {
   switch (action) {
@@ -76,10 +87,30 @@ export function nextTaskStatus(current: string, action: string): string | null {
 
 @Injectable()
 export class TaskService {
+  private readonly logger = new Logger(TaskService.name);
+  private readonly taskListeners = new Set<TaskEventListener>();
+
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly auditService: AuditService,
   ) {}
+
+  /** A1：注册任务写事件监听（调度桥接用）；fire-and-forget，监听器异常不影响任务主流程。 */
+  onTaskEvent(fn: TaskEventListener): void {
+    this.taskListeners.add(fn);
+  }
+
+  private emitTaskEvent(taskId: string, trigger: TaskEventTrigger, actor?: OrgContext): void {
+    for (const fn of this.taskListeners) {
+      try {
+        fn(taskId, trigger, actor);
+      } catch (e) {
+        this.logger.warn(
+          `task event listener failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+  }
 
   async listTasks() {
     return this.db
@@ -122,6 +153,8 @@ export class TaskService {
         source: 'manual',
       })
       .returning();
+    // A1：任务创建成功 → 通知调度桥（fire-and-forget，触发事件驱动重排）
+    this.emitTaskEvent(row.id, 'TASK_CREATED');
     return row;
   }
 
@@ -156,6 +189,8 @@ export class TaskService {
       before: { status: before },
       after: { status: row.status },
     });
+    // A1：任务状态变更成功 → 通知调度桥（TASK_UPDATED，触发事件驱动重排）
+    this.emitTaskEvent(row.id, 'TASK_UPDATED', actor);
     return row;
   }
 }
