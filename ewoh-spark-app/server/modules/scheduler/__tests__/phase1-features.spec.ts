@@ -250,6 +250,7 @@ describe('Task 1.7 废弃 legacy scheduler/plans API', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never, // overridePreviewService
     );
     return { ctrl, schedulerService };
   }
@@ -294,6 +295,7 @@ describe('Task 1.7 废弃 legacy scheduler/plans API', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never, // overridePreviewService
     );
     const run: any = await ctrl.createRun({}, { userContext: testOrgContext() });
     expect(run).toEqual({ runId: 'R1' });

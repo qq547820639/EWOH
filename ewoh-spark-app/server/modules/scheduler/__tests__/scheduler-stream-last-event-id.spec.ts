@@ -58,6 +58,7 @@ function makeHarness(): ControllerHarness {
       {} as never,
       {} as never,
       {} as never,
+      {} as never, // overridePreviewService
   );
   return { controller, streamSvc, subject };
 }

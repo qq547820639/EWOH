@@ -6,6 +6,7 @@ import {
   NotFoundException,
   ConflictException,
   Optional,
+  forwardRef,
 } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -33,6 +34,8 @@ import { DispatchCoordinatorService } from './dispatch-coordinator.service';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import { SchedulingFeedbackService } from './scheduling-feedback.service';
 import { ConstraintLoaderService } from './constraint-loader.service';
+import { ReplanCoordinatorService } from './replan-coordinator.service';
+import { OutboxService } from './outbox.service';
 
 /** 方案服务：持久化方案、审批/拒绝/下发/重排/对比。 */
 @Injectable()
@@ -50,6 +53,11 @@ export class PlanService {
     @Optional() private readonly feedbackService?: SchedulingFeedbackService,
     // T02 / P0-2：持久化人工约束唯一加载入口（可选注入；缺失时回退旧逻辑，兼容旧单测）。
     private readonly constraintLoaderService?: ConstraintLoaderService,
+    // T04 / P1-6：PLAN_STALE 事件化（可选注入；缺失时仅抛异常，兼容旧单测）。
+    @Optional() private readonly outboxService?: OutboxService,
+    // T04 / P1-6：stale approve → scoped replan（forwardRef 打破 Plan↔Replan 循环依赖）。
+    @Optional() @Inject(forwardRef(() => ReplanCoordinatorService))
+    private readonly replanCoordinator?: ReplanCoordinatorService,
   ) {}
 
   /** 持久化一个 V2 方案（ewoh_schedule_plan + 分配明细）。 */
@@ -167,11 +175,21 @@ export class PlanService {
     }
 
     if (plan.version !== body.version) {
+      // T04 / P1-6：PLAN_STALE 事件化 + scoped replan（cause=PLAN_STALE）后仍拒绝审批。
+      await this.notifyStalePlan(planId, ctx);
       throw new ConflictException('PLAN_STALE');
     }
-    await this.worldStateSnapshotService.assertFreshForApprove(
-      body.snapshotVersion,
-    );
+    try {
+      await this.worldStateSnapshotService.assertFreshForApprove(
+        body.snapshotVersion,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === 'PLAN_STALE' || msg.includes('PLAN_STALE')) {
+        await this.notifyStalePlan(planId, ctx);
+      }
+      throw err;
+    }
     // Phase 3 / P3-T4：方案不得改变安全关键任务的锁定分配。
     await this.assertNoSafetyCriticalChange(planId, 'approve', [], ctx);
 
@@ -211,6 +229,43 @@ export class PlanService {
     });
     this.recordAcceptanceFeedback(planId, true, ctx);
     return this.getPlan(planId);
+  }
+
+  /**
+   * T04 / P1-6：stale approve → outbox `stale_plan` 事件 + scoped replan（cause=PLAN_STALE）。
+   * 观测型：失败仅记日志，不改变审批拒绝语义（PLAN_STALE 仍然抛异常）。
+   */
+  private async notifyStalePlan(
+    planId: string,
+    ctx: OrgContext,
+  ): Promise<void> {
+    try {
+      if (this.outboxService) {
+        await this.outboxService.enqueue(
+          'stale_plan',
+          planId,
+          {
+            planId,
+            reason: 'approve rejected: PLAN_STALE',
+            occurredAt: new Date().toISOString(),
+          },
+          ctx.primaryOrgId || null,
+          undefined,
+          {
+            entityType: 'schedule_plan',
+            planId,
+            occurredAt: new Date().toISOString(),
+          },
+        );
+      }
+      if (this.replanCoordinator) {
+        await this.replanCoordinator.handleTrigger('PLAN_STALE', planId, ctx);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `stale plan notification failed for ${planId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /** 观测型：记录审批验收反馈。失败仅记日志，不影响审批流程。 */

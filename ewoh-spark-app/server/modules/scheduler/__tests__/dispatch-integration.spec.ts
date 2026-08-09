@@ -190,4 +190,72 @@ describe('智能调度执行闭环 - 集成链路', () => {
     ).rejects.toThrow('PLAN_STALE');
     expect(state.plans.get('PLAN-STALE')?.status).toBe('shadow');
   });
+
+  it('T04/P1-6: stale approve → outbox stale_plan 事件 + scoped replan（cause=PLAN_STALE）', async () => {
+    const { db, state } = makeFakeDb({
+      plans: [
+        {
+          planId: 'PLAN-STALE-2',
+          planName: 'p',
+          strategy: 'scheduling_v2',
+          status: 'shadow',
+          version: 1,
+          snapshotVersion: 'WS-OLD',
+        },
+      ],
+      assignments: [],
+      tasks: [],
+    });
+    const requestDatabaseContext = {
+      runInTransaction: jest.fn(async (_guc: unknown, cb: () => Promise<void>) => {
+        await cb();
+      }),
+    };
+    const worldState = {
+      assertFreshForApprove: jest.fn().mockRejectedValue(new Error('PLAN_STALE')),
+      buildSnapshot: jest.fn(),
+    };
+    const auditService = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const outboxService = {
+      enqueue: jest.fn().mockResolvedValue({
+        id: 'evt', eventType: 'stale_plan', entityId: 'PLAN-STALE-2', payload: {},
+        status: 'pending', sequence: 1, createdAt: new Date().toISOString(),
+      }),
+    };
+    const replanCoordinator = {
+      handleTrigger: jest.fn().mockResolvedValue({ run: { runId: 'RUN-X' }, plans: [], debounced: false }),
+    };
+    const planService = new PlanService(
+      db,
+      requestDatabaseContext as unknown as RequestDatabaseContext,
+      auditService as unknown as AuditService,
+      { solve: jest.fn(), solveVariants: jest.fn() } as unknown as SolverService,
+      worldState as unknown as WorldStateSnapshotService,
+      { dispatch: jest.fn() } as unknown as DispatchCoordinatorService,
+      { getActivePolicy: jest.fn(), getPolicy: jest.fn(), getConfig: jest.fn(), getConfigByVersion: jest.fn() } as never,
+      undefined,
+      undefined,
+      outboxService as unknown as OutboxService,
+      replanCoordinator as never,
+    );
+
+    await expect(
+      planService.approvePlan(
+        'PLAN-STALE-2',
+        { version: 1, snapshotVersion: 'WS-OLD' },
+        testOrgContext(),
+      ),
+    ).rejects.toThrow('PLAN_STALE');
+
+    // outbox stale_plan 事件 + scoped replan（cause=PLAN_STALE）均被触发。
+    const eventTypes = outboxService.enqueue.mock.calls.map((c) => c[0]);
+    expect(eventTypes).toContain('stale_plan');
+    expect(replanCoordinator.handleTrigger).toHaveBeenCalledWith(
+      'PLAN_STALE',
+      'PLAN-STALE-2',
+      testOrgContext(),
+    );
+    // 方案状态不被改变（审批仍拒绝）。
+    expect(state.plans.get('PLAN-STALE-2')?.status).toBe('shadow');
+  });
 });

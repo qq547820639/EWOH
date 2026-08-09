@@ -23,6 +23,7 @@ import { ConflictService } from './conflict.service';
 import { KpiService } from './kpi.service';
 import { PlanCompareService } from './plan-compare.service';
 import { ConflictPreviewService } from './conflict-preview.service';
+import { OverridePreviewService } from './override-preview.service';
 import { ShadowPolicyService } from './shadow-policy.service';
 import { PolicyActivationService } from './policy-activation.service';
 import { PolicyReplayService } from './policy-replay.service';
@@ -60,6 +61,7 @@ export class SchedulerController {
     private readonly kpiService: KpiService,
     private readonly planCompareService: PlanCompareService,
     private readonly conflictPreviewService: ConflictPreviewService,
+    private readonly overridePreviewService: OverridePreviewService,
     private readonly shadowPolicyService: ShadowPolicyService,
     private readonly policyActivationService: PolicyActivationService,
     private readonly policyReplayService: PolicyReplayService,
@@ -288,6 +290,17 @@ export class SchedulerController {
     return this.schedulerService.applyOverrides(planId, body, request.userContext);
   }
 
+  /** T04 / P1-8：覆盖影响预览（纯计算，不落库不重排；7 项 delta）。 */
+  @Post('plans/:planId/overrides/preview')
+  @HttpCode(200)
+  async previewOverrides(
+    @Param('planId') planId: string,
+    @Body() body: PlanOverrideRequest,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.overridePreviewService.preview(planId, body, request.userContext);
+  }
+
   @Get('tasks/:id/candidates')
   async getTaskCandidates(@Param('id') id: string) {
     return this.schedulerService.getTaskCandidates(id);
@@ -322,6 +335,13 @@ export class SchedulerController {
   @Get('conflicts/:id')
   async getConflict(@Param('id') id: string) {
     return this.conflictService.getConflictDetail(id);
+  }
+
+  /** T04 / P1-5（G5）：显式冲突归并触发（写路径；GET /conflicts 为纯读）。 */
+  @Post('conflicts/reconcile')
+  @HttpCode(200)
+  async reconcileConflicts(@Req() request: { userContext?: OrgContext }) {
+    return this.conflictService.reconcileNow(request.userContext);
   }
 
   /** OPEN → ACKNOWLEDGED（人工确认，记录 acknowledgedBy/At + 审计 + SSE）。 */

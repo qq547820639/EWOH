@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger, forwardRef } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -43,6 +43,7 @@ export class ReplanCoordinatorService {
     private readonly triggerService: TriggerService,
     private readonly worldStateSnapshotService: WorldStateSnapshotService,
     private readonly solverService: SolverService,
+    @Inject(forwardRef(() => PlanService))
     private readonly planService: PlanService,
     private readonly policyService: SchedulingPolicyService,
     // T02 / P0-2：持久化人工约束唯一加载入口（可选注入；缺失时回退空约束，兼容旧单测）。
