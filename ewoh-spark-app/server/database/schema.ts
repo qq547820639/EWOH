@@ -176,6 +176,19 @@ export const ewohProductionTask = pgTable("ewoh_production_task", {
    * @type { string[] }
    */
   requiredCertifications: jsonb("required_certifications"),
+  // --- TaskRequirement 领域列 (standalone_016_task_requirement, Phase 1 / P1-TREQ) ---
+  /**
+   * 设备能力需求（jsonb string[]）：TaskRequirement 业务事实，
+   * 替代 taskType 白名单派生（world-state deriveRequiredDeviceCapabilities）。
+   * backfill 旧值由运行时标记 derived；真实写入值不再派生。
+   * @type { string[] }
+   */
+  requiredDeviceCapabilities: jsonb("required_device_capabilities").default([]),
+  /**
+   * 候选工位（jsonb string[]）：Task.candidateStations。
+   * @type { string[] }
+   */
+  candidateStations: jsonb("candidate_stations").default([]),
   // --- 调度领域模型新列 (standalone_012_domain_columns, Phase 1 / P1-T1) ---
   /** 基础优先级（业务真实值，不再从 title/taskType 猜测）。 */
   basePriority: varchar("base_priority", { length: 50 }),

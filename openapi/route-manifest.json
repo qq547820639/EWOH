@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-09T06:39:08.157Z",
+  "generatedAt": "2026-08-09T08:25:24.994Z",
   "spec": "openapi/ewoh.yaml",
   "controllerKeys": [
     "DELETE /api/dashboard/devices/{deviceId}/bindings",
@@ -120,7 +120,6 @@
     "GET /api/scheduler/snapshot",
     "GET /api/scheduler/tasks/{id}/candidates",
     "GET /api/scheduler/v2/stream",
-    "GET /api/scheduler/weights",
     "GET /api/simulator/status",
     "GET /api/spatial/entities",
     "GET /api/spatial/entities/{entityId}",
@@ -276,7 +275,6 @@
     "POST /api/scheduler/events",
     "POST /api/scheduler/feedback/actuals",
     "POST /api/scheduler/plans",
-    "POST /api/scheduler/plans/data-driven",
     "POST /api/scheduler/plans/{planId}/approve",
     "POST /api/scheduler/plans/{planId}/confirm",
     "POST /api/scheduler/plans/{planId}/dispatch",
@@ -309,7 +307,6 @@
     "PUT /api/ai/config",
     "PUT /api/operations/workbench/views/{key}",
     "PUT /api/parameters/{key}",
-    "PUT /api/scheduler/weights",
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
@@ -779,9 +776,26 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 310,
+  "controllerOperations": 307,
   "specOperations": 464,
-  "documentedControllerOperations": 310,
+  "documentedControllerOperations": 307,
   "undocumented": [],
-  "unimplemented": []
+  "unimplemented": [
+    {
+      "method": "GET",
+      "path": "/api/scheduler/weights"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scheduler/weights"
+    },
+    {
+      "method": "POST",
+      "path": "/api/scheduler/plans/data-driven"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/scheduler/weights"
+    }
+  ]
 }

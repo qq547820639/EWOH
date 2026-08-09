@@ -56,6 +56,8 @@ import type {
   PlanOverrideDiffSummary,
   RecordActualsRequest,
   SchedulingEventRequest,
+  RouteCandidateCost,
+  RouteCandidatesResponse,
 } from '@shared/api.interface';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { AuditService } from '../shared/audit.service';
@@ -105,25 +107,12 @@ export class SchedulerService {
     'approved',
   ]);
 
-  private weights: ScheduleWeights = {
-    w1_output: 0.25,
-    w2_on_time: 0.2,
-    w3_safety_risk: 0.2,
-    w4_body_load: 0.15,
-    w5_move_distance: 0.1,
-    w6_changeover_cost: 0.1,
-  };
+
 
   /** v0.7 A2：预占过期预警阈值（ms），剩余时长低于该值产出 reservation_expiring 冲突。默认 15 分钟。 */
   private readonly reservationExpiringThresholdMs = 15 * 60 * 1000;
 
-  private weightHistory: Array<{
-    before: ScheduleWeights;
-    after: ScheduleWeights;
-    operator: string;
-    reason: string;
-    at: string;
-  }> = [];
+
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
@@ -158,152 +147,13 @@ export class SchedulerService {
   ) {}
 
   async generatePlans(body?: { idempotencyKey?: string }): Promise<SchedulePlan[]> {
-    // ⚠️ 遗留演示路径（data-driven 方案生成器）：KEEP/CAP/BAL 三方案的
-    // taktImprovement / output_rate / move_distance / affectedPersons 等指标为
-    // 【合成数据，仅供演示】，不代表真实调度结果。真实调度请走 SolverService
-    // （CP-SAT / heuristic），本函数保留仅为兼容旧接口与演示驾驶舱。
-    try {
-      const idempotencyKey = body?.idempotencyKey?.trim();
-      const idBase = idempotencyKey
-        ? `PLAN-${idempotencyKey.replace(/[^A-Za-z0-9_-]/g, '')}-`
-        : `PLAN-${Date.now()}-`;
-
-      if (idempotencyKey) {
-        const existingIds = [
-          `${idBase}KEEP`,
-          `${idBase}CAP`,
-          `${idBase}BAL`,
-        ];
-        const existing = await this.db
-          .select()
-          .from(ewohSchedulePlan)
-          .where(inArray(ewohSchedulePlan.planId, existingIds));
-        if (existing.length > 0) {
-          return existing.map((plan) => this.mapPlan(plan));
-        }
-      }
-
-      // 1. 查询当前状态：设备列表与电量
-      const devices = await this.db.select().from(ewohDevice);
-
-      // 1. 查询最近 1 小时遥测：按 deviceId 分组的平均 loadScore 与 fatigueTrend
-      const telemetryRows = await this.db
-        .select({
-          deviceId: ewohTelemetry.deviceId,
-          avgLoad: sql<number>`coalesce(avg(${ewohTelemetry.loadScore}), 0)::float`,
-          avgFatigue: sql<number>`coalesce(avg(${ewohTelemetry.fatigueTrend}), 0)::float`,
-        })
-        .from(ewohTelemetry)
-        .where(gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`))
-        .groupBy(ewohTelemetry.deviceId);
-
-      // 1. 查询未结事件
-      const openEventRows = await this.db
-        .select()
-        .from(ewohEvent)
-        .where(eq(ewohEvent.status, 'open'));
-
-      // 2. 计算当前指标基线
-      const avgLoad =
-        telemetryRows.length > 0
-          ? Number(
-              (
-                telemetryRows.reduce((sum, r) => sum + (r.avgLoad ?? 0), 0) /
-                telemetryRows.length
-              ).toFixed(3),
-            )
-          : 0;
-      const lowBatteryDevices = devices.filter(
-        (d) => (d.batteryPct ?? 100) < 20,
-      ).length;
-      const highLoadDevices = telemetryRows.filter(
-        (r) => (r.avgLoad ?? 0) > 0.7,
-      ).length;
-      const openEvents = openEventRows.length;
-      const criticalEvents = openEventRows.filter((e) =>
-        ['L2', 'L3'].includes(e.severity ?? ''),
-      ).length;
-
-      // 3. 生成 3 个方案
-      const plans = [
-        {
-          planId: `${idBase}KEEP`,
-          planName: '保持现状',
-          strategy: 'keep_status',
-          status: 'proposed',
-          taktImprovement: 0,
-          highLoadPersons: highLoadDevices,
-          lowBatteryRisk: lowBatteryDevices,
-          affectedPersons: 0,
-          metricsJson: {
-            avgLoad,
-            openEvents,
-            criticalEvents,
-            output_rate: 1.0,
-            on_time_rate: 0.92,
-            safety_risk: criticalEvents,
-            move_distance: 0,
-            changeover: 0,
-          },
-          reason: `【合成数据，仅供演示】维持当前人员分配与任务安排，作为基线对照。当前未结事件 ${openEvents} 项，高负荷人员 ${highLoadDevices} 人，低电量设备 ${lowBatteryDevices} 台。`,
-          createdAt: new Date(),
-        },
-        {
-          planId: `${idBase}CAP`,
-          planName: '产能优先',
-          strategy: 'capacity_priority',
-          status: 'proposed',
-          taktImprovement: 8.5,
-          highLoadPersons: Math.max(highLoadDevices - 1, 0),
-          lowBatteryRisk: lowBatteryDevices,
-          affectedPersons: 2,
-          metricsJson: {
-            avgLoad: Number((avgLoad * 1.1).toFixed(3)),
-            output_rate: 1.12,
-            on_time_rate: 0.95,
-            safety_risk: criticalEvents,
-            move_distance: 320,
-            changeover: 2,
-          },
-          reason:
-            '【合成数据，仅供演示】将高产能人员调配到关键工位，预计节拍提升 8.5%，产量提升 12%。受影响 2 人，需注意负荷上升。',
-          createdAt: new Date(),
-        },
-        {
-          planId: `${idBase}BAL`,
-          planName: '负荷均衡',
-          strategy: 'load_balance',
-          status: 'proposed',
-          taktImprovement: 3.2,
-          highLoadPersons: 0,
-          lowBatteryRisk: Math.max(lowBatteryDevices - 1, 0),
-          affectedPersons: 3,
-          metricsJson: {
-            avgLoad: Number((avgLoad * 0.85).toFixed(3)),
-            output_rate: 1.03,
-            on_time_rate: 0.94,
-            safety_risk: Math.max(criticalEvents - 1, 0),
-            move_distance: 480,
-            changeover: 3,
-          },
-          reason:
-            '【合成数据，仅供演示】重新均衡人员负荷，将高负荷人员任务部分转移给低负荷人员，预计平均负荷下降 15%，高风险事件减少。受影响 3 人。',
-          createdAt: new Date(),
-        },
-      ];
-
-      // 4. 写入数据库
-      const inserted = await this.db
-        .insert(ewohSchedulePlan)
-        .values(plans)
-        .returning();
-
-      // 5. 返回生成的方案（含数据库生成的 id 等）
-      return inserted.map((r) => this.mapPlan(r));
-    } catch (error) {
-      this.logger.error('generatePlans 失败', error);
-      throw error;
-    }
+    // P1-SSOT：遗留合成方案生成器（KEEP/CAP/BAL 伪造指标并写 ewohSchedulePlan）
+    // 已删除。正式调度只走 V2 链路（createRun → SolverService → planService），
+    // 本接口保留仅为兼容旧调用方：委托真实调度并把结果映射为 legacy 形状，
+    // metricsJson 仅含真实 solver 指标（solverStatus/objective/solveDurationMs），不伪造。
+    void body;
+    const { plans } = await this.createRun({ trigger: 'MANUAL' });
+    return plans.map((p) => this.toLegacyPlan(p));
   }
 
   async getPlans(status?: string): Promise<SchedulePlan[]> {
@@ -548,296 +398,6 @@ export class SchedulerService {
     }
   }
 
-  getWeights(): ScheduleWeights {
-    return { ...this.weights };
-  }
-
-  async updateWeights(
-    newWeights: ScheduleWeights,
-    operator?: string,
-    reason?: string,
-    actor?: OrgContext,
-  ): Promise<ScheduleWeights> {
-    const keys: (keyof ScheduleWeights)[] = [
-      'w1_output',
-      'w2_on_time',
-      'w3_safety_risk',
-      'w4_body_load',
-      'w5_move_distance',
-      'w6_changeover_cost',
-    ];
-    for (const key of keys) {
-      const v = newWeights[key];
-      if (typeof v !== 'number' || Number.isNaN(v) || v < 0 || v > 1) {
-        throw new BadRequestException(
-          `weight ${key} must be a number between 0 and 1`,
-        );
-      }
-    }
-
-    const before = { ...this.weights };
-    const op = actor?.userId ?? operator ?? 'system';
-    const gucContext: OrgContext = {
-      userId: op,
-      primaryOrgId: actor?.primaryOrgId ?? '',
-      role: actor?.role,
-      accessibleOrgIds:
-        actor?.accessibleOrgIds ??
-        (actor?.primaryOrgId ? [actor.primaryOrgId] : []),
-      isGlobalAdmin: actor?.isGlobalAdmin ?? false,
-    };
-
-    try {
-      await this.requestDatabaseContext.runInTransaction(
-        buildGucSettings(gucContext),
-        async () => {
-          await this.db.insert(ewohScheduleAudit).values({
-            auditId: `AUDIT-${Date.now()}-${this.randomSuffix()}`,
-            planId: 'weights',
-            action: 'weights.update',
-            operator: op,
-            reason: reason ?? '',
-            createdAt: new Date(),
-          });
-
-          await this.auditService.appendAuditLog({
-            actorId: op,
-            orgId: actor?.primaryOrgId ?? '',
-            action: 'scheduler.weights.update',
-            entityType: 'schedule_weights',
-            entityId: 'weights',
-            before,
-            after: { ...newWeights },
-            reason: reason ?? undefined,
-          });
-
-          this.weightHistory.push({
-            before,
-            after: { ...newWeights },
-            operator: op,
-            reason: reason ?? '',
-            at: new Date().toISOString(),
-          });
-          this.weights = { ...newWeights };
-        },
-      );
-    } catch (error) {
-      this.logger.error('updateWeights 失败', error);
-      throw error;
-    }
-
-    return { ...this.weights };
-  }
-
-  /**
-   * 数据驱动方案生成（大脑推理增强 G3.7）
-   * 基于实时遥测/事件/电量动态推算 3 个方案，而非固定模板。
-   */
-  async getDataDrivenPlans(): Promise<SchedulePlan[]> {
-    try {
-      // 1. 查询设备列表与电量
-      const devices = await this.db.select().from(ewohDevice);
-
-      // 2. 查询最近 1h 遥测：按 deviceId 分组的平均 loadScore 与 fatigueTrend
-      const telemetryRows = await this.db
-        .select({
-          deviceId: ewohTelemetry.deviceId,
-          avgLoad: sql<number>`coalesce(avg(${ewohTelemetry.loadScore}), 0)::float`,
-          avgFatigue: sql<number>`coalesce(avg(${ewohTelemetry.fatigueTrend}), 0)::float`,
-        })
-        .from(ewohTelemetry)
-        .where(gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`))
-        .groupBy(ewohTelemetry.deviceId);
-
-      // 3. 查询未结事件（L2/L3 严重）
-      const openEventRows = await this.db
-        .select()
-        .from(ewohEvent)
-        .where(eq(ewohEvent.status, 'open'));
-
-      // 4. 计算真实基线指标
-      const totalDevices = Math.max(devices.length, 1);
-      const avgLoad =
-        telemetryRows.length > 0
-          ? Number(
-              (
-                telemetryRows.reduce((sum, r) => sum + (r.avgLoad ?? 0), 0) /
-                telemetryRows.length
-              ).toFixed(3),
-            )
-          : 0;
-      const avgFatigue =
-        telemetryRows.length > 0
-          ? Number(
-              (
-                telemetryRows.reduce((sum, r) => sum + (r.avgFatigue ?? 0), 0) /
-                telemetryRows.length
-              ).toFixed(3),
-            )
-          : 0;
-      const lowBatteryDevices = devices.filter(
-        (d) => (d.batteryPct ?? 100) < 20,
-      ).length;
-      const highLoadDevices = telemetryRows.filter(
-        (r) => (r.avgLoad ?? 0) > 0.7,
-      ).length;
-      const overloadDevices = telemetryRows.filter(
-        (r) => (r.avgLoad ?? 0) > 0.85,
-      ).length;
-      const openEvents = openEventRows.length;
-      const criticalEvents = openEventRows.filter((e) =>
-        ['L2', 'L3'].includes(e.severity ?? ''),
-      ).length;
-      const l3Events = openEventRows.filter((e) => e.severity === 'L3').length;
-
-      // 负荷降低潜力：高负荷设备占比
-      const loadReductionPotential = Number(
-        (overloadDevices / totalDevices).toFixed(3),
-      );
-      // 准时率随负荷上升而下降
-      const baseOnTimeRate = Number(
-        Math.max(0.95 - avgLoad * 0.15, 0.7).toFixed(3),
-      );
-
-      const ts = Date.now();
-      const now = new Date();
-
-      // 方案 1: 保持现状（基线，真实指标）
-      const keepPlan = {
-        planId: `PLAN-${ts}-KEEP`,
-        planName: '保持现状',
-        strategy: 'keep_status',
-        status: 'proposed',
-        taktImprovement: 0,
-        highLoadPersons: highLoadDevices,
-        lowBatteryRisk: lowBatteryDevices,
-        affectedPersons: 0,
-        metricsJson: {
-          avgLoad,
-          avgFatigue,
-          openEvents,
-          criticalEvents,
-          l3Events,
-          highLoadDevices,
-          lowBatteryDevices,
-          output_rate: 1.0,
-          on_time_rate: baseOnTimeRate,
-          safety_risk: criticalEvents,
-          move_distance: 0,
-          changeover: 0,
-        },
-        reason: `维持当前人员分配与任务安排，作为基线对照。当前平均负荷 ${avgLoad}，未结事件 ${openEvents} 项（含 L2/L3 ${criticalEvents} 项），高负荷设备 ${highLoadDevices} 台，低电量设备 ${lowBatteryDevices} 台。`,
-        createdAt: now,
-      };
-
-      // 方案 2: AI推荐（数据驱动：高负荷→负荷均衡，低电量→换电）
-      const aiTaktImprovement = Number(
-        Math.min(
-          loadReductionPotential * 30 + highLoadDevices * 1.5,
-          12,
-        ).toFixed(1),
-      );
-      const aiAvgLoad = Number(
-        (avgLoad * (1 - loadReductionPotential * 0.5)).toFixed(3),
-      );
-      const aiLowBatteryRisk = Math.max(lowBatteryDevices - 1, 0);
-      const aiOnTimeRate = Number(
-        Math.min(baseOnTimeRate + 0.03, 0.98).toFixed(3),
-      );
-      const aiReasonParts: string[] = [];
-      if (overloadDevices > 0)
-        aiReasonParts.push(
-          `将 ${overloadDevices} 台过载设备任务转移至低负荷设备`,
-        );
-      if (lowBatteryDevices > 0)
-        aiReasonParts.push(`优先安排 ${lowBatteryDevices} 台低电量设备换电`);
-      if (l3Events > 0) aiReasonParts.push(`介入 ${l3Events} 项 L3 安全事件`);
-      const aiPlan = {
-        planId: `PLAN-${ts}-AI`,
-        planName: 'AI推荐',
-        strategy: 'load_balance',
-        status: 'proposed',
-        taktImprovement: aiTaktImprovement,
-        highLoadPersons: Math.max(highLoadDevices - overloadDevices, 0),
-        lowBatteryRisk: aiLowBatteryRisk,
-        affectedPersons: Math.min(
-          highLoadDevices + lowBatteryDevices,
-          totalDevices,
-        ),
-        metricsJson: {
-          avgLoad: aiAvgLoad,
-          avgFatigue: Number((avgFatigue * 0.85).toFixed(3)),
-          openEvents,
-          criticalEvents: Math.max(criticalEvents - l3Events, 0),
-          l3Events: 0,
-          highLoadDevices: Math.max(highLoadDevices - overloadDevices, 0),
-          lowBatteryDevices: aiLowBatteryRisk,
-          output_rate: Number((1 + aiTaktImprovement / 100).toFixed(3)),
-          on_time_rate: aiOnTimeRate,
-          safety_risk: Math.max(criticalEvents - l3Events, 0),
-          move_distance: 200 + overloadDevices * 80,
-          changeover: Math.min(overloadDevices + lowBatteryDevices, 4),
-          loadReductionPotential,
-        },
-        reason:
-          aiReasonParts.length > 0
-            ? `AI 数据驱动推荐：${aiReasonParts.join('；')}。预计节拍提升 ${aiTaktImprovement}%，平均负荷降至 ${aiAvgLoad}。`
-            : `AI 数据驱动推荐：当前指标平稳，进行预防性负荷均衡。预计节拍提升 ${aiTaktImprovement}%。`,
-        createdAt: now,
-      };
-
-      // 方案 3: 产能优先（激进产能，提升产量但负荷上升）
-      const capTaktImprovement = Number(
-        Math.min(8 + highLoadDevices * 1.2, 15).toFixed(1),
-      );
-      const capAvgLoad = Number(Math.min(avgLoad * 1.15, 0.95).toFixed(3));
-      const capPlan = {
-        planId: `PLAN-${ts}-CAP`,
-        planName: '产能优先',
-        strategy: 'capacity_priority',
-        status: 'proposed',
-        taktImprovement: capTaktImprovement,
-        highLoadPersons: Math.min(highLoadDevices + 1, totalDevices),
-        lowBatteryRisk: lowBatteryDevices,
-        affectedPersons: Math.min(2 + highLoadDevices, totalDevices),
-        metricsJson: {
-          avgLoad: capAvgLoad,
-          avgFatigue: Number((avgFatigue * 1.1).toFixed(3)),
-          openEvents,
-          criticalEvents,
-          l3Events,
-          highLoadDevices: Math.min(highLoadDevices + 1, totalDevices),
-          lowBatteryDevices,
-          output_rate: Number((1 + capTaktImprovement / 100).toFixed(3)),
-          on_time_rate: Number(Math.max(baseOnTimeRate - 0.02, 0.7).toFixed(3)),
-          safety_risk: criticalEvents,
-          move_distance: 320 + highLoadDevices * 60,
-          changeover: 2,
-        },
-        reason: `将高产能人员调配到关键工位，预计节拍提升 ${capTaktImprovement}%，产量提升 ${Math.round(capTaktImprovement)}%。受影响 ${Math.min(2 + highLoadDevices, totalDevices)} 人，需注意平均负荷上升至 ${capAvgLoad}。`,
-        createdAt: now,
-      };
-
-      // 5. 写入数据库
-      const inserted = await this.db
-        .insert(ewohSchedulePlan)
-        .values([keepPlan, aiPlan, capPlan])
-        .returning();
-
-      this.logger.log(
-        `getDataDrivenPlans generated ${inserted.length} plans (avgLoad=${avgLoad}, highLoad=${highLoadDevices}, lowBattery=${lowBatteryDevices}, critical=${criticalEvents})`,
-      );
-
-      return inserted.map((r) => this.mapPlan(r));
-    } catch (error) {
-      this.logger.error('getDataDrivenPlans 失败', error);
-      throw error;
-    }
-  }
-
-  // ===== Scheduling V2 endpoints =====
-
-  /** 创建调度运行：触发 + 求解 + 持久化方案。 */
   async createRun(
     body: CreateRunRequest,
     actor?: OrgContext,
@@ -1616,7 +1176,84 @@ export class SchedulerService {
     return this.routingService.loadGraph();
   }
 
-  async calculateRouteV2(body: CalculateRouteRequest): Promise<Route> {
+  /**
+   * 路由计算（V2）：单 person×task（旧契约）或批量候选（P0 扩展）。
+   *
+   * 批量模式（body.candidates 存在）：Task × Candidate 路由成本 SSOT——
+   * 复用 TravelCostService/routeCostProvider 的 estimate（与求解矩阵同一语义），
+   * 返回 { data: { candidates } }；blocked/forbiddenZone/坐标缺失 → feasible=false
+   * （硬约束），不伪造 0,0 坐标，不返回未经 SSOT 的距离。
+   */
+  async calculateRouteV2(
+    body: CalculateRouteRequest,
+  ): Promise<Route | RouteCandidatesResponse> {
+    if (body.candidates && body.candidates.length > 0) {
+      const state = await this.worldStateSnapshotService.getCurrentWorldState();
+      const stationById = new Map(state.stations.map((s) => [s.id, s]));
+      const taskStation = state.tasks.find((t) => t.id === body.taskId)?.stationId;
+      const taskPoint = taskStation ? stationById.get(taskStation) : undefined;
+      const taskPointCoords = taskPoint
+        ? { x: taskPoint.x, y: taskPoint.y }
+        : undefined;
+
+      // blocked/forbiddenZone 事实：route graph 状态（与 buildEligibilityMatrix 同源）。
+      const blockedEdges = new Set(
+        (state.routeStatus ?? [])
+          .filter((r) => r.status === 'blocked')
+          .map((r) => r.edgeId),
+      );
+      const forbiddenZoneIds = new Set(
+        (state.forbiddenZones ?? []).map((f) => f.zoneId),
+      );
+
+      const candidates: RouteCandidateCost[] = [];
+      for (const cand of body.candidates) {
+        const person = cand.personId
+          ? state.persons.find((p) => p.id === cand.personId)
+          : undefined;
+        const personPoint = person
+          ? person.stationId
+            ? (() => {
+                const st = stationById.get(person.stationId);
+                return st ? { x: st.x, y: st.y } : undefined;
+              })()
+            : person.x != null && person.y != null
+              ? { x: person.x, y: person.y }
+              : undefined
+          : undefined;
+        const cost = await this.routeCostProvider.estimate(
+          cand.personId ?? 'unknown',
+          body.taskId,
+          personPoint,
+          taskPointCoords,
+        );
+        const routeBlocked =
+          cost.source === 'euclidean_fallback' &&
+          cost.fallbackReason === 'no_route_edge' &&
+          blockedEdges.size > 0;
+        const inForbiddenZone =
+          (person?.zoneId != null && forbiddenZoneIds.has(person.zoneId)) ||
+          (taskStation != null && forbiddenZoneIds.has(taskStation));
+        candidates.push({
+          personId: cand.personId ?? null,
+          deviceId: cand.deviceId ?? null,
+          stationId: cand.stationId ?? null,
+          feasible: cost.feasible && !routeBlocked && !inForbiddenZone,
+          distanceMeters: cost.distanceMeters,
+          etaSeconds: cost.etaSeconds,
+          routeCostMode: cost.source,
+          fallbackReason: inForbiddenZone
+            ? 'forbidden_zone'
+            : routeBlocked
+              ? 'blocked'
+              : cost.fallbackReason,
+          dataQuality: cost.dataQuality,
+          blocked: routeBlocked,
+          forbiddenZone: inForbiddenZone,
+        });
+      }
+      return { data: { taskId: body.taskId, candidates } };
+    }
     return this.routingService.calculateRoute(body.personId, body.taskId);
   }
 
@@ -2338,6 +1975,46 @@ export class SchedulerService {
       confirmedAt: r.confirmedAt ? r.confirmedAt.toISOString() : null,
       confirmReason: r.confirmReason ?? null,
     };
+  }
+
+  /**
+   * P1-SSOT：V2 SchedulingPlanV2 → legacy SchedulePlan 形状映射。
+   * 仅透传真实求解事实（solverStatus / objective / solveDurationMs / fallbackReason），
+   * 不合成任何演示指标（taktImprovement 等保持 0/null，metricsJson 不伪造）。
+   */
+  private toLegacyPlan(p: SchedulingPlanV2): SchedulePlan {
+    return {
+      id: p.planId,
+      planId: p.planId,
+      planName: p.planName ?? p.planId,
+      strategy: this.variantLabel(p) ?? 'solver',
+      status: (p.status as SchedulePlan['status']) ?? 'proposed',
+      taktImprovement: 0,
+      highLoadPersons: 0,
+      lowBatteryRisk: 0,
+      affectedPersons: p.assignments.length,
+      metricsJson: {
+        solverStatus: p.solverStatus,
+        solverVersion: p.solverVersion,
+        solveDurationMs: p.solveDurationMs ?? null,
+        fallbackReason: p.fallbackReason ?? null,
+        objective: p.objective ?? null,
+        objectiveBreakdown: p.objectiveBreakdown ?? null,
+        assignmentCount: p.assignments.length,
+      },
+      reason: p.fallbackReason ?? null,
+      createdAt: new Date().toISOString(),
+      confirmedBy: null,
+      confirmedAt: null,
+      confirmReason: null,
+    };
+  }
+
+  /** 从 baselineDelta.variant（Record<string, unknown>）安全读取变体标签。 */
+  private variantLabel(p: SchedulingPlanV2): string | null {
+    const variant = (p.baselineDelta as Record<string, unknown> | null | undefined)
+      ?.variant as Record<string, unknown> | null | undefined;
+    return typeof variant?.label === 'string' ? variant.label : null;
   }
 
   private mapAudit(r: typeof ewohScheduleAudit.$inferSelect): ScheduleAudit {

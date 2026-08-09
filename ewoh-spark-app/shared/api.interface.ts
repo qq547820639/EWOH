@@ -1239,6 +1239,49 @@ export interface ReplanRequest {
 export interface CalculateRouteRequest {
   personId: string;
   taskId: string;
+  /**
+   * 批量候选路由评估（P0 扩展）：Task × Candidate 路由成本 SSOT 查询。
+   * 提供 candidates 时返回 { data: { candidates: RouteCandidateCost[] } }，
+   * 每个候选携带 feasible/distanceMeters/etaSeconds/routeCostMode/
+   * fallbackReason/dataQuality/blocked/forbiddenZone（TravelCostService 权威）。
+   * 不提供时保持旧契约（单 person 单 task → Route）。
+   */
+  candidates?: Array<{
+    personId?: string | null;
+    deviceId?: string | null;
+    stationId?: string | null;
+  }>;
+}
+
+/** 批量候选路由评估结果（Task × Candidate，TravelCostService SSOT）。 */
+export interface RouteCandidateCost {
+  personId: string | null;
+  deviceId: string | null;
+  stationId: string | null;
+  /** 是否可作为分配候选（blocked/forbiddenZone/坐标缺失均为 false）。 */
+  feasible: boolean;
+  /** 距离（米）；未知坐标时 0 且 feasible=false。 */
+  distanceMeters: number;
+  /** 预计耗时（秒）。 */
+  etaSeconds: number;
+  /** route_graph | euclidean_fallback。 */
+  routeCostMode: string;
+  /** 显式降级原因（no_route_edge/coords_unknown/graph_unavailable/blocked/forbidden_zone 等）。 */
+  fallbackReason: string | null;
+  /** FRESH / STALE / UNKNOWN。 */
+  dataQuality: string;
+  /** 路线阻断（硬约束：feasible=false）。 */
+  blocked: boolean;
+  /** 禁入区（硬约束：feasible=false）。 */
+  forbiddenZone: boolean;
+}
+
+/** 批量候选路由评估响应。 */
+export interface RouteCandidatesResponse {
+  data: {
+    taskId: string;
+    candidates: RouteCandidateCost[];
+  };
 }
 
 /** 调度冲突严重度。 */

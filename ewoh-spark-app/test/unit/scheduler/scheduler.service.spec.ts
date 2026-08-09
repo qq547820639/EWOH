@@ -202,29 +202,13 @@ describe('SchedulerService confirmPlan', () => {
   });
 });
 
-describe('SchedulerService generatePlans idempotency', () => {
-  it('returns existing plans when the same idempotency key is reused', async () => {
-    const plan = {
-      id: 'row-1',
-      planId: 'PLAN-key-1-KEEP',
-      planName: '保持现状',
-      strategy: 'keep_status',
-      status: 'shadow',
-      taktImprovement: 0,
-      highLoadPersons: 1,
-      lowBatteryRisk: 0,
-      affectedPersons: 0,
-      metricsJson: null,
-      reason: 'existing',
-      createdAt: new Date(),
-      confirmedBy: null,
-      confirmedAt: null,
-      confirmReason: null,
-    };
-    const where = jest.fn().mockResolvedValue([plan]);
+describe('SchedulerService generatePlans（P1-SSOT：委托 V2 createRun，不再合成方案）', () => {
+  it('委托真实调度链路并映射为 legacy 形状（metricsJson 只含真实 solver 指标）', async () => {
     const db = {
-      select: jest.fn(() => ({
-        from: jest.fn(() => ({ where })),
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue(undefined),
+        })),
       })),
     } as never;
     const context = {
@@ -234,139 +218,77 @@ describe('SchedulerService generatePlans idempotency', () => {
       ),
     };
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const triggerService = {
+      evaluate: jest.fn().mockResolvedValue({
+        runId: 'RUN-1',
+        triggerType: 'MANUAL',
+        triggerEntityId: null,
+        status: 'queued',
+      }),
+    };
+    const worldState = {
+      buildSnapshot: jest.fn().mockResolvedValue({ snapshotVersion: 'WS-1' }),
+    };
+    const solver = {
+      solveVariants: jest.fn().mockResolvedValue([
+        {
+          planId: 'RUN-1A',
+          planName: '准时优先',
+          status: 'shadow',
+          solverVersion: 'heuristic-v2',
+          solverStatus: 'HEURISTIC',
+          solveDurationMs: 5,
+          fallbackReason: 'cp-sat unavailable',
+          objective: 0,
+          objectiveBreakdown: null,
+          assignments: [],
+          baselineDelta: null,
+          violations: [],
+          createdAt: '2026-01-01',
+        },
+      ]),
+    };
+    const planService = {
+      persistPlan: jest.fn().mockResolvedValue(undefined),
+    };
     const service = new SchedulerService(
       db,
       context as never,
       audit as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
+      worldState as never, // worldStateSnapshotService
+      triggerService as never,
+      solver as never,
+      planService as never,
+      {} as never, // routingService
+      {} as never, // eligibilityService
+      {} as never, // routeCostProvider
+      {} as never, // policyService
+      {} as never, // feedbackService
     );
 
-    const result = await service.generatePlans({ idempotencyKey: 'key-1' });
+    const result = await service.generatePlans({});
 
+    expect(triggerService.evaluate).toHaveBeenCalledWith('MANUAL', null, expect.anything());
+    expect(solver.solveVariants).toHaveBeenCalledTimes(1);
     expect(result).toHaveLength(1);
-    expect(result[0].planId).toBe('PLAN-key-1-KEEP');
-    expect(where).toHaveBeenCalledTimes(1);
+    expect(result[0].planId).toBe('RUN-1A');
+    // 真实 solver 指标透传（不伪造 taktImprovement 等演示指标）。
+    expect(result[0].taktImprovement).toBe(0);
+    expect(result[0].metricsJson).toMatchObject({
+      solverStatus: 'HEURISTIC',
+      fallbackReason: 'cp-sat unavailable',
+    });
+    expect(result[0].affectedPersons).toBe(0);
   });
 });
 
-describe('SchedulerService updateWeights', () => {
-  const NEW_WEIGHTS = {
-    w1_output: 0.4,
-    w2_on_time: 0.2,
-    w3_safety_risk: 0.15,
-    w4_body_load: 0.15,
-    w5_move_distance: 0.05,
-    w6_changeover_cost: 0.05,
-  };
-
-  it('persists weights.update to ewoh_schedule_audit and audit log inside the request transaction', async () => {
-    let insideTransaction = false;
-    let capturedRow: Record<string, unknown> | undefined;
-    const context = {
-      runInTransaction: jest.fn(
-        async (_settings: unknown, operation: () => Promise<unknown>) => {
-          insideTransaction = true;
-          try {
-            return await operation();
-          } finally {
-            insideTransaction = false;
-          }
-        },
-      ),
-    };
-    let insertSawTransaction = false;
-    const insert = jest.fn((_table: unknown) => ({
-      values: jest.fn(async (row: unknown) => {
-        insertSawTransaction = insideTransaction;
-        capturedRow = row as Record<string, unknown>;
-      }),
-    }));
-    const db = { insert } as never;
-    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
-    const service = new SchedulerService(
-      db,
-      context as never,
-      audit as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-    );
-
-    const result = await service.updateWeights(
-      NEW_WEIGHTS,
-      'body-operator',
-      'tuning',
-      ACTOR,
-    );
-
-    expect(result).toEqual(NEW_WEIGHTS);
-    expect(insertSawTransaction).toBe(true);
-    expect(capturedRow).toMatchObject({
-      planId: 'weights',
-      action: 'weights.update',
-      operator: 'user-1',
-    });
-    expect(insert.mock.calls[0][0]).toBe(ewohScheduleAudit);
-    expect(audit.appendAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        actorId: 'user-1',
-        orgId: 'org-1',
-        action: 'scheduler.weights.update',
-        entityType: 'schedule_weights',
-        entityId: 'weights',
-        before: expect.objectContaining({ w1_output: 0.25 }),
-        after: NEW_WEIGHTS,
-      }),
-    );
-  });
-
-  it('keeps the API response shape and does not update memory when the transaction fails', async () => {
-    const context = {
-      runInTransaction: jest.fn(
-        async (_settings: unknown, operation: () => Promise<unknown>) =>
-          operation(),
-      ),
-    };
-    const insert = jest.fn((_table: unknown) => ({
-      values: jest.fn().mockResolvedValue(undefined),
-    }));
-    const audit = {
-      appendAuditLog: jest.fn().mockRejectedValue(new Error('audit store down')),
-    };
-    const service = new SchedulerService(
-      { insert } as never,
-      context as never,
-      audit as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-    );
-    const before = service.getWeights();
-
-    await expect(
-      service.updateWeights(NEW_WEIGHTS, undefined, undefined, ACTOR),
-    ).rejects.toThrow('audit store down');
-
-    expect(service.getWeights()).toEqual(before);
+describe('SchedulerService weights 契约（P1-SSOT：内存权重已移除）', () => {
+  it('updateWeights / getWeights 已从服务移除（正式策略只走版本化 SchedulingPolicy）', () => {
+    // P1-SSOT：删除 in-memory weights 双系统后，服务不应再暴露这些方法。
+    // 直接断言类原型：updateWeights/getWeights 已被删除（P1-SSOT）。
+    const proto = SchedulerService.prototype as unknown as Record<string, unknown>;
+    expect(proto.updateWeights).toBeUndefined();
+    expect(proto.getWeights).toBeUndefined();
+    expect(proto.getDataDrivenPlans).toBeUndefined();
   });
 });

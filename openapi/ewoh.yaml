@@ -4986,35 +4986,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         InternalError:
           $ref: '#/components/responses/InternalError'
-  /api/scheduler/plans/data-driven:
-    post:
-      tags:
-        - scheduler
-      summary: Generate data-driven schedule plans (deprecated)
-      description: |
-        遗留演示路径（generatePlans）：KEEP/CAP/BAL 三方案的 taktImprovement /
-        output_rate / move_distance / affectedPersons 等指标为【合成数据，仅供演示】，
-        不代表真实调度结果。真实调度请使用 SolverService（CP-SAT / heuristic）。
-      deprecated: true
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/GeneratePlansRequest'
-      responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SchedulePlanList'
-        BadRequest:
-          $ref: '#/components/responses/BadRequest'
-        Unauthorized:
-          $ref: '#/components/responses/Unauthorized'
-        InternalError:
-          $ref: '#/components/responses/InternalError'
   /api/scheduler/plans/{planId}/confirm:
     post:
       tags:
@@ -5069,45 +5040,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ScheduleAuditList'
-        Unauthorized:
-          $ref: '#/components/responses/Unauthorized'
-        InternalError:
-          $ref: '#/components/responses/InternalError'
-  /api/scheduler/weights:
-    get:
-      tags:
-        - scheduler
-      summary: Get schedule weights
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ScheduleWeights'
-        Unauthorized:
-          $ref: '#/components/responses/Unauthorized'
-        InternalError:
-          $ref: '#/components/responses/InternalError'
-    put:
-      tags:
-        - scheduler
-      summary: Update schedule weights
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateWeightsRequest'
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ScheduleWeights'
-        BadRequest:
-          $ref: '#/components/responses/BadRequest'
         Unauthorized:
           $ref: '#/components/responses/Unauthorized'
         InternalError:
@@ -10197,10 +10129,84 @@ components:
           type: string
         taskId:
           type: string
+        candidates:
+          type: array
+          description: 批量候选路由评估（P0 扩展）；提供时返回 RouteCandidatesResponse
+          items:
+            type: object
+            properties:
+              personId:
+                type: string
+                nullable: true
+              deviceId:
+                type: string
+                nullable: true
+              stationId:
+                type: string
+                nullable: true
       required:
         - personId
         - taskId
       additionalProperties: false
+    RouteCandidateCost:
+      type: object
+      description: Task×Candidate 路由成本（TravelCostService SSOT；blocked/forbiddenZone/坐标缺失均为 feasible=false）
+      properties:
+        personId:
+          type: string
+          nullable: true
+        deviceId:
+          type: string
+          nullable: true
+        stationId:
+          type: string
+          nullable: true
+        feasible:
+          type: boolean
+        distanceMeters:
+          type: number
+        etaSeconds:
+          type: number
+        routeCostMode:
+          type: string
+        fallbackReason:
+          type: string
+          nullable: true
+        dataQuality:
+          type: string
+        blocked:
+          type: boolean
+        forbiddenZone:
+          type: boolean
+      required:
+        - personId
+        - deviceId
+        - stationId
+        - feasible
+        - distanceMeters
+        - etaSeconds
+        - routeCostMode
+        - fallbackReason
+        - dataQuality
+        - blocked
+        - forbiddenZone
+    RouteCandidatesResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            taskId:
+              type: string
+            candidates:
+              type: array
+              items:
+                $ref: '#/components/schemas/RouteCandidateCost'
+          required:
+            - taskId
+            - candidates
+      required:
+        - data
     PlanCompareResult:
       type: object
       additionalProperties: true

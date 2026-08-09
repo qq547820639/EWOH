@@ -172,7 +172,7 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
     expect(c.feasible).toBe(false);
   });
 
-  it('routeStatus 含 blocked 边 + 候选走 euclidean 兜底 → blocked=true（矩阵层显式标记，euclidean 仍可行）', async () => {
+  it('routeStatus 含 blocked 边 + 候选走 euclidean 兜底 → blocked=true 且 feasible=false（P0 硬约束：阻断即不可行）', async () => {
     const { svc, routing } = makeSvc({
       calculateRouteBetween: jest.fn().mockResolvedValue({
         routeId: 'euclidean-fallback', distanceMeters: 0, etaSeconds: 0, nodes: [], geometry: [],
@@ -190,8 +190,9 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
     ]);
     const c = matrix.candidates[0];
     expect(c.blocked).toBe(true);
-    // euclidean 直线成本仍可作为估算（feasible=true），但阻断事实已在 blocked 标记暴露。
-    expect(c.feasible).toBe(true);
+    // P0 硬约束语义：blocked 路线不可达即不可行（feasible=false），
+    // 阻断候选不得作为可用成本估算送入求解器。
+    expect(c.feasible).toBe(false);
   });
 
   it('决策 D-D：矩阵落库缓存（persistMatrix 写、getCachedMatrix 读、同键幂等覆盖）', async () => {
