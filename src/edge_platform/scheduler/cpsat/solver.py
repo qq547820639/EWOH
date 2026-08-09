@@ -242,9 +242,13 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
             continue
         lo = max(0, (t.earliestStartMs - request.nowMs) // MINUTE)
         hi = max(horizon_min, lo + 1)
+        dur = max(1, t.durationMs // MINUTE)
         s = model.NewIntVar(lo, hi, f"start_{t.taskId}")
-        e = model.NewIntVar(lo + 1, hi + 10, f"end_{t.taskId}")
-        model.Add(e == s + max(1, t.durationMs // MINUTE))
+        # end 域必须容纳 s + dur（lo+dur..hi+dur）。原 hi+10 上界在
+        # lo+dur > hi+10 时（earliestStart 在视野外 + 长时长，如 121min 起 + 30min）
+        # 使模型在变量声明阶段即 INFEASIBLE（F-HORIZON 复现路径之一）。
+        e = model.NewIntVar(lo + dur, hi + dur, f"end_{t.taskId}")
+        model.Add(e == s + dur)
         start_min[t.taskId] = s
         end_min[t.taskId] = e
 
@@ -286,22 +290,42 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
                 continue
             model.Add(start_min[t.taskId] >= end_min[pred])
 
-    # 3) 时间窗：end <= due。
+    # 2b) 任务是否被分配（供 horizon/due 约束条件化：仅当任务被分配时才生效，
+    #     未分配任务如实进入 unassigned，而非使整个模型 INFEASIBLE）。
+    #     与约束 1 的 sum(presence)<=1 联立：av=1 ⟺ 存在被选中候选（assigned）。
+    assigned_by_task: dict[str, object] = {}
+    for t in request.tasks:
+        if t.taskId in frozen_by_task or t.taskId not in end_min:
+            continue
+        av = model.NewBoolVar(f"assigned_{t.taskId}")
+        model.Add(sum(presence[t.taskId].values()) >= 1).OnlyEnforceIf(av)
+        model.Add(sum(presence[t.taskId].values()) == 0).OnlyEnforceIf(av.Not())
+        assigned_by_task[t.taskId] = av
+
+    # 3) 时间窗：end <= due（仅当任务被分配时生效——无法满足 due 的任务如实未分配）。
     for t in request.tasks:
         if t.taskId in frozen_by_task or t.taskId not in end_min:
             continue
         if t.dueMs:
-            model.Add(end_min[t.taskId] <= t.dueMs // MINUTE)
+            model.Add(end_min[t.taskId] <= t.dueMs // MINUTE).OnlyEnforceIf(
+                assigned_by_task[t.taskId]
+            )
 
-    # 3b) 计划视野：非冻结任务必须在 horizon 内完成（end <= horizon_min）。
-    #     缺此项时 start/end 变量上界允许排到 horizon 边界（start=horizon_min，
+    # 3b) 计划视野：非冻结任务必须在 horizon 内完成（end <= horizon_min），
+    #     且**仅当任务被分配时生效**。
+    #     缺 3b 时 start/end 变量上界允许排到 horizon 边界（start=horizon_min，
     #     end=horizon_min+dur），求解器可把任务排到视野之外以规避整窗预约的
     #     no-overlap（如预约覆盖 [0,horizon] 时把任务排在 [horizon, horizon+1]，
-    #     产生"窗外空转派工"）。约束后任务必须在视野内真实落位或如实未分配。
+    #     产生"窗外空转派工"）。
+    #     若 3b 无条件生效，则 earliestStart 在视野外 / lo+dur>horizon 的任务
+    #     会使整个模型 INFEASIBLE（视野内任务也被连坐）；OnlyEnforceIf 保证
+    #     无法在视野内落位的任务被如实置为 unassigned，而不是崩掉全局。
     for t in request.tasks:
         if t.taskId in frozen_by_task or t.taskId not in end_min:
             continue
-        model.Add(end_min[t.taskId] <= horizon_min)
+        model.Add(end_min[t.taskId] <= horizon_min).OnlyEnforceIf(
+            assigned_by_task[t.taskId]
+        )
 
     # 4) reservation：预约建模为资源上的 fixed interval（与 frozen 任务一致），
     #    加入 interval_by_resource 后由下方 AddNoOverlap 统一约束——
