@@ -244,6 +244,12 @@ describe('Task 1.7 废弃 legacy scheduler/plans API', () => {
       { getUnifiedResourceState: jest.fn().mockResolvedValue([]) } as never,
       { handleTrigger: jest.fn() } as never,
       {} as never, // conflictService
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
     return { ctrl, schedulerService };
   }
@@ -282,6 +288,12 @@ describe('Task 1.7 废弃 legacy scheduler/plans API', () => {
       { getUnifiedResourceState: jest.fn().mockResolvedValue([]) } as never,
       { handleTrigger: jest.fn() } as never,
       {} as never, // conflictService
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
     const run: any = await ctrl.createRun({}, { userContext: testOrgContext() });
     expect(run).toEqual({ runId: 'R1' });

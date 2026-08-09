@@ -294,5 +294,94 @@ if (!e2eConfig) {
       expect(staleSnapshot.status).toBe(409);
       expect(JSON.stringify(staleSnapshot.body)).toContain('PLAN_STALE');
     });
+
+    // ======================================================================
+    // Phase 4：Execution / KPI / Replay / Shadow / Gate / Activation（真实 PG）
+    // ======================================================================
+
+    it('F: dispatch 后建立 Execution 记录；actual 回填 → STARTED', async () => {
+      const run = await apiRequest<SchedulingRunResponse>(baseUrl, '/api/scheduler/runs', {
+        method: 'POST',
+        headers: makeHeaders(token),
+        body: JSON.stringify({ strategy: 'scheduling_v2', trigger: 'TASK_UPDATED' }),
+      });
+      expect(run.status).toBe(201);
+      const plan = run.body.plans?.[0];
+      expect(plan).toBeDefined();
+      const approve = await apiRequest(baseUrl, `/api/scheduler/plans/${plan!.planId}/approve`, {
+        method: 'POST',
+        headers: makeHeaders(token),
+        body: JSON.stringify({ version: plan!.version, snapshotVersion: plan!.snapshotVersion, operator: 'e2e' }),
+      });
+      expect(approve.status).toBe(200);
+      const dispatch = await apiRequest(baseUrl, `/api/scheduler/plans/${plan!.planId}/dispatch`, {
+        method: 'POST',
+        headers: makeHeaders(token),
+      });
+      expect(dispatch.status).toBe(200);
+      const execs = await apiRequest<{ executions: Array<{ assignmentId: string; status: string }> }>(
+        baseUrl,
+        `/api/scheduler/executions?planId=${encodeURIComponent(plan!.planId)}`,
+        { method: 'GET', headers: makeHeaders(token) },
+      );
+      if (plan!.assignments.length > 0) {
+        expect(execs.body.executions.length).toBeGreaterThan(0);
+        expect(execs.body.executions[0].status).toBe('PLANNED');
+        const upd = await apiRequest<{ status: string }>(baseUrl, `/api/scheduler/executions/${execs.body.executions[0].assignmentId}/update`, {
+          method: 'POST',
+          headers: makeHeaders(token),
+          body: JSON.stringify({ status: 'STARTED', actualStartAt: new Date().toISOString() }),
+        });
+        expect(upd.status).toBe(201);
+        expect(upd.body.status).toBe('STARTED');
+      }
+    });
+
+    it('G: KPI 聚合端点可用（真实聚合不抛错）', async () => {
+      const res = await apiRequest<{ delivery: unknown; stability: unknown; solver: unknown }>(baseUrl, '/api/scheduler/kpi', {
+        method: 'GET',
+        headers: makeHeaders(token),
+      });
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('delivery');
+      expect(res.body).toHaveProperty('stability');
+      expect(res.body).toHaveProperty('solver');
+    });
+
+    it('H: Policy Replay 持久化（candidate v1 + seed）', async () => {
+      const replay = await apiRequest<{ replayId?: string; seed?: number }>(baseUrl, '/api/scheduler/policy/replay', {
+        method: 'POST',
+        headers: makeHeaders(token),
+        body: JSON.stringify({ candidatePolicyVersion: 1, seed: 42 }),
+      });
+      if (replay.status === 201 || replay.status === 200) {
+        expect(replay.body.replayId).toBeTruthy();
+        expect(replay.body.seed).toBe(42);
+      } else {
+        // 无历史快照 / 候选策略未注册时明确失败原因（不掩盖；两种合法失败路径）。
+        const msg = JSON.stringify(replay.body);
+        expect(
+          msg.includes('no historical snapshot') || msg.includes('not found'),
+        ).toBe(true);
+      }
+    });
+
+    it('I: Policy Activation Gate 端点可用 + 未就绪策略激活被拒', async () => {
+      const gate = await apiRequest<{ passed: boolean; checks: unknown[] }>(baseUrl, '/api/scheduler/policy/1/gate', {
+        method: 'POST',
+        headers: makeHeaders(token),
+        body: JSON.stringify({}),
+      });
+      expect(gate.status).toBe(201);
+      expect(gate.body).toHaveProperty('passed');
+      expect(gate.body).toHaveProperty('checks');
+      const activate = await apiRequest(baseUrl, '/api/scheduler/policy/999/activate', {
+        method: 'POST',
+        headers: makeHeaders(token),
+        body: JSON.stringify({ operator: 'e2e', reason: 'test' }),
+      });
+      // 策略不存在/未 SHADOW → 拒绝（不返回成功激活）
+      expect(activate.status).not.toBe(200);
+    });
   });
 }

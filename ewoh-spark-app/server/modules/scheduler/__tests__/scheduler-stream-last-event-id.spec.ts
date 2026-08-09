@@ -52,6 +52,12 @@ function makeHarness(): ControllerHarness {
     {} as never,
     {} as never,
     {} as never, // conflictService
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
   );
   return { controller, streamSvc, subject };
 }

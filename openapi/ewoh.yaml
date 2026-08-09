@@ -7992,6 +7992,213 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scheduler/executions:
+    get:
+      tags:
+        - scheduler
+      summary: List scheduling executions (Phase 4)
+      parameters:
+        - name: planId
+          in: query
+          schema: { type: string }
+        - name: taskId
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Execution list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionListResponse'
+  /api/scheduler/executions/{assignmentId}/update:
+    post:
+      tags:
+        - scheduler
+      summary: Update execution state / record actuals / deviation (Phase 4)
+      parameters:
+        - name: assignmentId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecutionUpdateRequest'
+      responses:
+        '200':
+          description: Updated execution
+  /api/scheduler/kpi:
+    get:
+      tags:
+        - scheduler
+      summary: Aggregate scheduler KPIs (Phase 4)
+      parameters:
+        - name: persist
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: KPI snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerKpiSnapshot'
+  /api/scheduler/conflicts/{id}/actions/preview:
+    post:
+      tags:
+        - scheduler
+      summary: Preview conflict resolution replan (readonly, Phase 4)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConflictPreviewRequest'
+      responses:
+        '200':
+          description: Preview result (candidate plan + diff, not applied)
+  /api/scheduler/policy/replay:
+    post:
+      tags:
+        - scheduler
+        - policy
+      summary: Run deterministic policy replay (Phase 4)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyReplayRequest'
+      responses:
+        '200':
+          description: Replay record
+    get:
+      tags:
+        - scheduler
+        - policy
+      summary: List replay records
+      responses:
+        '200':
+          description: Replay records
+  /api/scheduler/policy/{version}/shadow:
+    post:
+      tags:
+        - scheduler
+        - policy
+      summary: Move policy to SHADOW (Phase 4)
+      parameters:
+        - name: version
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Policy moved to SHADOW
+  /api/scheduler/policy/{version}/shadow/plan:
+    post:
+      tags:
+        - scheduler
+        - policy
+      summary: Generate shadow plan under SHADOW policy (not dispatchable)
+      parameters:
+        - name: version
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Shadow plan + compare
+  /api/scheduler/policy/{version}/gate:
+    post:
+      tags:
+        - scheduler
+        - policy
+      summary: Evaluate activation gate (Phase 4)
+      parameters:
+        - name: version
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                replayId: { type: string }
+      responses:
+        '200':
+          description: Gate evaluation
+  /api/scheduler/policy/{version}/activate:
+    post:
+      tags:
+        - scheduler
+        - policy
+      summary: Human-gated policy activation (Phase 4)
+      parameters:
+        - name: version
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - operator
+              properties:
+                operator: { type: string }
+                reason: { type: string }
+                replayId: { type: string }
+      responses:
+        '200':
+          description: Activation record
+  /api/scheduler/policy/activations:
+    get:
+      tags:
+        - scheduler
+        - policy
+      summary: List policy activations
+      responses:
+        '200':
+          description: Activation records
+  /api/scheduler/policy/activations/{activationId}/rollback:
+    post:
+      tags:
+        - scheduler
+        - policy
+      summary: Rollback policy activation to previous ACTIVE (Phase 4)
+      parameters:
+        - name: activationId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                operator: { type: string }
+                reason: { type: string }
+      responses:
+        '200':
+          description: Rolled back activation record
 components:
   securitySchemes:
     BearerAuth:

@@ -24,6 +24,17 @@ import type {
   SchedulingPolicyComparison,
   ResourceState,
   SchedulingEventRequest,
+  ExecutionUpdateRequest,
+  SchedulingExecution,
+  ExecutionListResponse,
+  SchedulerKpiSnapshot,
+  PlanCompareResult,
+  ConflictPreviewRequest,
+  ConflictPreviewResult,
+  PolicyReplayRequest,
+  PolicyReplayRecord,
+  PolicyGateEvaluation,
+  PolicyActivationRecord,
 } from '@shared/api.interface';
 
 // ===== Scheduling V2 (智能调度工作台) =====
@@ -345,6 +356,146 @@ export async function activatePolicyVersion(
     url: `/api/scheduler/policy/versions/${version}/activate`,
     method: 'POST',
     data: operator ? { operator } : {},
+  });
+  return res.data;
+}
+
+// ============================================================================
+// Phase 4：Execution / KPI / Replay / Shadow / Activation / Preview
+// ============================================================================
+
+export async function updateExecution(
+  assignmentId: string,
+  body: ExecutionUpdateRequest,
+): Promise<SchedulingExecution> {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/executions/${encodeURIComponent(assignmentId)}/update`,
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}
+
+export async function listExecutions(params?: {
+  planId?: string;
+  taskId?: string;
+  status?: string;
+}): Promise<ExecutionListResponse> {
+  const res = await axiosForBackend({
+    url: '/api/scheduler/executions',
+    method: 'GET',
+    params,
+  });
+  return res.data;
+}
+
+export async function getKpi(persist = false): Promise<SchedulerKpiSnapshot> {
+  const res = await axiosForBackend({
+    url: '/api/scheduler/kpi',
+    method: 'GET',
+    params: persist ? { persist: '1' } : undefined,
+  });
+  return res.data;
+}
+
+export async function comparePlansV2(
+  baselinePlanId: string,
+  candidatePlanId: string,
+): Promise<PlanCompareResult> {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/plans/${encodeURIComponent(baselinePlanId)}/compare/${encodeURIComponent(candidatePlanId)}`,
+    method: 'GET',
+  });
+  return res.data;
+}
+
+export async function previewConflictAction(
+  conflictId: string,
+  body?: ConflictPreviewRequest,
+): Promise<ConflictPreviewResult> {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/conflicts/${encodeURIComponent(conflictId)}/actions/preview`,
+    method: 'POST',
+    data: body ?? {},
+  });
+  return res.data;
+}
+
+export async function runPolicyReplay(
+  body: PolicyReplayRequest,
+): Promise<PolicyReplayRecord> {
+  const res = await axiosForBackend({
+    url: '/api/scheduler/policy/replay',
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}
+
+export async function listPolicyReplays(): Promise<PolicyReplayRecord[]> {
+  const res = await axiosForBackend({ url: '/api/scheduler/policy/replay', method: 'GET' });
+  return res.data;
+}
+
+export async function enableShadowPolicy(
+  version: number,
+  operator?: string,
+): Promise<{ ok: boolean; status: string; policyVersion: number }> {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/policy/${version}/shadow`,
+    method: 'POST',
+    data: operator ? { operator } : {},
+  });
+  return res.data;
+}
+
+export async function generateShadowPlan(
+  version: number,
+): Promise<{ shadowPlan: SchedulingPlanV2; compare: PlanCompareResult | null }> {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/policy/${version}/shadow/plan`,
+    method: 'POST',
+  });
+  return res.data;
+}
+
+export async function evaluatePolicyGate(
+  version: number,
+  replayId?: string,
+): Promise<PolicyGateEvaluation> {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/policy/${version}/gate`,
+    method: 'POST',
+    data: replayId ? { replayId } : {},
+  });
+  return res.data;
+}
+
+export async function activatePolicy(
+  version: number,
+  body: { operator: string; reason?: string; replayId?: string },
+): Promise<PolicyActivationRecord> {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/policy/${version}/activate`,
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}
+
+export async function listPolicyActivations(): Promise<PolicyActivationRecord[]> {
+  const res = await axiosForBackend({ url: '/api/scheduler/policy/activations', method: 'GET' });
+  return res.data;
+}
+
+export async function rollbackPolicyActivation(
+  activationId: string,
+  body: { operator: string; reason?: string },
+): Promise<PolicyActivationRecord> {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/policy/activations/${encodeURIComponent(activationId)}/rollback`,
+    method: 'POST',
+    data: body,
   });
   return res.data;
 }

@@ -24,6 +24,12 @@ function makeController(opts: {
     {} as never, // resourceProjectionService
     {} as never, // replanCoordinatorService（controller 不再直连）
     {} as never, // conflictService
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
   );
   return { controller, schedulerService };
 }

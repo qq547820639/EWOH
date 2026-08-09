@@ -13,6 +13,7 @@ import {
   PanelTop,
   TriangleAlert,
   SlidersHorizontal,
+  Activity,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -81,6 +82,7 @@ const ResourcePoolPanel = React.lazy(() => import('./panels/ResourcePoolPanel'))
 const TaskOrchestrationPanel = React.lazy(() => import('./panels/TaskOrchestrationPanel'));
 const BrainPanel = React.lazy(() => import('./panels/BrainPanel'));
 const IntelligenceLayers = React.lazy(() => import('./panels/IntelligenceLayers'));
+const IntelligenceWorkspace = React.lazy(() => import('./panels/IntelligenceWorkspace'));
 
 /** 懒加载 chunk 加载期间的轻量占位，避免空白闪烁。 */
 const MapPanelFallback = () => (
@@ -152,6 +154,7 @@ const CommandMap = (): React.ReactElement => {
   // 智能调度驾驶舱：选中的任务（用于拉取后端候选资源）与驾驶舱面板显隐。
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [showIntelligence, setShowIntelligence] = useState(false);
+  const [showWorkspace, setShowWorkspace] = useState(false);
   const [replayMode, setReplayMode] = useState(false);
   const [replayPaused, setReplayPaused] = useState(false);
   // Phase 3 / P3-T3：聚合状态 Hook（React Query 权威数据 + SSE 增量 + 本地 UI state）。
@@ -715,6 +718,24 @@ const CommandMap = (): React.ReactElement => {
                 onSelectTask={setSelectedTaskId}
                 onClose={() => setShowIntelligence(false)}
               />
+            </React.Suspense>
+          </div>
+        )}
+        {mode === 'scheduling' && (
+          <button
+            type="button"
+            onClick={() => setShowWorkspace((v) => !v)}
+            className="absolute right-2 top-20 z-40 flex items-center gap-1 rounded-md border border-white/10 bg-[hsl(220_14%_14%)]/95 px-2 py-1.5 text-[10px] text-white/80 shadow-lg hover:bg-white/10"
+            title="Phase 4 智能工作台：KPI / Policy Replay / Shadow / Activation"
+          >
+            <Activity className="w-3.5 h-3.5 text-cyan-400" />
+            {showWorkspace ? '隐藏工作台' : '智能工作台'}
+          </button>
+        )}
+        {mode === 'scheduling' && showWorkspace && (
+          <div className="absolute right-2 bottom-2 z-40">
+            <React.Suspense fallback={<MapPanelFallback />}>
+              <IntelligenceWorkspace />
             </React.Suspense>
           </div>
         )}
