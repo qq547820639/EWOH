@@ -1,7 +1,7 @@
 /* eslint-disable */
 /** auto generated, do not edit */
 import { sql } from 'drizzle-orm';
-import { boolean, index, integer, jsonb, numeric, pgTable, real, text, uniqueIndex, uuid, varchar, customType, bigint } from "drizzle-orm/pg-core"
+import { boolean, index, integer, jsonb, numeric, pgTable, real, text, uniqueIndex, uuid, varchar, customType, bigint, doublePrecision } from "drizzle-orm/pg-core"
 
 export const customTimestamptz = customType<{
   data: Date;
@@ -612,6 +612,13 @@ export const ewohSchedulePlan = pgTable("ewoh_schedule_plan", {
    * @type { { lateness: number; travel: number; wait: number; workload: number; station: number; change: number; risk: number; energy: number } | null }
    */
   weightsJson: jsonb("weights_json"),
+  /**
+   * Shadow Plan 标识（standalone_020_policy_lifecycle）：服务端 hard guard——
+   * shadow plan 不可 approve/dispatch/reserve（不靠前端隐藏按钮）。
+   */
+  isShadow: boolean("is_shadow").notNull().default(false),
+  /** 生成该 Shadow Plan 的策略版本。 */
+  shadowPolicyVersion: integer("shadow_policy_version"),
   // System field: Update time (auto-filled, do not modify)
   updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
@@ -1356,10 +1363,13 @@ export const ewohOutbox = pgTable("ewoh_outbox", {
   status: varchar("status", { length: 50 }).notNull().default('pending'),
   payloadJson: jsonb("payload_json"),
   orgId: varchar("org_id", { length: 255 }),
+  /** 统一 Envelope 关联 ID（standalone_021_sse_envelope）：run/plan/execution 全链路。 */
+  correlationId: varchar("correlation_id", { length: 255 }),
   createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   publishedAt: customTimestamptz("published_at", { precision: 3 }),
 }, (table) => [
   uniqueIndex("ewoh_outbox_event_id_key").on(table.eventId),
+  index("idx_ewoh_outbox_correlation").on(table.correlationId),
   index("idx_ewoh_outbox_status").on(table.status),
   index("idx_ewoh_outbox_entity").on(table.entityId),
 ]);
@@ -1375,6 +1385,12 @@ export const ewohSchedulingPolicy = pgTable("ewoh_scheduling_policy", {
    */
   weightsJson: jsonb("weights_json"),
   active: boolean("active").notNull().default(true),
+  /**
+   * 策略状态机（standalone_020_policy_lifecycle）：DRAFT/SHADOW/ACTIVE/ARCHIVED。
+   * 迁移语义：active=true → ACTIVE；active=false → ARCHIVED。新流程显式设置中间态。
+   * @type { 'DRAFT' | 'SHADOW' | 'ACTIVE' | 'ARCHIVED' }
+   */
+  status: varchar("status", { length: 20 }).notNull().default('DRAFT'),
   orgId: varchar("org_id", { length: 255 }),
   updatedBy: varchar("updated_by", { length: 255 }),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -1382,6 +1398,10 @@ export const ewohSchedulingPolicy = pgTable("ewoh_scheduling_policy", {
 }, (table) => [
   index("idx_ewoh_scheduling_policy_org").on(table.orgId),
   index("idx_ewoh_scheduling_policy_active").on(table.active),
+  index("idx_ewoh_scheduling_policy_status").on(table.status),
+  // 同一 org 同一 ACTIVE 唯一（020 uq_ewoh_scheduling_policy_org_active）
+  uniqueIndex("uq_ewoh_scheduling_policy_org_active").on(table.orgId, table.status)
+    .where(sql`status = 'ACTIVE'`),
 ]);
 
 /** 持久化重排触发（ReplanTrigger）：orgId+triggerType+entityId+eventVersion 幂等去重。 */
@@ -1485,3 +1505,118 @@ export const ewohOutboxTable = ewohOutbox;
 export const ewohSchedulingPolicyTable = ewohSchedulingPolicy;
 export const ewohReplanTriggerTable = ewohReplanTrigger;
 export const ewohSchedulingFeedbackTable = ewohSchedulingFeedback;
+
+// ============================================================================
+// Phase 4 / P4-EXEC：正式执行领域（standalone_018_execution_feedback）
+// ============================================================================
+
+/** 正式执行记录：Plan Assignment → Execution（planned vs actual + deviation）。 */
+export const ewohSchedulingExecution = pgTable("ewoh_scheduling_execution", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  executionId: varchar("execution_id", { length: 255 }).notNull().unique(),
+  orgId: varchar("org_id", { length: 255 }),
+  runId: varchar("run_id", { length: 255 }),
+  planId: varchar("plan_id", { length: 255 }).notNull(),
+  assignmentId: varchar("assignment_id", { length: 255 }).notNull(),
+  taskId: varchar("task_id", { length: 255 }).notNull(),
+  personId: varchar("person_id", { length: 255 }),
+  deviceId: varchar("device_id", { length: 255 }),
+  stationId: varchar("station_id", { length: 255 }),
+  plannedStartAt: customTimestamptz("planned_start_at", { precision: 3 }),
+  plannedEndAt: customTimestamptz("planned_end_at", { precision: 3 }),
+  actualStartAt: customTimestamptz("actual_start_at", { precision: 3 }),
+  actualEndAt: customTimestamptz("actual_end_at", { precision: 3 }),
+  plannedTravelMs: bigint("planned_travel_ms", { mode: 'number' }),
+  actualTravelMs: bigint("actual_travel_ms", { mode: 'number' }),
+  plannedDistanceM: doublePrecision("planned_distance_m"),
+  actualDistanceM: doublePrecision("actual_distance_m"),
+  plannedWaitingMs: bigint("planned_waiting_ms", { mode: 'number' }),
+  actualWaitingMs: bigint("actual_waiting_ms", { mode: 'number' }),
+  status: varchar("status", { length: 50 }).notNull().default('PLANNED'),
+  deviationType: varchar("deviation_type", { length: 100 }),
+  deviationReason: text("deviation_reason"),
+  snapshotVersion: varchar("snapshot_version", { length: 255 }),
+  policyVersion: integer("policy_version"),
+  solverVersion: varchar("solver_version", { length: 100 }),
+  source: varchar("source", { length: 50 }).notNull().default('feedback'),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_ewoh_scheduling_execution_org").on(table.orgId),
+  index("idx_ewoh_scheduling_execution_plan").on(table.planId),
+  index("idx_ewoh_scheduling_execution_assignment").on(table.assignmentId),
+  index("idx_ewoh_scheduling_execution_task").on(table.taskId),
+  index("idx_ewoh_scheduling_execution_status").on(table.status),
+  uniqueIndex("uq_ewoh_scheduling_execution_assignment").on(table.assignmentId),
+]);
+
+// ============================================================================
+// Phase 4 / P4-KPI+P4-REPLAY（standalone_019_kpi_replay）
+// ============================================================================
+
+/** 生产 KPI 聚合缓存（Delivery/Resources/Stability/Solver/DataQuality）。 */
+export const ewohSchedulingKpi = pgTable("ewoh_scheduling_kpi", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  kpiId: varchar("kpi_id", { length: 255 }).notNull().unique(),
+  orgId: varchar("org_id", { length: 255 }),
+  periodStart: customTimestamptz("period_start", { precision: 3 }).notNull(),
+  periodEnd: customTimestamptz("period_end", { precision: 3 }).notNull(),
+  kpiJson: jsonb("kpi_json").notNull().default({}),
+  source: varchar("source", { length: 50 }).notNull().default('aggregate'),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uq_ewoh_scheduling_kpi_org_period").on(table.orgId, table.periodStart, table.periodEnd),
+  index("idx_ewoh_scheduling_kpi_org").on(table.orgId),
+]);
+
+/** Policy Replay 记录（deterministic replay 结果持久化）。 */
+export const ewohPolicyReplay = pgTable("ewoh_policy_replay", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  replayId: varchar("replay_id", { length: 255 }).notNull().unique(),
+  orgId: varchar("org_id", { length: 255 }),
+  candidatePolicyVersion: integer("candidate_policy_version").notNull(),
+  baselinePolicyVersion: integer("baseline_policy_version").notNull(),
+  solverVersion: varchar("solver_version", { length: 100 }),
+  snapshotVersion: varchar("snapshot_version", { length: 255 }),
+  snapshotSet: jsonb("snapshot_set").default([]),
+  seed: integer("seed"),
+  status: varchar("status", { length: 50 }).notNull().default('COMPLETED'),
+  aggregateKpisJson: jsonb("aggregate_kpis_json").default({}),
+  perRunResultsJson: jsonb("per_run_results_json").default([]),
+  failuresJson: jsonb("failures_json").default([]),
+  startedAt: customTimestamptz("started_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  completedAt: customTimestamptz("completed_at", { precision: 3 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_ewoh_policy_replay_candidate").on(table.candidatePolicyVersion),
+  index("idx_ewoh_policy_replay_org").on(table.orgId),
+]);
+
+// ============================================================================
+// Phase 4 / P4-GATE：策略生命周期（standalone_020_policy_lifecycle）
+// ============================================================================
+
+/** 策略激活审计（operator/reason/before/after/gate/rollback target）。 */
+export const ewohPolicyActivation = pgTable("ewoh_policy_activation", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  activationId: varchar("activation_id", { length: 255 }).notNull().unique(),
+  orgId: varchar("org_id", { length: 255 }),
+  policyVersion: integer("policy_version").notNull(),
+  beforeVersion: integer("before_version"),
+  afterVersion: integer("after_version"),
+  operator: varchar("operator", { length: 255 }).notNull(),
+  reason: text("reason"),
+  gateResultJson: jsonb("gate_result_json").default({}),
+  rollbackTarget: integer("rollback_target"),
+  status: varchar("status", { length: 50 }).notNull().default('ACTIVATED'),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_ewoh_policy_activation_policy").on(table.policyVersion),
+  index("idx_ewoh_policy_activation_org").on(table.orgId),
+]);
+
+export const ewohSchedulingExecutionTable = ewohSchedulingExecution;
+export const ewohSchedulingKpiTable = ewohSchedulingKpi;
+export const ewohPolicyReplayTable = ewohPolicyReplay;
+export const ewohPolicyActivationTable = ewohPolicyActivation;

@@ -920,6 +920,11 @@ export interface SchedulingEvent {
   planId?: string | null;
   /** 业务发生时间（ISO；无则取 serverTs）。 */
   occurredAt?: string | null;
+  // --- 统一 Scheduler Event Envelope（Phase 4 / P4-SSE） ---
+  /** 组织隔离（orgId；无则 null/ALL）。 */
+  orgId?: string | null;
+  /** 全链路关联 ID（run/plan/execution/policy），与 outbox.correlation_id 同源。 */
+  correlationId?: string | null;
 }
 
 export interface RouteGraphNode {
@@ -1012,6 +1017,17 @@ export interface CandidateRouteCost {
   dataQuality: RouteCostDataQuality;
   /** 是否可行（坐标齐全且可通行）；false 时 eta/distance 仅供参考。 */
   feasible: boolean;
+  /**
+   * 路径几何（P4-GEOM）：route_graph 为真实 A* 折线；euclidean 为起终点两点。
+   * 地图渲染与 Solver 使用同一 RouteCost 几何——禁止前端自行连直线。
+   */
+  geometry?: Array<{ x: number; y: number }>;
+  /**
+   * RouteCost 标识（P4-GEOM）：Task×Candidate 的唯一成本引用（deterministic）。
+   * 同一 snapshot+task+person/device/station 组合的 routeCostId 稳定，供
+   * Solver → Plan → Command Map 共享同一 RouteCost identity。
+   */
+  routeCostId?: string;
 }
 
 /** 任务 × 候选的 RouteCostMatrix（02 §10；决策 D-D 落库缓存，支撑确定性 replay）。 */
@@ -1138,4 +1154,310 @@ export interface ConflictsListRequest {
 export interface ConflictsListResponse {
   conflicts: SchedulingConflict[];
   total: number;
+}
+
+// ============================================================================
+// Phase 4 / P4-SSE：统一 Scheduler Event Envelope（所有 Scheduler SSE 走该模型）
+// ============================================================================
+
+/** Scheduler 统一事件模型（sequence / Last-Event-ID / gap / org isolation / correlation）。 */
+export interface SchedulerEventEnvelope<T = unknown> {
+  eventId: string;
+  sequence: number;
+  orgId: string;
+  eventType: string;
+  entityType?: string;
+  entityId?: string;
+  occurredAt: string;
+  snapshotVersion?: string;
+  entityVersion?: number;
+  correlationId?: string;
+  payload: T;
+}
+
+// ============================================================================
+// Phase 4 / P4-EXEC：正式执行领域
+// ============================================================================
+
+export type SchedulingExecutionStatus =
+  | 'PLANNED'
+  | 'DISPATCHED'
+  | 'STARTED'
+  | 'PAUSED'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED';
+
+export type SchedulingDeviationType =
+  | 'START_DELAY'
+  | 'END_DELAY'
+  | 'TRAVEL_DELAY'
+  | 'PERSON_CHANGED'
+  | 'DEVICE_CHANGED'
+  | 'STATION_CHANGED'
+  | 'ROUTE_DEVIATION'
+  | 'PERSON_UNAVAILABLE'
+  | 'DEVICE_FAILURE'
+  | 'TASK_CANCELLED'
+  | 'SAFETY_INTERRUPTION'
+  | 'MANUAL_OVERRIDE'
+  | null;
+
+/** 正式执行记录：Plan Assignment → Execution（planned vs actual，deviation 事实）。 */
+export interface SchedulingExecution {
+  id: string;
+  executionId: string;
+  orgId: string | null;
+  runId: string | null;
+  planId: string;
+  assignmentId: string;
+  taskId: string;
+  personId: string | null;
+  deviceId: string | null;
+  stationId: string | null;
+  plannedStartAt: string | null;
+  plannedEndAt: string | null;
+  actualStartAt: string | null;
+  actualEndAt: string | null;
+  plannedTravelMs: number | null;
+  actualTravelMs: number | null;
+  plannedDistanceM: number | null;
+  actualDistanceM: number | null;
+  plannedWaitingMs: number | null;
+  actualWaitingMs: number | null;
+  status: SchedulingExecutionStatus;
+  deviationType: SchedulingDeviationType;
+  deviationReason: string | null;
+  snapshotVersion: string | null;
+  policyVersion: number | null;
+  solverVersion: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ExecutionUpdateRequest {
+  /** 目标状态；终态转换（STARTED/COMPLETED/FAILED/CANCELLED）幂等。 */
+  status?: SchedulingExecutionStatus;
+  actualStartAt?: string | null;
+  actualEndAt?: string | null;
+  actualTravelMs?: number | null;
+  actualDistanceM?: number | null;
+  actualWaitingMs?: number | null;
+  deviationType?: SchedulingDeviationType;
+  deviationReason?: string | null;
+  /** 是否触发 replan（deviation 符合规则时由服务端自动判定，可选强制关闭）。 */
+  triggerReplan?: boolean;
+}
+
+export interface ExecutionListResponse {
+  executions: SchedulingExecution[];
+  total: number;
+}
+
+// ============================================================================
+// Phase 4 / P4-KPI：生产指标聚合
+// ============================================================================
+
+export interface SchedulerKpiSnapshot {
+  periodStart: string;
+  periodEnd: string;
+  delivery: {
+    onTimeRate: number | null;
+    completionRate: number | null;
+    latenessP50Ms: number | null;
+    latenessP95Ms: number | null;
+    latenessMaxMs: number | null;
+    averageWaitingMs: number | null;
+    averageTravelMs: number | null;
+    averageTravelDistanceM: number | null;
+  };
+  resources: {
+    personUtilization: number | null;
+    deviceUtilization: number | null;
+    stationUtilization: number | null;
+    resourceIdleMs: number | null;
+    workloadVariance: number | null;
+  };
+  stability: {
+    replanCount: number;
+    replanSuccessRate: number | null;
+    assignmentChurnRate: number | null;
+    manualOverrideRate: number | null;
+    conflictRate: number | null;
+    averageConflictResolutionMs: number | null;
+  };
+  solver: {
+    solverLatencyP50Ms: number | null;
+    solverLatencyP95Ms: number | null;
+    optimalRate: number | null;
+    feasibleRate: number | null;
+    heuristicFallbackRate: number | null;
+    timeoutRate: number | null;
+    infeasibleRate: number | null;
+  };
+  dataQuality: {
+    staleResourceRate: number | null;
+    unknownLocationRate: number | null;
+    degradedRouteRate: number | null;
+  };
+}
+
+// ============================================================================
+// Phase 4 / P4-REPLAY：Policy Replay 记录
+// ============================================================================
+
+export interface PolicyReplayRecord {
+  replayId: string;
+  orgId: string | null;
+  candidatePolicyVersion: number;
+  baselinePolicyVersion: number;
+  solverVersion: string | null;
+  snapshotVersion: string | null;
+  seed: number | null;
+  status: 'COMPLETED' | 'FAILED' | 'RUNNING';
+  aggregateKpis: SchedulerKpiSnapshot | null;
+  perRunResults: Array<Record<string, unknown>>;
+  failures: Array<{ runId?: string; reason: string }>;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+export interface PolicyReplayRequest {
+  candidatePolicyVersion: number;
+  /** 快照集：不传则取最近一次历史快照。 */
+  snapshotVersion?: string;
+  /** 确定性种子（相同 snapshot+policy+solver+seed = 相同结果）。 */
+  seed?: number;
+  limit?: number;
+}
+
+// ============================================================================
+// Phase 4 / P4-GATE：策略生命周期 + 激活
+// ============================================================================
+
+export type SchedulingPolicyStatus = 'DRAFT' | 'SHADOW' | 'ACTIVE' | 'ARCHIVED';
+
+export interface PolicyGateConfig {
+  safetyViolations: number;
+  blockedRouteAssignments: number;
+  minOnTimeRate: number;
+  maxLatenessP95Ms: number;
+  maxFallbackRate: number;
+  maxConflictRate: number;
+  maxChurnRate: number;
+  maxSolverLatencyP95Ms: number;
+}
+
+export interface PolicyGateEvaluation {
+  passed: boolean;
+  checks: Array<{ name: string; ok: boolean; actual: number | null; threshold: number | null; detail?: string }>;
+  replayId: string | null;
+  shadowEvaluation: {
+    shadowRuns: number;
+    shadowConflicts: number;
+    safetyViolations: number;
+    blockedRouteAssignments: number;
+    fallbackRate: number | null;
+    conflictRate: number | null;
+  };
+}
+
+export interface PolicyActivationRecord {
+  activationId: string;
+  orgId: string | null;
+  policyVersion: number;
+  beforeVersion: number | null;
+  afterVersion: number | null;
+  operator: string;
+  reason: string | null;
+  gateResult: PolicyGateEvaluation | null;
+  rollbackTarget: number | null;
+  status: 'ACTIVATED' | 'ROLLED_BACK';
+  createdAt: string;
+}
+
+export interface PolicyLifecycleUpdateRequest {
+  policyVersion: number;
+  /** DRAFT → SHADOW / SHADOW → DRAFT / ARCHIVED 回退等。 */
+  status: SchedulingPolicyStatus;
+  operator?: string;
+  reason?: string;
+}
+
+// ============================================================================
+// Phase 4 / P4-COMPARE：Plan Compare 权威 Diff
+// ============================================================================
+
+export type PlanDiffChangeType =
+  | 'ADDED'
+  | 'REMOVED'
+  | 'PERSON_CHANGED'
+  | 'DEVICE_CHANGED'
+  | 'STATION_CHANGED'
+  | 'TIME_CHANGED'
+  | 'ROUTE_CHANGED'
+  | 'ETA_CHANGED'
+  | 'DISTANCE_CHANGED'
+  | 'WORKLOAD_CHANGED'
+  | 'LATENESS_CHANGED'
+  | 'RISK_CHANGED'
+  | 'CONFLICT_CHANGED'
+  | 'CHURN';
+
+export interface AssignmentSnapshot {
+  taskId: string;
+  personId: string | null;
+  deviceId: string | null;
+  stationId: string | null;
+  plannedStart: string | null;
+  plannedEnd: string | null;
+  etaSeconds?: number;
+  distanceMeters?: number;
+  riskLevel?: string | null;
+  routeGeometry?: Array<{ x: number; y: number }>;
+}
+
+export interface PlanAssignmentDiff {
+  taskId: string;
+  changeTypes: PlanDiffChangeType[];
+  before?: AssignmentSnapshot;
+  after?: AssignmentSnapshot;
+  reasons: string[];
+}
+
+export interface PlanCompareResult {
+  baselinePlanId: string;
+  candidatePlanId: string;
+  added: string[];
+  removed: string[];
+  diffByTask: PlanAssignmentDiff[];
+  changeTypeCounts: Record<PlanDiffChangeType, number>;
+  churn: number;
+  aggregate: {
+    baselineKpi?: SchedulerKpiSnapshot | null;
+    candidateKpi?: SchedulerKpiSnapshot | null;
+  };
+}
+
+// ============================================================================
+// Phase 4 / P4-PREVIEW：Conflict Preview Replan
+// ============================================================================
+
+export interface ConflictPreviewResult {
+  conflictId: string;
+  baselinePlanId: string | null;
+  candidatePlanId: string | null;
+  diff: PlanCompareResult | null;
+  affectedTasks: string[];
+  affectedResources: string[];
+  remainingConflicts: Array<{ conflictId: string; type: string; message: string }>;
+  expectedKpiImpact: Record<string, unknown> | null;
+  readonly: true;
+}
+
+export interface ConflictPreviewRequest {
+  /** 建议动作（来自 conflict.resolution 建议处置），如 reallocate / release_reservation / reroute。 */
+  action?: string;
+  /** 对动作的候选资源覆盖（可选）。 */
+  resourceIds?: string[];
 }

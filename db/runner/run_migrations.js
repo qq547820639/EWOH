@@ -67,6 +67,18 @@ const FILES = {
   standalone_scheduling_tables_fix: path.join(root, 'db/migrations/standalone_017_scheduling_tables_fix.sql'),
   standalone_scheduling_tables_fix_rollback: path.join(root, 'db/migrations/standalone_017_scheduling_tables_fix.rollback.sql'),
   standalone_scheduling_tables_fix_verify: path.join(root, 'db/verify/standalone_017_scheduling_tables_fix.verify.sql'),
+  standalone_execution_feedback: path.join(root, 'db/migrations/standalone_018_execution_feedback.sql'),
+  standalone_execution_feedback_rollback: path.join(root, 'db/migrations/standalone_018_execution_feedback.rollback.sql'),
+  standalone_execution_feedback_verify: path.join(root, 'db/verify/standalone_018_execution_feedback.verify.sql'),
+  standalone_kpi_replay: path.join(root, 'db/migrations/standalone_019_kpi_replay.sql'),
+  standalone_kpi_replay_rollback: path.join(root, 'db/migrations/standalone_019_kpi_replay.rollback.sql'),
+  standalone_kpi_replay_verify: path.join(root, 'db/verify/standalone_019_kpi_replay.verify.sql'),
+  standalone_policy_lifecycle: path.join(root, 'db/migrations/standalone_020_policy_lifecycle.sql'),
+  standalone_policy_lifecycle_rollback: path.join(root, 'db/migrations/standalone_020_policy_lifecycle.rollback.sql'),
+  standalone_policy_lifecycle_verify: path.join(root, 'db/verify/standalone_020_policy_lifecycle.verify.sql'),
+  standalone_sse_envelope: path.join(root, 'db/migrations/standalone_021_sse_envelope.sql'),
+  standalone_sse_envelope_rollback: path.join(root, 'db/migrations/standalone_021_sse_envelope.rollback.sql'),
+  standalone_sse_envelope_verify: path.join(root, 'db/verify/standalone_021_sse_envelope.verify.sql'),
 };
 
 const PLAN_NAMES = Object.freeze(Object.keys(FILES));
@@ -88,6 +100,10 @@ const ROLLBACK_COMMANDS = new Set([
   '--rollback-standalone-conflict-lifecycle',
   '--rollback-standalone-task-requirement',
   '--rollback-standalone-scheduling-tables-fix',
+  '--rollback-standalone-execution-feedback',
+  '--rollback-standalone-kpi-replay',
+  '--rollback-standalone-policy-lifecycle',
+  '--rollback-standalone-sse-envelope',
 ]);
 const EXECUTE_COMMANDS = new Set([
   '--apply',
@@ -147,6 +163,18 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-scheduling-tables-fix',
   '--rollback-standalone-scheduling-tables-fix',
   '--verify-standalone-scheduling-tables-fix',
+  '--apply-standalone-execution-feedback',
+  '--rollback-standalone-execution-feedback',
+  '--verify-standalone-execution-feedback',
+  '--apply-standalone-kpi-replay',
+  '--rollback-standalone-kpi-replay',
+  '--verify-standalone-kpi-replay',
+  '--apply-standalone-policy-lifecycle',
+  '--rollback-standalone-policy-lifecycle',
+  '--verify-standalone-policy-lifecycle',
+  '--apply-standalone-sse-envelope',
+  '--rollback-standalone-sse-envelope',
+  '--verify-standalone-sse-envelope',
 ]);
 
 const TOKEN = '__EWOH_SCHEMA__';
@@ -295,7 +323,7 @@ function main() {
     console.error('EWOH_DATABASE_URL or SUDA_DATABASE_URL is required.');
     process.exit(2);
   }
-  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod', '--verify-standalone-outbox-sequence', '--verify-standalone-domain-columns', '--verify-standalone-route-cost-matrix', '--verify-standalone-policy-weights', '--verify-standalone-conflict-lifecycle', '--verify-standalone-task-requirement', '--verify-standalone-scheduling-tables-fix'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
+  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod', '--verify-standalone-outbox-sequence', '--verify-standalone-domain-columns', '--verify-standalone-route-cost-matrix', '--verify-standalone-policy-weights', '--verify-standalone-conflict-lifecycle', '--verify-standalone-task-requirement', '--verify-standalone-scheduling-tables-fix', '--verify-standalone-execution-feedback', '--verify-standalone-kpi-replay', '--verify-standalone-policy-lifecycle', '--verify-standalone-sse-envelope'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
     console.error('EWOH_ALLOW_DDL=1 is required for --apply and --rollback.');
     process.exit(2);
   }
@@ -460,6 +488,66 @@ function main() {
       return;
     }
 
+    if (command === '--verify-standalone-execution-feedback') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_execution_feedback_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const last = Array.isArray(rows) ? rows[rows.length - 1] : rows;
+      const row = (Array.isArray(last) ? last[0] : last) || {};
+      const ok = Number(row.exec_key_cols || 0) >= 7 && Number(row.exec_indexes || 0) >= 5;
+      if (!ok) {
+        console.error(`VERIFY FAILED: execution table missing (${JSON.stringify(row)})`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: ewoh_scheduling_execution present with key columns + indexes');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-kpi-replay') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_kpi_replay_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const last = Array.isArray(rows) ? rows[rows.length - 1] : rows;
+      const row = (Array.isArray(last) ? last[0] : last) || {};
+      const ok = Number(row.replay_key_cols || 0) >= 6;
+      if (!ok) {
+        console.error(`VERIFY FAILED: kpi/replay tables missing (${JSON.stringify(row)})`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: kpi + policy_replay tables present');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-policy-lifecycle') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_policy_lifecycle_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const last = Array.isArray(rows) ? rows[rows.length - 1] : rows;
+      const row = (Array.isArray(last) ? last[0] : last) || {};
+      const ok = Number(row.activation_key_cols || 0) >= 5;
+      if (!ok) {
+        console.error(`VERIFY FAILED: policy lifecycle missing (${JSON.stringify(row)})`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: policy.status + activation + plan.is_shadow present');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-sse-envelope') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_sse_envelope_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const last = Array.isArray(rows) ? rows[rows.length - 1] : rows;
+      const row = (Array.isArray(last) ? last[0] : last) || {};
+      const ok = Number(row.outbox_indexes || 0) >= 4;
+      if (!ok) {
+        console.error(`VERIFY FAILED: sse envelope missing (${JSON.stringify(row)})`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: outbox.correlation_id + sequence index present');
+      }
+      return;
+    }
+
     if (command === '--verify-standalone-policy-weights') {
       const rows = await sql.unsafe(substitute(read(FILES.standalone_policy_weights_verify), schema));
       console.log(JSON.stringify(rows, null, 2));
@@ -592,6 +680,14 @@ function main() {
       '--rollback-standalone-task-requirement': 'standalone_task_requirement_rollback',
       '--apply-standalone-scheduling-tables-fix': 'standalone_scheduling_tables_fix',
       '--rollback-standalone-scheduling-tables-fix': 'standalone_scheduling_tables_fix_rollback',
+      '--apply-standalone-execution-feedback': 'standalone_execution_feedback',
+      '--rollback-standalone-execution-feedback': 'standalone_execution_feedback_rollback',
+      '--apply-standalone-kpi-replay': 'standalone_kpi_replay',
+      '--rollback-standalone-kpi-replay': 'standalone_kpi_replay_rollback',
+      '--apply-standalone-policy-lifecycle': 'standalone_policy_lifecycle',
+      '--rollback-standalone-policy-lifecycle': 'standalone_policy_lifecycle_rollback',
+      '--apply-standalone-sse-envelope': 'standalone_sse_envelope',
+      '--rollback-standalone-sse-envelope': 'standalone_sse_envelope_rollback',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {
