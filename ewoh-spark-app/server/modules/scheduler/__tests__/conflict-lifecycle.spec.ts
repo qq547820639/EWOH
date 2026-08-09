@@ -12,6 +12,7 @@
 import { ConflictService } from '../conflict.service';
 import { ewohSchedulingConflict, ewohSchedulePlan } from '@server/database/schema';
 import type { WorldStateSnapshot } from '@shared/api.interface';
+import { testOrgContext } from './dispatch-test-harness';
 
 const HOUR = 3600_000;
 
@@ -153,9 +154,9 @@ function makeSvc(seedConflicts: Array<Record<string, unknown>> = [], state: Reco
 }
 
 describe('P3-T1: ConflictService 推导 + 归并落库', () => {
-  it('新推导冲突 → 落库 OPEN + conflict.detected SSE + audit', async () => {
+  it('新推导冲突 → 落库 OPEN + conflict.detected SSE + audit（T04：写路径走 reconcileNow）', async () => {
     const { svc, conflicts, mocks } = makeSvc();
-    const res = await svc.listConflicts({});
+    const res = await svc.reconcileNow(testOrgContext());
     expect(res.conflicts).toHaveLength(1);
     expect(res.conflicts[0].type).toBe('device_offline');
     expect(res.conflicts[0].status).toBe('OPEN');
@@ -180,7 +181,7 @@ describe('P3-T1: ConflictService 推导 + 归并落库', () => {
   it('推导消失 → 自动 RESOLVED（resolution=auto_cleared）+ audit + SSE conflict.resolved（决策 D-C）', async () => {
     // 先推导一次（产生落库 OPEN 行），再让设备恢复在线（推导消失）。
     const first = makeSvc();
-    await first.svc.listConflicts({});
+    await first.svc.reconcileNow(testOrgContext());
     const conflictId = first.conflicts[0].conflictId;
     // 第二次：设备恢复（无 device_offline 推导）。
     const { svc, conflicts, mocks } = makeSvc(first.conflicts, {
@@ -188,7 +189,7 @@ describe('P3-T1: ConflictService 推导 + 归并落库', () => {
         { id: 'd1', batteryPct: 100, online: true, status: 'online', dataQuality: 'FRESH' },
       ],
     });
-    const res = await svc.listConflicts({});
+    const res = await svc.reconcileNow(testOrgContext());
     expect(res.conflicts).toHaveLength(0);
     // 落库行已自动 RESOLVED。
     const row = conflicts.find((c) => c.conflictId === conflictId)!;
@@ -210,6 +211,8 @@ describe('P3-T1: ConflictService 推导 + 归并落库', () => {
 
   it('列表/详情旧字段向后兼容（status 缺省 OPEN、snapshotVersion=CURRENT）', async () => {
     const { svc } = makeSvc();
+    // T04：查询纯读（listConflicts 不写）；详情读取已落库行（先 reconcileNow 落库）。
+    await svc.reconcileNow(testOrgContext());
     const res = await svc.listConflicts({ type: 'device_offline' });
     expect(res.conflicts[0].snapshotVersion).toBe('CURRENT');
     expect(res.conflicts[0].severity).toBe('high');
@@ -222,7 +225,7 @@ describe('P3-T1: ConflictService 推导 + 归并落库', () => {
 describe('P3-T1: Conflict 生命周期状态机（02 §6.1）', () => {
   it('OPEN → ACKNOWLEDGED → RESOLVED（人工 acknowledge + resolve + 审计）', async () => {
     const { svc, conflicts, mocks } = makeSvc();
-    await svc.listConflicts({});
+    await svc.reconcileNow(testOrgContext());
     const conflictId = String(conflicts[0].conflictId);
 
     const acked = await svc.acknowledge(conflictId, 'op1', '已知问题');
@@ -254,7 +257,7 @@ describe('P3-T1: Conflict 生命周期状态机（02 §6.1）', () => {
 
   it('OPEN → SUPPRESSED →（suppressUntil 到期）→ OPEN 自动回', async () => {
     const { svc, conflicts, mocks } = makeSvc();
-    await svc.listConflicts({});
+    await svc.reconcileNow(testOrgContext());
     const conflictId = String(conflicts[0].conflictId);
 
     const suppressed = await svc.suppress(conflictId, 'op1', '暂时忽略', Date.now() + HOUR);
@@ -266,7 +269,7 @@ describe('P3-T1: Conflict 生命周期状态机（02 §6.1）', () => {
 
     // suppressUntil 内：reconcile 保持 SUPPRESSED，不重复推 conflict.detected。
     const before = mocks.outbox.enqueue.mock.calls.length;
-    const res1 = await svc.listConflicts({});
+    const res1 = await svc.reconcileNow(testOrgContext());
     expect(res1.conflicts[0].status).toBe('SUPPRESSED');
     expect(mocks.outbox.enqueue.mock.calls.length).toBe(before); // 无新增 SSE
 
@@ -274,7 +277,7 @@ describe('P3-T1: Conflict 生命周期状态机（02 §6.1）', () => {
     await new Promise((r) => setTimeout(r, 5)); // 确保时间推进
     const expiredRow = conflicts[0];
     (expiredRow as { suppressUntil: Date }).suppressUntil = new Date(Date.now() - 1000);
-    const res2 = await svc.listConflicts({});
+    const res2 = await svc.reconcileNow(testOrgContext());
     expect(res2.conflicts[0].status).toBe('OPEN');
     expect(mocks.audit.appendAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'conflict.reopen', reason: 'suppress_until expired' }),
@@ -283,7 +286,7 @@ describe('P3-T1: Conflict 生命周期状态机（02 §6.1）', () => {
 
   it('ACKNOWLEDGED → SUPPRESSED 允许；RESOLVED 不可再 suppress', async () => {
     const { svc, conflicts } = makeSvc();
-    await svc.listConflicts({});
+    await svc.reconcileNow(testOrgContext());
     const conflictId = String(conflicts[0].conflictId);
     await svc.acknowledge(conflictId, 'op1', 'ack');
     const suppressed = await svc.suppress(conflictId, 'op1', 'suppress', Date.now() + HOUR);
@@ -291,7 +294,7 @@ describe('P3-T1: Conflict 生命周期状态机（02 §6.1）', () => {
 
     // RESOLVED 后再 suppress → 拒绝。
     const { svc: svc2, conflicts: conflicts2 } = makeSvc();
-    await svc2.listConflicts({});
+    await svc2.reconcileNow(testOrgContext());
     const id2 = String(conflicts2[0].conflictId);
     await svc2.resolve(id2, 'op2', 'done');
     await expect(svc2.suppress(id2, 'op2', 'suppress')).rejects.toThrow(
@@ -301,12 +304,12 @@ describe('P3-T1: Conflict 生命周期状态机（02 §6.1）', () => {
 
   it('RESOLVED 复现 → reopen OPEN + audit conflict.reopen（reappeared）', async () => {
     const first = makeSvc();
-    await first.svc.listConflicts({});
+    await first.svc.reconcileNow(testOrgContext());
     const conflictId = String(first.conflicts[0].conflictId);
     await first.svc.resolve(conflictId, 'op1', 'done');
     // 设备再次离线（复现）。
     const { svc, conflicts, mocks } = makeSvc(first.conflicts);
-    const res = await svc.listConflicts({});
+    const res = await svc.reconcileNow(testOrgContext());
     expect(res.conflicts[0].status).toBe('OPEN');
     expect(mocks.audit.appendAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'conflict.reopen', reason: 'conflict reappeared after RESOLVED' }),

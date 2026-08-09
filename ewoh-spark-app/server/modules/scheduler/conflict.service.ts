@@ -72,12 +72,15 @@ export class ConflictService {
 
   // ===== 公开查询 =====
 
-  /** 推导 + 归并落库 + 返回当前冲突视图（含生命周期字段，旧字段兼容）。 */
+  /**
+   * T04 / P1-5（G5）：推导 + 只读合并 + 返回当前冲突视图（GET 纯读，无任何写副作用）。
+   * 不再调用 reconcile()（写路径）；写操作走显式端点 acknowledge/resolve/suppress/reconcileNow。
+   */
   async listConflicts(
     params: ConflictsListRequest = {},
   ): Promise<ConflictsListResponse> {
     const derived = await this.derive();
-    const merged = await this.reconcile(derived, SYSTEM_CTX);
+    const merged = await this.mergeWithDbReadOnly(derived);
     let conflicts = merged;
     if (params.type) conflicts = conflicts.filter((c) => c.type === params.type);
     if (params.severity)
@@ -87,6 +90,45 @@ export class ConflictService {
       conflicts = conflicts.filter((c) => c.resourceId === params.resourceId);
     conflicts.sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
     return { conflicts, total: conflicts.length };
+  }
+
+  /**
+   * T04 / P1-5（G5）：显式冲突归并触发（写路径）。迁移既有 reconcile() 写逻辑：
+   * 推导 → 归并落库（INSERT/UPDATE + SSE + audit）。供前端"立即归并"按钮/轮询任务使用。
+   */
+  async reconcileNow(
+    ctx: OrgContext,
+  ): Promise<{ ok: boolean; reconciledCount: number; conflicts: SchedulingConflict[] }> {
+    const derived = await this.derive();
+    const merged = await this.reconcile(derived, ctx ?? SYSTEM_CTX);
+    return { ok: true, reconciledCount: merged.length, conflicts: merged };
+  }
+
+  /**
+   * T04 / P1-5（G5）：只读合并——将推导结果投影已落库行的生命周期字段
+   * （status/detectedAt/acknowledgedBy/.../suppressUntil/planId），**不产生任何
+   * INSERT/UPDATE，不发 SSE，不写审计**。供 GET /conflicts 纯读。
+   */
+  private async mergeWithDbReadOnly(
+    derived: SchedulingConflict[],
+  ): Promise<SchedulingConflict[]> {
+    const persisted = await this.loadAllRows();
+    const byId = new Map(persisted.map((r) => [r.conflictId, r]));
+    return derived.map((c) => {
+      const row = byId.get(c.conflictId);
+      if (!row) return c; // 未落库：返回推导态（status 缺省 OPEN，不写库）。
+      return {
+        ...c,
+        status: (row.status ?? 'OPEN') as ConflictLifecycleStatus,
+        detectedAt: row.detectedAt ? row.detectedAt.toISOString() : c.createdAt,
+        acknowledgedBy: row.acknowledgedBy ?? null,
+        acknowledgedAt: row.acknowledgedAt ? row.acknowledgedAt.toISOString() : null,
+        resolvedBy: row.resolvedBy ?? null,
+        resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,
+        suppressUntil: row.suppressUntil ? row.suppressUntil.toISOString() : null,
+        planId: c.planId ?? row.planId ?? null,
+      };
+    });
   }
 
   /** 冲突详情；当前真实数据中不存在且无落库行时抛 NotFoundException。 */
