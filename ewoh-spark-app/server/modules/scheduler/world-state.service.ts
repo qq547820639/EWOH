@@ -21,6 +21,7 @@ import { RequestDatabaseContext } from '../../database/request-database-context'
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { deriveDeviceCapabilities } from './device-capabilities';
+import { ResourceProjectionService } from './resource-projection.service';
 
 /** 资源数据新鲜度阈值（ms）：sourceTs 距今超过该值则标 STALE。 */
 const DEFAULT_FRESHNESS_MS = 5 * 60 * 1000;
@@ -33,6 +34,10 @@ export class WorldStateSnapshotService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly requestDatabaseContext: RequestDatabaseContext,
+    // T02 / P0-1（G1）：资源视图单一事实源。生产路径始终注入；旧单测未注入时
+    // 回退旧直读逻辑（保持既有 50+ spec 兼容）。注入后 persons/devices/stations
+    // 改消费 ResourceProjectionService.projectForSnapshot()，消除双轨。
+    private readonly resourceProjectionService?: ResourceProjectionService,
   ) {}
   // 资源数据新鲜度阈值（ms）。必须为类字段而非构造参数：
   // Nest DI 会将构造参数按类型 token 解析，原始类型 number 无法注入 → 启动崩溃
@@ -175,7 +180,19 @@ export class WorldStateSnapshotService {
       }
     }
 
-    const persons = personnel.map((p) => {
+    // T02 / P0-1（G1）：persons/devices/stations 资源视图单一事实源。
+    // 注入 ResourceProjectionService 时消费 projectForSnapshot()（与 resources/state 同源，
+    // 消除双轨）；未注入（旧单测）时回退旧直读逻辑，保持既有测试兼容。
+    let persons: WorldStateSnapshot['persons'];
+    let stations: WorldStateSnapshot['stations'];
+    let deviceList: WorldStateSnapshot['devices'];
+    if (this.resourceProjectionService) {
+      const resourceView = await this.resourceProjectionService.projectForSnapshot();
+      persons = resourceView.persons;
+      stations = resourceView.stations;
+      deviceList = resourceView.devices;
+    } else {
+      persons = personnel.map((p) => {
       const se = p.spatialEntityId
         ? spatialByEntityId.get(p.spatialEntityId)
         : undefined;
@@ -197,8 +214,9 @@ export class WorldStateSnapshotService {
         stationId: p.spatialEntityId ?? null,
         zoneId: se ? (se.parentId ?? null) : null,
         // 坐标缺失 → 显式 UNKNOWN（null），禁止用 0 冒充真实坐标。
-        x: se ? (se.x ?? null) : null,
-        y: se ? (se.y ?? null) : null,
+        // P0-3：WGS84 坐标不进笛卡尔 x/y（仅 coordinate 承载 lat/lng）。
+        x: se && (se.coordinateType ?? 'FACTORY_CARTESIAN') !== 'WGS84' ? (se.x ?? null) : null,
+        y: se && (se.coordinateType ?? 'FACTORY_CARTESIAN') !== 'WGS84' ? (se.y ?? null) : null,
         availableFromMs: personReservationEnd.get(p.id) ?? null,
         shift: p.shift ?? null,
         workload: p.workload ?? null,
@@ -207,14 +225,17 @@ export class WorldStateSnapshotService {
         sourceTs,
         freshnessMs: this.freshnessMs,
         dataQuality,
+        coordinate: this.toCoordinateRef(
+          (se?.coordinateType ?? 'FACTORY_CARTESIAN'),
+          se ? (se.x ?? null) : null,
+          se ? (se.y ?? null) : null,
+          se?.floorId ?? null,
+        ),
       };
     });
 
-    // 设备 → 当前绑定人员（targetType='person' 且 active）。
-    // 注：设备位置不再借用人员坐标（见 01 §4.1），绑定仅用于安全事件影响链。
-
     // 工位列表（v0.7 A1：提前计算，供任务 candidateStations 派生使用）。
-    const stations = spatialEntities
+    stations = spatialEntities
       .filter((se) => ['workstation', 'station'].includes(se.entityType))
       .map((se) => {
         // 工位容量：读 capacity 列（真实来源，替代 extra.capacity 非正式字段），否则 null。
@@ -224,13 +245,76 @@ export class WorldStateSnapshotService {
           id: se.entityId,
           name: se.name,
           // P0：坐标缺失显式 null（禁止 0,0 伪坐标；无坐标工位不参与定位决策）。
-          x: se.x ?? null,
-          y: se.y ?? null,
+          // P0-3：WGS84 坐标不进笛卡尔 x/y。
+          x: (se.coordinateType ?? 'FACTORY_CARTESIAN') !== 'WGS84' ? (se.x ?? null) : null,
+          y: (se.coordinateType ?? 'FACTORY_CARTESIAN') !== 'WGS84' ? (se.y ?? null) : null,
           capacity,
           queue: this.asStringArray(se.queue),
           availableWindows: this.parseWindows(se.availableWindows),
+          coordinate: this.toCoordinateRef(
+            (se.coordinateType ?? 'FACTORY_CARTESIAN'),
+            se.x ?? null,
+            se.y ?? null,
+            se.floorId ?? null,
+          ),
         };
       });
+
+    deviceList = devices.map((d) => {
+      const sourceTs = d.lastTelemetryAt
+        ? d.lastTelemetryAt.getTime()
+        : d.updatedAt
+          ? d.updatedAt.getTime()
+          : null;
+      const dataQuality = this.classifyFreshness(sourceTs, now);
+      const stale = dataQuality !== 'FRESH';
+      const derived: string[] = [];
+      // 能力：真实列优先（SSOT，消除两处语义不一致）；列无值才按型号白名单派生并标记。
+      const columnCaps = this.asStringArray(d.capabilities);
+      const capabilities =
+        columnCaps.length > 0 ? columnCaps : deriveDeviceCapabilities(d.deviceModel);
+      if (columnCaps.length === 0) derived.push('capabilities');
+      // 位置：设备自身 location_lat/lng（真实遥测）；缺失则显式 UNKNOWN(null)，
+      // 绝不借用人员坐标（见 01 §4.1）。
+      const lat = d.locationLat ?? null;
+      const lng = d.locationLng ?? null;
+      const hasDeviceLocation = lat != null && lng != null;
+      // P0-3：WGS84 坐标不进笛卡尔 x/y（仅 coordinate 承载 lat/lng）。
+      const isWgs84 = (d.locationCoordinateType ?? 'FACTORY_CARTESIAN') === 'WGS84';
+      // 设备自身空间实体（entityId=deviceId），用于解析所在工位（parentId）。
+      const deviceSe = d.deviceId ? spatialByEntityId.get(d.deviceId) : undefined;
+      return {
+        id: d.id,
+        workerName: d.workerName ?? null,
+        deviceModel: d.deviceModel ?? null,
+        batteryPct: d.batteryPct ?? 100,
+        capabilities,
+        // STALE/UNKNOWN 设备不视为可用（离线/不可派）。
+        online: stale ? false : (d.online ?? false),
+        status: d.faultCode ? 'fault' : stale ? 'offline' : 'online',
+        x: hasDeviceLocation && !isWgs84 ? lat : null,
+        y: hasDeviceLocation && !isWgs84 ? lng : null,
+        locationStationId: deviceSe ? (deviceSe.parentId ?? null) : null,
+        availableWindows: this.parseWindows(d.availableWindows),
+        locationConfidence: hasDeviceLocation ? (d.locationConfidence ?? null) : null,
+        locationUpdatedAt: d.locationUpdatedAt ? d.locationUpdatedAt.getTime() : null,
+        telemetryUpdatedAt: d.telemetryUpdatedAt ? d.telemetryUpdatedAt.getTime() : null,
+        sourceTs,
+        freshnessMs: this.freshnessMs,
+        dataQuality,
+        derived,
+        // P0-3：设备坐标类型判别（WGS84 设备 locationLat/Lng 即经纬度；UNKNOWN 显式标记）。
+        coordinate:
+          (d.locationCoordinateType ?? 'FACTORY_CARTESIAN') === 'WGS84'
+            ? hasDeviceLocation
+              ? { type: 'WGS84', lat: lat as number, lng: lng as number }
+              : { type: 'UNKNOWN' }
+            : hasDeviceLocation
+              ? { type: 'FACTORY_CARTESIAN', x: lat as number, y: lng as number, floorId: null }
+              : { type: 'UNKNOWN' },
+      };
+    });
+    }
 
     const taskList = tasks.map((t) => {
       // 派生字段标记：本快照中这些字段来自派生而非真实列（P1-T2）。
@@ -309,50 +393,6 @@ export class WorldStateSnapshotService {
         requiredStationCapabilities: this.asStringArray(t.requiredStationCapabilities),
         preferredResources: this.asStringArray(t.preferredResources),
         excludedResources: this.asStringArray(t.excludedResources),
-        derived,
-      };
-    });
-
-    const deviceList = devices.map((d) => {
-      const sourceTs = d.lastTelemetryAt
-        ? d.lastTelemetryAt.getTime()
-        : d.updatedAt
-          ? d.updatedAt.getTime()
-          : null;
-      const dataQuality = this.classifyFreshness(sourceTs, now);
-      const stale = dataQuality !== 'FRESH';
-      const derived: string[] = [];
-      // 能力：真实列优先（SSOT，消除两处语义不一致）；列无值才按型号白名单派生并标记。
-      const columnCaps = this.asStringArray(d.capabilities);
-      const capabilities =
-        columnCaps.length > 0 ? columnCaps : deriveDeviceCapabilities(d.deviceModel);
-      if (columnCaps.length === 0) derived.push('capabilities');
-      // 位置：设备自身 location_lat/lng（真实遥测）；缺失则显式 UNKNOWN(null)，
-      // 绝不借用人员坐标（见 01 §4.1）。
-      const lat = d.locationLat ?? null;
-      const lng = d.locationLng ?? null;
-      const hasDeviceLocation = lat != null && lng != null;
-      // 设备自身空间实体（entityId=deviceId），用于解析所在工位（parentId）。
-      const deviceSe = d.deviceId ? spatialByEntityId.get(d.deviceId) : undefined;
-      return {
-        id: d.id,
-        workerName: d.workerName ?? null,
-        deviceModel: d.deviceModel ?? null,
-        batteryPct: d.batteryPct ?? 100,
-        capabilities,
-        // STALE/UNKNOWN 设备不视为可用（离线/不可派）。
-        online: stale ? false : (d.online ?? false),
-        status: d.faultCode ? 'fault' : stale ? 'offline' : 'online',
-        x: hasDeviceLocation ? lat : null,
-        y: hasDeviceLocation ? lng : null,
-        locationStationId: deviceSe ? (deviceSe.parentId ?? null) : null,
-        availableWindows: this.parseWindows(d.availableWindows),
-        locationConfidence: hasDeviceLocation ? (d.locationConfidence ?? null) : null,
-        locationUpdatedAt: d.locationUpdatedAt ? d.locationUpdatedAt.getTime() : null,
-        telemetryUpdatedAt: d.telemetryUpdatedAt ? d.telemetryUpdatedAt.getTime() : null,
-        sourceTs,
-        freshnessMs: this.freshnessMs,
-        dataQuality,
         derived,
       };
     });
@@ -778,6 +818,28 @@ export class WorldStateSnapshotService {
       h = ((h << 5) + h + str.charCodeAt(i)) | 0;
     }
     return h >>> 0;
+  }
+
+  /**
+   * 空间实体 → 坐标判别联合（P0-3）。
+   * 约定：FACTORY_CARTESIAN 读 x/y/floorId；WGS84 仅展示（lat=y ?? x, lng=x ?? y，
+   * 详见 05 §12.2 假设——真实 WGS84 数据源未定，此处仅保证不进笛卡尔距离）。
+   */
+  private toCoordinateRef(
+    type: string,
+    x: number | null,
+    y: number | null,
+    floorId: string | null,
+  ): import('@shared/api.interface').CoordinateReference {
+    if (type === 'WGS84') {
+      const lat = y ?? x;
+      const lng = x ?? y;
+      if (lat == null || lng == null) return { type: 'UNKNOWN' };
+      return { type: 'WGS84', lat, lng };
+    }
+    if (type === 'UNKNOWN') return { type: 'UNKNOWN' };
+    if (x == null || y == null) return { type: 'UNKNOWN' };
+    return { type: 'FACTORY_CARTESIAN', x, y, floorId };
   }
 
   /** 基于对象 JSON 序列化内容的实体版本。 */

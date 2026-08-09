@@ -8,7 +8,7 @@ import {
   ewohDevice,
   ewohSpatialEntity,
 } from '@server/database/schema';
-import type { ResourceState } from '@shared/api.interface';
+import type { CoordinateReference, ResourceState, WorldStateSnapshot } from '@shared/api.interface';
 import {
   ResourceReservationService,
   type ReservationResult,
@@ -102,8 +102,9 @@ export class ResourceProjectionService {
           stationId: p.spatialEntityId ?? null,
           zoneId: se ? (se.parentId ?? null) : null,
           // 坐标缺失 → 显式 UNKNOWN(null)，禁止用 0 冒充真实坐标。
-          x: se ? (se.x ?? null) : null,
-          y: se ? (se.y ?? null) : null,
+          // P0-3：WGS84 坐标不进笛卡尔 x/y（仅 coordinate 承载 lat/lng）。
+          x: se && (se.coordinateType ?? 'FACTORY_CARTESIAN') !== 'WGS84' ? (se.x ?? null) : null,
+          y: se && (se.coordinateType ?? 'FACTORY_CARTESIAN') !== 'WGS84' ? (se.y ?? null) : null,
         },
         availableWindows: this.computeAvailabilityWindows(pRes, now),
         reservations: pRes.map((r) => ({
@@ -133,6 +134,8 @@ export class ResourceProjectionService {
         freshnessMs: DEFAULT_FRESHNESS_MS,
         dataQuality,
         version: p.version ?? 1,
+        // T02 / P0-3：坐标判别联合（FACTORY_CARTESIAN 时填充；缺失 UNKNOWN）。
+        coordinate: this.toCoordinateFromSpatial(se),
       };
     });
 
@@ -173,8 +176,9 @@ export class ResourceProjectionService {
         location: {
           stationId: se ? (se.parentId ?? null) : null,
           zoneId: parentSe ? (parentSe.parentId ?? null) : null,
-          x: d.locationLat ?? null,
-          y: d.locationLng ?? null,
+          // P0-3：WGS84 设备位置不进笛卡尔 x/y（仅 coordinate 承载 lat/lng）。
+          x: hasDeviceLocation && (d.locationCoordinateType ?? 'FACTORY_CARTESIAN') !== 'WGS84' ? d.locationLat ?? null : null,
+          y: hasDeviceLocation && (d.locationCoordinateType ?? 'FACTORY_CARTESIAN') !== 'WGS84' ? d.locationLng ?? null : null,
         },
         availableWindows: this.computeAvailabilityWindows(dRes, now),
         reservations: dRes.map((r) => ({
@@ -206,6 +210,8 @@ export class ResourceProjectionService {
         dataQuality: deviceDataQuality,
         version: 1,
         derived,
+        // T02 / P0-3：设备位置坐标类型（location_coordinate_type 列）。
+        coordinate: this.toCoordinateFromDevice(d, hasDeviceLocation),
       };
     });
 
@@ -231,8 +237,9 @@ export class ResourceProjectionService {
           location: {
             stationId: se.entityId,
             zoneId: se.parentId ?? null,
-            x: se.x ?? null,
-            y: se.y ?? null,
+            // P0-3：WGS84 工位坐标不进笛卡尔 x/y（仅 coordinate 承载 lat/lng）。
+            x: (se.coordinateType ?? 'FACTORY_CARTESIAN') !== 'WGS84' ? (se.x ?? null) : null,
+            y: (se.coordinateType ?? 'FACTORY_CARTESIAN') !== 'WGS84' ? (se.y ?? null) : null,
           },
           availableWindows: this.computeAvailabilityWindows(sRes, now),
           reservations: sRes.map((r) => ({
@@ -262,6 +269,8 @@ export class ResourceProjectionService {
           freshnessMs: DEFAULT_FRESHNESS_MS,
           dataQuality: stationDataQuality,
           version: se.version ?? 1,
+          // T02 / P0-3：工位坐标类型（coordinate_type / floor_id 列）。
+          coordinate: this.toCoordinateFromSpatial(se),
         };
       });
 
@@ -334,6 +343,203 @@ export class ResourceProjectionService {
       const name = typeof rec.name === 'string' ? rec.name : '';
       const expiresAtMs = typeof rec.expiresAtMs === 'number' ? rec.expiresAtMs : null;
       if (name) out.push({ name, expiresAtMs });
+    }
+    return out;
+  }
+
+  // ==========================================================================
+  // T02 / P0-1（G1）：Snapshot 资源视图单一事实源 + P0-3（G8）坐标类型化
+  // ==========================================================================
+
+  /**
+   * 快照形态的资源视图（WorldStateSnapshot.persons/devices/stations）。
+   * WorldStateSnapshotService.collectState 消费本方法替换旧的双轨直读，
+   * 保证 resources/state 与 world-state 对同一 person/device/station 完全一致。
+   * 只换来源不换形状：字段与旧快照装配一致（availableFromMs 由真实 reservation
+   * 推导、dataQuality FRESH/STALE/UNKNOWN），并增加 coordinate 判别联合。
+   */
+  async projectForSnapshot(): Promise<{
+    persons: WorldStateSnapshot['persons'];
+    devices: WorldStateSnapshot['devices'];
+    stations: WorldStateSnapshot['stations'];
+  }> {
+    const [personnelRows, deviceRows, spatialRows, reservations] =
+      await Promise.all([
+        this.db.select().from(ewohPersonnel),
+        this.db.select().from(ewohDevice),
+        this.db.select().from(ewohSpatialEntity),
+        this.reservationService.listActive(),
+      ]);
+
+    const spatialByEntityId = new Map<string, (typeof spatialRows)[number]>();
+    for (const se of spatialRows) spatialByEntityId.set(se.entityId, se);
+
+    // 人员下一次可用时间：取该人员未来 reservation 的最大结束时间（真实占用）。
+    const personReservationEnd = new Map<string, number>();
+    for (const r of reservations) {
+      if (r.resourceType === 'person' && r.endMs != null) {
+        const cur = personReservationEnd.get(r.resourceId) ?? 0;
+        if (r.endMs > cur) personReservationEnd.set(r.resourceId, r.endMs);
+      }
+    }
+
+    const now = Date.now();
+
+    const persons: WorldStateSnapshot['persons'] = personnelRows.map((p) => {
+      const se = p.spatialEntityId
+        ? spatialByEntityId.get(p.spatialEntityId)
+        : undefined;
+      // P0-3：WGS84 坐标不进笛卡尔 x/y（仅 coordinate 承载 lat/lng）。
+      const isWgs84 = (se?.coordinateType ?? 'FACTORY_CARTESIAN') === 'WGS84';
+      const load = (p.currentLoad as { loadLevel?: number; fatigueLevel?: number } | null) ?? {};
+      const sourceTs = p.updatedAt ? p.updatedAt.getTime() : null;
+      const dataQuality = this.classifyFreshness(sourceTs, now);
+      return {
+        id: p.id,
+        name: p.name,
+        status:
+          dataQuality === 'FRESH' ? (p.status ?? 'available') : 'unavailable',
+        healthStatus: p.healthStatus ?? 'normal',
+        skills: this.asStringArray(p.skills),
+        certifications: this.asStringArray(p.certifications),
+        loadLevel: load.loadLevel ?? 0,
+        fatigueLevel: load.fatigueLevel ?? 0,
+        stationId: p.spatialEntityId ?? null,
+        zoneId: se ? (se.parentId ?? null) : null,
+        x: se && !isWgs84 ? (se.x ?? null) : null,
+        y: se && !isWgs84 ? (se.y ?? null) : null,
+        availableFromMs: personReservationEnd.get(p.id) ?? null,
+        shift: p.shift ?? null,
+        workload: p.workload ?? null,
+        currentTaskId: p.currentTaskId ?? null,
+        certificationExpiry: this.parseCertificationExpiry(p.certificationExpiry),
+        sourceTs,
+        freshnessMs: DEFAULT_FRESHNESS_MS,
+        dataQuality,
+        coordinate: this.toCoordinateFromSpatial(se),
+      };
+    });
+
+    const devices: WorldStateSnapshot['devices'] = deviceRows.map((d) => {
+      const sourceTs = d.lastTelemetryAt
+        ? d.lastTelemetryAt.getTime()
+        : d.updatedAt
+          ? d.updatedAt.getTime()
+          : null;
+      const dataQuality = this.classifyFreshness(sourceTs, now);
+      const stale = dataQuality !== 'FRESH';
+      const derived: string[] = [];
+      const columnCaps = this.asStringArray(d.capabilities);
+      const capabilities =
+        columnCaps.length > 0 ? columnCaps : deriveDeviceCapabilities(d.deviceModel);
+      if (columnCaps.length === 0) derived.push('capabilities');
+      const lat = d.locationLat ?? null;
+      const lng = d.locationLng ?? null;
+      const hasDeviceLocation = lat != null && lng != null;
+      // P0-3：WGS84 坐标不进笛卡尔 x/y（仅 coordinate 承载 lat/lng）。
+      const isWgs84 = (d.locationCoordinateType ?? 'FACTORY_CARTESIAN') === 'WGS84';
+      const deviceSe = d.deviceId ? spatialByEntityId.get(d.deviceId) : undefined;
+      return {
+        id: d.id,
+        workerName: d.workerName ?? null,
+        deviceModel: d.deviceModel ?? null,
+        batteryPct: d.batteryPct ?? 100,
+        capabilities,
+        online: stale ? false : (d.online ?? false),
+        status: d.faultCode ? 'fault' : stale ? 'offline' : 'online',
+        x: hasDeviceLocation && !isWgs84 ? lat : null,
+        y: hasDeviceLocation && !isWgs84 ? lng : null,
+        locationStationId: deviceSe ? (deviceSe.parentId ?? null) : null,
+        availableWindows: this.parseWindows(d.availableWindows),
+        locationConfidence: hasDeviceLocation ? (d.locationConfidence ?? null) : null,
+        locationUpdatedAt: d.locationUpdatedAt ? d.locationUpdatedAt.getTime() : null,
+        telemetryUpdatedAt: d.telemetryUpdatedAt ? d.telemetryUpdatedAt.getTime() : null,
+        sourceTs,
+        freshnessMs: DEFAULT_FRESHNESS_MS,
+        dataQuality,
+        derived,
+        coordinate: this.toCoordinateFromDevice(d, hasDeviceLocation),
+      };
+    });
+
+    const stations: WorldStateSnapshot['stations'] = spatialRows
+      .filter((se) => ['workstation', 'station'].includes(se.entityType ?? ''))
+      .map((se) => {
+        const capacity =
+          typeof se.capacity === 'number' && se.capacity > 0 ? se.capacity : null;
+        // P0-3：WGS84 坐标不进笛卡尔 x/y（仅 coordinate 承载 lat/lng）。
+        const isWgs84 = (se.coordinateType ?? 'FACTORY_CARTESIAN') === 'WGS84';
+        return {
+          id: se.entityId,
+          name: se.name,
+          x: !isWgs84 ? (se.x ?? null) : null,
+          y: !isWgs84 ? (se.y ?? null) : null,
+          capacity,
+          queue: this.asStringArray(se.queue),
+          availableWindows: this.parseWindows(se.availableWindows),
+          coordinate: this.toCoordinateFromSpatial(se),
+        };
+      });
+
+    return { persons, devices, stations };
+  }
+
+  /** 空间实体 → 坐标判别联合（P0-3；coordinate_type/floor_id 列）。 */
+  private toCoordinateFromSpatial(se?: {
+    coordinateType?: string | null;
+    floorId?: string | null;
+    x?: number | null;
+    y?: number | null;
+  }): CoordinateReference {
+    if (!se || !se.coordinateType || se.coordinateType === 'UNKNOWN') {
+      return { type: 'UNKNOWN' };
+    }
+    if (se.coordinateType === 'WGS84') {
+      const lat = se.y ?? se.x;
+      const lng = se.x ?? se.y;
+      if (lat == null || lng == null) return { type: 'UNKNOWN' };
+      return { type: 'WGS84', lat, lng };
+    }
+    // FACTORY_CARTESIAN（默认）。
+    if (se.x == null || se.y == null) return { type: 'UNKNOWN' };
+    return { type: 'FACTORY_CARTESIAN', x: se.x, y: se.y, floorId: se.floorId ?? null };
+  }
+
+  /** 设备位置 → 坐标判别联合（location_coordinate_type 列；location_lat/lng 可能为 WGS84）。 */
+  private toCoordinateFromDevice(
+    d: {
+      locationCoordinateType?: string | null;
+      locationLat?: number | null;
+      locationLng?: number | null;
+    },
+    hasDeviceLocation: boolean,
+  ): CoordinateReference {
+    const type = d.locationCoordinateType ?? 'FACTORY_CARTESIAN';
+    if (!hasDeviceLocation || type === 'UNKNOWN') {
+      return { type: 'UNKNOWN' };
+    }
+    if (type === 'WGS84') {
+      return { type: 'WGS84', lat: d.locationLat ?? 0, lng: d.locationLng ?? 0 };
+    }
+    return {
+      type: 'FACTORY_CARTESIAN',
+      x: d.locationLat ?? 0,
+      y: d.locationLng ?? 0,
+      floorId: null,
+    };
+  }
+
+  /** jsonb 可用窗口列解析（[{ startMs, endMs }]）。 */
+  private parseWindows(v: unknown): Array<{ startMs: number; endMs: number }> {
+    if (!Array.isArray(v)) return [];
+    const out: Array<{ startMs: number; endMs: number }> = [];
+    for (const item of v) {
+      if (typeof item === 'object' && item !== null) {
+        const rec = item as Record<string, unknown>;
+        if (typeof rec.startMs === 'number' && typeof rec.endMs === 'number') {
+          out.push({ startMs: rec.startMs, endMs: rec.endMs });
+        }
+      }
     }
     return out;
   }

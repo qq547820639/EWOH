@@ -522,3 +522,154 @@ describe('P1-T2: 领域新列优先装配（新列真实值 > 派生兜底 + der
     expect(state.persons[0].certificationExpiry).toEqual([{ name: 'cert-a', expiresAtMs: 1234 }]);
   });
 });
+
+// ============================================================================
+// T02 / P0-1（G1）+ P0-4：双源一致性 + derived[] 全覆盖断言
+// ============================================================================
+
+describe('T02 / P0-1: world-state 消费 ResourceProjectionService（双源一致）', () => {
+  it('注入 resourceProjectionService 时 collectState 的 persons/devices/stations 完全来自投影', async () => {
+    // 构造一个注入 ResourceProjectionService 的 WorldStateSnapshotService。
+    // 投影返回固定值；断言 collectState 不再直读表而是透传投影（与 resources/state 同源）。
+    // thenable + 链式 where/orderBy/limit（Promise.all 直接 await 到空数组）。
+    const emptyQuery: any = Promise.resolve([]);
+    emptyQuery.where = () => emptyQuery;
+    emptyQuery.orderBy = () => emptyQuery;
+    emptyQuery.limit = () => emptyQuery;
+    const db = {
+      select: () => ({ from: () => emptyQuery }),
+      runInTransaction: jest.fn(),
+    } as never;
+    const requestDatabaseContext = { runInTransaction: jest.fn() } as never;
+    const projection = {
+      projectForSnapshot: jest.fn().mockResolvedValue({
+        persons: [
+          {
+            id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal',
+            skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0,
+            stationId: 'S-1', zoneId: 'Z-1', x: 10, y: 20,
+            availableFromMs: null, shift: null, workload: null, currentTaskId: null,
+            certificationExpiry: null, sourceTs: null, freshnessMs: 300000, dataQuality: 'UNKNOWN',
+            coordinate: { type: 'FACTORY_CARTESIAN', x: 10, y: 20, floorId: null },
+          },
+        ],
+        devices: [
+          {
+            id: 'd1', workerName: null, deviceModel: null, batteryPct: 100,
+            capabilities: [], online: true, status: 'online', x: 30, y: 40,
+            locationStationId: null, availableWindows: [], locationConfidence: null,
+            locationUpdatedAt: null, telemetryUpdatedAt: null, sourceTs: null,
+            freshnessMs: 300000, dataQuality: 'UNKNOWN', derived: [],
+            coordinate: { type: 'FACTORY_CARTESIAN', x: 30, y: 40, floorId: null },
+          },
+        ],
+        stations: [
+          {
+            id: 'S-1', name: 'S-1', x: 10, y: 20, capacity: 2, queue: [],
+            availableWindows: [],
+            coordinate: { type: 'FACTORY_CARTESIAN', x: 10, y: 20, floorId: 'F1' },
+          },
+        ],
+      }),
+    };
+    const svc = new WorldStateSnapshotService(db, requestDatabaseContext, projection as never);
+    const state = await (svc as unknown as { getCurrentWorldState(): Promise<{ persons: Array<Record<string, unknown>>; devices: Array<Record<string, unknown>>; stations: Array<Record<string, unknown>> }> })
+      .getCurrentWorldState();
+    // persons/devices/stations 与投影完全一致（双源一致：resources/state 与 world-state 同源）。
+    expect(state.persons).toHaveLength(1);
+    expect(state.persons[0].id).toBe('p1');
+    expect(state.persons[0].stationId).toBe('S-1');
+    expect(state.persons[0].coordinate).toEqual({ type: 'FACTORY_CARTESIAN', x: 10, y: 20, floorId: null });
+    expect(state.devices).toHaveLength(1);
+    expect(state.devices[0].x).toBe(30);
+    expect(state.stations).toHaveLength(1);
+    expect(state.stations[0].capacity).toBe(2);
+    expect(state.stations[0].coordinate).toEqual({ type: 'FACTORY_CARTESIAN', x: 10, y: 20, floorId: 'F1' });
+    // 投影只被消费一次（SSOT）。
+    expect(projection.projectForSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('P0-4: derived[] 全覆盖（requiredDeviceCapabilities/candidateStations/safetyCritical 列空时带标记）', async () => {
+    const svc = makeSvc({
+      personnel: [],
+      device: [],
+      task: [
+        taskRow({ id: 't1', taskType: 'material_handling', priority: 'urgent' }),
+        // 有真实列的权威任务（不派生）。
+        taskRow({
+          id: 't2', taskType: 'material_handling', priority: 'high',
+          safetyCritical: false, preemptible: true, skillMatchMode: 'ANY',
+          productionImpact: 0.2, requiredDeviceCapabilities: ['vacuum'], candidateStations: ['S-9'],
+        }),
+      ],
+      spatial: [],
+      event: [],
+      routeNode: [],
+      routeEdge: [],
+      reservation: [],
+      binding: [],
+    });
+    const state = await (svc as unknown as { getCurrentWorldState(): Promise<{ tasks: Array<Record<string, unknown>> }> })
+      .getCurrentWorldState();
+    const byId = new Map(state.tasks.map((t) => [t.id, t]));
+    // 列空 → keyword/topology 派生 + derived 标记齐全（P0-4 AC：无列读列、无列 derived 标记）。
+    const t1 = byId.get('t1')!;
+    const t1Derived = t1.derived as string[];
+    expect(t1Derived).toContain('safetyCritical');
+    expect(t1Derived).toContain('preemptible');
+    expect(t1Derived).toContain('skillMatchMode');
+    expect(t1Derived).toContain('productionImpact');
+    expect(t1Derived).toContain('requiredDeviceCapabilities');
+    expect(t1Derived).toContain('candidateStations');
+    // 有真实列 → 不标记 derived（业务事实）。
+    const t2 = byId.get('t2')!;
+    const t2Derived = t2.derived as string[];
+    expect(t2Derived).not.toContain('safetyCritical');
+    expect(t2Derived).not.toContain('preemptible');
+    expect(t2Derived).not.toContain('skillMatchMode');
+    expect(t2Derived).not.toContain('productionImpact');
+    expect(t2Derived).not.toContain('requiredDeviceCapabilities');
+    expect(t2Derived).not.toContain('candidateStations');
+  });
+
+  it('P0-3: WGS84 坐标不进笛卡尔 x/y（仅 coordinate 承载 lat/lng）', async () => {
+    const svc = makeSvc({
+      personnel: [
+        { id: 'p1', name: 'p1', status: 'available', spatialEntityId: 'SE-P1', updatedAt: new Date() },
+      ],
+      device: [
+        // WGS84 设备：location_lat/lng 为经纬度；x/y 必须为 null（避免当笛卡尔）。
+        { id: 'd1', deviceId: 'D-001', online: true, batteryPct: 80, locationLat: 31.23, locationLng: 121.47, locationCoordinateType: 'WGS84', lastTelemetryAt: new Date() },
+        // 笛卡尔设备：x/y 正常填充。
+        { id: 'd2', deviceId: 'D-002', online: true, batteryPct: 80, locationLat: 500, locationLng: 600, locationCoordinateType: 'FACTORY_CARTESIAN', lastTelemetryAt: new Date() },
+      ],
+      spatial: [
+        // WGS84 工位（约定 x=lng, y=lat；仅 coordinate 承载，不进笛卡尔距离）。
+        { entityId: 'S-W', entityType: 'station', name: 'S-W', parentId: 'Z-1', x: 121.47, y: 31.23, coordinateType: 'WGS84', floorId: null, extra: null },
+        // 笛卡尔工位。
+        { entityId: 'S-C', entityType: 'station', name: 'S-C', parentId: 'Z-1', x: 10, y: 20, coordinateType: 'FACTORY_CARTESIAN', floorId: 'F1', extra: null },
+      ],
+      event: [],
+      routeNode: [],
+      routeEdge: [],
+      reservation: [],
+      binding: [],
+    });
+    const state = await (svc as unknown as { getCurrentWorldState(): Promise<{ persons: Array<Record<string, unknown>>; devices: Array<Record<string, unknown>>; stations: Array<Record<string, unknown>> }> })
+      .getCurrentWorldState();
+    const deviceById = new Map(state.devices.map((d) => [d.id, d]));
+    // WGS84 设备：x/y=null（不进笛卡尔距离），coordinate 携带 lat/lng。
+    expect(deviceById.get('d1')?.x).toBeNull();
+    expect(deviceById.get('d1')?.y).toBeNull();
+    expect(deviceById.get('d1')?.coordinate).toEqual({ type: 'WGS84', lat: 31.23, lng: 121.47 });
+    // 笛卡尔设备：x/y 正常。
+    expect(deviceById.get('d2')?.x).toBe(500);
+    expect(deviceById.get('d2')?.y).toBe(600);
+    const stationById = new Map(state.stations.map((s) => [s.id, s]));
+    // WGS84 工位：x/y=null，coordinate 携带 WGS84。
+    expect(stationById.get('S-W')?.x).toBeNull();
+    expect(stationById.get('S-W')?.coordinate).toEqual({ type: 'WGS84', lat: 31.23, lng: 121.47 });
+    expect(stationById.get('S-C')?.x).toBe(10);
+    expect(stationById.get('S-C')?.coordinate).toEqual({ type: 'FACTORY_CARTESIAN', x: 10, y: 20, floorId: 'F1' });
+  });
+});
