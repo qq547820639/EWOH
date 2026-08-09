@@ -38,6 +38,62 @@ except Exception:  # noqa: BLE001 - 任何导入失败都视为不可用
 MINUTE = 60_000
 
 
+def _fixed_interval_bounds(s_ms, e_ms):
+    """把毫秒起止规整为一致的 (start, size, end) 分钟三元组。
+
+    OR-Tools 的 NewIntervalVar 强制 start + size == end。若对毫秒各自整除分钟
+    会出现亚分钟余数不一致（例：startMs=36_030_000→start=600、
+    endMs=37_800_000→end=630、size=(1_770_000)//60_000=29 → 600+29=629≠630
+    → 模型整体 INFEASIBLE）。因此统一：
+      start = s_ms // MINUTE；end = max(start + 1, e_ms // MINUTE)；size = end - start。
+    短区间（整除后 end == start）由 max(start+1, ...) 保证至少 1 分钟。
+    """
+    start = s_ms // MINUTE
+    end = max(start + 1, e_ms // MINUTE)
+    return start, end - start, end
+
+
+def _fixed_interval(model, s_ms, e_ms, name):
+    """构造满足 start+size==end 的 fixed interval（frozen/reservation 共用）。
+
+    frozen 任务与预约均为资源上的固定占用区间，建模方式一致。
+    """
+    start, size, end = _fixed_interval_bounds(s_ms, e_ms)
+    return model.NewIntervalVar(
+        model.NewConstant(start),
+        size,
+        model.NewConstant(end),
+        name,
+    )
+
+
+def _reservation_interval_specs(reservations):
+    """把预约映射为 (resource_key, startMs, endMs) 规格，供建模为 fixed interval。
+
+    resourceType 取值 person/device/station，与候选 interval 的 key 前缀
+    p:/d:/s: 完全一致（见 _solve_cpsat 候选区间 key）。endMs <= startMs 的
+    异常预约直接跳过（防御），避免生成非法区间。
+    """
+    specs = []
+    for r in reservations or []:
+        try:
+            s_ms, e_ms = int(r.startMs), int(r.endMs)
+        except (TypeError, ValueError):
+            continue
+        if e_ms <= s_ms:
+            continue
+        if r.resourceType == "person":
+            key = f"p:{r.resourceId}"
+        elif r.resourceType == "device":
+            key = f"d:{r.resourceId}"
+        elif r.resourceType == "station":
+            key = f"s:{r.resourceId}"
+        else:
+            continue
+        specs.append((key, s_ms, e_ms))
+    return specs
+
+
 def is_available() -> bool:
     """OR-Tools 依赖是否可用。"""
     return _ORT_TOOLS_AVAILABLE
@@ -169,32 +225,17 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
                 if pid:
                     key = f"p:{pid}"
                     interval_by_resource.setdefault(key, []).append(
-                        model.NewIntervalVar(
-                            model.NewConstant(sMs // MINUTE),
-                            max(1, (eMs - sMs) // MINUTE),
-                            model.NewConstant(eMs // MINUTE),
-                            f"frozen_p_{pid}_{t.taskId}",
-                        )
+                        _fixed_interval(model, sMs, eMs, f"frozen_p_{pid}_{t.taskId}")
                     )
                 if did:
                     key = f"d:{did}"
                     interval_by_resource.setdefault(key, []).append(
-                        model.NewIntervalVar(
-                            model.NewConstant(sMs // MINUTE),
-                            max(1, (eMs - sMs) // MINUTE),
-                            model.NewConstant(eMs // MINUTE),
-                            f"frozen_d_{did}_{t.taskId}",
-                        )
+                        _fixed_interval(model, sMs, eMs, f"frozen_d_{did}_{t.taskId}")
                     )
                 if sid:
                     key = f"s:{sid}"
                     interval_by_resource.setdefault(key, []).append(
-                        model.NewIntervalVar(
-                            model.NewConstant(sMs // MINUTE),
-                            max(1, (eMs - sMs) // MINUTE),
-                            model.NewConstant(eMs // MINUTE),
-                            f"frozen_s_{sid}_{t.taskId}",
-                        )
+                        _fixed_interval(model, sMs, eMs, f"frozen_s_{sid}_{t.taskId}")
                     )
             continue
         if not candidates.get(t.taskId):
@@ -252,25 +293,20 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         if t.dueMs:
             model.Add(end_min[t.taskId] <= t.dueMs // MINUTE)
 
-    # 4) reservation 冲突：已预订区间与该任务占用重叠 → 不可在对应资源上。
-    for t in request.tasks:
-        if t.taskId in frozen_by_task or not presence.get(t.taskId):
-            continue
-        for (pi, di, si), present in presence[t.taskId].items():
-            p = request.persons[pi]
-            for r in request.reservations:
-                if r.resourceType == "person" and r.resourceId == p.id:
-                    model.Add(present == 0)
-            if di != -1:
-                d = request.devices[di]
-                for r in request.reservations:
-                    if r.resourceType == "device" and r.resourceId == d.id:
-                        model.Add(present == 0)
-            if si != -1:
-                st = request.stations[si]
-                for r in request.reservations:
-                    if r.resourceType == "station" and r.resourceId == st.id:
-                        model.Add(present == 0)
+    # 4) reservation：预约建模为资源上的 fixed interval（与 frozen 任务一致），
+    #    加入 interval_by_resource 后由下方 AddNoOverlap 统一约束——
+    #    任务区间与预约区间不得重叠（可排在其前或其后），而非"存在任意预约即禁止分配"。
+    for key, s_ms, e_ms in _reservation_interval_specs(request.reservations):
+        res_id = key[2:]
+        if key.startswith("p:"):
+            name = f"res_p_{res_id}"
+        elif key.startswith("d:"):
+            name = f"res_d_{res_id}"
+        else:
+            name = f"res_s_{res_id}"
+        interval_by_resource.setdefault(key, []).append(
+            _fixed_interval(model, s_ms, e_ms, name)
+        )
 
     # 5) forbidden zone：任务 zone 在禁入区 → 无候选（已在候选层处理，此处兜底）。
     # 6) 资源 no-overlap。

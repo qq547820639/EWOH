@@ -12,6 +12,8 @@ Plan 状态机：shadow → simulating → pending_review → approved → dispa
 纯 Python 标准库实现。
 """
 
+import logging
+
 from edge_platform.spatial import new_id, now_iso
 
 from .models import (
@@ -22,12 +24,15 @@ from .models import (
     PLAN_SHADOW,
     TASK_DISPATCHED,
     Assignment,
+    CandidateAssignment,
     ScheduleFeedback,
     ScheduleRequestMW,
     validate_plan_transition,
 )
 from .replanner import Replanner
 from .reservation import ReservationConflictError
+
+logger = logging.getLogger(__name__)
 
 
 class PlanStaleError(ValueError):
@@ -147,15 +152,20 @@ class SchedulerService:
             try:
                 req = ScheduleRequestMW(**{k: v for k, v in d.items() if k != "id"})
                 self._requests[req.request_id] = req
-            except Exception:
+            except Exception as e:  # noqa: BLE001 - 单条损坏不影响整体恢复
+                logger.warning("hydrate_from_repository: 跳过损坏的调度请求 %r: %s", d.get("request_id"), e)
                 continue
-        # 恢复方案（含 assignments）
+        # 恢复方案（含 assignments：必须还原为 CandidateAssignment 对象，
+        # confirm/execute 按属性访问 planned_end/person_id/task_id/route 等）。
         for d in self.repository.list_plans() or []:
             try:
                 plan = SchedulePlan(**{k: v for k, v in d.items() if k != "id"})
-                plan.assignments = d.get("assignments") or []
+                plan.assignments = [
+                    CandidateAssignment(**a) for a in (d.get("assignments") or []) if isinstance(a, dict)
+                ]
                 self._plans[plan.plan_id] = plan
-            except Exception:
+            except Exception as e:  # noqa: BLE001 - 单条损坏不影响整体恢复
+                logger.warning("hydrate_from_repository: 跳过损坏的调度方案 %r: %s", d.get("plan_id"), e)
                 continue
 
     def _persist_request(self, req):
@@ -560,8 +570,8 @@ class SchedulerService:
                 self.repository.update_task(
                     a.task_id, int(task.get("version") or 1), status=new_status
                 )
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001 - 任务同步失败不影响派工主流程
+                logger.warning("set_assignment_status: 同步任务 %s 状态失败: %s", a.task_id, e)
         self._publish(
             "assignment.updated",
             entity_id=a.assignment_id,

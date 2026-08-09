@@ -24,7 +24,8 @@ PLAN_DISPATCHED = "dispatched"
 PLAN_EXPIRED = "expired"
 PLAN_ARCHIVED = "archived"
 
-PLAN_TERMINAL = frozenset({PLAN_EXPIRED, PLAN_ARCHIVED})
+# 终态集合与 contracts/state-machines/plan.yaml 的 terminal: [dispatched, expired, archived] 对齐
+PLAN_TERMINAL = frozenset({PLAN_DISPATCHED, PLAN_EXPIRED, PLAN_ARCHIVED})
 
 # 合法 Plan 状态转换（from -> 可达 to 集合），与 contracts/state-machines/plan.yaml 一致
 PLAN_TRANSITIONS = {

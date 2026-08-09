@@ -9,7 +9,11 @@ import sys
 import tempfile
 import unittest
 
+# 支持 PYTHONPATH=src 与直接运行两种方式：
+# - src/edge_platform 在 path 上 → 顶层 `inference` / `collection` 可解析（历史风格）；
+# - src 在 path 上 → `edge_platform.*` 绝对导入可解析（collection 模块已改为绝对导入）。
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from collection.dataset import export_dataset
 from collection.session import SessionManager

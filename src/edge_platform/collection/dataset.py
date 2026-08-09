@@ -14,8 +14,8 @@ import os
 import sqlite3
 import time
 
-from inference import SAMPLE_HZ, ms_to_ts, ts_to_ms
-from inference.features import extract_features
+from edge_platform.inference import SAMPLE_HZ, ms_to_ts, ts_to_ms
+from edge_platform.inference.features import extract_features
 
 QUERY_LIMIT = 100000
 

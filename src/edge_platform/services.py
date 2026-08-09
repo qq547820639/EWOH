@@ -106,8 +106,12 @@ WORK_NORM_MIN = 120  # 连续作业时长归一化基准（分钟）
 OPEN_HIGH_SEVERITY = ("L2", "L3")
 
 
-def person_metrics(storage, person, device):
-    """从真实记录推导人员指标：当前负荷、连续作业分钟、近期风险。"""
+def person_metrics(storage, person, device, events_cache=None):
+    """从真实记录推导人员指标：当前负荷、连续作业分钟、近期风险。
+
+    events_cache: 可选的已归一化事件列表（norm_event 输出）。由批量调用方
+    （recommend）一次性查询后传入，避免每个人员重复 list_events(N)（N+1 查询）。
+    """
     now = datetime.now().astimezone()
     load, work_min = 0.0, 0.0
     if device:
@@ -120,10 +124,12 @@ def person_metrics(storage, person, device):
             t0, t1 = parse_ts(norm_telemetry(rows[0])["timestamp"]), parse_ts(norm_telemetry(rows[-1])["timestamp"])
             if t0 and t1:
                 work_min = max(0.0, (t1 - t0).total_seconds() / 60)
+    if events_cache is None:
+        events_cache = [norm_event(x) for x in storage.list_events(200)]
     open_events = [
         e
-        for e in (norm_event(x) for x in storage.list_events(200))
-        if e.get("person_id") == person.get("person_id") and e.get("status") == "open"
+        for e in events_cache
+        if e and e.get("person_id") == person.get("person_id") and e.get("status") == "open"
     ]
     recent_high = [e for e in open_events if e.get("severity") in OPEN_HIGH_SEVERITY]
     risk = min(1.0, 0.2 * len(open_events) + 0.4 * len(recent_high))
@@ -154,11 +160,13 @@ def recommend(storage, assignments, payload, device_online):
     assigned = {a["person_id"] for a in assignments if a.get("status") == "confirmed"}
     devices = storage.list_devices()
     by_person = {d.get("person_id"): d for d in devices if d.get("person_id")}
+    # A3 修复：事件列表只查询一次并复用于所有候选人员，消除 person_metrics 的 N+1 查询。
+    events_cache = [norm_event(x) for x in storage.list_events(200)]
     rows = []
     for p in storage.list_people():
         skills = person_skills(p)
         dev = by_person.get(p.get("person_id"))
-        m = person_metrics(storage, p, dev)
+        m = person_metrics(storage, p, dev, events_cache=events_cache)
         skill_ok = skill in skills
         zone_score = 1.0 if p.get("team") == zone or p.get("zone") == zone else 0.6
         capacity = max(0.0, 1 - max(m["current_load"], load_level * 0.3))

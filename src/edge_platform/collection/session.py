@@ -11,7 +11,7 @@ import sqlite3
 import time
 from contextlib import closing
 
-from inference import ms_to_ts, new_id
+from edge_platform.inference import ms_to_ts, new_id
 
 # 允许通过 start_session(**fields) 覆盖的会话字段
 SESSION_FIELDS = (

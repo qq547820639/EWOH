@@ -1074,7 +1074,12 @@ def make_handler(ctx):
                 session = sm.verify(token)
                 user = {"user_id": session.user_id, "username": username, "role": session.role}
                 return self.send_json({"token": token, "user": user})
-            # auth 模块未就绪：演示用简单 token（L2：24h 过期 + 惰性清理）
+            # auth 模块未就绪：production 必须 fail-closed（不生成任何演示 token）
+            if Settings.load().runtime_mode == "production":
+                return self._new_error(
+                    "auth_unavailable", "认证服务未就绪，拒绝登录（production 不提供演示凭据）", 503
+                )
+            # 非 production（development/simulation）：演示用简单 token（L2：24h 过期 + 惰性清理）
             self._demo_token_cleanup()
             token = uuid.uuid4().hex
             user = {"user_id": username, "username": username, "role": "admin"}
