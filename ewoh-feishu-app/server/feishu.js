@@ -111,6 +111,12 @@ function runLarkCliProcess(args, { input, asBot }) {
           resolve({ ok: false, data: null, error: 'lark-cli timeout (>20s)' });
           return;
         }
+        // maxBuffer 超限（ENOBUFS）：与"启动失败"区分，输出准确文案
+        if (err && err.code === 'ENOBUFS') {
+          console.error('[feishu] lark-cli 输出超过 maxBuffer（16MB）:', err.message);
+          resolve({ ok: false, data: null, error: 'lark-cli output exceeded maxBuffer (16MB)' });
+          return;
+        }
         // 启动失败（找不到二进制/无权限等）：err.code 为非数字字符串（ENOENT/EACCES/...）
         if (err && typeof err.code !== 'number') {
           console.error('[feishu] lark-cli 启动失败:', err.message);
