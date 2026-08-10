@@ -49,11 +49,11 @@
 
 ## 回归与交付
 
-- [ ] Task 7: 回归 + 契约 + 提交
-  - [ ] 7.1 全量回归：`npx jest modules/scheduler`（含新增 spec）+ 客户端 scheduler 相关 + `npx tsc --noEmit` + 改动文件 eslint。
-  - [ ] 7.2 Python 侧：`pytest tests/test_ts_python_contract_parity.py` + 既有 edge/cpsat 测试不退化。
-  - [ ] 7.3 契约/OpenAPI：本次 `shared/scheduler.ts` 新增纯 TS 类型与可选配置字段，确认是否需同步 `openapi/route-manifest.json`（如 route-manifest 含 SchedulingPolicyConfig 则重新生成）。
-  - [ ] 7.4 排除调试残留，提交并推送 `main`（项目约定）。
+- [x] Task 7: 回归 + 契约 + 提交
+  - [x] 7.1 全量回归：`npx jest modules/scheduler`（68 suites/495 tests）+ 客户端（95 suites/726 tests）+ `tsc --noEmit`（server/spec 零错误）+ 改动文件 eslint 全绿。
+  - [x] 7.2 Python 侧：`pytest tests/test_ts_python_contract_parity.py` + 既有 edge/cpsat 测试 21 passed（10 skipped 为 ortools 依赖跳过）。
+  - [x] 7.3 契约/OpenAPI：`npm run openapi:no-drift` 通过——`shared/scheduler.ts` 新增为纯 TS 可选字段，无需重新生成 route-manifest。
+  - [x] 7.4 排除调试残留与用户未提交改动（`update-readme-latest/*`），已提交并推送 `main`（commit 60c7808，35 files）。
 
 # Task Dependencies
 - [Task 1] 无依赖（先行，消除回退分支降低后续改造成本）。
