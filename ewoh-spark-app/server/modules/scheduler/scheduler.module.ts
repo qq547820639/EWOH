@@ -53,7 +53,12 @@ const SCHEDULER_NOTIFY_PROVIDERS = SCHEDULER_NOTIFY_URL
   ? [
       {
         provide: SCHEDULER_STREAM_NOTIFY_LISTENER,
-        useFactory: () => new PgNotifyListener(SCHEDULER_NOTIFY_URL),
+        // Task 3 埋点：LISTEN 断线重连时经 metricsService 计数
+        // （PgNotifyListener 由 useFactory 手工构造，避免构造注入，改以回调解耦）。
+        useFactory: (metricsService: SchedulerMetricsService) =>
+          new PgNotifyListener(SCHEDULER_NOTIFY_URL, undefined, () =>
+            metricsService.recordListenerReconnect(),
+          ),
       },
     ]
   : [];

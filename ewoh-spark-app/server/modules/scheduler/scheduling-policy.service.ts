@@ -85,6 +85,7 @@ const DEFAULT_CONFIG: SchedulingPolicyConfig = {
   replanApproval: {
     autoMaxAffectedRatio: 0.5,
     autoMaxChurnRatio: 0.4,
+    maxChangedAssignments: 20,
     requireApprovalOnSafetyCritical: true,
     requireApprovalOnHumanLock: true,
   },

@@ -76,7 +76,35 @@ describe('SchedulerMetricsService（Phase 3.2 可观测指标）', () => {
     const text = metrics.renderMetrics();
     expect(text).toContain('scheduler_run_total 0');
     expect(text).toContain('scheduler_solver_timeout_total 0');
+    expect(text).toContain('scheduler_stream_notify_wakeup_total 0');
+    expect(text).toContain('scheduler_stream_poll_fallback_total 0');
+    expect(text).toContain('scheduler_stream_listener_reconnect_total 0');
+    expect(text).toContain('scheduler_sse_resync_total 0');
     expect(text).toBeTruthy();
+  });
+
+  it('Realtime 指标：notify wakeup / poll fallback / listener reconnect / resync 正确记录', () => {
+    metrics.recordNotifyWakeup();
+    metrics.recordNotifyWakeup();
+    metrics.recordPollFallback();
+    metrics.recordListenerReconnect();
+    metrics.recordResync();
+
+    const s = metrics.snapshot();
+    expect(s['scheduler_stream_notify_wakeup_total']).toBe(2);
+    expect(s['scheduler_stream_poll_fallback_total']).toBe(1);
+    expect(s['scheduler_stream_listener_reconnect_total']).toBe(1);
+    expect(s['scheduler_sse_resync_total']).toBe(1);
+
+    const text = metrics.renderMetrics();
+    expect(text).toContain('# TYPE scheduler_stream_notify_wakeup_total counter');
+    expect(text).toContain('# TYPE scheduler_stream_poll_fallback_total counter');
+    expect(text).toContain('# TYPE scheduler_stream_listener_reconnect_total counter');
+    expect(text).toContain('# TYPE scheduler_sse_resync_total counter');
+    expect(text).toMatch(/scheduler_stream_notify_wakeup_total 2/);
+    expect(text).toMatch(/scheduler_stream_poll_fallback_total 1/);
+    expect(text).toMatch(/scheduler_stream_listener_reconnect_total 1/);
+    expect(text).toMatch(/scheduler_sse_resync_total 1/);
   });
 
   it('P2-T3：候选数/硬拒绝/影响数/churn 指标正确记录', () => {

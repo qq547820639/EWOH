@@ -3,7 +3,7 @@
  * buildCommandMapState 为纯函数（node 可测）：聚合 React Query 各查询结果 +
  * UI state → 展示模型。不重算资格/成本（透传后端字段）。
  */
-import { buildCommandMapState, DEFAULT_UI_STATE } from './commandMapSelector';
+import { applyUiPatch, buildCommandMapState, DEFAULT_UI_STATE } from './commandMapSelector';
 import type { WorldStateSnapshot, SchedulingPlanV2, ResourceState } from '@shared/api.interface';
 
 const SNAPSHOT: WorldStateSnapshot = {
@@ -70,5 +70,39 @@ describe('buildCommandMapState（聚合选择器）', () => {
     expect(state.conflicts.total).toBe(0);
     expect(state.loading).toBe(true);
     expect(state.hasError).toBe(true);
+  });
+});
+
+describe('applyUiPatch（updateUi 底层合并，selection owner）', () => {
+  it('局部 patch 更新指定 ui 字段，其余字段原样保留', () => {
+    const prev: Parameters<typeof applyUiPatch>[0] = {
+      ...DEFAULT_UI_STATE,
+      selectedTaskId: 't1',
+      activeLayers: ['conflict'],
+    };
+    const next = applyUiPatch(prev, { selectedPlanId: 'P2' });
+    expect(next.selectedPlanId).toBe('P2');
+    expect(next.selectedTaskId).toBe('t1');
+    expect(next.activeLayers).toEqual(['conflict']);
+    expect(next).not.toBe(prev);
+  });
+
+  it('面板选方案 → updateUi 更新 selectedPlanId（无选中 → 选中）', () => {
+    const next = applyUiPatch({ ...DEFAULT_UI_STATE }, { selectedPlanId: 'PLAN-B' });
+    expect(next.selectedPlanId).toBe('PLAN-B');
+  });
+
+  it('地图选任务 → ui.selectedTaskId 更新', () => {
+    const next = applyUiPatch({ ...DEFAULT_UI_STATE }, { selectedTaskId: 'TASK-1' });
+    expect(next.selectedTaskId).toBe('TASK-1');
+  });
+
+  it('取消/清空选中 → 字段显式置 null（不保留旧值）', () => {
+    const next = applyUiPatch(
+      { ...DEFAULT_UI_STATE, selectedPlanId: 'PLAN-A', selectedTaskId: 'TASK-1' },
+      { selectedPlanId: null },
+    );
+    expect(next.selectedPlanId).toBeNull();
+    expect(next.selectedTaskId).toBe('TASK-1');
   });
 });

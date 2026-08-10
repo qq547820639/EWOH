@@ -39,7 +39,6 @@ import type {
   EventInfo,
   OrganizationInfo,
   PersonnelInfo,
-  SchedulingPlanV2,
   RouteGraph,
   TaskCandidatesResponse,
   DecisionTrace,
@@ -194,9 +193,7 @@ const CommandMap = (): React.ReactElement => {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [focusPlanId, setFocusPlanId] = useState<string | null>(null);
   const [focusPlanPersons, setFocusPlanPersons] = useState<string[]>([]);
-  const [activePlan, setActivePlan] = useState<SchedulingPlanV2 | null>(null);
   // 智能调度驾驶舱：选中的任务（用于拉取后端候选资源）与驾驶舱面板显隐。
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [showIntelligence, setShowIntelligence] = useState(false);
   const [showWorkspace, setShowWorkspace] = useState(false);
   // Phase 4 / P4-COMPARE：Plan Compare UI state（三模式 + 聚焦）。
@@ -209,6 +206,13 @@ const CommandMap = (): React.ReactElement => {
   const [replayPaused, setReplayPaused] = useState(false);
   // Phase 3 / P3-T3：聚合状态 Hook（React Query 权威数据 + SSE 增量 + 本地 UI state）。
   const schedulerState = useCommandMapSchedulerState();
+  // selection owner：selectedTaskId / selectedPlanId 唯一真源在 ui（updateUi 统一写入），
+  // 本组件与 SchedulePanel 等不再各自维护副本。
+  const { ui, updateUi } = schedulerState;
+  const selectedTaskId = ui.selectedTaskId;
+  const selectedPlanId = ui.selectedPlanId;
+  // 当前选中方案由 ui.selectedPlanId 派生：无效/缺失 → null，绝不回退 plans[0]。
+  const activePlan = schedulerState.plans.find((p) => p.planId === selectedPlanId) ?? null;
 
   // Phase 4 / P4-COMPARE：对比结果（后端权威 diff）+ 地图 VM。
   const compareResultQuery = useQueryCompare<PlanCompareResult | null>({
@@ -402,13 +406,13 @@ const CommandMap = (): React.ReactElement => {
   // 离开调度模式或清空方案时，重置任务选择与驾驶舱面板。
   useEffect(() => {
     if (mode !== 'scheduling') {
-      setSelectedTaskId(null);
+      if (ui.selectedTaskId) updateUi({ selectedTaskId: null });
       setShowIntelligence(false);
     }
-  }, [mode]);
+  }, [mode, ui.selectedTaskId, updateUi]);
   useEffect(() => {
-    if (!activePlan) setSelectedTaskId(null);
-  }, [activePlan]);
+    if (!activePlan && ui.selectedTaskId) updateUi({ selectedTaskId: null });
+  }, [activePlan, ui.selectedTaskId, updateUi]);
 
   const entityList = entities ?? [];
   const state = worldState ?? null;
@@ -765,8 +769,8 @@ const CommandMap = (): React.ReactElement => {
             >
               <SchedulerLayersOverlay
                 state={schedulerState}
-                // P0-8：Plan 层与 SchedulePanel 共享同一选中方案（lifted 到 CommandMap 级）。
-                selectedPlanId={activePlan?.planId ?? null}
+                // P0-8：Plan 层与 SchedulePanel 共享同一选中方案（selection owner：ui.selectedPlanId）。
+                selectedPlanId={selectedPlanId}
               />
               {showCompare && compareVm && (
                 <PlanCompareLayer
@@ -816,7 +820,7 @@ const CommandMap = (): React.ReactElement => {
                 worldState={displayWorldState}
                 candidates={candidates ?? null}
                 selectedTaskId={selectedTaskId}
-                onSelectTask={setSelectedTaskId}
+                onSelectTask={(taskId) => updateUi({ selectedTaskId: taskId })}
                 onClose={() => setShowIntelligence(false)}
               />
             </React.Suspense>
@@ -1009,7 +1013,8 @@ const CommandMap = (): React.ReactElement => {
                 focusPlanId={focusPlanId}
                 onFocusPlanConsumed={() => setFocusPlanId(null)}
                 onViewOnMap={handleViewOnMap}
-                onSelectPlan={setActivePlan}
+                selectedPlanId={selectedPlanId}
+                onSelectPlan={(plan) => updateUi({ selectedPlanId: plan?.planId ?? null })}
                 personnel={personnel ?? []}
               />
             </React.Suspense>
@@ -1060,7 +1065,7 @@ const CommandMap = (): React.ReactElement => {
           {/* v0.7 A3：人工覆盖中心（消费 /plans/:id/overrides） */}
           {activeTab === 'override' && (
             <React.Suspense fallback={<MapPanelFallback />}>
-              <OverridePanel planId={activePlan?.planId ?? null} />
+              <OverridePanel planId={selectedPlanId} />
             </React.Suspense>
           )}
           {activeTab === 'workbench' && (
@@ -1077,7 +1082,7 @@ const CommandMap = (): React.ReactElement => {
               <ResourcePoolPanel
                 entities={entityList}
                 worldState={state}
-                planId={activePlan?.planId ?? null}
+                planId={selectedPlanId}
               />
             </React.Suspense>
           )}

@@ -4,7 +4,7 @@
  * useSchedulerStream 处理 SSE 增量 + gap→resync；聚合交给纯选择器 commandMapSelector
  * （node 可测）；本地只存 UI state。
  */
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   getSnapshot,
@@ -15,6 +15,7 @@ import {
 } from '@client/src/api/scheduler';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import {
+  applyUiPatch,
   buildCommandMapState,
   DEFAULT_UI_STATE,
   type CommandMapAggregate,
@@ -23,10 +24,25 @@ import {
 import type { ConflictsListRequest } from '@shared/api.interface';
 
 export type { CommandMapAggregate, CommandMapUIState, CommandMapLayer, PanelMode, Viewport } from './commandMapSelector';
-export { DEFAULT_UI_STATE, buildCommandMapState } from './commandMapSelector';
+export { DEFAULT_UI_STATE, applyUiPatch, buildCommandMapState } from './commandMapSelector';
 
-export function useCommandMapSchedulerState(): CommandMapAggregate {
+export type CommandMapSchedulerState = CommandMapAggregate & {
+  /**
+   * 全页唯一 selection owner：CommandMap / SchedulePanel 等组件统一经它读写
+   * selectedTaskId / selectedPlanId / selectedResourceId（局部 patch 合并）。
+   * 禁止组件各自维护 selection 副本（消除双轨状态）。
+   */
+  updateUi: (patch: Partial<CommandMapUIState>) => void;
+};
+
+export function useCommandMapSchedulerState(): CommandMapSchedulerState {
   const [ui, setUi] = useState<CommandMapUIState>(DEFAULT_UI_STATE);
+
+  // selection owner 写入入口：引用稳定（useCallback），组件可安全放入依赖数组。
+  const updateUi = useCallback(
+    (patch: Partial<CommandMapUIState>) => setUi((prev) => applyUiPatch(prev, patch)),
+    [],
+  );
 
   const snapshotQuery = useQuery({
     queryKey: queryKeys.schedulerSnapshot,
@@ -97,5 +113,5 @@ export function useCommandMapSchedulerState(): CommandMapAggregate {
     ],
   );
 
-  return aggregate;
+  return { ...aggregate, updateUi };
 }

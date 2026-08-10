@@ -118,7 +118,7 @@ function makeService() {
 }
 
 /** 构造真实 PlanService（consultReplanApproval 决策逻辑），仅 mock 外部依赖。 */
-function makePlanServiceForApproval() {
+function makePlanServiceForApproval(configOverride: Record<string, unknown> = {}) {
   const worldState = {
     buildSnapshot: jest.fn().mockResolvedValue(makeSnapshot()),
     getCurrentWorldState: jest.fn().mockResolvedValue(makeSnapshot()),
@@ -129,6 +129,7 @@ function makePlanServiceForApproval() {
       autoMaxChurnRatio: 0.4,
       requireApprovalOnSafetyCritical: true,
       requireApprovalOnHumanLock: true,
+      ...configOverride,
     }),
   };
   const planService = new PlanService(
@@ -311,5 +312,97 @@ describe('M03 ReplanPreviewService', () => {
     });
     expect(out.decision).toBe('HUMAN_APPROVAL_REQUIRED');
     expect(out.reasons).toContain('human_lock');
+  });
+
+  /** 软触发 + 纯计数型 preview（不命中 critical/ratio/lock/lateness 等其余维度）。 */
+  function softImpactPreview(
+    changed: number,
+    added: number,
+    removed: number,
+  ): { impact: ReplanImpact; preview: ReplanPreviewResult } {
+    const impact: ReplanImpact = {
+      triggerType: 'PERSON_UNAVAILABLE',
+      triggerIds: [],
+      affectedTaskIds: ['t1'],
+      affectedResourceIds: [],
+      affectedPersonIds: ['p1'],
+      affectedDeviceIds: [],
+      affectedStationIds: [],
+      affectedZoneIds: [],
+      frozenAssignmentIds: [],
+      movableAssignmentIds: ['t1'],
+      reasons: ['soft_deviation:PERSON_UNAVAILABLE:p1'],
+      snapshotVersion: 'WS-TEST-0001',
+      baselinePlanVersion: null,
+    };
+    const preview: ReplanPreviewResult = {
+      baselinePlanId: 'PLAN-BASE',
+      candidatePlanId: 'PREVIEW-X',
+      readonly: true,
+      affectedTaskCount: 1,
+      unchangedAssignmentCount: 0,
+      changedAssignmentCount: changed,
+      addedAssignmentCount: added,
+      removedAssignmentCount: removed,
+      latenessDelta: 0,
+      travelDelta: 0,
+      workloadDelta: 0,
+      stationWaitDelta: 0,
+      changeoverDelta: 0,
+      energyRiskDelta: 0,
+      riskDelta: 0,
+      churnDelta: 0,
+      changedAssignments: [],
+    };
+    return { impact, preview };
+  }
+
+  it('approval：改派总数超限（maxChangedAssignments=5，changed+added+removed=6）→ HUMAN_APPROVAL_REQUIRED', async () => {
+    const planService = makePlanServiceForApproval({ maxChangedAssignments: 5 });
+    const { impact, preview } = softImpactPreview(4, 1, 1);
+    const out = await planService.consultReplanApproval({
+      triggerType: 'PERSON_UNAVAILABLE',
+      impact,
+      preview,
+      ctx: testOrgContext(),
+    });
+    expect(out.decision).toBe('HUMAN_APPROVAL_REQUIRED');
+    expect(out.reasons).toContain('max_changed_assignments');
+  });
+
+  it('approval：改派总数未超限（maxChangedAssignments=5，=5）→ 不命中 max_changed_assignments', async () => {
+    const planService = makePlanServiceForApproval({ maxChangedAssignments: 5 });
+    const { impact, preview } = softImpactPreview(3, 1, 1);
+    const out = await planService.consultReplanApproval({
+      triggerType: 'PERSON_UNAVAILABLE',
+      impact,
+      preview,
+      ctx: testOrgContext(),
+    });
+    expect(out.decision).toBe('AUTO_REPLAN');
+    expect(out.reasons).not.toContain('max_changed_assignments');
+  });
+
+  it('approval：maxChangedAssignments 缺省 20（=21 命中，=20 不命中）', async () => {
+    const planService = makePlanServiceForApproval();
+    const hit = softImpactPreview(10, 10, 1);
+    const out = await planService.consultReplanApproval({
+      triggerType: 'PERSON_UNAVAILABLE',
+      impact: hit.impact,
+      preview: hit.preview,
+      ctx: testOrgContext(),
+    });
+    expect(out.decision).toBe('HUMAN_APPROVAL_REQUIRED');
+    expect(out.reasons).toContain('max_changed_assignments');
+
+    const miss = softImpactPreview(10, 9, 1);
+    const out2 = await planService.consultReplanApproval({
+      triggerType: 'PERSON_UNAVAILABLE',
+      impact: miss.impact,
+      preview: miss.preview,
+      ctx: testOrgContext(),
+    });
+    expect(out2.decision).toBe('AUTO_REPLAN');
+    expect(out2.reasons).not.toContain('max_changed_assignments');
   });
 });

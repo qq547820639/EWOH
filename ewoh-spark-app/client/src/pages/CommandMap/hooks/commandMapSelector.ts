@@ -67,6 +67,20 @@ export const DEFAULT_UI_STATE: CommandMapUIState = {
   viewport: { x: 0, y: 0, scale: 1 },
 };
 
+/**
+ * UI state 局部合并（纯函数，node 可测）：updateUi 的底层实现。
+ *
+ * selection owner 约定：selectedTaskId / selectedResourceId / selectedPlanId 只经
+ * useCommandMapSchedulerState.updateUi 写入（CommandMap / SchedulePanel 均通过它读写），
+ * 各组件禁止自持副本；patch 中未提及的字段原样保留。
+ */
+export function applyUiPatch(
+  prev: CommandMapUIState,
+  patch: Partial<CommandMapUIState>,
+): CommandMapUIState {
+  return { ...prev, ...patch };
+}
+
 /** 纯选择器：各查询结果 + UI state → 聚合展示模型（可单测，不重算调度资格）。 */
 export function buildCommandMapState(params: {
   snapshot: WorldStateSnapshot | null;

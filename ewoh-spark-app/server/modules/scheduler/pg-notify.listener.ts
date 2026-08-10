@@ -33,6 +33,8 @@ export class PgNotifyListener implements SchedulerOutboxListener {
   constructor(
     private readonly databaseUrl: string,
     private readonly channel: string = SCHEDULER_OUTBOX_NOTIFY_CHANNEL,
+    /** Task 3 埋点：每次重新建立 LISTEN 连接时回调（供 scheduler.module 注入 metricsService 埋点 reconnect）。 */
+    private readonly onReconnect?: () => void,
   ) {}
 
   /** 订阅通知（异步建立连接，立即返回取消函数；失败自动退避重试直至取消）。 */
@@ -95,6 +97,10 @@ export class PgNotifyListener implements SchedulerOutboxListener {
         const nextDelay = Math.min(retryDelayMs * 2, RETRY_MAX_MS);
         this.retryTimer = setTimeout(() => {
           this.retryTimer = null;
+          // Task 3 埋点：退避重试 = 重新尝试建立 LISTEN 连接，计一次 reconnect
+          // （postgres.js listen 库内的 onclose 自动重连对本类透明、无法直接观测，
+          //   此处以退避重连尝试作为 reconnect 近似计数）。
+          this.onReconnect?.();
           void this.connect(onNotify, nextDelay);
         }, retryDelayMs);
       }

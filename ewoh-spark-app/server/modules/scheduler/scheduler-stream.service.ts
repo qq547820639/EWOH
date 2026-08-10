@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/c
 import { Subject, type Observable } from 'rxjs';
 import type { SchedulingEvent, OutboxEvent } from '@shared/api.interface';
 import { OutboxService } from './outbox.service';
+import { SchedulerMetricsService } from './scheduler-metrics.service';
 
 const POLL_INTERVAL_MS = 2_000;
 const POLL_BATCH = 500;
@@ -46,16 +47,19 @@ export class SchedulerStreamService implements OnModuleDestroy {
   private timer: NodeJS.Timeout | null = null;
   /** Task 6：NOTIFY wake-up 订阅的取消函数（仅在提供 notifyListener 时非空）。 */
   private notifyUnsubscribe: (() => void) | null = null;
+  /** Task 3 埋点：notifyListener 未启用或订阅失败 → 每次 poll 计一次 fallback。 */
+  private pollingIsFallback = false;
 
   /**
    * 保持既有构造签名向后兼容：`new SchedulerStreamService(outboxService)` 依然成立
-   * （notifyListener 可选，缺省 undefined = 纯轮询，现有 spec 零改动）。
+   * （notifyListener/metricsService 可选，缺省 undefined = 纯轮询、无埋点，现有 spec 零改动）。
    * Nest DI 下 @Optional 保证 token 未提供（SCHEDULER_STREAM_NOTIFY != 1）时注入 undefined。
    */
   constructor(
     private readonly outboxService: OutboxService,
     @Optional() @Inject(SCHEDULER_STREAM_NOTIFY_LISTENER)
     private readonly notifyListener?: SchedulerOutboxListener,
+    @Optional() private readonly metricsService?: SchedulerMetricsService,
   ) {}
 
   /** 记录已推送事件 id（有界去重：超上限淘汰最老一半）。 */
@@ -96,6 +100,8 @@ export class SchedulerStreamService implements OnModuleDestroy {
 
     // 客户端已超前于服务器 → 状态不一致，必须重新同步。
     if (base > latest) {
+      // Task 3 埋点：gap→resync（客户端需放弃增量全量拉取）。
+      this.metricsService?.recordResync();
       return { events: [], resyncNeeded: true, gap: true, currentSequence: latest };
     }
 
@@ -105,6 +111,8 @@ export class SchedulerStreamService implements OnModuleDestroy {
     // 否则说明中间事件被裁剪/丢失，增量无法安全续接。
     const gap = base > 0 && rows.length > 0 && rows[0].sequence > base + 1;
     if (gap) {
+      // Task 3 埋点：gap→resync（客户端需放弃增量全量拉取）。
+      this.metricsService?.recordResync();
       return { events: [], resyncNeeded: true, gap: true, currentSequence: latest };
     }
 
@@ -134,6 +142,8 @@ export class SchedulerStreamService implements OnModuleDestroy {
     if (this.notifyListener) {
       try {
         this.notifyUnsubscribe = this.notifyListener.subscribe(() => {
+          // Task 3 埋点：NOTIFY wake-up 生效（即时 poll），非 fallback 路径。
+          this.metricsService?.recordNotifyWakeup();
           void this.poll();
         });
         this.logger.log('scheduler stream notify listener subscribed');
@@ -144,7 +154,12 @@ export class SchedulerStreamService implements OnModuleDestroy {
           err instanceof Error ? err.stack : String(err),
         );
         this.notifyUnsubscribe = null;
+        // Task 3 埋点：订阅失败 → 后续定时 poll 计 fallback。
+        this.pollingIsFallback = true;
       }
+    } else {
+      // Task 3 埋点：notifyListener 未启用（SCHEDULER_STREAM_NOTIFY != 1）→ 定时 poll 计 fallback。
+      this.pollingIsFallback = true;
     }
     this.logger.log('scheduler stream polling started');
   }
@@ -180,6 +195,8 @@ export class SchedulerStreamService implements OnModuleDestroy {
 
   private async poll(): Promise<void> {
     try {
+      // Task 3 埋点：listener 未启用/订阅失败时的轮询兜底（每次 poll 计一次）。
+      if (this.pollingIsFallback) this.metricsService?.recordPollFallback();
       const events = await this.outboxService.listLatest(POLL_BATCH);
       // 倒序 → 升序，保证按 sequence 顺序推送。
       for (let i = events.length - 1; i >= 0; i--) {

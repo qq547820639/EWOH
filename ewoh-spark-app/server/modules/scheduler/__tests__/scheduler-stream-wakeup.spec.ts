@@ -53,6 +53,16 @@ function makeListener() {
   return { listener, fire: () => onNotify?.() };
 }
 
+/** mock metricsService（Task 3 埋点）：结构近似 SchedulerMetricsService 的 4 个实时指标方法。 */
+function makeMetrics() {
+  return {
+    recordNotifyWakeup: jest.fn(),
+    recordPollFallback: jest.fn(),
+    recordListenerReconnect: jest.fn(),
+    recordResync: jest.fn(),
+  };
+}
+
 describe('SchedulerStreamService OUTBOX LISTEN/NOTIFY wake-up（Task 6）', () => {
   it('收到通知 → 立即触发一次 poll（不等 2s 轮询），新事件被推送', async () => {
     const outbox = makeOutbox(jest.fn().mockResolvedValue([evt(1)]));
@@ -167,5 +177,116 @@ describe('SchedulerStreamService OUTBOX LISTEN/NOTIFY wake-up（Task 6）', () =
     expect(() => svc.stop()).not.toThrow();
     // 幂等：重复 stop 同样不抛。
     expect(() => svc.stop()).not.toThrow();
+  });
+
+  // ---- Task 3 埋点：Realtime 可观测指标（notify wakeup / poll fallback / resync） ----
+
+  it('埋点：NOTIFY 触发 poll 记录 recordNotifyWakeup；listener 启用时定时轮询不计 fallback', async () => {
+    jest.useFakeTimers();
+    try {
+      const outbox = makeOutbox(jest.fn().mockResolvedValue([evt(1)]));
+      const { listener, fire } = makeListener();
+      const metrics = makeMetrics();
+      const svc = new SchedulerStreamService(outbox as never, listener, metrics as never);
+      const events: SchedulingEvent[] = [];
+      const sub = svc.events().subscribe((e) => events.push(e));
+
+      await svc.start();
+      expect(listener.subscribe).toHaveBeenCalledTimes(1);
+
+      // NOTIFY wake-up：即时 poll + 计数
+      fire();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(outbox.listLatest).toHaveBeenCalledTimes(1);
+      expect(events.map((e) => e.sequence)).toEqual([1]);
+      expect(metrics.recordNotifyWakeup).toHaveBeenCalledTimes(1);
+      expect(metrics.recordPollFallback).not.toHaveBeenCalled();
+
+      // listener 启用成功 → 定时轮询兜底不计 fallback
+      await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+      expect(metrics.recordPollFallback).not.toHaveBeenCalled();
+
+      sub.unsubscribe();
+      svc.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('埋点：未提供 listener → 每次定时 poll 记录 recordPollFallback', async () => {
+    jest.useFakeTimers();
+    try {
+      const outbox = makeOutbox(jest.fn().mockResolvedValue([evt(1)]));
+      const metrics = makeMetrics();
+      const svc = new SchedulerStreamService(outbox as never, undefined, metrics as never);
+      const events: SchedulingEvent[] = [];
+      const sub = svc.events().subscribe((e) => events.push(e));
+
+      await svc.start();
+      await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+      expect(outbox.listLatest).toHaveBeenCalledTimes(1);
+      expect(events.map((e) => e.sequence)).toEqual([1]);
+      expect(metrics.recordPollFallback).toHaveBeenCalledTimes(1);
+
+      sub.unsubscribe();
+      svc.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('埋点：listener 订阅抛错 → 降级轮询路径每次 poll 记录 recordPollFallback', async () => {
+    jest.useFakeTimers();
+    try {
+      const outbox = makeOutbox(jest.fn().mockResolvedValue([evt(1)]));
+      const throwingListener: SchedulerOutboxListener = {
+        subscribe: jest.fn(() => {
+          throw new Error('listener subscribe boom');
+        }),
+      };
+      const metrics = makeMetrics();
+      const svc = new SchedulerStreamService(outbox as never, throwingListener, metrics as never);
+      const events: SchedulingEvent[] = [];
+      const sub = svc.events().subscribe((e) => events.push(e));
+
+      await svc.start();
+      expect(throwingListener.subscribe).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+      expect(outbox.listLatest).toHaveBeenCalledTimes(1);
+      expect(events.map((e) => e.sequence)).toEqual([1]);
+      expect(metrics.recordPollFallback).toHaveBeenCalledTimes(1);
+
+      sub.unsubscribe();
+      svc.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('埋点：replaySince 检测到 sequence 缺口 → recordResync；客户端超前 → recordResync', async () => {
+    const metrics = makeMetrics();
+
+    // 分支一：缺口（base+1 与首条回放 sequence 不连续）
+    const gapOutbox = {
+      latestSequence: jest.fn().mockResolvedValue(10),
+      listSince: jest.fn().mockResolvedValue([evt(5)]),
+      listLatest: jest.fn().mockResolvedValue([]),
+    };
+    const gapSvc = new SchedulerStreamService(gapOutbox as never, undefined, metrics as never);
+    const gapResult = await gapSvc.replaySince(1);
+    expect(gapResult.resyncNeeded).toBe(true);
+    expect(metrics.recordResync).toHaveBeenCalledTimes(1);
+
+    // 分支二：客户端 sequence 超前于服务器最新
+    const aheadOutbox = {
+      latestSequence: jest.fn().mockResolvedValue(3),
+      listSince: jest.fn().mockResolvedValue([]),
+      listLatest: jest.fn().mockResolvedValue([]),
+    };
+    const aheadSvc = new SchedulerStreamService(aheadOutbox as never, undefined, metrics as never);
+    const aheadResult = await aheadSvc.replaySince(5);
+    expect(aheadResult.resyncNeeded).toBe(true);
+    expect(metrics.recordResync).toHaveBeenCalledTimes(2);
   });
 });

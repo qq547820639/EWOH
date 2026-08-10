@@ -855,6 +855,7 @@ export class PlanService {
    *  - affectedRatio = affectedTaskIds / 可调度任务数 > autoMaxAffectedRatio（缺省 0.5）
    *  - 影响集合含 safetyCritical 任务（requireApprovalOnSafetyCritical 缺省 true）
    *  - 预期 churnRatio = churnDelta / affected > autoMaxChurnRatio（缺省 0.4）
+   *  - 改派总数 changed+added+removed > maxChangedAssignments（缺省 20）
    *  - latenessDelta > 0 或 riskDelta > 0（预览保守原则）
    *  - 影响集合含人工 LOCK（snapshot.lockedAssignments；requireApprovalOnHumanLock 缺省 true）
    */
@@ -914,6 +915,14 @@ export class PlanService {
         preview.churnDelta / affectedCount;
       if (churnRatio > (config.autoMaxChurnRatio ?? 0.4)) {
         reasons.push('churn_ratio');
+      }
+      // 改派总数（changed+added+removed）超限 → 人工审批。
+      const changedTotal =
+        preview.changedAssignmentCount +
+        preview.addedAssignmentCount +
+        preview.removedAssignmentCount;
+      if (changedTotal > (config.maxChangedAssignments ?? 20)) {
+        reasons.push('max_changed_assignments');
       }
       if (preview.latenessDelta > 0 || preview.riskDelta > 0) {
         reasons.push('lateness_risk_delta');

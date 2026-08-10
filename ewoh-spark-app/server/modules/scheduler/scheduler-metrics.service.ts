@@ -110,6 +110,20 @@ export class SchedulerMetricsService {
     this.inc(reason ? `scheduler_sse_gap_total{reason="${reason}"}` : 'scheduler_sse_gap_total');
   }
 
+  // ---- Realtime 可观测（Task 3 / P2 增量：实时链路计数器） ----
+
+  /** 记录一次 outbox 通知驱动的即时 poll（低延迟 wake-up 生效）。 */
+  recordNotifyWakeup(): void { this.inc('scheduler_stream_notify_wakeup_total'); }
+
+  /** 记录一次 listener 不可用/未启用时回退到轮询的 poll。 */
+  recordPollFallback(): void { this.inc('scheduler_stream_poll_fallback_total'); }
+
+  /** 记录一次 Postgres LISTEN 断线重连。 */
+  recordListenerReconnect(): void { this.inc('scheduler_stream_listener_reconnect_total'); }
+
+  /** 记录一次 SSE gap→resync（客户端需放弃增量全量拉取）。 */
+  recordResync(): void { this.inc('scheduler_sse_resync_total'); }
+
   /** 记录一次 dispatch 成功/失败。 */
   recordDispatch(ok: boolean): void {
     this.inc(ok ? 'scheduler_dispatch_total' : 'scheduler_dispatch_failure_total');
@@ -286,6 +300,26 @@ export class SchedulerMetricsService {
       ['scheduler_plan_churn_total', '方案 churn 累计（相对基线改派任务数）'],
       ['scheduler_station_decision_total', 'station 决策命中累计（P1-4）'],
       ['scheduler_changeover_total', 'changeover 换产次数累计（P1-4）'],
+    ] as Array<[string, string]>) {
+      lines.push(`# HELP ${name} ${help}`);
+      lines.push(`# TYPE ${name} counter`);
+      const variants = [...this.counters.entries()].filter(([k]) => k.startsWith(name));
+      if (variants.length === 0) {
+        lines.push(`${name} 0`);
+      } else {
+        for (const [key, val] of variants) {
+          const rest = key.includes('{') ? key.slice(key.indexOf('{')) : '';
+          lines.push(`${name}${rest} ${val}`);
+        }
+      }
+    }
+
+    // ---- Realtime 可观测（Task 3 / P2 增量）counters ----
+    for (const [name, help] of [
+      ['scheduler_stream_notify_wakeup_total', 'outbox NOTIFY 通知驱动的即时 poll 累计（低延迟 wake-up 生效）'],
+      ['scheduler_stream_poll_fallback_total', 'listener 不可用/未启用时回退轮询的 poll 累计'],
+      ['scheduler_stream_listener_reconnect_total', 'Postgres LISTEN 断线重连累计'],
+      ['scheduler_sse_resync_total', 'SSE gap→resync 累计（客户端放弃增量全量拉取）'],
     ] as Array<[string, string]>) {
       lines.push(`# HELP ${name} ${help}`);
       lines.push(`# TYPE ${name} counter`);

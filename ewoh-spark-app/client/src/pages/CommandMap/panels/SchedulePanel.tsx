@@ -177,7 +177,12 @@ interface SchedulePanelProps {
   onFocusPlanConsumed?: () => void;
   /** 在调度模式地图上高亮某方案受影响人员 */
   onViewOnMap?: (personIds: string[]) => void;
-  /** 将当前选中方案上抛给地图层做覆盖渲染 */
+  /**
+   * 当前选中方案 id（受控）：由父组件注入（CommandMap ui.selectedPlanId）。
+   * 本组件不自持选中状态，选中变更经 onSelectPlan 上抛父级 updateUi 回流。
+   */
+  selectedPlanId?: string | null;
+  /** 选中方案变更回调（受控组件唯一写入口，plan 为 null 表示取消选中） */
   onSelectPlan?: (plan: SchedulingPlanV2 | null) => void;
   /** 人员列表（用于调整指派/解释说明） */
   personnel?: PersonnelInfo[];
@@ -188,11 +193,11 @@ export default function SchedulePanel({
   onFocusPlanConsumed,
   onViewOnMap,
   onSelectPlan,
+  selectedPlanId = null,
   personnel = [],
 }: SchedulePanelProps) {
   const queryClient = useQueryClient();
 
-  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
   const [approveTarget, setApproveTarget] = useState<SchedulingPlanV2 | null>(null);
   const [approveReason, setApproveReason] = useState('');
@@ -238,21 +243,14 @@ export default function SchedulePanel({
     [plans, selectedPlanId],
   );
 
-  // 将选中方案上抛给地图层
-  useEffect(() => {
-    onSelectPlan?.(selectedPlan);
-  }, [selectedPlan, onSelectPlan]);
-
-  // 聚焦到大脑建议/任务编排关联的方案
+  // 聚焦到大脑建议/任务编排关联的方案（深链恢复）。
+  // 受控：只选中 focusPlanId 对应方案；不在列表（deepLink 拉取中）时置 null，绝不回退 plans[0]。
   useEffect(() => {
     if (!focusPlanId) return;
-    if (plans.some((p) => p.planId === focusPlanId)) {
-      setSelectedPlanId(focusPlanId);
-    } else if (plans.length > 0) {
-      setSelectedPlanId(plans[0].planId);
-    }
+    const target = plans.find((p) => p.planId === focusPlanId) ?? null;
+    onSelectPlan?.(target);
     onFocusPlanConsumed?.();
-  }, [focusPlanId, plans, onFocusPlanConsumed]);
+  }, [focusPlanId, plans, onSelectPlan, onFocusPlanConsumed]);
 
   const appendPlans = (newPlans: SchedulingPlanV2[]) => {
     if (!newPlans || newPlans.length === 0) return;
@@ -261,7 +259,7 @@ export default function SchedulePanel({
       const seen = new Set<string>();
       return merged.filter((p) => (seen.has(p.planId) ? false : (seen.add(p.planId), true)));
     });
-    setSelectedPlanId((prev) => prev ?? newPlans[0].planId);
+    // 受控：不自动选中新方案（不回退 plans[0]），由用户显式选择。
   };
 
   const generateMutation = useMutation({
@@ -306,7 +304,7 @@ export default function SchedulePanel({
     queryClient.setQueryData<SchedulingPlanV2[]>(queryKeys.schedulerActivePlans, (prev) =>
       (prev ?? []).map((p) => (p.planId === plan.planId ? plan : p)),
     );
-    setSelectedPlanId(plan.planId);
+    onSelectPlan?.(plan);
   };
 
   const approveMutation = useMutation({
@@ -498,7 +496,7 @@ export default function SchedulePanel({
                 <button
                   key={p.planId}
                   type="button"
-                  onClick={() => setSelectedPlanId(p.planId)}
+                  onClick={() => onSelectPlan?.(p)}
                   className={cn(
                     'w-full text-left px-3 py-2 border-b border-white/5 hover:bg-white/5 transition-colors',
                     active && 'bg-white/10',

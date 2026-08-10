@@ -580,6 +580,8 @@ export interface ReplanApprovalConfig {
   autoMaxAffectedRatio?: number;
   /** 预期 churn 比例阈值（churnDelta/affected），超过需人工审批，缺省 0.4。 */
   autoMaxChurnRatio?: number;
+  /** 候选方案相对基线改派 assignment 总数（changed+added+removed）上限；超过则需人工审批（缺省 20）。 */
+  maxChangedAssignments?: number;
   /** 影响集合含 safetyCritical 任务时需人工审批，缺省 true。 */
   requireApprovalOnSafetyCritical?: boolean;
   /** 影响集合含人工 LOCK 时需人工审批，缺省 true。 */
@@ -1908,7 +1910,7 @@ export interface ReplanPreviewRequest {
 /** Replan V2 自动重排 vs 人工审批判定（08 §6）。 */
 export interface ReplanApprovalDecision {
   decision: 'AUTO_REPLAN' | 'HUMAN_APPROVAL_REQUIRED';
-  /** 命中原因（critical_event / affected_ratio / safety_critical / human_lock / churn_ratio / lateness_risk_delta）。 */
+  /** 命中原因（critical_event / affected_ratio / safety_critical / human_lock / churn_ratio / max_changed_assignments / lateness_risk_delta）。 */
   reasons: string[];
 }
 
