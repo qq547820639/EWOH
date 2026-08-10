@@ -51,19 +51,34 @@ export interface RouteCostMemo {
   size(): number;
 }
 
-export function createRouteCostMemo(provider: {
-  estimate(
-    personId: string,
-    taskId: string,
-    from?: { x: number | null; y: number | null },
-    to?: { x: number | null; y: number | null },
-  ): Promise<RouteCost>;
-}): RouteCostMemo {
+/** memo 命中统计（仅 benchmark/诊断注入；生产默认 off，零语义影响）。 */
+export interface RouteCostMemoStats {
+  /** memo 查询总次数。 */
+  lookups: number;
+  /** 命中缓存（同键已在 cache 内）的次数。 */
+  hits: number;
+}
+
+export function createRouteCostMemo(
+  provider: {
+    estimate(
+      personId: string,
+      taskId: string,
+      from?: { x: number | null; y: number | null },
+      to?: { x: number | null; y: number | null },
+    ): Promise<RouteCost>;
+  },
+  stats?: RouteCostMemoStats | null,
+): RouteCostMemo {
   const cache = new Map<string, Promise<RouteCost>>();
   return {
     get(personId, taskId, from, to) {
       const key = routeCostMemoKey(personId, taskId, from, to);
       let p = cache.get(key);
+      if (stats) {
+        stats.lookups += 1;
+        if (p) stats.hits += 1;
+      }
       if (!p) {
         // 缓存 Promise 而非值：并发 await 去重；同键结果必然一致。
         p = provider.estimate(personId, taskId, from, to);

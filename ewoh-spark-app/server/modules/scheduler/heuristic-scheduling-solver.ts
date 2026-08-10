@@ -17,7 +17,7 @@ import {
 } from './eligibility.service';
 import { RoutingService } from './routing.service';
 import { RouteCostProvider } from './route-cost.provider';
-import { createRouteCostMemo, type RouteCostMemo } from './route-cost-memo';
+import { createRouteCostMemo, type RouteCostMemo, type RouteCostMemoStats } from './route-cost-memo';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import type { SchedulerMetricsService } from './scheduler-metrics.service';
 import { TaskLifecycle } from './task-lifecycle';
@@ -161,6 +161,9 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     private readonly objectiveEvaluator: SchedulingObjectiveEvaluator = new SchedulingObjectiveEvaluator(),
     // T03 / P1-2（G7）：候选引擎（可选注入；注入后候选生成与端点共享语义）。
     private readonly candidateEngine?: CandidateEngineService,
+    // P0-bench：run-local route-cost memo 命中统计注入（默认 off；仅 benchmark 使用，
+    // 不改变 route-cost 语义——未注入时 memo 行为与历史完全一致）。
+    private readonly routeMemoStats?: RouteCostMemoStats,
   ) {}
 
   /** 暴露当前激活策略（供外层组合求解器构建请求权重时复用同一策略）。 */
@@ -441,7 +444,11 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       });
     }
     // run-local 确定性路径成本 memo（per-solve-call，几何点对键）。
-    const routeCostMemo: RouteCostMemo = createRouteCostMemo(this.routeCostProvider);
+    // P0-bench：注入统计对象（可选）时累计命中/查询，供 benchmark 报告缓存命中率。
+    const routeCostMemo: RouteCostMemo = createRouteCostMemo(
+      this.routeCostProvider,
+      this.routeMemoStats,
+    );
     // 禁入区域 id 数组（invariant；避免每候选 Array.from）。
     const forbiddenZoneIds = Array.from(forbiddenZones);
     // 前置完成判定闭包（doneTaskIds 运行时增长，闭包共享同一 Set 引用）。
@@ -1361,6 +1368,17 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       baselineDelta: evaluated.baselineDelta,
       violations,
       createdAt: new Date().toISOString(),
+    };
+  }
+
+  /** P0-bench：run-local route-cost memo 命中统计（未注入统计对象时全 0；诊断/benchmark 用）。 */
+  routeCacheStats(): { lookups: number; hits: number; hitRatio: number } {
+    const lookups = this.routeMemoStats?.lookups ?? 0;
+    const hits = this.routeMemoStats?.hits ?? 0;
+    return {
+      lookups,
+      hits,
+      hitRatio: lookups > 0 ? hits / lookups : 0,
     };
   }
 

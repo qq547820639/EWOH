@@ -291,6 +291,10 @@ function buildSolvers(cpSatUrl: string | null): {
   candidateGenMs: () => number;
   candidateCount: () => number;
   hardRejectCount: () => number;
+  /** P0-bench：硬约束/eligibility 剪枝掉的候选数（等价于 hardRejectCount，语义即 prunedCount）。 */
+  prunedCount: () => number;
+  /** P0-bench：run-local route-cost memo 命中率（未注入时为 0）。 */
+  routeCacheHitRatio: () => number;
 } {
   const policyService = {
     getActivePolicy: async () => POLICY,
@@ -350,6 +354,9 @@ function buildSolvers(cpSatUrl: string | null): {
     },
   } as never;
 
+  // P0-bench：route-cost memo 命中统计（默认 off；仅注入到 heuristic 供命中率报告）。
+  const routeMemoStats = { lookups: 0, hits: 0 };
+
   const heuristic = new HeuristicSchedulingSolver(
     policyService,
     null as never,
@@ -357,6 +364,9 @@ function buildSolvers(cpSatUrl: string | null): {
     new EligibilityService(),
     new PriorityEngine(),
     metricsCapture,
+    undefined,
+    undefined,
+    routeMemoStats,
   );
 
   const cpSat = cpSatUrl
@@ -369,6 +379,11 @@ function buildSolvers(cpSatUrl: string | null): {
     candidateGenMs: () => candidateGenMs,
     candidateCount: () => recordedCandidateCount,
     hardRejectCount: () => recordedHardRejectCount,
+    prunedCount: () => recordedHardRejectCount,
+    routeCacheHitRatio: () => {
+      const lookups = routeMemoStats.lookups;
+      return lookups > 0 ? routeMemoStats.hits / lookups : 0;
+    },
   };
 }
 
@@ -392,6 +407,8 @@ function startPeakHeapSampler(intervalMs = 25): {
 // ===== 指标提取 =====
 interface RunResult {
   wallMs: number;
+  /** P0-bench：solve 期间进程 CPU 时间（user+system，ms）。 */
+  cpuTimeMs: number;
   candidateGenMs: number;
   solveDurationMs?: number;
   solverStatus?: string;
@@ -402,6 +419,8 @@ interface RunResult {
   changedAssignments: number;
   /** P0：求解器上报的候选组合总数（metricsService 埋点捕获）。 */
   candidateCount: number;
+  /** P0-bench：硬约束/eligibility 剪枝掉的候选数（metricsService 埋点捕获）。 */
+  prunedCount: number;
   /** P0：solve 期间峰值堆（MB）。 */
   peakHeapMb: number;
 }
@@ -430,6 +449,7 @@ async function runOnce(
   baselineAssignee: Map<string, string>,
   candidateGenMs: () => number,
   candidateCount: () => number,
+  prunedCount: () => number,
 ): Promise<RunResult> {
   const opts = {
     planId,
@@ -443,14 +463,18 @@ async function runOnce(
   };
   const sampler = startPeakHeapSampler();
   const t0 = process.hrtime.bigint();
+  const cpu0 = process.cpuUsage();
   const plan = await solver.solve(snapshot, [], opts);
+  const cpu1 = process.cpuUsage(cpu0);
   const t1 = process.hrtime.bigint();
   sampler.stop();
   const wallMs = Number(t1 - t0) / 1e6;
+  const cpuTimeMs = (cpu1.user + cpu1.system) / 1000;
   const totalTasks = snapshot.tasks.length;
   const assigned = (plan.assignments || []).length;
   return {
     wallMs,
+    cpuTimeMs,
     candidateGenMs: candidateGenMs(),
     solveDurationMs: plan.solveDurationMs,
     solverStatus: plan.solverStatus,
@@ -466,6 +490,7 @@ async function runOnce(
     },
     changedAssignments: assigned,
     candidateCount: candidateCount(),
+    prunedCount: prunedCount(),
     peakHeapMb: sampler.peakHeapMb(),
   };
 }
@@ -489,8 +514,14 @@ interface MatrixSizeResult {
   persons: number;
   devices: number;
   wallMs: number;
+  /** P0-bench：进程 CPU 时间（user+system，ms）。 */
+  cpuTimeMs: number | null;
   peakHeapMb: number | null;
   candidateCount: number | null;
+  /** P0-bench：硬约束/eligibility 剪枝掉的候选数。 */
+  prunedCount: number | null;
+  /** P0-bench：run-local route-cost memo 命中率（hits / lookups）。 */
+  routeCacheHitRatio: number | null;
   assignmentRate: number | null;
   solverStatus: string;
 }
@@ -562,8 +593,11 @@ async function runMatrix(args: Args): Promise<void> {
           persons,
           devices,
           wallMs,
+          cpuTimeMs: null,
           peakHeapMb: null,
           candidateCount: null,
+          prunedCount: null,
+          routeCacheHitRatio: null,
           assignmentRate: null,
           solverStatus: 'OOM',
         });
@@ -572,8 +606,11 @@ async function runMatrix(args: Args): Promise<void> {
       const rep = JSON.parse(fs.readFileSync(outFile, 'utf8')) as {
         heuristic?: {
           avgWallMs?: number;
+          avgCpuMs?: number;
           peakHeapMb?: number;
           candidateCount?: number;
+          prunedCount?: number;
+          routeCacheHitRatio?: number;
           avgFeasibleRate?: number;
           solverStatus?: string;
           solverVersion?: string;
@@ -584,8 +621,11 @@ async function runMatrix(args: Args): Promise<void> {
         persons,
         devices,
         wallMs: rep.heuristic?.avgWallMs ?? wallMs,
+        cpuTimeMs: rep.heuristic?.avgCpuMs ?? null,
         peakHeapMb: rep.heuristic?.peakHeapMb ?? null,
         candidateCount: rep.heuristic?.candidateCount ?? null,
+        prunedCount: rep.heuristic?.prunedCount ?? null,
+        routeCacheHitRatio: rep.heuristic?.routeCacheHitRatio ?? null,
         assignmentRate: rep.heuristic?.avgFeasibleRate ?? null,
         solverStatus:
           rep.heuristic?.solverStatus ??
@@ -596,6 +636,33 @@ async function runMatrix(args: Args): Promise<void> {
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+
+  // P0-bench：target check 断言（仅报告，不改变退出码；CI 宽松阈值保持不变）。
+  const byTasks = new Map(results.map((r) => [r.tasks, r]));
+  const gate500 = byTasks.get(500);
+  const gate1000 = byTasks.get(1000);
+  const check = (r: MatrixSizeResult | undefined, budgetMs: number): boolean | null =>
+    r ? r.solverStatus !== 'OOM' && r.wallMs < budgetMs : null;
+  const check500 = check(gate500, 5000);
+  const check1000 = check(gate1000, 10000);
+  const oom = results.some((r) => r.solverStatus === 'OOM');
+  const targetGate = {
+    p500_ms: 5000,
+    p1000_ms: 10000,
+    oom,
+    passed: !oom && check500 !== false && check1000 !== false,
+  };
+  const label = (v: boolean | null): string =>
+    v === null ? 'SKIP' : v ? 'PASS' : 'FAIL';
+  console.log('\n--- TARGET CHECK (report-only; CI gate 阈值保持不变) ---');
+  console.log(
+    `  [${label(check500)}] 500 tasks wall ${gate500 ? gate500.wallMs.toFixed(1) : 'N/A'}ms < 5000ms`,
+  );
+  console.log(
+    `  [${label(check1000)}] 1000 tasks wall ${gate1000 ? gate1000.wallMs.toFixed(1) : 'N/A'}ms < 10000ms`,
+  );
+  console.log(`  [${oom ? 'FAIL' : 'PASS'}] no OOM`);
+  console.log(`  overall: ${targetGate.passed ? 'PASS' : 'FAIL'}`);
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -613,6 +680,8 @@ async function runMatrix(args: Args): Promise<void> {
       seed: args.seed,
       heapCapMb: 2048,
     },
+    // P0-bench：目标断言（500<5s / 1000<10s / 无 OOM；warn-only，不影响退出码）。
+    targetGate,
     results,
   };
   fs.mkdirSync(OUT_DIR, { recursive: true });
@@ -632,7 +701,8 @@ async function main() {
     `Benchmark tasks=${args.tasks} persons=${args.persons} devices=${args.devices} runs=${args.runs} seed=${args.seed} cpSat=${args.cpSatUrl || 'none'}`,
   );
 
-  const { heuristic, cpSat, candidateGenMs, candidateCount, hardRejectCount } = buildSolvers(args.cpSatUrl);
+  const { heuristic, cpSat, candidateGenMs, candidateCount, hardRejectCount, prunedCount, routeCacheHitRatio } =
+    buildSolvers(args.cpSatUrl);
 
   // 每个 run 使用同一种子生成同构负载，仅时间窗随机。
   const snapshot = generateSnapshot(args.tasks, args.persons, args.devices, args.seed);
@@ -640,7 +710,15 @@ async function main() {
   const heuristicRows: RunResult[] = [];
   const baseline = new Map<string, string>();
   for (let i = 0; i < args.runs; i += 1) {
-    const r = await runOnce(heuristic, snapshot, `H-${i}`, baseline, candidateGenMs, candidateCount);
+    const r = await runOnce(
+      heuristic,
+      snapshot,
+      `H-${i}`,
+      baseline,
+      candidateGenMs,
+      candidateCount,
+      prunedCount,
+    );
     heuristicRows.push(r);
   }
 
@@ -654,7 +732,15 @@ async function main() {
   let cpSatNote = 'cp-sat worker 未配置（无 CPSAT_WORKER_URL / --cp-sat-url）';
   if (cpSat) {
     for (let i = 0; i < args.runs; i += 1) {
-      const r = await runOnce(cpSat, snapshot, `C-${i}`, baseline, candidateGenMs, candidateCount);
+      const r = await runOnce(
+        cpSat,
+        snapshot,
+        `C-${i}`,
+        baseline,
+        candidateGenMs,
+        candidateCount,
+        prunedCount,
+      );
       cpSatRows.push(r);
       if (r.solverStatus === 'OPTIMAL' || r.solverStatus === 'FEASIBLE') cpSatAvailable = true;
     }
@@ -685,11 +771,17 @@ async function main() {
       avgCandidateGenMs: avg('candidateGenMs', heuristicRows),
       avgSolveDurationMs: avg('solveDurationMs', heuristicRows),
       avgWallMs: avg('wallMs', heuristicRows),
+      // P0-bench：进程 CPU 时间（user+system）均值。
+      avgCpuMs: avg('cpuTimeMs', heuristicRows),
       avgFeasibleRate: avg('feasibleRate', heuristicRows),
       avgViolations: avg('violations', heuristicRows),
       // P0：求解器可观测（候选数 / 硬拒绝数 / 峰值堆 / 状态）。
       candidateCount: heuristicRows[0]?.candidateCount ?? 0,
       hardRejectCount: hardRejectCount(),
+      // P0-bench：硬约束/eligibility 剪枝掉的候选数（= hardRejectCount）。
+      prunedCount: prunedCount(),
+      // P0-bench：run-local route-cost memo 命中率（hits / lookups）。
+      routeCacheHitRatio: routeCacheHitRatio(),
       peakHeapMb: heuristicRows[0]?.peakHeapMb ?? 0,
       solverStatus: heuristicRows[0]?.solverStatus ?? 'UNKNOWN',
       metrics: summarizeMetrics(
