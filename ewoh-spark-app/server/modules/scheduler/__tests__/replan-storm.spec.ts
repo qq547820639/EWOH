@@ -18,6 +18,7 @@ function makeReplanService(opts: {
     conflictAggregationWindowMs: number;
   };
   evaluate?: jest.Mock;
+  outbox?: { enqueue: jest.Mock };
 }) {
   const db = {
     update: jest.fn(() => ({
@@ -86,6 +87,9 @@ function makeReplanService(opts: {
     solverService as never,
     planService as never,
     policyService as never,
+    undefined,
+    undefined,
+    opts.outbox as never,
   );
   return { svc, triggerService, solverService };
 }
@@ -152,6 +156,36 @@ describe('M02 风暴守卫（replan-storm）', () => {
     expect(svc.getSuppressedCount('orgA')).toBe(1);
     // 求解次数：orgA 2 次 + orgB 1 次 = 3。
     expect(solverService.solveVariants).toHaveBeenCalledTimes(3);
+  });
+
+  it('M05-FIX：抑制时 outbox 发射 replan.suppressed（SSE 契约）', async () => {
+    const enqueue = jest.fn().mockResolvedValue({ eventId: 'EVT-1' });
+    const { svc } = makeReplanService({
+      replan: SHORT_CONFIG,
+      outbox: { enqueue },
+    });
+    const ctx = { userId: 'u1', primaryOrgId: 'org1' };
+
+    // 前 2 次允许（窗口=2），第 3 次抑制。
+    await svc.handleTrigger('DEVICE_OFFLINE', 'd1', ctx);
+    await svc.handleTrigger('DEVICE_OFFLINE', 'd1', ctx);
+    const r3 = await svc.handleTrigger('DEVICE_OFFLINE', 'd1', ctx);
+    expect(r3.suppressed).toBe(true);
+
+    expect(enqueue).toHaveBeenCalledWith(
+      'replan.suppressed',
+      expect.any(String),
+      expect.objectContaining({
+        triggerType: 'DEVICE_OFFLINE',
+        triggerEntityId: 'd1',
+        reason: 'storm_guard_suppressed',
+        suppressedAt: expect.any(String),
+        suppressedCount: 1,
+      }),
+      'org1',
+      undefined,
+      expect.objectContaining({ entityType: 'replan' }),
+    );
   });
 
   it('MANUAL 触发不被风暴守卫抑制（人工重排始终放行）', async () => {

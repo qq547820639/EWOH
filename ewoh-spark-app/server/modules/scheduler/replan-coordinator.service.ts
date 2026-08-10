@@ -23,6 +23,7 @@ import { SchedulingPolicyService } from './scheduling-policy.service';
 import { ImpactAnalyzer } from './impact-analyzer';
 import { ConstraintLoaderService } from './constraint-loader.service';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
+import { OutboxService } from './outbox.service';
 import { propagateImpact } from './impact-propagation';
 
 /** 影响分析结果：哪些任务需重排、哪些被冻结、原因说明。 */
@@ -85,6 +86,8 @@ export class ReplanCoordinatorService {
     private readonly constraintLoaderService?: ConstraintLoaderService,
     // M02：风暴守卫抑制计数上报（可选注入；缺失时仅内存计数，兼容旧单测）。
     private readonly metricsService?: SchedulerMetricsService,
+    // M05-FIX：风暴守卫抑制 SSE 发射（可选注入；缺失时静默跳过，兼容旧单测）。
+    private readonly outboxService?: OutboxService,
   ) {}
 
   /** Replan V2 风暴守卫状态读取（供测试/审计）。 */
@@ -165,8 +168,12 @@ export class ReplanCoordinatorService {
     return 'allowed';
   }
 
-  /** 记录一次被抑制的触发（内存计数 + metrics + SSE）。 */
-  private async recordSuppressed(ctx: OrgContext): Promise<void> {
+  /** 记录一次被抑制的触发（内存计数 + metrics + SSE replan.suppressed）。 */
+  private async recordSuppressed(
+    ctx: OrgContext,
+    triggerType: string,
+    triggerIds: string[],
+  ): Promise<void> {
     const orgKey = ctx.primaryOrgId || 'ALL';
     const state = this.touchOrgState(orgKey);
     state.suppressedCount += 1;
@@ -175,6 +182,30 @@ export class ReplanCoordinatorService {
         this.metricsService.recordReplanSuppressed();
       } catch (err) {
         this.logger.warn(`recordReplanSuppressed failed: ${(err as Error).message}`);
+      }
+    }
+    // M05-FIX：SSE 发射 replan.suppressed（事件目录已登记 ReplanSuppressed）。
+    if (this.outboxService) {
+      try {
+        await this.outboxService.enqueue(
+          'replan.suppressed',
+          (triggerIds[0] ?? triggerType ?? 'ALL'),
+          {
+            triggerType,
+            triggerEntityId: triggerIds[0] ?? null,
+            triggerIds,
+            reason: 'storm_guard_suppressed',
+            suppressedAt: new Date().toISOString(),
+            suppressedCount: state.suppressedCount,
+          },
+          orgKey,
+          undefined,
+          { entityType: 'replan', occurredAt: new Date().toISOString() },
+        );
+      } catch (err) {
+        this.logger.warn(
+          `replan.suppressed enqueue failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
     this.logger.warn(
@@ -270,7 +301,7 @@ export class ReplanCoordinatorService {
     if (triggerType !== 'MANUAL') {
       const guard = await this.evaluateStormGuard(ctx);
       if (guard === 'suppressed') {
-        await this.recordSuppressed(ctx);
+        await this.recordSuppressed(ctx, triggerType, entityId ? [entityId] : []);
         return { run: null, plans: [], debounced: false, suppressed: true };
       }
       if (guard === 'debounced') {
@@ -396,7 +427,7 @@ export class ReplanCoordinatorService {
     }
     const guard = await this.evaluateStormGuard(ctx);
     if (guard === 'suppressed') {
-      await this.recordSuppressed(ctx);
+      await this.recordSuppressed(ctx, 'RESERVATION_CONFLICT', triggerIds);
       return { run: null, plans: [], debounced: false, suppressed: true };
     }
     if (guard === 'debounced') {
