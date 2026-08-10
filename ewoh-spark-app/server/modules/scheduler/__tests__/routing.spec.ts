@@ -236,4 +236,40 @@ describe('RoutingService.calculateRouteBetween（真实路线）', () => {
     expect(route.fallbackReason).toBeNull();
     expect(route.dataQuality).toBe('FRESH');
   });
+
+  it('15.4 fault-injection：route graph 加载失败（DB 临时故障）→ 显式 degraded euclidean fallback（graph_unavailable / STALE），绝不静默当权威路线', async () => {
+    const db = {
+      select: jest.fn(() => {
+        throw new Error('server closed the connection unexpectedly (57P01)');
+      }),
+    };
+    const svc = new RoutingService(db as never, { getConfig: jest.fn().mockResolvedValue({ walkingSpeedMps: 1.0 }) } as never);
+    const route = await svc.calculateRouteBetween(
+      { x: 0, y: 0 },
+      { x: 5, y: 5 },
+      { personId: 'p1', taskId: 't1' },
+    );
+    // 15.6：降级可观测 —— source/fallbackReason/dataQuality 显式标记，绝不抛异常、
+    // 绝不返回 source=route_graph（不被当作权威路线）。
+    expect(route.source).toBe('euclidean_fallback');
+    expect(route.feasible).toBe(true);
+    expect(route.fallbackReason).toBe('graph_unavailable');
+    expect(route.dataQuality).toBe('STALE');
+    expect(route.nodes).toEqual([]);
+    expect(route.distanceMeters).toBeGreaterThan(0); // 欧氏仍给出有效参考成本
+  });
+
+  it('15.4 fault-injection：graph 加载失败且坐标缺失 → 显式不可行（graph_unavailable / STALE / feasible=false）', async () => {
+    const db = {
+      select: jest.fn(() => {
+        throw new Error('connection refused');
+      }),
+    };
+    const svc = new RoutingService(db as never, { getConfig: jest.fn().mockResolvedValue({ walkingSpeedMps: 1.0 }) } as never);
+    const route = await svc.calculateRouteBetween({ x: NaN, y: 0 }, { x: 5, y: 5 });
+    expect(route.source).toBe('euclidean_fallback');
+    expect(route.feasible).toBe(false);
+    expect(route.fallbackReason).toBe('graph_unavailable');
+    expect(route.dataQuality).toBe('STALE');
+  });
 });

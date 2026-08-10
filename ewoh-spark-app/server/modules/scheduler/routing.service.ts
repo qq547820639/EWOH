@@ -118,12 +118,6 @@ export class RoutingService {
     to: Point,
     meta?: { personId?: string; taskId?: string },
   ): Promise<Route> {
-    const graph = await this.loadGraph();
-    const nodes = graph.nodes.map((n) => ({
-      nodeId: n.nodeId,
-      x: n.x,
-      y: n.y,
-    }));
     const personId = meta?.personId ?? 'unknown';
     const taskId = meta?.taskId ?? 'unknown';
     const hasCoords =
@@ -131,6 +125,29 @@ export class RoutingService {
       Number.isFinite(from.y) &&
       Number.isFinite(to.x) &&
       Number.isFinite(to.y);
+    // 15.4 fault-injection：route graph 加载失败（DB 临时故障）→ 显式 degraded
+    // euclidean fallback（fallbackReason=graph_unavailable / dataQuality=STALE），
+    // 满足"从不抛异常"约定；该 Route 显式标记降级，绝不静默当作权威路线。
+    let graph: RouteGraph;
+    try {
+      graph = await this.loadGraph();
+    } catch (err) {
+      this.logger.warn(
+        `route graph load failed; explicit degraded euclidean fallback (graph_unavailable): ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return this.euclideanRoute(from, to, {
+        personId,
+        taskId,
+        feasible: hasCoords,
+        fallbackReason: 'graph_unavailable',
+        dataQuality: 'STALE',
+      });
+    }
+    const nodes = graph.nodes.map((n) => ({
+      nodeId: n.nodeId,
+      x: n.x,
+      y: n.y,
+    }));
     const fallback = await this.euclideanRoute(from, to, {
       personId,
       taskId,

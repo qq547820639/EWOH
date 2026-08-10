@@ -26,6 +26,52 @@ const CPSAT_VERSION = 'cpsat-v1';
 /** 默认缺省时长（无 planStart/planEnd 时），与策略默认一致（30 分钟）。 */
 const DEFAULT_DURATION_MS = 1_800_000;
 
+/** 合法 solverStatus 枚举（Nest 侧共享契约；越枚举值视为畸形响应）。 */
+const KNOWN_SOLVER_STATUSES = new Set<SolverStatus>([
+  'OPTIMAL',
+  'FEASIBLE',
+  'HEURISTIC',
+  'FALLBACK',
+  'INFEASIBLE',
+  'TIMEOUT',
+  'UNAVAILABLE',
+]);
+/** SolverResponse.assignments 条目允许的契约字段（越契约字段 → 畸形，如未知枚举值）。 */
+const KNOWN_ASSIGNMENT_KEYS = new Set([
+  'taskId',
+  'personId',
+  'deviceId',
+  'stationId',
+  'startMs',
+  'endMs',
+  'reasons',
+  'rejectedAlternatives',
+]);
+
+/**
+ * 15.1 fault-injection：Worker 响应形状校验（malformed response 防御）。
+ * 解析成功但不满足共享契约（solverStatus 越枚举 / assignments 缺失或条目越契约字段）
+ * → 判定为畸形响应：绝不作为 OPTIMAL/FEASIBLE 采纳，显式 FALLBACK 回退启发式。
+ */
+function isWellFormedSolverResponse(r: SolverResponse): boolean {
+  if (!r || typeof r !== 'object') return false;
+  if (!KNOWN_SOLVER_STATUSES.has(r.solverStatus)) return false;
+  if (!Array.isArray(r.assignments)) return false;
+  for (const a of r.assignments) {
+    if (!a || typeof a !== 'object') return false;
+    if (typeof a.taskId !== 'string' || a.taskId.length === 0) return false;
+    if (!Number.isFinite(a.startMs) || !Number.isFinite(a.endMs)) return false;
+    for (const k of ['personId', 'deviceId', 'stationId'] as const) {
+      const v = a[k];
+      if (v != null && typeof v !== 'string') return false;
+    }
+    if (!Array.isArray(a.reasons)) return false;
+    // 越契约字段（含未知枚举值）→ 畸形：客户端不静默消化未知字段。
+    if (Object.keys(a).some((k) => !KNOWN_ASSIGNMENT_KEYS.has(k))) return false;
+  }
+  return true;
+}
+
 /**
  * CP-SAT 生产激活阶梯（Task 6 / P1）：OFF → SHADOW → CANARY → PRODUCTION。
  * - OFF（当前）：worker 不可达/未部署 → solverStatus=UNAVAILABLE 回退 heuristic；
@@ -100,6 +146,8 @@ export class CpSatSchedulingSolver {
 
     let response: SolverResponse | null = null;
     let reachable = false;
+    // 15.1 fault-injection：Worker 可达但响应畸形（非 JSON / 形状越契约）→ 显式降级信号。
+    let malformedResponse = false;
     // P2-T1：候选可行性矩阵（TravelCostService SSOT）——只有矩阵判定 feasible 的
     // person/device 候选才进入求解请求（eligiblePersonIds/eligibleDeviceIds）；
     // 缺坐标候选在矩阵层已被排除（绝不把 UNKNOWN 坐标当作 0,0 伪坐标送入 Worker）。
@@ -238,6 +286,31 @@ export class CpSatSchedulingSolver {
         }
       }
       reachable = false;
+      // 15.1 fault-injection：非 JSON 畸形 body（res.json 解析失败）→ 显式降级信号，
+      // 绝不 crash；与"不可达"同走 UNAVAILABLE，但 fallbackReason 明确 malformed。
+      if (err instanceof Error && /malformed/i.test(err.message)) {
+        malformedResponse = true;
+      }
+    }
+
+    // 15.1 fault-injection：Worker 可达但响应形状越契约（solverStatus 越枚举 /
+    // assignments 缺失或条目含未知枚举值）→ 显式 FALLBACK（reachable=true），
+    // 绝不把畸形响应当作 OPTIMAL/FEASIBLE 采纳（禁止 mislabel）。
+    if (response && !isWellFormedSolverResponse(response)) {
+      this.logger.warn(
+        `CP-SAT worker 返回畸形响应（malformed response），拒绝采纳：solverStatus=${JSON.stringify(response.solverStatus)} assignments=${Array.isArray(response.assignments)}`,
+      );
+      if (this.metricsService) {
+        try {
+          this.metricsService.recordFallback();
+        } catch (metricsErr) {
+          this.logger.warn(
+            `solver fallback metrics recording failed: ${metricsErr instanceof Error ? metricsErr.message : String(metricsErr)}`,
+          );
+        }
+      }
+      malformedResponse = true;
+      response = null; // 视为无效响应 → 走下方 FALLBACK 分支
     }
 
     // 成功且为最优/可行 → 采用 CP-SAT 结果。
@@ -263,9 +336,11 @@ export class CpSatSchedulingSolver {
 
     // 否则回退到启发式：Worker 可达但结果不可用 → FALLBACK；不可达 → UNAVAILABLE。
     const fallbackStatus: SolverStatus = reachable ? 'FALLBACK' : 'UNAVAILABLE';
-    const fallbackReason = reachable
-      ? `CP-SAT worker 返回非最优/不可用状态（${response?.solverStatus ?? 'unknown'}），回退启发式`
-      : `CP-SAT worker 不可达（${this.workerUrl}），回退启发式`;
+    const fallbackReason = malformedResponse
+      ? `CP-SAT worker 返回畸形响应（malformed response），回退启发式`
+      : reachable
+        ? `CP-SAT worker 返回非最优/不可用状态（${response?.solverStatus ?? 'unknown'}），回退启发式`
+        : `CP-SAT worker 不可达（${this.workerUrl}），回退启发式`;
     this.logger.warn(
       `回退到启发式求解器（solverStatus=${fallbackStatus}）：${fallbackReason}`,
     );
@@ -558,7 +633,18 @@ export class CpSatSchedulingSolver {
       if (!res.body) {
         throw new Error('CP-SAT worker returned empty body');
       }
-      const response = (await res.json()) as SolverResponse;
+      let response: SolverResponse;
+      try {
+        response = (await res.json()) as SolverResponse;
+      } catch (parseErr) {
+        // 15.1 fault-injection：非 JSON 畸形 body → 带 malformed 标记的明确错误，
+        // 由 solve() 统一捕获并显式降级（UNAVAILABLE + fallbackReason 提及 malformed）。
+        throw new Error(
+          `CP-SAT worker returned malformed (non-JSON) response body: ${
+            parseErr instanceof Error ? parseErr.message : String(parseErr)
+          }`,
+        );
+      }
       const echoed =
         (response as SolverResponse & { requestId?: string }).requestId ??
         res.headers?.get?.('x-request-id');

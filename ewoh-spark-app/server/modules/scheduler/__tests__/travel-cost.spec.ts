@@ -427,4 +427,27 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
     expect(c.dataQuality).toBe('FRESH');
     expect(c.feasible).toBe(true); // 缺省 DEGRADED：降级候选可行
   });
+
+  it('15.4 fault-injection：graph_unavailable 候选显式标记（euclidean_fallback / fallbackReason / dataQuality=STALE），绝不作为权威 route_graph', async () => {
+    const { svc } = makeSvc({
+      calculateRouteBetween: jest.fn().mockResolvedValue({
+        routeId: 'euclidean-fallback', distanceMeters: 50, etaSeconds: 50, nodes: [], geometry: [],
+        source: 'euclidean_fallback', riskLevel: null, graphVersion: null,
+        calculatedAt: new Date().toISOString(), feasible: true, fallbackReason: 'graph_unavailable', dataQuality: 'STALE',
+      }),
+    });
+    const snapshot = baseSnapshot({
+      persons: [{ id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
+      stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
+    });
+    const matrix = await svc.buildMatrix(snapshot, TASK, [
+      { personId: 'p1', deviceId: 'd1', stationId: 'S1' },
+    ]);
+    const c = matrix.candidates[0];
+    // 15.6：降级可观测 —— 候选成本显式标记为 euclidean 降级，绝不静默当作权威路线。
+    expect(c.routeCostMode).toBe('euclidean_fallback');
+    expect(c.fallbackReason).toBe('graph_unavailable');
+    expect(c.dataQuality).toBe('STALE');
+    expect(c.feasible).toBe(true); // DEGRADED 缺省：显式降级而非静默不可行
+  });
 });
