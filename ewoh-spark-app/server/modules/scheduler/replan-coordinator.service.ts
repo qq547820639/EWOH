@@ -561,6 +561,9 @@ export class ReplanCoordinatorService {
         snapshotVersion: snapshot.snapshotVersion,
         horizonMinutes: 480,
         baselineAssignee,
+        // Task B / P0：局部重排真实影响集（scheduler_partial_replan_affected 取真实受影响数，
+        // 不随 partial snapshot 的 frozen 任务数膨胀）。
+        affectedTaskIds: impact.affectedTaskIds,
       });
 
       // ReplanStabilityBudget（Task 5）：minimumObjectiveImprovement 抑制门——

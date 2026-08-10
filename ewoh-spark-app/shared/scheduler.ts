@@ -847,6 +847,10 @@ export interface SchedulingRun {
   error: string | null;
   /** 失败原因（ewoh_scheduling_run.failure_reason 列，替代仅日志；无则 null）。 */
   failureReason?: string | null;
+  /** 运行所用求解器状态（standalone_030_solver_activation；succeeded 后回填，无则 null）。 */
+  solverStatus?: string | null;
+  /** 运行所用求解器回退/降级原因（无回退为 null）。 */
+  fallbackReason?: string | null;
   createdAt: string;
 }
 
@@ -1153,6 +1157,17 @@ export interface SchedulingPolicy {
   weights: ObjectiveWeights;
 }
 
+/**
+ * 求解器激活阶梯（Solver Activation Ladder）唯一事实源（Task A P0）。
+ * - OFF（缺省）：仅 heuristic 生产（CP-SAT 不参与任何路径）；
+ * - SHADOW：heuristic 生产 + CP-SAT 双跑（isShadow 标记，绝不作为生产方案返回/落库）；
+ * - CANARY：按 org allowlist / 确定性哈希采样放量 CP-SAT 为生产路径（失败自动回滚采样至 0）；
+ * - PRODUCTION：CP-SAT 为生产首选手（仅当 feature-status.yaml cpSat.productionEnabled=true
+ *   或环境变量 EWOH_SOLVER_PRODUCTION_ENABLED=1 允许；否则 fail-closed 回退 heuristic）。
+ * 解析优先级：EWOH_SOLVER_ACTIVATION 环境变量 > SchedulingPolicyConfig.cpSat.activation > 'OFF'。
+ */
+export type SolverActivationState = 'OFF' | 'SHADOW' | 'CANARY' | 'PRODUCTION';
+
 export interface SchedulingPolicyConfig {
   configVersion: number;
   /** 硬约束参数。 */
@@ -1221,20 +1236,23 @@ export interface SchedulingPolicyConfig {
   churn?: ChurnConfig;
   /** Prediction Shadow Learning canary（08 §11）。 */
   prediction?: PredictionConfig;
-  // --- CP-SAT 生产激活阶梯（Task 6 / P1）：OFF → SHADOW → CANARY → PRODUCTION（全可选，缺省=现状） ---
+  // --- CP-SAT 生产激活阶梯（Task A / P0）：OFF → SHADOW → CANARY → PRODUCTION（全可选，缺省=现状） ---
   /**
    * CP-SAT 激活阶梯配置（OFF→SHADOW→CANARY→PRODUCTION；见 docs/runtime-gates.md）。
-   * 当前 productionEnabled 恒为 false（feature-status.yaml cpSat.productionEnabled=false），
-   * 不得声称"生产就绪"。
+   * 当前 feature-status.yaml cpSat.productionEnabled=false → 生产禁止 PRODUCTION 阶梯
+   * （EWOH_SOLVER_ACTIVATION=PRODUCTION 时 fail-closed 回退 heuristic，fallbackReason=production_not_gated）。
+   * 缺省 activation='OFF'：仅 heuristic 生产（CP-SAT 不参与任何路径）。
    */
   cpSat?: {
     /**
-     * SHADOW 双跑对比：同一快照/策略上同时跑 heuristic（生产方案）+ CP-SAT（shadow 对比），
-     * 返回两者与 comparison（feasibility/objective/violations/runtime/solverStatus）；
-     * shadow 结果标记 isShadow，绝不作为生产方案返回（solve() 保持 heuristic 生产方案）。
-     * 缺省 false=现状（不跑双跑，零行为变化）。
+     * 激活阶梯唯一事实源：OFF（缺省，仅 heuristic）/ SHADOW（heuristic 生产 + CP-SAT 双跑 isShadow）/ CANARY（采样放量）/ PRODUCTION（仅 feature-status productionEnabled=true 允许）。
      */
-    shadowCompare?: boolean;
+    activation?: SolverActivationState;
+    /** CANARY 采样比例 0..1（缺省 0）。 */
+    canaryFraction?: number;
+    /** CANARY org allowlist（可选；命中即采样）。 */
+    orgAllowlist?: string[];
+    shadowCompare?: boolean; // 保持兼容
   };
 }
 

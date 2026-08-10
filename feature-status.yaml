@@ -59,6 +59,9 @@ features:
 
   cpSat:
     # CP-SAT 求解器（OPTIONAL / EXPERIMENTAL，未部署 OR-Tools）
+    # Solver Activation Ladder 唯一事实源：EWOH_SOLVER_ACTIVATION（默认 OFF，仅 heuristic 生产；
+    # SHADOW/CANARY/PRODUCTION 需显式配置；PRODUCTION 还需 EWOH_SOLVER_PRODUCTION_ENABLED=1，
+    # 未开时 fail-closed 回退 heuristic，fallbackReason=production_not_gated）。
     implemented: true
     tested: true
     deployable: true                 # worker.py + Dockerfile.cpsat + docker-compose.cpsat.yml（可选）
@@ -75,9 +78,11 @@ features:
       - tests/test_cpsat_solver_real.py
       - ewoh-spark-app/server/modules/scheduler/__tests__/cp-sat-contract.spec.ts
       - ewoh-spark-app/server/modules/scheduler/__tests__/cp-sat-fallback.spec.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/solver-activation.spec.ts
       - deploy/cloud/Dockerfile.cpsat
       - deploy/cloud/docker-compose.cpsat.yml
       - docs/decisions/ADR-003-cpsat-worker.md
+      - "EWOH_SOLVER_ACTIVATION（激活阶梯唯一事实源，默认 OFF；README §2.3/§4.2 + deploy/.env.example）"
 
   predictionShadow:
     # 预测/策略影子评估（内存态、仅观测，不激活候选）

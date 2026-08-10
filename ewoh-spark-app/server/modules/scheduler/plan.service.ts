@@ -82,6 +82,9 @@ export class PlanService {
           violationsJson: plan.violations,
           policyVersion: plan.policyVersion ?? null,
           solverVersion: plan.solverVersion ?? null,
+          // standalone_030_solver_activation（Task A / P0）：实际求解器状态/回退原因持久化。
+          solverStatus: plan.solverStatus ?? null,
+          fallbackReason: plan.fallbackReason ?? null,
           horizonMinutes: plan.horizonMinutes ?? null,
           scoreBreakdownJson: (plan.scoreBreakdown ?? null) as unknown as Record<string, unknown> | null,
           // Phase 2 / P2-T2：实际投放的 8 权重快照（确定性 replay）。
@@ -750,6 +753,9 @@ export class PlanService {
       snapshotVersion: plan.snapshotVersion ?? '',
       policyVersion: plan.policyVersion ?? 1,
       solverVersion: plan.solverVersion ?? 'heuristic-v2',
+      // standalone_030_solver_activation（Task A / P0）：回读实际求解器状态/回退原因。
+      solverStatus: (plan.solverStatus ?? undefined) as SchedulingPlanV2['solverStatus'],
+      fallbackReason: plan.fallbackReason ?? undefined,
       horizonMinutes: plan.horizonMinutes ?? 480,
       assignments,
       metrics: {

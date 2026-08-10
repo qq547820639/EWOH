@@ -388,6 +388,108 @@ function auditCpSatDeployment(checks) {
   }
 }
 
+// ---------------- R6b Solver 激活阶梯真相门禁（Task A / P0） ----------------
+// 求解器激活唯一事实源：SolverService 默认激活必须为 OFF（heuristic canonical），
+// 与 feature-status.yaml cpSat.productionEnabled=false 一致；EWOH_SOLVER_ACTIVATION
+// 与默认 OFF 必须在 README / feature-status.yaml / deploy/.env.example 三处文档化。
+const SOLVER_ACTIVATION_ENV = 'EWOH_SOLVER_ACTIVATION';
+const SOLVER_SERVICE_SRC = 'ewoh-spark-app/server/modules/scheduler/solver.service.ts';
+const SOLVER_ENV_EXAMPLE = 'deploy/.env.example';
+
+function auditSolverActivation(checks, manifest, readme, envExample) {
+  const cpSat = manifest && manifest.features && manifest.features.cpSat;
+  const productionEnabled = Boolean(cpSat && cpSat.productionEnabled === true);
+  const solverSrc = readFileSafe(SOLVER_SERVICE_SRC) || '';
+
+  // (a) 代码默认激活必须为 OFF；productionEnabled=false 时严禁非 OFF 缺省。
+  const defaultOffInCode =
+    solverSrc.includes("cpSat?.activation ?? 'OFF'") &&
+    /case 'OFF':|case 'SHADOW':/.test(solverSrc) &&
+    /heuristicSolver\.solve\(/.test(solverSrc);
+  check(
+    checks,
+    'solver_activation_default_off',
+    defaultOffInCode,
+    defaultOffInCode
+      ? `${SOLVER_SERVICE_SRC} 默认激活解析为 'OFF'（heuristic canonical，与 productionEnabled 一致）`
+      : `${SOLVER_SERVICE_SRC} 缺少默认 'OFF' 解析（cpSat?.activation ?? 'OFF' / OFF 分支 heuristic）`,
+  );
+  if (!productionEnabled && !defaultOffInCode) {
+    check(
+      checks,
+      'solver_activation_code_vs_manifest',
+      false,
+      `feature-status.yaml cpSat.productionEnabled=false 但 ${SOLVER_SERVICE_SRC} 默认激活非 OFF → 漂移（默认必须仅 heuristic）`,
+    );
+  }
+
+  // (b) EWOH_SOLVER_ACTIVATION 与默认 OFF 必须三处文档化（README / feature-status.yaml / deploy/.env.example）。
+  const readmeDocsEnv = Boolean(
+    readme &&
+      readme.includes(SOLVER_ACTIVATION_ENV) &&
+      /EWOH_SOLVER_ACTIVATION[^\n]*OFF/.test(readme),
+  );
+  check(
+    checks,
+    'solver_env_readme',
+    readmeDocsEnv,
+    readmeDocsEnv
+      ? `README.md 文档化 ${SOLVER_ACTIVATION_ENV} 且默认 OFF`
+      : `README.md 必须文档化 ${SOLVER_ACTIVATION_ENV} 且默认 OFF（heuristic canonical）`,
+  );
+
+  const manifestDocsEnv = Boolean(
+    manifest &&
+      manifest.features &&
+      manifest.features.cpSat &&
+      JSON.stringify(manifest.features.cpSat).includes(SOLVER_ACTIVATION_ENV),
+  );
+  check(
+    checks,
+    'solver_env_feature_status',
+    manifestDocsEnv,
+    manifestDocsEnv
+      ? `feature-status.yaml cpSat 块文档化 ${SOLVER_ACTIVATION_ENV}`
+      : `feature-status.yaml cpSat 块必须文档化 ${SOLVER_ACTIVATION_ENV}（激活阶梯单一事实源）`,
+  );
+
+  const envExampleDocs = Boolean(
+    envExample &&
+      envExample.includes(`${SOLVER_ACTIVATION_ENV}=OFF`) &&
+      envExample.includes('EWOH_SOLVER_PRODUCTION_ENABLED=0'),
+  );
+  check(
+    checks,
+    'solver_env_example',
+    envExampleDocs,
+    envExampleDocs
+      ? `deploy/.env.example 文档化 ${SOLVER_ACTIVATION_ENV}=OFF 与 EWOH_SOLVER_PRODUCTION_ENABLED=0`
+      : `deploy/.env.example 必须文档化 ${SOLVER_ACTIVATION_ENV}=OFF 与 EWOH_SOLVER_PRODUCTION_ENABLED=0`,
+  );
+
+  // (c) productionEnabled=false 时，README 不得声称 CP-SAT 为 canonical。
+  // 判据：README 必须声明 heuristic canonical + 显式标注 CP-SAT OPTIONAL/EXPERIMENTAL（否定标记），
+  // 且不得出现主语为 CP-SAT 的 canonical/生产就绪 声称（跨标点（，。;；）视为不同子句，不判声称）。
+  if (readme && !productionEnabled) {
+    const heuristicCanonical = /heuristic[\s\S]{0,80}canonical/i.test(readme);
+    const cpsatMarkedNonCanonical =
+      /CP-SAT[^\n]{0,120}(OPTIONAL|EXPERIMENTAL|不生产启用|未启用|未部署 OR-Tools)/i.test(readme);
+    const cpsatCanonicalClaim =
+      /CP-SAT[^\n，。;；]{0,40}(canonical|production[\s-]?ready|生产就绪|已生产启用)/i.test(readme) ||
+      /(canonical|production[\s-]?ready|生产就绪|已生产启用)[^\n，。;；]{0,40}CP-SAT/i.test(readme);
+    check(
+      checks,
+      'solver_readme_no_cpsat_canonical_claim',
+      heuristicCanonical && cpsatMarkedNonCanonical && !cpsatCanonicalClaim,
+      heuristicCanonical && cpsatMarkedNonCanonical && !cpsatCanonicalClaim
+        ? 'README 声明 heuristic canonical 且显式标注 CP-SAT OPTIONAL/EXPERIMENTAL（无 CP-SAT canonical 声称）'
+        : `productionEnabled=false 时 README 不得声称 CP-SAT canonical（heuristicCanonical=${heuristicCanonical} cpsatMarkedNonCanonical=${cpsatMarkedNonCanonical} cpsatCanonicalClaim=${cpsatCanonicalClaim}）`,
+    );
+  } else if (readme && productionEnabled) {
+    check(checks, 'solver_readme_no_cpsat_canonical_claim', true, 'productionEnabled=true：跳过 canonical 声称检查');
+  }
+}
+
 // ---------------- R7 OpenAPI 契约零漂移 ----------------
 function auditOpenApiNoDrift(checks, skip) {
   if (skip) {
@@ -427,10 +529,10 @@ function main() {
   const checks = [];
 
   const manifestRaw = readFileSafe('feature-status.yaml');
+  let manifest = null;
   if (!manifestRaw) {
     check(checks, 'manifest_exists', false, 'feature-status.yaml 不存在');
   } else {
-    let manifest = null;
     try {
       manifest = yaml.load(manifestRaw);
     } catch (error) {
@@ -446,6 +548,12 @@ function main() {
   auditOpenDecisions(checks, readFileSafe('docs/decisions/OPEN-DECISIONS.md'));
   auditVersionConsistency(checks, readFileSafe('README.md'), readFileSafe('CHANGELOG.md'));
   auditCpSatDeployment(checks);
+  auditSolverActivation(
+    checks,
+    manifest,
+    readFileSafe('README.md'),
+    readFileSafe(SOLVER_ENV_EXAMPLE),
+  );
   auditOpenApiNoDrift(checks, skipOpenApi);
 
   const failed = checks.filter((c) => !c.ok && c.level === 'FAIL');
@@ -496,6 +604,7 @@ module.exports = {
   auditOpenDecisions,
   auditVersionConsistency,
   auditCpSatDeployment,
+  auditSolverActivation,
   auditOpenApiNoDrift,
   main,
 };

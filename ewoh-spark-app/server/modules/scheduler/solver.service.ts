@@ -4,6 +4,7 @@ import type {
   SchedulingConstraint,
   SchedulingPlanV2,
   SchedulingPolicy,
+  SolverActivationState,
   WorldStateSnapshot,
 } from '@shared/api.interface';
 import { EligibilityService } from './eligibility.service';
@@ -17,6 +18,8 @@ import {
   CpSatSchedulingSolver,
   type CpSatSolverConfig,
 } from './cp-sat-scheduling-solver';
+import { ShadowEvaluatorService } from './prediction/shadow-evaluator.service';
+import { OutboxService } from './outbox.service';
 import type { SolveOptions } from './scheduling-solver.interface';
 
 /** 求解器输入约束（来自重排/锁定）。 */
@@ -78,6 +81,10 @@ export class SolverService {
     private readonly metricsService: SchedulerMetricsService,
     // T03 / P1-2（G7）：候选引擎（必选；heuristic 候选生成与端点共享语义）。
     private readonly candidateEngine: CandidateEngineService,
+    // Task A / P0：CANARY 自动回滚（canary 归 0；模块内已提供，测试直构时可空）。
+    @Optional() private readonly shadowEvaluatorService?: ShadowEvaluatorService,
+    // Task A / P0：CANARY 回滚 outbox 审计事件（模块内已提供，测试直构时可空）。
+    @Optional() private readonly outboxService?: OutboxService,
   ) {
     this.heuristicSolver = new HeuristicSchedulingSolver(
       policyService,
@@ -189,18 +196,24 @@ export class SolverService {
     return plans;
   }
 
-  /** 单次求解，返回一个完整方案（优先 CP-SAT，失败回退启发式）。 */
+  /** 单次求解，返回一个完整方案。路由由激活阶梯（OFF/SHADOW/CANARY/PRODUCTION）决定。 */
   async solve(
     snapshot: WorldStateSnapshot,
     constraints: SolverConstraint[],
     opts: SolveOptions,
   ): Promise<SchedulingPlanV2> {
     const started = Date.now();
-    const plan = await this.cpSatSolver.solve(
-      snapshot,
-      this.toSchedulingConstraints(constraints),
-      opts,
-    );
+    const activation = await this.resolveActivation(opts);
+    const plan = await this.runByActivation(activation, snapshot, constraints, opts);
+    // Task A / P0：solverActivation 审计（state/canaryFraction/orgAllowlisted 随 baselineDelta 落库）。
+    plan.baselineDelta = {
+      ...(plan.baselineDelta ?? {}),
+      solverActivation: {
+        state: activation.state,
+        canaryFraction: activation.canaryFraction,
+        orgAllowlisted: activation.orgAllowlisted,
+      },
+    };
     // Phase 2 / P2-T3：Solver 可观测埋点（churn / 局部重排影响数；失败仅记日志）。
     try {
       const churn = this.computeChurn(plan, opts);
@@ -225,6 +238,258 @@ export class SolverService {
       );
     }
     return plan;
+  }
+
+  /** 生产门控（Task A / P0）：EWOH_SOLVER_PRODUCTION_ENABLED === '1' 才允许 CP-SAT 进入生产路径。 */
+  private isProductionEnabled(): boolean {
+    return process.env.EWOH_SOLVER_PRODUCTION_ENABLED === '1';
+  }
+
+  /**
+   * 解析激活阶梯（Task A / P0，唯一事实源）。
+   * 优先级：EWOH_SOLVER_ACTIVATION 环境变量（非法值 warn + 回退 'OFF'）>
+   * SchedulingPolicyConfig.cpSat.activation（parseConfig 缺省 'OFF'）> 'OFF'。
+   * CANARY 采样判定：org allowlist 命中即采样；否则确定性哈希 (stableHash(orgId ?? planId) % 1000)/1000 < canaryFraction。
+   */
+  private async resolveActivation(opts: SolveOptions): Promise<{
+    state: SolverActivationState;
+    canaryFraction: number;
+    orgAllowlist: string[];
+    orgAllowlisted: boolean;
+  }> {
+    const config = await this.policyService.getConfig().catch(() => null);
+    const cpSat = config?.cpSat;
+
+    let state: SolverActivationState = 'OFF';
+    const envOverride = process.env.EWOH_SOLVER_ACTIVATION;
+    if (envOverride !== undefined && envOverride !== '') {
+      if (
+        envOverride === 'OFF' ||
+        envOverride === 'SHADOW' ||
+        envOverride === 'CANARY' ||
+        envOverride === 'PRODUCTION'
+      ) {
+        state = envOverride;
+      } else {
+        this.logger.warn(
+          `EWOH_SOLVER_ACTIVATION 非法值 "${envOverride}"（须为 OFF/SHADOW/CANARY/PRODUCTION），回退 'OFF'`,
+        );
+      }
+    } else {
+      state = cpSat?.activation ?? 'OFF';
+    }
+
+    const canaryFraction =
+      typeof cpSat?.canaryFraction === 'number' &&
+      Number.isFinite(cpSat.canaryFraction)
+        ? Math.min(1, Math.max(0, cpSat.canaryFraction))
+        : 0;
+    const orgAllowlist = Array.isArray(cpSat?.orgAllowlist)
+      ? cpSat.orgAllowlist.filter((o): o is string => typeof o === 'string')
+      : [];
+
+    const orgId = opts.orgId ?? null;
+    const allowlisted = orgId != null && orgAllowlist.includes(orgId);
+    const sampled =
+      allowlisted ||
+      (canaryFraction > 0 &&
+        (this.stableHash(orgId ?? opts.planId) % 1000) / 1000 < canaryFraction);
+
+    return {
+      state,
+      canaryFraction,
+      orgAllowlist,
+      orgAllowlisted: state === 'CANARY' ? sampled : false,
+    };
+  }
+
+  /** 按激活阶梯路由求解（Task A / P0）。 */
+  private async runByActivation(
+    activation: {
+      state: SolverActivationState;
+      canaryFraction: number;
+      orgAllowlist: string[];
+      orgAllowlisted: boolean;
+    },
+    snapshot: WorldStateSnapshot,
+    constraints: SolverConstraint[],
+    opts: SolveOptions,
+  ): Promise<SchedulingPlanV2> {
+    const schedConstraints = this.toSchedulingConstraints(constraints);
+    switch (activation.state) {
+      case 'SHADOW':
+        // heuristic 生产 + CP-SAT 双跑（isShadow 标记；仅观测，绝不作为生产方案返回）。
+        return this.solveShadowActivation(snapshot, schedConstraints, opts);
+      case 'CANARY':
+        // 采样命中 → CP-SAT 生产路径（失败由 cpSatSolver 回退 heuristic + canary 归 0）；
+        // 未采样 → 仅 heuristic（与 OFF 同语义）。
+        if (activation.orgAllowlisted) {
+          return this.solveCanary(snapshot, schedConstraints, opts);
+        }
+        return this.heuristicSolver.solve(snapshot, schedConstraints, opts);
+      case 'PRODUCTION':
+        if (!this.isProductionEnabled()) {
+          // fail-closed：生产门禁未开，CP-SAT 结果绝不成为生产方案。
+          this.logger.error(
+            `PRODUCTION 激活但 EWOH_SOLVER_PRODUCTION_ENABLED!=='1'：fail-closed 回退 heuristic（fallbackReason=production_not_gated）`,
+          );
+          const plan = await this.heuristicSolver.solve(
+            snapshot,
+            schedConstraints,
+            opts,
+          );
+          plan.fallbackReason = 'production_not_gated';
+          return plan;
+        }
+        // 生产门禁已开：CP-SAT 首选手（失败内部回退 heuristic，如既有行为）。
+        return this.cpSatSolver.solve(snapshot, schedConstraints, opts);
+      case 'OFF':
+      default:
+        // 缺省：仅 heuristic（CP-SAT 不参与任何路径）。
+        return this.heuristicSolver.solve(snapshot, schedConstraints, opts);
+    }
+  }
+
+  /**
+   * SHADOW 激活（Task A / P0）：heuristic=生产方案；CP-SAT=shadow 对比（isShadow 标记）。
+   * shadow 结果绝不作为生产方案返回；CP-SAT 不可达/超时仅记录，生产方案保持 heuristic。
+   */
+  private async solveShadowActivation(
+    snapshot: WorldStateSnapshot,
+    constraints: SchedulingConstraint[],
+    opts: SolveOptions,
+  ): Promise<SchedulingPlanV2> {
+    const started = Date.now();
+    const productionPlan = await this.heuristicSolver.solve(
+      snapshot,
+      constraints,
+      opts,
+    );
+    let shadowPlan: SchedulingPlanV2 | null = null;
+    try {
+      shadowPlan = await this.cpSatSolver.solve(snapshot, constraints, opts);
+      shadowPlan.status = 'shadow';
+      shadowPlan.baselineDelta = {
+        ...(shadowPlan.baselineDelta ?? {}),
+        shadow: {
+          isShadow: true,
+          mode: 'cp-sat-shadow-compare',
+          comparedWith: 'heuristic',
+        },
+      };
+      this.metricsService.recordRun({
+        durationMs: Math.max(Date.now() - started, 0),
+        feasible: this.isFeasible(shadowPlan, snapshot),
+        solverVersion: shadowPlan.solverVersion,
+        solverStatus: shadowPlan.solverStatus,
+      });
+      this.logger.log(
+        `SHADOW double-run: production=${productionPlan.solverStatus ?? '?'} shadow=${shadowPlan.solverStatus ?? '?'} planId=${opts.planId}`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `SHADOW 双跑 CP-SAT 不可达/异常（生产方案保持 heuristic）：${err instanceof Error ? err.message : String(err)}`,
+      );
+      try {
+        this.metricsService.recordRun({
+          durationMs: Math.max(Date.now() - started, 0),
+          feasible: this.isFeasible(productionPlan, snapshot),
+          solverVersion: productionPlan.solverVersion,
+          solverStatus: productionPlan.solverStatus,
+        });
+      } catch (metricsErr) {
+        this.logger.warn(
+          `shadow metrics recording failed: ${metricsErr instanceof Error ? metricsErr.message : String(metricsErr)}`,
+        );
+      }
+    }
+    return productionPlan;
+  }
+
+  /**
+   * CANARY 激活采样路径（Task A / P0）：CP-SAT 作为生产首选手（cpSatSolver 内部失败回退
+   * heuristic 并携带 solverStatus/fallbackReason）。当结果处于 FALLBACK/UNAVAILABLE/TIMEOUT
+   * 或求解异常 → 采用 heuristic 回退方案 + canary 归 0 + outbox policy.shadow.canary.rollback
+   * （全部 try/catch 守卫，绝不破坏 solve）。
+   */
+  private async solveCanary(
+    snapshot: WorldStateSnapshot,
+    constraints: SchedulingConstraint[],
+    opts: SolveOptions,
+  ): Promise<SchedulingPlanV2> {
+    try {
+      const plan = await this.cpSatSolver.solve(snapshot, constraints, opts);
+      if (
+        plan.solverStatus === 'FALLBACK' ||
+        plan.solverStatus === 'UNAVAILABLE' ||
+        plan.solverStatus === 'TIMEOUT'
+      ) {
+        this.logger.warn(
+          `CANARY 采样 CP-SAT 不可用（solverStatus=${plan.solverStatus}）：采纳 heuristic 回退方案 + canary 归 0，planId=${opts.planId}`,
+        );
+        await this.rollbackCanary(plan.solverStatus ?? 'unknown', opts);
+      } else {
+        this.logger.log(
+          `CANARY 采样 CP-SAT 生产路径（solverStatus=${plan.solverStatus}），planId=${opts.planId}`,
+        );
+      }
+      return plan;
+    } catch (err) {
+      this.logger.warn(
+        `CANARY 采样 CP-SAT 求解异常，回退 heuristic + canary 归 0：${err instanceof Error ? err.message : String(err)}`,
+      );
+      await this.rollbackCanary('exception', opts);
+      return this.heuristicSolver.solve(snapshot, constraints, opts);
+    }
+  }
+
+  /**
+   * CANARY 自动回滚（Task A / P0）：ShadowEvaluatorService.setCanaryFraction(0) +
+   * outbox `policy.shadow.canary.rollback` + 指标。全部 try/catch 守卫（绝不抛出）。
+   */
+  private async rollbackCanary(reason: string, opts: SolveOptions): Promise<void> {
+    try {
+      this.shadowEvaluatorService?.setCanaryFraction(0);
+    } catch (err) {
+      this.logger.warn(
+        `canary rollback (setCanaryFraction 0) failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    try {
+      await this.outboxService?.enqueue(
+        'policy.shadow.canary.rollback',
+        opts.planId,
+        {
+          reasons: [`cpsat_unavailable:${reason}`],
+          canaryRolledBack: true,
+          planId: opts.planId,
+        },
+        null,
+        undefined,
+        { entityType: 'policy', snapshotVersion: opts.snapshotVersion },
+      );
+    } catch (err) {
+      this.logger.warn(
+        `canary rollback event enqueue failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    try {
+      this.metricsService.recordPolicyEvent('shadow');
+    } catch (err) {
+      this.logger.warn(
+        `canary rollback metrics failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /** 确定性稳定哈希（FNV-1a 32-bit；跨进程/重启恒定，供 CANARY 采样）。 */
+  private stableHash(input: string): number {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < input.length; i++) {
+      h ^= input.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return h >>> 0;
   }
 
   /**
@@ -365,12 +630,20 @@ export class SolverService {
     return churn;
   }
 
-  /** 局部重排影响任务数（来自影响分析的 affected 语义，无则按快照任务数近似）。 */
+  /**
+   * 局部重排影响任务数（scheduler_partial_replan_affected 的数值来源，Task B P0 统一语义）。
+   * - 局部重排（partial replan）：opts.affectedTaskIds 非空 → 返回其长度（真实影响集
+   *   ReplanImpact.affectedTaskIds，来自 impact-propagation；不随 partial snapshot 的
+   *   frozen 任务数膨胀）。
+   * - 全量重排（full replan，affectedTaskIds 缺省）：按快照任务数近似（保持既有语义）。
+   */
   private affectedTaskCount(
     snapshot: WorldStateSnapshot,
     opts: SolveOptions,
   ): number {
-    void opts;
+    if (Array.isArray(opts.affectedTaskIds) && opts.affectedTaskIds.length > 0) {
+      return opts.affectedTaskIds.length;
+    }
     return snapshot.tasks.length;
   }
 

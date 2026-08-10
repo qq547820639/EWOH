@@ -43,6 +43,17 @@ const OPTIMAL_RESPONSE: SolverResponse = {
 };
 
 describe('CP-SAT 求解器回退（fallback）', () => {
+  // Task A / P0：SolverService 默认激活阶梯为 OFF（仅 heuristic）；本套测试专门验证
+  // CP-SAT → heuristic 回退语义，故显式提升到 PRODUCTION 阶梯 + 打开生产门控。
+  beforeEach(() => {
+    process.env.EWOH_SOLVER_ACTIVATION = 'PRODUCTION';
+    process.env.EWOH_SOLVER_PRODUCTION_ENABLED = '1';
+  });
+  afterEach(() => {
+    delete process.env.EWOH_SOLVER_ACTIVATION;
+    delete process.env.EWOH_SOLVER_PRODUCTION_ENABLED;
+  });
+
   const snapshot = buildSnapshot({
     persons: [seedPerson({ id: 'p1' })],
     tasks: [seedTask({ id: 't1' })],

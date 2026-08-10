@@ -17,6 +17,17 @@ export interface SolveOptions {
   /** 可选显式策略覆盖（缺失时由求解器从 SchedulingPolicyService 加载）。 */
   policy?: SchedulingPolicy;
   /**
+   * Task B / P0：局部重排真实影响任务集（ReplanImpact.affectedTaskIds，来自 impact-propagation）。
+   * 提供时 scheduler_partial_replan_affected 取 affectedTaskIds.length（真实受影响数）；
+   * 缺省（全量重排/无影响分析）时按快照任务数近似。绝不改变求解语义，仅影响观测指标。
+   */
+  affectedTaskIds?: string[];
+  /**
+   * Task A / P0：租户 org id（CANARY org allowlist 采样判定；缺省 null 时采样键退化为 planId）。
+   * 仅影响 CANARY 采样决策与 solverActivation 审计，不改变求解语义。
+   */
+  orgId?: string | null;
+  /**
    * P0 大规模性能：可行候选 top-K 上限（默认 12；可经 SchedulingPolicyConfig
    * 的扩展字段 candidateTopK 配置）。只影响决策轨迹的候选明细（保持 top-K），
    * 绝不改变贪心 argmin 选择（稳定 top-K 与原全量排序逐位一致）。

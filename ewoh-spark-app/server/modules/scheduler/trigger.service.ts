@@ -149,6 +149,9 @@ export class TriggerService {
       orgId: r.orgId ?? null,
       error: r.error ?? null,
       failureReason: r.failureReason ?? null,
+      // standalone_030_solver_activation（Task A / P0）：回读求解器状态/回退原因。
+      solverStatus: r.solverStatus ?? null,
+      fallbackReason: r.fallbackReason ?? null,
       createdAt: r.createdAt ? r.createdAt.toISOString() : new Date().toISOString(),
     };
   }

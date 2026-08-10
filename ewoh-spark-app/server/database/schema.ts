@@ -601,6 +601,11 @@ export const ewohSchedulePlan = pgTable("ewoh_schedule_plan", {
   policyVersion: integer("policy_version"),
   /** 求解器版本（对应 SchedulingPolicy.solverVersion）。 */
   solverVersion: varchar("solver_version", { length: 100 }),
+  // --- Solver 激活阶梯持久化（standalone_030_solver_activation，Task A / P0） ---
+  /** 实际使用的求解器状态（OPTIMAL/FEASIBLE/HEURISTIC/FALLBACK/TIMEOUT/UNAVAILABLE）。 */
+  solverStatus: varchar("solver_status", { length: 32 }),
+  /** 回退/降级原因（如 worker 不可达、超时、production_not_gated；无回退为 NULL）。 */
+  fallbackReason: text("fallback_reason"),
   /** 求解时间窗（分钟）。 */
   horizonMinutes: integer("horizon_minutes"),
   /**
@@ -1125,6 +1130,11 @@ export const ewohSchedulingRun = pgTable("ewoh_scheduling_run", {
   error: text("error"),
   /** 失败原因（替代仅日志，供审计追溯；standalone_012_domain_columns）。 */
   failureReason: text("failure_reason"),
+  // --- Solver 激活阶梯持久化（standalone_030_solver_activation，Task A / P0） ---
+  /** 运行所用求解器状态（随方案求解写入；succeeded 后回填）。 */
+  solverStatus: varchar("solver_status", { length: 32 }),
+  /** 运行所用求解器回退/降级原因（无回退为 NULL）。 */
+  fallbackReason: text("fallback_reason"),
   orgId: varchar("org_id", { length: 255 }),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),

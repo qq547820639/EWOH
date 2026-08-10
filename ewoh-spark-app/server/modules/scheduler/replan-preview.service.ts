@@ -91,6 +91,9 @@ export class ReplanPreviewService {
       snapshotVersion: snapshot.snapshotVersion,
       horizonMinutes: 480,
       baselineAssignee,
+      // Task B / P0：局部重排真实影响集（scheduler_partial_replan_affected 与
+      // preview.affectedTaskCount 同源，均取 impact.affectedTaskIds.length）。
+      affectedTaskIds: impact.affectedTaskIds,
     });
     const candidate = plans[0] ?? null;
     if (!candidate) {

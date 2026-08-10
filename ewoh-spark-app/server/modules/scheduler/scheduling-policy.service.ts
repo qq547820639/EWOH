@@ -133,6 +133,13 @@ const DEFAULT_CONFIG: SchedulingPolicyConfig = {
       minCoverage: 0.8,
     },
   },
+  // --- CP-SAT 激活阶梯（Task A / P0）：缺省 OFF（仅 heuristic 生产；CP-SAT 不参与任何路径） ---
+  cpSat: {
+    activation: 'OFF',
+    canaryFraction: 0,
+    orgAllowlist: [],
+    shadowCompare: false,
+  },
 };
 
 /**
@@ -531,6 +538,21 @@ export class SchedulingPolicyService {
           ),
         },
       },
+      // --- CP-SAT 激活阶梯（Task A / P0）：cpSat 块透传，缺省=OFF（仅 heuristic） ---
+      cpSat: {
+        activation: this.activationState(
+          c.cpSat?.activation,
+          DEFAULT_CONFIG.cpSat!.activation,
+        ),
+        canaryFraction: this.num(c.cpSat?.canaryFraction, DEFAULT_CONFIG.cpSat!.canaryFraction),
+        orgAllowlist: Array.isArray(c.cpSat?.orgAllowlist)
+          ? c.cpSat!.orgAllowlist!.filter((o): o is string => typeof o === 'string')
+          : DEFAULT_CONFIG.cpSat!.orgAllowlist,
+        shadowCompare:
+          c.cpSat?.shadowCompare === undefined
+            ? DEFAULT_CONFIG.cpSat!.shadowCompare
+            : Boolean(c.cpSat.shadowCompare),
+      },
     };
   }
 
@@ -579,6 +601,22 @@ export class SchedulingPolicyService {
 
   private num(v: unknown, fallback: number): number {
     return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+  }
+
+  /** 解析 CP-SAT 激活状态（非法值回退缺省，绝不透传未知字符串）。 */
+  private activationState(
+    v: unknown,
+    fallback: import('@shared/api.interface').SolverActivationState,
+  ): import('@shared/api.interface').SolverActivationState {
+    if (
+      v === 'OFF' ||
+      v === 'SHADOW' ||
+      v === 'CANARY' ||
+      v === 'PRODUCTION'
+    ) {
+      return v;
+    }
+    return fallback;
   }
 
   /**

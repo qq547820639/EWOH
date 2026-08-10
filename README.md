@@ -122,8 +122,9 @@ EWOH
 
 - **Production Canonical Solver = `HeuristicSchedulingSolver`**（Scheduler V2，确定性贪心 + 多目标评分）。
 - **CP-SAT 为 OPTIONAL / EXPERIMENTAL**：未部署 OR-Tools，不生产启用；不可用时 `solverStatus=UNAVAILABLE` 并显式回退 heuristic，绝不冒充 CP-SAT 成功。
+- **求解器激活阶梯（Solver Activation Ladder，唯一事实源）**：`OFF → SHADOW → CANARY → PRODUCTION`，默认 **`OFF`（仅 heuristic 生产，CP-SAT 不参与任何路径）**。解析优先级：`EWOH_SOLVER_ACTIVATION` 环境变量 > `SchedulingPolicyConfig.cpSat.activation` > `OFF`；`EWOH_SOLVER_PRODUCTION_ENABLED=1` 才允许 `PRODUCTION` 阶梯——当前 feature-status.yaml `cpSat.productionEnabled=false`，即使显式 `PRODUCTION` 也 fail-closed 回退 heuristic（`fallbackReason=production_not_gated`）。`SHADOW` 双跑结果标记 isShadow 绝不批准/派工；`CANARY` 按 org allowlist / 确定性哈希采样放量，CP-SAT 不可用自动回滚采样至 0 并 emit `policy.shadow.canary.rollback`。
 - **Parity / Fidelity 现状**：CP-SAT 与 heuristic 已对齐约束语义（真实 `safetyCritical/preemptible/skillMatchMode`、device 位置、station capacity 透传，无占位值）、人工约束（`SchedulingConstraint[]`）完整映射、统一消费共享 `PriorityEngine` 的 `effectivePriorityScore`、技能匹配显式 `skillMatchMode: ALL|ANY`。
-- 每个正式方案均记录 `solverVersion / solverStatus / fallbackReason / snapshotVersion / policyVersion`；`solverStatus` 取值 `OPTIMAL / FEASIBLE / HEURISTIC / FALLBACK / TIMEOUT / UNAVAILABLE`。
+- 每个正式方案均记录 `solverVersion / solverStatus / fallbackReason / snapshotVersion / policyVersion`；`solverStatus` 取值 `OPTIMAL / FEASIBLE / HEURISTIC / FALLBACK / TIMEOUT / UNAVAILABLE`。`solver_status / fallback_reason` 随方案与运行持久化（standalone_030_solver_activation）。
 
 ---
 
@@ -226,6 +227,8 @@ Schema 唯一事实源为 `db/migrations/standalone_*`；`server/database/schema
 | `BODY_LIMIT` | `1mb` | 请求体上限 |
 | `EWOH_DB_STATEMENT_TIMEOUT_MS` | `0` | SQL 语句超时（0=不设） |
 | `CPSAT_WORKER_URL` | `http://127.0.0.1:8000` | CP-SAT worker 地址（当前未启用，heuristic 为 canonical） |
+| `EWOH_SOLVER_ACTIVATION` | `OFF` | 求解器激活阶梯唯一事实源：`OFF`（默认，仅 heuristic）/ `SHADOW` / `CANARY` / `PRODUCTION`（后三者需显式配置；`PRODUCTION` 还需下项门禁） |
+| `EWOH_SOLVER_PRODUCTION_ENABLED` | `0` | 生产门控：`1` 才允许 CP-SAT 进入 `PRODUCTION` 阶梯；`0`（默认）fail-closed 回退 heuristic（`fallbackReason=production_not_gated`） |
 
 ### 4.3 飞书侧车
 
