@@ -20,6 +20,7 @@ const feishu = require('./feishu');
 const sync = require('./sync');
 const events = require('./events');
 const security = require('./security');
+const health = require('./health');
 
 // 初始化数据库（建表 + 预置设备/规则）
 const db = dbm.initDatabase();
@@ -41,6 +42,7 @@ function initFeishuIntegration() {
   // 启动时加载飞书配置 + 首次同步 3 台预置设备到多维表格 + 启动事件状态轮询（失败不阻断）
   const feishuConfig = feishu.loadConfig();
   if (feishuConfig) {
+    health.setFeishuState({ configured: true, initError: null });
     console.log(`[feishu] 配置已加载，chat_id=${feishuConfig.chat_id}（base_token 已加载，不打印敏感值）`);
     for (const dev of dbm.listDevices(db)) {
       Promise.resolve(sync.syncDevice(dev)).catch((e) =>
@@ -60,6 +62,7 @@ function initFeishuIntegration() {
     console.log(`[sync] 全量同步定时器已启动，间隔 ${SYNC_ALL_INTERVAL_MS}ms`);
   } else {
     console.warn('[feishu] 未加载到配置，飞书集成将降级（仅 console.error，不阻断）');
+    health.setFeishuState({ configured: false, initError: 'feishu-config.json 未加载' });
   }
 }
 
@@ -101,6 +104,12 @@ app.use('/api', apiAuth, createApiRouter(db));
 app.get('/', (req, res) => {
   res.json({ name: 'EWOH 外骨骼监督平台', status: 'running', api: '/api/status' });
 });
+
+// 健康检查（Task 16.1）：
+//   - /health/live  恒 200（进程存活探针）
+//   - /health/ready 本地 API + 飞书集成均可用 → 200；否则 503
+// 探针免鉴权；不改变 / 与 /api/status 既有行为
+health.registerHealthRoutes(app);
 
 // ---- 模拟器（P0-SEC-002）：默认关闭 ----
 function simulatorEnabled() {

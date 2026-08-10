@@ -66,6 +66,10 @@ let activeCliCalls = 0;
 const cliWaitQueue = [];
 let consecutiveCliFailures = 0;
 let breakerOpenUntil = 0;
+// 最近一次成功/失败调用（供 /health/ready 通过 getFeishuStatus 判定集成可用性）
+let lastCliSuccessAt = 0;
+let lastCliError = null;
+let lastCliErrorAt = 0;
 
 // 获取并发槽位（满时排队等待，不阻塞事件循环）
 // P2-10：排队长度达到 FEISHU_CLI_MAX_QUEUE 时立即拒绝（reject），防止无界队列增长
@@ -97,19 +101,38 @@ function releaseCliSlot() {
   }
 }
 
-// 记录一次调用结果并驱动熔断状态机
-function recordCliResult(ok) {
+// 记录一次调用结果并驱动熔断状态机（err 为失败时的错误信息，供健康检查展示）
+function recordCliResult(ok, err) {
   if (ok) {
     consecutiveCliFailures = 0;
+    lastCliSuccessAt = Date.now();
+    lastCliError = null;
+    lastCliErrorAt = 0;
     return;
   }
   consecutiveCliFailures += 1;
+  lastCliError = err || null;
+  lastCliErrorAt = Date.now();
   if (consecutiveCliFailures >= BREAKER_THRESHOLD) {
     breakerOpenUntil = Date.now() + BREAKER_COOLDOWN_MS;
     console.error(
       `[feishu] lark-cli 连续失败 ${consecutiveCliFailures} 次，熔断 ${BREAKER_COOLDOWN_MS / 1000}s`
     );
   }
+}
+
+// 飞书集成当前状态（供健康检查 /health/ready 判定；不暴露任何凭据）
+//  - configured: feishu-config.json 是否加载成功
+//  - circuitOpen: 熔断是否打开（连续失败 ≥ 阈值后的冷却期内为 true）
+//  - lastSuccessAt / lastError / lastErrorAt: 最近一次 lark-cli 调用的成败
+function getFeishuStatus() {
+  return {
+    configured: !!getConfig(),
+    circuitOpen: breakerOpenUntil > Date.now(),
+    lastSuccessAt: lastCliSuccessAt ? new Date(lastCliSuccessAt).toISOString() : null,
+    lastError: lastCliError,
+    lastErrorAt: lastCliErrorAt ? new Date(lastCliErrorAt).toISOString() : null,
+  };
 }
 
 // 解析 stdout JSON 信封（失败返回 null）
@@ -219,7 +242,7 @@ async function larkCli(args, { input, asBot = false } = {}) {
   }
   try {
     const r = await runLarkCliProcess(args, { input, asBot });
-    recordCliResult(r.ok);
+    recordCliResult(r.ok, r.error);
     return r;
   } finally {
     releaseCliSlot();
@@ -334,6 +357,9 @@ const __test = {
     cliWaitQueue.length = 0;
     consecutiveCliFailures = 0;
     breakerOpenUntil = 0;
+    lastCliSuccessAt = 0;
+    lastCliError = null;
+    lastCliErrorAt = 0;
     MAX_CONCURRENT = 4;
     BREAKER_THRESHOLD = 5;
     BREAKER_COOLDOWN_MS = 30000;
@@ -350,6 +376,10 @@ const __test = {
   },
   setBreakerCooldownMs(n) {
     BREAKER_COOLDOWN_MS = n;
+  },
+  // 直接打开/关闭熔断（供健康检查测试模拟熔断打开；ts 为熔断关闭时间戳）
+  setBreakerOpenUntil(ts) {
+    breakerOpenUntil = Number.isFinite(Number(ts)) ? Number(ts) : Date.now();
   },
   setMaxRetries(n) {
     MAX_RETRIES = n;
@@ -760,6 +790,7 @@ module.exports = {
   __test,
   loadConfig,
   getConfig,
+  getFeishuStatus,
   resolveBaseToken,
   fmtDateTime,
   // IM

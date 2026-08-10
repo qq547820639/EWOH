@@ -4,6 +4,7 @@
 
 const feishu = require('./feishu');
 const dbm = require('./db');
+const health = require('./health');
 
 // 本地英文字段名 → 飞书 Base 中文字段名映射（Base 表结构由 Task 1 创建）
 const DEVICE_FIELDS = {
@@ -238,9 +239,9 @@ function parseRecordSearchRows(data) {
   }));
 }
 
-// 单次轮询：拉取飞书事件表中状态为 handled/closed 的记录，
+// 单次轮询（内部实现）：拉取飞书事件表中状态为 handled/closed 的记录，
 // 与本地 SQLite events 表对比，发现飞书侧状态变更就回写本地
-async function pollFeishuEventStatusChanges(db) {
+async function pollFeishuEventStatusChangesInner(db) {
   try {
     const cfg = feishu.getConfig();
     if (!cfg || !cfg.tables || !cfg.tables.events) {
@@ -329,6 +330,13 @@ async function pollFeishuEventStatusChanges(db) {
   }
 }
 
+// 对外封装：每次轮询结束后回写健康状态（供 /health/ready 判定最近同步成功/失败）
+async function pollFeishuEventStatusChanges(db) {
+  const r = await pollFeishuEventStatusChangesInner(db);
+  health.recordFeishuSync(!!(r && r.ok), (r && r.error) || null);
+  return r;
+}
+
 // 启动轮询定时器：立即跑一次，之后每 60s 跑一次
 function startEventStatusPolling(db) {
   if (pollTimer) return pollTimer;
@@ -367,6 +375,7 @@ async function syncAllToFeishu(db) {
   const cfg = feishu.getConfig();
   if (!cfg || !cfg.tables) {
     console.error('[sync] syncAllToFeishu: 未加载到飞书配置，跳过');
+    health.recordFeishuSync(false, 'no config');
     return { ok: false, error: 'no config', synced };
   }
 
@@ -446,6 +455,7 @@ async function syncAllToFeishu(db) {
   console.log(
     `[sync] 全量同步完成: 设备=${synced.devices}, 事件=${synced.events}, 遥测=${synced.telemetry}`
   );
+  health.recordFeishuSync(true, null);
   return { ok: true, synced };
 }
 

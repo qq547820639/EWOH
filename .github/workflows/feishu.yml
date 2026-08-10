@@ -1,0 +1,49 @@
+# EWOH 受控试点系统 - 飞书 sidecar 应用（ewoh-feishu-app）测试 CI（Task 16.2）
+# 触发：push 与 pull_request（与其他 workflow 一致）
+# 步骤：checkout（固定 SHA）→ setup-node 24 → npm ci → npm test；
+#       测试结果以 JUnit 报告上传为 artifact（可定位；生成失败不阻断主测试结论）。
+name: feishu
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  feishu-app-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ewoh-feishu-app/package-lock.json
+
+      - name: 安装依赖（npm ci）
+        run: npm ci
+        working-directory: ewoh-feishu-app
+
+      - name: 运行 feishu-app 测试套件（node --test，覆盖 auth/db/security/retry/lark-cli/queue/health 等）
+        run: npm test
+        working-directory: ewoh-feishu-app
+
+      - name: 生成 JUnit 测试报告（供 artifact 收集；失败不阻断主测试结论）
+        run: node --test --test-reporter junit --test-reporter-destination test-results.xml test/*.test.js
+        working-directory: ewoh-feishu-app
+        continue-on-error: true
+
+      - name: 上传测试结果 artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: feishu-app-test-results
+          path: ewoh-feishu-app/test-results.xml
+          if-no-files-found: ignore
+          retention-days: 30
