@@ -74,16 +74,28 @@ describe('核心页面 12 种状态覆盖矩阵', () => {
 describe('页面接线与源码一致性（fixture 佐证）', () => {
   const pagesDir = path.join(__dirname);
 
-  /** 源码中是否出现关键接线标记 */
-  const sourceHas = (pageDir: 'CommandMap' | 'WorkOrchestration' | 'Overview' | 'Events' | 'Devices' | 'Alerts', marker: string): boolean => {
-    const file = path.join(pagesDir, pageDir, `${pageDir}.tsx`);
-    if (!fs.existsSync(file)) return false;
-    return fs.readFileSync(file, 'utf8').includes(marker);
+  /** 源码中是否出现关键接线标记（默认页面主文件；可指定额外文件——CommandMap 已拆分，状态接线在 Shell/queryState）。 */
+  const sourceHas = (
+    pageDir: 'CommandMap' | 'WorkOrchestration' | 'Overview' | 'Events' | 'Devices' | 'Alerts',
+    marker: string,
+    file?: string,
+  ): boolean => {
+    const filePath = path.join(pagesDir, pageDir, file ?? `${pageDir}.tsx`);
+    if (!fs.existsSync(filePath)) return false;
+    return fs.readFileSync(filePath, 'utf8').includes(marker);
   };
 
   it('CommandMap 接线 partial/degraded（DataStates）与 recovery（retryAll）', () => {
-    expect(sourceHas('CommandMap', 'DataStates')).toBe(true);
-    expect(sourceHas('CommandMap', 'retryAll')).toBe(true);
+    // Task 8 拆分后 CommandMap.tsx 为薄入口，状态接线位于 CommandMapShell.tsx（DataStates/retryAll 消费）
+    // 与 queryState.ts（retryAll 定义）。
+    expect(
+      sourceHas('CommandMap', 'DataStates', 'CommandMapShell.tsx') ||
+        sourceHas('CommandMap', 'DataStates'),
+    ).toBe(true);
+    expect(
+      sourceHas('CommandMap', 'retryAll', 'CommandMapShell.tsx') ||
+        sourceHas('CommandMap', 'retryAll', 'queryState.ts'),
+    ).toBe(true);
   });
 
   it('WorkOrchestration 接线 conflict 与 error/recovery', () => {
