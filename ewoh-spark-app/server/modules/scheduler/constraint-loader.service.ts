@@ -1,4 +1,5 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
+import { createHash } from 'crypto';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -111,9 +112,7 @@ export class ConstraintLoaderService {
   hashConstraints(constraints: SchedulingConstraint[]): string {
     const stableJson = JSON.stringify(this.stableSerialize(constraints));
     // 使用 Node crypto 的 SHA-256（同步，避免异步开销）。
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const crypto = require('crypto') as typeof import('crypto');
-    return crypto.createHash('sha256').update(stableJson, 'utf8').digest('hex');
+    return createHash('sha256').update(stableJson, 'utf8').digest('hex');
   }
 
   /** 将约束行反序列化为 SchedulingConstraint（真实列优先，valueJson 内嵌字段兼容）。 */

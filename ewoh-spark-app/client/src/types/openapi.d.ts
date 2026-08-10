@@ -7294,55 +7294,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/scheduler/plans/data-driven": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Generate data-driven schedule plans (deprecated)
-         * @deprecated
-         * @description 遗留演示路径（generatePlans）：KEEP/CAP/BAL 三方案的 taktImprovement /
-         *     output_rate / move_distance / affectedPersons 等指标为【合成数据，仅供演示】，
-         *     不代表真实调度结果。真实调度请使用 SolverService（CP-SAT / heuristic）。
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["GeneratePlansRequest"];
-                };
-            };
-            responses: {
-                /** @description Created */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["SchedulePlanList"];
-                    };
-                };
-                BadRequest: components["responses"]["BadRequest"];
-                Unauthorized: components["responses"]["Unauthorized"];
-                InternalError: components["responses"]["InternalError"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/scheduler/plans/{planId}/confirm": {
         parameters: {
             query?: never;
@@ -7425,71 +7376,6 @@ export interface paths {
             };
         };
         put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/scheduler/weights": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get schedule weights */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Successful response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ScheduleWeights"];
-                    };
-                };
-                Unauthorized: components["responses"]["Unauthorized"];
-                InternalError: components["responses"]["InternalError"];
-            };
-        };
-        /** Update schedule weights */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["UpdateWeightsRequest"];
-                };
-            };
-            responses: {
-                /** @description Successful response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ScheduleWeights"];
-                    };
-                };
-                BadRequest: components["responses"]["BadRequest"];
-                Unauthorized: components["responses"]["Unauthorized"];
-                InternalError: components["responses"]["InternalError"];
-            };
-        };
         post?: never;
         delete?: never;
         options?: never;
@@ -8582,6 +8468,106 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["SchedulingConflict"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/conflicts/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reconcile scheduling conflicts explicitly (write path)
+         * @description Phase 1 / P1-5 (G5). Explicitly re-derive conflicts and merge with persisted lifecycle rows (INSERT/UPDATE + SSE + audit). GET /conflicts is read-only; use this endpoint to trigger the write reconcile (e.g. frontend "reconcile now" button or polling job).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @description Actor identifier (falls back to user context) */
+                        operator?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Reconcile result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            ok?: boolean;
+                            reconciledCount?: number;
+                            conflicts?: components["schemas"]["SchedulingConflict"][];
+                        };
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/plans/{planId}/overrides/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview override impact before applying (read-only, 7 deltas)
+         * @description Phase 1 / P1-8. Pure computation: same snapshot + request constraints solved to a PREVIEW-* candidate plan (never persisted, never dispatched), compared against baseline. Returns affectedAssignments / conflictsIntroduced / latenessDeltaMinutes / travelDeltaMinutes / workloadDelta / stationWaitDeltaMinutes / planChurn. Safety-critical tasks are guarded (SAFETY_CRITICAL_LOCKED) — preview never changes them.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    planId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PlanOverrideRequest"];
+                };
+            };
+            responses: {
+                /** @description Override preview result (read-only) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OverridePreviewResponse"];
                     };
                 };
                 Unauthorized: components["responses"]["Unauthorized"];
@@ -11899,6 +11885,455 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scheduler/executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List scheduling executions (Phase 4) */
+        get: {
+            parameters: {
+                query?: {
+                    planId?: string;
+                    taskId?: string;
+                    status?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Execution list */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ExecutionListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/executions/{assignmentId}/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Update execution state / record actuals / deviation (Phase 4) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    assignmentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ExecutionUpdateRequest"];
+                };
+            };
+            responses: {
+                /** @description Updated execution */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/kpi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Aggregate scheduler KPIs (Phase 4) */
+        get: {
+            parameters: {
+                query?: {
+                    persist?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description KPI snapshot */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulerKpiSnapshot"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/conflicts/{id}/actions/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview conflict resolution replan (readonly, Phase 4) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["ConflictPreviewRequest"];
+                };
+            };
+            responses: {
+                /** @description Preview result (candidate plan + diff, not applied) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/policy/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List replay records */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Replay records */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        /** Run deterministic policy replay (Phase 4) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PolicyReplayRequest"];
+                };
+            };
+            responses: {
+                /** @description Replay record */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/policy/{version}/shadow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move policy to SHADOW (Phase 4) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    version: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Policy moved to SHADOW */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/policy/{version}/shadow/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate shadow plan under SHADOW policy (not dispatchable) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    version: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Shadow plan + compare */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/policy/{version}/gate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Evaluate activation gate (Phase 4) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    version: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        replayId?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Gate evaluation */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/policy/{version}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Human-gated policy activation (Phase 4) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    version: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        operator: string;
+                        reason?: string;
+                        replayId?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Activation record */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/policy/activations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List policy activations */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Activation records */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/policy/activations/{activationId}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rollback policy activation to previous ACTIVE (Phase 4) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    activationId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        operator?: string;
+                        reason?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Rolled back activation record */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -12831,6 +13266,32 @@ export interface components {
         CalculateRouteRequest: {
             personId: string;
             taskId: string;
+            /** @description 批量候选路由评估（P0 扩展）；提供时返回 RouteCandidatesResponse */
+            candidates?: {
+                personId?: string | null;
+                deviceId?: string | null;
+                stationId?: string | null;
+            }[];
+        };
+        /** @description Task×Candidate 路由成本（TravelCostService SSOT；blocked/forbiddenZone/坐标缺失均为 feasible=false） */
+        RouteCandidateCost: {
+            personId: string | null;
+            deviceId: string | null;
+            stationId: string | null;
+            feasible: boolean;
+            distanceMeters: number;
+            etaSeconds: number;
+            routeCostMode: string;
+            fallbackReason: string | null;
+            dataQuality: string;
+            blocked: boolean;
+            forbiddenZone: boolean;
+        };
+        RouteCandidatesResponse: {
+            data: {
+                taskId: string;
+                candidates: components["schemas"]["RouteCandidateCost"][];
+            };
         };
         PlanCompareResult: {
             [key: string]: unknown;
@@ -12933,6 +13394,23 @@ export interface components {
             conflicts?: components["schemas"]["SchedulingConflict"][];
             total?: number;
         };
+        OverridePreviewResponse: {
+            planId: string;
+            /** @constant */
+            readonly: true;
+            affectedAssignments: string[];
+            conflictsIntroduced: {
+                conflictId?: string;
+                type?: string;
+                message?: string;
+            }[];
+            latenessDeltaMinutes: number;
+            travelDeltaMinutes: number;
+            workloadDelta: number;
+            stationWaitDeltaMinutes: number;
+            planChurn: number;
+            candidatePlanId: string;
+        };
         SchedulingConstraint: {
             id?: string;
             type?: string;
@@ -12951,6 +13429,17 @@ export interface components {
             validFrom?: number;
             expiresAt?: number;
             snapshotVersion?: string;
+            /** @description Constraint effective start (epoch ms; standalone_023) */
+            validFromMs?: number;
+            /** @description Constraint expiry (epoch ms; filtered before solving) */
+            expiresAtMs?: number;
+            /** @description Tenant isolation (null = global) */
+            orgId?: string;
+            /** @description manual | system | auto */
+            source?: string;
+            /** Format: date-time */
+            deactivatedAt?: string;
+            deactivatedBy?: string;
         } & {
             [key: string]: unknown;
         };
@@ -14604,6 +15093,118 @@ export interface components {
             affectedCount: number;
             irreversible: boolean;
             requiresConfirmation: boolean;
+        };
+        /** @enum {string} */
+        SchedulingExecutionStatus: "PLANNED" | "DISPATCHED" | "STARTED" | "PAUSED" | "COMPLETED" | "FAILED" | "CANCELLED";
+        /** @enum {string|null} */
+        SchedulingDeviationType: "START_DELAY" | "END_DELAY" | "TRAVEL_DELAY" | "PERSON_CHANGED" | "DEVICE_CHANGED" | "STATION_CHANGED" | "ROUTE_DEVIATION" | "PERSON_UNAVAILABLE" | "DEVICE_FAILURE" | "TASK_CANCELLED" | "SAFETY_INTERRUPTION" | "MANUAL_OVERRIDE" | null;
+        SchedulingExecution: {
+            id: string;
+            executionId: string;
+            orgId?: string | null;
+            runId?: string | null;
+            planId: string;
+            assignmentId: string;
+            taskId: string;
+            personId?: string | null;
+            deviceId?: string | null;
+            stationId?: string | null;
+            /** Format: date-time */
+            plannedStartAt?: string | null;
+            /** Format: date-time */
+            plannedEndAt?: string | null;
+            /** Format: date-time */
+            actualStartAt?: string | null;
+            /** Format: date-time */
+            actualEndAt?: string | null;
+            plannedTravelMs?: number | null;
+            actualTravelMs?: number | null;
+            plannedDistanceM?: number | null;
+            actualDistanceM?: number | null;
+            plannedWaitingMs?: number | null;
+            actualWaitingMs?: number | null;
+            status: components["schemas"]["SchedulingExecutionStatus"];
+            deviationType: components["schemas"]["SchedulingDeviationType"];
+            deviationReason?: string | null;
+            snapshotVersion?: string | null;
+            policyVersion?: number | null;
+            solverVersion?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ExecutionListResponse: {
+            executions: components["schemas"]["SchedulingExecution"][];
+            total: number;
+        };
+        ExecutionUpdateRequest: {
+            status?: components["schemas"]["SchedulingExecutionStatus"];
+            /** Format: date-time */
+            actualStartAt?: string | null;
+            /** Format: date-time */
+            actualEndAt?: string | null;
+            actualTravelMs?: number | null;
+            actualDistanceM?: number | null;
+            actualWaitingMs?: number | null;
+            deviationType?: components["schemas"]["SchedulingDeviationType"];
+            deviationReason?: string | null;
+            triggerReplan?: boolean;
+        };
+        SchedulerKpiSnapshot: {
+            /** Format: date-time */
+            periodStart: string;
+            /** Format: date-time */
+            periodEnd: string;
+            delivery: {
+                onTimeRate?: number | null;
+                completionRate?: number | null;
+                latenessP50Ms?: number | null;
+                latenessP95Ms?: number | null;
+                latenessMaxMs?: number | null;
+                averageWaitingMs?: number | null;
+                averageTravelMs?: number | null;
+                averageTravelDistanceM?: number | null;
+            };
+            resources: {
+                personUtilization?: number | null;
+                deviceUtilization?: number | null;
+                stationUtilization?: number | null;
+                resourceIdleMs?: number | null;
+                workloadVariance?: number | null;
+            };
+            stability: {
+                replanCount?: number;
+                replanSuccessRate?: number | null;
+                assignmentChurnRate?: number | null;
+                manualOverrideRate?: number | null;
+                conflictRate?: number | null;
+                averageConflictResolutionMs?: number | null;
+            };
+            solver: {
+                solverLatencyP50Ms?: number | null;
+                solverLatencyP95Ms?: number | null;
+                optimalRate?: number | null;
+                feasibleRate?: number | null;
+                heuristicFallbackRate?: number | null;
+                timeoutRate?: number | null;
+                infeasibleRate?: number | null;
+            };
+            dataQuality: {
+                staleResourceRate?: number | null;
+                unknownLocationRate?: number | null;
+                degradedRouteRate?: number | null;
+            };
+        };
+        PolicyReplayRequest: {
+            candidatePolicyVersion: number;
+            snapshotVersion?: string;
+            seed?: number;
+            limit?: number;
+        };
+        ConflictPreviewRequest: {
+            action?: string;
+            resourceIds?: string[];
         };
     };
     responses: {

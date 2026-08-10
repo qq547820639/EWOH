@@ -14510,3 +14510,296 @@ components:
         requiresConfirmation:
           type: boolean
       additionalProperties: false
+    SchedulingExecutionStatus:
+      type: string
+      enum: [PLANNED, DISPATCHED, STARTED, PAUSED, COMPLETED, FAILED, CANCELLED]
+    SchedulingDeviationType:
+      type: string
+      enum: [START_DELAY, END_DELAY, TRAVEL_DELAY, PERSON_CHANGED, DEVICE_CHANGED, STATION_CHANGED, ROUTE_DEVIATION, PERSON_UNAVAILABLE, DEVICE_FAILURE, TASK_CANCELLED, SAFETY_INTERRUPTION, MANUAL_OVERRIDE]
+      nullable: true
+    SchedulingExecution:
+      type: object
+      required:
+        - id
+        - executionId
+        - planId
+        - assignmentId
+        - taskId
+        - status
+        - deviationType
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        executionId:
+          type: string
+        orgId:
+          type: string
+          nullable: true
+        runId:
+          type: string
+          nullable: true
+        planId:
+          type: string
+        assignmentId:
+          type: string
+        taskId:
+          type: string
+        personId:
+          type: string
+          nullable: true
+        deviceId:
+          type: string
+          nullable: true
+        stationId:
+          type: string
+          nullable: true
+        plannedStartAt:
+          type: string
+          format: date-time
+          nullable: true
+        plannedEndAt:
+          type: string
+          format: date-time
+          nullable: true
+        actualStartAt:
+          type: string
+          format: date-time
+          nullable: true
+        actualEndAt:
+          type: string
+          format: date-time
+          nullable: true
+        plannedTravelMs:
+          type: integer
+          nullable: true
+        actualTravelMs:
+          type: integer
+          nullable: true
+        plannedDistanceM:
+          type: integer
+          nullable: true
+        actualDistanceM:
+          type: integer
+          nullable: true
+        plannedWaitingMs:
+          type: integer
+          nullable: true
+        actualWaitingMs:
+          type: integer
+          nullable: true
+        status:
+          $ref: '#/components/schemas/SchedulingExecutionStatus'
+        deviationType:
+          $ref: '#/components/schemas/SchedulingDeviationType'
+        deviationReason:
+          type: string
+          nullable: true
+        snapshotVersion:
+          type: string
+          nullable: true
+        policyVersion:
+          type: integer
+          nullable: true
+        solverVersion:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    ExecutionListResponse:
+      type: object
+      required:
+        - executions
+        - total
+      properties:
+        executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchedulingExecution'
+        total:
+          type: integer
+      additionalProperties: false
+    ExecutionUpdateRequest:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/SchedulingExecutionStatus'
+        actualStartAt:
+          type: string
+          format: date-time
+          nullable: true
+        actualEndAt:
+          type: string
+          format: date-time
+          nullable: true
+        actualTravelMs:
+          type: integer
+          nullable: true
+        actualDistanceM:
+          type: integer
+          nullable: true
+        actualWaitingMs:
+          type: integer
+          nullable: true
+        deviationType:
+          $ref: '#/components/schemas/SchedulingDeviationType'
+        deviationReason:
+          type: string
+          nullable: true
+        triggerReplan:
+          type: boolean
+      additionalProperties: false
+    SchedulerKpiSnapshot:
+      type: object
+      required:
+        - periodStart
+        - periodEnd
+        - delivery
+        - resources
+        - stability
+        - solver
+        - dataQuality
+      properties:
+        periodStart:
+          type: string
+          format: date-time
+        periodEnd:
+          type: string
+          format: date-time
+        delivery:
+          type: object
+          properties:
+            onTimeRate:
+              type: number
+              nullable: true
+            completionRate:
+              type: number
+              nullable: true
+            latenessP50Ms:
+              type: integer
+              nullable: true
+            latenessP95Ms:
+              type: integer
+              nullable: true
+            latenessMaxMs:
+              type: integer
+              nullable: true
+            averageWaitingMs:
+              type: integer
+              nullable: true
+            averageTravelMs:
+              type: integer
+              nullable: true
+            averageTravelDistanceM:
+              type: integer
+              nullable: true
+          additionalProperties: false
+        resources:
+          type: object
+          properties:
+            personUtilization:
+              type: number
+              nullable: true
+            deviceUtilization:
+              type: number
+              nullable: true
+            stationUtilization:
+              type: number
+              nullable: true
+            resourceIdleMs:
+              type: integer
+              nullable: true
+            workloadVariance:
+              type: number
+              nullable: true
+          additionalProperties: false
+        stability:
+          type: object
+          properties:
+            replanCount:
+              type: integer
+            replanSuccessRate:
+              type: number
+              nullable: true
+            assignmentChurnRate:
+              type: number
+              nullable: true
+            manualOverrideRate:
+              type: number
+              nullable: true
+            conflictRate:
+              type: number
+              nullable: true
+            averageConflictResolutionMs:
+              type: integer
+              nullable: true
+          additionalProperties: false
+        solver:
+          type: object
+          properties:
+            solverLatencyP50Ms:
+              type: integer
+              nullable: true
+            solverLatencyP95Ms:
+              type: integer
+              nullable: true
+            optimalRate:
+              type: number
+              nullable: true
+            feasibleRate:
+              type: number
+              nullable: true
+            heuristicFallbackRate:
+              type: number
+              nullable: true
+            timeoutRate:
+              type: number
+              nullable: true
+            infeasibleRate:
+              type: number
+              nullable: true
+          additionalProperties: false
+        dataQuality:
+          type: object
+          properties:
+            staleResourceRate:
+              type: number
+              nullable: true
+            unknownLocationRate:
+              type: number
+              nullable: true
+            degradedRouteRate:
+              type: number
+              nullable: true
+          additionalProperties: false
+      additionalProperties: false
+    PolicyReplayRequest:
+      type: object
+      required:
+        - candidatePolicyVersion
+      properties:
+        candidatePolicyVersion:
+          type: integer
+        snapshotVersion:
+          type: string
+        seed:
+          type: integer
+        limit:
+          type: integer
+      additionalProperties: false
+    ConflictPreviewRequest:
+      type: object
+      properties:
+        action:
+          type: string
+        resourceIds:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
