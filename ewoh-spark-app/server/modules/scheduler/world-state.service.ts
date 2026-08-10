@@ -16,7 +16,10 @@ import {
   ewohDeviceBinding,
 } from '@server/database/schema';
 import { eq, desc, like, and, or } from 'drizzle-orm';
-import type { WorldStateSnapshot } from '@shared/api.interface';
+import type {
+  SchedulingEventImpact,
+  WorldStateSnapshot,
+} from '@shared/api.interface';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -531,6 +534,63 @@ export class WorldStateSnapshotService {
       }
     }
 
+    // ---- 事件影响范围（P0-2 / eventImpacts）----
+    // 为 PriorityEngine 提供"事件 → 受影响任务/资源"的 scope 索引，使开放事件只影响相关任务，
+    // 而非无差别作用于所有任务。已锁定/已派出任务（executing/dispatched/in_progress）不纳入受影响集合，
+    // 避免对正在执行的任务重新排优。
+    const eventImpacts: SchedulingEventImpact[] = events.map((e) => {
+      const evidence = (e.evidenceJson ?? {}) as Record<string, unknown>;
+      const affectedTaskIds = this.asStringArray(evidence.affectedTaskIds);
+      const affectedPersonIds = this.asStringArray(evidence.affectedPersonIds);
+      const affectedDeviceIds = this.asStringArray(evidence.affectedDeviceIds);
+      const affectedStationIds = this.asStringArray(evidence.affectedStationIds);
+      const affectedZoneIds = this.asStringArray(evidence.affectedZoneIds);
+
+      // 事件自身设备：加入受影响设备集合（若未在证据链中）。
+      const deviceId = e.deviceId ?? null;
+      if (deviceId && !affectedDeviceIds.includes(deviceId)) {
+        affectedDeviceIds.push(deviceId);
+      }
+      // 设备拥有空间实体 → 解析其所在 zone（parentId）；设备自身为工位时录入受影响工位。
+      if (deviceId) {
+        const deviceSe = spatialByEntityId.get(deviceId);
+        const zoneId = deviceSe?.parentId ?? null;
+        if (zoneId && !affectedZoneIds.includes(zoneId)) {
+          affectedZoneIds.push(zoneId);
+        }
+        if (
+          deviceSe &&
+          ['workstation', 'station'].includes(deviceSe.entityType) &&
+          !affectedStationIds.includes(deviceId)
+        ) {
+          affectedStationIds.push(deviceId);
+        }
+      }
+
+      // 传播到任务：设备/工位/区域任一匹配的任务，且未锁定（skip 已派出/执行中）。
+      const relatedTaskIds = new Set<string>();
+      for (const t of taskList) {
+        if (['executing', 'dispatched', 'in_progress'].includes(t.status)) continue;
+        const related =
+          (deviceId != null && t.deviceId === deviceId) ||
+          (t.stationId != null && affectedStationIds.includes(t.stationId)) ||
+          (t.zoneId != null && affectedZoneIds.includes(t.zoneId));
+        if (related) relatedTaskIds.add(t.id);
+      }
+      for (const tid of affectedTaskIds) relatedTaskIds.add(tid);
+
+      return {
+        eventId: e.eventId,
+        severity: e.severity ?? 'L1',
+        status: e.status ?? 'open',
+        affectedTaskIds: Array.from(relatedTaskIds),
+        affectedPersonIds,
+        affectedDeviceIds,
+        affectedStationIds,
+        affectedZoneIds,
+      };
+    });
+
     const reservationList = reservations.map((r) => ({
       reservationId: r.reservationId,
       resourceId: r.resourceId,
@@ -643,6 +703,8 @@ export class WorldStateSnapshotService {
       stations,
       backlog,
       events: eventList,
+      // P0-2：事件影响 scope（供 PriorityEngine 只消费相关事件）。
+      eventImpacts,
       routeStatus,
       // P0-6：edgeId → 受影响任务索引（供 ROUTE_BLOCKED/ROUTE_CONGESTED 影响分析）。
       routeEdgeTaskIndex,

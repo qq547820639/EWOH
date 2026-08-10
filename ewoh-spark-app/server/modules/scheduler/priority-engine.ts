@@ -1,5 +1,6 @@
 import type {
   SchedulingConstraint,
+  SchedulingEventImpact,
   SchedulingPolicy,
   SchedulingPolicyConfig,
   WorldStateSnapshot,
@@ -22,6 +23,10 @@ export interface PriorityResult {
   urgent: boolean;
   /** T03 / P1-1（G4）：本次计算所用策略版本（可审计）。 */
   policyVersion: number;
+  /** P0-2：同快照内排序（1-based，越小越靠前）。由 computeEffectivePriorityResults 统一填充；直接 compute 时为 undefined。 */
+  rank?: number;
+  /** P0-2：触发原因码（base_priority/deadline_risk/waiting_age/production_impact/event_severity/downstream_blocking/manual_boost）。 */
+  reasonCodes?: string[];
 }
 
 /** 计算优先级所需的输入。 */
@@ -39,8 +44,8 @@ export interface PriorityInput {
   horizonEndMs: number;
   downstreamCount: Map<string, number>;
   manualBoostIds: Set<string>;
-  /** T03 / P1-1（G4）：开放事件（open 且 severity L2/L3 或 DEADLINE_AT_RISK → deadlineAtRisk=true）。 */
-  events?: Array<{ eventType: string | null; severity: string }>;
+  /** T03 / P1-1（G4）：开放事件（open 且 severity L2/L3 或 DEADLINE_AT_RISK → deadlineAtRisk=true）。eventId 可选（P0-2 scope 匹配保留）。 */
+  events?: Array<{ eventType: string | null; severity: string; eventId?: string }>;
   /** 显式截止风险标记（事件驱动推导结果；缺省由 events 推导）。 */
   deadlineAtRisk?: boolean;
 }
@@ -179,6 +184,13 @@ export class PriorityEngine {
       explanation.push(`manual_boost=${boostTerm.toFixed(2)}`);
     }
 
+    // P0-2：可解释原因码——base_priority 恒在（基线），其余因子仅当 term≠0（实际生效）时计入。
+    const reasonCodes = ['base_priority'].concat(
+      factors
+        .filter((f) => f.name !== 'base_priority' && f.term !== 0)
+        .map((f) => f.name),
+    );
+
     return {
       level: rank,
       score,
@@ -186,6 +198,7 @@ export class PriorityEngine {
       explanation,
       urgent,
       policyVersion: policy.version,
+      reasonCodes,
     };
   }
 
@@ -243,11 +256,41 @@ export function computeEffectivePriorityResults(
   }
 
   const results = new Map<string, PriorityResult>();
-  // T03 / P1-1（G4）：事件驱动优先级——开放事件（status=open）传入引擎推导 deadlineAtRisk。
-  const openEvents = (snapshot.events ?? [])
-    .filter((e) => e.status === 'open')
-    .map((e) => ({ eventType: e.eventType ?? null, severity: e.severity }));
+
+  // P0-2：事件 scope——优先用 eventImpacts 做"任务 → 相关开放事件"的匹配，使事件只影响相关任务。
+  // 兼容回退：eventImpacts 缺失/为空时保留旧行为（所有开放事件作用于所有任务），保证既有调用方与测试不变。
+  const openEventByEventId = new Map<
+    string,
+    { eventType: string | null; severity: string; eventId?: string }
+  >();
+  for (const e of snapshot.events ?? []) {
+    if (e.status !== 'open') continue;
+    openEventByEventId.set(e.eventId, {
+      eventType: e.eventType ?? null,
+      severity: e.severity,
+      eventId: e.eventId,
+    });
+  }
+  const hasEventImpacts =
+    Array.isArray(snapshot.eventImpacts) && snapshot.eventImpacts.length > 0;
+
   for (const t of snapshot.tasks) {
+    let events: Array<{ eventType: string | null; severity: string; eventId?: string }>;
+    if (hasEventImpacts) {
+      // 仅收集与当前任务相关的开放事件。
+      events = [];
+      for (const imp of snapshot.eventImpacts ?? []) {
+        if (imp.status !== 'open') continue;
+        if (!isEventRelatedToTask(imp, t)) continue;
+        const open = openEventByEventId.get(imp.eventId);
+        if (!open) continue; // eventImpacts 引用了非开放事件 → 不参与（fail-safe）。
+        events.push(open);
+      }
+    } else {
+      // 向后兼容：全部开放事件。
+      events = Array.from(openEventByEventId.values());
+    }
+
     const result = engine.compute(policy, {
       task: {
         id: t.id,
@@ -261,11 +304,34 @@ export function computeEffectivePriorityResults(
       horizonEndMs,
       downstreamCount,
       manualBoostIds,
-      events: openEvents,
+      events,
     });
     results.set(t.id, result);
   }
+
+  // P0-2：快照内排序 rank（1-based，score 越小越靠前）。
+  const ranked = Array.from(results.values()).sort((a, b) => a.score - b.score);
+  ranked.forEach((r, idx) => {
+    r.rank = idx + 1;
+  });
+
   return results;
+}
+
+/**
+ * P0-2：判断事件影响 scope 是否波及给定任务。
+ * 任一维度命中即视为相关：直接任务 id / 指派人员 / 设备 / 工位 / 区域。
+ */
+function isEventRelatedToTask(
+  imp: SchedulingEventImpact,
+  t: WorldStateSnapshot['tasks'][number],
+): boolean {
+  if (imp.affectedTaskIds.includes(t.id)) return true;
+  if (t.assigneeId && imp.affectedPersonIds.includes(t.assigneeId)) return true;
+  if (t.deviceId && imp.affectedDeviceIds.includes(t.deviceId)) return true;
+  if (t.stationId && imp.affectedStationIds.includes(t.stationId)) return true;
+  if (t.zoneId && imp.affectedZoneIds.includes(t.zoneId)) return true;
+  return false;
 }
 
 /** 便捷封装：仅返回 score 映射（保持既有调用方兼容）。 */

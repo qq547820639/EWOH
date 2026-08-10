@@ -25,7 +25,6 @@ import {
 } from '@client/src/api/scheduler';
 import { getCurrentOperator } from '@client/src/lib/auth';
 import { queryKeys } from '@client/src/hooks/queryKeys';
-import { useSchedulerStream } from '@client/src/hooks/useSchedulerStream';
 import { isNonAuthoritativePlan } from './schedule-panel-demo';
 import type {
   SchedulingPlanV2,
@@ -192,8 +191,6 @@ export default function SchedulePanel({
   personnel = [],
 }: SchedulePanelProps) {
   const queryClient = useQueryClient();
-  // 订阅调度 SSE：将服务端事件增量写入 React Query 缓存（活跃方案/详情）。
-  useSchedulerStream();
 
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);

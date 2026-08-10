@@ -8,15 +8,40 @@ import {
   ewohDevice,
   ewohSpatialEntity,
 } from '@server/database/schema';
-import type { CoordinateReference, ResourceState, WorldStateSnapshot } from '@shared/api.interface';
+import type {
+  CoordinateReference,
+  FreshnessPolicy,
+  ResourceState,
+  WorldStateSnapshot,
+} from '@shared/api.interface';
 import {
   ResourceReservationService,
   type ReservationResult,
 } from './resource-reservation.service';
 import { deriveDeviceCapabilities } from './device-capabilities';
 
-/** 数据新鲜度阈值（ms）：sourceTs 距今超过该值则标 STALE。 */
-const DEFAULT_FRESHNESS_MS = 5 * 60 * 1000;
+/** 数据新鲜度阈值（ms）：sourceTs 距今超过该值则标 STALE。保留向后兼容常量。 */
+export const DEFAULT_FRESHNESS_MS = 5 * 60 * 1000;
+
+/**
+ * 默认差异化新鲜度策略（Task 3 / 3.2）：按 resourceType + signalType 差异化阈值。
+ * person:location=60s / telemetry=120s / master=5min；device:telemetry=60s /
+ * location=120s / master=5min；station:master=5min；未命中一律回退 default=5min。
+ * STALE/UNKNOWN 资源绝不被视为 AVAILABLE（fail-closed）。
+ */
+export const DEFAULT_FRESHNESS_POLICY: FreshnessPolicy = {
+  policyVersion: 1,
+  thresholdsMs: {
+    'person:location': 60 * 1000,
+    'person:telemetry': 120 * 1000,
+    'person:master': DEFAULT_FRESHNESS_MS,
+    'device:telemetry': 60 * 1000,
+    'device:location': 120 * 1000,
+    'device:master': DEFAULT_FRESHNESS_MS,
+    'station:master': DEFAULT_FRESHNESS_MS,
+  },
+  defaultThresholdMs: DEFAULT_FRESHNESS_MS,
+};
 /** 可用窗口推导的规划前瞻（ms）：基于真实 reservation 计算空闲时间窗。 */
 const AVAILABILITY_HORIZON_MS = 24 * 60 * 60 * 1000;
 
@@ -89,7 +114,7 @@ export class ResourceProjectionService {
       } | null);
       const pRes = resFor('person', p.id);
       const sourceTs = p.updatedAt ? p.updatedAt.getTime() : null;
-      const dataQuality = this.classifyFreshness(sourceTs, now);
+      const dataQuality = this.classifyFreshness(sourceTs, now, 'person', 'master');
       return {
         id: p.id,
         type: 'person',
@@ -131,7 +156,8 @@ export class ResourceProjectionService {
         queue: null,
         updatedAt: sourceTs,
         sourceTs,
-        freshnessMs: DEFAULT_FRESHNESS_MS,
+        freshnessMs: this.resolveFreshnessMs('person', 'master'),
+        freshnessPolicyVersion: DEFAULT_FRESHNESS_POLICY.policyVersion,
         dataQuality,
         version: p.version ?? 1,
         // T02 / P0-3：坐标判别联合（FACTORY_CARTESIAN 时填充；缺失 UNKNOWN）。
@@ -152,7 +178,7 @@ export class ResourceProjectionService {
         : d.updatedAt
           ? d.updatedAt.getTime()
           : null;
-      const deviceDataQuality = this.classifyFreshness(sourceTs, now);
+      const deviceDataQuality = this.classifyFreshness(sourceTs, now, 'device', 'telemetry');
       const derived: string[] = [];
       // 能力：与 world-state 统一读 ewoh_device.capabilities 列（SSOT，消除 [deviceModel]
       // 裸串语义不一致）；列无值才按型号白名单派生并标记 derived。
@@ -206,7 +232,8 @@ export class ResourceProjectionService {
         queue: null,
         updatedAt: sourceTs,
         sourceTs,
-        freshnessMs: DEFAULT_FRESHNESS_MS,
+        freshnessMs: this.resolveFreshnessMs('device', 'telemetry'),
+        freshnessPolicyVersion: DEFAULT_FRESHNESS_POLICY.policyVersion,
         dataQuality: deviceDataQuality,
         version: 1,
         derived,
@@ -222,7 +249,7 @@ export class ResourceProjectionService {
       .map((se) => {
         const sRes = resFor('station', se.entityId);
         const sourceTs = se.updatedAt ? se.updatedAt.getTime() : null;
-        const stationDataQuality = this.classifyFreshness(sourceTs, now);
+        const stationDataQuality = this.classifyFreshness(sourceTs, now, 'station', 'master');
         return {
           id: se.entityId,
           type: 'station',
@@ -266,7 +293,8 @@ export class ResourceProjectionService {
           queue: this.asStringArray(se.queue),
           updatedAt: sourceTs,
           sourceTs,
-          freshnessMs: DEFAULT_FRESHNESS_MS,
+          freshnessMs: this.resolveFreshnessMs('station', 'master'),
+          freshnessPolicyVersion: DEFAULT_FRESHNESS_POLICY.policyVersion,
           dataQuality: stationDataQuality,
           version: se.version ?? 1,
           // T02 / P0-3：工位坐标类型（coordinate_type / floor_id 列）。
@@ -311,14 +339,32 @@ export class ResourceProjectionService {
     return windows.filter((w) => w.endMs > w.startMs);
   }
 
-  /** 无时间戳 → UNKNOWN；距今超过阈值 → STALE；否则 FRESH。 */
+  /** 无时间戳 → UNKNOWN；距今超过（类型/信号差异化）阈值 → STALE；否则 FRESH。 */
   private classifyFreshness(
     sourceTs: number | null,
     now: number,
+    resourceType?: string,
+    signalType?: string,
   ): 'FRESH' | 'STALE' | 'UNKNOWN' {
     if (sourceTs == null) return 'UNKNOWN';
-    if (now - sourceTs > DEFAULT_FRESHNESS_MS) return 'STALE';
+    if (now - sourceTs > this.resolveFreshnessMs(resourceType, signalType)) {
+      return 'STALE';
+    }
     return 'FRESH';
+  }
+
+  /** 按 resourceType + signalType 从策略解析阈值；未命中回退默认阈值。 */
+  private resolveFreshnessMs(
+    resourceType?: string,
+    signalType?: string,
+  ): number {
+    if (resourceType && signalType) {
+      const hit = DEFAULT_FRESHNESS_POLICY.thresholdsMs[
+        `${resourceType}:${signalType}`
+      ];
+      if (hit != null) return hit;
+    }
+    return DEFAULT_FRESHNESS_POLICY.defaultThresholdMs;
   }
 
   /** jsonb 数组列可能以 unknown 返回；安全地规整为 string[]（runtime validation）。 */
@@ -393,7 +439,7 @@ export class ResourceProjectionService {
       const isWgs84 = (se?.coordinateType ?? 'FACTORY_CARTESIAN') === 'WGS84';
       const load = (p.currentLoad as { loadLevel?: number; fatigueLevel?: number } | null) ?? {};
       const sourceTs = p.updatedAt ? p.updatedAt.getTime() : null;
-      const dataQuality = this.classifyFreshness(sourceTs, now);
+      const dataQuality = this.classifyFreshness(sourceTs, now, 'person', 'master');
       return {
         id: p.id,
         name: p.name,
@@ -414,7 +460,7 @@ export class ResourceProjectionService {
         currentTaskId: p.currentTaskId ?? null,
         certificationExpiry: this.parseCertificationExpiry(p.certificationExpiry),
         sourceTs,
-        freshnessMs: DEFAULT_FRESHNESS_MS,
+        freshnessMs: this.resolveFreshnessMs('person', 'master'),
         dataQuality,
         coordinate: this.toCoordinateFromSpatial(se),
       };
@@ -426,7 +472,7 @@ export class ResourceProjectionService {
         : d.updatedAt
           ? d.updatedAt.getTime()
           : null;
-      const dataQuality = this.classifyFreshness(sourceTs, now);
+      const dataQuality = this.classifyFreshness(sourceTs, now, 'device', 'telemetry');
       const stale = dataQuality !== 'FRESH';
       const derived: string[] = [];
       const columnCaps = this.asStringArray(d.capabilities);
@@ -455,7 +501,7 @@ export class ResourceProjectionService {
         locationUpdatedAt: d.locationUpdatedAt ? d.locationUpdatedAt.getTime() : null,
         telemetryUpdatedAt: d.telemetryUpdatedAt ? d.telemetryUpdatedAt.getTime() : null,
         sourceTs,
-        freshnessMs: DEFAULT_FRESHNESS_MS,
+        freshnessMs: this.resolveFreshnessMs('device', 'telemetry'),
         dataQuality,
         derived,
         coordinate: this.toCoordinateFromDevice(d, hasDeviceLocation),

@@ -14,7 +14,6 @@ import {
   getConflicts,
 } from '@client/src/api/scheduler';
 import { queryKeys } from '@client/src/hooks/queryKeys';
-import { useSchedulerStream } from '@client/src/hooks/useSchedulerStream';
 import {
   buildCommandMapState,
   DEFAULT_UI_STATE,
@@ -56,9 +55,8 @@ export function useCommandMapSchedulerState(): CommandMapAggregate {
     staleTime: 10_000,
   });
 
-  // SSE 增量：gap → resync（并行重建以上权威查询）；失败 → 轮询兜底。
-  useSchedulerStream();
-
+  // 注意：SSE 增量订阅由 CommandMap 顶层的 SchedulerRealtimeProvider（单例）拥有，
+  // 本 Hook 不再独立建立连接，仅消费 React Query 权威查询。
   const aggregate = useMemo(
     () =>
       buildCommandMapState({

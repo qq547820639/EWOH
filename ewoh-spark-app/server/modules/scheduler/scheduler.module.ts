@@ -30,7 +30,11 @@ import { TaskSchedulingBridge } from './task-scheduling.bridge';
 import { ConstraintLoaderService } from './constraint-loader.service';
 import { CandidateEngineService } from './candidate-engine.service';
 import { OverridePreviewService } from './override-preview.service';
+import { DeterministicPredictionProvider } from './prediction/prediction-provider';
 import { TaskModule } from '../task/task.module';
+
+/** 预测提供者注入 token（shadow only）：消费者应将其视为可选。 */
+export const PREDICTION_PROVIDER = 'PREDICTION_PROVIDER';
 
 @Module({
   imports: [TaskModule],
@@ -65,6 +69,9 @@ import { TaskModule } from '../task/task.module';
     ConstraintLoaderService,
     CandidateEngineService,
     OverridePreviewService,
+    // Task 5 / PredictionProvider（shadow only）：确定性基线。预测只是优化器输入，
+    // 绝不写生产调度、绝不替代 hard constraints。消费者应将其视为可选。
+    { provide: PREDICTION_PROVIDER, useClass: DeterministicPredictionProvider },
   ],
   exports: [
     SchedulerService,
@@ -93,6 +100,8 @@ import { TaskModule } from '../task/task.module';
     ConstraintLoaderService,
     CandidateEngineService,
     OverridePreviewService,
+    // Task 5：暴露预测提供者 token，消费方可按需注入（shadow only）。
+    PREDICTION_PROVIDER,
   ],
 })
 export class SchedulerModule {}

@@ -62,6 +62,8 @@ import AlertToast from '../../components/AlertToast';
 import DataStates from '../../components/DataStates';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useCommandMapSchedulerState } from './hooks/useCommandMapSchedulerState';
+import { SchedulerRealtimeProvider, useSchedulerRealtime } from '@client/src/scheduler/SchedulerRealtimeProvider';
+import type { SchedulerStreamStatusV2 } from './hooks/schedulerRealtimeCore';
 import { SchedulerLayersOverlay, computeAggregateViewBox } from './layers/SchedulerLayers';
 import { PlanCompareLayer } from './layers/PlanCompareLayer';
 import { planCompareMapVM, extractUnchangedTasks, DEFAULT_PLAN_COMPARE_UI, type PlanCompareUiState } from './vm/planCompareVM';
@@ -99,6 +101,39 @@ const MapPanelFallback = () => (
     加载中…
   </div>
 );
+
+/** 调度实时连接状态徽标（Task 2.1 可选 UI）：展示 V2 状态 + 最近事件时间 + 快照版本。 */
+const REALTIME_STATUS_V2_META: Record<SchedulerStreamStatusV2, { label: string; cls: string }> = {
+  CONNECTED: { label: '实时', cls: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+  DEGRADED: { label: '降级', cls: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
+  RESYNCING: { label: '重同步', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
+  OFFLINE: { label: '离线', cls: 'bg-red-500/20 text-red-400 border-red-500/30' },
+};
+
+function SchedulerRealtimeBadge() {
+  const rt = useSchedulerRealtime();
+  const meta = REALTIME_STATUS_V2_META[rt.statusV2];
+  const lastTime = rt.lastEventTime
+    ? new Date(rt.lastEventTime).toLocaleTimeString('zh-CN', { hour12: false })
+    : '—';
+  return (
+    <div
+      className="absolute right-2 top-2 z-40 flex items-center gap-1.5 rounded-md border border-white/10 bg-[hsl(220_14%_14%)]/95 px-2 py-1 text-[10px] text-white/80 shadow-lg"
+      title="调度实时连接状态"
+    >
+      <span className={`rounded border px-1 font-medium ${meta.cls}`}>{meta.label}</span>
+      <span className="tabular-nums text-white/60">seq {rt.lastSequence}</span>
+      <span className="tabular-nums text-white/60" title="最近事件时间">
+        {lastTime}
+      </span>
+      {rt.snapshotVersion && (
+        <span className="text-white/60" title="快照版本">
+          v{rt.snapshotVersion}
+        </span>
+      )}
+    </div>
+  );
+}
 
 interface TabItem {
   key: string;
@@ -659,11 +694,12 @@ const CommandMap = (): React.ReactElement => {
   });
 
   return (
-    <div
-      id="command-map-main"
-      tabIndex={-1}
-      className="fixed inset-0 z-50 flex flex-col bg-[hsl(220_14%_10%)] text-white"
-    >
+    <SchedulerRealtimeProvider>
+      <div
+        id="command-map-main"
+        tabIndex={-1}
+        className="fixed inset-0 z-50 flex flex-col bg-[hsl(220_14%_10%)] text-white"
+      >
       <a
         href="#command-map-main"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[200] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-[hsl(221_83%_53%)] focus:shadow-lg"
@@ -1114,7 +1150,9 @@ const CommandMap = (): React.ReactElement => {
           </div>
         </div>
       )}
+      <SchedulerRealtimeBadge />
     </div>
+    </SchedulerRealtimeProvider>
   );
 };
 

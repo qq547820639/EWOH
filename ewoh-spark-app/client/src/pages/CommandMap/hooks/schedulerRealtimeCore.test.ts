@@ -8,6 +8,8 @@ import {
   resyncBaseline,
   nextStreamState,
   mergeSourceSequence,
+  mapToV2Status,
+  pollingInvalidateKeys,
 } from './schedulerRealtimeCore';
 
 describe('schedulerRealtimeCore.nextSequence（单调守卫 + 缺口检测）', () => {
@@ -78,5 +80,35 @@ describe('schedulerRealtimeCore.mergeSourceSequence（三源单调防回退）',
     expect(mergeSourceSequence('poll', 5, 42)).toEqual({ accept: true, gap: false, lastSequence: 42 });
     // 回退（服务器游标倒退）→ 保守丢弃。
     expect(mergeSourceSequence('resync', 5, 3).accept).toBe(false);
+  });
+});
+
+describe('schedulerRealtimeCore.mapToV2Status（内部状态 → V2 枚举）', () => {
+  it('live → CONNECTED；idle/connecting → CONNECTED', () => {
+    expect(mapToV2Status({ status: 'live', resyncing: false })).toBe('CONNECTED');
+    expect(mapToV2Status({ status: 'idle', resyncing: false })).toBe('CONNECTED');
+    expect(mapToV2Status({ status: 'connecting', resyncing: false })).toBe('CONNECTED');
+  });
+
+  it('polling → DEGRADED；error → OFFLINE', () => {
+    expect(mapToV2Status({ status: 'polling', resyncing: false })).toBe('DEGRADED');
+    expect(mapToV2Status({ status: 'error', resyncing: false })).toBe('OFFLINE');
+  });
+
+  it('活动重同步期间 → RESYNCING（无论内部状态）', () => {
+    expect(mapToV2Status({ status: 'live', resyncing: true })).toBe('RESYNCING');
+    expect(mapToV2Status({ status: 'polling', resyncing: true })).toBe('RESYNCING');
+    expect(mapToV2Status({ status: 'error', resyncing: true })).toBe('RESYNCING');
+  });
+});
+
+describe('schedulerRealtimeCore.pollingInvalidateKeys（轮询兜底刷新决策关键集）', () => {
+  it('覆盖活跃方案 / 快照 / 资源 / 冲突 / 路由（Task 2.3/2.4）', () => {
+    const keys = pollingInvalidateKeys();
+    expect(keys).toContainEqual(['scheduler-active-plans']);
+    expect(keys).toContainEqual(['scheduler', 'snapshot']);
+    expect(keys).toContainEqual(['scheduler-resource-state']);
+    expect(keys).toContainEqual(['scheduler', 'conflicts', {}]);
+    expect(keys).toContainEqual(['scheduler-routes']);
   });
 });

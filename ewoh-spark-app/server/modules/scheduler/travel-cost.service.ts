@@ -107,20 +107,37 @@ export class TravelCostService {
 
   /**
    * 构建任务 × 候选 的 RouteCostMatrix（P2-T1）。
-   * 缓存策略（决策 D-D）：先按 (taskId, snapshotVersion) 读缓存，命中且候选数不缺 → 直接复用；
-   * 否则逐候选 estimate 计算并写缓存（upsert，幂等）。
+   * 缓存策略（决策 D-D，Task 4 扩展 key 版本化）：判读 key =
+   *   snapshotVersion + policyVersion + routeGraphVersion + taskId + candidateSetHash，
+   * 命中且候选数不缺 → 直接复用；否则逐候选 estimate 计算并写缓存（upsert，幂等）。
+   * 避免不同策略版本/不同候选集合错误复用矩阵。
    */
   async buildMatrix(
     snapshot: WorldStateSnapshot,
     task: WorldStateSnapshot['tasks'][number],
     candidates: Array<{ personId: string | null; deviceId: string | null; stationId: string | null }>,
   ): Promise<RouteCostMatrix> {
-    const cached = await this.getCachedMatrix(task.id, snapshot.snapshotVersion);
+    const policy = await this.policy.getActivePolicy();
+    const routeGraphVersion = this.routeGraphVersionOf(snapshot);
+    const candHash = candidateSetHash(candidates);
+    const cached = await this.getCachedMatrix(
+      task.id,
+      snapshot.snapshotVersion,
+      policy.version,
+      routeGraphVersion,
+      candHash,
+    );
     if (cached && cached.candidates.length >= candidates.length) {
       return cached;
     }
-    const policy = await this.policy.getActivePolicy();
-    const matrix = await this.computeMatrix(snapshot, task, candidates, policy);
+    const matrix = await this.computeMatrix(
+      snapshot,
+      task,
+      candidates,
+      policy,
+      routeGraphVersion,
+      candHash,
+    );
     await this.persistMatrix(matrix);
     return matrix;
   }
@@ -162,10 +179,20 @@ export class TravelCostService {
     return result;
   }
 
-  /** 读取缓存的矩阵（决策 D-D 缓存命中）。 */
+  /**
+   * 读取缓存的矩阵（决策 D-D 缓存命中）。
+   * Task 4：判读 key 扩展为
+   *   snapshotVersion + policyVersion + routeGraphVersion + taskId + candidateSetHash。
+   * 由于 ewoh_route_cost_matrix 表无 routeGraphVersion/candidateSetHash 列（Option B，
+   * 避免 schema/migration），此处仅按 (taskId, snapshotVersion) 取行，再在内存中校验
+   * policyVersion / routeGraphVersion / candidateSetHash 三者一致才命中。
+   */
   async getCachedMatrix(
     taskId: string,
     snapshotVersion: string,
+    policyVersion: number,
+    routeGraphVersion: string,
+    candidateSetHashKey: string,
   ): Promise<RouteCostMatrix | null> {
     try {
       const rows = await this.db
@@ -180,10 +207,16 @@ export class TravelCostService {
         .limit(1);
       const row = rows[0];
       if (!row) return null;
-      return this.parseMatrixRow(row);
+      // Option B：内存校验完整缓存 key，避免不同策略/候选集错误复用矩阵。
+      if (row.policyVersion !== policyVersion) return null;
+      const parsed = this.parseMatrixRow(row);
+      if (!parsed) return null;
+      if (parsed.routeGraphVersion !== routeGraphVersion) return null;
+      if (parsed.candidateSetHash !== candidateSetHashKey) return null;
+      return parsed;
     } catch (err) {
       this.logger.warn(
-        `route cost matrix cache read failed (task=${taskId} snapshot=${snapshotVersion}): ${(err as Error)?.message ?? err}`,
+        `route cost matrix cache read failed (task=${taskId} snapshot=${snapshotVersion} policy=${policyVersion} hash=${candidateSetHashKey}): ${(err as Error)?.message ?? err}`,
       );
       return null;
     }
@@ -259,6 +292,8 @@ export class TravelCostService {
     task: WorldStateSnapshot['tasks'][number],
     candidates: Array<{ personId: string | null; deviceId: string | null; stationId: string | null }>,
     policy: { version: number; solverVersion: string; weights: ObjectiveWeights },
+    routeGraphVersion: string,
+    candidateSetHashKey: string,
   ): Promise<RouteCostMatrix> {
     const stationById = new Map(snapshot.stations.map((s) => [s.id, s]));
     const personById = new Map(snapshot.persons.map((p) => [p.id, p]));
@@ -294,10 +329,12 @@ export class TravelCostService {
     }
 
     return {
-      matrixId: `RCM-${Date.now()}-${task.id}`,
+      matrixId: `RCM-${routeGraphVersion}-${candidateSetHashKey}-${Date.now()}-${task.id}`,
       snapshotVersion: snapshot.snapshotVersion,
       policyVersion: policy.version,
       solverVersion: policy.solverVersion,
+      routeGraphVersion,
+      candidateSetHash: candidateSetHashKey,
       taskId: task.id,
       candidates: matrixCandidates,
       generatedAt: new Date().toISOString(),
@@ -424,6 +461,14 @@ export class TravelCostService {
     );
   }
 
+  /**
+   * 路由图版本（Task 4 缓存 key 维度）。WorldStateSnapshot 无显式 route graph 版本，
+   * 以全局单调递增的 worldVersion 作为 route graph 版本代理；缺失时回退 'default'。
+   */
+  private routeGraphVersionOf(snapshot: WorldStateSnapshot): string {
+    return snapshot.worldVersion != null ? String(snapshot.worldVersion) : 'default';
+  }
+
   private riskToCost(riskLevel: string | null): number {
     if (riskLevel === 'high') return 2;
     if (riskLevel === 'medium') return 1.3;
@@ -444,11 +489,18 @@ export class TravelCostService {
       ? (row.candidatesJson as unknown[]).filter(this.isCandidateRouteCost)
       : [];
     if (!Array.isArray(row.candidatesJson)) return null;
+    // Task 4（Option B）：routeGraphVersion/candidateSetHash 无独立列，编码在 matrixId
+    // 的 `RCM-<rv>-<hash>-<ts>-<taskId>` 前缀中，读取时解出用于缓存 key 校验。
+    const parts = row.matrixId.split('-');
+    const routeGraphVersion = parts[1] ?? null;
+    const candidateSetHashKey = parts[2] ?? null;
     return {
       matrixId: row.matrixId,
       snapshotVersion: row.snapshotVersion ?? '',
       policyVersion: row.policyVersion ?? 0,
       solverVersion: row.solverVersion ?? 'unknown',
+      routeGraphVersion,
+      candidateSetHash: candidateSetHashKey,
       taskId: row.taskId,
       candidates,
       generatedAt: row.generatedAt ? row.generatedAt.toISOString() : '',
@@ -493,4 +545,25 @@ export interface RouteCost {
    * 地图渲染与 Solver 使用同一几何，禁止前端自行连直线。
    */
   geometry?: Array<{ x: number; y: number }>;
+}
+
+/**
+ * 候选集合哈希（Task 4.2）：从候选 id 生成确定性哈希，用于区分不同候选集的矩阵缓存。
+ * 对每个候选产出 `personId|deviceId|stationId`，字典序排序后以 `::` 拼接，再 FNV-1a 稳定哈希。
+ * 相同输入永远得到相同输出；候选顺序无关。
+ */
+export function candidateSetHash(
+  candidates: Array<{ personId: string | null; deviceId: string | null; stationId: string | null }>,
+): string {
+  const input = candidates
+    .map((c) => `${c.personId ?? ''}|${c.deviceId ?? ''}|${c.stationId ?? ''}`)
+    .sort()
+    .join('::');
+  // FNV-1a 32-bit（确定性、稳定、无外部依赖）。
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
 }

@@ -1,5 +1,8 @@
-import { PriorityEngine } from '../priority-engine';
-import { defaultConfig, defaultPolicy } from './scheduler-test-helpers';
+import {
+  PriorityEngine,
+  computeEffectivePriorityResults,
+} from '../priority-engine';
+import { buildSnapshot, defaultConfig, defaultPolicy } from './scheduler-test-helpers';
 
 describe('PriorityEngine（Task 0.4）', () => {
   const engine = new PriorityEngine();
@@ -171,5 +174,171 @@ describe('PriorityEngine（Task 0.4）', () => {
     const b = compute({ id: 'd1', priority: 'high' });
     expect(a.policyVersion).toBe(policy.version);
     expect(a).toEqual(b);
+  });
+});
+
+// ============================================================================
+// P0-2：事件 scope（eventImpacts）驱动的优先级决策
+// ============================================================================
+
+describe('PriorityEngine（Task 下 P0-2：eventImpacts 作用域）', () => {
+  const config = defaultConfig();
+  const policy = defaultPolicy();
+  const now = 0;
+  const horizonEndMs = 480 * 60 * 1000;
+
+  function taskRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 't1',
+      title: 't1',
+      taskType: 'work',
+      priority: 'medium',
+      status: 'pending',
+      assigneeId: null,
+      deviceId: null,
+      stationId: null,
+      zoneId: null,
+      planStart: null,
+      planEnd: new Date(now + 3600_000).toISOString(),
+      progress: 0,
+      predecessorIds: [],
+      requiredSkills: [],
+      requiredCertifications: [],
+      ...overrides,
+    };
+  }
+
+  function resultsFor(snapshot: Parameters<typeof computeEffectivePriorityResults>[2]) {
+    return computeEffectivePriorityResults(
+      policy,
+      config,
+      snapshot,
+      [],
+      now,
+      horizonEndMs,
+    );
+  }
+
+  it('无关安全事件（eventImpacts 仅圈中 other-task）不改变任务优先级', () => {
+    const baseline = resultsFor(
+      buildSnapshot({ tasks: [taskRow()], events: [], eventImpacts: [] }),
+    );
+    const irrelevant = resultsFor(
+      buildSnapshot({
+        tasks: [taskRow()],
+        events: [{ eventId: 'evt-x', severity: 'L2', status: 'open', eventType: 'DEVICE_OFFLINE' }],
+        eventImpacts: [
+          {
+            eventId: 'evt-x',
+            severity: 'L2',
+            status: 'open',
+            affectedTaskIds: ['other-task'],
+            affectedPersonIds: [],
+            affectedDeviceIds: [],
+            affectedStationIds: [],
+            affectedZoneIds: [],
+          },
+        ],
+      }),
+    );
+    expect(irrelevant.get('t1')!.score).toBe(baseline.get('t1')!.score);
+    expect(irrelevant.get('t1')!.factors.some((f) => f.name === 'event_severity')).toBe(false);
+  });
+
+  it('相关设备事件（eventImpacts.affectedDeviceIds 命中任务设备）→ event_severity 出现、score 更小', () => {
+    const baseline = resultsFor(
+      buildSnapshot({ tasks: [taskRow()], events: [], eventImpacts: [] }),
+    );
+    const related = resultsFor(
+      buildSnapshot({
+        tasks: [taskRow({ deviceId: 'D-1' })],
+        events: [{ eventId: 'evt-d', severity: 'L2', status: 'open', eventType: 'DEVICE_OFFLINE' }],
+        eventImpacts: [
+          {
+            eventId: 'evt-d',
+            severity: 'L2',
+            status: 'open',
+            affectedTaskIds: [],
+            affectedPersonIds: [],
+            affectedDeviceIds: ['D-1'],
+            affectedStationIds: [],
+            affectedZoneIds: [],
+          },
+        ],
+      }),
+    );
+    expect(related.get('t1')!.factors.some((f) => f.name === 'event_severity')).toBe(true);
+    expect(related.get('t1')!.score).toBeLessThan(baseline.get('t1')!.score);
+  });
+
+  it('L3 安全事件仅影响被圈中的任务，不影响无关任务（scope 正确）', () => {
+    const results = resultsFor(
+      buildSnapshot({
+        tasks: [taskRow({ id: 't-related', deviceId: 'D-1' }), taskRow({ id: 't-unrelated' })],
+        events: [{ eventId: 'evt-s', severity: 'L3', status: 'open', eventType: 'SAFETY' }],
+        eventImpacts: [
+          {
+            eventId: 'evt-s',
+            severity: 'L3',
+            status: 'open',
+            affectedTaskIds: [],
+            affectedPersonIds: [],
+            affectedDeviceIds: ['D-1'],
+            affectedStationIds: ['S-1'],
+            affectedZoneIds: [],
+          },
+        ],
+      }),
+    );
+    expect(results.get('t-related')!.factors.some((f) => f.name === 'event_severity')).toBe(true);
+    expect(results.get('t-unrelated')!.factors.some((f) => f.name === 'event_severity')).toBe(false);
+  });
+
+  it('已解决事件（status !== open）不再影响新计划', () => {
+    const baseline = resultsFor(
+      buildSnapshot({ tasks: [taskRow()], events: [], eventImpacts: [] }),
+    );
+    const resolved = resultsFor(
+      buildSnapshot({
+        tasks: [taskRow({ deviceId: 'D-1' })],
+        events: [{ eventId: 'evt-r', severity: 'L2', status: 'closed', eventType: 'DEVICE_OFFLINE' }],
+        eventImpacts: [
+          {
+            eventId: 'evt-r',
+            severity: 'L2',
+            status: 'closed',
+            affectedTaskIds: [],
+            affectedPersonIds: [],
+            affectedDeviceIds: ['D-1'],
+            affectedStationIds: [],
+            affectedZoneIds: [],
+          },
+        ],
+      }),
+    );
+    expect(resolved.get('t1')!.score).toBe(baseline.get('t1')!.score);
+    expect(resolved.get('t1')!.factors.some((f) => f.name === 'event_severity')).toBe(false);
+  });
+
+  it('computeEffectivePriorityResults 输出含 rank 与 reasonCodes[]', () => {
+    const results = resultsFor(
+      buildSnapshot({
+        tasks: [
+          taskRow({ id: 't-a', priority: 'high' }),
+          taskRow({ id: 't-b', priority: 'medium' }),
+        ],
+        events: [],
+        eventImpacts: [],
+      }),
+    );
+    const ra = results.get('t-a')!;
+    const rb = results.get('t-b')!;
+    // rank 均为 1-based 且互不相同（high 更紧急 → rank 1）。
+    expect(ra.rank).toBe(1);
+    expect(rb.rank).toBe(2);
+    // reasonCodes 已填充且含 base_priority 基线。
+    expect(Array.isArray(ra.reasonCodes)).toBe(true);
+    expect(ra.reasonCodes).toContain('base_priority');
+    expect(rb.reasonCodes).toContain('base_priority');
   });
 });

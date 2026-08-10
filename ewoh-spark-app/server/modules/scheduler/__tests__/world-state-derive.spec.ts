@@ -673,3 +673,82 @@ describe('T02 / P0-1: world-state 消费 ResourceProjectionService（双源一�
     expect(stationById.get('S-C')?.coordinate).toEqual({ type: 'FACTORY_CARTESIAN', x: 10, y: 20, floorId: 'F1' });
   });
 });
+
+// ============================================================================
+// P0-2：事件影响范围（eventImpacts）构建
+// ============================================================================
+
+describe('P0-2: 事件影响范围 eventImpacts 构建', () => {
+  it('事件带 deviceId + 空间实体 → 解析 zone，并传播到未锁定任务', async () => {
+    const svc = makeSvc({
+      personnel: [],
+      device: [
+        { id: 'd1', deviceId: 'D-001', deviceModel: 'X', online: true, batteryPct: 80 },
+      ],
+      task: [
+        // 未锁定任务：deviceId 匹配事件设备 → 应被纳入受影响任务。
+        { ...taskRow({ id: 't1', spatialEntityId: 'S-1' }), deviceId: 'D-001' },
+        // 已派出的锁定任务：同一设备 → 不应被纳入（不重新排优）。
+        { ...taskRow({ id: 't2', status: 'dispatched', spatialEntityId: 'S-1' }), deviceId: 'D-001' },
+      ],
+      spatial: [
+        { entityId: 'D-001', entityType: 'device', name: 'D-001', parentId: 'Z-1', x: 0, y: 0, extra: null },
+        { entityId: 'S-1', entityType: 'station', name: 'S-1', parentId: 'Z-1', x: 0, y: 0, extra: null },
+      ],
+      event: [
+        {
+          eventId: 'evt1',
+          severity: 'L2',
+          status: 'open',
+          eventType: 'DEVICE_OFFLINE',
+          deviceId: 'D-001',
+          evidenceJson: { affectedZoneIds: ['Z-1'] },
+        },
+      ],
+      routeNode: [],
+      routeEdge: [],
+      reservation: [],
+      binding: [],
+    });
+    const state = await (svc as unknown as { getCurrentWorldState(): Promise<{ eventImpacts: Array<Record<string, unknown>> }> })
+      .getCurrentWorldState();
+    expect(state.eventImpacts).toHaveLength(1);
+    const imp = state.eventImpacts[0];
+    expect(imp.eventId).toBe('evt1');
+    expect(imp.severity).toBe('L2');
+    expect(imp.status).toBe('open');
+    // 事件设备进入受影响设备集合；其空间实体解析出 zone。
+    expect(imp.affectedDeviceIds).toContain('D-001');
+    expect(imp.affectedZoneIds).toContain('Z-1');
+    // 未锁定任务 t1 被传播；已派出 t2 被跳过。
+    expect(imp.affectedTaskIds).toContain('t1');
+    expect(imp.affectedTaskIds).not.toContain('t2');
+  });
+
+  it('证据链 affectedTaskIds 直接并入受影响任务集合', async () => {
+    const svc = makeSvc({
+      personnel: [],
+      device: [],
+      task: [],
+      spatial: [],
+      event: [
+        {
+          eventId: 'evt2',
+          severity: 'L3',
+          status: 'open',
+          eventType: 'SAFETY',
+          deviceId: null,
+          evidenceJson: { affectedTaskIds: ['t9'] },
+        },
+      ],
+      routeNode: [],
+      routeEdge: [],
+      reservation: [],
+      binding: [],
+    });
+    const state = await (svc as unknown as { getCurrentWorldState(): Promise<{ eventImpacts: Array<Record<string, unknown>> }> })
+      .getCurrentWorldState();
+    expect(state.eventImpacts).toHaveLength(1);
+    expect(state.eventImpacts[0].affectedTaskIds).toContain('t9');
+  });
+});

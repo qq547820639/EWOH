@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { getPlan } from '@client/src/api/scheduler';
 import { getAccessToken } from '@client/src/lib/auth';
 import { queryKeys } from '@client/src/hooks/queryKeys';
+import { mapToV2Status, pollingInvalidateKeys, type SchedulerStreamStatusV2 } from '@client/src/pages/CommandMap/hooks/schedulerRealtimeCore';
 import type { SchedulingEvent, SchedulingPlanV2 } from '@shared/api.interface';
 
 /**
@@ -18,6 +19,9 @@ import type { SchedulingEvent, SchedulingPlanV2 } from '@shared/api.interface';
  */
 
 export type SchedulerStreamStatus = 'idle' | 'connecting' | 'live' | 'polling' | 'error';
+
+/** 便于外部直接引用 V2 枚举类型（透传自 schedulerRealtimeCore）。 */
+export type { SchedulerStreamStatusV2 } from '@client/src/pages/CommandMap/hooks/schedulerRealtimeCore';
 
 interface UseSchedulerStreamOptions {
   /** 是否启用（默认 true）。 */
@@ -77,6 +81,16 @@ function mergePlanIntoActive(
 
 export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
   status: SchedulerStreamStatus;
+  /** V2 对外健康状态（CONNECTED / DEGRADED / RESYNCING / OFFLINE）。 */
+  statusV2: SchedulerStreamStatusV2;
+  /** 最近一条已应用事件的 epoch ms（无则 null）。 */
+  lastEventTime: number | null;
+  /** 最近一次全量重同步负载中的快照版本（无则 null）。 */
+  snapshotVersion: string | null;
+  /** 最近已确认的 outbox sequence（单调游标）。 */
+  lastSequence: number;
+  /** 手动触发全量重同步（失效决策关键查询）。 */
+  triggerResync: () => void;
 } {
   const {
     enabled = true,
@@ -88,6 +102,11 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
 
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<SchedulerStreamStatus>('idle');
+  // Task 2.2：对外暴露更丰富的实时状态（供 Provider / UI 徽标展示）。
+  const [lastEventTime, setLastEventTime] = useState<number | null>(null);
+  const [snapshotVersion, setSnapshotVersion] = useState<string | null>(null);
+  const [lastSequence, setLastSequence] = useState<number>(0);
+  const [resyncing, setResyncing] = useState<boolean>(false);
 
   // refs：避免闭包过期，同时保证 effect 内读取最新值。
   const abortRef = useRef<AbortController | null>(null);
@@ -104,14 +123,17 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
 
   /** 全量重同步：放弃增量，从后端拉取权威状态（P0-1 / P3-T2）。 */
   const triggerResync = useCallback(() => {
+    // 活动重同步期间对外暴露 RESYNCING（权威重建中，不猜测缺口内状态）。
+    setResyncing(true);
     // 权威端点并行失效重建：活跃方案 / 世界快照 / 资源投影 / 冲突 / 方案详情 / 运行 / 路由。
     // P0：routes 纳入 resync——route.changed 事件缺口后必须重拉路由图与路由成本，
     // 否则地图路线与 Solver 使用的 RouteCost 不一致（缺口内状态不猜测，一律权威恢复）。
-    queryClient.invalidateQueries({ queryKey: ['scheduler-active-plans'] });
-    queryClient.invalidateQueries({ queryKey: ['scheduler-snapshot'] });
-    queryClient.invalidateQueries({ queryKey: ['scheduler-resource-state'] });
-    queryClient.invalidateQueries({ queryKey: ['scheduler-conflicts'] });
-    queryClient.invalidateQueries({ queryKey: ['scheduler-routes'] });
+    // 注意：快照/冲突的 queryKey 是 ['scheduler','snapshot'] / ['scheduler','conflicts',{}]，
+    // 必须与 useCommandMapSchedulerState 使用的 queryKeys.schedulerSnapshot / schedulerConflicts 一致，
+    // 否则 resync 失效不到这些查询（P0-4 语义：缺口后权威重建字典关键读模型）。
+    for (const key of pollingInvalidateKeys()) {
+      queryClient.invalidateQueries({ queryKey: key });
+    }
     queryClient.invalidateQueries({ queryKey: ['schedule-route-graph'] });
     // 使用前缀匹配，使所有 ['scheduler-plan', planId] / ['scheduler-run', runId] 都失效。
     queryClient.invalidateQueries({ queryKey: ['scheduler-plan'] });
@@ -128,12 +150,21 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
   const handleResync = useCallback(
     (data: string) => {
       try {
-        const payload = JSON.parse(data) as { currentSequence?: number; reason?: string };
+        const payload = JSON.parse(data) as {
+          currentSequence?: number;
+          reason?: string;
+          snapshotVersion?: string;
+        };
         const current =
           typeof payload.currentSequence === 'number'
             ? payload.currentSequence
             : lastSequenceRef.current;
         lastSequenceRef.current = current;
+        setLastSequence(current);
+        // Task 2.2：resync 负载若携带权威快照版本则透传给 UI（无则保持 null）。
+        if (typeof payload.snapshotVersion === 'string') {
+          setSnapshotVersion(payload.snapshotVersion);
+        }
         lastEventIdRef.current = String(current);
         triggerResync();
       } catch {
@@ -151,15 +182,21 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
       // sequence 去重：重复事件（sequence <= lastSequence）不重复执行业务逻辑。
       if (event.sequence <= lastSequenceRef.current) return;
 
+      // Task 2.2：事件应用成功 → 记录最近事件时间并清除重同步标记（恢复实时增量）。
+      setLastEventTime(Date.now());
+      setResyncing(false);
+
       // 缺口检测：跳过了中间事件，增量无法安全续接 → 全量重同步。
       if (lastSequenceRef.current > 0 && event.sequence > lastSequenceRef.current + 1) {
         lastSequenceRef.current = event.sequence;
+        setLastSequence(event.sequence);
         lastEventIdRef.current = String(event.sequence);
         triggerResync();
         return;
       }
 
       lastSequenceRef.current = event.sequence;
+      setLastSequence(event.sequence);
       // Last-Event-ID 续传游标 = outbox sequence（与 SSE id 字段一致，重连时原样回传）。
       lastEventIdRef.current = String(event.sequence);
 
@@ -211,14 +248,18 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
     [queryClient, triggerResync],
   );
 
-  /** 启动轮询兜底：定时刷新活跃方案查询，并周期性尝试重连 SSE。 */
+  /** 启动轮询兜底：定时刷新决策关键查询，并周期性尝试重连 SSE。 */
   const startPolling = useCallback(() => {
     if (pollingRef.current) return;
     pollingRef.current = true;
     setStatus('polling');
-    // 轮询：刷新活跃方案查询（getActivePlans 返回缓存维护的列表）。
+    // Task 2.3/2.4：轮询兜底需刷新与 `triggerResync` 相同的决策关键读模型——
+    // 仅刷新活跃方案会导致快照/资源/冲突/路由在 SSE 断开期间停留在陈旧状态，
+    // 地图叠加层与冲突中心会展示过时数据。故一并失效快照、资源、冲突、路由。
     pollTimerRef.current = setInterval(() => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.schedulerActivePlans });
+      for (const key of pollingInvalidateKeys()) {
+        queryClient.invalidateQueries({ queryKey: key });
+      }
     }, pollIntervalMs);
   }, [pollIntervalMs, queryClient]);
 
@@ -282,6 +323,8 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
                 consecutiveErrorsRef.current = 0;
                 if (pollingRef.current) stopPolling();
                 setStatus('live');
+                // Task 2.2：连接恢复 / 实时可达 → 退出重同步标记。
+                setResyncing(false);
               }
               if (!parsed.data) continue;
               // 任意带 id 的事件（scheduling.event / resync）都推进续传游标。
@@ -343,5 +386,13 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
     };
   }, [enabled, connect]);
 
-  return { status };
+  // Task 2.2：对外暴露更丰富的实时状态（V2 枚举 + 事件时间 + 快照版本 + 游标 + 手动重同步）。
+  return {
+    status,
+    statusV2: mapToV2Status({ status, resyncing }),
+    lastEventTime,
+    snapshotVersion,
+    lastSequence,
+    triggerResync,
+  };
 }

@@ -24,7 +24,7 @@ import {
   OPERATIONAL_REFETCH_INTERVAL_MS,
   QUERY_STALE_TIME_MS,
 } from '../../hooks/queryConfig';
-import { useSchedulerStream } from '../../hooks/useSchedulerStream';
+import { SchedulerRealtimeProvider } from '../../scheduler/SchedulerRealtimeProvider';
 import { getCurrentOperator } from '../../lib/auth';
 import type { PlanStatus, SchedulingPlanV2 } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
@@ -121,8 +121,7 @@ function isPlanStaleError(err: unknown): boolean {
 
 const Scheduling = (): React.ReactElement => {
   const queryClient = useQueryClient();
-  // 订阅调度 SSE：将服务端事件增量写入 React Query 缓存（活跃方案/详情）。
-  useSchedulerStream();
+  // 注意：SSE 实时订阅由本页根部的 SchedulerRealtimeProvider（单例）拥有。
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [actionFor, setActionFor] = useState<string | null>(null);
@@ -309,7 +308,8 @@ const Scheduling = (): React.ReactElement => {
               : null;
 
   return (
-    <div className="space-y-6 p-4 sm:p-6">
+    <SchedulerRealtimeProvider>
+      <div className="space-y-6 p-4 sm:p-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">生产调度中心</h1>
@@ -543,6 +543,7 @@ const Scheduling = (): React.ReactElement => {
         </div>
       </div>
     </div>
+    </SchedulerRealtimeProvider>
   );
 };
 

@@ -4,7 +4,7 @@
  * forbiddenZone / blocked 矩阵层显式标记、feasible 语义、缓存读写（决策 D-D）。
  */
 /// <reference types="jest" />
-import { TravelCostService } from '../travel-cost.service';
+import { TravelCostService, candidateSetHash } from '../travel-cost.service';
 import { ewohRouteCostMatrix } from '@server/database/schema';
 import type { RouteCostMatrix, WorldStateSnapshot } from '@shared/api.interface';
 
@@ -197,11 +197,15 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
 
   it('决策 D-D：矩阵落库缓存（persistMatrix 写、getCachedMatrix 读、同键幂等覆盖）', async () => {
     const { svc, rows } = makeSvc({ calculateRouteBetween: jest.fn() });
+    const cand = { personId: 'p1', deviceId: null, stationId: 'S1' };
+    const hash = candidateSetHash([cand]);
     const matrix: RouteCostMatrix = {
-      matrixId: 'RCM-1-t1',
+      matrixId: `RCM-1-${hash}-1-t1`,
       snapshotVersion: 'WS-MATRIX-0001',
       policyVersion: 1,
       solverVersion: 'heuristic-v2',
+      routeGraphVersion: 1,
+      candidateSetHash: hash,
       taskId: 't1',
       candidates: [
         {
@@ -215,7 +219,7 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
     await svc.persistMatrix(matrix);
     expect(rows).toHaveLength(1);
 
-    const cached = await svc.getCachedMatrix('t1', 'WS-MATRIX-0001');
+    const cached = await svc.getCachedMatrix('t1', 'WS-MATRIX-0001', 1, '1', hash);
     expect(cached).not.toBeNull();
     expect(cached!.taskId).toBe('t1');
     expect(cached!.candidates[0].personId).toBe('p1');
@@ -224,6 +228,92 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
     // 幂等覆盖：再次写不新增行。
     await svc.persistMatrix(matrix);
     expect(rows).toHaveLength(1);
+  });
+
+  it('Task 4：不同 policyVersion → 不复用缓存矩阵（重新计算）', async () => {
+    const routeOk = {
+      routeId: 'R', distanceMeters: 15, etaSeconds: 15, nodes: ['A', 'B'], geometry: [],
+      source: 'route_graph', riskLevel: null, graphVersion: null,
+      calculatedAt: new Date().toISOString(), feasible: true, fallbackReason: null, dataQuality: 'FRESH',
+    };
+    const { svc, routing, policy, rows } = makeSvc({
+      calculateRouteBetween: jest.fn().mockResolvedValue(routeOk),
+    });
+    const snapshot = baseSnapshot({
+      persons: [{ id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
+      stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
+    });
+    const candidates = [{ personId: 'p1', deviceId: 'd1', stationId: 'S1' }];
+    await svc.buildMatrix(snapshot, TASK, candidates);
+    expect(routing.calculateRouteBetween).toHaveBeenCalledTimes(1);
+
+    // 切换策略版本（同 snapshot/task/candidates）→ 不应复用缓存，应重新计算。
+    policy.getActivePolicy.mockResolvedValue({
+      version: 2, solverVersion: 'heuristic-v3',
+      weights: { lateness: 3, travel: 1, wait: 1, workload: 1, station: 1, change: 0.5, risk: 1, energy: 0.5 },
+    });
+    const matrix2 = await svc.buildMatrix(snapshot, TASK, candidates);
+    expect(routing.calculateRouteBetween).toHaveBeenCalledTimes(2);
+    expect(matrix2.policyVersion).toBe(2);
+    expect(matrix2.candidateSetHash).toBe(candidateSetHash(candidates));
+    expect(rows).toHaveLength(1); // 同 (task, snapshot) 唯一键 → 幂等覆盖
+  });
+
+  it('Task 4：不同 candidateSetHash → 不复用缓存矩阵（重新计算）', async () => {
+    const routeOk = {
+      routeId: 'R', distanceMeters: 15, etaSeconds: 15, nodes: ['A', 'B'], geometry: [],
+      source: 'route_graph', riskLevel: null, graphVersion: null,
+      calculatedAt: new Date().toISOString(), feasible: true, fallbackReason: null, dataQuality: 'FRESH',
+    };
+    const { svc, routing } = makeSvc({
+      calculateRouteBetween: jest.fn().mockResolvedValue(routeOk),
+    });
+    const snapshot = baseSnapshot({
+      persons: [
+        { id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 },
+        { id: 'p2', name: 'p2', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 },
+      ],
+      stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
+    });
+    await svc.buildMatrix(snapshot, TASK, [{ personId: 'p1', deviceId: 'd1', stationId: 'S1' }]);
+    expect(routing.calculateRouteBetween).toHaveBeenCalledTimes(1);
+
+    // 同 policy/routeGraph，但候选集合不同（candidateSetHash 不同）→ 不复用，重新计算。
+    await svc.buildMatrix(snapshot, TASK, [{ personId: 'p2', deviceId: 'd2', stationId: 'S1' }]);
+    expect(routing.calculateRouteBetween).toHaveBeenCalledTimes(2); // 两次 buildMatrix 各计算 1 候选
+  });
+
+  it('Task 4：相同输入（同 policy/routeGraph/hash/candidates）→ 命中缓存不复算', async () => {
+    const routeOk = {
+      routeId: 'R', distanceMeters: 15, etaSeconds: 15, nodes: ['A', 'B'], geometry: [],
+      source: 'route_graph', riskLevel: null, graphVersion: null,
+      calculatedAt: new Date().toISOString(), feasible: true, fallbackReason: null, dataQuality: 'FRESH',
+    };
+    const { svc, routing } = makeSvc({
+      calculateRouteBetween: jest.fn().mockResolvedValue(routeOk),
+    });
+    const snapshot = baseSnapshot({
+      persons: [{ id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
+      stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
+    });
+    const candidates = [{ personId: 'p1', deviceId: 'd1', stationId: 'S1' }];
+    const first = await svc.buildMatrix(snapshot, TASK, candidates);
+    expect(routing.calculateRouteBetween).toHaveBeenCalledTimes(1);
+
+    const second = await svc.buildMatrix(snapshot, TASK, candidates);
+    expect(routing.calculateRouteBetween).toHaveBeenCalledTimes(1); // 命中缓存，未重算
+    expect(second.matrixId).toBe(first.matrixId);
+  });
+
+  it('Task 4：candidateSetHash 确定性（相同输入同哈希、顺序无关、不同输入不同哈希）', () => {
+    const a = [{ personId: 'p1', deviceId: 'd1', stationId: 'S1' }];
+    const b = [{ personId: 'p2', deviceId: 'd2', stationId: 'S2' }];
+    expect(candidateSetHash(a)).toBe(candidateSetHash([{ stationId: 'S1', personId: 'p1', deviceId: 'd1' }]));
+    // 候选顺序无关。
+    expect(candidateSetHash([{ personId: 'p1', deviceId: null, stationId: null }, { personId: 'p2', deviceId: null, stationId: null }]))
+      .toBe(candidateSetHash([{ personId: 'p2', deviceId: null, stationId: null }, { personId: 'p1', deviceId: null, stationId: null }]));
+    // 不同输入 → 不同哈希。
+    expect(candidateSetHash(a)).not.toBe(candidateSetHash(b));
   });
 
   it('buildEligibilityMatrix：仅矩阵判定 feasible 的人员候选进入（缺坐标候选被排除）', async () => {

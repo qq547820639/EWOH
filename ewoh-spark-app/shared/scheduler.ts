@@ -440,6 +440,8 @@ export interface ResourceState {
   freshnessMs?: number | null;
   /** 数据质量：FRESH / STALE / UNKNOWN。 */
   dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
+  /** 判定 dataQuality 所用的 FreshnessPolicy 版本（可审计；无则 null）。 */
+  freshnessPolicyVersion?: number | null;
   /** 当前任务 id（person/device 有背衬列时填充，无则 null，不虚构）。 */
   currentTask?: string | null;
   /** 班组（person 有 team_name 列，其余资源无则 null）。 */
@@ -469,6 +471,64 @@ export interface ResourceState {
   // --- Command Map 增量（Phase 0 / P0-3）：坐标判别联合（可选，向后兼容） ---
   /** 坐标引用（FACTORY_CARTESIAN/WGS84/UNKNOWN）。旧 x/y 别名保留：笛卡尔时填充，其余 null。 */
   coordinate?: CoordinateReference;
+}
+
+// ============================================================================
+// Command Map 增量（Task 3 / 3.1）：差异化资源新鲜度策略
+// ============================================================================
+
+/** 信号类型（同一资源可能有多种数据源信号）。 */
+export type FreshnessSignalType =
+  | 'location'
+  | 'telemetry'
+  | 'status'
+  | 'reservation'
+  | 'master'
+  | string;
+
+/**
+ * 资源新鲜度策略：按 resourceType + signalType 差异化阈值（ms）。
+ * STALE/UNKNOWN 的资源绝不被视为 AVAILABLE（fail-closed）。
+ */
+export interface FreshnessPolicy {
+  /** 策略版本（可审计，参与 dataQuality 追溯）。 */
+  policyVersion: number;
+  /** key = `${resourceType}:${signalType}` → 超过该时长的 sourceTs 视为 STALE。 */
+  thresholdsMs: Record<string, number>;
+  /** 默认阈值（ms），未在 thresholdsMs 中命中时使用。 */
+  defaultThresholdMs: number;
+}
+
+/**
+ * 事件影响范围（P0-2）：事件对调度对象的影响 scope。
+ * 供 PriorityEngine 只消费与任务相关的开放事件，避免无关事件无差别影响所有任务。
+ */
+export interface SchedulingEventImpact {
+  eventId: string;
+  severity: string;
+  status: string;
+  /** 直接受影响的任务 id（证据链 affectedTaskIds 或显式解析）。 */
+  affectedTaskIds: string[];
+  affectedPersonIds: string[];
+  affectedDeviceIds: string[];
+  affectedStationIds: string[];
+  affectedZoneIds: string[];
+}
+
+/** 优先级决策可解释输出（P0-2 / Phase 5）：含 rank 与 reasonCodes[]。 */
+export interface PriorityDecision {
+  taskId: string;
+  /** 有效优先级分（越小越紧急）。 */
+  effectivePriority: number;
+  /** 同快照内排序（1-based，越小越靠前）。 */
+  rank: number;
+  /** 触发原因码：base_priority/deadline_risk/waiting_age/production_impact/event_severity/downstream_blocking/manual_boost。 */
+  reasonCodes: string[];
+  /** 政策版本（可审计）。 */
+  policyVersion: number;
+  /** 兼容保留：旧字段名。 */
+  factors: Array<{ name: string; weight: number; value: number; term: number }>;
+  explanation: string[];
 }
 
 export interface WorldStateSnapshot {
@@ -630,6 +690,8 @@ export interface WorldStateSnapshot {
     status: string;
     eventType: string | null;
   }>;
+  /** P0-2：事件影响 scope（eventId → 影响对象）。PriorityEngine 据此只消费相关事件。可选字段（向后兼容）。 */
+  eventImpacts?: SchedulingEventImpact[];
   routeStatus: Array<{
     edgeId: string;
     status: string;
@@ -1152,6 +1214,10 @@ export interface RouteCostMatrix {
   snapshotVersion: string;
   policyVersion: number;
   solverVersion: string;
+  /** 路由图版本（route graph version），用于成本矩阵缓存判读。 */
+  routeGraphVersion?: string | number | null;
+  /** 候选集合哈希（确定性），用于区分不同候选集的矩阵。 */
+  candidateSetHash?: string | null;
   taskId: string;
   candidates: CandidateRouteCost[];
   generatedAt: string;

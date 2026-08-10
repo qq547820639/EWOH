@@ -9,6 +9,45 @@
 
 export type RealtimeSource = 'sse' | 'resync' | 'poll';
 
+/** 对外暴露的实时连接健康状态（V2 枚举，供 Provider / UI 徽标消费）。 */
+export type SchedulerStreamStatusV2 = 'CONNECTED' | 'DEGRADED' | 'RESYNCING' | 'OFFLINE';
+
+/** 内部状态 → V2 枚举的纯映射（node 可测）。 */
+export function mapToV2Status(params: {
+  status: 'idle' | 'connecting' | 'live' | 'polling' | 'error';
+  resyncing: boolean;
+}): SchedulerStreamStatusV2 {
+  // 活动重同步优先暴露 RESYNCING（增量被放弃，正在全量权威重建）。
+  if (params.resyncing) return 'RESYNCING';
+  switch (params.status) {
+    case 'live':
+      return 'CONNECTED';
+    case 'polling':
+      return 'DEGRADED';
+    case 'idle':
+    case 'connecting':
+      return 'CONNECTED';
+    case 'error':
+      return 'OFFLINE';
+  }
+}
+
+/**
+ * 轮询兜底期间需刷新的决策关键读模型（Task 2.3/2.4）。
+ * 与 `triggerResync` 保持一致：仅刷新活跃方案会导致快照/资源/冲突/路由
+ * 在 SSE 断开期间停留陈旧状态，地图叠加层与冲突中心会展示过时数据。
+ * 返回的 key 数组与 useCommandMapSchedulerState 等消费方使用的 queryKey 一致。
+ */
+export function pollingInvalidateKeys(): Array<Array<string | Record<string, unknown>>> {
+  return [
+    ['scheduler-active-plans'],
+    ['scheduler', 'snapshot'],
+    ['scheduler-resource-state'],
+    ['scheduler', 'conflicts', {}],
+    ['scheduler-routes'],
+  ];
+}
+
 export interface SequenceDecision {
   /** 是否接受该 sequence（false = 回退/重复，直接丢弃）。 */
   accept: boolean;
