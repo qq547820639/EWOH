@@ -2,6 +2,7 @@
 # 触发：push 与 pull_request
 # 内容：
 #   - PostgreSQL 生产迁移门禁（空库/跨版本/幂等/回滚/权限模型）
+#   - PostgreSQL 上一 RC → current main 升级门禁（Task 14.3，verify-rc-upgrade.mjs）
 #   - PostgreSQL 备份/恢复门禁（空库恢复/行数/业务不变量/组织隔离/跨版本）
 #   - Helm 静态审计（lint + template，无需集群）
 #   - 容器镜像门禁（真实构建 + SBOM + Trivy 漏洞报告 + 镜像摘要）
@@ -64,7 +65,7 @@ jobs:
       - name: 创建一次性测试数据库
         run: |
           pg_container="$(docker ps -q --filter 'publish=5432' | head -n1)"
-          for db in mig_test br_source br_target; do
+          for db in mig_test br_source br_target rc_upgrade; do
             docker exec "$pg_container" psql -U postgres -d ewoh -c "create database $db;" || true
           done
 
@@ -72,6 +73,15 @@ jobs:
         env:
           EWOH_MIGRATION_TEST_DB_URL: ${{ env.PG }}/mig_test
         run: node scripts/verify-migration-prod.mjs
+
+      - name: PostgreSQL 上一 RC → current main 升级门禁（Task 14.3）
+        # release gate：从 RC 快照（release/ewoh-0.6.0-rc*) 打包的 runner 动态解析
+        # 「上一版本」截点（当前 rc1..rc4 均为 standalone_003），在其上应用剩余
+        # standalone_004..031 迁移链并全量 verify；任何失败/环境缺失均响亮失败
+        # （exit 1，绝不整包 SKIP）。详见 scripts/verify-rc-upgrade.mjs 头部注释。
+        env:
+          EWOH_DATABASE_URL: ${{ env.PG }}/rc_upgrade
+        run: node scripts/verify-rc-upgrade.mjs
 
       - name: PostgreSQL 备份/恢复门禁（空库恢复/行数/不变量/组织隔离/跨版本）
         env:

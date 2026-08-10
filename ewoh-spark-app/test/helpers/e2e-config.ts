@@ -52,19 +52,7 @@ function readRuntimeDatabaseUrlFromPort3101(): string | null {
   }
 }
 
-export function resolveE2EConfig(): E2EConfig | null {
-  const runtimeDatabaseUrl =
-    process.env.EWOH_E2E_RUNTIME_DATABASE_URL?.trim() ??
-    readRuntimeDatabaseUrlFromPort3101();
-
-  if (!runtimeDatabaseUrl) {
-    console.warn(
-      '[EWOH E2E] Runtime DATABASE_URL is unavailable. Set EWOH_E2E_RUNTIME_DATABASE_URL ' +
-        'or start the standalone API on 127.0.0.1:3101 with DATABASE_URL; the E2E suite will skip.',
-    );
-    return null;
-  }
-
+function buildConfig(runtimeDatabaseUrl: string): E2EConfig {
   return {
     ownerDatabaseUrl: DEFAULT_OWNER_DATABASE_URL,
     runtimeDatabaseUrl,
@@ -74,4 +62,34 @@ export function resolveE2EConfig(): E2EConfig | null {
     refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN?.trim() || '1h',
     rateLimitMax: process.env.RATE_LIMIT_MAX?.trim() || '10000',
   };
+}
+
+export function resolveE2EConfig(): E2EConfig | null {
+  // CI-safe detection (Task 14.4): 一旦设置了 EWOH_E2E_RUNTIME_DATABASE_URL，
+  // 即声明「真实-PG E2E 必须运行」。空/纯空白值属 CI 配置错误 —— 抛错响亮失败，
+  // 绝不回退到 :3101 探测或整包静默 SKIP（防止 release gate 因误配置伪通过）。
+  const envRuntimeUrl = process.env.EWOH_E2E_RUNTIME_DATABASE_URL;
+  if (envRuntimeUrl !== undefined && envRuntimeUrl !== null) {
+    const trimmed = envRuntimeUrl.trim();
+    if (!trimmed) {
+      throw new Error(
+        '[EWOH E2E] EWOH_E2E_RUNTIME_DATABASE_URL is set but empty/whitespace: ' +
+          'the real-PG E2E suite must not silently skip in CI. Set a real PostgreSQL URL ' +
+          'or unset the variable (local desktop then falls back to the :3101 listener).',
+      );
+    }
+    return buildConfig(trimmed);
+  }
+
+  // Local desktop: env var unset → 探测 127.0.0.1:3101 standalone API 的 DATABASE_URL。
+  const runtimeDatabaseUrl = readRuntimeDatabaseUrlFromPort3101();
+  if (!runtimeDatabaseUrl) {
+    console.warn(
+      '[EWOH E2E] Runtime DATABASE_URL is unavailable. Set EWOH_E2E_RUNTIME_DATABASE_URL ' +
+        'or start the standalone API on 127.0.0.1:3101 with DATABASE_URL; the E2E suite will skip.',
+    );
+    return null;
+  }
+
+  return buildConfig(runtimeDatabaseUrl);
 }

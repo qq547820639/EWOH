@@ -215,6 +215,17 @@ jobs:
           node db/runner/run_migrations.js --verify-standalone-domain
           node scripts/verify-domain-concurrency.js
 
+      - name: E2E preflight（真实 PG 可达 + 套件运行配置断言，Task 14.4）
+        # release gate 保证：真实-PG E2E（npm run test:e2e）绝不允许整包静默 SKIP。
+        # 本步骤在 test:e2e 之前复用 resolveE2EConfig() 语义（EWOH_E2E_RUNTIME_DATABASE_URL
+        # 或 :3101 监听）解析运行时 URL，并真实连接一次（select 1）；PG 不可达或
+        # 套件未配置为真实运行时以 ::error:: 响亮失败（exit 1），绝不伪通过。
+        working-directory: ewoh-spark-app
+        env:
+          EWOH_E2E_OWNER_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_E2E_RUNTIME_DATABASE_URL: postgresql://ewoh_api:${{ env.EWOH_API_DATABASE_PASSWORD }}@127.0.0.1:5432/ewoh
+        run: node ../scripts/e2e-preflight.mjs
+
       - name: E2E HTTP + PostgreSQL
         # F61-02 领域表的持久化/幂等/多实例/事务一致性由 test:e2e 覆盖。CI 在此提供
         # PostgreSQL Service Container，并通过 EWOH_E2E_RUNTIME_DATABASE_URL 使
