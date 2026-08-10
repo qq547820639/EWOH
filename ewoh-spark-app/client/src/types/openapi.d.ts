@@ -8238,6 +8238,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scheduler/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Unified scheduling context (single org time slice, P0-2)
+         * @description SchedulingContextService.getContext()（P0-2）：单一 org 时间切片。Command Map 应一次性消费 snapshotVersion/resourceVersion/routeGraphVersion/policyVersion/ eventSequence/sourceTimestamp/tasks/resources/reservations/constraints/ dataQuality，避免跨切片组合成伪"当前状态"。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulingContext"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scheduler/conflicts": {
         parameters: {
             query?: never;
@@ -13615,6 +13656,34 @@ export interface components {
             [key: string]: unknown;
         };
         SchedulingFeedbackList: components["schemas"]["SchedulingFeedback"][];
+        /** @description GET /api/scheduler/context 响应（P0-2）：单一 org 时间切片统一调度上下文， 与 shared/scheduler.ts SchedulingContext 同形。版本字段真实取值，禁止伪造。 */
+        SchedulingContext: {
+            snapshotVersion: string;
+            resourceVersion: string;
+            routeGraphVersion: string;
+            policyVersion: number;
+            eventSequence: number;
+            sourceTimestamp: string;
+            /** @description 任务集合（与 world-state snapshot 同源，org 过滤）。 */
+            tasks: {
+                [key: string]: unknown;
+            }[];
+            /** @description 统一资源投影（与 GET /api/scheduler/resources/state 同源，org 过滤）。 */
+            resources: components["schemas"]["ResourceState"][];
+            /** @description 活跃预占（与 world-state snapshot 同源）。 */
+            reservations: {
+                [key: string]: unknown;
+            }[];
+            /** @description 全局 active 人工约束（org + 有效期过滤）。 */
+            constraints: components["schemas"]["SchedulingConstraint"][];
+            /** @description 数据质量汇总（可审计；全部来自真实统计，不伪造）。 */
+            dataQuality: {
+                staleResourceCount: number;
+                unknownLocationCount: number;
+                degradedRouteCount: number;
+                totalResources: number;
+            };
+        };
         WorldStateSnapshot: {
             snapshotVersion?: string;
             ts?: string;
@@ -15223,6 +15292,12 @@ export interface components {
                 manualOverrideRate?: number | null;
                 conflictRate?: number | null;
                 averageConflictResolutionMs?: number | null;
+                affectedAssignmentRatio?: number | null;
+                unchangedAssignmentRate?: number | null;
+                scheduleChurn?: number | null;
+                replanDuration?: number | null;
+                replanTriggerCount?: number | null;
+                replanSuppressedCount?: number | null;
             };
             solver: {
                 solverLatencyP50Ms?: number | null;

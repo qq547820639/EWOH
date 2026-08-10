@@ -148,6 +148,16 @@ function operationKey(operation) {
   return `${operation.method} ${operation.path}`;
 }
 
+/**
+ * Manifest 键集合：去重 + 排序。
+ * specKeys 来自 ewoh.yaml 与 work-orchestration.yaml 两本 spec 的操作并集，
+ * 同一路由可能同时出现在两本 spec 中（GET 路由大量重叠），原始数组含重复项；
+ * manifest 必须可复现且键唯一（“每个路由恰好出现一次”）。
+ */
+function uniqueSortedKeys(operations) {
+  return [...new Set(operations.map(operationKey))].sort();
+}
+
 function auditRoutes(controllerOperations, specOperations) {
   const controllerKeys = new Map(
     controllerOperations.map((operation) => [operationKey(operation), operation]),
@@ -197,11 +207,12 @@ function main() {
   const controllerOperations = extractControllerOperations(controllerPath);
   const result = auditRoutes(controllerOperations, specOperations);
   if (options.manifest) {
+    // 刻意不写 generatedAt：manifest 必须由当前 spec + controllers 字节级可复现
+    // 生成（两次生成输出一致），任何时间戳都会破坏可复现性。
     const manifest = {
-      generatedAt: new Date().toISOString(),
       spec: path.relative(root, specPath),
-      controllerKeys: controllerOperations.map(operationKey).sort(),
-      specKeys: specOperations.map(operationKey).sort(),
+      controllerKeys: uniqueSortedKeys(controllerOperations),
+      specKeys: uniqueSortedKeys(specOperations),
       ...result,
     };
     const manifestPath = path.resolve(root, options.manifest);

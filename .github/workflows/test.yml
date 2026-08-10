@@ -153,8 +153,15 @@ jobs:
       - name: 单一事实源证据清单生成与漂移校验（truth-check）
         run: make truth-check
 
-      - name: OpenAPI 路由零漂移门禁（Batch 11.5：controller ↔ openapi/ewoh.yaml）
-        run: node scripts/audit-openapi-routes.js
+      - name: OpenAPI 路由零漂移门禁（Batch 11.5：controller ↔ openapi/ewoh.yaml + work-orchestration.yaml）
+        # 双向一致性：未文档化 controller 路由 + 已文档化但未实现路由，任一存在即失败。
+        run: node scripts/audit-openapi-routes.js --strict
+
+      - name: OpenAPI 契约漂移门禁（gen:openapi:check：spec → 生成类型零漂移）
+        # 重新生成 client/src/types/*.d.ts 到临时目录并与已提交输出比对，
+        # 任何漂移（包括新增 endpoint 未同步生成类型）都会使本步骤失败。
+        working-directory: ewoh-spark-app
+        run: npm run gen:openapi:check
 
       - name: NestJS 生产构建（跳过交互式插件初始化）
         run: EWOH_SKIP_PLUGIN_INIT=1 npm run build:prod

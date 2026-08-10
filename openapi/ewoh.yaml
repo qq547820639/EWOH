@@ -5608,6 +5608,27 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scheduler/context:
+    get:
+      tags:
+        - scheduler
+      summary: Unified scheduling context (single org time slice, P0-2)
+      description: >
+        SchedulingContextService.getContext()（P0-2）：单一 org 时间切片。Command Map
+        应一次性消费 snapshotVersion/resourceVersion/routeGraphVersion/policyVersion/
+        eventSequence/sourceTimestamp/tasks/resources/reservations/constraints/
+        dataQuality，避免跨切片组合成伪"当前状态"。
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulingContext'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scheduler/conflicts:
     get:
       tags:
@@ -11126,6 +11147,77 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/SchedulingFeedback'
+    SchedulingContext:
+      type: object
+      description: >
+        GET /api/scheduler/context 响应（P0-2）：单一 org 时间切片统一调度上下文，
+        与 shared/scheduler.ts SchedulingContext 同形。版本字段真实取值，禁止伪造。
+      required:
+        - snapshotVersion
+        - resourceVersion
+        - routeGraphVersion
+        - policyVersion
+        - eventSequence
+        - sourceTimestamp
+        - tasks
+        - resources
+        - reservations
+        - constraints
+        - dataQuality
+      properties:
+        snapshotVersion:
+          type: string
+        resourceVersion:
+          type: string
+        routeGraphVersion:
+          type: string
+        policyVersion:
+          type: integer
+        eventSequence:
+          type: integer
+        sourceTimestamp:
+          type: string
+        tasks:
+          type: array
+          description: 任务集合（与 world-state snapshot 同源，org 过滤）。
+          items:
+            type: object
+            additionalProperties: true
+        resources:
+          type: array
+          description: 统一资源投影（与 GET /api/scheduler/resources/state 同源，org 过滤）。
+          items:
+            $ref: '#/components/schemas/ResourceState'
+        reservations:
+          type: array
+          description: 活跃预占（与 world-state snapshot 同源）。
+          items:
+            type: object
+            additionalProperties: true
+        constraints:
+          type: array
+          description: 全局 active 人工约束（org + 有效期过滤）。
+          items:
+            $ref: '#/components/schemas/SchedulingConstraint'
+        dataQuality:
+          type: object
+          description: 数据质量汇总（可审计；全部来自真实统计，不伪造）。
+          required:
+            - staleResourceCount
+            - unknownLocationCount
+            - degradedRouteCount
+            - totalResources
+          properties:
+            staleResourceCount:
+              type: integer
+            unknownLocationCount:
+              type: integer
+            degradedRouteCount:
+              type: integer
+            totalResources:
+              type: integer
+          additionalProperties: false
+      additionalProperties: false
     WorldStateSnapshot:
       type: object
       properties:
@@ -14761,6 +14853,25 @@ components:
               nullable: true
             averageConflictResolutionMs:
               type: integer
+              nullable: true
+            # --- Replan V2 KPI（08 §8；全可选，向后兼容；与 shared/scheduler.ts 对齐） ---
+            affectedAssignmentRatio:
+              type: number
+              nullable: true
+            unchangedAssignmentRate:
+              type: number
+              nullable: true
+            scheduleChurn:
+              type: number
+              nullable: true
+            replanDuration:
+              type: number
+              nullable: true
+            replanTriggerCount:
+              type: number
+              nullable: true
+            replanSuppressedCount:
+              type: number
               nullable: true
           additionalProperties: false
         solver:

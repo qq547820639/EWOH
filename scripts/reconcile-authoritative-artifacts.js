@@ -113,8 +113,10 @@ function freshRouteAudit(rootDir) {
     path.join(rootDir, 'ewoh-spark-app/server'),
   );
   return {
-    controllerKeys: controllerOperations.map(routeAudit.operationKey).sort(),
-    specKeys: specOperations.map(routeAudit.operationKey).sort(),
+    // 与 manifest 写入端（audit-openapi-routes.js --write-manifest）保持一致：
+    // 键集合去重 + 排序（两本 spec 路由重叠会产生重复 GET 键）。
+    controllerKeys: [...new Set(controllerOperations.map(routeAudit.operationKey))].sort(),
+    specKeys: [...new Set(specOperations.map(routeAudit.operationKey))].sort(),
     result: routeAudit.auditRoutes(controllerOperations, specOperations),
   };
 }
