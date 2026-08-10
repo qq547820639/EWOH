@@ -5,19 +5,30 @@
   confirm/execute/replan/feedback/set_assignment_status 全部拒绝（AdvisoryOnlyError）；
 - SchedulingRepository(readonly=True)：写方法抛 ReadonlyModeError，读方法可用；
 - run.py build_scheduler 模式解析：simulation → 可写；production/development → advisory；
-  EWOH_EDGE_SCHEDULING_WRITE=1 → 可写（仅限本地联调）。
+  EWOH_EDGE_SCHEDULING_WRITE=1 → 可写（仅限 development/test/simulation，本地联调）；
+  13.1：production + EWOH_EDGE_SCHEDULING_WRITE=1 → fail-closed 抛配置错误。
 """
 
+import os
+import sys
 import unittest
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
+from edge_platform.run import (
+    SchedulingWriteProhibitedError,
+    build_scheduler,
+    ensure_scheduling_write_permitted,
+    scheduling_write_allowed_in_mode,
+)
 from edge_platform.scheduler import (
     EffectivePriorityCalculator,
     GreedyOptimizer,
     Planner,
     ReservationService,
+    SchedulerService,
     Scorer,
     ScoringWeights,
-    SchedulerService,
     WeightAuditLog,
     WorldStateService,
     build_route_planner,
@@ -284,6 +295,82 @@ class RunPyOwnershipResolutionTest(unittest.TestCase):
         scheduler = _make_scheduler(advisory_only=True)
         self.assertTrue(scheduler.advisory_only)
         self.assertEqual(scheduler.advisory_only, True)
+
+
+class SchedulingWriteFailClosedTest(unittest.TestCase):
+    """13.1：production 写禁止（fail-closed）+ 非生产模式显式写仍可用。
+
+    覆盖：
+    - production（或任何非 simulation/development/test 模式）+ EWOH_EDGE_SCHEDULING_WRITE=1
+      → 启动即抛 SchedulingWriteProhibitedError（不允许静默降级为 advisory）；
+    - development/test/simulation + EWOH_EDGE_SCHEDULING_WRITE=1 → 可写；
+    - 无环境变量 → advisory-only 默认。
+    """
+
+    def setUp(self):
+        self._old_write = os.environ.get("EWOH_EDGE_SCHEDULING_WRITE")
+        os.environ.pop("EWOH_EDGE_SCHEDULING_WRITE", None)
+
+    def tearDown(self):
+        os.environ.pop("EWOH_EDGE_SCHEDULING_WRITE", None)
+        if self._old_write is not None:
+            os.environ["EWOH_EDGE_SCHEDULING_WRITE"] = self._old_write
+
+    def _build(self, mode, write):
+        """按 mode + write 标志装配 build_scheduler，返回 (scheduler, resource_state_service)。"""
+        if write:
+            os.environ["EWOH_EDGE_SCHEDULING_WRITE"] = "1"
+        else:
+            os.environ.pop("EWOH_EDGE_SCHEDULING_WRITE", None)
+        return build_scheduler(_FakeWorldStorage(), None, None, mode=mode, advisory_only=True)
+
+    def test_production_write_env_fails_closed(self):
+        with self.assertRaises(SchedulingWriteProhibitedError) as ctx:
+            self._build("production", write=True)
+        msg = str(ctx.exception)
+        self.assertIn("EWOH_EDGE_SCHEDULING_WRITE", msg)
+        self.assertIn("production", msg)
+        self.assertIn("development", msg)  # 提示仅限非生产模式
+
+    def test_unknown_mode_write_env_fails_closed(self):
+        # 任何非 simulation/development/test 模式都按生产语义 fail-closed
+        with self.assertRaises(SchedulingWriteProhibitedError):
+            self._build("staging", write=True)
+        with self.assertRaises(SchedulingWriteProhibitedError):
+            self._build("", write=True)
+
+    def test_development_write_env_writable(self):
+        scheduler, _ = self._build("development", write=True)
+        self.assertFalse(scheduler.advisory_only)
+
+    def test_test_mode_write_env_writable(self):
+        scheduler, _ = self._build("test", write=True)
+        self.assertFalse(scheduler.advisory_only)
+
+    def test_simulation_write_env_writable(self):
+        scheduler, _ = self._build("simulation", write=True)
+        self.assertFalse(scheduler.advisory_only)
+
+    def test_production_no_env_advisory_default(self):
+        scheduler, _ = self._build("production", write=False)
+        self.assertTrue(scheduler.advisory_only)
+
+    def test_no_env_advisory_default(self):
+        scheduler, _ = self._build("development", write=False)
+        self.assertTrue(scheduler.advisory_only)
+
+    def test_helpers_contract(self):
+        # 辅助函数直接契约
+        self.assertTrue(scheduling_write_allowed_in_mode("development"))
+        self.assertTrue(scheduling_write_allowed_in_mode("TEST"))
+        self.assertTrue(scheduling_write_allowed_in_mode("simulation"))
+        self.assertFalse(scheduling_write_allowed_in_mode("production"))
+        self.assertFalse(scheduling_write_allowed_in_mode("staging"))
+        os.environ["EWOH_EDGE_SCHEDULING_WRITE"] = "1"
+        with self.assertRaises(SchedulingWriteProhibitedError):
+            ensure_scheduling_write_permitted("production")
+        # 非生产模式不抛
+        ensure_scheduling_write_permitted("development")
 
 
 if __name__ == "__main__":

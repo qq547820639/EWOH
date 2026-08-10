@@ -47,6 +47,34 @@ def build_components(db_path, force_stub, adapter_ports, metrics):
     return components, mode
 
 
+# ---- P0-SCHED-OWNERSHIP 13.1：production 写禁止（fail-closed）----
+# 运行模式取自 EWOH_RUNTIME_MODE（见 edge_platform.runtime.bootstrap.resolve_runtime_mode）；
+# EWOH_EDGE_SCHEDULING_WRITE=1 仅允许在显式非生产模式（development/test/simulation）生效。
+SCHEDULING_WRITE_ALLOWED_MODES = ("simulation", "development", "test")
+
+
+class SchedulingWriteProhibitedError(RuntimeError):
+    """production 下显式开启调度写权限被拒绝（fail-closed 配置错误）。"""
+
+
+def scheduling_write_allowed_in_mode(mode: str) -> bool:
+    """EWOH_EDGE_SCHEDULING_WRITE=1 是否允许在当前运行模式生效。"""
+    return (mode or "").strip().lower() in SCHEDULING_WRITE_ALLOWED_MODES
+
+
+def ensure_scheduling_write_permitted(mode: str) -> None:
+    """production（非 simulation/development/test）+ EWOH_EDGE_SCHEDULING_WRITE=1 → 启动即报错。
+
+    不静默降级为 advisory：配置错误必须显式失败，避免 operator 误以为写权限已生效。
+    """
+    if os.environ.get("EWOH_EDGE_SCHEDULING_WRITE") == "1" and not scheduling_write_allowed_in_mode(mode):
+        raise SchedulingWriteProhibitedError(
+            f"EWOH_EDGE_SCHEDULING_WRITE=1 被拒绝（runtime mode={mode or 'production'}）："
+            "正式调度写权限归 NestJS 控制面，Edge 在 production 下禁止写入调度数据（fail-closed）。"
+            "EWOH_EDGE_SCHEDULING_WRITE=1 仅允许 development/test/simulation 模式使用。"
+        )
+
+
 def build_scheduler(storage, repository, event_bus, mode="production", advisory_only=True):
     """装配智能调度闭环组件（Phase 3/5/6 接线，保持既有实现）。
 
@@ -63,7 +91,9 @@ def build_scheduler(storage, repository, event_bus, mode="production", advisory_
       advisory 建议，confirm/execute/replan/写库被拒绝，正式调度写权限唯一归
       NestJS 控制面（避免 split-brain / double dispatch / policy divergence）；
     - simulation：advisory_only=False —— 允许 Edge 完整模拟闭环；
-    - 显式 EWOH_EDGE_SCHEDULING_WRITE=1（仅限 development/本地联调）可强制可写。
+    - 显式 EWOH_EDGE_SCHEDULING_WRITE=1（仅限 development/test/simulation/本地联调）
+      可强制可写；production + EWOH_EDGE_SCHEDULING_WRITE=1 → fail-closed 抛
+      SchedulingWriteProhibitedError（不允许静默降级，见 ensure_scheduling_write_permitted）。
     """
     import os
 
@@ -82,6 +112,9 @@ def build_scheduler(storage, repository, event_bus, mode="production", advisory_
     )
 
     effective_advisory = bool(advisory_only)
+    # 13.1 fail-closed：production（非 simulation/development/test）+ EWOH_EDGE_SCHEDULING_WRITE=1
+    # → 启动即抛配置错误，禁止静默降级为 advisory（正式调度写权限归 NestJS 控制面）。
+    ensure_scheduling_write_permitted(mode)
     if mode == "simulation":
         effective_advisory = False
     elif os.environ.get("EWOH_EDGE_SCHEDULING_WRITE") == "1":
@@ -140,6 +173,8 @@ def main():
     # Task 33：创建可注入 MetricsCollector 单例，传入 pipeline 与 server
     metrics = MetricsCollector()
     components, mode = build_components(args.db, args.stub, settings.adapter_ports, metrics)
+    # 13.1：production 下禁止调度写（fail-closed）——在构造任何可写仓储之前即拒绝启动。
+    ensure_scheduling_write_permitted(mode)
     storage = components.storage
     bus = components.bus
     pipeline = components.pipeline
@@ -167,7 +202,8 @@ def main():
     # 智能调度持久化仓储：调度数据落库，服务重启后不丢失（Phase 2，API 接线留到 Phase 6）。
     # P0-SCHED-OWNERSHIP：connected production（production/development）下仓储只读
     # （readonly=True）——Edge 不得写正式 plan/task/assignment/reservation；
-    # simulation 模式（或 EWOH_EDGE_SCHEDULING_WRITE=1）才启用完整写。
+    # simulation 模式（或 EWOH_EDGE_SCHEDULING_WRITE=1，且非 production——production 下
+    # 该变量已在 ensure_scheduling_write_permitted fail-closed 拒绝）才启用完整写。
     scheduling_repository = None
     repository_readonly = mode != "simulation" and os.environ.get(
         "EWOH_EDGE_SCHEDULING_WRITE"
