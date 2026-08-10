@@ -144,6 +144,38 @@ export class ConflictService {
     return found;
   }
 
+  /**
+   * Replan V2（M02，08 §7）：open conflicts 聚合视图——供 replan-coordinator
+   * conflict batch seed 消费。只读聚合：同资源/同区域冲突归并为 batch
+   * （triggerIds=资源并集，affectedTaskIds=受影响任务并集）。不修改生命周期写路径。
+   */
+  async aggregateOpenConflicts(
+    windowMs: number,
+  ): Promise<{
+    triggerIds: string[];
+    affectedTaskIds: string[];
+    conflicts: SchedulingConflict[];
+  }> {
+    const derived = await this.derive();
+    const now = Date.now();
+    const open = derived.filter((c) => {
+      if ((c.status ?? 'OPEN') !== 'OPEN') return false;
+      if (!c.createdAt) return true;
+      return now - Date.parse(c.createdAt) <= windowMs;
+    });
+    const triggerIds = Array.from(
+      new Set(
+        open
+          .map((c) => c.resourceId)
+          .filter((x): x is string => Boolean(x)),
+      ),
+    ).sort();
+    const affectedTaskIds = Array.from(
+      new Set(open.flatMap((c) => c.taskIds ?? [])),
+    ).sort();
+    return { triggerIds, affectedTaskIds, conflicts: open };
+  }
+
   // ===== 人工生命周期转移（02 §6.1） =====
 
   /** OPEN → ACKNOWLEDGED（已 ACK 幂等保持；RESOLVED/SUPPRESSED 拒绝）。 */

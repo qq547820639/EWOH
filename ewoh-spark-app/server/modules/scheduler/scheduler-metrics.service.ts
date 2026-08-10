@@ -191,6 +191,11 @@ export class SchedulerMetricsService {
     this.inc('scheduler_plan_churn_total', count);
   }
 
+  /** 记录一次 Replan V2 风暴守卫抑制（08 §7）。 */
+  recordReplanSuppressed(count = 1): void {
+    this.inc('scheduler_replan_suppressed_total', count);
+  }
+
   /** 测试用：清空全部指标。 */
   reset(): void {
     this.counters.clear();

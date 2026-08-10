@@ -24,6 +24,7 @@ import {
 import type { SchedulingSolver, SolveOptions } from './scheduling-solver.interface';
 import { SchedulingObjectiveEvaluator } from './scheduling-objective-evaluator.service';
 import type { CandidateEngineService } from './candidate-engine.service';
+import type { CandidateEvaluation } from '@shared/api.interface';
 
 /** 内部候选方案。 */
 interface Candidate {
@@ -414,6 +415,69 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
 
       const candidates: Candidate[] = [];
 
+      // T03 / P1-2（G7）修 #17：注入 CandidateEngineService 时，候选池消费
+      // buildCandidatePool（与端点 GET /tasks/:taskId/candidates 同语义）；
+      // 未注入时保持现状内联（向后兼容）。routeId 由 engine 池不携带，映射为
+      // routeCostId 并标注 parity 差异（见 candidate-engine parity 测试）。
+      if (this.candidateEngine) {
+        const enginePool = await this.candidateEngine.buildCandidatePool(task, snapshot, {
+          nowMs: now,
+          lockedPersonByTask,
+          lockedDeviceByTask,
+          excludedPersonByTask,
+          excludedDeviceByTask,
+          excludedStationByTask,
+          excludedPersonGlobal,
+          excludedDeviceGlobal,
+          excludedStationGlobal,
+          preferredPersonByTask,
+          preferredDeviceByTask,
+          preferredStationByTask,
+          preferredPersonGlobal,
+          preferredDeviceGlobal,
+          preferredStationGlobal,
+          bookedTimeSlots: [...baseBookedSlots, ...runBookedSlots],
+          bookedDeviceSlots,
+          bookedStationSlots,
+          bookedStationCounts,
+          baselineAssignee: opts.baselineAssignee,
+          minBatteryPct: effectiveMinBattery,
+          maxContinuousLoad: effectiveMaxLoad,
+          stationDecisionEnabled,
+        });
+        candidateCount += enginePool.length;
+        for (const ev of enginePool) {
+          if (!ev.eligible) hardRejectCount += 1;
+          const startMs = lockedWindow ? lockedWindow[0] : ev.startMs;
+          const endMs = lockedWindow ? lockedWindow[1] : ev.endMs;
+          const eligible =
+            ev.eligible && (mustFinishByMs == null || endMs <= mustFinishByMs);
+          candidates.push({
+            personId: ev.personId,
+            deviceId: ev.deviceId,
+            stationId: ev.stationId,
+            zoneId: task.zoneId,
+            startMs,
+            endMs,
+            routeId: ev.routeCost?.routeCostId ?? null,
+            etaSeconds: ev.routeCost?.etaSeconds ?? 0,
+            distanceMeters: ev.routeCost?.distanceMeters ?? 0,
+            riskLevel: ev.routeCost && ev.routeCost.risk > 0 ? 'high' : null,
+            routeGeometry: ev.routeCost?.geometry ?? [],
+            waitMs: ev.softCosts?.waitMs ?? 0,
+            lateMs: ev.softCosts?.latenessMs ?? 0,
+            changeCost: ev.softCosts?.changeCost ?? 0,
+            cost: eligible ? ev.scoreBreakdown.total : Number.POSITIVE_INFINITY,
+            scoreBreakdown: ev.scoreBreakdown,
+            reasons: eligible ? [] : ev.rejectReasons,
+            alternatives: eligible ? [] : ev.rejectReasons.map((r) => ({ reasons: [r] })),
+            rejectReasons: ev.rejectReasons,
+            changeover: ev.changeover,
+            softCosts: ev.softCosts as Record<string, number>,
+          });
+        }
+      } else {
+
       const candidatePersons = snapshot.persons.filter((p) =>
         this.personMatchesLock(p.id, task.id, lockedPersonByTask) &&
         !this.isExcludedResource(
@@ -703,6 +767,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           }
         }
       }
+      } // end inline candidate path (else of candidateEngine)
 
       const feasible = candidates
         .filter((c) => c.cost !== Number.POSITIVE_INFINITY)

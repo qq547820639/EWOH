@@ -1,5 +1,6 @@
-import type { WorldStateSnapshot } from '@shared/api.interface';
+import type { ReplanImpact, WorldStateSnapshot } from '@shared/api.interface';
 import { TaskLifecycle } from './task-lifecycle';
+import { propagateImpact } from './impact-propagation';
 
 /** 影响分类：硬冲突 / 软偏差 / 关键事件。 */
 export type ImpactClass = 'hard_conflict' | 'soft_deviation' | 'critical_event';
@@ -231,5 +232,81 @@ export class ImpactAnalyzer {
     if (raw in IMPACT_META) return raw as ImpactType;
     // 兼容别名：DEVICE_OFFLINE 等已在集合内，ROUTE_BLOCKED/RESERVATION_CONFLICT 直接命中。
     return 'PLAN_STALE';
+  }
+
+  /**
+   * Replan V2（M02）：复用本分析器的 scope 判定语义产出 ReplanImpact 形状。
+   * 内部构造 seed（直接命中集合）并委托 impact-propagation 做闭包扩散；
+   * 保留 analyze():ImpactResult 供旧调用方。与 M01 propagateImpact 共享
+   * FROZEN_STATUSES 与 movable 判定（frozen 不入 movable），不冲突。
+   */
+  analyzeV2(
+    snapshot: WorldStateSnapshot,
+    event: ImpactEvent,
+    options: { maxPropagationDepth?: number; maxAffectedTasks?: number } = {},
+  ): ReplanImpact {
+    const type = this.normalizeType(event.eventType ?? '');
+    const entityId = event.entityId ?? null;
+    const seed = this.buildSeed(type, entityId ? [entityId] : [], snapshot);
+    return propagateImpact(snapshot, seed, options);
+  }
+
+  /**
+   * Replan V2（M02）：构造 seed ReplanImpact（直接命中集合，支持多 triggerIds 供
+   * conflict batch 聚合）。scope 判定与 analyze()/analyzeV2() 一致：
+   * device/person/station/zone/route edge 各按对应维度；RESERVATION_CONFLICT 资源
+   * 可能为 person/device（旧语义 t.deviceId===entityId || t.assigneeId===entityId）。
+   * 纯数据构造，无 DB/注入。
+   */
+  buildSeed(
+    triggerType: string,
+    triggerIds: string[],
+    snapshot: WorldStateSnapshot,
+  ): ReplanImpact {
+    const type = this.normalizeType(triggerType);
+    const meta = IMPACT_META[type] ?? IMPACT_META.PLAN_STALE;
+    const ids = Array.from(new Set((triggerIds ?? []).filter(Boolean))).sort();
+    const seed: ReplanImpact = {
+      triggerType: type,
+      triggerIds: ids,
+      affectedTaskIds: [],
+      affectedResourceIds: [],
+      affectedPersonIds: [],
+      affectedDeviceIds: [],
+      affectedStationIds: [],
+      affectedZoneIds: [],
+      frozenAssignmentIds: [],
+      movableAssignmentIds: [],
+      reasons: [],
+      snapshotVersion: snapshot.snapshotVersion,
+      baselinePlanVersion: null,
+    };
+    switch (type) {
+      case 'DEVICE_OFFLINE':
+      case 'DEVICE_LOW_BATTERY':
+      case 'RESOURCE_OFFLINE':
+        seed.affectedDeviceIds = ids;
+        break;
+      case 'PERSON_UNAVAILABLE':
+        seed.affectedPersonIds = ids;
+        break;
+      case 'SAFETY_EVENT':
+      case 'ZONE_RESTRICTED':
+        seed.affectedZoneIds = ids;
+        break;
+      case 'ROUTE_BLOCKED':
+      case 'ROUTE_CONGESTED':
+        seed.triggerIds = ids; // routeEdgeTaskIndex 反查
+        break;
+      case 'RESERVATION_CONFLICT':
+        // 冲突资源可能是 person/device（旧语义 t.deviceId===entityId || t.assigneeId===entityId）。
+        seed.affectedDeviceIds = ids;
+        seed.affectedPersonIds = ids;
+        break;
+      default:
+        break;
+    }
+    seed.reasons = ids.map((id) => `${meta.classification}:${type}:${id}`);
+    return seed;
   }
 }

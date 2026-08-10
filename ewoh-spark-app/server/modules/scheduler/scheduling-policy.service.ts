@@ -173,6 +173,39 @@ export class SchedulingPolicyService {
   }
 
   /**
+   * Replan V2（M02）：解析 ReplanConfig（缺省回退 DEFAULT_CONFIG.replan）。
+   * 供 ReplanCoordinatorService 风暴守卫/传播上限读取；配置全可选。
+   */
+  async resolveReplanConfig(
+    config?: SchedulingPolicyConfig | null,
+  ): Promise<SchedulingPolicyConfig['replan']> {
+    const effective = config ?? (await this.getConfig());
+    return {
+      ...DEFAULT_CONFIG.replan,
+      ...(effective.replan ?? {}),
+    };
+  }
+
+  /**
+   * Replan V2（M02）：解析 ReplanApprovalConfig（缺省回退 DEFAULT_CONFIG.replanApproval）。
+   * 供 M03 审批政策读取；M02 已提供访问器。
+   */
+  async resolveReplanApprovalConfig(
+    config?: SchedulingPolicyConfig | null,
+  ): Promise<SchedulingPolicyConfig['replanApproval']> {
+    const effective = config ?? (await this.getConfig());
+    return {
+      ...DEFAULT_CONFIG.replanApproval,
+      ...(effective.replanApproval ?? {}),
+    };
+  }
+
+  /** Replan V2（M02）：同步访问默认 ReplanConfig（供测试/无 DB 场景）。 */
+  defaultReplanConfig(): NonNullable<SchedulingPolicyConfig['replan']> {
+    return { ...DEFAULT_CONFIG.replan };
+  }
+
+  /**
    * 保存新配置：configVersion 取当前最大值 + 1，active=true，
    * 并将此前所有 active 行置为 active=false。
    */
