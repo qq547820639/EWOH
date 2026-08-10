@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import { X, MapPin } from 'lucide-react';
 import type {
   CurrentWorldState,
@@ -489,4 +489,5 @@ const EntityDetail = ({
   );
 };
 
-export default EntityDetail;
+// React.memo：回调 props 已由 CommandMap 稳定化，store 其他 slice 写入不连带重渲染（Task 4 / P1）。
+export default memo(EntityDetail);

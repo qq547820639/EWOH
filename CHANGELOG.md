@@ -64,7 +64,10 @@
   - **前端深化**：`execution.deviation` 事件失效 worldState（地图位置近实时）；冲突中心"定位地图"按钮
     （选中实体+收起面板）；覆盖面板候选资源选择器（按评分/技能/负荷排序，不可行候选含排除原因）。
   - **CP-SAT Worker 部署就绪**：`src/edge_platform/scheduler/cpsat/worker.py`（纯标准库 HTTP worker，
-    POST /api/scheduler/v2/solve + health 探针）+ `deploy/cloud/Dockerfile.cpsat` + compose `cpsat` 可选服务；
+    POST /api/scheduler/v2/solve + health 探针）+ `deploy/cloud/Dockerfile.cpsat` + compose `cpsat` 可选服务
+    （`deploy/cloud/docker-compose.standalone.yml` 内建 cpsat 服务，另提供独立
+    `deploy/cloud/docker-compose.cpsat.yml` 仅启动 worker）；ortools 版本锁定 `==9.11.4210`
+    （与 `src/edge_platform/scheduler/cpsat/requirements.txt` 一致）；
     ortools 缺失时如实返回 UNAVAILABLE 由云侧回退 heuristic。
 - **智能调度 v0.7（四批增量，指挥地图 → 智能调度驾驶舱）**：
   - **任务派生建模**（`world-state.service.ts`）：`productionImpact`（priority 映射 urgent=1.0→low=0.1）、

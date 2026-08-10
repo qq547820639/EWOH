@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type {
   SchedulingAssignment,
   SchedulingConstraint,
@@ -24,6 +25,19 @@ import { checkConstraintSupported } from './constraints';
 const CPSAT_VERSION = 'cpsat-v1';
 /** 默认缺省时长（无 planStart/planEnd 时），与策略默认一致（30 分钟）。 */
 const DEFAULT_DURATION_MS = 1_800_000;
+
+/**
+ * CP-SAT 生产激活阶梯（Task 6 / P1）：OFF → SHADOW → CANARY → PRODUCTION。
+ * - OFF（当前）：worker 不可达/未部署 → solverStatus=UNAVAILABLE 回退 heuristic；
+ *   feature-status.yaml cpSat.productionEnabled=false（生产未启用，不得声称"生产就绪"）。
+ * - SHADOW：SolverService.solveShadowCompare 双跑（heuristic=生产方案；CP-SAT=shadow 对比，isShadow）。
+ * - CANARY：prediction canary 抽样放量；shadow/heuristic 硬约束分歧自动回滚 canary=0
+ *   （见 shadow-policy.service.ts handleShadowCompareDivergence）。
+ * - PRODUCTION：docs/runtime-gates.md G1..G12 全部通过 + shadow/canary 阈值达标
+ *   （PredictionConfig.autoRollbackOn：mae<=0.25 / fallbackRate<=0.5 / coverage>=0.8）后才可翻转。
+ */
+const CPSAT_ACTIVATION_LADDER = 'OFF->SHADOW->CANARY->PRODUCTION' as const;
+void CPSAT_ACTIVATION_LADDER; // 激活阶梯常量：留作代码级文档与可审计锚点
 
 /** CP-SAT Worker 配置。 */
 export interface CpSatSolverConfig {
@@ -201,11 +215,14 @@ export class CpSatSchedulingSolver {
         eligibleByTask,
         candidateCostsByTask,
       );
-      response = await this.post(request);
+      // Task 6 / P1：全链路关联 ID（X-Request-ID 头；worker 回显 requestId 仅日志，不进共享契约）。
+      const requestId = `req-${randomUUID()}`;
+      response = await this.post(request, requestId);
       reachable = true;
     } catch (err) {
+      const requestId = `req-${randomUUID()}`;
       this.logger.warn(
-        `CP-SAT worker 不可达（${this.workerUrl}）：${(err as Error)?.message ?? err}`,
+        `CP-SAT worker 不可达（${this.workerUrl}）requestId=${requestId}：${(err as Error)?.message ?? err}`,
       );
       // Phase 2 / P2-T3：Solver 可观测埋点（fallback / timeout；失败仅记日志）。
       if (this.metricsService) {
@@ -229,7 +246,7 @@ export class CpSatSchedulingSolver {
       (response.solverStatus === 'OPTIMAL' || response.solverStatus === 'FEASIBLE')
     ) {
       this.logger.log(
-        `使用 CP-SAT 求解器（${response.solverStatus}），objective=${response.objective}`,
+        `使用 CP-SAT 求解器（${response.solverStatus}），objective=${response.objective}，requestId=${(response as SolverResponse & { requestId?: string }).requestId ?? 'n/a'}`,
       );
       return this.buildCpsatPlan(
         response,
@@ -521,13 +538,17 @@ export class CpSatSchedulingSolver {
     return frozen;
   }
 
-  private async post(request: SolverRequest): Promise<SolverResponse> {
+  private async post(request: SolverRequest, requestId: string): Promise<SolverResponse> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const res = await this.fetchImpl(`${this.workerUrl}/api/scheduler/v2/solve`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          // Task 6 / P1：全链路关联 ID（worker 回显 requestId 仅日志，不进共享契约）。
+          'X-Request-ID': requestId,
+        },
         body: JSON.stringify(request),
         signal: controller.signal,
       });
@@ -537,7 +558,14 @@ export class CpSatSchedulingSolver {
       if (!res.body) {
         throw new Error('CP-SAT worker returned empty body');
       }
-      return (await res.json()) as SolverResponse;
+      const response = (await res.json()) as SolverResponse;
+      const echoed =
+        (response as SolverResponse & { requestId?: string }).requestId ??
+        res.headers?.get?.('x-request-id');
+      this.logger.debug(
+        `CP-SAT worker requestId=${echoed ?? 'n/a'}（sent ${requestId}）`,
+      );
+      return response;
     } finally {
       clearTimeout(timer);
     }

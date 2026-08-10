@@ -1512,6 +1512,31 @@ export const ewohSchedulingFeedback = pgTable("ewoh_scheduling_feedback", {
   index("idx_ewoh_scheduling_feedback_ts").on(table.ts),
 ]);
 
+export const predictionShadowObservation = pgTable("prediction_shadow_observation", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: varchar("org_id", { length: 255 }),
+  predictionType: varchar("prediction_type", { length: 100 }).notNull(),
+  entityId: varchar("entity_id", { length: 255 }),
+  taskId: varchar("task_id", { length: 255 }),
+  correlationId: varchar("correlation_id", { length: 255 }),
+  executionId: varchar("execution_id", { length: 255 }),
+  prediction: doublePrecision("prediction").notNull(),
+  baseline: doublePrecision("baseline"),
+  actual: doublePrecision("actual"),
+  confidence: doublePrecision("confidence"),
+  modelVersion: varchar("model_version", { length: 100 }),
+  policyVersion: integer("policy_version"),
+  snapshotVersion: varchar("snapshot_version", { length: 100 }),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  actualAt: customTimestamptz("actual_at", { precision: 3 }),
+  absoluteError: doublePrecision("absolute_error"),
+  relativeError: doublePrecision("relative_error"),
+}, (table) => [
+  index("idx_prediction_shadow_observation_org_created").on(table.orgId, table.createdAt),
+  index("idx_prediction_shadow_observation_correlation").on(table.correlationId),
+  index("idx_prediction_shadow_observation_task").on(table.taskId),
+]);
+
 // table aliases
 export const ewohAiSuggestionTable = ewohAiSuggestion;
 export const ewohDeviceTable = ewohDevice;

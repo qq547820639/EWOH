@@ -94,3 +94,70 @@ jobs:
           path: output/perf-budget-gate.json
           if-no-files-found: error
           retention-days: 30
+
+  # Task 1 (P0) — Scheduler 大规模性能 gate（无 PG 依赖）：
+  # 运行 benchmark-scheduler --matrix（10/100/500/1000，persons=0.3t/devices=0.15t，
+  # 每个 size 子进程隔离 + 2GB 堆上限），硬性失败条件（宽松安全界，避免 CI 误伤）：
+  #   500 tasks wall > 20s 或 1000 tasks wall > 60s 或任意 size 上报 OOM。
+  # 绝不伪造 pass：OOM/超时均如实失败。
+  scheduler-benchmark-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ewoh-spark-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ewoh-spark-app
+        run: npm ci
+
+      - name: Run scheduler benchmark matrix (10/100/500/1000)
+        working-directory: ewoh-spark-app
+        run: npm run benchmark:scheduler:matrix
+
+      - name: Hard-fail gate (500 <= 20s, 1000 <= 60s, no OOM)
+        working-directory: ewoh-spark-app
+        run: |
+          node -e '
+            const r = require("./output/benchmark-scheduler-matrix.json");
+            if (!r || !Array.isArray(r.results)) {
+              console.error("SCHEDULER BENCHMARK GATE FAILED: no matrix report");
+              process.exit(1);
+            }
+            const by = {};
+            for (const x of r.results) by[x.tasks] = x;
+            const hard = [];
+            if (!by[500] || by[500].solverStatus === "OOM" || by[500].wallMs > 20000) {
+              hard.push("500-task gate breached (wallMs=" + (by[500] ? by[500].wallMs : "missing") + ")");
+            }
+            if (!by[1000] || by[1000].solverStatus === "OOM" || by[1000].wallMs > 60000) {
+              hard.push("1000-task gate breached (wallMs=" + (by[1000] ? by[1000].wallMs : "missing") + ")");
+            }
+            if (hard.length) {
+              console.error("SCHEDULER BENCHMARK GATE FAILED: " + hard.join("; "));
+              process.exit(1);
+            }
+            console.log(
+              "SCHEDULER BENCHMARK GATE PASSED: 500=" + by[500].wallMs.toFixed(1) +
+              "ms peakHeap=" + by[500].peakHeapMb + "MB candidates=" + by[500].candidateCount +
+              "; 1000=" + by[1000].wallMs.toFixed(1) +
+              "ms peakHeap=" + by[1000].peakHeapMb + "MB candidates=" + by[1000].candidateCount
+            );
+          '
+
+      - name: Upload scheduler benchmark report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: scheduler-benchmark-matrix-${{ github.sha }}
+          path: output/benchmark-scheduler-matrix.json
+          if-no-files-found: error
+          retention-days: 30

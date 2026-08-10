@@ -5,6 +5,7 @@
  * 组合（不依赖颜色作为唯一表达）。
  */
 import React from 'react';
+import { memo } from 'react';
 import type { PlanCompareMapVM, CompareMapEntry, PlanCompareMode } from '../vm/planCompareVM';
 
 interface PlanCompareLayerProps {
@@ -202,8 +203,8 @@ function SideMarkers({
   );
 }
 
-/** Plan Compare 地图叠加层（三模式切换由 VM.mode 决定；纯视觉）。 */
-export function PlanCompareLayer({
+/** Plan Compare 地图叠加层（三模式切换由 VM.mode 决定；纯视觉）。React.memo：vm/焦点/未变点引用未变时跳过重渲染。 */
+export const PlanCompareLayer = memo(function PlanCompareLayer({
   vm,
   focusedTaskId,
   onFocusTask,
@@ -247,4 +248,4 @@ export function PlanCompareLayer({
       ))}
     </g>
   );
-}
+});

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-10T01:43:24.258Z",
+  "generatedAt": "2026-08-10T09:33:48.433Z",
   "spec": "openapi/ewoh.yaml",
   "controllerKeys": [
     "DELETE /api/dashboard/devices/{deviceId}/bindings",
@@ -103,6 +103,7 @@
     "GET /api/scheduler/audit",
     "GET /api/scheduler/conflicts",
     "GET /api/scheduler/conflicts/{id}",
+    "GET /api/scheduler/context",
     "GET /api/scheduler/executions",
     "GET /api/scheduler/kpi",
     "GET /api/scheduler/metrics",
@@ -806,9 +807,15 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 322,
+  "controllerOperations": 323,
   "specOperations": 479,
   "documentedControllerOperations": 322,
-  "undocumented": [],
+  "undocumented": [
+    {
+      "method": "GET",
+      "path": "/api/scheduler/context",
+      "file": "ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts"
+    }
+  ],
   "unimplemented": []
 }

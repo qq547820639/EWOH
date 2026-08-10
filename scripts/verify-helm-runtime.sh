@@ -81,7 +81,9 @@ helm upgrade --install "$RELEASE" "$CHART" --namespace "$NAMESPACE" --create-nam
   || fail "helm install 失败"
 
 echo "== 2. migration job hook =="
-kubectl -n "$NAMESPACE" wait --for=condition=complete job -l app.kubernetes.io/component=migrate \
+# 注意：Job 对象本身没有 app.kubernetes.io/component 标签（该标签仅存在于 pod
+# template），按标签选择器等待会命中零资源并立即报错，故按确定性名称等待。
+kubectl -n "$NAMESPACE" wait --for=condition=complete "job/$RELEASE-ewoh-migrate" \
   --timeout="$HELM_TIMEOUT" || fail "迁移 Job 未完成"
 
 echo "== 3. rollout + replicas =="

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Sparkles,
@@ -26,6 +26,9 @@ import {
 import { getCurrentOperator } from '@client/src/lib/auth';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import { isNonAuthoritativePlan } from './schedule-panel-demo';
+import { pickComparePlanId } from './schedule-panel-logic';
+import SolverStatusChain from './SolverStatusChain';
+import { useVirtualList } from '@client/src/lib/virtualList';
 import type {
   SchedulingPlanV2,
   SchedulingAssignment,
@@ -188,7 +191,7 @@ interface SchedulePanelProps {
   personnel?: PersonnelInfo[];
 }
 
-export default function SchedulePanel({
+function SchedulePanel({
   focusPlanId,
   onFocusPlanConsumed,
   onViewOnMap,
@@ -206,7 +209,7 @@ export default function SchedulePanel({
   const [adjustTarget, setAdjustTarget] = useState<SchedulingAssignment | null>(null);
   const [adjustPersonId, setAdjustPersonId] = useState<string>('');
   const [compareOpen, setCompareOpen] = useState(false);
-  const [comparePlanId, setComparePlanId] = useState<string>('');
+  const [comparePlanId, setComparePlanId] = useState<string | null>(null);
   const [compareResult, setCompareResult] = useState<Record<string, unknown> | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -243,8 +246,20 @@ export default function SchedulePanel({
     [plans, selectedPlanId],
   );
 
+  // 分配明细虚拟列表：行高按固定值估算（reasons/备选 1-2 行），只渲染可视窗口。
+  const assignmentList = useVirtualList<HTMLDivElement>({
+    total: selectedPlan?.assignments.length ?? 0,
+    itemHeight: 72,
+    overscan: 4,
+  });
+
+  // 切换方案时重置分配列表滚动位置。
+  useEffect(() => {
+    if (assignmentList.ref.current) assignmentList.ref.current.scrollTop = 0;
+  }, [selectedPlanId]);
+
   // 聚焦到大脑建议/任务编排关联的方案（深链恢复）。
-  // 受控：只选中 focusPlanId 对应方案；不在列表（deepLink 拉取中）时置 null，绝不回退 plans[0]。
+  // 受控：只选中 focusPlanId 对应方案；不在列表（deepLink 拉取中）时置 null，绝不回退首个方案。
   useEffect(() => {
     if (!focusPlanId) return;
     const target = plans.find((p) => p.planId === focusPlanId) ?? null;
@@ -259,7 +274,7 @@ export default function SchedulePanel({
       const seen = new Set<string>();
       return merged.filter((p) => (seen.has(p.planId) ? false : (seen.add(p.planId), true)));
     });
-    // 受控：不自动选中新方案（不回退 plans[0]），由用户显式选择。
+    // 受控：不自动选中新方案（绝不回退首个方案），由用户显式选择。
   };
 
   const generateMutation = useMutation({
@@ -433,8 +448,9 @@ export default function SchedulePanel({
   };
 
   const openCompare = () => {
-    const other = plans.find((p) => p.planId !== selectedPlanId);
-    setComparePlanId(other?.planId ?? plans[0]?.planId ?? '');
+    // 唯一约束：绝不回退首个方案——无其他可对比方案时 comparePlanId 置 null
+    // （面板展示空/禁用态），避免「对比」双方是同一方案。
+    setComparePlanId(pickComparePlanId(plans, selectedPlanId));
     setCompareResult(null);
     setCompareOpen(true);
   };
@@ -542,6 +558,12 @@ export default function SchedulePanel({
                   {selectedPlan.status}
                 </Badge>
                 <span className="text-[10px] text-white/50">VERSION {selectedPlan.version}</span>
+                <SolverStatusChain
+                  status={selectedPlan.solverStatus}
+                  solverVersion={selectedPlan.solverVersion}
+                  fallbackReason={selectedPlan.fallbackReason}
+                  solveDurationMs={selectedPlan.solveDurationMs}
+                />
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-white/60">
                 <span>
@@ -587,13 +609,23 @@ export default function SchedulePanel({
                 ))}
               </div>
 
-              {/* 分配变更列表 */}
+              {/* 分配变更列表（虚拟化：只渲染可视窗口） */}
               <div>
                 <div className="text-[10px] text-white/60 font-medium mb-1">
                   分配明细（{selectedPlan.assignments.length}）
                 </div>
-                <div className="space-y-1">
-                  {selectedPlan.assignments.map((a) => (
+                <div
+                  ref={assignmentList.ref}
+                  className="max-h-[280px] overflow-y-auto rounded-md border border-white/10"
+                >
+                  <div style={{ height: assignmentList.range.totalHeight, position: 'relative' }}>
+                    <div
+                      className="space-y-1"
+                      style={{ transform: `translateY(${assignmentList.range.offsetY}px)` }}
+                    >
+                      {selectedPlan.assignments
+                        .slice(assignmentList.slice.start, assignmentList.slice.end)
+                        .map((a) => (
                     <div
                       key={a.assignmentId}
                       className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5"
@@ -631,6 +663,8 @@ export default function SchedulePanel({
                       </div>
                     </div>
                   ))}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -867,10 +901,13 @@ export default function SchedulePanel({
             <div className="flex items-center gap-2">
               <Badge className="bg-white/10 text-white text-[9px]">B</Badge>
               <select
-                value={comparePlanId}
-                onChange={(e) => setComparePlanId(e.target.value)}
+                value={comparePlanId ?? ''}
+                onChange={(e) => setComparePlanId(e.target.value || null)}
                 className="flex-1 rounded-md border border-white/10 bg-[hsl(220_14%_18%)] px-2 py-1.5 text-xs text-white outline-none"
               >
+                <option value="">
+                  {comparePlanId ? '请选择对比方案' : '暂无其他方案可选（无兜底）'}
+                </option>
                 {plans.map((p) => (
                   <option key={p.planId} value={p.planId}>
                     {p.planName ?? p.planId} · {p.status}
@@ -963,3 +1000,7 @@ function CompareResult({ result }: { result: Record<string, unknown> }) {
     </div>
   );
 }
+
+// React.memo：仅当 props 引用变化（selectedPlanId/回调/人员列表）时重渲染，
+// CommandMap 侧的 selection/mode/viewport 等 store 写入不会连带重渲染本面板（Task 4 / P1）。
+export default memo(SchedulePanel);

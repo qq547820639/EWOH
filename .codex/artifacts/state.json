@@ -220,7 +220,7 @@
     "final6_scenario_tck": "8 gates passed",
     "final6_openapi": "231/231 controller operations documented",
     "git_sync_plan": "offline-first issue/PR plan; 188 items, 0 tracked, 188 pending by design; live creation approval-gated",
-    "postgres_ddl_rls_gate": "standalone-postgres-check PASSED: 57 managed tables（unverified）, RLS, audit chain, destructive rollback to 0 objects, rebuild passed",
+    "postgres_ddl_rls_gate": "standalone-postgres-check PASSED: 73 managed tables（unverified, per db/contracts/schema-manifest.yaml after adding ewoh_replan_trigger）, RLS, audit chain, destructive rollback to 0 objects, rebuild passed",
     "local_gate_sweep": "scenario 8 gates, connector 32, AAS 7, Rego 4, deployment 4, cross-tenant E2E 29/29 all passed",
     "perf_smoke_2026_08_04": "/health/live 1000 req / 50 concurrency: 1368 QPS, p50 24.08ms, p95 74.80ms, 0 failures",
     "ops_backup_restore_2026_08_04": "57 tables exported/restored/verified; identity sequence advanced; standalone-ops-check PASSED",

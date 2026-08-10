@@ -15,6 +15,7 @@ import {
   SlidersHorizontal,
   Activity,
   GitCompareArrows,
+  Gauge,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -62,8 +63,11 @@ import AlertToast from '../../components/AlertToast';
 import DataStates from '../../components/DataStates';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useCommandMapSchedulerState } from './hooks/useCommandMapSchedulerState';
+import { useCommandMapController, CommandMapStoreSseBridge } from './hooks/useCommandMapController';
 import { SchedulerRealtimeProvider, useSchedulerRealtime } from '@client/src/scheduler/SchedulerRealtimeProvider';
 import { isContextStale, type SchedulerStreamStatusV2 } from './hooks/schedulerRealtimeCore';
+import { useSchedulerRealtimeSlice } from './store/commandMapStore';
+import { isNavigatorOnline } from '@client/src/lib/offlineStatus';
 import { SchedulerLayersOverlay, computeAggregateViewBox } from './layers/SchedulerLayers';
 import { PlanCompareLayer } from './layers/PlanCompareLayer';
 import { planCompareMapVM, extractUnchangedTasks, DEFAULT_PLAN_COMPARE_UI, type PlanCompareUiState } from './vm/planCompareVM';
@@ -94,6 +98,10 @@ const IntelligenceWorkspace = React.lazy(() => import('./panels/IntelligenceWork
 const PlanComparePanel = React.lazy(() => import('./panels/PlanComparePanel'));
 const PlanDiffDrawer = React.lazy(() => import('./panels/PlanDiffDrawer'));
 const ConflictPreviewPanel = React.lazy(() => import('./panels/ConflictPreviewPanel'));
+// Task 5 / P1：Decision Cockpit 统一决策上下文面板。
+const DecisionCockpit = React.lazy(() => import('./panels/DecisionCockpit'));
+// Task 5 / P1：全局 Data Freshness 指示行（每事实源一个徽标）。
+const DataFreshnessIndicatorRow = React.lazy(() => import('./components/DataFreshnessIndicatorRow'));
 
 /** 懒加载 chunk 加载期间的轻量占位，避免空白闪烁。 */
 const MapPanelFallback = () => (
@@ -182,6 +190,8 @@ const TABS: TabItem[] = [
   { key: 'resource', label: '资源池', icon: Users },
   { key: 'orchestration', label: '任务编排', icon: Workflow },
   { key: 'brain', label: '大脑建议', icon: Brain },
+  // Task 5 / P1：Decision Cockpit 统一决策上下文（9 段：发生了什么/为什么/影响/...）。
+  { key: 'decision', label: '决策驾驶舱', icon: Gauge },
 ];
 
 const MODES = MODE_ITEMS.map((m) => m.key);
@@ -216,13 +226,30 @@ interface PlanAssignmentExplanation {
 }
 
 const CommandMap = (): React.ReactElement => {
-  const [mode, setMode] = useState<string>('production');
-  const [level, setLevel] = useState<'L0' | 'L1' | 'L2' | 'L3' | 'L4'>('L1');
-  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  // Task 4 / P1：唯一状态源门面控制器——selection/mode/level/replay/viewport/decisionContext
+  // 写入统一经 controller→store；本组件不再自持上述副本。
+  const ctl = useCommandMapController();
+  const mode = ctl.mode;
+  const setMode = ctl.setMode;
+  const level = ctl.level;
+  const setLevel = ctl.setLevel;
+  const selectedEntityId = ctl.selectedEntityId;
+  const setSelectedEntityId = ctl.selectEntity;
+  const selectedTaskId = ctl.selectedTaskId;
+  const selectedPlanId = ctl.selectedPlanId;
+  const replayMode = ctl.replay.active;
+  const replayPaused = ctl.replay.paused;
+  const replaySpeed = ctl.replay.speed;
+  const replayTime = ctl.replay.timestamp;
+  const setReplayPaused = ctl.setReplayPaused;
+  const setReplaySpeed = ctl.setReplaySpeed;
+  const setReplayTime = ctl.setReplayTime;
   const [activeTab, setActiveTab] = useState<string>('timeline');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [focusPlanId, setFocusPlanId] = useState<string | null>(null);
   const [focusPlanPersons, setFocusPlanPersons] = useState<string[]>([]);
+  // Task 5 / P1：决策驾驶舱 Lock/Exclude → 人工覆盖面板的初始动作模式。
+  const [overrideInitialKind, setOverrideInitialKind] = useState<import('@shared/api.interface').PlanOverrideKind | null>(null);
   // 智能调度驾驶舱：选中的任务（用于拉取后端候选资源）与驾驶舱面板显隐。
   const [showIntelligence, setShowIntelligence] = useState(false);
   const [showWorkspace, setShowWorkspace] = useState(false);
@@ -232,17 +259,11 @@ const CommandMap = (): React.ReactElement => {
   // Phase 4 / P4-PREVIEW：冲突处置工作台（预览冲突 + 地图 diff）。
   const [previewConflict, setPreviewConflict] = useState<import('@shared/api.interface').SchedulingConflict | null>(null);
   const [previewResult, setPreviewResult] = useState<import('@shared/api.interface').ConflictPreviewResult | null>(null);
-  const [replayMode, setReplayMode] = useState(false);
-  const [replayPaused, setReplayPaused] = useState(false);
   // Phase 3 / P3-T3：聚合状态 Hook（React Query 权威数据 + SSE 增量 + 本地 UI state）。
   const schedulerState = useCommandMapSchedulerState();
-  // selection owner：selectedTaskId / selectedPlanId 唯一真源在 ui（updateUi 统一写入），
-  // 本组件与 SchedulePanel 等不再各自维护副本。
-  const { ui, updateUi } = schedulerState;
-  const selectedTaskId = ui.selectedTaskId;
-  const selectedPlanId = ui.selectedPlanId;
-  // 当前选中方案由 ui.selectedPlanId 派生：无效/缺失 → null，绝不回退 plans[0]。
-  const activePlan = schedulerState.plans.find((p) => p.planId === selectedPlanId) ?? null;
+  // 当前选中方案由 store 唯一真源 selectedPlanId 派生：无效/缺失 → null
+  // （controller 对照权威 plans 校验），绝不回退首个方案。
+  const activePlan = ctl.activePlan;
   // P1-D：统一调度上下文（版本边界 + dataQuality）+ STALE CONTEXT 判定。
   // 任一活跃方案（含选中方案）与 context.snapshotVersion 不一致 → 醒目标记，不静默混合。
   const schedulerContext = schedulerState.context ?? null;
@@ -273,8 +294,6 @@ const CommandMap = (): React.ReactElement => {
     }
     return vm;
   }, [compareResult, compareUi.mode, schedulerState]);
-  const [replaySpeed, setReplaySpeed] = useState(1);
-  const [replayTime, setReplayTime] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [panelExpanded, setPanelExpanded] = useState(false);
@@ -411,7 +430,10 @@ const CommandMap = (): React.ReactElement => {
     staleTime: QUERY_STALE_TIME_MS,
   });
 
-  const { data: devices } = useQuery<DeviceInfo[]>({
+  const {
+    data: devices,
+    dataUpdatedAt: devicesUpdatedAt,
+  } = useQuery<DeviceInfo[]>({
     queryKey: queryKeys.devices({ pageSize: 200 }),
     queryFn: () => searchDevices({ pageSize: 200 }),
     staleTime: QUERY_STALE_TIME_MS,
@@ -440,16 +462,16 @@ const CommandMap = (): React.ReactElement => {
     staleTime: QUERY_STALE_TIME_MS,
   });
 
-  // 离开调度模式或清空方案时，重置任务选择与驾驶舱面板。
+  // 离开调度模式或清空方案时，重置任务选择与驾驶舱面板（store 唯一真源写入）。
   useEffect(() => {
     if (mode !== 'scheduling') {
-      if (ui.selectedTaskId) updateUi({ selectedTaskId: null });
+      if (ctl.selectedTaskId) ctl.selectTask(null);
       setShowIntelligence(false);
     }
-  }, [mode, ui.selectedTaskId, updateUi]);
+  }, [mode, ctl.selectedTaskId, ctl.selectTask]);
   useEffect(() => {
-    if (!activePlan && ui.selectedTaskId) updateUi({ selectedTaskId: null });
-  }, [activePlan, ui.selectedTaskId, updateUi]);
+    if (!activePlan && ctl.selectedTaskId) ctl.selectTask(null);
+  }, [activePlan, ctl.selectedTaskId, ctl.selectTask]);
 
   const entityList = entities ?? [];
   const state = worldState ?? null;
@@ -529,14 +551,12 @@ const CommandMap = (): React.ReactElement => {
       return;
     }
     const timer = window.setInterval(() => {
-      setReplayTime((prev) => {
-        const next = advanceReplayTime(replaySnapshots, prev);
-        replayTimeRef.current = next;
-        return next;
-      });
+      const next = advanceReplayTime(replaySnapshots, replayTimeRef.current);
+      replayTimeRef.current = next;
+      setReplayTime(next);
     }, Math.max(200, 1000 / replaySpeed));
     return () => window.clearInterval(timer);
-  }, [replayMode, replayPaused, replaySpeed, replaySnapshots]);
+  }, [replayMode, replayPaused, replaySpeed, replaySnapshots, setReplayTime]);
 
   // 聚焦事件：打开事件中心并选中事件，同时尝试定位关联设备
   const focusEventEntity = useCallback(
@@ -571,25 +591,23 @@ const CommandMap = (): React.ReactElement => {
 
   // 层级循环 L0 → L1 → L2 → L3 → L4 → L0
   const handleLevelToggle = useCallback(() => {
-    setLevel((prev) => {
-      const next =
-        prev === 'L0'
-          ? 'L1'
-          : prev === 'L1'
-            ? 'L2'
-            : prev === 'L2'
-              ? 'L3'
-              : prev === 'L3'
-                ? 'L4'
-                : 'L0';
-      // L3/L4 近景需先选中目标实体，无选中时回退原层级并提示，避免画面迷失
-      if ((next === 'L3' || next === 'L4') && !selectedEntityId) {
-        toast.info(`请先在地图上选中${next === 'L3' ? '一个工位' : '一名人员'}再进入近景`);
-        return prev;
-      }
-      return next;
-    });
-  }, [selectedEntityId]);
+    const next =
+      level === 'L0'
+        ? 'L1'
+        : level === 'L1'
+          ? 'L2'
+          : level === 'L2'
+            ? 'L3'
+            : level === 'L3'
+              ? 'L4'
+              : 'L0';
+    // L3/L4 近景需先选中目标实体，无选中时回退原层级并提示，避免画面迷失
+    if ((next === 'L3' || next === 'L4') && !selectedEntityId) {
+      toast.info(`请先在地图上选中${next === 'L3' ? '一个工位' : '一名人员'}再进入近景`);
+      return;
+    }
+    setLevel(next);
+  }, [level, selectedEntityId, setLevel]);
 
   // 侧栏/小屏直接选择层级：L3/L4 同样需先选中实体，与键盘守卫保持一致
   const handleLevelSelect = useCallback(
@@ -603,43 +621,11 @@ const CommandMap = (): React.ReactElement => {
     [selectedEntityId],
   );
 
-  // 回放切换
-  const handleReplayToggle = useCallback(() => {
-    setReplayMode((prev) => {
-      const next = !prev;
-      if (next) {
-        setReplayPaused(false);
-        setReplayTime(null);
-      }
-      return next;
-    });
-  }, []);
-
-  // 空格：暂停/继续回放；未进入回放时先进入
-  const handleReplayPauseToggle = useCallback(() => {
-    setReplayMode((prev) => {
-      if (!prev) {
-        setReplayPaused(false);
-        setReplayTime(null);
-        return true;
-      }
-      setReplayPaused((p) => !p);
-      return true;
-    });
-  }, []);
-
-  const handleReplayModeChange = useCallback((next: boolean) => {
-    setReplayMode(next);
-    if (next) {
-      setReplayPaused(false);
-      setReplayTime(null);
-    }
-  }, []);
-
-  const handleReplayTimeChange = useCallback((time: string | null) => {
-    setReplayTime(time);
-    if (time) setReplayPaused(true);
-  }, []);
+  // 回放切换 / 暂停 / 模式变更 / 时间变更（统一经 controller→store）
+  const handleReplayToggle = ctl.toggleReplay;
+  const handleReplayPauseToggle = ctl.toggleReplayPause;
+  const handleReplayModeChange = ctl.setReplayMode;
+  const handleReplayTimeChange = ctl.setReplayTime;
 
   // 全屏切换
   const handleFullscreen = useCallback(() => {
@@ -734,8 +720,123 @@ const CommandMap = (): React.ReactElement => {
     },
   });
 
+  // ---- 稳定回调（供 React.memo 子组件跳过无关重渲染，Task 4 / P1）----
+  const handleFocusPlanPersonsConsumed = useCallback(() => setFocusPlanPersons([]), []);
+  const handleFocusPlanConsumed = useCallback(() => setFocusPlanId(null), []);
+  const handleSelectPlan = useCallback(
+    (plan: import('@shared/api.interface').SchedulingPlanV2 | null) =>
+      ctl.selectPlan(plan?.planId ?? null),
+    [ctl.selectPlan],
+  );
+  const handleCloseEntity = useCallback(() => ctl.selectEntity(null), [ctl.selectEntity]);
+  const handleOpenDisposition = useCallback((eventId: string) => {
+    setActiveTab('events');
+    setSelectedEventId(eventId);
+  }, []);
+  const handleFocusCompareTask = useCallback(
+    (taskId: string | null) => setCompareUi((u) => ({ ...u, focusedTaskId: taskId })),
+    [],
+  );
+  // 冲突预览叠加层无 diff 聚焦（稳定 no-op，保持 memo 生效）。
+  const handleNoopFocusTask = useCallback(() => undefined, []);
+  const handleConflictReplan = useCallback(() => {
+    setActiveTab('schedule');
+  }, []);
+  const handleLocateEntity = useCallback(
+    (entityId: string | null) => {
+      if (entityId) {
+        ctl.selectEntity(entityId);
+        setPanelExpanded(false);
+      }
+    },
+    [ctl.selectEntity],
+  );
+  const handleConflictPreview = useCallback((conflict: import('@shared/api.interface').SchedulingConflict) => {
+    setPreviewConflict(conflict);
+    setPreviewResult(null);
+  }, []);
+
+  // PlanCompare 未变化任务坐标（稳定引用，供 PlanCompareLayer memo）。
+  const compareUnchangedPoints = useMemo(
+    () =>
+      compareVm
+        ? compareVm.unchangedTaskIds
+            .map((tid) => {
+              const st = schedulerState.snapshot?.stations.find((s) => s.id === tid);
+              const pt = st ? { x: st.x, y: st.y } : null;
+              return pt ? { taskId: tid, point: pt } : null;
+            })
+            .filter((x): x is { taskId: string; point: { x: number; y: number } } => x != null)
+        : [],
+    [compareVm, schedulerState.snapshot],
+  );
+
+  // 冲突预览地图 diff VM（稳定引用，供 PlanCompareLayer memo）。
+  const previewDiffVm = useMemo(
+    () =>
+      previewResult?.diff
+        ? planCompareMapVM(previewResult.diff, 'DIFF', schedulerState.snapshot ?? null)
+        : null,
+    [previewResult, schedulerState.snapshot],
+  );
+
+  // FactoryMap planOverlay 稳定引用（memo 化，避免每次渲染新建对象）。
+  const planOverlayMemo = useMemo(
+    () => ({ plan: activePlan, routeGraph: routeGraph ?? null }),
+    [activePlan, routeGraph],
+  );
+
+  // Task 5 / P1：全局 Data Freshness 指示行——每事实源一个徽标。
+  // 调度方案/调度上下文源用 store.schedulerRealtime（lastEventTime + connectionState），
+  // 世界·设备源用 React Query dataUpdatedAt + navigator.onLine；
+  // 关键规则：SSE 断开（connectionState=OFFLINE/connected=false）时绝不显示 LIVE。
+  const schedulerRealtime = useSchedulerRealtimeSlice();
+  const freshnessSources = useMemo(() => {
+    const contextTs = schedulerContext?.sourceTimestamp
+      ? Date.parse(schedulerContext.sourceTimestamp)
+      : NaN;
+    const worldDevTs = Math.max(worldUpdatedAt, devicesUpdatedAt);
+    return [
+      {
+        key: 'scheduler-plans',
+        label: '调度方案',
+        lastUpdatedAt: schedulerRealtime.lastEventTime,
+        connectionState: schedulerRealtime.connectionState,
+        connected: schedulerRealtime.connected,
+        replayActive: ctl.replay.active,
+        shadowMode: activePlan?.status === 'shadow',
+      },
+      {
+        key: 'world-devices',
+        label: '世界·设备',
+        lastUpdatedAt: worldDevTs > 0 ? worldDevTs : null,
+        connected: isNavigatorOnline(),
+      },
+      {
+        key: 'scheduler-context',
+        label: '调度上下文',
+        lastUpdatedAt: Number.isFinite(contextTs) ? contextTs : null,
+        connectionState: schedulerRealtime.connectionState,
+        connected: schedulerRealtime.connected,
+      },
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedulerRealtime, schedulerContext?.sourceTimestamp, worldUpdatedAt, devicesUpdatedAt, activePlan, ctl.replay.active]);
+
+  // Task 5 / P1：人员 id → 姓名（TaskMoveExplain old→new 展示用）。
+  const personNameOf = useMemo(
+    () => (id: string | null): string | null => {
+      if (!id) return null;
+      const p = personnel?.find((pp) => pp.id === id || pp.employeeNo === id);
+      return p?.name ?? null;
+    },
+    [personnel],
+  );
+
   return (
     <SchedulerRealtimeProvider>
+      {/* SSE 连接状态 → store.schedulerRealtime 镜像（渲染 null，必须位于 Provider 内） */}
+      <CommandMapStoreSseBridge />
       <div
         id="command-map-main"
         tabIndex={-1}
@@ -762,6 +863,11 @@ const CommandMap = (): React.ReactElement => {
         searchRef={searchRef}
       />
 
+      {/* Task 5 / P1：全局数据新鲜度指示行（每事实源一个徽标） */}
+      <React.Suspense fallback={null}>
+        <DataFreshnessIndicatorRow sources={freshnessSources} />
+      </React.Suspense>
+
       {failedQueries.length > 0 && (
         <div className="mx-4 mt-3">
           <DataStates
@@ -784,14 +890,15 @@ const CommandMap = (): React.ReactElement => {
           mode={mode}
           level={level}
           selectedEntityId={selectedEntityId}
-          onSelectEntity={setSelectedEntityId}
+          onSelectEntity={ctl.selectEntity}
           replayMode={replayMode}
           replayTime={replayTime}
           focusPlanPersons={focusPlanPersons}
-          onFocusPlanPersonsConsumed={() => setFocusPlanPersons([])}
-          planOverlay={{ plan: activePlan, routeGraph: routeGraph ?? null }}
+          onFocusPlanPersonsConsumed={handleFocusPlanPersonsConsumed}
+          planOverlay={planOverlayMemo}
           candidates={candidates ?? null}
           selectedTaskId={selectedTaskId}
+          visibleBounds={ctl.viewportBounds}
         />
 
         {/* Phase 3 / P3-T3：纯视觉叠加层（conflict/risk/reservation/availability 等，数据来自 hook 聚合状态） */}
@@ -806,29 +913,23 @@ const CommandMap = (): React.ReactElement => {
             >
               <SchedulerLayersOverlay
                 state={schedulerState}
-                // P0-8：Plan 层与 SchedulePanel 共享同一选中方案（selection owner：ui.selectedPlanId）。
+                // P0-8：Plan 层与 SchedulePanel 共享同一选中方案（selection owner：store.selectedPlanId）。
                 selectedPlanId={selectedPlanId}
               />
               {showCompare && compareVm && (
                 <PlanCompareLayer
                   vm={compareVm}
                   focusedTaskId={compareUi.focusedTaskId}
-                  onFocusTask={(taskId) => setCompareUi((u) => ({ ...u, focusedTaskId: taskId }))}
+                  onFocusTask={handleFocusCompareTask}
                   unchangedTaskIds={compareVm.unchangedTaskIds}
-                  unchangedPoints={compareVm.unchangedTaskIds
-                    .map((tid) => {
-                      const st = schedulerState.snapshot?.stations.find((s) => s.id === tid);
-                      const pt = st ? { x: st.x, y: st.y } : null;
-                      return pt ? { taskId: tid, point: pt } : null;
-                    })
-                    .filter((x): x is { taskId: string; point: { x: number; y: number } } => x != null)}
+                  unchangedPoints={compareUnchangedPoints}
                 />
               )}
-              {previewConflict && previewResult?.diff && (
+              {previewConflict && previewDiffVm && (
                 <PlanCompareLayer
-                  vm={planCompareMapVM(previewResult.diff, 'DIFF', schedulerState.snapshot ?? null)}
+                  vm={previewDiffVm}
                   focusedTaskId={null}
-                  onFocusTask={() => undefined}
+                  onFocusTask={handleNoopFocusTask}
                   unchangedTaskIds={[]}
                 />
               )}
@@ -857,7 +958,7 @@ const CommandMap = (): React.ReactElement => {
                 worldState={displayWorldState}
                 candidates={candidates ?? null}
                 selectedTaskId={selectedTaskId}
-                onSelectTask={(taskId) => updateUi({ selectedTaskId: taskId })}
+                onSelectTask={ctl.selectTask}
                 onClose={() => setShowIntelligence(false)}
               />
             </React.Suspense>
@@ -922,11 +1023,8 @@ const CommandMap = (): React.ReactElement => {
           devices={devices ?? []}
           events={events ?? []}
           planExplanation={planExplanation}
-          onOpenDisposition={(eventId) => {
-            setActiveTab('events');
-            setSelectedEventId(eventId);
-          }}
-          onClose={() => setSelectedEntityId(null)}
+          onOpenDisposition={handleOpenDisposition}
+          onClose={handleCloseEntity}
         />
 
         {/* 小屏模式/层级控件 */}
@@ -1048,10 +1146,10 @@ const CommandMap = (): React.ReactElement => {
             <React.Suspense fallback={<MapPanelFallback />}>
               <SchedulePanel
                 focusPlanId={focusPlanId}
-                onFocusPlanConsumed={() => setFocusPlanId(null)}
+                onFocusPlanConsumed={handleFocusPlanConsumed}
                 onViewOnMap={handleViewOnMap}
                 selectedPlanId={selectedPlanId}
-                onSelectPlan={(plan) => updateUi({ selectedPlanId: plan?.planId ?? null })}
+                onSelectPlan={handleSelectPlan}
                 personnel={personnel ?? []}
               />
             </React.Suspense>
@@ -1060,22 +1158,12 @@ const CommandMap = (): React.ReactElement => {
           {activeTab === 'conflicts' && (
             <React.Suspense fallback={<MapPanelFallback />}>
               <ConflictCenterPanel
-                onReplan={(conflict) => {
-                  // 冲突 → 跳转调度方案面板并触发一次手动重排视野
-                  setActiveTab('schedule');
-                }}
+                // 冲突 → 跳转调度方案面板并触发一次手动重排视野
+                onReplan={handleConflictReplan}
                 // v0.7 Batch7.2：点击资源 → 选中地图实体并退出面板聚焦地图
-                onLocateEntity={(entityId) => {
-                  if (entityId) {
-                    setSelectedEntityId(entityId);
-                    setPanelExpanded(false);
-                  }
-                }}
+                onLocateEntity={handleLocateEntity}
                 // Phase 4 / P4-PREVIEW：打开冲突处置工作台（Preview Replan + 地图 Diff）
-                onPreview={(conflict) => {
-                  setPreviewConflict(conflict);
-                  setPreviewResult(null);
-                }}
+                onPreview={handleConflictPreview}
               />
             </React.Suspense>
           )}
@@ -1102,7 +1190,7 @@ const CommandMap = (): React.ReactElement => {
           {/* v0.7 A3：人工覆盖中心（消费 /plans/:id/overrides） */}
           {activeTab === 'override' && (
             <React.Suspense fallback={<MapPanelFallback />}>
-              <OverridePanel planId={selectedPlanId} />
+              <OverridePanel planId={selectedPlanId} initialKind={overrideInitialKind ?? undefined} />
             </React.Suspense>
           )}
           {activeTab === 'workbench' && (
@@ -1110,7 +1198,7 @@ const CommandMap = (): React.ReactElement => {
               <WorkbenchPanel
                 onNavigate={setActiveTab}
                 onModeChange={setMode}
-                onSelectEntity={setSelectedEntityId}
+                onSelectEntity={ctl.selectEntity}
               />
             </React.Suspense>
           )}
@@ -1141,6 +1229,21 @@ const CommandMap = (): React.ReactElement => {
                   setFocusPlanId(planId);
                   setActiveTab('schedule');
                 }}
+              />
+            </React.Suspense>
+          )}
+          {/* Task 5 / P1：Decision Cockpit 统一决策上下文（9 段） */}
+          {activeTab === 'decision' && (
+            <React.Suspense fallback={<MapPanelFallback />}>
+              <DecisionCockpit
+                planDiff={compareResult ?? previewResult?.diff ?? null}
+                onCompare={() => setShowCompare(true)}
+                onOverride={(kind) => {
+                  setOverrideInitialKind(kind ?? null);
+                  setActiveTab('override');
+                }}
+                onLocate={handleLocateEntity}
+                personNameOf={personNameOf}
               />
             </React.Suspense>
           )}

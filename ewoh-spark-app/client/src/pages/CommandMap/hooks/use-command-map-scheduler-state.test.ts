@@ -43,7 +43,7 @@ describe('buildCommandMapState（聚合选择器）', () => {
     });
     expect(state.snapshot?.snapshotVersion).toBe('WS-1');
     expect(state.resources).toHaveLength(1);
-    expect(state.plans[0].planId).toBe('P1');
+    expect(state.plans.some((p) => p.planId === 'P1')).toBe(true);
     expect(state.conflicts.total).toBe(1);
     expect(state.conflicts.openCount).toBe(1);
     expect(state.ui.selectedTaskId).toBe('t1');

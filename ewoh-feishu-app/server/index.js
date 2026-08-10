@@ -285,6 +285,13 @@ async function shutdown(signal) {
   } catch (e) {
     console.error('[sync] flushTelemetry 失败:', e.message);
   }
+  // P2-10：等待在途 lark-cli 子进程排空（有界 2s），避免退出时打断进行中的飞书调用；
+  // 超时未排空则由下方 1.5s 兜底强制退出。
+  try {
+    await feishu.waitForCliIdle(2000);
+  } catch (e) {
+    console.error('[feishu] 等待 lark-cli 排空异常:', e.message);
+  }
   server.close(() => {
     try {
       db.close();

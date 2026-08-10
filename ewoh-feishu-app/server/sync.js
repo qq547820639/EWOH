@@ -254,22 +254,40 @@ async function pollFeishuEventStatusChanges(db) {
       logic: 'and',
       conditions: [['状态', 'intersects', ['handled', 'closed']]],
     });
-    const r = await feishu.larkCli([
-      'base', '+record-search',
-      '--base-token', cfg.base_token,
-      '--table-id', tableId,
-      '--keyword', '-',
-      '--search-field', '事件ID',
-      '--filter-json', filterJson,
-      '--limit', '100',
-      '--format', 'json',
-    ]);
-    if (!r.ok) {
-      console.error('[sync] pollFeishuEventStatusChanges 查询失败:', r.error);
-      return { ok: false, error: r.error };
+    // P2-10：分页遍历全部匹配记录。record-search 单次最多 100 条（--limit 范围 1-200），
+    // 用 --offset 翻页；MAX_PAGES 守卫防止失控（最多 10 页 / 1000 条，超限记录下轮 60s 轮询再补）。
+    // base_token 走 resolveBaseToken（env FEISHU_BASE_TOKEN 优先），与其它 base 命令凭证来源一致。
+    const PAGE_SIZE = 100;
+    const MAX_PAGES = 10;
+    const baseToken = feishu.resolveBaseToken();
+    if (!baseToken) {
+      console.error('[sync] pollFeishuEventStatusChanges: 无 base_token（env/配置均缺失），跳过');
+      return { ok: false, error: 'no base_token' };
+    }
+    let records = [];
+    let offset = 0;
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const r = await feishu.larkCli([
+        'base', '+record-search',
+        '--base-token', baseToken,
+        '--table-id', tableId,
+        '--keyword', '-',
+        '--search-field', '事件ID',
+        '--filter-json', filterJson,
+        '--limit', String(PAGE_SIZE),
+        '--offset', String(offset),
+        '--format', 'json',
+      ]);
+      if (!r.ok) {
+        console.error('[sync] pollFeishuEventStatusChanges 查询失败:', r.error);
+        return { ok: false, error: r.error };
+      }
+      const pageRecords = parseRecordSearchRows(r.data);
+      records = records.concat(pageRecords);
+      if (pageRecords.length < PAGE_SIZE) break; // 不足一页 = 最后一页
+      offset += PAGE_SIZE;
     }
 
-    const records = parseRecordSearchRows(r.data);
     if (!Array.isArray(records) || records.length === 0) {
       return { ok: true, count: 0, applied: 0 };
     }

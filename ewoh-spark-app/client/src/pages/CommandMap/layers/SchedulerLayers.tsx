@@ -3,8 +3,13 @@
  * 数据来源：useCommandMapSchedulerState 聚合状态（后端权威字段透传）。
  * 本文件只做 SVG 视觉叠加（坐标换算/颜色/标注），不重算调度资格、成本或优先级。
  * 每个图层组件为纯函数（props: state: CommandMapAggregate）。
+ *
+ * Task 4 / P1：所有图层组件 + SchedulerLayersOverlay 均 React.memo——
+ * useCommandMapSchedulerState 返回稳定引用，store 其他 slice（selection/mode/viewport 等）
+ * 写入时 layer 不重渲染（SSE 局部更新）。
  */
 import React from 'react';
+import { memo } from 'react';
 import type { CommandMapAggregate } from '../hooks/useCommandMapSchedulerState';
 import type { SchedulingPlanV2, ReplanPreviewResult } from '@shared/api.interface';
 import {
@@ -18,7 +23,7 @@ interface LayerProps {
 }
 
 /** P0-8：Plan 层选中方案选择（纯函数，node 可测）。
- * 只使用 selectedPlanId 定位方案——**不再回退 plans[0]**。
+ * 只使用 selectedPlanId 定位方案——**绝不回退首个方案**。
  * 无选中/未知 id → null（不渲染错误方案；与 SchedulePanel 同源共享同一 planId）。
  */
 export function selectPlanForLayer(
@@ -42,7 +47,7 @@ function pointOf(state: CommandMapAggregate, id: string): { x: number; y: number
 const EMPTY = null;
 
 /** Factory Base 层：工位静态底座（数据来自 snapshot.stations，纯视觉）。 */
-export function BaseLayer({ state }: LayerProps): React.ReactElement | null {
+export const BaseLayer = memo(function BaseLayer({ state }: LayerProps): React.ReactElement | null {
   const stations = state.snapshot?.stations ?? [];
   if (stations.length === 0) return EMPTY;
   return (
@@ -57,10 +62,10 @@ export function BaseLayer({ state }: LayerProps): React.ReactElement | null {
       ))}
     </g>
   );
-}
+});
 
 /** Task 层：任务位置标记（pending/executing 区分颜色）。 */
-export function TaskLayer({ state }: LayerProps): React.ReactElement | null {
+export const TaskLayer = memo(function TaskLayer({ state }: LayerProps): React.ReactElement | null {
   const tasks = state.snapshot?.tasks ?? [];
   if (tasks.length === 0) return EMPTY;
   const p = (id: string) => {
@@ -83,10 +88,10 @@ export function TaskLayer({ state }: LayerProps): React.ReactElement | null {
       })}
     </g>
   );
-}
+});
 
 /** Resource 层：人员/设备位置标记（状态着色）。 */
-export function ResourceLayer({ state }: LayerProps): React.ReactElement | null {
+export const ResourceLayer = memo(function ResourceLayer({ state }: LayerProps): React.ReactElement | null {
   const s = state.snapshot;
   if (!s) return EMPTY;
   const persons = s.persons.map((p) => ({ id: p.id, x: p.x, y: p.y, status: p.status, name: p.name }));
@@ -111,10 +116,10 @@ export function ResourceLayer({ state }: LayerProps): React.ReactElement | null 
       )}
     </g>
   );
-}
+});
 
 /** Availability 层：不可用资源高亮（stale/offline/low battery，数据来自 snapshot 字段透传）。 */
-export function AvailabilityLayer({ state }: LayerProps): React.ReactElement | null {
+export const AvailabilityLayer = memo(function AvailabilityLayer({ state }: LayerProps): React.ReactElement | null {
   const s = state.snapshot;
   if (!s) return EMPTY;
   return (
@@ -131,10 +136,10 @@ export function AvailabilityLayer({ state }: LayerProps): React.ReactElement | n
       )}
     </g>
   );
-}
+});
 
 /** Reservation 层：预占时间窗标记（资源位置 + 时间段标注，数据来自 snapshot.reservations）。 */
-export function ReservationLayer({ state }: LayerProps): React.ReactElement | null {
+export const ReservationLayer = memo(function ReservationLayer({ state }: LayerProps): React.ReactElement | null {
   const reservations = state.snapshot?.reservations ?? [];
   if (reservations.length === 0) return EMPTY;
   return (
@@ -151,10 +156,10 @@ export function ReservationLayer({ state }: LayerProps): React.ReactElement | nu
       })}
     </g>
   );
-}
+});
 
-/** Plan 层：方案分配连线（task → person），数据来自选中的方案（P0-8：不再 plans[0]）。 */
-export function PlanLayer({
+/** Plan 层：方案分配连线（task → person），数据来自选中的方案（P0-8：只认 selectedPlanId，无回退）。 */
+export const PlanLayer = memo(function PlanLayer({
   state,
   selectedPlanId,
 }: LayerProps & { selectedPlanId?: string | null }): React.ReactElement | null {
@@ -182,10 +187,10 @@ export function PlanLayer({
       })}
     </g>
   );
-}
+});
 
 /** Route 层：路由图边（数据来自 state.routes，透传 edge 坐标）。 */
-export function RouteLayer({ state }: LayerProps): React.ReactElement | null {
+export const RouteLayer = memo(function RouteLayer({ state }: LayerProps): React.ReactElement | null {
   const graph = state.routes;
   if (!graph) return EMPTY;
   const nodeById = new Map(graph.nodes.map((n) => [n.nodeId, n]));
@@ -209,10 +214,10 @@ export function RouteLayer({ state }: LayerProps): React.ReactElement | null {
       })}
     </g>
   );
-}
+});
 
 /** Conflict 层：冲突位置标记（数据来自 conflictVM，按 severity 着色）。 */
-export function ConflictLayer({ state }: LayerProps): React.ReactElement | null {
+export const ConflictLayer = memo(function ConflictLayer({ state }: LayerProps): React.ReactElement | null {
   const items = state.conflicts.items.filter((c) => c.status === 'OPEN' || c.status === 'ACKNOWLEDGED');
   if (items.length === 0) return EMPTY;
   return (
@@ -231,10 +236,10 @@ export function ConflictLayer({ state }: LayerProps): React.ReactElement | null 
       })}
     </g>
   );
-}
+});
 
 /** Risk 层：高风险路由/工位高亮（route riskLevel 透传，纯视觉）。 */
-export function RiskLayer({ state }: LayerProps): React.ReactElement | null {
+export const RiskLayer = memo(function RiskLayer({ state }: LayerProps): React.ReactElement | null {
   const graph = state.routes;
   if (!graph) return EMPTY;
   const nodeById = new Map(graph.nodes.map((n) => [n.nodeId, n]));
@@ -256,13 +261,14 @@ export function RiskLayer({ state }: LayerProps): React.ReactElement | null {
       })}
     </g>
   );
-}
+});
 
 /**
  * 多图层组合渲染（P0）：工厂 Base 恒在底层，其余按 activeLayers 全量叠加。
  * 同时开启 Resource + Route + Plan + Conflict 是调度驾驶舱的正常使用场景。
+ * React.memo：state/selectedPlanId/replanPreview 引用未变（仅 store 其他 slice 写入）时跳过重渲染。
  */
-export function SchedulerLayersOverlay({
+export const SchedulerLayersOverlay = memo(function SchedulerLayersOverlay({
   state,
   selectedPlanId,
   replanPreview,
@@ -283,10 +289,10 @@ export function SchedulerLayersOverlay({
   if (active.has('human-locked'))
     layers.push(<HumanLockedLayer key="human-locked" state={state} />);
   return <>{layers}</>;
-}
+});
 
 /** M05：changed-by-replan overlay——由 ReplanPreviewResult.changedAssignments 派生 taskId 集合着色（08 §10）。 */
-export function ReplanChangeLayer({
+export const ReplanChangeLayer = memo(function ReplanChangeLayer({
   state,
   replanPreview,
 }: LayerProps & { replanPreview?: ReplanPreviewResult | null }): React.ReactElement | null {
@@ -316,10 +322,10 @@ export function ReplanChangeLayer({
       })}
     </g>
   );
-}
+});
 
 /** M05：human-locked overlay——snapshot.lockedAssignments + LOCKED_* 约束高亮（08 §10）。 */
-export function HumanLockedLayer({ state }: LayerProps): React.ReactElement | null {
+export const HumanLockedLayer = memo(function HumanLockedLayer({ state }: LayerProps): React.ReactElement | null {
   const s = state.snapshot;
   if (!s) return EMPTY;
   const locked = humanLockedTaskIds(s);
@@ -339,7 +345,7 @@ export function HumanLockedLayer({ state }: LayerProps): React.ReactElement | nu
       })}
     </g>
   );
-}
+});
 
 export interface AggregateViewBox {
   minX: number;

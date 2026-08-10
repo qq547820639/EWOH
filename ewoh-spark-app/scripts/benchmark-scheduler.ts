@@ -39,7 +39,7 @@ import type {
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const OUT_DIR = path.join(REPO_ROOT, 'output');
@@ -53,6 +53,8 @@ interface Args {
   cpSatUrl: string | null;
   out: string;
   seed: number;
+  matrix: boolean;
+  sizes: number[];
 }
 
 function parseArgs(argv: string[]): Args {
@@ -64,6 +66,8 @@ function parseArgs(argv: string[]): Args {
     cpSatUrl: process.env.CPSAT_WORKER_URL || null,
     out: '',
     seed: 20260807,
+    matrix: false,
+    sizes: [10, 100, 500, 1000],
   };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -74,6 +78,12 @@ function parseArgs(argv: string[]): Args {
     else if (a === '--cp-sat-url') args.cpSatUrl = argv[++i];
     else if (a === '--out') args.out = argv[++i];
     else if (a === '--seed') args.seed = Number(argv[++i]);
+    else if (a === '--matrix') args.matrix = true;
+    else if (a === '--sizes')
+      args.sizes = String(argv[++i])
+        .split(',')
+        .map((s) => Number(s.trim()))
+        .filter((n) => Number.isInteger(n) && n >= 1);
     else if (a === '--help' || a === '-h') {
       usage();
       process.exit(0);
@@ -81,7 +91,12 @@ function parseArgs(argv: string[]): Args {
   }
   if (!Number.isInteger(args.tasks) || args.tasks < 1) throw new Error('--tasks must be an integer >= 1');
   if (!Number.isInteger(args.runs) || args.runs < 1) throw new Error('--runs must be an integer >= 1');
-  args.out = args.out || path.join(OUT_DIR, `benchmark-scheduler-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+  if (args.sizes.length === 0) throw new Error('--sizes must contain at least one integer >= 1');
+  args.out =
+    args.out ||
+    (args.matrix
+      ? path.join(OUT_DIR, 'benchmark-scheduler-matrix.json')
+      : path.join(OUT_DIR, `benchmark-scheduler-${new Date().toISOString().replace(/[:.]/g, '-')}.json`));
   return args;
 }
 
@@ -94,6 +109,12 @@ function usage() {
   --cp-sat-url U  CP-SAT Worker URL（默认取 CPSAT_WORKER_URL；缺省则仅 heuristic）
   --out FILE      结果输出 JSON（默认 output/benchmark-scheduler-<ts>.json）
   --seed N        随机种子（默认 20260807）
+  --matrix        矩阵模式：按 --sizes 逐个 size 以子进程隔离求解并报告
+                  （默认 sizes 10/100/500/1000 → 3/2、30/15、150/75、250/125，
+                  自定义 size 回退 persons=round(0.3*t)、devices=round(0.15*t)，runs=1，
+                  每个 size 独立 NODE_OPTIONS=--max-old-space-size=2048；
+                  OOM 时如实报告 solverStatus=OOM，不崩溃）
+  --sizes LIST    矩阵模式的 size 列表（逗号分隔，默认 10,100,500,1000）
 环境：CPSAT_WORKER_URL 提供 CP-SAT Worker 地址。
 运行（需强制 CommonJS 以解析无扩展名相对导入）：
   TS_NODE_COMPILER_OPTIONS='{"module":"CommonJS","moduleResolution":"node"}' \\
@@ -131,6 +152,17 @@ const POLICY: SchedulingPolicy = {
   changeCostWeight: 0.5,
   riskWeight: 1,
   energyWeight: 0.5,
+  // Phase 2 / P2-T2：目标权重权威对象（与上述别名等价；求解器内部统一读 weights）。
+  weights: {
+    lateness: 3,
+    travel: 1,
+    wait: 1,
+    workload: 1,
+    station: 1,
+    change: 0.5,
+    risk: 1,
+    energy: 0.5,
+  },
 };
 
 const CONFIG: SchedulingPolicyConfig = {
@@ -257,6 +289,8 @@ function buildSolvers(cpSatUrl: string | null): {
   heuristic: HeuristicSchedulingSolver;
   cpSat: CpSatSchedulingSolver | null;
   candidateGenMs: () => number;
+  candidateCount: () => number;
+  hardRejectCount: () => number;
 } {
   const policyService = {
     getActivePolicy: async () => POLICY,
@@ -304,19 +338,55 @@ function buildSolvers(cpSatUrl: string | null): {
     },
   } as never;
 
+  // P0：捕获求解器上报的候选数 / 硬拒绝数（metricsService 埋点，失败不影响求解）。
+  let recordedCandidateCount = 0;
+  let recordedHardRejectCount = 0;
+  const metricsCapture = {
+    recordCandidateCount: (n: number) => {
+      recordedCandidateCount = n;
+    },
+    recordHardReject: (n: number) => {
+      recordedHardRejectCount = n;
+    },
+  } as never;
+
   const heuristic = new HeuristicSchedulingSolver(
     policyService,
     null as never,
     routeCostProvider,
     new EligibilityService(),
     new PriorityEngine(),
+    metricsCapture,
   );
 
   const cpSat = cpSatUrl
     ? new CpSatSchedulingSolver(heuristic, { workerUrl: cpSatUrl, timeoutMs: 8000 })
     : null;
 
-  return { heuristic, cpSat, candidateGenMs: () => candidateGenMs };
+  return {
+    heuristic,
+    cpSat,
+    candidateGenMs: () => candidateGenMs,
+    candidateCount: () => recordedCandidateCount,
+    hardRejectCount: () => recordedHardRejectCount,
+  };
+}
+
+// ===== 峰值堆采样（solve 期间周期性读取 heapUsed，取最大值） =====
+function startPeakHeapSampler(intervalMs = 25): {
+  peakHeapMb: () => number;
+  stop: () => void;
+} {
+  let peak = process.memoryUsage().heapUsed;
+  const timer = setInterval(() => {
+    const used = process.memoryUsage().heapUsed;
+    if (used > peak) peak = used;
+  }, intervalMs);
+  timer.unref();
+  return {
+    peakHeapMb: () => peak / 1048576,
+    stop: () => clearInterval(timer),
+  };
 }
 
 // ===== 指标提取 =====
@@ -330,6 +400,10 @@ interface RunResult {
   violations: number;
   metrics: SchedulingPlanMetrics;
   changedAssignments: number;
+  /** P0：求解器上报的候选组合总数（metricsService 埋点捕获）。 */
+  candidateCount: number;
+  /** P0：solve 期间峰值堆（MB）。 */
+  peakHeapMb: number;
 }
 
 function summarizeMetrics(plans: SchedulingPlanV2[]): Record<string, number> {
@@ -355,6 +429,7 @@ async function runOnce(
   planId: string,
   baselineAssignee: Map<string, string>,
   candidateGenMs: () => number,
+  candidateCount: () => number,
 ): Promise<RunResult> {
   const opts = {
     planId,
@@ -366,9 +441,11 @@ async function runOnce(
     policy: POLICY,
     baselineAssignee,
   };
+  const sampler = startPeakHeapSampler();
   const t0 = process.hrtime.bigint();
   const plan = await solver.solve(snapshot, [], opts);
   const t1 = process.hrtime.bigint();
+  sampler.stop();
   const wallMs = Number(t1 - t0) / 1e6;
   const totalTasks = snapshot.tasks.length;
   const assigned = (plan.assignments || []).length;
@@ -388,6 +465,8 @@ async function runOnce(
       changeCost: 0,
     },
     changedAssignments: assigned,
+    candidateCount: candidateCount(),
+    peakHeapMb: sampler.peakHeapMb(),
   };
 }
 
@@ -395,14 +474,165 @@ function avg(key: keyof RunResult, rows: RunResult[]): number {
   return rows.reduce((a, r) => a + (r[key] as number), 0) / Math.max(rows.length, 1);
 }
 
+// ===== 矩阵模式 =====
+/** 默认 size → (persons, devices) 显式映射（与 Task 1 基线负载一致：10→3/2、100→30/15、
+ * 500→150/75、1000→250/125）。自定义 --sizes 时回退 persons=round(0.3*t)、devices=round(0.15*t)。 */
+const SIZE_PERSON_DEVICE: Record<number, [number, number]> = {
+  10: [3, 2],
+  100: [30, 15],
+  500: [150, 75],
+  1000: [250, 125],
+};
+
+interface MatrixSizeResult {
+  tasks: number;
+  persons: number;
+  devices: number;
+  wallMs: number;
+  peakHeapMb: number | null;
+  candidateCount: number | null;
+  assignmentRate: number | null;
+  solverStatus: string;
+}
+
+/** 以子进程隔离运行单 size（OOM 时进程崩溃不波及矩阵；如实报告 solverStatus=OOM）。 */
+function spawnSingleSizeChild(
+  argv: string[],
+  outFile: string,
+): Promise<{ exitCode: number; wallMs: number }> {
+  const t0 = process.hrtime.bigint();
+  return new Promise((resolve) => {
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      TS_NODE_COMPILER_OPTIONS: '{"module":"CommonJS","moduleResolution":"node"}',
+      // 每个 size 独立 2GB 堆上限；OOM 由子进程退出码体现（V8 exit 134）。
+      NODE_OPTIONS: process.env.NODE_OPTIONS
+        ? `${process.env.NODE_OPTIONS} --max-old-space-size=2048`
+        : '--max-old-space-size=2048',
+    };
+    const child = spawn(
+      process.execPath,
+      [
+        '-r',
+        'ts-node/register',
+        '-r',
+        'tsconfig-paths/register',
+        path.join(__dirname, 'benchmark-scheduler.ts'),
+        ...argv,
+        '--out',
+        outFile,
+      ],
+      { cwd: REPO_ROOT, env, stdio: 'inherit' },
+    );
+    child.on('close', (code) => {
+      resolve({ exitCode: code ?? -1, wallMs: Number(process.hrtime.bigint() - t0) / 1e6 });
+    });
+    child.on('error', () => {
+      resolve({ exitCode: -1, wallMs: Number(process.hrtime.bigint() - t0) / 1e6 });
+    });
+  });
+}
+
+async function runMatrix(args: Args): Promise<void> {
+  const results: MatrixSizeResult[] = [];
+  const tmpDir = fs.mkdtempSync(path.join(OUT_DIR, 'matrix-tmp-'));
+  try {
+    for (const t of args.sizes) {
+      const explicit = SIZE_PERSON_DEVICE[t];
+      const persons = explicit ? explicit[0] : Math.round(0.3 * t);
+      const devices = explicit ? explicit[1] : Math.round(0.15 * t);
+      const outFile = path.join(tmpDir, `size-${t}.json`);
+      const argv = [
+        '--tasks',
+        String(t),
+        '--persons',
+        String(persons),
+        '--devices',
+        String(devices),
+        '--runs',
+        '1',
+        '--seed',
+        String(args.seed),
+      ];
+      const { exitCode, wallMs } = await spawnSingleSizeChild(argv, outFile);
+      if (exitCode !== 0 || !fs.existsSync(outFile)) {
+        // OOM / 崩溃：诚实上报，不伪造数值。
+        results.push({
+          tasks: t,
+          persons,
+          devices,
+          wallMs,
+          peakHeapMb: null,
+          candidateCount: null,
+          assignmentRate: null,
+          solverStatus: 'OOM',
+        });
+        continue;
+      }
+      const rep = JSON.parse(fs.readFileSync(outFile, 'utf8')) as {
+        heuristic?: {
+          avgWallMs?: number;
+          peakHeapMb?: number;
+          candidateCount?: number;
+          avgFeasibleRate?: number;
+          solverStatus?: string;
+          solverVersion?: string;
+        };
+      };
+      results.push({
+        tasks: t,
+        persons,
+        devices,
+        wallMs: rep.heuristic?.avgWallMs ?? wallMs,
+        peakHeapMb: rep.heuristic?.peakHeapMb ?? null,
+        candidateCount: rep.heuristic?.candidateCount ?? null,
+        assignmentRate: rep.heuristic?.avgFeasibleRate ?? null,
+        solverStatus:
+          rep.heuristic?.solverStatus ??
+          rep.heuristic?.solverVersion ??
+          'UNKNOWN',
+      });
+    }
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+
+  const report = {
+    generatedAt: new Date().toISOString(),
+    commitSha: gitSha(),
+    environment: {
+      node: process.version,
+      platform: process.platform,
+      arch: process.arch,
+    },
+    mode: 'matrix',
+    matrix: {
+      sizes: args.sizes,
+      personsRatio: 0.3,
+      devicesRatio: 0.15,
+      seed: args.seed,
+      heapCapMb: 2048,
+    },
+    results,
+  };
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  fs.writeFileSync(args.out, JSON.stringify(report, null, 2));
+  console.log(JSON.stringify(report, null, 2));
+  console.log(`\nWrote ${args.out}`);
+}
+
 // ===== main =====
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args.matrix) {
+    await runMatrix(args);
+    return;
+  }
   console.log(
     `Benchmark tasks=${args.tasks} persons=${args.persons} devices=${args.devices} runs=${args.runs} seed=${args.seed} cpSat=${args.cpSatUrl || 'none'}`,
   );
 
-  const { heuristic, cpSat, candidateGenMs } = buildSolvers(args.cpSatUrl);
+  const { heuristic, cpSat, candidateGenMs, candidateCount, hardRejectCount } = buildSolvers(args.cpSatUrl);
 
   // 每个 run 使用同一种子生成同构负载，仅时间窗随机。
   const snapshot = generateSnapshot(args.tasks, args.persons, args.devices, args.seed);
@@ -410,10 +640,8 @@ async function main() {
   const heuristicRows: RunResult[] = [];
   const baseline = new Map<string, string>();
   for (let i = 0; i < args.runs; i += 1) {
-    const r = await runOnce(heuristic, snapshot, `H-${i}`, baseline, candidateGenMs);
+    const r = await runOnce(heuristic, snapshot, `H-${i}`, baseline, candidateGenMs, candidateCount);
     heuristicRows.push(r);
-    // 用上一轮结果作为下一轮 baseline（测量 changeover/churn）
-    (r as unknown as { }); // placeholder to keep baseline typing
   }
 
   // changed assignments：对比相邻两轮 heuristic 的人选变化
@@ -426,7 +654,7 @@ async function main() {
   let cpSatNote = 'cp-sat worker 未配置（无 CPSAT_WORKER_URL / --cp-sat-url）';
   if (cpSat) {
     for (let i = 0; i < args.runs; i += 1) {
-      const r = await runOnce(cpSat, snapshot, `C-${i}`, baseline, candidateGenMs);
+      const r = await runOnce(cpSat, snapshot, `C-${i}`, baseline, candidateGenMs, candidateCount);
       cpSatRows.push(r);
       if (r.solverStatus === 'OPTIMAL' || r.solverStatus === 'FEASIBLE') cpSatAvailable = true;
     }
@@ -459,6 +687,11 @@ async function main() {
       avgWallMs: avg('wallMs', heuristicRows),
       avgFeasibleRate: avg('feasibleRate', heuristicRows),
       avgViolations: avg('violations', heuristicRows),
+      // P0：求解器可观测（候选数 / 硬拒绝数 / 峰值堆 / 状态）。
+      candidateCount: heuristicRows[0]?.candidateCount ?? 0,
+      hardRejectCount: hardRejectCount(),
+      peakHeapMb: heuristicRows[0]?.peakHeapMb ?? 0,
+      solverStatus: heuristicRows[0]?.solverStatus ?? 'UNKNOWN',
       metrics: summarizeMetrics(
         heuristicRows.map((r) => ({ metrics: r.metrics } as SchedulingPlanV2)),
       ),

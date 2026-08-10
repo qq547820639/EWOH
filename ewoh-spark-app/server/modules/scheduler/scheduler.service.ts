@@ -1,30 +1,27 @@
+/**
+ * SchedulerService — Strangler Refactor（Task 2）后的 thin facade。
+ *
+ * 保持原有公开 API 面（方法签名/构造签名）不变，将全部实现委托给 7 个职责
+ * 单一的服务（映射表见 scheduler-query.service.ts 等文件头部说明；行为由
+ * scheduler-facade-characterization.spec.ts 作为 oracle 锁定）。
+ *
+ * 保留字段/语义（兼容旧单测的私有成员访问）：
+ *   - constraintLoaderService：旧单测构造后注入；RunOrchestrator 经 getter 惰性读取。
+ *   - comparePolicyVersion：旧单测会将其替换为 spy；Event 服务经调用时求值的
+ *     引用读取，保证替换生效。
+ */
 import {
   Injectable,
   Inject,
   Logger,
-  BadRequestException,
-  NotFoundException,
-  ConflictException,
-  Optional,
 } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import {
-  ewohSchedulePlan,
-  ewohScheduleAudit,
-  ewohDevice,
-  ewohTelemetry,
-  ewohEvent,
-  ewohSchedulingRun,
-  ewohSchedulingConstraint,
-} from '@server/database/schema';
-import { eq, desc, and, sql, gte, lte, inArray, type SQL } from 'drizzle-orm';
 import type {
   SchedulePlan,
   ScheduleAudit,
-  ScheduleWeights,
   SchedulingPlanV2,
   SchedulingRun,
   RouteGraph,
@@ -35,33 +32,27 @@ import type {
   ReplanRequest,
   CalculateRouteRequest,
   TaskCandidatesResponse,
-  TaskCandidateResource,
   ListRunsRequest,
   ListRunsResponse,
   WorldStateSnapshot,
   SchedulingConflict,
-  SchedulingConflictType,
-  ConflictSeverity,
-  SchedulingConflictScope,
   ConflictsListRequest,
   ConflictsListResponse,
   SchedulingPolicyConfig,
   SchedulingPolicy,
   SchedulingPolicyVersionSummary,
   SchedulingPolicyComparison,
-  SchedulingConstraint,
   PlanOverrideRequest,
   PlanOverrideResponse,
-  PlanOverrideKind,
-  PlanOverrideDiffSummary,
   RecordActualsRequest,
   SchedulingEventRequest,
-  RouteCandidateCost,
   RouteCandidatesResponse,
+  SchedulingExecution,
+  ExecutionUpdateRequest,
+  ExecutionListResponse,
 } from '@shared/api.interface';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { AuditService } from '../shared/audit.service';
-import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { WorldStateSnapshotService } from './world-state.service';
 import { TriggerService } from './trigger.service';
@@ -75,114 +66,207 @@ import { SchedulingFeedbackService } from './scheduling-feedback.service';
 import { OutboxService } from './outbox.service';
 import { ReplanCoordinatorService } from './replan-coordinator.service';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
-import { ExecutionService } from './execution.service';
 import { ConflictService } from './conflict.service';
 import { PolicyReplayService } from './policy-replay.service';
-import { TaskLifecycle } from './task-lifecycle';
+import { ExecutionService } from './execution.service';
 import { ConstraintLoaderService } from './constraint-loader.service';
 import { CandidateEngineService } from './candidate-engine.service';
 import { ReplanPreviewService } from './replan-preview.service';
+import { SchedulerQueryService } from './scheduler-query.service';
+import { SchedulerRunOrchestrator } from './scheduler-run-orchestrator.service';
+import { SchedulerPlanApplicationService } from './scheduler-plan-application.service';
+import { SchedulerReplanApplicationService } from './scheduler-replan-application.service';
+import { SchedulerConstraintApplicationService } from './scheduler-constraint-application.service';
+import { SchedulerEventApplicationService } from './scheduler-event-application.service';
+import { SchedulerDispatchApplicationService } from './scheduler-dispatch-application.service';
 
-/**
- * NOTE: ewoh_schedule_audit has no before_json/after_json columns in the
- * current DDL, so the before/after weight snapshots are persisted through
- * ewoh_audit_log via AuditService. The ewoh_schedule_audit row keeps the
- * action/operator/plan surface for API and query compatibility.
- */
 @Injectable()
 export class SchedulerService {
   private readonly logger = new Logger(SchedulerService.name);
 
-  /** 视为"活跃"（非终态）的方案状态，用于列出当前待处理/已批准的方案。 */
-  private static readonly ACTIVE_PLAN_STATUSES = [
-    'draft',
-    'shadow',
-    'proposed',
-    'approved',
-    'dispatched',
-    'executing',
-  ];
-
-  /** 可接受人工覆盖并重排的方案状态（已下发/执行/终态/审核中不重排）。 */
-  private static readonly REPLANNABLE_PLAN_STATUSES = new Set([
-    'draft',
-    'shadow',
-    'proposed',
-    'approved',
-  ]);
-
-
-
-  /** v0.7 A2：预占过期预警阈值（ms），剩余时长低于该值产出 reservation_expiring 冲突。默认 15 分钟。 */
-  private readonly reservationExpiringThresholdMs = 15 * 60 * 1000;
-
-
+  private readonly queryService: SchedulerQueryService;
+  private readonly runOrchestrator: SchedulerRunOrchestrator;
+  private readonly planApplication: SchedulerPlanApplicationService;
+  private readonly replanApplication: SchedulerReplanApplicationService;
+  private readonly constraintApplication: SchedulerConstraintApplicationService;
+  private readonly eventApplication: SchedulerEventApplicationService;
+  private readonly dispatchApplication: SchedulerDispatchApplicationService;
 
   constructor(
-    @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
-    private readonly requestDatabaseContext: RequestDatabaseContext,
-    private readonly auditService: AuditService,
-    private readonly worldStateSnapshotService: WorldStateSnapshotService,
-    private readonly triggerService: TriggerService,
-    private readonly solverService: SolverService,
-    private readonly planService: PlanService,
-    private readonly routingService: RoutingService,
-    private readonly eligibilityService: EligibilityService,
-    private readonly routeCostProvider: RouteCostProvider,
-    private readonly policyService: SchedulingPolicyService,
-    private readonly feedbackService: SchedulingFeedbackService,
-    // v0.7 B3：SSE 实时事件推送（conflict.detected / execution.deviation）。
-    // 可选注入：测试可传 mock；缺失时静默跳过（不影响主流程）。
-    private readonly outboxService?: OutboxService,
-    // v0.7 Batch6.1：事件驱动级联重排（dispatchStateTriggers）。
-    // 可选注入：测试可传 mock；缺失时事件仅做局部重排不级联。
-    private readonly replanCoordinatorService?: ReplanCoordinatorService,
-    // v0.7 Batch6.4：调度可观测指标（recordRun/recordFallback）。
-    // 可选注入：测试可传 mock；缺失时静默跳过。
-    private readonly metricsService?: SchedulerMetricsService,
-    // Phase 3 / P3-T1：冲突生命周期服务（推导+落库+状态机）。
-    // 可选注入：模块生产路径始终注入；旧单测未注入时回退到本文件遗留的
-    // 内存推导（buildConflicts），保证公开 API 与既有测试兼容。
-    private readonly conflictService?: ConflictService,
-    // Phase 4 / P4-T2：Shadow Policy 真实 replay（历史快照 × 双策略求解对比）。
-    // 可选注入：模块生产路径始终注入；旧单测未注入时 compare 回退参数 delta 估算，
-    // activate 守卫视作未评估。
-    private readonly policyReplayService?: PolicyReplayService,
-    // Phase 4 / P4-EXEC：正式执行领域（可选注入，旧单测未注入时静默跳过）。
-    private readonly executionService?: ExecutionService,
-    // T02 / P0-2：持久化人工约束唯一加载入口（可选注入；缺失时回退空约束，兼容旧单测）。
+    @Inject(DRIZZLE_DATABASE) db: PostgresJsDatabase,
+    requestDatabaseContext: RequestDatabaseContext,
+    auditService: AuditService,
+    worldStateSnapshotService: WorldStateSnapshotService,
+    triggerService: TriggerService,
+    solverService: SolverService,
+    planService: PlanService,
+    routingService: RoutingService,
+    eligibilityService: EligibilityService,
+    routeCostProvider: RouteCostProvider,
+    policyService: SchedulingPolicyService,
+    feedbackService: SchedulingFeedbackService,
+    outboxService?: OutboxService,
+    replanCoordinatorService?: ReplanCoordinatorService,
+    metricsService?: SchedulerMetricsService,
+    conflictService?: ConflictService,
+    policyReplayService?: PolicyReplayService,
+    executionService?: ExecutionService,
+    // T02 / P0-2：持久化人工约束唯一加载入口。保持为实例字段（旧单测可在构造后
+    // 赋值），RunOrchestrator 经 getter 惰性读取，保证后注入的 loader 生效。
     private readonly constraintLoaderService?: ConstraintLoaderService,
-    // T03 / P1-2（G7）：候选引擎（可选注入；注入后 getTaskCandidates 委托富化响应）。
-    private readonly candidateEngineService?: CandidateEngineService,
-    // M03：Replan Preview（dry-run readonly；可选注入，缺失时审批 consult 不产出 preview）。
-    private readonly replanPreviewService?: ReplanPreviewService,
-  ) {}
+    candidateEngineService?: CandidateEngineService,
+    replanPreviewService?: ReplanPreviewService,
+  ) {
+    this.queryService = new SchedulerQueryService(
+      db,
+      worldStateSnapshotService,
+      planService,
+      routingService,
+      policyService,
+      feedbackService,
+      eligibilityService,
+      routeCostProvider,
+      candidateEngineService,
+      conflictService,
+      policyReplayService,
+      executionService,
+      outboxService,
+    );
+    this.runOrchestrator = new SchedulerRunOrchestrator(
+      db,
+      requestDatabaseContext,
+      triggerService,
+      worldStateSnapshotService,
+      solverService,
+      planService,
+      () => this.constraintLoaderService,
+    );
+    this.planApplication = new SchedulerPlanApplicationService(
+      db,
+      requestDatabaseContext,
+      auditService,
+      planService,
+      policyService,
+      policyReplayService,
+      executionService,
+    );
+    this.replanApplication = new SchedulerReplanApplicationService(planService);
+    this.constraintApplication = new SchedulerConstraintApplicationService(
+      planService,
+      policyService,
+    );
+    this.eventApplication = new SchedulerEventApplicationService(
+      replanCoordinatorService,
+      replanPreviewService,
+      outboxService,
+      metricsService,
+      worldStateSnapshotService,
+      policyService,
+      planService,
+      auditService,
+      feedbackService,
+      // 调用时求值：兼容旧单测（batch10-shadow-eval）构造后替换 svc.comparePolicyVersion 为 spy。
+      (...args) => this.comparePolicyVersion(...args),
+    );
+    this.dispatchApplication = new SchedulerDispatchApplicationService(
+      executionService,
+    );
+  }
 
+  // ==========================================================================
+  // Legacy 兼容入口 / 只读查询面（QueryService / RunOrchestrator）
+  // ==========================================================================
+
+  /** @deprecated 请改用 POST /api/scheduler/runs（保留仅为兼容旧调用方）。 */
   async generatePlans(body?: { idempotencyKey?: string }): Promise<SchedulePlan[]> {
-    // P1-SSOT：遗留合成方案生成器（KEEP/CAP/BAL 伪造指标并写 ewohSchedulePlan）
-    // 已删除。正式调度只走 V2 链路（createRun → SolverService → planService），
-    // 本接口保留仅为兼容旧调用方：委托真实调度并把结果映射为 legacy 形状，
-    // metricsJson 仅含真实 solver 指标（solverStatus/objective/solveDurationMs），不伪造。
-    void body;
-    const { plans } = await this.createRun({ trigger: 'MANUAL' });
-    return plans.map((p) => this.toLegacyPlan(p));
+    return this.runOrchestrator.generatePlans(body);
   }
 
   async getPlans(status?: string): Promise<SchedulePlan[]> {
-    try {
-      const conditions = status ? [eq(ewohSchedulePlan.status, status)] : [];
-      const rows = await this.db
-        .select()
-        .from(ewohSchedulePlan)
-        .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .orderBy(desc(ewohSchedulePlan.createdAt))
-        .limit(50);
-      return rows.map((r) => this.mapPlan(r));
-    } catch (error) {
-      this.logger.error('getPlans 失败', error);
-      throw error;
-    }
+    return this.queryService.getPlans(status);
   }
+
+  async getAudit(planId?: string): Promise<ScheduleAudit[]> {
+    return this.queryService.getAudit(planId);
+  }
+
+  async createRun(
+    body: CreateRunRequest,
+    actor?: OrgContext,
+  ): Promise<{ run: SchedulingRun | null; plans: SchedulingPlanV2[]; debounced: boolean }> {
+    return this.runOrchestrator.createRun(body, actor);
+  }
+
+  async getRun(runId: string): Promise<SchedulingRun | null> {
+    return this.queryService.getRun(runId);
+  }
+
+  async listRuns(params: ListRunsRequest = {}, actor?: OrgContext): Promise<ListRunsResponse> {
+    return this.queryService.listRuns(params, actor);
+  }
+
+  async getActivePlans(): Promise<SchedulingPlanV2[]> {
+    return this.queryService.getActivePlans();
+  }
+
+  async getSnapshot(): Promise<WorldStateSnapshot> {
+    return this.queryService.getSnapshot();
+  }
+
+  async getPlanDetail(planId: string): Promise<SchedulingPlanV2> {
+    return this.queryService.getPlanDetail(planId);
+  }
+
+  async getPolicy(): Promise<{ policy: SchedulingPolicy; config: SchedulingPolicyConfig }> {
+    return this.queryService.getPolicy();
+  }
+
+  async listPolicyVersions(): Promise<SchedulingPolicyVersionSummary[]> {
+    return this.queryService.listPolicyVersions();
+  }
+
+  async comparePolicyVersion(
+    configVersion: number,
+    actor?: OrgContext,
+  ): Promise<SchedulingPolicyComparison> {
+    return this.queryService.comparePolicyVersion(configVersion, actor);
+  }
+
+  async listPlanConstraintsV2(planId: string) {
+    return this.queryService.listPlanConstraintsV2(planId);
+  }
+
+  async getRoutes(): Promise<RouteGraph> {
+    return this.queryService.getRoutes();
+  }
+
+  async calculateRouteV2(
+    body: CalculateRouteRequest,
+  ): Promise<Route | RouteCandidatesResponse> {
+    return this.queryService.calculateRouteV2(body);
+  }
+
+  async getTaskCandidates(taskId: string): Promise<TaskCandidatesResponse> {
+    return this.queryService.getTaskCandidates(taskId);
+  }
+
+  async listConflicts(params: ConflictsListRequest = {}): Promise<ConflictsListResponse> {
+    return this.queryService.listConflicts(params);
+  }
+
+  async getConflictDetail(conflictId: string): Promise<SchedulingConflict> {
+    return this.queryService.getConflictDetail(conflictId);
+  }
+
+  async executionList(
+    query: { planId?: string; taskId?: string; status?: string; limit?: number; offset?: number },
+  ): Promise<ExecutionListResponse> {
+    return this.queryService.executionList(query);
+  }
+
+  // ==========================================================================
+  // 方案应用写路径（PlanApplicationService）
+  // ==========================================================================
 
   async confirmPlan(
     planId: string,
@@ -190,103 +274,7 @@ export class SchedulerService {
     operator?: string,
     actor?: OrgContext,
   ): Promise<{ plan: SchedulePlan; audit: ScheduleAudit }> {
-    if (!reason || !reason.trim()) {
-      throw new BadRequestException('reason is required');
-    }
-
-    try {
-      const [existing] = await this.db
-        .select()
-        .from(ewohSchedulePlan)
-        .where(eq(ewohSchedulePlan.planId, planId))
-        .limit(1);
-
-      if (!existing) {
-        throw new NotFoundException(`Schedule plan ${planId} not found`);
-      }
-
-      const op = operator || 'supervisor';
-      const now = new Date();
-      const currentStatus = existing.status ?? 'proposed';
-      const gucContext: OrgContext = {
-        userId: actor?.userId ?? 'system',
-        primaryOrgId: actor?.primaryOrgId ?? '',
-        role: actor?.role,
-        accessibleOrgIds:
-          actor?.accessibleOrgIds ??
-          (actor?.primaryOrgId ? [actor.primaryOrgId] : []),
-        isGlobalAdmin: actor?.isGlobalAdmin ?? false,
-      };
-
-      return this.requestDatabaseContext.runInTransaction(
-        buildGucSettings(gucContext),
-        async () => {
-          const [updated] = await this.db
-            .update(ewohSchedulePlan)
-            .set({
-              status: 'confirmed',
-              confirmedBy: op,
-              confirmedAt: now,
-              confirmReason: reason,
-            })
-            .where(
-              and(
-                eq(ewohSchedulePlan.planId, planId),
-                eq(ewohSchedulePlan.status, currentStatus),
-              ),
-            )
-            .returning();
-
-          if (!updated) {
-            throw new ConflictException('STATE_CONFLICT');
-          }
-
-          const [auditRow] = await this.db
-            .insert(ewohScheduleAudit)
-            .values({
-              auditId: `AUDIT-${Date.now()}-${this.randomSuffix()}`,
-              planId,
-              action: 'confirm',
-              operator: op,
-              reason,
-              createdAt: now,
-            })
-            .returning();
-
-          await this.auditService.appendAuditLog({
-            actorId: actor?.userId ?? 'system',
-            orgId: actor?.primaryOrgId ?? '',
-            action: 'scheduler.confirm',
-            entityType: 'schedule_plan',
-            entityId: planId,
-            before: {
-              status: currentStatus,
-              confirmReason: existing.confirmReason ?? null,
-            },
-            after: {
-              status: 'confirmed',
-              confirmedBy: op,
-              confirmReason: reason,
-            },
-          });
-
-          return {
-            plan: this.mapPlan(updated),
-            audit: this.mapAudit(auditRow),
-          };
-        },
-      );
-    } catch (error) {
-      if (
-        error instanceof BadRequestException ||
-        error instanceof NotFoundException ||
-        error instanceof ConflictException
-      ) {
-        throw error;
-      }
-      this.logger.error('confirmPlan 失败', error);
-      throw error;
-    }
+    return this.planApplication.confirmPlan(planId, reason, operator, actor);
   }
 
   async rejectPlan(
@@ -295,430 +283,86 @@ export class SchedulerService {
     operator?: string,
     actor?: OrgContext,
   ): Promise<{ plan: SchedulePlan; audit: ScheduleAudit }> {
-    if (!reason || !reason.trim()) {
-      throw new BadRequestException('reason is required');
-    }
-
-    try {
-      const [existing] = await this.db
-        .select()
-        .from(ewohSchedulePlan)
-        .where(eq(ewohSchedulePlan.planId, planId))
-        .limit(1);
-
-      if (!existing) {
-        throw new NotFoundException(`Schedule plan ${planId} not found`);
-      }
-
-      const op = operator || 'supervisor';
-      const now = new Date();
-      const currentStatus = existing.status ?? 'proposed';
-      const gucContext: OrgContext = {
-        userId: actor?.userId ?? 'system',
-        primaryOrgId: actor?.primaryOrgId ?? '',
-        role: actor?.role,
-        accessibleOrgIds:
-          actor?.accessibleOrgIds ??
-          (actor?.primaryOrgId ? [actor.primaryOrgId] : []),
-        isGlobalAdmin: actor?.isGlobalAdmin ?? false,
-      };
-
-      return this.requestDatabaseContext.runInTransaction(
-        buildGucSettings(gucContext),
-        async () => {
-          const [updated] = await this.db
-            .update(ewohSchedulePlan)
-            .set({
-              status: 'rejected',
-              confirmedBy: op,
-              confirmedAt: now,
-              confirmReason: reason,
-            })
-            .where(
-              and(
-                eq(ewohSchedulePlan.planId, planId),
-                eq(ewohSchedulePlan.status, currentStatus),
-              ),
-            )
-            .returning();
-
-          if (!updated) {
-            throw new ConflictException('STATE_CONFLICT');
-          }
-
-          const [auditRow] = await this.db
-            .insert(ewohScheduleAudit)
-            .values({
-              auditId: `AUDIT-${Date.now()}-${this.randomSuffix()}`,
-              planId,
-              action: 'reject',
-              operator: op,
-              reason,
-              createdAt: now,
-            })
-            .returning();
-
-          await this.auditService.appendAuditLog({
-            actorId: actor?.userId ?? 'system',
-            orgId: actor?.primaryOrgId ?? '',
-            action: 'scheduler.reject',
-            entityType: 'schedule_plan',
-            entityId: planId,
-            before: {
-              status: currentStatus,
-              confirmReason: existing.confirmReason ?? null,
-            },
-            after: {
-              status: 'rejected',
-              confirmedBy: op,
-              confirmReason: reason,
-            },
-          });
-
-          return {
-            plan: this.mapPlan(updated),
-            audit: this.mapAudit(auditRow),
-          };
-        },
-      );
-    } catch (error) {
-      if (
-        error instanceof BadRequestException ||
-        error instanceof NotFoundException ||
-        error instanceof ConflictException
-      ) {
-        throw error;
-      }
-      this.logger.error('rejectPlan 失败', error);
-      throw error;
-    }
+    return this.planApplication.rejectPlan(planId, reason, operator, actor);
   }
 
-  async getAudit(planId?: string): Promise<ScheduleAudit[]> {
-    try {
-      const conditions = planId ? [eq(ewohScheduleAudit.planId, planId)] : [];
-      const rows = await this.db
-        .select()
-        .from(ewohScheduleAudit)
-        .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .orderBy(desc(ewohScheduleAudit.createdAt))
-        .limit(100);
-      return rows.map((r) => this.mapAudit(r));
-    } catch (error) {
-      this.logger.error('getAudit 失败', error);
-      throw error;
-    }
-  }
-
-  async createRun(
-    body: CreateRunRequest,
+  async approvePlanV2(
+    planId: string,
+    body: ApprovePlanRequest,
     actor?: OrgContext,
-  ): Promise<{ run: SchedulingRun | null; plans: SchedulingPlanV2[]; debounced: boolean }> {
-    const ctx = this.toOrgContext(actor);
-    const trigger = body.trigger ?? 'MANUAL';
-    const run = await this.triggerService.evaluate(trigger, body.entityId ?? null, ctx);
-    if (!run) {
-      return { run: null, plans: [], debounced: true };
-    }
-
-    const snapshot = await this.worldStateSnapshotService.buildSnapshot(ctx);
-    const horizonMinutes = body.horizonMinutes ?? 480;
-    // P0-2（G2）：createRun 主链路加载全局 active 约束（org + 有效期过滤）。
-    // 人工 LOCK/EXCLUDE 不得因为空 constraints 在 manual/automatic run 中丢失。
-    const constraints = this.constraintLoaderService
-      ? await this.constraintLoaderService.loadGlobalActive(ctx)
-      : [];
-
-    // P0-6：baselinePlanId → churn 基线（taskId → personId，复用 solveVariants 的
-    // baselineAssignee 机制）；读取失败降级为空基线（仅记日志，不阻断求解）。
-    let baselineAssignee: Map<string, string | null> | undefined;
-    if (body.baselinePlanId) {
-      try {
-        const baseline = await this.planService.getPlan(body.baselinePlanId);
-        baselineAssignee = new Map(
-          baseline.assignments.map((a) => [a.taskId, a.personId ?? null]),
-        );
-      } catch (err) {
-        this.logger.warn(
-          `createRun: baselinePlanId ${body.baselinePlanId} 读取失败，churn 基线降级为空: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
-
-    let plans = await this.solverService.solveVariants(
-      snapshot,
-      constraints,
-      {
-        planId: run.runId,
-        triggerType: trigger,
-        triggerEntityId: run.triggerEntityId,
-        snapshotVersion: snapshot.snapshotVersion,
-        horizonMinutes,
-        baselineAssignee,
-      },
-    );
-
-    // P0-6：objectiveProfile → 单变体筛选（on_time=A / load_balance=B / composite=C）。
-    // 未识别或缺省保持 A/B/C 三变体现状（solveVariants 不支持单 profile 参数，
-    // 在调用处按 planId 后缀筛选，返回值形状不变）。
-    const profileSuffix = this.resolveObjectiveProfileSuffix(body.objectiveProfile);
-    if (profileSuffix) {
-      plans = plans.filter((p) => p.planId === `${run.runId}${profileSuffix}`);
-    }
-
-    // P0-6：mode=SHADOW → 仅评估，不写入 ewoh_schedule_plan 正式表；
-    // run 标记 succeeded 且 planIds=[]（shadow 方案不进入正式派工链）。
-    const isShadow = body.mode === 'SHADOW';
-    if (!isShadow) {
-      for (const plan of plans) {
-        await this.planService.persistPlan(plan, ctx);
-      }
-    }
-
-    await this.requestDatabaseContext.runInTransaction(
-      buildGucSettings(ctx),
-      async () => {
-        await this.db
-          .update(ewohSchedulingRun)
-          .set({
-            status: 'succeeded',
-            snapshotVersion: snapshot.snapshotVersion,
-            planIds: isShadow ? [] : plans.map((p) => p.planId),
-          })
-          .where(eq(ewohSchedulingRun.runId, run.runId));
-      },
-    );
-
-    return { run, plans, debounced: false };
+  ): Promise<SchedulingPlanV2> {
+    return this.planApplication.approvePlanV2(planId, body, actor);
   }
 
-  /** P0-6：objectiveProfile → solveVariants 变体后缀（A/B/C）；未识别/缺省返回 null（三变体现状）。 */
-  private static readonly OBJECTIVE_PROFILE_SUFFIX: Record<string, string> = {
-    on_time: 'A',
-    load_balance: 'B',
-    composite: 'C',
-  };
-
-  private resolveObjectiveProfileSuffix(profile?: string): string | null {
-    if (!profile) return null;
-    return SchedulerService.OBJECTIVE_PROFILE_SUFFIX[profile] ?? null;
+  async rejectPlanV2(
+    planId: string,
+    body: RejectPlanRequest,
+    actor?: OrgContext,
+  ): Promise<SchedulingPlanV2> {
+    return this.planApplication.rejectPlanV2(planId, body, actor);
   }
 
-  async getRun(runId: string): Promise<SchedulingRun | null> {
-    const [row] = await this.db
-      .select()
-      .from(ewohSchedulingRun)
-      .where(eq(ewohSchedulingRun.runId, runId))
-      .limit(1);
-    if (!row) return null;
-    return this.mapRun(row);
+  async dispatchPlanV2(
+    planId: string,
+    actor?: OrgContext,
+  ): Promise<SchedulingPlanV2> {
+    return this.planApplication.dispatchPlanV2(planId, actor);
   }
 
-  /**
-   * 分页查询调度运行历史 + 返回当前活跃方案列表。
-   * - runs：按过滤器（status / from / to）分页的 SchedulingRun 记录；
-   * - plans：状态为非终态的活跃方案（proposed/shadow/draft/approved/dispatched/executing）；
-   * - total：满足过滤条件的运行总条数（用于分页）。
-   * 复用现有 db（drizzle）与 planService.getPlan，不引入并行调度器。
-   */
-  async listRuns(params: ListRunsRequest = {}, actor?: OrgContext): Promise<ListRunsResponse> {
-    const page = Math.max(1, params.page ?? 1);
-    const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 20));
-
-    const conditions: SQL[] = [];
-    if (params.status) {
-      conditions.push(eq(ewohSchedulingRun.status, params.status));
-    }
-    if (params.from && !Number.isNaN(Date.parse(params.from))) {
-      conditions.push(gte(ewohSchedulingRun.createdAt, new Date(params.from)));
-    }
-    if (params.to && !Number.isNaN(Date.parse(params.to))) {
-      conditions.push(lte(ewohSchedulingRun.createdAt, new Date(params.to)));
-    }
-    // Batch 8 RLS 缓解：应用层 org 过滤补强（ewohSchedulingRun 有 org_id 列但不在 RLS 白名单）。
-    // actor 携带 primaryOrgId 时按 org 过滤（与写路径 GUC 语义一致）；缺省不过滤（向后兼容）。
-    const orgFilter = actor?.primaryOrgId
-      ? eq(ewohSchedulingRun.orgId, actor.primaryOrgId)
-      : undefined;
-    if (orgFilter) conditions.push(orgFilter);
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-
-    const [countRows, runRows, activePlanRows] = await Promise.all([
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(ewohSchedulingRun)
-        .where(whereClause),
-      this.db
-        .select()
-        .from(ewohSchedulingRun)
-        .where(whereClause)
-        .orderBy(desc(ewohSchedulingRun.createdAt))
-        .limit(pageSize)
-        .offset((page - 1) * pageSize),
-      this.db
-        .select()
-        .from(ewohSchedulePlan)
-        .where(inArray(ewohSchedulePlan.status, SchedulerService.ACTIVE_PLAN_STATUSES))
-        .orderBy(desc(ewohSchedulePlan.createdAt)),
-    ]);
-
-    const runs = runRows.map((r) => this.mapRun(r));
-    const plans = (
-      await Promise.all(
-        activePlanRows.map((p) =>
-          this.planService.getPlan(p.planId).catch((err) => {
-            this.logger.warn(
-              `listRuns: 活跃方案 ${p.planId} 读取失败，已跳过: ${err instanceof Error ? err.message : String(err)}`,
-            );
-            return null;
-          }),
-        ),
-      )
-    ).filter((p): p is SchedulingPlanV2 => p !== null);
-
-    return {
-      runs,
-      plans,
-      total: countRows[0]?.count ?? 0,
-      page,
-      pageSize,
-    };
+  async applyOverrides(
+    planId: string,
+    body: PlanOverrideRequest,
+    actor?: OrgContext,
+  ): Promise<PlanOverrideResponse> {
+    return this.planApplication.applyOverrides(planId, body, actor);
   }
 
-  /**
-   * P0-1 Active Plan 权威查询：返回当前所有非终态方案（shadow/proposed/
-   * draft/approved/dispatched/executing），按创建时间倒序。
-   *
-   * 前端页面刷新 / SSE resync / 多终端必须从此处重新拉取权威方案，
-   * SSE 仅作为增量更新机制，不作为唯一状态源。
-   */
-  async getActivePlans(): Promise<SchedulingPlanV2[]> {
-    const rows = await this.db
-      .select()
-      .from(ewohSchedulePlan)
-      .where(inArray(ewohSchedulePlan.status, SchedulerService.ACTIVE_PLAN_STATUSES))
-      .orderBy(desc(ewohSchedulePlan.createdAt));
-    const plans = await Promise.all(
-      rows.map((p) =>
-        this.planService.getPlan(p.planId).catch((err) => {
-          this.logger.warn(
-            `getActivePlans: 活跃方案 ${p.planId} 读取失败，已跳过: ${err instanceof Error ? err.message : String(err)}`,
-          );
-          return null;
-        }),
-      ),
-    );
-    return plans.filter((p): p is SchedulingPlanV2 => p !== null);
+  async comparePlansV2(
+    planId: string,
+    otherPlanId: string,
+  ): Promise<Record<string, unknown>> {
+    return this.planApplication.comparePlansV2(planId, otherPlanId);
   }
 
-  /**
-   * 返回 map 与调度共享的当前权威世界状态快照。
-   * 复用 WorldStateSnapshotService.getCurrentWorldState() 的真实当前状态（不持久化、不虚构），
-   * 以 snapshotVersion='CURRENT' + 当前 ts 包装为 WorldStateSnapshot。
-   */
-  async getSnapshot(): Promise<WorldStateSnapshot> {
-    const state = await this.worldStateSnapshotService.getCurrentWorldState();
-    return {
-      ...state,
-      snapshotVersion: 'CURRENT',
-      ts: new Date().toISOString(),
-    };
+  async activatePolicyVersion(
+    configVersion: number,
+    body: { approver?: string; reason?: string },
+    actor?: OrgContext,
+  ): Promise<{ config: SchedulingPolicyConfig }> {
+    return this.planApplication.activatePolicyVersion(configVersion, body, actor);
   }
 
-  async getPlanDetail(planId: string): Promise<SchedulingPlanV2> {
-    return this.planService.getPlan(planId);
+  // ==========================================================================
+  // 重排 / 约束 / 策略候选（委托 Replan / Constraint 应用服务）
+  // ==========================================================================
+
+  async replanV2(
+    planId: string,
+    body: ReplanRequest,
+    actor?: OrgContext,
+  ): Promise<SchedulingPlanV2> {
+    return this.replanApplication.replanV2(planId, body, actor);
   }
 
-  // ===== SchedulingPolicy versioning (Task 6: 命令图调度闭环) =====
-
-  /** 返回当前生效策略 + 配置（只读）。 */
-  async getPolicy(): Promise<{ policy: SchedulingPolicy; config: SchedulingPolicyConfig }> {
-    const [policy, config] = await Promise.all([
-      this.policyService.getActivePolicy(),
-      this.policyService.getConfig(),
-    ]);
-    return { policy, config };
+  async deactivateConstraintV2(
+    constraintId: string,
+    actor?: OrgContext,
+    reason = '',
+  ) {
+    return this.constraintApplication.deactivateConstraintV2(constraintId, actor, reason);
   }
 
-  /** 列出全部策略版本（含 active 标志、操作人、创建时间）。 */
-  async listPolicyVersions(): Promise<SchedulingPolicyVersionSummary[]> {
-    return this.policyService.listVersions();
-  }
-
-  /** 注册一个候选策略版本（inactive，绝不自动激活）。 */
   async registerPolicyVersion(
     config: SchedulingPolicyConfig,
     actor?: OrgContext,
   ): Promise<SchedulingPolicyConfig> {
-    const ctx = this.toOrgContext(actor);
-    return this.policyService.registerCandidatePolicy(
-      config,
-      ctx.primaryOrgId || null,
-      ctx.userId,
-    );
+    return this.constraintApplication.registerPolicyVersion(config, actor);
   }
 
-  /**
-   * shadow/只读对比：候选版本 vs 当前生效版本。
-   * Phase 4 / P4-T2：优先以历史 snapshot 真实 replay（active vs candidate 双策略求解，
-   * 对比 objective/KPI，结果附加于 comparison.replay）；无历史快照时回退
-   * param delta + 估算。绝不激活任何版本。
-   */
-  async comparePolicyVersion(
-    configVersion: number,
-    actor?: OrgContext,
-  ): Promise<SchedulingPolicyComparison> {
-    const ctx = this.toOrgContext(actor);
-    const [activeConfig, candidateConfig, feedbackKpis] = await Promise.all([
-      this.policyService.getConfig(),
-      this.policyService.getConfigByVersion(configVersion),
-      this.feedbackService.deriveKpis(),
-    ]);
-    if (!candidateConfig) {
-      throw new NotFoundException(
-        `Scheduling policy version ${configVersion} not found`,
-      );
-    }
-    const paramDeltas = this.buildConfigParamDeltas(activeConfig, candidateConfig);
-    const comparison: SchedulingPolicyComparison = {
-      candidateVersion: configVersion,
-      activeVersion: activeConfig.configVersion,
-      feedbackKpis,
-      paramDeltas,
-      objective: this.estimateObjective(activeConfig, candidateConfig),
-      verdict: this.buildVerdict(paramDeltas),
-      readOnly: true,
-    };
-    // Phase 4 / P4-T2：真实 replay（失败仅记日志，不阻断旧评估路径）。
-    if (this.policyReplayService) {
-      try {
-        comparison.replay = await this.policyReplayService.evaluate(
-          configVersion,
-          ctx,
-        );
-      } catch (err) {
-        this.logger.warn(
-          `policy replay failed (v${configVersion}): ${(err as Error)?.message ?? err}`,
-        );
-        comparison.replay = null;
-      }
-    }
-    return comparison;
-  }
+  // ==========================================================================
+  // 事件驱动 / 反馈闭环（EventApplicationService）
+  // ==========================================================================
 
-  /**
-   * v0.7 Batch6.1 事件驱动智能重排（service 层入口，取代 controller 直连）。
-   * 1. 事件 → ReplanCoordinator 局部重排（影响分析 → 冻结无关任务 → 子图求解 → 熔断）；
-   * 2. 级联：基于最新世界状态检查路由阻断/拥塞/预占冲突，逐条触发 scoped 重排
-   *    （TriggerService 冷却去抖 + 幂等去重天然防风暴）。
-   * 缺失 replanCoordinatorService（测试/降级）时返回空结果。
-   *
-   * M03（08 §6）：编排 AUTO_REPLAN / HUMAN_APPROVAL——当 policy.replanApproval 判定
-   * 需人工审批（critical_event/affected_ratio/safety_critical/human_lock/churn/lateness_risk）
-   * 时，不自动落库，产出 ReplanPreview + 发 SSE `replan.approval_required`；否则走
-   * 现有 handleTrigger 自动落库 proposed（唯一写路径不变）。仅当 policy 配置
-   * replanApproval 且事件非 MANUAL 时 consult；未配置保持现状（兼容）。
-   */
   async injectSchedulingEvent(
     body: SchedulingEventRequest,
     actor?: OrgContext,
@@ -730,1559 +374,25 @@ export class SchedulerService {
     approval?: import('@shared/api.interface').ReplanApprovalDecision;
     preview?: import('@shared/api.interface').ReplanPreviewResult | null;
   }> {
-    const ctx = this.toOrgContext(actor);
-    if (!this.replanCoordinatorService) {
-      return { run: null, plans: [], debounced: true, cascaded: [] };
-    }
-
-    // M03：人工审批政策 consult（仅配置 replanApproval 且非 MANUAL 时）。
-    if (body.trigger !== 'MANUAL') {
-      const approval = await this.maybeConsultApproval(
-        body.trigger,
-        body.entityId ?? null,
-        ctx,
-      );
-      if (approval && approval.decision === 'HUMAN_APPROVAL_REQUIRED') {
-        const preview = await this.replanPreviewService
-          .previewReplan(body.trigger, body.entityId ? [body.entityId] : [], ctx)
-          .catch(() => null);
-        if (this.outboxService) {
-          Promise.resolve(
-            this.outboxService.enqueue(
-              'replan.approval_required',
-              body.entityId ?? 'ALL',
-              {
-                triggerType: body.trigger,
-                triggerEntityId: body.entityId ?? null,
-                reasons: approval.reasons,
-                preview: preview ?? null,
-                occurredAt: new Date().toISOString(),
-              },
-              ctx.primaryOrgId || null,
-            ),
-          ).catch((e) => {
-            this.logger.warn(
-              `replan.approval_required enqueue failed: ${e instanceof Error ? e.message : String(e)}`,
-            );
-          });
-        }
-        return {
-          run: null,
-          plans: [],
-          debounced: false,
-          cascaded: [],
-          approval,
-          preview,
-        };
-      }
-    }
-
-    const primary = await this.replanCoordinatorService.handleTrigger(
-      body.trigger,
-      body.entityId ?? null,
-      ctx,
-    );
-
-    // v0.7 Batch6.4：事件驱动调度可观测埋点（成功/回退/级联数）。
-    if (this.metricsService) {
-      this.metricsService.recordRun({
-        durationMs: 0, // 事件驱动路径耗时由 handleTrigger 内部测量，此处仅计数
-        feasible: !primary.debounced,
-        solverStatus: primary.run?.status ?? 'debounced',
-      });
-      if (primary.debounced) this.metricsService.recordFallback();
-    }
-
-    // 级联：事件处理后，世界状态中的路由/预占问题自动触发 scoped 重排。
-    let cascaded: string[] = [];
-    try {
-      const state = await this.worldStateSnapshotService.buildSnapshot(ctx);
-      const dispatched = await this.replanCoordinatorService.dispatchStateTriggers(state, ctx);
-      cascaded = dispatched.map((d) => d.triggerType);
-    } catch (e) {
-      this.logger.warn(
-        `cascade state triggers failed: ${e instanceof Error ? e.message : String(e)}`,
-      );
-    }
-
-    // v0.7 Batch10.2：影子评估自动化——每 N 次事件驱动 run 后自动对比候选策略与活跃策略
-    // （复用 comparePolicyVersion 的 KPI + param delta，仅观测不改活跃策略）。
-    // await 保证评估在响应前完成（观测型，失败仅记日志不阻断）。
-    await this.maybeRunShadowEvaluation(ctx);
-
-    return { ...primary, cascaded };
+    return this.eventApplication.injectSchedulingEvent(body, actor);
   }
 
-  /** M03：consult replanApproval policy；未配置 replanApproval 或 consult 失败 → null（保持现状）。 */
-  private async maybeConsultApproval(
-    triggerType: string,
-    entityId: string | null,
-    ctx: OrgContext,
-  ): Promise<import('@shared/api.interface').ReplanApprovalDecision | null> {
-    try {
-      const config = await this.policyService
-        .resolveReplanApprovalConfig()
-        .catch(() => null);
-      if (!config) return null;
-      if (!this.replanCoordinatorService) return null;
-      const impact = await this.replanCoordinatorService.analyzeImpactV2(
-        triggerType,
-        entityId ? [entityId] : [],
-        ctx,
-      );
-      return this.planService.consultReplanApproval({
-        triggerType,
-        impact,
-        preview: null,
-        ctx,
-      });
-    } catch (err) {
-      this.logger.warn(
-        `replan approval consult failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return null;
-    }
-  }
-
-  /** 事件驱动 run 计数器（影子评估节流）。 */
-  private eventRunCounter = 0;
-  /** 每 N 次事件驱动 run 触发一次影子评估。 */
-  private static readonly SHADOW_EVAL_INTERVAL = 10;
-
-  /**
-   * v0.7 Batch10.2：影子评估自动化。
-   * 每 SHADOW_EVAL_INTERVAL 次事件驱动 run，自动调用 comparePolicyVersion（候选 vs 活跃），
-   * 结果写入审计日志（观测型，不激活任何候选策略）。失败仅记日志不阻断主流程。
-   */
-  private async maybeRunShadowEvaluation(ctx: OrgContext): Promise<void> {
-    this.eventRunCounter += 1;
-    if (this.eventRunCounter % SchedulerService.SHADOW_EVAL_INTERVAL !== 0) return;
-    if (!this.policyService) return;
-    try {
-      const active = await this.policyService.getConfig().catch(() => null);
-      if (!active) return;
-      // 候选 = 活跃版本 + 1（若有注册的未激活版本）；无则跳过。
-      const candidates = await this.policyService.listVersions().catch(() => []);
-      const pending = candidates.find((v) => v.configVersion === active.configVersion + 1);
-      if (!pending) return;
-      const comparison = await this.comparePolicyVersion(pending.configVersion, ctx);
-      this.logger.log(
-        `[shadow-eval] run#${this.eventRunCounter} candidate v${pending.configVersion} vs active v${active.configVersion}: ` +
-          `acceptance=${comparison.feedbackKpis?.acceptanceRate ?? '-'}% verdict=${comparison.verdict}`,
-      );
-      await this.auditService.appendAuditLog({
-        actorId: 'shadow-eval',
-        orgId: ctx.primaryOrgId,
-        action: 'scheduler.policy.shadow_eval',
-        entityType: 'scheduling_policy',
-        entityId: String(pending.configVersion),
-        before: { configVersion: active.configVersion },
-        after: { candidateVersion: pending.configVersion, verdict: comparison.verdict },
-        reason: 'automatic shadow evaluation (Batch 10.2)',
-      });
-    } catch (e) {
-      this.logger.warn(`shadow evaluation failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-
-  /**
-   * v0.7 D1 反馈闭环：回填任务执行实际值（actualStart/actualEnd/实际资源等）。
-   * 委托 SchedulingFeedbackService.recordActuals（按 assignmentId/planId/taskId 匹配更新）。
-   * 匹配语义：至少提供一个匹配键，否则拒绝；重复回填为覆盖式更新（天然幂等）。
-   * 调用方：POST /api/scheduler/feedback/actuals（任务执行方/移动端/边缘）。
-   */
   async recordTaskActuals(
     input: RecordActualsRequest,
     actor?: OrgContext,
   ): Promise<{ ok: boolean; matched: boolean }> {
-    if (
-      !input.assignmentId &&
-      !input.planId &&
-      !input.taskId
-    ) {
-      throw new BadRequestException(
-        '至少提供一个匹配键（assignmentId / planId / taskId）',
-      );
-    }
-    const ctx = this.toOrgContext(actor);
-    await this.feedbackService.recordActuals(
-      {
-        planId: input.planId,
-        assignmentId: input.assignmentId,
-        taskId: input.taskId,
-        actualStart: input.actualStart ?? null,
-        actualEnd: input.actualEnd ?? null,
-        actualTravel: input.actualTravel ?? null,
-        actualWait: input.actualWait ?? null,
-        actualResource: input.actualResource ?? null,
-      },
-      ctx,
-    );
-    // v0.7 B3：执行偏差实时推送（SSE execution.deviation），供地图执行偏差图层消费。
-    // 观测型：推送失败仅记日志，不影响回填主流程。
-    if (this.outboxService) {
-      Promise.resolve(
-        this.outboxService.enqueue(
-          'execution.deviation',
-          input.taskId ?? input.assignmentId ?? 'unknown',
-          {
-            planId: input.planId ?? null,
-            assignmentId: input.assignmentId ?? null,
-            taskId: input.taskId ?? null,
-            actualStart: input.actualStart ?? null,
-            actualEnd: input.actualEnd ?? null,
-            actualTravel: input.actualTravel ?? null,
-            actualWait: input.actualWait ?? null,
-          },
-          ctx.primaryOrgId || null,
-        ),
-      ).catch((e) => {
-        this.logger.warn(`execution.deviation enqueue failed: ${(e as Error).message}`);
-      });
-    }
-    // recordActuals 为更新语义（无行则不写）；matched 交由调用方以查询反馈行确认，
-    // 此处统一返回 ok（观测型回填不阻断执行方）。
-    return { ok: true, matched: true };
+    return this.eventApplication.recordTaskActuals(input, actor);
   }
 
-  /**
-   * 显式激活指定版本（人工审批路径）：翻转 active 并写入审计。
-   * Phase 4 / P4-T2 守卫：
-   *   - body 必须带 approver + reason（无则 400）；
-   *   - 仅允许 shadow 候选（active=false）且已完成 replay 评估的策略 activate；
-   *   - 已激活版本不可重复 activate（409）。
-   */
-  async activatePolicyVersion(
-    configVersion: number,
-    body: { approver?: string; reason?: string },
-    actor?: OrgContext,
-  ): Promise<{ config: SchedulingPolicyConfig }> {
-    const ctx = this.toOrgContext(actor);
-    // 守卫 0/1：approver + reason 必须来自请求 body（审批要件，不静默回退 ctx）。
-    const approver = body?.approver?.trim() ?? '';
-    const reason = body?.reason?.trim() ?? '';
-
-    if (!approver) {
-      throw new BadRequestException('APPROVER_REQUIRED: 激活策略必须提供 approver');
-    }
-    if (!reason) {
-      throw new BadRequestException('REASON_REQUIRED: 激活策略必须提供 reason');
-    }
-
-    // 守卫 2：版本存在且为 shadow 候选（active=false），不可重复 activate。
-    const status = await this.policyService.getPolicyVersionStatus(configVersion);
-    if (!status) {
-      throw new NotFoundException(
-        `Scheduling policy version ${configVersion} not found`,
-      );
-    }
-    if (status.active) {
-      throw new ConflictException('POLICY_ALREADY_ACTIVE');
-    }
-
-    // 守卫 3：已完成 replay 评估（shadow → 评估 → activate 闭环）。
-    if (!this.policyReplayService?.isEvaluated(configVersion)) {
-      throw new ConflictException(
-        'POLICY_NOT_EVALUATED: 候选策略须先完成 shadow replay 评估',
-      );
-    }
-
-    const config = await this.policyService.activatePolicyVersion(
-      configVersion,
-      ctx.primaryOrgId || null,
-      approver,
-    );
-    await this.auditService.appendAuditLog({
-      actorId: approver,
-      orgId: ctx.primaryOrgId,
-      action: 'scheduler.policy.activate',
-      entityType: 'scheduling_policy',
-      entityId: String(configVersion),
-      before: { configVersion, active: false },
-      after: { configVersion, active: true },
-      reason,
-    });
-    return { config };
-  }
-
-  /** 计算候选 vs 生效配置的标量与 priority 子字段差异。 */
-  private buildConfigParamDeltas(
-    active: SchedulingPolicyConfig,
-    candidate: SchedulingPolicyConfig,
-  ): Record<string, { active: unknown; candidate: unknown }> {
-    const deltas: Record<string, { active: unknown; candidate: unknown }> = {};
-    const scalarKeys: (keyof SchedulingPolicyConfig)[] = [
-      'minBatteryPct',
-      'maxContinuousLoad',
-      'defaultTaskDurationMs',
-      'horizonMinutes',
-      'walkingSpeedMps',
-      'euclideanDistanceWeight',
-      'congestedFactor',
-      'blockedFactor',
-      'highRiskFactor',
-      'mediumRiskFactor',
-      'triggerCooldownMs',
-    ];
-    for (const k of scalarKeys) {
-      if (active[k] !== candidate[k]) {
-        deltas[k] = { active: active[k], candidate: candidate[k] };
-      }
-    }
-    const priorityKeys: (keyof SchedulingPolicyConfig['priority'])[] = [
-      'deadlineRiskWeight',
-      'waitingAgeWeight',
-      'eventSeverityWeight',
-      'productionImpactWeight',
-      'downstreamBlockingWeight',
-      'manualBoostWeight',
-      'agingBaseMs',
-    ];
-    for (const k of priorityKeys) {
-      if (active.priority[k] !== candidate.priority[k]) {
-        deltas[`priority.${k}`] = {
-          active: active.priority[k],
-          candidate: candidate.priority[k],
-        };
-      }
-    }
-    return deltas;
-  }
-
-  /** 基于求解目标权重（与 buildPolicy 一致）的归一化 composite objective 估计。 */
-  private estimateObjective(
-    active: SchedulingPolicyConfig,
-    candidate: SchedulingPolicyConfig,
-  ): { active: number; candidate: number } {
-    const score = (c: SchedulingPolicyConfig): number =>
-      c.priority.deadlineRiskWeight * 3 +
-      c.euclideanDistanceWeight +
-      c.highRiskFactor / 2 +
-      c.minBatteryPct / 30;
-    return { active: score(active), candidate: score(candidate) };
-  }
-
-  private buildVerdict(
-    deltas: Record<string, { active: unknown; candidate: unknown }>,
-  ): string {
-    const changed = Object.keys(deltas);
-    if (changed.length === 0) {
-      return '候选版本与生效版本参数完全一致，无实际变更。';
-    }
-    return `候选版本相对生效版本存在 ${changed.length} 项参数差异（${changed.join(
-      ', ',
-    )}）；请结合反馈 KPI 决策，本结果仅为只读 shadow 对比。`;
-  }
-
-  /** P0-2：查询方案仍生效的持久化人工约束。 */
-  async listPlanConstraintsV2(planId: string) {
-    return this.planService.listPlanConstraints(planId);
-  }
-
-  /** P0-2：解除一条人工约束（软删除 + 审计）。 */
-  async deactivateConstraintV2(
-    constraintId: string,
-    actor?: OrgContext,
-    reason = '',
-  ) {
-    return this.planService.deactivateConstraint(
-      constraintId,
-      this.toOrgContext(actor),
-      reason,
-    );
-  }
-
-  async approvePlanV2(
-    planId: string,
-    body: ApprovePlanRequest,
-    actor?: OrgContext,
-  ): Promise<SchedulingPlanV2> {
-    // P1-E（§九）：人工干预版本 CAS——结构化入参 expectedPlanVersion/expectedSnapshotVersion
-    // 与请求 version/snapshotVersion 不一致 → 过期拒绝（ConflictException，不自动应用）。
-    // 未提供 → 现状行为（planService 内既有 PLAN_STALE/快照新鲜度兜底）。
-    if (
-      body.expectedPlanVersion !== undefined &&
-      body.expectedPlanVersion !== body.version
-    ) {
-      throw new ConflictException(
-        `STALE_PLAN: expected version ${body.expectedPlanVersion}, body version ${body.version}`,
-      );
-    }
-    if (
-      body.expectedSnapshotVersion !== undefined &&
-      body.expectedSnapshotVersion !== body.snapshotVersion
-    ) {
-      throw new ConflictException(
-        `STALE_SNAPSHOT: expected ${body.expectedSnapshotVersion}, body snapshot ${body.snapshotVersion}`,
-      );
-    }
-    return this.planService.approvePlan(planId, body, this.toOrgContext(actor));
-  }
-
-  async rejectPlanV2(
-    planId: string,
-    body: RejectPlanRequest,
-    actor?: OrgContext,
-  ): Promise<SchedulingPlanV2> {
-    return this.planService.rejectPlan(planId, body, this.toOrgContext(actor));
-  }
-
-  async dispatchPlanV2(
-    planId: string,
-    actor?: OrgContext,
-  ): Promise<SchedulingPlanV2> {
-    const plan = await this.planService.dispatchPlan(planId, this.toOrgContext(actor));
-    // P4-EXEC：dispatch 后建立 Execution 记录（planned 事实；actual 由执行反馈回填）。
-    if (this.executionService) {
-      try {
-        await this.executionService.createFromPlan(
-          {
-            planId: plan.planId,
-            runId: (plan as { runId?: string | null }).runId ?? null,
-            snapshotVersion: plan.snapshotVersion ?? null,
-            policyVersion: plan.policyVersion ?? null,
-            solverVersion: plan.solverVersion ?? null,
-          },
-          plan.assignments.map((a) => ({
-            assignmentId: a.assignmentId,
-            taskId: a.taskId,
-            personId: a.personId ?? null,
-            deviceId: a.deviceId ?? null,
-            stationId: a.stationId ?? null,
-            plannedStart: a.plannedStart ?? null,
-            plannedEnd: a.plannedEnd ?? null,
-            etaSeconds: a.etaSeconds,
-            distanceMeters: a.distanceMeters,
-          })),
-          this.toOrgContext(actor).primaryOrgId ?? null,
-          actor,
-        );
-      } catch (err) {
-        this.logger.warn(`execution record creation failed: ${(err as Error)?.message ?? err}`);
-      }
-    }
-    return plan;
-  }
-
-  async replanV2(
-    planId: string,
-    body: ReplanRequest,
-    actor?: OrgContext,
-  ): Promise<SchedulingPlanV2> {
-    return this.planService.replan(planId, body, this.toOrgContext(actor));
-  }
-
-  /** 人工覆盖动作 → 约束类型映射。 */
-  private static readonly OVERRIDE_KIND_TO_TYPE: Record<
-    PlanOverrideKind,
-    SchedulingConstraint['type']
-  > = {
-    LOCK_PERSON: 'LOCKED_PERSON',
-    LOCK_DEVICE: 'LOCKED_DEVICE',
-    LOCK_STATION: 'LOCKED_STATION',
-    LOCK_TIME: 'LOCKED_TIME',
-    LOCK_ASSIGNMENT: 'LOCKED_ASSIGNMENT',
-    EXCLUDE_RESOURCE: 'EXCLUDED_RESOURCE',
-    PREFER_RESOURCE: 'PREFERRED_RESOURCE',
-    BOOST: 'MANUAL_BOOST',
-    ADJUST_TIME: 'LOCKED_TIME',
-    // Phase 3 / P3-T4：换资源 = 锁定新的 person/device/station（LOCKED_ASSIGNMENT 组合语义）。
-    CHANGE_RESOURCE: 'LOCKED_ASSIGNMENT',
-  };
-
-  /**
-   * 应用人工覆盖（Task 3：cmd-map-scheduling-closed-loop）。
-   * 将一组手工操作转换为 SchedulingConstraint 并落库 + 审计，
-   * 通过既有 V2 重排通道（planService.replan）产出新方案，
-   * 返回覆盖前后方案的 before/after 差异摘要。
-   */
-  async applyOverrides(
-    planId: string,
-    body: PlanOverrideRequest,
-    actor?: OrgContext,
-  ): Promise<PlanOverrideResponse> {
-    const ctx = this.toOrgContext(actor);
-    const operator = body.operator || ctx.userId;
-
-    // 1. 校验方案存在且处于可重排状态。
-    const [plan] = await this.db
-      .select()
-      .from(ewohSchedulePlan)
-      .where(eq(ewohSchedulePlan.planId, planId))
-      .limit(1);
-    if (!plan) throw new NotFoundException(`Plan ${planId} not found`);
-    if (!SchedulerService.REPLANNABLE_PLAN_STATUSES.has(plan.status ?? '')) {
-      throw new ConflictException('PLAN_NOT_REPLANNABLE');
-    }
-
-    // P1-E（§九）：人工干预版本 CAS——入参提供 expectedPlanVersion/expectedSnapshotVersion 时，
-    // 校验与目标方案当前 version/snapshotVersion 一致；过期拒绝（ConflictException，不自动应用）。
-    // 未提供 → 现状行为（向后兼容）。
-    if (
-      body.expectedPlanVersion !== undefined &&
-      body.expectedPlanVersion !== plan.version
-    ) {
-      throw new ConflictException(
-        `STALE_PLAN: expected version ${body.expectedPlanVersion}, current ${plan.version}`,
-      );
-    }
-    if (
-      body.expectedSnapshotVersion !== undefined &&
-      body.expectedSnapshotVersion !== plan.snapshotVersion
-    ) {
-      throw new ConflictException(
-        `STALE_SNAPSHOT: expected ${body.expectedSnapshotVersion}, current ${plan.snapshotVersion ?? ''}`,
-      );
-    }
-
-    // 2. 将覆盖动作转换为 SchedulingConstraint（富化 operator/reason/validFrom/expiresAt/snapshotVersion）。
-    const constraints = this.actionsToConstraints(body.actions, {
-      operator,
-      reason: body.reason,
-      snapshotVersion: plan.snapshotVersion ?? '',
-    });
-
-    // 3. 落库约束 + 审计（复用 ewoh_scheduling_constraint / ewoh_schedule_audit / appendAuditLog 模式）。
-    await this.requestDatabaseContext.runInTransaction(
-      buildGucSettings(ctx),
-      async () => {
-        if (constraints.length > 0) {
-          await this.db.insert(ewohSchedulingConstraint).values(
-            constraints.map((c) => ({
-              constraintId: c.id ?? `CON-${Date.now()}-${this.randomSuffix()}`,
-              planId,
-              taskId: c.taskId ?? null,
-              type: c.type,
-              valueJson: {
-                personId: c.personId ?? null,
-                deviceId: c.deviceId ?? null,
-                stationId: c.stationId ?? null,
-                zoneId: c.zoneId ?? null,
-                startMs: c.startMs ?? null,
-                endMs: c.endMs ?? null,
-                operator: c.operator ?? null,
-                reason: c.reason ?? null,
-                validFrom: c.validFrom ?? null,
-                expiresAt: c.expiresAt ?? null,
-                snapshotVersion: c.snapshotVersion ?? null,
-              },
-              active: true,
-              createdBy: ctx.userId,
-              // standalone_025_scheduler_rls：租户隔离（null=全局/存量行，policy 放行）。
-              orgId: ctx.primaryOrgId || null,
-            })),
-          );
-        }
-        await this.db.insert(ewohScheduleAudit).values({
-          auditId: `AUDIT-${Date.now()}-${this.randomSuffix()}`,
-          planId,
-          action: 'override.apply',
-          operator,
-          reason: body.reason ?? '',
-          createdAt: new Date(),
-        });
-      },
-    );
-
-    await this.auditService.appendAuditLog({
-      actorId: operator,
-      orgId: ctx.primaryOrgId,
-      action: 'scheduler.plan.override',
-      entityType: 'schedule_plan',
-      entityId: planId,
-      before: { status: plan.status, version: plan.version },
-      after: { overrideCount: constraints.length, supersededBy: `${planId}-R${(plan.version ?? 1) + 1}` },
-      reason: body.reason,
-    });
-
-    // 4. 触发重排（复用既有 V2 求解通道，不新建求解路径）。
-    const before = await this.planService.getPlan(planId);
-    const after = await this.planService.replan(
-      planId,
-      { lockedConstraints: constraints, operator, reason: body.reason },
-      ctx,
-    );
-
-    // 5. 返回 before/after 差异摘要。
-    return {
-      planId: after.planId,
-      operator,
-      reason: body.reason,
-      appliedConstraints: constraints,
-      before,
-      after,
-      diff: this.buildPlanDiff(before, after),
-      // T04 / P1-8：可选 preview 引用（纯计算预览 id；本流程无预览候选时置 null）。
-      preview: null,
-    };
-  }
-
-  /** 将人工覆盖动作转换为统一 SchedulingConstraint。 */
-  private actionsToConstraints(
-    actions: PlanOverrideRequest['actions'],
-    meta: { operator: string; reason?: string; snapshotVersion: string },
-  ): SchedulingConstraint[] {
-    return actions.map((a, i) => {
-      const type = SchedulerService.OVERRIDE_KIND_TO_TYPE[a.kind];
-      // Phase 3 / P3-T4：CHANGE_RESOURCE 优先读 changeResource 目标（新 assignee）。
-      const personId = a.changeResource?.personId ?? a.personId;
-      const deviceId = a.changeResource?.deviceId ?? a.deviceId;
-      const stationId = a.changeResource?.stationId ?? a.stationId;
-      return {
-        id: `CON-${Date.now()}-${i}-${this.randomSuffix()}`,
-        type,
-        taskId: a.taskId,
-        personId,
-        deviceId,
-        stationId,
-        zoneId: a.zoneId,
-        startMs: a.startMs,
-        endMs: a.endMs,
-        operator: meta.operator,
-        reason: a.reason ?? meta.reason,
-        validFrom: a.validFrom,
-        expiresAt: a.expiresAt,
-        snapshotVersion: meta.snapshotVersion,
-      };
-    });
-  }
-
-  /** 计算覆盖前后方案差异（分配增删改 + 指标增量）。 */
-  private buildPlanDiff(
-    before: SchedulingPlanV2,
-    after: SchedulingPlanV2,
-  ): PlanOverrideDiffSummary {
-    const aByTask = new Map(before.assignments.map((x) => [x.taskId, x]));
-    const bByTask = new Map(after.assignments.map((x) => [x.taskId, x]));
-    const changedTaskIds: string[] = [];
-    const addedTaskIds: string[] = [];
-    const removedTaskIds: string[] = [];
-    for (const taskId of new Set([...aByTask.keys(), ...bByTask.keys()])) {
-      const x = aByTask.get(taskId);
-      const y = bByTask.get(taskId);
-      if (!x) addedTaskIds.push(taskId);
-      else if (!y) removedTaskIds.push(taskId);
-      else if (
-        x.personId !== y.personId ||
-        x.deviceId !== y.deviceId ||
-        x.plannedStart !== y.plannedStart
-      ) {
-        changedTaskIds.push(taskId);
-      }
-    }
-    return {
-      changedTaskIds,
-      addedTaskIds,
-      removedTaskIds,
-      metricsDelta: {
-        lateMinutes: after.metrics.lateMinutes - before.metrics.lateMinutes,
-        walkingMeters: after.metrics.walkingMeters - before.metrics.walkingMeters,
-        stationWaitMinutes:
-          after.metrics.stationWaitMinutes - before.metrics.stationWaitMinutes,
-        maxWorkload: after.metrics.maxWorkload - before.metrics.maxWorkload,
-        changeCost: after.metrics.changeCost - before.metrics.changeCost,
-      },
-    };
-  }
-
-  async comparePlansV2(
-    planId: string,
-    otherPlanId: string,
-  ): Promise<Record<string, unknown>> {
-    return this.planService.comparePlans(planId, otherPlanId);
-  }
-
-  async getRoutes(): Promise<RouteGraph> {
-    return this.routingService.loadGraph();
-  }
-
-  /**
-   * 路由计算（V2）：单 person×task（旧契约）或批量候选（P0 扩展）。
-   *
-   * 批量模式（body.candidates 存在）：Task × Candidate 路由成本 SSOT——
-   * 复用 TravelCostService/routeCostProvider 的 estimate（与求解矩阵同一语义），
-   * 返回 { data: { candidates } }；blocked/forbiddenZone/坐标缺失 → feasible=false
-   * （硬约束），不伪造 0,0 坐标，不返回未经 SSOT 的距离。
-   */
-  async calculateRouteV2(
-    body: CalculateRouteRequest,
-  ): Promise<Route | RouteCandidatesResponse> {
-    if (body.candidates && body.candidates.length > 0) {
-      const state = await this.worldStateSnapshotService.getCurrentWorldState();
-      const stationById = new Map(state.stations.map((s) => [s.id, s]));
-      const taskStation = state.tasks.find((t) => t.id === body.taskId)?.stationId;
-      const taskPoint = taskStation ? stationById.get(taskStation) : undefined;
-      const taskPointCoords = taskPoint
-        ? { x: taskPoint.x, y: taskPoint.y }
-        : undefined;
-
-      // blocked/forbiddenZone 事实：route graph 状态（与 buildEligibilityMatrix 同源）。
-      const blockedEdges = new Set(
-        (state.routeStatus ?? [])
-          .filter((r) => r.status === 'blocked')
-          .map((r) => r.edgeId),
-      );
-      const forbiddenZoneIds = new Set(
-        (state.forbiddenZones ?? []).map((f) => f.zoneId),
-      );
-
-      const candidates: RouteCandidateCost[] = [];
-      for (const cand of body.candidates) {
-        const person = cand.personId
-          ? state.persons.find((p) => p.id === cand.personId)
-          : undefined;
-        const personPoint = person
-          ? person.stationId
-            ? (() => {
-                const st = stationById.get(person.stationId);
-                return st ? { x: st.x, y: st.y } : undefined;
-              })()
-            : person.x != null && person.y != null
-              ? { x: person.x, y: person.y }
-              : undefined
-          : undefined;
-        const cost = await this.routeCostProvider.estimate(
-          cand.personId ?? 'unknown',
-          body.taskId,
-          personPoint,
-          taskPointCoords,
-        );
-        const routeBlocked =
-          cost.source === 'euclidean_fallback' &&
-          cost.fallbackReason === 'no_route_edge' &&
-          blockedEdges.size > 0;
-        const inForbiddenZone =
-          (person?.zoneId != null && forbiddenZoneIds.has(person.zoneId)) ||
-          (taskStation != null && forbiddenZoneIds.has(taskStation));
-        candidates.push({
-          personId: cand.personId ?? null,
-          deviceId: cand.deviceId ?? null,
-          stationId: cand.stationId ?? null,
-          feasible: cost.feasible && !routeBlocked && !inForbiddenZone,
-          distanceMeters: cost.distanceMeters,
-          etaSeconds: cost.etaSeconds,
-          routeCostMode: cost.source,
-          fallbackReason: inForbiddenZone
-            ? 'forbidden_zone'
-            : routeBlocked
-              ? 'blocked'
-              : cost.fallbackReason,
-          dataQuality: cost.dataQuality,
-          blocked: routeBlocked,
-          forbiddenZone: inForbiddenZone,
-          // P0：路径几何透传（route_graph 真实 A* / euclidean 两点），与 Solver 同源。
-          geometry: cost.geometry ?? [],
-        });
-      }
-      return { data: { taskId: body.taskId, candidates } };
-    }
-    return this.routingService.calculateRoute(body.personId, body.taskId);
-  }
-
-  /**
-   * 任务候选资源：为指定任务返回可派人员×设备×工位的资格/路径评估列表。
-   * T03 / P1-2（G7）：注入 CandidateEngineService 时委托其富化响应（rejectReasons /
-   * scoreBreakdown / stationOptions / timeWindows）；未注入回退旧逻辑（兼容旧单测）。
-   */
-  async getTaskCandidates(taskId: string): Promise<TaskCandidatesResponse> {
-    if (this.candidateEngineService) {
-      return this.candidateEngineService.evaluateTaskCandidates(taskId);
-    }
-    const state = await this.worldStateSnapshotService.getCurrentWorldState();
-    const task = state.tasks.find((t) => t.id === taskId);
-    if (!task) throw new NotFoundException(`Task ${taskId} not found`);
-
-    const policy = await this.policyService.getActivePolicy();
-    const config = await this.policyService.getConfig();
-    const now = Date.now();
-
-    const stationById = new Map(state.stations.map((s) => [s.id, s]));
-    const taskStation = task.stationId ? stationById.get(task.stationId) : undefined;
-    const taskPoint = taskStation
-      ? { x: taskStation.x, y: taskStation.y }
-      : undefined;
-
-    const doneTaskIds = new Set<string>(
-      state.tasks
-        .filter((t) => TaskLifecycle.isTerminal(t.status))
-        .map((t) => t.id),
-    );
-
-    const bookedTimeSlots = (state.reservations ?? [])
-      .filter((r) => r.resourceType === 'person')
-      .map((r) => ({ personId: r.resourceId, start: r.startMs, end: r.endMs }));
-    const bookedDeviceSlots = (state.reservations ?? [])
-      .filter((r) => r.resourceType === 'device')
-      .map((r) => ({ deviceId: r.resourceId, start: r.startMs, end: r.endMs }));
-    const bookedStationSlots = (state.reservations ?? [])
-      .filter((r) => r.resourceType === 'station')
-      .map((r) => ({ stationId: r.resourceId, start: r.startMs, end: r.endMs }));
-
-    const forbiddenZones = (state.forbiddenZones ?? []).map((f) => f.zoneId);
-    const safetyBlockedPersonIds = state.safetyBlockedPersonIds ?? [];
-
-    const candidateStartMs = task.planStart ? Date.parse(task.planStart) : now;
-    const candidateEndMs = task.planEnd
-      ? Date.parse(task.planEnd)
-      : now + (config.defaultTaskDurationMs ?? 1_800_000);
-
-    const lockedByTask = (state.lockedAssignments ?? []).find(
-      (la) => la.taskId === taskId,
-    );
-    const assigned = Boolean(task.assigneeId || lockedByTask?.personId);
-    const lockedAssigneeId = task.assigneeId ?? lockedByTask?.personId ?? null;
-    const lockedDeviceId = task.deviceId ?? lockedByTask?.deviceId ?? null;
-
-    const requiredCaps = task.requiredDeviceCapabilities ?? [];
-    // 设备候选：全部设备（资格判定负责 battery/offline/capability 排除）+ 无能力要求时的纯手工(null)。
-    const deviceCandidates: Array<(typeof state.devices)[number] | null> = [
-      ...state.devices,
-    ];
-    if (requiredCaps.length === 0) deviceCandidates.push(null);
-
-    const lockedPersonIds = Array.from(
-      new Set(
-        (state.lockedAssignments ?? [])
-          .filter((la) => la.taskId !== taskId)
-          .map((la) => la.personId ?? '')
-          .filter(Boolean),
-      ),
-    );
-
-    const candidates: TaskCandidateResource[] = [];
-
-    for (const person of state.persons) {
-      const personStation = person.stationId
-        ? stationById.get(person.stationId)
-        : undefined;
-      // 人员无工位且坐标缺失（UNKNOWN）时传 undefined 点，交由 routeCostProvider
-      // 走空间实体解析/不可行判定；绝不把 null 当作 0,0 伪坐标（见 02 §13）。
-      const personPoint = personStation
-        ? { x: personStation.x, y: personStation.y }
-        : person.x != null && person.y != null
-          ? { x: person.x, y: person.y }
-          : undefined;
-
-      const routeCost = await this.routeCostProvider.estimate(
-        person.id,
-        task.id,
-        personPoint,
-        taskPoint,
-      );
-      const routeInfeasible = routeCost.feasible === false;
-
-      for (const device of deviceCandidates) {
-        const eligibility = this.eligibilityService.check(
-          {
-            id: person.id,
-            status: person.status,
-            skills: person.skills,
-            certifications: person.certifications,
-            stationId: person.stationId,
-            loadLevel: person.loadLevel,
-            fatigueLevel: person.fatigueLevel,
-            healthStatus: person.healthStatus,
-          },
-          {
-            id: task.id,
-            taskType: task.taskType,
-            requiredSkills: task.requiredSkills,
-            skillMatchMode: task.skillMatchMode,
-            requiredCertifications: task.requiredCertifications,
-            stationId: task.stationId,
-            zoneId: task.zoneId,
-            predIds: task.predecessorIds,
-            requiredDeviceCapabilities: requiredCaps,
-          },
-          device
-            ? {
-                id: device.id,
-                batteryPct: device.batteryPct,
-                online: device.online,
-                status: device.status,
-                capabilities: device.capabilities ?? [],
-              }
-            : null,
-          {
-            now,
-            bookedTimeSlots,
-            bookedDeviceSlots,
-            bookedStationSlots,
-            lockedPersonIds,
-            forbiddenZones,
-            minBatteryPct: config.minBatteryPct,
-            maxContinuousLoad: config.maxContinuousLoad,
-            safetyBlockedPersonIds,
-            predecessorDone: (id) => doneTaskIds.has(id),
-            candidateStartMs,
-            candidateEndMs,
-          },
-        );
-
-        const reasons = [...eligibility.reasons];
-        if (routeInfeasible) reasons.push('route_infeasible');
-
-        const eligible = eligibility.eligible && !routeInfeasible;
-        const reservationConflict = eligibility.reasons.some((r) =>
-          ['time_conflict', 'device_reserved', 'station_reserved'].includes(r),
-        );
-        const skillMatch = !eligibility.reasons.includes('missing_skill');
-        const score = eligible
-          ? routeCost.etaSeconds + person.loadLevel * 60
-          : Number.POSITIVE_INFINITY;
-
-        candidates.push({
-          personId: person.id,
-          personName: person.name,
-          deviceId: device ? device.id : null,
-          stationId: task.stationId,
-          eligible,
-          etaSeconds: routeCost.etaSeconds,
-          distanceMeters: routeCost.distanceMeters,
-          skillMatch,
-          workload: person.loadLevel,
-          batteryPct: device ? device.batteryPct : null,
-          reservationConflict,
-          score,
-          reasons,
-        });
-      }
-    }
-
-    candidates.sort((a, b) => {
-      if (a.eligible !== b.eligible) return a.eligible ? -1 : 1;
-      if (a.score !== b.score) return a.score - b.score;
-      if (a.personId !== b.personId) return a.personId < b.personId ? -1 : 1;
-      const da = a.deviceId ?? '';
-      const db = b.deviceId ?? '';
-      return da < db ? -1 : da > db ? 1 : 0;
-    });
-
-    return {
-      taskId: task.id,
-      taskTitle: task.title ?? null,
-      taskStatus: task.status ?? null,
-      assigned,
-      lockedAssigneeId,
-      lockedDeviceId,
-      solverVersion: policy.solverVersion,
-      candidates,
-      generatedAt: new Date().toISOString(),
-    };
-  }
-
-  // ===== Conflict aggregation (V2) =====
-
-  /**
-   * 从真实世界状态 / 预占 / 活跃方案聚合统一调度冲突列表。
-   * 仅返回真实/可推导冲突；无冲突时返回空列表，不虚构。
-   * Phase 3 / P3-T1：生产路径委托 ConflictService（推导+落库+生命周期）；
-   * 未注入 ConflictService（旧单测）时回退本文件遗留内存推导。
-   */
-  async listConflicts(params: ConflictsListRequest = {}): Promise<ConflictsListResponse> {
-    if (this.conflictService) {
-      return this.conflictService.listConflicts(params);
-    }
-    let conflicts = await this.buildConflicts();
-    if (params.type) conflicts = conflicts.filter((c) => c.type === params.type);
-    if (params.severity) conflicts = conflicts.filter((c) => c.severity === params.severity);
-    if (params.scope) conflicts = conflicts.filter((c) => c.scope === params.scope);
-    if (params.resourceId) conflicts = conflicts.filter((c) => c.resourceId === params.resourceId);
-    conflicts.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    return { conflicts, total: conflicts.length };
-  }
-
-  /** 返回单个冲突详情；冲突在当前真实数据中不再存在时抛 NotFoundException。 */
-  async getConflictDetail(conflictId: string): Promise<SchedulingConflict> {
-    if (this.conflictService) {
-      return this.conflictService.getConflictDetail(conflictId);
-    }
-    const { conflicts } = await this.listConflicts({});
-    const found = conflicts.find((c) => c.conflictId === conflictId);
-    if (!found) throw new NotFoundException(`Conflict ${conflictId} not found`);
-    return found;
-  }
-
-  /** 从当前世界状态 / 预占 / 活跃方案推导全部真实冲突。 */
-  private async buildConflicts(): Promise<SchedulingConflict[]> {
-    const state = await this.worldStateSnapshotService.getCurrentWorldState();
-    const config = (await this.policyService
-      .getConfig()
-      .catch(() => null)) as SchedulingPolicyConfig | null;
-    const minBatteryPct = config?.minBatteryPct ?? 15;
-    const now = Date.now();
-    const conflicts: SchedulingConflict[] = [];
-
-    const terminalStatuses = new Set(['done', 'completed', 'cancelled', 'failed']);
-    const affectedTasks = state.tasks.filter((t) => !terminalStatuses.has(t.status));
-
-    const taskIdsFor = (kind: 'person' | 'device', id: string): string[] =>
-      affectedTasks
-        .filter((t) => (kind === 'person' ? t.assigneeId === id : t.deviceId === id))
-        .map((t) => t.id);
-
-    // 1. double booking：同一资源时间窗重叠的预占。
-    const resByKey = new Map<string, typeof state.reservations>();
-    for (const r of state.reservations ?? []) {
-      const key = `${r.resourceType}:${r.resourceId}`;
-      const list = resByKey.get(key) ?? [];
-      list.push(r);
-      resByKey.set(key, list);
-    }
-    for (const [key, list] of resByKey) {
-      const sorted = [...list].sort((a, b) => a.startMs - b.startMs);
-      for (let i = 0; i < sorted.length; i++) {
-        for (let j = i + 1; j < sorted.length; j++) {
-          const a = sorted[i];
-          const b = sorted[j];
-          if (a.startMs < b.endMs && b.startMs < a.endMs) {
-            const [resourceType, resourceId] = key.split(':');
-            conflicts.push(
-              this.mkConflict(
-                `double_booking:${key}:${a.reservationId}:${b.reservationId}`,
-                {
-                  type: 'double_booking',
-                  severity: 'critical',
-                  scope: 'resource',
-                  resourceType,
-                  resourceId,
-                  taskIds: [],
-                  message: `资源 ${resourceId}（${resourceType}）存在重叠预占：${a.reservationId} 与 ${b.reservationId}`,
-                  resolution: '释放其中一条预占或调整时间窗',
-                  snapshotVersion: 'CURRENT',
-                  data: {
-                    reservationIds: [a.reservationId, b.reservationId],
-                    overlapStartMs: Math.max(a.startMs, b.startMs),
-                    overlapEndMs: Math.min(a.endMs, b.endMs),
-                  },
-                },
-              ),
-            );
-          }
-        }
-      }
-    }
-
-    // 2. resource stale：STALE / UNKNOWN 数据不被视为可信。
-    for (const p of state.persons) {
-      if (p.dataQuality === 'STALE' || p.dataQuality === 'UNKNOWN') {
-        conflicts.push(
-          this.mkConflict(`resource_stale:person:${p.id}`, {
-            type: 'resource_stale',
-            severity: 'medium',
-            scope: 'resource',
-            resourceType: 'person',
-            resourceId: p.id,
-            taskIds: taskIdsFor('person', p.id),
-            message: `人员 ${p.name ?? p.id} 数据陈旧（${p.dataQuality}）`,
-            resolution: '等待遥测更新或人工确认状态',
-            snapshotVersion: 'CURRENT',
-            data: { dataQuality: p.dataQuality },
-          }),
-        );
-      }
-    }
-    for (const d of state.devices) {
-      if (d.dataQuality === 'STALE' || d.dataQuality === 'UNKNOWN') {
-        conflicts.push(
-          this.mkConflict(`resource_stale:device:${d.id}`, {
-            type: 'resource_stale',
-            severity: 'medium',
-            scope: 'resource',
-            resourceType: 'device',
-            resourceId: d.id,
-            taskIds: taskIdsFor('device', d.id),
-            message: `设备 ${d.id} 数据陈旧（${d.dataQuality}）`,
-            resolution: '等待遥测更新确认状态',
-            snapshotVersion: 'CURRENT',
-            data: { dataQuality: d.dataQuality },
-          }),
-        );
-      }
-    }
-
-    // 3. person unavailable：数据新鲜但状态不可用。
-    for (const p of state.persons) {
-      if (p.dataQuality === 'FRESH' && p.status === 'unavailable') {
-        conflicts.push(
-          this.mkConflict(`person_unavailable:${p.id}`, {
-            type: 'person_unavailable',
-            severity: 'high',
-            scope: 'resource',
-            resourceType: 'person',
-            resourceId: p.id,
-            taskIds: taskIdsFor('person', p.id),
-            message: `人员 ${p.name ?? p.id} 当前不可用`,
-            resolution: '改派其他人员或等待其恢复',
-            snapshotVersion: 'CURRENT',
-            data: { status: p.status },
-          }),
-        );
-      }
-    }
-
-    // 4. device offline。
-    for (const d of state.devices) {
-      if (d.online === false || d.status === 'offline') {
-        conflicts.push(
-          this.mkConflict(`device_offline:${d.id}`, {
-            type: 'device_offline',
-            severity: 'high',
-            scope: 'resource',
-            resourceType: 'device',
-            resourceId: d.id,
-            taskIds: taskIdsFor('device', d.id),
-            message: `设备 ${d.id} 离线`,
-            resolution: '检查设备连接或改派其他设备',
-            snapshotVersion: 'CURRENT',
-            data: { status: d.status },
-          }),
-        );
-      }
-    }
-
-    // 5. low battery。
-    for (const d of state.devices) {
-      if (d.batteryPct < minBatteryPct) {
-        conflicts.push(
-          this.mkConflict(`low_battery:${d.id}`, {
-            type: 'low_battery',
-            severity: 'medium',
-            scope: 'resource',
-            resourceType: 'device',
-            resourceId: d.id,
-            taskIds: taskIdsFor('device', d.id),
-            message: `设备 ${d.id} 电量 ${d.batteryPct}% 低于阈值 ${minBatteryPct}%`,
-            resolution: '安排设备充电或换电',
-            snapshotVersion: 'CURRENT',
-            data: { batteryPct: d.batteryPct, minBatteryPct },
-          }),
-        );
-      }
-    }
-
-    // 6. blocked route：路段状态非 open。
-    for (const r of state.routeStatus ?? []) {
-      if (r.status !== 'open') {
-        conflicts.push(
-          this.mkConflict(`blocked_route:${r.edgeId}`, {
-            type: 'blocked_route',
-            severity: 'high',
-            scope: 'route',
-            resourceType: 'route',
-            resourceId: r.edgeId,
-            taskIds: [],
-            message: `路段 ${r.edgeId} 不可通行（${r.status}）`,
-            resolution: '求解时排除该路段并绕行',
-            snapshotVersion: 'CURRENT',
-            data: { status: r.status, riskLevel: r.riskLevel },
-          }),
-        );
-      }
-    }
-
-    // 7. forbidden zone：受限制区域 + 安全事件派生区域。
-    for (const z of state.forbiddenZones ?? []) {
-      const zoneTaskIds = affectedTasks
-        .filter((t) => t.zoneId === z.zoneId)
-        .map((t) => t.id);
-      conflicts.push(
-        this.mkConflict(`forbidden_zone:${z.zoneId}`, {
-          type: 'forbidden_zone',
-          severity: 'critical',
-          scope: 'route',
-          resourceType: 'zone',
-          resourceId: z.zoneId,
-          taskIds: zoneTaskIds,
-          message: `区域 ${z.zoneId} 被禁止进入（${z.reason}）`,
-          resolution: '取消该区域任务或人工介入',
-          snapshotVersion: 'CURRENT',
-          data: { reason: z.reason },
-        }),
-      );
-    }
-
-    // 8. safety block：安全事件触发的禁用人员/设备。
-    for (const pid of state.safetyBlockedPersonIds ?? []) {
-      conflicts.push(
-        this.mkConflict(`safety_block:person:${pid}`, {
-          type: 'safety_block',
-          severity: 'critical',
-          scope: 'resource',
-          resourceType: 'person',
-          resourceId: pid,
-          taskIds: taskIdsFor('person', pid),
-          message: `人员 ${pid} 因安全事件被禁止作业`,
-          resolution: '确认安全事件消除后人工恢复',
-          snapshotVersion: 'CURRENT',
-          data: {},
-        }),
-      );
-    }
-    for (const did of state.safetyBlockedDeviceIds ?? []) {
-      conflicts.push(
-        this.mkConflict(`safety_block:device:${did}`, {
-          type: 'safety_block',
-          severity: 'critical',
-          scope: 'resource',
-          resourceType: 'device',
-          resourceId: did,
-          taskIds: taskIdsFor('device', did),
-          message: `设备 ${did} 因安全事件被禁止启用`,
-          resolution: '确认安全事件消除后人工恢复',
-          snapshotVersion: 'CURRENT',
-          data: {},
-        }),
-      );
-    }
-
-    // 9. predecessor violation：前置任务未完成仍被调度。
-    const statusById = new Map(state.tasks.map((t) => [t.id, t.status]));
-    for (const t of affectedTasks) {
-      const pendingPreds = (t.predecessorIds ?? []).filter(
-        (pid) => !terminalStatuses.has(statusById.get(pid) ?? ''),
-      );
-      if (pendingPreds.length > 0) {
-        conflicts.push(
-          this.mkConflict(`predecessor_violation:${t.id}`, {
-            type: 'predecessor_violation',
-            severity: 'high',
-            scope: 'task',
-            resourceType: null,
-            resourceId: null,
-            taskIds: [t.id],
-            message: `任务 ${t.id} 的前置任务（${pendingPreds.join(', ')}）尚未完成`,
-            resolution: '等待前置任务完成或调整依赖',
-            snapshotVersion: 'CURRENT',
-            data: { predecessorIds: pendingPreds },
-          }),
-        );
-      }
-    }
-
-    // 10. station capacity：工位任务数量超过容量。
-    const backlogCountById = new Map<string, number>();
-    for (const b of state.backlog ?? []) backlogCountById.set(b.taskId, b.count);
-    for (const s of state.stations ?? []) {
-      if (s.capacity == null) continue;
-      const count = backlogCountById.get(s.id) ?? 0;
-      if (count > s.capacity) {
-        conflicts.push(
-          this.mkConflict(`station_capacity:${s.id}`, {
-            type: 'station_capacity',
-            severity: 'medium',
-            scope: 'resource',
-            resourceType: 'station',
-            resourceId: s.id,
-            taskIds: [],
-            message: `工位 ${s.name ?? s.id} 任务数 ${count} 超过容量 ${s.capacity}`,
-            resolution: '向其他空闲工位分流任务',
-            snapshotVersion: 'CURRENT',
-            data: { capacity: s.capacity, count },
-          }),
-        );
-      }
-    }
-
-    // 11. stale plan：活跃方案基于已过期的快照。
-    const activePlans = await this.db
-      .select()
-      .from(ewohSchedulePlan)
-      .where(inArray(ewohSchedulePlan.status, SchedulerService.ACTIVE_PLAN_STATUSES));
-    for (const p of activePlans) {
-      if (!p.snapshotVersion) continue;
-      const stale = await this.worldStateSnapshotService.isPlanStale(p.snapshotVersion);
-      if (stale) {
-        conflicts.push(
-          this.mkConflict(`stale_plan:${p.planId}`, {
-            type: 'stale_plan',
-            severity: 'medium',
-            scope: 'plan',
-            resourceType: null,
-            resourceId: null,
-            taskIds: [],
-            message: `方案 ${p.planId} 基于的快照 ${p.snapshotVersion} 已过期`,
-            resolution: '基于最新快照重新运行调度生成新方案',
-            snapshotVersion: p.snapshotVersion,
-            data: { snapshotVersion: p.snapshotVersion, status: p.status },
-          }),
-        );
-      }
-    }
-
-    // 12. reservation conflict：预占的资源当前离线/数据陈旧（预占不可用资源）。
-    for (const r of state.reservations ?? []) {
-      const offline =
-        r.resourceType === 'device' &&
-        state.devices.find((d) => d.id === r.resourceId)?.online === false;
-      const stale =
-        r.resourceType === 'person'
-          ? state.persons.find((p) => p.id === r.resourceId)?.dataQuality !== 'FRESH'
-          : r.resourceType === 'device'
-            ? state.devices.find((d) => d.id === r.resourceId)?.dataQuality !== 'FRESH'
-            : false;
-      if (offline || stale) {
-        conflicts.push(
-          this.mkConflict(`reservation_conflict:${r.resourceType}:${r.resourceId}:${r.reservationId}`, {
-            type: 'reservation_conflict',
-            severity: 'high',
-            scope: 'resource',
-            resourceType: r.resourceType,
-            resourceId: r.resourceId,
-            taskIds: [],
-            message: `资源 ${r.resourceId}（${r.resourceType}）存在预占但当前不可用`,
-            resolution: '释放该预占并改派可用资源',
-            snapshotVersion: 'CURRENT',
-            data: {
-              reservationId: r.reservationId,
-              startMs: r.startMs,
-              endMs: r.endMs,
-              offline,
-              stale,
-            },
-          }),
-        );
-      }
-    }
-
-    // 13. reservation expiring：预占即将过期（剩余时长 < 阈值）。
-    // 预警而非阻断：提示值班员提前续约/重排，避免派工执行中途资源失效。
-    const expiringThresholdMs = this.reservationExpiringThresholdMs;
-    for (const r of state.reservations ?? []) {
-      if (r.endMs == null) continue;
-      const remainingMs = r.endMs - now;
-      if (remainingMs >= 0 && remainingMs < expiringThresholdMs) {
-        conflicts.push(
-          this.mkConflict(
-            `reservation_expiring:${r.resourceType}:${r.resourceId}:${r.reservationId}`,
-            {
-              type: 'reservation_expiring',
-              severity: 'medium',
-              scope: 'resource',
-              resourceType: r.resourceType,
-              resourceId: r.resourceId,
-              taskIds: [],
-              message: `资源 ${r.resourceId}（${r.resourceType}）预占即将过期（剩余 ${Math.ceil(remainingMs / 60000)} 分钟）`,
-              resolution: '续约预占或在过期前完成派工/重排',
-              snapshotVersion: 'CURRENT',
-              data: {
-                reservationId: r.reservationId,
-                startMs: r.startMs,
-                endMs: r.endMs,
-                remainingMs,
-                thresholdMs: expiringThresholdMs,
-              },
-            },
-          ),
-        );
-      }
-    }
-
-    // v0.7 B3：新冲突实时推送（SSE conflict.detected）。
-    // 仅推送首次出现的 conflictId（内存去重），避免前端轮询触发的重复推送；
-    // 冲突消失不推送（由前端轮询/快照兜底）。缺失 outboxService（测试）时静默跳过。
-    this.emitNewConflicts(conflicts);
-
-    return conflicts;
-  }
-
-  /** v0.7 B3：已推送过的冲突 id 缓存（防重复推送，有界）。 */
-  private readonly emittedConflictIds = new Set<string>();
-  private static readonly EMITTED_CONFLICT_CAP = 500;
-
-  /**
-   * v0.7 B3：将新出现的冲突通过 outbox 推送到 SSE 流（conflict.detected）。
-   * 内存去重：同 conflictId（内容哈希稳定）只推送一次；缓存超上限时清空最老一半。
-   * 幂等性由 sequence 机制 + 前端去重双保险。
-   */
-  private emitNewConflicts(conflicts: SchedulingConflict[]): void {
-    if (!this.outboxService) return;
-    for (const c of conflicts) {
-      if (this.emittedConflictIds.has(c.conflictId)) continue;
-      this.emittedConflictIds.add(c.conflictId);
-      if (this.emittedConflictIds.size > SchedulerService.EMITTED_CONFLICT_CAP) {
-        // 防无界增长：清空最老一半（近似）
-        const drop = Math.floor(this.emittedConflictIds.size / 2);
-        let i = 0;
-        for (const id of this.emittedConflictIds) {
-          if (i++ >= drop) break;
-          this.emittedConflictIds.delete(id);
-        }
-      }
-      Promise.resolve(
-        this.outboxService.enqueue(
-          'conflict.detected',
-          c.conflictId,
-          {
-            conflictId: c.conflictId,
-            type: c.type,
-            severity: c.severity,
-            scope: c.scope,
-            resourceId: c.resourceId,
-            resourceType: c.resourceType,
-            taskIds: c.taskIds,
-            message: c.message,
-            resolution: c.resolution,
-          },
-          null,
-        ),
-      ).catch((e) => {
-        this.logger.warn(`conflict.detected enqueue failed: ${(e as Error).message}`);
-      });
-    }
-  }
-
-  /** 构造统一冲突，conflictId 由内容种子哈希生成（跨查询稳定）。 */
-  private mkConflict(
-    seed: string,
-    input: Omit<SchedulingConflict, 'conflictId' | 'createdAt'>,
-  ): SchedulingConflict {
-    return {
-      conflictId: `CFL-${this.hash(seed)}`,
-      createdAt: new Date().toISOString(),
-      ...input,
-    };
-  }
-
-  /** djb2 字符串哈希（生成稳定冲突 id）。 */
-  private hash(str: string): number {
-    let h = 5381;
-    for (let i = 0; i < str.length; i++) {
-      h = ((h << 5) + h + str.charCodeAt(i)) | 0;
-    }
-    return h >>> 0;
-  }
-
-  private toOrgContext(actor?: OrgContext): OrgContext {
-    return {
-      userId: actor?.userId ?? 'system',
-      primaryOrgId: actor?.primaryOrgId ?? '',
-      role: actor?.role,
-      accessibleOrgIds:
-        actor?.accessibleOrgIds ??
-        (actor?.primaryOrgId ? [actor.primaryOrgId] : []),
-      isGlobalAdmin: actor?.isGlobalAdmin ?? false,
-    };
-  }
-
-  private mapRun(
-    r: typeof ewohSchedulingRun.$inferSelect,
-  ): SchedulingRun {
-    return {
-      runId: r.runId,
-      triggerType: r.triggerType ?? 'MANUAL',
-      triggerEntityId: r.triggerEntityId ?? null,
-      status: (r.status ?? 'queued') as SchedulingRun['status'],
-      snapshotVersion: r.snapshotVersion ?? null,
-      planIds: (r.planIds as string[] | null) ?? [],
-      orgId: r.orgId ?? null,
-      error: r.error ?? null,
-      failureReason: r.failureReason ?? null,
-      createdAt: r.createdAt ? r.createdAt.toISOString() : '',
-    };
-  }
-
-  private mapPlan(r: typeof ewohSchedulePlan.$inferSelect): SchedulePlan {
-    return {
-      id: r.id,
-      planId: r.planId,
-      planName: r.planName,
-      strategy: r.strategy,
-      status: r.status ?? 'shadow',
-      taktImprovement: r.taktImprovement ?? 0,
-      highLoadPersons: r.highLoadPersons ?? 0,
-      lowBatteryRisk: r.lowBatteryRisk ?? 0,
-      affectedPersons: r.affectedPersons ?? 0,
-      metricsJson: (r.metricsJson as Record<string, unknown> | null) ?? null,
-      reason: r.reason ?? null,
-      createdAt: r.createdAt ? r.createdAt.toISOString() : null,
-      confirmedBy: r.confirmedBy ?? null,
-      confirmedAt: r.confirmedAt ? r.confirmedAt.toISOString() : null,
-      confirmReason: r.confirmReason ?? null,
-    };
-  }
-
-  /**
-   * P1-SSOT：V2 SchedulingPlanV2 → legacy SchedulePlan 形状映射。
-   * 仅透传真实求解事实（solverStatus / objective / solveDurationMs / fallbackReason），
-   * 不合成任何演示指标（taktImprovement 等保持 0/null，metricsJson 不伪造）。
-   */
-  private toLegacyPlan(p: SchedulingPlanV2): SchedulePlan {
-    return {
-      id: p.planId,
-      planId: p.planId,
-      planName: p.planName ?? p.planId,
-      strategy: this.variantLabel(p) ?? 'solver',
-      status: (p.status as SchedulePlan['status']) ?? 'proposed',
-      taktImprovement: 0,
-      highLoadPersons: 0,
-      lowBatteryRisk: 0,
-      affectedPersons: p.assignments.length,
-      metricsJson: {
-        solverStatus: p.solverStatus,
-        solverVersion: p.solverVersion,
-        solveDurationMs: p.solveDurationMs ?? null,
-        fallbackReason: p.fallbackReason ?? null,
-        objective: p.objective ?? null,
-        objectiveBreakdown: p.objectiveBreakdown ?? null,
-        assignmentCount: p.assignments.length,
-      },
-      reason: p.fallbackReason ?? null,
-      createdAt: new Date().toISOString(),
-      confirmedBy: null,
-      confirmedAt: null,
-      confirmReason: null,
-    };
-  }
-
-  /** 从 baselineDelta.variant（Record<string, unknown>）安全读取变体标签。 */
-  private variantLabel(p: SchedulingPlanV2): string | null {
-    const variant = (p.baselineDelta as Record<string, unknown> | null | undefined)
-      ?.variant as Record<string, unknown> | null | undefined;
-    return typeof variant?.label === 'string' ? variant.label : null;
-  }
-
-  private mapAudit(r: typeof ewohScheduleAudit.$inferSelect): ScheduleAudit {
-    return {
-      id: r.id,
-      auditId: r.auditId,
-      planId: r.planId,
-      action: r.action,
-      operator: r.operator ?? null,
-      reason: r.reason ?? null,
-      createdAt: r.createdAt ? r.createdAt.toISOString() : null,
-    };
-  }
-
-  private randomSuffix(): string {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    let s = '';
-    for (let i = 0; i < 4; i++) {
-      s += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return s;
-  }
   // ==========================================================================
-  // Phase 4 门面：Execution / KPI / Replay / Preview / Policy Lifecycle
-  // （薄转发；实现细节在各应用服务，避免 SchedulerService 膨胀）
+  // 执行领域更新（DispatchApplicationService）
   // ==========================================================================
 
-  /** 执行领域：更新 Execution（含 deviation 派生 + 事件）。 */
   async executionUpdate(
     assignmentId: string,
-    body: import('@shared/api.interface').ExecutionUpdateRequest,
+    body: ExecutionUpdateRequest,
     actor?: OrgContext,
-  ): Promise<import('@shared/api.interface').SchedulingExecution> {
-    if (!this.executionService) throw new Error('executionService not injected');
-    return this.executionService.update(assignmentId, body, this.toOrgContext(actor).primaryOrgId ?? null);
+  ): Promise<SchedulingExecution> {
+    return this.dispatchApplication.executionUpdate(assignmentId, body, actor);
   }
-
-  /** 执行领域：查询。 */
-  async executionList(
-    query: { planId?: string; taskId?: string; status?: string; limit?: number; offset?: number },
-  ): Promise<import('@shared/api.interface').ExecutionListResponse> {
-    if (!this.executionService) throw new Error('executionService not injected');
-    return this.executionService.list(query);
-  }
-
 }

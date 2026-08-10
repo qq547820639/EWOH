@@ -5,7 +5,7 @@
 // 本面板提供：类型/严重度过滤、冲突列表、详情展开、空态/加载/错误三态。
 // 冲突数据不虚构：无冲突即空态提示，不展示伪造信息。
 
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ShieldAlert,
@@ -37,11 +37,11 @@ import { queryKeys } from '@client/src/hooks/queryKeys';
 import { getCurrentOperator } from '@client/src/lib/auth';
 import { conflictVM, conflictStatusLabel, type ConflictAction } from '../vm/conflictVM';
 import { TYPE_META, sortConflicts } from './conflict-panel-logic';
+import { useVirtualList } from '@client/src/lib/virtualList';
 import type { SchedulingConflict, SchedulingConflictType } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { Badge } from '@client/src/components/ui/badge';
 import { Button } from '@client/src/components/ui/button';
-import { ScrollArea } from '@client/src/components/ui/scroll-area';
 
 /** 冲突类型 → 图标与中文标签（前端展示语义，与后端 SchedulingConflictType 一一对应，逻辑见 conflict-panel-logic.ts）。 */
 const TYPE_ICONS: Record<SchedulingConflictType, React.ComponentType<{ className?: string }>> = {
@@ -99,6 +99,13 @@ export function ConflictCenterPanel({
 
   // 按严重度排序：高 → 中 → 低（同严重度保持后端顺序）。
   const sorted = useMemo(() => sortConflicts(conflicts), [conflicts]);
+
+  // 冲突列表虚拟化：行高按折叠态估算（展开行会在窗口内自然增高），只渲染可视窗口。
+  const conflictList = useVirtualList<HTMLDivElement>({
+    total: sorted.length,
+    itemHeight: 84,
+    overscan: 6,
+  });
 
   // Phase 3 / P3-T1：生命周期展示模型（status/actions 来自后端，前端按状态机映射操作）。
   const lifecycle = useMemo(() => conflictVM(conflicts), [conflicts]);
@@ -213,9 +220,13 @@ export function ConflictCenterPanel({
           </span>
         </div>
       ) : (
-        <ScrollArea className="flex-1 min-h-0">
-          <ul className="divide-y divide-white/5">
-            {sorted.map((c) => {
+        <div ref={conflictList.ref} className="flex-1 min-h-0 overflow-y-auto">
+          <div style={{ height: conflictList.range.totalHeight, position: 'relative' }}>
+            <ul
+              className="divide-y divide-white/5"
+              style={{ transform: `translateY(${conflictList.range.offsetY}px)` }}
+            >
+              {sorted.slice(conflictList.slice.start, conflictList.slice.end).map((c) => {
               const label = TYPE_META[c.type]?.label ?? c.type;
               const Icon = TYPE_ICONS[c.type] ?? CircleAlert;
               const isExpanded = expandedId === c.conflictId;
@@ -347,11 +358,14 @@ export function ConflictCenterPanel({
                 </li>
               );
             })}
-          </ul>
-        </ScrollArea>
+            </ul>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-export default ConflictCenterPanel;
+// React.memo：回调 props 由 CommandMap 提供稳定引用，store 的 selection/mode/viewport
+// 写入不会连带重渲染本面板（Task 4 / P1 SSE 局部更新）。
+export default memo(ConflictCenterPanel);

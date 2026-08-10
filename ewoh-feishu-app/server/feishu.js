@@ -13,6 +13,12 @@ const path = require('path');
 const CONFIG_PATH = path.join(__dirname, '..', 'feishu-config.json');
 const LARK_BIN = process.env.LARK_CLI || 'lark-cli';
 
+// 解析非负整数环境变量（非法/负数回退默认值）
+function parseEnvInt(name, def) {
+  const v = parseInt(process.env[name], 10);
+  return Number.isFinite(v) && v >= 0 ? v : def;
+}
+
 // 模块级配置（从 feishu-config.json 读取）
 let config = null;
 
@@ -37,11 +43,24 @@ function getConfig() {
 
 // 并发上限：同一时刻最多 MAX_CONCURRENT 个 lark-cli 子进程
 // 熔断：连续失败 ≥ BREAKER_THRESHOLD 次后暂停 BREAKER_COOLDOWN_MS
-// 说明：以下三项用 let 而非 const，仅为 node --test 测试钩子（__test）可注入
+// 说明：以下多项用 let 而非 const，仅为 node --test 测试钩子（__test）可注入
 // 配置（如缩短冷却期），生产路径默认值不变。
 let MAX_CONCURRENT = 4;
 let BREAKER_THRESHOLD = 5;
 let BREAKER_COOLDOWN_MS = 30000;
+
+// P2-10：有界重试策略 —— 仅重试可重试失败（超时/启动失败/网络/可重试错误码），
+// 业务错误（权限/参数/资源不存在等）立即失败不重试。
+//   - 最大重试次数：FEISHU_CLI_MAX_RETRIES（默认 3，即最多 1+3=4 次调用）
+//   - 指数退避：base 500ms × 2^attempt（attempt 0/1/2 → 500ms/1s/2s）
+//   - 全抖动：实际延迟 = random(0, backoff)（Math.random，stdlib only）
+//   - 身份策略：首次 user，重试交替 bot/user（第 1 次重试即 bot，兼容原 user→bot 兜底）
+// P2-10：队列上限 FEISHU_CLI_MAX_QUEUE（默认 200）——排队任务超过上限立即拒绝，
+// 防止无界队列增长导致内存膨胀与延迟雪崩。
+let MAX_RETRIES = parseEnvInt('FEISHU_CLI_MAX_RETRIES', 3);
+let RETRY_BASE_DELAY_MS = 500;
+let MAX_QUEUE = parseEnvInt('FEISHU_CLI_MAX_QUEUE', 200);
+let retryDelayFn = null; // 测试钩子：fn(attemptIndex) → 延迟 ms；null 走默认全抖动退避
 
 let activeCliCalls = 0;
 const cliWaitQueue = [];
@@ -49,10 +68,16 @@ let consecutiveCliFailures = 0;
 let breakerOpenUntil = 0;
 
 // 获取并发槽位（满时排队等待，不阻塞事件循环）
+// P2-10：排队长度达到 FEISHU_CLI_MAX_QUEUE 时立即拒绝（reject），防止无界队列增长
 function acquireCliSlot() {
   if (activeCliCalls < MAX_CONCURRENT) {
     activeCliCalls += 1;
     return Promise.resolve();
+  }
+  if (cliWaitQueue.length >= MAX_QUEUE) {
+    return Promise.reject(
+      new Error(`lark-cli queue full (${MAX_QUEUE} pending, ${activeCliCalls} running)`)
+    );
   }
   return new Promise((resolve) => {
     cliWaitQueue.push(resolve);
@@ -60,10 +85,16 @@ function acquireCliSlot() {
 }
 
 // 释放并发槽位并唤醒下一个等待者
+// P2-10：唤醒的等待者直接顶替本槽位（其不再重复 acquire），activeCliCalls 保持
+// 等于在途子进程数——原实现对顶替者不 +1，计数会漂移为负（等待排空判断会失效，
+// 且后期到达的调用可能绕过并发上限）。熔断/并发语义不变。
 function releaseCliSlot() {
   activeCliCalls -= 1;
   const next = cliWaitQueue.shift();
-  if (next) next();
+  if (next) {
+    activeCliCalls += 1;
+    next();
+  }
 }
 
 // 记录一次调用结果并驱动熔断状态机
@@ -180,7 +211,12 @@ async function larkCli(args, { input, asBot = false } = {}) {
     );
     return { ok: false, data: null, error: `circuit breaker open (retry in ${waitSec}s)` };
   }
-  await acquireCliSlot();
+  try {
+    await acquireCliSlot();
+  } catch (e) {
+    // 队列已满：立即拒绝（不排队、不启动子进程、不计入熔断统计）
+    return { ok: false, data: null, error: e.message };
+  }
   try {
     const r = await runLarkCliProcess(args, { input, asBot });
     recordCliResult(r.ok);
@@ -190,13 +226,104 @@ async function larkCli(args, { input, asBot = false } = {}) {
   }
 }
 
-// identity 默认 user，失败时尝试 bot 重试一次（异步）
+// ============ 有界重试策略（P2-10）============
+// 失败分类：仅"可重试失败"触发退避重试，业务错误立即返回。
+// 可重试：进程级失败（超时/启动失败/输出超限）、网络类错误、显式可重试错误码
+//   （408/425/429/500/502/503/504）、无错误码的未知失败（保守重试，有界）。
+// 不可重试：结构化业务错误（validation/authorization/not_found/config 等 type）、
+//   命中明确业务关键词（invalid token / permission denied / access denied / not found 等）、
+//   以及 400~499 非重试 HTTP 错误码与飞书 9999xxxx 业务码（按 message 判定，默认不重试）。
+
+const RETRYABLE_HTTP_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const RETRYABLE_ERR_PATTERN =
+  /timeout|timed\s?out|ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENETUNREACH|EAI_AGAIN|EAGAIN|network|ENOENT|EACCES|EPERM|EPIPE|spawn|rate\s?limit|temporarily unavailable/i;
+const NON_RETRYABLE_ERR_PATTERN =
+  /invalid token|permission denied|unauthorized|forbidden|access denied|no permission|缺少权限|无权限|invalid base_token|not\s?found|validation|invalid_argument|queue full|circuit breaker open/i;
+// 结构化错误 type：明确不可重试的业务类型
+const NON_RETRYABLE_ERR_TYPES =
+  /^(validation|authorization|auth|permission|scope|not_found|config|business)$/i;
+// 结构化错误 type：明确可重试的类型（网络/传输/网关/限流）
+const RETRYABLE_ERR_TYPES =
+  /^(network|transport|timeout|temporary|gateway|remote|retryable)$/i;
+
+function isRetryableHttpCode(code) {
+  return RETRYABLE_HTTP_CODES.has(code);
+}
+
+// 判定一次 { ok:false, error } 失败是否可重试（供 larkCliRetry 决策；导出供测试）
+function isRetryableError(result) {
+  if (!result || result.ok) return false;
+  const err = result.error;
+  if (err == null) return true; // 未知失败：保守重试（有界）
+  if (typeof err === 'number') return isRetryableHttpCode(err);
+  if (typeof err === 'string') {
+    if (NON_RETRYABLE_ERR_PATTERN.test(err)) return false;
+    if (RETRYABLE_ERR_PATTERN.test(err)) return true;
+    return true; // 自由文本未知错误：保守重试（有界）
+  }
+  if (typeof err === 'object') {
+    const type = err.type ? String(err.type) : '';
+    if (type) {
+      if (NON_RETRYABLE_ERR_TYPES.test(type)) return false;
+      if (RETRYABLE_ERR_TYPES.test(type)) return true;
+    }
+    const code = err.code;
+    if (code != null && Number.isFinite(Number(code))) {
+      if (isRetryableHttpCode(Number(code))) return true;
+      // 非 HTTP 标准码（如飞书 9999xxxx 业务码）：按 message 判定，默认不重试
+      const msg = String(err.message || err.msg || '');
+      if (RETRYABLE_ERR_PATTERN.test(msg)) return true;
+      if (NON_RETRYABLE_ERR_PATTERN.test(msg)) return false;
+      return false;
+    }
+    const msg = String(err.message || err.msg || '');
+    if (NON_RETRYABLE_ERR_PATTERN.test(msg)) return false;
+    if (RETRYABLE_ERR_PATTERN.test(msg)) return true;
+    return true; // 结构化但无 type/code 的未知错误：保守重试（有界）
+  }
+  return true;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// 默认退避：指数退避 base 500ms × 2^attempt + 全抖动 random(0, backoff)
+function defaultRetryDelay(attemptIndex) {
+  const backoff = RETRY_BASE_DELAY_MS * 2 ** attemptIndex;
+  return Math.floor(Math.random() * backoff);
+}
+
+// 实际重试延迟：测试可注入 retryDelayFn（__test.setRetryDelayFn）
+function computeRetryDelay(attemptIndex) {
+  if (retryDelayFn) return Math.max(0, Number(retryDelayFn(attemptIndex)) || 0);
+  return defaultRetryDelay(attemptIndex);
+}
+
+// 带重试的 lark-cli 调用（替换原"user→bot 单次重试"）：
+//   - 首次以 user 身份调用；重试身份交替 bot/user（第 1 次重试即 bot，兼容原兜底语义）；
+//   - 仅可重试失败触发重试（isRetryableError），业务错误立即返回；
+//   - 最多重试 FEISHU_CLI_MAX_RETRIES 次（默认 3），指数退避 + 全抖动。
 async function larkCliRetry(args, opts = {}) {
+  const maxRetries = MAX_RETRIES;
   let r = await larkCli(args, { ...opts, asBot: false });
-  if (!r.ok) {
-    r = await larkCli(args, { ...opts, asBot: true });
+  for (let attempt = 0; !r.ok && attempt < maxRetries && isRetryableError(r); attempt += 1) {
+    const delay = computeRetryDelay(attempt);
+    if (delay > 0) await sleep(delay);
+    r = await larkCli(args, { ...opts, asBot: (attempt + 1) % 2 === 1 });
   }
   return r;
+}
+
+// 等待在途 lark-cli 调用排空（有界等待，供优雅关停使用）
+// 返回 true=已排空；false=超时仍有在途调用（由调用方决定是否强制退出）
+async function waitForCliIdle(timeoutMs = 2000) {
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  while (activeCliCalls > 0 || cliWaitQueue.length > 0) {
+    if (Date.now() >= deadline) return false;
+    await sleep(50);
+  }
+  return true;
 }
 
 // ============ 测试钩子（node --test 用；生产路径不受影响）============
@@ -210,6 +337,10 @@ const __test = {
     MAX_CONCURRENT = 4;
     BREAKER_THRESHOLD = 5;
     BREAKER_COOLDOWN_MS = 30000;
+    MAX_RETRIES = parseEnvInt('FEISHU_CLI_MAX_RETRIES', 3);
+    RETRY_BASE_DELAY_MS = 500;
+    MAX_QUEUE = parseEnvInt('FEISHU_CLI_MAX_QUEUE', 200);
+    retryDelayFn = null;
   },
   setMaxConcurrent(n) {
     MAX_CONCURRENT = n;
@@ -220,14 +351,31 @@ const __test = {
   setBreakerCooldownMs(n) {
     BREAKER_COOLDOWN_MS = n;
   },
+  setMaxRetries(n) {
+    MAX_RETRIES = n;
+  },
+  setRetryBaseDelayMs(n) {
+    RETRY_BASE_DELAY_MS = n;
+  },
+  // 注入重试延迟函数（fn(attemptIndex) → ms）；null 恢复默认全抖动退避
+  setRetryDelayFn(fn) {
+    retryDelayFn = typeof fn === 'function' ? fn : null;
+  },
+  setMaxQueue(n) {
+    MAX_QUEUE = n;
+  },
   getState() {
     return {
       activeCliCalls,
+      queuedCliJobs: cliWaitQueue.length,
       consecutiveCliFailures,
       breakerOpenUntil,
       MAX_CONCURRENT,
       BREAKER_THRESHOLD,
       BREAKER_COOLDOWN_MS,
+      MAX_RETRIES,
+      RETRY_BASE_DELAY_MS,
+      MAX_QUEUE,
     };
   },
 };
@@ -433,13 +581,20 @@ async function sendFollowupMessage(chatId, text) {
 
 // ============ 多维表格记录 ============
 
+// 解析 base_token：优先环境变量 FEISHU_BASE_TOKEN（避免凭据落入配置文件），
+// 回退 feishu-config.json 的 base_token 字段；两者皆无返回 null。
+// P2-10：所有 base 命令统一走本函数，保证凭证来源一致（轮询路径原先直接用 cfg.base_token）。
+function resolveBaseToken() {
+  const cfg = getConfig();
+  return process.env.FEISHU_BASE_TOKEN || (cfg && cfg.base_token) || null;
+}
+
 // 创建记录（upsert 无 record-id 即创建），fields 为 {字段名: CellValue}
 // 注意：base 命令的 --json 不支持 stdin，直接作为参数值传入（字段映射较小，无 argv 长度问题）
 // C1 修复：base_token 优先从环境变量 FEISHU_BASE_TOKEN 注入（避免凭据落入配置文件与命令行参数）；
 // 为空时直接失败（不传空参数）。
 async function baseRecordCreate(tableId, fields) {
-  const cfg = getConfig();
-  const baseToken = process.env.FEISHU_BASE_TOKEN || (cfg && cfg.base_token);
+  const baseToken = resolveBaseToken();
   if (!baseToken || !tableId || !fields) return { ok: false, error: 'invalid args' };
   const r = await larkCliRetry(
     ['base', '+record-upsert', '--base-token', baseToken, '--table-id', tableId, '--json', JSON.stringify(fields)]
@@ -461,8 +616,7 @@ async function baseRecordUpdate(tableId, recordId, fields) {
 
 // 按字段查记录：filter = { field, value }，返回 Promise<[{ record_id, fields }]>
 async function baseRecordSearch(tableId, { filter, limit } = {}) {
-  const cfg = getConfig();
-  const baseToken = process.env.FEISHU_BASE_TOKEN || (cfg && cfg.base_token);
+  const baseToken = resolveBaseToken();
   if (!baseToken || !tableId || !filter || !filter.field) return [];
   const r = await larkCliRetry(
     ['base', '+record-search', '--base-token', baseToken, '--table-id', tableId,
@@ -601,9 +755,12 @@ async function createReportDoc(stats, eventList) {
 module.exports = {
   larkCli,
   larkCliRetry,
+  isRetryableError,
+  waitForCliIdle,
   __test,
   loadConfig,
   getConfig,
+  resolveBaseToken,
   fmtDateTime,
   // IM
   sendAlertCard,

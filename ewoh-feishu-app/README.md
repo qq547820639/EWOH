@@ -57,6 +57,8 @@ node server/index.js
 | `FEISHU_BASE_TOKEN` | 生产建议 | 空 | **C1 修复** 多维表格 base_token，生产环境应通过环境变量注入（服务端优先读取），避免凭据落入配置文件与命令行参数（lark-cli 暂不支持 env 直读时，argv 暴露问题依赖 lark-cli 后续支持，本项为缓解措施；配置文件的 `base_token` 字段保留为回退） |
 | `PORT` | 否 | `3000` | 服务端口 |
 | `LARK_CLI` | 飞书集成 | `lark-cli` | lark-cli 可执行文件路径 |
+| `FEISHU_CLI_MAX_RETRIES` | 否 | `3` | **P2-10** lark-cli 可重试失败的最大重试次数（指数退避 base 500ms × 2^attempt + 全抖动）；业务错误（权限/参数/资源不存在等）不重试 |
+| `FEISHU_CLI_MAX_QUEUE` | 否 | `200` | **P2-10** lark-cli 并发排队上限；排队任务超过上限立即拒绝（`lark-cli queue full`），防止无界队列增长 |
 
 ## 三、测试
 
@@ -74,6 +76,11 @@ npm run test:integration # 端到端集成测试（真实 HTTP server + 临时 S
 | `test/auth.test.js` | API 鉴权中间件（写 fail-closed / Bearer+X-API-Key / 常量时间比较 / 读放行与收紧） |
 | `test/db.test.js` | 文件库 WAL + 持久化重开、webhook_dedup 幂等、状态转换边界、规则 DB 加载 |
 | `test/integration.test.js` | 端到端：鉴权链路、卡片处置成功/幂等命中/closed 冲突 409/未知动作 400 |
+| `test/lark-cli-async.test.js` | lark-cli 异步化：并发上限/20s 超时/熔断/user→bot 兜底重试 |
+| `test/base-token.test.js` | FEISHU_BASE_TOKEN 环境变量优先 + 空 token fail（不传空参数） |
+| `test/sync-m2.test.js` | 遥测批量 flush：失败保留重试 / 成功清空 / 空 buffer 不调用 |
+| `test/feishu-retry.test.js` | **P2-10** 有界重试：退避注入/业务错误不重试/最大次数边界/失败分类 |
+| `test/queue-limit.test.js` | **P2-10** 队列上限：超限立即拒绝、不计入熔断统计 |
 
 ## 四、API 速查
 
@@ -122,16 +129,32 @@ NODE_ENV=production \
 - `FEISHU_SIMULATOR_ENABLED` 生产保持关闭（真机数据通过 `/api` 或飞书侧写入）
 - 前置反向代理（nginx/Traefik）时设 `FEISHU_CORS_ORIGINS` 为实际前端源
 
-## 七、已知限制与后续优化
+## 七、部署与运行时契约（Deployment & Runtime Contract）
 
-- **多实例部署**：`webhook_dedup` 幂等依赖 SQLite 单写，横向扩展需迁移 PostgreSQL 或引入 Redis 分布式锁
-- **lark-cli 同步调用**：`feishu.js` 使用 `spawnSync` 同步执行，飞书 API 慢时会阻塞事件循环；后续可改异步 spawn + 超时
+本应用（飞书 sidecar）以**单实例**为部署边界。横向扩容为多实例共享同一 SQLite 文件**不被支持**，请勿在生产这么做。
+
+| 契约项 | 约定 |
+|--------|------|
+| 实例模型 | **单实例 only**。数据层为 better-sqlite3 文件库（WAL + `busy_timeout` 5000，进程内同步 API，无网络协议层）。关键状态（遥测 buffer、事件状态轮询进度、lark-cli 信号量/熔断）都在进程内存中，跨进程无法共享 |
+| 为什么不迁移 PostgreSQL | 本应用是监督平台的**旁路 sidecar**：无事务性账本、无多写者、无跨进程一致性要求；PG 会引入连接管理/迁移/凭据面，超出 P2 收尾范围。若未来出现多实例/高可用硬需求，正确演进是先抽 webhook 处置与状态写为独立服务 + 分布式锁，而不是把整个 sidecar 搬上 PG |
+| 两实例共享文件的后果 | 只读多开基本可用（WAL 支持多读者）；一旦两实例同时写：`busy_timeout` 5s 兜底，超时抛 `SQLITE_BUSY`（DB 写异常当前不重试，写请求直接失败）；30s 全量同步与 5s 遥测 flush 会重复/互相覆盖飞书侧数据；`webhook_dedup` 唯一约束仅保证同刻并发回调中一方成功，另一方报错 |
+| 重启安全（幂等） | `webhook_dedup` 表 `UNIQUE(event_id, action_type)` 落盘持久化 → 重启后同一事件同一动作的重复投递仍命中幂等（`duplicated:true`），不重复处置；处置失败会删除幂等记录允许重试 |
+| 优雅关停 | SIGINT/SIGTERM → 停模拟器 → 停全量同步定时器/事件状态轮询 → flush 遥测缓冲 → **等待在途 lark-cli 子进程排空（有界 2s，`feishu.waitForCliIdle`）** → 关闭 HTTP → 关闭 DB；另有 1.5s 兜底强制退出 |
+| lark-cli 调用模型 | 全部**异步**（`execFile`，非 `spawnSync`）：20s 硬超时（SIGTERM 回收）、16MB 输出上限、并发上限 4（手写信号量）、熔断（连续失败 ≥5 次暂停 30s）、有界重试（`FEISHU_CLI_MAX_RETRIES`，指数退避 + 全抖动，业务错误不重试）、队列上限（`FEISHU_CLI_MAX_QUEUE`）。任何单次 lark-cli 慢调用不再阻塞事件循环 |
+| 凭据面 | `FEISHU_BASE_TOKEN` 环境变量优先，回退 `feishu-config.json` 的 `base_token`；base_token 经 lark-cli `--base-token` argv 传入（CLI 契约限制，argv 仅本进程可见），env 注入避免凭据落入配置文件。详见运行时审计文档 |
+
+> 各项审计结论与证据见 `docs/operations/feishu-sidecar-runtime.md`；lark-cli 异步化关闭记录见 `docs/decisions/OPEN-DECISIONS.md`（2026-08-10）。
+
+## 八、已知限制与后续优化
+
+- **多实例部署**：单实例边界为设计契约（见「七、部署与运行时契约」），暂不支持横向扩展；如需多实例请先评审独立化 + 分布式锁演进路径
+- **lark-cli 异步化（已解决）**：`feishu.js` 已由 `spawnSync` 改为异步 `execFile`（20s 超时 + SIGTERM 回收），并发上限/熔断/有界重试/队列上限齐备，单次慢调用不再阻塞事件循环（原"同步调用阻塞"问题已消除，见 OPEN-DECISIONS.md 2026-08-10 关闭记录）
 - **签名依赖 create_time**：飞书事件订阅信封 `header.create_time` 为 ISO 字符串（已兼容）；若飞书改用纯秒字段需同步适配（已有 `body.timestamp` 兜底）
 - **规则运行时调参**：已支持（改 DB config 即生效），但未提供 HTTP 写接口更新规则——如需开放请加 `/api/rules/:id` PUT（需鉴权）
-- **遥测批量上限**：`syncAllToFeishu` 一次批量 100 条，量大时建议分页（`+record-batch-create` 有单次条数上限）
-- **审计扩展**：建议后续把 dedup 命中（幂等返回）也写入 audit_log 便于完整溯源
+- **遥测批量上限**：`syncAllToFeishu` 一次批量 100 条（lark-cli `+record-batch-create` 单次上限 200），量大时按 100/批循环分片
+- **审计扩展**：dedup 命中（幂等返回）与飞书侧同步动作当前不写 audit_log，仅 webhook 验签与事件处置写审计——如需完整溯源可后续补写
 
-## 八、目录结构
+## 九、目录结构
 
 ```
 ewoh-feishu-app/

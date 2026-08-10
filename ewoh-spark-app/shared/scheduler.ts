@@ -1221,6 +1221,21 @@ export interface SchedulingPolicyConfig {
   churn?: ChurnConfig;
   /** Prediction Shadow Learning canary（08 §11）。 */
   prediction?: PredictionConfig;
+  // --- CP-SAT 生产激活阶梯（Task 6 / P1）：OFF → SHADOW → CANARY → PRODUCTION（全可选，缺省=现状） ---
+  /**
+   * CP-SAT 激活阶梯配置（OFF→SHADOW→CANARY→PRODUCTION；见 docs/runtime-gates.md）。
+   * 当前 productionEnabled 恒为 false（feature-status.yaml cpSat.productionEnabled=false），
+   * 不得声称"生产就绪"。
+   */
+  cpSat?: {
+    /**
+     * SHADOW 双跑对比：同一快照/策略上同时跑 heuristic（生产方案）+ CP-SAT（shadow 对比），
+     * 返回两者与 comparison（feasibility/objective/violations/runtime/solverStatus）；
+     * shadow 结果标记 isShadow，绝不作为生产方案返回（solve() 保持 heuristic 生产方案）。
+     * 缺省 false=现状（不跑双跑，零行为变化）。
+     */
+    shadowCompare?: boolean;
+  };
 }
 
 export interface SchedulingPolicyVersionSummary {

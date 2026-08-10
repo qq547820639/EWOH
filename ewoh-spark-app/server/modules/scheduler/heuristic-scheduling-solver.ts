@@ -9,9 +9,15 @@ import type {
   ScoreBreakdown,
   WorldStateSnapshot,
 } from '@shared/api.interface';
-import { EligibilityService } from './eligibility.service';
+import {
+  EligibilityService,
+  type EligibleDevice,
+  type EligiblePerson,
+  type EligibleTask,
+} from './eligibility.service';
 import { RoutingService } from './routing.service';
-import { RouteCostProvider, type RouteCost } from './route-cost.provider';
+import { RouteCostProvider } from './route-cost.provider';
+import { createRouteCostMemo, type RouteCostMemo } from './route-cost-memo';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import type { SchedulerMetricsService } from './scheduler-metrics.service';
 import { TaskLifecycle } from './task-lifecycle';
@@ -24,7 +30,15 @@ import {
 import type { SchedulingSolver, SolveOptions } from './scheduling-solver.interface';
 import { SchedulingObjectiveEvaluator } from './scheduling-objective-evaluator.service';
 import type { CandidateEngineService } from './candidate-engine.service';
-import type { CandidateEvaluation } from '@shared/api.interface';
+import type { CandidateEvaluation, CandidateRejectReason } from '@shared/api.interface';
+
+/**
+ * P0：decisionTrace.rejectedHard / violations.alternatives 的 trace 视图上限。
+ * 硬拒绝组合在 solve 内仍以紧凑列表全量计数（candidateCount / hardRejectCount /
+ * rejectedHardTotal），仅 trace 装配时截断为有界视图，保证大规模（1000+ 任务）
+ * 求解的内存有界（trace 不再持有 O(任务×人员×设备×工位) 的对象）。
+ */
+const TRACE_REJECT_CAP = 200;
 
 /** 内部候选方案。 */
 interface Candidate {
@@ -53,6 +67,77 @@ interface Candidate {
   changeover?: boolean;
   /** T03 / P1-7：硬/软成本明细（可解释）。 */
   softCosts?: Record<string, number>;
+}
+
+/**
+ * 紧凑拒绝记录（P0 性能）：hard-rejected (person, device, station) 组合不再
+ * 物化完整 Candidate（routeGeometry/scoreBreakdown/alternatives/softCosts），
+ * 仅保留 trace 所需字段；决策轨迹装配时才展开为 DecisionTrace.rejectedHard 形状。
+ */
+interface CompactReject {
+  personId: string | null;
+  deviceId: string | null;
+  stationId: string | null;
+  rejectReasons: string[];
+}
+
+/**
+ * P0：有界紧凑拒绝缓冲。trace 只消费前 TRACE_REJECT_CAP 条（保持枚举顺序），
+ * 全量计数由调用方 taskRejectedTotal 维护——避免大规模场景（1000+ 任务，
+ * ~3 千万拒绝组合）为 trace 视图物化全部条目（内存/GC 有界）。
+ */
+class CompactRejectBuffer {
+  readonly entries: CompactReject[] = [];
+  push(entry: CompactReject): void {
+    if (this.entries.length < TRACE_REJECT_CAP) this.entries.push(entry);
+  }
+}
+
+/** reuseBaseline fast-path 中复用的基线分配记录（SolveOptions.reuseBaseline 元素）。 */
+export interface ReuseBaselineEntry {
+  personId: string;
+  deviceId: string | null;
+  stationId: string | null;
+}
+
+/** reuseBaseline fast-path 的复验上下文（solve() 每任务装配一次，与枚举路径共享同一运行状态）。 */
+interface ReuseContext {
+  task: WorldStateSnapshot['tasks'][number];
+  entry: ReuseBaselineEntry;
+  lockedWindow: [number, number] | undefined;
+  now: number;
+  earliestStartMs: number;
+  softDeadlineMs: number;
+  mustFinishByMs: number | null;
+  defaultDurationMs: number;
+  policy: SchedulingPolicy;
+  config: SchedulingPolicyConfig;
+  personById: Map<string, WorldStateSnapshot['persons'][number]>;
+  deviceById: Map<string, WorldStateSnapshot['devices'][number]>;
+  stationById: Map<string, WorldStateSnapshot['stations'][number]>;
+  stationCapabilitiesById: Map<string, string[]>;
+  stationCapacityById: Map<string, number | null>;
+  personPointById: Map<string, { x: number | null; y: number | null } | undefined>;
+  routeCostMemo: RouteCostMemo;
+  eligiblePersonById: Map<string, EligiblePerson>;
+  eligibleDeviceById: Map<string, EligibleDevice>;
+  bookedPerson: Map<string, number>;
+  bookedDevice: Map<string, number>;
+  personSlotsById: Map<string, Array<{ personId: string; start: number; end: number }>>;
+  deviceSlotsById: Map<string, Array<{ deviceId: string; start: number; end: number }>>;
+  stationSlotsById: Map<string, Array<{ stationId: string; start: number; end: number }>>;
+  forbiddenZoneIds: string[];
+  safetyBlockedPersonIds: string[];
+  lockedPersonByTask: Map<string, string>;
+  lockedDeviceByTask: Map<string, string>;
+  excludedPersonByTask: Map<string, Set<string>>;
+  excludedPersonGlobal: Set<string>;
+  excludedDeviceByTask: Map<string, Set<string>>;
+  excludedDeviceGlobal: Set<string>;
+  excludedStationByTask: Map<string, Set<string>>;
+  excludedStationGlobal: Set<string>;
+  effectiveMinBattery: number;
+  effectiveMaxLoad: number;
 }
 
 /**
@@ -234,8 +319,10 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       if (Number.isFinite(planEnd)) frozenPredEndMs.set(t.id, planEnd);
     }
     const allTaskIds = snapshot.tasks.map((t) => t.id);
+    // P0：任务 id → 任务 索引（替代 predecessor 处理中的线性 find）。
+    const taskById = new Map(snapshot.tasks.map((t) => [t.id, t]));
     const predecessorOf = (taskId: string): string[] => {
-      const t = snapshot.tasks.find((x) => x.id === taskId);
+      const t = taskById.get(taskId);
       return t ? t.predecessorIds : [];
     };
     const cyclePath = detectDependencyCycle(allTaskIds, predecessorOf);
@@ -260,6 +347,110 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     const personById = new Map(snapshot.persons.map((p) => [p.id, p]));
     const deviceById = new Map(snapshot.devices.map((d) => [d.id, d]));
     const stationById = new Map(snapshot.stations.map((s) => [s.id, s]));
+
+    // ---- P0 性能：任务无关索引一次性构建（hoist 出任务循环） ----
+    // 工位 capability/capacity（原实现每任务重建）。
+    const stationCapabilitiesById = new Map<string, string[]>();
+    const stationCapacityById = new Map<string, number | null>();
+    for (const s of snapshot.stations) {
+      stationCapabilitiesById.set(s.id, s.capabilities ?? []);
+      stationCapacityById.set(s.id, s.capacity ?? null);
+    }
+    // 人员技能索引（staged candidate pipeline：按技能预筛人员）。
+    const personBySkill = new Map<string, WorldStateSnapshot['persons'][number][]>();
+    for (const p of snapshot.persons) {
+      for (const skill of p.skills ?? []) {
+        let arr = personBySkill.get(skill);
+        if (!arr) {
+          arr = [];
+          personBySkill.set(skill, arr);
+        }
+        arr.push(p);
+      }
+    }
+    // 设备能力索引（device prefilter；与 devicesForTask 同语义的预筛，见 deviceCandidatesForTask）。
+    const deviceByCapability = new Map<
+      string,
+      WorldStateSnapshot['devices'][number][]
+    >();
+    for (const d of snapshot.devices) {
+      for (const cap of d.capabilities ?? []) {
+        let arr = deviceByCapability.get(cap);
+        if (!arr) {
+          arr = [];
+          deviceByCapability.set(cap, arr);
+        }
+        arr.push(d);
+      }
+    }
+    // 人员落点（station 坐标或自身坐标；与任务无关，整个 solve 内不变）。
+    const personPointById = new Map<
+      string,
+      { x: number | null; y: number | null } | undefined
+    >();
+    for (const p of snapshot.persons) {
+      const personStation = p.stationId ? stationById.get(p.stationId) : undefined;
+      personPointById.set(
+        p.id,
+        personStation
+          ? { x: personStation.x, y: personStation.y }
+          : p.x != null && p.y != null
+            ? { x: p.x, y: p.y }
+            : undefined,
+      );
+    }
+    // 资格判定用人员/设备描述对象（solve 内不变，避免每候选重复构造）。
+    const eligiblePersonById = new Map<string, EligiblePerson>();
+    for (const p of snapshot.persons) {
+      // 快照类型未覆盖的下游扩展字段，通过受限联合访问（与 snapshotExt 同模式）。
+      const personExt = p as WorldStateSnapshot['persons'][number] & {
+        availableWindows?: Array<{ startMs: number; endMs: number }> | null;
+        source?: 'AUTHORITATIVE' | 'DERIVED';
+      };
+      eligiblePersonById.set(p.id, {
+        id: p.id,
+        status: p.status,
+        skills: p.skills ?? [],
+        certifications: p.certifications ?? [],
+        stationId: p.stationId ?? null,
+        loadLevel: p.loadLevel ?? 0,
+        fatigueLevel: p.fatigueLevel ?? 0,
+        healthStatus: p.healthStatus ?? null,
+        certificationExpiry: p.certificationExpiry ?? [],
+        availableWindows: personExt.availableWindows ?? null,
+        dataQuality: p.dataQuality,
+        source: personExt.source,
+      });
+    }
+    const eligibleDeviceById = new Map<string, EligibleDevice>();
+    for (const d of snapshot.devices) {
+      const deviceExt = d as WorldStateSnapshot['devices'][number] & {
+        maintenanceWindows?: Array<{ startMs: number; endMs: number }> | null;
+        source?: 'AUTHORITATIVE' | 'DERIVED';
+      };
+      eligibleDeviceById.set(d.id, {
+        id: d.id,
+        batteryPct: d.batteryPct,
+        online: d.online,
+        status: d.status,
+        capabilities: d.capabilities ?? [],
+        availableWindows: d.availableWindows ?? null,
+        maintenanceWindows: deviceExt.maintenanceWindows ?? null,
+        dataQuality: d.dataQuality,
+        source: deviceExt.source,
+      });
+    }
+    // run-local 确定性路径成本 memo（per-solve-call，几何点对键）。
+    const routeCostMemo: RouteCostMemo = createRouteCostMemo(this.routeCostProvider);
+    // 禁入区域 id 数组（invariant；避免每候选 Array.from）。
+    const forbiddenZoneIds = Array.from(forbiddenZones);
+    // 前置完成判定闭包（doneTaskIds 运行时增长，闭包共享同一 Set 引用）。
+    const predecessorDoneFn = (id: string): boolean =>
+      doneTaskIds.has(id) || frozenPredEndMs.has(id);
+    // 共享空槽位数组（eligibility 只读，不修改；按资源类型分型）。
+    const EMPTY_PERSON_SLOTS: Array<{ personId: string; start: number; end: number }> = [];
+    const EMPTY_DEVICE_SLOTS: Array<{ deviceId: string; start: number; end: number }> = [];
+    const EMPTY_STATION_SLOTS: Array<{ stationId: string; start: number; end: number }> = [];
 
     // 预订时间片（来自快照 reservations，person 类型映射为 personId 区间）。
     const baseBookedSlots: Array<{ personId: string; start: number; end: number }> =
@@ -316,10 +507,16 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       });
 
     const assignments: SchedulingAssignment[] = [];
+    // P0：taskId → assignment 索引（替代 predecessor 处理中的线性 find）。
+    const assignmentByTask = new Map<string, SchedulingAssignment>();
     const bookedPerson = new Map<string, number>(); // personId -> last end ms
     const bookedDevice = new Map<string, number>(); // deviceId -> last end ms
-    const runBookedSlots: Array<{ personId: string; start: number; end: number }> =
-      [];
+    // P0：单一人员槽位数组（base + run 增长），避免每候选 [...base, ...run] 展开。
+    const bookedPersonSlots: Array<{
+      personId: string;
+      start: number;
+      end: number;
+    }> = [...baseBookedSlots];
     const bookedDeviceSlots: Array<{
       deviceId: string;
       start: number;
@@ -330,6 +527,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       start: number;
       end: number;
     }> = [];
+    // P0：工位占用计数增量维护（预订时 +1，替代每任务重建）。
+    const bookedStationCounts = new Map<string, number>();
 
     for (const { task, priority } of ranked) {
       // P0-3：due/lateness 语义分离（与 CP-SAT 一致：due 软、mustFinishBy 硬）。
@@ -357,12 +556,12 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           continue;
         }
         if (!doneTaskIds.has(p)) continue; // 其余未完成前置在 predPending 分支处理
-        const predAsg = assignments.find((a) => a.taskId === p);
+        const predAsg = assignmentByTask.get(p);
         if (predAsg?.plannedEnd) {
           const e = Date.parse(predAsg.plannedEnd);
           if (Number.isFinite(e)) predEndTimesMs.push(e);
         } else {
-          const predTask = snapshot.tasks.find((x) => x.id === p);
+          const predTask = taskById.get(p);
           if (predTask?.planEnd) {
             const e = Date.parse(predTask.planEnd);
             if (Number.isFinite(e)) predEndTimesMs.push(e);
@@ -397,29 +596,200 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         stationDecisionEnabled,
       );
 
-      // station 维度索引（P1-3/P1-4）：capability + capacity。
-      const stationCapabilitiesById = new Map<string, string[]>();
-      const stationCapacityById = new Map<string, number | null>();
-      for (const s of snapshot.stations) {
-        stationCapabilitiesById.set(s.id, s.capabilities ?? []);
-        stationCapacityById.set(s.id, s.capacity ?? null);
+      // station 维度索引（P1-3/P1-4）：capability + capacity 已在 solve 开头一次性构建
+      // （hoist 出任务循环，见 solve 顶部 "任务无关索引" 段）。
+
+      // ---- P0：每任务状态（候选池 / 紧凑拒绝缓冲 / 计数） ----
+      const feasibleTopK: Candidate[] = [];
+      const rejectedList = new CompactRejectBuffer();
+      // 技能不匹配人员每人仅记一条紧凑拒绝（跨工位去重）。
+      const emittedSkillReject = new Set<string>();
+      let mustFinishByViolated = false;
+      let taskCandidateCount = 0;
+      let taskRejectedTotal = 0;
+      // 当前已占用槽位 → 资源维度索引（每任务 O(S) 构建一次；
+      // eligibility 的 time_conflict/device_reserved/station_reserved 只需扫描
+      // 本资源槽位，避免每候选全量扫描——结果与全量扫描语义完全一致）。
+      const personSlotsById = new Map<
+        string,
+        Array<{ personId: string; start: number; end: number }>
+      >();
+      for (const s of bookedPersonSlots) {
+        let arr = personSlotsById.get(s.personId);
+        if (!arr) {
+          arr = [];
+          personSlotsById.set(s.personId, arr);
+        }
+        arr.push(s);
       }
-      // 当前已占用工位计数（同一时间窗重叠任务数；P1-4 容量硬校验）。
-      const bookedStationCounts = new Map<string, number>();
+      const deviceSlotsById = new Map<
+        string,
+        Array<{ deviceId: string; start: number; end: number }>
+      >();
+      for (const s of bookedDeviceSlots) {
+        let arr = deviceSlotsById.get(s.deviceId);
+        if (!arr) {
+          arr = [];
+          deviceSlotsById.set(s.deviceId, arr);
+        }
+        arr.push(s);
+      }
+      const stationSlotsById = new Map<
+        string,
+        Array<{ stationId: string; start: number; end: number }>
+      >();
       for (const s of bookedStationSlots) {
-        bookedStationCounts.set(
-          s.stationId,
-          (bookedStationCounts.get(s.stationId) ?? 0) + 1,
-        );
+        let arr = stationSlotsById.get(s.stationId);
+        if (!arr) {
+          arr = [];
+          stationSlotsById.set(s.stationId, arr);
+        }
+        arr.push(s);
+      }
+      // 候选设备集合（hoist 出 person 循环：devicesForTask 与 person/station 无关）。
+      const deviceCandidates = this.deviceCandidatesForTask(
+        task.id,
+        deviceById,
+        deviceByCapability,
+        lockedDeviceByTask,
+        effectiveMinBattery,
+        task.requiredDeviceCapabilities,
+        excludedDeviceByTask,
+        excludedDeviceGlobal,
+      );
+      // lockedPersonIds 仅依赖 task.id（hoist 出候选循环）。
+      const lockedPersonIds = this.lockedPersonIdsForTask(snapshot, task.id);
+      // 任务描述对象（候选评估共用，无状态）。
+      const taskForEligibility: EligibleTask = {
+        id: task.id,
+        taskType: task.taskType,
+        requiredSkills: task.requiredSkills ?? [],
+        skillMatchMode: task.skillMatchMode,
+        requiredCertifications: task.requiredCertifications ?? [],
+        stationId: task.stationId ?? null,
+        zoneId: task.zoneId ?? null,
+        predIds: task.predecessorIds ?? [],
+        requiredDeviceCapabilities: task.requiredDeviceCapabilities,
+        requiredStationCapabilities: task.requiredStationCapabilities,
+        candidateStations:
+          task.candidateStations && task.candidateStations.length > 0
+            ? task.candidateStations
+            : undefined,
+        earliestStartMs: task.earliestStartMs,
+        dueAtMs: task.dueAtMs,
+        safetyCritical: task.safetyCritical,
+      };
+      // staged pipeline：requiredSkills 非空时仅枚举共享至少一个必需技能的人员
+      //（skillMatchMode ALL/ANY 下该预筛均 sound：不共享任何技能者必被拒绝）。
+      const requiredSkills = task.requiredSkills ?? [];
+      const skillMatchedPersonIds = new Set<string>();
+      if (requiredSkills.length > 0) {
+        for (const skill of requiredSkills) {
+          for (const p of personBySkill.get(skill) ?? []) {
+            if (
+              this.personMatchesLock(p.id, task.id, lockedPersonByTask) &&
+              !this.isExcludedResource(
+                task.id,
+                p.id,
+                excludedPersonByTask,
+                excludedPersonGlobal,
+              )
+            ) {
+              skillMatchedPersonIds.add(p.id);
+            }
+          }
+        }
+      }
+      const candidatePersons: WorldStateSnapshot['persons'][number][] = [];
+      const skillMismatchPersons: WorldStateSnapshot['persons'][number][] = [];
+      for (const p of snapshot.persons) {
+        if (
+          !this.personMatchesLock(p.id, task.id, lockedPersonByTask) ||
+          this.isExcludedResource(
+            task.id,
+            p.id,
+            excludedPersonByTask,
+            excludedPersonGlobal,
+          )
+        ) {
+          continue;
+        }
+        if (requiredSkills.length > 0 && !skillMatchedPersonIds.has(p.id)) {
+          skillMismatchPersons.push(p);
+        } else {
+          candidatePersons.push(p);
+        }
       }
 
-      const candidates: Candidate[] = [];
+      // ---- #9 reuseBaseline fast-path（flag-gated，DEFAULT OFF） ----
+      // 调用方显式提供 reuseBaseline（Map<taskId, {personId, deviceId, stationId}>）时，
+      // 对"当前运行状态下仍有效"的基线分配直接复用（免枚举）；任一校验失败回退完整枚举。
+      // 注意：fast-path 只会在调用方显式 opt-in 时改变求解结果——未传 reuseBaseline 时
+      // 行为与全量重排完全一致（确定性：结果仅由 opts 显式请求驱动，非默认路径）。
+      const reuseEntry = opts.reuseBaseline?.get(task.id);
+      let reuseAdopted = false;
+      if (reuseEntry && reuseEntry.personId) {
+        const reusedCandidate = await this.tryReuseAssignment({
+          task,
+          entry: reuseEntry,
+          lockedWindow,
+          now,
+          earliestStartMs,
+          softDeadlineMs,
+          mustFinishByMs,
+          defaultDurationMs,
+          policy,
+          config,
+          personById,
+          deviceById,
+          stationById,
+          stationCapabilitiesById,
+          stationCapacityById,
+          personPointById,
+          routeCostMemo,
+          eligiblePersonById,
+          eligibleDeviceById,
+          bookedPerson,
+          bookedDevice,
+          personSlotsById,
+          deviceSlotsById,
+          stationSlotsById,
+          forbiddenZoneIds,
+          safetyBlockedPersonIds,
+          lockedPersonByTask,
+          lockedDeviceByTask,
+          excludedPersonByTask,
+          excludedPersonGlobal,
+          excludedDeviceByTask,
+          excludedDeviceGlobal,
+          excludedStationByTask,
+          excludedStationGlobal,
+          effectiveMinBattery,
+          effectiveMaxLoad,
+        });
+        if (reusedCandidate) {
+          feasibleTopK.push(reusedCandidate);
+          reuseAdopted = true;
+        }
+      }
 
       // T03 / P1-2（G7）修 #17：注入 CandidateEngineService 时，候选池消费
       // buildCandidatePool（与端点 GET /tasks/:taskId/candidates 同语义）；
       // 未注入时保持现状内联（向后兼容）。routeId 由 engine 池不携带，映射为
       // routeCostId 并标注 parity 差异（见 candidate-engine parity 测试）。
-      if (this.candidateEngine) {
+      // P0：top-K 上限（SolveOptions.candidateTopK / config.candidateTopK，默认 12）。
+      const topK = Math.max(
+        1,
+        Math.floor(
+          opts.candidateTopK ??
+            (config as SchedulingPolicyConfig & { candidateTopK?: number })
+              .candidateTopK ??
+            12,
+        ),
+      );
+      if (reuseAdopted) {
+        // reuse 已采纳：跳过候选枚举（feasibleTopK 仅含复用候选）。
+      } else if (this.candidateEngine) {
         const enginePool = await this.candidateEngine.buildCandidatePool(task, snapshot, {
           nowMs: now,
           lockedPersonByTask,
@@ -436,7 +806,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           preferredPersonGlobal,
           preferredDeviceGlobal,
           preferredStationGlobal,
-          bookedTimeSlots: [...baseBookedSlots, ...runBookedSlots],
+          bookedTimeSlots: bookedPersonSlots,
           bookedDeviceSlots,
           bookedStationSlots,
           bookedStationCounts,
@@ -446,13 +816,14 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           stationDecisionEnabled,
         });
         candidateCount += enginePool.length;
+        taskCandidateCount += enginePool.length;
         for (const ev of enginePool) {
           if (!ev.eligible) hardRejectCount += 1;
           const startMs = lockedWindow ? lockedWindow[0] : ev.startMs;
           const endMs = lockedWindow ? lockedWindow[1] : ev.endMs;
           const eligible =
             ev.eligible && (mustFinishByMs == null || endMs <= mustFinishByMs);
-          candidates.push({
+          const candidate: Candidate = {
             personId: ev.personId,
             deviceId: ev.deviceId,
             stationId: ev.stationId,
@@ -474,19 +845,23 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
             rejectReasons: ev.rejectReasons,
             changeover: ev.changeover,
             softCosts: ev.softCosts as Record<string, number>,
-          });
+          };
+          if (eligible) {
+            this.insertTopK(feasibleTopK, candidate, topK);
+          } else {
+            if (mustFinishByMs != null && endMs > mustFinishByMs) {
+              mustFinishByViolated = true;
+            }
+            taskRejectedTotal += 1;
+            rejectedList.push({
+              personId: ev.personId,
+              deviceId: ev.deviceId,
+              stationId: ev.stationId,
+              rejectReasons: ev.rejectReasons,
+            });
+          }
         }
       } else {
-
-      const candidatePersons = snapshot.persons.filter((p) =>
-        this.personMatchesLock(p.id, task.id, lockedPersonByTask) &&
-        !this.isExcludedResource(
-          task.id,
-          p.id,
-          excludedPersonByTask,
-          excludedPersonGlobal,
-        ),
-      );
 
       for (const stationId of stationOptions) {
         // stationId 可为 null（任务无工位/无候选工位时回退无工位语义，保持旧行为）。
@@ -503,23 +878,38 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         // 候选工位作为任务落点（路径成本目的地）；无工位时回退 undefined（交由 routeCostProvider 解析）。
         const taskPoint = station ? { x: station.x, y: station.y } : undefined;
 
-        for (const person of candidatePersons) {
-          const personStation = person.stationId
-            ? stationById.get(person.stationId)
-            : undefined;
-          // 人员无工位且坐标缺失（UNKNOWN）时传 undefined 点，交由 routeCostProvider
-          // 走空间实体解析/不可行判定；绝不把 null 当作 0,0 伪坐标（见 02 §13）。
-          const personPoint = personStation
-            ? { x: personStation.x, y: personStation.y }
-            : person.x != null && person.y != null
-              ? { x: person.x, y: person.y }
-              : undefined;
-
-          // 真实路径成本（与地图一致的 route graph）。
-          const routeCost = await this.routeCostProvider.estimate(
+        // staged pipeline：技能不匹配人员不再枚举（compact reject + 等价计数：
+        // 每个本应评估的 (person, device, station) 组合照常计入 candidateCount /
+        // hardRejectCount；trace 每人只保留一条紧凑记录，见 P0 说明）。
+        for (const person of skillMismatchPersons) {
+          const skillRc = await routeCostMemo.get(
             person.id,
             task.id,
-            personPoint,
+            personPointById.get(person.id),
+            taskPoint,
+          );
+          if (skillRc.feasible === false) continue; // 原语义：route 不可行静默跳过，不计数
+          candidateCount += deviceCandidates.length;
+          taskCandidateCount += deviceCandidates.length;
+          hardRejectCount += deviceCandidates.length;
+          taskRejectedTotal += deviceCandidates.length;
+          if (!emittedSkillReject.has(person.id)) {
+            emittedSkillReject.add(person.id);
+            rejectedList.push({
+              personId: person.id,
+              deviceId: null,
+              stationId: null,
+              rejectReasons: ['missing_skill'],
+            });
+          }
+        }
+
+        for (const person of candidatePersons) {
+          // 真实路径成本（run-local 确定性 memo：同几何点对跨任务/跨人员复用）。
+          const routeCost = await routeCostMemo.get(
+            person.id,
+            task.id,
+            personPointById.get(person.id),
             taskPoint,
           );
           if (routeCost.feasible === false) {
@@ -527,19 +917,12 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
             continue;
           }
 
-          const deviceCandidates = this.devicesForTask(
-            task.id,
-            deviceById,
-            lockedDeviceByTask,
-            effectiveMinBattery,
-            task.requiredDeviceCapabilities,
-            excludedDeviceByTask,
-            excludedDeviceGlobal,
-          );
+          const personElig = eligiblePersonById.get(person.id)!;
+          const travelMs = routeCost.etaSeconds * 1000;
           for (const device of deviceCandidates) {
             // P2-T3：每个 (person, device, station) 候选组合计入候选数。
             candidateCount += 1;
-            const travelMs = routeCost.etaSeconds * 1000;
+            taskCandidateCount += 1;
             const rawStartMs = lockedWindow
               ? lockedWindow[0]
               : earliestStartMs + travelMs;
@@ -561,79 +944,91 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
             // （与 CP-SAT OnlyEnforceIf(assigned) 语义一致：无法满足的任务如实 unassigned）。
             if (mustFinishByMs != null && endMs > mustFinishByMs) {
               hardRejectCount += 1;
-              candidates.push({
+              taskRejectedTotal += 1;
+              mustFinishByViolated = true;
+              rejectedList.push({
                 personId: person.id,
                 deviceId: device ? device.id : null,
                 stationId,
-                zoneId: task.zoneId,
-                startMs,
-                endMs,
-                routeId: routeCost.routeId,
-                etaSeconds: routeCost.etaSeconds,
-                distanceMeters: routeCost.distanceMeters,
-                riskLevel: routeCost.riskLevel,
-                routeGeometry: routeCost.geometry ?? [],
-                waitMs: 0,
-                lateMs: 0,
-                changeCost: 0,
-                cost: Number.POSITIVE_INFINITY,
-                scoreBreakdown: this.zeroBreakdown(),
-                reasons: ['must_finish_by_violation'],
                 rejectReasons: ['must_finish_by_violation'],
-                alternatives: [{ reasons: ['must_finish_by_violation'] }],
               });
               continue;
             }
 
+            // P0：资源占用冲突预筛（与 eligibility 4/4b/4c 同判据、同优先级顺序；
+            // 命中即该组合必被 eligibility 拒绝——直接紧凑拒绝，跳过完整资格评估）。
+            // 预筛只淘汰"必拒绝"组合，绝不改变可行集/argmin；计数与 eligibility 拒绝一致。
+            const personConflict = (
+              personSlotsById.get(person.id) ?? EMPTY_PERSON_SLOTS
+            ).some((s) => this.intervalsOverlap(s.start, s.end, startMs, endMs));
+            if (personConflict) {
+              hardRejectCount += 1;
+              taskRejectedTotal += 1;
+              rejectedList.push({
+                personId: person.id,
+                deviceId: device ? device.id : null,
+                stationId,
+                rejectReasons: ['time_conflict'],
+              });
+              continue;
+            }
+            if (device != null) {
+              const deviceConflict = (
+                deviceSlotsById.get(device.id) ?? EMPTY_DEVICE_SLOTS
+              ).some((s) => this.intervalsOverlap(s.start, s.end, startMs, endMs));
+              if (deviceConflict) {
+                hardRejectCount += 1;
+                taskRejectedTotal += 1;
+                rejectedList.push({
+                  personId: person.id,
+                  deviceId: device.id,
+                  stationId,
+                  rejectReasons: ['device_reserved'],
+                });
+                continue;
+              }
+            }
+            if (stationId != null) {
+              const stationConflict = (
+                stationSlotsById.get(stationId) ?? EMPTY_STATION_SLOTS
+              ).some((s) => this.intervalsOverlap(s.start, s.end, startMs, endMs));
+              if (stationConflict) {
+                hardRejectCount += 1;
+                taskRejectedTotal += 1;
+                rejectedList.push({
+                  personId: person.id,
+                  deviceId: device ? device.id : null,
+                  stationId,
+                  rejectReasons: ['station_reserved'],
+                });
+                continue;
+              }
+            }
+
             const eligibility = this.eligibilityService.check(
-              {
-                id: person.id,
-                status: person.status,
-                skills: person.skills,
-                certifications: person.certifications,
-                stationId: person.stationId,
-                loadLevel: person.loadLevel,
-                fatigueLevel: person.fatigueLevel,
-                healthStatus: person.healthStatus,
-                certificationExpiry: person.certificationExpiry ?? [],
-              },
-              {
-                id: task.id,
-                taskType: task.taskType,
-                requiredSkills: task.requiredSkills,
-                skillMatchMode: task.skillMatchMode,
-                requiredCertifications: task.requiredCertifications,
-                stationId: task.stationId,
-                zoneId: task.zoneId,
-                predIds: task.predecessorIds,
-                requiredDeviceCapabilities: task.requiredDeviceCapabilities,
-                requiredStationCapabilities: task.requiredStationCapabilities,
-                candidateStations:
-                  task.candidateStations && task.candidateStations.length > 0
-                    ? task.candidateStations
-                    : undefined,
-              },
-              device
-                ? {
-                    id: device.id,
-                    batteryPct: device.batteryPct,
-                    online: device.online,
-                    status: device.status,
-                    capabilities: device.capabilities ?? [],
-                  }
-                : null,
+              personElig,
+              taskForEligibility,
+              device ? eligibleDeviceById.get(device.id)! : null,
               {
                 now,
-                bookedTimeSlots: [...baseBookedSlots, ...runBookedSlots],
-                bookedDeviceSlots,
-                bookedStationSlots,
-                lockedPersonIds: this.lockedPersonIdsForTask(snapshot, task.id),
-                forbiddenZones: Array.from(forbiddenZones),
+                // P0：资源维度槽位索引（每任务构建一次）——扫描范围从全量槽位
+                // 收窄到本资源槽位；eligibility 判定结果与全量扫描完全一致
+                // （time_conflict/device_reserved/station_reserved 均按资源 id 过滤）。
+                bookedTimeSlots: personSlotsById.get(person.id) ?? EMPTY_PERSON_SLOTS,
+                bookedDeviceSlots:
+                  device != null
+                    ? deviceSlotsById.get(device.id) ?? EMPTY_DEVICE_SLOTS
+                    : EMPTY_DEVICE_SLOTS,
+                bookedStationSlots:
+                  stationId != null
+                    ? stationSlotsById.get(stationId) ?? EMPTY_STATION_SLOTS
+                    : EMPTY_STATION_SLOTS,
+                lockedPersonIds,
+                forbiddenZones: forbiddenZoneIds,
                 minBatteryPct: effectiveMinBattery,
                 maxContinuousLoad: effectiveMaxLoad,
                 safetyBlockedPersonIds,
-                predecessorDone: (id) =>
-                  doneTaskIds.has(id) || frozenPredEndMs.has(id),
+                predecessorDone: predecessorDoneFn,
                 candidateStartMs: startMs,
                 candidateEndMs: endMs,
                 // T03 / P1-3/P1-4：station 决策维度。
@@ -646,26 +1041,12 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
 
             if (!eligibility.eligible) {
               hardRejectCount += 1;
-              candidates.push({
+              taskRejectedTotal += 1;
+              rejectedList.push({
                 personId: person.id,
                 deviceId: device ? device.id : null,
                 stationId,
-                zoneId: task.zoneId,
-                startMs,
-                endMs,
-                routeId: routeCost.routeId,
-                etaSeconds: routeCost.etaSeconds,
-                distanceMeters: routeCost.distanceMeters,
-                riskLevel: routeCost.riskLevel,
-                routeGeometry: routeCost.geometry ?? [],
-                waitMs: 0,
-                lateMs: 0,
-                changeCost: 0,
-                cost: Number.POSITIVE_INFINITY,
-                scoreBreakdown: this.zeroBreakdown(),
-                reasons: eligibility.reasons,
-                rejectReasons: eligibility.reasons as import('@shared/api.interface').CandidateRejectReason[],
-                alternatives: [{ reasons: eligibility.reasons }],
+                rejectReasons: eligibility.reasons as CandidateRejectReason[],
               });
               continue;
             }
@@ -748,7 +1129,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
               `effective_score=${priority.score.toFixed(2)}`,
               ...(changeover ? [`station_changeover=${stationId}`] : []),
             ];
-            candidates.push({
+            const candidate: Candidate = {
               personId: person.id,
               deviceId: device ? device.id : null,
               stationId,
@@ -777,28 +1158,28 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
                 riskMs,
                 energyPenalty,
               },
-            });
+            };
+            this.insertTopK(feasibleTopK, candidate, topK);
           }
         }
       }
       } // end inline candidate path (else of candidateEngine)
 
-      const feasible = candidates
-        .filter((c) => c.cost !== Number.POSITIVE_INFINITY)
-        .sort(this.candidateCompare);
-      const best = feasible[0];
+      const best = feasibleTopK[0];
 
       if (!best) {
-        const mustFinishByViolated = candidates.some((c) =>
-          c.reasons.includes('must_finish_by_violation'),
-        );
+        // P0：violation alternatives 同样有界（trace 视图上限；
+        // 全量计数经 rejectedHardTotal 透出，避免大规模场景 trace 内存爆炸）。
+        const violationAlternatives = rejectedList.entries.map((c) => ({
+          reasons: c.rejectReasons,
+        }));
         violations.push({
           taskId: task.id,
           reason: mustFinishByViolated
             ? 'must_finish_by_violation'
             : 'no_eligible_resource',
           type: 'infeasible',
-          alternatives: candidates.map((c) => ({ reasons: c.reasons })),
+          alternatives: violationAlternatives,
         });
         continue;
       }
@@ -806,7 +1187,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       // 预定资源。
       bookedPerson.set(best.personId, best.endMs);
       if (best.deviceId) bookedDevice.set(best.deviceId, best.endMs);
-      runBookedSlots.push({
+      bookedPersonSlots.push({
         personId: best.personId,
         start: best.startMs,
         end: best.endMs,
@@ -824,6 +1205,11 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           start: best.startMs,
           end: best.endMs,
         });
+        // P0：工位占用计数增量维护（预订时 +1，替代每任务重建）。
+        bookedStationCounts.set(
+          best.stationId,
+          (bookedStationCounts.get(best.stationId) ?? 0) + 1,
+        );
       }
       // P0-5：metrics 由 SchedulingObjectiveEvaluator 统一计算（见 solve 末尾），
       // 此处不再累积内部计数（避免 CP-SAT/heuristic 双源不一致）。
@@ -845,7 +1231,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
             value: f.term,
           })),
         },
-        candidates: feasible.map((c) => ({
+        candidates: feasibleTopK.map((c) => ({
           personId: c.personId,
           deviceId: c.deviceId,
           stationId: c.stationId,
@@ -853,7 +1239,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           reasons: c.reasons,
         })),
         selectedReason: best.reasons,
-        rejectedAlternatives: feasible.slice(1).map((c) => ({
+        rejectedAlternatives: feasibleTopK.slice(1).map((c) => ({
           personId: c.personId,
           deviceId: c.deviceId,
           stationId: c.stationId,
@@ -864,28 +1250,28 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         snapshotVersion: opts.snapshotVersion,
       };
       // T03 / P1-7：DecisionTrace 富化——结构化拒绝原因 + hard/soft 明细 + weights 快照。
+      // P0：rejectedHard 由紧凑拒绝缓冲装配（不再遍历完整 Candidate 数组），
+      // 有界视图（全量计数经 rejectedHardTotal 透出；1000+ 任务规模 trace 内存有界）。
       const rejectedHard: Array<{
         personId: string | null;
         deviceId: string | null;
         stationId: string | null;
         rejectReasons: string[];
-      }> = [];
-      for (const c of candidates) {
-        if (c.cost === Number.POSITIVE_INFINITY && c.rejectReasons && c.rejectReasons.length > 0) {
-          rejectedHard.push({
-            personId: c.personId,
-            deviceId: c.deviceId,
-            stationId: c.stationId,
-            rejectReasons: c.rejectReasons,
-          });
-        }
-      }
+      }> = rejectedList.entries.map((c) => ({
+        personId: c.personId,
+        deviceId: c.deviceId,
+        stationId: c.stationId,
+        rejectReasons: c.rejectReasons,
+      }));
       const traceExt = decisionTrace as DecisionTrace & {
         rejectedHard: Array<{ personId: string | null; deviceId: string | null; stationId: string | null; rejectReasons: string[] }>;
         hardConstraints: string[];
         softCosts: Record<string, number>;
         weightsSnapshot: Record<string, number>;
         stationContribution: { stationId: string | null; queueLength: number; changeover: boolean };
+        candidateCountTotal: number;
+        rejectedHardTotal: number;
+        reused?: boolean;
       };
       traceExt.rejectedHard = rejectedHard;
       traceExt.hardConstraints = [...SUPPORTED_HARD_CONSTRAINTS];
@@ -898,6 +1284,11 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           : 0,
         changeover: best.changeover ?? false,
       };
+      // P0：候选/拒绝总量（透明统计；rejectedHard 为紧凑去重后的 trace 视图）。
+      traceExt.candidateCountTotal = taskCandidateCount;
+      traceExt.rejectedHardTotal = taskRejectedTotal;
+      // reuseBaseline fast-path 标记（仅显式 opt-in 时出现）。
+      traceExt.reused = reuseAdopted || undefined;
 
       assignments.push({
         assignmentId: `ASG-${opts.planId}-${task.id}`,
@@ -918,6 +1309,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         scoreBreakdown: best.scoreBreakdown,
         decisionTrace,
       });
+      assignmentByTask.set(task.id, assignments[assignments.length - 1]);
       doneTaskIds.add(task.id);
     }
 
@@ -1011,19 +1403,6 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       risk,
       energyCost,
       total: lateness + travel + workloadBalance + stationWait + changeCost + risk + energyCost,
-    };
-  }
-
-  private zeroBreakdown(): ScoreBreakdown {
-    return {
-      lateness: 0,
-      travel: 0,
-      workloadBalance: 0,
-      stationWait: 0,
-      changeCost: 0,
-      risk: 0,
-      energyCost: 0,
-      total: 0,
     };
   }
 
@@ -1142,6 +1521,309 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     if (riskLevel === 'high') return config.highRiskFactor;
     if (riskLevel === 'medium') return config.mediumRiskFactor;
     return 1;
+  }
+
+  /**
+   * P0：候选设备集合（devicesForTask 的索引化等价实现）。
+   * 设备能力索引（deviceByCapability）作为预筛：任务要求能力时，若索引中无任何
+   * 设备具备首个必需能力，直接返回空集（devicesForTask 同样会拒绝）；
+   * 其余语义与 devicesForTask 完全一致（online/battery/capability 超集/排除/锁定 +
+   * 无能力要求时的 [null] 纯手工作业回退）。保持 devicesForTask 为权威：
+   * 本方法永不返回 devicesForTask 会拒绝的设备。
+   */
+  private deviceCandidatesForTask(
+    taskId: string,
+    deviceById: Map<string, WorldStateSnapshot['devices'][number]>,
+    deviceByCapability: Map<string, WorldStateSnapshot['devices'][number][]>,
+    locked: Map<string, string>,
+    minBatteryPct: number,
+    requiredCapabilities?: string[],
+    excludedPerTask?: Map<string, Set<string>>,
+    excludedGlobal?: Set<string>,
+  ): Array<WorldStateSnapshot['devices'][number] | null> {
+    const caps = requiredCapabilities ?? [];
+    if (caps.length > 0 && !deviceByCapability.has(caps[0])) return [];
+    return this.devicesForTask(
+      taskId,
+      deviceById,
+      locked,
+      minBatteryPct,
+      caps,
+      excludedPerTask,
+      excludedGlobal,
+    );
+  }
+
+  /**
+   * P0：稳定 top-K 插入（与 candidateCompare 全序一致）。
+   * 同序（comparator === 0）元素保持插入顺序——与原实现
+   * `candidates.sort(candidateCompare)` 的稳定排序语义一致，
+   * 因此 argmin（feasibleTopK[0]）与原实现逐位一致。
+   */
+  private insertTopK(arr: Candidate[], c: Candidate, k: number): void {
+    let lo = 0;
+    let hi = arr.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.candidateCompare(arr[mid], c) <= 0) lo = mid + 1;
+      else hi = mid;
+    }
+    arr.splice(lo, 0, c);
+    if (arr.length > k) arr.pop();
+  }
+
+  private intervalsOverlap(
+    startA: number,
+    endA: number,
+    startB: number,
+    endB: number,
+  ): boolean {
+    return startA < endB && startB < endA;
+  }
+
+  /**
+   * #9 reuseBaseline fast-path：对基线分配做"当前运行状态"下的廉价复验。
+   * 任一硬条件不满足（人员/设备/工位状态、技能/证书/能力、mustFinishBy、
+   * 当前预订冲突、容量）→ 返回 null（调用方回退完整枚举）。
+   * 返回的 Candidate 与正常枚举候选同形（含评分分解），可直接进入预订/轨迹装配；
+   * 其 reasons 为 ['unchanged_assignment_reused'] 供 trace 标记。
+   */
+  private async tryReuseAssignment(
+    ctx: ReuseContext,
+  ): Promise<Candidate | null> {
+    const { task, entry, lockedWindow } = ctx;
+    const person = ctx.personById.get(entry.personId);
+    if (!person) return null;
+    const device = entry.deviceId ? ctx.deviceById.get(entry.deviceId) : undefined;
+    if (entry.deviceId && !device) return null;
+    const station = entry.stationId ? ctx.stationById.get(entry.stationId) : undefined;
+    if (entry.stationId && !station) return null;
+
+    // person 级校验（与 eligibility 对应原因一致；任一失败即不可复用）。
+    if (person.status !== 'available') return null;
+    if (person.loadLevel > ctx.effectiveMaxLoad) return null;
+    if (ctx.safetyBlockedPersonIds.includes(person.id)) return null;
+    if (!this.personMatchesLock(person.id, task.id, ctx.lockedPersonByTask)) return null;
+    if (
+      this.isExcludedResource(
+        task.id,
+        person.id,
+        ctx.excludedPersonByTask,
+        ctx.excludedPersonGlobal,
+      )
+    ) {
+      return null;
+    }
+    const personElig = ctx.eligiblePersonById.get(person.id)!;
+    if (
+      personElig.healthStatus === 'blocked' ||
+      personElig.healthStatus === 'injured' ||
+      personElig.healthStatus === 'unavailable'
+    ) {
+      return null;
+    }
+    // 技能 / 证书（与 eligibility 1/1b/2 同判据）。
+    const requiredSkills = task.requiredSkills ?? [];
+    if (requiredSkills.length > 0) {
+      const matchMode = task.skillMatchMode ?? 'ALL';
+      const hasSkill =
+        matchMode === 'ALL'
+          ? requiredSkills.every((s) => personElig.skills.includes(s))
+          : requiredSkills.some((s) => personElig.skills.includes(s));
+      if (!hasSkill) return null;
+    }
+    const requiredCerts = task.requiredCertifications ?? [];
+    if (requiredCerts.length > 0) {
+      const certOk = requiredCerts.every((c) => personElig.certifications.includes(c));
+      if (!certOk) return null;
+      const expired = (personElig.certificationExpiry ?? []).some(
+        (e) =>
+          e.expiresAtMs != null &&
+          e.expiresAtMs < ctx.now &&
+          requiredCerts.includes(e.name),
+      );
+      if (expired) return null;
+    }
+
+    // device 级校验（锁定/排除/在线/电量/状态/能力）。
+    if (device) {
+      const lockedDeviceId = ctx.lockedDeviceByTask.get(task.id);
+      if (lockedDeviceId && lockedDeviceId !== device.id) return null;
+      if (
+        this.isExcludedResource(
+          task.id,
+          device.id,
+          ctx.excludedDeviceByTask,
+          ctx.excludedDeviceGlobal,
+        )
+      ) {
+        return null;
+      }
+      if (!device.online || device.batteryPct < ctx.effectiveMinBattery) return null;
+      if (device.status === 'fault' || device.status === 'maintenance') return null;
+      const requiredCaps = task.requiredDeviceCapabilities ?? [];
+      if (
+        requiredCaps.length > 0 &&
+        !requiredCaps.every((cap) => (device.capabilities ?? []).includes(cap))
+      ) {
+        return null;
+      }
+    } else if (ctx.lockedDeviceByTask.has(task.id)) {
+      // 任务锁定设备但基线为纯手工作业 → 不匹配。
+      return null;
+    }
+
+    // station 级校验（排除/能力/禁入区域）。
+    if (entry.stationId) {
+      if (
+        this.isExcludedResource(
+          task.id,
+          entry.stationId,
+          ctx.excludedStationByTask,
+          ctx.excludedStationGlobal,
+        )
+      ) {
+        return null;
+      }
+      const requiredStationCaps = task.requiredStationCapabilities ?? [];
+      if (requiredStationCaps.length > 0) {
+        const caps = ctx.stationCapabilitiesById.get(entry.stationId) ?? [];
+        if (!requiredStationCaps.every((c) => caps.includes(c))) return null;
+      }
+    }
+    if (task.zoneId && ctx.forbiddenZoneIds.includes(task.zoneId)) return null;
+
+    // 时间计算（与正常枚举完全一致）。
+    const taskPoint = station ? { x: station.x, y: station.y } : undefined;
+    const routeCost = await ctx.routeCostMemo.get(
+      person.id,
+      task.id,
+      ctx.personPointById.get(person.id),
+      taskPoint,
+    );
+    if (routeCost.feasible === false) return null;
+    const travelMs = routeCost.etaSeconds * 1000;
+    const rawStartMs = lockedWindow
+      ? lockedWindow[0]
+      : ctx.earliestStartMs + travelMs;
+    const startMs = lockedWindow
+      ? lockedWindow[0]
+      : this.earliestStart(
+          rawStartMs,
+          ctx.bookedPerson.get(person.id),
+          device ? ctx.bookedDevice.get(device.id) : undefined,
+        );
+    const durationMs = lockedWindow
+      ? Math.max(lockedWindow[1] - lockedWindow[0], 1)
+      : task.planEnd && task.planStart
+        ? Date.parse(task.planEnd) - Date.parse(task.planStart)
+        : ctx.defaultDurationMs;
+    const endMs = startMs + Math.max(durationMs, 1);
+
+    // mustFinishBy 硬截止。
+    if (ctx.mustFinishByMs != null && endMs > ctx.mustFinishByMs) return null;
+
+    // 当前运行状态下的资源占用冲突。
+    if (
+      (ctx.personSlotsById.get(person.id) ?? []).some((s) =>
+        this.intervalsOverlap(s.start, s.end, startMs, endMs),
+      )
+    ) {
+      return null;
+    }
+    if (
+      device &&
+      (ctx.deviceSlotsById.get(device.id) ?? []).some((s) =>
+        this.intervalsOverlap(s.start, s.end, startMs, endMs),
+      )
+    ) {
+      return null;
+    }
+    if (entry.stationId) {
+      const stationSlots = ctx.stationSlotsById.get(entry.stationId) ?? [];
+      if (
+        stationSlots.some((s) => this.intervalsOverlap(s.start, s.end, startMs, endMs))
+      ) {
+        return null;
+      }
+      // 工位容量（与 eligibility 4f 语义一致：重叠任务数 >= capacity → 拒绝）。
+      const capacity = ctx.stationCapacityById.get(entry.stationId) ?? null;
+      if (capacity != null && capacity >= 0) {
+        const overlapCount = stationSlots.filter((s) =>
+          this.intervalsOverlap(s.start, s.end, startMs, endMs),
+        ).length;
+        if (overlapCount >= capacity) return null;
+      }
+    }
+
+    // 评分（与正常枚举一致：复用即 person 不变，churn person 分项为 0）。
+    const lateMs = Math.max(0, endMs - ctx.softDeadlineMs);
+    const waitMs = Math.max(0, startMs - ctx.earliestStartMs);
+    const churnCfg = ctx.config.churn;
+    const deviceChanged = task.deviceId != null && task.deviceId !== entry.deviceId ? 1 : 0;
+    const stationChanged = task.stationId != null && task.stationId !== entry.stationId ? 1 : 0;
+    const churnCostScore =
+      churnCfg != null
+        ? deviceChanged * (churnCfg.deviceChangePenalty ?? 0) +
+          stationChanged * (churnCfg.stationChangePenalty ?? 0)
+        : undefined;
+    const changeCost = 0; // person 不变
+    const loadPenalty = person.loadLevel * 60 * 1000;
+    const changeCostMs = changeCost * 60 * 1000;
+    const changeover = task.stationId != null && task.stationId !== entry.stationId;
+    const setupMinutes = ctx.config.setupMinutes ?? 15;
+    const changeoverMs = changeover ? setupMinutes * 60 * 1000 : 0;
+    const riskMs = this.riskFactor(routeCost.riskLevel, ctx.config) * travelMs;
+    const batteryPct = device ? device.batteryPct : 100;
+    const energyPenalty =
+      device != null ? (1 - batteryPct / 100) * 60 * 1000 : 0;
+    const score = this.computeCandidateScore(
+      ctx.policy,
+      lateMs,
+      travelMs,
+      loadPenalty,
+      waitMs,
+      changeCostMs + changeoverMs,
+      riskMs,
+      energyPenalty,
+      entry.stationId,
+      station?.queue?.length ?? 0,
+      churnCostScore,
+    );
+    // 注：reuse 路径不做 PREFERRED_RESOURCE 偏好加分（偏好为软性加分，
+    // 不影响合法性；复用语义下评分结构已与枚举路径对齐）。
+
+    const reasons = ['unchanged_assignment_reused'];
+    return {
+      personId: person.id,
+      deviceId: entry.deviceId,
+      stationId: entry.stationId,
+      zoneId: task.zoneId,
+      startMs,
+      endMs,
+      routeId: routeCost.routeId,
+      etaSeconds: routeCost.etaSeconds,
+      distanceMeters: routeCost.distanceMeters,
+      riskLevel: routeCost.riskLevel,
+      routeGeometry: routeCost.geometry ?? [],
+      waitMs,
+      lateMs,
+      changeCost,
+      cost: score.total,
+      scoreBreakdown: score,
+      reasons,
+      alternatives: [],
+      changeover,
+      softCosts: {
+        lateMs,
+        travelMs,
+        waitMs,
+        changeCost,
+        changeoverMs,
+        riskMs,
+        energyPenalty,
+      },
+    };
   }
 
   private candidateCompare(a: Candidate, b: Candidate): number {

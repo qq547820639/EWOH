@@ -94,10 +94,13 @@ function makeReplanService(opts: {
   return { svc, triggerService, solverService };
 }
 
-/** 缩短窗口以便快速连续触发（避免真实 sleep）。 */
+/** 缩短窗口以便快速连续触发（避免真实 sleep）。
+ *  minimumReplanIntervalMs 用大值（60s）：抑制判定需同时满足「距上次 < minInterval」
+ *  与「窗口已满」；真实计时下 5ms 极易被整机负载抖动突破导致 flake，
+ *  而窗口规则（max=2）在 60s 内连续调用是确定性的。 */
 const SHORT_CONFIG = {
   replanDebounceMs: 0,
-  minimumReplanIntervalMs: 5,
+  minimumReplanIntervalMs: 60_000,
   maximumReplansPerWindow: 2,
   conflictAggregationWindowMs: 60_000,
 };

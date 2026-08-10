@@ -125,6 +125,15 @@ jobs:
           node scripts/collect-repo-facts.js --out "$GITHUB_WORKSPACE/output/repository-facts.json"
           node scripts/validate-repo-facts.js --snapshot "$GITHUB_WORKSPACE/output/repository-facts.json"
 
+      - name: Repository Truth Gate（feature-status + OPEN-DECISIONS + 版本/CP-SAT 漂移，Task 11 P2）
+        # 主事实门禁：feature-status.yaml 结构/生产启用不变量、文档一致性、
+        # OPEN-DECISIONS 未决项健康度、version.json ⇄ README ⇄ CHANGELOG 版本一致、
+        # CP-SAT 部署漂移守卫（compose 文件存在 + ortools 三处锁定一致）。
+        # OpenAPI 契约漂移已由本工作流「OpenAPI 路由零漂移门禁」与 standalone.yml
+        # 「OpenAPI contract drift gate (W4)（npm run gen:openapi:check，与
+        # openapi:no-drift 等价）」覆盖，故此处 --skip-openapi 避免重复执行。
+        run: node scripts/truth-feature-status.js --skip-openapi
+
       - name: Work Graph 不变量与阻塞诊断（P0-6/P0-7）
         run: |
           node tools/work-indexer/index.js --root "$GITHUB_WORKSPACE" --strict --invariants

@@ -1,11 +1,20 @@
-# EWOH 生产运行门禁 CI（Task 8）
+# EWOH 生产运行门禁 CI（Task 8 P1：Runtime Gates 自动闭环）
 # 触发：push 与 pull_request
 # 内容：
 #   - PostgreSQL 生产迁移门禁（空库/跨版本/幂等/回滚/权限模型）
 #   - PostgreSQL 备份/恢复门禁（空库恢复/行数/业务不变量/组织隔离/跨版本）
 #   - Helm 静态审计（lint + template，无需集群）
 #   - 容器镜像门禁（真实构建 + SBOM + Trivy 漏洞报告 + 镜像摘要）
-#   - Helm 运行时 / canary / 长稳负载：需真实集群 + 运行中 API，本环境标记
+#   - helm-kind-gate（新增）：ephemeral kind v0.23 集群 + 集群内 PostgreSQL 17，
+#     真实执行 helm install → 迁移 Job → 探针 → PVC → NetworkPolicy →
+#     坏镜像 upgrade 失败 → helm rollback → 健康恢复 → canary 坏版本自动回滚 →
+#     健康恢复；全部步骤有硬上限（job timeout-minutes: 30 + 步骤级 timeout-minutes），
+#     任何失败均响亮失败（无 continue-on-error 掩盖）。
+#   - soak-load-gate（新增）：PostgreSQL Service Container + standalone API 真实启动，
+#     执行 scripts/soak-load.js（2000 请求/25 并发）+ scripts/soak-scheduler-events.js
+#     （500 调度事件风暴 + SSE 订阅/断线重连）；job timeout-minutes: 25 硬上限。
+#   - 本地开发机（macOS 无 kind/helm/kubectl/docker）无法执行这三道运行门禁，
+#     全部由 GitHub Actions 在下次 push/PR 时真实运行；脚本在无环境时仍如实记录
 #     BLOCKED_BY_ENVIRONMENT（绝不伪造通过）。
 name: runtime-gates
 
@@ -94,17 +103,16 @@ jobs:
             --status SUCCEEDED \
             --details "helm lint 通过；helm template 渲染完整（含 worker/networkpolicy/migration-job）"
 
-      - name: Helm 运行时门禁（install/upgrade/rollback/探针/迁移Job/replicas/worker/storage/networkpolicy）
-        # 无集群：脚本探测到无 helm/kubectl/集群后如实记录 BLOCKED_BY_ENVIRONMENT。
-        run: bash scripts/verify-helm-runtime.sh
-
-      - name: Canary 升级门禁（健康指标/失败阈值/自动回滚/回滚后业务校验）
-        # 无集群：脚本记录 BLOCKED_BY_ENVIRONMENT。
-        run: bash scripts/canary-deploy.sh
-
-      - name: 长稳/负载门禁（真实 API+PG/多org并发/连接池/队列积压/导出任务/弱网重连/资源泄漏）
-        # 无运行中 API：脚本记录 BLOCKED_BY_ENVIRONMENT。
-        run: node scripts/soak-load.js
+      - name: 说明：Helm 运行时 / canary / 长稳负载门禁已迁移至独立 kind job
+        # Task 8 P1：原先这三步在无集群时记录 BLOCKED_BY_ENVIRONMENT；现在由本工作流
+        # 新增的 helm-kind-gate（ephemeral kind 集群，install/upgrade/rollback + canary
+        # 自动回滚）与 soak-load-gate（standalone API + PostgreSQL Service Container）
+        # 两个 job 真实执行。此处不再重复记录门禁状态，避免同 gate id 出现冲突证据。
+        run: |
+          echo "helm-runtime / canary / soak 三道运行门禁已由以下 job 真实执行："
+          echo "  - helm-kind-gate : ephemeral kind v0.23 + 集群内 PG17，install/upgrade/rollback + canary 自动回滚"
+          echo "  - soak-load-gate : standalone API + PG Service Container，soak-load.js + soak-scheduler-events.js"
+          echo "详见 docs/runtime-gates.md §3.4-3.6。"
 
       - name: 容器镜像安全门禁（真实构建 + SBOM + Trivy + 镜像摘要）
         run: bash scripts/container-image-gate.sh
@@ -118,11 +126,500 @@ jobs:
             output/gate-results/*.json
             output/migration-prod-report.json
             output/backup-restore-report.json
-            output/helm-runtime-report.json
-            output/canary-report.json
-            output/soak-load-report.json
             output/container-image-report.json
             output/trivy-image-report.json
             output/ewoh-api-sbom.cyclonedx.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # ===========================================================================
+  # G5 + G8：Helm 运行时门禁（ephemeral kind 集群，真实 install/upgrade/rollback）
+  # + canary 失败自动回滚。job 级 timeout-minutes: 30 为硬上限；每个 shell 步骤另有
+  # 步骤级 timeout-minutes；任何失败响亮失败，不用 continue-on-error 掩盖。
+  # ===========================================================================
+  helm-kind-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KIND_VERSION: v0.23.0          # kind 固定版本（release asset 直链）
+      KUBECTL_VERSION: v1.30.0       # 与 kind v0.23 默认节点镜像 k8s 1.30 对齐
+      HELM_VERSION: v3.16.3          # 与静态审计步骤一致
+      KIND_CLUSTER: ewoh-kind-gate
+      NS: ewoh
+      PG_PASSWORD: ewoh-kind-gate-pw # 一次性测试口令（kind 临时集群，无生产价值）
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: 安装 kind / kubectl / helm（全部固定版本）
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o "$HOME/.local/bin/kind" \
+            "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x "$HOME/.local/bin/kind"
+          curl -fsSL -o "$HOME/.local/bin/kubectl" \
+            "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x "$HOME/.local/bin/kubectl"
+          curl -fsSL -o /tmp/helm.tar.gz \
+            "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          tar -xzf /tmp/helm.tar.gz -C /tmp
+          mv /tmp/linux-amd64/helm "$HOME/.local/bin/helm"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          kind version
+          kubectl version --client=true
+          helm version --short
+
+      - name: 创建 ephemeral kind 集群
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          kind create cluster --name "$KIND_CLUSTER" --wait 180s
+          kubectl cluster-info
+          kubectl get nodes -o wide
+
+      - name: 安装 local-path-provisioner（PVC 动态供应，固定 v0.0.30）
+        # 图表 storage.driver=local + createPvc=true 会创建 ewoh-uploads PVC；
+        # kind 默认无存储供应器，安装 local-path-provisioner 并设为默认 StorageClass。
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          kubectl apply -f "https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.30/deploy/local-path-storage.yaml"
+          # 声明为默认 StorageClass：图表 PVC 未指定 storageClassName 时可绑定
+          kubectl patch storageclass local-path \
+            -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+          kubectl -n local-path-storage rollout status deploy/local-path-provisioner --timeout=120s
+          kubectl get storageclass
+
+      - name: 集群内供应 PostgreSQL 17（Deployment + Service postgres:5432）
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+          cat <<YAML | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: postgres
+            namespace: ewoh
+            labels:
+              app: postgres
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: postgres
+            template:
+              metadata:
+                labels:
+                  app: postgres
+              spec:
+                containers:
+                  - name: postgres
+                    image: postgres:17-alpine
+                    imagePullPolicy: IfNotPresent
+                    env:
+                      - name: POSTGRES_USER
+                        value: postgres
+                      - name: POSTGRES_PASSWORD
+                        value: "$PG_PASSWORD"
+                      - name: POSTGRES_DB
+                        value: ewoh
+                    ports:
+                      - containerPort: 5432
+                    readinessProbe:
+                      exec:
+                        command: ["pg_isready", "-U", "postgres", "-d", "ewoh"]
+                      initialDelaySeconds: 3
+                      periodSeconds: 3
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: postgres
+            namespace: ewoh
+          spec:
+            selector:
+              app: postgres
+            ports:
+              - port: 5432
+                targetPort: 5432
+          YAML
+          kubectl -n "$NS" rollout status deploy/postgres --timeout=180s
+          kubectl -n "$NS" wait --for=condition=Ready pod -l app=postgres --timeout=180s
+          kubectl -n "$NS" get svc postgres
+
+      - name: 创建 API / 迁移 Secret（DATABASE_URL 指向集群内 postgres）
+        # 图表 deployment.yaml 无条件引用 ewoh-api-secret 的 DATABASE_URL/JWT_SECRET/
+        # REDIS_URL 键；standalone 模式无 Redis，REDIS_URL 置空走内存回退。
+        # ewoh-migration-secret 承载迁移链所需：EWOH_DATABASE_URL（owner）、
+        # EWOH_API_DATABASE_PASSWORD（runtime role，与 API secret 的 DATABASE_URL 一致）、
+        # EWOH_BOOTSTRAP_ADMIN_*（--seed-standalone-admin）。
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          runtime_pw="$(openssl rand -hex 24)"
+          admin_pw="$(openssl rand -hex 24)"
+          jwt="$(openssl rand -hex 32)"
+          echo "runtime_pw_len=${#runtime_pw} admin_pw_len=${#admin_pw} jwt_len=${#jwt}"
+          kubectl -n "$NS" create secret generic ewoh-api-secret \
+            --from-literal="DATABASE_URL=postgresql://ewoh_api:${runtime_pw}@postgres:5432/ewoh" \
+            --from-literal="JWT_SECRET=${jwt}" \
+            --from-literal="REDIS_URL=" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n "$NS" create secret generic ewoh-migration-secret \
+            --from-literal="EWOH_DATABASE_URL=postgresql://postgres:${PG_PASSWORD}@postgres:5432/ewoh" \
+            --from-literal="EWOH_BOOTSTRAP_ADMIN_USERNAME=ci_admin" \
+            --from-literal="EWOH_BOOTSTRAP_ADMIN_PASSWORD=${admin_pw}" \
+            --from-literal="EWOH_BOOTSTRAP_ADMIN_DISPLAY_NAME=CI Admin" \
+            --from-literal="EWOH_API_DATABASE_PASSWORD=${runtime_pw}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n "$NS" get secrets
+
+      - name: 构建镜像并加载进 kind
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          docker build -f deploy/cloud/Dockerfile.api -t ewoh-api:ci .
+          docker build -f deploy/cloud/Dockerfile.migrate -t ewoh-migrate:ci .
+          kind load docker-image --name "$KIND_CLUSTER" ewoh-api:ci ewoh-migrate:ci
+
+      - name: helm install + 迁移 Job + rollout + PVC + NetworkPolicy
+        # --set 覆盖仅为在单节点 kind 上跑通：replicaCount=1、关 HPA/Ingress、
+        # Service 用 NodePort（runner 无需 port-forward 即可直达）、PDB 降为 1。
+        # worker 保持默认关闭（API 镜像暂无 worker 入口，与 verify-helm-runtime.sh 一致）。
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          helm lint deploy/cloud/helm/ewoh
+          helm upgrade --install ewoh deploy/cloud/helm/ewoh --namespace "$NS" --create-namespace \
+            --wait --timeout 8m \
+            --set image.repository=ewoh-api \
+            --set image.tag=ci \
+            --set image.pullPolicy=IfNotPresent \
+            --set migration.image.repository=ewoh-migrate \
+            --set migration.image.tag=ci \
+            --set replicaCount=1 \
+            --set autoscaling.enabled=false \
+            --set ingress.enabled=false \
+            --set service.type=NodePort \
+            --set pdb.minAvailable=1
+          # 迁移 Job（pre-install hook）必须完成。
+          # 注意：Job 对象本身无 app.kubernetes.io/component 标签（该标签只存在于
+          # pod template 上），须按确定性名称等待，不能按标签选择器等待。
+          kubectl -n "$NS" wait --for=condition=complete job/ewoh-ewoh-migrate --timeout=8m
+          # API rollout + 就绪
+          kubectl -n "$NS" rollout status deploy/ewoh-ewoh --timeout=8m
+          kubectl -n "$NS" wait --for=condition=Ready pod \
+            -l app.kubernetes.io/instance=ewoh,app.kubernetes.io/component=api --timeout=8m
+          # 持久化存储 PVC 必须 Bound（local-path-provisioner 供应）
+          kubectl -n "$NS" wait --for='jsonpath={.status.phase}=Bound' pvc ewoh-uploads --timeout=120s
+          # NetworkPolicy 已创建（kind 不强制 netpol，仅校验图表渲染/创建）
+          kubectl -n "$NS" get networkpolicy -o name | grep -q 'ewoh-ewoh'
+          # 记录 API 地址（NodePort，runner 与 kind 节点同宿主机，可直接访问）
+          node_ip="$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')"
+          node_port="$(kubectl -n "$NS" get svc ewoh-ewoh -o jsonpath='{.spec.ports[0].nodePort}')"
+          echo "EWOH_API_URL=http://${node_ip}:${node_port}" >> "$GITHUB_ENV"
+          echo "node_ip=$node_ip node_port=$node_port"
+          kubectl -n "$NS" get pods -o wide
+          kubectl -n "$NS" get svc,pvc,networkpolicy
+
+      - name: 健康冒烟（/health/live + /health/ready 断言 200）
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          live_code="$(curl -s -o /dev/null -w '%{http_code}' "$EWOH_API_URL/health/live" || true)"
+          ready_code="$(curl -s -o /dev/null -w '%{http_code}' "$EWOH_API_URL/health/ready" || true)"
+          echo "live=$live_code ready=$ready_code"
+          [ "$live_code" = "200" ] || { echo "::error::/health/live 非 200 ($live_code)"; exit 1; }
+          [ "$ready_code" = "200" ] || { echo "::error::/health/ready 非 200 ($ready_code)"; exit 1; }
+          curl -fsS "$EWOH_API_URL/health/ready"; echo ""
+
+      - name: 数据完整性（集群内 PG：ewoh_ 表 + 关键表 + 种子 admin）
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          ewoh_tables="$(kubectl -n "$NS" exec deploy/postgres -- psql -U postgres -d ewoh -tAc \
+            "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname like 'ewoh_%' and c.relkind in ('r','p');" | tr -d ' ')"
+          echo "ewoh_ tables count: ${ewoh_tables:-0}"
+          [ "${ewoh_tables:-0}" -gt 0 ] || { echo "::error::未发现任何 ewoh_ 表（迁移未生效）"; exit 1; }
+          for t in ewoh_user workbench_export_tasks ewoh_schedule_task; do
+            exists="$(kubectl -n "$NS" exec deploy/postgres -- psql -U postgres -d ewoh -tAc \
+              "select to_regclass('public.${t}');" | tr -d ' ')"
+            echo "table ${t} -> ${exists:-MISSING}"
+            [ -n "$exists" ] || { echo "::error::缺少表 public.${t}"; exit 1; }
+          done
+          admin_rows="$(kubectl -n "$NS" exec deploy/postgres -- psql -U postgres -d ewoh -tAc \
+            'select count(*) from public.ewoh_user;' | tr -d ' ')"
+          echo "ewoh_user rows: ${admin_rows:-0}"
+          [ "${admin_rows:-0}" -gt 0 ] || { echo "::error::ewoh_user 为空（seed 未生效）"; exit 1; }
+          echo "DATA INTEGRITY OK"
+
+      - name: 升级模拟（坏镜像 tag → 必须失败 → helm rollback → 健康恢复）
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          prev_rev="$(helm history ewoh -n "$NS" -o json | jq -r '[.[] | select(.status != "failed")] | last | .revision')"
+          echo "previous good revision: ${prev_rev}"
+          echo "HELM_PREV_REV=${prev_rev}" >> "$GITHUB_ENV"
+          # 坏镜像升级必须失败（镜像拉取 404 → ImagePullBackOff → --wait 超时）
+          set +e
+          helm upgrade ewoh deploy/cloud/helm/ewoh --namespace "$NS" \
+            --set image.tag=does-not-exist --set image.pullPolicy=Always \
+            --set service.type=NodePort \
+            --timeout 120s --wait
+          upgrade_exit=$?
+          set -e
+          echo "broken upgrade exit=$upgrade_exit（预期非零）"
+          [ "$upgrade_exit" -ne 0 ] || { echo "::error::坏镜像升级意外成功"; exit 1; }
+          helm history ewoh -n "$NS"
+          # 回滚到上一个好 revision，等待恢复
+          helm rollback ewoh "$prev_rev" --namespace "$NS" --wait --timeout 300s
+          kubectl -n "$NS" rollout status deploy/ewoh-ewoh --timeout=300s
+          kubectl -n "$NS" wait --for=condition=Ready pod \
+            -l app.kubernetes.io/instance=ewoh,app.kubernetes.io/component=api --timeout=300s
+          # 回滚后健康 200 + 镜像恢复为好 tag
+          live_code="$(curl -s -o /dev/null -w '%{http_code}' "$EWOH_API_URL/health/live" || true)"
+          ready_code="$(curl -s -o /dev/null -w '%{http_code}' "$EWOH_API_URL/health/ready" || true)"
+          echo "post-rollback live=$live_code ready=$ready_code"
+          [ "$live_code" = "200" ] && [ "$ready_code" = "200" ] \
+            || { echo "::error::回滚后健康检查失败"; exit 1; }
+          running_tag="$(kubectl -n "$NS" get deploy ewoh-ewoh -o jsonpath='{.spec.template.spec.containers[0].image}')"
+          echo "running image after rollback: $running_tag"
+          [ "$running_tag" = "ewoh-api:ci" ] || { echo "::error::回滚后镜像非 ewoh-api:ci: $running_tag"; exit 1; }
+          echo "UPGRADE/ROLLBACK SIMULATION OK"
+
+      - name: Canary 门禁（坏版本部署 → 阈值触发自动回滚 → 服务恢复）
+        # 复用 scripts/canary-deploy.sh：基线健康 → helm upgrade 坏 canary tag →
+        # 轮询失败阈值 → 自动 rollback → 回滚后业务态校验。API_URL 指向 kind NodePort。
+        # 轮询上限 CANARY_POLLS×CANARY_POLL_INTERVAL=60s，helm 超时 2m，全程有界。
+        timeout-minutes: 10
+        env:
+          API_URL: ${{ env.EWOH_API_URL }}
+          CANARY_POLLS: "10"
+          CANARY_POLL_INTERVAL: "5"
+          MAX_ERROR_RATE: "0.05"
+          MAX_P95_MS: "2000"
+          BAD_IMAGE_TAG: ewoh-broken-canary
+          HELM_TIMEOUT: 2m
+        run: |
+          set -euo pipefail
+          bash scripts/canary-deploy.sh
+          # 附加校验：回滚后 revision 运行好镜像 + /health/ready 200
+          kubectl -n "$NS" rollout status deploy/ewoh-ewoh --timeout=180s
+          running_tag="$(kubectl -n "$NS" get deploy ewoh-ewoh -o jsonpath='{.spec.template.spec.containers[0].image}')"
+          echo "running image after canary rollback: $running_tag"
+          [ "$running_tag" = "ewoh-api:ci" ] || { echo "::error::canary 回滚后镜像非 ewoh-api:ci: $running_tag"; exit 1; }
+          curl -fsS "$EWOH_API_URL/health/ready" >/dev/null \
+            || { echo "::error::canary 回滚后 /health/ready 未恢复"; exit 1; }
+          echo "CANARY RECOVERED OK"
+
+      - name: 输出报告（helm-kind-report.json + gate-results/helm-runtime.json）
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          mkdir -p output/gate-results
+          cat > output/helm-kind-report.json <<JSON
+          {
+            "gate": "helm-kind",
+            "status": "SUCCEEDED",
+            "checkedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "cluster": "kind-${KIND_CLUSTER}",
+            "kindVersion": "${KIND_VERSION}",
+            "apiUrl": "${EWOH_API_URL}",
+            "install": {
+              "release": "ewoh",
+              "namespace": "ewoh",
+              "chart": "deploy/cloud/helm/ewoh",
+              "replicas": 1,
+              "serviceType": "NodePort",
+              "storageDriver": "local (local-path-provisioner)",
+              "postgres": "in-cluster Deployment postgres:17-alpine Service postgres:5432"
+            },
+            "upgradeSimulation": { "brokenTag": "does-not-exist", "upgradeExpectedFail": true, "rolledBackToRevision": "${HELM_PREV_REV}" },
+            "canarySimulation": { "brokenTag": "ewoh-broken-canary", "autoRollback": true, "recovered": true },
+            "checks": ["migration-job-complete", "rollout-ready", "pvc-bound", "networkpolicy-present", "health-live-200", "health-ready-200", "data-integrity-ewoh-tables", "rollback-health-200", "rollback-image-restored", "canary-auto-rollback", "canary-recovered"]
+          }
+          JSON
+          node scripts/truth-gate-record.js \
+            --id helm-runtime \
+            --name "Kubernetes/Helm 运行时门禁（kind: install/upgrade/rollback/探针/迁移Job/存储/networkpolicy + canary 自动回滚）" \
+            --status SUCCEEDED \
+            --details "kind v0.23.0 真实集群：helm install→迁移Job→探针 200→坏镜像升级失败→helm rollback→健康恢复→canary 坏版本自动回滚→健康恢复；PostgreSQL 17 以集群内 Deployment+Service 供应；PVC 由 local-path-provisioner 绑定"
+          cat output/helm-kind-report.json
+
+      - name: 上传 kind 门禁报告
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: helm-kind-gate-report-${{ github.sha }}
+          path: |
+            output/helm-kind-report.json
+            output/canary-report.json
+            output/gate-results/*.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # ===========================================================================
+  # G9：长稳/负载门禁（standalone API 真实启动 + PostgreSQL Service Container）
+  # job 级 timeout-minutes: 25 硬上限；soak-load.js 2000 请求/25 并发；
+  # soak-scheduler-events.js 500 调度事件风暴 + SSE 订阅/断线重连（脚本级超时兜底）。
+  # ===========================================================================
+  soak-load-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ewoh-ci-owner-only
+          POSTGRES_DB: ewoh
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ewoh"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PG: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ewoh-spark-app/package-lock.json
+
+      - name: 安装依赖（postgres 驱动 / soak 脚本）
+        timeout-minutes: 8
+        run: npm ci
+        working-directory: ewoh-spark-app
+
+      - name: 应用 standalone 迁移链 + 种子（真实 PostgreSQL Service Container）
+        # 覆盖 soak-load.js 依赖的 workbench_export_tasks（standalone_005）与
+        # soak-scheduler-events.js 依赖的 Scheduler V2/outbox 链（017→006..028），
+        # 顺序与 standalone.yml 的 Scheduler V2 步骤一致；并播种 demo 数据供求解器使用。
+        timeout-minutes: 8
+        env:
+          EWOH_DATABASE_URL: ${{ env.PG }}/ewoh
+          EWOH_ALLOW_DDL: "1"
+        run: |
+          set -euo pipefail
+          runtime_password="$(openssl rand -hex 24)"
+          admin_password="$(openssl rand -hex 24)"
+          export EWOH_API_DATABASE_PASSWORD="$runtime_password"
+          export EWOH_RUNTIME_DATABASE_URL="postgresql://ewoh_api:${runtime_password}@127.0.0.1:5432/ewoh"
+          export EWOH_BOOTSTRAP_ADMIN_USERNAME=ci_admin
+          export EWOH_BOOTSTRAP_ADMIN_PASSWORD="$admin_password"
+          export EWOH_BOOTSTRAP_ADMIN_DISPLAY_NAME="CI Admin"
+          echo "EWOH_RUNTIME_DATABASE_URL=$EWOH_RUNTIME_DATABASE_URL" >> "$GITHUB_ENV"
+          echo "EWOH_BOOTSTRAP_ADMIN_USERNAME=ci_admin" >> "$GITHUB_ENV"
+          echo "EWOH_BOOTSTRAP_ADMIN_PASSWORD=$admin_password" >> "$GITHUB_ENV"
+          node db/runner/run_migrations.js --apply-standalone
+          node db/runner/run_migrations.js --verify-standalone
+          node db/runner/run_migrations.js --seed-standalone
+          node db/runner/run_migrations.js --apply-standalone-users
+          node db/runner/run_migrations.js --apply-standalone-runtime-role
+          node db/runner/run_migrations.js --apply-standalone-domain
+          node db/runner/run_migrations.js --verify-standalone-domain
+          node db/runner/run_migrations.js --apply-standalone-workbench-prod
+          node db/runner/run_migrations.js --verify-standalone-workbench-prod
+          node db/runner/run_migrations.js --seed-standalone-admin
+          node db/runner/run_migrations.js --apply-standalone-scheduling-tables-fix
+          node db/runner/run_migrations.js --apply-standalone-scheduling
+          node db/runner/run_migrations.js --apply-standalone-scheduling-persistence
+          node db/runner/run_migrations.js --apply-standalone-phase2-realtime
+          node db/runner/run_migrations.js --apply-standalone-reservation-conflict
+          node db/runner/run_migrations.js --apply-standalone-scheduling-feedback
+          node db/runner/run_migrations.js --apply-standalone-outbox-sequence
+          node db/runner/run_migrations.js --apply-standalone-domain-columns
+          node db/runner/run_migrations.js --apply-standalone-conflict-lifecycle
+          node db/runner/run_migrations.js --apply-standalone-policy-weights
+          node db/runner/run_migrations.js --apply-standalone-route-cost-matrix
+          node db/runner/run_migrations.js --apply-standalone-task-requirement
+          node db/runner/run_migrations.js --apply-standalone-execution-feedback
+          node db/runner/run_migrations.js --apply-standalone-kpi-replay
+          node db/runner/run_migrations.js --apply-standalone-policy-lifecycle
+          node db/runner/run_migrations.js --apply-standalone-sse-envelope
+          node db/runner/run_migrations.js --apply-standalone-reservation-capacity
+          node db/runner/run_migrations.js --apply-standalone-scheduler-incremental
+          node db/runner/run_migrations.js --apply-standalone-scheduler-outbox-notify
+          node db/runner/run_migrations.js --apply-standalone-scheduler-rls
+          node db/runner/run_migrations.js --apply-standalone-route-cost-matrix-full-key
+          node db/runner/run_migrations.js --apply-standalone-resource-time-windows
+          node db/runner/run_migrations.js --apply-standalone-assignment-event-tenancy
+          node db/runner/run_migrations.js --seed-standalone-scheduling
+
+      - name: 构建 standalone（build:prod:standalone）
+        timeout-minutes: 10
+        run: npm run build:prod:standalone
+        working-directory: ewoh-spark-app
+
+      - name: 启动 standalone API（后台，等待 /health/ready）
+        timeout-minutes: 5
+        env:
+          DATABASE_URL: ${{ env.EWOH_RUNTIME_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::EWOH_RUNTIME_DATABASE_URL 未注入（前置迁移步骤失败），无法启动 API"
+            exit 1
+          fi
+          # standalone 模式要求 JWT_SECRET >= 32 字符；此处即时生成，不依赖仓库 secret。
+          export JWT_SECRET="$(openssl rand -hex 32)"
+          nohup npm run start:standalone > /tmp/ewoh-api.log 2>&1 < /dev/null &
+          API_PID=$!
+          echo "API_PID=$API_PID" >> "$GITHUB_ENV"
+          ready=0
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:3000/health/live >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          [ "$ready" = "1" ] || { echo "::error::standalone API 未在 120s 内就绪"; tail -n 50 /tmp/ewoh-api.log || true; exit 1; }
+          curl -fsS http://127.0.0.1:3000/health/ready \
+            || { echo "::error::/health/ready 失败"; tail -n 50 /tmp/ewoh-api.log || true; exit 1; }
+          echo "STANDALONE API READY"
+
+      - name: 长稳/负载门禁（soak-load.js：2000 请求 / 25 并发）
+        timeout-minutes: 8
+        env:
+          TARGET_URL: http://127.0.0.1:3000
+          EWOH_SOAK_DATABASE_URL: ${{ env.PG }}/ewoh
+          SOAK_REQUESTS: "2000"
+          SOAK_CONCURRENCY: "25"
+        run: node scripts/soak-load.js
+
+      - name: 调度事件风暴 + SSE 订阅/断线重连（soak-scheduler-events.js：500 事件）
+        timeout-minutes: 8
+        env:
+          TARGET_URL: http://127.0.0.1:3000
+          EWOH_SOAK_DATABASE_URL: ${{ env.PG }}/ewoh
+          EWOH_SOAK_ADMIN_USERNAME: ${{ env.EWOH_BOOTSTRAP_ADMIN_USERNAME }}
+          EWOH_SOAK_ADMIN_PASSWORD: ${{ env.EWOH_BOOTSTRAP_ADMIN_PASSWORD }}
+          SOAK_SCHEDULER_EVENTS: "500"
+        run: node scripts/soak-scheduler-events.js
+
+      - name: 上传 soak 门禁报告
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: soak-load-gate-report-${{ github.sha }}
+          path: |
+            output/soak-load-report.json
+            output/soak-scheduler-events-report.json
+            output/gate-results/*.json
           if-no-files-found: ignore
           retention-days: 30

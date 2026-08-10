@@ -9,7 +9,9 @@ WORKDIR /app
 COPY src/edge_platform/ /app/edge_platform/
 
 # ortools 为唯一运行依赖（约 200MB）；如需最小镜像可拆分层
-RUN pip install --no-cache-dir "ortools>=9.8" || echo "ortools 安装失败（worker 将以 UNAVAILABLE 模式运行）"
+# 版本与 src/edge_platform/scheduler/cpsat/requirements.txt 锁定一致（==9.11.4210），
+# 保证同 SolverRequest + SOLVER_VERSION 可确定性重放。
+RUN pip install --no-cache-dir "ortools==9.11.4210" || echo "ortools 安装失败（worker 将以 UNAVAILABLE 模式运行）"
 
 EXPOSE 8000
 

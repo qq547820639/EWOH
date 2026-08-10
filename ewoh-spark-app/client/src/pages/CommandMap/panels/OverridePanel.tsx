@@ -61,9 +61,11 @@ const OVERRIDE_KINDS: Array<{
 interface OverridePanelProps {
   /** 外部传入的已选方案（若为空则从活跃方案列表选择）。 */
   planId?: string | null;
+  /** 初始覆盖动作类型（决策驾驶舱 Lock/Exclude 跳转时指定；缺省 LOCK_PERSON）。 */
+  initialKind?: PlanOverrideKind;
 }
 
-export function OverridePanel({ planId: externalPlanId }: OverridePanelProps): React.ReactElement {
+export function OverridePanel({ planId: externalPlanId, initialKind }: OverridePanelProps): React.ReactElement {
   const { data: plans, isLoading: plansLoading } = useQuery({
     queryKey: queryKeys.schedulerActivePlans,
     queryFn: () => getActivePlans(),
@@ -74,7 +76,7 @@ export function OverridePanel({ planId: externalPlanId }: OverridePanelProps): R
   const activePlans: SchedulingPlanV2[] = useMemo(() => plans ?? [], [plans]);
   const [planId, setPlanId] = useState<string | null>(externalPlanId ?? null);
   const [taskId, setTaskId] = useState<string>('');
-  const [kind, setKind] = useState<PlanOverrideKind>('LOCK_PERSON');
+  const [kind, setKind] = useState<PlanOverrideKind>(initialKind ?? 'LOCK_PERSON');
   const [targetPersonId, setTargetPersonId] = useState<string>('');
   const [targetDeviceId, setTargetDeviceId] = useState<string>('');
   const [targetStationId, setTargetStationId] = useState<string>('');

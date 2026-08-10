@@ -157,6 +157,53 @@ jobs:
           node db/runner/run_migrations.js --verify-standalone-domain
           node scripts/migrate-domain-state.js --dry-run
 
+      - name: Scheduler V2 multi-tenant isolation E2E (Org A vs Org B)
+        # Task 3 / ADR-004：Scheduler V2 运行时表多租户/RLS 边界 DB 级 E2E。
+        #   - 8 张 org-scoped 表（025 RLS）org-b 对 org-a 行 SELECT/UPDATE/DELETE 均 0 行；
+        #   - 3 张全局表（outbox/world_state_snapshot/assignment_event）跨 org 可读
+        #     （GLOBAL_SHARED / DERIVED_TENANT_OWNERSHIP，RLS 关闭）；
+        #   - assignment_event.org_id 由 standalone_028 派生触发器从归属 plan 推导。
+        # 前置：前序步骤已把迁移链 001..004 落到 PostgreSQL Service Container。
+        # 本步骤先应用 Scheduler V2 迁移链（standalone_017 补建表须先于 008/009/011/014
+        # 的 ALTER，再按序 006..028；全部 IF NOT EXISTS 幂等），再以运行时角色
+        # （ewoh_api：service_role 成员、LOGIN NOBYPASSRLS）执行断言——superuser/BYPASSRLS
+        # 会绕过 RLS，故此处必须用运行时 URL 而非 owner URL。
+        env:
+          EWOH_DATABASE_URL: postgresql://ewoh_api:${{ env.EWOH_API_DATABASE_PASSWORD }}@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+        run: |
+          set -euo pipefail
+          if [ -z "${{ env.EWOH_API_DATABASE_PASSWORD }}" ]; then
+            echo "::notice::BLOCKED_BY_ENVIRONMENT: EWOH_API_DATABASE_PASSWORD 未注入（前置迁移步骤未设 GITHUB_ENV），跳过 Scheduler V2 多租户 E2E。"
+            exit 0
+          fi
+          node db/runner/run_migrations.js --apply-standalone-scheduling-tables-fix
+          node db/runner/run_migrations.js --apply-standalone-scheduling
+          node db/runner/run_migrations.js --apply-standalone-scheduling-persistence
+          node db/runner/run_migrations.js --apply-standalone-phase2-realtime
+          node db/runner/run_migrations.js --apply-standalone-reservation-conflict
+          node db/runner/run_migrations.js --apply-standalone-scheduling-feedback
+          node db/runner/run_migrations.js --apply-standalone-outbox-sequence
+          node db/runner/run_migrations.js --apply-standalone-domain-columns
+          node db/runner/run_migrations.js --apply-standalone-conflict-lifecycle
+          node db/runner/run_migrations.js --apply-standalone-policy-weights
+          node db/runner/run_migrations.js --apply-standalone-route-cost-matrix
+          node db/runner/run_migrations.js --apply-standalone-task-requirement
+          node db/runner/run_migrations.js --apply-standalone-execution-feedback
+          node db/runner/run_migrations.js --apply-standalone-kpi-replay
+          node db/runner/run_migrations.js --apply-standalone-policy-lifecycle
+          node db/runner/run_migrations.js --apply-standalone-sse-envelope
+          node db/runner/run_migrations.js --apply-standalone-reservation-capacity
+          node db/runner/run_migrations.js --apply-standalone-scheduler-incremental
+          node db/runner/run_migrations.js --apply-standalone-scheduler-outbox-notify
+          node db/runner/run_migrations.js --apply-standalone-scheduler-rls
+          node db/runner/run_migrations.js --apply-standalone-route-cost-matrix-full-key
+          node db/runner/run_migrations.js --apply-standalone-resource-time-windows
+          node db/runner/run_migrations.js --apply-standalone-assignment-event-tenancy
+          node db/runner/run_migrations.js --verify-standalone-scheduler-rls
+          node db/runner/run_migrations.js --verify-standalone-assignment-event-tenancy
+          node scripts/verify-scheduler-multitenant.mjs
+
       - name: F61-02 dual-instance concurrency & upgrade/rollback verification
         # 2.D/2.F: two independent connections (two instances) race on the domain
         # primitives (unique-constraint lock race, optimistic version CAS, holder

@@ -37,6 +37,27 @@ export interface SolverConstraint {
 export type { SolveOptions } from './scheduling-solver.interface';
 
 /**
+ * Task 6 / P1：SHADOW 双跑对比结果（heuristic=生产方案；CP-SAT=shadow 对比，isShadow）。
+ * flag 关闭时 shadowPlan/comparison 为 null（与现状零行为变化）。
+ */
+export interface ShadowCompareResult {
+  /** 生产方案（heuristic；唯一可批准/派工的对象）。 */
+  productionPlan: SchedulingPlanV2;
+  /** CP-SAT shadow 对比方案（isShadow；绝不批准/派工）；flag 关闭时为 null。 */
+  shadowPlan: SchedulingPlanV2 | null;
+  /** 对比摘要（flag 关闭时为 null）。 */
+  comparison: {
+    productionSolverStatus: string | null;
+    shadowSolverStatus: string | null;
+    feasibility: { production: boolean; shadow: boolean; diverged: boolean };
+    objective: { production: number | null; shadow: number | null };
+    violations: { production: number; shadow: number; diverged: boolean };
+    runtimeMs: { production: number | null; shadow: number | null };
+    solverVersion: { production: string | null; shadow: string | null };
+  } | null;
+}
+
+/**
  * 求解器薄门面：保持既有公共 API（solve / solveVariants）不变，
  * 内部优先委托给 CP-SAT Worker（不可用时回退到确定性启发式 HeuristicSchedulingSolver）。
  */
@@ -204,6 +225,128 @@ export class SolverService {
       );
     }
     return plan;
+  }
+
+  /**
+   * Task 6 / P1：SHADOW 双跑（schedulingPolicyConfig.cpSat?.shadowCompare）。
+   * - flag 关闭（缺省）：仅生产方案（heuristic 单跑，不调用 CP-SAT）——与现状零行为变化。
+   * - flag 开启：同一 snapshot/policy 上同时跑 heuristic（生产方案）+ CP-SAT（shadow 对比），
+   *   返回两者与 comparison（feasibility/objective/violations/runtime/solverStatus）；
+   *   shadow 结果标记 isShadow，绝不作为生产方案返回（solve() 保持 heuristic 生产方案）。
+   * 激活阶梯（OFF→SHADOW→CANARY→PRODUCTION）：当前 feature-status.yaml
+   * cpSat.productionEnabled=false，本方法仅用于 SHADOW 观测，绝不派工。
+   */
+  async solveShadowCompare(
+    snapshot: WorldStateSnapshot,
+    constraints: SolverConstraint[],
+    opts: SolveOptions,
+  ): Promise<ShadowCompareResult> {
+    const config = await this.policyService.getConfig();
+    const shadowCompare = config.cpSat?.shadowCompare ?? false;
+    if (!shadowCompare) {
+      // 缺省：仅生产方案（heuristic），不跑 CP-SAT 双跑（零行为变化、确定性）。
+      const productionPlan = await this.heuristicSolver.solve(
+        snapshot,
+        this.toSchedulingConstraints(constraints),
+        opts,
+      );
+      return { productionPlan, shadowPlan: null, comparison: null };
+    }
+
+    const started = Date.now();
+    const productionPlan = await this.heuristicSolver.solve(
+      snapshot,
+      this.toSchedulingConstraints(constraints),
+      opts,
+    );
+    const shadowPlan = await this.cpSatSolver.solve(
+      snapshot,
+      this.toSchedulingConstraints(constraints),
+      opts,
+    );
+    // SHADOW 结果标记：status=shadow（PlanService ShadowPlanGuard 拒绝 approve/dispatch/reserve）
+    // + baselineDelta.shadow.isShadow=true（审计可解释）。绝不作为生产方案返回。
+    shadowPlan.status = 'shadow';
+    shadowPlan.baselineDelta = {
+      ...(shadowPlan.baselineDelta ?? {}),
+      shadow: {
+        isShadow: true,
+        mode: 'cp-sat-shadow-compare',
+        comparedWith: 'heuristic',
+      },
+    };
+
+    const productionViolations = this.violationSignatures(productionPlan.violations);
+    const shadowViolations = this.violationSignatures(shadowPlan.violations);
+    const violationsDiverged =
+      [...productionViolations].some((v) => !shadowViolations.has(v)) ||
+      [...shadowViolations].some((v) => !productionViolations.has(v));
+    const productionFeasible = this.isFeasible(productionPlan, snapshot);
+    const shadowFeasible = this.isFeasible(shadowPlan, snapshot);
+    const comparison = {
+      productionSolverStatus: productionPlan.solverStatus ?? null,
+      shadowSolverStatus: shadowPlan.solverStatus ?? null,
+      feasibility: {
+        production: productionFeasible,
+        shadow: shadowFeasible,
+        diverged: productionFeasible !== shadowFeasible,
+      },
+      objective: {
+        production: productionPlan.objective ?? null,
+        shadow: shadowPlan.objective ?? null,
+      },
+      violations: {
+        production: productionPlan.violations.length,
+        shadow: shadowPlan.violations.length,
+        diverged: violationsDiverged,
+      },
+      runtimeMs: {
+        production: productionPlan.solveDurationMs ?? null,
+        shadow: shadowPlan.solveDurationMs ?? null,
+      },
+      solverVersion: {
+        production: productionPlan.solverVersion ?? null,
+        shadow: shadowPlan.solverVersion ?? null,
+      },
+    };
+
+    // 观测埋点（记录/审计用；失败仅记日志，绝不阻断）。
+    try {
+      this.metricsService.recordRun({
+        durationMs: Math.max(Date.now() - started, 0),
+        feasible: shadowFeasible,
+        solverVersion: shadowPlan.solverVersion,
+        solverStatus: shadowPlan.solverStatus,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `shadow compare metrics recording failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    this.logger.log(
+      `SHADOW compare: production=${productionPlan.solverStatus ?? '?'} shadow=${shadowPlan.solverStatus ?? '?'} ` +
+        `violations=${productionPlan.violations.length}/${shadowPlan.violations.length} ` +
+        `diverged=${violationsDiverged} planId=${opts.planId} snapshot=${snapshot.snapshotVersion}`,
+    );
+    return { productionPlan, shadowPlan, comparison };
+  }
+
+  /** 硬约束违例签名集合（type 优先；无 type 退化为整体序列化），供分歧检测。 */
+  private violationSignatures(violations: Array<Record<string, unknown>>): Set<string> {
+    const sigs = new Set<string>();
+    for (const v of violations ?? []) {
+      const t = typeof v === 'object' && v != null ? v['type'] : undefined;
+      sigs.add(typeof t === 'string' && t ? `type:${t}` : `raw:${JSON.stringify(v)}`);
+    }
+    return sigs;
+  }
+
+  /** 可分配性：assignments 覆盖所有非终态任务（与 recordRun 的 feasible 语义一致）。 */
+  private isFeasible(plan: SchedulingPlanV2, snapshot: WorldStateSnapshot): boolean {
+    const schedulable = snapshot.tasks.filter(
+      (t) => !['completed', 'cancelled'].includes(t.status),
+    ).length;
+    return plan.assignments.length >= schedulable;
   }
 
   /** 计算方案相对基线的 churn（改派/新增/移除的任务数）。 */

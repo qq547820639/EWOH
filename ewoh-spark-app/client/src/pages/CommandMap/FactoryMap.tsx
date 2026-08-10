@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useRef } from 'react';
+import { memo, useMemo, useEffect, useRef } from 'react';
 import {
   TransformWrapper,
   TransformComponent,
@@ -16,6 +16,7 @@ import type {
 import { fitLabel, truncateLabel } from './labels';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
 import { getEntityColor, getDeviceColor, priorityLevelColor, resourceStatusColor, isExoDevice } from './entityColors';
+import { cullByBounds, cullPaddingFor, isPointWithinBounds, type VisibleBounds } from './store/viewportCulling';
 
 /** P0：ETA 格式化（后端秒 → 分:秒 / 分钟）；缺失返回空串（不前端估算）。 */
 function formatEta(etaSeconds: number): string {
@@ -46,6 +47,11 @@ interface FactoryMapProps {
   candidates?: TaskCandidatesResponse | null;
   /** 智能调度驾驶舱：当前选中的任务（用于在图上高亮其候选人员）。 */
   selectedTaskId?: string | null;
+  /**
+   * 视口 culling 可见范围（世界坐标）。null = 不启用 culling（默认渲染全部）。
+   * 由 CommandMap 从 store viewport slice 注入（Task 4 / P1）。
+   */
+  visibleBounds?: VisibleBounds | null;
 }
 
 /** 摄像头视锥三角形顶点（yaw=0 朝右，按 yaw 旋转） */
@@ -210,33 +216,55 @@ const FactoryMap = ({
   planOverlay,
   candidates = null,
   selectedTaskId = null,
+  visibleBounds = null,
 }: FactoryMapProps): React.ReactElement => {
+  // 视口 culling：bounds 非空时剔除视野外实体；null 保持默认（渲染全部）。
+  const cullBounds = visibleBounds ?? null;
+  const inView = (p: { x: number; y: number } | null | undefined, padding = 0): boolean =>
+    !cullBounds || (p ? isPointWithinBounds(p, cullBounds, padding) : false);
+
   const staticEntities = useMemo(
     () =>
-      entities
-        .filter((e) => STATIC_ORDER.includes(e.entityType))
-        .sort(
-          (a, b) =>
-            STATIC_ORDER.indexOf(a.entityType) - STATIC_ORDER.indexOf(b.entityType),
-        ),
-    [entities],
+      cullByBounds(
+        entities
+          .filter((e) => STATIC_ORDER.includes(e.entityType))
+          .sort(
+            (a, b) =>
+              STATIC_ORDER.indexOf(a.entityType) - STATIC_ORDER.indexOf(b.entityType),
+          ),
+        cullBounds,
+        0,
+      ).filter((e) => inView(e, cullPaddingFor(e))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [entities, cullBounds],
   );
 
   const workstations = useMemo(
-    () => entities.filter((e) => e.entityType === 'workstation'),
-    [entities],
+    () => cullByBounds(entities.filter((e) => e.entityType === 'workstation'), cullBounds, 0).filter((w) => inView(w, cullPaddingFor(w))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [entities, cullBounds],
   );
   const cameras = useMemo(
-    () => entities.filter((e) => e.entityType === 'camera'),
-    [entities],
+    () => cullByBounds(entities.filter((e) => e.entityType === 'camera'), cullBounds, 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [entities, cullBounds],
   );
   const uwbStations = useMemo(
-    () => entities.filter((e) => e.entityType === 'uwb_station'),
-    [entities],
+    () => cullByBounds(entities.filter((e) => e.entityType === 'uwb_station'), cullBounds, 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [entities, cullBounds],
   );
 
-  const persons = useMemo(() => mergePersons(entities, worldState), [entities, worldState]);
-  const devices = useMemo(() => mergeDevices(entities, worldState), [entities, worldState]);
+  const persons = useMemo(
+    () => cullByBounds(mergePersons(entities, worldState), cullBounds, 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [entities, worldState, cullBounds],
+  );
+  const devices = useMemo(
+    () => cullByBounds(mergeDevices(entities, worldState), cullBounds, 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [entities, worldState, cullBounds],
+  );
 
   // 智能调度驾驶舱：任务优先级徽标（后端 decisionTrace.priority，展示用，不本地复算）。
   const priorityMarkers = useMemo(() => {
@@ -256,19 +284,23 @@ const FactoryMap = ({
         const point = stationOf(a.stationId);
         return point ? { assignment: a, priority: p, point } : null;
       })
-      .filter((x): x is NonNullable<typeof x> => Boolean(x));
-  }, [planOverlay, workstations, entities]);
+      .filter((x): x is NonNullable<typeof x> => Boolean(x) && inView(x.point));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planOverlay, workstations, entities, cullBounds]);
 
   // 智能调度驾驶舱：将候选的人员 entityId/姓名 匹配到地图人员坐标（尽力匹配，无则不渲染圆环）。
   const candidateFocus = useMemo(() => {
     if (!selectedTaskId || !candidates) return null;
     const byId = new Map(persons.map((p) => [p.entityId, p]));
     const byName = new Map(persons.map((p) => [p.name, p]));
-    return candidates.candidates.map((c) => ({
-      candidate: c,
-      point: byId.get(c.personId) ?? byName.get(c.personName) ?? null,
-    }));
-  }, [selectedTaskId, candidates, persons]);
+    return candidates.candidates
+      .map((c) => ({
+        candidate: c,
+        point: byId.get(c.personId) ?? byName.get(c.personName) ?? null,
+      }))
+      .filter((x) => inView(x.point));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTaskId, candidates, persons, cullBounds]);
 
   // 生产模式：工位间流动连线（按 x 坐标排序模拟产线流向）
   const flowLines = useMemo(() => {
@@ -689,6 +721,8 @@ const FactoryMap = ({
                 {plan.assignments.map((a) => {
                   const from = personCoord(a.personId);
                   const to = stationCoord(a.stationId);
+                  // 视口 culling：两端点均不可见时跳过该分配。
+                  if (cullBounds && !inView(from) && !inView(to)) return null;
                   const geom = a.routeGeometry;
                   const pts =
                     Array.isArray(geom) && geom.length >= 2
@@ -712,10 +746,11 @@ const FactoryMap = ({
                     />
                   );
                 })}
-                {/* 目标工位标记 + 预测人员位置 */}
+                {/* 目标工位标记 + 预测人员位置（视口 culling：目标不可见时跳过） */}
                 {plan.assignments.map((a) => {
                   const to = stationCoord(a.stationId);
                   if (!to) return null;
+                  if (cullBounds && !inView(to)) return null;
                   return (
                     <g key={`amk-${a.assignmentId}`}>
                       <rect
@@ -1225,4 +1260,6 @@ const FactoryMap = ({
   );
 };
 
-export default FactoryMap;
+// React.memo：仅当 props 引用变化（entities/worldState/mode/level/selection 等）时重渲染；
+// store 其他 slice（如 schedulerRealtime 镜像）写入不会连带重渲染地图（Task 4 / P1）。
+export default memo(FactoryMap);

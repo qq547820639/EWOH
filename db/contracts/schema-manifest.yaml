@@ -1,6 +1,6 @@
 # EWOH managed schema manifest
 version: "1.2"
-generated: "2026-08-09"
+generated: "2026-08-10"
 source:
   data_contract: ".codex/artifacts/contracts/data-contract.md"
   security_contract: ".codex/artifacts/contracts/security-contract.md"
@@ -16,6 +16,7 @@ notes:
   - "Within that group, ewoh_device_person_binding is satisfied by the existing ewoh_device_binding table, so 35 physical CREATE statements are emitted."
   - "No frozen capability is silently dropped; the capability map in tmp/ddl/capability-map.csv is the acceptance basis."
   - "F61-02 (2.A): 6 domain persistence tables (ewoh_resource_locks, ewoh_handoffs, ewoh_git_sync_state, ewoh_evidence_metadata, ewoh_factory_replication_sessions, ewoh_idempotency_keys) added as managed tables via standalone_004_ewoh_domain.sql. managed_count 48->54, physical_create_count 38->44."
+  - "Task 3 (ADR-004): scheduler V2 runtime tenancy. ewoh_replan_trigger added to the manifest. org_id_policy=GLOBAL_SHARED for ewoh_outbox / ewoh_world_state_snapshot / ewoh_assignment_event: org_id is recorded for lineage only, NOT an RLS isolation boundary (RLS stays OFF per ADR-004; ewoh_assignment_event is DERIVED_TENANT_OWNERSHIP via standalone_028)."
 managed_tables:
   - domain: "Scale"
     logical_name: "ewoh_asset_package"
@@ -481,6 +482,13 @@ additional_hardened_existing_tables:
     status: "new"
     capability_mapping: ["scheduler.policy"]
   - domain: "Scheduling"
+    logical_name: "ewoh_replan_trigger"
+    physical_table: "ewoh_replan_trigger"
+    business_key_columns: ["org_id","trigger_key"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["scheduler.replan"]
+  - domain: "Scheduling"
     logical_name: "ewoh_scheduling_execution"
     physical_table: "ewoh_scheduling_execution"
     business_key_columns: ["org_id","execution_id"]
@@ -508,11 +516,12 @@ additional_hardened_existing_tables:
     org_id_policy: "NULLABLE"
     status: "new"
     capability_mapping: ["scheduler.policy.activation"]
+  # GLOBAL_SHARED（ADR-004）：org_id 仅用于血缘记录，非 RLS 隔离边界；RLS 保持关闭。
   - domain: "Scheduling"
     logical_name: "ewoh_world_state_snapshot"
     physical_table: "ewoh_world_state_snapshot"
     business_key_columns: ["org_id","snapshot_id"]
-    org_id_policy: "NOT NULL"
+    org_id_policy: "GLOBAL_SHARED"
     status: "new"
     capability_mapping: ["scheduler.snapshot"]
   - domain: "Scheduling"
@@ -550,17 +559,20 @@ additional_hardened_existing_tables:
     org_id_policy: "NOT NULL"
     status: "new"
     capability_mapping: ["scheduler.route_edge"]
+  # DERIVED_TENANT_OWNERSHIP（ADR-004）：RLS 关闭（全局审计流）；租户边界由
+  # standalone_028 派生触发器 trg_assignment_event_derive_org 落库 + 应用层过滤保证。
   - domain: "Scheduling"
     logical_name: "ewoh_assignment_event"
     physical_table: "ewoh_assignment_event"
     business_key_columns: ["org_id","event_id"]
-    org_id_policy: "NOT NULL"
+    org_id_policy: "GLOBAL_SHARED"
     status: "new"
     capability_mapping: ["scheduler.event"]
+  # GLOBAL_SHARED（ADR-004）：全局 sequence 事件日志；org_id 仅血缘，非隔离边界。
   - domain: "Scheduling"
     logical_name: "ewoh_outbox"
     physical_table: "ewoh_outbox"
     business_key_columns: ["org_id","outbox_id"]
-    org_id_policy: "NOT NULL"
+    org_id_policy: "GLOBAL_SHARED"
     status: "new"
     capability_mapping: ["scheduler.outbox"]

@@ -123,5 +123,8 @@ export function useCommandMapSchedulerState(): CommandMapSchedulerState {
     ],
   );
 
-  return { ...aggregate, updateUi };
+  // 返回值整体 useMemo：aggregate 变化（React Query 数据/本地 ui 更新）时才产生新引用。
+  // 保证 SchedulerLayers / PlanCompareLayer 等 React.memo 层在「仅 store slice 变化」
+  // （如 selection/mode/viewport 写入）时不因外层对象引用变化而重渲染（Task 4 / P1 SSE 局部更新）。
+  return useMemo(() => ({ ...aggregate, updateUi }), [aggregate, updateUi]);
 }

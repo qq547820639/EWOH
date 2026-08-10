@@ -1,6 +1,6 @@
 # EWOH 真实运行门禁（Runtime Gates）状态
 
-Status: 2026-08-06 · 依据 `output/code-deepening-baseline.json` 与 CI 工作流审计
+Status: 2026-08-10 · Task 8 P1：G5/G8/G9 三道运行门禁已由 ephemeral kind 集群 job 在 CI 自动化
 Owner: 平台/交付负责人
 
 本文件逐一记录 EWOH 的**真实运行门禁**（真实 PostgreSQL / Docker / Helm / 边缘节点
@@ -23,16 +23,19 @@ Owner: 平台/交付负责人
 | 2 | HTTP + PostgreSQL E2E | ✅ CI 自动化 | `standalone.yml`（`npm run test:e2e` + `test:browser`） | E2E/Jest 通过数 |
 | 3 | concurrency / idempotency / lock-contention | ✅ CI 自动化 | `standalone.yml`（`scripts/verify-domain-concurrency.js`） | 双实例并发脚本非零退出 |
 | 4 | Docker image startup + health check | ⚠️ CI 自动化 / 本地 BLOCKED | `standalone.yml`（新增步骤） | `/health/live`、`/health/ready` 200 |
-| 5 | Helm install/upgrade/rollback + smoke | 🔴 BLOCKED（静态审计已接入 CI；运行时脚本已就绪） | `verify-helm-runtime.sh` / `deployment:tck` / `verify-helm-chart.js` | 见 §4.1 |
+| 5 | Helm install/upgrade/rollback + smoke | ✅ CI 自动化（kind）/ 本地 BLOCKED | `runtime-gates.yml` job `helm-kind-gate`（ephemeral kind v0.23 + 集群内 PG17，真实 install/upgrade/rollback） | 见 §3.4 |
 | 6 | backup/restore + version compatibility drill | ⚠️ CI 自动化 / 本地 BLOCKED | `standalone.yml` + `verify-backup-restore.mjs`（空库恢复/行数/不变量/组织隔离/跨版本） | backup/restore/verify + identity smoke |
 | 7 | edge node disconnect/backlog/replay/duplicate | ✅ CI 自动化 | `test.yml`（`make test-contract` + 显式步骤） | Python 测试通过 |
-| 8 | canary upgrade + failed rollback | 🔴 BLOCKED（脚本已就绪） | `canary-deploy.sh` | 见 §4.8 |
-| 9 | long soak/load test | 🔴 BLOCKED（脚本已就绪） | `soak-load.js` | 见 §4.9 |
+| 8 | canary upgrade + failed rollback | ✅ CI 自动化（kind）/ 本地 BLOCKED | `runtime-gates.yml` job `helm-kind-gate`（canary 阶段，`canary-deploy.sh`，坏版本自动回滚） | 见 §3.5 |
+| 9 | long soak/load test | ✅ CI 自动化 / 本地 BLOCKED | `runtime-gates.yml` job `soak-load-gate`（`soak-load.js` 2000/25 + `soak-scheduler-events.js` 500 事件+SSE） | 见 §3.6 |
 | 10 | PostgreSQL 生产迁移门禁（空库/跨版本/幂等/回滚/权限） | ⚠️ CI 自动化 / 本地 BLOCKED | `runtime-gates.yml` + `verify-migration-prod.mjs` | 见 §4.10 |
 | 11 | 容器镜像安全门禁（真实构建/SBOM/Trivy/摘要） | ⚠️ CI 自动化 / 本地 BLOCKED | `runtime-gates.yml` + `container-image-gate.sh` | 见 §4.11 |
+| 12 | Scheduler V2 多租户隔离 E2E（Org A vs Org B，ADR-004） | ⚠️ CI 自动化 / 本地 BLOCKED | `standalone.yml` + `scripts/verify-scheduler-multitenant.mjs` | 见 §3.3 |
 
 图例：✅ = 已在 CI 真实运行；⚠️ = 仅在 CI 可运行（本地环境不可复现）；🔴 = BLOCKED（需真实
-基础设施/集群，当前环境无法运行，未伪造证据）。
+基础设施/集群，当前环境无法运行，未伪造证据）。标注「本地 BLOCKED」的 ✅ 行 = 门禁已在
+GitHub Actions 中真实自动化（含 ephemeral kind 集群），但本地开发机（macOS，无
+kind/helm/kubectl/docker/PG）仍不可复现，CI 证据以 workflow 运行日志/artifact 为准。
 
 ---
 
@@ -102,10 +105,12 @@ Owner: 平台/交付负责人
 
 ---
 
-## 3. 仅 CI 可运行（⚠️，本地环境不可复现）
+## 3. 仅 CI 可运行（✅/⚠️，本地环境不可复现）
 
-以下门禁依赖 Docker / 真实 PostgreSQL，当前本地开发机（macOS，无 Docker/PG）**无法
-手动复现**，但已在 GitHub Actions ubuntu 上真实运行。**未**在本地伪造成通过。
+以下门禁依赖 Docker / 真实 PostgreSQL / ephemeral kind 集群，当前本地开发机（macOS，
+无 Docker/PG/kind/helm/kubectl）**无法手动复现**，但已在 GitHub Actions ubuntu 上真实运行
+（G5/G8/G9 由 `runtime-gates.yml` 的 `helm-kind-gate` / `soak-load-gate` 两个 job 执行，
+工具链版本固定：kind v0.23.0 / kubectl v1.30.0 / helm v3.16.3）。**未**在本地伪造成通过。
 
 ### 3.1 G4 Docker image startup + health check
 - **CI**：`standalone.yml` 新增步骤「Docker image startup + health check」——构建后的
@@ -144,80 +149,105 @@ Owner: 平台/交付负责人
 - **诚实说明**：该 drill 为**就地恢复**（`ON CONFLICT DO NOTHING`，同一库内往返），验证脚本
   与格式兼容与行数一致，并非空库全量恢复演练；完整空库恢复 + 跨版本还原仍需真实备份环境。
 
+### 3.3 G12 Scheduler V2 多租户隔离 E2E（Org A vs Org B，ADR-004）
+- **CI**：`standalone.yml` 新增步骤「Scheduler V2 multi-tenant isolation E2E (Org A vs Org B)」——
+  先应用 Scheduler V2 迁移链（standalone_017 补建表先于 008/009/011/014 的 ALTER，
+  再按序 006..028），`--verify-standalone-scheduler-rls` + `--verify-standalone-assignment-event-tenancy`，
+  然后以**运行时角色**（`ewoh_api`：service_role 成员、LOGIN NOBYPASSRLS；superuser 会绕过
+  RLS，故不用 owner URL）执行 `scripts/verify-scheduler-multitenant.mjs`。
+- **覆盖**（ADR-004 三分类，DB 级断言）：
+  - 8 张 TENANT_SCOPED 表（025 RLS）：org-b 连接对 org-a 行 SELECT/UPDATE/DELETE 均 0 行；
+  - 无 GUC 连接：RLS 表仅可见全局行（`org_id IS NULL`）；
+  - 3 张全局表（outbox / world_state_snapshot / assignment_event）跨 org 可读
+    （GLOBAL_SHARED / DERIVED_TENANT_OWNERSHIP，RLS 关闭）；
+  - `ewoh_assignment_event.org_id` 由 standalone_028 触发器从归属 plan/assignment 推导，
+    派生不变量失配 = 0；
+  - RLS 配置自检：8 表 relrowsecurity=true、3 表 false、8 条 policy FOR service_role。
+- **一键命令（需真实 PG，连接角色须为非 superuser 的 service_role 成员）**：
+  ```bash
+  export EWOH_DATABASE_URL='postgresql://ewoh_api:<pw>@127.0.0.1:5432/ewoh' EWOH_ALLOW_DDL=1
+  # 前置：迁移链 001..004 已应用；再应用 Scheduler V2 链（017 → 006..028，见 standalone.yml 步骤）
+  node scripts/verify-scheduler-multitenant.mjs
+  ```
+- **所需环境变量/基础设施**：PostgreSQL 17（已迁移 025/028）；`EWOH_DATABASE_URL`（或
+  `EWOH_RUNTIME_DATABASE_URL`）；`EWOH_SCHEMA`（默认 public）。
+- **证据路径**：`RESULT {json}` 摘要 + `PASS`（退出码 0）；任一断言失败输出
+  `FAIL: n/m assertions failed`（退出码非 0）；URL 未设置或 DB 不可达时如实输出
+  `BLOCKED_BY_ENVIRONMENT`（退出码 0，绝不伪造通过）。
+
+### 3.4 G5 Helm install/upgrade/rollback + smoke（kind 集群自动化，本地 BLOCKED）
+- **CI**：`runtime-gates.yml` job `helm-kind-gate`（ubuntu-latest，`timeout-minutes: 30`
+  硬上限；每个 shell 步骤另有步骤级 `timeout-minutes`，任何失败响亮失败，无
+  `continue-on-error` 掩盖）——ephemeral kind v0.23.0 集群真实执行：
+  1. 集群内供应 PostgreSQL 17（`postgres:17-alpine` Deployment + Service `postgres:5432`）；
+  2. 安装 `local-path-provisioner` v0.0.30 并设为默认 StorageClass，使图表 PVC
+     （`ewoh-uploads`，`storage.driver=local`）动态绑定；
+  3. 创建 `ewoh-api-secret`（DATABASE_URL 指向集群内 postgres 的 `ewoh_api` 运行时角色 /
+     JWT_SECRET / REDIS_URL 置空走内存回退）与 `ewoh-migration-secret`
+     （EWOH_DATABASE_URL / EWOH_API_DATABASE_PASSWORD / EWOH_BOOTSTRAP_ADMIN_*）；
+  4. 构建 `Dockerfile.api` / `Dockerfile.migrate` 并 `kind load docker-image`；
+  5. `helm install ewoh deploy/cloud/helm/ewoh`（`--set replicaCount=1/autoscaling=false/
+     ingress=false/service.type=NodePort/pdb.minAvailable=1` 单节点覆盖）→ 迁移 Job
+     complete → rollout → PVC Bound → NetworkPolicy 存在 → `/health/live`、`/health/ready`
+     断言 200（NodePort 直达，无需 port-forward）；
+  6. 数据完整性：集群内 psql 断言 `ewoh_%` 表存在 + `ewoh_user / workbench_export_tasks /
+     ewoh_schedule_task` 存在 + seed admin 落库；
+  7. 升级模拟：`--set image.tag=does-not-exist`（坏镜像，`--wait` 超时）→ 升级必须失败 →
+     `helm rollback ewoh <prev-revision>` → rollout → 健康 200 + 镜像 tag 恢复为 `ewoh-api:ci`；
+  8. 报告：`output/helm-kind-report.json` + `output/gate-results/helm-runtime.json`
+     （truth-gate-record SUCCEEDED），上传 artifact `helm-kind-gate-report-<sha>`。
+- **一键命令（需 Docker + kind）**：一体化脚本 `scripts/verify-helm-runtime.sh` 在
+  有集群时执行 install → 迁移 Job → probes → replicas(>=3) → worker → networkpolicy →
+  PVC → restart → upgrade → rollback；无集群时如实记录 `BLOCKED_BY_ENVIRONMENT`。
+- **本地诚实说明**：本地 macOS 无 kind/helm/kubectl/docker，**本地仍 BLOCKED**，仅由
+  GitHub Actions 的 `helm-kind-gate` job 执行；CI 证据以 workflow 运行日志/artifact 为准。
+
+### 3.5 G8 canary upgrade + failed rollback（kind 集群自动化，本地 BLOCKED）
+- **CI**：与 G5 复用同一 `helm-kind-gate` job（rollback 验证通过后追加 canary 阶段）——
+  运行 `scripts/canary-deploy.sh`（`API_URL` 指向 kind NodePort；`CANARY_POLLS=10` /
+  `CANARY_POLL_INTERVAL=5` / `HELM_TIMEOUT=2m`，全程有界）：
+  - 基线健康 → `helm upgrade --set image.tag=ewoh-broken-canary --set factory.upgradeRing=canary`
+    （坏镜像，升级预期失败）→ 轮询失败阈值（`/health/ready` 非 200）→ 自动
+    `helm rollback` → 回滚后 rollout + 健康 200 + 镜像 tag 恢复为 `ewoh-api:ci`。
+  - 报告：`output/canary-report.json` + `output/gate-results/canary-upgrade.json`。
+- **一键命令（需集群，承接 G5）**：
+  ```bash
+  bash scripts/canary-deploy.sh   # env: API_URL / MAX_ERROR_RATE / MAX_P95_MS / BAD_IMAGE_TAG
+  ```
+- **本地诚实说明**：本地仍 BLOCKED（无集群），仅 CI `helm-kind-gate` 的 canary 阶段执行。
+
+### 3.6 G9 long soak/load test（CI 自动化，本地 BLOCKED）
+- **CI**：`runtime-gates.yml` job `soak-load-gate`（ubuntu-latest + PostgreSQL Service
+  Container，`timeout-minutes: 25` 硬上限）：
+  1. 应用 standalone 迁移链 + 种子（含 Scheduler V2/outbox 链与 demo 数据）；
+  2. `npm run build:prod:standalone` 后真实启动 standalone API（后台，等待 `/health/ready`）；
+  3. `scripts/soak-load.js`（`SOAK_REQUESTS=2000` / `SOAK_CONCURRENCY=25` /
+     `TARGET_URL=http://127.0.0.1:3000`）：HTTP+PG churn、多 org 隔离、连接池、队列积压、
+     导出任务状态机、弱网重连、资源泄漏；
+  4. `scripts/soak-scheduler-events.js`（Task 8 P1 新增，`SOAK_SCHEDULER_EVENTS=500`）：
+     登录 → 500 事件风暴（POST `/api/scheduler/events`，轮换 trigger + 唯一 entityId）→
+     SSE 订阅 `api/scheduler/v2/stream` → 携带 Last-Event-ID 断线重连续传；脚本级
+     `SOAK_SCHEDULER_TIMEOUT_MS`（默认 240s）兜底，绝不无限跑。
+  - 报告：`output/soak-load-report.json`、`output/soak-scheduler-events-report.json` +
+    `output/gate-results/soak-load.json`、`gate-results/soak-scheduler-events.json`。
+- **一键命令（需运行中 API + PG）**：
+  ```bash
+  export TARGET_URL='http://127.0.0.1:3000'
+  export EWOH_SOAK_DATABASE_URL='postgresql://postgres:<pw>@127.0.0.1:5432/ewoh'
+  SOAK_REQUESTS=2000 SOAK_CONCURRENCY=25 node scripts/soak-load.js
+  SOAK_SCHEDULER_EVENTS=500 EWOH_SOAK_ADMIN_USERNAME=ci_admin EWOH_SOAK_ADMIN_PASSWORD='<pw>' node scripts/soak-scheduler-events.js
+  ```
+- **本地诚实说明**：本地仍 BLOCKED（无 PG/API 运行环境），仅 CI `soak-load-gate` 执行。
+
 ---
 
-## 4. BLOCKED 门禁（🔴，需真实集群/设备，未伪造证据）
+## 4. 本地 BLOCKED 门禁（🔴，本地环境不可复现，未伪造证据）
 
-> 这些门禁当前环境（无 Docker/Helm/kubectl/kind/k3d、无真实边缘硬件）无法运行。以下给出
-> 一键命令、所需基础设施/环境变量与预期证据路径，作为拿到相应环境后的执行清单。**未**以
-> mock 或静态检查顶替其结论。
-
-### 4.1 G5 Helm install/upgrade/rollback + smoke
-- **BLOCKED 原因**：需要 kind/k3d 或真实 k8s 集群 + Helm + kubectl + 集群内可达的
-  PostgreSQL。本地无 Helm/kubectl/kind/k3d。
-- **静态部分（已接入 CI）**：`scripts/verify-helm-chart.js`（128 项图表结构审计）已通过
-  `npm run deployment:tck` 在 CI 运行。**静态审计 ≠ 真实安装**。
-- **一键命令（需集群，一体化脚本）**：`scripts/verify-helm-runtime.sh` 自动执行
-  install → 迁移 Job → probes → replicas(>=3) → worker → networkpolicy → PVC →
-  pod restart → upgrade → rollback，并在无集群时如实记录
-  `BLOCKED_BY_ENVIRONMENT`：
-  ```bash
-  kind create cluster --name ewoh-ci
-  kubectl create namespace ewoh
-  kubectl -n ewoh create secret generic ewoh-secret \
-    --from-literal=DATABASE_URL='postgresql://ewoh_api:<pw>@<pg-host>:5432/ewoh' \
-    --from-literal=JWT_SECRET='<openssl rand -hex 32>' \
-    --from-literal=REDIS_URL='redis://<host>:6379'
-  bash scripts/verify-helm-runtime.sh
-  # 或手动分步：
-  helm install ewoh deploy/cloud/helm/ewoh --namespace ewoh --wait --timeout 10m
-  helm upgrade ewoh deploy/cloud/helm/ewoh --namespace ewoh --set image.tag=<new> --wait
-  helm rollback ewoh 1 --namespace ewoh --wait
-  kubectl -n ewoh get pods -o wide   # 确认全部 Ready
-  ```
-- **所需基础设施/环境变量**：kind/k3d 或 k8s 集群；PostgreSQL 17（集群可达）；Helm、kubectl；
-  运行时 Secret（`ewoh-secret`：`DATABASE_URL`/`JWT_SECRET`/`REDIS_URL`）、迁移 Secret。
-- **预期证据路径**：`output/helm-runtime-report.json` + `gate-results/helm-runtime.json`。
-
-### 4.2 G8 canary upgrade + failed rollback
-- **BLOCKED 原因**：需要部署在含 canary/ring 能力的集群（G5 前置）并人为注入失败以验证
-  回滚。当前无集群。
-- **应用层部分覆盖（已自动化）**：HTTP + PostgreSQL E2E 已覆盖应用级
-  `POST /api/scale/fleet/upgrade` / `/api/scale/fleet/rollback`（shadow-ring
-  install/upgrade/rollback、全部 profile 回滚、审计）。**应用状态机 ≠ 基础设施 canary 回滚**。
-- **一键命令（需集群，承接 G5）**：一体化脚本 `scripts/canary-deploy.sh` 捕获基线健康指标、
-  部署 canary ring（broken image）、按失败阈值轮询并**自动回滚**、回滚后做业务态校验：
-  ```bash
-  bash scripts/canary-deploy.sh \
-    -- ...  # 或通过 env：API_URL / MAX_ERROR_RATE / MAX_P95_MS / BAD_IMAGE_TAG
-  # 手动分步参考：
-  helm upgrade ewoh deploy/cloud/helm/ewoh --namespace ewoh \
-    --set factory.upgradeRing=canary --set image.tag=<broken> --wait \
-    || echo "canary 升级失败（预期，触发回滚）"
-  helm rollback ewoh <prev-revision> --namespace ewoh --wait
-  kubectl -n ewoh rollout status deploy/ewoh
-  kubectl -n ewoh get pods && curl -fsS http://<ingress>/health/ready
-  ```
-- **所需基础设施/环境变量**：G5 全部 + 一个可注入故障的 canary ring。
-- **预期证据路径**：`output/canary-report.json` + `gate-results/canary-upgrade.json`。
-
-### 4.3 G9 long soak/load test
-- **BLOCKED 原因**：需要长时间运行的集群 + 真实 PostgreSQL + 持续负载注入与指标采集
-  （数小时级）。当前无运行中集群。
-- **短时性能冒烟（可运行）**：`scripts/perf-smoke.js`（1000 req / 50 并发，p95 等）可在
-  有真实 API + PG 时运行：`cd ewoh-spark-app && npm run perf:smoke`。**冒烟 ≠ 长稳负载**。
-- **一键命令（需运行中 API + PG）**：一体化脚本 `scripts/soak-load.js` 覆盖真实 API+PG
-  并发、多 org 隔离、连接池、队列积压、导出任务状态机、弱网重连、资源泄漏检测：
-  ```bash
-  export TARGET_URL='http://<host>:3000'
-  export EWOH_SOAK_DATABASE_URL='postgresql://postgres:<pw>@127.0.0.1:5432/ewoh'
-  node scripts/soak-load.js          # SOAK_REQUESTS / SOAK_CONCURRENCY 可调
-  # 超长稳（自备负载工具 + 指标采集，如 k6 + Prometheus + Grafana）：
-  k6 run --duration 4h --vus 50 load-script.js   # 需自建脚本
-  ```
-- **所需基础设施/环境变量**：运行中的 API + PostgreSQL；负载工具（k6 等）；指标采集
-  （Prometheus，`GET /metrics` 已暴露）；`TARGET_URL` / `EWOH_SOAK_DATABASE_URL`。
-- **预期证据路径**：`output/soak-load-report.json` + `gate-results/soak-load.json`。
+> 这些门禁本地开发机（macOS，无 Docker/PG/集群）无法运行。以下给出一键命令、所需
+> 基础设施/环境变量与预期证据路径，作为拿到相应环境后的执行清单。**未**以 mock 或
+> 静态检查顶替其结论。
+> 说明：G5/G8/G9 已在 CI 自动化（见 §3.4-3.6），本节仅余需真实 PostgreSQL 的
+> G10/G11 与需真实设备的基础设施类门禁。
 
 ### 4.10 G10 PostgreSQL 生产迁移门禁（空库/跨版本/幂等/回滚/权限模型）
 - **BLOCKED 原因**：需真实 PostgreSQL 17 + `ewoh-spark-app` 依赖（postgres 驱动）。本地无 PG。
@@ -252,13 +282,15 @@ Owner: 平台/交付负责人
 | `scripts/verify-helm-chart.js`（`npm run verify:helm`） | ✅ | 静态图表审计（含于 deployment:tck）；**不验证真实安装** |
 | `scripts/verify-deploy-artifacts.js` | ✅ | 静态 K8s/Compose/Dockerfile 校验（含于 deployment:tck） |
 | `scripts/verify-domain-concurrency.js` | ✅（需 PG） | 真实 PG 并发门禁，已接入 standalone.yml |
+| `scripts/verify-scheduler-multitenant.mjs` | ⚠️（需 PG，本地 BLOCKED） | Scheduler V2 多租户隔离 E2E（025 RLS + 028 派生归属），已接入 standalone.yml |
 | `scripts/postgres-logical-backup.mjs` / `post-restore-smoke.mjs` | ✅（需 PG） | 备份/恢复 drill，已接入 standalone.yml |
 | `scripts/standalone-postgres-check.sh` | ✅（需 PG） | 迁移/RLS/审计/回滚/重建，已接入 standalone.yml |
 | `scripts/verify-migration-prod.mjs` | ⚠️（需 PG，本地 BLOCKED） | 生产迁移门禁（空库/跨版本/幂等/回滚/权限），已接入 runtime-gates.yml |
 | `scripts/verify-backup-restore.mjs` | ⚠️（需 PG，本地 BLOCKED） | 备份/恢复门禁（空库恢复/行数/不变量/组织隔离/跨版本），已接入 runtime-gates.yml |
-| `scripts/verify-helm-runtime.sh` | 🔴（需集群） | Helm install/upgrade/rollback/worker/networkpolicy/restart 一体化，接入 runtime-gates.yml |
-| `scripts/canary-deploy.sh` | 🔴（需集群） | canary 失败阈值 + 自动回滚 + 回滚后业务校验，接入 runtime-gates.yml |
-| `scripts/soak-load.js` | 🔴（需运行中 API+PG） | 长稳/负载门禁（并发/连接池/队列/导出/弱网/泄漏），接入 runtime-gates.yml |
+| `scripts/verify-helm-runtime.sh` | ⚠️（需集群，本地 BLOCKED） | Helm install/upgrade/rollback/worker/networkpolicy/restart 一体化；CI 由 `helm-kind-gate` job 内联执行等价序列 |
+| `scripts/canary-deploy.sh` | ⚠️（需集群，本地 BLOCKED） | canary 失败阈值 + 自动回滚 + 回滚后业务校验；CI 由 `helm-kind-gate` job 真实调用 |
+| `scripts/soak-load.js` | ⚠️（需运行中 API+PG，本地 BLOCKED） | 长稳/负载门禁（并发/连接池/队列/导出/弱网/泄漏），CI 由 `soak-load-gate` job 真实调用 |
+| `scripts/soak-scheduler-events.js` | ⚠️（需运行中 API+PG，本地 BLOCKED） | 调度事件风暴 + SSE 订阅/断线重连（Task 8 P1 新增），CI 由 `soak-load-gate` job 真实调用 |
 | `scripts/container-image-gate.sh` | ⚠️（需 Docker，本地 BLOCKED） | 真实构建 + SBOM + Trivy + 镜像摘要，接入 runtime-gates.yml |
 
 ---
@@ -270,6 +302,8 @@ Owner: 平台/交付负责人
   - 新增「Scenario TCK」（`npm run scenario:tck`）。
   - 新增「Docker image startup + health check」（`--network host` + `/health/live`、`/health/ready`）。
   - 新增「Backup/restore + post-restore identity smoke drill」。
+  - **Task 3 新增**「Scheduler V2 multi-tenant isolation E2E (Org A vs Org B)」：
+    应用 Scheduler V2 迁移链（017 → 006..028）+ verify-025/028 + `verify-scheduler-multitenant.mjs`。
 - `.github/workflows/test.yml`：
   - 新增显式「Edge 节点断连/乱序/重放/去重门禁」命名步骤（覆盖
     `test_edge_backfill.py` / `test_edge_bridge_ingest.py` / `test_connector_runtime.py`）。
@@ -277,8 +311,21 @@ Owner: 平台/交付负责人
   - PostgreSQL 生产迁移门禁（`verify-migration-prod.mjs`，一次性库）。
   - PostgreSQL 备份/恢复门禁（`verify-backup-restore.mjs`，source+target 两库）。
   - Helm 静态审计（`helm lint` + `helm template`，无需集群）。
-  - Helm 运行时 / canary / 长稳负载（无集群时脚本如实记录 `BLOCKED_BY_ENVIRONMENT`）。
   - 容器镜像安全门禁（`container-image-gate.sh`：真实构建 + SBOM + Trivy + 摘要）。
+  - **Task 8 P1 新增** job `helm-kind-gate`（`timeout-minutes: 30` 硬上限）：ephemeral
+    kind v0.23.0 集群 + 集群内 PostgreSQL 17（Deployment+Service）+ local-path-provisioner，
+    真实执行 helm install → 迁移 Job → rollout → PVC → NetworkPolicy → 探针 200 →
+    坏镜像 upgrade 失败 → helm rollback → 健康恢复 → canary 坏版本自动回滚 → 健康恢复 →
+    数据完整性（psql 断言）；报告 `output/helm-kind-report.json` +
+    `gate-results/helm-runtime.json`（truth-gate-record SUCCEEDED）。
+  - **Task 8 P1 新增** job `soak-load-gate`（`timeout-minutes: 25` 硬上限）：PostgreSQL
+    Service Container + standalone API 真实启动（`build:prod:standalone` +
+    `start:standalone`），`soak-load.js`（`SOAK_REQUESTS=2000`/`SOAK_CONCURRENCY=25`）+
+    新增 `scripts/soak-scheduler-events.js`（500 事件风暴 + SSE 订阅/断线重连，脚本级
+    超时兜底）；报告 `output/soak-load-report.json`、`output/soak-scheduler-events-report.json`
+    + `gate-results/soak-load.json`、`gate-results/soak-scheduler-events.json`。
+  - 原先的「Helm 运行时 / canary / 长稳负载」三步 BLOCKED 步骤已移除（改由上述两个
+    kind/soak job 真实执行，避免同 gate id 出现 BLOCKED 与 SUCCEEDED 冲突证据）。
 - **Helm 图表扩展**（`deploy/cloud/helm/ewoh`）：
   - `templates/migration-job.yaml`：补入 `--apply-standalone-domain` 与
     `--apply-standalone-workbench-prod` + 各自 verify。

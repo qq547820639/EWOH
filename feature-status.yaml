@@ -1,0 +1,206 @@
+# ============================================================================
+# feature-status.yaml — 仓库功能事实清单（单一事实源，Task 11 P2 Repository Truth Gate）
+#
+# 字段语义（全部必填，布尔型）：
+#   implemented        代码中是否已实现
+#   tested             是否有测试证据（单元/契约/CI 门禁步骤）
+#   deployable         是否具备可部署工件（镜像 / compose / 迁移链）
+#   productionEnabled  是否已在生产环境启用（当前一律 false：系统尚未部署生产）
+#   runtimeVerified    是否在真实运行环境验证过（CI 真实 PG / 容器 / 生产模式启动）
+#   docsUpdated        README / CHANGELOG / ADR 等文档是否与代码现状一致
+#   evidence           证据列表（文件路径 / 测试名 / CI 步骤名，字符串数组）
+#
+# 硬性不变量（由 scripts/truth-feature-status.js 强制，任何违反即 FAIL）：
+#   a) productionEnabled=true  ⇒ runtimeVerified=true ∧ docsUpdated=true ∧ evidence 非空
+#   b) docsUpdated=true        ⇒ README.md 或 CHANGELOG.md 提及该功能
+#   c) 任一 true 字段          ⇒ evidence 非空
+#   d) productionEnabled=false ⇒ README/CHANGELOG 不得出现"已生产启用/生产就绪"等声明
+#   e) OpenAPI 契约无漂移（npm run openapi:no-drift，可 --skip-openapi 跳过）
+#   f) CP-SAT 部署漂移守卫：docker-compose.cpsat.yml 存在、ortools 版本三处锁定一致
+#
+# 当前汇总（2026-08-10）：无任何功能生产启用；调度 V2 / 求解器 / 预测影子等
+# 均为代码就绪但生产门控中；CP-SAT 未部署 OR-Tools（OPTIONAL/EXPERIMENTAL）。
+# ============================================================================
+
+features:
+  schedulerV2:
+    # 调度 V2：世界状态快照 → 优先级 → 资格 → 路径 → 求解 → 方案 → 审批 → 预约 → 派工
+    implemented: true
+    tested: true
+    deployable: true
+    productionEnabled: false        # 生产启用按 spec 门控，未放开（README §2.3）
+    runtimeVerified: false          # 调度运行时未在生产环境验证（CI 覆盖为单测 + PG 迁移/RLS）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/scheduler.service.ts
+      - ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/scheduler-domain.spec.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/task-scheduling-bridge.spec.ts
+      - db/migrations/standalone_006_scheduling.sql
+      - ewoh-spark-app/output/benchmark-scheduler-matrix.json
+      - ewoh-spark-app/output/bench-after-1000.json
+      - ewoh-spark-app/output/bench-before-500.json
+      - ".github/workflows/test.yml (NestJS Jest 测试)"
+
+  heuristicSolver:
+    # Production Canonical Solver（确定性贪心 + 多目标评分）
+    implemented: true
+    tested: true
+    deployable: true
+    productionEnabled: false        # 生产启用按 spec 门控
+    runtimeVerified: false
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/heuristic-scheduling-solver.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/solver-invariants.spec.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/solver-contract-parity.spec.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/solver-perf-parity.spec.ts
+      - ewoh-spark-app/output/benchmark-scheduler-matrix.json
+
+  cpSat:
+    # CP-SAT 求解器（OPTIONAL / EXPERIMENTAL，未部署 OR-Tools）
+    implemented: true
+    tested: true
+    deployable: true                 # worker.py + Dockerfile.cpsat + docker-compose.cpsat.yml（可选）
+    productionEnabled: false         # README §2.3：不生产启用，solverStatus=UNAVAILABLE 回退 heuristic
+    runtimeVerified: false           # 从未在含 ortools 的环境验证过求解运行
+    docsUpdated: true                # ADR-003 + README §2.3 + CHANGELOG 与本清单一致（含本次漂移修复）
+    evidence:
+      - src/edge_platform/scheduler/cpsat/worker.py
+      - src/edge_platform/scheduler/cpsat/solver.py
+      - src/edge_platform/scheduler/cpsat/requirements.txt
+      - tests/test_cpsat_solver.py
+      - tests/test_cpsat_reservation.py
+      - tests/test_cpsat_worker_contract.py
+      - tests/test_cpsat_solver_real.py
+      - ewoh-spark-app/server/modules/scheduler/__tests__/cp-sat-contract.spec.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/cp-sat-fallback.spec.ts
+      - deploy/cloud/Dockerfile.cpsat
+      - deploy/cloud/docker-compose.cpsat.yml
+      - docs/decisions/ADR-003-cpsat-worker.md
+
+  predictionShadow:
+    # 预测/策略影子评估（内存态、仅观测，不激活候选）
+    implemented: true
+    tested: true
+    deployable: false                # 内存内实现，无独立部署工件（advisory）
+    productionEnabled: false
+    runtimeVerified: false
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/prediction/shadow-evaluator.service.ts
+      - ewoh-spark-app/server/modules/scheduler/prediction/prediction-provider.ts
+      - ewoh-spark-app/server/modules/scheduler/shadow-policy.service.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/shadow-evaluator.spec.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/batch10-shadow-eval.spec.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/prediction-provider.spec.ts
+
+  schedulerRls:
+    # Scheduler V2 运行时表多租户 / RLS 边界（ADR-004：025 RLS + 028 派生归属）
+    implemented: true
+    tested: true
+    deployable: true                 # 迁移链随 standalone 部署
+    productionEnabled: false         # 迁移随部署生效；生产环境未启用（部署未发生）
+    runtimeVerified: true            # CI 真实 PG：verify-scheduler-multitenant.mjs DB 级 E2E
+    docsUpdated: true
+    evidence:
+      - db/migrations/standalone_025_scheduler_rls.sql
+      - db/migrations/standalone_028_assignment_event_tenancy.sql
+      - db/verify/standalone_028_assignment_event_tenancy.verify.sql
+      - scripts/verify-scheduler-multitenant.mjs
+      - ".github/workflows/standalone.yml (Scheduler V2 multi-tenant isolation E2E)"
+      - ewoh-spark-app/server/modules/scheduler/__tests__/rls-policy.spec.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/rls-org-filter.audit.spec.ts
+      - docs/decisions/ADR-004-scheduler-tenancy.md
+      - docs/runtime-gates.md
+
+  commandMap:
+    # 指挥地图（CommandMap 前端：地图模式 / 图层 / 时间线 / 工作台 / 管理端）
+    implemented: true
+    tested: true
+    deployable: true                 # 随 SPA 构建产物交付
+    productionEnabled: false
+    runtimeVerified: false
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/client/src/pages/CommandMap/CommandMap.tsx
+      - ewoh-spark-app/client/src/pages/CommandMap/map-mode-machine.ts
+      - ewoh-spark-app/client/src/pages/CommandMap/hooks/use-command-map-scheduler-state.test.ts
+      - ewoh-spark-app/client/src/pages/CommandMap/layers/scheduler-layers-select.test.ts
+      - ui/command_map/
+
+  decisionCockpit:
+    # 智能调度驾驶舱（决策舱：plan 对比 / 冲突中心 / 候选资源选择器等独立 client 组件）
+    # 当前未交付为独立 client 组件 → 全部字段 false。
+    implemented: false
+    tested: false
+    deployable: false
+    productionEnabled: false
+    runtimeVerified: false
+    docsUpdated: false
+    evidence: []
+
+  edgeServer:
+    # 边缘平台（Python 零第三方依赖运行时：采集 / 协议适配 / 推理 / 边缘调度 / API）
+    implemented: true
+    tested: true
+    deployable: true
+    productionEnabled: false         # 试点系统，未部署生产
+    runtimeVerified: true            # CI：P0-EDGE-002 生产模式真实启动 + P0-EDGE-006 装配门禁
+    docsUpdated: true
+    evidence:
+      - src/edge_platform/server.py
+      - src/edge_platform/run.py
+      - src/edge_platform/services.py
+      - tests/test_production_assembly.py
+      - tests/test_ny_exo_a1_contract.py
+      - ".github/workflows/test.yml (P0-EDGE-002 禁止静默 Stub 冒烟 / P0-EDGE-006 Production Runtime Assembly 门禁)"
+
+  feishuSidecar:
+    # 飞书侧车（消息卡片 / 多维表格 / 审批 / 文档；lark-cli 异步化 P1-2 已完成）
+    implemented: true
+    tested: true
+    deployable: true                 # ewoh-feishu-app 独立 Node 服务
+    productionEnabled: false
+    runtimeVerified: false
+    docsUpdated: true
+    evidence:
+      - ewoh-feishu-app/server/feishu.js
+      - ewoh-feishu-app/server/index.js
+      - ewoh-feishu-app/server/sync.js
+      - ewoh-feishu-app/test/security.test.js
+      - ewoh-feishu-app/test/sync-m2.test.js
+      - ewoh-feishu-app/README.md
+
+  runtimeGates:
+    # 运行时门禁（truth-gate 族 + docs/runtime-gates.md + runtime-gates.yml CI）
+    implemented: true
+    tested: true
+    deployable: true                 # CI/工程基础设施，随工作流运行
+    productionEnabled: false
+    runtimeVerified: true            # CI：runtime-gates.yml 对真实 PG 运行 truth-gate-record
+    docsUpdated: true
+    evidence:
+      - scripts/truth-gate.js
+      - scripts/truth-gate-record.js
+      - scripts/truth-manifest.js
+      - docs/runtime-gates.md
+      - .github/workflows/runtime-gates.yml
+      - ".github/workflows/test.yml (单一事实源证据清单生成与漂移校验 truth-check)"
+
+  benchmarkScheduler:
+    # 调度基准（benchmark-scheduler 矩阵：bench-before/bench-after 对比）
+    implemented: true
+    tested: true
+    deployable: false                # 开发/验收工具，非可部署服务
+    productionEnabled: false
+    runtimeVerified: false           # 本地已产出基准（output/ 可见），但不在 CI 运行
+    docsUpdated: false               # README/CHANGELOG 未将该基准作为功能文档化
+    evidence:
+      - ewoh-spark-app/scripts/benchmark-scheduler.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/benchmark-scheduler.spec.ts
+      - ewoh-spark-app/output/benchmark-scheduler-matrix.json
+      - ewoh-spark-app/output/bench-after-1000.json
+      - ewoh-spark-app/output/bench-after-500.json
+      - ewoh-spark-app/output/bench-before-500.json
+      - "ewoh-spark-app/package.json (npm run benchmark:scheduler)"

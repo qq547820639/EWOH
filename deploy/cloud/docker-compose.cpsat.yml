@@ -1,0 +1,20 @@
+# CP-SAT 求解 Worker 独立部署（可选服务，Task 11 漂移修复）
+# 与 docker-compose.standalone.yml 中的 cpsat 可选服务等价；单独提供该文件
+# 以便仅启动 CP-SAT worker（无需拉起 postgres/redis/api）。
+# 启用：cd deploy/cloud && docker compose -f docker-compose.cpsat.yml up -d
+# 说明：未安装 ortools 时 worker 仍可启动并返回 UNAVAILABLE（云侧安全回退 heuristic）。
+services:
+  cpsat:
+    build:
+      context: ../..
+      dockerfile: deploy/cloud/Dockerfile.cpsat
+    container_name: ewoh-cpsat
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ['CMD', 'python', '-c', "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
