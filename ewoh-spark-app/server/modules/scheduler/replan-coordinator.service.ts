@@ -25,6 +25,7 @@ import { ConstraintLoaderService } from './constraint-loader.service';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { OutboxService } from './outbox.service';
 import { propagateImpact } from './impact-propagation';
+import { ReplanGuardStatusService } from '../health/replan-guard-status.service';
 
 /** 影响分析结果：哪些任务需重排、哪些被冻结、原因说明。 */
 export interface ImpactAnalysis {
@@ -40,6 +41,10 @@ export interface TriggerResult {
   debounced: boolean;
   /** Replan V2 风暴守卫：被抑制（未创建 run）。 */
   suppressed?: boolean;
+  /** P1-6：production fail-closed——advisory-lock 能力异常阻止 automatic replan（未创建 run）。 */
+  blocked?: boolean;
+  /** P1-6：fail-closed 原因（同 tryAcquireCrossInstanceGuard 抛错信息）。 */
+  blockReason?: string;
 }
 
 /** 按 org 的风暴守卫状态（内存有界，无表）。 */
@@ -100,6 +105,8 @@ export class ReplanCoordinatorService {
     private readonly metricsService?: SchedulerMetricsService,
     // M05-FIX：风暴守卫抑制 SSE 发射（可选注入；缺失时静默跳过，兼容旧单测）。
     private readonly outboxService?: OutboxService,
+    // P1-6：跨实例守卫降级状态持有（health/readiness 上报；可选注入，兼容旧单测）。
+    private readonly guardStatusService?: ReplanGuardStatusService,
   ) {}
 
   /** Replan V2 风暴守卫状态读取（供测试/审计）。 */
@@ -143,6 +150,51 @@ export class ReplanCoordinatorService {
   }
 
   /**
+   * P1-6（§六）：部署模式判定——production 下跨实例守卫异常 fail-closed
+   * （阻止 automatic replan，不静默降级内存守卫）；其余（缺省/standalone/test）
+   * 保持 memory fallback（既有单测与单实例 E2E 依赖）。
+   */
+  private isProductionDeploy(): boolean {
+    return process.env.EWOH_DEPLOY_TARGET === 'production';
+  }
+
+  /** P1-6：记录一次守卫降级（metric + readiness 状态；失败仅记日志）。 */
+  private recordGuardDegraded(reason: string): void {
+    if (this.metricsService) {
+      try {
+        this.metricsService.recordReplanGuardDegraded();
+      } catch (err) {
+        this.logger.warn(
+          `recordReplanGuardDegraded failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    if (this.guardStatusService) {
+      try {
+        this.guardStatusService.recordDegradation(reason);
+      } catch (err) {
+        this.logger.warn(
+          `guard status record failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
+
+  /** P1-6：guard fail-closed 结果（production 下 advisory-lock 能力异常 → 阻止 automatic replan）。 */
+  private failClosedResult(err: unknown): TriggerResult {
+    const reason = err instanceof Error ? err.message : String(err);
+    this.logger.error(`automatic replan blocked (guard fail-closed): ${reason}`);
+    return {
+      run: null,
+      plans: [],
+      debounced: false,
+      suppressed: false,
+      blocked: true,
+      blockReason: reason,
+    };
+  }
+
+  /**
    * P0-5（跨实例一致性）：跨实例守卫权获取。
    * 在短事务内执行 pg_try_advisory_xact_lock（事务级 advisory lock，事务结束自动释放，
    * 无需显式 unlock），以 org 级稳定 key（hashtext('<orgId>:replan_guard')，int4 隐式提升
@@ -150,8 +202,10 @@ export class ReplanCoordinatorService {
    * 直接抑制（避免同一事件在多实例各自通过守卫 → 重复重排）。
    * 与 resource-reservation.service.ts 的 pg_advisory_xact_lock(hashtext(...)) 先例保持一致。
    * 锁能力不可用（mock db 无 execute / 非 PG / 只读副本 / 结果形状异常）→ 显式降级：
-   * 记录 reason（logger.warn）并视为"获得守卫权"，回退既有内存态逻辑（与现状完全一致），
-   * 不得在真实 PG 环境外静默跳过守卫。
+   * - production（EWOH_DEPLOY_TARGET=production）：fail-closed——抛错阻止 automatic replan
+   *   （调用方返回 blocked 结果，不创建 run），并上报 degraded metric + readiness 状态；
+   * - 非 production：记录 reason（logger.warn）并视为"获得守卫权"，回退既有内存态逻辑
+   *   （与现状完全一致），不得在真实 PG 环境外静默跳过守卫。
    */
   private async tryAcquireCrossInstanceGuard(
     ctx: OrgContext,
@@ -175,11 +229,21 @@ export class ReplanCoordinatorService {
       );
       return acquired;
     } catch (err) {
-      // 降级路径：无法执行原生 SQL / 无法解析结果 → 显式回退内存态守卫（与现状一致）。
+      const reason = err instanceof Error ? err.message : String(err);
+      // P1-6：无论部署模式都上报降级（metric + readiness 状态）。
+      this.recordGuardDegraded(reason);
+      if (this.isProductionDeploy()) {
+        // 降级路径（production）：fail-closed——不静默降级为内存态，阻断 automatic replan。
+        this.logger.error(
+          `cross-instance replan guard unavailable in production; automatic replan blocked (fail-closed): ${reason}`,
+        );
+        throw new Error(
+          `cross-instance replan guard unavailable in production (fail-closed): ${reason}`,
+        );
+      }
+      // 降级路径（非 production）：无法执行原生 SQL / 无法解析结果 → 显式回退内存态守卫（与现状一致）。
       this.logger.warn(
-        `cross-instance replan guard unavailable, falling back to in-memory state: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        `cross-instance replan guard unavailable, falling back to in-memory state: ${reason}`,
       );
       return true;
     }
@@ -484,7 +548,13 @@ export class ReplanCoordinatorService {
   ): Promise<TriggerResult> {
     // Replan V2 风暴守卫（08 §7）：抑制/去抖先于 triggerService 求值。
     if (triggerType !== 'MANUAL') {
-      const guard = await this.evaluateStormGuard(ctx);
+      let guard: 'allowed' | 'debounced' | 'suppressed';
+      try {
+        guard = await this.evaluateStormGuard(ctx);
+      } catch (err) {
+        // P1-6 production fail-closed：advisory-lock 能力异常 → 阻止 automatic replan（不创建 run）。
+        return this.failClosedResult(err);
+      }
       if (guard === 'suppressed') {
         await this.recordSuppressed(ctx, triggerType, entityId ? [entityId] : []);
         return { run: null, plans: [], debounced: false, suppressed: true };
@@ -666,7 +736,13 @@ export class ReplanCoordinatorService {
     if (triggerIds.length === 0) {
       return { run: null, plans: [], debounced: true, suppressed: false };
     }
-    const guard = await this.evaluateStormGuard(ctx);
+    let guard: 'allowed' | 'debounced' | 'suppressed';
+    try {
+      guard = await this.evaluateStormGuard(ctx);
+    } catch (err) {
+      // P1-6 production fail-closed：advisory-lock 能力异常 → 阻止 automatic replan（不创建 run）。
+      return this.failClosedResult(err);
+    }
     if (guard === 'suppressed') {
       await this.recordSuppressed(ctx, 'RESERVATION_CONFLICT', triggerIds);
       return { run: null, plans: [], debounced: false, suppressed: true };

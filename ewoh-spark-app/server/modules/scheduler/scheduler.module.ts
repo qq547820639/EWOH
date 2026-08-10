@@ -36,6 +36,8 @@ import { ReplanPreviewService } from './replan-preview.service';
 import { DeterministicPredictionProvider } from './prediction/prediction-provider';
 import { ShadowEvaluatorService } from './prediction/shadow-evaluator.service';
 import { TaskModule } from '../task/task.module';
+// P1-6：跨实例 replan 守卫降级状态持有（readiness 上报 ReplanGuardStatusService）。
+import { HealthModule } from '../health/health.module';
 
 /** 预测提供者注入 token（shadow only）：消费者应将其视为可选。 */
 export const PREDICTION_PROVIDER = 'PREDICTION_PROVIDER';
@@ -65,7 +67,7 @@ const SCHEDULER_NOTIFY_PROVIDERS = SCHEDULER_NOTIFY_URL
   : [];
 
 @Module({
-  imports: [TaskModule],
+  imports: [TaskModule, HealthModule],
   controllers: [SchedulerController, SchedulerMetricsController],
   providers: [
     SchedulerMetricsService,

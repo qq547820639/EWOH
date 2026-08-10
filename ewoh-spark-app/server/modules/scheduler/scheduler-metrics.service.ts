@@ -210,6 +210,11 @@ export class SchedulerMetricsService {
     this.inc('scheduler_replan_suppressed_total', count);
   }
 
+  /** P1-6：记录一次跨实例 replan 守卫（advisory lock）执行异常降级（production fail-closed / 非生产 memory fallback）。 */
+  recordReplanGuardDegraded(count = 1): void {
+    this.inc('scheduler_replan_guard_degraded_total', count);
+  }
+
   /** M04：记录一次非 MANUAL 触发的 replan run（replanTriggerCount KPI 数据源）。 */
   recordReplanTrigger(): void {
     this.inc('scheduler_replan_trigger_total');
@@ -300,6 +305,7 @@ export class SchedulerMetricsService {
       ['scheduler_plan_churn_total', '方案 churn 累计（相对基线改派任务数）'],
       ['scheduler_station_decision_total', 'station 决策命中累计（P1-4）'],
       ['scheduler_changeover_total', 'changeover 换产次数累计（P1-4）'],
+      ['scheduler_replan_guard_degraded_total', '跨实例 replan 守卫（advisory lock）执行异常降级累计（production fail-closed / 非生产 memory fallback）'],
     ] as Array<[string, string]>) {
       lines.push(`# HELP ${name} ${help}`);
       lines.push(`# TYPE ${name} counter`);
