@@ -673,8 +673,21 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
             const lateMs = Math.max(0, endMs - softDeadlineMs);
             const waitMs = Math.max(0, startMs - earliestStartMs);
             const baselineAssignee = opts.baselineAssignee?.get(task.id);
-            const changeCost =
+            // M04：Churn Objective V2——候选评分消费 churn 配置（person/device/station 变更罚）。
+            const churnCfg = config.churn;
+            const personChanged =
               baselineAssignee && baselineAssignee !== person.id ? 1 : 0;
+            const deviceChanged =
+              task.deviceId != null && task.deviceId !== device?.id ? 1 : 0;
+            const stationChanged =
+              task.stationId != null && task.stationId !== stationId ? 1 : 0;
+            const churnCostScore =
+              churnCfg != null
+                ? personChanged * (churnCfg.personChangePenalty ?? policy.weights.change) +
+                  deviceChanged * (churnCfg.deviceChangePenalty ?? 0) +
+                  stationChanged * (churnCfg.stationChangePenalty ?? 0)
+                : undefined;
+            const changeCost = personChanged;
             const loadPenalty = person.loadLevel * 60 * 1000;
             const changeCostMs = changeCost * 60 * 1000;
             // T03 / P1-4：setup/changeover 成本入评分（station 换型）。
@@ -698,6 +711,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
               energyPenalty,
               stationId,
               station?.queue?.length ?? 0,
+              churnCostScore,
             );
 
             // 人工偏好（PREFERRED_RESOURCE）：命中偏好资源（person/device/station）时
@@ -916,6 +930,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       policy,
       constraints,
       baseline: opts.baselineAssignee,
+      churn: config.churn,
       horizonMinutes,
       nowMs: now,
     });
@@ -973,6 +988,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     energyPenalty: number,
     stationId?: string | null,
     stationQueueLength = 0,
+    churnCostScore?: number,
   ): ScoreBreakdown {
     const w = policy.weights;
     const lateness = (w.lateness * lateMs) / 60000;
@@ -981,7 +997,9 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     // T03 / P1-4：stationWait = 基础等待 + 真实队列长度 × weights.station（工位排队成本）。
     const stationWait =
       (w.wait * waitMs) / 60000 + (w.station * stationQueueLength * waitMs) / 60000;
-    const changeCost = (w.change * changeCostMs) / 60000;
+    // M04：Churn Objective V2——传入 churnCostScore 时以 churn 罚直接计入（缺省=现状）。
+    const changeCost =
+      churnCostScore != null ? churnCostScore : (w.change * changeCostMs) / 60000;
     const risk = (w.risk * riskMs) / 60000;
     const energyCost = (w.energy * energyPenalty) / 60000;
     return {

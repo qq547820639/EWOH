@@ -334,8 +334,20 @@ export class CandidateEngineService {
           const lateMs = Math.max(0, endMs - softDeadlineMs);
           const waitMs = Math.max(0, startMs - nowMs);
           const baselineAssignee = opts.baselineAssignee?.get(task.id);
-          const changeCost =
+          // M04：Churn Objective V2——候选评分消费 churn 配置（person/device/station 变更罚）。
+          const personChanged =
             baselineAssignee && baselineAssignee !== person.id ? 1 : 0;
+          const deviceChanged =
+            task.deviceId != null && task.deviceId !== device?.id ? 1 : 0;
+          const stationChanged =
+            task.stationId != null && task.stationId !== stationId ? 1 : 0;
+          const churnCostScore =
+            config.churn != null
+              ? personChanged * (config.churn.personChangePenalty ?? policy.weights.change) +
+                deviceChanged * (config.churn.deviceChangePenalty ?? 0) +
+                stationChanged * (config.churn.stationChangePenalty ?? 0)
+              : undefined;
+          const changeCost = personChanged;
           const loadPenalty = person.loadLevel * 60 * 1000;
           const riskMs =
             (candRouteCost.riskLevel === 'high' ? config.highRiskFactor : 1) * travelMs;
@@ -352,6 +364,7 @@ export class CandidateEngineService {
             changeCost * 60 * 1000,
             riskMs,
             energyPenalty,
+            churnCostScore,
           );
 
           const preferred =
@@ -521,13 +534,16 @@ export class CandidateEngineService {
     changeCostMs: number,
     riskMs: number,
     energyPenalty: number,
+    churnCostScore?: number,
   ): ScoreBreakdown {
     const w = policy.weights;
     const lateness = (w.lateness * lateMs) / 60000;
     const travel = (w.travel * travelMs) / 60000;
     const workloadBalance = (w.workload * loadPenalty) / 60000;
     const stationWait = (w.wait * waitMs) / 60000;
-    const changeCost = (w.change * changeCostMs) / 60000;
+    // M04：Churn Objective V2——传入 churnCostScore 时以 churn 罚直接计入（缺省=现状）。
+    const changeCost =
+      churnCostScore != null ? churnCostScore : (w.change * changeCostMs) / 60000;
     const risk = (w.risk * riskMs) / 60000;
     const energyCost = (w.energy * energyPenalty) / 60000;
     return {

@@ -196,6 +196,27 @@ export class SchedulerMetricsService {
     this.inc('scheduler_replan_suppressed_total', count);
   }
 
+  /** M04：记录一次非 MANUAL 触发的 replan run（replanTriggerCount KPI 数据源）。 */
+  recordReplanTrigger(): void {
+    this.inc('scheduler_replan_trigger_total');
+  }
+
+  /** M04：记录 replan 持久化阶段耗时（ms；recordRun.durationMs 已含 solve）。 */
+  recordReplanPersistMs(ms: number): void {
+    this.gauges.set('scheduler_replan_persist_ms_last', ms);
+    this.inc('scheduler_replan_persist_ms_total', ms);
+  }
+
+  /** M04：记录一次 replan 的受影响任务占比（affected/可调度，gauge）。 */
+  recordAffectedAssignmentRatio(ratio: number): void {
+    this.gauges.set('scheduler_affected_assignment_ratio', ratio);
+  }
+
+  /** M04：记录一次 replan 的 unchanged assignment 占比（gauge）。 */
+  recordUnchangedAssignmentRate(rate: number): void {
+    this.gauges.set('scheduler_unchanged_assignment_rate', rate);
+  }
+
   /** 测试用：清空全部指标。 */
   reset(): void {
     this.counters.clear();

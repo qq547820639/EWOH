@@ -240,6 +240,7 @@ export class CpSatSchedulingSolver {
         priorityResults,
         geometryIndex,
         candidateCostsByTask,
+        config.churn,
       );
     }
 
@@ -564,6 +565,7 @@ export class CpSatSchedulingSolver {
         fallbackReason: string | null;
       }>
     >,
+    churn?: import('@shared/api.interface').ChurnConfig,
   ): Promise<SchedulingPlanV2> {
     // P0-5：metrics / scoreBreakdown / baselineDelta 由统一评估器基于 **CP-SAT 自己的
     // assignments** 计算——旧实现复用 heuristic shell（heuristic assignments 的 metrics），
@@ -576,6 +578,7 @@ export class CpSatSchedulingSolver {
       policy,
       constraints,
       baseline: opts.baselineAssignee,
+      churn,
       horizonMinutes: opts.horizonMinutes ?? 60,
       nowMs: Date.now(),
       candidateCostsByTask: this.toEvaluatorCostIndex(candidateCostsByTask),

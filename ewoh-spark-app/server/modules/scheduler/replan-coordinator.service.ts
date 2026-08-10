@@ -182,13 +182,52 @@ export class ReplanCoordinatorService {
     );
   }
 
-  /** 触发成功/允许后登记本次 replan（更新 lastReplanAt + 窗口时间戳）。 */
-  private markReplanAllowed(ctx: OrgContext): void {
+  /**
+   * M04：replan KPI 埋点（affectedAssignmentRatio / unchangedAssignmentRate）。
+   * 数据源=影响闭包 + 快照；由 kpi.service 聚合进 SchedulerKpiSnapshot.stability。
+   * 失败仅记日志，不影响主流程。
+   */
+  private recordReplanKpis(
+    impact: ReplanImpact,
+    snapshot: WorldStateSnapshot,
+    ctx: OrgContext,
+  ): void {
+    if (!this.metricsService) return;
+    try {
+      const schedulable = snapshot.tasks.filter((t) =>
+        ['draft', 'pending_confirm', 'pending_approval', 'pending_dispatch', 'pending', 'queued'].includes(
+          t.status,
+        ),
+      ).length;
+      const affectedRatio =
+        schedulable > 0 ? (impact.affectedTaskIds?.length ?? 0) / schedulable : 0;
+      this.metricsService.recordAffectedAssignmentRatio(affectedRatio);
+      const baselineAssignments = snapshot.tasks.filter((t) => t.assigneeId).length;
+      const unchangedRate =
+        baselineAssignments > 0
+          ? Math.max(0, 1 - (impact.movableAssignmentIds?.length ?? 0) / baselineAssignments)
+          : 1;
+      this.metricsService.recordUnchangedAssignmentRate(unchangedRate);
+    } catch (err) {
+      this.logger.warn(`recordReplanKpis failed: ${(err as Error).message}`);
+    }
+  }
+
+  /** 触发成功/允许后登记本次 replan（更新 lastReplanAt + 窗口时间戳 + KPI 埋点）。 */
+  private markReplanAllowed(ctx: OrgContext, triggerType?: string): void {
     const orgKey = ctx.primaryOrgId || 'ALL';
     const state = this.touchOrgState(orgKey);
     const now = Date.now();
     state.lastReplanAt = now;
     state.replanTimes.push(now);
+    // M04：非 MANUAL 触发计入 replanTriggerCount KPI 数据源。
+    if (triggerType && triggerType !== 'MANUAL' && this.metricsService) {
+      try {
+        this.metricsService.recordReplanTrigger();
+      } catch (err) {
+        this.logger.warn(`recordReplanTrigger failed: ${(err as Error).message}`);
+      }
+    }
   }
 
   /** 获取或创建 org 状态（有界 LRU：超出上限时淘汰最旧）。 */
@@ -312,8 +351,9 @@ export class ReplanCoordinatorService {
         },
       );
 
-      // Replan V2：登记本次 replan（风暴守卫窗口）。
-      this.markReplanAllowed(ctx);
+      // Replan V2：登记本次 replan（风暴守卫窗口 + KPI 埋点）。
+      this.markReplanAllowed(ctx, triggerType);
+      this.recordReplanKpis(impact, snapshot, ctx);
 
       return { run, plans, debounced: false, suppressed: false };
     } catch (e) {
@@ -438,7 +478,8 @@ export class ReplanCoordinatorService {
         },
       );
 
-      this.markReplanAllowed(ctx);
+      this.markReplanAllowed(ctx, 'RESERVATION_CONFLICT');
+      this.recordReplanKpis(impact, snapshot, ctx);
       return { run, plans, debounced: false, suppressed: false };
     } catch (e) {
       const message = (e as Error).message ?? String(e);

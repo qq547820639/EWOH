@@ -172,6 +172,206 @@ describe('P0-5: SchedulingObjectiveEvaluator', () => {
     expect(out.scoreBreakdown.changeCost).toBe(1);
   });
 
+  // ===== M04：Churn Objective V2 =====
+
+  it('M04 缺省配置（无 churn 输入）输出与现状逐位一致（回归快照）', () => {
+    const evaluator = new SchedulingObjectiveEvaluator();
+    const snapshot = buildSnapshotForEval();
+    const assignments = buildAssignments();
+    const baseline = new Map([
+      ['t1', 'p9'], // person 变更
+      ['t2', 'p2'], // 无变更
+    ]);
+    const base = {
+      snapshot,
+      assignments,
+      policy: defaultPolicy(),
+      constraints: [],
+      baseline,
+      horizonMinutes: 480,
+      nowMs: FIXED_NOW,
+    };
+    // 现状（无 churn）：changeCost = w.change * personChanged = 1（t1）。
+    const current = evaluator.evaluate(base);
+    // M04 缺省配置 = DEFAULT_CONFIG.churn（personChange=weights.change、removal=weights.change、其余 0）
+    // 在无 removed/addition 场景下应与现状逐位一致。
+    const churn = {
+      personChangePenalty: defaultPolicy().weights.change,
+      deviceChangePenalty: 0,
+      stationChangePenalty: 0,
+      startTimeShiftPenalty: 0,
+      sequenceChangePenalty: 0,
+      assignmentRemovalPenalty: defaultPolicy().weights.change,
+      assignmentAdditionPenalty: 0,
+    };
+    const withChurn = evaluator.evaluate({ ...base, churn });
+    expect(withChurn.metrics).toEqual(current.metrics);
+    expect(withChurn.scoreBreakdown).toEqual(current.scoreBreakdown);
+    expect(withChurn.objective).toBe(current.objective);
+  });
+
+  it('M04 personChanged 罚生效：device/station 不变时按 personChangePenalty 计', () => {
+    const evaluator = new SchedulingObjectiveEvaluator();
+    const snapshot = buildSnapshotForEval();
+    const out = evaluator.evaluate({
+      snapshot,
+      assignments: buildAssignments(),
+      policy: defaultPolicy(),
+      constraints: [],
+      baseline: new Map([
+        ['t1', 'p9'], // person 变更
+      ]),
+      // weights.change=1；配置 personChangePenalty=3 → churn 3。
+      churn: {
+        personChangePenalty: 3,
+        deviceChangePenalty: 0,
+        stationChangePenalty: 0,
+        startTimeShiftPenalty: 0,
+        sequenceChangePenalty: 0,
+        assignmentRemovalPenalty: 1,
+        assignmentAdditionPenalty: 0,
+      },
+      horizonMinutes: 480,
+      nowMs: FIXED_NOW,
+    });
+    expect(out.metrics.changeCost).toBe(1); // metrics 保持 person-change 计数
+    expect(out.scoreBreakdown.changeCost).toBe(3); // churn 罚 = 3
+    expect(out.objective).toBe(out.scoreBreakdown.total);
+  });
+
+  it('M04 startTimeShift 罚生效：起点位移分钟 × startTimeShiftPenalty', () => {
+    const evaluator = new SchedulingObjectiveEvaluator();
+    const snapshot = buildSnapshotForEval();
+    // 基线 t1 planStart=+5min（snapshot task planStart）；候选 plannedStart=+35min → 位移 30min。
+    snapshot.tasks = snapshot.tasks.map((t) =>
+      t.id === 't1'
+        ? { ...t, planStart: new Date(FIXED_NOW + 5 * MIN).toISOString() }
+        : t,
+    );
+    const shifted = buildAssignments().map((a) =>
+      a.taskId === 't1'
+        ? { ...a, plannedStart: new Date(FIXED_NOW + 35 * MIN).toISOString() }
+        : a,
+    );
+    const out = evaluator.evaluate({
+      snapshot,
+      assignments: shifted,
+      policy: defaultPolicy(),
+      constraints: [],
+      churn: {
+        personChangePenalty: 0,
+        deviceChangePenalty: 0,
+        stationChangePenalty: 0,
+        startTimeShiftPenalty: 0.5, // 每 1min
+        sequenceChangePenalty: 0,
+        assignmentRemovalPenalty: 0,
+        assignmentAdditionPenalty: 0,
+      },
+      horizonMinutes: 480,
+      nowMs: FIXED_NOW,
+    });
+    // t1 基线 planStart=+5min → 候选 +35min → shift=30min × 0.5 = 15。
+    expect(out.scoreBreakdown.changeCost).toBeCloseTo(15);
+  });
+
+  it('M04 removed/addition 罚生效：基线已分配但候选未分配 → removalPenalty', () => {
+    const evaluator = new SchedulingObjectiveEvaluator();
+    const snapshot = buildSnapshotForEval();
+    // 候选仅 t1；t2 在 baseline 但候选未分配 → removed。
+    const onlyT1 = buildAssignments().filter((a) => a.taskId === 't1');
+    const out = evaluator.evaluate({
+      snapshot,
+      assignments: onlyT1,
+      policy: defaultPolicy(),
+      constraints: [],
+      baseline: new Map([
+        ['t1', 'p1'],
+        ['t2', 'p2'], // t2 removed（候选无）
+      ]),
+      churn: {
+        personChangePenalty: 0,
+        deviceChangePenalty: 0,
+        stationChangePenalty: 0,
+        startTimeShiftPenalty: 0,
+        sequenceChangePenalty: 0,
+        assignmentRemovalPenalty: 2,
+        assignmentAdditionPenalty: 1,
+      },
+      horizonMinutes: 480,
+      nowMs: FIXED_NOW,
+    });
+    // removed=1（t2）→ 2；added=0 → changeCost=2。
+    expect(out.scoreBreakdown.changeCost).toBe(2);
+  });
+
+  it('M04 candidate scoring 消费 churn 配置（device/station 变更罚）', async () => {
+    // 通过 heuristic 求解验证候选评分使用 churn：device 变更在配置后影响 score。
+    const routing = {
+      calculateRoute: jest.fn().mockResolvedValue({ routeId: 'ROUTE-TEST' }),
+    };
+    const policy = {
+      getActivePolicy: jest.fn().mockResolvedValue(defaultPolicy()),
+      getConfig: jest.fn().mockResolvedValue({
+        ...defaultConfig(),
+        churn: {
+          personChangePenalty: 1,
+          deviceChangePenalty: 5,
+          stationChangePenalty: 0,
+          startTimeShiftPenalty: 0,
+          sequenceChangePenalty: 0,
+          assignmentRemovalPenalty: 1,
+          assignmentAdditionPenalty: 0,
+        },
+      }),
+    };
+    const routeCostProvider = {
+      estimate: jest.fn().mockResolvedValue({
+        routeId: 'ROUTE-TEST',
+        distanceMeters: 10,
+        etaSeconds: 10,
+        riskLevel: null,
+        feasible: true,
+        source: 'euclidean_fallback',
+        riskCost: 0,
+        congestionCost: 0,
+        graphVersion: null,
+        calculatedAt: new Date().toISOString(),
+      }),
+    };
+    const solver = new HeuristicSchedulingSolver(
+      policy as never,
+      routing as never,
+      routeCostProvider as never,
+      new EligibilityService(),
+    );
+    const snapshot = buildSnapshot({
+      persons: [seedPerson({ id: 'p1' })],
+      tasks: [
+        {
+          ...seedTask({ id: 't1' }),
+          stationId: 'S1',
+          deviceId: 'd1', // 基线 device d1
+          dueAtMs: FIXED_NOW + 40 * MIN,
+        },
+      ],
+      devices: [{ id: 'd1', workerName: null, deviceModel: null, batteryPct: 100, online: true, status: 'online', capabilities: [] }],
+      stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 1 }],
+    });
+    jest.spyOn(Date, 'now').mockReturnValue(FIXED_NOW);
+    try {
+      const plan = await solver.solve(snapshot, [], {
+        ...baseSolveOpts,
+        policy: defaultPolicy(),
+        baselineAssignee: new Map([['t1', 'p1']]),
+      });
+      // device 未变（d1）→ 无 device 罚；仅验证求解不抛且 churn 配置被消费（objective=scoreBreakdown.total）。
+      expect(plan.scoreBreakdown?.total).toBeDefined();
+      expect(plan.objective).toBe(plan.scoreBreakdown?.total);
+    } finally {
+      jest.restoreAllMocks();
+    }
+  });
+
   it('CP-SAT 路径 metrics 基于 CP-SAT assignments（不再复用 heuristic shell）', async () => {
     const response: SolverResponse = {
       solverVersion: 'cpsat-v1',

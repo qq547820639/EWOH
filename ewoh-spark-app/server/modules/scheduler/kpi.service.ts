@@ -3,12 +3,13 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq } from 'drizzle-orm';
-import { ewohSchedulingKpi } from '@server/database/schema';
+import { and, desc, eq, gte, lte } from 'drizzle-orm';
+import { ewohSchedulingKpi, ewohSchedulingRun } from '@server/database/schema';
 import type { SchedulerKpiSnapshot } from '@shared/api.interface';
 import { ExecutionService } from './execution.service';
 import { SchedulingFeedbackService } from './scheduling-feedback.service';
 import { ConflictService } from './conflict.service';
+import { SchedulerMetricsService } from './scheduler-metrics.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
 /**
@@ -32,6 +33,8 @@ export class KpiService {
     private readonly executionService: ExecutionService,
     private readonly feedbackService: SchedulingFeedbackService,
     private readonly conflictService: ConflictService,
+    // M04：Replan V2 KPI 数据源（风暴守卫抑制/触发计数/占比 gauge；可选注入）。
+    private readonly metricsService?: SchedulerMetricsService,
   ) {}
 
   /** 实时聚合（当前时间窗）。period 缺省：过去 24h。 */
@@ -127,6 +130,8 @@ export class KpiService {
         manualOverrideRate: null,
         conflictRate: conflictRate ?? (periodExec.length > 0 ? conflictCount / periodExec.length : null),
         averageConflictResolutionMs: null,
+        // M04：Replan V2 KPI（08 §8；全可选，缺省 null）。
+        ...(await this.aggregateReplanKpis(startMs, endMs, orgId)),
       },
       solver: {
         solverLatencyP50Ms: null,
@@ -147,6 +152,89 @@ export class KpiService {
       await this.persist(snapshot, orgId);
     }
     return snapshot;
+  }
+
+  /**
+   * M04：Replan V2 KPI（08 §8）——6 项 stability 扩展字段。
+   * 数据源：ewohSchedulingRun（窗口内 run）+ SchedulerMetricsService（内存计数/gauge）。
+   * 无运行数据/服务缺失时显式 null（不伪造）。
+   */
+  private async aggregateReplanKpis(
+    startMs: number,
+    endMs: number,
+    orgId: string | null,
+  ): Promise<
+    NonNullable<SchedulerKpiSnapshot['stability']>
+  > {
+    try {
+      const runs = await this.db
+        .select({
+          triggerType: ewohSchedulingRun.triggerType,
+          status: ewohSchedulingRun.status,
+          createdAt: ewohSchedulingRun.createdAt,
+        })
+        .from(ewohSchedulingRun)
+        .where(
+          and(
+            ...(orgId ? [eq(ewohSchedulingRun.orgId, orgId)] : []),
+            gte(ewohSchedulingRun.createdAt, new Date(startMs)),
+            lte(ewohSchedulingRun.createdAt, new Date(endMs)),
+          ),
+        );
+
+      // replanTriggerCount = 非 MANUAL 触发创建的 run 数（窗口内）。
+      const replanTriggerCount = runs.filter(
+        (r) => r.triggerType !== 'MANUAL' && r.triggerType != null,
+      ).length;
+
+      // metrics 内存计数（storm guard 抑制 / 触发；缺失服务则 null）。
+      let replanSuppressedCount: number | null = null;
+      let replanDurationMs: number | null = null;
+      let affectedAssignmentRatio: number | null = null;
+      let unchangedAssignmentRate: number | null = null;
+      let scheduleChurn: number | null = null;
+      if (this.metricsService) {
+        const m = this.metricsService.snapshot();
+        replanSuppressedCount = m['scheduler_replan_suppressed_total'] ?? 0;
+        replanDurationMs = m['scheduler_replan_persist_ms_last'] ?? null;
+        affectedAssignmentRatio = m['scheduler_affected_assignment_ratio'] ?? null;
+        unchangedAssignmentRate = m['scheduler_unchanged_assignment_rate'] ?? null;
+        scheduleChurn = m['scheduler_plan_churn_total'] ?? null;
+      }
+
+      return {
+        replanCount: runs.length,
+        replanSuccessRate: null,
+        assignmentChurnRate: null,
+        manualOverrideRate: null,
+        conflictRate: null,
+        averageConflictResolutionMs: null,
+        affectedAssignmentRatio,
+        unchangedAssignmentRate,
+        scheduleChurn,
+        replanDuration: replanDurationMs != null ? Math.round(replanDurationMs) : null,
+        replanTriggerCount,
+        replanSuppressedCount,
+      };
+    } catch (err) {
+      this.logger.warn(
+        `aggregateReplanKpis failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return {
+        replanCount: 0,
+        replanSuccessRate: null,
+        assignmentChurnRate: null,
+        manualOverrideRate: null,
+        conflictRate: null,
+        averageConflictResolutionMs: null,
+        affectedAssignmentRatio: null,
+        unchangedAssignmentRate: null,
+        scheduleChurn: null,
+        replanDuration: null,
+        replanTriggerCount: null,
+        replanSuppressedCount: null,
+      };
+    }
   }
 
   /** 写 KPI 缓存（org + period 幂等覆盖）。 */

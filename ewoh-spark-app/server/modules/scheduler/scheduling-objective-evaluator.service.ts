@@ -1,4 +1,5 @@
 import type {
+  ChurnConfig,
   SchedulingAssignment,
   SchedulingConstraint,
   SchedulingPlanMetrics,
@@ -32,6 +33,8 @@ export interface EvaluatePlanInput {
   constraints: SchedulingConstraint[];
   /** taskId → 基线 personId（churn/changeCost 用）。 */
   baseline?: Map<string, string | null>;
+  /** M04：Churn Objective V2 权重（可选；缺省=现状：person 变更按 weights.change、其余 0）。 */
+  churn?: ChurnConfig;
   horizonMinutes: number;
   nowMs: number;
   /** P0-4：权威 RouteCost 矩阵索引（CP-SAT 路径用；heuristic assignments 自带 cost 字段）。 */
@@ -62,10 +65,37 @@ export class SchedulingObjectiveEvaluator {
     const taskById = new Map(snapshot.tasks.map((t) => [t.id, t]));
     const w = policy.weights;
 
+    // M04：Churn Objective V2 权重（缺省=现状：person 变更按 weights.change、其余 0）。
+    const churn = input.churn;
+    const personPenalty = churn?.personChangePenalty ?? w.change;
+    const devicePenalty = churn?.deviceChangePenalty ?? 0;
+    const stationPenalty = churn?.stationChangePenalty ?? 0;
+    const startShiftPenalty = churn?.startTimeShiftPenalty ?? 0;
+    const sequencePenalty = churn?.sequenceChangePenalty ?? 0;
+    const removalPenalty = churn?.assignmentRemovalPenalty ?? 0;
+    const additionPenalty = churn?.assignmentAdditionPenalty ?? 0;
+
+    // M04：候选/基线 start 顺序（sequenceChanged 用；仅当权重非 0 才计算，保证缺省=现状零开销）。
+    let baselineRank = new Map<string, number>();
+    let candidateRank = new Map<string, number>();
+    if (sequencePenalty !== 0) {
+      const baselineOrdered = [...snapshot.tasks]
+        .filter((t) => t.planStart != null)
+        .sort((a, b) => Date.parse(a.planStart!) - Date.parse(b.planStart!));
+      baselineOrdered.forEach((t, i) => baselineRank.set(t.id, i));
+      const candidateOrdered = [...assignments]
+        .filter((a) => a.plannedStart != null)
+        .sort(
+          (a, b) => Date.parse(a.plannedStart!) - Date.parse(b.plannedStart!),
+        );
+      candidateOrdered.forEach((a, i) => candidateRank.set(a.taskId, i));
+    }
+
     let totalLateMs = 0;
     let totalWalking = 0;
     let totalWaitMs = 0;
     let totalChange = 0;
+    let totalChurnScore = 0;
     let totalLateScore = 0;
     let totalTravelScore = 0;
     let totalWaitScore = 0;
@@ -114,25 +144,77 @@ export class SchedulingObjectiveEvaluator {
       const travelMs = etaSeconds * 1000;
       const distanceMeters = a.distanceMeters ?? 0;
 
-      // changeCost：基线 person 与当前 person 不同 → 1。
+      // M04：Churn Objective V2——将 change 项细化为七项 churn 罚。
+      // 基线 person 用传入 baseline 映射（缺省=现状 changeCost 语义）；
+      // device/station/start 基线取自快照任务当前分配（partial replan 下即基线）。
       const baselineAssignee = baseline?.get(a.taskId) ?? null;
-      const change =
+      const personChanged =
         baselineAssignee != null && baselineAssignee !== a.personId ? 1 : 0;
+      const baselineDevice = task?.deviceId ?? null;
+      const deviceChanged =
+        baselineDevice != null && baselineDevice !== a.deviceId ? 1 : 0;
+      const baselineStation = task?.stationId ?? null;
+      const stationChanged =
+        baselineStation != null && baselineStation !== a.stationId ? 1 : 0;
+      const baselineStartMs = task?.planStart
+        ? Date.parse(task.planStart)
+        : NaN;
+      const startShiftMin = Number.isFinite(baselineStartMs) &&
+        Number.isFinite(startMs)
+        ? Math.abs(startMs - baselineStartMs) / 60000
+        : 0;
+      const sequenceChanged =
+        sequencePenalty !== 0 &&
+        baselineRank.has(a.taskId) &&
+        candidateRank.has(a.taskId) &&
+        baselineRank.get(a.taskId) !== candidateRank.get(a.taskId)
+          ? 1
+          : 0;
 
+      const churnScore =
+        personChanged * personPenalty +
+        deviceChanged * devicePenalty +
+        stationChanged * stationPenalty +
+        startShiftMin * startShiftPenalty +
+        sequenceChanged * sequencePenalty;
+
+      totalChange += personChanged;
+      totalChurnScore += churnScore;
       totalLateMs += lateMs;
       totalWalking += distanceMeters;
       totalWaitMs += waitMs;
-      totalChange += change;
       totalLateScore += (w.lateness * lateMs) / 60000;
       totalTravelScore += (w.travel * travelMs) / 60000;
       totalWaitScore += (w.wait * waitMs) / 60000;
-      totalChangeScore += w.change * change;
+      totalChangeScore += churnScore;
 
       assignedMsByPerson.set(
         a.personId ?? 'unassigned',
         (assignedMsByPerson.get(a.personId ?? 'unassigned') ?? 0) +
           (endMs - startMs),
       );
+    }
+
+    // M04：removed / added 罚（缺省 removal=weights.change、addition=0）。
+    // removed = 基线已分配但候选未分配的任务；added = 候选新增且基线未分配的任务。
+    // 仅在传入 churn 配置且对应权重非 0 时累计（保证缺省=现状逐位一致）。
+    let removedCount = 0;
+    let addedCount = 0;
+    if (churn) {
+      const assignedTaskIds = new Set(assignments.map((a) => a.taskId));
+      const baselineKeys = baseline ? new Set(baseline.keys()) : new Set<string>();
+      if (removalPenalty !== 0) {
+        for (const taskId of baselineKeys) {
+          if (!assignedTaskIds.has(taskId)) removedCount += 1;
+        }
+      }
+      if (additionPenalty !== 0) {
+        for (const taskId of assignedTaskIds) {
+          if (!baselineKeys.has(taskId)) addedCount += 1;
+        }
+      }
+      totalChurnScore += removedCount * removalPenalty + addedCount * additionPenalty;
+      totalChangeScore += removedCount * removalPenalty + addedCount * additionPenalty;
     }
 
     const maxWorkloadMs = Math.max(0, ...Array.from(assignedMsByPerson.values()));
