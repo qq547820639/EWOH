@@ -246,16 +246,13 @@ export class WorldStateSnapshotService {
       };
     });
 
-    const stationCounts = new Map<string, number>();
-    for (const t of taskList) {
-      if (t.stationId) {
-        stationCounts.set(t.stationId, (stationCounts.get(t.stationId) ?? 0) + 1);
-      }
-    }
-    const backlog = Array.from(stationCounts.entries()).map(([taskId, count]) => ({
-      taskId,
-      count,
-    }));
+    // P0-6 核验（spec §八.10）：backlog 语义 =「工位排队任务数」，与 stations[].queue
+    // （真实 queue 列）一致；不是「工位上的全量任务数」（含执行中/已完成）。
+    // 注意：backlog[].taskId 字段实为 stationId（既有消费方 buildConflicts /
+    // conflict.service 按 stationId 取用，类型命名历史遗留，此处保持形状不改名）。
+    const backlog = stations
+      .filter((s) => Array.isArray(s.queue) && s.queue.length > 0)
+      .map((s) => ({ taskId: s.id, count: s.queue.length }));
 
     const eventList = events.map((e) => ({
       eventId: e.eventId,

@@ -32,6 +32,7 @@ function makeController(opts: {
       {} as never,
       {} as never, // overridePreviewService
       {} as never, // replanPreviewService
+      {} as never, // schedulingContextService
   );
   return { controller, schedulerService };
 }

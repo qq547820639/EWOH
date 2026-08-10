@@ -428,7 +428,24 @@ export class SchedulerService {
     const constraints = this.constraintLoaderService
       ? await this.constraintLoaderService.loadGlobalActive(ctx)
       : [];
-    const plans = await this.solverService.solveVariants(
+
+    // P0-6：baselinePlanId → churn 基线（taskId → personId，复用 solveVariants 的
+    // baselineAssignee 机制）；读取失败降级为空基线（仅记日志，不阻断求解）。
+    let baselineAssignee: Map<string, string | null> | undefined;
+    if (body.baselinePlanId) {
+      try {
+        const baseline = await this.planService.getPlan(body.baselinePlanId);
+        baselineAssignee = new Map(
+          baseline.assignments.map((a) => [a.taskId, a.personId ?? null]),
+        );
+      } catch (err) {
+        this.logger.warn(
+          `createRun: baselinePlanId ${body.baselinePlanId} 读取失败，churn 基线降级为空: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    let plans = await this.solverService.solveVariants(
       snapshot,
       constraints,
       {
@@ -437,11 +454,25 @@ export class SchedulerService {
         triggerEntityId: run.triggerEntityId,
         snapshotVersion: snapshot.snapshotVersion,
         horizonMinutes,
+        baselineAssignee,
       },
     );
 
-    for (const plan of plans) {
-      await this.planService.persistPlan(plan, ctx);
+    // P0-6：objectiveProfile → 单变体筛选（on_time=A / load_balance=B / composite=C）。
+    // 未识别或缺省保持 A/B/C 三变体现状（solveVariants 不支持单 profile 参数，
+    // 在调用处按 planId 后缀筛选，返回值形状不变）。
+    const profileSuffix = this.resolveObjectiveProfileSuffix(body.objectiveProfile);
+    if (profileSuffix) {
+      plans = plans.filter((p) => p.planId === `${run.runId}${profileSuffix}`);
+    }
+
+    // P0-6：mode=SHADOW → 仅评估，不写入 ewoh_schedule_plan 正式表；
+    // run 标记 succeeded 且 planIds=[]（shadow 方案不进入正式派工链）。
+    const isShadow = body.mode === 'SHADOW';
+    if (!isShadow) {
+      for (const plan of plans) {
+        await this.planService.persistPlan(plan, ctx);
+      }
     }
 
     await this.requestDatabaseContext.runInTransaction(
@@ -452,13 +483,25 @@ export class SchedulerService {
           .set({
             status: 'succeeded',
             snapshotVersion: snapshot.snapshotVersion,
-            planIds: plans.map((p) => p.planId),
+            planIds: isShadow ? [] : plans.map((p) => p.planId),
           })
           .where(eq(ewohSchedulingRun.runId, run.runId));
       },
     );
 
     return { run, plans, debounced: false };
+  }
+
+  /** P0-6：objectiveProfile → solveVariants 变体后缀（A/B/C）；未识别/缺省返回 null（三变体现状）。 */
+  private static readonly OBJECTIVE_PROFILE_SUFFIX: Record<string, string> = {
+    on_time: 'A',
+    load_balance: 'B',
+    composite: 'C',
+  };
+
+  private resolveObjectiveProfileSuffix(profile?: string): string | null {
+    if (!profile) return null;
+    return SchedulerService.OBJECTIVE_PROFILE_SUFFIX[profile] ?? null;
   }
 
   async getRun(runId: string): Promise<SchedulingRun | null> {
@@ -1186,6 +1229,8 @@ export class SchedulerService {
               },
               active: true,
               createdBy: ctx.userId,
+              // standalone_025_scheduler_rls：租户隔离（null=全局/存量行，policy 放行）。
+              orgId: ctx.primaryOrgId || null,
             })),
           );
         }

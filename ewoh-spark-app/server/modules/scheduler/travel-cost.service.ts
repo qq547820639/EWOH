@@ -242,6 +242,9 @@ export class TravelCostService {
             matrixId: matrix.matrixId,
             policyVersion: matrix.policyVersion,
             solverVersion: matrix.solverVersion,
+            // Task 4 / P0-4：全键唯一索引维度（standalone_026），与逻辑缓存 key 对齐。
+            routeGraphVersion: matrix.routeGraphVersion != null ? String(matrix.routeGraphVersion) : null,
+            candidateSetHash: matrix.candidateSetHash ?? null,
             candidatesJson: this.toJsonbArray(matrix.candidates),
             generatedAt: new Date(matrix.generatedAt),
             updatedAt: new Date(),
@@ -254,6 +257,9 @@ export class TravelCostService {
           snapshotVersion: matrix.snapshotVersion,
           policyVersion: matrix.policyVersion,
           solverVersion: matrix.solverVersion,
+          // Task 4 / P0-4：全键唯一索引维度（standalone_026），与逻辑缓存 key 对齐。
+          routeGraphVersion: matrix.routeGraphVersion != null ? String(matrix.routeGraphVersion) : null,
+          candidateSetHash: matrix.candidateSetHash ?? null,
           candidatesJson: this.toJsonbArray(matrix.candidates),
           generatedAt: new Date(matrix.generatedAt),
         });

@@ -616,6 +616,33 @@ describe('P1-T2: 领域新列优先装配（新列真实值 > 派生兜底 + der
     expect(byId.get('S-2')?.capacity).toBeNull();
   });
 
+  it('P0-6: station backlog = 工位排队任务数（queue 列），而非工位上的全量任务数', async () => {
+    const svc = makeSvc({
+      personnel: [],
+      device: [],
+      // 工位 S-1 上有 1 个任务（t1 绑定 S-1），但不在 queue 排队列中——不得计入 backlog。
+      task: [taskRow({ id: 't1', spatialEntityId: 'S-1' })],
+      spatial: [
+        spatialRow('S-1', { entityType: 'station', queue: ['q1', 'q2'] }),
+        spatialRow('S-2', { entityType: 'station' }), // 无 queue → 不产生 backlog 条目
+      ],
+      event: [],
+      routeNode: [],
+      routeEdge: [],
+      reservation: [],
+      binding: [],
+    });
+    const state = await (svc as unknown as { getCurrentWorldState(): Promise<{ stations: Array<Record<string, unknown>>; backlog: Array<{ taskId: string; count: number }> }> })
+      .getCurrentWorldState();
+    // backlog[].taskId 实为 stationId（既有消费方按 stationId 取用）；count = queue 长度。
+    const backlogById = new Map(state.backlog.map((b) => [b.taskId, b.count]));
+    expect(backlogById.get('S-1')).toBe(2);
+    expect(backlogById.has('S-2')).toBe(false);
+    // 与 stations[].queue 长度一致（语义对齐）。
+    const s1 = state.stations.find((s) => s.id === 'S-1');
+    expect(backlogById.get('S-1')).toBe(((s1?.queue as unknown[] | undefined) ?? []).length);
+  });
+
   it('person 坐标缺失 → UNKNOWN(null) 而非 0', async () => {
     const svc = makeSvc({
       personnel: [

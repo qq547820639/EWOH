@@ -89,6 +89,8 @@ export class PlanService {
           // T02 / P0-2：求解所用 effective constraints 快照 + 稳定哈希（standalone_023）。
           constraintsJson: (plan.constraints ?? []) as unknown as Record<string, unknown>[],
           effectiveConstraintsHash: plan.effectiveConstraintsHash ?? null,
+          // standalone_025_scheduler_rls：租户隔离（null=全局/存量行，policy 放行）。
+          orgId: ctx.primaryOrgId || null,
           createdAt: new Date(plan.createdAt),
         });
 
@@ -606,6 +608,8 @@ export class PlanService {
               },
               active: true,
               createdBy: ctx.userId,
+              // standalone_025_scheduler_rls：租户隔离（null=全局/存量行，policy 放行）。
+              orgId: ctx.primaryOrgId || null,
             })),
           );
         }

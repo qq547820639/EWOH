@@ -121,7 +121,7 @@ export class CandidateEngineService {
     });
 
     const stationOptions = this.buildStationOptions(task, fullState, pool);
-    const timeWindows = this.buildTimeWindows(task, fullState);
+    const timeWindows = this.buildTimeWindows(task, fullState, config.horizonMinutes);
 
     const candidates: TaskCandidateResource[] = pool.map((c) => ({
       personId: c.personId,
@@ -459,6 +459,7 @@ export class CandidateEngineService {
   private buildTimeWindows(
     task: WorldStateSnapshot['tasks'][number],
     state: WorldStateSnapshot,
+    horizonMinutes?: number,
   ): Array<{ startMs: number; endMs: number }> {
     const now = Date.now();
     if (task.planStart && task.planEnd) {
@@ -466,7 +467,7 @@ export class CandidateEngineService {
         { startMs: Date.parse(task.planStart), endMs: Date.parse(task.planEnd) },
       ];
     }
-    return [{ startMs: now, endMs: now + 480 * 60 * 1000 }];
+    return [{ startMs: now, endMs: now + (horizonMinutes ?? 480) * 60 * 1000 }];
   }
 
   /** 汇总结构化拒绝原因（eligibility + 路由 + mustFinishBy 硬截止）。 */

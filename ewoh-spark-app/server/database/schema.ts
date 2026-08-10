@@ -627,6 +627,8 @@ export const ewohSchedulePlan = pgTable("ewoh_schedule_plan", {
   constraintsJson: jsonb("constraints_json").notNull().default([]),
   /** constraints 稳定哈希（键排序 JSON 序列化 → SHA-256；replay 校验）。 */
   effectiveConstraintsHash: varchar("effective_constraints_hash", { length: 64 }),
+  /** 租户隔离（standalone_025_scheduler_rls；RLS + 应用层过滤；null=全局/存量行）。 */
+  orgId: varchar("org_id", { length: 255 }),
   // System field: Update time (auto-filled, do not modify)
   updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
@@ -1276,6 +1278,16 @@ export const ewohRouteCostMatrix = pgTable("ewoh_route_cost_matrix", {
   snapshotVersion: varchar("snapshot_version", { length: 255 }).notNull(),
   policyVersion: integer("policy_version"),
   solverVersion: varchar("solver_version", { length: 100 }),
+  /**
+   * 全键唯一索引维度（standalone_026）：路由图版本，与 travel-cost 逻辑缓存 key 对齐。
+   * @type { string | null }
+   */
+  routeGraphVersion: varchar("route_graph_version", { length: 255 }),
+  /**
+   * 全键唯一索引维度（standalone_026）：候选集合确定性哈希，与逻辑缓存 key 对齐。
+   * @type { string | null }
+   */
+  candidateSetHash: varchar("candidate_set_hash", { length: 64 }),
   /**
    * CandidateRouteCost[] jsonb 数组。
    * @type { Array<Record<string, unknown>> }

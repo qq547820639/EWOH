@@ -17,6 +17,7 @@ import {
 import { filter, interval, map, merge, Observable } from 'rxjs';
 import { SchedulerService } from './scheduler.service';
 import { SchedulerStreamService } from './scheduler-stream.service';
+import { SchedulingContextService } from './scheduling-context.service';
 import { ResourceProjectionService } from './resource-projection.service';
 import { ReplanCoordinatorService } from './replan-coordinator.service';
 import { ConflictService } from './conflict.service';
@@ -68,6 +69,9 @@ export class SchedulerController {
     private readonly policyActivationService: PolicyActivationService,
     private readonly policyReplayService: PolicyReplayService,
     private readonly replanPreviewService: ReplanPreviewService,
+    // P0-2：统一调度上下文（GET /api/scheduler/context，org 隔离单一时间切片）。
+    // 追加在末尾：保持既有测试 positional 注入不破坏（DI 按类型解析，顺序无关）。
+    private readonly schedulingContextService: SchedulingContextService,
   ) {}
 
   /**
@@ -78,6 +82,17 @@ export class SchedulerController {
   @Get('resources/state')
   async getUnifiedResourceState() {
     return this.resourceProjectionService.getUnifiedResourceState();
+  }
+
+  /**
+   * P0-2：统一调度上下文（单一 org 时间切片，版本字段真实取值）。
+   * Command Map 应一次性从此消费 snapshotVersion/resourceVersion/routeGraphVersion/
+   * policyVersion/eventSequence/sourceTimestamp/tasks/resources/reservations/constraints/
+   * dataQuality，避免跨切片组合成伪"当前状态"。
+   */
+  @Get('context')
+  async getSchedulingContext(@Req() request: { userContext?: OrgContext }) {
+    return this.schedulingContextService.getContext(request.userContext);
   }
 
   /**

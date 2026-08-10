@@ -834,6 +834,57 @@ export interface SchedulingRun {
   createdAt: string;
 }
 
+// ============================================================================
+// Command Map 增量（Phase 0 / P0-2）：统一调度上下文（SchedulingContext）
+// ============================================================================
+
+/**
+ * 统一调度上下文（Phase 0 / P0-2）：单一 org 时间切片，版本字段真实取值，禁止伪造。
+ *
+ * 组装方：SchedulingContextService.getContext()（GET /api/scheduler/context）。
+ * 各版本字段来源（可审计）：
+ * - snapshotVersion：WorldStateSnapshot.snapshotVersion（buildSnapshot 持久化快照版本）；
+ * - resourceVersion：snapshot.worldVersion 字符串化（资源投影与快照同一世界版本，
+ *   无独立资源版本号——与 TravelCostService 缓存 key 的 worldVersion 代理同源）；
+ * - routeGraphVersion：snapshot.worldVersion 字符串化（routeGraphVersionOf 同源，
+ *   见 travel-cost.service.ts：WorldStateSnapshot 无显式 route graph 版本，以
+ *   全局单调递增 worldVersion 作为路由图版本代理）；
+ * - policyVersion：SchedulingPolicy.version（当前生效策略版本）；
+ * - eventSequence：outbox 全局最大 sequence（latestSequence；与 SSE Last-Event-ID 同源）；
+ * - sourceTimestamp：snapshot.ts。
+ * 前端 Command Map 必须从本接口一次性拉取，避免不同时间切片数据组合成伪"当前状态"。
+ */
+export interface SchedulingContext {
+  snapshotVersion: string;
+  resourceVersion: string;
+  routeGraphVersion: string;
+  policyVersion: number;
+  eventSequence: number;
+  sourceTimestamp: string;
+  /** 任务集合（与 world-state snapshot 同源，org 过滤）。 */
+  tasks: WorldStateSnapshot['tasks'];
+  /** 统一资源投影（与 GET /api/scheduler/resources/state 同源，org 过滤）。 */
+  resources: ResourceState[];
+  /** 活跃预占（与 world-state snapshot 同源）。 */
+  reservations: WorldStateSnapshot['reservations'];
+  /** 全局 active 人工约束（org + 有效期过滤）。 */
+  constraints: SchedulingConstraint[];
+  /** 数据质量汇总（可审计；全部来自真实统计，不伪造）。 */
+  dataQuality: {
+    /** dataQuality === 'STALE' 的资源数（来自资源投影）。 */
+    staleResourceCount: number;
+    /** 位置未知资源数（location.x/y/stationId 均为 null，来自资源投影）。 */
+    unknownLocationCount: number;
+    /** 状态非 open 的路由边数（congested/blocked，来自 snapshot.routeStatus）。 */
+    degradedRouteCount: number;
+    /** 资源总数（person + device + station）。 */
+    totalResources: number;
+  };
+}
+
+/** GET /api/scheduler/context 响应（与 SchedulingContext 同形，保留扩展位）。 */
+export interface SchedulingContextResponse extends SchedulingContext {}
+
 export interface SchedulingAssignment {
   assignmentId: string;
   taskId: string;

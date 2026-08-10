@@ -198,6 +198,36 @@ describe('T03 / P1-2 CandidateEngineService（结构化拒绝原因）', () => {
     expect(c.rejectReasons).toContain('health_blocked');
   });
 
+  it('时间窗 end 使用配置 horizonMinutes=120 → end = now + 120min', async () => {
+    const { engine } = makeEngine();
+    const policy = engine['policyService'] as unknown as { getConfig: jest.Mock };
+    policy.getConfig.mockResolvedValue({ ...defaultConfig(), horizonMinutes: 120 });
+    engine['worldStateSnapshotService'].getCurrentWorldState = jest.fn().mockResolvedValue(baseSnapshot());
+    const before = Date.now();
+    const res = await engine.evaluateTaskCandidates('t1');
+    const after = Date.now();
+    const tw = res.candidates[0].timeWindows[0];
+    expect(tw).toBeDefined();
+    expect(tw.endMs).toBeGreaterThanOrEqual(before + 120 * 60 * 1000);
+    expect(tw.endMs).toBeLessThanOrEqual(after + 120 * 60 * 1000);
+  });
+
+  it('时间窗回归：未配置 horizonMinutes → 缺省 end = now + 480min', async () => {
+    const { engine } = makeEngine();
+    const policy = engine['policyService'] as unknown as { getConfig: jest.Mock };
+    const { horizonMinutes: _hm, ...cfgWithoutHorizon } = defaultConfig();
+    void _hm;
+    policy.getConfig.mockResolvedValue(cfgWithoutHorizon);
+    engine['worldStateSnapshotService'].getCurrentWorldState = jest.fn().mockResolvedValue(baseSnapshot());
+    const before = Date.now();
+    const res = await engine.evaluateTaskCandidates('t1');
+    const after = Date.now();
+    const tw = res.candidates[0].timeWindows[0];
+    expect(tw).toBeDefined();
+    expect(tw.endMs).toBeGreaterThanOrEqual(before + 480 * 60 * 1000);
+    expect(tw.endMs).toBeLessThanOrEqual(after + 480 * 60 * 1000);
+  });
+
   it('buildCandidatePool 与端点共享语义：hard 不满足的候选 eligible=false + rejectReasons', async () => {
     const { engine } = makeEngine();
     const snapshot = baseSnapshot();

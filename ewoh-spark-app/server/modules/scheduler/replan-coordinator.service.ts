@@ -3,7 +3,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, sql } from 'drizzle-orm';
 import { ewohSchedulePlan, ewohSchedulingRun } from '@server/database/schema';
 import type {
   ReplanConfig,
@@ -78,7 +78,11 @@ const FREEZE_WINDOW_GRACE_MS = 5 * 60_000;
 export class ReplanCoordinatorService {
   private readonly logger = new Logger(ReplanCoordinatorService.name);
   private readonly impactAnalyzer = new ImpactAnalyzer();
-  /** Replan V2 风暴守卫（按 org 内存有界 LRU；无表）。 */
+  /**
+   * Replan V2 风暴守卫（按 org 内存有界 LRU；无表）。
+   * P0-5：内存态降级为缓存——advisory lock 可用时跨实例一致性由锁承载；
+   * 锁不可用（fake db / 非 PG）时显式降级至此内存态（与现状完全一致）。
+   */
   private readonly orgReplanStates = new Map<string, OrgReplanState>();
 
   constructor(
@@ -139,15 +143,64 @@ export class ReplanCoordinatorService {
   }
 
   /**
-   * Replan V2 风暴守卫（08 §7）：按 org 有界 LRU。
+   * P0-5（跨实例一致性）：跨实例守卫权获取。
+   * 在短事务内执行 pg_try_advisory_xact_lock（事务级 advisory lock，事务结束自动释放，
+   * 无需显式 unlock），以 org 级稳定 key（hashtext('<orgId>:replan_guard')，int4 隐式提升
+   * 为 int8）在多 Pod 间串行化风暴守卫判定；返回 false → 另一实例正持有守卫 → 调用方
+   * 直接抑制（避免同一事件在多实例各自通过守卫 → 重复重排）。
+   * 与 resource-reservation.service.ts 的 pg_advisory_xact_lock(hashtext(...)) 先例保持一致。
+   * 锁能力不可用（mock db 无 execute / 非 PG / 只读副本 / 结果形状异常）→ 显式降级：
+   * 记录 reason（logger.warn）并视为"获得守卫权"，回退既有内存态逻辑（与现状完全一致），
+   * 不得在真实 PG 环境外静默跳过守卫。
+   */
+  private async tryAcquireCrossInstanceGuard(
+    ctx: OrgContext,
+    orgKey: string,
+  ): Promise<boolean> {
+    try {
+      const acquired = await this.requestDatabaseContext.runInTransaction(
+        buildGucSettings(ctx),
+        async () => {
+          const res = (await this.db.execute(
+            sql`SELECT pg_try_advisory_xact_lock(hashtext(${orgKey + ':replan_guard'})) AS acquired`,
+          )) as unknown;
+          const row = Array.isArray(res)
+            ? (res as Array<Record<string, unknown>>)[0]
+            : (res as { rows?: Array<Record<string, unknown>> }).rows?.[0];
+          if (row == null) {
+            throw new Error('advisory lock result row missing (unexpected execute shape)');
+          }
+          return row.acquired === true;
+        },
+      );
+      return acquired;
+    } catch (err) {
+      // 降级路径：无法执行原生 SQL / 无法解析结果 → 显式回退内存态守卫（与现状一致）。
+      this.logger.warn(
+        `cross-instance replan guard unavailable, falling back to in-memory state: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return true;
+    }
+  }
+
+  /**
+   * Replan V2 风暴守卫（08 §7）：按 org 有界 LRU（P0-5：内存态为降级缓存）。
    * 距同 org 上次 replan < minimumReplanIntervalMs 且窗口内已达
    * maximumReplansPerWindow → 抑制（计数 + SSE replan.suppressed）。
    * 距上次 < replanDebounceMs → debounced（合并，不创建 run）。
+   * P0-5：先获取跨实例守卫权（org 级 advisory xact lock）；未获得 → 另一实例正在
+   * 处理该 org → 直接 suppressed；锁不可用 → tryAcquireCrossInstanceGuard 已显式
+   * 降级返回 true，继续走既有内存态判定。
    */
   private async evaluateStormGuard(
     ctx: OrgContext,
   ): Promise<'allowed' | 'debounced' | 'suppressed'> {
     const orgKey = ctx.primaryOrgId || 'ALL';
+    if (!(await this.tryAcquireCrossInstanceGuard(ctx, orgKey))) {
+      return 'suppressed';
+    }
     const now = Date.now();
     const replan = await this.readReplanConfig();
     const debounceMs = replan?.replanDebounceMs ?? FALLBACK_REPLAN.replanDebounceMs!;

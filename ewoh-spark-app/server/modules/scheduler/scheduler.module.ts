@@ -29,6 +29,7 @@ import { ShadowPolicyService } from './shadow-policy.service';
 import { PolicyActivationService } from './policy-activation.service';
 import { TaskSchedulingBridge } from './task-scheduling.bridge';
 import { ConstraintLoaderService } from './constraint-loader.service';
+import { SchedulingContextService } from './scheduling-context.service';
 import { CandidateEngineService } from './candidate-engine.service';
 import { OverridePreviewService } from './override-preview.service';
 import { ReplanPreviewService } from './replan-preview.service';
@@ -94,6 +95,8 @@ const SCHEDULER_NOTIFY_PROVIDERS = SCHEDULER_NOTIFY_URL
     ShadowPolicyService,
     PolicyActivationService,
     ConstraintLoaderService,
+    // P0-2：统一调度上下文（GET /api/scheduler/context）。
+    SchedulingContextService,
     CandidateEngineService,
     OverridePreviewService,
     ReplanPreviewService,
@@ -129,6 +132,7 @@ const SCHEDULER_NOTIFY_PROVIDERS = SCHEDULER_NOTIFY_URL
     ShadowPolicyService,
     PolicyActivationService,
     ConstraintLoaderService,
+    SchedulingContextService,
     CandidateEngineService,
     OverridePreviewService,
     ReplanPreviewService,

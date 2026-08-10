@@ -1172,6 +1172,20 @@ export interface CreateRunRequest {
   horizonMinutes?: number;
   operator?: string;
   reason?: string;
+  // --- Command Map 增量（Phase 0 / P0-6，05 §6；全部可选，向后兼容） ---
+  /** 求解目标画像：on_time → 变体 A（准时优先）；load_balance → 变体 B（负荷均衡）；composite → 变体 C（综合平衡）。未识别/缺省 → 保持 A/B/C 三变体现状。 */
+  objectiveProfile?:
+    | 'on_time'
+    | 'load_balance'
+    | 'min_disruption'
+    | 'production_impact'
+    | 'distance'
+    | 'composite'
+    | string;
+  /** 运行模式：MANUAL=正式（缺省）/ AUTO=事件自动 / SHADOW=仅评估（不写入正式 plan 表，planIds=[]）。 */
+  mode?: 'MANUAL' | 'AUTO' | 'SHADOW';
+  /** churn 基线方案 id：其 assignments 作为 baselineAssignee 传入求解（taskId → personId）。 */
+  baselinePlanId?: string;
 }
 
 /**

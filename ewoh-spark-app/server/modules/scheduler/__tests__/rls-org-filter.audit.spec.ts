@@ -1,9 +1,17 @@
 /* D2：调度读路径 RLS 组织过滤审计测试
  *
- * 背景（系统性走读）：ewoh_world_state_snapshot / ewoh_outbox /
- * ewoh_assignment_event / ewoh_replan_trigger / ewoh_scheduling_run
- * 为非 RLS 表，靠应用层 org 过滤（Actor.primaryOrgId 显式 where 条件），
- * 此前缺自动审计。
+ * 背景（系统性走读 + standalone_025_scheduler_rls 覆盖）：ewoh_world_state_snapshot /
+ * ewoh_outbox / ewoh_assignment_event 为**非 RLS 表**（025 明确保留）：
+ *   - ewoh_outbox：全局 sequence 事件日志（outbox_sequence_seq 全局原子键；SSE 按
+ *     sequence 增量重放/缺口检测），RLS 会破坏跨 org 的 sequence 键语义；
+ *   - ewoh_world_state_snapshot：snapshotVersion 全局唯一版本键（快照按版本存取）；
+ *   - ewoh_assignment_event：事件审计流（eventId 全局唯一，全量留痕）。
+ * 这些表靠应用层 org 过滤（Actor.primaryOrgId 显式 where 条件），此前缺自动审计。
+ * 其余调度域表（ewoh_scheduling_run / ewoh_schedule_plan / ewoh_scheduling_plan_assignment /
+ * ewoh_resource_reservation / ewoh_scheduling_policy / ewoh_scheduling_feedback /
+ * ewoh_replan_trigger / ewoh_scheduling_constraint）已由 standalone_025 启用 RLS
+ * （scheduler_<table>_org_isolation，读取 app.current_org_id），由 DB 层兜底 org 隔离；
+ * 本测试只审计**仍非 RLS** 的表。
  *
  * 选型理由（与现有 __tests__ 基建一致，纯静态、无 DB 依赖）：
  * 调度模块测试用轻量 fake db（thenable 链），无法用 drizzle toSQL() 抓真实 SQL；
@@ -24,13 +32,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
 
-/** 非 RLS 表（schema.ts 导出名 → SQL 表名）。 */
+/** 非 RLS 表（schema.ts 导出名 → SQL 表名）。仅剩全局 sequence/版本键语义表（025 保留非 RLS）。 */
 const NON_RLS_TABLES = new Set([
   'ewohWorldStateSnapshot',
   'ewohOutbox',
   'ewohAssignmentEvent',
-  'ewohReplanTrigger',
-  'ewohSchedulingRun',
 ]);
 
 /**
@@ -48,8 +54,6 @@ const ALLOWLIST: Record<string, string> = {
   'world-state.service.ts::getSnapshot': 'snapshotVersion 全局唯一版本键查询（快照按版本存取）',
   'world-state.service.ts::nextSnapshotVersion': '版本号派生 prefix 匹配，不暴露业务行',
   'policy-replay.service.ts::latestSnapshotRow': '最新历史快照键查询（全局时间序首行，供 shadow replay 评估，不暴露业务行/列表）',
-  'trigger.service.ts::getTriggerByKey': 'triggerKey 全局唯一幂等键查询',
-  'scheduler.service.ts::getRun': 'runId 全局唯一主键查询',
 };
 
 export interface ReadPathViolation {
@@ -189,38 +193,38 @@ describe('D2 调度读路径 RLS 组织过滤审计', () => {
   });
 
   it('移除现有 org 过滤 → 被审计捕获（反例验证）', () => {
-    // 模拟回归：trigger.service.latestTrigger 原本按 orgId 过滤，被人误删。
+    // 模拟回归：outbox.service.listLatest 原本按 orgId 过滤，被人误删。
     const badSource = `
-      import { ewohReplanTrigger } from '@server/database/schema';
-      export class TriggerService {
-        async latestTrigger(orgKey: string, triggerType: string) {
+      import { ewohOutbox } from '@server/database/schema';
+      export class OutboxService {
+        async outboxLatest(since: number) {
           return this.db
             .select()
-            .from(ewohReplanTrigger)
-            .where(eq(ewohReplanTrigger.triggerType, triggerType))
-            .orderBy(desc(ewohReplanTrigger.createdAt))
+            .from(ewohOutbox)
+            .where(gt(ewohOutbox.sequence, since))
+            .orderBy(desc(ewohOutbox.sequence))
             .limit(1);
         }
       }
     `;
     // 方法文本不再含 .orgId → 且不在 allowlist → 捕获
-    const violations = auditSource('trigger.service.ts', badSource);
-    expect(violations.some((v) => v.method === 'latestTrigger')).toBe(true);
+    const violations = auditSource('outbox.service.ts', badSource);
+    expect(violations.some((v) => v.method === 'outboxLatest')).toBe(true);
   });
 
   it('带 org 过滤的读路径不被误报（正例）', () => {
     const goodSource = `
-      import { ewohSchedulingRun } from '@server/database/schema';
-      export class RunService {
-        async listRuns(actor?: { primaryOrgId: string }) {
+      import { ewohOutbox } from '@server/database/schema';
+      export class OutboxService {
+        async listOutbox(actor?: { primaryOrgId: string }) {
           const conditions = [];
           if (actor?.primaryOrgId) {
-            conditions.push(eq(ewohSchedulingRun.orgId, actor.primaryOrgId));
+            conditions.push(eq(ewohOutbox.orgId, actor.primaryOrgId));
           }
-          return this.db.select().from(ewohSchedulingRun).where(and(...conditions));
+          return this.db.select().from(ewohOutbox).where(and(...conditions));
         }
       }
     `;
-    expect(auditSource('scheduler.service.ts', goodSource)).toEqual([]);
+    expect(auditSource('outbox.service.ts', goodSource)).toEqual([]);
   });
 });

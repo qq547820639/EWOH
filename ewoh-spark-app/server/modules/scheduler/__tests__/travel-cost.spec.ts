@@ -305,6 +305,36 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
     expect(second.matrixId).toBe(first.matrixId);
   });
 
+  it('Task 4 / P0-4：persistMatrix 写入 routeGraphVersion / candidateSetHash 列（与 DB 全键对齐）', async () => {
+    const { svc, rows } = makeSvc({ calculateRouteBetween: jest.fn() });
+    const cand = { personId: 'p1', deviceId: null, stationId: 'S1' };
+    const hash = candidateSetHash([cand]);
+    const matrix: RouteCostMatrix = {
+      matrixId: `RCM-7-${hash}-1-t1`,
+      snapshotVersion: 'WS-MATRIX-0001',
+      policyVersion: 3,
+      solverVersion: 'heuristic-v2',
+      routeGraphVersion: 7,
+      candidateSetHash: hash,
+      taskId: 't1',
+      candidates: [
+        {
+          personId: 'p1', deviceId: null, stationId: 'S1', etaSeconds: 10, distanceMeters: 10,
+          congestion: 1, blocked: false, forbiddenZone: false, risk: 1, energy: 0,
+          routeCostMode: 'euclidean_fallback', fallbackReason: 'no_route_edge', dataQuality: 'FRESH', feasible: true,
+        },
+      ],
+      generatedAt: new Date().toISOString(),
+    };
+    await svc.persistMatrix(matrix);
+    expect(rows).toHaveLength(1);
+    // 与 standalone_026 全键唯一索引列对齐（route_graph_version 数值序列化为字符串）。
+    expect(rows[0]).toMatchObject({
+      routeGraphVersion: '7',
+      candidateSetHash: hash,
+    });
+  });
+
   it('Task 4：candidateSetHash 确定性（相同输入同哈希、顺序无关、不同输入不同哈希）', () => {
     const a = [{ personId: 'p1', deviceId: 'd1', stationId: 'S1' }];
     const b = [{ personId: 'p2', deviceId: 'd2', stationId: 'S2' }];
