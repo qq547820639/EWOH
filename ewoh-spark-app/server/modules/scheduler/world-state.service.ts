@@ -13,7 +13,7 @@ import {
   ewohResourceReservation,
   ewohDeviceBinding,
 } from '@server/database/schema';
-import { eq, desc, like, and, or } from 'drizzle-orm';
+import { eq, and, or, sql } from 'drizzle-orm';
 import type {
   SchedulingEventImpact,
   WorldStateSnapshot,
@@ -43,25 +43,65 @@ export class WorldStateSnapshotService {
    */
   async buildSnapshot(ctx: OrgContext): Promise<WorldStateSnapshot> {
     const state = await this.collectState();
-    const snapshotVersion = await this.nextSnapshotVersion();
-    const snapshot: WorldStateSnapshot = {
-      ...state,
-      snapshotVersion,
-      ts: new Date().toISOString(),
-    };
-
-    await this.requestDatabaseContext.runInTransaction(
-      buildGucSettings(ctx),
-      async () => {
-        await this.db.insert(ewohWorldStateSnapshot).values({
-          snapshotVersion,
-          snapshotJson: snapshot as unknown as Record<string, unknown>,
-          createdAt: new Date(),
-        });
-      },
-    );
-    this.logger.log(`world state snapshot built: ${snapshotVersion}`);
+    const snapshot = await this.allocateAndPersistSnapshot(state, ctx);
+    this.logger.log(`world state snapshot built: ${snapshot.snapshotVersion}`);
     return snapshot;
+  }
+
+  /**
+   * 原子分配快照版本并持久化：分配（计数器 upsert）与插入在同一事务内完成，
+   * 行锁覆盖「分配 + 插入」窗口，保证并发下版本互异且无缺口。
+   * 有界重试：MAX_ATTEMPTS 次；快照版本唯一冲突（23505）或可串行化冲突（40001）
+   * 时以全新版本重试，超过上限抛明确错误，绝不无限循环。
+   */
+  private async allocateAndPersistSnapshot(
+    state: Omit<WorldStateSnapshot, 'snapshotVersion' | 'ts'>,
+    ctx: OrgContext,
+  ): Promise<WorldStateSnapshot> {
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        return await this.requestDatabaseContext.runInTransaction(
+          buildGucSettings(ctx),
+          async () => {
+            const snapshotVersion = await this.nextSnapshotVersion();
+            const snapshot: WorldStateSnapshot = {
+              ...state,
+              snapshotVersion,
+              ts: new Date().toISOString(),
+            };
+            await this.db.insert(ewohWorldStateSnapshot).values({
+              snapshotVersion,
+              snapshotJson: snapshot as unknown as Record<string, unknown>,
+              createdAt: new Date(),
+            });
+            return snapshot;
+          },
+        );
+      } catch (err) {
+        if (this.isRetryableAllocationError(err)) {
+          if (attempt < MAX_ATTEMPTS) {
+            this.logger.warn(
+              `world snapshot version allocation collision (attempt ${attempt}/${MAX_ATTEMPTS}): ${err instanceof Error ? err.message : String(err)}`,
+            );
+            continue;
+          }
+          throw new Error(
+            `world snapshot version allocation failed after ${MAX_ATTEMPTS} attempts: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+        throw err;
+      }
+    }
+    throw new Error(
+      `world snapshot version allocation failed after ${MAX_ATTEMPTS} attempts`,
+    );
+  }
+
+  /** 可重试的分配冲突：snapshot_version 唯一冲突（23505）或可串行化冲突（40001）。 */
+  private isRetryableAllocationError(err: unknown): boolean {
+    const code = (err as { code?: string } | null)?.code;
+    return code === '23505' || code === '40001';
   }
 
   /** 汇总当前世界状态（不持久化快照）。供只读查询（如候选资源）复用同一真实状态。 */
@@ -554,18 +594,28 @@ export class WorldStateSnapshotService {
     };
   }
 
-  /** 生成形如 WS-YYYYMMDD-NNNN 的递增快照版本。 */
+  /**
+   * 原子分配形如 WS-YYYYMMDD-NNNN 的快照版本。
+   * 必须在调用方事务内执行（buildSnapshot 经 RequestDatabaseContext 保证分配与
+   * 插入同事务）：对 ewoh_snapshot_version_counter 按天 upsert（ON CONFLICT (day)
+   * DO UPDATE SET last_seq = last_seq + 1），行锁串行化同一天内的并发分配，
+   * 保证版本互异且无缺口；ewoh_world_state_snapshot.snapshot_version 唯一约束
+   * 保留为最终兜底（冲突由 allocateAndPersistSnapshot 有界重试收敛）。
+   */
   private async nextSnapshotVersion(): Promise<string> {
-    const prefix = `WS-${this.dateStamp(new Date())}`;
-    const rows = await this.db
-      .select({ snapshotVersion: ewohWorldStateSnapshot.snapshotVersion })
-      .from(ewohWorldStateSnapshot)
-      .where(like(ewohWorldStateSnapshot.snapshotVersion, `${prefix}-%`))
-      .orderBy(desc(ewohWorldStateSnapshot.snapshotVersion))
-      .limit(1);
-    const last = rows[0]?.snapshotVersion;
-    const lastSeq = last ? Number(last.split('-').pop()) || 0 : 0;
-    return `${prefix}-${String(lastSeq + 1).padStart(4, '0')}`;
+    const day = this.dateStamp(new Date());
+    const rows = (await this.db.execute(
+      sql`
+        INSERT INTO ewoh_snapshot_version_counter (day, last_seq)
+        VALUES (${day}, 1)
+        ON CONFLICT (day) DO UPDATE SET
+          last_seq = ewoh_snapshot_version_counter.last_seq + 1,
+          _updated_at = now()
+        RETURNING last_seq
+      `,
+    )) as unknown as Array<{ last_seq?: number | string }>;
+    const seq = Number(rows[0]?.last_seq ?? 0);
+    return `WS-${day}-${String(seq).padStart(4, '0')}`;
   }
 
   private dateStamp(d: Date): string {
