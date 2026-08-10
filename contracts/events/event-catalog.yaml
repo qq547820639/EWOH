@@ -39,6 +39,8 @@ x-event-types:
   - ConflictResolved
   - ConflictSuppressed
   - ReplanCompleted
+  - ReplanApprovalRequired
+  - ReplanSuppressed
   - ExecutionDeviation
   - PolicyActivated
   - PolicyRolledBack
@@ -160,6 +162,14 @@ channels:
     publish:
       message:
         $ref: '#/components/messages/ReplanCompleted'
+  replan.approval_required:
+    publish:
+      message:
+        $ref: '#/components/messages/ReplanApprovalRequired'
+  replan.suppressed:
+    publish:
+      message:
+        $ref: '#/components/messages/ReplanSuppressed'
   execution.deviation:
     publish:
       message:
@@ -1081,6 +1091,63 @@ components:
           - orgId
           - eventId
           - runId
+          - occurredAt
+    ReplanApprovalRequired:
+      name: ReplanApprovalRequired
+      title: Replan Approval Required
+      summary: A replan trigger requires human approval before any plan is persisted (M03).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.replan.approval_required
+        source: ewoh:///organizations/{orgId}/replans/preview
+        subject: replans/approval-required
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          triggerType: { type: string }
+          triggerEntityId:
+            type: string
+            nullable: true
+          reasons:
+            type: array
+            items: { type: string }
+          preview:
+            type: object
+            nullable: true
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - triggerType
+          - occurredAt
+    ReplanSuppressed:
+      name: ReplanSuppressed
+      title: Replan Suppressed
+      summary: A replan trigger was suppressed by the per-org storm guard (M02).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.replan.suppressed
+        source: ewoh:///organizations/{orgId}/replans/suppressed
+        subject: replans/suppressed
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          triggerType: { type: string }
+          triggerEntityId:
+            type: string
+            nullable: true
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
           - occurredAt
     ExecutionDeviation:
       name: ExecutionDeviation

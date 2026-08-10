@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-09T17:32:52.063Z",
+  "generatedAt": "2026-08-10T01:43:24.258Z",
   "spec": "openapi/ewoh.yaml",
   "controllerKeys": [
     "DELETE /api/dashboard/devices/{deviceId}/bindings",
@@ -297,6 +297,7 @@
     "POST /api/scheduler/policy/{version}/gate",
     "POST /api/scheduler/policy/{version}/shadow",
     "POST /api/scheduler/policy/{version}/shadow/plan",
+    "POST /api/scheduler/replan/preview",
     "POST /api/scheduler/routes/calculate",
     "POST /api/scheduler/runs",
     "POST /api/simulator/start",
@@ -777,6 +778,7 @@
     "POST /api/scheduler/policy/{version}/gate",
     "POST /api/scheduler/policy/{version}/shadow",
     "POST /api/scheduler/policy/{version}/shadow/plan",
+    "POST /api/scheduler/replan/preview",
     "POST /api/scheduler/routes/calculate",
     "POST /api/scheduler/runs",
     "POST /api/simulator/start",
@@ -804,9 +806,9 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 321,
-  "specOperations": 478,
-  "documentedControllerOperations": 321,
+  "controllerOperations": 322,
+  "specOperations": 479,
+  "documentedControllerOperations": 322,
   "undocumented": [],
   "unimplemented": []
 }

@@ -8168,6 +8168,29 @@ paths:
       responses:
         '200':
           description: Replay records
+  /api/scheduler/replan/preview:
+    post:
+      tags:
+        - scheduler
+        - replan
+      summary: Replan V2 preview (dry-run readonly, M03)
+      description: >
+        Build snapshot -> analyzeImpactV2 -> partial subgraph solve (PREVIEW-*,
+        not persisted) -> compare with baseline plan -> counts + metric deltas.
+        Readonly: never persists, dispatches, or mutates run state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplanPreviewRequest'
+      responses:
+        '200':
+          description: Replan preview result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplanPreviewResult'
   /api/scheduler/policy/{version}/shadow:
     post:
       tags:
@@ -14802,4 +14825,133 @@ components:
           type: array
           items:
             type: string
+      additionalProperties: false
+    ReplanPreviewRequest:
+      type: object
+      required:
+        - triggerType
+      properties:
+        triggerType:
+          type: string
+        triggerIds:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    ReplanPreviewResult:
+      type: object
+      required:
+        - readonly
+        - affectedTaskCount
+        - unchangedAssignmentCount
+        - changedAssignmentCount
+        - addedAssignmentCount
+        - removedAssignmentCount
+      properties:
+        baselinePlanId:
+          type: string
+          nullable: true
+        candidatePlanId:
+          type: string
+          nullable: true
+        readonly:
+          type: boolean
+        affectedTaskCount:
+          type: integer
+        unchangedAssignmentCount:
+          type: integer
+        changedAssignmentCount:
+          type: integer
+        addedAssignmentCount:
+          type: integer
+        removedAssignmentCount:
+          type: integer
+        latenessDelta:
+          type: number
+        travelDelta:
+          type: number
+        workloadDelta:
+          type: number
+        stationWaitDelta:
+          type: number
+        changeoverDelta:
+          type: number
+        energyRiskDelta:
+          type: number
+        riskDelta:
+          type: number
+        churnDelta:
+          type: number
+        changedAssignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanAssignmentDiff'
+      additionalProperties: false
+    PlanAssignmentDiff:
+      type: object
+      required:
+        - taskId
+        - changeTypes
+        - reasons
+      properties:
+        taskId:
+          type: string
+        changeTypes:
+          type: array
+          items:
+            type: string
+        before:
+          $ref: '#/components/schemas/AssignmentSnapshot'
+        after:
+          $ref: '#/components/schemas/AssignmentSnapshot'
+        reasons:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    AssignmentSnapshot:
+      type: object
+      required:
+        - taskId
+        - personId
+        - deviceId
+        - stationId
+        - plannedStart
+        - plannedEnd
+      properties:
+        taskId:
+          type: string
+        personId:
+          type: string
+          nullable: true
+        deviceId:
+          type: string
+          nullable: true
+        stationId:
+          type: string
+          nullable: true
+        plannedStart:
+          type: string
+          format: date-time
+          nullable: true
+        plannedEnd:
+          type: string
+          format: date-time
+          nullable: true
+        etaSeconds:
+          type: number
+        distanceMeters:
+          type: number
+        riskLevel:
+          type: string
+          nullable: true
+        routeGeometry:
+          type: array
+          items:
+            type: object
+            properties:
+              x:
+                type: number
+              y:
+                type: number
       additionalProperties: false

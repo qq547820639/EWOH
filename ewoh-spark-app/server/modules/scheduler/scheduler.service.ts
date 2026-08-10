@@ -81,6 +81,7 @@ import { PolicyReplayService } from './policy-replay.service';
 import { TaskLifecycle } from './task-lifecycle';
 import { ConstraintLoaderService } from './constraint-loader.service';
 import { CandidateEngineService } from './candidate-engine.service';
+import { ReplanPreviewService } from './replan-preview.service';
 
 /**
  * NOTE: ewoh_schedule_audit has no before_json/after_json columns in the
@@ -153,6 +154,8 @@ export class SchedulerService {
     private readonly constraintLoaderService?: ConstraintLoaderService,
     // T03 / P1-2（G7）：候选引擎（可选注入；注入后 getTaskCandidates 委托富化响应）。
     private readonly candidateEngineService?: CandidateEngineService,
+    // M03：Replan Preview（dry-run readonly；可选注入，缺失时审批 consult 不产出 preview）。
+    private readonly replanPreviewService?: ReplanPreviewService,
   ) {}
 
   async generatePlans(body?: { idempotencyKey?: string }): Promise<SchedulePlan[]> {
@@ -666,15 +669,71 @@ export class SchedulerService {
    * 2. 级联：基于最新世界状态检查路由阻断/拥塞/预占冲突，逐条触发 scoped 重排
    *    （TriggerService 冷却去抖 + 幂等去重天然防风暴）。
    * 缺失 replanCoordinatorService（测试/降级）时返回空结果。
+   *
+   * M03（08 §6）：编排 AUTO_REPLAN / HUMAN_APPROVAL——当 policy.replanApproval 判定
+   * 需人工审批（critical_event/affected_ratio/safety_critical/human_lock/churn/lateness_risk）
+   * 时，不自动落库，产出 ReplanPreview + 发 SSE `replan.approval_required`；否则走
+   * 现有 handleTrigger 自动落库 proposed（唯一写路径不变）。仅当 policy 配置
+   * replanApproval 且事件非 MANUAL 时 consult；未配置保持现状（兼容）。
    */
   async injectSchedulingEvent(
     body: SchedulingEventRequest,
     actor?: OrgContext,
-  ): Promise<{ run: SchedulingRun | null; plans: SchedulingPlanV2[]; debounced: boolean; cascaded: string[] }> {
+  ): Promise<{
+    run: SchedulingRun | null;
+    plans: SchedulingPlanV2[];
+    debounced: boolean;
+    cascaded: string[];
+    approval?: import('@shared/api.interface').ReplanApprovalDecision;
+    preview?: import('@shared/api.interface').ReplanPreviewResult | null;
+  }> {
     const ctx = this.toOrgContext(actor);
     if (!this.replanCoordinatorService) {
       return { run: null, plans: [], debounced: true, cascaded: [] };
     }
+
+    // M03：人工审批政策 consult（仅配置 replanApproval 且非 MANUAL 时）。
+    if (body.trigger !== 'MANUAL') {
+      const approval = await this.maybeConsultApproval(
+        body.trigger,
+        body.entityId ?? null,
+        ctx,
+      );
+      if (approval && approval.decision === 'HUMAN_APPROVAL_REQUIRED') {
+        const preview = await this.replanPreviewService
+          .previewReplan(body.trigger, body.entityId ? [body.entityId] : [], ctx)
+          .catch(() => null);
+        if (this.outboxService) {
+          Promise.resolve(
+            this.outboxService.enqueue(
+              'replan.approval_required',
+              body.entityId ?? 'ALL',
+              {
+                triggerType: body.trigger,
+                triggerEntityId: body.entityId ?? null,
+                reasons: approval.reasons,
+                preview: preview ?? null,
+                occurredAt: new Date().toISOString(),
+              },
+              ctx.primaryOrgId || null,
+            ),
+          ).catch((e) => {
+            this.logger.warn(
+              `replan.approval_required enqueue failed: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          });
+        }
+        return {
+          run: null,
+          plans: [],
+          debounced: false,
+          cascaded: [],
+          approval,
+          preview,
+        };
+      }
+    }
+
     const primary = await this.replanCoordinatorService.handleTrigger(
       body.trigger,
       body.entityId ?? null,
@@ -709,6 +768,37 @@ export class SchedulerService {
     await this.maybeRunShadowEvaluation(ctx);
 
     return { ...primary, cascaded };
+  }
+
+  /** M03：consult replanApproval policy；未配置 replanApproval 或 consult 失败 → null（保持现状）。 */
+  private async maybeConsultApproval(
+    triggerType: string,
+    entityId: string | null,
+    ctx: OrgContext,
+  ): Promise<import('@shared/api.interface').ReplanApprovalDecision | null> {
+    try {
+      const config = await this.policyService
+        .resolveReplanApprovalConfig()
+        .catch(() => null);
+      if (!config) return null;
+      if (!this.replanCoordinatorService) return null;
+      const impact = await this.replanCoordinatorService.analyzeImpactV2(
+        triggerType,
+        entityId ? [entityId] : [],
+        ctx,
+      );
+      return this.planService.consultReplanApproval({
+        triggerType,
+        impact,
+        preview: null,
+        ctx,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `replan approval consult failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
   }
 
   /** 事件驱动 run 计数器（影子评估节流）。 */

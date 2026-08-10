@@ -12099,6 +12099,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scheduler/replan/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replan V2 preview (dry-run readonly, M03)
+         * @description Build snapshot -> analyzeImpactV2 -> partial subgraph solve (PREVIEW-*, not persisted) -> compare with baseline plan -> counts + metric deltas. Readonly: never persists, dispatches, or mutates run state.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReplanPreviewRequest"];
+                };
+            };
+            responses: {
+                /** @description Replan preview result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReplanPreviewResult"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scheduler/policy/{version}/shadow": {
         parameters: {
             query?: never;
@@ -15205,6 +15248,53 @@ export interface components {
         ConflictPreviewRequest: {
             action?: string;
             resourceIds?: string[];
+        };
+        ReplanPreviewRequest: {
+            triggerType: string;
+            triggerIds?: string[];
+        };
+        ReplanPreviewResult: {
+            baselinePlanId?: string | null;
+            candidatePlanId?: string | null;
+            readonly: boolean;
+            affectedTaskCount: number;
+            unchangedAssignmentCount: number;
+            changedAssignmentCount: number;
+            addedAssignmentCount: number;
+            removedAssignmentCount: number;
+            latenessDelta?: number;
+            travelDelta?: number;
+            workloadDelta?: number;
+            stationWaitDelta?: number;
+            changeoverDelta?: number;
+            energyRiskDelta?: number;
+            riskDelta?: number;
+            churnDelta?: number;
+            changedAssignments?: components["schemas"]["PlanAssignmentDiff"][];
+        };
+        PlanAssignmentDiff: {
+            taskId: string;
+            changeTypes: string[];
+            before?: components["schemas"]["AssignmentSnapshot"];
+            after?: components["schemas"]["AssignmentSnapshot"];
+            reasons: string[];
+        };
+        AssignmentSnapshot: {
+            taskId: string;
+            personId: string | null;
+            deviceId: string | null;
+            stationId: string | null;
+            /** Format: date-time */
+            plannedStart: string | null;
+            /** Format: date-time */
+            plannedEnd: string | null;
+            etaSeconds?: number;
+            distanceMeters?: number;
+            riskLevel?: string | null;
+            routeGeometry?: {
+                x?: number;
+                y?: number;
+            }[];
         };
     };
     responses: {

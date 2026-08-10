@@ -18,7 +18,7 @@ import {
   ewohSchedulingPlanAssignment,
   ewohSchedulingConstraint,
 } from '@server/database/schema';
-import { eq, asc, and, isNull, or, gte } from 'drizzle-orm';
+import { eq, asc, and, inArray, desc, isNull, or, gte } from 'drizzle-orm';
 import type {
   SchedulingPlanV2,
   SchedulingAssignment,
@@ -151,6 +151,42 @@ export class PlanService {
       .orderBy(asc(ewohSchedulingPlanAssignment.taskId));
 
     return this.toPlanV2(plan, assignments);
+  }
+
+  /**
+   * M03：列出当前生效方案（active 状态 shadow/proposed/approved/dispatched/executing），
+   * 按创建时间倒序。供 ReplanPreviewService 基线对比（预览只读，不落库）。
+   */
+  async listActivePlans(): Promise<SchedulingPlanV2[]> {
+    const activeStatuses = [
+      'draft',
+      'shadow',
+      'proposed',
+      'approved',
+      'dispatched',
+      'executing',
+    ];
+    const rows = await this.db
+      .select()
+      .from(ewohSchedulePlan)
+      .where(inArray(ewohSchedulePlan.status, activeStatuses))
+      .orderBy(desc(ewohSchedulePlan.createdAt));
+    const plans: SchedulingPlanV2[] = [];
+    for (const row of rows) {
+      try {
+        const assignments = await this.db
+          .select()
+          .from(ewohSchedulingPlanAssignment)
+          .where(eq(ewohSchedulingPlanAssignment.planId, row.planId))
+          .orderBy(asc(ewohSchedulingPlanAssignment.taskId));
+        plans.push(await this.toPlanV2(row, assignments));
+      } catch (err) {
+        this.logger.warn(
+          `listActivePlans: skip ${row.planId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    return plans;
   }
 
   /**
@@ -827,5 +863,85 @@ export class PlanService {
         );
       }
     }
+  }
+
+  /**
+   * Replan V2（M03，08 §6）：自动重排 vs 人工审批政策判定（不抛错，返回明确结果）。
+   * 命中任一维度 → HUMAN_APPROVAL_REQUIRED；未命中/未配置 replanApproval → AUTO_REPLAN。
+   *
+   * 判定维度：
+   *  - critical_event（SAFETY_EVENT / ZONE_RESTRICTED 触发）
+   *  - affectedRatio = affectedTaskIds / 可调度任务数 > autoMaxAffectedRatio（缺省 0.5）
+   *  - 影响集合含 safetyCritical 任务（requireApprovalOnSafetyCritical 缺省 true）
+   *  - 预期 churnRatio = churnDelta / affected > autoMaxChurnRatio（缺省 0.4）
+   *  - latenessDelta > 0 或 riskDelta > 0（预览保守原则）
+   *  - 影响集合含人工 LOCK（snapshot.lockedAssignments；requireApprovalOnHumanLock 缺省 true）
+   */
+  async consultReplanApproval(input: {
+    triggerType: string;
+    impact: import('@shared/api.interface').ReplanImpact;
+    preview?: import('@shared/api.interface').ReplanPreviewResult | null;
+    ctx: OrgContext;
+  }): Promise<import('@shared/api.interface').ReplanApprovalDecision> {
+    const { triggerType, impact, preview, ctx } = input;
+    const config = await this.schedulingPolicyService
+      .resolveReplanApprovalConfig()
+      .catch(() => null);
+    if (!config) {
+      return { decision: 'AUTO_REPLAN', reasons: [] };
+    }
+    const reasons: string[] = [];
+
+    // 1) critical_event。
+    if (triggerType === 'SAFETY_EVENT' || triggerType === 'ZONE_RESTRICTED') {
+      reasons.push('critical_event');
+    }
+
+    const affectedSet = new Set(impact.affectedTaskIds ?? []);
+    const snapshot = await this.worldStateSnapshotService.buildSnapshot(ctx);
+    const schedulableCount = snapshot.tasks.filter((t) =>
+      ['draft', 'pending_confirm', 'pending_approval', 'pending_dispatch', 'pending', 'queued'].includes(
+        t.status,
+      ),
+    ).length;
+    const affectedRatio =
+      schedulableCount > 0 ? affectedSet.size / schedulableCount : 1;
+    if (affectedRatio > (config.autoMaxAffectedRatio ?? 0.5)) {
+      reasons.push('affected_ratio');
+    }
+
+    // 2) 含 safetyCritical 任务。
+    if (config.requireApprovalOnSafetyCritical !== false) {
+      const hasSafetyCritical = snapshot.tasks.some(
+        (t) => t.safetyCritical === true && affectedSet.has(t.id),
+      );
+      if (hasSafetyCritical) reasons.push('safety_critical');
+    }
+
+    // 3) 含人工 LOCK。
+    if (config.requireApprovalOnHumanLock !== false) {
+      const hasHumanLock = (snapshot.lockedAssignments ?? []).some((l) =>
+        affectedSet.has(l.taskId),
+      );
+      if (hasHumanLock) reasons.push('human_lock');
+    }
+
+    // 4) 预期 churn 比例 / lateness / risk 增量（需 preview）。
+    if (preview) {
+      const affectedCount = Math.max(preview.affectedTaskCount, 1);
+      const churnRatio =
+        preview.churnDelta / affectedCount;
+      if (churnRatio > (config.autoMaxChurnRatio ?? 0.4)) {
+        reasons.push('churn_ratio');
+      }
+      if (preview.latenessDelta > 0 || preview.riskDelta > 0) {
+        reasons.push('lateness_risk_delta');
+      }
+    }
+
+    return {
+      decision: reasons.length > 0 ? 'HUMAN_APPROVAL_REQUIRED' : 'AUTO_REPLAN',
+      reasons,
+    };
   }
 }

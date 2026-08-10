@@ -27,6 +27,7 @@ import { OverridePreviewService } from './override-preview.service';
 import { ShadowPolicyService } from './shadow-policy.service';
 import { PolicyActivationService } from './policy-activation.service';
 import { PolicyReplayService } from './policy-replay.service';
+import { ReplanPreviewService } from './replan-preview.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import type {
   GeneratePlansRequest,
@@ -45,6 +46,7 @@ import type {
   SchedulingConflictType,
   ConflictSeverity,
   SchedulingConflictScope,
+  ReplanPreviewRequest,
 } from '@shared/api.interface';
 
 @Controller('api/scheduler')
@@ -65,6 +67,7 @@ export class SchedulerController {
     private readonly shadowPolicyService: ShadowPolicyService,
     private readonly policyActivationService: PolicyActivationService,
     private readonly policyReplayService: PolicyReplayService,
+    private readonly replanPreviewService: ReplanPreviewService,
   ) {}
 
   /**
@@ -170,6 +173,23 @@ export class SchedulerController {
       throw new BadRequestException('trigger is required');
     }
     return this.schedulerService.injectSchedulingEvent(body, request.userContext);
+  }
+
+  /** M03：Replan Preview（dry-run readonly，不落库不派工；08 §5）。 */
+  @Post('replan/preview')
+  @HttpCode(200)
+  async previewReplan(
+    @Body() body: ReplanPreviewRequest,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    if (!body?.triggerType) {
+      throw new BadRequestException('triggerType is required');
+    }
+    return this.replanPreviewService.previewReplan(
+      body.triggerType,
+      body.triggerIds ?? [],
+      request.userContext,
+    );
   }
 
   /**

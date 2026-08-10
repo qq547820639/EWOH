@@ -1888,6 +1888,20 @@ export interface ReplanPreviewResult {
   changedAssignments: PlanAssignmentDiff[];
 }
 
+/** Replan Preview 请求（08 §5；readonly，不落库）。 */
+export interface ReplanPreviewRequest {
+  triggerType: SchedulingTrigger | string;
+  /** 触发实体 id 并集（事件/资源/route edge/zone）；缺省空数组。 */
+  triggerIds?: string[];
+}
+
+/** Replan V2 自动重排 vs 人工审批判定（08 §6）。 */
+export interface ReplanApprovalDecision {
+  decision: 'AUTO_REPLAN' | 'HUMAN_APPROVAL_REQUIRED';
+  /** 命中原因（critical_event / affected_ratio / safety_critical / human_lock / churn_ratio / lateness_risk_delta）。 */
+  reasons: string[];
+}
+
 // ============================================================================
 // Incremental Replan V2 / M01：Prediction Shadow Learning 契约（08 §11）
 // ============================================================================
