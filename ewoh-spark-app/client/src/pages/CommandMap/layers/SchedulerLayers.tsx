@@ -6,7 +6,12 @@
  */
 import React from 'react';
 import type { CommandMapAggregate } from '../hooks/useCommandMapSchedulerState';
-import type { SchedulingPlanV2 } from '@shared/api.interface';
+import type { SchedulingPlanV2, ReplanPreviewResult } from '@shared/api.interface';
+import {
+  replanChangeOverlay,
+  humanLockedTaskIds,
+} from '../replanOverlayVM';
+import { HUMAN_LOCKED_COLOR } from '../entityColors';
 
 interface LayerProps {
   state: CommandMapAggregate;
@@ -260,7 +265,8 @@ export function RiskLayer({ state }: LayerProps): React.ReactElement | null {
 export function SchedulerLayersOverlay({
   state,
   selectedPlanId,
-}: LayerProps & { selectedPlanId?: string | null }): React.ReactElement | null {
+  replanPreview,
+}: LayerProps & { selectedPlanId?: string | null; replanPreview?: ReplanPreviewResult | null }): React.ReactElement | null {
   const active = new Set(state.ui.activeLayers);
   const layers: React.ReactElement[] = [<BaseLayer key="base" state={state} />];
   if (active.has('task')) layers.push(<TaskLayer key="task" state={state} />);
@@ -272,7 +278,67 @@ export function SchedulerLayersOverlay({
   if (active.has('route')) layers.push(<RouteLayer key="route" state={state} />);
   if (active.has('conflict')) layers.push(<ConflictLayer key="conflict" state={state} />);
   if (active.has('risk')) layers.push(<RiskLayer key="risk" state={state} />);
+  if (active.has('changed-by-replan'))
+    layers.push(<ReplanChangeLayer key="replan-change" state={state} replanPreview={replanPreview} />);
+  if (active.has('human-locked'))
+    layers.push(<HumanLockedLayer key="human-locked" state={state} />);
   return <>{layers}</>;
+}
+
+/** M05：changed-by-replan overlay——由 ReplanPreviewResult.changedAssignments 派生 taskId 集合着色（08 §10）。 */
+export function ReplanChangeLayer({
+  state,
+  replanPreview,
+}: LayerProps & { replanPreview?: ReplanPreviewResult | null }): React.ReactElement | null {
+  const overlay = replanChangeOverlay(replanPreview);
+  if (overlay.size === 0) return EMPTY;
+  const s = state.snapshot;
+  if (!s) return EMPTY;
+  return (
+    <g data-layer="changed-by-replan">
+      {Array.from(overlay.entries()).map(([taskId, item]) => {
+        const st = s.stations.find((x) => x.id === s.tasks.find((t) => t.id === taskId)?.stationId);
+        const pt = st
+          ? { x: st.x, y: st.y }
+          : (() => {
+              const t = s.tasks.find((x) => x.id === taskId);
+              if (!t) return null;
+              const st2 = s.stations.find((x) => x.id === t.stationId);
+              return st2 ? { x: st2.x, y: st2.y } : null;
+            })();
+        if (!pt) return null;
+        return (
+          <g key={`rc-${taskId}`} transform={`translate(${pt.x} ${pt.y})`}>
+            <circle r={8} fill="none" stroke={item.color} strokeWidth={2} strokeDasharray="3 2" />
+            <title>{`${taskId} ${item.status} (${item.changeTypes.join(',')})`}</title>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/** M05：human-locked overlay——snapshot.lockedAssignments + LOCKED_* 约束高亮（08 §10）。 */
+export function HumanLockedLayer({ state }: LayerProps): React.ReactElement | null {
+  const s = state.snapshot;
+  if (!s) return EMPTY;
+  const locked = humanLockedTaskIds(s);
+  if (locked.size === 0) return EMPTY;
+  return (
+    <g data-layer="human-locked">
+      {Array.from(locked).map((taskId) => {
+        const t = s.tasks.find((x) => x.id === taskId);
+        const st = s.stations.find((x) => x.id === t?.stationId);
+        if (!st) return null;
+        return (
+          <g key={`hl-${taskId}`} transform={`translate(${st.x} ${st.y})`}>
+            <rect x={-6} y={-6} width={12} height={12} rx={2} fill="none" stroke={HUMAN_LOCKED_COLOR} strokeWidth={2} />
+            <title>{`${taskId} human-locked`}</title>
+          </g>
+        );
+      })}
+    </g>
+  );
 }
 
 export interface AggregateViewBox {

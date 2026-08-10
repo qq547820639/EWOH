@@ -6,13 +6,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getActivePlans, comparePlansV2 } from '@client/src/api/scheduler';
-import type { SchedulingPlanV2, PlanCompareResult } from '@shared/api.interface';
+import type { SchedulingPlanV2, PlanCompareResult, ReplanPreviewResult } from '@shared/api.interface';
 import type { PlanCompareMode, PlanCompareUiState } from '../vm/planCompareVM';
 
 interface PlanComparePanelProps {
   ui: PlanCompareUiState;
   onUiChange: (next: PlanCompareUiState) => void;
   onOpenDiff: (taskId: string) => void;
+  /** M05：ReplanPreview 摘要（dry-run 候选差异；缺省不展示）。 */
+  replanPreview?: ReplanPreviewResult | null;
 }
 
 const MODE_LABEL: Record<PlanCompareMode, string> = {
@@ -70,6 +72,7 @@ export function PlanComparePanel({
   ui,
   onUiChange,
   onOpenDiff,
+  replanPreview,
 }: PlanComparePanelProps): React.ReactElement {
   const { data: plansData } = useQuery<SchedulingPlanV2[]>({
     queryKey: ['scheduler-active-plans'],
@@ -118,6 +121,38 @@ export function PlanComparePanel({
         <span className="text-[11px] font-semibold text-white/80">方案对比</span>
         <span className="text-[9px] text-white/40">后端权威 Diff</span>
       </div>
+
+      {/* M05：Replan Preview 摘要（dry-run readonly；Delta 来自服务端 ReplanPreviewService） */}
+      {replanPreview && (
+        <div className="rounded border border-cyan-500/20 bg-cyan-500/5 p-1.5">
+          <div className="text-[9px] font-semibold text-cyan-300">Replan 预览（只读）</div>
+          <div className="mt-1 grid grid-cols-4 gap-1 text-center text-[9px]">
+            <div>
+              <div className="font-bold text-white/80">{replanPreview.affectedTaskCount}</div>
+              <div className="text-white/40">影响</div>
+            </div>
+            <div>
+              <div className="font-bold text-emerald-400">{replanPreview.changedAssignmentCount}</div>
+              <div className="text-white/40">变更</div>
+            </div>
+            <div>
+              <div className="font-bold text-white/80">{replanPreview.unchangedAssignmentCount}</div>
+              <div className="text-white/40">不变</div>
+            </div>
+            <div>
+              <div className="font-bold text-white/80">{(replanPreview.churnDelta ?? 0).toFixed(2)}</div>
+              <div className="text-white/40">churn</div>
+            </div>
+          </div>
+          <div className="mt-1 text-[8px] text-white/40">
+            lateness {(replanPreview.latenessDelta ?? 0).toFixed(1)} · travel{' '}
+            {(replanPreview.travelDelta ?? 0).toFixed(1)} · workload{' '}
+            {(replanPreview.workloadDelta ?? 0).toFixed(2)} · wait{' '}
+            {(replanPreview.stationWaitDelta ?? 0).toFixed(1)} · risk{' '}
+            {(replanPreview.riskDelta ?? 0).toFixed(2)}
+          </div>
+        </div>
+      )}
 
       {/* 方案选择 */}
       <div className="space-y-1">

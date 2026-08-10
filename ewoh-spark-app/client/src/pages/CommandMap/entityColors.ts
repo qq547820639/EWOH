@@ -140,3 +140,30 @@ export function resourceStatusColor(status?: string): string {
       return '#34d399';
   }
 }
+
+// ============================================================================
+// M05：Replan 变更状态调色板（08 §10：changed-by-replan overlay）
+// ============================================================================
+
+/** Replan 变更状态（UNCHANGED/MOVED/ADDED/REMOVED/LOCKED）→ 展示色。 */
+export type ReplanChangeStatus = 'UNCHANGED' | 'MOVED' | 'ADDED' | 'REMOVED' | 'LOCKED';
+
+export function replanChangeColor(status: ReplanChangeStatus): string {
+  switch (status) {
+    case 'MOVED':
+      return '#f59e0b'; // amber：任务被重排移动
+    case 'ADDED':
+      return '#22c55e'; // green：候选新增
+    case 'REMOVED':
+      return '#ef4444'; // red：候选移除
+    case 'LOCKED':
+      return '#a855f7'; // purple：人工锁定
+    case 'UNCHANGED':
+    default:
+      return '#38bdf8'; // sky：未变更
+  }
+}
+
+/** 人工锁定（snapshot.lockedAssignments + LOCKED_* 约束）高亮色。 */
+export const HUMAN_LOCKED_COLOR = '#a855f7';
+

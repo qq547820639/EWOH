@@ -21,7 +21,10 @@ export type CommandMapLayer =
   | 'plan'
   | 'route'
   | 'conflict'
-  | 'risk';
+  | 'risk'
+  // M05：Replan 叠加层（08 §10）。
+  | 'changed-by-replan'
+  | 'human-locked';
 
 export type PanelMode = 'schedule' | 'conflict' | 'override' | 'resource' | 'none';
 
