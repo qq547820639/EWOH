@@ -907,6 +907,11 @@ export const ewohDevice = pgTable("ewoh_device", {
    * @type { Array<{ startMs: number; endMs: number }> }
    */
   availableWindows: jsonb("available_windows").default([]),
+  // --- Command Map 增量 (standalone_027_resource_time_windows, Phase 1 / P1-A) ---
+  /** 维护开始时间（epoch ms；null=无维护计划）。 */
+  maintenanceStartMs: bigint("maintenance_start_ms", { mode: 'number' }),
+  /** 维护结束时间（epoch ms；null=无维护计划）。 */
+  maintenanceEndMs: bigint("maintenance_end_ms", { mode: 'number' }),
   // --- Command Map 增量 (standalone_023, Phase 0 / P0-3) ---
   /** 设备位置坐标类型：FACTORY_CARTESIAN / WGS84 / UNKNOWN（location_lat/lng 语义）。 */
   locationCoordinateType: varchar("location_coordinate_type", { length: 20 }).notNull().default("FACTORY_CARTESIAN"),

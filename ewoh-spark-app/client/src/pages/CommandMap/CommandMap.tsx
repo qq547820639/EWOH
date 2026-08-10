@@ -42,6 +42,7 @@ import type {
   RouteGraph,
   TaskCandidatesResponse,
   DecisionTrace,
+  SchedulingContextResponse,
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { queryKeys } from '@client/src/hooks/queryKeys';
@@ -62,7 +63,7 @@ import DataStates from '../../components/DataStates';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useCommandMapSchedulerState } from './hooks/useCommandMapSchedulerState';
 import { SchedulerRealtimeProvider, useSchedulerRealtime } from '@client/src/scheduler/SchedulerRealtimeProvider';
-import type { SchedulerStreamStatusV2 } from './hooks/schedulerRealtimeCore';
+import { isContextStale, type SchedulerStreamStatusV2 } from './hooks/schedulerRealtimeCore';
 import { SchedulerLayersOverlay, computeAggregateViewBox } from './layers/SchedulerLayers';
 import { PlanCompareLayer } from './layers/PlanCompareLayer';
 import { planCompareMapVM, extractUnchangedTasks, DEFAULT_PLAN_COMPARE_UI, type PlanCompareUiState } from './vm/planCompareVM';
@@ -109,25 +110,54 @@ const REALTIME_STATUS_V2_META: Record<SchedulerStreamStatusV2, { label: string; 
   OFFLINE: { label: '离线', cls: 'bg-red-500/20 text-red-400 border-red-500/30' },
 };
 
-function SchedulerRealtimeBadge() {
+function SchedulerRealtimeBadge({
+  context,
+  contextStale,
+}: {
+  context: SchedulingContextResponse | null;
+  contextStale: boolean;
+}) {
   const rt = useSchedulerRealtime();
   const meta = REALTIME_STATUS_V2_META[rt.statusV2];
   const lastTime = rt.lastEventTime
     ? new Date(rt.lastEventTime).toLocaleTimeString('zh-CN', { hour12: false })
     : '—';
+  const asOfTime = context?.sourceTimestamp
+    ? new Date(context.sourceTimestamp).toLocaleTimeString('zh-CN', { hour12: false })
+    : null;
   return (
     <div
       className="absolute right-2 top-2 z-40 flex items-center gap-1.5 rounded-md border border-white/10 bg-[hsl(220_14%_14%)]/95 px-2 py-1 text-[10px] text-white/80 shadow-lg"
       title="调度实时连接状态"
     >
       <span className={`rounded border px-1 font-medium ${meta.cls}`}>{meta.label}</span>
+      {contextStale && (
+        <span
+          className="rounded border border-red-500/50 bg-red-500/20 px-1 font-bold text-red-400"
+          title="活跃方案与统一调度上下文（/api/scheduler/context）版本不一致，可能展示混合版本数据"
+        >
+          STALE CONTEXT
+        </span>
+      )}
       <span className="tabular-nums text-white/60">seq {rt.lastSequence}</span>
       <span className="tabular-nums text-white/60" title="最近事件时间">
         {lastTime}
       </span>
-      {rt.snapshotVersion && (
+      {context ? (
+        <span
+          className="tabular-nums text-white/60"
+          title={`统一调度上下文：asOf ${context.sourceTimestamp} · 快照 v${context.snapshotVersion} · 资源 v${context.resourceVersion} · 路由图 v${context.routeGraphVersion} · 策略 v${context.policyVersion}`}
+        >
+          S{context.snapshotVersion} R{context.resourceVersion} G{context.routeGraphVersion} P{context.policyVersion}
+        </span>
+      ) : rt.snapshotVersion ? (
         <span className="text-white/60" title="快照版本">
           v{rt.snapshotVersion}
+        </span>
+      ) : null}
+      {asOfTime && (
+        <span className="tabular-nums text-white/60" title={`asOf ${context?.sourceTimestamp ?? ''}`}>
+          asOf {asOfTime}
         </span>
       )}
     </div>
@@ -213,6 +243,13 @@ const CommandMap = (): React.ReactElement => {
   const selectedPlanId = ui.selectedPlanId;
   // 当前选中方案由 ui.selectedPlanId 派生：无效/缺失 → null，绝不回退 plans[0]。
   const activePlan = schedulerState.plans.find((p) => p.planId === selectedPlanId) ?? null;
+  // P1-D：统一调度上下文（版本边界 + dataQuality）+ STALE CONTEXT 判定。
+  // 任一活跃方案（含选中方案）与 context.snapshotVersion 不一致 → 醒目标记，不静默混合。
+  const schedulerContext = schedulerState.context ?? null;
+  const contextStale = useMemo(
+    () => isContextStale({ context: schedulerContext, plans: schedulerState.plans, activePlan }),
+    [schedulerContext, schedulerState.plans, activePlan],
+  );
 
   // Phase 4 / P4-COMPARE：对比结果（后端权威 diff）+ 地图 VM。
   const compareResultQuery = useQueryCompare<PlanCompareResult | null>({
@@ -1155,7 +1192,7 @@ const CommandMap = (): React.ReactElement => {
           </div>
         </div>
       )}
-      <SchedulerRealtimeBadge />
+      <SchedulerRealtimeBadge context={schedulerContext} contextStale={contextStale} />
     </div>
     </SchedulerRealtimeProvider>
   );

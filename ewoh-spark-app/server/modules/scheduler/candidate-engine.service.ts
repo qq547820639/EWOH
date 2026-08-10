@@ -235,12 +235,17 @@ export class CandidateEngineService {
     const safetyBlockedPersonIds = snapshot.safetyBlockedPersonIds ?? [];
     const forbiddenZones = (snapshot.forbiddenZones ?? []).map((f) => f.zoneId);
 
-    // station 维度索引（capability + capacity）。
+    // station 维度索引（capability + capacity + P1-A availableWindows）。
     const stationCapabilitiesById = new Map<string, string[]>();
     const stationCapacityById = new Map<string, number | null>();
+    const stationAvailableWindowsById = new Map<
+      string,
+      Array<{ startMs: number; endMs: number }>
+    >();
     for (const s of snapshot.stations) {
       stationCapabilitiesById.set(s.id, s.capabilities ?? []);
       stationCapacityById.set(s.id, s.capacity ?? null);
+      stationAvailableWindowsById.set(s.id, s.availableWindows ?? []);
     }
 
     const candidatePersons = snapshot.persons.filter(
@@ -324,6 +329,8 @@ export class CandidateEngineService {
               stationCapacityById,
               stationCapabilitiesById,
               bookedStationCounts,
+              // P1-A：候选工位可用窗口（正空间交集；无数据不限制）。
+              stationAvailableWindowsById,
             },
             routeInfeasible: stationRouteInfeasible,
             mustFinishByMs,
@@ -455,19 +462,32 @@ export class CandidateEngineService {
     return options;
   }
 
-  /** 时间窗（当前 now → horizon；有候选时取候选 start/end 范围）。 */
+  /**
+   * 任务级时间窗（P1-A 真实交集起点）：Task Window ∩ Horizon。
+   * - Task Window：earliestStartMs / dueAtMs（P1-T2 真实列）优先，回退 planStart/planEnd；
+   * - Horizon：config.horizonMinutes（缺省 480min）。
+   * 交集为空（如任务窗口已过 horizon）→ 返回空数组（不可派，不伪造窗口）。
+   * 资源维度的逐候选交集（Person/Device/Station 窗口、维护窗、容量）在
+   * EligibilityService.check（4g/4h）中按候选判定；shift 无时间语义（schema 仅 nullable
+   * 字符串）不参与硬交集——禁止用字符串猜班次。
+   */
   private buildTimeWindows(
     task: WorldStateSnapshot['tasks'][number],
     state: WorldStateSnapshot,
     horizonMinutes?: number,
   ): Array<{ startMs: number; endMs: number }> {
     const now = Date.now();
-    if (task.planStart && task.planEnd) {
-      return [
-        { startMs: Date.parse(task.planStart), endMs: Date.parse(task.planEnd) },
-      ];
-    }
-    return [{ startMs: now, endMs: now + (horizonMinutes ?? 480) * 60 * 1000 }];
+    const horizonEnd = now + (horizonMinutes ?? 480) * 60 * 1000;
+    const taskLo =
+      task.earliestStartMs ??
+      (task.planStart ? Date.parse(task.planStart) : null) ??
+      now;
+    const taskHi =
+      task.dueAtMs ?? (task.planEnd ? Date.parse(task.planEnd) : null) ?? horizonEnd;
+    const lo = Math.max(now, taskLo);
+    const hi = Math.min(horizonEnd, taskHi);
+    if (hi <= lo) return [];
+    return [{ startMs: lo, endMs: hi }];
   }
 
   /** 汇总结构化拒绝原因（eligibility + 路由 + mustFinishBy 硬截止）。 */
@@ -481,6 +501,19 @@ export class CandidateEngineService {
     endMs: number;
   }): CandidateRejectReason[] {
     const { person, task, device, ctx, routeInfeasible, mustFinishByMs, endMs } = input;
+    // P1-B：投影层 source 为可选超集字段（WorldStateSnapshot 形状未含）；此处类型断言透传。
+    const personSource = (
+      person as WorldStateSnapshot['persons'][number] & {
+        source?: 'AUTHORITATIVE' | 'DERIVED';
+        availableWindows?: Array<{ startMs: number; endMs: number }>;
+      }
+    );
+    const deviceSource = device
+      ? (device as WorldStateSnapshot['devices'][number] & {
+          source?: 'AUTHORITATIVE' | 'DERIVED';
+          maintenanceWindows?: Array<{ startMs: number; endMs: number }>;
+        })
+      : null;
     const eligibility = this.eligibilityService.check(
       {
         id: person.id,
@@ -492,6 +525,10 @@ export class CandidateEngineService {
         fatigueLevel: person.fatigueLevel,
         healthStatus: person.healthStatus,
         certificationExpiry: person.certificationExpiry ?? [],
+        // P1-A/P1-B：可用窗口 + 新鲜度 + 来源维度（缺数据不伪造/不误伤）。
+        availableWindows: personSource.availableWindows ?? [],
+        dataQuality: person.dataQuality,
+        source: personSource.source,
       },
       {
         id: task.id,
@@ -505,6 +542,10 @@ export class CandidateEngineService {
         requiredDeviceCapabilities: task.requiredDeviceCapabilities,
         requiredStationCapabilities: task.requiredStationCapabilities,
         candidateStations: task.candidateStations,
+        // P1-A/P1-B：Task Window 边界 + safety-critical fail-close 开关。
+        earliestStartMs: task.earliestStartMs ?? null,
+        dueAtMs: task.dueAtMs ?? null,
+        safetyCritical: task.safetyCritical,
       },
       device
         ? {
@@ -513,6 +554,11 @@ export class CandidateEngineService {
             online: device.online,
             status: device.status,
             capabilities: device.capabilities ?? [],
+            // P1-A/P1-B：可用/维护窗口 + 新鲜度 + 来源维度。
+            availableWindows: device.availableWindows ?? [],
+            maintenanceWindows: deviceSource?.maintenanceWindows ?? [],
+            dataQuality: device.dataQuality,
+            source: deviceSource?.source,
           }
         : null,
       ctx,

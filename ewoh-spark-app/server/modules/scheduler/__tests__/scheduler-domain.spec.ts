@@ -1,6 +1,7 @@
 import { EligibilityService } from '../eligibility.service';
 import { SolverService, type SolverConstraint, type SolveOptions } from '../solver.service';
 import { RoutingService } from '../routing.service';
+import { SchedulingPolicyService } from '../scheduling-policy.service';
 import { WorldStateSnapshotService } from '../world-state.service';
 import type { WorldStateSnapshot, SchedulingPolicy } from '@shared/api.interface';
 import {
@@ -146,6 +147,8 @@ function makeSolver() {
         agingBaseMs: 3_600_000,
       },
     }),
+    // P1-C：resolveProfiles 与生产逻辑一致（纯函数，无 DB 依赖）。
+    resolveProfiles: SchedulingPolicyService.prototype.resolveProfiles,
   };
   const routeCostProvider = {
     estimate: jest.fn().mockResolvedValue({

@@ -10,6 +10,7 @@ import type {
   SchedulingPlanV2,
   ResourceState,
   RouteGraph,
+  SchedulingContextResponse,
 } from '@shared/api.interface';
 
 export type CommandMapLayer =
@@ -56,6 +57,13 @@ export interface CommandMapAggregate {
   ui: CommandMapUIState;
   loading: boolean;
   hasError: boolean;
+  /**
+   * P1-D：统一调度上下文（GET /api/scheduler/context，Phase 0 交付）。
+   * 版本边界（snapshotVersion/resourceVersion/routeGraphVersion/policyVersion/
+   * eventSequence/sourceTimestamp）+ dataQuality；未拉到 → null。
+   * 可选扩展字段，不改变既有消费方形状。
+   */
+  context?: SchedulingContextResponse | null;
 }
 
 export const DEFAULT_UI_STATE: CommandMapUIState = {
@@ -88,6 +96,7 @@ export function buildCommandMapState(params: {
   plans: SchedulingPlanV2[] | undefined;
   routes: RouteGraph | null | undefined;
   conflicts: Parameters<typeof conflictVM>[0] | undefined;
+  context?: SchedulingContextResponse | null;
   ui: CommandMapUIState;
   loading: boolean;
   hasError: boolean;
@@ -98,6 +107,7 @@ export function buildCommandMapState(params: {
     plans: params.plans ?? [],
     routes: params.routes ?? null,
     conflicts: conflictVM(params.conflicts ?? []),
+    context: params.context ?? null,
     ui: params.ui,
     loading: params.loading,
     hasError: params.hasError,

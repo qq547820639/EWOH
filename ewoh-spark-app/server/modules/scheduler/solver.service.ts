@@ -1,5 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import type {
+  ObjectiveWeights,
   SchedulingConstraint,
   SchedulingPlanV2,
   SchedulingPolicy,
@@ -76,82 +77,63 @@ export class SolverService {
     );
   }
 
-  /** 用三种策略权重预设生成方案 A/B/C（权重来自版本化 SchedulingPolicy，乘预设缩放系数）。 */
+  /**
+   * 用版本化目标 Profile 生成方案变体（P1-C/§六）。
+   * 从 SchedulingPolicyConfig.profiles 读取（替代硬编码数组）；缺省兼容既有 A/B/C：
+   * A=ON_TIME（准时优先）、B=WORKLOAD_BALANCE（负荷均衡）、C=BALANCED（综合平衡）。
+   * planId 后缀（A/B/C）保持不变，createRun 的 objectiveProfile 筛选无需改动。
+   */
   async solveVariants(
     snapshot: WorldStateSnapshot,
     constraints: SolverConstraint[],
     opts: SolveOptions,
   ): Promise<SchedulingPlanV2[]> {
     const base = await this.policyService.getActivePolicy();
-    // 预设权重画像：仅作用于版本化策略已有的权重域（不新增第 4 个领域），
-    // 实际投放目标权重 = 基策略对应字段 × 预设缩放系数，保证三变体真正不同且可解释。
-    const profiles: Array<{
-      suffix: string;
-      label: string;
-      reason: string;
-      scale: Partial<
-        Pick<
-          SchedulingPolicy,
-          | 'latenessWeight'
-          | 'walkingWeight'
-          | 'workloadBalanceWeight'
-          | 'stationWaitWeight'
-          | 'changeCostWeight'
-          | 'riskWeight'
-          | 'energyWeight'
-        >
-      >;
-    }> = [
-      {
-        suffix: 'A',
-        label: '准时优先',
-        reason: '准时优先：latenessWeight×3、changeCostWeight×0.5',
-        scale: { latenessWeight: 3, changeCostWeight: 0.5 },
-      },
-      {
-        suffix: 'B',
-        label: '负荷均衡',
-        reason: '负荷均衡：workloadBalanceWeight×3、walkingWeight×1.5、latenessWeight×0.5',
-        scale: {
-          workloadBalanceWeight: 3,
-          walkingWeight: 1.5,
-          latenessWeight: 0.5,
-        },
-      },
-      {
-        suffix: 'C',
-        label: '综合平衡',
-        reason: '综合平衡：沿用版本化策略全部权重（不缩放）',
-        scale: {},
-      },
+    const config = await this.policyService.getConfig();
+    // 版本化目标 Profile（配置缺省回退内置预设；profileId → 权重缩放，soft objective 专用）。
+    const resolved = this.policyService.resolveProfiles(config);
+    // 变体投放槽：保持公共行为（A/B/C 三变体；suffix 兼容 createRun 的 planId 后缀筛选）。
+    const variantSlots: Array<{ suffix: string; profileId: string }> = [
+      { suffix: 'A', profileId: 'ON_TIME' },
+      { suffix: 'B', profileId: 'WORKLOAD_BALANCE' },
+      { suffix: 'C', profileId: 'BALANCED' },
     ];
+    const profiles = variantSlots.map((slot) => {
+      const profile = resolved[slot.profileId] ?? resolved.BALANCED;
+      const scale = profile.scale;
+      const scaleKeys = Object.keys(scale);
+      const reason =
+        scaleKeys.length === 0
+          ? `${profile.label}：沿用版本化策略全部权重（不缩放）`
+          : `${profile.label}：${scaleKeys.map((k) => `${k}×${scale[k as keyof ObjectiveWeights]}`).join('、')}`;
+      return { suffix: slot.suffix, profileId: slot.profileId, label: profile.label, scale, reason };
+    });
 
     const plans: SchedulingPlanV2[] = [];
     for (const profile of profiles) {
       const variantPolicy: SchedulingPolicy = {
         ...base,
-        // Phase 2 / P2-T2：8 权重权威缩放（weights 与兼容旧字段同步缩放）。
+        // Phase 2 / P2-T2：8 权重权威缩放（weights 与兼容旧字段同步缩放；profile 只缩放 soft objective）。
         weights: {
-          lateness: base.weights.lateness * (profile.scale.latenessWeight ?? 1),
-          travel: base.weights.travel * (profile.scale.walkingWeight ?? 1),
-          wait: base.weights.wait,
-          workload:
-            base.weights.workload * (profile.scale.workloadBalanceWeight ?? 1),
-          station: base.weights.station,
-          change: base.weights.change * (profile.scale.changeCostWeight ?? 1),
-          risk: base.weights.risk,
-          energy: base.weights.energy,
+          lateness: base.weights.lateness * (profile.scale.lateness ?? 1),
+          travel: base.weights.travel * (profile.scale.travel ?? 1),
+          wait: base.weights.wait * (profile.scale.wait ?? 1),
+          workload: base.weights.workload * (profile.scale.workload ?? 1),
+          station: base.weights.station * (profile.scale.station ?? 1),
+          change: base.weights.change * (profile.scale.change ?? 1),
+          risk: base.weights.risk * (profile.scale.risk ?? 1),
+          energy: base.weights.energy * (profile.scale.energy ?? 1),
         },
-        latenessWeight: base.latenessWeight * (profile.scale.latenessWeight ?? 1),
-        walkingWeight: base.walkingWeight * (profile.scale.walkingWeight ?? 1),
+        latenessWeight: base.latenessWeight * (profile.scale.lateness ?? 1),
+        walkingWeight: base.walkingWeight * (profile.scale.travel ?? 1),
         workloadBalanceWeight:
-          base.workloadBalanceWeight * (profile.scale.workloadBalanceWeight ?? 1),
+          base.workloadBalanceWeight * (profile.scale.workload ?? 1),
         stationWaitWeight:
-          base.stationWaitWeight * (profile.scale.stationWaitWeight ?? 1),
+          base.stationWaitWeight * (profile.scale.wait ?? 1),
         changeCostWeight:
-          base.changeCostWeight * (profile.scale.changeCostWeight ?? 1),
-        riskWeight: base.riskWeight * (profile.scale.riskWeight ?? 1),
-        energyWeight: base.energyWeight * (profile.scale.energyWeight ?? 1),
+          base.changeCostWeight * (profile.scale.change ?? 1),
+        riskWeight: base.riskWeight * (profile.scale.risk ?? 1),
+        energyWeight: base.energyWeight * (profile.scale.energy ?? 1),
       };
       const plan = await this.solve(snapshot, constraints, {
         ...opts,
@@ -165,6 +147,9 @@ export class SolverService {
         variant: {
           label: profile.label,
           reason: profile.reason,
+          // P1-C（§六）：profileId/profileVersion 一并持久化（DB 无独立列，随 baselineDelta 落库可审计）。
+          profileId: profile.profileId,
+          profileVersion: base.version,
           weights: {
             latenessWeight: variantPolicy.latenessWeight,
             workloadBalanceWeight: variantPolicy.workloadBalanceWeight,
@@ -173,6 +158,11 @@ export class SolverService {
           },
         },
       };
+      // P1-C（§六）：plan 记录版本化 Profile（profileId/profileVersion，与 weights 一起确定性重放）。
+      plan.profileId = profile.profileId;
+      plan.profileVersion = base.version;
+      // Phase 2 / P2-T2：实际投放的 8 权重快照（persistPlan 落库 weightsJson；可审计/确定性重放）。
+      plan.weights = variantPolicy.weights;
       plans.push(plan);
     }
     return plans;

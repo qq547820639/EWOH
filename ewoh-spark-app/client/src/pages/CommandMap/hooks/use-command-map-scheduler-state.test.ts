@@ -73,6 +73,64 @@ describe('buildCommandMapState（聚合选择器）', () => {
   });
 });
 
+describe('buildCommandMapState（P1-D：统一调度上下文透出）', () => {
+  it('context 透出版本字段 + dataQuality，既有字段不受影响', () => {
+    const context = {
+      snapshotVersion: 'WS-9',
+      resourceVersion: '9',
+      routeGraphVersion: '9',
+      policyVersion: 3,
+      eventSequence: 42,
+      sourceTimestamp: '2026-08-10T02:00:00.000Z',
+      tasks: [],
+      resources: [],
+      reservations: [],
+      constraints: [],
+      dataQuality: { staleResourceCount: 0, unknownLocationCount: 1, degradedRouteCount: 2, totalResources: 5 },
+    };
+    const state = buildCommandMapState({
+      snapshot: SNAPSHOT,
+      resources: [],
+      plans: [],
+      routes: null,
+      conflicts: [],
+      context,
+      ui: DEFAULT_UI_STATE,
+      loading: false,
+      hasError: false,
+    });
+    expect(state.context).toEqual(context);
+    expect(state.context?.snapshotVersion).toBe('WS-9');
+    expect(state.context?.resourceVersion).toBe('9');
+    expect(state.context?.policyVersion).toBe(3);
+    expect(state.context?.dataQuality).toEqual({
+      staleResourceCount: 0,
+      unknownLocationCount: 1,
+      degradedRouteCount: 2,
+      totalResources: 5,
+    });
+    // 既有字段形状不变。
+    expect(state.snapshot?.snapshotVersion).toBe('WS-1');
+    expect(state.plans).toEqual([]);
+    expect(state.loading).toBe(false);
+    expect(state.hasError).toBe(false);
+  });
+
+  it('context 未提供（未拉到/加载中）→ null（安全降级，不虚构版本）', () => {
+    const state = buildCommandMapState({
+      snapshot: null,
+      resources: undefined,
+      plans: undefined,
+      routes: undefined,
+      conflicts: undefined,
+      ui: DEFAULT_UI_STATE,
+      loading: true,
+      hasError: false,
+    });
+    expect(state.context).toBeNull();
+  });
+});
+
 describe('applyUiPatch（updateUi 底层合并，selection owner）', () => {
   it('局部 patch 更新指定 ui 字段，其余字段原样保留', () => {
     const prev: Parameters<typeof applyUiPatch>[0] = {

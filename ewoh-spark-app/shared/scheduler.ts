@@ -227,6 +227,11 @@ export interface PlanOverrideRequest {
   actions: PlanOverrideAction[];
   operator?: string;
   reason?: string;
+  // --- Phase 1 / P1-E（人工干预版本 CAS，§九；可选，缺省=现状向后兼容） ---
+  /** 期望的目标方案 version；提供且与当前不一致 → STALE_PLAN（409，不自动应用）。 */
+  expectedPlanVersion?: number;
+  /** 期望的目标方案 snapshotVersion；提供且与当前不一致 → STALE_SNAPSHOT（409，不自动应用）。 */
+  expectedSnapshotVersion?: string;
 }
 
 export interface PlanOverrideDiffSummary {
@@ -440,8 +445,19 @@ export interface ResourceState {
   freshnessMs?: number | null;
   /** 数据质量：FRESH / STALE / UNKNOWN。 */
   dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
+  /**
+   * 字段来源维度（与 dataQuality 新鲜度正交）：AUTHORITATIVE=真实列/权威来源；
+   * DERIVED=派生/兜底来源（如设备能力来自型号白名单、safetyCritical 派生等）。
+   * safety-critical 候选评估对该维度 fail-close（derived_data_fail_closed）。
+   */
+  source?: 'AUTHORITATIVE' | 'DERIVED';
   /** 判定 dataQuality 所用的 FreshnessPolicy 版本（可审计；无则 null）。 */
   freshnessPolicyVersion?: number | null;
+  /**
+   * 设备维护时间窗（ewoh_device.maintenance_start_ms / maintenance_end_ms 真实列）。
+   * device 专用；两列均无数据（NULL）→ 不填充/空数组（不伪造窗口，不产生约束）。
+   */
+  maintenanceWindows?: Array<{ startMs: number; endMs: number }>;
   /** 当前任务 id（person/device 有背衬列时填充，无则 null，不虚构）。 */
   currentTask?: string | null;
   /** 班组（person 有 team_name 列，其余资源无则 null）。 */
@@ -1007,6 +1023,11 @@ export interface SchedulingPlanV2 {
   scoreBreakdown?: ScoreBreakdown;
   /** 目标权重快照（Phase 2 / P2-T2）：persistPlan 落库实际使用的 8 权重，保证确定性 replay。 */
   weights?: ObjectiveWeights;
+  // --- Command Map 增量（Phase 1 / P1-C，§六）：版本化目标 Profile（可审计/确定性 replay） ---
+  /** 求解所用版本化目标 Profile id（如 ON_TIME / WORKLOAD_BALANCE / BALANCED；缺省不标注）。 */
+  profileId?: string;
+  /** 求解所用 Profile 版本（对应 policy version / configVersion；与 weights 一起确定性重放）。 */
+  profileVersion?: number;
   // --- Command Map 增量（Phase 0 / P0-2）：计划约束快照（确定性 replay + 审计） ---
   /** 求解所用 effective constraints 快照（standalone_023 constraints_json）。 */
   constraints?: SchedulingConstraint[];
@@ -1174,6 +1195,13 @@ export interface SchedulingPolicyConfig {
     changeCost?: number;
     energy?: number;
   };
+  // --- Command Map 增量（Phase 1 / P1-C，§六）：版本化目标 Profile（可选，缺省=内置 6 预设） ---
+  /**
+   * 版本化目标 Profile：profileId → 权重缩放（soft objective 专用，绝不改变 hard constraints）。
+   * 预设：ON_TIME / PRODUCTION_IMPACT / WORKLOAD_BALANCE / TRAVEL_MIN / MIN_CHURN / BALANCED；
+   * BALANCED=不缩放（缺省兜底）。solveVariants 缺省投放 A=ON_TIME、B=WORKLOAD_BALANCE、C=BALANCED。
+   */
+  profiles?: Record<string, { label: string; scale: Partial<ObjectiveWeights> }>;
   // --- RouteCost 三级策略（§5.4；可选，缺省 DEGRADED=现状行为，保证回归） ---
   /** 路线成本模式（§5.4 三级策略）：STRICT=route graph 不可达即候选 infeasible；DEGRADED=euclidean 显式降级+标记+惩罚（缺省）；ADVISORY=降级仅参考，safety-critical 不得自动 dispatch 降级路径。 */
   routeCostMode?: RouteCostMode;
@@ -1459,7 +1487,9 @@ export type CandidateRejectReason =
   | 'safety_blocked'
   | 'must_finish_by_violation'
   | 'route_infeasible'
-  | 'not_in_candidate_stations';
+  | 'not_in_candidate_stations'
+  | 'stale_data'
+  | 'derived_data_fail_closed';
 
 /** 候选评估（Task×Person×Device×Station×时间窗 → hard 是否满足 + 可解释拒绝）。 */
 export interface CandidateEvaluation {

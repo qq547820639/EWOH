@@ -13,6 +13,13 @@ export interface EligiblePerson {
   healthStatus: string | null;
   /** T03 / P1-2：证书到期信息（[{ name, expiresAtMs }]；expiresAtMs<now 视为过期）。 */
   certificationExpiry?: Array<{ name: string; expiresAtMs: number | null }> | null;
+  // --- Command Map 增量（Phase 1 / P1-A + P1-B） ---
+  /** 可用时间窗（正空间；缺数据不限制，不伪造）。 */
+  availableWindows?: Array<{ startMs: number; endMs: number }> | null;
+  /** 数据质量（P1-B fail-close；STALE/UNKNOWN + safety-critical → stale_data）。 */
+  dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
+  /** 字段来源维度（P1-B fail-close；DERIVED + safety-critical → derived_data_fail_closed）。 */
+  source?: 'AUTHORITATIVE' | 'DERIVED';
 }
 
 /** 参与资格判定的设备描述。 */
@@ -23,6 +30,15 @@ export interface EligibleDevice {
   status: string | null;
   /** 设备能力（如 'exo-lift' / 'vacuum'），用于 requiredDeviceCapabilities 匹配。 */
   capabilities: string[];
+  // --- Command Map 增量（Phase 1 / P1-A + P1-B） ---
+  /** 可用时间窗（正空间；缺数据不限制，不伪造）。 */
+  availableWindows?: Array<{ startMs: number; endMs: number }> | null;
+  /** 维护时间窗（负空间；与候选区间重叠 → 设备不可用）。 */
+  maintenanceWindows?: Array<{ startMs: number; endMs: number }> | null;
+  /** 数据质量（P1-B fail-close；STALE/UNKNOWN + safety-critical → stale_data）。 */
+  dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
+  /** 字段来源维度（P1-B fail-close；DERIVED + safety-critical → derived_data_fail_closed）。 */
+  source?: 'AUTHORITATIVE' | 'DERIVED';
 }
 
 /** 参与资格判定的任务描述。 */
@@ -42,6 +58,13 @@ export interface EligibleTask {
   requiredStationCapabilities?: string[];
   /** T03 / P1-3：候选工位集合（station 决策变量；不在集合内的工位不可选）。 */
   candidateStations?: string[];
+  // --- Command Map 增量（Phase 1 / P1-A + P1-B） ---
+  /** 最早开始时间（epoch ms；候选区间与其无重叠 → 时间窗交集为空）。 */
+  earliestStartMs?: number | null;
+  /** 截止时间（epoch ms；候选区间与其无重叠 → 时间窗交集为空）。 */
+  dueAtMs?: number | null;
+  /** 安全关键任务（P1-B fail-close：STALE/UNKNOWN/关键 DERIVED 资源不可派）。 */
+  safetyCritical?: boolean;
 }
 
 /** 资格判定上下文（软/硬约束参数）。 */
@@ -76,6 +99,8 @@ export interface EligibilityContext {
   stationCapabilitiesById?: Map<string, string[]>;
   /** T03 / P1-3：候选工位已占用（stationId → 时间区间），用于容量计数。 */
   bookedStationCounts?: Map<string, number>;
+  /** P1-A：候选工位可用窗口（stationId → 窗口列表）；无数据不限制（缺数据不伪造）。 */
+  stationAvailableWindowsById?: Map<string, Array<{ startMs: number; endMs: number }>>;
 }
 
 /**
@@ -208,6 +233,62 @@ export class EligibilityService {
       }
     }
 
+    // 4g) P1-A：Task Window ∩ Horizon（正空间）——候选区间与任务最早/截止边界无重叠
+    // → 时间窗交集为空（候选不可派）。候选区间由 buildCandidatePool 按 travel+now 构造。
+    if (task.earliestStartMs != null && candidateEnd <= task.earliestStartMs) {
+      reasons.push('time_conflict');
+    }
+    if (task.dueAtMs != null && candidateStart >= task.dueAtMs) {
+      reasons.push('time_conflict');
+    }
+
+    // 4h) P1-A：资源可用窗口正空间判定——候选区间必须与各资源至少一个可用窗口重叠。
+    // 缺数据（空数组/undefined）→ 不限制（缺数据不伪造窗口，避免误伤存量无窗口数据的资源）。
+    const personAvail = person.availableWindows ?? [];
+    if (
+      personAvail.length > 0 &&
+      !personAvail.some((w) =>
+        this.intervalsOverlap(w.startMs, w.endMs, candidateStart, candidateEnd),
+      )
+    ) {
+      reasons.push('time_conflict');
+    }
+    if (device) {
+      // 4h1) 设备维护时间窗（负空间）：候选区间与任一维护窗口重叠 → 设备不可派。
+      const mw = device.maintenanceWindows ?? [];
+      if (
+        mw.some((w) =>
+          this.intervalsOverlap(w.startMs, w.endMs, candidateStart, candidateEnd),
+        )
+      ) {
+        reasons.push('time_conflict');
+      }
+      // 4h2) 设备可用窗口（正空间）：候选区间必须落在至少一个窗口内（无数据不限制）。
+      const devAvail = device.availableWindows ?? [];
+      if (
+        devAvail.length > 0 &&
+        !devAvail.some((w) =>
+          this.intervalsOverlap(w.startMs, w.endMs, candidateStart, candidateEnd),
+        )
+      ) {
+        reasons.push('time_conflict');
+      }
+    }
+    // 4h3) 工位可用窗口（正空间；无数据不限制）。
+    if (stationId) {
+      const stationAvail = ctx.stationAvailableWindowsById?.get(stationId) ?? [];
+      if (
+        stationAvail.length > 0 &&
+        !stationAvail.some((w) =>
+          this.intervalsOverlap(w.startMs, w.endMs, candidateStart, candidateEnd),
+        )
+      ) {
+        reasons.push('time_conflict');
+      }
+    }
+    // shift 契约（P1-A）：ewoh_personnel.shift 仅为 nullable 字符串（schema 无时间窗数据），
+    // 不具备 start/end 时间语义，因此 shift 不参与硬交集——禁止用字符串猜测班次时间。
+
     // 5) 风险状态 / 已锁定人员
     if (ctx.lockedPersonIds.includes(person.id)) reasons.push('person_unavailable');
 
@@ -246,6 +327,20 @@ export class EligibilityService {
     // 10) 安全
     if (ctx.safetyBlockedPersonIds.includes(person.id))
       reasons.push('safety_blocked');
+
+    // 11) P1-B：safety-critical fail-close——STALE/UNKNOWN 或关键 DERIVED 事实的候选不可派。
+    // 与 dataQuality（新鲜度）正交；仅 safetyCritical=true 任务触发，非安全任务同状态不受影响。
+    if (task.safetyCritical === true) {
+      const personStale =
+        person.dataQuality === 'STALE' || person.dataQuality === 'UNKNOWN';
+      const deviceStale =
+        device != null &&
+        (device.dataQuality === 'STALE' || device.dataQuality === 'UNKNOWN');
+      if (personStale || deviceStale) reasons.push('stale_data');
+      if (person.source === 'DERIVED' || device?.source === 'DERIVED') {
+        reasons.push('derived_data_fail_closed');
+      }
+    }
 
     return {
       personId: person.id,

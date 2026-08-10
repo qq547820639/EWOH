@@ -10,6 +10,7 @@ import {
   mergeSourceSequence,
   mapToV2Status,
   pollingInvalidateKeys,
+  isContextStale,
 } from './schedulerRealtimeCore';
 
 describe('schedulerRealtimeCore.nextSequence（单调守卫 + 缺口检测）', () => {
@@ -110,5 +111,45 @@ describe('schedulerRealtimeCore.pollingInvalidateKeys（轮询兜底刷新决策
     expect(keys).toContainEqual(['scheduler-resource-state']);
     expect(keys).toContainEqual(['scheduler', 'conflicts', {}]);
     expect(keys).toContainEqual(['scheduler-routes']);
+  });
+});
+
+describe('schedulerRealtimeCore.isContextStale（P1-D：STALE CONTEXT 判定）', () => {
+  it('context 缺失（未拉到/加载中）→ 非 stale（无对照物，不误报）', () => {
+    expect(isContextStale({ context: null, plans: [{ snapshotVersion: 'WS-1' }] })).toBe(false);
+    expect(isContextStale({ context: null, plans: null })).toBe(false);
+  });
+
+  it('选中方案 snapshotVersion 与 context 不一致 → stale', () => {
+    const context = { snapshotVersion: 'WS-2' };
+    expect(isContextStale({ context, plans: [], activePlan: { snapshotVersion: 'WS-1' } })).toBe(true);
+  });
+
+  it('任一活跃方案与 context 不一致 → stale（即使选中方案一致）', () => {
+    const context = { snapshotVersion: 'WS-2' };
+    expect(
+      isContextStale({
+        context,
+        plans: [{ snapshotVersion: 'WS-2' }, { snapshotVersion: 'WS-1' }],
+        activePlan: { snapshotVersion: 'WS-2' },
+      }),
+    ).toBe(true);
+  });
+
+  it('全部方案与 context 一致 → 非 stale', () => {
+    const context = { snapshotVersion: 'WS-2' };
+    expect(
+      isContextStale({ context, plans: [{ snapshotVersion: 'WS-2' }], activePlan: { snapshotVersion: 'WS-2' } }),
+    ).toBe(false);
+  });
+
+  it('方案未声明 snapshotVersion → 不参与比较（无法核验，不误报）', () => {
+    const context = { snapshotVersion: 'WS-2' };
+    expect(isContextStale({ context, plans: [{ snapshotVersion: undefined }], activePlan: null })).toBe(false);
+    expect(isContextStale({ context, plans: [], activePlan: { snapshotVersion: null } })).toBe(false);
+  });
+
+  it('无任何方案 → 非 stale', () => {
+    expect(isContextStale({ context: { snapshotVersion: 'WS-2' }, plans: [], activePlan: null })).toBe(false);
   });
 });

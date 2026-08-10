@@ -159,6 +159,8 @@ export class ResourceProjectionService {
         freshnessMs: this.resolveFreshnessMs('person', 'master'),
         freshnessPolicyVersion: DEFAULT_FRESHNESS_POLICY.policyVersion,
         dataQuality,
+        // P1-B：字段来源维度（与 dataQuality 正交）。person 投影无派生兜底字段 → AUTHORITATIVE。
+        source: 'AUTHORITATIVE',
         version: p.version ?? 1,
         // T02 / P0-3：坐标判别联合（FACTORY_CARTESIAN 时填充；缺失 UNKNOWN）。
         coordinate: this.toCoordinateFromSpatial(se),
@@ -235,6 +237,13 @@ export class ResourceProjectionService {
         freshnessMs: this.resolveFreshnessMs('device', 'telemetry'),
         freshnessPolicyVersion: DEFAULT_FRESHNESS_POLICY.policyVersion,
         dataQuality: deviceDataQuality,
+        // P1-B：字段来源维度——capabilities 命中型号白名单兜底（derived 非空）→ DERIVED，否则 AUTHORITATIVE。
+        source: derived.length > 0 ? 'DERIVED' : 'AUTHORITATIVE',
+        // P1-A：维护时间窗（真实列 maintenance_start_ms/end_ms；两列均 NULL → 空数组，不伪造）。
+        maintenanceWindows: this.parseMaintenanceWindows(
+          d.maintenanceStartMs,
+          d.maintenanceEndMs,
+        ),
         version: 1,
         derived,
         // T02 / P0-3：设备位置坐标类型（location_coordinate_type 列）。
@@ -296,6 +305,8 @@ export class ResourceProjectionService {
           freshnessMs: this.resolveFreshnessMs('station', 'master'),
           freshnessPolicyVersion: DEFAULT_FRESHNESS_POLICY.policyVersion,
           dataQuality: stationDataQuality,
+          // P1-B：station 能力来自真实列 entityType（非白名单兜底）→ AUTHORITATIVE。
+          source: 'AUTHORITATIVE',
           version: se.version ?? 1,
           // T02 / P0-3：工位坐标类型（coordinate_type / floor_id 列）。
           coordinate: this.toCoordinateFromSpatial(se),
@@ -431,7 +442,10 @@ export class ResourceProjectionService {
 
     const now = Date.now();
 
-    const persons: WorldStateSnapshot['persons'] = personnelRows.map((p) => {
+    // P1-B：persons 附带字段来源维度（source），与 WorldStateSnapshot 形状兼容（可选超集）。
+    const persons: Array<
+      WorldStateSnapshot['persons'][number] & { source?: 'AUTHORITATIVE' | 'DERIVED' }
+    > = personnelRows.map((p) => {
       const se = p.spatialEntityId
         ? spatialByEntityId.get(p.spatialEntityId)
         : undefined;
@@ -462,11 +476,20 @@ export class ResourceProjectionService {
         sourceTs,
         freshnessMs: this.resolveFreshnessMs('person', 'master'),
         dataQuality,
+        // P1-B：字段来源维度（与 dataQuality 正交）。person 投影无派生兜底字段 → AUTHORITATIVE。
+        source: 'AUTHORITATIVE',
         coordinate: this.toCoordinateFromSpatial(se),
       };
     });
 
-    const devices: WorldStateSnapshot['devices'] = deviceRows.map((d) => {
+    // P1-B：devices 附带字段来源维度（source）+ 维护时间窗（maintenanceWindows），
+    // 与 WorldStateSnapshot 形状兼容（可选超集）。
+    const devices: Array<
+      WorldStateSnapshot['devices'][number] & {
+        source?: 'AUTHORITATIVE' | 'DERIVED';
+        maintenanceWindows?: Array<{ startMs: number; endMs: number }>;
+      }
+    > = deviceRows.map((d) => {
       const sourceTs = d.lastTelemetryAt
         ? d.lastTelemetryAt.getTime()
         : d.updatedAt
@@ -503,12 +526,21 @@ export class ResourceProjectionService {
         sourceTs,
         freshnessMs: this.resolveFreshnessMs('device', 'telemetry'),
         dataQuality,
+        // P1-B：capabilities 命中型号白名单兜底（derived 非空）→ DERIVED，否则 AUTHORITATIVE。
+        source: derived.length > 0 ? 'DERIVED' : 'AUTHORITATIVE',
+        // P1-A：维护时间窗（真实列；两列均 NULL → 空数组，不伪造）。
+        maintenanceWindows: this.parseMaintenanceWindows(
+          d.maintenanceStartMs,
+          d.maintenanceEndMs,
+        ),
         derived,
         coordinate: this.toCoordinateFromDevice(d, hasDeviceLocation),
       };
     });
 
-    const stations: WorldStateSnapshot['stations'] = spatialRows
+    const stations: Array<
+      WorldStateSnapshot['stations'][number] & { source?: 'AUTHORITATIVE' | 'DERIVED' }
+    > = spatialRows
       .filter((se) => ['workstation', 'station'].includes(se.entityType ?? ''))
       .map((se) => {
         const capacity =
@@ -525,6 +557,8 @@ export class ResourceProjectionService {
           availableWindows: this.parseWindows(se.availableWindows),
           // P1-3：工位基础能力（空间实体类型；供 requiredStationCapabilities 匹配）。
           capabilities: se.entityType ? [se.entityType] : [],
+          // P1-B：station 能力来自真实列 entityType（非白名单兜底）→ AUTHORITATIVE。
+          source: 'AUTHORITATIVE',
           coordinate: this.toCoordinateFromSpatial(se),
         };
       });
@@ -590,5 +624,19 @@ export class ResourceProjectionService {
       }
     }
     return out;
+  }
+
+  /**
+   * 设备维护时间窗（P1-A）：读取真实列 maintenance_start_ms / maintenance_end_ms。
+   * 两列任一为 NULL（无维护计划/数据不完整）→ 空数组（缺数据不伪造窗口、不产生约束）；
+   * endMs <= startMs（非法区间）同样丢弃（fail-safe）。
+   */
+  private parseMaintenanceWindows(
+    startMs: number | null | undefined,
+    endMs: number | null | undefined,
+  ): Array<{ startMs: number; endMs: number }> {
+    if (startMs == null || endMs == null) return [];
+    if (!(endMs > startMs)) return [];
+    return [{ startMs, endMs }];
   }
 }

@@ -1234,6 +1234,11 @@ export interface ApprovePlanRequest {
   snapshotVersion: string;
   operator?: string;
   reason?: string;
+  // --- Phase 1 / P1-E（人工干预版本 CAS，§九；可选，缺省=现状向后兼容） ---
+  /** 期望的方案 version；提供且与 body.version 不一致 → STALE_PLAN（409，不自动应用）。 */
+  expectedPlanVersion?: number;
+  /** 期望的方案 snapshotVersion；提供且与 body.snapshotVersion 不一致 → STALE_SNAPSHOT（409，不自动应用）。 */
+  expectedSnapshotVersion?: string;
 }
 
 /** 拒绝方案请求（V2） */

@@ -183,6 +183,8 @@ export function makeSolver(cpSatConfig?: import('../cp-sat-scheduling-solver').C
   const policy = {
     getActivePolicy: jest.fn().mockResolvedValue(defaultPolicy()),
     getConfig: jest.fn().mockResolvedValue(defaultConfig()),
+    // P1-C：resolveProfiles 与生产逻辑一致（纯函数，无 DB 依赖）。
+    resolveProfiles: SchedulingPolicyService.prototype.resolveProfiles,
   };
   const routeCostProvider = {
     estimate: jest.fn().mockResolvedValue({

@@ -1097,6 +1097,25 @@ export class SchedulerService {
     body: ApprovePlanRequest,
     actor?: OrgContext,
   ): Promise<SchedulingPlanV2> {
+    // P1-E（§九）：人工干预版本 CAS——结构化入参 expectedPlanVersion/expectedSnapshotVersion
+    // 与请求 version/snapshotVersion 不一致 → 过期拒绝（ConflictException，不自动应用）。
+    // 未提供 → 现状行为（planService 内既有 PLAN_STALE/快照新鲜度兜底）。
+    if (
+      body.expectedPlanVersion !== undefined &&
+      body.expectedPlanVersion !== body.version
+    ) {
+      throw new ConflictException(
+        `STALE_PLAN: expected version ${body.expectedPlanVersion}, body version ${body.version}`,
+      );
+    }
+    if (
+      body.expectedSnapshotVersion !== undefined &&
+      body.expectedSnapshotVersion !== body.snapshotVersion
+    ) {
+      throw new ConflictException(
+        `STALE_SNAPSHOT: expected ${body.expectedSnapshotVersion}, body snapshot ${body.snapshotVersion}`,
+      );
+    }
     return this.planService.approvePlan(planId, body, this.toOrgContext(actor));
   }
 
@@ -1194,6 +1213,26 @@ export class SchedulerService {
     if (!plan) throw new NotFoundException(`Plan ${planId} not found`);
     if (!SchedulerService.REPLANNABLE_PLAN_STATUSES.has(plan.status ?? '')) {
       throw new ConflictException('PLAN_NOT_REPLANNABLE');
+    }
+
+    // P1-E（§九）：人工干预版本 CAS——入参提供 expectedPlanVersion/expectedSnapshotVersion 时，
+    // 校验与目标方案当前 version/snapshotVersion 一致；过期拒绝（ConflictException，不自动应用）。
+    // 未提供 → 现状行为（向后兼容）。
+    if (
+      body.expectedPlanVersion !== undefined &&
+      body.expectedPlanVersion !== plan.version
+    ) {
+      throw new ConflictException(
+        `STALE_PLAN: expected version ${body.expectedPlanVersion}, current ${plan.version}`,
+      );
+    }
+    if (
+      body.expectedSnapshotVersion !== undefined &&
+      body.expectedSnapshotVersion !== plan.snapshotVersion
+    ) {
+      throw new ConflictException(
+        `STALE_SNAPSHOT: expected ${body.expectedSnapshotVersion}, current ${plan.snapshotVersion ?? ''}`,
+      );
     }
 
     // 2. 将覆盖动作转换为 SchedulingConstraint（富化 operator/reason/validFrom/expiresAt/snapshotVersion）。

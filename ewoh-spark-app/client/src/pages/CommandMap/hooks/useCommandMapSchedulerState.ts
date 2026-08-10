@@ -10,6 +10,7 @@ import {
   getSnapshot,
   getActivePlans,
   getUnifiedResourceState,
+  getSchedulerContext,
   getRoutes,
   getConflicts,
 } from '@client/src/api/scheduler';
@@ -49,6 +50,13 @@ export function useCommandMapSchedulerState(): CommandMapSchedulerState {
     queryFn: getSnapshot,
     staleTime: 15_000,
   });
+  // P1-D：统一调度上下文（版本边界 + dataQuality）。Command Map 以它为统一版本
+  // 边界判定 STALE CONTEXT；独立查询，失败不影响地图主体数据。
+  const contextQuery = useQuery({
+    queryKey: queryKeys.schedulerContext,
+    queryFn: getSchedulerContext,
+    staleTime: 15_000,
+  });
   const resourcesQuery = useQuery({
     queryKey: queryKeys.schedulerResourceState,
     queryFn: getUnifiedResourceState,
@@ -81,6 +89,7 @@ export function useCommandMapSchedulerState(): CommandMapSchedulerState {
         plans: plansQuery.data,
         routes: routesQuery.data,
         conflicts: conflictsQuery.data?.conflicts,
+        context: contextQuery.data ?? null,
         ui,
         loading:
           snapshotQuery.isLoading ||
@@ -98,6 +107,7 @@ export function useCommandMapSchedulerState(): CommandMapSchedulerState {
       snapshotQuery.data,
       snapshotQuery.isLoading,
       snapshotQuery.isError,
+      contextQuery.data,
       resourcesQuery.data,
       resourcesQuery.isLoading,
       resourcesQuery.isError,

@@ -94,6 +94,9 @@ const FILES = {
   standalone_route_cost_matrix_full_key: path.join(root, 'db/migrations/standalone_026_route_cost_matrix_full_key.sql'),
   standalone_route_cost_matrix_full_key_rollback: path.join(root, 'db/migrations/standalone_026_route_cost_matrix_full_key.rollback.sql'),
   standalone_route_cost_matrix_full_key_verify: path.join(root, 'db/verify/standalone_026_route_cost_matrix_full_key.verify.sql'),
+  standalone_resource_time_windows: path.join(root, 'db/migrations/standalone_027_resource_time_windows.sql'),
+  standalone_resource_time_windows_rollback: path.join(root, 'db/migrations/standalone_027_resource_time_windows.rollback.sql'),
+  standalone_resource_time_windows_verify: path.join(root, 'db/verify/standalone_027_resource_time_windows.verify.sql'),
 };
 
 const PLAN_NAMES = Object.freeze(Object.keys(FILES));
@@ -124,6 +127,7 @@ const ROLLBACK_COMMANDS = new Set([
   '--rollback-standalone-scheduler-outbox-notify',
   '--rollback-standalone-scheduler-rls',
   '--rollback-standalone-route-cost-matrix-full-key',
+  '--rollback-standalone-resource-time-windows',
 ]);
 const EXECUTE_COMMANDS = new Set([
   '--apply',
@@ -210,6 +214,9 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-route-cost-matrix-full-key',
   '--rollback-standalone-route-cost-matrix-full-key',
   '--verify-standalone-route-cost-matrix-full-key',
+  '--apply-standalone-resource-time-windows',
+  '--rollback-standalone-resource-time-windows',
+  '--verify-standalone-resource-time-windows',
 ]);
 
 const TOKEN = '__EWOH_SCHEMA__';
@@ -331,6 +338,7 @@ function usage() {
   console.error('       run_migrations.js --apply-standalone-scheduler-outbox-notify | --rollback-standalone-scheduler-outbox-notify | --verify-standalone-scheduler-outbox-notify');
   console.error('       run_migrations.js --apply-standalone-scheduler-rls | --rollback-standalone-scheduler-rls | --verify-standalone-scheduler-rls');
   console.error('       run_migrations.js --apply-standalone-route-cost-matrix-full-key | --rollback-standalone-route-cost-matrix-full-key | --verify-standalone-route-cost-matrix-full-key');
+  console.error('       run_migrations.js --apply-standalone-resource-time-windows | --rollback-standalone-resource-time-windows | --verify-standalone-resource-time-windows');
   console.error('Env: EWOH_DATABASE_URL or SUDA_DATABASE_URL, EWOH_SCHEMA, EWOH_ALLOW_DDL=1');
   console.error('Rollback also requires EWOH_ALLOW_DESTRUCTIVE_ROLLBACK=1.');
   process.exit(2);
@@ -363,7 +371,7 @@ function main() {
     console.error('EWOH_DATABASE_URL or SUDA_DATABASE_URL is required.');
     process.exit(2);
   }
-  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod', '--verify-standalone-outbox-sequence', '--verify-standalone-domain-columns', '--verify-standalone-route-cost-matrix', '--verify-standalone-policy-weights', '--verify-standalone-conflict-lifecycle', '--verify-standalone-task-requirement', '--verify-standalone-scheduling-tables-fix', '--verify-standalone-execution-feedback', '--verify-standalone-kpi-replay', '--verify-standalone-policy-lifecycle', '--verify-standalone-sse-envelope', '--verify-standalone-reservation-capacity', '--verify-standalone-scheduler-incremental', '--verify-standalone-scheduler-outbox-notify', '--verify-standalone-scheduler-rls', '--verify-standalone-route-cost-matrix-full-key'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
+  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod', '--verify-standalone-outbox-sequence', '--verify-standalone-domain-columns', '--verify-standalone-route-cost-matrix', '--verify-standalone-policy-weights', '--verify-standalone-conflict-lifecycle', '--verify-standalone-task-requirement', '--verify-standalone-scheduling-tables-fix', '--verify-standalone-execution-feedback', '--verify-standalone-kpi-replay', '--verify-standalone-policy-lifecycle', '--verify-standalone-sse-envelope', '--verify-standalone-reservation-capacity', '--verify-standalone-scheduler-incremental', '--verify-standalone-scheduler-outbox-notify', '--verify-standalone-scheduler-rls', '--verify-standalone-route-cost-matrix-full-key', '--verify-standalone-resource-time-windows'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
     console.error('EWOH_ALLOW_DDL=1 is required for --apply and --rollback.');
     process.exit(2);
   }
@@ -686,6 +694,22 @@ function main() {
       return;
     }
 
+    if (command === '--verify-standalone-resource-time-windows') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_resource_time_windows_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const last = Array.isArray(rows) ? rows[rows.length - 1] : rows;
+      const row = (Array.isArray(last) ? last[0] : last) || {};
+      // 期望：ewoh_device 维护时间窗列=2（DO 块内 RAISE EXCEPTION 会整体抛错；此处防御断言）。
+      const ok = Number(row.maintenance_cols || 0) === 2;
+      if (!ok) {
+        console.error(`VERIFY FAILED: device maintenance window columns misconfigured (${JSON.stringify(row)})`);
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: ewoh_device maintenance_start_ms/maintenance_end_ms present');
+      }
+      return;
+    }
+
     if (command === '--verify-standalone-policy-weights') {
       const rows = await sql.unsafe(substitute(read(FILES.standalone_policy_weights_verify), schema));
       console.log(JSON.stringify(rows, null, 2));
@@ -836,6 +860,8 @@ function main() {
       '--rollback-standalone-scheduler-rls': 'standalone_scheduler_rls_rollback',
       '--apply-standalone-route-cost-matrix-full-key': 'standalone_route_cost_matrix_full_key',
       '--rollback-standalone-route-cost-matrix-full-key': 'standalone_route_cost_matrix_full_key_rollback',
+      '--apply-standalone-resource-time-windows': 'standalone_resource_time_windows',
+      '--rollback-standalone-resource-time-windows': 'standalone_resource_time_windows_rollback',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {

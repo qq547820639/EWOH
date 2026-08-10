@@ -16,6 +16,7 @@ import type {
   ConflictsListRequest,
   ConflictsListResponse,
   SchedulingConflict,
+  SchedulingContextResponse,
   PlanOverrideRequest,
   PlanOverrideResponse,
   OverridePreviewResponse,
@@ -103,6 +104,19 @@ export async function getActivePlans(): Promise<SchedulingPlanV2[]> {
     url: '/api/scheduler/active-plans',
     method: 'GET',
   });
+  return res.data;
+}
+
+/**
+ * P1-D：统一调度上下文（GET /api/scheduler/context，Phase 0 / P0-2 交付）。
+ *
+ * 单一 org 时间切片：snapshotVersion / resourceVersion / routeGraphVersion /
+ * policyVersion / eventSequence / sourceTimestamp / tasks / resources /
+ * reservations / constraints / dataQuality。Command Map 以它作为统一版本边界，
+ * 判定 Plan/Resource 版本一致性（STALE CONTEXT），禁止跨切片混合展示。
+ */
+export async function getSchedulerContext(): Promise<SchedulingContextResponse> {
+  const res = await axiosForBackend({ url: '/api/scheduler/context', method: 'GET' });
   return res.data;
 }
 

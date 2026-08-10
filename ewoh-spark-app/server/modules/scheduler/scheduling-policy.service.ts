@@ -45,6 +45,30 @@ const DEFAULT_POLICY: SchedulingPolicy = {
   energyWeight: DEFAULT_OBJECTIVE_WEIGHTS.energy,
 };
 
+/**
+ * 内置版本化目标 Profile 预设（Phase 1 / P1-C，§六）。
+ * 语义兼容既有 solveVariants 硬编码 A/B/C：A=ON_TIME（lateness×3、change×0.5）、
+ * B=WORKLOAD_BALANCE（workload×3、travel×1.5、lateness×0.5）、C=BALANCED（不缩放）。
+ * profile 只作用于 soft objective 权重缩放，绝不改变 hard constraints。
+ */
+const DEFAULT_PROFILES: Record<
+  string,
+  { label: string; scale: Partial<ObjectiveWeights> }
+> = {
+  ON_TIME: { label: '准时优先', scale: { lateness: 3, change: 0.5 } },
+  PRODUCTION_IMPACT: {
+    label: '生产影响优先',
+    scale: { lateness: 2, change: 1 },
+  },
+  WORKLOAD_BALANCE: {
+    label: '负荷均衡',
+    scale: { workload: 3, travel: 1.5, lateness: 0.5 },
+  },
+  TRAVEL_MIN: { label: '路程最短', scale: { travel: 3, lateness: 0.8 } },
+  MIN_CHURN: { label: '最小扰动', scale: { change: 3, travel: 0.5, lateness: 0.7 } },
+  BALANCED: { label: '综合平衡', scale: {} },
+};
+
 /** 无生效配置时的硬编码默认配置。 */
 const DEFAULT_CONFIG: SchedulingPolicyConfig = {
   configVersion: 1,
@@ -99,6 +123,8 @@ const DEFAULT_CONFIG: SchedulingPolicyConfig = {
     assignmentRemovalPenalty: DEFAULT_OBJECTIVE_WEIGHTS.change,
     assignmentAdditionPenalty: 0,
   },
+  // Phase 1 / P1-C（§六）：版本化目标 Profile 预设（缺省=内置；配置可覆盖/新增）。
+  profiles: DEFAULT_PROFILES,
   prediction: {
     canaryFractions: [0, 0.05, 0.2, 0.5, 1],
     autoRollbackOn: {
@@ -204,6 +230,44 @@ export class SchedulingPolicyService {
   /** Replan V2（M02）：同步访问默认 ReplanConfig（供测试/无 DB 场景）。 */
   defaultReplanConfig(): NonNullable<SchedulingPolicyConfig['replan']> {
     return { ...DEFAULT_CONFIG.replan };
+  }
+
+  /**
+   * Phase 1 / P1-C（§六）：解析版本化目标 Profile。
+   * 返回归一化 Record<profileId, { label, scale }>：
+   * - 配置缺省（无 profiles）→ 内置 6 预设（DEFAULT_PROFILES）；
+   * - 配置与内置合并：配置覆盖同名 profile 的 label/scale，并可新增 profileId；
+   * - 始终保证 BALANCED 存在（缺省=不缩放，兜底）。
+   * profile 只作用于 soft objective 权重缩放，绝不改变 hard constraints。
+   */
+  resolveProfiles(
+    config?: SchedulingPolicyConfig | null,
+  ): Record<string, { label: string; scale: Partial<ObjectiveWeights> }> {
+    const effective = config ?? DEFAULT_CONFIG;
+    const configured = effective.profiles ?? {};
+    const merged: Record<
+      string,
+      { label: string; scale: Partial<ObjectiveWeights> }
+    > = {};
+    for (const [id, preset] of Object.entries(DEFAULT_PROFILES)) {
+      const override = configured[id];
+      merged[id] = override
+        ? {
+            label: override.label ?? preset.label,
+            scale: { ...preset.scale, ...(override.scale ?? {}) },
+          }
+        : preset;
+    }
+    for (const [id, override] of Object.entries(configured)) {
+      if (!merged[id]) {
+        merged[id] = {
+          label: override.label,
+          scale: { ...(override.scale ?? {}) },
+        };
+      }
+    }
+    if (!merged.BALANCED) merged.BALANCED = DEFAULT_PROFILES.BALANCED;
+    return merged;
   }
 
   /**
@@ -388,6 +452,8 @@ export class SchedulingPolicyService {
         agingBaseMs: this.num(c.priority?.agingBaseMs, DEFAULT_CONFIG.priority.agingBaseMs),
       },
       weights: (c.weights ?? undefined) as SchedulingPolicyConfig['weights'],
+      // Phase 1 / P1-C（§六）：版本化目标 Profile 透传（缺失/非法回退内置预设，resolveProfiles 兜底）。
+      profiles: (c.profiles ?? undefined) as SchedulingPolicyConfig['profiles'],
       // T03 / P1-4：魔法数入策略透传（缺省默认常量）。
       preferenceBonusMinutes: this.num(c.preferenceBonusMinutes, DEFAULT_CONFIG.preferenceBonusMinutes),
       setupMinutes: this.num(c.setupMinutes, DEFAULT_CONFIG.setupMinutes),

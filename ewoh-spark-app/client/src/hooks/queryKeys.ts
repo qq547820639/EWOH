@@ -36,6 +36,8 @@ export const queryKeys = {
   schedulerRuns: (filters?: ListRunsRequest) => ['scheduler', 'runs', filters ?? {}] as const,
   /** map 与调度共享的当前世界状态快照（V2）。 */
   schedulerSnapshot: ['scheduler', 'snapshot'] as const,
+  /** P1-D：统一调度上下文（GET /api/scheduler/context，版本边界 + dataQuality）。 */
+  schedulerContext: ['scheduler-context'] as const,
   /** 单个任务的候选资源（V2，后端资格判定 + 路径可行性计算）。 */
   schedulerTaskCandidates: (taskId: string) => ['scheduler-task-candidates', taskId] as const,
   /** 统一调度冲突列表（V2 冲突中心 / 命令图冲突面板）。 */

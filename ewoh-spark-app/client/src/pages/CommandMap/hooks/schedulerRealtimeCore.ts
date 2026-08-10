@@ -125,3 +125,27 @@ export function mergeSourceSequence(
   }
   return nextSequence(prev, observed);
 }
+
+/**
+ * P1-D：STALE CONTEXT 判定（纯函数，node 可测）。
+ *
+ * 统一调度上下文（GET /api/scheduler/context）是 Command Map 的版本边界；
+ * 任一活跃方案（含当前选中方案）的 snapshotVersion 与 context.snapshotVersion
+ * 不一致 → true，UI 必须显式标记 `STALE CONTEXT`（禁止静默混合不同版本数据）。
+ *
+ * 判空策略（避免误报）：
+ * - context 缺失（未拉到/加载中）→ false（无对照物，无从判定）；
+ * - 方案未声明 snapshotVersion → 不参与比较（无法核验，不误报）。
+ */
+export function isContextStale(params: {
+  context: { snapshotVersion?: string | null } | null;
+  plans: Array<{ snapshotVersion?: string | null }> | null;
+  activePlan?: { snapshotVersion?: string | null } | null;
+}): boolean {
+  const ctxVersion = params.context?.snapshotVersion;
+  if (!ctxVersion) return false;
+  const candidates: Array<string | null | undefined> = [];
+  if (params.plans) candidates.push(...params.plans.map((p) => p.snapshotVersion));
+  if (params.activePlan) candidates.push(params.activePlan.snapshotVersion);
+  return candidates.some((v) => Boolean(v) && v !== ctxVersion);
+}
