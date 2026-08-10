@@ -128,11 +128,21 @@ jobs:
       - name: Repository Truth Gate（feature-status + OPEN-DECISIONS + 版本/CP-SAT 漂移，Task 11 P2）
         # 主事实门禁：feature-status.yaml 结构/生产启用不变量、文档一致性、
         # OPEN-DECISIONS 未决项健康度、version.json ⇄ README ⇄ CHANGELOG 版本一致、
-        # CP-SAT 部署漂移守卫（compose 文件存在 + ortools 三处锁定一致）。
+        # CP-SAT 部署漂移守卫（compose 文件存在 + ortools 三处锁定一致）、
+        # README 能力状态清单行级一致（Task 17.3）。
         # OpenAPI 契约漂移已由本工作流「OpenAPI 路由零漂移门禁」与 standalone.yml
         # 「OpenAPI contract drift gate (W4)（npm run gen:openapi:check，与
         # openapi:no-drift 等价）」覆盖，故此处 --skip-openapi 避免重复执行。
-        run: node scripts/truth-feature-status.js --skip-openapi
+        # 末尾追加 --self-test（Task 17.2）：solver-activation 不变量数据级断言。
+        run: |
+          node scripts/truth-feature-status.js --skip-openapi
+          node scripts/truth-feature-status.js --self-test
+
+      - name: 环境变量清单漂移门禁（Task 17.1）
+        # 以 deploy/.env.example 为部署参数唯一事实源，交叉校验生产代码路径
+        # （ewoh-spark-app/server、src/edge_platform、ewoh-feishu-app/server）
+        # 读取的每个环境变量必须被文档化或显式白名单放行；--strict 任一违规即失败。
+        run: node scripts/audit-env-inventory.js --strict
 
       - name: Work Graph 不变量与阻塞诊断（P0-6/P0-7）
         run: |
@@ -152,6 +162,12 @@ jobs:
 
       - name: 单一事实源证据清单生成与漂移校验（truth-check）
         run: make truth-check
+
+      - name: Release Drift Gate（truth-gate.js，Task 17.3）
+        # 以 truth-check 生成的 evidence-manifest 为准，用当前 HEAD SHA 重算
+        # Production Ready：manifest 声称 ready 但门禁未全部 SUCCEEDED 或证据
+        # SHA 过期（STALE）→ 失败；未声称 ready → 通过并如实报告 recomputed 姿态。
+        run: node scripts/truth-gate.js
 
       - name: OpenAPI 路由零漂移门禁（Batch 11.5：controller ↔ openapi/ewoh.yaml + work-orchestration.yaml）
         # 双向一致性：未文档化 controller 路由 + 已文档化但未实现路由，任一存在即失败。

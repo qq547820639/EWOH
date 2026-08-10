@@ -236,6 +236,98 @@ function auditDocsCrossCheck(checks, manifest, readme, changelog) {
   );
 }
 
+// ---------------- R3b README 能力状态表行级检查（Task 17.3） ----------------
+// feature-status.yaml 的每个 feature 必须在 README「能力状态清单」表中有一行，
+// 且 6 个状态列（实现/测试/可部署/生产启用/运行时验证/文档一致）用 是/否 与
+// 清单布尔值逐列一致：yaml 为 true 的行不得在 README 中标记为「未启用/未验证」，
+// 反之亦然。表行首列以（featureKey）标注，使检查可精确映射。
+const CAPABILITY_TABLE_HEADER = '能力状态清单';
+// 列顺序与 feature-status.yaml FEATURE_FIELDS 一致（表头：功能|实现|测试|可部署|生产启用|运行时验证|文档一致）
+const CAPABILITY_COLUMNS = [
+  'implemented',
+  'tested',
+  'deployable',
+  'productionEnabled',
+  'runtimeVerified',
+  'docsUpdated',
+];
+
+function parseCapabilityTableRows(readme) {
+  if (!readme) return [];
+  const headerIdx = readme.indexOf(CAPABILITY_TABLE_HEADER);
+  if (headerIdx < 0) return [];
+  const section = readme.slice(headerIdx);
+  const tableStart = section.indexOf('|');
+  if (tableStart < 0) return [];
+  const rows = [];
+  for (const line of section.slice(tableStart).split('\n')) {
+    if (!line.trim().startsWith('|')) break; // 表格结束（后续小节不属于能力状态表）
+    const cells = line.split('|').map((cell) => cell.trim());
+    rows.push(cells);
+  }
+  return rows;
+}
+
+function auditReadmeCapabilityTable(checks, manifest, readme) {
+  if (!manifest || !manifest.features || typeof manifest.features !== 'object') return;
+  const features = manifest.features;
+  const rows = parseCapabilityTableRows(readme);
+  const missing = [];
+  const inconsistent = [];
+  const rowFeatureKeys = new Set();
+  let tableFound = false;
+
+  for (const row of rows) {
+    const first = row[1] || '';
+    if (!first) continue; // 表头/分隔线
+    const keyMatch = first.match(/[（(]([A-Za-z][A-Za-z0-9]*)[）)]/);
+    if (!keyMatch || !(keyMatch[1] in features)) continue;
+    tableFound = true;
+    const key = keyMatch[1];
+    rowFeatureKeys.add(key);
+    const f = features[key];
+    if (!f || typeof f !== 'object') continue;
+    for (let col = 0; col < CAPABILITY_COLUMNS.length; col++) {
+      const expected = f[CAPABILITY_COLUMNS[col]] === true ? '是' : '否';
+      const actual = String(row[2 + col] || '').trim();
+      if (actual !== expected) {
+        inconsistent.push(
+          `feature.${key}.${CAPABILITY_COLUMNS[col]}: README 标记「${actual || '（空）'}」应为「${expected}」`,
+        );
+      }
+    }
+  }
+
+  for (const key of Object.keys(features)) {
+    if (!rowFeatureKeys.has(key)) missing.push(key);
+  }
+
+  check(
+    checks,
+    'readme_capability_table_exists',
+    tableFound || rows.length === 0,
+    tableFound
+      ? 'README 包含「能力状态清单」表且解析到 feature 行'
+      : 'README 未解析到「能力状态清单」表的 feature 行（需添加或检查（featureKey）标注）',
+  );
+  check(
+    checks,
+    'readme_capability_table_rows',
+    missing.length === 0,
+    missing.length === 0
+      ? `README 能力状态清单包含全部 ${Object.keys(features).length} 个 feature 行`
+      : `README 能力状态清单缺少行：${missing.join(', ')}`,
+  );
+  check(
+    checks,
+    'readme_capability_table_status',
+    inconsistent.length === 0,
+    inconsistent.length === 0
+      ? 'README 能力状态清单各行状态与 feature-status.yaml 一致（是/否 逐列匹配）'
+      : inconsistent.join('；'),
+  );
+}
+
 // ---------------- R4 OPEN-DECISIONS ----------------
 function parseOpenDecisionsRows(text) {
   if (!text) return { rows: [], summary: null };
@@ -490,6 +582,46 @@ function auditSolverActivation(checks, manifest, readme, envExample) {
   }
 }
 
+// ---------------- --self-test：solver-activation 不变量数据级断言（Task 17.2） ----------------
+// 直接对原始事实源（feature-status.yaml / deploy/.env.example / solver.service.ts /
+// README.md）做独立断言，不依赖上方审计函数的正则——防止审计自身被“改坏”后仍通过。
+// 断言内容：cpSat.productionEnabled=false ⇔ 代码默认激活 'OFF' ⇔ .env.example
+// 文档化默认 OFF 与生产门控 0 ⇔ README 不声称 CP-SAT canonical。
+function runSelfTest() {
+  const manifest = yaml.load(readFileSafe('feature-status.yaml') || '{}');
+  const envExample = readFileSafe(SOLVER_ENV_EXAMPLE) || '';
+  const readme = readFileSafe('README.md') || '';
+  const solverSrc = readFileSafe(SOLVER_SERVICE_SRC) || '';
+  const cpSat = manifest && manifest.features && manifest.features.cpSat;
+
+  const assertions = [
+    ['feature-status.yaml 存在且 cpSat.productionEnabled=false', Boolean(cpSat && cpSat.productionEnabled === false)],
+    ['deploy/.env.example 文档化 EWOH_SOLVER_ACTIVATION=OFF', envExample.includes('EWOH_SOLVER_ACTIVATION=OFF')],
+    ['deploy/.env.example 文档化 EWOH_SOLVER_PRODUCTION_ENABLED=0', envExample.includes('EWOH_SOLVER_PRODUCTION_ENABLED=0')],
+    ['feature-status.yaml cpSat 块文档化 EWOH_SOLVER_ACTIVATION', Boolean(cpSat && JSON.stringify(cpSat).includes(SOLVER_ACTIVATION_ENV))],
+    [`${SOLVER_SERVICE_SRC} 默认激活解析为 'OFF'（cpSat?.activation ?? 'OFF'）`, solverSrc.includes("cpSat?.activation ?? 'OFF'")],
+    [
+      'README 声明 heuristic canonical 且无 CP-SAT canonical 声称',
+      /heuristic[\s\S]{0,80}canonical/i.test(readme) &&
+        !/CP-SAT[^\n，。;；]{0,40}(canonical|production[\s-]?ready|生产就绪|已生产启用)/i.test(readme),
+    ],
+    [
+      '不变量自洽：cpSat.productionEnabled=false 时代码默认非 PRODUCTION',
+      cpSat && cpSat.productionEnabled === false ? !solverSrc.includes("cpSat?.activation ?? 'PRODUCTION'") : true,
+    ],
+  ];
+
+  console.log('TRUTH FEATURE-STATUS SELF-TEST (solver activation invariant)');
+  let failed = 0;
+  for (const [label, ok] of assertions) {
+    console.log(`  ${ok ? 'PASS' : 'FAIL'} ${label}`);
+    if (!ok) failed += 1;
+  }
+  console.log(`  summary: ${assertions.length - failed}/${assertions.length} passed`);
+  console.log(failed === 0 ? 'SELF-TEST PASS' : 'SELF-TEST FAIL');
+  if (failed > 0) process.exitCode = 1;
+}
+
 // ---------------- R7 OpenAPI 契约零漂移 ----------------
 function auditOpenApiNoDrift(checks, skip) {
   if (skip) {
@@ -526,7 +658,13 @@ function main() {
   const args = process.argv.slice(2);
   const skipOpenApi = args.includes('--skip-openapi');
   const json = args.includes('--json');
+  const selfTest = args.includes('--self-test');
   const checks = [];
+
+  if (selfTest) {
+    runSelfTest();
+    return;
+  }
 
   const manifestRaw = readFileSafe('feature-status.yaml');
   let manifest = null;
@@ -542,6 +680,7 @@ function main() {
       auditManifest(manifest, checks);
       auditProductionGate(manifest, checks);
       auditDocsCrossCheck(checks, manifest, readFileSafe('README.md'), readFileSafe('CHANGELOG.md'));
+      auditReadmeCapabilityTable(checks, manifest, readFileSafe('README.md'));
     }
   }
 
@@ -601,10 +740,12 @@ module.exports = {
   auditManifest,
   auditProductionGate,
   auditDocsCrossCheck,
+  auditReadmeCapabilityTable,
   auditOpenDecisions,
   auditVersionConsistency,
   auditCpSatDeployment,
   auditSolverActivation,
   auditOpenApiNoDrift,
+  runSelfTest,
   main,
 };

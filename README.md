@@ -67,6 +67,25 @@ EWOH 定位为**只读监督、风险分析与受控工作流系统**：平台�
 | **规模化工厂复制** | 工厂模板、连接器、场景包、字段映射资产目录；onboarding 检查、差异预览、影子运行、Fleet 升级/回滚。 |
 | **工程治理** | 契约驱动状态机、OpenAPI 路由门禁、仓库事实源审计、Work Graph、门禁引擎、发布/安全门禁、SBOM。 |
 
+### 能力状态清单（与 feature-status.yaml 单一事实源对齐）
+
+> 本表由 `scripts/truth-feature-status.js` 行级强制：每行状态（是/否）必须与
+> `feature-status.yaml` 对应 feature 的布尔字段一致；当前无任何功能生产启用。
+
+| 功能 | 实现 | 测试 | 可部署 | 生产启用 | 运行时验证 | 文档一致 |
+| ---- | ---- | ---- | ------ | -------- | ---------- | -------- |
+| Scheduler V2 调度闭环（schedulerV2） | 是 | 是 | 是 | 否 | 否 | 是 |
+| Heuristic 启发式求解器（heuristicSolver） | 是 | 是 | 是 | 否 | 否 | 是 |
+| CP-SAT 求解器（cpSat） | 是 | 是 | 是 | 否 | 否 | 是 |
+| 预测/策略影子评估（predictionShadow） | 是 | 是 | 否 | 否 | 否 | 是 |
+| Scheduler V2 RLS 多租户（schedulerRls） | 是 | 是 | 是 | 否 | 是 | 是 |
+| Command Map 指挥地图（commandMap） | 是 | 是 | 是 | 否 | 否 | 是 |
+| 智能调度驾驶舱（decisionCockpit） | 否 | 否 | 否 | 否 | 否 | 否 |
+| 边缘平台（edgeServer） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 飞书侧车（feishuSidecar） | 是 | 是 | 是 | 否 | 否 | 是 |
+| 运行时门禁（runtimeGates） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 调度基准（benchmarkScheduler） | 是 | 是 | 否 | 否 | 否 | 否 |
+
 ### 运行时构成
 
 仓库为多运行时单仓库：
