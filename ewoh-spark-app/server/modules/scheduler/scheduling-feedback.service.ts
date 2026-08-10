@@ -17,6 +17,7 @@ import type {
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { ShadowEvaluatorService } from './prediction/shadow-evaluator.service';
 
 /**
  * 调度反馈（SchedulingFeedback，Task 7）。
@@ -38,6 +39,8 @@ export class SchedulingFeedbackService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly requestDatabaseContext: RequestDatabaseContext,
+    // M05：Prediction Shadow Learning 回填点（可选注入；缺失时静默跳过，不改变反馈写入）。
+    private readonly shadowEvaluatorService?: ShadowEvaluatorService,
   ) {}
 
   /**
@@ -256,6 +259,51 @@ export class SchedulingFeedbackService {
         .update(ewohSchedulingFeedback)
         .set(patch)
         .where(and(...conditions));
+
+      // M05：Prediction Shadow Learning 回填——任务实际完成时回填 shadow 样本 actual。
+      // 观测型：失败仅记日志，绝不阻断 feedback 写入；不改变任何生产调度。
+      if (this.shadowEvaluatorService && input.actualEnd != null) {
+        try {
+          const actualMs =
+            typeof input.actualEnd === 'string' || input.actualEnd instanceof Date
+              ? new Date(input.actualEnd).getTime()
+              : null;
+          if (actualMs != null && Number.isFinite(actualMs)) {
+            // 回填"任务时长"预测：actual = actualEnd − actualStart（有 start 时），
+            // 否则用计划/实际 end 与 now 的差值不可靠 → 仅回填有 start 的样本。
+            if (input.actualStart != null) {
+              const startMs =
+                typeof input.actualStart === 'string' || input.actualStart instanceof Date
+                  ? new Date(input.actualStart).getTime()
+                  : null;
+              if (startMs != null && Number.isFinite(startMs)) {
+                const durationActual = Math.max(0, actualMs - startMs);
+                // 按 taskId 维度回填最近一条 task_duration 预测样本。
+                const samples = this.shadowEvaluatorService.listSamples(ctx);
+                for (const s of samples) {
+                  if (
+                    s.predictionType === 'task_duration' &&
+                    (s as unknown as { taskId?: string }).taskId === input.taskId &&
+                    s.actual == null
+                  ) {
+                    this.shadowEvaluatorService.backfillActual(
+                      'task_duration',
+                      durationActual,
+                      s.createdAt,
+                      ctx,
+                    );
+                    break;
+                  }
+                }
+              }
+            }
+          }
+        } catch (err) {
+          this.logger.warn(
+            `shadow sample backfill failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
     });
   }
 
