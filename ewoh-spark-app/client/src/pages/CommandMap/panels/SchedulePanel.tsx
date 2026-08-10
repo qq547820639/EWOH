@@ -21,12 +21,13 @@ import {
   rejectPlanV2,
   dispatchPlanV2,
   replan,
+  previewReplan,
   comparePlans,
 } from '@client/src/api/scheduler';
 import { getCurrentOperator } from '@client/src/lib/auth';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import { isNonAuthoritativePlan } from './schedule-panel-demo';
-import { pickComparePlanId } from './schedule-panel-logic';
+import { pickComparePlanId, replanPreviewSummary, dispatchPlanSummary } from './schedule-panel-logic';
 import SolverStatusChain from './SolverStatusChain';
 import { useVirtualList } from '@client/src/lib/virtualList';
 import type {
@@ -35,6 +36,7 @@ import type {
   SchedulingConstraint,
   PersonnelInfo,
   PlanStatus,
+  ReplanPreviewResult,
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { Button } from '@client/src/components/ui/button';
@@ -191,6 +193,121 @@ interface SchedulePanelProps {
   personnel?: PersonnelInfo[];
 }
 
+/** Task 10 / 10.2：REPLAN 确认对话框的预览摘要块（数据全部来自后端 dry-run）。 */
+function ReplanPreviewBlock({
+  preview,
+  plan,
+}: {
+  preview: ReplanPreviewResult;
+  plan: SchedulingPlanV2;
+}): React.ReactElement {
+  const summary = replanPreviewSummary(preview);
+  if (!summary) return <div className="py-4 text-center text-xs text-white/50">无预览数据</div>;
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-5 gap-1.5 text-center">
+        <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
+          <div className="text-sm font-bold text-white/90">{summary.affectedTaskCount}</div>
+          <div className="text-[9px] text-white/50">影响任务</div>
+        </div>
+        <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
+          <div className="text-sm font-bold text-amber-400">{summary.changedAssignmentCount}</div>
+          <div className="text-[9px] text-white/50">变更分配</div>
+        </div>
+        <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
+          <div className="text-sm font-bold text-emerald-400">{summary.unchangedAssignmentCount}</div>
+          <div className="text-[9px] text-white/50">不变分配</div>
+        </div>
+        <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
+          <div className="text-sm font-bold text-white/90">+{summary.addedAssignmentCount}</div>
+          <div className="text-[9px] text-white/50">新增</div>
+        </div>
+        <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
+          <div className="text-sm font-bold text-red-400">-{summary.removedAssignmentCount}</div>
+          <div className="text-[9px] text-white/50">移除</div>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {summary.deltas.map((d) => (
+          <div key={d.key} className="rounded-md border border-white/10 bg-white/5 px-2 py-1">
+            <div className="text-[9px] text-white/50">
+              {d.label} Δ{d.unit ? `（${d.unit}）` : ''}
+            </div>
+            <div
+              className={cn(
+                'text-sm font-semibold',
+                d.value < 0 ? 'text-emerald-400' : d.value > 0 ? 'text-red-400' : 'text-white',
+              )}
+            >
+              {d.value > 0 ? '+' : ''}
+              {d.value.toFixed(2)}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <SolverStatusChain
+          status={plan.solverStatus}
+          solverVersion={plan.solverVersion}
+          fallbackReason={plan.fallbackReason}
+          solveDurationMs={plan.solveDurationMs}
+        />
+        <span className="text-[9px] text-white/50">
+          快照 v{plan.snapshotVersion ?? '—'} · 策略 v{plan.policyVersion ?? '—'}
+        </span>
+      </div>
+      {summary.baselinePlanId && summary.candidatePlanId && (
+        <div className="text-[9px] text-white/40">
+          {summary.baselinePlanId.slice(-8)} → {summary.candidatePlanId.slice(-8)}（PREVIEW，不落库）
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Task 10 / 10.2：DISPATCH 确认对话框的方案摘要块。 */
+function DispatchSummaryBlock({ plan }: { plan: SchedulingPlanV2 }): React.ReactElement {
+  const summary = dispatchPlanSummary(plan);
+  if (!summary) return <div className="py-4 text-center text-xs text-white/50">无方案数据</div>;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-medium text-white/90">{summary.planName ?? summary.planId}</span>
+        <Badge className={cn('text-[9px] px-1.5', statusBadgeClass(plan.status))}>{plan.status}</Badge>
+        <span className="text-[10px] text-white/50">VERSION {summary.version}</span>
+        <SolverStatusChain
+          status={plan.solverStatus}
+          solverVersion={plan.solverVersion}
+          fallbackReason={plan.fallbackReason}
+          solveDurationMs={plan.solveDurationMs}
+        />
+      </div>
+      <div className="grid grid-cols-4 gap-1.5">
+        <div className="rounded-md border border-white/10 bg-white/5 px-2 py-1">
+          <div className="text-sm font-bold text-white/90">{summary.assignmentsCount}</div>
+          <div className="text-[9px] text-white/50">分配数</div>
+        </div>
+        <div className="rounded-md border border-white/10 bg-white/5 px-2 py-1">
+          <div className="text-sm font-bold text-white/90">{summary.lateMinutes.toFixed(0)} min</div>
+          <div className="text-[9px] text-white/50">预计延期</div>
+        </div>
+        <div className="rounded-md border border-white/10 bg-white/5 px-2 py-1">
+          <div className="text-sm font-bold text-white/90">{summary.walkingMeters.toFixed(0)} m</div>
+          <div className="text-[9px] text-white/50">人员总移动</div>
+        </div>
+        <div className="rounded-md border border-white/10 bg-white/5 px-2 py-1">
+          <div className="text-sm font-bold text-white/90">{formatPct(summary.maxWorkload)}</div>
+          <div className="text-[9px] text-white/50">最大负荷</div>
+        </div>
+      </div>
+      <div className="text-[9px] text-white/50">
+        工位等待 {summary.stationWaitMinutes.toFixed(0)} min · 快照 v{summary.snapshotVersion ?? '—'} · 策略 v
+        {summary.policyVersion ?? '—'}
+      </div>
+    </div>
+  );
+}
+
 function SchedulePanel({
   focusPlanId,
   onFocusPlanConsumed,
@@ -206,12 +323,24 @@ function SchedulePanel({
   const [approveReason, setApproveReason] = useState('');
   const [rejectTarget, setRejectTarget] = useState<SchedulingPlanV2 | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  // Task 10 / 10.2：危险操作「预览 → 确认」——REPLAN 先调后端 previewReplan（dry-run）。
+  const [replanTarget, setReplanTarget] = useState<SchedulingPlanV2 | null>(null);
+  const [replanPreview, setReplanPreview] = useState<ReplanPreviewResult | null>(null);
+  const [replanPreviewLoading, setReplanPreviewLoading] = useState(false);
+  const [replanPreviewError, setReplanPreviewError] = useState<string | null>(null);
+  // Task 10 / 10.2：DISPATCH 确认对话框（不再点击即下发）。
+  const [dispatchTarget, setDispatchTarget] = useState<SchedulingPlanV2 | null>(null);
   const [adjustTarget, setAdjustTarget] = useState<SchedulingAssignment | null>(null);
   const [adjustPersonId, setAdjustPersonId] = useState<string>('');
   const [compareOpen, setCompareOpen] = useState(false);
   const [comparePlanId, setComparePlanId] = useState<string | null>(null);
   const [compareResult, setCompareResult] = useState<Record<string, unknown> | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  // 焦点管理（镜像 Shell 帮助对话框模式：打开存焦点 → 关闭恢复）。
+  const replanPrevFocusRef = useRef<HTMLElement | null>(null);
+  const replanConfirmRef = useRef<HTMLButtonElement | null>(null);
+  const dispatchPrevFocusRef = useRef<HTMLElement | null>(null);
+  const dispatchConfirmRef = useRef<HTMLButtonElement | null>(null);
 
   // 活跃方案列表：来自 React Query 缓存（createRun 结果 + SSE 事件流维护）。
   const { data: plansData } = useQuery<SchedulingPlanV2[]>({
@@ -454,6 +583,59 @@ function SchedulePanel({
     setCompareResult(null);
     setCompareOpen(true);
   };
+
+  // ---- Task 10 / 10.2：REPLAN 预览 → 确认 ----
+  // 打开确认框即调后端 previewReplan（dry-run readonly）；仅确认后才执行真实 replan。
+  const openReplanConfirm = (plan: SchedulingPlanV2) => {
+    setReplanTarget(plan);
+    setReplanPreview(null);
+    setReplanPreviewError(null);
+    setReplanPreviewLoading(true);
+    previewReplan({ triggerType: 'MANUAL', triggerIds: [plan.planId] })
+      .then((preview) => setReplanPreview(preview))
+      .catch((err: unknown) => {
+        setReplanPreviewError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => setReplanPreviewLoading(false));
+  };
+
+  const confirmReplan = () => {
+    if (!replanTarget) return;
+    // 与 Task 8 前行为一致：无锁定约束、reason 缺省；仅执行入口从「点击即重排」改为「预览后确认」。
+    replanMutation.mutate({ plan: replanTarget, lockedConstraints: [] });
+    setReplanTarget(null);
+    setReplanPreview(null);
+  };
+
+  // ---- Task 10 / 10.2：DISPATCH 确认 ----
+  const confirmDispatch = () => {
+    if (!dispatchTarget) return;
+    dispatchMutation.mutate(dispatchTarget);
+    setDispatchTarget(null);
+  };
+
+  // 焦点管理（镜像 Shell 帮助对话框模式：打开存焦点 → 关闭恢复）。
+  useEffect(() => {
+    if (replanTarget) {
+      replanPrevFocusRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      window.requestAnimationFrame(() => replanConfirmRef.current?.focus());
+    } else if (replanPrevFocusRef.current) {
+      replanPrevFocusRef.current.focus();
+      replanPrevFocusRef.current = null;
+    }
+  }, [replanTarget]);
+
+  useEffect(() => {
+    if (dispatchTarget) {
+      dispatchPrevFocusRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      window.requestAnimationFrame(() => dispatchConfirmRef.current?.focus());
+    } else if (dispatchPrevFocusRef.current) {
+      dispatchPrevFocusRef.current.focus();
+      dispatchPrevFocusRef.current = null;
+    }
+  }, [dispatchTarget]);
 
   const kpis = selectedPlan
     ? [
@@ -704,7 +886,8 @@ function SchedulePanel({
                       toast.error('演示方案不可下发（仅用于展示）');
                       return;
                     }
-                    dispatchMutation.mutate(selectedPlan);
+                    // Task 10 / 10.2：下发前先确认（汇总方案摘要）。
+                    setDispatchTarget(selectedPlan);
                   }}
                   disabled={selectedPlan.status !== 'approved' || dispatchMutation.isPending}
                 >
@@ -728,11 +911,11 @@ function SchedulePanel({
                   size="sm"
                   variant="outline"
                   className="h-6 text-[10px] px-2"
-                  onClick={() => replanMutation.mutate({ plan: selectedPlan, lockedConstraints: [] })}
-                  disabled={plans.length === 0}
+                  onClick={() => openReplanConfirm(selectedPlan)}
+                  disabled={plans.length === 0 || replanPreviewLoading}
                 >
                   <RotateCcw className="w-3 h-3" />
-                  重新排程
+                  {replanPreviewLoading ? '预览中...' : '重新排程'}
                 </Button>
                 <Button
                   size="sm"
@@ -879,6 +1062,77 @@ function SchedulePanel({
               disabled={replanMutation.isPending || !adjustTarget || !adjustPersonId}
             >
               {replanMutation.isPending ? '重排中...' : '锁定并重排'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Task 10 / 10.2：REPLAN 预览 → 确认 Dialog（预览来自后端 dry-run，仅确认才执行） */}
+      <Dialog open={!!replanTarget} onOpenChange={(open) => !open && setReplanTarget(null)}>
+        <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="text-white">重新排程确认</DialogTitle>
+            <DialogDescription className="text-white/70">
+              {replanTarget?.planName ?? replanTarget?.planId} · v{replanTarget?.version}
+              — 以下为后端 dry-run 预览（不落库不派工），确认后才会执行真实重排。
+            </DialogDescription>
+          </DialogHeader>
+          {replanPreviewLoading ? (
+            <div className="py-6 text-center text-xs text-white/60">正在计算重排预览…</div>
+          ) : replanPreviewError ? (
+            <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              预览失败：{replanPreviewError}
+              <div className="mt-1 text-[10px] text-red-300/70">可关闭后重试；不会执行任何变更。</div>
+            </div>
+          ) : replanPreview && replanTarget ? (
+            <ReplanPreviewBlock preview={replanPreview} plan={replanTarget} />
+          ) : (
+            <div className="py-6 text-center text-xs text-white/50">无预览数据</div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setReplanTarget(null)}
+              disabled={replanPreviewLoading}
+            >
+              取消
+            </Button>
+            <Button
+              ref={replanConfirmRef}
+              size="sm"
+              autoFocus
+              onClick={confirmReplan}
+              disabled={replanMutation.isPending || replanPreviewLoading || !replanPreview || !!replanPreviewError}
+            >
+              {replanMutation.isPending ? '重排中...' : '确认执行重新排程'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Task 10 / 10.2：DISPATCH 确认 Dialog（汇总已审批方案摘要） */}
+      <Dialog open={!!dispatchTarget} onOpenChange={(open) => !open && setDispatchTarget(null)}>
+        <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="text-white">确认下发执行</DialogTitle>
+            <DialogDescription className="text-white/70">
+              下发后方案进入执行态，人员/设备将按此方案作业；旧方案将失效。
+            </DialogDescription>
+          </DialogHeader>
+          {dispatchTarget && <DispatchSummaryBlock plan={dispatchTarget} />}
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setDispatchTarget(null)}>
+              取消
+            </Button>
+            <Button
+              ref={dispatchConfirmRef}
+              size="sm"
+              autoFocus
+              onClick={confirmDispatch}
+              disabled={dispatchMutation.isPending}
+            >
+              {dispatchMutation.isPending ? '下发中...' : '确认下发'}
             </Button>
           </DialogFooter>
         </DialogContent>

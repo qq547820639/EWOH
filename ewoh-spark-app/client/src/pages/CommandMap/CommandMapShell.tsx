@@ -70,17 +70,29 @@ import {
 } from './replay';
 import TopBar from './TopBar';
 import ModePanel, { MODES as MODE_ITEMS } from './ModePanel';
-import { isValidMode, transitionMode } from './map-mode-machine';
+import { isValidMode, transitionMode, type MapLevel } from './map-mode-machine';
 import EntityDetail from './EntityDetail';
 import AlertToast from '../../components/AlertToast';
 import DataStates from '../../components/DataStates';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useCommandMapSchedulerState } from './hooks/useCommandMapSchedulerState';
 import { useCommandMapController, CommandMapStoreSseBridge } from './hooks/useCommandMapController';
+import {
+  useUrlOperatorContext,
+  type UrlIdKind,
+  type UrlInvalidIdNotice,
+  type UrlOperatorContext,
+} from './hooks/useUrlOperatorContext';
 import { SchedulerRealtimeProvider, useSchedulerRealtime } from '@client/src/scheduler/SchedulerRealtimeProvider';
-import { isContextStale, type SchedulerStreamStatusV2 } from './hooks/schedulerRealtimeCore';
+import { isContextStale } from './hooks/schedulerRealtimeCore';
 import { useSchedulerRealtimeSlice } from './store/commandMapStore';
 import { isNavigatorOnline } from '@client/src/lib/offlineStatus';
+import {
+  classifyFreshness,
+  freshnessReason,
+  FRESHNESS_STATUS_LABELS,
+} from '@client/src/lib/dataFreshness';
+import { FRESHNESS_STATUS_CLASSES } from '@client/src/components/DataFreshnessBadge';
 import { planCompareMapVM, extractUnchangedTasks, DEFAULT_PLAN_COMPARE_UI, type PlanCompareUiState } from './vm/planCompareVM';
 import { useQuery as useQueryCompare } from '@tanstack/react-query';
 import { comparePlansV2 } from '@client/src/api/scheduler';
@@ -116,14 +128,10 @@ export const MapPanelFallback = () => (
   </div>
 );
 
-/** 调度实时连接状态徽标（Task 2.1 可选 UI）：展示 V2 状态 + 最近事件时间 + 快照版本。 */
-const REALTIME_STATUS_V2_META: Record<SchedulerStreamStatusV2, { label: string; cls: string }> = {
-  CONNECTED: { label: '实时', cls: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
-  DEGRADED: { label: '降级', cls: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
-  RESYNCING: { label: '重同步', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
-  OFFLINE: { label: '离线', cls: 'bg-red-500/20 text-red-400 border-red-500/30' },
-};
-
+/** 调度实时连接状态徽标（Task 9/10：统一 Data Freshness 词汇）。
+ * 原 REALTIME_STATUS_V2_META（实时/降级/重同步/离线）已并入 lib/dataFreshness：
+ * SchedulerRealtime V2 连接态经 classifyFreshness 映射为唯一状态词汇
+ * （RESYNCING / DEGRADED / OFFLINE / LIVE 等），本徽标只消费统一模型。 */
 function SchedulerRealtimeBadge({
   context,
   contextStale,
@@ -132,7 +140,17 @@ function SchedulerRealtimeBadge({
   contextStale: boolean;
 }) {
   const rt = useSchedulerRealtime();
-  const meta = REALTIME_STATUS_V2_META[rt.statusV2];
+  const status = classifyFreshness({
+    lastUpdatedAt: rt.lastEventTime,
+    connectionState: rt.statusV2,
+    connected: rt.statusV2 !== 'OFFLINE',
+  });
+  const metaCls = FRESHNESS_STATUS_CLASSES[status];
+  const reason = freshnessReason({
+    lastUpdatedAt: rt.lastEventTime,
+    connectionState: rt.statusV2,
+    connected: rt.statusV2 !== 'OFFLINE',
+  });
   const lastTime = rt.lastEventTime
     ? new Date(rt.lastEventTime).toLocaleTimeString('zh-CN', { hour12: false })
     : '—';
@@ -142,9 +160,9 @@ function SchedulerRealtimeBadge({
   return (
     <div
       className="absolute right-2 top-2 z-40 flex items-center gap-1.5 rounded-md border border-white/10 bg-[hsl(220_14%_14%)]/95 px-2 py-1 text-[10px] text-white/80 shadow-lg"
-      title="调度实时连接状态"
+      title={`调度实时连接状态 · ${reason}`}
     >
-      <span className={`rounded border px-1 font-medium ${meta.cls}`}>{meta.label}</span>
+      <span className={`rounded border px-1 font-medium ${metaCls}`}>{FRESHNESS_STATUS_LABELS[status]}</span>
       {contextStale && (
         <span
           className="rounded border border-red-500/50 bg-red-500/20 px-1 font-bold text-red-400"
@@ -303,7 +321,6 @@ const CommandMapShell = (): React.ReactElement => {
   const [panelExpanded, setPanelExpanded] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const replayTimeRef = useRef<string | null>(null);
-  const handledUrlEventRef = useRef<string | null>(null);
   const helpCloseRef = useRef<HTMLButtonElement>(null);
   const helpPreviousFocusRef = useRef<HTMLElement | null>(null);
   const queryClient = useQueryClient();
@@ -583,15 +600,150 @@ const CommandMapShell = (): React.ReactElement => {
     [entities],
   );
 
-  // 飞书闭环：读取 URL event_id 参数（H2）
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const eventId = params.get('event_id');
-    if (eventId && handledUrlEventRef.current !== eventId) {
-      handledUrlEventRef.current = eventId;
-      focusEventEntity(eventId);
+  // ---- Task 9 / 9.1：URL 背书的操作上下文（镜像 ⇄ 恢复；深链聚焦）----
+  // 写规则：一律 history.replaceState——mode/level/selection/tab/冲突/事件/回放时间戳/
+  // compare 均属连续变化，不入历史栈；后退/前进只跨真实导航（深链/外部跳转），
+  // 与操作员直觉一致。瞬态 UI（对话框/动画/抽屉可见性）不镜像。
+  const urlCtx = useMemo<UrlOperatorContext>(
+    () => ({
+      mode: ctl.mode,
+      level: ctl.level,
+      entityId: selectedEntityId,
+      taskId: selectedTaskId,
+      planId: selectedPlanId,
+      tab: activeTab,
+      conflictId: previewConflict?.conflictId ?? null,
+      eventId: selectedEventId,
+      replayTs: replayMode ? replayTime : null,
+      compareBaseline: showCompare ? compareUi.baselinePlanId : null,
+      compareCandidate: showCompare ? compareUi.candidatePlanId : null,
+    }),
+    [
+      ctl.mode,
+      ctl.level,
+      selectedEntityId,
+      selectedTaskId,
+      selectedPlanId,
+      activeTab,
+      previewConflict,
+      selectedEventId,
+      replayMode,
+      replayTime,
+      showCompare,
+      compareUi.baselinePlanId,
+      compareUi.candidatePlanId,
+    ],
+  );
+
+  // URL 提供的 id 是否存在于已加载权威数据（不存在 → 降级默认 + 用户可见提示）。
+  const validateUrlId = useCallback(
+    (kind: UrlIdKind, id: string): boolean => {
+      switch (kind) {
+        case 'plan':
+          return schedulerState.plans.some((p) => p.planId === id);
+        case 'task': {
+          const inSnapshot = schedulerState.snapshot?.tasks.some((t) => t.id === id) ?? false;
+          const inPlan = schedulerState.plans.some((p) =>
+            p.assignments.some((a) => a.taskId === id),
+          );
+          return inSnapshot || inPlan;
+        }
+        case 'entity':
+          return entityList.some((e) => e.entityId === id);
+        case 'conflict':
+          return schedulerState.conflicts.items.some((c) => c.conflictId === id);
+        case 'event':
+          return (events ?? []).some((e) => e.eventId === id || e.id === id);
+      }
+    },
+    [schedulerState.plans, schedulerState.snapshot, schedulerState.conflicts, entityList, events],
+  );
+  const isValidUrlTab = useCallback((tab: string) => TABS.some((t) => t.key === tab), []);
+
+  // 恢复 URL 上下文 → 写 store / 本地 state（状态所有权不变，仅镜像）。
+  // 深链（plan_id/task_id/event_id）：选中 + 打开对应标签 + 聚焦。
+  const restoreUrlContext = useCallback(
+    (ctx: UrlOperatorContext) => {
+      if (ctx.mode && ctx.mode !== ctl.mode) ctl.setMode(ctx.mode);
+      if (ctx.level && ctx.level !== ctl.level) ctl.setLevel(ctx.level as MapLevel);
+      if (ctx.entityId) ctl.selectEntity(ctx.entityId);
+      if (ctx.taskId) {
+        ctl.setMode('scheduling');
+        ctl.selectTask(ctx.taskId);
+        setActiveTab('schedule');
+      }
+      if (ctx.planId) {
+        ctl.selectPlan(ctx.planId);
+        setActiveTab('schedule');
+      }
+      if (ctx.tab) setActiveTab(ctx.tab);
+      if (ctx.conflictId) {
+        const vmItem = schedulerState.conflicts.items.find(
+          (c) => c.conflictId === ctx.conflictId,
+        );
+        if (vmItem) {
+          // ConflictVMItem 为 SchedulingConflict 展示子集，预览面板所需字段齐全。
+          setPreviewConflict({
+            conflictId: vmItem.conflictId,
+            type: vmItem.type,
+            severity: vmItem.severity,
+            scope: vmItem.scope,
+            resourceId: vmItem.resourceId,
+            resourceType: vmItem.resourceType,
+            taskIds: vmItem.taskIds,
+            message: vmItem.message,
+            resolution: vmItem.resolution,
+            createdAt: vmItem.detectedAt ?? '',
+            snapshotVersion: null,
+            status: vmItem.status,
+            detectedAt: vmItem.detectedAt,
+            acknowledgedBy: vmItem.acknowledgedBy,
+            resolvedBy: vmItem.resolvedBy,
+            suppressUntil: vmItem.suppressUntil,
+          } as SchedulingConflict);
+          setPreviewResult(null);
+        }
+      }
+      if (ctx.eventId) {
+        setActiveTab('events');
+        focusEventEntity(ctx.eventId);
+      }
+      if (ctx.replayTs) {
+        ctl.setReplayMode(true);
+        ctl.setReplayTime(ctx.replayTs);
+      }
+      if (
+        ctx.compareBaseline &&
+        ctx.compareCandidate &&
+        ctx.compareBaseline !== ctx.compareCandidate
+      ) {
+        setCompareUi((u) => ({
+          ...u,
+          baselinePlanId: ctx.compareBaseline!,
+          candidatePlanId: ctx.compareCandidate!,
+          focusedTaskId: null,
+        }));
+        setShowCompare(true);
+      }
+    },
+    [ctl, schedulerState.conflicts, focusEventEntity],
+  );
+
+  // 失效 id 通知：toast 瞬态提示；内联 banner 由返回的 notices 渲染。
+  const handleInvalidUrlIds = useCallback((invalid: UrlInvalidIdNotice[]) => {
+    for (const notice of invalid) {
+      toast.warning(notice.message, { description: `URL 参数 ${notice.kind}_id=${notice.id}` });
     }
-  }, [focusEventEntity]);
+  }, []);
+
+  const { notices: urlNotices, dismissNotice: dismissUrlNotice } = useUrlOperatorContext({
+    state: urlCtx,
+    ready: !schedulerState.loading,
+    onRestore: restoreUrlContext,
+    validateId: validateUrlId,
+    isValidTab: isValidUrlTab,
+    onInvalidId: handleInvalidUrlIds,
+  });
 
   // 层级循环 L0 → L1 → L2 → L3 → L4 → L0
   const handleLevelToggle = useCallback(() => {
@@ -895,6 +1047,28 @@ const CommandMapShell = (): React.ReactElement => {
       <React.Suspense fallback={null}>
         <DataFreshnessIndicatorRow sources={freshnessSources} />
       </React.Suspense>
+
+      {/* Task 9 / 9.1：URL 失效 id 内联 banner（toast 已另行提示，可关闭） */}
+      {urlNotices.length > 0 && (
+        <div
+          role="alert"
+          aria-live="polite"
+          className="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2"
+        >
+          <TriangleAlert className="w-4 h-4 shrink-0 text-amber-400" />
+          <span className="text-xs text-amber-200">
+            {urlNotices.map((n) => n.message).join('；')}
+          </span>
+          <button
+            type="button"
+            onClick={() => urlNotices.forEach((_, i) => dismissUrlNotice(i))}
+            className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-amber-300/80 hover:bg-amber-500/10"
+            aria-label="关闭 URL 失效提示"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
 
       {failedQueries.length > 0 && (
         <div className="mx-4 mt-3">

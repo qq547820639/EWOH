@@ -20,6 +20,8 @@ export const FRESHNESS_STATUS_CLASSES: Record<FreshnessStatus, string> = {
   OFFLINE: 'bg-red-500/20 text-red-400 border-red-500/30',
   REPLAY: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
   SHADOW: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  RESYNCING: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  DEGRADED: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
 };
 
 function formatUpdatedAt(ts: number | null | undefined): string {
@@ -44,7 +46,8 @@ export interface DataFreshnessBadgeProps extends Omit<FreshnessInput, 'now'> {
 
 /**
  * 单个事实源的新鲜度徽标：状态 + 更新时间 + 滞后 + 原因（tooltip）。
- * 状态经 classifyFreshness 纯函数计算（LIVE/DELAYED/STALE/OFFLINE/REPLAY/SHADOW）。
+ * 状态经 classifyFreshness 纯函数计算
+ * （LIVE/DELAYED/STALE/OFFLINE/REPLAY/SHADOW/RESYNCING/DEGRADED）。
  */
 export function DataFreshnessBadge({
   source,

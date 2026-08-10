@@ -5,7 +5,7 @@
 // 本面板提供：类型/严重度过滤、冲突列表、详情展开、空态/加载/错误三态。
 // 冲突数据不虚构：无冲突即空态提示，不展示伪造信息。
 
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ShieldAlert,
@@ -36,12 +36,26 @@ import {
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import { getCurrentOperator } from '@client/src/lib/auth';
 import { conflictVM, conflictStatusLabel, type ConflictAction } from '../vm/conflictVM';
-import { TYPE_META, sortConflicts } from './conflict-panel-logic';
+import {
+  TYPE_META,
+  sortConflicts,
+  lifecycleReasonValid,
+  buildLifecycleActionParams,
+} from './conflict-panel-logic';
 import { useVirtualList } from '@client/src/lib/virtualList';
 import type { SchedulingConflict, SchedulingConflictType } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { Badge } from '@client/src/components/ui/badge';
 import { Button } from '@client/src/components/ui/button';
+import { Textarea } from '@client/src/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@client/src/components/ui/dialog';
 
 /** 冲突类型 → 图标与中文标签（前端展示语义，与后端 SchedulingConflictType 一一对应，逻辑见 conflict-panel-logic.ts）。 */
 const TYPE_ICONS: Record<SchedulingConflictType, React.ComponentType<{ className?: string }>> = {
@@ -91,6 +105,14 @@ export function ConflictCenterPanel({
 }: ConflictCenterPanelProps): React.ReactElement {
   const [typeFilter, setTypeFilter] = useState<SchedulingConflictType | undefined>(initialType);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  // Task 10 / 10.2：生命周期操作确认对话框（替换 window.prompt，收集必填 reason）。
+  const [lifecycleTarget, setLifecycleTarget] = useState<{
+    conflict: SchedulingConflict;
+    action: ConflictAction;
+  } | null>(null);
+  const [lifecycleReason, setLifecycleReason] = useState('');
+  const lifecycleReasonRef = useRef<HTMLTextAreaElement | null>(null);
+  const lifecycleConfirmRef = useRef<HTMLButtonElement | null>(null);
 
   const { conflicts, total, isLoading, isError } = useSchedulerConflicts(
     typeFilter ? { type: typeFilter } : undefined,
@@ -140,15 +162,28 @@ export function ConflictCenterPanel({
     },
   });
 
-  /** 执行生命周期操作：reason/operator 必填（沿用审计要求）。 */
+  /** 执行生命周期操作：先经确认对话框收集 reason（reason 必填，沿用审计要求），
+   *  确认后调用与原 window.prompt 时代完全一致的 API（buildLifecycleActionParams）。 */
   function runLifecycleAction(conflict: SchedulingConflict, action: ConflictAction): void {
-    const operator = getCurrentOperator();
-    const reason = window.prompt(`请输入操作原因（${action}，必填）：`, '');
-    if (!reason || !reason.trim()) {
+    setLifecycleTarget({ conflict, action });
+    setLifecycleReason('');
+  }
+
+  function confirmLifecycleAction(): void {
+    if (!lifecycleTarget) return;
+    if (!lifecycleReasonValid(lifecycleReason)) {
       toast.error('操作原因必填');
       return;
     }
-    lifecycleMutation.mutate({ conflictId: conflict.conflictId, action, operator, reason });
+    const params = buildLifecycleActionParams(
+      lifecycleTarget.conflict,
+      lifecycleTarget.action,
+      getCurrentOperator(),
+      lifecycleReason,
+    );
+    lifecycleMutation.mutate(params);
+    setLifecycleTarget(null);
+    setLifecycleReason('');
   }
 
   const ACTION_LABEL: Record<ConflictAction, string> = {
@@ -362,6 +397,52 @@ export function ConflictCenterPanel({
           </div>
         </div>
       )}
+
+      {/* Task 10 / 10.2：生命周期操作确认对话框（收集必填 reason，替换 window.prompt） */}
+      <Dialog
+        open={!!lifecycleTarget}
+        onOpenChange={(open) => {
+          if (!open) setLifecycleTarget(null);
+        }}
+      >
+        <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-white">
+              确认{lifecycleTarget ? ACTION_LABEL[lifecycleTarget.action] : ''}冲突
+            </DialogTitle>
+            <DialogDescription className="text-white/70">
+              {lifecycleTarget
+                ? `${TYPE_META[lifecycleTarget.conflict.type]?.label ?? lifecycleTarget.conflict.type} · ${lifecycleTarget.conflict.conflictId}`
+                : ''}
+              — 操作原因必填（写入审计）。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-xs text-white/60">操作原因（必填）</label>
+            <Textarea
+              ref={lifecycleReasonRef}
+              value={lifecycleReason}
+              onChange={(e) => setLifecycleReason(e.target.value)}
+              placeholder={`请输入${lifecycleTarget ? ACTION_LABEL[lifecycleTarget.action] : ''}原因...`}
+              autoFocus
+              className="bg-white/5 border-white/10 text-white"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setLifecycleTarget(null)}>
+              取消
+            </Button>
+            <Button
+              ref={lifecycleConfirmRef}
+              size="sm"
+              onClick={confirmLifecycleAction}
+              disabled={lifecycleMutation.isPending || !lifecycleReasonValid(lifecycleReason)}
+            >
+              {lifecycleMutation.isPending ? '提交中...' : '确认'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

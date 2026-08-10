@@ -33,6 +33,8 @@ import type {
   PlanCompareResult,
   ConflictPreviewRequest,
   ConflictPreviewResult,
+  ReplanPreviewRequest,
+  ReplanPreviewResult,
   PolicyReplayRequest,
   PolicyReplayRecord,
   PolicyGateEvaluation,
@@ -172,6 +174,22 @@ export async function replan(
 ): Promise<SchedulingPlanV2> {
   const res = await axiosForBackend({
     url: `/api/scheduler/plans/${planId}/replan`,
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}
+
+/**
+ * M03 / Task 9-10：Replan Preview（dry-run readonly，08 §5）。
+ * POST /api/scheduler/replan/preview：触发 → 影响闭包 → 局部子图求解（PREVIEW-*，
+ * 不落库）→ 与基线方案对比，返回计数 + 指标增量。前端「预览后确认」使用。
+ */
+export async function previewReplan(
+  body: ReplanPreviewRequest,
+): Promise<ReplanPreviewResult> {
+  const res = await axiosForBackend({
+    url: '/api/scheduler/replan/preview',
     method: 'POST',
     data: body,
   });

@@ -7,7 +7,7 @@
 //
 // 交互链：选择方案 → 选择任务 → 选择动作类型 → 选择目标资源/时间 → 填写 operator+reason → 提交 → 展示 diff。
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Lock,
   XCircle,
@@ -23,12 +23,14 @@ import {
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { getActivePlans, getTaskCandidates } from '@client/src/api/scheduler';
+import { getActivePlans, getTaskCandidates, previewOverrides } from '@client/src/api/scheduler';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import { usePlanOverrides } from '@client/src/hooks/usePlanOverrides';
 import { getCurrentOperator } from '@client/src/lib/auth';
 import { planDiffVM } from '../vm/planDiffVM';
+import { overridePreviewSummary, overridePreviewDeltaRows } from './override-preview-logic';
 import type {
+  OverridePreviewResponse,
   PlanOverrideAction,
   PlanOverrideKind,
   SchedulingPlanV2,
@@ -38,6 +40,14 @@ import { cn } from '@client/src/lib/utils';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
 import { ScrollArea } from '@client/src/components/ui/scroll-area';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@client/src/components/ui/dialog';
 
 /** 覆盖动作定义（九类，对应后端 PlanOverrideKind 子集，Phase 3 / P3-T4 新增换资源/锁定设备/工位/调时）。 */
 const OVERRIDE_KINDS: Array<{
@@ -84,6 +94,11 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
   const [endMs, setEndMs] = useState<string>('');
   const [operator, setOperator] = useState<string>(getCurrentOperator());
   const [reason, setReason] = useState<string>('');
+  // Task 10 / 10.2：执行前预览（previewOverrides dry-run）→ 确认后才真正提交。
+  const [preview, setPreview] = useState<OverridePreviewResponse | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<PlanOverrideAction | null>(null);
   const [result, setResult] = useState<{
     planId: string;
     changed: string[];
@@ -91,6 +106,9 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
     removed: string[];
     metrics: Record<string, number> | null;
   } | null>(null);
+  // 焦点管理（镜像 Shell 帮助对话框模式：打开存焦点 → 关闭恢复）。
+  const previewPrevFocusRef = useRef<HTMLElement | null>(null);
+  const previewConfirmRef = useRef<HTMLButtonElement | null>(null);
 
   const overrideMutation = usePlanOverrides(planId);
 
@@ -168,12 +186,28 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
   function handleSubmit() {
     const action = buildAction();
     if (!action || !planId) return;
+    // Task 10 / 10.2：先执行预览（纯计算不落库）→ 预览对话框确认后才真正提交。
+    setPendingAction(action);
+    setPreview(null);
+    setPreviewError(null);
+    setPreviewLoading(true);
+    previewOverrides(planId, { actions: [action], operator, reason })
+      .then(setPreview)
+      .catch((e) => {
+        setPreviewError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => setPreviewLoading(false));
+  }
+
+  /** 预览确认后真正执行覆盖（保留原 API 调用与成功后的 diff 展示）。 */
+  function confirmExecute() {
+    if (!pendingAction || !planId) return;
     overrideMutation.mutate(
-      { actions: [action], operator, reason },
+      { actions: [pendingAction], operator, reason },
       {
         onSuccess: (res) => {
           toast.success('覆盖已生效，已触发重排');
-          // Phase 3 / P3-T3：经 planDiffVM 差分展示 before/after。
+          // Phase 3 / P3-T3：经 planDiffVM 差分展示 before/after（保留）。
           const diff = planDiffVM(res.before, res.after);
           setResult({
             planId: res.planId,
@@ -188,7 +222,22 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
         },
       },
     );
+    setPreview(null);
+    setPendingAction(null);
   }
+
+  // 焦点管理（镜像 Shell 帮助对话框模式：打开存焦点 → 关闭恢复）。
+  const previewOpen = Boolean(preview || previewError || previewLoading);
+  useEffect(() => {
+    if (previewOpen) {
+      previewPrevFocusRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      window.requestAnimationFrame(() => previewConfirmRef.current?.focus());
+    } else if (previewPrevFocusRef.current) {
+      previewPrevFocusRef.current.focus();
+      previewPrevFocusRef.current = null;
+    }
+  }, [previewOpen]);
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -445,6 +494,100 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
           </div>
         </div>
       </ScrollArea>
+
+      {/* Task 10 / 10.2：执行前预览 Dialog（previewOverrides dry-run，确认后才真正提交） */}
+      <Dialog open={previewOpen} onOpenChange={(open) => !open && setPreview(null)}>
+        <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="text-white">覆盖影响预览</DialogTitle>
+            <DialogDescription className="text-white/70">
+              以下为后端 dry-run 计算（不落库不重排）；确认后才会真正提交覆盖并触发重排。
+            </DialogDescription>
+          </DialogHeader>
+          {previewLoading ? (
+            <div className="py-6 text-center text-xs text-white/60">
+              <Loader2 className="w-4 h-4 animate-spin inline mr-1.5" />
+              正在计算覆盖影响…
+            </div>
+          ) : previewError ? (
+            <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              预览失败：{previewError}
+              <div className="mt-1 text-[10px] text-red-300/70">不会执行任何变更，可关闭后检查输入重试。</div>
+            </div>
+          ) : preview ? (
+            <div className="space-y-2">
+              <div className="grid grid-cols-3 gap-1.5 text-center">
+                <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
+                  <div className="text-sm font-bold text-white/90">
+                    {overridePreviewSummary(preview).affectedCount}
+                  </div>
+                  <div className="text-[9px] text-white/50">受影响分配</div>
+                </div>
+                <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
+                  <div className="text-sm font-bold text-amber-400">
+                    {overridePreviewSummary(preview).planChurn}
+                  </div>
+                  <div className="text-[9px] text-white/50">改派任务（churn）</div>
+                </div>
+                <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
+                  <div className="text-sm font-bold text-white/90">
+                    {overridePreviewSummary(preview).conflictsIntroduced.length}
+                  </div>
+                  <div className="text-[9px] text-white/50">引入新冲突</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {overridePreviewDeltaRows(preview).map((d) => (
+                  <div key={d.key} className="rounded-md border border-white/10 bg-white/5 px-2 py-1">
+                    <div className="text-[9px] text-white/50">{d.label} Δ（{d.unit || '—'}）</div>
+                    <div
+                      className={cn(
+                        'text-sm font-semibold',
+                        d.value < 0 ? 'text-emerald-400' : d.value > 0 ? 'text-red-400' : 'text-white',
+                      )}
+                    >
+                      {d.value > 0 ? '+' : ''}
+                      {d.value.toFixed(1)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {overridePreviewSummary(preview).conflictsIntroduced.length > 0 && (
+                <div className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1.5">
+                  <div className="text-[9px] text-amber-400/80">预览引入的新冲突</div>
+                  {overridePreviewSummary(preview).conflictsIntroduced.slice(0, 3).map((c, i) => (
+                    <div key={c.conflictId ?? i} className="mt-0.5 text-[9.5px] text-white/60">
+                      · {c.type ?? '—'}：{c.message ?? ''}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="text-[9px] text-white/40">
+                目标方案 {preview.planId.slice(0, 8)} · 候选 {preview.candidatePlanId.slice(0, 12)}（PREVIEW）
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPreview(null)}
+              disabled={previewLoading}
+            >
+              取消
+            </Button>
+            <Button
+              ref={previewConfirmRef}
+              size="sm"
+              autoFocus
+              onClick={confirmExecute}
+              disabled={overrideMutation.isPending || previewLoading || !preview || !!previewError}
+            >
+              {overrideMutation.isPending ? '提交中...' : '确认执行覆盖并重排'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

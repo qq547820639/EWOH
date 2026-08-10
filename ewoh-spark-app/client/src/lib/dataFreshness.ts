@@ -2,14 +2,19 @@
  * Task 5 / P1：全局 Data Freshness Model（纯函数，node 可测）。
  *
  * 为 Command Map 各「事实源」（调度方案 / 世界·设备 / 调度上下文等）统一分类：
- * LIVE / DELAYED / STALE / OFFLINE / REPLAY / SHADOW。
+ * LIVE / DELAYED / STALE / OFFLINE / REPLAY / SHADOW / RESYNCING / DEGRADED。
  *
- * 分类规则（阈值显式化）：
- * - REPLAY   ：回放进行中（replayActive=true，优先级最高，任何连接态都覆盖）；
- * - SHADOW   ：方案/上下文为 shadow-only（shadowMode=true）；
- * - OFFLINE  ：SSE/连接断开（connected===false 或 connectionState==='OFFLINE'）。
- *              关键规则：SSE 断开但存在缓存数据时，状态**绝不**为 LIVE——
- *              断开判定优先于滞后计算（否则缓存时间戳仍很新会误报 LIVE）。
+ * 分类规则（阈值显式化；Task 9/10 将 SchedulerRealtime V2 连接态
+ * CONNECTED/DEGRADED/RESYNCING/OFFLINE 并入本词汇表，全局唯一状态词汇）：
+ * - REPLAY    ：回放进行中（replayActive=true，优先级最高，任何连接态都覆盖）；
+ * - SHADOW    ：方案/上下文为 shadow-only（shadowMode=true）；
+ * - OFFLINE   ：SSE/连接断开（connected===false 或 connectionState==='OFFLINE'）。
+ *               关键规则：SSE 断开但存在缓存数据时，状态**绝不**为 LIVE——
+ *               断开判定优先于滞后计算（否则缓存时间戳仍很新会误报 LIVE）；
+ * - RESYNCING ：连接态重同步中（connectionState==='RESYNCING'，增量被放弃、
+ *               正在全量权威重建，缓存未经验证不得宣称 LIVE）；
+ * - DEGRADED  ：连接降级（connectionState==='DEGRADED'，SSE 断开后轮询兜底，
+ *               实时性降低）；
  * - 其余按滞后时间（lagMs，缺省由 now - lastUpdatedAt 计算）分类：
  *   - lag <= FRESHNESS_LIVE_LAG_MS（5s）      → LIVE；
  *   - lag <= FRESHNESS_STALE_LAG_MS（30s）    → DELAYED；
@@ -17,7 +22,15 @@
  *   - 无时间戳且无显式 lag（无新鲜度证据）      → STALE（保守，绝不无证据宣称 LIVE）。
  */
 
-export type FreshnessStatus = 'LIVE' | 'DELAYED' | 'STALE' | 'OFFLINE' | 'REPLAY' | 'SHADOW';
+export type FreshnessStatus =
+  | 'LIVE'
+  | 'DELAYED'
+  | 'STALE'
+  | 'OFFLINE'
+  | 'REPLAY'
+  | 'SHADOW'
+  | 'RESYNCING'
+  | 'DEGRADED';
 
 /** LIVE 阈值：数据滞后 <= 5s 视为实时。 */
 export const FRESHNESS_LIVE_LAG_MS = 5_000;
@@ -48,6 +61,23 @@ export const FRESHNESS_STATUS_LABELS: Record<FreshnessStatus, string> = {
   OFFLINE: '离线',
   REPLAY: '回放',
   SHADOW: 'Shadow',
+  RESYNCING: '重同步',
+  DEGRADED: '降级',
+};
+
+/**
+ * 新鲜度状态展示优先级（越大越优先；REPLAY 恒为最高）。
+ * 用于同屏多源/多信号叠加时的取大展示（如冲突徽标与新鲜度徽标并存）。
+ */
+export const FRESHNESS_STATUS_PRIORITY: Record<FreshnessStatus, number> = {
+  REPLAY: 8,
+  OFFLINE: 7,
+  RESYNCING: 6,
+  DEGRADED: 5,
+  SHADOW: 4,
+  STALE: 3,
+  DELAYED: 2,
+  LIVE: 1,
 };
 
 /** 纯函数：输入 → 新鲜度状态（规则见文件头注释）。 */
@@ -56,6 +86,9 @@ export function classifyFreshness(input: FreshnessInput): FreshnessStatus {
   if (input.shadowMode) return 'SHADOW';
   // 断开判定优先于滞后计算：SSE 断开 + 存在缓存 → OFFLINE（绝不 LIVE）。
   if (input.connected === false || input.connectionState === 'OFFLINE') return 'OFFLINE';
+  // 连接态重同步/降级为一级状态（与 SchedulerRealtime V2 词汇统一）。
+  if (input.connectionState === 'RESYNCING') return 'RESYNCING';
+  if (input.connectionState === 'DEGRADED') return 'DEGRADED';
 
   let lag: number | null = input.lagMs ?? null;
   if (lag == null) {
@@ -79,6 +112,12 @@ export function freshnessReason(input: FreshnessInput): string {
     return input.connectionState === 'OFFLINE'
       ? 'SSE 连接断开（OFFLINE），缓存数据不得视为实时'
       : '连接已断开，缓存数据不得视为实时';
+  }
+  if (input.connectionState === 'RESYNCING') {
+    return 'SSE 正在全量重同步（增量被放弃），以重同步源为准';
+  }
+  if (input.connectionState === 'DEGRADED') {
+    return 'SSE 连接降级（轮询兜底），实时性降低';
   }
   const status = classifyFreshness(input);
   if (status === 'STALE' && input.lastUpdatedAt == null && input.lagMs == null) {

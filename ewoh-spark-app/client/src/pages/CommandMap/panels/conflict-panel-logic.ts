@@ -3,8 +3,15 @@
 // v0.7 A3：把冲突类型映射与排序抽为纯函数模块：
 // - TYPE_META：后端 SchedulingConflictType → 中文标签（防展示漂移，测试覆盖完整性）；
 // - sortConflicts：按严重度（高 → 中 → 低）稳定排序，同严重度保持输入顺序。
+//
+// Task 10 / 10.2：生命周期操作（ack/resolve/suppress）确认对话框纯逻辑：
+// - lifecycleReasonValid：reason 必填语义（沿用 window.prompt 时代的必填校验）；
+// - buildLifecycleActionParams：构造与原 API 调用一致的 mutation 参数（不改变契约）。
 
-import type { SchedulingConflictType } from '@shared/api.interface';
+import type {
+  ConflictAction,
+} from '../vm/conflictVM';
+import type { SchedulingConflict, SchedulingConflictType } from '@shared/api.interface';
 
 export const TYPE_META: Record<SchedulingConflictType, { label: string }> = {
   double_booking: { label: '资源重复预占' },
@@ -29,4 +36,19 @@ export function sortConflicts<T extends { severity: string }>(conflicts: T[]): T
   return [...conflicts].sort(
     (a, b) => (SEVERITY_RANK[a.severity] ?? 3) - (SEVERITY_RANK[b.severity] ?? 3),
   );
+}
+
+/** 生命周期操作确认框：reason 必填（空白/全空格视为无效，沿用原 window.prompt 语义）。 */
+export function lifecycleReasonValid(reason: string): boolean {
+  return Boolean(reason && reason.trim().length > 0);
+}
+
+/** 构造生命周期 mutation 参数（与原 API 调用契约一致：conflictId/action/operator/reason）。 */
+export function buildLifecycleActionParams(
+  conflict: SchedulingConflict,
+  action: ConflictAction,
+  operator: string,
+  reason: string,
+): { conflictId: string; action: ConflictAction; operator: string; reason: string } {
+  return { conflictId: conflict.conflictId, action, operator, reason };
 }
