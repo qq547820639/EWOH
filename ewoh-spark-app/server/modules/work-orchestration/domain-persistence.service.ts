@@ -9,7 +9,7 @@ import {
   ewohIdempotencyKeys,
   ewohResourceLocks,
 } from '@server/database/schema';
-import { STANDALONE_ROOT_DATABASE } from '@server/database/request-database-context';
+import { RequestDatabaseContext } from '@server/database/request-database-context';
 
 export interface ResourceLockRecord {
   resourceId: string;
@@ -94,6 +94,13 @@ type DbOrTx = PostgresJsDatabase<Record<string, never>>;
  * instead of the application clock, so concurrent instances share one time source.
  * Composite operations (2.C) run inside explicit `db.transaction()` boundaries so a
  * mid-failure never leaves a partial write (e.g. a lock acquired without its audit).
+ *
+ * Root-handle access control (7.2): every public method runs inside
+ * RequestDatabaseContext.systemTransaction — the explicit system-level transaction
+ * API with NO tenant GUC settings — instead of touching the root database handle
+ * directly. These domain tables are NOT RLS-protected, so tenant isolation stays
+ * the caller's responsibility; the system transaction keeps the root handle
+ * auditable and confined to a named API.
  */
 @Injectable()
 export class DomainPersistenceService {
@@ -101,8 +108,8 @@ export class DomainPersistenceService {
   private readonly dbNow = sql`now()` as unknown as Date;
 
   constructor(
-    @Inject(STANDALONE_ROOT_DATABASE)
-    private readonly db: PostgresJsDatabase<Record<string, never>>,
+    @Inject(RequestDatabaseContext)
+    private readonly requestContext: RequestDatabaseContext,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -121,7 +128,9 @@ export class DomainPersistenceService {
     purpose?: string;
     expiresAt?: string;
   }): Promise<ResourceLockRecord> {
-    return this.acquireLockOn(this.db, input);
+    return this.requestContext.systemTransaction((db) =>
+      this.acquireLockOn(db, input),
+    );
   }
 
   /**
@@ -139,9 +148,9 @@ export class DomainPersistenceService {
     },
     audit?: AuditEntry,
   ): Promise<ResourceLockRecord> {
-    return this.db.transaction(async (tx) => {
-      const record = await this.acquireLockOn(tx, input);
-      if (audit) await this.appendAudit(tx, audit);
+    return this.requestContext.systemTransaction(async (db) => {
+      const record = await this.acquireLockOn(db, input);
+      if (audit) await this.appendAudit(db, audit);
       return record;
     });
   }
@@ -152,31 +161,33 @@ export class DomainPersistenceService {
     holder: string;
     isGlobalAdmin?: boolean;
   }): Promise<{ released: boolean; holder: string }> {
-    const [row] = await this.db
-      .select()
-      .from(ewohResourceLocks)
-      .where(
-        and(
-          eq(ewohResourceLocks.orgId, input.orgId),
-          eq(ewohResourceLocks.resourceKey, input.resourceKey),
-        ),
-      );
-    if (!row || !row.active) return { released: false, holder: '' };
-    if (row.holder !== input.holder && !input.isGlobalAdmin) {
-      throw new ConflictException(
-        'only the lock holder or a global admin can release this lock',
-      );
-    }
-    await this.db
-      .update(ewohResourceLocks)
-      .set({ active: false, version: sql`${ewohResourceLocks.version} + 1` })
-      .where(
-        and(
-          eq(ewohResourceLocks.id, row.id),
-          eq(ewohResourceLocks.version, row.version),
-        ),
-      );
-    return { released: true, holder: row.holder };
+    return this.requestContext.systemTransaction(async (db) => {
+      const [row] = await db
+        .select()
+        .from(ewohResourceLocks)
+        .where(
+          and(
+            eq(ewohResourceLocks.orgId, input.orgId),
+            eq(ewohResourceLocks.resourceKey, input.resourceKey),
+          ),
+        );
+      if (!row || !row.active) return { released: false, holder: '' };
+      if (row.holder !== input.holder && !input.isGlobalAdmin) {
+        throw new ConflictException(
+          'only the lock holder or a global admin can release this lock',
+        );
+      }
+      await db
+        .update(ewohResourceLocks)
+        .set({ active: false, version: sql`${ewohResourceLocks.version} + 1` })
+        .where(
+          and(
+            eq(ewohResourceLocks.id, row.id),
+            eq(ewohResourceLocks.version, row.version),
+          ),
+        );
+      return { released: true, holder: row.holder };
+    });
   }
 
   async renewLock(input: {
@@ -185,55 +196,61 @@ export class DomainPersistenceService {
     holder: string;
     expiresAt?: string;
   }): Promise<ResourceLockRecord | null> {
-    const [row] = await this.db
-      .select()
-      .from(ewohResourceLocks)
-      .where(
-        and(
-          eq(ewohResourceLocks.orgId, input.orgId),
-          eq(ewohResourceLocks.resourceKey, input.resourceKey),
-        ),
-      );
-    if (!row || !row.active || row.holder !== input.holder) return null;
-    const [updated] = await this.db
-      .update(ewohResourceLocks)
-      .set({
-        renewedAt: this.dbNow,
-        expiresAt: input.expiresAt ? new Date(input.expiresAt) : row.expiresAt,
-        version: sql`${ewohResourceLocks.version} + 1`,
-      })
-      .where(
-        and(
-          eq(ewohResourceLocks.id, row.id),
-          eq(ewohResourceLocks.version, row.version),
-        ),
-      )
-      .returning();
-    return updated ? this.toLockRecord(updated) : null;
+    return this.requestContext.systemTransaction(async (db) => {
+      const [row] = await db
+        .select()
+        .from(ewohResourceLocks)
+        .where(
+          and(
+            eq(ewohResourceLocks.orgId, input.orgId),
+            eq(ewohResourceLocks.resourceKey, input.resourceKey),
+          ),
+        );
+      if (!row || !row.active || row.holder !== input.holder) return null;
+      const [updated] = await db
+        .update(ewohResourceLocks)
+        .set({
+          renewedAt: this.dbNow,
+          expiresAt: input.expiresAt ? new Date(input.expiresAt) : row.expiresAt,
+          version: sql`${ewohResourceLocks.version} + 1`,
+        })
+        .where(
+          and(
+            eq(ewohResourceLocks.id, row.id),
+            eq(ewohResourceLocks.version, row.version),
+          ),
+        )
+        .returning();
+      return updated ? this.toLockRecord(updated) : null;
+    });
   }
 
   async getLock(orgId: string, resourceKey: string): Promise<ResourceLockRecord | null> {
-    const [row] = await this.db
-      .select()
-      .from(ewohResourceLocks)
-      .where(
-        and(
-          eq(ewohResourceLocks.orgId, orgId),
-          eq(ewohResourceLocks.resourceKey, resourceKey),
-        ),
-      );
-    return row ? this.toLockRecord(row) : null;
+    return this.requestContext.systemTransaction(async (db) => {
+      const [row] = await db
+        .select()
+        .from(ewohResourceLocks)
+        .where(
+          and(
+            eq(ewohResourceLocks.orgId, orgId),
+            eq(ewohResourceLocks.resourceKey, resourceKey),
+          ),
+        );
+      return row ? this.toLockRecord(row) : null;
+    });
   }
 
   async listActiveLocks(orgId: string): Promise<ResourceLockRecord[]> {
-    const rows = await this.db
-      .select()
-      .from(ewohResourceLocks)
-      .where(
-        and(eq(ewohResourceLocks.orgId, orgId), eq(ewohResourceLocks.active, true)),
-      )
-      .orderBy(desc(ewohResourceLocks.acquiredAt));
-    return rows.map((row) => this.toLockRecord(row));
+    return this.requestContext.systemTransaction(async (db) => {
+      const rows = await db
+        .select()
+        .from(ewohResourceLocks)
+        .where(
+          and(eq(ewohResourceLocks.orgId, orgId), eq(ewohResourceLocks.active, true)),
+        )
+        .orderBy(desc(ewohResourceLocks.acquiredAt));
+      return rows.map((row) => this.toLockRecord(row));
+    });
   }
 
   /**
@@ -241,19 +258,21 @@ export class DomainPersistenceService {
    * Returns the number of recovered locks. The expiry comparison uses database time.
    */
   async recoverExpiredLocks(orgId: string): Promise<number> {
-    const result = await this.db
-      .update(ewohResourceLocks)
-      .set({ active: false, version: sql`${ewohResourceLocks.version} + 1` })
-      .where(
-        and(
-          eq(ewohResourceLocks.orgId, orgId),
-          eq(ewohResourceLocks.active, true),
-          gte(ewohResourceLocks.expiresAt, new Date(0)),
-          sql`${ewohResourceLocks.expiresAt} <= now()`,
-        ),
-      )
-      .returning({ id: ewohResourceLocks.id });
-    return result.length;
+    return this.requestContext.systemTransaction(async (db) => {
+      const result = await db
+        .update(ewohResourceLocks)
+        .set({ active: false, version: sql`${ewohResourceLocks.version} + 1` })
+        .where(
+          and(
+            eq(ewohResourceLocks.orgId, orgId),
+            eq(ewohResourceLocks.active, true),
+            gte(ewohResourceLocks.expiresAt, new Date(0)),
+            sql`${ewohResourceLocks.expiresAt} <= now()`,
+          ),
+        )
+        .returning({ id: ewohResourceLocks.id });
+      return result.length;
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -261,16 +280,18 @@ export class DomainPersistenceService {
   // ---------------------------------------------------------------------------
 
   async getIdempotency<T>(scope: string, key: string): Promise<T | undefined> {
-    const [row] = await this.db
-      .select()
-      .from(ewohIdempotencyKeys)
-      .where(
-        and(
-          eq(ewohIdempotencyKeys.scope, scope),
-          eq(ewohIdempotencyKeys.idempotencyKey, key),
-        ),
-      );
-    return row?.response as T | undefined;
+    return this.requestContext.systemTransaction(async (db) => {
+      const [row] = await db
+        .select()
+        .from(ewohIdempotencyKeys)
+        .where(
+          and(
+            eq(ewohIdempotencyKeys.scope, scope),
+            eq(ewohIdempotencyKeys.idempotencyKey, key),
+          ),
+        );
+      return row?.response as T | undefined;
+    });
   }
 
   /**
@@ -278,14 +299,16 @@ export class DomainPersistenceService {
    * already exists (dedup), otherwise the provided response.
    */
   async setIdempotency<T>(scope: string, key: string, response: T): Promise<T> {
-    const existing = await this.getIdempotency<T>(scope, key);
-    if (existing !== undefined) return existing;
-    await this.db
-      .insert(ewohIdempotencyKeys)
-      .values({ scope, idempotencyKey: key, response: response as unknown })
-      .onConflictDoNothing();
-    const stored = await this.getIdempotency<T>(scope, key);
-    return stored as T;
+    return this.requestContext.systemTransaction(async (db) => {
+      const existing = await this.getIdempotency<T>(scope, key);
+      if (existing !== undefined) return existing;
+      await db
+        .insert(ewohIdempotencyKeys)
+        .values({ scope, idempotencyKey: key, response: response as unknown })
+        .onConflictDoNothing();
+      const stored = await this.getIdempotency<T>(scope, key);
+      return stored as T;
+    });
   }
 
   /**
@@ -299,15 +322,15 @@ export class DomainPersistenceService {
     key: string,
     creator: (tx: DbOrTx) => Promise<T>,
   ): Promise<{ created: boolean; result: T }> {
-    return this.db.transaction(async (tx) => {
-      const existing = (await this.getIdempotencyOn(tx, scope, key)) as T | undefined;
+    return this.requestContext.systemTransaction(async (db) => {
+      const existing = (await this.getIdempotencyOn(db, scope, key)) as T | undefined;
       if (existing !== undefined) return { created: false, result: existing };
-      const result = await creator(tx);
-      await tx
+      const result = await creator(db);
+      await db
         .insert(ewohIdempotencyKeys)
         .values({ scope, idempotencyKey: key, response: result as unknown })
         .onConflictDoNothing();
-      const stored = (await this.getIdempotencyOn(tx, scope, key)) as T | undefined;
+      const stored = (await this.getIdempotencyOn(db, scope, key)) as T | undefined;
       return { created: true, result: (stored ?? result) as T };
     });
   }
@@ -325,7 +348,9 @@ export class DomainPersistenceService {
     acceptance?: string;
     openQuestions?: string[];
   }): Promise<HandoffRecord> {
-    return this.createHandoffOn(this.db, record);
+    return this.requestContext.systemTransaction((db) =>
+      this.createHandoffOn(db, record),
+    );
   }
 
   /**
@@ -345,9 +370,9 @@ export class DomainPersistenceService {
     },
     evidence?: EvidenceMetadataRecord,
   ): Promise<HandoffRecord> {
-    return this.db.transaction(async (tx) => {
-      const handoff = await this.createHandoffOn(tx, record);
-      if (evidence) await this.upsertEvidenceOn(tx, evidence);
+    return this.requestContext.systemTransaction(async (db) => {
+      const handoff = await this.createHandoffOn(db, record);
+      if (evidence) await this.upsertEvidenceOn(db, evidence);
       return handoff;
     });
   }
@@ -361,9 +386,9 @@ export class DomainPersistenceService {
     handoffId: string,
     evidence?: EvidenceMetadataRecord,
   ): Promise<HandoffRecord | null> {
-    return this.db.transaction(async (tx) => {
-      const handoff = await this.updateHandoffStatusOn(tx, handoffId, 'accepted');
-      if (evidence) await this.upsertEvidenceOn(tx, evidence);
+    return this.requestContext.systemTransaction(async (db) => {
+      const handoff = await this.updateHandoffStatusOn(db, handoffId, 'accepted');
+      if (evidence) await this.upsertEvidenceOn(db, evidence);
       return handoff;
     });
   }
@@ -372,23 +397,29 @@ export class DomainPersistenceService {
     handoffId: string,
     state: 'accepted' | 'rejected' | 'closed',
   ): Promise<HandoffRecord | null> {
-    return this.updateHandoffStatusOn(this.db, handoffId, state);
+    return this.requestContext.systemTransaction((db) =>
+      this.updateHandoffStatusOn(db, handoffId, state),
+    );
   }
 
   async getHandoff(handoffId: string): Promise<HandoffRecord | null> {
-    const [row] = await this.db
-      .select()
-      .from(ewohHandoffs)
-      .where(eq(ewohHandoffs.handoffId, handoffId));
-    return row ? this.toHandoffRecord(row) : null;
+    return this.requestContext.systemTransaction(async (db) => {
+      const [row] = await db
+        .select()
+        .from(ewohHandoffs)
+        .where(eq(ewohHandoffs.handoffId, handoffId));
+      return row ? this.toHandoffRecord(row) : null;
+    });
   }
 
   async listHandoffs(): Promise<HandoffRecord[]> {
-    const rows = await this.db
-      .select()
-      .from(ewohHandoffs)
-      .orderBy(desc(ewohHandoffs.createdAt));
-    return rows.map((row) => this.toHandoffRecord(row));
+    return this.requestContext.systemTransaction(async (db) => {
+      const rows = await db
+        .select()
+        .from(ewohHandoffs)
+        .orderBy(desc(ewohHandoffs.createdAt));
+      return rows.map((row) => this.toHandoffRecord(row));
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -396,7 +427,9 @@ export class DomainPersistenceService {
   // ---------------------------------------------------------------------------
 
   async upsertGitSyncState(record: GitSyncStateRecord): Promise<void> {
-    await this.upsertGitSyncOn(this.db, record);
+    return this.requestContext.systemTransaction((db) =>
+      this.upsertGitSyncOn(db, record),
+    );
   }
 
   /**
@@ -405,18 +438,20 @@ export class DomainPersistenceService {
    * for the read path (2.B), instead of recomputing a plan from process memory.
    */
   async getGitSyncState(syncId: string): Promise<GitSyncStateRecord | null> {
-    const [row] = await this.db
-      .select()
-      .from(ewohGitSyncState)
-      .where(eq(ewohGitSyncState.syncId, syncId));
-    if (!row) return null;
-    return {
-      syncId: row.syncId,
-      lastSyncAt: this.toIso(row.lastSyncAt),
-      lastSyncSha: row.lastSyncSha ?? undefined,
-      lastSyncStatus: row.lastSyncStatus ?? undefined,
-      conflicts: row.conflicts ?? undefined,
-    };
+    return this.requestContext.systemTransaction(async (db) => {
+      const [row] = await db
+        .select()
+        .from(ewohGitSyncState)
+        .where(eq(ewohGitSyncState.syncId, syncId));
+      if (!row) return null;
+      return {
+        syncId: row.syncId,
+        lastSyncAt: this.toIso(row.lastSyncAt),
+        lastSyncSha: row.lastSyncSha ?? undefined,
+        lastSyncStatus: row.lastSyncStatus ?? undefined,
+        conflicts: row.conflicts ?? undefined,
+      };
+    });
   }
 
   /**
@@ -428,9 +463,9 @@ export class DomainPersistenceService {
     record: GitSyncStateRecord,
     evidence: EvidenceMetadataRecord,
   ): Promise<void> {
-    return this.db.transaction(async (tx) => {
-      await this.upsertGitSyncOn(tx, record);
-      await this.upsertEvidenceOn(tx, evidence);
+    return this.requestContext.systemTransaction(async (db) => {
+      await this.upsertGitSyncOn(db, record);
+      await this.upsertEvidenceOn(db, evidence);
     });
   }
 
@@ -439,26 +474,30 @@ export class DomainPersistenceService {
   // ---------------------------------------------------------------------------
 
   async upsertEvidenceMetadata(record: EvidenceMetadataRecord): Promise<void> {
-    await this.upsertEvidenceOn(this.db, record);
+    return this.requestContext.systemTransaction((db) =>
+      this.upsertEvidenceOn(db, record),
+    );
   }
 
   async getEvidenceMetadata(evidenceId: string): Promise<EvidenceMetadataRecord | null> {
-    const [row] = await this.db
-      .select()
-      .from(ewohEvidenceMetadata)
-      .where(eq(ewohEvidenceMetadata.evidenceId, evidenceId));
-    if (!row) return null;
-    return {
-      evidenceId: row.evidenceId,
-      workItemId: row.workItemId ?? undefined,
-      commitSha: row.commitSha ?? undefined,
-      envFingerprint: row.envFingerprint ?? undefined,
-      verifier: row.verifier ?? undefined,
-      producedAt: this.toIso(row.producedAt),
-      expiresAt: this.toIso(row.expiresAt),
-      result: row.result ?? undefined,
-      checksum: row.checksum ?? undefined,
-    };
+    return this.requestContext.systemTransaction(async (db) => {
+      const [row] = await db
+        .select()
+        .from(ewohEvidenceMetadata)
+        .where(eq(ewohEvidenceMetadata.evidenceId, evidenceId));
+      if (!row) return null;
+      return {
+        evidenceId: row.evidenceId,
+        workItemId: row.workItemId ?? undefined,
+        commitSha: row.commitSha ?? undefined,
+        envFingerprint: row.envFingerprint ?? undefined,
+        verifier: row.verifier ?? undefined,
+        producedAt: this.toIso(row.producedAt),
+        expiresAt: this.toIso(row.expiresAt),
+        result: row.result ?? undefined,
+        checksum: row.checksum ?? undefined,
+      };
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -471,7 +510,9 @@ export class DomainPersistenceService {
     factoryId: string;
     step?: string;
   }): Promise<FactoryReplicationSessionRecord> {
-    return this.createReplicationSessionOn(this.db, input);
+    return this.requestContext.systemTransaction((db) =>
+      this.createReplicationSessionOn(db, input),
+    );
   }
 
   async updateReplicationSession(
@@ -484,7 +525,9 @@ export class DomainPersistenceService {
       outputEvidenceId?: string;
     },
   ): Promise<FactoryReplicationSessionRecord | null> {
-    return this.updateReplicationSessionOn(this.db, sessionId, patch);
+    return this.requestContext.systemTransaction((db) =>
+      this.updateReplicationSessionOn(db, sessionId, patch),
+    );
   }
 
   /**
@@ -503,9 +546,9 @@ export class DomainPersistenceService {
     },
     evidence: EvidenceMetadataRecord,
   ): Promise<FactoryReplicationSessionRecord | null> {
-    return this.db.transaction(async (tx) => {
-      const session = await this.updateReplicationSessionOn(tx, sessionId, patch);
-      await this.upsertEvidenceOn(tx, evidence);
+    return this.requestContext.systemTransaction(async (db) => {
+      const session = await this.updateReplicationSessionOn(db, sessionId, patch);
+      await this.upsertEvidenceOn(db, evidence);
       return session;
     });
   }

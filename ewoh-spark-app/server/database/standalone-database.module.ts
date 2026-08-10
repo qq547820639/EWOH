@@ -19,10 +19,12 @@ import {
   exports: [
     DRIZZLE_DATABASE,
     RequestDatabaseContext,
-    // Root database handle used by DomainPersistenceService (work orchestration)
-    // and other consumers that persist domain state directly. A @Global module
-    // only makes its *exported* providers resolvable app-wide, so this token must
-    // be listed here or Nest fails to inject it into non-global modules.
+    // Root database handle (system-level, no RLS/GUC). Since 7.2, business code
+    // must reach it ONLY via RequestDatabaseContext.systemTransaction; this token
+    // is still exported for the database plumbing itself and test helpers
+    // (e.g. test/helpers/e2e-app.ts closes the pool). A @Global module only makes
+    // its *exported* providers resolvable app-wide, so this token must be listed
+    // here or Nest fails to inject it into non-global modules.
     STANDALONE_ROOT_DATABASE,
   ],
 })

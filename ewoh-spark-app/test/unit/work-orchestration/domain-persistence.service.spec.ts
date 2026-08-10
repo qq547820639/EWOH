@@ -34,6 +34,7 @@ interface DbHandle {
     };
     execute: () => Promise<unknown[]>;
     transaction: (fn: (tx: unknown) => Promise<unknown>) => Promise<unknown>;
+    systemTransaction: <T>(fn: (tx: unknown) => Promise<T>) => Promise<T>;
   };
 }
 
@@ -87,6 +88,11 @@ function buildDb(options: {
     update: update.update,
     execute: () => Promise.resolve([]),
     transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(db),
+    // RequestDatabaseContext.systemTransaction contract: the mock handle doubles
+    // as the request context so `new DomainPersistenceService(db as never)`
+    // keeps working after the 7.2 root-handle refactor.
+    systemTransaction: <T,>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
+      db.transaction(fn) as Promise<T>,
   };
   return { db };
 }
@@ -450,6 +456,11 @@ class StatefulDb {
       this.restore(snap);
       throw err;
     }
+  }
+
+  /** RequestDatabaseContext.systemTransaction contract (7.2 root-handle refactor). */
+  async systemTransaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+    return this.transaction(fn) as Promise<T>;
   }
 
   async execute(): Promise<MockRow[]> {

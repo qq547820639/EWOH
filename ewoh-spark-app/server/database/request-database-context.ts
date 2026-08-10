@@ -33,6 +33,30 @@ export class RequestDatabaseContext {
     });
   }
 
+  /**
+   * Runs `operation` inside a system-level transaction on the root database
+   * handle WITHOUT tenant GUC settings (no app.current_org_id / app.user_id …).
+   *
+   * Reserved for migrations, bootstrap, and system infrastructure that must
+   * operate across org boundaries (e.g. work-orchestration durable domain state:
+   * resource locks, idempotency keys, handoffs, git-sync state, evidence
+   * metadata, factory replication sessions). Business requests MUST use
+   * runInTransaction with the org GUC settings (or the tenant-aware
+   * DRIZZLE_DATABASE proxy) so RLS and tenant isolation apply.
+   *
+   * Like runInTransaction, an already-active transaction is reused (one request
+   * on one transaction/connection); otherwise a dedicated transaction is opened
+   * on the root handle. `op` receives the transaction handle it should query on.
+   */
+  async systemTransaction<T>(
+    op: (db: StandaloneDatabase) => Promise<T>,
+  ): Promise<T> {
+    return this.runInTransaction([], async () => {
+      const db = this.storage.getStore() ?? this.rootDatabase;
+      return op(db);
+    });
+  }
+
   async runInTransaction<T>(
     settings: readonly TransactionSetting[],
     operation: () => Promise<T>,
