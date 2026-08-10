@@ -515,6 +515,106 @@ export interface SchedulingEventImpact {
   affectedZoneIds: string[];
 }
 
+// ============================================================================
+// Incremental Replan V2 / M01：ReplanImpact 领域模型（08 §1）
+// ============================================================================
+
+/**
+ * Replan V2 影响模型（08 §1）：直接命中 + 传播闭包后需重排的影响范围。
+ *
+ * 与既有 ImpactAnalyzer.analyze():ImpactResult 并存（向后兼容）；handleTrigger
+ * 内部改消费 analyzeImpactV2()。全部字段为纯数据、可选/可空语义向后兼容，
+ * 默认行为=现状（无配置时与现有 partial replan 一致）。
+ *
+ * 字段命名贴合既有风格：affectedTaskIds/frozenTaskIds 沿用 impact-analyzer.ts
+ * （affectedTaskIds=直接受影响+下游闭包；frozen 语义沿用 FROZEN_STATUSES）。
+ */
+export interface ReplanImpact {
+  /** 触发类型（SchedulingTrigger 或扩展字符串）。 */
+  triggerType: SchedulingTrigger | string;
+  /** 触发实体 id（事件/资源/route edge/zone；确定性排序）。 */
+  triggerIds: string[];
+  /** 直接受影响 + 传播闭包后需重排的任务（= 现有 ImpactAnalyzer.affectedTaskIds 语义超集）。 */
+  affectedTaskIds: string[];
+  /** 受影响资源（person/device/station 统一 id，投影层同 id 空间）。 */
+  affectedResourceIds: string[];
+  affectedPersonIds: string[];
+  affectedDeviceIds: string[];
+  affectedStationIds: string[];
+  affectedZoneIds: string[];
+  /** 冻结 assignment/task id（executing/dispatched/in_progress/LOCK/safety）。 */
+  frozenAssignmentIds: string[];
+  /** 可移动任务（= affected ∩ schedulable ∩ !frozen）。 */
+  movableAssignmentIds: string[];
+  /** 逐条原因（去重、确定性排序；与 triggerIds 对齐，如 'DEVICE_OFFLINE:D-1'）。 */
+  reasons: string[];
+  /** 影响分析所基于的世界快照。 */
+  snapshotVersion: string;
+  /** 当前生效方案 version（无则 null）。 */
+  baselinePlanVersion: number | null;
+}
+
+/** Replan V2 风暴治理/传播上限配置（08 §3/§7；全可选，缺省=现状）。 */
+export interface ReplanConfig {
+  /** 触发去抖（ms），缺省 5000。 */
+  replanDebounceMs?: number;
+  /** 两次重排最小间隔（ms），缺省 30000（与既有 triggerCooldownMs 对齐）。 */
+  minimumReplanIntervalMs?: number;
+  /** 窗口内最大重排次数，缺省 12。 */
+  maximumReplansPerWindow?: number;
+  /** 冲突聚合窗口（ms），缺省 60000。 */
+  conflictAggregationWindowMs?: number;
+  /** 影响传播最大深度（仅 predecessor 闭包计深），缺省 3。 */
+  maxPropagationDepth?: number;
+  /** 影响传播最大任务数截断，缺省 200。 */
+  maxAffectedTasks?: number;
+}
+
+/** Replan V2 自动重排 vs 人工审批政策（08 §6；全可选，缺省=现状自动）。 */
+export interface ReplanApprovalConfig {
+  /** 受影响比例阈值（affected / 可调度任务数），超过需人工审批，缺省 0.5。 */
+  autoMaxAffectedRatio?: number;
+  /** 预期 churn 比例阈值（churnDelta/affected），超过需人工审批，缺省 0.4。 */
+  autoMaxChurnRatio?: number;
+  /** 影响集合含 safetyCritical 任务时需人工审批，缺省 true。 */
+  requireApprovalOnSafetyCritical?: boolean;
+  /** 影响集合含人工 LOCK 时需人工审批，缺省 true。 */
+  requireApprovalOnHumanLock?: boolean;
+}
+
+/** Churn Objective V2 权重（08 §4；全可选，缺省=现状回归）。 */
+export interface ChurnConfig {
+  /** 人员变更罚分，缺省 = weights.change（现状：仅 person 变更计 churn）。 */
+  personChangePenalty?: number;
+  /** 设备变更罚分，缺省 0。 */
+  deviceChangePenalty?: number;
+  /** 工位变更罚分，缺省 0。 */
+  stationChangePenalty?: number;
+  /** 起点位移罚分（每 1min），缺省 0。 */
+  startTimeShiftPenalty?: number;
+  /** 相对基线执行顺序变化罚，缺省 0。 */
+  sequenceChangePenalty?: number;
+  /** 移除 assignment 罚分，缺省 = weights.change。 */
+  assignmentRemovalPenalty?: number;
+  /** 新增 assignment 罚分，缺省 0。 */
+  assignmentAdditionPenalty?: number;
+}
+
+/** Prediction Shadow Learning canary 配置（08 §11；全可选）。 */
+export interface PredictionConfig {
+  /** canary 采样比例阶梯（shadow 仅采样比例，生产输出仍为 baseline），缺省 [0,0.05,0.2,0.5,1]。 */
+  canaryFractions?: number[];
+  /** 自动回退条件（超阈值 canary 归 0，SSE prediction.rollback）。 */
+  autoRollbackOn?: {
+    /** 窗口 MAE 上限，缺省 0.25。 */
+    maxAbsoluteError?: number;
+    /** 回退率上限，缺省 0.5。 */
+    maxFallbackRate?: number;
+    /** 最小覆盖率，缺省 0.8。 */
+    minCoverage?: number;
+  };
+}
+
 /** 优先级决策可解释输出（P0-2 / Phase 5）：含 rank 与 reasonCodes[]。 */
 export interface PriorityDecision {
   taskId: string;
@@ -1024,6 +1124,15 @@ export interface SchedulingPolicyConfig {
   setupMinutes?: number;
   /** 工位容量硬校验开关（默认 true；false 回退基线行为）。 */
   stationCapacityEnforced?: boolean;
+  // --- Incremental Replan V2（08 §3/§6/§7/§11；全可选，缺省=现状） ---
+  /** Replan V2 风暴治理/传播上限（08 §3/§7）。 */
+  replan?: ReplanConfig;
+  /** Replan V2 自动重排 vs 人工审批政策（08 §6）。 */
+  replanApproval?: ReplanApprovalConfig;
+  /** Churn Objective V2 权重（08 §4；缺省=现状回归）。 */
+  churn?: ChurnConfig;
+  /** Prediction Shadow Learning canary（08 §11）。 */
+  prediction?: PredictionConfig;
 }
 
 export interface SchedulingPolicyVersionSummary {
@@ -1557,6 +1666,19 @@ export interface SchedulerKpiSnapshot {
     manualOverrideRate: number | null;
     conflictRate: number | null;
     averageConflictResolutionMs: number | null;
+    // --- Replan V2 KPI（08 §8；全可选，向后兼容） ---
+    /** 受影响任务占比（Σ affectedTaskIds / Σ 可调度任务，窗口均值）。 */
+    affectedAssignmentRatio?: number | null;
+    /** 未变更 assignment 占比（= 1 − assignmentChurnRate）。 */
+    unchangedAssignmentRate?: number | null;
+    /** 方案搅动（Σ (changed+added+removed) assignments / 窗口）。 */
+    scheduleChurn?: number | null;
+    /** 重排耗时（solve + persist，ms）。 */
+    replanDuration?: number | null;
+    /** 非 MANUAL 触发创建的 run 数 / 窗口。 */
+    replanTriggerCount?: number | null;
+    /** 风暴守卫抑制数 / 窗口。 */
+    replanSuppressedCount?: number | null;
   };
   solver: {
     solverLatencyP50Ms: number | null;
@@ -1732,4 +1854,82 @@ export interface ConflictPreviewRequest {
   action?: string;
   /** 对动作的候选资源覆盖（可选）。 */
   resourceIds?: string[];
+}
+
+// ============================================================================
+// Incremental Replan V2 / M01：Replan Preview 契约（08 §5）
+// ============================================================================
+
+/**
+ * Replan V2 预览结果（08 §5）：dry-run 候选方案 + PlanCompareService.compare
+ * 派生的指标增量。只读、不落库、不派工（同 OverridePreviewService 语义）。
+ * candidatePlanId 为 PREVIEW-*，不持久化。
+ */
+export interface ReplanPreviewResult {
+  baselinePlanId: string | null;
+  /** PREVIEW-*，不持久化。 */
+  candidatePlanId: string | null;
+  readonly: true;
+  affectedTaskCount: number;
+  unchangedAssignmentCount: number;
+  changedAssignmentCount: number;
+  addedAssignmentCount: number;
+  removedAssignmentCount: number;
+  /** 指标增量（候选 − 基线；均为 number，可为 0）。 */
+  latenessDelta: number;
+  travelDelta: number;
+  workloadDelta: number;
+  stationWaitDelta: number;
+  changeoverDelta: number;
+  energyRiskDelta: number;
+  riskDelta: number;
+  churnDelta: number;
+  /** 逐任务 diff（复用 PlanAssignmentDiff；reasons = diff.reasons + ReplanImpact.reasons）。 */
+  changedAssignments: PlanAssignmentDiff[];
+}
+
+// ============================================================================
+// Incremental Replan V2 / M01：Prediction Shadow Learning 契约（08 §11）
+// ============================================================================
+
+/**
+ * Prediction Shadow Learning 单条样本（08 §11）：记录预测 vs 确定性 baseline，
+ * 待 ExecutionService/SchedulingFeedback 回填 actual 后计算误差。advisory-only，
+ * 不写生产调度。
+ */
+export interface PredictionShadowSample {
+  modelVersion: string;
+  predictionType: string;
+  inputVersion: string;
+  /** 模型预测值。 */
+  prediction: number;
+  /** 确定性 baseline 值。 */
+  baseline: number;
+  /** 置信度 0..1。 */
+  confidence: number;
+  createdAt: string;
+  /** 实际值（feedback 回填前为 null）。 */
+  actual: number | null;
+  /** 绝对误差 |prediction − actual|（actual 未回填为 null）。 */
+  absoluteError: number | null;
+  /** 相对误差 |prediction − actual| / |actual|（actual 未回填或为 0 时为 null）。 */
+  relativeError: number | null;
+}
+
+/** Prediction Shadow Learning 窗口聚合指标（08 §11）。 */
+export interface PredictionShadowAggregate {
+  /** 平均绝对误差。 */
+  mae: number;
+  /** 均方根误差。 */
+  rmse: number;
+  /** 绝对误差 p50。 */
+  p50: number;
+  /** 绝对误差 p95。 */
+  p95: number;
+  /** 校准度（预测误差分布与置信度的匹配度，0..1）。 */
+  calibration: number;
+  /** 回退率（provider 不可用/低置信度 → baseline 的比例）。 */
+  fallbackRate: number;
+  /** 覆盖率（有 actual 回填样本占比，0..1）。 */
+  coverage: number;
 }

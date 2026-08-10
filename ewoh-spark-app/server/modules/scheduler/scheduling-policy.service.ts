@@ -73,6 +73,39 @@ const DEFAULT_CONFIG: SchedulingPolicyConfig = {
   preferenceBonusMinutes: 30,
   setupMinutes: 15,
   stationCapacityEnforced: true,
+  // --- Incremental Replan V2（M01，08 §3/§6/§7/§11）：缺省=现状 ---
+  replan: {
+    replanDebounceMs: 5_000,
+    minimumReplanIntervalMs: 30_000,
+    maximumReplansPerWindow: 12,
+    conflictAggregationWindowMs: 60_000,
+    maxPropagationDepth: 3,
+    maxAffectedTasks: 200,
+  },
+  replanApproval: {
+    autoMaxAffectedRatio: 0.5,
+    autoMaxChurnRatio: 0.4,
+    requireApprovalOnSafetyCritical: true,
+    requireApprovalOnHumanLock: true,
+  },
+  churn: {
+    // 缺省=现状回归：person 变更与 assignment 移除按 weights.change，其余维度 0。
+    personChangePenalty: DEFAULT_OBJECTIVE_WEIGHTS.change,
+    deviceChangePenalty: 0,
+    stationChangePenalty: 0,
+    startTimeShiftPenalty: 0,
+    sequenceChangePenalty: 0,
+    assignmentRemovalPenalty: DEFAULT_OBJECTIVE_WEIGHTS.change,
+    assignmentAdditionPenalty: 0,
+  },
+  prediction: {
+    canaryFractions: [0, 0.05, 0.2, 0.5, 1],
+    autoRollbackOn: {
+      maxAbsoluteError: 0.25,
+      maxFallbackRate: 0.5,
+      minCoverage: 0.8,
+    },
+  },
 };
 
 /**
@@ -328,6 +361,76 @@ export class SchedulingPolicyService {
         c.stationCapacityEnforced === undefined
           ? DEFAULT_CONFIG.stationCapacityEnforced
           : Boolean(c.stationCapacityEnforced),
+      // --- Incremental Replan V2（M01）：可选块透传，缺省回退默认（08 §3/§6/§7/§11） ---
+      replan: {
+        replanDebounceMs: this.num(c.replan?.replanDebounceMs, DEFAULT_CONFIG.replan.replanDebounceMs),
+        minimumReplanIntervalMs: this.num(
+          c.replan?.minimumReplanIntervalMs,
+          DEFAULT_CONFIG.replan.minimumReplanIntervalMs,
+        ),
+        maximumReplansPerWindow: this.num(
+          c.replan?.maximumReplansPerWindow,
+          DEFAULT_CONFIG.replan.maximumReplansPerWindow,
+        ),
+        conflictAggregationWindowMs: this.num(
+          c.replan?.conflictAggregationWindowMs,
+          DEFAULT_CONFIG.replan.conflictAggregationWindowMs,
+        ),
+        maxPropagationDepth: this.num(c.replan?.maxPropagationDepth, DEFAULT_CONFIG.replan.maxPropagationDepth),
+        maxAffectedTasks: this.num(c.replan?.maxAffectedTasks, DEFAULT_CONFIG.replan.maxAffectedTasks),
+      },
+      replanApproval: {
+        autoMaxAffectedRatio: this.num(
+          c.replanApproval?.autoMaxAffectedRatio,
+          DEFAULT_CONFIG.replanApproval.autoMaxAffectedRatio,
+        ),
+        autoMaxChurnRatio: this.num(
+          c.replanApproval?.autoMaxChurnRatio,
+          DEFAULT_CONFIG.replanApproval.autoMaxChurnRatio,
+        ),
+        requireApprovalOnSafetyCritical:
+          c.replanApproval?.requireApprovalOnSafetyCritical === undefined
+            ? DEFAULT_CONFIG.replanApproval.requireApprovalOnSafetyCritical
+            : Boolean(c.replanApproval.requireApprovalOnSafetyCritical),
+        requireApprovalOnHumanLock:
+          c.replanApproval?.requireApprovalOnHumanLock === undefined
+            ? DEFAULT_CONFIG.replanApproval.requireApprovalOnHumanLock
+            : Boolean(c.replanApproval.requireApprovalOnHumanLock),
+      },
+      churn: {
+        personChangePenalty: this.num(c.churn?.personChangePenalty, DEFAULT_CONFIG.churn.personChangePenalty),
+        deviceChangePenalty: this.num(c.churn?.deviceChangePenalty, DEFAULT_CONFIG.churn.deviceChangePenalty),
+        stationChangePenalty: this.num(c.churn?.stationChangePenalty, DEFAULT_CONFIG.churn.stationChangePenalty),
+        startTimeShiftPenalty: this.num(c.churn?.startTimeShiftPenalty, DEFAULT_CONFIG.churn.startTimeShiftPenalty),
+        sequenceChangePenalty: this.num(c.churn?.sequenceChangePenalty, DEFAULT_CONFIG.churn.sequenceChangePenalty),
+        assignmentRemovalPenalty: this.num(
+          c.churn?.assignmentRemovalPenalty,
+          DEFAULT_CONFIG.churn.assignmentRemovalPenalty,
+        ),
+        assignmentAdditionPenalty: this.num(
+          c.churn?.assignmentAdditionPenalty,
+          DEFAULT_CONFIG.churn.assignmentAdditionPenalty,
+        ),
+      },
+      prediction: {
+        canaryFractions: Array.isArray(c.prediction?.canaryFractions)
+          ? c.prediction!.canaryFractions!
+          : DEFAULT_CONFIG.prediction.canaryFractions,
+        autoRollbackOn: {
+          maxAbsoluteError: this.num(
+            c.prediction?.autoRollbackOn?.maxAbsoluteError,
+            DEFAULT_CONFIG.prediction.autoRollbackOn.maxAbsoluteError,
+          ),
+          maxFallbackRate: this.num(
+            c.prediction?.autoRollbackOn?.maxFallbackRate,
+            DEFAULT_CONFIG.prediction.autoRollbackOn.maxFallbackRate,
+          ),
+          minCoverage: this.num(
+            c.prediction?.autoRollbackOn?.minCoverage,
+            DEFAULT_CONFIG.prediction.autoRollbackOn.minCoverage,
+          ),
+        },
+      },
     };
   }
 
