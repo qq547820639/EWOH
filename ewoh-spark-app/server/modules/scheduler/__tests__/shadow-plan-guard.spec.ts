@@ -42,7 +42,10 @@ describe('Shadow Plan Guard（P4-SHADOW：服务端 hard guard）', () => {
       undefined as never,
       undefined as never,
       undefined as never,
-      undefined as never,
+      { recordAcceptance: jest.fn(), recordBaseline: jest.fn() } as never,
+      { loadForPlan: jest.fn(), hashConstraints: jest.fn() } as never,
+      { enqueue: jest.fn().mockResolvedValue({ id: 'evt', eventType: 'stale_plan', entityId: 'x', payload: {}, status: 'pending', sequence: 1, createdAt: new Date().toISOString() }) } as never,
+      { handleTrigger: jest.fn() } as never,
     );
     await expect(
       svc.approvePlan('SHADOW-1', { version: 1, snapshotVersion: 'WS-1', operator: 'admin' }, {} as never),
@@ -67,7 +70,10 @@ describe('Shadow Plan Guard（P4-SHADOW：服务端 hard guard）', () => {
       undefined as never,
       undefined as never,
       undefined as never,
-      undefined as never,
+      { recordAcceptance: jest.fn(), recordBaseline: jest.fn() } as never,
+      { loadForPlan: jest.fn(), hashConstraints: jest.fn() } as never,
+      { enqueue: jest.fn().mockResolvedValue({ id: 'evt', eventType: 'stale_plan', entityId: 'x', payload: {}, status: 'pending', sequence: 1, createdAt: new Date().toISOString() }) } as never,
+      { handleTrigger: jest.fn() } as never,
     );
     // 版本不匹配 → 抛 PLAN_STALE（证明 guard 放行且进入后续校验）
     await expect(

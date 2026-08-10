@@ -182,6 +182,21 @@ export function makeDispatchCoordinator(seed: FakeDbSeed = {}) {
   const taskService = {
     transitionTaskState: jest.fn().mockResolvedValue(undefined),
   };
+  const feedbackService = {
+    recordBaseline: jest.fn().mockResolvedValue(undefined),
+  };
+  const policyService = {
+    getConfig: jest.fn().mockResolvedValue({ defaultTaskDurationMs: 1_800_000 }),
+  };
+  // §5.4：ADVISORY 模式 safety-critical 路线阻断判定（默认 route_graph 不阻断）。
+  const travelCostService = {
+    estimate: jest.fn().mockResolvedValue({
+      routeId: 'R', distanceMeters: 10, etaSeconds: 10, riskLevel: null,
+      feasible: true, source: 'route_graph', riskCost: 0, congestionCost: 0,
+      graphVersion: null, calculatedAt: new Date().toISOString(),
+      fallbackReason: null, dataQuality: 'FRESH',
+    }),
+  };
 
   const svc = new DispatchCoordinatorService(
     db,
@@ -191,6 +206,9 @@ export function makeDispatchCoordinator(seed: FakeDbSeed = {}) {
     outboxService as unknown as OutboxService,
     auditService as unknown as AuditService,
     taskService as unknown as TaskService,
+    feedbackService as unknown as import('../scheduling-feedback.service').SchedulingFeedbackService,
+    policyService as unknown as import('../scheduling-policy.service').SchedulingPolicyService,
+    travelCostService as unknown as import('../travel-cost.service').TravelCostService,
   );
 
   return {
@@ -204,6 +222,9 @@ export function makeDispatchCoordinator(seed: FakeDbSeed = {}) {
       outboxService,
       auditService,
       taskService,
+      feedbackService,
+      policyService,
+      travelCostService,
     },
   };
 }
@@ -240,6 +261,28 @@ export function makePlanService(seed: FakeDbSeed = {}) {
     getConfig: jest.fn(),
     getConfigByVersion: jest.fn(),
   };
+  const feedbackService = {
+    recordAcceptance: jest.fn().mockResolvedValue(undefined),
+    recordBaseline: jest.fn().mockResolvedValue(undefined),
+  };
+  const constraintLoaderService = {
+    loadForPlan: jest.fn().mockImplementation(async (_planId: string, requestConstraints: unknown[]) => requestConstraints),
+    hashConstraints: jest.fn().mockReturnValue('hash'),
+  };
+  const outboxService = {
+    enqueue: jest.fn().mockResolvedValue({
+      id: 'evt-outbox-1',
+      eventType: 'stale_plan',
+      entityId: 'asg-1',
+      payload: {},
+      status: 'pending',
+      sequence: 1,
+      createdAt: new Date().toISOString(),
+    }),
+  };
+  const replanCoordinator = {
+    handleTrigger: jest.fn().mockResolvedValue(undefined),
+  };
 
   const svc = new PlanService(
     db,
@@ -249,7 +292,27 @@ export function makePlanService(seed: FakeDbSeed = {}) {
     worldStateSnapshotService as unknown as WorldStateSnapshotService,
     dispatchCoordinator as unknown as DispatchCoordinatorService,
     schedulingPolicyService as unknown as SchedulingPolicyService,
+    feedbackService as unknown as import('../scheduling-feedback.service').SchedulingFeedbackService,
+    constraintLoaderService as unknown as import('../constraint-loader.service').ConstraintLoaderService,
+    outboxService as unknown as OutboxService,
+    replanCoordinator as unknown as import('../replan-coordinator.service').ReplanCoordinatorService,
   );
 
-  return { svc, db, state, mocks: { requestDatabaseContext, auditService, solverService, worldStateSnapshotService, dispatchCoordinator, schedulingPolicyService } };
+  return {
+    svc,
+    db,
+    state,
+    mocks: {
+      requestDatabaseContext,
+      auditService,
+      solverService,
+      worldStateSnapshotService,
+      dispatchCoordinator,
+      schedulingPolicyService,
+      feedbackService,
+      constraintLoaderService,
+      outboxService,
+      replanCoordinator,
+    },
+  };
 }

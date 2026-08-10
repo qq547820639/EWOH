@@ -26,6 +26,29 @@ function makePlanService(seed: Parameters<typeof makeFakeDb>[0]) {
   const feedback = { deriveKpis: jest.fn() };
   const solver = { solve: jest.fn(), solveVariants: jest.fn() };
   const dispatch = { dispatch: jest.fn() };
+  // 模拟 ConstraintLoaderService：合并 DB 继承约束（active 且同 plan）+ 请求约束。
+  const constraintLoader = {
+    loadForPlan: jest.fn(async (planId: string, requestConstraints: any[]) => {
+      const inherited = state.constraints
+        .filter((c: any) => c.planId === planId && c.active !== false)
+        .map((c: any): Record<string, unknown> => ({
+          id: c.constraintId,
+          type: c.type,
+          taskId: c.taskId ?? undefined,
+          ...((c.valueJson ?? {}) as Record<string, unknown>),
+        }));
+      const merged = [...requestConstraints];
+      for (const c of inherited) {
+        const alreadyRequested = merged.some(
+          (rc: { type?: string; taskId?: string; personId?: string }) =>
+            rc.type === c.type && rc.taskId === c.taskId && rc.personId === c.personId,
+        );
+        if (!alreadyRequested) merged.push(c);
+      }
+      return merged;
+    }),
+    hashConstraints: jest.fn((cs: unknown[]) => JSON.stringify(cs)),
+  };
 
   const svc = new PlanService(
     db,
@@ -36,6 +59,9 @@ function makePlanService(seed: Parameters<typeof makeFakeDb>[0]) {
     dispatch as unknown as DispatchCoordinatorService,
     policy as unknown as SchedulingPolicyService,
     feedback as unknown as SchedulingFeedbackService,
+    constraintLoader as never,
+    { enqueue: jest.fn() } as never,
+    { handleTrigger: jest.fn() } as never,
   );
   return { svc, state, db, mocks: { worldState, solver, auditService } };
 }

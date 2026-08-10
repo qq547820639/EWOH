@@ -50,10 +50,12 @@ export class SolverService {
     routingService: RoutingService,
     routeCostProvider: RouteCostProvider,
     eligibilityService: EligibilityService,
-    @Optional() cpSatConfig?: CpSatSolverConfig,
-    @Optional() private readonly metricsService?: SchedulerMetricsService,
-    // T03 / P1-2（G7）：候选引擎（可选注入；注入后 heuristic 候选生成与端点共享语义）。
-    @Optional() private readonly candidateEngine?: CandidateEngineService,
+    // CP-SAT 可禁用（合规显式降级）：保持 @Optional，默认值 {} 使必选参数可安全跟在后面。
+    @Optional() cpSatConfig: CpSatSolverConfig = {},
+    // T02 / P0-1（G7）：Solver 可观测（必选；生产路径始终注入）。
+    private readonly metricsService: SchedulerMetricsService,
+    // T03 / P1-2（G7）：候选引擎（必选；heuristic 候选生成与端点共享语义）。
+    private readonly candidateEngine: CandidateEngineService,
   ) {
     this.heuristicSolver = new HeuristicSchedulingSolver(
       policyService,
@@ -189,29 +191,27 @@ export class SolverService {
       opts,
     );
     // Phase 2 / P2-T3：Solver 可观测埋点（churn / 局部重排影响数；失败仅记日志）。
-    if (this.metricsService) {
-      try {
-        const churn = this.computeChurn(plan, opts);
-        if (churn > 0) this.metricsService.recordPlanChurn(churn);
-        if (opts.triggerType && opts.triggerType !== 'MANUAL') {
-          const affected = this.affectedTaskCount(snapshot, opts);
-          this.metricsService.recordPartialReplanAffected(affected);
-        }
-        this.metricsService.recordRun({
-          durationMs: Math.max(Date.now() - started, 0),
-          feasible:
-            plan.assignments.length >=
-            snapshot.tasks.filter(
-              (t) => !['completed', 'cancelled'].includes(t.status),
-            ).length,
-          solverVersion: plan.solverVersion,
-          solverStatus: plan.solverStatus,
-        });
-      } catch (err) {
-        this.logger.warn(
-          `solver metrics recording failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
+    try {
+      const churn = this.computeChurn(plan, opts);
+      if (churn > 0) this.metricsService.recordPlanChurn(churn);
+      if (opts.triggerType && opts.triggerType !== 'MANUAL') {
+        const affected = this.affectedTaskCount(snapshot, opts);
+        this.metricsService.recordPartialReplanAffected(affected);
       }
+      this.metricsService.recordRun({
+        durationMs: Math.max(Date.now() - started, 0),
+        feasible:
+          plan.assignments.length >=
+          snapshot.tasks.filter(
+            (t) => !['completed', 'cancelled'].includes(t.status),
+          ).length,
+        solverVersion: plan.solverVersion,
+        solverStatus: plan.solverStatus,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `solver metrics recording failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
     return plan;
   }

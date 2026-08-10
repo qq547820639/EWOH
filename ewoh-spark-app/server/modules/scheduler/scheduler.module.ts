@@ -14,7 +14,8 @@ import { ResourceReservationService } from './resource-reservation.service';
 import { OutboxService } from './outbox.service';
 import { ResourceProjectionService } from './resource-projection.service';
 import { ReplanCoordinatorService } from './replan-coordinator.service';
-import { SchedulerStreamService } from './scheduler-stream.service';
+import { SchedulerStreamService, SCHEDULER_STREAM_NOTIFY_LISTENER } from './scheduler-stream.service';
+import { PgNotifyListener } from './pg-notify.listener';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { SchedulerMetricsController } from './scheduler-metrics.controller';
 import { SchedulingFeedbackService } from './scheduling-feedback.service';
@@ -37,6 +38,25 @@ import { TaskModule } from '../task/task.module';
 
 /** 预测提供者注入 token（shadow only）：消费者应将其视为可选。 */
 export const PREDICTION_PROVIDER = 'PREDICTION_PROVIDER';
+
+/**
+ * Task 6：Outbox → LISTEN/NOTIFY 低延迟 wake-up。
+ * 仅当 SCHEDULER_STREAM_NOTIFY=1 且存在 DATABASE_URL/SUDA_DATABASE_URL 时提供 notifyListener，
+ * 否则不注册 token（SchedulerStreamService 经 @Optional 注入 undefined → 纯轮询，现状行为不变）。
+ * 注意：module 定义时读取 env，与仓库内其它 import-time env 读取（如 ai.controller）一致。
+ */
+const SCHEDULER_NOTIFY_URL =
+  process.env.SCHEDULER_STREAM_NOTIFY === '1'
+    ? process.env.DATABASE_URL || process.env.SUDA_DATABASE_URL || ''
+    : '';
+const SCHEDULER_NOTIFY_PROVIDERS = SCHEDULER_NOTIFY_URL
+  ? [
+      {
+        provide: SCHEDULER_STREAM_NOTIFY_LISTENER,
+        useFactory: () => new PgNotifyListener(SCHEDULER_NOTIFY_URL),
+      },
+    ]
+  : [];
 
 @Module({
   imports: [TaskModule],
@@ -76,6 +96,8 @@ export const PREDICTION_PROVIDER = 'PREDICTION_PROVIDER';
     // Task 5 / PredictionProvider（shadow only）：确定性基线。预测只是优化器输入，
     // 绝不写生产调度、绝不替代 hard constraints。消费者应将其视为可选。
     { provide: PREDICTION_PROVIDER, useClass: DeterministicPredictionProvider },
+    // Task 6：NOTIFY wake-up 监听器（条件装配，默认不提供）。
+    ...SCHEDULER_NOTIFY_PROVIDERS,
   ],
   exports: [
     SchedulerService,

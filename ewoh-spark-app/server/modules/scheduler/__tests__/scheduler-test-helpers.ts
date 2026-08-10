@@ -173,7 +173,9 @@ export const baseSolveOpts: SolveOptions = {
 };
 
 /** 构造 SolverService 所需的最小 mock 依赖，并返回依赖以便测试按需改写。
- *  默认注入一个立即失败的 fetch，使 CP-SAT 尝试安全回退到启发式（保持单测离网、确定性）。 */
+ *  默认注入一个立即失败的 fetch，使 CP-SAT 尝试安全回退到启发式（保持单测离网、确定性）。
+ *  metricsService 注入完整 mock（启发式/cp-sat/solver 埋点方法齐全）；
+ *  candidateEngine 显式传 undefined（保持启发式内联候选路径，避免改变既有求解行为）。 */
 export function makeSolver(cpSatConfig?: import('../cp-sat-scheduling-solver').CpSatSolverConfig) {
   const routing = {
     calculateRoute: jest.fn().mockResolvedValue({ routeId: 'ROUTE-TEST' }),
@@ -196,6 +198,15 @@ export function makeSolver(cpSatConfig?: import('../cp-sat-scheduling-solver').C
       calculatedAt: new Date().toISOString(),
     }),
   };
+  const metricsService = {
+    recordPlanChurn: jest.fn(),
+    recordPartialReplanAffected: jest.fn(),
+    recordRun: jest.fn(),
+    recordFallback: jest.fn(),
+    recordSolverTimeout: jest.fn(),
+    recordCandidateCount: jest.fn(),
+    recordHardReject: jest.fn(),
+  } as unknown as import('../scheduler-metrics.service').SchedulerMetricsService;
   const solver = new SolverService(
     policy as unknown as SchedulingPolicyService,
     routing as unknown as RoutingService,
@@ -206,8 +217,10 @@ export function makeSolver(cpSatConfig?: import('../cp-sat-scheduling-solver').C
       timeoutMs: 50,
       fetch: jest.fn().mockRejectedValue(new Error('network disabled in unit test')),
     },
+    metricsService,
+    undefined as unknown as import('../candidate-engine.service').CandidateEngineService,
   );
-  return { solver, routing, policy, routeCostProvider };
+  return { solver, routing, policy, routeCostProvider, metricsService };
 }
 
 /** 构造一个默认的资格判定上下文。 */

@@ -84,6 +84,29 @@ function makeScheduler(
     .mockResolvedValue(defaultConfig());
 
   const schedulingPolicyService = policy as unknown as SchedulingPolicyService;
+  // 模拟 ConstraintLoaderService：合并 DB 继承约束（active 且同 plan）+ 请求约束。
+  const constraintLoaderService = {
+    loadForPlan: jest.fn(async (planId: string, requestConstraints: any[]) => {
+      const inherited = state.constraints
+        .filter((c: any) => c.planId === planId && c.active !== false)
+        .map((c: any): Record<string, unknown> => ({
+          id: c.constraintId,
+          type: c.type,
+          taskId: c.taskId ?? undefined,
+          ...((c.valueJson ?? {}) as Record<string, unknown>),
+        }));
+      const merged = [...requestConstraints];
+      for (const c of inherited) {
+        const alreadyRequested = merged.some(
+          (rc: { type?: string; taskId?: string; personId?: string }) =>
+            rc.type === c.type && rc.taskId === c.taskId && rc.personId === c.personId,
+        );
+        if (!alreadyRequested) merged.push(c);
+      }
+      return merged;
+    }),
+    hashConstraints: jest.fn((cs: unknown[]) => JSON.stringify(cs)),
+  };
   const planService = new PlanService(
     db,
     requestDatabaseContext as unknown as RequestDatabaseContext,
@@ -92,6 +115,10 @@ function makeScheduler(
     worldStateSnapshotService as unknown as WorldStateSnapshotService,
     { dispatch: jest.fn() } as never,
     schedulingPolicyService,
+    { recordAcceptance: jest.fn(), recordBaseline: jest.fn() } as never,
+    constraintLoaderService as never,
+    { enqueue: jest.fn().mockResolvedValue({ id: 'evt', eventType: 'stale_plan', entityId: 'x', payload: {}, status: 'pending', sequence: 1, createdAt: new Date().toISOString() }) } as never,
+    { handleTrigger: jest.fn() } as never,
   );
 
   const schedulerService = new SchedulerService(

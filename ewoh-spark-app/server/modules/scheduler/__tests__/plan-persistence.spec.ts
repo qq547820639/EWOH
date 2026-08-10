@@ -111,6 +111,10 @@ function makePlanServiceWith(seed: Parameters<typeof makeFakeDb>[0]) {
     getConfig: jest.fn(),
     getConfigByVersion: jest.fn(),
   };
+  const constraintLoaderService = {
+    loadForPlan: jest.fn(async (_planId: string, requestConstraints: any[]) => requestConstraints),
+    hashConstraints: jest.fn().mockReturnValue('hash'),
+  };
 
   const svc = new PlanService(
     db,
@@ -120,6 +124,10 @@ function makePlanServiceWith(seed: Parameters<typeof makeFakeDb>[0]) {
     worldStateSnapshotService as unknown as WorldStateSnapshotService,
     dispatchCoordinator as unknown as DispatchCoordinatorService,
     schedulingPolicyService as unknown as SchedulingPolicyService,
+    { recordAcceptance: jest.fn(), recordBaseline: jest.fn() } as never,
+    constraintLoaderService as never,
+    { enqueue: jest.fn().mockResolvedValue({ id: 'evt', eventType: 'stale_plan', entityId: 'x', payload: {}, status: 'pending', sequence: 1, createdAt: new Date().toISOString() }) } as never,
+    { handleTrigger: jest.fn() } as never,
   );
 
   return {
@@ -132,6 +140,7 @@ function makePlanServiceWith(seed: Parameters<typeof makeFakeDb>[0]) {
       worldStateSnapshotService,
       dispatchCoordinator,
       schedulingPolicyService,
+      constraintLoaderService,
     },
   };
 }

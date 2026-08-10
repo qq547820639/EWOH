@@ -4,8 +4,6 @@ import {
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import {
-  ewohPersonnel,
-  ewohDevice,
   ewohProductionTask,
   ewohSpatialEntity,
   ewohEvent,
@@ -23,11 +21,7 @@ import type {
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
-import { deriveDeviceCapabilities } from './device-capabilities';
 import { ResourceProjectionService } from './resource-projection.service';
-
-/** 资源数据新鲜度阈值（ms）：sourceTs 距今超过该值则标 STALE。 */
-const DEFAULT_FRESHNESS_MS = 5 * 60 * 1000;
 
 /** 世界状态快照服务：构建/持久化/新鲜度校验。 */
 @Injectable()
@@ -37,15 +31,11 @@ export class WorldStateSnapshotService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly requestDatabaseContext: RequestDatabaseContext,
-    // T02 / P0-1（G1）：资源视图单一事实源。生产路径始终注入；旧单测未注入时
-    // 回退旧直读逻辑（保持既有 50+ spec 兼容）。注入后 persons/devices/stations
-    // 改消费 ResourceProjectionService.projectForSnapshot()，消除双轨。
-    private readonly resourceProjectionService?: ResourceProjectionService,
+    // T02 / P0-1（G1）：资源视图单一事实源（必选）。persons/devices/stations
+    // 统一消费 ResourceProjectionService.projectForSnapshot()（与 resources/state 同源），
+    // 消除双轨直读（旧回退分支已删除）。
+    private readonly resourceProjectionService: ResourceProjectionService,
   ) {}
-  // 资源数据新鲜度阈值（ms）。必须为类字段而非构造参数：
-  // Nest DI 会将构造参数按类型 token 解析，原始类型 number 无法注入 → 启动崩溃
-  // （此前误改构造参数导致 standalone 启动失败，见 Batch 12 修复）。
-  private readonly freshnessMs = DEFAULT_FRESHNESS_MS;
 
   /**
    * 基于实时的 ewoh 表状态构建并持久化一个世界状态快照。
@@ -132,8 +122,6 @@ export class WorldStateSnapshotService {
     Omit<WorldStateSnapshot, 'snapshotVersion' | 'ts'>
   > {
     const [
-      personnel,
-      devices,
       tasks,
       spatialEntities,
       events,
@@ -142,8 +130,6 @@ export class WorldStateSnapshotService {
       reservations,
       deviceBindings,
     ] = await Promise.all([
-      this.db.select().from(ewohPersonnel),
-      this.db.select().from(ewohDevice),
       this.db.select().from(ewohProductionTask),
       this.db.select().from(ewohSpatialEntity),
       this.db.select().from(ewohEvent),
@@ -172,154 +158,12 @@ export class WorldStateSnapshotService {
     const spatialByEntityId = new Map<string, (typeof spatialEntities)[number]>();
     for (const se of spatialEntities) spatialByEntityId.set(se.entityId, se);
 
-    const now = Date.now();
-
-    // 人员下一次可用时间：取该人员未来 reservation 的最大结束时间（真实占用）。
-    const personReservationEnd = new Map<string, number>();
-    for (const r of reservations) {
-      if (r.resourceType === 'person' && r.endMs != null) {
-        const cur = personReservationEnd.get(r.resourceId) ?? 0;
-        if (r.endMs > cur) personReservationEnd.set(r.resourceId, r.endMs);
-      }
-    }
-
-    // T02 / P0-1（G1）：persons/devices/stations 资源视图单一事实源。
-    // 注入 ResourceProjectionService 时消费 projectForSnapshot()（与 resources/state 同源，
-    // 消除双轨）；未注入（旧单测）时回退旧直读逻辑，保持既有测试兼容。
-    let persons: WorldStateSnapshot['persons'];
-    let stations: WorldStateSnapshot['stations'];
-    let deviceList: WorldStateSnapshot['devices'];
-    if (this.resourceProjectionService) {
-      const resourceView = await this.resourceProjectionService.projectForSnapshot();
-      persons = resourceView.persons;
-      stations = resourceView.stations;
-      deviceList = resourceView.devices;
-    } else {
-      persons = personnel.map((p) => {
-      const se = p.spatialEntityId
-        ? spatialByEntityId.get(p.spatialEntityId)
-        : undefined;
-      const load = (p.currentLoad as { loadLevel?: number } | null) ?? {};
-      const fatigue = (p.currentLoad as { fatigueLevel?: number } | null) ?? {};
-      const sourceTs = p.updatedAt ? p.updatedAt.getTime() : null;
-      const dataQuality = this.classifyFreshness(sourceTs, now);
-      return {
-        id: p.id,
-        name: p.name,
-        // STALE/UNKNOWN 数据不被视为可用（不透支决策）。
-        status:
-          dataQuality === 'FRESH' ? (p.status ?? 'available') : 'unavailable',
-        healthStatus: p.healthStatus ?? 'normal',
-        skills: this.asStringArray(p.skills),
-        certifications: this.asStringArray(p.certifications),
-        loadLevel: load.loadLevel ?? 0,
-        fatigueLevel: fatigue.fatigueLevel ?? 0,
-        stationId: p.spatialEntityId ?? null,
-        zoneId: se ? (se.parentId ?? null) : null,
-        // 坐标缺失 → 显式 UNKNOWN（null），禁止用 0 冒充真实坐标。
-        // P0-3：WGS84 坐标不进笛卡尔 x/y（仅 coordinate 承载 lat/lng）。
-        x: se && (se.coordinateType ?? 'FACTORY_CARTESIAN') !== 'WGS84' ? (se.x ?? null) : null,
-        y: se && (se.coordinateType ?? 'FACTORY_CARTESIAN') !== 'WGS84' ? (se.y ?? null) : null,
-        availableFromMs: personReservationEnd.get(p.id) ?? null,
-        shift: p.shift ?? null,
-        workload: p.workload ?? null,
-        currentTaskId: p.currentTaskId ?? null,
-        certificationExpiry: this.parseCertificationExpiry(p.certificationExpiry),
-        sourceTs,
-        freshnessMs: this.freshnessMs,
-        dataQuality,
-        coordinate: this.toCoordinateRef(
-          (se?.coordinateType ?? 'FACTORY_CARTESIAN'),
-          se ? (se.x ?? null) : null,
-          se ? (se.y ?? null) : null,
-          se?.floorId ?? null,
-        ),
-      };
-    });
-
-    // 工位列表（v0.7 A1：提前计算，供任务 candidateStations 派生使用）。
-    stations = spatialEntities
-      .filter((se) => ['workstation', 'station'].includes(se.entityType))
-      .map((se) => {
-        // 工位容量：读 capacity 列（真实来源，替代 extra.capacity 非正式字段），否则 null。
-        const capacity =
-          typeof se.capacity === 'number' && se.capacity > 0 ? se.capacity : null;
-        return {
-          id: se.entityId,
-          name: se.name,
-          // P0：坐标缺失显式 null（禁止 0,0 伪坐标；无坐标工位不参与定位决策）。
-          // P0-3：WGS84 坐标不进笛卡尔 x/y。
-          x: (se.coordinateType ?? 'FACTORY_CARTESIAN') !== 'WGS84' ? (se.x ?? null) : null,
-          y: (se.coordinateType ?? 'FACTORY_CARTESIAN') !== 'WGS84' ? (se.y ?? null) : null,
-          capacity,
-          queue: this.asStringArray(se.queue),
-          availableWindows: this.parseWindows(se.availableWindows),
-          // P1-3：工位基础能力（空间实体类型；供 requiredStationCapabilities 匹配）。
-          capabilities: se.entityType ? [se.entityType] : [],
-          coordinate: this.toCoordinateRef(
-            (se.coordinateType ?? 'FACTORY_CARTESIAN'),
-            se.x ?? null,
-            se.y ?? null,
-            se.floorId ?? null,
-          ),
-        };
-      });
-
-    deviceList = devices.map((d) => {
-      const sourceTs = d.lastTelemetryAt
-        ? d.lastTelemetryAt.getTime()
-        : d.updatedAt
-          ? d.updatedAt.getTime()
-          : null;
-      const dataQuality = this.classifyFreshness(sourceTs, now);
-      const stale = dataQuality !== 'FRESH';
-      const derived: string[] = [];
-      // 能力：真实列优先（SSOT，消除两处语义不一致）；列无值才按型号白名单派生并标记。
-      const columnCaps = this.asStringArray(d.capabilities);
-      const capabilities =
-        columnCaps.length > 0 ? columnCaps : deriveDeviceCapabilities(d.deviceModel);
-      if (columnCaps.length === 0) derived.push('capabilities');
-      // 位置：设备自身 location_lat/lng（真实遥测）；缺失则显式 UNKNOWN(null)，
-      // 绝不借用人员坐标（见 01 §4.1）。
-      const lat = d.locationLat ?? null;
-      const lng = d.locationLng ?? null;
-      const hasDeviceLocation = lat != null && lng != null;
-      // P0-3：WGS84 坐标不进笛卡尔 x/y（仅 coordinate 承载 lat/lng）。
-      const isWgs84 = (d.locationCoordinateType ?? 'FACTORY_CARTESIAN') === 'WGS84';
-      // 设备自身空间实体（entityId=deviceId），用于解析所在工位（parentId）。
-      const deviceSe = d.deviceId ? spatialByEntityId.get(d.deviceId) : undefined;
-      return {
-        id: d.id,
-        workerName: d.workerName ?? null,
-        deviceModel: d.deviceModel ?? null,
-        batteryPct: d.batteryPct ?? 100,
-        capabilities,
-        // STALE/UNKNOWN 设备不视为可用（离线/不可派）。
-        online: stale ? false : (d.online ?? false),
-        status: d.faultCode ? 'fault' : stale ? 'offline' : 'online',
-        x: hasDeviceLocation && !isWgs84 ? lat : null,
-        y: hasDeviceLocation && !isWgs84 ? lng : null,
-        locationStationId: deviceSe ? (deviceSe.parentId ?? null) : null,
-        availableWindows: this.parseWindows(d.availableWindows),
-        locationConfidence: hasDeviceLocation ? (d.locationConfidence ?? null) : null,
-        locationUpdatedAt: d.locationUpdatedAt ? d.locationUpdatedAt.getTime() : null,
-        telemetryUpdatedAt: d.telemetryUpdatedAt ? d.telemetryUpdatedAt.getTime() : null,
-        sourceTs,
-        freshnessMs: this.freshnessMs,
-        dataQuality,
-        derived,
-        // P0-3：设备坐标类型判别（WGS84 设备 locationLat/Lng 即经纬度；UNKNOWN 显式标记）。
-        coordinate:
-          (d.locationCoordinateType ?? 'FACTORY_CARTESIAN') === 'WGS84'
-            ? hasDeviceLocation
-              ? { type: 'WGS84', lat: lat as number, lng: lng as number }
-              : { type: 'UNKNOWN' }
-            : hasDeviceLocation
-              ? { type: 'FACTORY_CARTESIAN', x: lat as number, y: lng as number, floorId: null }
-              : { type: 'UNKNOWN' },
-      };
-    });
-    }
+    // T02 / P0-1（G1）：persons/devices/stations 资源视图单一事实源（必选）。
+    // 统一消费 projectForSnapshot()（与 resources/state 同源），消除双轨直读。
+    const resourceView = await this.resourceProjectionService.projectForSnapshot();
+    const persons = resourceView.persons;
+    const stations = resourceView.stations;
+    const deviceList = resourceView.devices;
 
     const taskList = tasks.map((t) => {
       // 派生字段标记：本快照中这些字段来自派生而非真实列（P1-T2）。
@@ -762,45 +606,6 @@ export class WorldStateSnapshotService {
   }
 
   /**
-   * 解析 jsonb 可用窗口列（[{ startMs, endMs }]）；非法条目丢弃（runtime validation，
-   * 禁止 as unknown as 逃避类型检查）。无值/非数组返回空数组。
-   */
-  private parseWindows(v: unknown): Array<{ startMs: number; endMs: number }> {
-    if (!Array.isArray(v)) return [];
-    const out: Array<{ startMs: number; endMs: number }> = [];
-    for (const item of v) {
-      if (this.isWindow(item)) out.push({ startMs: item.startMs, endMs: item.endMs });
-    }
-    return out;
-  }
-
-  /** 可用窗口条目形状守卫。 */
-  private isWindow(v: unknown): v is { startMs: number; endMs: number } {
-    if (typeof v !== 'object' || v === null) return false;
-    const rec = v as Record<string, unknown>;
-    return typeof rec.startMs === 'number' && typeof rec.endMs === 'number';
-  }
-
-  /**
-   * 解析证书到期平行列（[{ name, expiresAtMs }]，决策 D-A）。
-   * 无值/非数组返回空数组；name 缺失的条目丢弃。
-   */
-  private parseCertificationExpiry(
-    v: unknown,
-  ): Array<{ name: string; expiresAtMs: number | null }> {
-    if (!Array.isArray(v)) return [];
-    const out: Array<{ name: string; expiresAtMs: number | null }> = [];
-    for (const item of v) {
-      if (typeof item !== 'object' || item === null) continue;
-      const rec = item as Record<string, unknown>;
-      const name = typeof rec.name === 'string' ? rec.name : '';
-      const expiresAtMs = typeof rec.expiresAtMs === 'number' ? rec.expiresAtMs : null;
-      if (name) out.push({ name, expiresAtMs });
-    }
-    return out;
-  }
-
-  /**
    * v0.7 A1：从任务类型派生安全关键语义（重体力/搬运类），保守默认 false。
    * 仅作白名单匹配，未命中的任务绝不被误判为安全关键（避免误阻断）。
    */
@@ -884,44 +689,9 @@ export class WorldStateSnapshotService {
     return h >>> 0;
   }
 
-  /**
-   * 空间实体 → 坐标判别联合（P0-3）。
-   * 约定：FACTORY_CARTESIAN 读 x/y/floorId；WGS84 仅展示（lat=y ?? x, lng=x ?? y，
-   * 详见 05 §12.2 假设——真实 WGS84 数据源未定，此处仅保证不进笛卡尔距离）。
-   */
-  private toCoordinateRef(
-    type: string,
-    x: number | null,
-    y: number | null,
-    floorId: string | null,
-  ): import('@shared/api.interface').CoordinateReference {
-    if (type === 'WGS84') {
-      const lat = y ?? x;
-      const lng = x ?? y;
-      if (lat == null || lng == null) return { type: 'UNKNOWN' };
-      return { type: 'WGS84', lat, lng };
-    }
-    if (type === 'UNKNOWN') return { type: 'UNKNOWN' };
-    if (x == null || y == null) return { type: 'UNKNOWN' };
-    return { type: 'FACTORY_CARTESIAN', x, y, floorId };
-  }
-
   /** 基于对象 JSON 序列化内容的实体版本。 */
   private entityVersion(obj: unknown): number {
     return this.hash(JSON.stringify(obj));
-  }
-
-  /**
-   * 依据来源时间戳与新鲜度阈值判定资源数据质量。
-   * 无时间戳 → UNKNOWN；距今超过阈值 → STALE；否则 FRESH。
-   */
-  private classifyFreshness(
-    sourceTs: number | null,
-    now: number,
-  ): 'FRESH' | 'STALE' | 'UNKNOWN' {
-    if (sourceTs == null) return 'UNKNOWN';
-    if (now - sourceTs > this.freshnessMs) return 'STALE';
-    return 'FRESH';
   }
 
   /** 精确比较两个 entityVersions 映射（键集与每个值都需一致）。 */

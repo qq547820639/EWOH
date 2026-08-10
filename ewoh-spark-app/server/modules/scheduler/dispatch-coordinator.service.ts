@@ -4,7 +4,6 @@ import {
   Logger,
   NotFoundException,
   ConflictException,
-  Optional,
 } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -29,6 +28,7 @@ import { TaskService } from '../task/task.service';
 import { TaskLifecycle } from './task-lifecycle';
 import { SchedulingFeedbackService } from './scheduling-feedback.service';
 import { SchedulingPolicyService } from './scheduling-policy.service';
+import { TravelCostService } from './travel-cost.service';
 
 /** 事务化的执行闭环：校验 → 预占 → 下发 → 审计 → 出站事件。 */
 @Injectable()
@@ -43,8 +43,12 @@ export class DispatchCoordinatorService {
     private readonly outboxService: OutboxService,
     private readonly auditService: AuditService,
     private readonly taskService: TaskService,
-    @Optional() private readonly feedbackService?: SchedulingFeedbackService,
-    @Optional() private readonly policyService?: SchedulingPolicyService,
+    // T02 / P0-1（G1）：观测基线反馈（必选；生产路径始终注入）。
+    private readonly feedbackService: SchedulingFeedbackService,
+    // P1-SCHED-004：统一默认任务时长来源（必选；Solver/Plan/Reservation/Dispatch 共享同一策略）。
+    private readonly policyService: SchedulingPolicyService,
+    // §5.4 ADVISORY 模式：safety-critical 降级路线阻断判定（必选；scheduler.module 已注册）。
+    private readonly travelCostService: TravelCostService,
   ) {}
 
   /**
@@ -53,9 +57,7 @@ export class DispatchCoordinatorService {
    */
   private async resolveDefaultDurationMs(): Promise<number> {
     try {
-      const config = this.policyService
-        ? await this.policyService.getConfig()
-        : undefined;
+      const config = await this.policyService.getConfig();
       const configured = config?.defaultTaskDurationMs;
       if (typeof configured === 'number' && configured > 0) {
         return configured;
@@ -118,6 +120,39 @@ export class DispatchCoordinatorService {
           throw new ConflictException(
             `SAFETY_BLOCK_DISPATCH: ${blocked.length} assignment(s) reference safety-blocked resources`,
           );
+        }
+      }
+    }
+
+    // §5.4 ADVISORY 模式 fail-closed：euclidean 降级仅参考，safety-critical 任务
+    // 不得自动 dispatch 降级路径（route graph 不可达 → 拒绝派工，非安全任务正常放行）。
+    // 与 SAFETY_BLOCK 同级位于事务之外，fail-fast 且异常即整体失败（无部分提交）。
+    {
+      const config = await this.policyService.getConfig();
+      if (config.routeCostMode === 'ADVISORY') {
+        const assignments = await this.db
+          .select()
+          .from(ewohSchedulingPlanAssignment)
+          .where(
+            and(
+              eq(ewohSchedulingPlanAssignment.planId, planId),
+              eq(ewohSchedulingPlanAssignment.status, 'approved'),
+            ),
+          );
+        for (const a of assignments) {
+          if (!a.taskId || !a.personId) continue;
+          const [task] = await this.db
+            .select({ safetyCritical: ewohProductionTask.safetyCritical })
+            .from(ewohProductionTask)
+            .where(eq(ewohProductionTask.id, a.taskId))
+            .limit(1);
+          if (!task || !task.safetyCritical) continue;
+          const cost = await this.travelCostService.estimate(a.personId, a.taskId);
+          if (cost.source === 'euclidean_fallback') {
+            throw new ConflictException(
+              `SAFETY_CRITICAL_DEGRADED_ROUTE: task=${a.taskId} has degraded route under ADVISORY mode`,
+            );
+          }
         }
       }
     }
@@ -340,14 +375,12 @@ export class DispatchCoordinatorService {
     );
 
     // 观测型：记录 planned 基线反馈。失败不影响下发（仅记录日志）。
-    if (this.feedbackService) {
-      try {
-        await this.feedbackService.recordBaseline(planId, undefined, ctx);
-      } catch (err) {
-        this.logger.warn(
-          `scheduling feedback baseline skipped for plan ${planId}: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
+    try {
+      await this.feedbackService.recordBaseline(planId, undefined, ctx);
+    } catch (err) {
+      this.logger.warn(
+        `scheduling feedback baseline skipped for plan ${planId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
 
     return {

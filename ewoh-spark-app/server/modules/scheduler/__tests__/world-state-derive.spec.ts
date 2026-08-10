@@ -6,6 +6,7 @@
  */
 /// <reference types="jest" />
 import { WorldStateSnapshotService } from '../world-state.service';
+import { deriveDeviceCapabilities } from '../device-capabilities';
 import {
   ewohPersonnel,
   ewohDevice,
@@ -55,9 +56,156 @@ function makeDb(rowsByTable: Partial<Record<string, unknown[]>>) {
   return { select: jest.fn(() => ({ from })) } as never;
 }
 
+/** 将 fake db 行数据映射为投影视图（复刻旧直读语义，供 persons/devices/stations 断言）。
+ *  资源装配已迁至 ResourceProjectionService；此处 mock 按测试数据行产出相同形状。 */
+function projectFromRows(rowsByTable: Partial<Record<string, unknown[]>>) {
+  const personnel = (rowsByTable['personnel'] ?? []) as Array<Record<string, any>>;
+  const devices = (rowsByTable['device'] ?? []) as Array<Record<string, any>>;
+  const spatial = (rowsByTable['spatial'] ?? []) as Array<Record<string, any>>;
+  const reservations = (rowsByTable['reservation'] ?? []) as Array<Record<string, any>>;
+  const spatialByEntityId = new Map<string, Record<string, any>>(
+    spatial.map((se) => [se.entityId, se]),
+  );
+  const now = Date.now();
+  const classifyFreshness = (sourceTs: number | null): 'FRESH' | 'STALE' | 'UNKNOWN' => {
+    if (sourceTs == null) return 'UNKNOWN';
+    return now - sourceTs > 300000 ? 'STALE' : 'FRESH';
+  };
+  const toCoordinateRef = (
+    type: string, x: number | null, y: number | null, floorId: string | null,
+  ) => {
+    if (type === 'WGS84') {
+      const lat = y ?? x;
+      const lng = x ?? y;
+      if (lat == null || lng == null) return { type: 'UNKNOWN' };
+      return { type: 'WGS84', lat, lng };
+    }
+    if (type === 'UNKNOWN') return { type: 'UNKNOWN' };
+    if (x == null || y == null) return { type: 'UNKNOWN' };
+    return { type: 'FACTORY_CARTESIAN', x, y, floorId };
+  };
+  const asStringArray = (v: unknown): string[] =>
+    Array.isArray(v) ? (v as unknown[]).filter((x): x is string => typeof x === 'string') : [];
+
+  const personReservationEnd = new Map<string, number>();
+  for (const r of reservations) {
+    if (r.resourceType === 'person' && r.endMs != null) {
+      personReservationEnd.set(
+        r.resourceId,
+        Math.max(personReservationEnd.get(r.resourceId) ?? 0, r.endMs),
+      );
+    }
+  }
+
+  const persons = personnel.map((p) => {
+    const se = p.spatialEntityId ? spatialByEntityId.get(p.spatialEntityId) : undefined;
+    const load = (p.currentLoad as { loadLevel?: number; fatigueLevel?: number } | null) ?? {};
+    const sourceTs = p.updatedAt ? p.updatedAt.getTime() : null;
+    const dataQuality = classifyFreshness(sourceTs);
+    const type = se?.coordinateType ?? 'FACTORY_CARTESIAN';
+    return {
+      id: p.id,
+      name: p.name,
+      status: dataQuality === 'FRESH' ? (p.status ?? 'available') : 'unavailable',
+      healthStatus: p.healthStatus ?? 'normal',
+      skills: asStringArray(p.skills),
+      certifications: asStringArray(p.certifications),
+      loadLevel: load.loadLevel ?? 0,
+      fatigueLevel: load.fatigueLevel ?? 0,
+      stationId: p.spatialEntityId ?? null,
+      zoneId: se ? (se.parentId ?? null) : null,
+      x: se && type !== 'WGS84' ? (se.x ?? null) : null,
+      y: se && type !== 'WGS84' ? (se.y ?? null) : null,
+      availableFromMs: personReservationEnd.get(p.id) ?? null,
+      shift: p.shift ?? null,
+      workload: p.workload ?? null,
+      currentTaskId: p.currentTaskId ?? null,
+      certificationExpiry: p.certificationExpiry ?? null,
+      sourceTs,
+      freshnessMs: 300000,
+      dataQuality,
+      coordinate: toCoordinateRef(type, se ? (se.x ?? null) : null, se ? (se.y ?? null) : null, se?.floorId ?? null),
+    };
+  });
+
+  const deviceList = devices.map((d) => {
+    const sourceTs = d.lastTelemetryAt
+      ? d.lastTelemetryAt.getTime()
+      : d.updatedAt
+        ? d.updatedAt.getTime()
+        : null;
+    const dataQuality = classifyFreshness(sourceTs);
+    const stale = dataQuality !== 'FRESH';
+    const columnCaps = asStringArray(d.capabilities);
+    const capabilities = columnCaps.length > 0 ? columnCaps : deriveDeviceCapabilities(d.deviceModel);
+    const derived: string[] = [];
+    if (columnCaps.length === 0) derived.push('capabilities');
+    const lat = d.locationLat ?? null;
+    const lng = d.locationLng ?? null;
+    const hasDeviceLocation = lat != null && lng != null;
+    const isWgs84 = (d.locationCoordinateType ?? 'FACTORY_CARTESIAN') === 'WGS84';
+    const deviceSe = d.deviceId ? spatialByEntityId.get(d.deviceId) : undefined;
+    return {
+      id: d.id,
+      workerName: d.workerName ?? null,
+      deviceModel: d.deviceModel ?? null,
+      batteryPct: d.batteryPct ?? 100,
+      capabilities,
+      online: stale ? false : (d.online ?? false),
+      status: d.faultCode ? 'fault' : stale ? 'offline' : 'online',
+      x: hasDeviceLocation && !isWgs84 ? lat : null,
+      y: hasDeviceLocation && !isWgs84 ? lng : null,
+      locationStationId: deviceSe ? (deviceSe.parentId ?? null) : null,
+      availableWindows: [],
+      locationConfidence: hasDeviceLocation ? (d.locationConfidence ?? null) : null,
+      locationUpdatedAt: d.locationUpdatedAt ? d.locationUpdatedAt.getTime() : null,
+      telemetryUpdatedAt: d.telemetryUpdatedAt ? d.telemetryUpdatedAt.getTime() : null,
+      sourceTs,
+      freshnessMs: 300000,
+      dataQuality,
+      derived,
+      coordinate: isWgs84
+        ? hasDeviceLocation
+          ? { type: 'WGS84', lat: lat as number, lng: lng as number }
+          : { type: 'UNKNOWN' }
+        : hasDeviceLocation
+          ? { type: 'FACTORY_CARTESIAN', x: lat as number, y: lng as number, floorId: null }
+          : { type: 'UNKNOWN' },
+    };
+  });
+
+  const stations = spatial
+    .filter((se) => ['workstation', 'station'].includes(se.entityType))
+    .map((se) => {
+      const capacity = typeof se.capacity === 'number' && se.capacity > 0 ? se.capacity : null;
+      const type = se.coordinateType ?? 'FACTORY_CARTESIAN';
+      return {
+        id: se.entityId,
+        name: se.name,
+        x: type !== 'WGS84' ? (se.x ?? null) : null,
+        y: type !== 'WGS84' ? (se.y ?? null) : null,
+        capacity,
+        queue: asStringArray(se.queue),
+        availableWindows: Array.isArray(se.availableWindows)
+          ? (se.availableWindows as Array<Record<string, any>>)
+              .filter((w) => typeof w?.startMs === 'number' && typeof w?.endMs === 'number')
+              .map((w) => ({ startMs: w.startMs, endMs: w.endMs }))
+          : [],
+        capabilities: se.entityType ? [se.entityType] : [],
+        coordinate: toCoordinateRef(type, se.x ?? null, se.y ?? null, se.floorId ?? null),
+      };
+    });
+
+  return { persons, devices: deviceList, stations };
+}
+
 function makeSvc(rowsByTable: Partial<Record<string, unknown[]>>) {
   const db = makeDb(rowsByTable);
-  return new WorldStateSnapshotService(db, { runInTransaction: jest.fn() } as never);
+  return new WorldStateSnapshotService(
+    db,
+    { runInTransaction: jest.fn() } as never,
+    { projectForSnapshot: jest.fn().mockResolvedValue(projectFromRows(rowsByTable)) } as never,
+  );
 }
 
 function taskRow(overrides: Record<string, unknown> = {}) {

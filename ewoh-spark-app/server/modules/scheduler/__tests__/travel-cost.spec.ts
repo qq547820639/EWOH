@@ -350,4 +350,51 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
     expect(t1.deviceIds).toContain('d1');
     expect(t1.deviceIds).not.toContain('d2');
   });
+
+  it('§5.4 STRICT：无 route graph 时 euclidean fallback 候选 feasible=false（route_infeasible）', async () => {
+    const { svc, routing, policy } = makeSvc({
+      calculateRouteBetween: jest.fn().mockResolvedValue({
+        routeId: 'euclidean-fallback', distanceMeters: 0, etaSeconds: 0, nodes: [], geometry: [],
+        source: 'euclidean_fallback', riskLevel: null, graphVersion: null,
+        calculatedAt: new Date().toISOString(), feasible: false, fallbackReason: 'no_route_edge', dataQuality: 'FRESH',
+      }),
+    });
+    (policy.getConfig as jest.Mock).mockResolvedValue({ walkingSpeedMps: 1, routeCostMode: 'STRICT' });
+    const snapshot = baseSnapshot({
+      persons: [{ id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
+      stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
+    });
+    const matrix = await svc.buildMatrix(snapshot, TASK, [
+      { personId: 'p1', deviceId: 'd1', stationId: 'S1' },
+    ]);
+    const c = matrix.candidates[0];
+    // 降级标记保留（source/fallbackReason/dataQuality 不变），仅可行态被 STRICT 收紧。
+    expect(c.routeCostMode).toBe('euclidean_fallback');
+    expect(c.fallbackReason).toBe('no_route_edge');
+    expect(c.dataQuality).toBe('FRESH');
+    expect(c.feasible).toBe(false);
+  });
+
+  it('§5.4 DEGRADED（缺省未配置 routeCostMode）：降级候选可行、带 fallbackReason/dataQuality（现状回归）', async () => {
+    const { svc, routing } = makeSvc({
+      calculateRouteBetween: jest.fn().mockResolvedValue({
+        routeId: 'euclidean-fallback', distanceMeters: 0, etaSeconds: 0, nodes: [], geometry: [],
+        source: 'euclidean_fallback', riskLevel: null, graphVersion: null,
+        calculatedAt: new Date().toISOString(), feasible: false, fallbackReason: 'no_route_edge', dataQuality: 'FRESH',
+      }),
+    });
+    // makeSvc 缺省 getConfig 返回 { walkingSpeedMps: 1 }（无 routeCostMode → 缺省 DEGRADED 行为）。
+    const snapshot = baseSnapshot({
+      persons: [{ id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
+      stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
+    });
+    const matrix = await svc.buildMatrix(snapshot, TASK, [
+      { personId: 'p1', deviceId: 'd1', stationId: 'S1' },
+    ]);
+    const c = matrix.candidates[0];
+    expect(c.routeCostMode).toBe('euclidean_fallback');
+    expect(c.fallbackReason).toBe('no_route_edge');
+    expect(c.dataQuality).toBe('FRESH');
+    expect(c.feasible).toBe(true); // 缺省 DEGRADED：降级候选可行
+  });
 });

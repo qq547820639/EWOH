@@ -3,8 +3,8 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { eq } from 'drizzle-orm';
-import { ewohSchedulingRun } from '@server/database/schema';
+import { eq, desc } from 'drizzle-orm';
+import { ewohSchedulePlan, ewohSchedulingRun } from '@server/database/schema';
 import type {
   ReplanConfig,
   ReplanImpact,
@@ -60,7 +60,15 @@ const FALLBACK_REPLAN: ReplanConfig = {
   conflictAggregationWindowMs: 60_000,
   maxPropagationDepth: 3,
   maxAffectedTasks: 200,
+  freezeWindowMinutes: 15,
+  minimumObjectiveImprovement: 0.02,
 };
+
+/**
+ * ReplanStabilityBudget（Task 5）：freeze window 对"计划开始时间已轻微过去"的宽容（ms）。
+ * 防时钟偏差把本应在窗口外的任务误判进冻结集。
+ */
+const FREEZE_WINDOW_GRACE_MS = 5 * 60_000;
 
 /**
  * 重排协调器：对一次触发做影响分析，并据此执行一次确定性的局部/全量重排。
@@ -173,6 +181,7 @@ export class ReplanCoordinatorService {
     ctx: OrgContext,
     triggerType: string,
     triggerIds: string[],
+    reason: string = 'storm_guard_suppressed',
   ): Promise<void> {
     const orgKey = ctx.primaryOrgId || 'ALL';
     const state = this.touchOrgState(orgKey);
@@ -194,7 +203,7 @@ export class ReplanCoordinatorService {
             triggerType,
             triggerEntityId: triggerIds[0] ?? null,
             triggerIds,
-            reason: 'storm_guard_suppressed',
+            reason,
             suppressedAt: new Date().toISOString(),
             suppressedCount: state.suppressedCount,
           },
@@ -209,7 +218,7 @@ export class ReplanCoordinatorService {
       }
     }
     this.logger.warn(
-      `replan suppressed for org ${orgKey} (storm guard): total=${state.suppressedCount}`,
+      `replan suppressed for org ${orgKey} (${reason}): total=${state.suppressedCount}`,
     );
   }
 
@@ -286,6 +295,129 @@ export class ReplanCoordinatorService {
   }
 
   /**
+   * ReplanStabilityBudget（Task 5）：freeze window 收集。
+   * 将计划开始时间落在 [now - FREEZE_WINDOW_GRACE_MS, now + freezeWindowMs] 的
+   * 已分配任务并入冻结集（求解器不可移动），返回 windowFrozenTaskIds。
+   * freezeWindowMs <= 0 视为禁用（显式配置 0 表示不启用冻结窗口）。
+   * 必须在子图过滤前调用：frozenSet 的扩充使临期任务同样保留在子图中。
+   */
+  private collectWindowFrozenTaskIds(
+    snapshot: WorldStateSnapshot,
+    frozenSet: Set<string>,
+    freezeWindowMs: number,
+  ): Set<string> {
+    const windowFrozenTaskIds = new Set<string>();
+    if (freezeWindowMs <= 0) return windowFrozenTaskIds;
+    const nowMs = Date.now();
+    for (const t of snapshot.tasks) {
+      if (t.assigneeId == null || t.planStart == null) continue;
+      const planStartMs = new Date(t.planStart).getTime();
+      if (!Number.isFinite(planStartMs)) continue;
+      const msUntilStart = planStartMs - nowMs;
+      if (msUntilStart > freezeWindowMs || msUntilStart < -FREEZE_WINDOW_GRACE_MS) continue;
+      windowFrozenTaskIds.add(t.id);
+      frozenSet.add(t.id);
+    }
+    return windowFrozenTaskIds;
+  }
+
+  /**
+   * ReplanStabilityBudget（Task 5）：freeze window 锁追加。
+   * 将 windowFrozenTaskIds 的当前分配以 LOCKED_ASSIGNMENT 语义追加进
+   * partialSnapshot.lockedAssignments（taskId 已存在的则不覆盖），求解器据此视为不可移动。
+   */
+  private appendFreezeWindowLocks(
+    snapshot: WorldStateSnapshot,
+    lockedAssignments: WorldStateSnapshot['lockedAssignments'],
+    windowFrozenTaskIds: Set<string>,
+  ): WorldStateSnapshot['lockedAssignments'] {
+    if (windowFrozenTaskIds.size === 0) return lockedAssignments;
+    const taskById = new Map(snapshot.tasks.map((t) => [t.id, t]));
+    const lockedByTask = new Set(lockedAssignments.map((la) => la.taskId));
+    for (const id of windowFrozenTaskIds) {
+      if (lockedByTask.has(id)) continue;
+      const t = taskById.get(id);
+      if (!t || t.assigneeId == null) continue;
+      lockedAssignments.push({
+        taskId: id,
+        personId: t.assigneeId,
+        deviceId: t.deviceId,
+        stationId: t.stationId,
+      });
+      lockedByTask.add(id);
+    }
+    return lockedAssignments;
+  }
+
+  /** 读取最近一次正式方案的目标总值（scoreBreakdownJson.total；jsonb，无则 null）。 */
+  private async loadLatestPlanObjective(): Promise<number | null> {
+    try {
+      // ewohSchedulePlan 无 orgId 列（schema 确认）：基线=全局最新方案（按 createdAt 降序）。
+      const [latestPlan] = await this.db
+        .select()
+        .from(ewohSchedulePlan)
+        .orderBy(desc(ewohSchedulePlan.createdAt))
+        .limit(1);
+      const breakdown = (latestPlan?.scoreBreakdownJson ?? null) as { total?: number } | null;
+      const total = breakdown?.total;
+      return typeof total === 'number' && Number.isFinite(total) ? total : null;
+    } catch (err) {
+      // 旧单测 db mock 无 select、表不可达等情况：跳过门禁（保持现状，不抑制）。
+      this.logger.debug(
+        `loadLatestPlanObjective unavailable: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * ReplanStabilityBudget（Task 5）：minimumObjectiveImprovement 抑制门。
+   * 非 critical 触发、且影响集无 safetyCritical 任务、且候选方案无冲突/硬约束待修复、
+   * 且候选目标改进率低于阈值（缺省 2%）→ 返回 true（应抑制）。
+   * 基线或候选目标缺失/基线 ≤ 0 → 返回 false（不抑制，保持现状）。
+   */
+  private async shouldSuppressForLowImprovement(
+    best: SchedulingPlanV2,
+    impact: ReplanImpact,
+    snapshot: WorldStateSnapshot,
+    triggerType: string,
+    replan: ReplanConfig,
+  ): Promise<boolean> {
+    // 1) critical 触发（安全/资源禁用类）不做目标门槛——必须重排。
+    const criticalTrigger =
+      triggerType === 'SAFETY_EVENT' ||
+      triggerType === 'ZONE_RESTRICTED' ||
+      triggerType === 'PERSON_UNAVAILABLE' ||
+      triggerType === 'DEVICE_OFFLINE';
+    if (criticalTrigger) return false;
+    // 2) 影响集含 safetyCritical 任务，或候选方案仍有冲突/硬约束待修复 → 必须落盘。
+    const hasSafetyCriticalInImpact = impact.affectedTaskIds.some((id) =>
+      snapshot.tasks.some((t) => t.id === id && t.safetyCritical === true),
+    );
+    const hasViolations = (best.violations?.length ?? 0) > 0;
+    const hasFailedAssignments = best.assignments.some((a) =>
+      ['failed', 'blocked', 'cancelled'].includes(a.status),
+    );
+    if (hasSafetyCriticalInImpact || hasViolations || hasFailedAssignments) return false;
+
+    const minImprovement =
+      replan.minimumObjectiveImprovement ?? FALLBACK_REPLAN.minimumObjectiveImprovement!;
+    if (minImprovement <= 0) return false;
+    const candidateTotal = best.scoreBreakdown?.total;
+    const baselineTotal = await this.loadLatestPlanObjective();
+    if (
+      baselineTotal == null ||
+      candidateTotal == null ||
+      !Number.isFinite(baselineTotal) ||
+      !Number.isFinite(candidateTotal) ||
+      baselineTotal <= 0
+    ) {
+      return false;
+    }
+    return (baselineTotal - candidateTotal) / baselineTotal < minImprovement;
+  }
+
+  /**
    * 处理一次重排触发：求值（去重/去抖）→ 构建快照 → 影响分析 → 局部重排 → 持久化 → 更新运行状态。
    * 局部重排：仅把受影响任务 + 冻结任务交给求解器，无关任务不进入子图（不 churn），
    * 并传递 baselineAssignee 作为 churn/stability 罚项基线。
@@ -328,12 +460,26 @@ export class ReplanCoordinatorService {
       );
 
       // 局部重排子图 = 受影响任务 ∪ 冻结任务；无关任务不进入求解输入 → 天然不 churn。
+      // ReplanStabilityBudget（Task 5）：freeze window 先于子图过滤——
+      // 计划开始时间落在 [now-宽容, now+freezeWindowMinutes] 的已分配任务并入冻结集，
+      // 使临执行前的近期 assignment 保留在子图中且以 LOCKED_ASSIGNMENT 语义不可移动。
       const affectedSet = new Set(impact.affectedTaskIds);
       const frozenSet = new Set(impact.frozenAssignmentIds);
+      const replan = await this.readReplanConfig();
+      const windowFrozenTaskIds = this.collectWindowFrozenTaskIds(
+        snapshot,
+        frozenSet,
+        (replan.freezeWindowMinutes ?? FALLBACK_REPLAN.freezeWindowMinutes!) * 60_000,
+      );
       const partialSnapshot: WorldStateSnapshot = {
         ...snapshot,
         tasks: snapshot.tasks.filter(
           (t) => affectedSet.has(t.id) || frozenSet.has(t.id),
+        ),
+        lockedAssignments: this.appendFreezeWindowLocks(
+          snapshot,
+          [...snapshot.lockedAssignments],
+          windowFrozenTaskIds,
         ),
       };
 
@@ -363,6 +509,45 @@ export class ReplanCoordinatorService {
         horizonMinutes: 480,
         baselineAssignee,
       });
+
+      // ReplanStabilityBudget（Task 5）：minimumObjectiveImprovement 抑制门——
+      // 非 critical 且无冲突/硬约束待修复、候选目标改进低于阈值时，不落盘并 emit
+      // replan.suppressed（reason=minimum_objective_improvement）；run 闭合为 succeeded（planIds=[]）。
+      const best = plans[0];
+      if (
+        best &&
+        (await this.shouldSuppressForLowImprovement(
+          best,
+          impact,
+          snapshot,
+          triggerType,
+          replan,
+        ))
+      ) {
+        await this.requestDatabaseContext.runInTransaction(
+          buildGucSettings(ctx),
+          async () => {
+            await this.db
+              .update(ewohSchedulingRun)
+              .set({
+                status: 'succeeded',
+                snapshotVersion: snapshot.snapshotVersion,
+                planIds: [],
+              })
+              .where(eq(ewohSchedulingRun.runId, run.runId));
+          },
+        );
+        await this.recordSuppressed(
+          ctx,
+          triggerType,
+          entityId ? [entityId] : [],
+          'minimum_objective_improvement',
+        );
+        this.logger.debug(
+          `replan suppressed (minimum_objective_improvement): trigger=${triggerType}, candidate objective 改进率低于阈值`,
+        );
+        return { run: null, plans: [], debounced: false, suppressed: true };
+      }
 
       for (const plan of plans) {
         await this.planService.persistPlan(plan, ctx);
@@ -461,10 +646,22 @@ export class ReplanCoordinatorService {
 
       const affectedSet = new Set(impact.affectedTaskIds);
       const frozenSet = new Set(impact.frozenAssignmentIds);
+      // ReplanStabilityBudget（Task 5）：freeze window 同样适用于 conflict batch——
+      // 临执行前（planStart ∈ [now-宽容, now+freezeWindowMinutes]）的已分配任务并入冻结集。
+      const windowFrozenTaskIds = this.collectWindowFrozenTaskIds(
+        snapshot,
+        frozenSet,
+        (replan.freezeWindowMinutes ?? FALLBACK_REPLAN.freezeWindowMinutes!) * 60_000,
+      );
       const partialSnapshot: WorldStateSnapshot = {
         ...snapshot,
         tasks: snapshot.tasks.filter(
           (t) => affectedSet.has(t.id) || frozenSet.has(t.id),
+        ),
+        lockedAssignments: this.appendFreezeWindowLocks(
+          snapshot,
+          [...snapshot.lockedAssignments],
+          windowFrozenTaskIds,
         ),
       };
 

@@ -568,6 +568,10 @@ export interface ReplanConfig {
   maxPropagationDepth?: number;
   /** 影响传播最大任务数截断，缺省 200。 */
   maxAffectedTasks?: number;
+  /** 冻结窗口（分钟）：计划开始时间落在 [now, now+freezeWindowMinutes] 的 assignment 并入冻结集（缺省 15）。 */
+  freezeWindowMinutes?: number;
+  /** 最低目标改进率：非 critical 且无冲突/硬约束待修复时，候选目标改进低于该比率则抑制重排（缺省 0.02）。 */
+  minimumObjectiveImprovement?: number;
 }
 
 /** Replan V2 自动重排 vs 人工审批政策（08 §6；全可选，缺省=现状自动）。 */
@@ -1117,6 +1121,9 @@ export interface SchedulingPolicyConfig {
     changeCost?: number;
     energy?: number;
   };
+  // --- RouteCost 三级策略（§5.4；可选，缺省 DEGRADED=现状行为，保证回归） ---
+  /** 路线成本模式（§5.4 三级策略）：STRICT=route graph 不可达即候选 infeasible；DEGRADED=euclidean 显式降级+标记+惩罚（缺省）；ADVISORY=降级仅参考，safety-critical 不得自动 dispatch 降级路径。 */
+  routeCostMode?: RouteCostMode;
   // --- Command Map 增量（Phase 1 / P1-4，05 §3.9/G3；可选，向后兼容） ---
   /** 人工偏好折算分值（分钟，默认 30；替代 solver 内 magic number）。 */
   preferenceBonusMinutes?: number;
@@ -1276,6 +1283,9 @@ export type RouteCostFallbackReason =
 
 /** 路径成本数据质量（02 §13：未知/缺失字段必须显式标记）。 */
 export type RouteCostDataQuality = 'FRESH' | 'STALE' | 'UNKNOWN';
+
+/** 路线成本三级策略模式（§5.4）：STRICT=route graph 不可达即候选 infeasible；DEGRADED=euclidean 显式降级+标记+惩罚（缺省）；ADVISORY=降级仅参考，safety-critical 不得自动 dispatch 降级路径。 */
+export type RouteCostMode = 'STRICT' | 'DEGRADED' | 'ADVISORY';
 
 /** 单个候选的路径成本明细（RouteCostMatrix 条目）。 */
 export interface CandidateRouteCost {

@@ -5,7 +5,6 @@ import {
   BadRequestException,
   NotFoundException,
   ConflictException,
-  Optional,
   forwardRef,
 } from '@nestjs/common';
 import {
@@ -50,14 +49,15 @@ export class PlanService {
     private readonly worldStateSnapshotService: WorldStateSnapshotService,
     private readonly dispatchCoordinator: DispatchCoordinatorService,
     private readonly schedulingPolicyService: SchedulingPolicyService,
-    @Optional() private readonly feedbackService?: SchedulingFeedbackService,
-    // T02 / P0-2：持久化人工约束唯一加载入口（可选注入；缺失时回退旧逻辑，兼容旧单测）。
-    private readonly constraintLoaderService?: ConstraintLoaderService,
-    // T04 / P1-6：PLAN_STALE 事件化（可选注入；缺失时仅抛异常，兼容旧单测）。
-    @Optional() private readonly outboxService?: OutboxService,
+    // T02 / P0-1（G1）：观测反馈（必选；生产路径始终注入）。
+    private readonly feedbackService: SchedulingFeedbackService,
+    // T02 / P0-2：持久化人工约束唯一加载入口（必选）。
+    private readonly constraintLoaderService: ConstraintLoaderService,
+    // T04 / P1-6：PLAN_STALE 事件化（必选）。
+    private readonly outboxService: OutboxService,
     // T04 / P1-6：stale approve → scoped replan（forwardRef 打破 Plan↔Replan 循环依赖）。
-    @Optional() @Inject(forwardRef(() => ReplanCoordinatorService))
-    private readonly replanCoordinator?: ReplanCoordinatorService,
+    @Inject(forwardRef(() => ReplanCoordinatorService))
+    private readonly replanCoordinator: ReplanCoordinatorService,
   ) {}
 
   /** 持久化一个 V2 方案（ewoh_schedule_plan + 分配明细）。 */
@@ -276,27 +276,23 @@ export class PlanService {
     ctx: OrgContext,
   ): Promise<void> {
     try {
-      if (this.outboxService) {
-        await this.outboxService.enqueue(
-          'stale_plan',
+      await this.outboxService.enqueue(
+        'stale_plan',
+        planId,
+        {
           planId,
-          {
-            planId,
-            reason: 'approve rejected: PLAN_STALE',
-            occurredAt: new Date().toISOString(),
-          },
-          ctx.primaryOrgId || null,
-          undefined,
-          {
-            entityType: 'schedule_plan',
-            planId,
-            occurredAt: new Date().toISOString(),
-          },
-        );
-      }
-      if (this.replanCoordinator) {
-        await this.replanCoordinator.handleTrigger('PLAN_STALE', planId, ctx);
-      }
+          reason: 'approve rejected: PLAN_STALE',
+          occurredAt: new Date().toISOString(),
+        },
+        ctx.primaryOrgId || null,
+        undefined,
+        {
+          entityType: 'schedule_plan',
+          planId,
+          occurredAt: new Date().toISOString(),
+        },
+      );
+      await this.replanCoordinator.handleTrigger('PLAN_STALE', planId, ctx);
     } catch (err) {
       this.logger.warn(
         `stale plan notification failed for ${planId}: ${err instanceof Error ? err.message : String(err)}`,
@@ -310,7 +306,6 @@ export class PlanService {
     accepted: boolean,
     ctx: OrgContext,
   ): void {
-    if (!this.feedbackService) return;
     this.feedbackService
       .recordAcceptance(planId, accepted, ctx)
       .catch((err) => {
@@ -444,31 +439,18 @@ export class PlanService {
    * P0-2 约束继承：重排时合并「当前方案仍生效的持久化人工约束」与「请求新约束」。
    *
    * 人工 LOCK/EXCLUDE/PREFER 等不得因为下一次普通 replan 传入 [] 而消失。
-   * T02：委托 ConstraintLoaderService.loadForPlan（org + active + 有效期过滤统一入口）；
-   * 未注入 loader（旧单测）时回退本类旧逻辑（listPlanConstraints + 合并）。
+   * T02：统一委托 ConstraintLoaderService.loadForPlan（org + active + 有效期过滤统一入口）。
    */
   async loadEffectiveConstraints(
     planId: string,
     requestConstraints: import('@shared/api.interface').SchedulingConstraint[],
     ctx?: OrgContext,
   ): Promise<import('@shared/api.interface').SchedulingConstraint[]> {
-    if (this.constraintLoaderService) {
-      return this.constraintLoaderService.loadForPlan(
-        planId,
-        requestConstraints,
-        ctx ?? { userId: 'system', primaryOrgId: '', role: 'system', accessibleOrgIds: [], isGlobalAdmin: false },
-      );
-    }
-    const inherited = await this.listPlanConstraints(planId);
-    // 请求约束优先（operator 来源显式标注）；同类型同目标时请求覆盖继承
-    const merged = [...requestConstraints];
-    for (const c of inherited) {
-      const alreadyRequested = merged.some(
-        (rc) => rc.type === c.type && rc.taskId === c.taskId && rc.personId === c.personId,
-      );
-      if (!alreadyRequested) merged.push(c);
-    }
-    return merged;
+    return this.constraintLoaderService.loadForPlan(
+      planId,
+      requestConstraints,
+      ctx ?? { userId: 'system', primaryOrgId: '', role: 'system', accessibleOrgIds: [], isGlobalAdmin: false },
+    );
   }
 
   /**
@@ -591,9 +573,8 @@ export class PlanService {
 
     // T02 / P0-2：计划约束快照（确定性 replay + 审计）——落库求解所用 constraints + 稳定哈希。
     newPlan.constraints = effectiveConstraints;
-    newPlan.effectiveConstraintsHash = this.constraintLoaderService
-      ? this.constraintLoaderService.hashConstraints(effectiveConstraints)
-      : null;
+    newPlan.effectiveConstraintsHash =
+      this.constraintLoaderService.hashConstraints(effectiveConstraints);
 
     await this.persistPlan(newPlan, ctx);
 

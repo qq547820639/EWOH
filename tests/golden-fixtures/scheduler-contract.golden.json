@@ -1,0 +1,261 @@
+{
+  "request": {
+    "requestId": "REQ-PARITY-0001",
+    "snapshotVersion": "WS-PARITY-0001",
+    "policyVersion": 7,
+    "solverVersion": "cpsat-v1",
+    "horizonMinutes": 480,
+    "nowMs": 1700000000000,
+    "weights": {
+      "lateness": 100,
+      "travel": 50,
+      "workloadBalance": 40,
+      "stationWait": 30,
+      "changeCost": 20,
+      "risk": 80,
+      "energyRisk": 60,
+      "churn": 10
+    },
+    "tasks": [
+      {
+        "taskId": "T-101",
+        "priority": 1,
+        "earliestStartMs": 1700000100000,
+        "dueMs": 1700001000000,
+        "durationMs": 1800000,
+        "requiredSkills": ["assembly", "weld"],
+        "requiredCertifications": ["c-weld-basic"],
+        "requiredDeviceCapabilities": ["exo-lift"],
+        "candidateStationIds": ["S-1", "S-2"],
+        "zoneId": "Z-1",
+        "predecessorIds": [],
+        "safetyCritical": true,
+        "preemptible": false,
+        "skillMatchMode": "ALL",
+        "effectivePriorityScore": 12.5,
+        "mustFinishByMs": 1700001600000,
+        "eligiblePersonIds": ["P-1", "P-2"],
+        "eligibleDeviceIds": ["D-1"]
+      },
+      {
+        "taskId": "T-102",
+        "priority": 2,
+        "earliestStartMs": 1700000200000,
+        "dueMs": null,
+        "durationMs": 1200000,
+        "requiredSkills": ["inspect"],
+        "requiredCertifications": [],
+        "requiredDeviceCapabilities": [],
+        "candidateStationIds": ["S-3"],
+        "zoneId": null,
+        "predecessorIds": ["T-101"],
+        "safetyCritical": false,
+        "preemptible": true,
+        "skillMatchMode": "ANY",
+        "effectivePriorityScore": 40,
+        "mustFinishByMs": null,
+        "eligiblePersonIds": ["P-2"],
+        "eligibleDeviceIds": []
+      }
+    ],
+    "persons": [
+      {
+        "id": "P-1",
+        "status": "AVAILABLE",
+        "locationStationId": "S-1",
+        "x": 12.5,
+        "y": 8.25,
+        "skills": ["assembly", "weld", "inspect"],
+        "certifications": ["c-weld-basic"],
+        "workload": 0.3,
+        "fatigue": 0.2,
+        "availableFromMs": 1700000100000,
+        "executingTaskIds": []
+      },
+      {
+        "id": "P-2",
+        "status": "AVAILABLE",
+        "locationStationId": null,
+        "x": null,
+        "y": null,
+        "skills": ["inspect"],
+        "certifications": [],
+        "workload": 0.1,
+        "fatigue": 0.05,
+        "availableFromMs": null,
+        "executingTaskIds": ["T-103"]
+      }
+    ],
+    "devices": [
+      {
+        "id": "D-1",
+        "status": "AVAILABLE",
+        "online": true,
+        "capabilities": ["exo-lift"],
+        "batteryPct": 92,
+        "x": 11.0,
+        "y": 9.0,
+        "availableFromMs": 1700000100000,
+        "executingTaskIds": []
+      },
+      {
+        "id": "D-2",
+        "status": "OFFLINE",
+        "online": false,
+        "capabilities": ["vacuum"],
+        "batteryPct": 10,
+        "x": null,
+        "y": null,
+        "availableFromMs": null,
+        "executingTaskIds": []
+      }
+    ],
+    "stations": [
+      {
+        "id": "S-1",
+        "x": 10.0,
+        "y": 10.0,
+        "capacity": 1,
+        "executingTaskIds": []
+      },
+      {
+        "id": "S-2",
+        "x": 20.0,
+        "y": 5.0,
+        "capacity": 2,
+        "executingTaskIds": []
+      },
+      {
+        "id": "S-3",
+        "x": null,
+        "y": null,
+        "capacity": 1,
+        "executingTaskIds": []
+      }
+    ],
+    "reservations": [
+      {
+        "resourceId": "P-1",
+        "resourceType": "person",
+        "startMs": 1700001000000,
+        "endMs": 1700002800000
+      }
+    ],
+    "forbiddenZones": ["Z-2"],
+    "constraints": [
+      {
+        "id": "C-1",
+        "type": "REQUIRED_SKILL",
+        "taskId": "T-101",
+        "personId": "P-2",
+        "hard": true,
+        "operator": "scheduler",
+        "reason": "missing_skill",
+        "source": "system",
+        "orgId": null,
+        "validFromMs": null,
+        "expiresAtMs": null,
+        "deactivatedAt": null,
+        "deactivatedBy": null
+      },
+      {
+        "id": "C-2",
+        "type": "LOCKED_TIME",
+        "taskId": "T-102",
+        "startMs": 1700000200000,
+        "endMs": 1700001400000,
+        "value": 0,
+        "hard": true,
+        "operator": "dispatcher",
+        "reason": "manual_lock",
+        "source": "manual",
+        "orgId": "org-ewoh-demo"
+      }
+    ],
+    "candidateCosts": [
+      {
+        "taskId": "T-101",
+        "personId": "P-1",
+        "stationId": "S-1",
+        "distanceMeters": 120.5,
+        "etaSeconds": 90,
+        "dataQuality": "FRESH",
+        "fallbackReason": null
+      },
+      {
+        "taskId": "T-101",
+        "personId": "P-2",
+        "stationId": "S-2",
+        "distanceMeters": 0,
+        "etaSeconds": 0,
+        "dataQuality": "UNKNOWN",
+        "fallbackReason": "coords_unknown"
+      }
+    ],
+    "frozenAssignments": [
+      {
+        "taskId": "T-103",
+        "personId": "P-2",
+        "deviceId": null,
+        "stationId": "S-3",
+        "startMs": 1700000200000,
+        "endMs": 1700000400000
+      }
+    ],
+    "safetyBlockedPersonIds": ["P-9"],
+    "safetyBlockedDeviceIds": ["D-9"],
+    "baselineAssignee": {
+      "T-101": "P-1",
+      "T-102": null
+    },
+    "timeLimitMs": 5000
+  },
+  "response": {
+    "solverVersion": "cpsat-v1",
+    "solverStatus": "OPTIMAL",
+    "solveDurationMs": 42,
+    "objective": 123.5,
+    "objectiveBreakdown": {
+      "lateness": 20,
+      "travel": 40,
+      "workloadBalance": 10,
+      "stationWait": 5,
+      "changeCost": 30,
+      "risk": 8,
+      "energyRisk": 8,
+      "churn": 2.5
+    },
+    "hardViolations": [],
+    "optimalityGap": 0,
+    "unassignedTaskIds": ["T-104"],
+    "assignments": [
+      {
+        "taskId": "T-101",
+        "personId": "P-1",
+        "deviceId": "D-1",
+        "stationId": "S-1",
+        "startMs": 1700000100000,
+        "endMs": 1700001900000,
+        "reasons": ["cpsat-selected", "skill_match"],
+        "rejectedAlternatives": [
+          {
+            "personId": "P-2",
+            "stationId": "S-2",
+            "reason": ["missing_skill"]
+          }
+        ]
+      },
+      {
+        "taskId": "T-102",
+        "personId": "P-2",
+        "deviceId": null,
+        "stationId": "S-3",
+        "startMs": 1700002000000,
+        "endMs": 1700003200000,
+        "reasons": ["cpsat-selected"],
+        "rejectedAlternatives": []
+      }
+    ]
+  },
+  "solverStatusValues": ["OPTIMAL", "FEASIBLE", "HEURISTIC", "FALLBACK", "INFEASIBLE", "TIMEOUT", "UNAVAILABLE"]
+}

@@ -139,6 +139,10 @@ function makePlanServiceForApproval() {
     worldState as never,
     {} as never,
     policyService as never,
+    { recordAcceptance: jest.fn(), recordBaseline: jest.fn() } as never,
+    { loadForPlan: jest.fn(), hashConstraints: jest.fn() } as never,
+    { enqueue: jest.fn() } as never,
+    { handleTrigger: jest.fn() } as never,
   );
   return planService;
 }
@@ -294,6 +298,10 @@ describe('M03 ReplanPreviewService', () => {
       worldState as never,
       {} as never,
       policyService as never,
+      { recordAcceptance: jest.fn(), recordBaseline: jest.fn() } as never,
+      { loadForPlan: jest.fn(), hashConstraints: jest.fn() } as never,
+      { enqueue: jest.fn() } as never,
+      { handleTrigger: jest.fn() } as never,
     );
     const out = await svc.consultReplanApproval({
       triggerType: 'DEVICE_OFFLINE',

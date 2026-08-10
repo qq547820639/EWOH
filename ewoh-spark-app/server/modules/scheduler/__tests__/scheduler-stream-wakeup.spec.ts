@@ -1,0 +1,171 @@
+/* Task 6：Outbox → Postgres LISTEN/NOTIFY 低延迟 wake-up（scheduler-stream.service 单元测试）。
+ *
+ * 覆盖：
+ *   a) 注入 mock listener → 收到通知立即触发一次 poll（不等 2s 轮询），新事件被推送；
+ *   b) listener 订阅抛错 → 降级纯轮询：2s 定时器照常推送事件（NOTIFY 不是唯一事实源）；
+ *   c) 未提供 listener（缺省）→ 行为与现状一致（仅轮询）；
+ *   d) sequence 去重/推进语义不变（重复通知不重复推送，新 sequence 照常推送）；
+ *   e) unsubscribe 抛错 → stop() 不抛（仅告警），定时器已清理。
+ *
+ * 构造签名向后兼容性由现有 phase2-realtime / last-event-id / sse-events spec 全绿保证
+ * （`new SchedulerStreamService(outboxService)` 单参构造不受影响）。
+ */
+/// <reference types="jest" />
+import { SchedulerStreamService, type SchedulerOutboxListener } from '../scheduler-stream.service';
+import type { OutboxEvent, SchedulingEvent } from '@shared/api.interface';
+
+const POLL_INTERVAL_MS = 2_000;
+
+function evt(sequence: number): OutboxEvent {
+  return {
+    id: `evt-${sequence}`,
+    eventType: 'DEVICE_OFFLINE',
+    entityId: 'd1',
+    payload: {},
+    status: 'published',
+    sequence,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function makeOutbox(listLatestImpl?: jest.Mock) {
+  return {
+    latestSequence: jest.fn().mockResolvedValue(0),
+    listSince: jest.fn().mockResolvedValue([]),
+    listLatest: listLatestImpl ?? jest.fn().mockResolvedValue([]),
+  };
+}
+
+/** 等待微任务清空（poll 的异步 mock 链 resolve 到 subject.next）。 */
+async function flush(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** mock listener：subscribe 记录 onNotify 回调，fire() 模拟收到 DB 通知。 */
+function makeListener() {
+  let onNotify: (() => void) | null = null;
+  const listener: SchedulerOutboxListener = {
+    subscribe: jest.fn((cb: () => void) => {
+      onNotify = cb;
+      return jest.fn();
+    }),
+  };
+  return { listener, fire: () => onNotify?.() };
+}
+
+describe('SchedulerStreamService OUTBOX LISTEN/NOTIFY wake-up（Task 6）', () => {
+  it('收到通知 → 立即触发一次 poll（不等 2s 轮询），新事件被推送', async () => {
+    const outbox = makeOutbox(jest.fn().mockResolvedValue([evt(1)]));
+    const { listener, fire } = makeListener();
+    const svc = new SchedulerStreamService(outbox as never, listener);
+    const events: SchedulingEvent[] = [];
+    const sub = svc.events().subscribe((e) => events.push(e));
+
+    await svc.start();
+    expect(listener.subscribe).toHaveBeenCalledTimes(1);
+    // 启动本身不立即 poll（仅启动 2s 定时器）。
+    expect(outbox.listLatest).not.toHaveBeenCalled();
+
+    fire();
+    await flush();
+    expect(outbox.listLatest).toHaveBeenCalledTimes(1);
+    expect(events.map((e) => e.sequence)).toEqual([1]);
+
+    sub.unsubscribe();
+    svc.stop();
+  });
+
+  it('notify listener 订阅抛错 → 降级纯轮询：2s 定时器照常推送事件', async () => {
+    jest.useFakeTimers();
+    try {
+      const outbox = makeOutbox(jest.fn().mockResolvedValue([evt(1)]));
+      const throwingListener: SchedulerOutboxListener = {
+        subscribe: jest.fn(() => {
+          throw new Error('listener subscribe boom');
+        }),
+      };
+      const svc = new SchedulerStreamService(outbox as never, throwingListener);
+      const events: SchedulingEvent[] = [];
+      const sub = svc.events().subscribe((e) => events.push(e));
+
+      await svc.start();
+      expect(throwingListener.subscribe).toHaveBeenCalledTimes(1);
+      expect(events).toHaveLength(0);
+
+      // 轮询兜底：推进一个 2s 周期后事件仍被推送（NOTIFY 失败不影响事件交付）。
+      await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+      expect(outbox.listLatest).toHaveBeenCalledTimes(1);
+      expect(events.map((e) => e.sequence)).toEqual([1]);
+
+      svc.stop();
+      sub.unsubscribe();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('未提供 notify listener（缺省）→ 行为与现状一致：仅 2s 轮询推送', async () => {
+    jest.useFakeTimers();
+    try {
+      const outbox = makeOutbox(jest.fn().mockResolvedValue([evt(1)]));
+      const svc = new SchedulerStreamService(outbox as never);
+      const events: SchedulingEvent[] = [];
+      const sub = svc.events().subscribe((e) => events.push(e));
+
+      await svc.start();
+      expect(outbox.listLatest).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+      expect(outbox.listLatest).toHaveBeenCalledTimes(1);
+      expect(events.map((e) => e.sequence)).toEqual([1]);
+
+      svc.stop();
+      sub.unsubscribe();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('sequence 去重/推进语义不变：重复通知不重复推送，新 sequence 照常推送', async () => {
+    const outbox = makeOutbox(
+      jest
+        .fn()
+        .mockResolvedValueOnce([evt(1)])
+        .mockResolvedValueOnce([evt(1), evt(2)]),
+    );
+    const { listener, fire } = makeListener();
+    const svc = new SchedulerStreamService(outbox as never, listener);
+    const events: SchedulingEvent[] = [];
+    const sub = svc.events().subscribe((e) => events.push(e));
+
+    await svc.start();
+    expect(listener.subscribe).toHaveBeenCalledTimes(1);
+
+    fire();
+    await flush();
+    expect(events.map((e) => e.sequence)).toEqual([1]);
+
+    // 第二次通知：seq1 已在 lastSequence/seenEventIds 内 → 去重；seq2 新推送。
+    fire();
+    await flush();
+    expect(events.map((e) => e.sequence)).toEqual([1, 2]);
+
+    sub.unsubscribe();
+    svc.stop();
+  });
+
+  it('unsubscribe 抛错 → stop() 不抛（仅告警），轮询定时器已清理', async () => {
+    const listener: SchedulerOutboxListener = {
+      subscribe: jest.fn(() => () => {
+        throw new Error('unsubscribe boom');
+      }),
+    };
+    const svc = new SchedulerStreamService(makeOutbox() as never, listener);
+    await svc.start();
+    expect(listener.subscribe).toHaveBeenCalledTimes(1);
+
+    expect(() => svc.stop()).not.toThrow();
+    // 幂等：重复 stop 同样不抛。
+    expect(() => svc.stop()).not.toThrow();
+  });
+});

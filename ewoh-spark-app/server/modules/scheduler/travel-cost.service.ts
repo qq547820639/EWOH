@@ -431,12 +431,15 @@ export class TravelCostService {
       (to!.y as number) - (from!.y as number),
     );
     const etaSeconds = speed > 0 ? distanceMeters / speed : 0;
+    // §5.4 三级策略：STRICT 下 euclidean 降级候选显式不可行（route_infeasible 下游拒绝）；
+    // DEGRADED/ADVISORY/未配置（缺省）保持现状：feasible=true + fallbackReason/dataQuality/惩罚。
+    const strictMode = config.routeCostMode === 'STRICT';
     return {
       routeId: null,
       distanceMeters,
       etaSeconds,
       riskLevel: null,
-      feasible: true,
+      feasible: !strictMode,
       source: 'euclidean_fallback',
       riskCost: 0,
       congestionCost: 0,

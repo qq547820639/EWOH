@@ -82,6 +82,17 @@ describe('智能调度执行闭环 - 集成链路', () => {
       outboxService as unknown as OutboxService,
       auditService as unknown as AuditService,
       taskService as unknown as TaskService,
+      { recordBaseline: jest.fn().mockResolvedValue(undefined) } as never,
+      { getConfig: jest.fn().mockResolvedValue({ defaultTaskDurationMs: 1_800_000 }) } as never,
+      // §5.4：ADVISORY 模式路线阻断判定（默认 route_graph 不阻断）。
+      {
+        estimate: jest.fn().mockResolvedValue({
+          routeId: 'R', distanceMeters: 10, etaSeconds: 10, riskLevel: null,
+          feasible: true, source: 'route_graph', riskCost: 0, congestionCost: 0,
+          graphVersion: null, calculatedAt: new Date().toISOString(),
+          fallbackReason: null, dataQuality: 'FRESH',
+        }),
+      } as never,
     );
 
     const planService = new PlanService(
@@ -92,6 +103,10 @@ describe('智能调度执行闭环 - 集成链路', () => {
       worldState as unknown as WorldStateSnapshotService,
       dispatchCoordinator,
       { getActivePolicy: jest.fn(), getPolicy: jest.fn(), getConfig: jest.fn(), getConfigByVersion: jest.fn() } as never,
+      { recordAcceptance: jest.fn().mockResolvedValue(undefined), recordBaseline: jest.fn() } as never,
+      { loadForPlan: jest.fn(), hashConstraints: jest.fn() } as never,
+      outboxService as unknown as OutboxService,
+      { handleTrigger: jest.fn() } as never,
     );
 
     // 3) 持久化 shadow plan。
@@ -179,6 +194,10 @@ describe('智能调度执行闭环 - 集成链路', () => {
       worldState as unknown as WorldStateSnapshotService,
       { dispatch: jest.fn() } as unknown as DispatchCoordinatorService,
       { getActivePolicy: jest.fn(), getPolicy: jest.fn(), getConfig: jest.fn(), getConfigByVersion: jest.fn() } as never,
+      { recordAcceptance: jest.fn().mockResolvedValue(undefined), recordBaseline: jest.fn() } as never,
+      { loadForPlan: jest.fn(), hashConstraints: jest.fn() } as never,
+      { enqueue: jest.fn().mockResolvedValue({ id: 'evt', eventType: 'stale_plan', entityId: 'PLAN-STALE', payload: {}, status: 'pending', sequence: 1, createdAt: new Date().toISOString() }) } as unknown as OutboxService,
+      { handleTrigger: jest.fn() } as never,
     );
 
     await expect(
@@ -233,8 +252,8 @@ describe('智能调度执行闭环 - 集成链路', () => {
       worldState as unknown as WorldStateSnapshotService,
       { dispatch: jest.fn() } as unknown as DispatchCoordinatorService,
       { getActivePolicy: jest.fn(), getPolicy: jest.fn(), getConfig: jest.fn(), getConfigByVersion: jest.fn() } as never,
-      undefined,
-      undefined,
+      { recordAcceptance: jest.fn().mockResolvedValue(undefined), recordBaseline: jest.fn() } as never,
+      { loadForPlan: jest.fn(), hashConstraints: jest.fn() } as never,
       outboxService as unknown as OutboxService,
       replanCoordinator as never,
     );
