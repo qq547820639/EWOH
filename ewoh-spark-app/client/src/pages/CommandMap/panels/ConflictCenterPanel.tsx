@@ -43,8 +43,10 @@ import {
   buildLifecycleActionParams,
 } from './conflict-panel-logic';
 import { useVirtualList } from '@client/src/lib/virtualList';
+import { KeyboardTableView, type KeyboardTableColumn } from '../components/KeyboardTableView';
 import type { SchedulingConflict, SchedulingConflictType } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
+import { UI_ARIA_LABELS } from '@client/src/lib/a11y';
 import { Badge } from '@client/src/components/ui/badge';
 import { Button } from '@client/src/components/ui/button';
 import { Textarea } from '@client/src/components/ui/textarea';
@@ -86,6 +88,17 @@ const SEVERITY_CLASS: Record<string, string> = {
   low: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
 };
 
+/** 冲突生命周期状态徽标类（含文本标签，不只靠颜色——Task 12/12.3）。 */
+function conflictStatusBadgeClass(status: string): string {
+  return status === 'OPEN'
+    ? 'bg-red-500/15 text-red-400 border-red-500/30'
+    : status === 'ACKNOWLEDGED'
+      ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+      : status === 'RESOLVED'
+        ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+        : 'bg-slate-500/15 text-slate-400 border-slate-500/30';
+}
+
 interface ConflictCenterPanelProps {
   /** 可选：外部指定仅展示某类冲突（如地图冲突层点击跳转）。 */
   initialType?: SchedulingConflictType;
@@ -105,6 +118,8 @@ export function ConflictCenterPanel({
 }: ConflictCenterPanelProps): React.ReactElement {
   const [typeFilter, setTypeFilter] = useState<SchedulingConflictType | undefined>(initialType);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  // Task 12/12.2：卡片视图（默认）/ 表格视图（键盘可达语义表格）切换。
+  const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
   // Task 10 / 10.2：生命周期操作确认对话框（替换 window.prompt，收集必填 reason）。
   const [lifecycleTarget, setLifecycleTarget] = useState<{
     conflict: SchedulingConflict;
@@ -134,6 +149,54 @@ export function ConflictCenterPanel({
   const lifecycleById = useMemo(
     () => new Map(lifecycle.items.map((i) => [i.conflictId, i])),
     [lifecycle],
+  );
+
+  // Task 12/12.2：冲突表格视图列定义（严重度/状态含文本标签，不只靠颜色；
+  // 表格行背景与卡片不同，徽标用实底高对比配色，保证 4.5:1 文本对比度）。
+  const tableSeverityClass: Record<string, string> = {
+    high: 'bg-red-600 text-white border-transparent',
+    medium: 'bg-amber-600 text-white border-transparent',
+    low: 'bg-blue-600 text-white border-transparent',
+  };
+  const tableStatusClass: Record<string, string> = {
+    OPEN: 'bg-red-600 text-white border-transparent',
+    ACKNOWLEDGED: 'bg-amber-600 text-white border-transparent',
+    RESOLVED: 'bg-emerald-600 text-white border-transparent',
+    SUPPRESSED: 'bg-slate-600 text-white border-transparent',
+  };
+  const conflictColumns = useMemo<KeyboardTableColumn<SchedulingConflict>[]>(
+    () => [
+      { key: 'type', header: '类型', render: (c) => TYPE_META[c.type]?.label ?? c.type },
+      {
+        key: 'severity',
+        header: '严重度',
+        render: (c) => (
+          <Badge className={cn('border text-[10px]', tableSeverityClass[c.severity] ?? 'bg-slate-600 text-white border-transparent')}>
+            {SEVERITY_LABEL[c.severity] ?? c.severity}
+          </Badge>
+        ),
+      },
+      {
+        key: 'status',
+        header: '状态',
+        render: (c) => {
+          const status = lifecycleById.get(c.conflictId)?.status ?? 'OPEN';
+          return (
+            <Badge className={cn('border text-[10px]', tableStatusClass[status] ?? 'bg-slate-600 text-white border-transparent')}>
+              {conflictStatusLabel(status)}
+            </Badge>
+          );
+        },
+      },
+      { key: 'resource', header: '资源', render: (c) => c.resourceId ?? '—' },
+      { key: 'message', header: '信息', render: (c) => <span className="text-white/70">{c.message}</span> },
+      {
+        key: 'detected',
+        header: '检测时间',
+        render: (c) => (c.detectedAt ? new Date(c.detectedAt).toLocaleString() : '—'),
+      },
+    ],
+    [lifecycleById],
   );
 
   const queryClient = useQueryClient();
@@ -232,6 +295,17 @@ export function ConflictCenterPanel({
             清除筛选
           </Button>
         )}
+        {/* Task 12/12.2：表格视图切换（键盘可达语义表格） */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setViewMode((v) => (v === 'card' ? 'table' : 'card'))}
+          aria-pressed={viewMode === 'table'}
+          aria-label={viewMode === 'card' ? UI_ARIA_LABELS.switchTableView : UI_ARIA_LABELS.switchCardView}
+          className="text-xs text-white/60 hover:text-white"
+        >
+          {viewMode === 'card' ? '表格视图' : '列表视图'}
+        </Button>
       </div>
 
       {/* 三态：加载 / 错误 / 内容 */}
@@ -254,6 +328,17 @@ export function ConflictCenterPanel({
             {typeFilter ? '当前筛选条件下无冲突' : '所有资源与方案状态正常'}
           </span>
         </div>
+      ) : viewMode === 'table' ? (
+        <KeyboardTableView<SchedulingConflict>
+          ariaLabel="冲突列表（表格视图）"
+          className="flex-1"
+          columns={conflictColumns}
+          rows={sorted}
+          rowKey={(c) => c.conflictId}
+          selectedKey={expandedId}
+          onActivate={(c) => setExpandedId(expandedId === c.conflictId ? null : c.conflictId)}
+          itemHeight={36}
+        />
       ) : (
         <div ref={conflictList.ref} className="flex-1 min-h-0 overflow-y-auto">
           <div style={{ height: conflictList.range.totalHeight, position: 'relative' }}>
@@ -268,14 +353,7 @@ export function ConflictCenterPanel({
               const lc = lifecycleById.get(c.conflictId);
               const status = lc?.status ?? 'OPEN';
               const actions = lc?.actions ?? [];
-              const statusClass =
-                status === 'OPEN'
-                  ? 'bg-red-500/15 text-red-400 border-red-500/30'
-                  : status === 'ACKNOWLEDGED'
-                    ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-                    : status === 'RESOLVED'
-                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                      : 'bg-slate-500/15 text-slate-400 border-slate-500/30';
+              const statusClass = conflictStatusBadgeClass(status);
               return (
                 <li key={c.conflictId}>
                   <button

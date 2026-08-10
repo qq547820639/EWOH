@@ -5,7 +5,7 @@
  * 地图 Diff 复用 PlanCompareLayer（通过 onPreviewDiff 上传 compare VM）。
  * 前端不判断业务动作——suggested action / diff / reasons 全部来自后端。
  */
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { AlertTriangle, Loader2, Play, RefreshCw, X, ArrowRight } from 'lucide-react';
@@ -15,6 +15,7 @@ import type { SchedulingConflict } from '@shared/api.interface';
 import type { ConflictPreviewResult } from '@shared/api.interface';
 import type { PlanCompareMode } from '../vm/planCompareVM';
 import { previewSummary, resolvePreviewAction } from './conflict-preview-logic';
+import { UI_ARIA_LABELS } from '@client/src/lib/a11y';
 
 interface ConflictPreviewPanelProps {
   conflict: SchedulingConflict;
@@ -55,6 +56,19 @@ export function ConflictPreviewPanel({
   const [preview, setPreview] = useState<ConflictPreviewResult | null>(null);
   const [mode, setMode] = useState<PlanCompareMode>('DIFF');
 
+  // Task 12/12.3：焦点管理（镜像 Shell 帮助对话框模式：打开存焦点 → 关闭恢复 + Escape 关闭）。
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    return () => {
+      previousFocusRef.current?.focus();
+      previousFocusRef.current = null;
+    };
+  }, []);
+
   const previewMutation = useMutation({
     mutationFn: () => previewConflictAction(conflict.conflictId, resolvePreviewAction(conflict) ? { action: resolvePreviewAction(conflict) } : {}),
     onSuccess: (data) => {
@@ -72,14 +86,28 @@ export function ConflictPreviewPanel({
   const changeTypeCounts = diff?.changeTypeCounts ?? {};
 
   return (
-    <div className="flex h-full w-[380px] flex-col gap-2 rounded-lg border border-white/10 bg-[hsl(220_14%_12%)]/95 p-2 text-white shadow-xl">
+    <div
+      className="flex h-full w-[380px] flex-col gap-2 rounded-lg border border-white/10 bg-[hsl(220_14%_12%)]/95 p-2 text-white shadow-xl"
+      role="dialog"
+      aria-modal="true"
+      aria-label="冲突处置工作台"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') onClose();
+      }}
+    >
       {/* Header */}
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-1 text-[11px] font-semibold text-white/85">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
           冲突处置工作台
         </span>
-        <button type="button" onClick={onClose} className="rounded px-1.5 text-[10px] text-white/50 hover:bg-white/10">
+        <button
+          ref={closeButtonRef}
+          type="button"
+          onClick={onClose}
+          aria-label={UI_ARIA_LABELS.closeConflictPreview}
+          className="rounded px-1.5 text-[10px] text-white/50 hover:bg-white/10"
+        >
           ✕
         </button>
       </div>

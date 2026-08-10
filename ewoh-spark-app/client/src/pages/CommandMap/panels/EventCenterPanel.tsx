@@ -11,7 +11,9 @@ import { queryKeys } from '@client/src/hooks/queryKeys';
 import { getCurrentOperator } from '@client/src/lib/auth';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
-import { ScrollArea } from '@client/src/components/ui/scroll-area';
+import { UI_ARIA_LABELS } from '@client/src/lib/a11y';
+import { useVirtualList } from '@client/src/lib/virtualList';
+import { KeyboardTableView, type KeyboardTableColumn } from '../components/KeyboardTableView';
 import { summarizeReplayContext, type ReplayContextSummary } from '../replayContext';
 
 interface EventCenterPanelProps {
@@ -89,6 +91,8 @@ export default function EventCenterPanel({
   const [replayContext, setReplayContext] = useState<ReplayContextSummary | null>(null);
   const [contextLoading, setContextLoading] = useState(false);
   const [contextError, setContextError] = useState('');
+  // Task 12/12.2：卡片视图（默认）/ 表格视图（键盘可达语义表格）切换。
+  const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
   const queryClient = useQueryClient();
 
   const selectedId = selectedEventId ?? internalSelectedId;
@@ -142,12 +146,39 @@ export default function EventCenterPanel({
     return events.filter((e) => e.severity === severityFilter);
   }, [events, severityFilter]);
 
+  // Task 11/11.2：事件列表虚拟化（行高按固定值估算，只渲染可视窗口 + overscan）。
+  const eventList = useVirtualList<HTMLDivElement>({
+    total: filteredEvents.length,
+    itemHeight: 56,
+    overscan: 6,
+  });
+
   const selectedEvent = useMemo(() => {
     if (!filteredEvents || !selectedId) return null;
     return (
       filteredEvents.find((e) => e.id === selectedId || e.eventId === selectedId) ?? null
     );
   }, [filteredEvents, selectedId]);
+
+  // Task 12/12.2：事件表格视图列定义（语义文本，不只靠颜色）。
+  const eventColumns = useMemo<KeyboardTableColumn<EventInfo>[]>(
+    () => [
+      { key: 'title', header: '事件', render: (e) => <span className="text-white/90">{e.title}</span> },
+      { key: 'device', header: '设备', render: (e) => e.deviceId ?? '—' },
+      { key: 'time', header: '时间', render: (e) => timeAgo(e.createdAt) },
+      {
+        key: 'severity',
+        header: '严重度',
+        render: (e) => (
+          <Badge className={cn('text-[9px] px-1.5 py-0', severityBadgeClass(e.severity))}>
+            {e.severity}
+          </Badge>
+        ),
+      },
+      { key: 'status', header: '状态', render: (e) => e.status ?? '—' },
+    ],
+    [],
+  );
 
   const loadReplayContext = async (eventId: string) => {
     setContextLoading(true);
@@ -204,25 +235,49 @@ export default function EventCenterPanel({
               </Button>
             ))}
           </div>
+          <div className="w-px h-4 bg-white/10" />
+          {/* Task 12/12.2：表格视图切换（键盘可达语义表格） */}
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 text-[10px] px-2"
+            onClick={() => setViewMode((v) => (v === 'card' ? 'table' : 'card'))}
+            aria-pressed={viewMode === 'table'}
+            aria-label={viewMode === 'card' ? UI_ARIA_LABELS.switchTableView : UI_ARIA_LABELS.switchCardView}
+          >
+            {viewMode === 'card' ? '表格视图' : '列表视图'}
+          </Button>
         </div>
 
-        {/* Event list */}
-        <ScrollArea className="flex-1">
-          {isLoading ? (
-            <div className="p-4 text-center text-sm text-white/70" role="status" aria-live="polite">
-              加载中...
-            </div>
-          ) : isError ? (
-            <div className="p-4 text-center text-sm text-red-400" role="status" aria-live="polite">
-              加载失败
-            </div>
-          ) : !filteredEvents || filteredEvents.length === 0 ? (
-            <div className="p-4 text-center text-sm text-white/70" role="status" aria-live="polite">
-              暂无数据
-            </div>
-          ) : (
-            <div className="divide-y divide-white/5">
-              {filteredEvents.map((ev) => (
+        {/* Event list（Task 11/11.2 虚拟化 + Task 12/12.2 表格视图） */}
+        {isLoading ? (
+          <div className="flex-1 p-4 text-center text-sm text-white/70" role="status" aria-live="polite">
+            加载中...
+          </div>
+        ) : isError ? (
+          <div className="flex-1 p-4 text-center text-sm text-red-400" role="status" aria-live="polite">
+            加载失败
+          </div>
+        ) : !filteredEvents || filteredEvents.length === 0 ? (
+          <div className="flex-1 p-4 text-center text-sm text-white/70" role="status" aria-live="polite">
+            暂无数据
+          </div>
+        ) : viewMode === 'table' ? (
+          <KeyboardTableView<EventInfo>
+            ariaLabel="事件列表（表格视图）"
+            className="flex-1"
+            columns={eventColumns}
+            rows={filteredEvents}
+            rowKey={(e) => e.id}
+            selectedKey={selectedId}
+            onActivate={(e) => changeSelectedId(e.id)}
+            itemHeight={32}
+          />
+        ) : (
+          <div ref={eventList.ref} className="flex-1 min-h-0 overflow-y-auto">
+            <div style={{ height: eventList.range.totalHeight, position: 'relative' }}>
+              <div className="divide-y divide-white/5" style={{ transform: `translateY(${eventList.range.offsetY}px)` }}>
+                {filteredEvents.slice(eventList.slice.start, eventList.slice.end).map((ev) => (
                 <div
                   key={ev.id}
                   onClick={() => changeSelectedId(ev.id)}
@@ -259,9 +314,10 @@ export default function EventCenterPanel({
                   </Badge>
                 </div>
               ))}
+                </div>
+              </div>
             </div>
           )}
-        </ScrollArea>
       </div>
 
       {/* Right: event detail */}

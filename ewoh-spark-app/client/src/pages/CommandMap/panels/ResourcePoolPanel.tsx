@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Users,
@@ -34,7 +34,9 @@ import type {
 import { cn } from '@client/src/lib/utils';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
-import { ScrollArea } from '@client/src/components/ui/scroll-area';
+import { UI_ARIA_LABELS } from '@client/src/lib/a11y';
+import { useVirtualList } from '@client/src/lib/virtualList';
+import { KeyboardTableView, type KeyboardTableColumn } from '../components/KeyboardTableView';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -206,7 +208,6 @@ function ResourceCard({
   const load = item.loadScore ?? 0;
   const battery = item.batteryPct ?? null;
   const assigned = workstations.find((w) => w.entityId === item.assignedWorkstationId);
-
   return (
     <div className="bg-white/5 rounded-lg p-3 border border-white/10">
       <div className="flex items-start justify-between gap-2">
@@ -267,39 +268,58 @@ function ResourceCard({
       )}
 
       {(isPerson || isDevice) && workstations.length > 0 && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full h-6 mt-2 text-[10px]"
-            >
-              <ChevronDown className="w-3 h-3" />
-              分配
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            className="bg-[hsl(220_14%_14%)] border-white/10 text-white min-w-[10rem]"
-          >
-            <DropdownMenuLabel className="text-[10px] text-white/70">
-              选择目标工位
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator className="bg-white/10" />
-            {workstations.map((w) => (
-              <DropdownMenuItem
-                key={w.entityId}
-                className="text-xs text-white/80 hover:bg-white/10 focus:bg-white/10"
-                onClick={() => onAllocate(w.entityId)}
-              >
-                {w.name}
-                <span className="ml-auto text-[9px] text-white/60">{w.entityId}</span>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <AssignWorkstationMenu item={item} workstations={workstations} onAllocate={onAllocate} />
       )}
     </div>
+  );
+}
+
+/** 分配目标工位下拉（卡片视图与表格视图共用；纯键盘可达）。 */
+function AssignWorkstationMenu({
+  item,
+  workstations,
+  onAllocate,
+  compact = false,
+}: {
+  item: ResourceItem;
+  workstations: ResourceItem[];
+  onAllocate: (targetId: string) => void;
+  /** 表格视图内使用紧凑按钮（无上下外边距）。 */
+  compact?: boolean;
+}): React.ReactElement {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="sm"
+          variant="outline"
+          className={compact ? 'h-6 text-[10px]' : 'w-full h-6 mt-2 text-[10px]'}
+          aria-label={UI_ARIA_LABELS.assignResource}
+        >
+          <ChevronDown className="w-3 h-3" />
+          分配
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="bg-[hsl(220_14%_14%)] border-white/10 text-white min-w-[10rem]"
+      >
+        <DropdownMenuLabel className="text-[10px] text-white/70">
+          选择目标工位
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator className="bg-white/10" />
+        {workstations.map((w) => (
+          <DropdownMenuItem
+            key={w.entityId}
+            className="text-xs text-white/80 hover:bg-white/10 focus:bg-white/10"
+            onClick={() => onAllocate(w.entityId)}
+          >
+            {w.name}
+            <span className="ml-auto text-[9px] text-white/60">{w.entityId}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -427,6 +447,19 @@ const ResourcePoolPanel = ({
     [entities, worldState, deviceInfos, resourceStates],
   );
 
+  // Task 11/11.2：三列资源列表虚拟化（卡片行高按固定值估算，只渲染可视窗口）。
+  const personsList = useVirtualList<HTMLDivElement>({ total: persons.length, itemHeight: 96, overscan: 4 });
+  const devicesList = useVirtualList<HTMLDivElement>({ total: devices.length, itemHeight: 96, overscan: 4 });
+  const workstationsList = useVirtualList<HTMLDivElement>({ total: workstations.length, itemHeight: 96, overscan: 4 });
+
+  // Task 12/12.2：卡片视图（默认）/ 表格视图（键盘可达语义表格）切换。
+  const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
+  const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
+  const allResources = useMemo(
+    () => [...persons, ...devices, ...workstations],
+    [persons, devices, workstations],
+  );
+
   const [allocations, setAllocations] = useState<
     Record<string, { targetType: 'workstation'; targetId: string }>
   >({});
@@ -475,6 +508,59 @@ const ResourcePoolPanel = ({
       [entityId]: { targetType: 'workstation', targetId },
     }));
   };
+
+  // Task 12/12.2：资源表格视图列定义（状态含文本标签，不只靠颜色）。
+  const resourceColumns = useMemo<KeyboardTableColumn<ResourceItem>[]>(
+    () => [
+      {
+        key: 'type',
+        header: '类型',
+        render: (item) => ({ person: '人员', device: '设备', workstation: '工位' }[item.type] ?? item.type),
+      },
+      { key: 'name', header: '名称', render: (item) => <span className="text-white/90">{item.name}</span> },
+      { key: 'id', header: 'ID', render: (item) => item.entityId },
+      {
+        key: 'status',
+        header: '状态',
+        render: (item) => (
+          <Badge className={cn('text-[9px] px-1.5 py-0', statusBadgeClass(item.status))}>
+            {STATUS_LABEL[item.status] ?? item.status}
+          </Badge>
+        ),
+      },
+      {
+        key: 'load',
+        header: '负荷',
+        render: (item) => (item.loadScore != null ? `${(item.loadScore * 100).toFixed(0)}%` : '—'),
+      },
+      {
+        key: 'battery',
+        header: '电量',
+        render: (item) => (item.batteryPct != null ? `${item.batteryPct.toFixed(0)}%` : '—'),
+      },
+      {
+        key: 'assigned',
+        header: '已分配',
+        render: (item) => {
+          const targetId = allocations[item.entityId]?.targetId ?? item.assignedWorkstationId ?? null;
+          return workstations.find((w) => w.entityId === targetId)?.name ?? '—';
+        },
+      },
+    ],
+    [allocations, workstations],
+  );
+  const renderResourceActions = useCallback(
+    (item: ResourceItem) =>
+      (item.type === 'person' || item.type === 'device') && workstations.length > 0 ? (
+        <AssignWorkstationMenu
+          compact
+          item={item}
+          workstations={workstations}
+          onAllocate={(targetId) => handlePickTarget(item.entityId, targetId)}
+        />
+      ) : null,
+    [workstations],
+  );
 
   /** 将手动分配目标转换为求解器可执行的锁定约束（LOCKED_PERSON / LOCKED_DEVICE + 目标工位）。 */
   const buildLockConstraints = (): SchedulingConstraint[] => {
@@ -528,6 +614,7 @@ const ResourcePoolPanel = ({
     icon: LucideIcon,
     items: ResourceItem[],
     accent: string,
+    list: ReturnType<typeof useVirtualList<HTMLDivElement>>,
   ) => {
     const Icon = icon;
     return (
@@ -539,26 +626,28 @@ const ResourcePoolPanel = ({
           {items.length}
         </span>
       </div>
-      <ScrollArea className="flex-1">
-        <div className="p-2 space-y-2">
-          {items.length === 0 ? (
-            <div className="text-[10px] text-white/60 text-center py-4">暂无数据</div>
-          ) : (
-            items.map((item) => {
-              const assigned =
-                allocations[item.entityId]?.targetId ?? item.assignedWorkstationId ?? null;
-              return (
-                <ResourceCard
-                  key={item.entityId}
-                  item={{ ...item, assignedWorkstationId: assigned }}
-                  workstations={workstations}
-                  onAllocate={(targetId) => handlePickTarget(item.entityId, targetId)}
-                />
-              );
-            })
-          )}
-        </div>
-      </ScrollArea>
+      <div ref={list.ref} className="flex-1 min-h-0 overflow-y-auto">
+        {items.length === 0 ? (
+          <div className="text-[10px] text-white/60 text-center py-4">暂无数据</div>
+        ) : (
+          <div style={{ height: list.range.totalHeight, position: 'relative' }}>
+            <div className="p-2 space-y-2" style={{ transform: `translateY(${list.range.offsetY}px)` }}>
+              {items.slice(list.slice.start, list.slice.end).map((item) => {
+                const assigned =
+                  allocations[item.entityId]?.targetId ?? item.assignedWorkstationId ?? null;
+                return (
+                  <ResourceCard
+                    key={item.entityId}
+                    item={{ ...item, assignedWorkstationId: assigned }}
+                    workstations={workstations}
+                    onAllocate={(targetId) => handlePickTarget(item.entityId, targetId)}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
     );
   };
@@ -569,6 +658,17 @@ const ResourcePoolPanel = ({
         <Activity className="w-3.5 h-3.5 text-cyan-400" />
         <span className="text-xs font-medium text-white/80">资源池</span>
         <div className="flex-1" />
+        {/* Task 12/12.2：表格视图切换（键盘可达语义表格） */}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 text-[10px] px-2 text-white/60"
+          onClick={() => setViewMode((v) => (v === 'card' ? 'table' : 'card'))}
+          aria-pressed={viewMode === 'table'}
+          aria-label={viewMode === 'card' ? UI_ARIA_LABELS.switchTableView : UI_ARIA_LABELS.switchCardView}
+        >
+          {viewMode === 'card' ? '表格视图' : '列表视图'}
+        </Button>
         <Button
           size="sm"
           variant="outline"
@@ -595,9 +695,25 @@ const ResourcePoolPanel = ({
       </div>
 
       <div className="flex-1 flex min-h-0">
-        {renderColumn('人员', Users, persons, 'text-green-400')}
-        {renderColumn('设备', Cpu, devices, 'text-blue-400')}
-        {renderColumn('工位', Factory, workstations, 'text-orange-400')}
+        {viewMode === 'table' ? (
+          <KeyboardTableView<ResourceItem>
+            ariaLabel="资源列表（表格视图）"
+            className="flex-1"
+            columns={resourceColumns}
+            rows={allResources}
+            rowKey={(item) => item.entityId}
+            selectedKey={selectedResourceId}
+            onActivate={(item) => setSelectedResourceId(item.entityId)}
+            renderActions={renderResourceActions}
+            itemHeight={36}
+          />
+        ) : (
+          <>
+            {renderColumn('人员', Users, persons, 'text-green-400', personsList)}
+            {renderColumn('设备', Cpu, devices, 'text-blue-400', devicesList)}
+            {renderColumn('工位', Factory, workstations, 'text-orange-400', workstationsList)}
+          </>
+        )}
       </div>
 
       <div className="shrink-0 border-t border-white/10 p-2 max-h-[120px] overflow-y-auto">

@@ -3,9 +3,10 @@
  * 展示后端 PlanAssignmentDiff：Before / After / Change Types / Reasons。
  * Reasons 来自后端 PlanCompare/DecisionTrace 解释，前端不猜测。
  */
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import type { PlanAssignmentDiff } from '@shared/api.interface';
 import type { CompareMapEntry } from '../vm/planCompareVM';
+import { UI_ARIA_LABELS } from '@client/src/lib/a11y';
 
 interface PlanDiffDrawerProps {
   entry: CompareMapEntry | null;
@@ -75,17 +76,41 @@ export function PlanDiffDrawer({
   diff,
   onClose,
 }: PlanDiffDrawerProps): React.ReactElement | null {
+  // Task 12/12.3：焦点管理（镜像 Shell 帮助对话框模式：打开存焦点 → 关闭恢复 + Escape 关闭）。
+  // hooks 必须在条件 return 之前无条件调用。
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    return () => {
+      previousFocusRef.current?.focus();
+      previousFocusRef.current = null;
+    };
+  }, []);
+
   if (!entry) return null;
   const changeTypes = entry.changeTypes ?? diff?.changeTypes ?? [];
   const reasons = entry.reasons ?? diff?.reasons ?? [];
 
   return (
-    <div className="absolute bottom-2 left-2 z-40 w-72 rounded-lg border border-white/10 bg-[hsl(220_14%_12%)]/95 p-2 text-white shadow-xl">
+    <div
+      className="absolute bottom-2 left-2 z-40 w-72 rounded-lg border border-white/10 bg-[hsl(220_14%_12%)]/95 p-2 text-white shadow-xl"
+      role="dialog"
+      aria-modal="true"
+      aria-label="变更详情"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') onClose();
+      }}
+    >
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-semibold text-white/85">变更详情</span>
         <button
+          ref={closeButtonRef}
           type="button"
           onClick={onClose}
+          aria-label={UI_ARIA_LABELS.closePlanDiff}
           className="rounded px-1.5 text-[10px] text-white/50 hover:bg-white/10"
         >
           ✕

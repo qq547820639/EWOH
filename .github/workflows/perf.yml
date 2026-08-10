@@ -161,3 +161,74 @@ jobs:
           path: output/benchmark-scheduler-matrix.json
           if-no-files-found: error
           retention-days: 30
+
+  # Task 11/11.2 — Command Map 客户端性能 gate（无 PG / 浏览器依赖，node SSR 可跑）：
+  # 运行 client 端基准（jest + renderToString，1000 任务大 fixture 预置 React Query 缓存）
+  # 产出 output/benchmark-command-map.json；硬性失败条件（宽松安全界，避免 CI 误伤）：
+  #   1) Shell 首绘（renderToString 均值）> 15000ms；
+  #   2) 1000+ 行虚拟列表可视窗口渲染行数 > 100（虚拟化必须生效）；
+  #   3) SSE 批处理写放大削减 < 90%（原始事件 vs 合并后实际写出）。
+  # 绝不伪造 pass：报告缺失 / 任一预算超限均如实失败。
+  command-map-perf-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ewoh-spark-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ewoh-spark-app
+        run: npm ci
+
+      - name: Run Command Map client benchmark (1000-task fixture)
+        working-directory: ewoh-spark-app
+        run: npm run benchmark:command-map
+
+      - name: Hard-fail gate (shell render / virtualization / SSE batching budgets)
+        working-directory: ewoh-spark-app
+        run: |
+          node -e '
+            const r = require("./output/benchmark-command-map.json");
+            if (!r || !r.budgets || !r.shellRenderMs || !r.sseBatching) {
+              console.error("COMMAND-MAP PERF GATE FAILED: no benchmark report");
+              process.exit(1);
+            }
+            const hard = [];
+            if (!r.budgets.shellRenderMs.passed) {
+              hard.push("shell first-paint render " + r.shellRenderMs.mean.toFixed(1) + "ms > budget " + r.budgets.shellRenderMs.budgetMs + "ms");
+            }
+            if (!r.budgets.maxSliceRows.passed) {
+              hard.push("virtualized list renders > " + r.budgets.maxSliceRows.budgetRows + " rows per window");
+            }
+            if (!r.budgets.sseWriteReductionMinPct.passed) {
+              hard.push("SSE batching write reduction " + r.sseBatching.writeReductionPct + "% < " + r.budgets.sseWriteReductionMinPct.minPct + "%");
+            }
+            if (hard.length) {
+              console.error("COMMAND-MAP PERF GATE FAILED: " + hard.join("; "));
+              process.exit(1);
+            }
+            console.log(
+              "COMMAND-MAP PERF GATE PASSED: shellRender(mean)=" + r.shellRenderMs.mean.toFixed(1) +
+              "ms (budget " + r.budgets.shellRenderMs.budgetMs + "ms); virtualization=" +
+              r.virtualization.map((v) => v.total + "->" + v.renderedRows + "rows").join(",") +
+              "; sseReduction=" + r.sseBatching.writeReductionPct + "% (raw " + r.sseBatching.rawEvents +
+              " -> storeWrites " + r.sseBatching.storeWrites + ")"
+            );
+          '
+
+      - name: Upload Command Map benchmark report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: command-map-perf-${{ github.sha }}
+          path: output/benchmark-command-map.json
+          if-no-files-found: error
+          retention-days: 30

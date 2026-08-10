@@ -26,6 +26,8 @@ import type {
 import { cn } from '@client/src/lib/utils';
 import { Button } from '@client/src/components/ui/button';
 import { UI_ARIA_LABELS } from '../../../lib/a11y';
+import { useVirtualList } from '@client/src/lib/virtualList';
+import { KeyboardTableView, type KeyboardTableColumn } from '../components/KeyboardTableView';
 import { Badge } from '@client/src/components/ui/badge';
 import { Input } from '@client/src/components/ui/input';
 import {
@@ -104,6 +106,8 @@ const TaskOrchestrationPanel = ({
   const [latestPlanId, setLatestPlanId] = useState<string | null>(null);
   const [editor, setEditor] = useState<NodeEditorState>({ open: false, node: null });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Task 12/12.2：卡片视图（默认）/ 表格视图（键盘可达语义表格）切换。
+  const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
 
   const sortedNodes = useMemo(() => {
     return [...nodes].sort((a, b) => a.order - b.order);
@@ -163,11 +167,24 @@ const TaskOrchestrationPanel = ({
       const col = idx % perRow;
       return {
         node,
+        row,
         x: col * (NODE_WIDTH + NODE_GAP_X),
         y: row * (NODE_HEIGHT + NODE_GAP_Y),
       };
     });
   }, [sortedNodes]);
+
+  // Task 11/11.2：节点画布按行虚拟化（每行 4 节点、行高固定），只渲染可视行。
+  const canvasRows = Math.ceil(layout.length / 4);
+  const canvasList = useVirtualList<HTMLDivElement>({
+    total: canvasRows,
+    itemHeight: NODE_HEIGHT + NODE_GAP_Y,
+    overscan: 2,
+  });
+  const visibleLayout = useMemo(
+    () => layout.filter((l) => l.row >= canvasList.slice.start && l.row < canvasList.slice.end),
+    [layout, canvasList.slice.start, canvasList.slice.end],
+  );
 
   const totalWidth = Math.max(
     ...layout.map((l) => l.x + NODE_WIDTH),
@@ -188,6 +205,64 @@ const TaskOrchestrationPanel = ({
   };
 
   const simulation = result?.simulation ?? null;
+
+  // Task 12/12.2：工序表格视图列定义（状态含文本/图标，不只靠颜色）。
+  const nodeColumns = useMemo<KeyboardTableColumn<ProcessNode>[]>(
+    () => [
+      { key: 'order', header: '顺序', render: (n) => `#${n.order}` },
+      { key: 'name', header: '工序名称', render: (n) => <span className="text-white/90">{n.name}</span> },
+      {
+        key: 'station',
+        header: '工位',
+        render: (n) => entityName('workstation', n.assignedWorkstationId),
+      },
+      { key: 'person', header: '人员', render: (n) => entityName('person', n.assignedPersonId) },
+      {
+        key: 'takt',
+        header: '节拍',
+        render: (n) => (
+          <span className="tabular-nums">
+            {n.estimatedTakt ?? '—'}s
+            {n.taktSource && (
+              <span
+                className={cn(
+                  'ml-1 px-1 rounded text-[8px] leading-3',
+                  n.taktSource === 'telemetry'
+                    ? 'bg-cyan-500/20 text-cyan-300'
+                    : 'bg-white/10 text-white/50',
+                )}
+                title={n.taktSource === 'telemetry' ? '由工位实时遥测推算' : '使用默认节拍值'}
+              >
+                {n.taktSource === 'telemetry' ? '遥测' : '默认'}
+              </span>
+            )}
+          </span>
+        ),
+      },
+      {
+        key: 'bottleneck',
+        header: '瓶颈',
+        render: (n) =>
+          bottleneckHighlight(simulation, n.assignedWorkstationId) ? (
+            <span className="flex items-center gap-1 text-red-400">
+              <AlertTriangle className="w-3 h-3" />
+              瓶颈
+            </span>
+          ) : (
+            '—'
+          ),
+      },
+      {
+        key: 'deps',
+        header: '依赖',
+        render: (n) =>
+          (n.dependencies ?? [])
+            .map((d) => sortedNodes.find((s) => s.nodeId === d)?.name ?? d)
+            .join('、') || '—',
+      },
+    ],
+    [simulation, sortedNodes],
+  );
 
   return (
     <div className="h-full flex flex-col bg-[hsl(220_14%_14%)] text-white">
@@ -216,6 +291,17 @@ const TaskOrchestrationPanel = ({
           className="h-6 w-20 text-[10px] bg-white/5 border-white/10 text-white"
         />
         <div className="flex-1" />
+        {/* Task 12/12.2：表格视图切换（键盘可达语义表格） */}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 text-[10px] px-2 text-white/60"
+          onClick={() => setViewMode((v) => (v === 'card' ? 'table' : 'card'))}
+          aria-pressed={viewMode === 'table'}
+          aria-label={viewMode === 'card' ? UI_ARIA_LABELS.switchTableView : UI_ARIA_LABELS.switchCardView}
+        >
+          {viewMode === 'card' ? '表格视图' : '列表视图'}
+        </Button>
         <Button
           size="sm"
           variant="outline"
@@ -236,8 +322,43 @@ const TaskOrchestrationPanel = ({
         </Button>
       </div>
 
-      {/* Canvas */}
-      <div className="flex-1 min-h-0 overflow-auto p-3">
+      {/* Task 12/12.2：表格视图（键盘可达语义表格，含编辑/删除操作） */}
+      {viewMode === 'table' ? (
+        <div className="flex-1 min-h-0">
+          <KeyboardTableView<ProcessNode>
+            ariaLabel="工序列表（表格视图）"
+            className="h-full"
+            columns={nodeColumns}
+            rows={sortedNodes}
+            rowKey={(n) => n.nodeId}
+            selectedKey={selectedId}
+            onActivate={(n) => setSelectedId(n.nodeId)}
+            renderActions={(n) => (
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  className="p-1 rounded hover:bg-white/10"
+                  aria-label={UI_ARIA_LABELS.editProcess}
+                  onClick={() => setEditor({ open: true, node: n })}
+                >
+                  <Pencil className="w-3 h-3 text-white/60" />
+                </button>
+                <button
+                  type="button"
+                  className="p-1 rounded hover:bg-white/10"
+                  aria-label={UI_ARIA_LABELS.deleteProcess}
+                  onClick={() => handleDeleteNode(n.nodeId)}
+                >
+                  <Trash2 className="w-3 h-3 text-red-400" />
+                </button>
+              </div>
+            )}
+            itemHeight={36}
+          />
+        </div>
+      ) : (
+      // Canvas（Task 11/11.2：按行虚拟化，只渲染可视行节点与依赖线）
+      <div ref={canvasList.ref} className="flex-1 min-h-0 overflow-auto p-3">
         {sortedNodes.length === 0 ? (
           <div className="h-full flex items-center justify-center text-xs text-white/70">
             点击「添加工序」创建工序节点
@@ -247,13 +368,13 @@ const TaskOrchestrationPanel = ({
             className="relative"
             style={{ width: totalWidth + 24, height: totalHeight + 24 }}
           >
-            {/* SVG dependency lines */}
+            {/* SVG dependency lines（只画可见行的依赖，画布滚动时随行切换） */}
             <svg
               className="absolute inset-0 pointer-events-none"
               width={totalWidth + 24}
               height={totalHeight + 24}
             >
-              {layout.map(({ node, x, y }) => {
+              {visibleLayout.map(({ node, x, y }) => {
                 return (node.dependencies ?? []).map((depId) => {
                   const dep = layout.find((l) => l.node.nodeId === depId);
                   if (!dep) return null;
@@ -288,8 +409,8 @@ const TaskOrchestrationPanel = ({
               </defs>
             </svg>
 
-            {/* Nodes */}
-            {layout.map(({ node, x, y }) => {
+            {/* Nodes（只渲染可视行） */}
+            {visibleLayout.map(({ node, x, y }) => {
               const isBottleneck = bottleneckHighlight(
                 simulation,
                 node.assignedWorkstationId,
@@ -407,6 +528,7 @@ const TaskOrchestrationPanel = ({
           </div>
         )}
       </div>
+      )}
 
       {/* Simulation result */}
       <div className="shrink-0 border-t border-white/10 p-2 max-h-[100px] overflow-y-auto">

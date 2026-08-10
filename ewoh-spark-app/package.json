@@ -49,6 +49,7 @@
     "perf:workbench": "node scripts/perf/seed-workbench-data.js && node scripts/perf/workbench-benchmark.js && node scripts/perf/perf-gate.js",
     "benchmark:scheduler": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"CommonJS\",\"moduleResolution\":\"node\"}' node -r ts-node/register -r tsconfig-paths/register scripts/benchmark-scheduler.ts",
     "benchmark:scheduler:matrix": "npm run benchmark:scheduler -- --matrix",
+    "benchmark:command-map": "jest --config client/jest.config.cjs --runInBand src/pages/CommandMap/perf",
     "bundle:report": "node scripts/bundle-budget.mjs --report",
     "bundle:budget": "node scripts/bundle-budget.mjs",
     "license:check": "node scripts/check-licenses.mjs",

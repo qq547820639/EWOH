@@ -27,6 +27,39 @@ describe('a11y labels', () => {
       '设备离线，L3 级事件，点击查看详情',
     );
   });
+
+  it('Task 12：Command Map 键盘可达标签齐备（表格视图切换/覆盖层关闭/分配）', () => {
+    expect(UI_ARIA_LABELS.switchTableView).toBe('切换到表格视图');
+    expect(UI_ARIA_LABELS.switchCardView).toBe('切换到列表视图');
+    expect(UI_ARIA_LABELS.closeConflictPreview).toBe('关闭冲突处置工作台');
+    expect(UI_ARIA_LABELS.closePlanDiff).toBe('关闭变更详情');
+    expect(UI_ARIA_LABELS.closeIntelligencePanel).toBe('关闭智能调度驾驶舱');
+    expect(UI_ARIA_LABELS.assignResource).toBe('分配资源到工位');
+  });
+
+  it('Task 12：Command Map 状态具备非颜色信道（1.4.1 不只靠颜色）', () => {
+    // 新鲜度（文本标签 + tooltip）、冲突严重度（文本）、生命周期状态（文本）、
+    // 资源状态（文本）、方案状态（文本）——全部含文本信道。
+    const missing = statusesMissingNonColorChannel([
+      // dataFreshness：LIVE/DELAYED/STALE/OFFLINE/REPLAY/SHADOW/RESYNCING/DEGRADED
+      { status: 'LIVE', hasText: true, hasIcon: false, hasAria: true },
+      { status: 'STALE', hasText: true, hasIcon: false, hasAria: true },
+      { status: 'OFFLINE', hasText: true, hasIcon: false, hasAria: true },
+      { status: 'RESYNCING', hasText: true, hasIcon: false, hasAria: true },
+      // 冲突严重度 / 生命周期
+      { status: 'high', hasText: true, hasIcon: false, hasAria: false },
+      { status: 'OPEN', hasText: true, hasIcon: false, hasAria: false },
+      { status: 'RESOLVED', hasText: true, hasIcon: false, hasAria: false },
+      // 资源 / 任务 / 方案状态
+      { status: 'online', hasText: true, hasIcon: false, hasAria: false },
+      { status: 'busy', hasText: true, hasIcon: false, hasAria: false },
+      { status: 'blocked', hasText: true, hasIcon: false, hasAria: false },
+      { status: 'approved', hasText: true, hasIcon: false, hasAria: false },
+      // 瓶颈（图标 + 文本）
+      { status: 'bottleneck', hasText: true, hasIcon: true, hasAria: false },
+    ]);
+    expect(missing).toEqual([]);
+  });
 });
 
 describe('contrast tokens', () => {

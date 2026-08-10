@@ -6,7 +6,9 @@ module.exports = {
     '^.+\\.tsx?$': [
       'ts-jest',
       {
-        tsconfig: '<rootDir>/../tsconfig.app.json',
+        // 基座 tsconfig.app.json + esModuleInterop（与 Vite/esbuild 的 CJS 互操作对齐，
+        // 保证 `import React from 'react'` 等默认导入在 node/jest 下等价于真实构建）。
+        tsconfig: '<rootDir>/tsconfig.jest.json',
       },
     ],
   },

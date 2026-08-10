@@ -126,6 +126,216 @@ export function mergeSourceSequence(
   return nextSequence(prev, observed);
 }
 
+/* ------------------------------------------------------------------ *
+ * Task 11 / 11.1：SSE 高频事件批处理/合并（big-data 体验）。
+ *
+ * - `coalesceEvents`：纯函数——同一事件类型（如 device.telemetry）在一个批次窗口内
+ *   只保留最新 keepPerType 条；结构性业务事件（plan.* / conflict.* / replan.* /
+ *   assignment.* / run.* / execution.*）原样保序保留，保证每事件语义不变。
+ *   输出按 sequence 升序（保序应用，供单调守卫消费）。
+ * - `createEventBatcher`：纯逻辑批处理器（时钟/调度器可注入，node 可测）——
+ *   收集窗口内（默认 80ms，可配置）的同批事件，flush 时一次性合并后回调；
+ *   结构性事件即时 flush（不等窗口），保持业务事件的近实时性；
+ *   批次大小达到 maxBatchSize 立即 flush，防止无限堆积。
+ * ------------------------------------------------------------------ */
+
+/** 结构性业务事件前缀：这些事件必须逐条、按序、即时应用（不进入合并窗口）。 */
+export const DEFAULT_STRUCTURAL_PREFIXES = [
+  'plan.',
+  'conflict.',
+  'replan.',
+  'assignment.',
+  'run.',
+  'execution.',
+] as const;
+
+/** 事件是否属于结构性业务事件（需即时/逐条应用）。 */
+export function isStructuralEventType(
+  type: string,
+  prefixes: readonly string[] = DEFAULT_STRUCTURAL_PREFIXES,
+): boolean {
+  return prefixes.some((prefix) => type.startsWith(prefix));
+}
+
+/** 参与批处理/合并的最小事件形状（schedulerRealtimeCore 不依赖 shared 类型，便于 node 单测）。 */
+export interface BatchableEvent {
+  sequence: number;
+  eventType?: string | null;
+}
+
+export interface CoalesceOptions {
+  /** 结构性事件前缀（默认 DEFAULT_STRUCTURAL_PREFIXES）。 */
+  structuralPrefixes?: readonly string[];
+  /** 合并窗口内同一事件类型保留的条数（默认 1 = 仅保留最新）。 */
+  keepPerType?: number;
+}
+
+/**
+ * 合并一批事件：
+ * - 结构性事件（plan./conflict./replan. 等）全部保序保留（业务语义逐条生效）；
+ * - 其余高频事件（如 device.telemetry）同一类型在同一批次内只保留最新的
+ *   keepPerType 条（后到者覆盖先到者——遥测只看最新值）；
+ * - 输出按 sequence 升序稳定排序，保证单调守卫/业务应用顺序不被破坏。
+ */
+export function coalesceEvents<TEvent extends BatchableEvent>(
+  events: readonly TEvent[],
+  options: CoalesceOptions = {},
+): TEvent[] {
+  const structuralPrefixes = options.structuralPrefixes ?? DEFAULT_STRUCTURAL_PREFIXES;
+  const keepPerType = Math.max(1, options.keepPerType ?? 1);
+
+  const structural: TEvent[] = [];
+  // 同一类型的分桶：仅保留最新 keepPerType 条（后到覆盖先到）。
+  const buckets = new Map<string, TEvent[]>();
+  const typeOrder: string[] = [];
+
+  for (const event of events) {
+    const type = event.eventType ?? '';
+    if (isStructuralEventType(type, structuralPrefixes)) {
+      structural.push(event);
+      continue;
+    }
+    let bucket = buckets.get(type);
+    if (!bucket) {
+      bucket = [];
+      buckets.set(type, bucket);
+      typeOrder.push(type);
+    }
+    bucket.push(event);
+    if (bucket.length > keepPerType) bucket.shift();
+  }
+
+  const coalesced = [...structural];
+  for (const type of typeOrder) {
+    coalesced.push(...(buckets.get(type) ?? []));
+  }
+  // 保序：批次内事件 sequence 单调（到达序 == 序号序），合并后仍按 sequence 升序稳定排列，
+  // 保证消费方按序应用（缺口检测/业务顺序不受合并影响）。
+  return coalesced.sort((a, b) => a.sequence - b.sequence);
+}
+
+/** 一次 flush 的批次负载：已合并事件 + 窗口内原始 seq 边界（缺口检测基准）。 */
+export interface EventBatch<TEvent extends BatchableEvent> {
+  /** 已合并（保序、按 sequence 升序）的事件。 */
+  events: TEvent[];
+  /** 批次窗口内**收到**的最小 sequence（与上游游标比较做缺口检测）。 */
+  minSeq: number;
+  /** 批次窗口内**收到**的最大 sequence（游标推进基准，合并丢弃中间 seq 不视为缺口）。 */
+  maxSeq: number;
+  /** 窗口内原始事件数（合并前后对比，衡量写放大削减）。 */
+  rawCount: number;
+}
+
+export interface EventBatcher<TEvent extends BatchableEvent> {
+  /** 推入一条事件；结构性事件触发立即 flush（含积压），其余进入合并窗口。 */
+  push: (event: TEvent) => void;
+  /** 立即合并并 flush 积压（返回本次是否有内容写出）。 */
+  flush: () => boolean;
+  /** 取消定时器并丢弃积压（卸载/重连前调用）。 */
+  dispose: () => void;
+  /** 当前积压条数。 */
+  pendingCount: number;
+}
+
+export interface CreateEventBatcherParams<TEvent extends BatchableEvent> {
+  /** 合并窗口（ms），默认 80。 */
+  windowMs?: number;
+  /** 单批最大事件数，超过立即 flush（防无限堆积），默认 64。 */
+  maxBatchSize?: number;
+  /** 结构性事件前缀（默认 DEFAULT_STRUCTURAL_PREFIXES）。 */
+  structuralPrefixes?: readonly string[];
+  /** 合并选项透传。 */
+  coalesce?: CoalesceOptions;
+  /** flush 回调（合并后逐批写出）。 */
+  onFlush: (batch: EventBatch<TEvent>) => void;
+  /** 注入时钟（默认 Date.now），便于单测。 */
+  now?: () => number;
+  /** 注入定时器（默认 setTimeout/clearTimeout），便于单测。 */
+  schedule?: (fn: () => void, ms: number) => { cancel: () => void };
+}
+
+/**
+ * 创建事件批处理器：窗口内合并高频事件，结构性事件即时 flush。
+ * 纯逻辑（无 React/DOM 依赖），时钟与调度器可注入——node 环境可测。
+ */
+export function createEventBatcher<TEvent extends BatchableEvent>(
+  params: CreateEventBatcherParams<TEvent>,
+): EventBatcher<TEvent> {
+  const windowMs = Math.max(0, params.windowMs ?? 80);
+  const maxBatchSize = Math.max(1, params.maxBatchSize ?? 64);
+  const coalesceOptions: CoalesceOptions = {
+    structuralPrefixes: params.structuralPrefixes ?? DEFAULT_STRUCTURAL_PREFIXES,
+    ...params.coalesce,
+  };
+
+  let pending: TEvent[] = [];
+  let timer: { cancel: () => void } | null = null;
+  let disposed = false;
+
+  const cancelTimer = () => {
+    if (timer) {
+      timer.cancel();
+      timer = null;
+    }
+  };
+
+  const flushNow = (): boolean => {
+    cancelTimer();
+    if (pending.length === 0) return false;
+    const batch = pending;
+    pending = [];
+    const minSeq = batch[0].sequence;
+    const maxSeq = batch[batch.length - 1].sequence;
+    const rawCount = batch.length;
+    const events = coalesceEvents(batch, coalesceOptions);
+    params.onFlush({ events, minSeq, maxSeq, rawCount });
+    return true;
+  };
+
+  const armTimer = () => {
+    if (timer || disposed) return;
+    timer = params.schedule ? params.schedule(flushNow, windowMs) : scheduleDefault(flushNow, windowMs);
+  };
+
+  return {
+    push(event: TEvent) {
+      if (disposed) return;
+      const type = event.eventType ?? '';
+      if (isStructuralEventType(type, coalesceOptions.structuralPrefixes ?? DEFAULT_STRUCTURAL_PREFIXES)) {
+        // 结构性业务事件：先 flush 积压（保持相对顺序），再立即应用本条。
+        flushNow();
+        params.onFlush({
+          events: [event],
+          minSeq: event.sequence,
+          maxSeq: event.sequence,
+          rawCount: 1,
+        });
+        return;
+      }
+      pending.push(event);
+      if (pending.length >= maxBatchSize) {
+        flushNow();
+        return;
+      }
+      armTimer();
+    },
+    flush: flushNow,
+    dispose() {
+      disposed = true;
+      cancelTimer();
+      pending = [];
+    },
+    get pendingCount() {
+      return pending.length;
+    },
+  };
+}
+
+function scheduleDefault(fn: () => void, ms: number): { cancel: () => void } {
+  const id = setTimeout(fn, ms);
+  return { cancel: () => clearTimeout(id) };
+}
+
 /**
  * P1-D：STALE CONTEXT 判定（纯函数，node 可测）。
  *

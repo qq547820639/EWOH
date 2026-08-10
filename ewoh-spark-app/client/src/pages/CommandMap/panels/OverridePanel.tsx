@@ -109,6 +109,15 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
   // 焦点管理（镜像 Shell 帮助对话框模式：打开存焦点 → 关闭恢复）。
   const previewPrevFocusRef = useRef<HTMLElement | null>(null);
   const previewConfirmRef = useRef<HTMLButtonElement | null>(null);
+  // Task 12/12.3：覆盖结果（重排成功）后聚焦结果区，屏幕阅读器可读（不只靠颜色）。
+  const resultRef = useRef<HTMLDivElement | null>(null);
+
+  // Task 12/12.3：覆盖结果出现后把焦点移动到结果区（键盘用户立即感知执行结果）。
+  useEffect(() => {
+    if (result) {
+      window.requestAnimationFrame(() => resultRef.current?.focus());
+    }
+  }, [result]);
 
   const overrideMutation = usePlanOverrides(planId);
 
@@ -470,9 +479,16 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
             )}
           </Button>
 
-          {/* 结果 diff */}
+          {/* 结果 diff（Task 12/12.3：可聚焦 + aria-live，状态不只靠颜色） */}
           {result && (
-            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-2">
+            <div
+              ref={resultRef}
+              tabIndex={-1}
+              role="status"
+              aria-live="polite"
+              aria-label={`重排完成，新方案 ${result.planId.slice(0, 8)}`}
+              className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-2 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[hsl(221_83%_53%)]"
+            >
               <div className="flex items-center gap-1.5 text-emerald-300 text-xs font-medium">
                 <CheckCircle2 className="w-4 h-4" /> 重排完成，新方案 {result.planId.slice(0, 8)}
               </div>

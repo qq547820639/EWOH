@@ -43,7 +43,8 @@ export function DataFreshnessIndicatorRow({
       aria-label="数据新鲜度"
       title="各事实源数据新鲜度（悬停查看原因）"
     >
-      <span className="text-[9px] uppercase tracking-wide text-white/40">Data Freshness</span>
+      {/* Task 12/12.3：标签文本对比度 ≥ 4.5:1（text-white/40 不满足，提升为 white/70） */}
+      <span className="text-[9px] uppercase tracking-wide text-white/70">Data Freshness</span>
       {sources.map((s) => (
         <DataFreshnessBadge
           key={s.key}

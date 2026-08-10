@@ -3,7 +3,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { getPlan } from '@client/src/api/scheduler';
 import { getAccessToken } from '@client/src/lib/auth';
 import { queryKeys } from '@client/src/hooks/queryKeys';
-import { mapToV2Status, pollingInvalidateKeys, type SchedulerStreamStatusV2 } from '@client/src/pages/CommandMap/hooks/schedulerRealtimeCore';
+import {
+  mapToV2Status,
+  pollingInvalidateKeys,
+  createEventBatcher,
+  type EventBatcher,
+  type EventBatch,
+  type SchedulerStreamStatusV2,
+} from '@client/src/pages/CommandMap/hooks/schedulerRealtimeCore';
 import type { SchedulingEvent, SchedulingPlanV2 } from '@shared/api.interface';
 
 /**
@@ -12,6 +19,12 @@ import type { SchedulingEvent, SchedulingPlanV2 } from '@shared/api.interface';
  * 消费后端 `GET /api/scheduler/v2/stream`，将事件增量写入 React Query 缓存，
  * 并处理：sequence 去重、Last-Event-ID 续传、缺口检测→全量重同步（resync）、
  * SSE 失败→轮询兜底→恢复后回到 SSE。
+ *
+ * Task 11 / 11.1（big-data）：高频事件（如 device.telemetry）经 createEventBatcher
+ * 在短窗口内（默认 80ms，可配置 batchWindowMs）合并后一次性写出，避免每个事件都
+ * 触发一次 React 状态更新；结构性业务事件（plan.* / conflict.* / replan.* 等）
+ * 立即 flush，逐条按序应用。单调守卫 / 缺口检测 / Last-Event-ID 语义保持不变：
+ * 缺口检测以「批次窗口内收到的最小 seq」为基准，合并丢弃的中间 seq 不误报缺口。
  *
  * 说明：后端该端点需要 `Authorization: Bearer` 头，原生 `EventSource` 无法携带
  * 自定义请求头，因此这里用 `fetch` + ReadableStream 手动解析 SSE 上报协议
@@ -34,12 +47,16 @@ interface UseSchedulerStreamOptions {
   reconnectIntervalMs?: number;
   /** 检测到 sequence 缺口 / 需要全量重同步时回调（默认：失效调度相关查询）。 */
   onResync?: () => void;
+  /** Task 11/11.1：SSE 批处理合并窗口（ms）；0 表示禁用批处理（逐条应用）。 */
+  batchWindowMs?: number;
 }
 
 const STREAM_PATH = '/api/scheduler/v2/stream';
 const DEFAULT_POLL_INTERVAL_MS = 10_000;
 const DEFAULT_MAX_CONSECUTIVE_ERRORS = 3;
 const DEFAULT_RECONNECT_INTERVAL_MS = 15_000;
+/** Task 11/11.1：高频事件合并窗口（ms），快速突发（遥测/位置）合并为一次 store 写出。 */
+const DEFAULT_BATCH_WINDOW_MS = 80;
 
 function streamUrl(): string {
   const base = (import.meta as unknown as { env?: Record<string, string> }).env
@@ -97,6 +114,7 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
     pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
     maxConsecutiveErrors = DEFAULT_MAX_CONSECUTIVE_ERRORS,
     reconnectIntervalMs = DEFAULT_RECONNECT_INTERVAL_MS,
+    batchWindowMs = DEFAULT_BATCH_WINDOW_MS,
     onResync,
   } = options;
 
@@ -149,6 +167,9 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
    */
   const handleResync = useCallback(
     (data: string) => {
+      // Task 11/11.1：resync 为权威重建，先 flush 积压增量（保持接收顺序），
+      // 再以服务器权威 currentSequence 重置基线（积压中 <= 基线的事件由守卫自然丢弃）。
+      batcherRef.current?.flush();
       try {
         const payload = JSON.parse(data) as {
           currentSequence?: number;
@@ -176,30 +197,12 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
     [triggerResync],
   );
 
-  /** 处理单个调度事件 → 写入缓存。 */
-  const handleEvent = useCallback(
+  /**
+   * 逐条应用事件（Task 11/11.1：批内事件按序应用，业务语义逐条保留）。
+   * 游标推进/状态更新由批次 flush 统一处理，避免每事件一次 React 渲染。
+   */
+  const applyEvent = useCallback(
     (event: SchedulingEvent) => {
-      // sequence 去重：重复事件（sequence <= lastSequence）不重复执行业务逻辑。
-      if (event.sequence <= lastSequenceRef.current) return;
-
-      // Task 2.2：事件应用成功 → 记录最近事件时间并清除重同步标记（恢复实时增量）。
-      setLastEventTime(Date.now());
-      setResyncing(false);
-
-      // 缺口检测：跳过了中间事件，增量无法安全续接 → 全量重同步。
-      if (lastSequenceRef.current > 0 && event.sequence > lastSequenceRef.current + 1) {
-        lastSequenceRef.current = event.sequence;
-        setLastSequence(event.sequence);
-        lastEventIdRef.current = String(event.sequence);
-        triggerResync();
-        return;
-      }
-
-      lastSequenceRef.current = event.sequence;
-      setLastSequence(event.sequence);
-      // Last-Event-ID 续传游标 = outbox sequence（与 SSE id 字段一致，重连时原样回传）。
-      lastEventIdRef.current = String(event.sequence);
-
       const type = event.eventType ?? '';
       // 由事件类型推断受影响的 planId。
       let planId: string | null = null;
@@ -245,7 +248,62 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
         queryClient.invalidateQueries({ queryKey: queryKeys.worldState });
       }
     },
-    [queryClient, triggerResync],
+    [queryClient],
+  );
+
+  /**
+   * 应用一个事件批次（Task 11/11.1）。
+   * - 缺口检测以「批次窗口内收到的最小 seq」与上一批次游标比较：窗口内已完整接收
+   *   （只是合并丢弃了中间遥测），故合并不产生伪缺口；
+   * - 批次内事件按 sequence 升序逐条应用（applyEvent），业务事件顺序不变；
+   * - 游标推进到批次最大 seq，Last-Event-ID 同步更新（合并丢弃的中间 seq 不会
+   *   在重连时被要求重放，因为服务端游标与客户端一致）。
+   */
+  const applyEventBatch = useCallback(
+    (batch: EventBatch<SchedulingEvent>) => {
+      // 缺口检测：批次起点与上一批次接收游标不连续 → 增量无法安全续接 → 全量 resync。
+      if (lastSequenceRef.current > 0 && batch.minSeq > lastSequenceRef.current + 1) {
+        lastSequenceRef.current = batch.maxSeq;
+        setLastSequence(batch.maxSeq);
+        lastEventIdRef.current = String(batch.maxSeq);
+        triggerResync();
+        return;
+      }
+      // 单调守卫：批内已按 seq 升序去重，此守卫兜底跨批次重复/回退事件。
+      for (const event of batch.events) {
+        if (event.sequence <= lastSequenceRef.current) continue;
+        applyEvent(event);
+      }
+      lastSequenceRef.current = batch.maxSeq;
+      setLastSequence(batch.maxSeq);
+      // Last-Event-ID 续传游标 = outbox sequence（与 SSE id 字段一致，重连时原样回传）。
+      lastEventIdRef.current = String(batch.maxSeq);
+      // 批次成功应用 → 记录最近事件时间并清除重同步标记（恢复实时增量）。
+      setLastEventTime(Date.now());
+      setResyncing(false);
+    },
+    [applyEvent, triggerResync],
+  );
+
+  // Task 11/11.1：事件批处理器（懒创建一次；onFlush 引用稳定）。
+  const batcherRef = useRef<EventBatcher<SchedulingEvent> | null>(null);
+  if (batcherRef.current === null) {
+    batcherRef.current = createEventBatcher<SchedulingEvent>({
+      windowMs: batchWindowMs,
+      onFlush: applyEventBatch,
+    });
+  }
+
+  /**
+   * 处理单个调度事件（入口）：重复事件在入批前剔除；结构性事件由 batcher 即时 flush。
+   */
+  const handleEvent = useCallback(
+    (event: SchedulingEvent) => {
+      // 预过滤：sequence <= 已接收游标 → 重复/回退事件（不进入批处理）。
+      if (event.sequence <= lastSequenceRef.current) return;
+      batcherRef.current?.push(event);
+    },
+    [],
   );
 
   /** 启动轮询兜底：定时刷新决策关键查询，并周期性尝试重连 SSE。 */
@@ -379,6 +437,9 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
     if (!enabled) return;
     connect();
     return () => {
+      // Task 11/11.1：卸载前 flush 积压（丢失最后窗口的事件），随后释放批处理器。
+      batcherRef.current?.flush();
+      batcherRef.current?.dispose();
       abortRef.current?.abort();
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);

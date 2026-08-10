@@ -30,6 +30,7 @@ import { isNonAuthoritativePlan } from './schedule-panel-demo';
 import { pickComparePlanId, replanPreviewSummary, dispatchPlanSummary } from './schedule-panel-logic';
 import SolverStatusChain from './SolverStatusChain';
 import { useVirtualList } from '@client/src/lib/virtualList';
+import { KeyboardTableView, type KeyboardTableColumn } from '../components/KeyboardTableView';
 import type {
   SchedulingPlanV2,
   SchedulingAssignment,
@@ -41,6 +42,7 @@ import type {
 import { cn } from '@client/src/lib/utils';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
+import { UI_ARIA_LABELS } from '@client/src/lib/a11y';
 import {
   Dialog,
   DialogContent,
@@ -381,6 +383,35 @@ function SchedulePanel({
     itemHeight: 72,
     overscan: 4,
   });
+
+  // Task 12/12.2：卡片视图（默认）/ 表格视图（键盘可达语义表格）切换。
+  const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
+  const assignmentColumns = useMemo<KeyboardTableColumn<SchedulingAssignment>[]>(
+    () => [
+      { key: 'task', header: '任务', render: (a) => <span className="text-white/90 font-medium">{a.taskId}</span> },
+      {
+        key: 'person',
+        header: '人员',
+        render: (a) => <span className="text-cyan-400">{assignmentAssigneeName(a, personnel)}</span>,
+      },
+      {
+        key: 'status',
+        header: '状态',
+        render: (a) => (
+          <Badge className={cn('text-[8px] px-1', statusBadgeClassFromAssignment(a.status))}>
+            {a.status}
+          </Badge>
+        ),
+      },
+      { key: 'station', header: '工位', render: (a) => (a.stationId ? `工位 ${a.stationId}` : '—') },
+      {
+        key: 'time',
+        header: '计划时间',
+        render: (a) => `${formatTime(a.plannedStart)} → ${formatTime(a.plannedEnd)}`,
+      },
+    ],
+    [personnel],
+  );
 
   // 切换方案时重置分配列表滚动位置。
   useEffect(() => {
@@ -791,11 +822,34 @@ function SchedulePanel({
                 ))}
               </div>
 
-              {/* 分配变更列表（虚拟化：只渲染可视窗口） */}
+              {/* 分配变更列表（虚拟化：只渲染可视窗口；Task 12/12.2 支持表格视图） */}
               <div>
-                <div className="text-[10px] text-white/60 font-medium mb-1">
-                  分配明细（{selectedPlan.assignments.length}）
+                <div className="flex items-center gap-2 text-[10px] text-white/60 font-medium mb-1">
+                  <span>分配明细（{selectedPlan.assignments.length}）</span>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode((v) => (v === 'card' ? 'table' : 'card'))}
+                    aria-pressed={viewMode === 'table'}
+                    aria-label={viewMode === 'card' ? UI_ARIA_LABELS.switchTableView : UI_ARIA_LABELS.switchCardView}
+                    className="ml-auto rounded px-1.5 py-0.5 text-[10px] text-white/50 hover:bg-white/10"
+                  >
+                    {viewMode === 'card' ? '表格视图' : '列表视图'}
+                  </button>
                 </div>
+                {viewMode === 'table' ? (
+                  <KeyboardTableView<SchedulingAssignment>
+                    ariaLabel="分配明细（表格视图）"
+                    className="max-h-[280px] rounded-md border border-white/10"
+                    columns={assignmentColumns}
+                    rows={selectedPlan.assignments}
+                    rowKey={(a) => a.assignmentId}
+                    onActivate={(a) => {
+                      // 主操作：在地图上高亮该分配涉及的人员（与卡片视图「定位」一致）。
+                      if (a.personId && onViewOnMap) onViewOnMap([a.personId]);
+                    }}
+                    itemHeight={34}
+                  />
+                ) : (
                 <div
                   ref={assignmentList.ref}
                   className="max-h-[280px] overflow-y-auto rounded-md border border-white/10"
@@ -848,6 +902,7 @@ function SchedulePanel({
                     </div>
                   </div>
                 </div>
+                )}
               </div>
 
               {/* 操作 */}

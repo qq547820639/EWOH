@@ -23,6 +23,8 @@ import type {
 import { cn } from '@client/src/lib/utils';
 import { candidateExplainVM, type CandidateExplainItem } from '../vm/candidateExplainVM';
 import { Badge } from '@client/src/components/ui/badge';
+import { UI_ARIA_LABELS } from '@client/src/lib/a11y';
+import { useVirtualList } from '@client/src/lib/virtualList';
 
 /**
  * 智能调度驾驶舱（Task 8）右侧叠加层。
@@ -362,6 +364,18 @@ const IntelligenceLayers = ({
     });
   }, [plan]);
 
+  // Task 11/11.2：智能驾驶舱内长列表虚拟化（大方案 500-1000 assignments 只渲染可视窗口）。
+  const priorityList = useVirtualList<HTMLDivElement>({
+    total: priorityTasks.length,
+    itemHeight: 48,
+    overscan: 4,
+  });
+  const deviationList = useVirtualList<HTMLDivElement>({
+    total: plan?.assignments.length ?? 0,
+    itemHeight: 20,
+    overscan: 4,
+  });
+
   const resourceCount = useMemo(() => {
     if (!worldState) return { persons: 0, devices: 0, workstations: 0 };
     return {
@@ -380,8 +394,7 @@ const IntelligenceLayers = ({
         <button
           type="button"
           onClick={onClose}
-          className="text-white/50 hover:text-white"
-          aria-label="关闭智能调度驾驶舱"
+          aria-label={UI_ARIA_LABELS.closeIntelligencePanel}
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -394,13 +407,18 @@ const IntelligenceLayers = ({
           </div>
         ) : (
           <>
-            {/* 优先级层 */}
+            {/* 优先级层（Task 11/11.2 虚拟化） */}
             <Section title="优先级层" icon={<Flag className="w-3 h-3 text-red-400" />}>
-              {priorityTasks.length === 0 && (
-                <div className="text-[10px] text-white/40">方案无分配任务</div>
-              )}
-              <div className="space-y-1">
-                {priorityTasks.map(({ assignment, priority, unassigned }) => {
+              <div
+                ref={priorityList.ref}
+                className="max-h-64 overflow-y-auto rounded border border-white/10"
+              >
+                {priorityTasks.length === 0 && (
+                  <div className="text-[10px] text-white/40">方案无分配任务</div>
+                )}
+                <div style={{ height: priorityList.range.totalHeight, position: 'relative' }}>
+                  <div className="space-y-1" style={{ transform: `translateY(${priorityList.range.offsetY}px)` }}>
+                    {priorityTasks.slice(priorityList.slice.start, priorityList.slice.end).map(({ assignment, priority, unassigned }) => {
                   const active = selectedTaskId === assignment.taskId;
                   return (
                     <button
@@ -452,6 +470,8 @@ const IntelligenceLayers = ({
                     </button>
                   );
                 })}
+                  </div>
+                </div>
               </div>
             </Section>
 
@@ -479,10 +499,19 @@ const IntelligenceLayers = ({
             </Section>
             <Section title="执行偏差" icon={<Activity className="w-3 h-3 text-blue-400" />}>
               {plan.assignments.some((a) => (a as unknown as AssignmentRecord).actualStart != null) ? (
-                <div className="space-y-1">
-                  {plan.assignments.map((a) => (
-                    <ExecutionDeviation key={a.assignmentId} assignment={a} />
-                  ))}
+                <div
+                  ref={deviationList.ref}
+                  className="max-h-48 overflow-y-auto rounded border border-white/10"
+                >
+                  <div style={{ height: deviationList.range.totalHeight, position: 'relative' }}>
+                    <div className="space-y-1" style={{ transform: `translateY(${deviationList.range.offsetY}px)` }}>
+                      {plan.assignments
+                        .slice(deviationList.slice.start, deviationList.slice.end)
+                        .map((a) => (
+                          <ExecutionDeviation key={a.assignmentId} assignment={a} />
+                        ))}
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="text-[10px] text-white/40">

@@ -11,6 +11,10 @@ import {
   mapToV2Status,
   pollingInvalidateKeys,
   isContextStale,
+  isStructuralEventType,
+  coalesceEvents,
+  createEventBatcher,
+  type EventBatch,
 } from './schedulerRealtimeCore';
 
 describe('schedulerRealtimeCore.nextSequence（单调守卫 + 缺口检测）', () => {
@@ -151,5 +155,207 @@ describe('schedulerRealtimeCore.isContextStale（P1-D：STALE CONTEXT 判定）'
 
   it('无任何方案 → 非 stale', () => {
     expect(isContextStale({ context: { snapshotVersion: 'WS-2' }, plans: [], activePlan: null })).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Task 11 / 11.1：SSE 批处理/合并（coalesceEvents / createEventBatcher）
+ * ------------------------------------------------------------------ */
+
+interface TestEvent {
+  eventId: string;
+  eventType: string;
+  sequence: number;
+}
+
+function ev(id: string, eventType: string, sequence: number): TestEvent {
+  return { eventId: id, eventType, sequence };
+}
+
+describe('schedulerRealtimeCore.isStructuralEventType（结构性业务事件识别）', () => {
+  it('plan./conflict./replan./assignment./run./execution. 前缀为结构性事件', () => {
+    expect(isStructuralEventType('plan.changed')).toBe(true);
+    expect(isStructuralEventType('conflict.detected')).toBe(true);
+    expect(isStructuralEventType('replan.started')).toBe(true);
+    expect(isStructuralEventType('assignment.updated')).toBe(true);
+    expect(isStructuralEventType('run.created')).toBe(true);
+    expect(isStructuralEventType('execution.deviation')).toBe(true);
+  });
+
+  it('遥测/位置等高频事件不是结构性事件（进入合并窗口）', () => {
+    expect(isStructuralEventType('device.telemetry')).toBe(false);
+    expect(isStructuralEventType('position.updated')).toBe(false);
+  });
+});
+
+describe('schedulerRealtimeCore.coalesceEvents（窗口内同类事件合并）', () => {
+  it('同一类型（device.telemetry）只保留最新一条，输出按 sequence 升序', () => {
+    const events = [
+      ev('t1', 'device.telemetry', 1),
+      ev('t2', 'device.telemetry', 2),
+      ev('t3', 'device.telemetry', 3),
+    ];
+    const kept = coalesceEvents(events);
+    expect(kept).toHaveLength(1);
+    expect(kept[0].sequence).toBe(3);
+  });
+
+  it('结构性事件（plan./conflict.）全部保序保留，逐条语义不变', () => {
+    const events = [
+      ev('p1', 'plan.changed', 1),
+      ev('t2', 'device.telemetry', 2),
+      ev('c3', 'conflict.detected', 3),
+    ];
+    const kept = coalesceEvents(events);
+    // 单条遥测保留（同类型仅一条无冗余）；结构性事件全部保序。
+    expect(kept.map((e) => e.sequence)).toEqual([1, 2, 3]);
+    expect(kept.filter((e) => e.eventType.startsWith('plan.') || e.eventType.startsWith('conflict.'))).toHaveLength(2);
+  });
+
+  it('混合批次：遥测合并 + 结构性事件保序，最终按 sequence 升序', () => {
+    const events = [
+      ev('t1', 'device.telemetry', 1),
+      ev('p2', 'plan.changed', 2),
+      ev('t3', 'device.telemetry', 3),
+      ev('c4', 'conflict.detected', 4),
+      ev('t5', 'device.telemetry', 5),
+    ];
+    const kept = coalesceEvents(events);
+    // 遥测只留 5；plan.changed(2)/conflict.detected(4) 原样保留；按 seq 升序。
+    expect(kept.map((e) => e.sequence)).toEqual([2, 4, 5]);
+  });
+
+  it('keepPerType > 1 时保留同类型最近 N 条', () => {
+    const events = [
+      ev('t1', 'device.telemetry', 1),
+      ev('t2', 'device.telemetry', 2),
+      ev('t3', 'device.telemetry', 3),
+      ev('p4', 'plan.changed', 4),
+    ];
+    const kept = coalesceEvents(events, { keepPerType: 2 });
+    expect(kept.map((e) => e.sequence)).toEqual([2, 3, 4]);
+  });
+
+  it('自定义结构性前缀可配置', () => {
+    const events = [
+      ev('t1', 'device.telemetry', 1),
+      ev('t2', 'device.telemetry', 2),
+      ev('g3', 'gate.changed', 3),
+    ];
+    const kept = coalesceEvents(events, { structuralPrefixes: ['gate.'] });
+    expect(kept.map((e) => e.sequence)).toEqual([2, 3]);
+  });
+});
+
+describe('schedulerRealtimeCore.createEventBatcher（窗口批处理 + 结构性事件即时 flush）', () => {
+  /** 手动触发的伪调度器（单测无需真实定时器）。 */
+  function manualScheduler() {
+    let scheduled: (() => void) | null = null;
+    return {
+      schedule: (fn: () => void) => {
+        scheduled = fn;
+        return { cancel: () => (scheduled = null) };
+      },
+      /** 手动触发一次已排定的 flush。 */
+      fire: () => {
+        const fn = scheduled;
+        scheduled = null;
+        fn?.();
+      },
+      hasPending: () => scheduled !== null,
+    };
+  }
+
+  it('窗口内同类高频事件合并为一次 flush（store 写放大削减）', () => {
+    const scheduler = manualScheduler();
+    const batches: Array<EventBatch<TestEvent>> = [];
+    const batcher = createEventBatcher<TestEvent>({
+      windowMs: 100,
+      onFlush: (batch) => batches.push(batch),
+      schedule: scheduler.schedule,
+    });
+    for (let seq = 1; seq <= 20; seq += 1) {
+      batcher.push(ev(`t${seq}`, 'device.telemetry', seq));
+    }
+    expect(batches).toHaveLength(0); // 窗口未到，不 flush
+    scheduler.fire();
+    expect(batches).toHaveLength(1); // 20 条遥测 → 1 次 flush
+    expect(batches[0].rawCount).toBe(20);
+    expect(batches[0].events).toHaveLength(1); // 只保留最新
+    expect(batches[0].events[0].sequence).toBe(20);
+    expect(batches[0].minSeq).toBe(1); // 缺口检测基准 = 窗口内最小 seq
+    expect(batches[0].maxSeq).toBe(20); // 游标推进基准 = 窗口内最大 seq
+  });
+
+  it('结构性事件（plan.changed）立即 flush，不等窗口', () => {
+    const scheduler = manualScheduler();
+    const batches: Array<EventBatch<TestEvent>> = [];
+    const batcher = createEventBatcher<TestEvent>({
+      windowMs: 100,
+      onFlush: (batch) => batches.push(batch),
+      schedule: scheduler.schedule,
+    });
+    batcher.push(ev('t1', 'device.telemetry', 1));
+    batcher.push(ev('p2', 'plan.changed', 2)); // 结构性 → 立即 flush
+    // 先 flush 积压遥测（批次 1），再立即应用 plan.changed（批次 2），顺序保持。
+    expect(batches).toHaveLength(2);
+    expect(batches[0].events.map((e) => e.sequence)).toEqual([1]);
+    expect(batches[1].events.map((e) => e.sequence)).toEqual([2]);
+    expect(scheduler.hasPending()).toBe(false);
+  });
+
+  it('批次达到 maxBatchSize 立即 flush（防无限堆积）', () => {
+    const scheduler = manualScheduler();
+    const batches: Array<EventBatch<TestEvent>> = [];
+    const batcher = createEventBatcher<TestEvent>({
+      windowMs: 100,
+      maxBatchSize: 8,
+      onFlush: (batch) => batches.push(batch),
+      schedule: scheduler.schedule,
+    });
+    for (let seq = 1; seq <= 20; seq += 1) {
+      batcher.push(ev(`t${seq}`, 'device.telemetry', seq));
+    }
+    // 8 条触发一次 → 第 8、16 条立即 flush，余 4 条等窗口。
+    expect(batches).toHaveLength(2);
+    expect(batcher.pendingCount).toBe(4);
+    scheduler.fire();
+    expect(batches).toHaveLength(3);
+  });
+
+  it('flush() 手动冲刷积压；dispose() 丢弃积压且不再接受新事件', () => {
+    const scheduler = manualScheduler();
+    const batches: Array<EventBatch<TestEvent>> = [];
+    const batcher = createEventBatcher<TestEvent>({
+      windowMs: 100,
+      onFlush: (batch) => batches.push(batch),
+      schedule: scheduler.schedule,
+    });
+    batcher.push(ev('t1', 'device.telemetry', 1));
+    expect(batcher.flush()).toBe(true);
+    expect(batches).toHaveLength(1);
+    expect(batcher.flush()).toBe(false); // 无积压 → false
+
+    batcher.push(ev('t2', 'device.telemetry', 2));
+    batcher.dispose();
+    expect(batcher.pendingCount).toBe(0);
+    batcher.push(ev('t3', 'device.telemetry', 3)); // dispose 后丢弃
+    expect(batcher.pendingCount).toBe(0);
+    scheduler.fire();
+    expect(batches).toHaveLength(1); // 未再 flush
+  });
+
+  it('windowMs=0 时事件在下一轮调度立即 flush（禁用批处理语义）', () => {
+    const scheduler = manualScheduler();
+    const batches: Array<EventBatch<TestEvent>> = [];
+    const batcher = createEventBatcher<TestEvent>({
+      windowMs: 0,
+      onFlush: (batch) => batches.push(batch),
+      schedule: scheduler.schedule,
+    });
+    batcher.push(ev('t1', 'device.telemetry', 1));
+    expect(scheduler.hasPending()).toBe(true);
+    scheduler.fire();
+    expect(batches).toHaveLength(1);
   });
 });

@@ -35,6 +35,15 @@ export const UI_ARIA_LABELS = {
   graphCriticalPath: '关键路径',
   searchPersonnel: '搜索人员',
   batteryChart: '设备电量分布图',
+  // ---- Task 12：Command Map 键盘可达性 / 覆盖层焦点（12.2 / 12.3）----
+  switchTableView: '切换到表格视图',
+  switchCardView: '切换到列表视图',
+  closeConflictPreview: '关闭冲突处置工作台',
+  closePlanDiff: '关闭变更详情',
+  closeIntelligencePanel: '关闭智能调度驾驶舱',
+  closeUrlNotices: '关闭 URL 失效提示',
+  assignResource: '分配资源到工位',
+  reopenConflictPreview: '打开冲突处置工作台',
 } as const;
 
 export function eventAccessibleLabel(title: string, severity: string): string {

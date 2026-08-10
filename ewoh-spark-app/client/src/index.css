@@ -18,3 +18,21 @@
   outline: 2px solid var(--focus-ring, hsl(221 83% 53%)) !important;
   outline-offset: 2px !important;
 }
+
+/* Task 12/12.3：高对比度（forced-colors，如 Windows 高对比度模式）——
+   状态徽标/表格/进度条保留可见边框与文本，状态不只靠颜色区分。 */
+@media (forced-colors: active) {
+  [class*="badge"],
+  [class*="border-"],
+  th,
+  td,
+  table {
+    border-color: CanvasText;
+    forced-color-adjust: none;
+  }
+  /* 表格行键盘选中态在强制颜色下仍以边框/文本表达，不依赖背景色 */
+  tr[aria-selected="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

@@ -1063,7 +1063,7 @@ const CommandMapShell = (): React.ReactElement => {
             type="button"
             onClick={() => urlNotices.forEach((_, i) => dismissUrlNotice(i))}
             className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-amber-300/80 hover:bg-amber-500/10"
-            aria-label="关闭 URL 失效提示"
+            aria-label={UI_ARIA_LABELS.closeUrlNotices}
           >
             <X className="w-3 h-3" />
           </button>
