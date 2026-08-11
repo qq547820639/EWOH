@@ -144,11 +144,11 @@ class Handler(SimpleHTTPRequestHandler):
         return self.send_json({"error":"not found"},404)
 
 def main():
-    addr=('127.0.0.1',8765)
-    print('EWOH Demo running at http://127.0.0.1:8765')
+    addr=('127.0.0.1',8766)
+    print('EWOH Demo running at http://127.0.0.1:8766')
     print('Data source: SIMULATED. Do not present as customer or real-device validation.')
     try:
-        threading.Timer(0.8,lambda:webbrowser.open('http://127.0.0.1:8765')).start()
+        threading.Timer(0.8,lambda:webbrowser.open('http://127.0.0.1:8766')).start()
     except Exception: pass
     ThreadingHTTPServer(addr,Handler).serve_forever()
 if __name__=='__main__': main()

@@ -11,9 +11,9 @@ import { EligibilityService } from './eligibility.service';
 import { RoutingService } from './routing.service';
 import { RouteCostProvider } from './route-cost.provider';
 import { SchedulingPolicyService } from './scheduling-policy.service';
-import type { SchedulerMetricsService } from './scheduler-metrics.service';
+import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { HeuristicSchedulingSolver } from './heuristic-scheduling-solver';
-import type { CandidateEngineService } from './candidate-engine.service';
+import { CandidateEngineService } from './candidate-engine.service';
 import {
   CpSatSchedulingSolver,
   type CpSatSolverConfig,
