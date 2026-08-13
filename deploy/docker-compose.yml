@@ -107,8 +107,6 @@ services:
       POSTGRES_PASSWORD: ${EWOH_DB_PASSWORD:-CHANGE_ME}
     volumes:
       - ewoh-pgdata:/var/lib/postgresql/data
-      # schema 初始化（首次启动执行）
-      - ../delivery/02_技术规范/database.sql:/docker-entrypoint-initdb.d/database.sql:ro
     networks:
       - ewoh-internal
     # 不暴露端口到外部网络；仅 ewoh-internal 可达

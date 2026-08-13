@@ -28,21 +28,34 @@ def bearer_token(h):
 def enforce_export_role(ctx, h):
     """导出端点 RBAC 校验：携带 Bearer token 且会话有效时，校验角色是否在导出允许名单内。
 
-    无 token（演示/离线模式）或会话无效时放行，不破坏现有无认证调用；
-    仅当 token 解析出有效会话且角色不在 export_allowed_roles 时返回 403。
-    返回 True 表示已发送 403 响应（调用方应直接 return），False 表示放行。
+    production 下 fail-closed：无 token / 会话无效 / 认证服务不可用一律拒绝（防泄露原始遥测）；
+    非 production（development/simulation）保留演示兼容：无 token 或会话无效时放行。
+    返回 True 表示已发送错误响应（调用方应直接 return），False 表示放行。
     """
+    is_prod = Settings.load().runtime_mode == "production"
     token = bearer_token(h)
     if not token:
+        if is_prod:
+            h._new_error("unauthorized", "production 导出必须携带有效 Bearer token", 401)
+            return True
         return False
     sm = session_manager()
     if sm is None:
+        if is_prod:
+            h._new_error("auth_unavailable", "认证服务未就绪，拒绝导出", 503)
+            return True
         return False
     try:
         session = sm.verify(token)
     except Exception:
+        if is_prod:
+            h._new_error("unauthorized", "token 校验失败", 401)
+            return True
         return False
     if session is None:
+        if is_prod:
+            h._new_error("unauthorized", "token 无效或已过期", 401)
+            return True
         return False
     allowed = Settings.load().export_allowed_roles
     if not check_export_role(session.role, allowed):

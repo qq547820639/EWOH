@@ -108,8 +108,9 @@ export class IngestService {
         for (const r of rows) existingEntityIds.add(r.entityId);
       } catch (error) {
         this.logger.warn(
-          `批量 entity 预检失败（fail-open）：${error instanceof Error ? error.message : String(error)}`,
+          `批量 entity 预检失败（fail-closed 拒绝写入）：${error instanceof Error ? error.message : String(error)}`,
         );
+        throw error;
       }
     }
 
@@ -125,8 +126,9 @@ export class IngestService {
         for (const r of rows) existingRawRefs.add(r.rawRef);
       } catch (error) {
         this.logger.warn(
-          `批量 raw_ref 预检失败（fail-open）：${error instanceof Error ? error.message : String(error)}`,
+          `批量 raw_ref 预检失败（fail-closed 拒绝写入）：${error instanceof Error ? error.message : String(error)}`,
         );
+        throw error;
       }
     }
 

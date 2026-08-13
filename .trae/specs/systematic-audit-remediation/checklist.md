@@ -1,0 +1,8 @@
+- [x] `deploy/docker-compose.yml` 不再挂载 SQLite 旧 schema 到 PostgreSQL
+- [x] `enforce_export_role` production 下 fail-closed（拒绝导出）
+- [x] `rate_limiter` 接入 `build_server`（production）
+- [x] ingest 批量预检（entity/raw_ref）fail-closed（re-throw）
+- [x] Python 全量 edge 测试通过（840 passed）
+- [x] `tsc -b --force` 0 错误；ingest jest 通过（28 passed）
+- [x] `npm run openapi:no-drift` 通过
+- [~] 复核确认：走读子代理关于「引用不存在文件」的 3 项为误报，未执行对应改动

@@ -30,7 +30,7 @@ from .config import Settings
 from .routes import NOT_HANDLED, ReqMeta
 from .routes._util import OFFLINE_AFTER_SEC
 from .routes.registry import dispatch
-from .security import SecurityHeaders
+from .security import SecurityHeaders, rate_limiter
 
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
@@ -461,6 +461,10 @@ def build_server(addr, ctx, tls_cert=None, tls_key=None):
     """
     handler_cls = make_handler(ctx)
     SecurityHeaders.wrap(handler_cls)
+    # P0-Edge-Security：production 下接入速率限制（默认 60 req/min/IP，进程内内存）。
+    # 仅 production 启用，避免开发/仿真/自检路径被限流误伤。
+    if Settings.load().runtime_mode == "production":
+        handler_cls = rate_limiter()(handler_cls)
     httpd = ThreadingHTTPServer(addr, handler_cls)
     # 优先使用显式参数，其次读取 Settings
     if tls_cert is None or tls_key is None:
