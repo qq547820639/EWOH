@@ -41,13 +41,13 @@ function wrap(fn) {
       const result = fn(req, res);
       if (result && typeof result.catch === 'function') {
         result.catch((e) => {
-          console.error('[api] handler error:', e);
-          fail(res, 500, 'INTERNAL', e.message || '内部错误');
+          console.error('[api] handler error:', e && e.stack ? e.stack : e);
+          fail(res, 500, 'INTERNAL', '内部错误');
         });
       }
     } catch (e) {
-      console.error('[api] handler error:', e);
-      fail(res, 500, 'INTERNAL', e.message || '内部错误');
+      console.error('[api] handler error:', e && e.stack ? e.stack : e);
+      fail(res, 500, 'INTERNAL', '内部错误');
     }
   };
 }

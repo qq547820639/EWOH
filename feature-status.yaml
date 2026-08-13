@@ -37,9 +37,6 @@ features:
       - ewoh-spark-app/server/modules/scheduler/__tests__/scheduler-domain.spec.ts
       - ewoh-spark-app/server/modules/scheduler/__tests__/task-scheduling-bridge.spec.ts
       - db/migrations/standalone_006_scheduling.sql
-      - ewoh-spark-app/output/benchmark-scheduler-matrix.json
-      - ewoh-spark-app/output/bench-after-1000.json
-      - ewoh-spark-app/output/bench-before-500.json
       - ".github/workflows/test.yml (NestJS Jest 测试)"
 
   heuristicSolver:
@@ -135,15 +132,21 @@ features:
       - ui/command_map/
 
   decisionCockpit:
-    # 智能调度驾驶舱（决策舱：plan 对比 / 冲突中心 / 候选资源选择器等独立 client 组件）
-    # 当前未交付为独立 client 组件 → 全部字段 false。
-    implemented: false
-    tested: false
-    deployable: false
+    # 智能调度驾驶舱（决策舱：plan 对比 / 冲突中心 / 候选资源选择器等组件）
+    # 已交付为 CommandMap 决策驾驶舱 tab，调用真实后端 API。
+    implemented: true
+    tested: true
+    deployable: true
     productionEnabled: false
     runtimeVerified: false
-    docsUpdated: false
-    evidence: []
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/client/src/pages/CommandMap/panels/DecisionCockpit.tsx
+      - ewoh-spark-app/client/src/pages/CommandMap/DecisionCockpitWorkspace.tsx
+      - ewoh-spark-app/client/src/pages/CommandMap/panels/ConflictCenterPanel.tsx
+      - ewoh-spark-app/client/src/pages/CommandMap/panels/PlanComparePanel.tsx
+      - ewoh-spark-app/client/src/pages/CommandMap/panels/ResourcePoolPanel.tsx
+      - ewoh-spark-app/client/src/pages/CommandMap/panels/decision-cockpit-render-only.test.ts
 
   edgeServer:
     # 边缘平台（Python 零第三方依赖运行时：采集 / 协议适配 / 推理 / 边缘调度 / API）
@@ -204,8 +207,5 @@ features:
     evidence:
       - ewoh-spark-app/scripts/benchmark-scheduler.ts
       - ewoh-spark-app/server/modules/scheduler/__tests__/benchmark-scheduler.spec.ts
-      - ewoh-spark-app/output/benchmark-scheduler-matrix.json
-      - ewoh-spark-app/output/bench-after-1000.json
-      - ewoh-spark-app/output/bench-after-500.json
-      - ewoh-spark-app/output/bench-before-500.json
+      - ewoh-spark-app/output/benchmark-scheduler-2026-08-07T14-39-03-704Z.json
       - "ewoh-spark-app/package.json (npm run benchmark:scheduler)"

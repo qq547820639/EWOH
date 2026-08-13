@@ -7,7 +7,7 @@
 纯 Python 标准库实现，零第三方依赖。
 """
 
-from edge_platform.stubs import Storage
+from edge_platform.edge.storage import Storage
 
 
 class AuditLogger:

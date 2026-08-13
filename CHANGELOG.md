@@ -5,6 +5,20 @@
 
 ## [Unreleased]
 
+### Fixed
+- **权威事实源收敛 + UX 缺口闭合（close-head-truth-ux-gaps）**：
+  - **事实源假阴性修正**：`feature-status.yaml` 的 `decisionCockpit` 由「未实现」修正为已实现
+    （CommandMap 决策驾驶舱 tab 已真实接线并调用后端 API），同步 README 能力状态清单。
+  - **失效证据清理**：`schedulerV2` / `benchmarkScheduler` 引用已不存在的 `output/bench-*.json`
+    替换为真实存在的基准文件。
+  - **DB 受管表口径修正**：`schema-manifest.yaml` 与 `state.json` 的受管表数由 73 修正为 57
+    （与 `managed_tables` 列表及 CHANGELOG/release-manifest 一致），`reconcile` dbConsistent 恢复 PASS。
+  - **决策驾驶舱反馈诚实闭合**：调度反馈段由静默 `null` 改为显式「暂无调度反馈数据」空态。
+  - **UX 缺口闭合**：状态色收敛至语义设计 Token；设备详情接入统一时间线；角色化 Quick Start 入口；
+    清理未接线孤儿页（Overview/Events/CenterPlaceholder/ExamplePage）；修正 Alerts 离线横幅文案。
+  - **代码质量债**：ingest 幂等查询 DB 失败由 fail-open 改为 fail-closed + 日志；work-orchestration
+    死代码清理；audit 模块导入卫生；飞书 API 错误响应脱敏；跨工厂/CP-SAT 占位能力加 fail-closed 边界标注。
+
 ### Added
 - **智能调度闭环补全（任务写路径接线 + 事件节流基础设施）**：
   - **任务写路径自动重排（10.1 关闭）**：TaskService 新增 `onTaskEvent` 回调注册表（task 模块零依赖，

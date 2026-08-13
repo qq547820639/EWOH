@@ -85,8 +85,7 @@ const Alerts = (): React.ReactElement => {
       {isOffline && (
         <OfflineState
           title="当前处于离线状态"
-          description="网络连接已断开，告警操作将加入待同步队列，联网后自动提交。"
-          pendingCount={rows.length}
+          description="当前离线，部分操作可能失败，请稍后重试。"
           onRetry={() => query.refetch()}
         />
       )}

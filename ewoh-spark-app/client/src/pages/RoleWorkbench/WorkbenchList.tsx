@@ -83,7 +83,7 @@ function renderCell(
     return (
       <Link
         to={href}
-        className="text-[hsl(221_83%_53%)] hover:underline"
+        className="text-semantic-info hover:underline"
         onClick={(event) => event.stopPropagation()}
       >
         {text}
@@ -234,7 +234,7 @@ export function WorkbenchList({
   return (
     <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
       <div className="flex flex-wrap items-center gap-2 border-b border-[hsl(220_14%_89%)] px-4 py-3">
-        <ClipboardList className="size-4 text-[hsl(221_83%_53%)]" />
+        <ClipboardList className="size-4 text-semantic-info" />
         <h2 className="font-semibold text-[hsl(220_14%_14%)]">{list.label}</h2>
         <span
           className="text-xs text-[hsl(218_10%_42%)]"

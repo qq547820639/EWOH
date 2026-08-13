@@ -499,7 +499,7 @@ export class WorkOrchestrationService {
     if (!body.idempotencyKey || typeof body.idempotencyKey !== 'string') {
       throw new BadRequestException('idempotencyKey is required for git-sync apply');
     }
-    const { created, result } = await this.domainPersistence.setIdempotencyAndCreate(
+    const { result } = await this.domainPersistence.setIdempotencyAndCreate(
       'git-sync-apply',
       body.idempotencyKey,
       async () => {
@@ -548,7 +548,7 @@ export class WorkOrchestrationService {
         return response;
       },
     );
-    return created ? result : result;
+    return result;
   }
 
   getSiteReadiness() {

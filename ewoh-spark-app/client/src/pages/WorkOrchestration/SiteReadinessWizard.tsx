@@ -416,12 +416,13 @@ const SiteReadinessWizard = ({
           </div>
         )}
         <p className="mt-3 text-xs text-[hsl(218_10%_42%)]">
-          TODO(后端)：Docker / K8s / Helm / 对象存储 / 真实设备探测属后端与现场能力，本向导不伪造结果。
+          Docker / K8s / Helm / 对象存储 / 真实设备探测属后端与现场能力：待后端/现场接入，
+          当前未启用（本向导不伪造结果）。
         </p>
       </SectionCard>
 
       {/* 基础设施检查 */}
-      <SectionCard icon={Workflow} title="基础设施检查（DB / K8s / Helm / 对象存储 / 真实设备）" badge="后端/现场待接入">
+      <SectionCard icon={Workflow} title="基础设施检查（DB / K8s / Helm / 对象存储 / 真实设备）" badge="后端/现场待接入 · 当前未启用">
         <div className="space-y-1">
           {BACKEND_INFRA_ITEMS.map((item) => (
             <div key={item.id} className="flex items-start gap-2 py-1">

@@ -12,8 +12,8 @@ import type { SiteReadinessCheck, RepairSuggestion } from './siteReadinessFlow';
  * - 摄像头捕获（navigator.mediaDevices.getUserMedia）
  * - 后端连通性（/health/live，public 接口）
  *
- * 真实环境探测（Docker/K8s/Helm/真实设备）属后端/现场能力，列为 TODO，
- * 不在客户端伪造返回值。
+ * 真实环境探测（Docker/K8s/Helm/真实设备）属后端/现场能力，待后端/现场接入，
+ * 当前未启用，不在客户端伪造返回值。
  */
 
 export interface SiteReadinessProbeResult {
@@ -114,7 +114,8 @@ function getApiBaseUrl(): string {
 
 /**
  * 探测后端连通性：请求 public 的 /health/live。可注入 fetchImpl 与 baseUrl 便于测试。
- * TODO(后端): 真实环境探测（Docker/K8s/Helm/对象存储/真实设备）需后端提供对应接口。
+ * 待后端/现场接入，当前未启用：真实环境探测（Docker/K8s/Helm/对象存储/真实设备）
+ * 需后端提供对应接口。
  */
 export async function probeBackendConnectivity(
   fetchImpl: typeof fetch = fetch,
