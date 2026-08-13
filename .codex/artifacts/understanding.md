@@ -1,7 +1,9 @@
 # EWOH Current Understanding
 
-Updated: 2026-08-04
-Trace: EWOH-2026-08-04-principal-final6
+Updated: 2026-08-14
+Trace: EWOH-2026-08-14-rc4-convergence
+
+> **本目录（`.codex/artifacts`）已被 `.trae/specs` + `feature-status.yaml` + `CHANGELOG.md` 取代为权威运行时事实源。**
 
 ## Confirmed Current
 

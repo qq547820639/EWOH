@@ -1,0 +1,6 @@
+- [x] `state.json` 的 `trace_id` 已更新为当前收敛 trace，`current_status` 反映 rc4 现状
+- [x] `phase-state.md` 与 `understanding.md` 已更新 `Updated` 并注明 `.codex/artifacts` 被 `.trae/specs` + `feature-status.yaml` + `CHANGELOG.md` 取代
+- [x] `.trae-html-share-packages/` 已从版本库移除且无残留引用
+- [x] `.trae/documents/command-map-assessment-6.md` 与 `command-map-rectification.md` 已标注「已落地」
+- [x] `node scripts/truth-feature-status.js` 通过（31/31）
+- [x] `cd ewoh-spark-app && npx tsc -b --force` 通过（0 错误）

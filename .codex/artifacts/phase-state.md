@@ -1,7 +1,11 @@
 # EWOH Phase State
 
-Updated: 2026-08-04
-Trace: EWOH-2026-08-04-principal-final6
+Updated: 2026-08-14
+Trace: EWOH-2026-08-14-rc4-convergence
+
+> **本目录（`.codex/artifacts`）已被 `.trae/specs` + `feature-status.yaml` + `CHANGELOG.md` 取代为权威运行时事实源。**
+> 当前权威状态：`0.6.0-rc4`（HEAD `98bfa2f`）——Scheduler Phase 0 正确性基线、Incremental Replan V2、close-head-truth-ux-gaps 均已交付；
+> heuristic canonical + CP-SAT OPTIONAL/EXPERIMENTAL（激活阶梯 fail-closed）；`truth-feature-status` 31/31、`tsc` 0 错误、OpenAPI 零漂移；无任何功能生产启用。
 
 ## 当前权威状态（HEAD @git-head — live git HEAD，见 scripts/truth-source.js）
 

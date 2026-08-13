@@ -1,5 +1,7 @@
 # 指挥地图问题盘点（第 6 轮）
 
+> **已落地（2026-08-14）**：本盘点的 P0/P1/P2 项已在当前 HEAD（`98bfa2f`）修复——P0 `workstationIds` 重复声明已消除并回填 `taktSource`；`getDispatchStatus` 死代码已删除；`canConfirm` 的 `shadow` 残留已清理。本文档保留为历史走读记录，非待办清单。
+
 > 说明：第 5 轮整改计划（`command-map-assessment-5.md`）大部分已落地并覆盖：
 > 大脑建议「采纳」闭环（planId 回填 + `/brain/apply`）、任务编排节拍数据驱动（占用率推算）、
 > LLM 增强状态提示、调度确认/驳回/下发、班组长工作台可操作化。

@@ -1,5 +1,5 @@
 {
-  "trace_id": "EWOH-2026-08-04-principal-final6",
+  "trace_id": "EWOH-2026-08-14-rc4-convergence",
   "intent_anchor": {
     "objective": "EWOH Embodied Factory OS full lifecycle implementation",
     "success": "Contracts frozen, DDL/RLS/audit verified, backend/frontend/scenarios passing, deploy/rollback/delivery ready",
@@ -12,7 +12,7 @@
     ]
   },
   "project_root": "/Volumes/Extra/CodeProj/EWOH",
-  "current_status": "Final 6.0 adopted; Work Orchestration Control Plane implemented; 2026-08-04 iterations add mobile P0, evidence/gate hardening, onboarding F0-F3 real execution, mapping dry-run, unified world replay, E-SOP, quality schemes, slow-query observability, frontend lazy loading, MES role workbench, progressive lists, replay context UI, git sync apply gate, final standalone gate, pilot readiness rerun, and real-PG validation; ALL STANDALONE CHECKS PASSED with E2E 33/33 + browser 5/5, server Jest 81 suites / 391 tests, client 15 suites / 50 tests, OpenAPI 253/253, repo facts 33/33, work graph 252/109/0 conflicts, build PASSED; PILOT READINESS NOT READY (7/3/5)",
+  "current_status": "0.6.0-rc4 (HEAD 98bfa2f): scheduler Phase 0 correctness baseline, Incremental Replan V2, and close-head-truth-ux-gaps delivered; heuristic canonical + CP-SAT OPTIONAL/EXPERIMENTAL with Solver Activation Ladder (fail-closed); truth-feature-status 31/31, tsc 0 errors, OpenAPI zero-drift; productionEnabled=false (engineering-complete, production-unvalidated); authoritative runtime state now in feature-status.yaml + CHANGELOG.md + .trae/specs (this .codex/artifacts layer is superseded)",
   "source_refs": [
     "/Users/panhao/.codex/attachments/8f7c4e91-36c9-4318-a6b6-80ba15ad62d7/goal-objective.md",
     "/Users/panhao/.codex/attachments/694f0de3-3c07-421a-beeb-60e6936eab7a/goal-objective.md",
