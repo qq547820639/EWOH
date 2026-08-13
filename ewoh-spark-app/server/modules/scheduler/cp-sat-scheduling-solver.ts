@@ -20,6 +20,10 @@ import {
   type PriorityResult,
 } from './priority-engine';
 import { checkConstraintSupported } from './constraints';
+import {
+  CpSatCircuitBreaker,
+  type CpSatCircuitBreakerConfig,
+} from './cp-sat-circuit-breaker';
 
 /** CP-SAT 求解器版本标识。 */
 const CPSAT_VERSION = 'cpsat-v1';
@@ -94,6 +98,8 @@ export interface CpSatSolverConfig {
   logger?: Logger;
   /** 可注入的 fetch（测试替身用）。默认为全局 fetch。 */
   fetch?: typeof globalThis.fetch;
+  /** Phase 2 / P2-T4：CP-SAT 熔断器配置（缺省 5 次连续失败熔断 / 60s 冷却）。 */
+  circuitBreaker?: CpSatCircuitBreakerConfig;
 }
 
 /**
@@ -107,6 +113,7 @@ export class CpSatSchedulingSolver {
   private readonly workerUrl: string;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof globalThis.fetch;
+  private readonly circuitBreaker: CpSatCircuitBreaker;
 
   constructor(
     private readonly heuristicSolver: HeuristicSchedulingSolver,
@@ -121,6 +128,7 @@ export class CpSatSchedulingSolver {
       config.workerUrl ?? process.env.CPSAT_WORKER_URL ?? 'http://127.0.0.1:8000';
     this.timeoutMs = config.timeoutMs ?? 8000;
     this.fetchImpl = config.fetch ?? globalThis.fetch;
+    this.circuitBreaker = new CpSatCircuitBreaker(config.circuitBreaker);
   }
 
   async solve(
@@ -128,6 +136,27 @@ export class CpSatSchedulingSolver {
     constraints: SchedulingConstraint[],
     opts: SolveOptions,
   ): Promise<SchedulingPlanV2> {
+    // Phase 2 / P2-T4：熔断器打开时跳过 CP-SAT（worker 不可用），直接回退启发式，
+    // 避免反复打一个坏掉的 worker 并每次等满超时。
+    if (this.circuitBreaker.isOpen()) {
+      this.logger.warn(
+        `CP-SAT circuit breaker open → skip worker, heuristic fallback (${this.workerUrl})`,
+      );
+      if (this.metricsService) {
+        try {
+          this.metricsService.recordFallback();
+        } catch (metricsErr) {
+          this.logger.warn(
+            `circuit-open metrics recording failed: ${metricsErr instanceof Error ? metricsErr.message : String(metricsErr)}`,
+          );
+        }
+      }
+      const plan = await this.heuristicSolver.solve(snapshot, constraints, opts);
+      plan.solverStatus = 'UNAVAILABLE';
+      plan.fallbackReason = 'cpsat_circuit_open';
+      return plan;
+    }
+
     const policy = opts.policy ?? (await this.heuristicSolver.loadActivePolicy());
     const config = await this.heuristicSolver.loadConfig();
     const nowMs = Date.now();
@@ -286,6 +315,8 @@ export class CpSatSchedulingSolver {
         }
       }
       reachable = false;
+      // Phase 2 / P2-T4：传输/协议级失败（不可达/超时/HTTP 错误/非 JSON）累计熔断。
+      this.circuitBreaker.recordFailure();
       // 15.1 fault-injection：非 JSON 畸形 body（res.json 解析失败）→ 显式降级信号，
       // 绝不 crash；与"不可达"同走 UNAVAILABLE，但 fallbackReason 明确 malformed。
       if (err instanceof Error && /malformed/i.test(err.message)) {
@@ -310,7 +341,15 @@ export class CpSatSchedulingSolver {
         }
       }
       malformedResponse = true;
+      // Phase 2 / P2-T4：畸形响应同样累计熔断（worker 返回垃圾）。
+      this.circuitBreaker.recordFailure();
       response = null; // 视为无效响应 → 走下方 FALLBACK 分支
+    }
+
+    // Phase 2 / P2-T4：响应 well-formed（worker 正常应答，含 OPTIMAL/FEASIBLE/INFEASIBLE/TIMEOUT）
+    // → 复位熔断（worker 健康）。
+    if (response) {
+      this.circuitBreaker.recordSuccess();
     }
 
     // 成功且为最优/可行 → 采用 CP-SAT 结果。
