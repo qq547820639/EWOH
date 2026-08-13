@@ -25,6 +25,7 @@ import time
 from typing import Dict, List, Optional
 
 from .contract import SolverRequest, SolverResponse, SolverAssignmentResult
+from .objective import compute_unassigned_scale
 
 # 求解器版本标识（与 NestJS CpSatSchedulingSolver.CPSAT_VERSION 对齐）。
 # Phase 2 / P2-T3：OR-Tools 固定版本见同目录 requirements.txt（ortools==9.11.4210）。
@@ -416,6 +417,11 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
     w = request.weights
     terms: List[object] = []
 
+    # Phase 2：字典序目标——未分配覆盖（Level 0）严格支配所有软目标（Level 1+）。
+    # 用请求实际边界算出的整数 scale（替代魔法数 unassignedPenalty=1000），
+    # 避免软成本累加超过未分配惩罚导致漏派工。
+    unassigned_scale = compute_unassigned_scale(request)
+
     # A2 修复：未分配惩罚（每个可分配任务未分配时计入大惩罚）。
     # 缺此项时最小化目标的最优解 = 全部留空（presence 全 0，objective=0）——
     # 求解器"诚实"地什么都不做，部署后 OPTIMAL 却零派工。此项使分配优先于所有常规软目标。
@@ -424,7 +430,7 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
             continue
         missed = model.NewBoolVar(f"missed_{t.taskId}")
         model.Add(sum(presence[t.taskId].values()) == 1 - missed)
-        terms.append(w.unassignedPenalty * missed)
+        terms.append(unassigned_scale * missed)
 
     # lateness：max(0, end - due)。
     for t in request.tasks:
@@ -556,6 +562,7 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         solveDurationMs=dur_ms,
         objective=objective_val,
         objectiveBreakdown={
+            "unassigned": float(unassigned_scale * len(unassigned)),
             "lateness": float(w.lateness),
             "stationWait": float(w.stationWait),
             "travel": float(w.travel),

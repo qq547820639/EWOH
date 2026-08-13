@@ -1,0 +1,9 @@
+- [x] `objective.py` 提供 `OBJECTIVE_LEVELS` 与 `compute_unassigned_scale`（纯函数、无副作用）
+- [x] `compute_unassigned_scale` 返回 int 且严格支配软目标上界、不溢出 int64
+- [x] `solver.py` 目标构造改为「未分配 scale 支配 + 软项求和」
+- [x] 软目标权重（lateness/stationWait/travel/churn）语义不变
+- [x] 硬约束（SAFETY_BLOCK/容量/no-overlap/禁入区/技能证书）保持硬约束语义
+- [x] 响应 `objectiveBreakdown` 增加 `unassigned` 项
+- [x] `test_objective_lexicographic.py` 全绿（无需 ortools，5 用例）
+- [x] `test_cpsat_contract.py` 不回归
+- [x] `npm run openapi:no-drift` 通过
