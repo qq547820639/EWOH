@@ -1,0 +1,10 @@
+- [x] `SchedulingConstraintIR` 类型已定义（`shared/scheduler.ts`），含 `hardness/scope/params/reasonCode`
+- [x] `constraint-compiler.ts` 提供 `classifyHardness` 与 `compileConstraints`（纯函数、无副作用）
+- [x] 8 条 parity 关键约束（REQUIRED_SKILL ALL/ANY、REQUIRED_CERTIFICATION、SAFETY_BLOCK、PREDECESSOR、STATION_CAPACITY、mustFinishBy 硬、due 软）被归一化
+- [x] EXCLUDED_RESOURCE 重分类为 HARD（与 SUPPORTED_HARD_CONSTRAINTS 一致）
+- [x] `reasonCode` 与 `eligibility.service.ts` 的 reason key 对齐
+- [x] `constraint-parity.spec.ts` 数据驱动测试矩阵全绿（14 用例）
+- [x] 求解 run 编排将 IR 挂到 DecisionTrace（additive，求解行为不变）
+- [x] scheduler jest 回归通过（92 套件 / 728 tests）
+- [x] `tsc -b --force` 0 错误
+- [x] `npm run openapi:no-drift` 通过

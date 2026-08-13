@@ -33,6 +33,10 @@ import { SolverService } from './solver.service';
 import { PlanService } from './plan.service';
 import { ConstraintLoaderService } from './constraint-loader.service';
 import { toOrgContext } from './scheduler-run-context';
+import {
+  compileConstraints,
+  type ConstraintCompileTask,
+} from './constraint-compiler';
 
 @Injectable()
 export class SchedulerRunOrchestrator {
@@ -114,6 +118,31 @@ export class SchedulerRunOrchestrator {
     const profileSuffix = this.resolveObjectiveProfileSuffix(body.objectiveProfile);
     if (profileSuffix) {
       plans = plans.filter((p) => p.planId === `${run.runId}${profileSuffix}`);
+    }
+
+    // P1-1：统一约束 IR（仅审计/解释；additive，不参与求解决策，不改动求解结果）。
+    // 把本次 run 的约束语义归一化为 SchedulingConstraintIR[]，挂到每个 assignment 的
+    // DecisionTrace（可选字段，向后兼容；缺省不影响现有序列化）。
+    const tasksById = new Map<string, ConstraintCompileTask>(
+      snapshot.tasks.map((t) => [
+        t.id,
+        {
+          requiredSkills: t.requiredSkills ?? [],
+          skillMatchMode: t.skillMatchMode,
+          requiredCertifications: t.requiredCertifications ?? [],
+          mustFinishByMs: t.latestFinishMs ?? null,
+          dueMs: t.dueAtMs ?? null,
+          predIds: t.predecessorIds ?? [],
+        },
+      ]),
+    );
+    const constraintIR = compileConstraints(constraints, { tasksById });
+    for (const plan of plans) {
+      for (const assignment of plan.assignments) {
+        if (assignment.decisionTrace) {
+          assignment.decisionTrace.constraintIR = constraintIR;
+        }
+      }
     }
 
     // P0-6：mode=SHADOW → 仅评估，不写入 ewoh_schedule_plan 正式表；

@@ -190,6 +190,73 @@ export interface SchedulingConstraint {
   deactivatedBy?: string | null;
 }
 
+// ============================================================================
+// Command Map 增量（Phase 1 / P1-1）：统一约束 IR（归一化/审计表示）
+// ============================================================================
+
+/** 约束作用域（IR 归一化资源维度）。 */
+export type ConstraintScope =
+  | 'person'
+  | 'device'
+  | 'station'
+  | 'task'
+  | 'zone'
+  | 'global';
+
+/**
+ * 统一约束 IR 的 type。
+ * - 显式约束：SchedulingHardConstraintType | SchedulingSoftConstraintType；
+ * - 派生截止约束（由任务/世界状态推导，非用户显式约束）：'MUST_FINISH_BY' / 'DUE'。
+ *   这两个派生伪类型不进入 SchedulingConstraint 联合（不改变任何契约/OpenAPI/DB 语义）。
+ */
+export type SchedulingConstraintIRType =
+  | SchedulingHardConstraintType
+  | SchedulingSoftConstraintType
+  | 'MUST_FINISH_BY'
+  | 'DUE';
+
+/**
+ * 归一化约束参数（关键字段显式声明 + 索引签名向后兼容）。
+ * IR 无独立 taskId/personId/deviceId/stationId/zoneId 字段，资源标识统一放入 params。
+ */
+export interface ConstraintParams {
+  /** REQUIRED_SKILL：ALL=全部必需 / ANY=任一即可（缺省 ALL）。 */
+  skillMatchMode?: 'ALL' | 'ANY';
+  requiredSkills?: string[];
+  requiredCertifications?: string[];
+  requiredDeviceCapabilities?: string[];
+  requiredStationCapabilities?: string[];
+  candidateStations?: string[];
+  /** 硬性最晚完成时间（epoch ms；违反则任务不可分配）。 */
+  mustFinishByMs?: number;
+  /** 软截止（epoch ms；超时仅 lateness 罚）。 */
+  dueMs?: number;
+  /** 前置任务 id 列表。 */
+  predIds?: string[];
+  /** 工位容量（同时段任务数上限）。 */
+  capacity?: number;
+  [key: string]: unknown;
+}
+
+/**
+ * 统一约束 IR（约束语义单一事实源；纯归一化/审计表示，不参与求解决策）。
+ * hardness 由 SUPPORTED_HARD_CONSTRAINTS / SUPPORTED_SOFT_CONSTRAINTS 唯一确定
+ * （EXCLUDED_RESOURCE 重分类为 HARD）。
+ */
+export interface SchedulingConstraintIR {
+  id?: string;
+  type: SchedulingConstraintIRType;
+  hardness: 'HARD' | 'SOFT';
+  scope: ConstraintScope;
+  params: Record<string, unknown>;
+  /** 仅 SOFT 使用（如 due 软约束的 lateness 罚）。 */
+  penalty?: number;
+  /** derived=从任务/世界状态推导（非用户显式约束）。 */
+  source: 'manual' | 'system' | 'auto' | 'derived';
+  /** 与 eligibility 的 reason key 对齐；软约束用类型名小写蛇形。 */
+  reasonCode: string;
+}
+
 export type PlanOverrideKind =
   | 'LOCK_PERSON'
   | 'LOCK_DEVICE'
@@ -989,6 +1056,8 @@ export interface DecisionTrace {
     queueLength: number;
     changeover: boolean;
   };
+  /** 本次求解执行的约束统一 IR（P1-1；审计/解释用，可选，向后兼容）。 */
+  constraintIR?: SchedulingConstraintIR[];
 }
 
 export interface SchedulingPlanMetrics {
