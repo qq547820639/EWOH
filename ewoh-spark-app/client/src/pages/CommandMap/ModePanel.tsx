@@ -106,7 +106,7 @@ const ModePanel = ({
               className={cn(
                 'flex-1 py-1.5 rounded-md text-xs font-medium transition-colors',
                 level === l
-                  ? 'bg-[hsl(221_83%_53%)] text-white'
+                  ? 'bg-semantic-info text-white'
                   : 'bg-white/5 text-white/60 hover:bg-white/10',
               )}
             >

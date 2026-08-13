@@ -20,9 +20,12 @@
 跨工厂路径规划、联邦学习等留待后续迭代）。纯 Python 标准库实现。
 """
 
+import logging
 from dataclasses import dataclass, field
 
 from edge_platform.spatial import new_id, now_iso
+
+logger = logging.getLogger(__name__)
 
 # 工厂节点状态
 FACTORY_ACTIVE = "ACTIVE"
@@ -37,6 +40,10 @@ LINK_STANDBY_CAPACITY = "STANDBY_CAPACITY"  # 备用产能
 
 # 跨工厂调度 stub 状态（V2.0 未实现完整逻辑）
 CROSS_FACTORY_STUB = "STUB"
+
+# 跨工厂调度 stub：仅 V2.0 骨架契约，禁止用于生产派工（fail-closed 门禁）。
+# 该开关恒为 False；若生产路径试图将其置 True 启用，调度方法内的运行时断言会拦截。
+CROSS_FACTORY_PRODUCTION_READY = False
 
 # 联邦层默认保留策略：只保留聚合数据
 FEDERATION_RETENTION_DEFAULT = "aggregated-only"
@@ -391,11 +398,22 @@ class MultiFactoryRegistry:
 
 
 class CrossFactorySchedulerStub:
-    """跨工厂调度 stub（V2.0 规划级骨架，不实现完整逻辑）。
+    """跨工厂调度 stub（仅 V2.0 骨架契约，禁止用于生产派工）。
 
-    聚合各本地 Scheduler.propose() 结果，标注 cross_factory=true、status=STUB。
-    安全不变量 3：跨工厂调度只生成建议，不自动执行；实际执行须经人工确认后由本地调度器完成。
+    本类不是可用的跨工厂调度器：它只聚合各本地 Scheduler.propose() 结果并标注
+    cross_factory=true、status=STUB，**绝不**产出可执行派工方案，也绝不自动执行
+    （安全不变量 3：跨工厂调度只生成建议，需人工确认后由本地调度器执行）。
+
+    fail-closed 门禁：
+    - `PRODUCTION_READY` 恒为 False；调度方法 `propose_cross_factory` 内含运行时
+      断言，若被误用于生产派工（将开关置 True）会直接失败并记录日志。
+    - 每次调用 `propose_cross_factory` 都会打印 warning 日志，明确本方法为占位，
+      仅返回 STUB 建议。
+    - `validate_isolation` 仅为只读结构性校验（数据隔离检查），不产出调度结果。
     """
+
+    # 仅 V2.0 骨架契约，禁止用于生产派工（fail-closed 门禁）。
+    PRODUCTION_READY = CROSS_FACTORY_PRODUCTION_READY
 
     def __init__(self, registry, local_schedulers):
         """
@@ -413,12 +431,23 @@ class CrossFactorySchedulerStub:
         return record
 
     def propose_cross_factory(self, task, candidate_factories, ctx=None):
-        """跨工厂调度建议（骨架）。
+        """跨工厂调度建议（仅 V2.0 骨架契约，禁止用于生产派工）。
 
         骨架逻辑：列出可参与的 ACTIVE 工厂，调用各本地 Scheduler.propose()，聚合候选。
         每条候选标注 cross_factory=true、status=STUB（V2.0 未实现完整跨工厂优化逻辑）。
         返回聚合的候选列表（仅建议，不自动执行）。
+
+        fail-closed：本方法含运行时断言（PRODUCTION_READY 恒为 False），被误用于
+        生产派工时直接失败；每次调用打印 warning 日志，绝不静默产出看似可执行的调度结果。
         """
+        assert self.PRODUCTION_READY is False, (
+            "CrossFactorySchedulerStub 仅 V2.0 骨架契约，禁止用于生产派工"
+        )
+        logger.warning(
+            "CrossFactorySchedulerStub.propose_cross_factory 被调用："
+            "仅 V2.0 骨架契约，禁止用于生产派工，返回 status=STUB 建议（不自动执行）"
+        )
+
         ctx = ctx or {}
         persons = ctx.get("persons", [])
         devices = ctx.get("devices", [])

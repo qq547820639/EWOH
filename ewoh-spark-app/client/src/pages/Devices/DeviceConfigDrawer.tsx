@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -14,6 +14,7 @@ import {
   Unlink,
   Save,
   X,
+  History,
   type LucideIcon,
 } from 'lucide-react';
 import type {
@@ -51,9 +52,12 @@ import {
   getDeviceBindings,
   bindDevice,
   unbindDevice,
+  getTelemetry,
 } from '@client/src/api/dashboard';
 import { getHierarchy, getEntities } from '@client/src/api/spatial';
 import { queryKeys } from '@client/src/hooks/queryKeys';
+import Timeline from '@client/src/components/Timeline';
+import { normalizeTimelineEvent } from '@client/src/lib/timelineModel';
 
 export interface DeviceConfigDrawerProps {
   open: boolean;
@@ -216,6 +220,42 @@ const DeviceConfigDrawer = ({
     queryFn: getHierarchy,
     enabled: isEdit && open && showHierarchyPicker,
   });
+
+  // ===== 状态历史 / 统一时间线（仅 edit 模式，复用现有遥测接口） =====
+  const telemetryQuery = useQuery({
+    queryKey: ['device-telemetry', device?.deviceId],
+    queryFn: () => getTelemetry(device!.deviceId),
+    enabled: isEdit && open && !!device?.deviceId,
+    refetchOnWindowFocus: false,
+  });
+
+  const timelineEvents = useMemo(
+    () =>
+      (telemetryQuery.data ?? []).map((t, index) =>
+        normalizeTimelineEvent({
+          id: t.id || `${device?.deviceId ?? 'device'}-telemetry-${index}`,
+          timestamp: t.ts,
+          actor: 'device',
+          source: 'device',
+          objectType: 'device',
+          objectId: device?.deviceId,
+          action: 'telemetry',
+          previousState: null,
+          currentState:
+            t.qualityStatus ??
+            (t.batteryPct != null ? `电量 ${t.batteryPct}%` : null),
+          severity: t.qualityStatus === 'fault' ? 'L2' : undefined,
+          title: `设备遥测 · ${t.deviceId}`,
+          status: t.qualityStatus ?? undefined,
+          meta: {
+            batteryPct: t.batteryPct,
+            loadScore: t.loadScore,
+            fatigueTrend: t.fatigueTrend,
+          },
+        }),
+      ),
+    [telemetryQuery.data, device?.deviceId],
+  );
 
   const invalidateBindingsAndDevices = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.deviceBindings(device?.deviceId) });
@@ -558,6 +598,32 @@ const DeviceConfigDrawer = ({
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+            </>
+          )}
+
+          {/* ===== 状态历史 / 时间线区块（仅 edit 模式） ===== */}
+          {isEdit && (
+            <>
+              <Separator />
+              <div className="space-y-3">
+                <div className="flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-[hsl(218_10%_42%)]" />
+                  <span className="text-sm font-semibold text-[hsl(220_14%_14%)]">
+                    状态历史 / 时间线
+                  </span>
+                </div>
+                {telemetryQuery.isLoading ? (
+                  <div className="py-4 text-center text-xs text-[hsl(218_10%_42%)]">
+                    加载中...
+                  </div>
+                ) : timelineEvents.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-[hsl(220_14%_89%)] py-4 text-center text-xs text-[hsl(218_10%_42%)]">
+                    暂无历史记录
+                  </div>
+                ) : (
+                  <Timeline events={timelineEvents} />
+                )}
               </div>
             </>
           )}

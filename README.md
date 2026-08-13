@@ -80,7 +80,7 @@ EWOH 定位为**只读监督、风险分析与受控工作流系统**：平台�
 | 预测/策略影子评估（predictionShadow） | 是 | 是 | 否 | 否 | 否 | 是 |
 | Scheduler V2 RLS 多租户（schedulerRls） | 是 | 是 | 是 | 否 | 是 | 是 |
 | Command Map 指挥地图（commandMap） | 是 | 是 | 是 | 否 | 否 | 是 |
-| 智能调度驾驶舱（decisionCockpit） | 否 | 否 | 否 | 否 | 否 | 否 |
+| 智能调度驾驶舱（decisionCockpit） | 是 | 是 | 是 | 否 | 否 | 是 |
 | 边缘平台（edgeServer） | 是 | 是 | 是 | 否 | 是 | 是 |
 | 飞书侧车（feishuSidecar） | 是 | 是 | 是 | 否 | 否 | 是 |
 | 运行时门禁（runtimeGates） | 是 | 是 | 是 | 否 | 是 | 是 |

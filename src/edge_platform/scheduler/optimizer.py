@@ -10,6 +10,7 @@
 纯 Python 标准库实现；不依赖 OR-tools / pulp 等求解器。
 """
 
+import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 
@@ -23,6 +24,9 @@ from .models import (
     CandidateAssignment,
     SchedulePlan,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_ts(ts, default=None):
@@ -300,11 +304,22 @@ class CpSatOptimizer(Optimizer):
 
     docstring 说明：本类可扩展接入 OR-Tools CP-SAT（import ortools 失败时回退贪心），
     但当前实现仅返回 GreedyOptimizer 的服务结果，绝不破坏部署。
+
+    明确标注：**CP-SAT 优化器为占位，当前 solve() 回退 GreedyOptimizer**，
+    并非真正的 CP-SAT 求解；每次回退会打印 warning 日志，避免误以为已启用 CP-SAT。
     """
 
     def __init__(self, greedy):
         self.greedy = greedy
 
     def solve(self, world_state, tasks, candidates, policy):
-        """当前实现回退到贪心求解；扩展 CP-SAT 时在此替换。"""
+        """当前实现回退到贪心求解；扩展 CP-SAT 时在此替换。
+
+        CP-SAT 优化器为占位，此处显式回退 GreedyOptimizer 并记录 warning 日志，
+        绝不静默产出看似 CP-SAT 求解的结果。
+        """
+        logger.warning(
+            "CpSatOptimizer 为占位实现，当前 solve() 回退 GreedyOptimizer；"
+            "尚未接入 OR-Tools CP-SAT 求解"
+        )
         return self.greedy.solve(world_state, tasks, candidates, policy)

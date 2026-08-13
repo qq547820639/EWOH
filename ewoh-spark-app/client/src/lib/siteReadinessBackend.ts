@@ -8,8 +8,8 @@ import { axiosForBackend } from './http';
  * 该接口要求 mappingId 已注册；若本地映射尚未注册或后端报错，调用方应展示
  * 错误并回退到本地示例 Dry Run（见 siteReadinessMapping.ts，标注"示例，非真实映射"）。
  *
- * TODO(后端): 若希望向导内的本地映射直接 dry-run，后端需提供按规则集执行的
- * dry-run 接口（当前仅支持按已注册 mappingId 执行）。
+ * TODO(后端)：待后端/现场接入，当前未启用。若希望向导内的本地映射直接 dry-run，
+ * 后端需提供按规则集执行的 dry-run 接口（当前仅支持按已注册 mappingId 执行）。
  */
 
 export interface BackendDryRunSample {

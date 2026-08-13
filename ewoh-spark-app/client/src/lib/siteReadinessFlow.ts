@@ -205,9 +205,9 @@ export const BACKEND_INFRA_ITEMS: Array<{
   label: string;
   note: string;
 }> = [
-  { id: 'infra.db', label: '数据库（PostgreSQL）健康', note: '由后端 /health/ready 提供，待现场确认' },
-  { id: 'infra.k8s', label: 'Kubernetes 集群', note: '后端/现场能力，dashboard 待接入' },
-  { id: 'infra.helm', label: 'Helm 部署', note: '后端/现场能力，暂以占位展示' },
-  { id: 'infra.storage', label: '对象存储（S3）', note: '后端/现场能力，暂以占位展示' },
-  { id: 'infra.device', label: '真实设备（扫码枪/摄像头/PLC）', note: '需要真实设备，现场验证' },
+  { id: 'infra.db', label: '数据库（PostgreSQL）健康', note: '由后端 /health/ready 提供；待后端/现场接入，当前未启用' },
+  { id: 'infra.k8s', label: 'Kubernetes 集群', note: '待后端/现场接入，当前未启用（dashboard 未接入）' },
+  { id: 'infra.helm', label: 'Helm 部署', note: '待后端/现场接入，当前未启用（暂以占位展示）' },
+  { id: 'infra.storage', label: '对象存储（S3）', note: '待后端/现场接入，当前未启用（暂以占位展示）' },
+  { id: 'infra.device', label: '真实设备（扫码枪/摄像头/PLC）', note: '需真实设备现场验证；待现场接入，当前未启用' },
 ];

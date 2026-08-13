@@ -229,7 +229,7 @@ const MapViewport = ({
             aria-pressed={level === l}
             aria-label={`切换到${l}层级`}
             className={`h-7 min-w-7 rounded px-1 text-[10px] font-medium ${
-              level === l ? 'bg-[hsl(221_83%_53%)] text-white' : 'text-white/60'
+              level === l ? 'bg-semantic-info text-white' : 'text-white/60'
             }`}
           >
             {l}

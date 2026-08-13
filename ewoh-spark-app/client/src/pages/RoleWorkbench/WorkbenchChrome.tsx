@@ -153,7 +153,7 @@ export function WorkbenchChrome({
             <button
               type="button"
               onClick={onClearFilters}
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-[hsl(221_83%_53%)] hover:underline"
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-semantic-info hover:underline"
             >
               <FilterX className="size-3" />
               清除
@@ -182,7 +182,7 @@ export function WorkbenchChrome({
             aria-pressed={inputMode === mode}
             className={`rounded-md px-3 py-2 text-xs font-medium ${
               inputMode === mode
-                ? 'bg-[hsl(221_83%_53%)] text-white'
+                ? 'bg-semantic-info text-white'
                 : 'text-[hsl(218_10%_42%)] hover:bg-[hsl(220_14%_96%)]'
             }`}
             style={{ minHeight: targetSize }}
@@ -214,7 +214,7 @@ export function WorkbenchChrome({
             aria-pressed={role === item.key}
             className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium ${
               role === item.key
-                ? 'bg-[hsl(221_83%_53%)] text-white'
+                ? 'bg-semantic-info text-white'
                 : 'text-[hsl(218_10%_42%)] hover:bg-[hsl(220_14%_96%)]'
             }`}
           >

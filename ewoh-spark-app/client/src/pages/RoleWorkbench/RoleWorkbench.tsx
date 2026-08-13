@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { toast } from 'sonner';
+import { CircleHelp, Factory, Sparkles } from 'lucide-react';
 import {
   createWorkbenchExport,
   getRoleWorkbench,
@@ -12,6 +13,8 @@ import {
   type WorkbenchView,
 } from '../../api/operations';
 import { getAuthUser } from '../../lib/auth';
+import { ONBOARDING_VERSION, shouldShowOnboarding } from '../../lib/onboardingState';
+import { OnboardingQuickStart } from '../../components/OnboardingQuickStart';
 import { queryKeys } from '../../hooks/queryKeys';
 import QueryState from '../../components/QueryState';
 import { getRoleSchema } from './roleSchema';
@@ -85,6 +88,11 @@ export default function RoleWorkbench(): React.ReactElement {
   }, [searchParams, authRoles]);
 
   const [debugMode, setDebugMode] = useState(false);
+  // 角色化 Quick Start：新用户（当前版本未跳过/未完成）展示入口，点击展开引导。
+  const [showQuickStart, setShowQuickStart] = useState(false);
+  const showQuickStartEntry = personId
+    ? shouldShowOnboarding(personId, ONBOARDING_VERSION)
+    : false;
   // 多输入方式：默认由平台能力推断（触摸/键盘），管理员可切换单手/手套以放大触控目标。
   const [inputMode, setInputMode] = useState<WorkbenchInputMode>(() =>
     inferInputMode({
@@ -480,6 +488,50 @@ export default function RoleWorkbench(): React.ReactElement {
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
+      {showQuickStartEntry && (
+        <section className="rounded-lg border border-blue-100 bg-blue-50/60 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <CircleHelp className="mt-0.5 size-5 shrink-0 text-semantic-info" />
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-[hsl(220_14%_14%)]">
+                  角色化快速上手
+                </h2>
+                <p className="mt-1 text-xs text-[hsl(218_10%_42%)]">
+                  根据你的角色一步步接入设备、发布模板、安装场景并跑通首个任务。
+                </p>
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setShowQuickStart(true)}
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-semantic-info px-4 text-sm font-medium text-white disabled:opacity-50"
+              >
+                <Sparkles className="size-4" />
+                开始引导
+              </button>
+              <Link
+                to="/scale"
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-4 text-sm font-medium text-[hsl(220_14%_14%)]"
+              >
+                <Factory className="size-4" />
+                演示工厂上线
+              </Link>
+            </div>
+          </div>
+          {showQuickStart && personId && (
+            <div className="mt-3">
+              <OnboardingQuickStart
+                userId={personId}
+                roles={authRoles}
+                onClose={() => setShowQuickStart(false)}
+              />
+            </div>
+          )}
+        </section>
+      )}
+
       <WorkbenchChrome
         schema={schema}
         role={role}

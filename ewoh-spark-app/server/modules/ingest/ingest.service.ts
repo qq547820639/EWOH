@@ -604,8 +604,11 @@ export class IngestService {
         .where(eq(ewohSpatialEntity.entityId, entityId))
         .limit(1);
       return !!row;
-    } catch {
-      return false;
+    } catch (error) {
+      this.logger.warn(
+        `entity 存在性查询失败（fail-closed 拒绝写入）entityId=${entityId}：${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw error;
     }
   }
 
@@ -618,8 +621,11 @@ export class IngestService {
         .where(eq(ewohTelemetry.rawRef, rawRef))
         .limit(1);
       return !!row;
-    } catch {
-      return false;
+    } catch (error) {
+      this.logger.warn(
+        `raw_ref 幂等去重查询失败（fail-closed 拒绝写入）rawRef=${rawRef}：${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw error;
     }
   }
 
@@ -718,8 +724,11 @@ export class IngestService {
         existing?.online,
         newFaultCode,
       );
-    } catch (_) {
+    } catch (error) {
       // 查询失败不阻断（设备可能首次接入，无既有行 → 不算转换）
+      this.logger.warn(
+        `device ${deviceId} fault-state 查询失败（不阻断，视为无转换）：${error instanceof Error ? error.message : String(error)}`,
+      );
     }
     if (wasNormal) {
       this.logger.warn(

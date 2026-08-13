@@ -212,7 +212,9 @@ export function DecisionCockpit({
         replanImpact,
         planDiff: planDiff ?? null,
         taskDiff,
-        feedback: null, // Command Map 页暂不拉取 SchedulingFeedback（无该端点数据流）
+        // CommandMap 上下文未接入 SchedulingFeedback 数据流（无该端点数据流）；
+        // 不再静默透传 null 渲染为空，改为下方显式空态「暂无调度反馈数据」。
+        feedback: null,
         unchangedTaskCount: diffCounts.unchanged,
         availableActions,
       }),
@@ -326,6 +328,20 @@ export function DecisionCockpit({
               </div>
             </div>
           ))}
+
+          {/* 调度反馈：CommandMap 未接入 SchedulingFeedback 数据流，显式空态（不静默透传 null）。 */}
+          <div
+            className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5"
+            data-section="SCHEDULING_FEEDBACK"
+          >
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-white/60">
+              调度反馈
+            </div>
+            <div className="flex items-baseline gap-2 text-[10px]">
+              <span className="w-24 shrink-0 text-white/45">执行反馈</span>
+              <span className="min-w-0 flex-1 text-white/50">暂无调度反馈数据</span>
+            </div>
+          </div>
 
           {/* ACTIONS：复用 CommandMap 既有行为 */}
           {availableActions.length > 0 && (
