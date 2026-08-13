@@ -65,7 +65,9 @@ export class TriggerService {
     const runRow = await this.requestDatabaseContext.runInTransaction(
       buildGucSettings(ctx),
       async () => {
-        // 1) 冷却去抖：同 (orgId, triggerType) 最近一次触发在窗口内则合并。
+        // 1) 冷却去抖：同 (orgId, triggerType, entityId) 最近一次触发在窗口内则合并。
+        // 实体感知（P1：entity-aware trigger debounce）——与 triggerKey 的 entityId 维度一致：
+        // 不同实体的同类型触发不再互相抑制；entityId 为空时退化为 orgId+triggerType 去抖（'ALL'）。
         const recent = await this.db
           .select()
           .from(ewohReplanTrigger)
@@ -73,6 +75,7 @@ export class TriggerService {
             and(
               eq(ewohReplanTrigger.orgId, orgKey),
               eq(ewohReplanTrigger.triggerType, triggerType),
+              eq(ewohReplanTrigger.entityId, entityId ?? 'ALL'),
             ),
           )
           .orderBy(desc(ewohReplanTrigger.createdAt))

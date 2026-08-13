@@ -1,0 +1,7 @@
+- [x] 冷却去抖查询追加了 `entityId` 维度（与 `triggerKey` 的 entityId 一致）
+- [x] 幂等去重（`triggerKey`）语义保持不变
+- [x] 无实体触发（`entityId=null`）退化为 orgId+triggerType 去抖
+- [x] 回归测试覆盖：同实体去抖 / 不同实体不去抖 / 无实体退化
+- [x] scheduler jest 回归通过（93 套件 / 731 tests）
+- [x] `tsc -b --force` 0 错误
+- [x] `npm run openapi:no-drift` 通过
