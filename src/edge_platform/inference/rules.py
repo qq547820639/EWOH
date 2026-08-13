@@ -241,7 +241,7 @@ class RuleEngine:
 
         # ---- Task 21 新增规则 ----
         # LOW_BATTERY：battery_percent < low_battery_pct 持续 low_battery_sec
-        battery = _f(tel.get("battery_percent"))
+        battery = _f(tel.get("battery_pct", tel.get("battery_percent", tel.get("battery_level"))))
         lb_enter = battery is not None and battery < self.cfg["low_battery_pct"]
         lb_exit = battery is not None and battery < self.cfg["low_battery_exit_pct"]
         drafts += self._track(

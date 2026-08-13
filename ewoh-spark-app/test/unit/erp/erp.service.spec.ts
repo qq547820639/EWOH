@@ -1,9 +1,5 @@
 import { ErpService } from '../../../server/modules/erp/erp.service';
-import {
-  ewohEvent,
-  ewohScheduleTask,
-  ewohScheduleTaskStep,
-} from '@server/database/schema';
+import { ewohEvent } from '@server/database/schema';
 
 function createInsertMock(returnRows: unknown[] = []) {
   const entries: Array<{ table: unknown; rows: unknown }> = [];
@@ -17,7 +13,7 @@ function createInsertMock(returnRows: unknown[] = []) {
 }
 
 describe('ErpService inbound orders', () => {
-  it('creates a work order and ERP order event with audit', async () => {
+  it('delegates work order creation to MesService and emits an ERP order event', async () => {
     const orderRow = {
       eventId: 'ERP-O-1',
       eventCode: 'ERP_ORDER',
@@ -26,9 +22,16 @@ describe('ErpService inbound orders', () => {
     const { insert, entries } = createInsertMock([orderRow]);
     const execute = jest.fn().mockResolvedValue([]);
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const writeScheduleOrder = jest.fn().mockResolvedValue({
+      scheduleTaskId: 'WO-ERP-1',
+      title: 'ERP订单 SO-100',
+      status: 'draft',
+    });
+    const mesService = { writeScheduleOrder };
     const service = new ErpService(
       { execute, insert } as never,
       audit as never,
+      mesService as never,
     );
 
     const result = await service.receiveOrder(
@@ -43,11 +46,26 @@ describe('ErpService inbound orders', () => {
 
     expect(result.duplicate).toBe(false);
     expect(result.order.eventId).toBe('ERP-O-1');
-    expect(entries.map((entry) => entry.table)).toEqual([
-      ewohScheduleTask,
-      ewohScheduleTaskStep,
-      ewohEvent,
-    ]);
+    expect(result.workOrderId).toMatch(/^WO-ERP-/);
+    // ERP 不再直接触碰调度表：只会直接写 ewohEvent。
+    expect(entries.map((entry) => entry.table)).toEqual([ewohEvent]);
+    expect(writeScheduleOrder).toHaveBeenCalledTimes(1);
+    expect(writeScheduleOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'erp',
+        status: 'draft',
+        title: 'ERP订单 SO-100',
+        scheduleTaskId: expect.stringMatching(/^WO-ERP-/),
+        description: expect.stringContaining('"erp":true'),
+      }),
+      [
+        expect.objectContaining({
+          name: 'ERP生产',
+          status: 'pending',
+          stepId: expect.stringMatching(/-S1$/),
+        }),
+      ],
+    );
     expect(audit.appendAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'erp.order.receive' }),
     );
@@ -60,6 +78,7 @@ describe('ErpService inbound orders', () => {
     const service = new ErpService(
       { execute, insert: jest.fn() } as never,
       audit as never,
+      {} as never,
     );
 
     const result = await service.receiveOrder({
@@ -106,7 +125,7 @@ describe('ErpService outbound queue', () => {
       })),
     };
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
-    const service = new ErpService(db as never, audit as never);
+    const service = new ErpService(db as never, audit as never, {} as never);
 
     const queued = await service.receiveOutbound({
       outboundId: 'OB-1',
@@ -137,6 +156,7 @@ describe('ErpService outbound queue', () => {
     const service = new ErpService(
       db as never,
       { appendAuditLog: jest.fn() } as never,
+      {} as never,
     );
     await expect(
       service.ackOutbound('missing', { success: true }),
@@ -164,6 +184,7 @@ describe('ErpService reconcile', () => {
     const service = new ErpService(
       { select } as never,
       { appendAuditLog: jest.fn() } as never,
+      {} as never,
     );
 
     const report = await service.reconcile();

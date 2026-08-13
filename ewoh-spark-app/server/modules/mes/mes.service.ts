@@ -209,27 +209,6 @@ export class MesService {
     }
     const orderId = body.orderId?.trim() || `WO-${randomUUID().slice(0, 8)}`;
     const now = new Date();
-    const [row] = await this.db
-      .insert(ewohScheduleTask)
-      .values({
-        scheduleTaskId: orderId,
-        title: body.title.trim(),
-        description: JSON.stringify({
-          productCode: body.productCode ?? null,
-          orderQty: body.orderQty ?? null,
-          batchNo: body.batchNo ?? null,
-          mes: true,
-        }),
-        status: 'draft',
-        priority: body.priority ?? 'medium',
-        source: 'mes',
-        planStart: body.planStart ? new Date(body.planStart) : null,
-        planEnd: body.planEnd ? new Date(body.planEnd) : null,
-        isSimulation: false,
-        progress: 0,
-      })
-      .returning();
-
     const steps = body.steps.map((step, index) => ({
       stepId: `${orderId}-S${index + 1}`,
       scheduleTaskId: orderId,
@@ -255,9 +234,26 @@ export class MesService {
           }
         : null,
     }));
-    if (steps.length > 0) {
-      await this.db.insert(ewohScheduleTaskStep).values(steps);
-    }
+    const row = await this.writeScheduleOrder(
+      {
+        scheduleTaskId: orderId,
+        title: body.title.trim(),
+        description: JSON.stringify({
+          productCode: body.productCode ?? null,
+          orderQty: body.orderQty ?? null,
+          batchNo: body.batchNo ?? null,
+          mes: true,
+        }),
+        status: 'draft',
+        priority: body.priority ?? 'medium',
+        source: 'mes',
+        planStart: body.planStart ? new Date(body.planStart) : null,
+        planEnd: body.planEnd ? new Date(body.planEnd) : null,
+        isSimulation: false,
+        progress: 0,
+      },
+      steps,
+    );
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
       orgId: actor?.primaryOrgId ?? '',
@@ -273,6 +269,25 @@ export class MesService {
       },
     });
     return this.getWorkOrder(orderId);
+  }
+
+  /**
+   * Canonical write path for ewoh_schedule_task + ewoh_schedule_task_step.
+   * MES 与 ERP 共用此入口，避免双方各自直写调度表；调用方各自保留自己的
+   * source、校验与审计语义。
+   */
+  async writeScheduleOrder(
+    task: typeof ewohScheduleTask.$inferInsert,
+    steps: typeof ewohScheduleTaskStep.$inferInsert[],
+  ) {
+    const [row] = await this.db
+      .insert(ewohScheduleTask)
+      .values(task)
+      .returning();
+    if (steps.length > 0) {
+      await this.db.insert(ewohScheduleTaskStep).values(steps);
+    }
+    return row;
   }
 
   async getStep(stepId: string) {

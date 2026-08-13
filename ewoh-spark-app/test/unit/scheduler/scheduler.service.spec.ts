@@ -227,7 +227,7 @@ describe('SchedulerService generatePlans（P1-SSOT：委托 V2 createRun，不�
       }),
     };
     const worldState = {
-      buildSnapshot: jest.fn().mockResolvedValue({ snapshotVersion: 'WS-1' }),
+      buildSnapshot: jest.fn().mockResolvedValue({ snapshotVersion: 'WS-1', tasks: [] }),
     };
     const solver = {
       solveVariants: jest.fn().mockResolvedValue([

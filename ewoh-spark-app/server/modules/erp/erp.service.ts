@@ -11,9 +11,9 @@ import { randomUUID } from 'node:crypto';
 import {
   ewohEvent,
   ewohScheduleTask,
-  ewohScheduleTaskStep,
 } from '@server/database/schema';
 import { AuditService } from '../shared/audit.service';
+import { MesService } from '../mes/mes.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
 const ERP_ORDER = 'ERP_ORDER';
@@ -24,6 +24,7 @@ export class ErpService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly auditService: AuditService,
+    private readonly mesService: MesService,
   ) {}
 
   async receiveOrder(
@@ -56,31 +57,35 @@ export class ErpService {
 
     const workOrderId = `WO-ERP-${randomUUID().slice(0, 8)}`;
     const now = new Date();
-    await this.db.insert(ewohScheduleTask).values({
-      scheduleTaskId: workOrderId,
-      title: `ERP订单 ${body.externalOrderId}`,
-      description: JSON.stringify({
-        externalOrderId: body.externalOrderId,
-        productCode: body.productCode,
-        quantity,
-        bom: body.bom ?? [],
-        erp: true,
-      }),
-      status: 'draft',
-      priority: 'high',
-      source: 'erp',
-      planEnd: body.dueDate ? new Date(body.dueDate) : null,
-      isSimulation: false,
-      progress: 0,
-    });
-    await this.db.insert(ewohScheduleTaskStep).values({
-      stepId: `${workOrderId}-S1`,
-      scheduleTaskId: workOrderId,
-      stepNo: 1,
-      name: 'ERP生产',
-      status: 'pending',
-      progress: 0,
-    });
+    await this.mesService.writeScheduleOrder(
+      {
+        scheduleTaskId: workOrderId,
+        title: `ERP订单 ${body.externalOrderId}`,
+        description: JSON.stringify({
+          externalOrderId: body.externalOrderId,
+          productCode: body.productCode,
+          quantity,
+          bom: body.bom ?? [],
+          erp: true,
+        }),
+        status: 'draft',
+        priority: 'high',
+        source: 'erp',
+        planEnd: body.dueDate ? new Date(body.dueDate) : null,
+        isSimulation: false,
+        progress: 0,
+      },
+      [
+        {
+          stepId: `${workOrderId}-S1`,
+          scheduleTaskId: workOrderId,
+          stepNo: 1,
+          name: 'ERP生产',
+          status: 'pending',
+          progress: 0,
+        },
+      ],
+    );
 
     const eventId = `ERP-O-${randomUUID().slice(0, 8)}`;
     const [order] = await this.db

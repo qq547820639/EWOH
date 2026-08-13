@@ -9,7 +9,7 @@ import json
 import sqlite3
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS person (
@@ -217,6 +217,28 @@ def _now():
     return datetime.now().astimezone().isoformat(timespec="milliseconds")
 
 
+def _ts_ms(ts):
+    """ISO 8601 时间字符串 -> Unix 毫秒（instant 语义，兼容任意时区偏移）。
+
+    与 edge_platform.inference.ts_to_ms 保持同一约定：naive 时间按 UTC 处理；
+    无法解析时返回 None。
+    """
+    s = str(ts).strip()
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(round(dt.timestamp() * 1000))
+
+
+def _in_window(ts, start_ms, end_ms):
+    t = _ts_ms(ts)
+    return t is not None and start_ms <= t <= end_ms
+
 
 class Storage:
     """契约：edge/storage.py class Storage(db_path) 的 stub 实现（SQLite 持久化）。"""
@@ -283,12 +305,16 @@ class Storage:
             return self._tele_row(row)
 
     def query_telemetry(self, device_id, start, end, limit):
+        start_ms, end_ms = _ts_ms(start), _ts_ms(end)
+        if start_ms is None or end_ms is None:
+            return []
         with self._lock:
             rows = self._db.execute(
-                "SELECT * FROM telemetry WHERE device_id=? AND ts BETWEEN ? AND ? ORDER BY ts LIMIT ?",
-                (device_id, start, end, int(limit)),
+                "SELECT * FROM telemetry WHERE device_id=?", (device_id,)
             ).fetchall()
-            return [self._tele_row(r) for r in rows]
+        matched = [r for r in rows if _in_window(r["ts"], start_ms, end_ms)]
+        matched.sort(key=lambda r: _ts_ms(r["ts"]))
+        return [self._tele_row(r) for r in matched[: int(limit)]]
 
     def export_slice(self, device_id, start, end):
         records = self.query_telemetry(device_id, start, end, 100000)
@@ -374,17 +400,21 @@ class Storage:
             )
 
     def query_inference(self, device_id, start, end, limit):
+        start_ms, end_ms = _ts_ms(start), _ts_ms(end)
+        if start_ms is None or end_ms is None:
+            return []
         with self._lock:
             rows = self._db.execute(
-                "SELECT * FROM inference WHERE device_id=? AND ts_end BETWEEN ? AND ? ORDER BY ts_end LIMIT ?",
-                (device_id, start, end, int(limit)),
+                "SELECT * FROM inference WHERE device_id=?", (device_id,)
             ).fetchall()
-            out = []
-            for r in rows:
-                d = dict(r)
-                d["meta"] = json.loads(d.pop("evidence_json") or "{}")
-                out.append(d)
-            return out
+        matched = [r for r in rows if _in_window(r["ts_end"], start_ms, end_ms)]
+        matched.sort(key=lambda r: _ts_ms(r["ts_end"]))
+        out = []
+        for r in matched[: int(limit)]:
+            d = dict(r)
+            d["meta"] = json.loads(d.pop("evidence_json") or "{}")
+            out.append(d)
+        return out
 
     # -- 事件 --
     def insert_event(self, evt):

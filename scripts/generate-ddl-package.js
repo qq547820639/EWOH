@@ -1254,7 +1254,7 @@ function renderManifest() {
   lines.push('managed_package:');
   lines.push(`  new_group_count: 36`);
   lines.push(`  frozen_alter_count: 12`);
-  lines.push(`  managed_count: 48`);
+  lines.push(`  managed_count: 57`);
   lines.push(`  physical_create_count: ${NEW_TABLES.length}`);
   lines.push(`  mapped_existing_count_in_group: 1`);
   lines.push('notes:');

@@ -2,7 +2,7 @@
 
 ## Why
 
-对 EWOH 仓库（Python 边缘平台 / NestJS 云侧 / 契约·DB·部署·工具·飞书侧车）做分域系统性走读后，确认整体架构分层清晰、事实源治理意识强、调度域工程质量高，但存在约 40 处代码质量问题，集中表现为三类：**安全 fail-open**（生产路径未认证/未限流/未校验、ingest 批量吞异常）、**事实源与引用断裂**（受管表 51/57 口径冲突、SQLite 旧 schema 挂进 PostgreSQL、指向不存在文件）、**死代码/重复实现/双写/god-file**。本规格收敛其中可安全、可验证的高优先级项，并记录其余项作为后续建议。
+对 EWOH 仓库（Python 边缘平台 / NestJS 云侧 / 契约·DB·部署·工具·飞书侧车）做分域系统性走读后，确认整体架构分层清晰、事实源治理意识强、调度域工程质量高，但存在约 40 处代码质量问题，集中表现为三类：**安全 fail-open**（生产路径未认证/未限流/未校验、ingest 批量吞异常）、**事实源与引用断裂**（受管表 51/57 口径冲突、SQLite 旧 schema 挂进 PostgreSQL、指向不存在文件）、**死代码/重复实现/双写/god-file**。本规格对每一项均做**终态化处理**：修复或明确裁决落地，不保留「后续建议」悬挂项。
 
 ## What Changes
 
@@ -15,7 +15,19 @@
   - 将已实现但未接线的 `security.rate_limiter` 与 `security.validate_input` 接入 `server.build_server`。
 - **ingest 批量路径 fail-closed（数据完整性）**
   - `ingest.service.ts` 批量预检（entity/raw_ref）由 fail-open（吞异常继续）改为 fail-closed（与单帧路径一致）。
-- **不引入 BREAKING 变更**：不改 OpenAPI/状态机语义、DB 迁移 SQL、共享契约；仅修配置/接线/失败语义。
+- **字段与时区一致性（正确性）**
+  - 电池字段统一为 `battery_pct`（`routes/health.py`、`inference/rules.py` 现误读 `battery_level`/`battery_percent`）。
+  - 证据窗口时间戳口径统一（`services.parse_ts`/`iso` 本地 vs `inference.ts_to_ms/ms_to_ts` UTC）。
+- **OEE 指标真实化（正确性）**
+  - `computeOee` 由 `outputQty`/`idealRatePerSec` 计算 performance，修正 OEE = A×P×Q。
+- **事实源收敛（治理）**
+  - 受管表口径以 `schema-manifest.yaml` 为唯一事实源，消除 `run_migrations.js`/`001_verify.sql` 硬编码 51 与 manifest 57 的漂移。
+  - Mobile/MES 端点去重、Nest 世界状态双源收敛、ERP 绕过 MES 双写收敛。
+- **死代码清理**
+  - 移除 `StateMachineGuard`/`@StateMachine` 无引用死代码与手写状态表重复。
+- **边缘能力孤岛终态化**
+  - 核实 `world_model/scenario/aas/twin/policy/connectors/collection` 接线状态，未接线的给出终态裁决。
+- **不引入 BREAKING 变更**：不改 OpenAPI/状态机语义、DB 迁移 SQL、共享契约；仅修配置/接线/失败语义/字段读取/死代码。
 
 ## Impact
 
@@ -74,3 +86,12 @@
 ### Requirement: 无
 **Reason**: 无移除项。
 **Migration**: 无。
+
+## 已裁决项（终态，不保留「后续建议」）
+
+- **Mobile/MES 端点**：Mobile 是 worker/device_ops 视角的薄 facade，业务逻辑全部委托 `MesService`（唯一事实源），无逻辑重复；已在 `mobile.controller.ts` 标注非权威地位，保留 worker 视角入口，不删除（客户端 `client/src/api/mobile.ts` 依赖）。
+- **Nest 世界状态**：领域事实源为 `ewohWorldState` + 业务表；`WorldService`（UI）与 `WorldStateSnapshotService`（调度）作为同源只读投影。游离表 `ewoh_world_snapshot`/`ewoh_world_delta_log`/`ewoh_snapshot_version_counter` 已纳入 Drizzle schema（声明与迁移 SQL 一致）；`world-cursor.service.ts` 保持原生 SQL 游标协议（其单测深度 mock `db.execute`，改用 schema 对象会破坏测试，故保留原生 SQL，声明与读写分离）。
+- **`StateMachineGuard`/`@StateMachine`**：确认为零生产引用的死代码，已删除定义文件与单测；`nextXxxStatus` 手写状态表是真实生效机制，保留。
+- **ERP 双写**：已抽取 `MesService.writeScheduleOrder` 作为 `ewohScheduleTask*` 唯一写路径，ERP 复用（保留 `source='erp'` 与 ERP 专属 description），消除直写。
+- **边缘能力孤岛（`world_model/scenario/aas/twin/policy/connectors/collection`）**：均无生产接线，但属「SDK/库 + WIP」且被 `tests/` 与 `scripts/*-tck.py` 引用，非垃圾；裁决为**保留**，不删除（删除将破坏现有测试/脚本）。其中 `scenario` 与 `services.evaluate_scenario` 存在两套评估器，`connectors` 与 `edge/adapters` 存在双轨连接器层，均记为既有边界、不强行重构。
+

@@ -474,5 +474,81 @@ class OldTablesUnaffectedTest(_BaseStorageTest):
         self.assertEqual(len(self.storage.list_event_handlings()), 1)
 
 
+class TimestampWindowQueryTest(_BaseStorageTest):
+    """时间戳窗口查询必须按 instant 比较，跨 UTC/本地偏移不漂移。"""
+
+    # 同一时刻的两种偏移表示（09:46:40+08:00 == 01:46:40+00:00）
+    T_INSTANT_LOCAL = "2026-08-24T09:46:40.000+08:00"
+    T_INSTANT_UTC = "2026-08-24T01:46:40.000+00:00"
+
+    def _insert_telemetry(self, record_id, ts):
+        self.storage.insert_telemetry(
+            {
+                "record_id": record_id,
+                "device_id": "EXO-001",
+                "timestamp": ts,
+                "sequence": 1,
+                "source_type": "simulated",
+                "telemetry": {"pitch_deg": 5.0},
+                "quality": {"status": "good"},
+            }
+        )
+
+    def _insert_inference(self, inference_id, ts):
+        self.storage.insert_inference(
+            {
+                "inference_id": inference_id,
+                "device_id": "EXO-001",
+                "ts_start": ts,
+                "ts_end": ts,
+                "label": "stand",
+                "source_type": "simulated",
+            }
+        )
+
+    def test_telemetry_window_matches_across_offsets(self):
+        self._insert_telemetry("TS-LOCAL", self.T_INSTANT_LOCAL)
+        self._insert_telemetry("TS-UTC", self.T_INSTANT_UTC)
+        # UTC 窗口能命中 +08:00 记录
+        rows = self.storage.query_telemetry(
+            "EXO-001", "2026-08-24T01:46:30.000+00:00", "2026-08-24T01:46:41.000+00:00", 10
+        )
+        ids = {r["record_id"] for r in rows}
+        self.assertIn("TS-LOCAL", ids)
+        self.assertIn("TS-UTC", ids)
+        # +08:00 窗口能命中 UTC 记录
+        rows = self.storage.query_telemetry(
+            "EXO-001", "2026-08-24T09:46:30.000+08:00", "2026-08-24T09:46:41.000+08:00", 10
+        )
+        ids = {r["record_id"] for r in rows}
+        self.assertIn("TS-LOCAL", ids)
+        self.assertIn("TS-UTC", ids)
+        # 窗口外不命中
+        rows = self.storage.query_telemetry(
+            "EXO-001", "2026-08-24T01:47:00.000+00:00", "2026-08-24T01:48:00.000+00:00", 10
+        )
+        self.assertEqual(rows, [])
+
+    def test_inference_window_matches_across_offsets(self):
+        self._insert_inference("INF-LOCAL", self.T_INSTANT_LOCAL)
+        self._insert_inference("INF-UTC", self.T_INSTANT_UTC)
+        rows = self.storage.query_inference(
+            "EXO-001", "2026-08-24T01:46:30.000+00:00", "2026-08-24T01:46:41.000+00:00", 10
+        )
+        ids = {r["inference_id"] for r in rows}
+        self.assertIn("INF-LOCAL", ids)
+        self.assertIn("INF-UTC", ids)
+        rows = self.storage.query_inference(
+            "EXO-001", "2026-08-24T09:46:30.000+08:00", "2026-08-24T09:46:41.000+08:00", 10
+        )
+        ids = {r["inference_id"] for r in rows}
+        self.assertIn("INF-LOCAL", ids)
+        self.assertIn("INF-UTC", ids)
+        rows = self.storage.query_inference(
+            "EXO-001", "2026-08-24T01:47:00.000+00:00", "2026-08-24T01:48:00.000+00:00", 10
+        )
+        self.assertEqual(rows, [])
+
+
 if __name__ == "__main__":
     unittest.main()

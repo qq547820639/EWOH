@@ -72,27 +72,47 @@ export function computeOee(
 ): OeeMetrics {
   const durations: Record<string, number> = {};
   let runningSec = 0;
+  let totalOutput = 0;
+  let idealCapacity = 0;
+  let hasOutputQty = false;
+  let hasIdealRate = false;
   for (const event of statusEvents) {
     const evidence = (event.evidenceJson as Record<string, unknown> | null) ?? {};
     const status = String(evidence.status ?? 'idle');
     const duration = Math.max(0, Number(evidence.durationSec ?? 0));
     durations[status] = (durations[status] ?? 0) + duration;
-    if (status === 'running') runningSec += duration;
+    if (status !== 'running') continue;
+    runningSec += duration;
+    const outputQty = Number(evidence.outputQty ?? Number.NaN);
+    const idealRatePerSec = Number(evidence.idealRatePerSec ?? Number.NaN);
+    if (Number.isFinite(outputQty)) {
+      totalOutput += outputQty;
+      hasOutputQty = true;
+    }
+    if (Number.isFinite(idealRatePerSec)) {
+      idealCapacity += idealRatePerSec * duration;
+      hasIdealRate = true;
+    }
   }
   const availableSec =
     plannedTimeSec > 0
       ? plannedTimeSec
       : Object.values(durations).reduce((sum, value) => sum + value, 0);
   const availability = availableSec > 0 ? Math.min(1, runningSec / availableSec) : 0;
+  let performance = 1;
+  if (hasOutputQty && hasIdealRate && idealCapacity > 0) {
+    performance = Math.min(1, Math.max(0, totalOutput / idealCapacity));
+  }
+  const quality = 1;
   const downtimeBreakdown = Object.entries(durations)
     .filter(([status]) => status !== 'running')
     .map(([status, seconds]) => ({ reason: status, seconds }))
     .sort((left, right) => right.seconds - left.seconds);
   return {
     availability,
-    performance: 1,
-    quality: 1,
-    oee: availability,
+    performance,
+    quality,
+    oee: availability * performance * quality,
     statusDurations: durations,
     downtimeBreakdown,
   };

@@ -5,7 +5,6 @@ import { DbIdempotencyStore } from './db-idempotency.store';
 import { IdempotencyService, IDEMPOTENCY_STORE } from './idempotency.service';
 import { OrgContextInterceptor } from './org-context.interceptor';
 import { OrgScopeService } from './org-scope.service';
-import { StateMachineGuard } from './state-machine.guard';
 import { RolesGuard } from './roles.guard';
 import { AuditChainService } from './audit-chain.service';
 import { RedisService } from './redis.service';
@@ -22,7 +21,6 @@ import { SlowQueryService } from '../observability/slow-query.service';
     { provide: IDEMPOTENCY_STORE, useClass: DbIdempotencyStore },
     OrgContextInterceptor,
     OrgScopeService,
-    StateMachineGuard,
     RolesGuard,
     AuditChainService,
     RedisService,
@@ -34,7 +32,6 @@ import { SlowQueryService } from '../observability/slow-query.service';
     IdempotencyService,
     OrgContextInterceptor,
     OrgScopeService,
-    StateMachineGuard,
     RolesGuard,
     AuditChainService,
     RedisService,

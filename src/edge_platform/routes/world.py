@@ -133,7 +133,7 @@ def api_device_health(ctx, h, device_id):
         "device_id": device_id,
         "online": ctx.device_online(d),
         "last_seen": d.get("last_seen"),
-        "battery_pct": tele.get("battery_pct", tele.get("battery_level")),
+        "battery_pct": tele.get("battery_pct", tele.get("battery_percent", tele.get("battery_level"))),
         "fault": bool(tele.get("fault")) or quality.get("status", "good") not in ("good", None, "unknown"),
         "packet_loss_pct": quality.get("packet_loss_pct", 0.0),
         "quality_status": quality.get("status", "unknown"),

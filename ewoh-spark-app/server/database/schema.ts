@@ -1239,6 +1239,60 @@ export const ewohWorldStateSnapshot = pgTable("ewoh_world_state_snapshot", {
   uniqueIndex("ewoh_world_state_snapshot_snapshot_version_key").on(table.snapshotVersion),
 ]);
 
+// --- 世界状态游标 / 增量日志 / 快照版本计数器 ---
+// 物理列与 db/migrations/standalone_001_schema.sql（ewoh_world_snapshot / ewoh_world_delta_log）
+// 及 db/migrations/standalone_031_snapshot_version_counter.sql（ewoh_snapshot_version_counter）对齐。
+
+export const ewohWorldSnapshotCursor = pgTable("ewoh_world_snapshot", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id").default(sql`nullif(current_setting('app.current_org_id', true), '')::uuid`),
+  snapshotVersion: bigint("snapshot_version", { mode: "number" }).notNull(),
+  snapshotType: varchar("snapshot_type", { length: 50 }).notNull().default("full"),
+  payload: jsonb("payload").notNull(),
+  entityCount: integer("entity_count").notNull().default(0),
+  checksum: varchar("checksum", { length: 128 }),
+  sourceType: varchar("source_type", { length: 50 }).notNull().default("simulated"),
+  snapshotCreatedAt: customTimestamptz("created_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdAt: customTimestamptz("_created_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedBy: uuid("_updated_by"),
+}, (table) => [
+  index("idx_ewoh_world_snapshot_org").on(table.orgId),
+  uniqueIndex("uq_ewoh_world_snapshot_org_version").on(
+    sql`coalesce(${table.orgId}, '00000000-0000-4000-8000-000000000000'::uuid)`,
+    table.snapshotVersion,
+  ),
+]);
+
+export const ewohWorldDeltaLog = pgTable("ewoh_world_delta_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id").default(sql`nullif(current_setting('app.current_org_id', true), '')::uuid`),
+  seq: bigint("seq", { mode: "number" }).generatedAlwaysAsIdentity().unique().notNull(),
+  snapshotVersion: bigint("snapshot_version", { mode: "number" }).notNull(),
+  entityType: varchar("entity_type", { length: 100 }).notNull(),
+  entityId: varchar("entity_id", { length: 255 }).notNull(),
+  deltaType: varchar("delta_type", { length: 50 }).notNull(),
+  payload: jsonb("payload"),
+  beforeJson: jsonb("before_json"),
+  occurredAt: customTimestamptz("occurred_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  sourceType: varchar("source_type", { length: 50 }).notNull().default("simulated"),
+  createdAt: customTimestamptz("_created_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedBy: uuid("_updated_by"),
+}, (table) => [
+  index("idx_ewoh_world_delta_org_seq").on(table.orgId, table.seq),
+  index("idx_ewoh_world_delta_version_seq").on(table.snapshotVersion, table.seq),
+]);
+
+export const ewohSnapshotVersionCounter = pgTable("ewoh_snapshot_version_counter", {
+  day: varchar("day", { length: 8 }).primaryKey(),
+  lastSeq: integer("last_seq").notNull().default(0),
+  createdAt: customTimestamptz("created_at", { precision: 6 }).notNull().default(sql`now()`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`now()`),
+});
+
 // --- Conflict Lifecycle 持久化 (standalone_013, Phase 3 / P3-T1) ---
 
 export const ewohSchedulingConflict = pgTable("ewoh_scheduling_conflict", {

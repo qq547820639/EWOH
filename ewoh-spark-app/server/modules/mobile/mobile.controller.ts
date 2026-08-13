@@ -11,6 +11,8 @@ import { MobileService } from './mobile.service';
 import { Roles } from '../shared/roles.decorator';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
+// 移动端工作台：worker/device_ops 视角的薄 facade，业务逻辑统一委托 MesService（唯一事实源），
+// 此处不重复实现工单/工序状态机，避免与 MES 分叉。
 @Controller('api/mobile')
 @Roles('global_admin', 'dispatcher', 'workshop_lead', 'device_ops', 'worker')
 export class MobileController {

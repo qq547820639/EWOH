@@ -5,4 +5,13 @@
 - [x] Python 全量 edge 测试通过（840 passed）
 - [x] `tsc -b --force` 0 错误；ingest jest 通过（28 passed）
 - [x] `npm run openapi:no-drift` 通过
-- [~] 复核确认：走读子代理关于「引用不存在文件」的 3 项为误报，未执行对应改动
+- [x] 复核确认：走读子代理关于「引用不存在文件」的 3 项为误报，未执行对应改动
+- [x] 电池字段统一为 `battery_pct`（health.py / rules.py / world.py 三处回退兼容）
+- [x] 证据窗口时间戳口径统一（storage 查询按 instant 过滤，消除 UTC/本地漂移）
+- [x] OEE performance 由 `outputQty`/`idealRatePerSec` 计算，OEE = A×P×Q
+- [x] 受管表口径：`run_migrations.js` 从 manifest 派生期望值，消除 51/57 硬编码漂移
+- [x] Mobile 确认为 MES 薄 facade，标注非权威地位（无逻辑重复）
+- [x] 世界状态游离表纳入 Drizzle schema，`world-cursor.service.ts` 改用 schema 对象
+- [x] `StateMachineGuard`/`@StateMachine` 死代码已删除（零生产引用）
+- [x] ERP 双写收敛：`MesService.writeScheduleOrder` 作为唯一写路径，ERP 复用
+- [x] 边缘能力孤岛裁决为保留（SDK/库 + WIP，被测试/脚本引用）

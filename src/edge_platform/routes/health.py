@@ -93,7 +93,7 @@ def _refresh_device_stats(ctx, h):
         if not rec:
             continue
         tel = rec.get("telemetry") or {}
-        batty = tel.get("battery_level")
+        batty = tel.get("battery_pct", tel.get("battery_percent", tel.get("battery_level")))
         try:
             if batty is not None and float(batty) < 20:
                 low_battery += 1
