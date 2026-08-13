@@ -1,0 +1,11 @@
+- [x] `task-dag.ts` 提供 `computeBlockingReach`（纯函数、无副作用）
+- [x] 传递下游可达数正确：链 / 菱形 / 多前驱（去重，菱形不重复计数）
+- [x] 环安全：不无限递归、结果确定且非负
+- [x] 无依赖任务返回 0
+- [x] `priority-engine.ts` 已用传递可达数替换直接 `downstreamCount`
+- [x] `PriorityEngine.compute` 签名与 `PriorityInput.downstreamCount` 类型不变
+- [x] `task-dag.spec.ts` 数据驱动测试全绿（5 用例）
+- [x] 既有 `priority-engine.spec.ts` 不回归
+- [x] scheduler jest 回归通过（94 套件 / 736 tests）
+- [x] `tsc -b --force` 0 错误
+- [x] `npm run openapi:no-drift` 通过

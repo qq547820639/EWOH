@@ -5,6 +5,7 @@ import type {
   SchedulingPolicyConfig,
   WorldStateSnapshot,
 } from '@shared/api.interface';
+import { computeBlockingReach } from './task-dag';
 
 /** 单个优先级影响因素（用于可解释性）。 */
 export interface PriorityFactor {
@@ -238,12 +239,9 @@ export function computeEffectivePriorityResults(
 ): Map<string, PriorityResult> {
   const engine = new PriorityEngine();
 
-  const downstreamCount = new Map<string, number>();
-  for (const t of snapshot.tasks) {
-    for (const pred of t.predecessorIds) {
-      downstreamCount.set(pred, (downstreamCount.get(pred) ?? 0) + 1);
-    }
-  }
+  // P1-1：下游阻塞从「直接反向计数」升级为「传递闭包可达数」（Task DAG）。
+  // 长链头部任务直接/间接阻塞更多任务，应被识别为更关键；环安全由 computeBlockingReach 保证。
+  const downstreamCount = computeBlockingReach(snapshot.tasks);
 
   const manualBoostIds = new Set<string>();
   for (const c of constraints) {
