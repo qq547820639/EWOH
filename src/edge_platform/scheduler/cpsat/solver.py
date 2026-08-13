@@ -76,6 +76,52 @@ def travel_cost_for_candidate(candidate_costs, task_id, person_id, station_id):
     return None
 
 
+def compute_warm_start_hints(baseline_assignee, tasks, person_ids):
+    """Phase 2 warm start：从 baselineAssignee 计算 (taskId, personId) 基线提示对。
+
+    仅保留任务与人员都真实存在的基线指派（供 CP-SAT AddHint 使用）。
+    """
+    task_ids = {t.taskId for t in tasks}
+    person_id_set = set(person_ids)
+    hints = []
+    for task_id, person_id in (baseline_assignee or {}).items():
+        if not person_id:
+            continue
+        if task_id not in task_ids or person_id not in person_id_set:
+            continue
+        hints.append((task_id, person_id))
+    return hints
+
+
+def partition_tasks_into_windows(tasks, now_ms, horizon_minutes, window_minutes):
+    """Phase 2 rolling horizon：按 earliestStartMs 把任务分到时间窗口（时间升序）。
+
+    window_minutes <= 0 或 >= horizon_minutes 时退化为单窗口（返回全部任务）。
+    视野外任务（earliestStartMs >= horizon_end）并入最后一个窗口。
+    返回非空窗口的 taskId 列表（按时间升序）。
+    """
+    if not tasks:
+        return []
+    if window_minutes <= 0 or window_minutes >= horizon_minutes:
+        return [[t.taskId for t in tasks]]
+
+    window_count = max(1, (horizon_minutes + window_minutes - 1) // window_minutes)
+    buckets: List[List[str]] = [[] for _ in range(window_count)]
+    horizon_end_ms = now_ms + horizon_minutes * MINUTE
+    window_span_ms = window_minutes * MINUTE
+
+    for t in tasks:
+        offset = t.earliestStartMs - now_ms
+        idx = offset // window_span_ms
+        if idx < 0:
+            idx = 0
+        if idx >= window_count or t.earliestStartMs >= horizon_end_ms:
+            idx = window_count - 1
+        buckets[idx].append(t.taskId)
+
+    return [b for b in buckets if b]
+
+
 def _fixed_interval_bounds(s_ms, e_ms):
     """把毫秒起止规整为一致的 (start, size, end) 分钟三元组。
 
@@ -326,6 +372,17 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
                 interval_by_resource.setdefault(key, []).append(
                     model.NewOptionalIntervalVar(s, dur, e, present, f"si_{st.id}_{t.taskId}_{pi}_{di}")
                 )
+
+    # Phase 2 warm start：从 baselineAssignee 添加 hint（加速增量重排收敛）。
+    # 仅对「基线人员」的 presence 给 1，其余候选给 0；任务/人员不存在则跳过。
+    for task_id, person_id in compute_warm_start_hints(
+        request.baselineAssignee, request.tasks, person_ids
+    ):
+        if task_id in frozen_by_task or task_id not in presence:
+            continue
+        for (pi, _di, _si), present in presence[task_id].items():
+            is_baseline = request.persons[pi].id == person_id
+            model.AddHint(present, 1 if is_baseline else 0)
 
     # ---- 硬约束 ----
     # 1) 任务至多分配一次。
