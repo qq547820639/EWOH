@@ -262,7 +262,7 @@ Schema 唯一事实源为 `db/migrations/standalone_*`；`server/database/schema
 
 ## 五、API 接口文档
 
-完整 OpenAPI 契约见 [openapi/ewoh.yaml](openapi/ewoh.yaml)（307 条控制器路由，`node scripts/audit-openapi-routes.js` 保证与 NestJS 路由零漂移；审计覆盖 openapi/ewoh.yaml + openapi/work-orchestration.yaml 双 spec，spec 条目共 461 条、去重后 307 条）。以下为主要端点速查。
+完整 OpenAPI 契约见 [openapi/ewoh.yaml](openapi/ewoh.yaml)（323 条控制器路由，`node scripts/audit-openapi-routes.js` 保证与 NestJS 路由零漂移；审计覆盖 openapi/ewoh.yaml + openapi/work-orchestration.yaml 双 spec，spec 条目共 481 条、去重后 323 条）。以下为主要端点速查。
 
 ### 5.1 Python Edge API（本地）
 
@@ -311,7 +311,6 @@ Schema 唯一事实源为 `db/migrations/standalone_*`；`server/database/schema
 | `GET /api/scheduler/metrics` `/api/scheduler/metrics/feedback` | 调度指标与 planned-vs-actual 反馈 KPI |
 | `GET /api/scheduler/routes` `POST /api/scheduler/routes/calculate` | 路由（RouteGraph/ETA） |
 | `GET /api/scheduler/resources/state` | 资源状态权威投影（ResourceProjection SSOT） |
-| `GET /api/scheduler/weights` | 调度权重（可调） |
 | `GET /api/scheduler/v2/stream` | SSE 调度事件流（Bearer 认证） |
 | `GET /api/scheduler/audit` | 调度审计 |
 | `GET /api/audit` | 审计日志 |

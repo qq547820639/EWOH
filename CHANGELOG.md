@@ -5,6 +5,114 @@
 
 ## [Unreleased]
 
+### Added
+- **产品化深化批（close-loop-and-converge，路线图执行）**：
+  - **执行反馈可视化（SchedulePanel）**：新增 `ExecutionDeviationList`——真实消费
+    `GET /api/scheduler/executions?planId=`（计划 vs 实际 + 偏差事实），30s 轮询 +
+    三态；`pickPreviousApprovedPlanId` 纯函数 + 「对比上一已批准方案」回看动作
+    （值班员评估回退目标，复用 PlanCompare 端点，绝不兜底列表首个）。
+  - **方案状态流转指示**：`planStatusStepVM` + `PlanStatusStepper` 组件——影子方案→
+    已批准→已派工→执行中四步流转（done/current/todo），方案状态徽标同步中文化。
+  - **L3 告警聚合去抖**：`alertToastLogic.aggregateL3` 按设备聚合近窗口事件，
+    AlertToast 一张卡展示「设备 × N 条」+ 展开列表按设备分组（风暴不刷屏）。
+  - **中文化残留清理**：churn→换人成本/换人、STALE CONTEXT→上下文已过期、
+    seq→序号、asOf→截至。
+  - **Pilot Soak 真值环境（文档+编排）**：`docs/operations/pilot-soak-runbook.md`
+    （部署前 7 项检查 / 8 周 soak 协议 / 故障注入日历 / runtimeVerified 验收表）+
+    `scripts/pilot-soak.sh`（本机 13 项检查 + 真实环境项如实 BLOCKED，退出码 0/1/2
+    语义诚实，--report 输出小时摘要）。
+- **治理收敛（converge）**：
+  - **边缘 production RBAC 落地（R-1）**：`action_for_request(method, path)` 把请求
+    映射为 9 动作矩阵；do_GET/do_POST/do_PATCH 在认证门禁之后按会话角色执行
+    `is_allowed`（fail-closed，403 forbidden）——operator 不能建任务/改派工，
+    viewer/data_analyst 不可读审计；development/simulation 保持离线演示语义；
+    回归测试 9 例（`test_rbac_enforcement.py`）。
+  - **边缘 hydrate 补齐（R-3）**：重启后恢复正式派工 `_assignments`（可查/可续
+    状态流转）、执行反馈 `_feedback`（学习闭环）、active 预约
+    （ReservationService.restore → confirm 冲突检测跨重启有效，防双预约）；
+    存储行按模型字段过滤构造对象（额外列 recommended_by 等不再致恢复失败）；
+    回归测试 2 例 + `SchedulerService.list_feedback`。
+  - **云侧 N+1 消除（R-5）**：`listActivePlans`/`listRuns`/`getActivePlans` 的分配明细改为
+    `inArray` 批量加载（`loadAssignmentsBatched`/`listPlansBatched`，原每方案
+    1-2 次查询，且保留 per-plan 损坏跳过语义）；facade/runs-snapshot 表征测试 mock 同步。
+  - **删除死脚手架**：`server/modules/hello`（整文件注释模板）移除。
+
+### Fixed
+- **全仓系统性走读整改（systematic-code-walkthrough-2026-08-14，P0×3 + P1×5）**：
+  - **边缘 P0-1 静态目录穿越**：`server.py` 的 `translate_path` 覆盖丢失了标准库的 `..` 清洗，
+    `GET /../../../demo.db` 可匿名读取仓库任意文件（含 110MB 全量数据库，运行时实测 200）。
+    修复为镜像标准库语义（丢弃 `.`/`..` 段，绝不越出 STATIC_DIR），新增回归测试
+    `test_server_patch_and_static_safety.py`（穿越/绝对路径/编码变体 → 404）。
+  - **边缘 P0-2 do_PATCH 写路径无 production 门禁与审计**：`/api/tasks/{id}` PATCH 与 do_POST 不对称，
+    production 匿名可写且不落审计。修复为复用 production 认证 fail-closed + 自动审计
+    （action=PATCH …），`_flush_post_audit` 泛化支持任意方法；rate_limiter 同步覆盖 do_PATCH。
+  - **云侧 P0-1 SSE 被全局拦截器破坏**：`OrgContextInterceptor` 用 `lastValueFrom(next.handle())`
+    包裹 `@Sse` 无限流——永不 resolve，客户端收不到任何调度事件，且请求级事务/连接被占满
+    （连接池 max=20）。修复：SSE 处理器（`SSE_METADATA`）直通不进事务（租户隔离由应用层
+    orgId 过滤保证），新增直通单测（org-context.interceptor.spec.ts 6/6）。
+  - **Simulator fail-closed（P1）**：`onModuleInit` 自动启动改为显式 `EWOH_SIMULATOR_ENABLED=1`
+    才启动；`deploy/.env.example` 默认 `EWOH_SIMULATOR_DISABLED=1`（此前生产 standalone 会把
+    仿真遥测写入真实表、破坏快照新鲜度 PLAN_STALE）。
+  - **边缘安全 fail-closed 补全（P1×2）**：视觉理解出站地址 SSRF 防护——
+    `ark_vision.describe_image` 新增 `validate_outbound_url`（仅公网 http/https，
+    DNS 解析后拒绝环回/内网/链路本地/云元数据地址），请求级 base_url/image_url 覆盖
+    无法再把服务端出站请求指向内部网络（保留云侧 Ark 配置代理功能）；
+    `/api/command-map/stream` production 下要求有效 Bearer token（匿名订阅 401 fail-closed），
+    development/simulation 保留离线演示直连；均带回归测试（内网地址拒绝/公网放行/
+    端点 502/SSE 401/开发直连）。
+  - **决策驾驶舱执行反馈闭环（P1，执行反馈断链修复）**：`SCHEDULING_FEEDBACK` 段由显式
+    空态改为真实消费 `GET /api/scheduler/executions`（planned vs actual + deviation 事实）：
+    汇总指标（执行中/完成/失败取消/按时完成率/平均延误）+ 最近 5 条执行事件（人员/任务/
+    状态文案/偏差标签），30s 轮询 + 加载/错误重试/空态三态（空态文案如实说明"方案派工后
+    显示执行进度"）。新增纯映射 `executionFeedbackVM.ts`（不重算任何资格/成本/硬约束，
+    仅状态→文案映射）+ 单测 6 例 + render-only 静态约束；queryKeys 新增
+    `schedulerExecutions(planId)`。client 测试 108 套件 / 886 通过。
+  - **真机遥测动作分类恒 unknown（P0，E-01）修复——三层字段契约对齐**：
+    NXP1 设备不提供 roll_deg/3D 角速度/3D 加速度，旧特征提取强制要求三者齐备 →
+    `extract_features` 恒 None → 推理恒 unknown/data_quality + ACTION_ANOMALY_LOW_QUALITY
+    持续误报。修复：`features._sample_values` 核心通道（pitch/torque/assist）与可选通道
+    （roll/角速度/加速度，缺失维度聚合为 None）分离，标量角速度模长 `angular_velocity_dps`
+    折算为 gyro_mag；`extract_features` 可选维度 None 不判 invalid；规则路径 None-safe
+    （gyro/accel 缺失计 0）；`_infer` 对「模型 12 维契约 vs 设备通道子集」诚实降级规则路径；
+    `_KEY_CHANNELS` 收敛为核心通道（可选通道缺失不再触发 sensor_channel_missing）。
+    回归测试 10 例：`DeviceSubsetChannelTest`（8）+ `RealDeviceChainTest`（2，真机形状
+    UnifiedExoFrame→frame_adapter→extract_features→walk/bend 标签端到端）。
+  - **边缘存储索引补齐（E-08）**：inference(device_id, ts_end)、risk_event(start_time/status/device_id)、
+    scheduling_request(status)、scheduling_plan(status)、world_state_snapshot(timestamp)——
+    消除推理/事件/调度列表全表扫描的索引缺口（幂等 CREATE INDEX IF NOT EXISTS）。
+  - **CP-SAT worker 时间基准与目标分解修复（P0×3，纯算术一致性，可单测）**：
+    `to_relative_minutes` 统一模型时间基准——frozen/reservation/due/mustFinish
+    原以 epoch 毫秒整除分钟（≈2.9e7）与相对分钟变量混入同一 AddNoOverlap/MaxEquality，
+    导致预约/冻结约束对普通任务完全失效、lateness 恒 0、硬截止从不生效；
+    `late_domain_upper` 修复 late 变量域溢出（原固定 horizon+10 上界被表达式越过
+    → 模型不可满足）；objectiveBreakdown 由「输出权重值」改为输出求解出的真实分量
+    （unassigned/lateness/stationWait/travel/churn 自然单位）。新增纯函数回归测试
+    （test_cpsat_solver.py TestTimeBasisHelpers + test_cpsat_reservation.py 相对分钟语义）。
+    注：无 ortools 环境仍以 UNAVAILABLE fail-closed 回退，真实求解验证留待部署环境。
+  - **边缘调度只读边界 403（P1）**：readonly/advisory 模式下 POST /api/tasks 原 500、
+    PATCH /api/tasks 原 400，现统一 `403 SCHEDULING_READ_ONLY`（与 plan confirm/execute
+    一致），任务写路径如实告知「正式调度写权限归 NestJS 控制面」；回归测试 2 例。
+  - **审计身份防伪造（P1）**：routes/scheduler.py、routes/world.py 的 actor/handler/author 由
+    「客户端自报优先」改为「服务端 token 身份优先」（`_util.resolve_actor`），未认证才降级
+    客户端字段（仅 development/simulation 演示便利）；新增回归测试。
+  - **边缘采集链路机械缺陷（E-05/06/07/10/19）**：`UnifiedExoFrame` 新增 `sequence`/`backfill`
+    采集溯源字段并全链路透传（frame_adapter → storage/规则层，契约测试同步扩展）；
+    `PACKET_LOSS_BURST` 死规则改读生产字段 `packet_loss_pct`（兼容旧字段 0-1 换算）；
+    TIME_SYNC_ANOMALY 跳过补传历史帧（重连补传不再误报）；firmware_version 透传恢复白名单校验；
+    SEQ 丢包统计仅计实时 TELEMETRY 帧（IDENT/FAULT/BACKFILL 不再污染期望帧数）。
+  - **飞书侧车（P1×3）**：健康探针如实报告——`syncAllToFeishu` 聚合子项失败
+    （任一失败 → `recordFeishuSync(false, 首错)`，此前恒报 true）；`GET /api/feishu/report`
+    改 POST（飞书建文档副作用归入写鉴权 fail-closed），README 同步；内置 web UI 处置表单
+    与写鉴权脱节（永久 401/503）——顶栏新增「写权限」按钮（Bearer 头注入 + 401/503 可行动
+    错误提示 + localStorage 持久），处置闭环恢复可用。
+  - **测试红灯修复**：`stateCoverage.test.ts` 移除已删除孤儿页（Overview/Events）的期望
+    （client 879/879 恢复全绿）。
+  - **前端包体清理（P2）**：移除随 SPA 发布的死静态副本 `client/public/command_map`
+    （232KB，生产 React CommandMap 不使用；历史原型保留在仓库根 `ui/command_map`），
+    并修正 `app.tsx` 过期的「全屏 iframe」注释。
+  - **文档/部署漂移**：README 路由口径 307/461 → 实测 323/481（唯一 323）并移除不存在的
+    `GET /api/scheduler/weights` 行；`deploy/cloud/.env.compose.example` 版本 rc2 → rc4。
+
 ### Fixed
 - **权威事实源收敛 + UX 缺口闭合（close-head-truth-ux-gaps）**：
   - **事实源假阴性修正**：`feature-status.yaml` 的 `decisionCockpit` 由「未实现」修正为已实现
