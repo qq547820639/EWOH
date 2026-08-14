@@ -73,6 +73,10 @@ class _FakeReservationService:
         self.reservations.append(res)
         return res
 
+    def restore(self, reservations):
+        """契约兼容（hydrate R-3 调用）；本 fake 不维护持久化预约。"""
+        return 0
+
 
 def _make_service(repo):
     return SchedulerService(
@@ -186,6 +190,116 @@ class SchedulerHydrateRegressionTest(unittest.TestCase):
         self.assertIsNotNone(service.get_plan(good.plan_id))
         with self.assertRaises(KeyError):
             service.get_plan("PLN-BAD")
+
+    def test_hydrate_restores_assignments_and_feedback(self):
+        """R-3 回归：重启后派工可查、反馈保留（此前仅恢复 requests/plans）。"""
+        from datetime import datetime, timedelta, timezone
+
+        from edge_platform.scheduler.models import Assignment, ScheduleFeedback
+
+        # 未来时间窗（避免预约因过期被冲突检测跳过）
+        start = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(timespec="seconds")
+        end = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat(timespec="seconds")
+        plan = SchedulePlan(
+            plan_id="PLN-HYDRATE-2",
+            request_id="REQ-HYDRATE-2",
+            version=1,
+            status=PLAN_PENDING_REVIEW,
+            assignments=[
+                CandidateAssignment(
+                    task_id="TASK-HYDRATE-2",
+                    person_id="P-002",
+                    device_id="EXO-002",
+                    station_id="ST-002",
+                    planned_start=start,
+                    planned_end=end,
+                )
+            ],
+        )
+        self.repo.save_plan(plan)
+
+        # 服务 A：execute 产生正式派工（persist 到 storage）+ 写入反馈。
+        service_a = _make_service(self.repo)
+        service_a.hydrate_from_repository()
+        service_a.confirm(plan.plan_id, "leader1", "综合最优")
+        executed = service_a.execute(plan.plan_id)
+        self.assertEqual(len(executed), 1)
+        service_a.feedback(plan.plan_id, {"TASK-HYDRATE-2": {"status": "completed"}})
+
+        # 模拟进程重启：全新实例 + 全新 ReservationService（不共享内存态）。
+        from edge_platform.scheduler.reservation import ReservationService
+
+        service_b = SchedulerService(
+            world_state_service=_FakeWorldState(),
+            planner=_FakePlanner(),
+            reservation_service=ReservationService(),
+            repository=self.repo,
+        )
+        service_b.hydrate_from_repository()
+
+        # 派工恢复：/api/assignments 重启后仍可查
+        items = service_b.list_assignments()
+        self.assertEqual(len(items), 1)
+        self.assertIsInstance(items[0], Assignment)
+        self.assertEqual(items[0].assignment_id, executed[0].assignment_id)
+        # 状态流转可续（dispatched → received 为契约合法路径；set_assignment_status 依赖内存对象）
+        a = service_b.set_assignment_status(executed[0].assignment_id, "received", "leader1", "续接执行")
+        self.assertEqual(a.status, "received")
+
+        # 反馈恢复：学习闭环数据不丢
+        fbs = service_b.list_feedback()
+        self.assertEqual(len(fbs), 1)
+        self.assertIsInstance(fbs[0], ScheduleFeedback)
+        self.assertEqual(fbs[0].plan_id, plan.plan_id)
+
+    def test_hydrate_restores_active_reservations_and_conflict_detection(self):
+        """R-3 回归：重启后 active 预约恢复，confirm 冲突检测跨重启有效（防双预约）。"""
+        from datetime import datetime, timedelta, timezone
+
+        from edge_platform.scheduler.reservation import ReservationService
+
+        start = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(timespec="seconds")
+        end = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat(timespec="seconds")
+        plan = SchedulePlan(
+            plan_id="PLN-HYDRATE-3",
+            request_id="REQ-HYDRATE-3",
+            version=1,
+            status=PLAN_PENDING_REVIEW,
+            assignments=[
+                CandidateAssignment(
+                    task_id="TASK-HYDRATE-3",
+                    person_id="P-003",
+                    device_id="EXO-003",
+                    station_id="ST-003",
+                    planned_start=start,
+                    planned_end=end,
+                )
+            ],
+        )
+        self.repo.save_plan(plan)
+
+        service_a = _make_service(self.repo)
+        service_a.hydrate_from_repository()
+        service_a.confirm(plan.plan_id, "leader1", "综合最优")
+        persisted = self.repo.list_reservations(status="active")
+        self.assertGreaterEqual(len(persisted), 1)
+        first = persisted[0]
+
+        # 重启：全新 ReservationService → hydrate 恢复预约 → 同窗冲突必须被检出
+        svc_b_reservation = ReservationService()
+        service_b = SchedulerService(
+            world_state_service=_FakeWorldState(),
+            planner=_FakePlanner(),
+            reservation_service=svc_b_reservation,
+            repository=self.repo,
+        )
+        service_b.hydrate_from_repository()
+        self.assertTrue(
+            svc_b_reservation.check_conflict(
+                first["resource_id"], first["start_at"], first["end_at"]
+            ),
+            "重启后 active 预约必须参与冲突检测（防跨重启双预约）",
+        )
 
 
 if __name__ == "__main__":

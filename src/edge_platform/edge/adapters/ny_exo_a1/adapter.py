@@ -313,7 +313,10 @@ class NyExoA1Adapter(BaseAdapter):
             self._remember_raw(frame, raw, note="bad_crc")
             return []  # 坏帧不进入上层（spec：CRC 失败帧拒绝）
 
-        self._track_sequence(frame["seq"])
+        # E-19 修复：丢包率统计仅以实时 TELEMETRY 帧的 SEQ 为准——IDENT/HEARTBEAT/
+        # FAULT 状态帧与 BACKFILL 补传帧的 SEQ 语义不同，参与统计会污染期望帧数。
+        if frame["type"] == protocol.TYPE_TELEMETRY:
+            self._track_sequence(frame["seq"])
         self._last_seen = ts_ms_to_iso(frame["ts_ms"], self.tz_offset_hours)
         try:
             payload = protocol.parse_payload(frame)
@@ -366,7 +369,7 @@ class NyExoA1Adapter(BaseAdapter):
                 reasons.append("sampling_rate_anomaly")
             return [
                 (
-                    self.to_unified(payload, frame["ts_ms"], raw_bytes=raw, quality_reasons=reasons),
+                    self.to_unified(payload, frame["ts_ms"], raw_bytes=raw, quality_reasons=reasons, seq=frame["seq"]),
                     self._meta(frame, raw, frame["seq"], frame["ts_ms"], backfill=False),
                 )
             ]
@@ -454,7 +457,7 @@ class NyExoA1Adapter(BaseAdapter):
             ts_ms = entry.get("ts_ms", frame["ts_ms"])
             out.append(
                 (
-                    self.to_unified(entry.get("telemetry") or {}, ts_ms, raw_bytes=raw),
+                    self.to_unified(entry.get("telemetry") or {}, ts_ms, raw_bytes=raw, seq=seq, backfill=True),
                     self._meta(frame, raw, seq, ts_ms, backfill=True),
                 )
             )
@@ -546,7 +549,7 @@ class NyExoA1Adapter(BaseAdapter):
     def _is_low_battery(self):
         return self._battery_pct is not None and self._battery_pct < LOW_BATTERY_PCT
 
-    def to_unified(self, telemetry, ts_ms, raw_bytes=b"", quality_reasons=None):
+    def to_unified(self, telemetry, ts_ms, raw_bytes=b"", quality_reasons=None, seq=None, backfill=False):
         """厂商遥测物理量 dict → UnifiedExoFrame（唯一的统一语义转换入口）。
 
         质量判定（Task 10.1/10.2）：
@@ -639,6 +642,10 @@ class NyExoA1Adapter(BaseAdapter):
         frame.raw_ref = _raw_ref(raw_bytes)
         # Task 10.2：quality.reason 说明 invalid/degraded 原因（good 时 None）
         frame.quality["reason"] = reason
+        # E-05/E-07：采集溯源透传——SEQ 供存储层还原乱序/丢包，backfill 供规则层
+        # 跳过时间戳倒退检测（重连补传历史帧不误报 TIME_SYNC_ANOMALY）。
+        frame.sequence = seq
+        frame.backfill = bool(backfill)
         return frame
 
 

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 from edge_platform import services
 
-from . import NOT_HANDLED, Route, dispatch_routes, exact
+from . import Route, dispatch_routes, exact
 from ._util import _device_view, _latest_state, now_iso, parse_ts
 
 # Task 19 演示指引（原 server.py 模块级 DEMO_STEPS）

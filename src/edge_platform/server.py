@@ -27,6 +27,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import services
 from .config import Settings
+from .rbac.permissions import action_for_request, is_allowed
 from .routes import NOT_HANDLED, ReqMeta
 from .routes._util import OFFLINE_AFTER_SEC
 from .routes.registry import dispatch
@@ -95,6 +96,45 @@ def _anonymous_or_none():
     if Settings.load().runtime_mode == "production":
         return None
     return "anonymous"
+
+
+def rbac_allowed(handler, action):
+    """production 下按会话角色执行 RBAC 动作校验（fail-closed，P1 落地）。
+
+    - 非 production → True（离线演示便利，审计仍记录 anonymous/自报身份）；
+    - production 无会话/会话无效/未知角色 → False（禁止）；
+    - 会话角色命中矩阵 → 按矩阵判定。
+    """
+    if Settings.load().runtime_mode != "production":
+        return True
+    sm = _get_session_manager()
+    if sm is None:
+        return False
+    auth = (handler.headers.get("Authorization", "") or "").strip()
+    token = auth[len("Bearer ") :].strip() if auth.startswith("Bearer ") else ""
+    if not token:
+        return False
+    try:
+        session = sm.verify(token)
+    except Exception:
+        return False
+    if session is None:
+        return False
+    return bool(is_allowed(session.role, action))
+
+
+def _rbac_forbidden(handler):
+    """统一 RBAC 拒绝响应（403 forbidden，不泄露矩阵细节）。"""
+    return handler.send_json(
+        {
+            "error": {
+                "code": "forbidden",
+                "message": "当前角色无权执行该操作",
+                "request_id": getattr(handler, "_request_id", ""),
+            }
+        },
+        403,
+    )
 
 
 # Task 16/27：SessionManager 单例（auth 模块就绪后懒加载）
@@ -191,7 +231,15 @@ def make_handler(ctx):
                 return str(STATIC_DIR / "index.html")
             if parsed == "/":
                 parsed = "/index.html"
-            return str(STATIC_DIR / parsed.lstrip("/"))
+            # P0-安全：静态目录只服务 STATIC_DIR 之内的相对文件。
+            # 镜像标准库语义：丢弃 `.`/`..` 段（绝不越出 STATIC_DIR），
+            # 阻断 GET /../../../demo.db 读取仓库任意文件（含全量数据库）。
+            # 本类覆盖了父类 translate_path 的路径清洗，因此必须在此显式处理。
+            segments = [
+                seg for seg in parsed.split("/")
+                if seg and seg not in (".", "..")
+            ]
+            return str(STATIC_DIR / "/".join(segments))
 
         def log_message(self, fmt, *args):
             print("[EWOH]", fmt % args)
@@ -228,11 +276,12 @@ def make_handler(ctx):
 
         # ---- 基础工具 ----
         def _flush_post_audit(self):
-            """在发送响应前刷新待审计的 POST 操作日志，避免客户端先收到响应的竞态。"""
+            """在发送响应前刷新待审计的写操作日志，避免客户端先收到响应的竞态。"""
             if getattr(self, "_post_audit_pending", False):
                 self._post_audit_pending = False
+                method = getattr(self, "_audit_method", "POST")
                 self._audit(
-                    "POST " + urlparse(self.path).path,
+                    f"{method} " + urlparse(self.path).path,
                     target_type=getattr(self, "_audit_target_type", "api"),
                     target_id=getattr(self, "_audit_target_id", None),
                     result="success",
@@ -354,6 +403,12 @@ def make_handler(ctx):
             self._request_id = None  # keep-alive 复用实例时重置请求 ID
             self._post_audit_pending = False
             p = urlparse(self.path).path
+            # P1 RBAC 落地：production 下受限读路径（审计查询/原始数据导出）按角色校验
+            # （矩阵：viewer/data_analyst 无 view_audit；导出受 export_data 约束）。
+            if Settings.load().runtime_mode == "production":
+                action = action_for_request("GET", p)
+                if action and not rbac_allowed(self, action):
+                    return _rbac_forbidden(self)
             try:
                 if self._dispatch("GET") is not NOT_HANDLED:
                     return
@@ -383,6 +438,7 @@ def make_handler(ctx):
             # Task 16.6：POST 操作自动审计（action/path/actor_id/request_id）
             # 审计在 send_json/send_csv 发送响应前写入，避免竞态
             self._post_audit_pending = True
+            self._audit_method = "POST"
             self._audit_target_type = "api"
             self._audit_target_id = None
             # P0-Edge-Security：production 下所有写操作（POST/PATCH）必须认证，
@@ -392,6 +448,11 @@ def make_handler(ctx):
                 if actor is None and p not in PUBLIC_POST_PATHS:
                     self._post_audit_pending = False
                     return self._new_error("unauthorized", "production 写操作必须携带有效 Bearer token", 401)
+                # P1 RBAC 落地：认证通过后按角色校验写动作（如 operator 无 manage_assignments）。
+                action = action_for_request("POST", p)
+                if action and not rbac_allowed(self, action):
+                    self._post_audit_pending = False
+                    return _rbac_forbidden(self)
             try:
                 if self._dispatch("POST", payload) is not NOT_HANDLED:
                     return
@@ -422,6 +483,9 @@ def make_handler(ctx):
             """PATCH /api/tasks/{id} — 乐观锁局部更新任务（status/priority 等）。"""
             self._request_id = None
             self._post_audit_pending = False
+            # 提前生成 request_id，确保审计日志能关联到本次请求（与 do_POST 对齐）
+            inbound = self.headers.get("X-Request-ID") if self.headers else None
+            self._request_id = inbound or uuid.uuid4().hex[:8]
             p = urlparse(self.path).path
             try:
                 payload = self.read_json()
@@ -435,10 +499,43 @@ def make_handler(ctx):
             task_id = p[len("/api/tasks/") :].split("/")[0]
             if not task_id:
                 return self.send_json({"error": "not found"}, 404)
-            outcome = self._dispatch("PATCH", payload)
-            if outcome is not NOT_HANDLED:
-                return outcome
-            return self.send_json({"error": "not found"}, 404)
+            # P0-安全：production 下写操作必须认证（与 do_POST 对齐，fail-closed），
+            # 公共端点白名单豁免；未认证 → 401，禁止 anonymous 写。
+            if Settings.load().runtime_mode == "production":
+                actor = self._actor()
+                if actor is None and p not in PUBLIC_POST_PATHS:
+                    return self._new_error("unauthorized", "production 写操作必须携带有效 Bearer token", 401)
+                # P1 RBAC 落地：认证通过后按角色校验写动作（manage_assignments）。
+                action = action_for_request("PATCH", p)
+                if action and not rbac_allowed(self, action):
+                    return _rbac_forbidden(self)
+            # 写操作自动审计（与 do_POST 对齐）：send_json 响应前落库防竞态。
+            self._post_audit_pending = True
+            self._audit_method = "PATCH"
+            self._audit_target_type = "task"
+            self._audit_target_id = task_id
+            try:
+                outcome = self._dispatch("PATCH", payload)
+                if outcome is not NOT_HANDLED:
+                    return outcome
+                self._post_audit_pending = False  # 404 不审计
+                return self.send_json({"error": "not found"}, 404)
+            except BrokenPipeError:
+                self._post_audit_pending = False
+                return
+            except Exception as e:
+                self._post_audit_pending = False
+                self._audit(
+                    "PATCH " + p,
+                    target_type=getattr(self, "_audit_target_type", "api"),
+                    target_id=getattr(self, "_audit_target_id", None),
+                    result="error",
+                )
+                _log_internal_error("PATCH", p, self._request_id, e)
+                return self.send_json(
+                    {"error": {"code": "internal_error", "message": "请求处理失败", "request_id": self._request_id}},
+                    500,
+                )
 
         def do_OPTIONS(self):
             """CORS 预检：允许指挥地图前端跨端口调用 API（本地边缘部署）。"""

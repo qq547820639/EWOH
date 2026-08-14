@@ -28,10 +28,15 @@ CREATE TABLE IF NOT EXISTS inference (
   inference_id TEXT PRIMARY KEY, device_id TEXT NOT NULL, ts_start TEXT NOT NULL, ts_end TEXT NOT NULL,
   label TEXT NOT NULL, confidence REAL, model_id TEXT, model_version TEXT,
   evidence_json TEXT, source_type TEXT NOT NULL);
+-- E-08：推理按设备+时间窗查询（原全表扫描）；risk_event 按时间/状态查询
+CREATE INDEX IF NOT EXISTS idx_inference_device_ts ON inference(device_id, ts_end);
 CREATE TABLE IF NOT EXISTS risk_event (
   event_id TEXT PRIMARY KEY, event_code TEXT NOT NULL, severity TEXT NOT NULL, status TEXT NOT NULL,
   person_id TEXT, device_id TEXT, task_id TEXT, zone_id TEXT, start_time TEXT NOT NULL, end_time TEXT,
   trigger_json TEXT NOT NULL, evidence_json TEXT NOT NULL, source_type TEXT NOT NULL, handling_json TEXT);
+CREATE INDEX IF NOT EXISTS idx_risk_event_start ON risk_event(start_time);
+CREATE INDEX IF NOT EXISTS idx_risk_event_status ON risk_event(status);
+CREATE INDEX IF NOT EXISTS idx_risk_event_device ON risk_event(device_id);
 -- Task 17：handling_json 存储 {status(open/handled/closed), handler_id, action, comment,
 --   handled_at, end_time, closed_by, close_reason, rule_version}；evidence_json 存储
 --   {window_before_sec, window_after_sec, record_ids, data_quality, evidence_window_sec,
@@ -158,6 +163,8 @@ CREATE TABLE IF NOT EXISTS scheduling_request (
   policy_id TEXT, world_state_version TEXT,
   created_at TEXT, expires_at TEXT, status TEXT DEFAULT 'pending', created_by TEXT
 );
+-- E-08：按状态列出的请求/方案查询（原全表扫描）
+CREATE INDEX IF NOT EXISTS idx_scheduling_request_status ON scheduling_request(status);
 CREATE TABLE IF NOT EXISTS scheduling_plan (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   plan_id TEXT UNIQUE NOT NULL,
@@ -168,6 +175,7 @@ CREATE TABLE IF NOT EXISTS scheduling_plan (
   created_at TEXT, confirmed_at TEXT, confirmed_by TEXT, confirm_reason TEXT,
   assignments_json TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_scheduling_plan_status ON scheduling_plan(status);
 CREATE TABLE IF NOT EXISTS scheduling_plan_assignment (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   plan_id TEXT NOT NULL, assignment_id TEXT UNIQUE NOT NULL,
@@ -210,6 +218,8 @@ CREATE TABLE IF NOT EXISTS world_state_snapshot (
   stations_json TEXT, assignments_json TEXT, reservations_json TEXT,
   events_json TEXT, topology_version TEXT
 );
+-- E-08：按时间窗口取世界快照（回放/追溯）
+CREATE INDEX IF NOT EXISTS idx_world_state_snapshot_ts ON world_state_snapshot(timestamp);
 """
 
 

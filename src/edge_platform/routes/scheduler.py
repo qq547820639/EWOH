@@ -13,13 +13,14 @@ PATCH /api/tasks/{id}。
 
 import json
 
-from edge_platform import server
-from edge_platform import services
+from edge_platform import server, services
+from edge_platform.config import Settings
 from edge_platform.scheduler.cpsat import solver as cpsat_solver
 from edge_platform.scheduler.cpsat.contract import SolverRequest
+from edge_platform.scheduler.repository import ReadonlyModeError
 
-from . import NOT_HANDLED, STREAM, Route, affix, dispatch_routes, exact, sub_path
-from ._util import now_iso
+from . import STREAM, Route, affix, dispatch_routes, exact, sub_path
+from ._util import now_iso, resolve_actor
 
 
 def _sched(ctx, h):
@@ -38,7 +39,15 @@ def api_resource_state(ctx, h, req_meta):
 
 
 def api_command_map_stream(ctx, h, req_meta):
-    """GET /api/command-map/stream — SSE 实时事件流（Phase 5）。"""
+    """GET /api/command-map/stream — SSE 实时事件流（Phase 5）。
+
+    P1 安全修复：production 下事件流要求有效 Bearer token（fail-closed），
+    防止匿名订阅调度/派工/资源事件；development/simulation 保留离线演示直连。
+    """
+    if Settings.load().runtime_mode == "production":
+        actor = h._actor() if hasattr(h, "_actor") else None
+        if actor is None:
+            return h._new_error("unauthorized", "production 事件流必须携带有效 Bearer token", 401)
     bus = ctx.event_bus
     h.send_response(200)
     h.send_header("Content-Type", "text/event-stream; charset=utf-8")
@@ -142,7 +151,12 @@ def api_create_task(ctx, h, payload):
         v = _task_field(payload, key)
         if v is not None:
             fields[key] = v
-    task = sched.create_task(actor_id=actor, **fields)
+    try:
+        task = sched.create_task(actor_id=actor, **fields)
+    except ReadonlyModeError as e:
+        # P1-01：readonly/advisory 模式下写被仓储拒绝 → 403 而非 500
+        # （正式调度写权限归 NestJS 控制面，Edge 如实告知只读边界）。
+        return h._new_error("SCHEDULING_READ_ONLY", str(e), 403)
     return h.send_json({"ok": True, "task": task.to_dict()})
 
 
@@ -173,6 +187,9 @@ def api_update_task(ctx, h, task_id, payload):
         )
     except KeyError:
         return h._new_error("not_found", "任务不存在", 404)
+    except ReadonlyModeError as e:
+        # P1-01：readonly/advisory 模式下写被仓储拒绝 → 403（此前落入通用 400/500）。
+        return h._new_error("SCHEDULING_READ_ONLY", str(e), 403)
     except ValueError as e:
         return h._new_error("invalid_state", str(e), 409)
     except Exception as e:
@@ -191,7 +208,7 @@ def api_create_scheduling_request(ctx, h, payload):
     task_ids = payload.get("task_ids") or []
     trigger_type = payload.get("trigger_type") or "manual"
     policy_id = payload.get("policy_id") or ""
-    created_by = payload.get("created_by") or h._actor()
+    created_by = resolve_actor(h, payload, "created_by")
     if not task_ids:
         return h._new_error("invalid_params", "task_ids 不能为空", 400)
     req = sched.create_request(task_ids, trigger_type, policy_id, created_by)
@@ -245,7 +262,7 @@ def _plan_action(ctx, h, plan_id, action, payload):
     """POST /api/scheduling/plans/{id}/{action} — 确认/驳回/重排。"""
     if ctx.scheduler is None:
         return h._new_error("not_ready", "调度服务未启用", 503)
-    actor = payload.get("actor_id") or h._actor()
+    actor = resolve_actor(h, payload, "actor_id")
     reason = payload.get("reason", "")
     try:
         if action == "confirm":
@@ -321,7 +338,7 @@ def api_assignment_status(ctx, h, assignment_id, new_status, payload):
     """POST /api/assignments/{id}/{start|pause|complete|cancel} — 派工状态转换。"""
     if ctx.scheduler is None:
         return h._new_error("not_ready", "调度服务未启用", 503)
-    actor = payload.get("actor_id") or h._actor()
+    actor = resolve_actor(h, payload, "actor_id")
     reason = payload.get("reason", "")
     try:
         a = ctx.scheduler.set_assignment_status(assignment_id, new_status, actor, reason)
@@ -339,7 +356,7 @@ def api_assignment_override(ctx, h, assignment_id, payload):
     """POST /api/assignments/{id}/override — 人工覆盖派工（重排/改派）。"""
     if ctx.scheduler is None:
         return h._new_error("not_ready", "调度服务未启用", 503)
-    actor = payload.get("actor_id") or h._actor()
+    actor = resolve_actor(h, payload, "actor_id")
     reason = payload.get("reason", "")
     new_status = payload.get("status") or "executing"
     try:
@@ -491,10 +508,30 @@ DOMAIN_ROUTES = [
     Route("POST", "/api/tasks/confirm", exact("/api/tasks/confirm"), route_confirm),
     Route("POST", "/api/tasks", exact("/api/tasks"), route_create_task),
     Route("POST", "/api/scheduling/requests", exact("/api/scheduling/requests"), route_create_sched_request),
-    Route("POST", "/api/scheduling/plans/{id}/confirm", affix("/api/scheduling/plans/", "/confirm"), route_plan_confirm),
-    Route("POST", "/api/scheduling/plans/{id}/execute", affix("/api/scheduling/plans/", "/execute"), route_plan_execute),
-    Route("POST", "/api/scheduling/plans/{id}/reject", affix("/api/scheduling/plans/", "/reject"), route_plan_reject),
-    Route("POST", "/api/scheduling/plans/{id}/replan", affix("/api/scheduling/plans/", "/replan"), route_plan_replan),
+    Route(
+        "POST",
+        "/api/scheduling/plans/{id}/confirm",
+        affix("/api/scheduling/plans/", "/confirm"),
+        route_plan_confirm,
+    ),
+    Route(
+        "POST",
+        "/api/scheduling/plans/{id}/execute",
+        affix("/api/scheduling/plans/", "/execute"),
+        route_plan_execute,
+    ),
+    Route(
+        "POST",
+        "/api/scheduling/plans/{id}/reject",
+        affix("/api/scheduling/plans/", "/reject"),
+        route_plan_reject,
+    ),
+    Route(
+        "POST",
+        "/api/scheduling/plans/{id}/replan",
+        affix("/api/scheduling/plans/", "/replan"),
+        route_plan_replan,
+    ),
     Route("POST", "/api/assignments/{id}/start", affix("/api/assignments/", "/start"), route_assignment_start),
     Route("POST", "/api/assignments/{id}/pause", affix("/api/assignments/", "/pause"), route_assignment_pause),
     Route("POST", "/api/assignments/{id}/complete", affix("/api/assignments/", "/complete"), route_assignment_complete),

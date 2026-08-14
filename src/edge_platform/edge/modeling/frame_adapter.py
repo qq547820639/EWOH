@@ -17,10 +17,10 @@ tests/test_sustained_run.py 中 `_frame_to_msg` 同语义，正式化到生产�
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 # 分组帧中的键 → telemetry 嵌套键（仅映射管线消费的字段，未映射字段不泄漏）
-_TELEMETRY_FIELD_MAP: Dict[str, str] = {
+_TELEMETRY_FIELD_MAP: dict[str, str] = {
     # pose（运动级）
     "trunk_pitch_deg": "pitch_deg",
     "angular_velocity_dps": "angular_velocity_dps",
@@ -35,7 +35,7 @@ _TELEMETRY_FIELD_MAP: Dict[str, str] = {
 }
 
 
-def unified_to_telemetry_row(frame_dict: Dict[str, Any]) -> Dict[str, Any]:
+def unified_to_telemetry_row(frame_dict: dict[str, Any]) -> dict[str, Any]:
     """UnifiedExoFrame 分组格式 → 存储/推理管线扁平格式（纯函数）。
 
     输入为 `to_storage_dict` 输出（或任意分组格式 dict）；
@@ -47,7 +47,7 @@ def unified_to_telemetry_row(frame_dict: Dict[str, Any]) -> Dict[str, Any]:
     device = frame_dict.get("device") or {}
     quality = frame_dict.get("quality") or {}
 
-    telemetry: Dict[str, Any] = {}
+    telemetry: dict[str, Any] = {}
     for src_group in (pose, load, device):
         for src_key, dst_key in _TELEMETRY_FIELD_MAP.items():
             if src_key in src_group and src_group[src_key] is not None:
@@ -57,7 +57,7 @@ def unified_to_telemetry_row(frame_dict: Dict[str, Any]) -> Dict[str, Any]:
         "record_id": frame_dict.get("record_id", ""),
         "device_id": frame_dict.get("entity_id", ""),
         "timestamp": frame_dict.get("event_time", ""),
-        "sequence": frame_dict.get("sequence", 0),
+        "sequence": frame_dict.get("sequence") or 0,
         "source_type": frame_dict.get("source_type", "real"),
         "person_id": frame_dict.get("worker_id"),
         "telemetry": telemetry,
@@ -67,6 +67,10 @@ def unified_to_telemetry_row(frame_dict: Dict[str, Any]) -> Dict[str, Any]:
             "packet_loss_pct": quality.get("packet_loss_pct"),
         },
         "raw_ref": frame_dict.get("raw_ref", ""),
+        # E-10：固件版本透传（推理管线 firmware 白名单校验依赖此字段）；
+        # E-07：补传标记透传（规则层据此跳过时间戳倒退检测）。
+        "firmware_version": frame_dict.get("firmware_version") or "",
+        "backfill": bool(frame_dict.get("backfill", False)),
     }
 
 

@@ -38,12 +38,15 @@ from edge_platform.edge.exo_semantic import UnifiedExoFrame, to_storage_dict  # 
 FIXTURE_DIR = SRC / "edge_platform" / "edge" / "adapters" / "ny_exo_a1" / "fixtures"
 
 #: spec 5.2 统一语义帧必备顶层字段 + spec「标准消息扩展」6 个扩展字段
+#: + 采集溯源扩展（E-05/E-07）：sequence=设备帧 SEQ，backfill=补传历史帧标记
 REQUIRED_TOP_FIELDS = (
     "entity_id", "worker_id", "event_time", "source_type",
     "pose", "load", "device", "quality",
     # 标准消息扩展字段（spec「标准消息扩展与数据质量」）
     "record_id", "ingested_at", "device_model",
     "firmware_version", "protocol_version", "raw_ref",
+    # 采集溯源扩展字段（平台级，非厂商私有字段）
+    "sequence", "backfill",
 )
 
 #: 各分组必备子字段（与 exo_semantic.UnifiedExoFrame 默认值保持一致）

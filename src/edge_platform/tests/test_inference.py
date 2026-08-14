@@ -142,6 +142,31 @@ def stream(dev, person, t0, n, seq0=0, step_ms=50, **kw):
     return [mk_msg(dev, person, t0 + i * step_ms, seq0 + i, **kw) for i in range(n)]
 
 
+# ---------- 真机（NXP1）通道子集消息工厂：无 roll/3D 角速度/3D 加速度 ----------
+def mk_subset_msg(dev, person, t_ms, seq, pitch=10.0, gyro_dps=120.0, torque=8.0, assist=0.2, status="good"):
+    """frame_adapter 对 NXP1 统一帧的输出形状：pitch/标量角速度模长/torque/assist/battery。"""
+    return {
+        "record_id": f"REC-{dev}-{int(seq)}",
+        "device_id": dev,
+        "person_id": person,
+        "timestamp": ms_to_ts(t_ms),
+        "sequence": seq,
+        "telemetry": {
+            "pitch_deg": pitch,
+            "angular_velocity_dps": gyro_dps,
+            "torque_nm": torque,
+            "assist_level": assist,
+            "battery_pct": 80.0,
+        },
+        "quality": {"status": status, "packet_loss_pct": 0.0},
+        "source_type": "real",
+    }
+
+
+def subset_stream(dev, person, t0, n, seq0=0, step_ms=50, **kw):
+    return [mk_subset_msg(dev, person, t0 + i * step_ms, seq0 + i, **kw) for i in range(n)]
+
+
 # ---------- 特征 ----------
 class FeatureTest(unittest.TestCase):
     def test_dimensions(self):
@@ -170,6 +195,72 @@ class FeatureTest(unittest.TestCase):
         for m in win[:13]:
             del m["telemetry"]["pitch_deg"]  # 关键字段缺失等同 invalid
         self.assertIsNone(extract_features(win))
+
+
+# ---------- 真机通道子集回归（P0：恒 unknown 修复） ----------
+class DeviceSubsetChannelTest(unittest.TestCase):
+    """NXP1 真机无 roll/3D 角速度/3D 加速度：核心通道齐备即必须产出特征与真实标签。"""
+
+    def test_extract_features_with_device_subset(self):
+        feats = extract_features(subset_stream("D1", "P1", BASE_TS, 40, gyro_dps=120.0))
+        self.assertIsNotNone(feats, "真机通道子集必须能产出特征（此前恒 None）")
+        self.assertAlmostEqual(feats["pitch_mean"], 10.0, places=6)
+        self.assertAlmostEqual(feats["gyro_mag_mean"], 120.0, places=6, msg="标量角速度模长应折算为 gyro_mag")
+        self.assertAlmostEqual(feats["torque_mean"], 8.0, places=6)
+        self.assertIsNone(feats["roll_mean"], "设备无 roll 通道 → 维度为 None（非 invalid）")
+        self.assertIsNone(feats["accel_mag_std"], "设备无 3D 加速度 → 维度为 None")
+
+    def test_invalid_ratio_only_counts_core_channels(self):
+        win = subset_stream("D1", "P1", BASE_TS, 40)
+        for i in range(12):
+            win[i]["quality"]["status"] = "invalid"
+        self.assertIsNotNone(extract_features(win), "缺 roll/accel 不计 invalid（12/40=30% 未超限）")
+        win[12]["quality"]["status"] = "invalid"
+        self.assertIsNone(extract_features(win))
+
+    def test_missing_core_channel_still_invalid(self):
+        win = subset_stream("D1", "P1", BASE_TS, 40)
+        for m in win[:13]:
+            del m["telemetry"]["torque_nm"]  # 核心通道缺失 → invalid
+        self.assertIsNone(extract_features(win))
+
+    def test_rule_label_walk_on_subset(self):
+        feats = extract_features(subset_stream("D1", "P1", BASE_TS, 40, gyro_dps=120.0))
+        label, conf, reason = InferencePipeline._rule_label(feats)
+        self.assertEqual(label, "walk")
+        self.assertIsNone(reason)
+
+    def test_rule_label_carry_on_subset(self):
+        feats = extract_features(subset_stream("D1", "P1", BASE_TS, 40, gyro_dps=120.0, torque=20.0))
+        label, _, _ = InferencePipeline._rule_label(feats)
+        self.assertEqual(label, "carry")
+
+    def test_rule_label_stand_on_subset(self):
+        feats = extract_features(subset_stream("D1", "P1", BASE_TS, 40, gyro_dps=20.0))
+        label, _, _ = InferencePipeline._rule_label(feats)
+        self.assertEqual(label, "stand")
+
+    def test_unknown_triggers_skip_optional_channels(self):
+        win = subset_stream("D1", "P1", BASE_TS, 40, gyro_dps=120.0)
+        feats = extract_features(win)
+        pipe = InferencePipeline(FakeStorage(), FakeBus(), None, RuleEngine(config={"cooldown_sec": 30}))
+        triggered = pipe._check_unknown_triggers(win, feats, "walk", 0.65, None, True, None)
+        self.assertIsNone(triggered, "核心通道齐备时可选通道缺失不得触发 sensor_channel_missing")
+
+    def test_pipeline_falls_back_to_rule_when_model_needs_full_channels(self):
+        """模型按 12 维训练、真机仅提供子集 → 诚实降级规则路径，标签真实而非 unknown。"""
+        pipe = InferencePipeline(FakeStorage(), FakeBus(), None, RuleEngine(config={"cooldown_sec": 30}))
+        fake_model = type("M", (), {"feature_names": list(FEATURE_NAMES)})()
+        pipe._get_model = lambda: (fake_model, {})
+        res = None
+        for m in subset_stream("D1", "P1", BASE_TS, 40, gyro_dps=120.0):
+            r = pipe.handle_telemetry(m)
+            if r is not None:
+                res = r
+        self.assertIsNotNone(res)
+        self.assertTrue(res["is_rule"], "模型需 12 维而设备仅子集 → 降级规则路径")
+        self.assertEqual(res["label"], "walk")
+        self.assertIsNone(res["unknown_reason"])
 
 
 # ---------- 规则引擎 ----------
@@ -787,6 +878,32 @@ class NewRulesTest(unittest.TestCase):
         fires = [d for d in drafts if d["event_code"] == "PACKET_LOSS_BURST" and "end_time" not in d]
         self.assertEqual(len(fires), 1)
         self.assertEqual(fires[0]["severity"], "L1")
+
+    def test_packet_loss_burst_with_production_field(self):
+        """E-06 回归：生产字段 packet_loss_pct（0-100）必须能触发（旧字段 packet_loss 已废弃）。"""
+        r = RuleEngine(config={"packet_loss_sec": 1, "cooldown_sec": 30})
+        drafts = []
+        for m in stream("D1", "P1", BASE_TS, 21, packet_loss=None):
+            m["quality"]["packet_loss_pct"] = 15.0
+            drafts += r.on_telemetry(m)
+        fires = [d for d in drafts if d["event_code"] == "PACKET_LOSS_BURST" and "end_time" not in d]
+        self.assertEqual(len(fires), 1)
+
+    def test_time_sync_anomaly_backfill_not_triggered(self):
+        """E-07 回归：补传历史帧时间戳倒退不触发 TIME_SYNC_ANOMALY，且不更新漂移基线。"""
+        r = RuleEngine(config={"time_sync_sec": 0, "cooldown_sec": 30})
+        r.on_telemetry(mk_msg("D1", "P1", BASE_TS, 0))
+        # 补传帧：历史时间戳 + backfill 标记 → 不应触发
+        backfill_msg = mk_msg("D1", "P1", BASE_TS - 5000, 1)
+        backfill_msg["backfill"] = True
+        drafts = r.on_telemetry(backfill_msg)
+        fires = [d for d in drafts if d["event_code"] == "TIME_SYNC_ANOMALY"]
+        self.assertEqual(fires, [], "补传帧历史时间戳不得触发 TIME_SYNC_ANOMALY")
+        # 补传不污染基线：随后与基线相比倒退的实时帧仍应触发
+        late_realtime = mk_msg("D1", "P1", BASE_TS - 300, 2)
+        drafts2 = r.on_telemetry(late_realtime)
+        fires2 = [d for d in drafts2 if d["event_code"] == "TIME_SYNC_ANOMALY" and "end_time" not in d]
+        self.assertEqual(len(fires2), 1)
 
     def test_action_anomaly_low_quality(self):
         r = RuleEngine(config={"action_anomaly_sec": 1, "cooldown_sec": 30})

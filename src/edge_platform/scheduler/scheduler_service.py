@@ -216,11 +216,19 @@ class SchedulerService:
         P1（上线验收发现）：此前 plan/request/assignment/reservation 仅存内存 +
         落盘，但重启后不加载，导致 approved plan 在 API 重启后不可见/不可继续派工。
         本方法把磁盘上已持久化的对象重新装入 _requests/_plans/_assignments/
-        _feedback，使调度闭环在进程重启后仍可继续。
+        _feedback + ReservationService，使调度闭环在进程重启后仍可继续。
+        R-3 补齐：assignments（派工可查/可续状态流转）、feedback（学习闭环）、
+        reservations（confirm 冲突检测跨重启有效，防双预约）。
         """
         if self.repository is None:
             return
-        from .models import SchedulePlan, ScheduleRequestMW
+        from dataclasses import fields as dc_fields
+
+        from .models import Assignment, ScheduleFeedback, SchedulePlan, ScheduleRequestMW
+
+        # 存储行含额外列（recommended_by/created_at 等）——只取模型字段构造对象。
+        assignment_fields = {f.name for f in dc_fields(Assignment)}
+        feedback_fields = {f.name for f in dc_fields(ScheduleFeedback)}
 
         # 恢复请求
         for d in self.repository.list_requests() or []:
@@ -228,7 +236,9 @@ class SchedulerService:
                 req = ScheduleRequestMW(**{k: v for k, v in d.items() if k != "id"})
                 self._requests[req.request_id] = req
             except Exception as e:  # noqa: BLE001 - 单条损坏不影响整体恢复
-                logger.warning("hydrate_from_repository: 跳过损坏的调度请求 %r: %s", d.get("request_id"), e)
+                logger.warning(
+                "hydrate_from_repository: 跳过损坏的调度请求 %r: %s", d.get("request_id"), e
+            )
                 continue
         # 恢复方案（含 assignments：必须还原为 CandidateAssignment 对象，
         # confirm/execute 按属性访问 planned_end/person_id/task_id/route 等）。
@@ -242,6 +252,31 @@ class SchedulerService:
             except Exception as e:  # noqa: BLE001 - 单条损坏不影响整体恢复
                 logger.warning("hydrate_from_repository: 跳过损坏的调度方案 %r: %s", d.get("plan_id"), e)
                 continue
+        # R-3：恢复正式派工（重启后 /api/assignments 可查、set_assignment_status 可续）。
+        for d in self.repository.list_assignments() or []:
+            try:
+                a = Assignment(**{k: d[k] for k in assignment_fields if k in d})
+                self._assignments[a.assignment_id] = a
+            except Exception as e:  # noqa: BLE001 - 单条损坏不影响整体恢复
+                logger.warning("hydrate_from_repository: 跳过损坏的派工 %r: %s", d.get("assignment_id"), e)
+                continue
+        # R-3：恢复执行反馈（学习闭环跨重启保留）。
+        for d in self.repository.list_feedback() or []:
+            try:
+                fb = ScheduleFeedback(**{k: d[k] for k in feedback_fields if k in d})
+                self._feedback[fb.feedback_id] = fb
+            except Exception as e:  # noqa: BLE001 - 单条损坏不影响整体恢复
+                logger.warning("hydrate_from_repository: 跳过损坏的反馈 %r: %s", d.get("feedback_id"), e)
+                continue
+        # R-3：恢复 active 预约（confirm 冲突检测跨重启有效，防双预约）。
+        try:
+            restored = self.reservation_service.restore(
+                self.repository.list_reservations(status="active") or []
+            )
+            if restored:
+                logger.info("hydrate_from_repository: 恢复 active 预约 %d 条", restored)
+        except Exception as e:  # noqa: BLE001 - 预约恢复失败不阻断整体 hydrate
+            logger.warning("hydrate_from_repository: 恢复预约失败: %s", e)
 
     def _persist_request(self, req):
         if self.repository is None:
@@ -255,7 +290,10 @@ class SchedulerService:
         if self.repository is None:
             return
         if self.advisory_only:
-            logger.info("advisory 模式：跳过方案落库（plan=%s，advisory 建议不写正式事实）", getattr(plan, "plan_id", "?"))
+            logger.info(
+                "advisory 模式：跳过方案落库（plan=%s，advisory 建议不写正式事实）",
+                getattr(plan, "plan_id", "?"),
+            )
             return
         self.repository.save_plan(plan)
 
@@ -646,6 +684,13 @@ class SchedulerService:
         items = list(self._assignments.values())
         if status:
             items = [a for a in items if getattr(a, "status", "") == status]
+        return items
+
+    def list_feedback(self, plan_id=None):
+        """列出执行反馈（内存态；hydrate 后含历史记录，供学习闭环查询）。"""
+        items = list(self._feedback.values())
+        if plan_id:
+            items = [f for f in items if getattr(f, "plan_id", "") == plan_id]
         return items
 
     def list_requests(self, status=None):

@@ -109,7 +109,7 @@ class _RateLimiter:
 def rate_limiter(max_per_minute: int = 60) -> Callable[[type], type]:
     """速率限制中间件装饰器工厂。
 
-    包装 handler 类的 ``do_GET`` / ``do_POST``：在请求入口按客户端 IP 计数，
+    包装 handler 类的 ``do_GET`` / ``do_POST`` / ``do_PATCH``：在请求入口按客户端 IP 计数，
     超限直接返回 ``429 Too Many Requests``（JSON 错误体 + ``Retry-After`` 头），
     不进入原处理逻辑。其他方法不受影响。
 
@@ -138,7 +138,7 @@ def rate_limiter(max_per_minute: int = 60) -> Callable[[type], type]:
         return handler.client_address[0] if handler.client_address else "unknown"
 
     def decorator(handler_cls: type) -> type:
-        for method in ("do_GET", "do_POST"):
+        for method in ("do_GET", "do_POST", "do_PATCH"):
             parent = getattr(handler_cls, method, None)
             if parent is None:
                 continue

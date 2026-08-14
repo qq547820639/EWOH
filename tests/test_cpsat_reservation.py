@@ -32,72 +32,87 @@ from edge_platform.scheduler.cpsat.solver import (  # noqa: E402
     _fixed_interval_bounds,
     _reservation_interval_specs,
     solve,
+    to_relative_minutes,
 )
 
 
 class FixedIntervalBoundsTest(unittest.TestCase):
     """F1 回归：fixed interval 必须满足 start+size==end（NewIntervalVar 硬性要求）。
 
-    直接对毫秒各自整除分钟会出现亚分钟余数不一致（startMs=36_030_000→600、
-    endMs=37_800_000→630、size=(1_770_000)//60_000=29 → 600+29=629≠630
-    → 模型整体 INFEASIBLE）。纯逻辑测试，不依赖 ortools。
+    自 P0-01 修复起 `_fixed_interval_bounds` 接收**相对 now 的分钟**（可负），
+    毫秒→分钟转换由 `to_relative_minutes` 统一完成；亚分钟余数不一致
+    （startMs=36_030_000→600、endMs=37_800_000→630、
+    size=(1_770_000)//60_000=29 → 600+29=629≠630 → 模型整体 INFEASIBLE）
+    仍必须被规整保证 start+size==end。纯逻辑测试，不依赖 ortools。
     """
 
     def test_non_integer_minute_reservation_consistent(self):
         """QA 复现推演：非整分钟预约 → start+size==end。"""
-        start, size, end = _fixed_interval_bounds(36_030_000, 37_800_000)
+        start, size, end = _fixed_interval_bounds(
+            to_relative_minutes(36_030_000, 0), to_relative_minutes(37_800_000, 0)
+        )
         self.assertEqual((start, size, end), (600, 30, 630))
         self.assertEqual(start + size, end)
 
     def test_short_sub_minute_reservation_uses_min_end(self):
         """短预约（40 秒，整除后 end==start）→ end=max(start+1, ...) 分支，size≥1。"""
-        start, size, end = _fixed_interval_bounds(36_030_000, 36_070_000)
+        start, size, end = _fixed_interval_bounds(
+            to_relative_minutes(36_030_000, 0), to_relative_minutes(36_070_000, 0)
+        )
         self.assertEqual(start, 600)
         self.assertEqual(end, 601)
         self.assertEqual(size, 1)
         self.assertEqual(start + size, end)
 
     def test_multi_minute_reservation_consistent(self):
-        start, size, end = _fixed_interval_bounds(36_030_000, 38_000_000)
+        start, size, end = _fixed_interval_bounds(
+            to_relative_minutes(36_030_000, 0), to_relative_minutes(38_000_000, 0)
+        )
         self.assertEqual((start, end), (600, 633))
         self.assertEqual(size, end - start)
         self.assertEqual(start + size, end)
 
     def test_exact_minute_reservation_consistent(self):
         """整分钟预约（无余数）同样保持 start+size==end。"""
-        start, size, end = _fixed_interval_bounds(36_000_000, 37_800_000)
+        start, size, end = _fixed_interval_bounds(
+            to_relative_minutes(36_000_000, 0), to_relative_minutes(37_800_000, 0)
+        )
         self.assertEqual((start, size, end), (600, 30, 630))
         self.assertEqual(start + size, end)
 
 
 class ReservationIntervalSpecTest(unittest.TestCase):
-    """纯函数测试：不依赖 ortools，验证 key 映射与防御性跳过。"""
+    """纯函数测试：不依赖 ortools，验证 key 映射与防御性跳过（相对 now 分钟，P0-01）。"""
 
     def test_key_mapping_matches_candidate_prefixes(self):
+        now = 1_000_000
         specs = _reservation_interval_specs(
             [
-                SolverReservation(resourceId="p1", resourceType="person", startMs=0, endMs=30_000),
-                SolverReservation(resourceId="d1", resourceType="device", startMs=0, endMs=30_000),
-                SolverReservation(resourceId="s1", resourceType="station", startMs=0, endMs=30_000),
-            ]
+                SolverReservation(resourceId="p1", resourceType="person", startMs=now + 60_000, endMs=now + 120_000),
+                SolverReservation(resourceId="d1", resourceType="device", startMs=now - 60_000, endMs=now + 60_000),
+                SolverReservation(resourceId="s1", resourceType="station", startMs=now + 120_000, endMs=now + 240_000),
+            ],
+            now,
         )
         self.assertEqual(
             specs,
             [
-                ("p:p1", 0, 30_000),
-                ("d:d1", 0, 30_000),
-                ("s:s1", 0, 30_000),
+                ("p:p1", 1, 2),
+                ("d:d1", -1, 1),
+                ("s:s1", 2, 4),
             ],
         )
 
     def test_abnormal_reservation_skipped(self):
         """endMs <= startMs 的异常预约直接跳过（防御），未知 resourceType 跳过。"""
+        now = 1_000_000
         specs = _reservation_interval_specs(
             [
                 SolverReservation(resourceId="p1", resourceType="person", startMs=30_000, endMs=30_000),
                 SolverReservation(resourceId="d1", resourceType="device", startMs=40_000, endMs=10_000),
                 SolverReservation(resourceId="x1", resourceType="robot", startMs=0, endMs=30_000),
-            ]
+            ],
+            now,
         )
         self.assertEqual(specs, [])
 

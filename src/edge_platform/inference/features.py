@@ -54,25 +54,46 @@ def _num(v):
 
 
 def _sample_values(msg):
-    """从单条遥测取 (pitch, roll, gyro_mag, accel_mag, torque, assist)；字段缺失/非法返回 None。"""
+    """从单条遥测取 (pitch, roll, gyro_mag, accel_mag, torque, assist)。
+
+    核心通道（NXP1 必采）：pitch_deg / torque_nm / assist_level——任一缺失/非法
+    → 整样本 invalid（返回 None）。可选通道：roll_deg（标量）、
+    gyro（3D 列表，或标量模长 angular_velocity_dps）、acceleration（3D 列表）——
+    设备未提供时对应分量置 None（不判 invalid），由 extract_features 聚合为
+    None 维度。修复真机链路 P0：NXP1 无 roll/3D 角速度/3D 加速度，
+    旧实现要求三者齐备 → extract_features 恒 None → 动作分类恒 unknown。
+    """
     t = msg.get("telemetry") or {}
     pitch = _num(t.get("pitch_deg"))
-    roll = _num(t.get("roll_deg"))
     torque = _num(t.get("torque_nm"))
     assist = _num(t.get("assist_level"))
+    if None in (pitch, torque, assist):
+        return None
+    roll = _num(t.get("roll_deg"))
+
     gyro = t.get("angular_velocity")
+    gyro_mag = None
+    if isinstance(gyro, (list, tuple)) and len(gyro) == 3:
+        vals = [_num(v) for v in gyro]
+        if None not in vals:
+            gyro_mag = _mag(vals)
+    elif gyro is None:
+        # NXP1 只提供标量角速度模长（angular_velocity_dps），直接用其绝对值
+        scalar = _num(t.get("angular_velocity_dps"))
+        if scalar is not None:
+            gyro_mag = abs(scalar)
+    else:
+        return None  # 提供了但形状非法 → 该样本 invalid（与旧语义一致）
+
     accel = t.get("acceleration")
-    if None in (pitch, roll, torque, assist):
-        return None
-    if not (isinstance(gyro, (list, tuple)) and len(gyro) == 3):
-        return None
-    if not (isinstance(accel, (list, tuple)) and len(accel) == 3):
-        return None
-    gyro = [_num(v) for v in gyro]
-    accel = [_num(v) for v in accel]
-    if None in gyro or None in accel:
-        return None
-    return pitch, roll, _mag(gyro), _mag(accel), torque, assist
+    accel_mag = None
+    if isinstance(accel, (list, tuple)) and len(accel) == 3:
+        vals = [_num(v) for v in accel]
+        if None not in vals:
+            accel_mag = _mag(vals)
+    elif accel is not None:
+        return None  # 提供了但形状非法 → invalid
+    return pitch, roll, gyro_mag, accel_mag, torque, assist
 
 
 def is_invalid(msg):
@@ -101,24 +122,29 @@ def extract_features(window, min_samples=MIN_SAMPLES):
             continue  # invalid 样本不参与统计（占比已在上方约束）
         p, r, g, a, tq, al = v
         pitch.append(p)
-        roll.append(r)
-        gyro_mag.append(g)
-        accel_mag.append(a)
+        if r is not None:
+            roll.append(r)
+        if g is not None:
+            gyro_mag.append(g)
+        if a is not None:
+            accel_mag.append(a)
         torque.append(tq)
         assist.append(al)
     if not pitch:
         return None  # 有效样本为空（占比约束已保证 >=70% 可用时才走到这里）
 
+    # 可选通道（roll/gyro/accel）无样本时对应维度为 None（设备未配备该传感器），
+    # 由推理管线按"通道缺失"语义处理；核心通道（pitch/torque/assist）必有样本。
     return {
         "pitch_mean": _mean(pitch),
         "pitch_std": _std(pitch),
         "pitch_max": max(pitch),
-        "roll_mean": _mean(roll),
-        "roll_std": _std(roll),
-        "gyro_mag_mean": _mean(gyro_mag),
-        "gyro_mag_std": _std(gyro_mag),
-        "gyro_mag_max": max(gyro_mag),
-        "accel_mag_std": _std(accel_mag),
+        "roll_mean": _mean(roll) if roll else None,
+        "roll_std": _std(roll) if roll else None,
+        "gyro_mag_mean": _mean(gyro_mag) if gyro_mag else None,
+        "gyro_mag_std": _std(gyro_mag) if gyro_mag else None,
+        "gyro_mag_max": max(gyro_mag) if gyro_mag else None,
+        "accel_mag_std": _std(accel_mag) if accel_mag else None,
         "torque_mean": _mean(torque),
         "torque_max": max(torque),
         "assist_mean": _mean(assist),

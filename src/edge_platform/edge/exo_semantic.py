@@ -143,6 +143,11 @@ class UnifiedExoFrame:
     firmware_version: str = ""
     protocol_version: str = ""
     raw_ref: str = ""
+    # ---- 采集溯源扩展（补传/乱序/丢包可观测，E-05/E-07 修复） ----
+    # sequence：设备帧 SEQ（实时帧与补传帧共用序列）；backfill：是否补传历史帧
+    # （规则层据此跳过时间戳倒退检测，避免重连补传触发 TIME_SYNC_ANOMALY 误报）。
+    sequence: Optional[int] = None
+    backfill: bool = False
 
     def __post_init__(self):
         if not self.event_time:
@@ -259,4 +264,6 @@ def from_storage_dict(d):
         firmware_version=d.get("firmware_version", ""),
         protocol_version=d.get("protocol_version", ""),
         raw_ref=d.get("raw_ref", ""),
+        sequence=d.get("sequence"),
+        backfill=bool(d.get("backfill", False)),
     )

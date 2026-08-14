@@ -66,8 +66,14 @@ _TRAINING_BOUNDS = {
     "assist_mean": (-0.5, 1.5),
 }
 
-# 传感器关键通道（任一 None → sensor_channel_missing）
-_KEY_CHANNELS = ("pitch_deg", "roll_deg", "torque_nm", "assist_level", "angular_velocity", "acceleration")
+# 传感器关键通道（任一 None → sensor_channel_missing）。
+# P0 修复（真机通道子集）：仅核心通道参与缺失判定——NXP1 设备不提供
+# roll/3D 角速度/3D 加速度（属可选通道），旧口径会导致真机帧恒被判
+# sensor_channel_missing，动作分类恒 unknown。
+_KEY_CHANNELS = ("pitch_deg", "torque_nm", "assist_level")
+# 可选通道（设备未配备时缺失不触发 sensor_channel_missing）：
+# roll_deg / angular_velocity(3D) / angular_velocity_dps(标量模长) / acceleration(3D)
+_OPTIONAL_CHANNELS = ("roll_deg", "angular_velocity", "angular_velocity_dps", "acceleration")
 
 # Task 31：consent 检查使用的用途名（与 ConsentPurpose.TELEMETRY.value 一致）。
 # ConsentManager.is_allowed 接受字符串，会自动转成 ConsentPurpose 枚举。
@@ -164,7 +170,10 @@ class InferencePipeline:
         if feats["pitch_mean"] > 35:
             return "bend", 0.7, None
         # Task 20.1: carry = 行走特征 + 高扭矩（区别于纯 lift 的静止高负荷）
-        is_walk = feats["gyro_mag_mean"] > 40 or feats["accel_mag_std"] > 1.5
+        # 可选通道缺失（真机无 3D 加速度/角速度向量）时以 None 计 0，不误伤规则判定。
+        gyro = feats.get("gyro_mag_mean") or 0
+        accel_std = feats.get("accel_mag_std") or 0
+        is_walk = gyro > 40 or accel_std > 1.5
         is_high_load = feats["torque_mean"] > 15 or feats["assist_mean"] > 0.5
         if is_walk and is_high_load:
             return "carry", 0.65, None
@@ -213,7 +222,8 @@ class InferencePipeline:
         """
         bend = feats["pitch_mean"] > 35
         load = feats["torque_mean"] > 15 or feats["assist_mean"] > 0.5
-        walk = feats["gyro_mag_mean"] > 40 or feats["accel_mag_std"] > 1.5
+        # 可选通道缺失（真机无 3D 加速度/角速度向量）时以 None 计 0
+        walk = (feats.get("gyro_mag_mean") or 0) > 40 or (feats.get("accel_mag_std") or 0) > 1.5
         # carry = walk + load（无 bend）是合法组合，不视为歧义
         if walk and load and not bend:
             return False
@@ -252,6 +262,8 @@ class InferencePipeline:
             return []
         scores = {}
         for k, v in feats.items():
+            if v is None:
+                continue  # 可选通道缺失维度不参与排序（真机通道子集）
             if model is not None and k in model.feature_names:
                 i = model.feature_names.index(k)
                 scores[k] = abs((v - model.mean[i]) / model.std[i])
@@ -349,6 +361,15 @@ class InferencePipeline:
         feats = extract_features(window)
         model, meta = self._get_model()
         is_rule = False
+        if model is not None and (
+            feats is None
+            or any(feats.get(n) is None for n in model.feature_names)
+        ):
+            # P0 修复（真机通道子集）：模型按 12 维训练，设备帧仅提供子集通道
+            # （NXP1 无 roll/3D 角速度/3D 加速度）→ 特征存在 None 维。诚实降级到
+            # 规则路径（基于 pitch/torque/assist 的核心通道判定），而非让模型
+            # 返回 unknown/data_quality 抹掉真实动作。
+            model = None
         if model is not None:
             try:
                 pred = model.predict(feats)

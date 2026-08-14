@@ -125,6 +125,34 @@ def is_allowed(role, action) -> bool:
     return PERMISSIONS.get(role_value, {}).get(action, False)
 
 
+def action_for_request(method, path):
+    """按 HTTP 方法 + 路径把请求映射到 RBAC 动作（无匹配返回 None = 不额外限制）。
+
+    - 审计查询 → view_audit（矩阵：data_analyst/viewer 不可见）；
+    - 原始数据导出 → export_data；
+    - 事件处置/评论写路径 → handle_events；
+    - 任务/调度/派工写路径 → manage_assignments（operator 无权，防越权派工）；
+    - 模型/规则写路径 → manage_models / manage_rules。
+    遥测/事件读路径不映射——监督平台读语义默认放行（与云侧一致）。
+    """
+    m = (method or "").upper()
+    p = path or ""
+    if p.startswith("/api/audit"):
+        return VIEW_AUDIT
+    if p.startswith("/api/telemetry/export"):
+        return EXPORT_DATA
+    if m in ("POST", "PATCH", "PUT", "DELETE"):
+        if p.startswith("/api/events/"):
+            return HANDLE_EVENTS
+        if p.startswith("/api/tasks") or p.startswith("/api/scheduling") or p.startswith("/api/assignments"):
+            return MANAGE_ASSIGNMENTS
+        if p.startswith("/api/models"):
+            return MANAGE_MODELS
+        if p.startswith("/api/rules"):
+            return MANAGE_RULES
+    return None
+
+
 def check_export_role(role, allowed_roles) -> bool:
     """校验角色是否在导出允许名单内。
 

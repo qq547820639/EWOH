@@ -72,6 +72,34 @@ class ReservationService:
             self._reservations[res.reservation_id] = res
             return res
 
+    def restore(self, reservations):
+        """R-3 hydrate：从持久化记录恢复预约到内存（重启后冲突检测仍生效）。
+
+        - 跳过损坏记录与已存在对象（幂等）；
+        - 仅恢复 active 状态（released/过期预约不参与冲突检测，调用方过滤）；
+        - 存储行含额外列（created_at 等）——只取模型字段构造对象；
+        - 返回成功恢复数量。
+        """
+        from dataclasses import fields as dc_fields
+
+        reservation_fields = {f.name for f in dc_fields(Reservation)}
+        restored = 0
+        with self._lock:
+            for d in reservations or []:
+                try:
+                    rid = d.get("reservation_id")
+                    if not rid or rid in self._reservations:
+                        continue
+                    if d.get("status", "active") != "active":
+                        continue
+                    self._reservations[rid] = Reservation(
+                        **{k: d[k] for k in reservation_fields if k in d}
+                    )
+                    restored += 1
+                except Exception:  # noqa: BLE001 - 单条损坏不影响整体恢复
+                    continue
+        return restored
+
     def check_conflict(self, resource_id, start_at, end_at, exclude_reservation_id=None):
         """判断同资源在时间窗上是否与现有 active 预约冲突。"""
         with self._lock:

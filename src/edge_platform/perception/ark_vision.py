@@ -12,9 +12,12 @@
 """
 
 import contextlib
+import ipaddress
 import json
+import socket
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 
 from edge_platform.config import Settings
 
@@ -23,6 +26,44 @@ DEFAULT_MODEL = "doubao-seed-2-1-pro-260628"
 DEFAULT_QUESTION = "你看见了什么？"
 #: 演示模式默认图片（未显式传入 image_url 时使用）
 DEFAULT_DEMO_IMAGE = "https://ark-project.tos-cn-beijing.volces.com/doc_image/ark_demo_img_1.png"
+
+
+def validate_outbound_url(raw_url, label="url"):
+    """SSRF 防护（P1 安全修复）：出站地址仅允许公网 http/https，且解析后
+    不含环回/内网/链路本地/保留/组播/未指定地址（阻断指向 169.254.169.254、
+    localhost、10.x/172.16-31.x/192.168.x 等的服务端出站请求）。
+
+    返回 (ok, reason)；ok=False 时调用方必须拒绝。
+    """
+    try:
+        parsed = urlparse(raw_url)
+    except ValueError:
+        return False, "invalid_url"
+    if parsed.scheme not in ("http", "https"):
+        return False, "invalid_scheme"
+    host = parsed.hostname
+    if not host:
+        return False, "missing_host"
+    try:
+        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return False, "dns_resolution_failed"
+    for info in infos:
+        ip = info[4][0]
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if (
+            addr.is_loopback
+            or addr.is_private
+            or addr.is_link_local
+            or addr.is_reserved
+            or addr.is_multicast
+            or addr.is_unspecified
+        ):
+            return False, "internal_address"
+    return True, None
 
 
 def _extract_content(raw):
@@ -80,6 +121,27 @@ def describe_image(image_url="", question=DEFAULT_QUESTION, api_key="", base_url
             "error": "未配置 EWOH_ARK_API_KEY，无法调用视觉理解模型。",
             "answer": "",
         }
+    # P1 安全修复（SSRF）：出站 API 地址必须是公网 http/https（拒绝内网/环回/链路本地/
+    # 云元数据地址），即使请求级 base_url 覆盖也不能把服务端出站请求指向内部网络。
+    ok, reason = validate_outbound_url(base_url, label="base_url")
+    if not ok:
+        return {
+            "ok": False,
+            "backend": "ark",
+            "model": model,
+            "error": f"base_url 不安全（{reason}）：仅允许公网 http/https 地址。",
+            "answer": "",
+        }
+    if image_url:
+        ok_img, reason_img = validate_outbound_url(image_url, label="image_url")
+        if not ok_img:
+            return {
+                "ok": False,
+                "backend": "ark",
+                "model": model,
+                "error": f"image_url 不安全（{reason_img}）：仅允许公网 http/https 图片地址。",
+                "answer": "",
+            }
     url = base_url.rstrip("/") + "/chat/completions"
     body = {
         "model": model,

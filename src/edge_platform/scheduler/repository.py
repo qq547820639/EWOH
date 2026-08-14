@@ -143,6 +143,13 @@ class SchedulingRepository:
         """列出预约（可选按 status 过滤），返回 dict 列表。"""
         return self.storage.list_reservations(status=status)
 
+    def list_assignments(self, person_id=None, status=None):
+        """列出正式派工记录（可选按 person_id/status 过滤），返回 dict 列表。
+
+        R-3 hydrate 补齐：重启后恢复 _assignments 内存态（派工可查/可续状态流转）。
+        """
+        return self.storage.list_assignments(person_id=person_id, status=status)
+
     # ---- 决策 / 审计 ----
 
     def record_decision(self, plan_id, version, action, actor_id, reason, before, after):

@@ -382,6 +382,7 @@ class ExoSemanticTest(unittest.TestCase):
             for grp in ("pose", "load", "device", "quality"):
                 self.assertNotIn(k, d[grp], f"厂商私有字段 {k} 不应出现在 {grp}")
         # 顶层只包含统一字段 + 标准消息扩展字段（spec「标准消息扩展与数据质量」）
+        # + 采集溯源扩展字段（E-05/E-07：sequence/backfill，平台级非厂商私有）
         self.assertEqual(
             set(d.keys()),
             {
@@ -399,6 +400,8 @@ class ExoSemanticTest(unittest.TestCase):
                 "firmware_version",
                 "protocol_version",
                 "raw_ref",
+                "sequence",
+                "backfill",
             },
         )
         # 统一字段已就位

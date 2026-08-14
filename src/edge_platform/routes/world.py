@@ -7,11 +7,11 @@ GET /api/devices、/api/devices/{id}、/api/devices/{id}/health、/api/people、
 逻辑自 server.py 原 Handler 机械抽取：self→h、闭包 ctx→显式参数，响应契约不变。
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from edge_platform import services
 
-from . import NOT_HANDLED, Route, affix, dispatch_routes, exact, sub_path
+from . import Route, affix, dispatch_routes, exact, sub_path
 from ._util import (
     EVIDENCE_WINDOW_SEC,
     OFFLINE_AFTER_SEC,
@@ -20,6 +20,7 @@ from ._util import (
     _filter_source,
     now_iso,
     parse_ts,
+    resolve_actor,
 )
 
 
@@ -199,7 +200,7 @@ def api_event_status_v2(ctx, h, event_id, payload):
     evt = ctx.storage.get_event(event_id)
     if not evt:
         return h._new_error("not_found", "事件不存在", 404)
-    handler_id = payload.get("handler_id") or payload.get("handled_by") or h._actor()
+    handler_id = resolve_actor(h, payload, "handler_id", "handled_by")
     action = payload.get("action") or status
     comment = payload.get("comment")
     handling = {"handled_by": handler_id, "handled_at": now_iso(), "action": action, "comment": comment}
@@ -221,7 +222,7 @@ def route_event_status_v2(ctx, h, req_meta):
 def api_event_comment(ctx, h, event_id, payload):
     """POST /api/events/{event_id}/comment — 添加事件评论。"""
     comment = (payload.get("comment") or "").strip()
-    author_id = (payload.get("author_id") or h._actor()).strip()
+    author_id = (resolve_actor(h, payload, "author_id") or "").strip()
     if not comment:
         return h._new_error("invalid_params", "comment 不能为空", 400)
     if not ctx.storage.get_event(event_id):

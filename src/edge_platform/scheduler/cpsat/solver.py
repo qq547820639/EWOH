@@ -42,6 +42,28 @@ except Exception:  # noqa: BLE001 - 任何导入失败都视为不可用
 MINUTE = 60_000
 
 
+def to_relative_minutes(epoch_ms, now_ms):
+    """P0-01 修复（纯函数）：把 epoch 毫秒转换为相对 now 的分钟数。
+
+    模型内所有变量必须使用同一时间基准（相对 now 的分钟，负数表示已过去）：
+    - 非冻结任务：earliestStart 等已按 (epoch - now) // MINUTE 转相对；
+    - frozen/reservation/due/mustFinish 原实现直接 epoch // MINUTE（≈2.9e7），
+      与相对分钟混入同一 AddNoOverlap/MaxEquality → 预约/冻结约束对普通任务
+      完全失效（可排进已预约窗口）、lateness 恒 0、硬截止永不生效。
+    """
+    return (int(epoch_ms) - int(now_ms)) // MINUTE
+
+
+def late_domain_upper(hi_min, dur_min, due_rel_min, horizon_min):
+    """P0-02 修复（纯函数）：lateness 变量域上界必须容纳 end - due 的最大可能值。
+
+    原实现固定 horizon_min + 10：当 end 上界（hi+dur）超过 due 超过该值时，
+    AddMaxEquality 的表达式越过目标变量域 → 模型不可满足。上界取
+    max(hi+dur - due, horizon_min + 10) 且至少 1，保证表达式值域被目标域覆盖。
+    """
+    return max(1, (hi_min + dur_min) - due_rel_min, horizon_min + 10)
+
+
 def person_has_required_skills(
     person_skills, required_skills, match_mode: str = "ALL"
 ) -> bool:
@@ -122,27 +144,25 @@ def partition_tasks_into_windows(tasks, now_ms, horizon_minutes, window_minutes)
     return [b for b in buckets if b]
 
 
-def _fixed_interval_bounds(s_ms, e_ms):
-    """把毫秒起止规整为一致的 (start, size, end) 分钟三元组。
+def _fixed_interval_bounds(s_min, e_min):
+    """把分钟起止规整为一致的 (start, size, end) 分钟三元组。
 
-    OR-Tools 的 NewIntervalVar 强制 start + size == end。若对毫秒各自整除分钟
-    会出现亚分钟余数不一致（例：startMs=36_030_000→start=600、
-    endMs=37_800_000→end=630、size=(1_770_000)//60_000=29 → 600+29=629≠630
-    → 模型整体 INFEASIBLE）。因此统一：
-      start = s_ms // MINUTE；end = max(start + 1, e_ms // MINUTE)；size = end - start。
-    短区间（整除后 end == start）由 max(start+1, ...) 保证至少 1 分钟。
+    输入为**相对 now 的分钟**（可负），由调用方经 to_relative_minutes 转换；
+    OR-Tools 的 NewIntervalVar 强制 start + size == end，此处保证
+    start + size == end 且区间至少 1 分钟（亚分钟余数已在调用方整除吸收）。
     """
-    start = s_ms // MINUTE
-    end = max(start + 1, e_ms // MINUTE)
+    start = s_min
+    end = max(start + 1, e_min)
     return start, end - start, end
 
 
-def _fixed_interval(model, s_ms, e_ms, name):
+def _fixed_interval(model, s_min, e_min, name):
     """构造满足 start+size==end 的 fixed interval（frozen/reservation 共用）。
 
-    frozen 任务与预约均为资源上的固定占用区间，建模方式一致。
+    frozen 任务与预约均为资源上的固定占用区间，建模方式一致；
+    s_min/e_min 为相对 now 的分钟（可负），与任务决策变量同基准。
     """
-    start, size, end = _fixed_interval_bounds(s_ms, e_ms)
+    start, size, end = _fixed_interval_bounds(s_min, e_min)
     return model.NewIntervalVar(
         model.NewConstant(start),
         size,
@@ -151,12 +171,13 @@ def _fixed_interval(model, s_ms, e_ms, name):
     )
 
 
-def _reservation_interval_specs(reservations):
-    """把预约映射为 (resource_key, startMs, endMs) 规格，供建模为 fixed interval。
+def _reservation_interval_specs(reservations, now_ms):
+    """把预约映射为 (resource_key, startMin, endMin) 规格（相对 now 分钟）。
 
     resourceType 取值 person/device/station，与候选 interval 的 key 前缀
     p:/d:/s: 完全一致（见 _solve_cpsat 候选区间 key）。endMs <= startMs 的
     异常预约直接跳过（防御），避免生成非法区间。
+    P0-01：与任务变量统一转换为相对分钟，保证 AddNoOverlap 语义有效。
     """
     specs = []
     for r in reservations or []:
@@ -174,7 +195,13 @@ def _reservation_interval_specs(reservations):
             key = f"s:{r.resourceId}"
         else:
             continue
-        specs.append((key, s_ms, e_ms))
+        specs.append(
+            (
+                key,
+                to_relative_minutes(s_ms, now_ms),
+                to_relative_minutes(e_ms, now_ms),
+            )
+        )
     return specs
 
 
@@ -311,28 +338,33 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
     interval_by_resource: Dict[str, List[object]] = {}
 
     # 冻结任务：固定时间；其余任务：start/end 整数变量。
+    # P0-01：frozen 的 epoch 毫秒必须转换为相对 now 的分钟，与普通任务变量
+    # 同一时间基准——否则 AddNoOverlap 中两种量纲（≈2.9e7 vs 0..horizon）
+    # 永不重叠，冻结/预约对普通任务的可占用保护完全失效。
     for t in request.tasks:
         if t.taskId in frozen_by_task:
             f = frozen_by_task[t.taskId]
-            start_min[t.taskId] = model.NewConstant(f.startMs // MINUTE)
-            end_min[t.taskId] = model.NewConstant(f.endMs // MINUTE)
-            for pid, did, sid, sMs, eMs in [
+            start_rel = to_relative_minutes(f.startMs, request.nowMs)
+            end_rel = to_relative_minutes(f.endMs, request.nowMs)
+            start_min[t.taskId] = model.NewConstant(start_rel)
+            end_min[t.taskId] = model.NewConstant(end_rel)
+            for pid, did, sid, _sMs, _eMs in [
                 (f.personId, f.deviceId, f.stationId, f.startMs, f.endMs),
             ]:
                 if pid:
                     key = f"p:{pid}"
                     interval_by_resource.setdefault(key, []).append(
-                        _fixed_interval(model, sMs, eMs, f"frozen_p_{pid}_{t.taskId}")
+                        _fixed_interval(model, start_rel, end_rel, f"frozen_p_{pid}_{t.taskId}")
                     )
                 if did:
                     key = f"d:{did}"
                     interval_by_resource.setdefault(key, []).append(
-                        _fixed_interval(model, sMs, eMs, f"frozen_d_{did}_{t.taskId}")
+                        _fixed_interval(model, start_rel, end_rel, f"frozen_d_{did}_{t.taskId}")
                     )
                 if sid:
                     key = f"s:{sid}"
                     interval_by_resource.setdefault(key, []).append(
-                        _fixed_interval(model, sMs, eMs, f"frozen_s_{sid}_{t.taskId}")
+                        _fixed_interval(model, start_rel, end_rel, f"frozen_s_{sid}_{t.taskId}")
                     )
             continue
         if not candidates.get(t.taskId):
@@ -420,7 +452,10 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         if t.taskId in frozen_by_task or t.taskId not in end_min:
             continue
         if t.mustFinishByMs:
-            model.Add(end_min[t.taskId] <= t.mustFinishByMs // MINUTE).OnlyEnforceIf(
+            # P0-01：硬截止同样必须转相对分钟（原 epoch//MINUTE ≈2.9e7 恒大于
+            # 相对 end → 约束恒真，硬截止从未生效）。
+            finish_rel = to_relative_minutes(t.mustFinishByMs, request.nowMs)
+            model.Add(end_min[t.taskId] <= finish_rel).OnlyEnforceIf(
                 assigned_by_task[t.taskId]
             )
 
@@ -443,7 +478,8 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
     # 4) reservation：预约建模为资源上的 fixed interval（与 frozen 任务一致），
     #    加入 interval_by_resource 后由下方 AddNoOverlap 统一约束——
     #    任务区间与预约区间不得重叠（可排在其前或其后），而非"存在任意预约即禁止分配"。
-    for key, s_ms, e_ms in _reservation_interval_specs(request.reservations):
+    #    P0-01：统一转换为相对 now 的分钟（与任务变量同基准）。
+    for key, s_min, e_min in _reservation_interval_specs(request.reservations, request.nowMs):
         res_id = key[2:]
         if key.startswith("p:"):
             name = f"res_p_{res_id}"
@@ -452,7 +488,7 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         else:
             name = f"res_s_{res_id}"
         interval_by_resource.setdefault(key, []).append(
-            _fixed_interval(model, s_ms, e_ms, name)
+            _fixed_interval(model, s_min, e_min, name)
         )
 
     # 5) forbidden zone：任务 zone 在禁入区 → 无候选（已在候选层处理，此处兜底）。
@@ -489,12 +525,23 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         model.Add(sum(presence[t.taskId].values()) == 1 - missed)
         terms.append(unassigned_scale * missed)
 
-    # lateness：max(0, end - due)。
+    # lateness：max(0, end - due)。P0-01/P0-02 修复：
+    # - dueMs 是 epoch 毫秒，必须转相对分钟（原 epoch//MINUTE 使
+    #   end - due 恒为巨负数 → lateness 恒 0，软目标失效）；
+    # - late 变量域上界必须容纳 end 上界与 due 的差（原 horizon+10 固定上界
+    #   在长时长/迟 due 场景下被表达式越过 → 模型不可满足）。
+    late_by_task: Dict[str, object] = {}
+    wait_by_task: Dict[str, object] = {}
     for t in request.tasks:
         if t.taskId in frozen_by_task or t.taskId not in end_min or not t.dueMs:
             continue
-        late = model.NewIntVar(0, horizon_min + 10, f"late_{t.taskId}")
-        model.AddMaxEquality(late, [0, end_min[t.taskId] - t.dueMs // MINUTE])
+        due_rel = to_relative_minutes(t.dueMs, request.nowMs)
+        lo = max(0, (t.earliestStartMs - request.nowMs) // MINUTE)
+        hi = max(horizon_min, lo + 1)
+        dur = max(1, t.durationMs // MINUTE)
+        late = model.NewIntVar(0, late_domain_upper(hi, dur, due_rel, horizon_min), f"late_{t.taskId}")
+        model.AddMaxEquality(late, [0, end_min[t.taskId] - due_rel])
+        late_by_task[t.taskId] = late
         terms.append(w.lateness * late)
 
     # stationWait：start - earliestStart。
@@ -504,6 +551,7 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         earliest = max(0, (t.earliestStartMs - request.nowMs) // MINUTE)
         wait = model.NewIntVar(0, horizon_min + 10, f"wait_{t.taskId}")
         model.AddMaxEquality(wait, [0, start_min[t.taskId] - earliest])
+        wait_by_task[t.taskId] = wait
         terms.append(w.stationWait * wait)
 
     # travel：P0-4 权威 RouteCost 矩阵（Nest TravelCostService 计算后透传）。
@@ -569,6 +617,8 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
     # ---- 提取结果 ----
     assignments: List[SolverAssignmentResult] = []
     unassigned: List[str] = []
+    travel_sum = 0.0
+    churn_count = 0
     for t in request.tasks:
         if t.taskId in frozen_by_task:
             f = frozen_by_task[t.taskId]
@@ -598,6 +648,16 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         pi, di, si = chosen
         s_val = int(solver.Value(start_min[t.taskId]))
         e_val = int(solver.Value(end_min[t.taskId]))
+        # P0-03：在提取阶段累积 travel/churn 的真实解值（供 objectiveBreakdown 使用）。
+        st = request.stations[si] if si != -1 else None
+        dist_m = travel_cost_for_candidate(
+            request.candidateCosts, t.taskId, request.persons[pi].id, st.id if st else None
+        )
+        if dist_m is not None:
+            travel_sum += float(dist_m)
+        baseline = request.baselineAssignee.get(t.taskId)
+        if baseline and request.persons[pi].id != baseline:
+            churn_count += 1
         assignments.append(
             SolverAssignmentResult(
                 taskId=t.taskId,
@@ -611,6 +671,12 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
             )
         )
 
+    # P0-03：objectiveBreakdown 输出求解出的真实分量值（原实现把权重值当分量输出，
+    # 属伪造占位）。分量为自然单位：unassigned=个（×scale 后为惩罚值）、
+    # lateness/stationWait=分钟、travel=米、churn=换人次数。
+    lateness_sum = sum(float(solver.Value(v)) for v in late_by_task.values())
+    wait_sum = sum(float(solver.Value(v)) for v in wait_by_task.values())
+
     objective_val = float(solver.ObjectiveValue()) if solver.ObjectiveValue() is not None else 0.0
     bound = float(solver.BestObjectiveBound()) if solver.BestObjectiveBound() is not None else None
     return SolverResponse(
@@ -620,10 +686,10 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         objective=objective_val,
         objectiveBreakdown={
             "unassigned": float(unassigned_scale * len(unassigned)),
-            "lateness": float(w.lateness),
-            "stationWait": float(w.stationWait),
-            "travel": float(w.travel),
-            "churn": float(w.churn),
+            "lateness": lateness_sum,
+            "stationWait": wait_sum,
+            "travel": travel_sum,
+            "churn": float(churn_count),
         },
         hardViolations=[],
         optimalityGap=(bound - objective_val) if bound is not None else None,

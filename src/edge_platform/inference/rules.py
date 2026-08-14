@@ -258,11 +258,18 @@ class RuleEngine:
         )
 
         # TIME_SYNC_ANOMALY：时间戳倒退 / 漂移超过阈值
+        # E-07：补传历史帧时间戳天然倒退，不参与漂移检测（基线仅由实时帧维护），
+        # 避免重连补传触发误报。
+        backfill_frame = bool(msg.get("backfill"))
         last_ts = self._last_ts.get(dev)
         drift = None
-        if last_ts is not None:
+        if backfill_frame:
+            pass  # 不更新基线、不产生 drift
+        elif last_ts is not None:
             drift = ts_ms - last_ts
-        self._last_ts[dev] = ts_ms
+            self._last_ts[dev] = ts_ms
+        else:
+            self._last_ts[dev] = ts_ms
         ts_enter = False
         ts_exit = False
         if drift is not None:
@@ -283,7 +290,13 @@ class RuleEngine:
         )
 
         # PACKET_LOSS_BURST：packet_loss_pct > packet_loss_enter_pct 持续 packet_loss_sec
-        pkt_loss = _f(q.get("packet_loss"))
+        # E-06：生产字段为 packet_loss_pct（0-100）；兼容旧字段 packet_loss（0-1，换算百分比）。
+        pkt_raw = q.get("packet_loss_pct")
+        if pkt_raw is None:
+            legacy = q.get("packet_loss")
+            if legacy is not None:
+                pkt_raw = legacy * 100.0 if legacy <= 1 else legacy
+        pkt_loss = _f(pkt_raw)
         pl_enter = pkt_loss is not None and pkt_loss > self.cfg["packet_loss_enter_pct"]
         pl_exit = pkt_loss is not None and pkt_loss > self.cfg["packet_loss_exit_pct"]
         drafts += self._track(

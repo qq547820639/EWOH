@@ -22,6 +22,25 @@ def now_iso():
     return services.iso(datetime.now())
 
 
+def resolve_actor(h, payload, *client_keys):
+    """解析操作人身份（P1 安全修复）：服务端 token 身份优先，客户端自报仅作降级。
+
+    此前各写接口用 ``payload.get("actor_id") or h._actor()``，客户端可自报操作人
+    覆盖 Bearer token 身份，审计溯源可被伪造。修复后：
+    - 有有效服务端身份（非 None、非 anonymous）→ 一律采用服务端身份；
+    - 服务端身份缺失（未认证）→ 仅在 development/simulation 回退客户端自报键
+      （离线演示便利），production 下返回 None（由写保护门禁拒绝）。
+    """
+    token_actor = h._actor() if hasattr(h, "_actor") else None
+    if token_actor and token_actor != "anonymous":
+        return token_actor
+    for key in client_keys:
+        value = (payload or {}).get(key)
+        if value:
+            return value
+    return token_actor
+
+
 def _device_view(ctx, d):
     v = dict(d)
     v["online"] = ctx.device_online(d)
