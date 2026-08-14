@@ -56,13 +56,59 @@
     return res.json();
   }
 
+  /* ---------- 写权限凭证（v1.1.0 写操作 fail-closed 鉴权） ----------
+   * 后端 /api 写操作必须携带 Authorization: Bearer <FEISHU_API_TOKEN>，
+   * 未配置或错误会 401/503。凭证只存浏览器 localStorage（供本机值班台使用），
+   * 由「写权限」按钮设置；服务端 token 仍以环境变量为唯一来源。 */
+  const API_TOKEN_KEY = "ewoh.feishu.apiToken";
+
+  function getApiToken() {
+    try { return localStorage.getItem(API_TOKEN_KEY) || ""; } catch (_) { return ""; }
+  }
+
+  function setApiToken(token) {
+    try {
+      if (token) localStorage.setItem(API_TOKEN_KEY, token);
+      else localStorage.removeItem(API_TOKEN_KEY);
+    } catch (_) { /* localStorage 不可用时仅本会话内不持久 */ }
+  }
+
+  function updateTokenBadge() {
+    const btn = document.getElementById("apiTokenBtn");
+    if (btn) btn.textContent = getApiToken() ? "写权限：已配置" : "写权限：未配置";
+  }
+
+  function configureApiToken() {
+    const current = getApiToken();
+    const input = window.prompt(
+      "输入写操作 API Token（与服务端 FEISHU_API_TOKEN 一致）：\n" +
+      "留空并确定 = 清除已保存的 Token。",
+      current
+    );
+    if (input === null) return; // 取消：不变更
+    setApiToken(input.trim());
+    updateTokenBadge();
+  }
+
   async function postJSON(url, body) {
+    const headers = { "Content-Type": "application/json", Accept: "application/json" };
+    const token = getApiToken();
+    if (token) headers.Authorization = "Bearer " + token;
     const res = await fetch(API_BASE + url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers,
       body: JSON.stringify(body || {}),
     });
-    if (!res.ok) throw new Error("HTTP " + res.status + " @ " + url);
+    if (!res.ok) {
+      // 写鉴权失败给出可行动提示（fail-closed：503=服务端未配 token，401=token 错误）
+      if (res.status === 401 || res.status === 503) {
+        throw new Error(
+          "HTTP " + res.status + "（写操作需配置 API Token：点击顶栏「写权限」按钮，"
+          + "输入与服务端 FEISHU_API_TOKEN 一致的凭证后重试）"
+        );
+      }
+      throw new Error("HTTP " + res.status + " @ " + url);
+    }
     return res.json().catch(() => ({}));
   }
 
@@ -815,6 +861,10 @@
     bindEvents();
     tickClock();
     setInterval(tickClock, 1000);
+    // 写权限凭证：顶栏按钮 + 当前状态徽标（v1.1.0 写操作 fail-closed 鉴权）
+    updateTokenBadge();
+    const tokenBtn = document.getElementById("apiTokenBtn");
+    if (tokenBtn) tokenBtn.addEventListener("click", configureApiToken);
     // 首屏立即拉取
     pollFast();
     renderDashboard();

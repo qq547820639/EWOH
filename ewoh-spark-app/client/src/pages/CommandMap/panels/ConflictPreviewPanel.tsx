@@ -186,7 +186,7 @@ export function ConflictPreviewPanel({
             <span className="rounded bg-white/10 px-1 py-0.5">{preview.candidatePlanId?.slice(-8) ?? '—'}</span>
             {diff && (
               <span className="ml-auto text-white/60">
-                churn {diff.churn} · 变更 {diff.diffByTask.length} · +{diff.added.length} -{diff.removed.length}
+                换人 {diff.churn} · 变更 {diff.diffByTask.length} · +{diff.added.length} -{diff.removed.length}
               </span>
             )}
           </div>

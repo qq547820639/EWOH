@@ -25,6 +25,32 @@ export function pickComparePlanId(
   return other ? other.planId : null;
 }
 
+/**
+ * 选取「上一已批准/已派工方案」id 用于回看对比（值班员评估回退到上一版）。
+ * - 无选中方案 → null；
+ * - 候选 = 非当前方案且状态 ∈ {approved, dispatched, executing, completed, superseded}
+ *   （superseded = 被重排替代的旧版，是最接近"回退目标"的历史方案）；
+ * - 按 createdAt 降序取最近的一个；无候选 → null（不兜底列表首个，同 pickComparePlanId 约束）。
+ */
+export function pickPreviousApprovedPlanId(
+  plans: SchedulingPlanV2[],
+  selectedPlanId: string | null | undefined,
+): string | null {
+  if (!selectedPlanId) return null;
+  const candidates = plans
+    .filter(
+      (p) =>
+        p.planId !== selectedPlanId &&
+        ['approved', 'dispatched', 'executing', 'completed', 'superseded'].includes(p.status),
+    )
+    .sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return tb - ta;
+    });
+  return candidates.length > 0 ? candidates[0].planId : null;
+}
+
 /** 指标增量行（label + 数值 + 展示单位）。 */
 export interface ReplanPreviewDeltaRow {
   key: string;
@@ -62,7 +88,7 @@ export function replanPreviewSummary(
       { key: 'workload', label: '负荷', value: preview.workloadDelta ?? 0, unit: '' },
       { key: 'stationWait', label: '工位等待', value: preview.stationWaitDelta ?? 0, unit: 'min' },
       { key: 'risk', label: '风险', value: preview.riskDelta ?? 0, unit: '' },
-      { key: 'churn', label: 'churn', value: preview.churnDelta ?? 0, unit: '' },
+      { key: 'churn', label: '换人成本', value: preview.churnDelta ?? 0, unit: '' },
     ],
     baselinePlanId: preview.baselinePlanId ?? null,
     candidatePlanId: preview.candidatePlanId ?? null,

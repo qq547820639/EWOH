@@ -20,7 +20,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { getTaskCandidates, acknowledgeConflict } from '@client/src/api/scheduler';
+import { getTaskCandidates, acknowledgeConflict, listExecutions } from '@client/src/api/scheduler';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import { getCurrentOperator } from '@client/src/lib/auth';
 import { useCommandMapController } from '../hooks/useCommandMapController';
@@ -29,6 +29,7 @@ import {
   type DecisionActionId,
   type DecisionConflictView,
 } from '../vm/decisionContextVM';
+import { buildExecutionFeedbackView } from '../vm/executionFeedbackVM';
 import { extractUnchangedTasks } from '../vm/planCompareVM';
 import { taskMoveExplainVM } from '../vm/taskMoveExplainVM';
 import TaskMoveExplain from './TaskMoveExplain';
@@ -151,6 +152,23 @@ export function DecisionCockpit({
     enabled: Boolean(taskId),
     staleTime: 30_000,
   });
+
+  // Phase 4 执行反馈（P1 闭环）：方案执行记录（planned vs actual + deviation 事实），
+  // 30s 轮询与 CommandMap 其他运营查询一致；无方案时不请求。
+  const executionsQuery = useQuery({
+    queryKey: queryKeys.schedulerExecutions(activePlan?.planId),
+    queryFn: () => listExecutions({ planId: activePlan?.planId }),
+    enabled: Boolean(activePlan?.planId),
+    refetchInterval: 30_000,
+  });
+  const executionFeedback = useMemo(
+    () =>
+      buildExecutionFeedbackView({
+        executions: executionsQuery.data?.executions ?? null,
+        personNameOf,
+      }),
+    [executionsQuery.data, personNameOf],
+  );
 
   // ReplanImpact：优先 prop，其次 store decisionContext payload（source='replan'）。
   const payloadReplanImpact = useMemo(() => {
@@ -329,18 +347,62 @@ export function DecisionCockpit({
             </div>
           ))}
 
-          {/* 调度反馈：CommandMap 未接入 SchedulingFeedback 数据流，显式空态（不静默透传 null）。 */}
+          {/* 调度反馈（Phase 4 执行反馈闭环）：真实消费 /api/scheduler/executions，
+              派工后展示执行进度与偏差；空态如实说明而非静默透传 null。 */}
           <div
             className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5"
             data-section="SCHEDULING_FEEDBACK"
           >
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-white/60">
-              调度反馈
+            <div className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/60">
+              <span>调度反馈</span>
+              {executionsQuery.isError && (
+                <button
+                  type="button"
+                  onClick={() => executionsQuery.refetch()}
+                  className="normal-case underline-offset-2 text-white/50 hover:text-white/80 hover:underline"
+                >
+                  加载失败 · 重试
+                </button>
+              )}
             </div>
-            <div className="flex items-baseline gap-2 text-[10px]">
-              <span className="w-24 shrink-0 text-white/45">执行反馈</span>
-              <span className="min-w-0 flex-1 text-white/50">暂无调度反馈数据</span>
-            </div>
+            {executionsQuery.isLoading ? (
+              <div className="text-[10px] text-white/50">执行反馈加载中…</div>
+            ) : executionFeedback.empty ? (
+              <div className="text-[10px] text-white/50">
+                暂无执行数据（方案派工后此处显示执行进度与偏差）
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                  {executionFeedback.summary.map((row) => (
+                    <div key={row.label} className="flex items-baseline gap-1.5 text-[10px]">
+                      <span className="shrink-0 text-white/45">{row.label}</span>
+                      <span className={cn('min-w-0 flex-1', SECTION_TONE_CLASS[row.tone] ?? 'text-white/80')}>
+                        {row.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-0.5 border-t border-white/10 pt-1">
+                  {executionFeedback.recent.map((item) => (
+                    <div
+                      key={`${item.taskId}-${item.status}`}
+                      className="flex items-baseline gap-1.5 text-[10px]"
+                    >
+                      <span className="shrink-0 truncate text-white/45">
+                        {item.personLabel} · {item.taskId}
+                      </span>
+                      <span className={cn('shrink-0', SECTION_TONE_CLASS[item.statusTone] ?? 'text-white/80')}>
+                        {item.statusLabel}
+                      </span>
+                      {item.deviationLabel && (
+                        <span className="min-w-0 truncate text-amber-300/90">{item.deviationLabel}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ACTIONS：复用 CommandMap 既有行为 */}

@@ -28,7 +28,7 @@ const CHANGE_LABEL: Record<string, string> = {
   LATENESS_CHANGED: '迟到变更',
   RISK_CHANGED: '风险变更',
   CONFLICT_CHANGED: '冲突变更',
-  CHURN: 'churn',
+  CHURN: '换人',
 };
 
 function fmtTime(iso?: string | null): string {

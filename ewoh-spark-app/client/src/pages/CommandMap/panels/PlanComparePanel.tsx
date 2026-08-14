@@ -37,7 +37,7 @@ const CHANGE_LABEL: Record<string, string> = {
   LATENESS_CHANGED: '迟到变更',
   RISK_CHANGED: '风险变更',
   CONFLICT_CHANGED: '冲突变更',
-  CHURN: 'churn',
+  CHURN: '换人',
 };
 
 function ModeTabs({
@@ -141,7 +141,7 @@ export function PlanComparePanel({
             </div>
             <div>
               <div className="font-bold text-white/80">{(replanPreview.churnDelta ?? 0).toFixed(2)}</div>
-              <div className="text-white/40">churn</div>
+              <div className="text-white/40">换人</div>
             </div>
           </div>
           <div className="mt-1 text-[8px] text-white/40">
@@ -218,7 +218,7 @@ export function PlanComparePanel({
             </div>
           </div>
           <div className="text-[9px] text-white/50">
-            churn {result.churn} ·{' '}
+            换人 {result.churn} ·{' '}
             {Object.entries(result.changeTypeCounts)
               .map(([k, v]) => `${CHANGE_LABEL[k] ?? k} ${v}`)
               .join(' · ')}

@@ -168,17 +168,17 @@ function SchedulerRealtimeBadge({
           className="rounded border border-red-500/50 bg-red-500/20 px-1 font-bold text-red-400"
           title="活跃方案与统一调度上下文（/api/scheduler/context）版本不一致，可能展示混合版本数据"
         >
-          STALE CONTEXT
+          上下文已过期
         </span>
       )}
-      <span className="tabular-nums text-white/60">seq {rt.lastSequence}</span>
+      <span className="tabular-nums text-white/60">序号 {rt.lastSequence}</span>
       <span className="tabular-nums text-white/60" title="最近事件时间">
         {lastTime}
       </span>
       {context ? (
         <span
           className="tabular-nums text-white/60"
-          title={`统一调度上下文：asOf ${context.sourceTimestamp} · 快照 v${context.snapshotVersion} · 资源 v${context.resourceVersion} · 路由图 v${context.routeGraphVersion} · 策略 v${context.policyVersion}`}
+          title={`统一调度上下文：截至 ${context.sourceTimestamp} · 快照 v${context.snapshotVersion} · 资源 v${context.resourceVersion} · 路由图 v${context.routeGraphVersion} · 策略 v${context.policyVersion}`}
         >
           S{context.snapshotVersion} R{context.resourceVersion} G{context.routeGraphVersion} P{context.policyVersion}
         </span>
@@ -188,8 +188,8 @@ function SchedulerRealtimeBadge({
         </span>
       ) : null}
       {asOfTime && (
-        <span className="tabular-nums text-white/60" title={`asOf ${context?.sourceTimestamp ?? ''}`}>
-          asOf {asOfTime}
+        <span className="tabular-nums text-white/60" title={`截至 ${context?.sourceTimestamp ?? ''}`}>
+          截至 {asOfTime}
         </span>
       )}
     </div>
@@ -286,7 +286,7 @@ const CommandMapShell = (): React.ReactElement => {
   // 当前选中方案由 store 唯一真源 selectedPlanId 派生：无效/缺失 → null
   // （controller 对照权威 plans 校验），绝不回退首个方案。
   const activePlan = ctl.activePlan;
-  // P1-D：统一调度上下文（版本边界 + dataQuality）+ STALE CONTEXT 判定。
+  // P1-D：统一调度上下文（版本边界 + dataQuality）+ 上下文已过期 判定。
   // 任一活跃方案（含选中方案）与 context.snapshotVersion 不一致 → 醒目标记，不静默混合。
   const schedulerContext = schedulerState.context ?? null;
   const contextStale = useMemo(

@@ -372,6 +372,7 @@ function stopEventStatusPolling() {
 // 且遥测逐条 create 高频调用。现全部收敛为 upsert/批量语义，降低 API 频率与数据漂移。
 async function syncAllToFeishu(db) {
   const synced = { devices: 0, events: 0, telemetry: 0 };
+  const failures = [];
   const cfg = feishu.getConfig();
   if (!cfg || !cfg.tables) {
     console.error('[sync] syncAllToFeishu: 未加载到飞书配置，跳过');
@@ -386,13 +387,19 @@ async function syncAllToFeishu(db) {
       try {
         const r = await syncDevice(dev);
         if (r && r.ok) synced.devices++;
-        else console.error(`[sync] 全量同步-设备失败 ${dev.device_id}:`, r && r.error);
+        else {
+          const err = `设备 ${dev.device_id}: ${r && r.error}`;
+          console.error(`[sync] 全量同步-设备失败:`, err);
+          failures.push(err);
+        }
       } catch (e) {
         console.error(`[sync] 全量同步-设备异常 ${dev.device_id}:`, e.message);
+        failures.push(`设备 ${dev.device_id} 异常: ${e.message}`);
       }
     }
   } catch (e) {
     console.error('[sync] 全量同步-读取设备失败:', e.message);
+    failures.push(`读取设备失败: ${e.message}`);
   }
 
   // ---- 事件：最近 50 条 upsert（先查飞书是否已有 → 有则 update，无则 create）----
@@ -423,13 +430,19 @@ async function syncAllToFeishu(db) {
           ? await feishu.baseRecordUpdate(tableId, match.record_id, fields)
           : await feishu.baseRecordCreate(tableId, fields);
         if (r && r.ok) synced.events++;
-        else console.error(`[sync] 全量同步-事件失败 ${ev.event_id}:`, r && r.error);
+        else {
+          const err = `事件 ${ev.event_id}: ${r && r.error}`;
+          console.error('[sync] 全量同步-事件失败:', err);
+          failures.push(err);
+        }
       } catch (e) {
         console.error(`[sync] 全量同步-事件异常 ${ev.event_id}:`, e.message);
+        failures.push(`事件 ${ev.event_id} 异常: ${e.message}`);
       }
     }
   } catch (e) {
     console.error('[sync] 全量同步-读取事件失败:', e.message);
+    failures.push(`读取事件失败: ${e.message}`);
   }
 
   // ---- 遥测：最近 100 条批量写入（一次 batch-create API 调用）----
@@ -446,17 +459,25 @@ async function syncAllToFeishu(db) {
       ]);
       const r = await feishu.baseRecordBatchCreate(cfg.tables.telemetry, TELEMETRY_BATCH_FIELDS, batchRows);
       if (r && r.ok) synced.telemetry = batchRows.length;
-      else console.error('[sync] 全量同步-遥测批量失败:', r && r.error);
+      else {
+        console.error('[sync] 全量同步-遥测批量失败:', r && r.error);
+        failures.push(`遥测批量失败: ${r && r.error}`);
+      }
     }
   } catch (e) {
     console.error('[sync] 全量同步-读取遥测失败:', e.message);
+    failures.push(`读取遥测失败: ${e.message}`);
   }
 
   console.log(
-    `[sync] 全量同步完成: 设备=${synced.devices}, 事件=${synced.events}, 遥测=${synced.telemetry}`
+    `[sync] 全量同步完成: 设备=${synced.devices}, 事件=${synced.events}, 遥测=${synced.telemetry}` +
+      (failures.length ? `, 失败=${failures.length}` : '')
   );
-  health.recordFeishuSync(true, null);
-  return { ok: true, synced };
+  // 健康探针必须如实报告：任一子项失败（或整体失败）即不报 ready，
+  // 否则飞书同步彻底瘫痪时 /health/ready 仍返回 200，失去就绪语义。
+  const overallOk = failures.length === 0;
+  health.recordFeishuSync(overallOk, overallOk ? null : failures[0]);
+  return { ok: overallOk, error: overallOk ? null : failures[0], failures, synced };
 }
 
 module.exports = {

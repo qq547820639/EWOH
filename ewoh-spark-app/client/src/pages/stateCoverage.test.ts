@@ -32,8 +32,6 @@ export type CorePageState = (typeof CORE_PAGE_STATES)[number];
 export const PAGE_STATE_MATRIX: Record<string, readonly CorePageState[]> = Object.freeze({
   CommandMap: ['loading', 'empty', 'partial', 'degraded', 'error', 'recovery', 'success'],
   WorkOrchestration: ['loading', 'conflict', 'error', 'recovery'],
-  Overview: ['empty', 'stale', 'error', 'recovery'],
-  Events: ['loading', 'empty', 'stale', 'error', 'recovery'],
   Devices: ['loading', 'empty', 'stale', 'error', 'recovery', 'unauthorized', 'forbidden', 'conflict'],
   Alerts: ['loading', 'empty', 'stale', 'offline', 'error', 'recovery', 'success'],
 });
@@ -76,7 +74,7 @@ describe('页面接线与源码一致性（fixture 佐证）', () => {
 
   /** 源码中是否出现关键接线标记（默认页面主文件；可指定额外文件——CommandMap 已拆分，状态接线在 Shell/queryState）。 */
   const sourceHas = (
-    pageDir: 'CommandMap' | 'WorkOrchestration' | 'Overview' | 'Events' | 'Devices' | 'Alerts',
+    pageDir: 'CommandMap' | 'WorkOrchestration' | 'Devices' | 'Alerts',
     marker: string,
     file?: string,
   ): boolean => {
@@ -101,16 +99,6 @@ describe('页面接线与源码一致性（fixture 佐证）', () => {
   it('WorkOrchestration 接线 conflict 与 error/recovery', () => {
     expect(sourceHas('WorkOrchestration', 'conflicts')).toBe(true);
     expect(sourceHas('WorkOrchestration', 'AppErrorState')).toBe(true);
-  });
-
-  it('Overview 接线 stale 与 error/recovery', () => {
-    expect(sourceHas('Overview', 'health="stale"')).toBe(true);
-    expect(sourceHas('Overview', 'AppErrorState')).toBe(true);
-  });
-
-  it('Events 接线 stale 与 error/recovery', () => {
-    expect(sourceHas('Events', 'health="stale"')).toBe(true);
-    expect(sourceHas('Events', 'AppErrorState')).toBe(true);
   });
 
   it('Devices 接线 unauthorized/forbidden/conflict（AppErrorState 区分 401/403/409）', () => {

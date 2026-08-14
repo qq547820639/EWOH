@@ -543,7 +543,7 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
                   <div className="text-sm font-bold text-amber-400">
                     {overridePreviewSummary(preview).planChurn}
                   </div>
-                  <div className="text-[9px] text-white/50">改派任务（churn）</div>
+                  <div className="text-[9px] text-white/50">改派任务（换人成本）</div>
                 </div>
                 <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
                   <div className="text-sm font-bold text-white/90">

@@ -5,6 +5,7 @@ import {
   InternalServerErrorException,
   NestInterceptor,
 } from '@nestjs/common';
+import { SSE_METADATA } from '@nestjs/common/constants';
 import { defer, lastValueFrom, type Observable } from 'rxjs';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 
@@ -81,6 +82,21 @@ export class OrgContextInterceptor implements NestInterceptor {
       .switchToHttp()
       .getRequest<{ userContext?: OrgContext }>();
     if (!request.userContext) {
+      return next.handle();
+    }
+
+    // P0 修复：SSE（@Sse）返回的是长连接无限事件流，绝不能包进
+    // lastValueFrom + 请求级事务——lastValueFrom 等待流完成永不 resolve，
+    // 客户端收不到任何事件（静默失败），且请求级事务/连接被占用到断开
+    // （连接池 max=20，少量 SSE 客户端即可打满）。
+    // SSE 端点（scheduler v2/stream）的租户隔离由应用层事件过滤保证
+    // （orgId 过滤见 scheduler.controller.ts），不经 RLS，故可安全直通。
+    const routeHandler =
+      typeof context.getHandler === 'function' ? context.getHandler() : undefined;
+    const handlerIsSse =
+      routeHandler != null &&
+      Reflect.getMetadata(SSE_METADATA, routeHandler) !== undefined;
+    if (handlerIsSse) {
       return next.handle();
     }
 

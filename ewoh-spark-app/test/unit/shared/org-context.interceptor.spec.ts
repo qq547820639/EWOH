@@ -4,7 +4,7 @@ import {
   OrgContextInterceptor,
 } from '../../../server/modules/shared/org-context.interceptor';
 import { InternalServerErrorException } from '@nestjs/common';
-import { lastValueFrom, of } from 'rxjs';
+import { lastValueFrom, of, take } from 'rxjs';
 
 function httpContext(userContext?: unknown) {
   return {
@@ -17,6 +17,17 @@ function httpContext(userContext?: unknown) {
 
 function handlerReturning(value: unknown) {
   return { handle: jest.fn(() => of(value)) } as never;
+}
+
+/** 用 @Sse 同款元数据标记一个 handler（元数据挂在 descriptor.value 上），模拟 SSE 端点。 */
+function sseHandlerContext(userContext: unknown) {
+  const handler = function stream() {
+    /* noop */
+  };
+  Reflect.defineMetadata('__sse__', true, handler);
+  return Object.assign(httpContext(userContext), {
+    getHandler: () => handler,
+  }) as never;
 }
 
 describe('OrgContextInterceptor', () => {
@@ -99,6 +110,27 @@ describe('OrgContextInterceptor', () => {
     );
 
     expect(result).toBe('ok');
+    expect(runInTransaction).not.toHaveBeenCalled();
+  });
+
+  it('passes SSE handlers straight through without lastValueFrom/transaction (P0: infinite stream never resolves)', async () => {
+    const runInTransaction = jest.fn(
+      async (_settings: unknown, operation: () => Promise<unknown>) =>
+        operation(),
+    );
+    const interceptor = new OrgContextInterceptor({
+      runInTransaction,
+    } as never);
+    const result = await lastValueFrom(
+      interceptor
+        .intercept(
+          sseHandlerContext({ userId: 'user-1', primaryOrgId: 'org-root' }),
+          { handle: jest.fn(() => of('event-a', 'event-b')) } as never,
+        )
+        .pipe(take(1)),
+    );
+
+    expect(result).toBe('event-a');
     expect(runInTransaction).not.toHaveBeenCalled();
   });
 });

@@ -183,7 +183,7 @@ export function decisionContextVM(input: DecisionContextInput): DecisionContextV
     push(impactRows, '变更任务', fmt(changed), 'warning');
     push(impactRows, '新增任务', fmt(planDiff.added.length));
     push(impactRows, '移除任务', fmt(planDiff.removed.length));
-    push(impactRows, 'churn', fmt(planDiff.churn));
+    push(impactRows, '换人成本', fmt(planDiff.churn));
   }
   if (input.unchangedTaskCount != null) {
     push(impactRows, '未变化任务', fmt(input.unchangedTaskCount), 'positive');

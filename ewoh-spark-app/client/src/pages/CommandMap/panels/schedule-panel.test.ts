@@ -1,6 +1,10 @@
 /* P1-5 Production Demo 隔离测试：演示方案识别（不可审批/驳回/派工）。 */
 import { isNonAuthoritativePlan } from './schedule-panel-demo';
-import { replanPreviewSummary, dispatchPlanSummary } from './schedule-panel-logic';
+import {
+  replanPreviewSummary,
+  dispatchPlanSummary,
+  pickPreviousApprovedPlanId,
+} from './schedule-panel-logic';
 import type { ReplanPreviewResult, SchedulingPlanV2 } from '@shared/api.interface';
 
 describe('P1-5 isNonAuthoritativePlan（演示方案识别）', () => {
@@ -131,5 +135,37 @@ describe('Task 10 dispatchPlanSummary（DISPATCH 确认框方案摘要）', () =
   it('无方案 → null', () => {
     expect(dispatchPlanSummary(null)).toBeNull();
     expect(dispatchPlanSummary(undefined)).toBeNull();
+  });
+});
+
+describe('pickPreviousApprovedPlanId（上一已批准方案回看对比目标）', () => {
+  const makePlan = (overrides: Partial<SchedulingPlanV2>): SchedulingPlanV2 =>
+    ({
+      planId: 'PLAN-1',
+      status: 'shadow',
+      createdAt: '2026-08-14T10:00:00.000Z',
+      ...overrides,
+    }) as SchedulingPlanV2;
+
+  it('无选中方案 → null', () => {
+    expect(pickPreviousApprovedPlanId([makePlan({ planId: 'A' })], null)).toBeNull();
+  });
+
+  it('候选取最近时间的已批准/已派工/被替代方案（不兜底列表首个）', () => {
+    const plans = [
+      makePlan({ planId: 'CUR', status: 'shadow', createdAt: '2026-08-14T10:00:00.000Z' }),
+      makePlan({ planId: 'OLD-SUP', status: 'superseded', createdAt: '2026-08-14T09:30:00.000Z' }),
+      makePlan({ planId: 'OLD-DISP', status: 'dispatched', createdAt: '2026-08-14T09:00:00.000Z' }),
+      makePlan({ planId: 'SHADOW-2', status: 'shadow', createdAt: '2026-08-14T09:50:00.000Z' }),
+    ];
+    expect(pickPreviousApprovedPlanId(plans, 'CUR')).toBe('OLD-SUP');
+  });
+
+  it('无候选（仅当前方案/仅影子方案）→ null', () => {
+    const plans = [
+      makePlan({ planId: 'CUR', status: 'shadow' }),
+      makePlan({ planId: 'OTHER', status: 'shadow', createdAt: '2026-08-14T09:00:00.000Z' }),
+    ];
+    expect(pickPreviousApprovedPlanId(plans, 'CUR')).toBeNull();
   });
 });

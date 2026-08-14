@@ -84,4 +84,16 @@ describe('M05 Decision Cockpit 纯展示约束', () => {
       }
     }
   });
+
+  it('executionFeedbackVM 仅映射服务端执行记录（状态/偏差文案），不 import 判定逻辑', () => {
+    const src = fs.readFileSync(
+      path.join(PANELS_DIR, '..', 'vm', 'executionFeedbackVM.ts'),
+      'utf8',
+    );
+    expect(src).not.toMatch(/from ['"].*eligibility[^'"]*['"]/);
+    expect(src).not.toMatch(/from ['"].*constraints[^'"]*['"]/);
+    expect(src).not.toMatch(/from ['"].*candidate-engine[^'"]*['"]/);
+    expect(src).not.toMatch(/from ['"].*solver[^'"]*['"]/);
+    expect(src).not.toMatch(/isEligible|checkHard|computeHard|rejectHard/);
+  });
 });

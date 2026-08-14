@@ -59,7 +59,8 @@ const RoutesComponent = () => {
   return (
     <React.Suspense fallback={<PageFallback />}>
       <Routes>
-        {/* 指挥地图：全屏 iframe，不使用 Layout 侧边栏 */}
+        {/* 指挥地图：应用内全屏路由（React 版），不使用 Layout 侧边栏；
+            历史静态原型保留在仓库根 ui/command_map（UX 参考，非生产事实源） */}
         <Route
           path="command-map"
           element={

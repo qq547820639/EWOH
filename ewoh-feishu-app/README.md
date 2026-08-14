@@ -94,7 +94,7 @@ npm run test:integration # 端到端集成测试（真实 HTTP server + 临时 S
 | `/api/events/:id/handle` | POST | **写必鉴权** | 事件处置（acknowledge/resolve/escalate/comment） |
 | `/api/rules` | GET | 读放行 | 规则列表（DB 事实源） |
 | `/api/audit` | GET | 读放行 | 审计日志 |
-| `/api/feishu/report` | GET | 读放行 | 生成班次报告 |
+| `/api/feishu/report` | POST | **写必鉴权** | 生成班次报告（飞书侧创建文档，属副作用写操作） |
 | `/webhook/card` | POST | 飞书验签 | 卡片按钮回调（**业务幂等**，见下文） |
 
 ## 五、v1.1.0 加固内容（设计决策摘要）
@@ -147,6 +147,7 @@ NODE_ENV=production \
 
 ## 八、已知限制与后续优化
 
+- **内置 web UI 写操作鉴权（已解决）**：v1.1.0 引入写操作 fail-closed 鉴权后，`public/` 前端处置表单此前未携带凭证（永久 401/503）；现已提供顶栏「写权限」按钮——输入与服务端 `FEISHU_API_TOKEN` 一致的 Token 后，写请求自动携带 `Authorization: Bearer` 头（Token 仅存浏览器 localStorage，供本机值班台使用）
 - **多实例部署**：单实例边界为设计契约（见「七、部署与运行时契约」），暂不支持横向扩展；如需多实例请先评审独立化 + 分布式锁演进路径
 - **lark-cli 异步化（已解决）**：`feishu.js` 已由 `spawnSync` 改为异步 `execFile`（20s 超时 + SIGTERM 回收），并发上限/熔断/有界重试/队列上限齐备，单次慢调用不再阻塞事件循环（原"同步调用阻塞"问题已消除，见 OPEN-DECISIONS.md 2026-08-10 关闭记录）
 - **签名依赖 create_time**：飞书事件订阅信封 `header.create_time` 为 ISO 字符串（已兼容）；若飞书改用纯秒字段需同步适配（已有 `body.timestamp` 兜底）

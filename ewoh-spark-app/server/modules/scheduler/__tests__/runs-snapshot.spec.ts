@@ -96,6 +96,13 @@ function makeSvc(seed: { runs?: Array<Record<string, unknown>>; plans?: Array<Re
       if (!plan) throw new Error(`Plan ${planId} not found`);
       return { planId, status: plan.status, createdAt: plan.createdAt } as unknown as SchedulingPlanV2;
     }),
+    // R-5 N+1：listRuns 改用批量加载；mock 保持与 getPlan 同语义。
+    listPlansBatched: jest.fn().mockImplementation(async (planIds: string[]) =>
+      planIds.map((planId) => {
+        const plan = plans.find((p) => p.planId === planId);
+        return { planId, status: plan?.status, createdAt: plan?.createdAt } as unknown as SchedulingPlanV2;
+      }),
+    ),
   };
 
   const worldStateSnapshotService = {
@@ -175,10 +182,10 @@ describe('Task 1: GET /api/scheduler/runs 分页运行历史 + 活跃方案', ()
     expect(res.runs[0].status).toBe('succeeded');
     expect(res.runs[0].snapshotVersion).toBe('WS-1');
     expect(res.runs[0].planIds).toEqual(['PLAN-1']);
-    // 活跃方案通过 planService.getPlan 填充为 SchedulingPlanV2
+    // 活跃方案经 planService.listPlansBatched 批量填充为 SchedulingPlanV2（R-5 N+1）
     expect(res.plans).toHaveLength(1);
     expect(res.plans[0].planId).toBe('PLAN-1');
-    expect(mocks.planService.getPlan).toHaveBeenCalledWith('PLAN-1');
+    expect(mocks.planService.listPlansBatched).toHaveBeenCalledWith(['PLAN-1']);
   });
 
   it('第二页正确跳过前 offset 条', async () => {
@@ -238,11 +245,13 @@ describe('P0-1: GET /api/scheduler/active-plans 服务端权威活跃方案', ()
         planRow({ planId: 'PLAN-BROKEN', status: 'approved' }),
       ],
     });
-    // 强制 getPlan 对 PLAN-BROKEN 抛错（如分配/快照数据缺失）
-    mocks.planService.getPlan.mockImplementation(async (planId: string) => {
-      if (planId === 'PLAN-BROKEN') throw new Error('orphan plan detail');
-      return { planId, status: 'shadow', createdAt: new Date() } as unknown as SchedulingPlanV2;
-    });
+    // 强制批量加载对 PLAN-BROKEN 抛错（如分配/快照数据缺失）；与真实 PlanService
+    // listPlansBatched 语义一致：单条失败跳过、整体不中断。
+    mocks.planService.listPlansBatched.mockImplementation(async (planIds: string[]) =>
+      planIds
+        .filter((planId) => planId !== 'PLAN-BROKEN')
+        .map((planId) => ({ planId, status: 'shadow', createdAt: new Date() }) as unknown as SchedulingPlanV2),
+    );
     const active = await svc.getActivePlans();
     // 失败方案被跳过，整体不中断；可恢复的方案仍在
     expect(active.map((p) => p.planId)).toEqual(['PLAN-OK']);

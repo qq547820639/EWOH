@@ -193,18 +193,10 @@ export class SchedulerQueryService {
     ]);
 
     const runs = runRows.map((r) => this.mapRun(r));
-    const plans = (
-      await Promise.all(
-        activePlanRows.map((p) =>
-          this.planService.getPlan(p.planId).catch((err) => {
-            this.logger.warn(
-              `listRuns: 活跃方案 ${p.planId} 读取失败，已跳过: ${err instanceof Error ? err.message : String(err)}`,
-            );
-            return null;
-          }),
-        ),
-      )
-    ).filter((p): p is SchedulingPlanV2 => p !== null);
+    // R-5 N+1 修复：活跃方案批量加载（原逐方案 getPlan → 每方案 2 次查询）。
+    const plans = await this.planService.listPlansBatched(
+      activePlanRows.map((p) => p.planId),
+    );
 
     return {
       runs,
@@ -228,17 +220,8 @@ export class SchedulerQueryService {
       .from(ewohSchedulePlan)
       .where(inArray(ewohSchedulePlan.status, SchedulerQueryService.ACTIVE_PLAN_STATUSES))
       .orderBy(desc(ewohSchedulePlan.createdAt));
-    const plans = await Promise.all(
-      rows.map((p) =>
-        this.planService.getPlan(p.planId).catch((err) => {
-          this.logger.warn(
-            `getActivePlans: 活跃方案 ${p.planId} 读取失败，已跳过: ${err instanceof Error ? err.message : String(err)}`,
-          );
-          return null;
-        }),
-      ),
-    );
-    return plans.filter((p): p is SchedulingPlanV2 => p !== null);
+    // R-5 N+1 修复：批量加载（保留 per-plan 失败跳过语义——listPlansBatched 内部跳过损坏方案）。
+    return this.planService.listPlansBatched(rows.map((p) => p.planId));
   }
 
   /**

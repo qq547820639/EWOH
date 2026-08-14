@@ -105,6 +105,16 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    // P1 修复（fail-closed）：仿真器会持续向真实表写入模拟遥测/位置，
+    // 破坏世界快照新鲜度校验（PLAN_STALE）与数据完整性。自动启动必须显式
+    // 开启（EWOH_SIMULATOR_ENABLED=1），生产/未配置一律不自动启动；
+    // 显式调用 start()（E2E/演示脚本）仍受 EWOH_SIMULATOR_DISABLED=1 控制。
+    if (process.env.EWOH_SIMULATOR_ENABLED !== '1') {
+      this.logger.log(
+        'Simulator 不自动启动（fail-closed）：需显式 EWOH_SIMULATOR_ENABLED=1',
+      );
+      return;
+    }
     try {
       await this.start();
     } catch (error) {

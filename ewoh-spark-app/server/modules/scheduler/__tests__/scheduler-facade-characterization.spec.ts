@@ -192,6 +192,13 @@ function makeSvc(seed: FakeDbSeed = {}, opts: { noConflict?: boolean; noExecutio
       if (!row) throw new Error(`Plan ${planId} not found`);
       return planV2(planId, (row.status as string) ?? 'proposed');
     }),
+    // R-5 N+1：listRuns 改用批量加载；mock 保持与 getPlan 同语义（按 seed 富化）。
+    listPlansBatched: jest.fn().mockImplementation(async (planIds: string[]) =>
+      planIds.map((planId) => {
+        const row = (seed.plans ?? []).find((p) => p.planId === planId);
+        return planV2(planId, (row?.status as string) ?? 'proposed');
+      }),
+    ),
     persistPlan: jest.fn().mockResolvedValue(undefined),
     listPlanConstraints: jest.fn().mockResolvedValue([]),
     deactivateConstraint: jest.fn().mockResolvedValue({ ok: true }),
@@ -596,17 +603,18 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
       expect(res.plans.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('getActivePlans 读取活跃方案并经 getPlan 富化', async () => {
+    it('getActivePlans 读取活跃方案并经批量加载富化（R-5 N+1）', async () => {
       const { svc, mocks } = makeSvc({
         plans: [PLAN_ROW, { ...PLAN_ROW, planId: 'P-2', status: 'approved' }],
       });
-      mocks.planService.getPlan.mockImplementation(async (planId: string) =>
-        planV2(planId, planId === 'P-2' ? 'approved' : 'proposed'),
+      mocks.planService.listPlansBatched.mockImplementation(async (planIds: string[]) =>
+        planIds.map((planId) => planV2(planId, planId === 'P-2' ? 'approved' : 'proposed')),
       );
       const plans = await svc.getActivePlans();
       expect(plans.map((p) => p.planId)).toEqual(expect.arrayContaining(['P-1', 'P-2']));
-      expect(mocks.planService.getPlan).toHaveBeenCalledWith('P-1');
-      expect(mocks.planService.getPlan).toHaveBeenCalledWith('P-2');
+      expect(mocks.planService.listPlansBatched).toHaveBeenCalledWith(
+        expect.arrayContaining(['P-1', 'P-2']),
+      );
     });
   });
 

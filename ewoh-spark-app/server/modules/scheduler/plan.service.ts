@@ -161,6 +161,7 @@ export class PlanService {
   /**
    * M03：列出当前生效方案（active 状态 shadow/proposed/approved/dispatched/executing），
    * 按创建时间倒序。供 ReplanPreviewService 基线对比（预览只读，不落库）。
+   * R-5 N+1 修复：assignments 一次 inArray 批量加载（原每方案一次查询）。
    */
   async listActivePlans(): Promise<SchedulingPlanV2[]> {
     const activeStatuses = [
@@ -176,18 +177,73 @@ export class PlanService {
       .from(ewohSchedulePlan)
       .where(inArray(ewohSchedulePlan.status, activeStatuses))
       .orderBy(desc(ewohSchedulePlan.createdAt));
+    if (rows.length === 0) return [];
+
+    const assignmentsByPlan = await this.loadAssignmentsBatched(
+      rows.map((row) => row.planId),
+    );
+
     const plans: SchedulingPlanV2[] = [];
     for (const row of rows) {
       try {
-        const assignments = await this.db
-          .select()
-          .from(ewohSchedulingPlanAssignment)
-          .where(eq(ewohSchedulingPlanAssignment.planId, row.planId))
-          .orderBy(asc(ewohSchedulingPlanAssignment.taskId));
-        plans.push(await this.toPlanV2(row, assignments));
+        plans.push(
+          await this.toPlanV2(row, assignmentsByPlan.get(row.planId) ?? []),
+        );
       } catch (err) {
         this.logger.warn(
           `listActivePlans: skip ${row.planId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    return plans;
+  }
+
+  /**
+   * R-5 N+1 修复：按 planId 批量加载分配明细（一次查询 + 内存分组），
+   * 保持 per-plan taskId 升序（与原逐方案查询一致）。
+   */
+  private async loadAssignmentsBatched(
+    planIds: string[],
+  ): Promise<Map<string, Array<typeof ewohSchedulingPlanAssignment.$inferSelect>>> {
+    const assignments = await this.db
+      .select()
+      .from(ewohSchedulingPlanAssignment)
+      .where(inArray(ewohSchedulingPlanAssignment.planId, planIds))
+      .orderBy(
+        asc(ewohSchedulingPlanAssignment.planId),
+        asc(ewohSchedulingPlanAssignment.taskId),
+      );
+    const byPlan = new Map<string, Array<typeof ewohSchedulingPlanAssignment.$inferSelect>>();
+    for (const assignment of assignments) {
+      const list = byPlan.get(assignment.planId) ?? [];
+      list.push(assignment);
+      byPlan.set(assignment.planId, list);
+    }
+    return byPlan;
+  }
+
+  /**
+   * R-5 N+1 修复：批量加载一组方案（含分配明细），供 listRuns 等列表端点使用
+   * （原实现逐方案调 getPlan → 每方案 2 次查询）。
+   */
+  async listPlansBatched(planIds: string[]): Promise<SchedulingPlanV2[]> {
+    if (planIds.length === 0) return [];
+    const rows = await this.db
+      .select()
+      .from(ewohSchedulePlan)
+      .where(inArray(ewohSchedulePlan.planId, planIds))
+      .orderBy(desc(ewohSchedulePlan.createdAt));
+    if (rows.length === 0) return [];
+    const assignmentsByPlan = await this.loadAssignmentsBatched(planIds);
+    const plans: SchedulingPlanV2[] = [];
+    for (const row of rows) {
+      try {
+        plans.push(
+          await this.toPlanV2(row, assignmentsByPlan.get(row.planId) ?? []),
+        );
+      } catch (err) {
+        this.logger.warn(
+          `listPlansBatched: skip ${row.planId}: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     }

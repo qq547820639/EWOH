@@ -27,8 +27,11 @@ import {
 import { getCurrentOperator } from '@client/src/lib/auth';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import { isNonAuthoritativePlan } from './schedule-panel-demo';
-import { pickComparePlanId, replanPreviewSummary, dispatchPlanSummary } from './schedule-panel-logic';
+import { pickComparePlanId, pickPreviousApprovedPlanId, replanPreviewSummary, dispatchPlanSummary } from './schedule-panel-logic';
 import SolverStatusChain from './SolverStatusChain';
+import { PlanStatusStepper } from './PlanStatusStepper';
+import { ExecutionDeviationList } from './ExecutionDeviationList';
+import { PLAN_STATUS_LABELS } from '../vm/planStatusStepVM';
 import { useVirtualList } from '@client/src/lib/virtualList';
 import { KeyboardTableView, type KeyboardTableColumn } from '../components/KeyboardTableView';
 import type {
@@ -275,7 +278,9 @@ function DispatchSummaryBlock({ plan }: { plan: SchedulingPlanV2 }): React.React
     <div className="space-y-2">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs font-medium text-white/90">{summary.planName ?? summary.planId}</span>
-        <Badge className={cn('text-[9px] px-1.5', statusBadgeClass(plan.status))}>{plan.status}</Badge>
+        <Badge className={cn('text-[9px] px-1.5', statusBadgeClass(plan.status))}>
+          {PLAN_STATUS_LABELS[plan.status] ?? plan.status}
+        </Badge>
         <span className="text-[10px] text-white/50">VERSION {summary.version}</span>
         <SolverStatusChain
           status={plan.solverStatus}
@@ -376,6 +381,19 @@ function SchedulePanel({
     () => plans.find((p) => p.planId === selectedPlanId) ?? null,
     [plans, selectedPlanId],
   );
+
+  // 「上一已批准/已派工方案」回看对比目标（无候选 → null，不兜底列表首个）。
+  const prevApprovedPlanId = useMemo(
+    () => pickPreviousApprovedPlanId(plans, selectedPlanId),
+    [plans, selectedPlanId],
+  );
+
+  const handleCompareWithPrevious = () => {
+    if (!selectedPlan || !prevApprovedPlanId) return;
+    setComparePlanId(prevApprovedPlanId);
+    compareMutation.mutate({ a: prevApprovedPlanId, b: selectedPlan.planId });
+    setCompareOpen(true);
+  };
 
   // 分配明细虚拟列表：行高按固定值估算（reasons/备选 1-2 行），只渲染可视窗口。
   const assignmentList = useVirtualList<HTMLDivElement>({
@@ -768,7 +786,7 @@ function SchedulePanel({
                   {selectedPlan.planName ?? selectedPlan.planId}
                 </span>
                 <Badge className={cn('text-[9px] px-1.5', statusBadgeClass(selectedPlan.status))}>
-                  {selectedPlan.status}
+                  {PLAN_STATUS_LABELS[selectedPlan.status] ?? selectedPlan.status}
                 </Badge>
                 <span className="text-[10px] text-white/50">VERSION {selectedPlan.version}</span>
                 <SolverStatusChain
@@ -778,6 +796,24 @@ function SchedulePanel({
                   solveDurationMs={selectedPlan.solveDurationMs}
                 />
               </div>
+              {/* 方案状态流转指示：值班员一眼看到卡点（影子方案→已批准→已派工→执行中） */}
+              <PlanStatusStepper status={selectedPlan.status} />
+              {/* 执行偏差（计划 vs 实际）：真实消费 /api/scheduler/executions */}
+              <ExecutionDeviationList planId={selectedPlan.planId} />
+              {/* 回看对比：上一已批准/已派工方案（值班员评估回退目标） */}
+              {prevApprovedPlanId && (
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 text-[10px] px-2 border-white/10"
+                    onClick={handleCompareWithPrevious}
+                  >
+                    <GitCompareArrows className="w-3 h-3" />
+                    对比上一已批准方案
+                  </Button>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-white/60">
                 <span>
                   Plan ID: <span className="text-white/80">{selectedPlan.planId}</span>

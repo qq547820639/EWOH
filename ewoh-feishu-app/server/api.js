@@ -178,7 +178,9 @@ function createApiRouter(db) {
   }));
 
   // -------- 飞书班次报告 --------
-  router.get('/feishu/report', wrap(async (req, res) => {
+  // P1 修复：生成班次报告会在飞书侧创建文档（副作用），不得是无鉴权 GET；
+  // 改为 POST 使其落入 /api 写操作 fail-closed 鉴权（未配置 token → 503）。
+  router.post('/feishu/report', wrap(async (req, res) => {
     const stats = dbm.getSystemStats(db);
     const { rows: eventList } = events.listEvents(db, { limit: 200 });
     // 处置率
