@@ -14,7 +14,7 @@ meta:
   updated_at: "2026-08-16"
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
-  git_head: "a149106"                     # 更新时的 main HEAD（git log -1）
+  git_head: "d47fe96"                     # 更新时的 main HEAD（git log -1；R-1~R-102 一揽子提交）
   rounds_elapsed: 102
 
 current_phase: "Phase 12 收口后深化（NO-13af 完成：resource.service 完整 drizzle 化 + 语义假库 ADR-081，R-102——§15/§31 收口）→ 剩余 1 项 Partial 深化推进（矩阵口径 54/1/0/1；NO-13ag resource 读面 org 守卫 + Scheduling/Devices 数据页渲染 smoke 下一候选）"
