@@ -14,6 +14,7 @@ import {
   ewohDeviceBinding,
 } from '@server/database/schema';
 import { eq, and, or, sql } from 'drizzle-orm';
+import { validateCloudWorldSnapshot } from '@shared/world-contract';
 import type {
   SchedulingEventImpact,
   WorldStateSnapshot,
@@ -22,6 +23,11 @@ import { RequestDatabaseContext } from '../../database/request-database-context'
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { ResourceProjectionService } from './resource-projection.service';
+import {
+  projectDeviceCapabilities,
+  projectPersonCapabilities,
+  projectStationCapabilities,
+} from './capability-projection';
 
 /** 世界状态快照服务：构建/持久化/新鲜度校验。 */
 @Injectable()
@@ -205,6 +211,26 @@ export class WorldStateSnapshotService {
     const stations = resourceView.stations;
     const deviceList = resourceView.devices;
 
+    // NO-12u / ADR-044：能力投影接线（Canonical CapabilityRecord，ADR-043）。
+    // 快照实体附 capabilityRecords（契约合法记录）；投影缺口（certification
+    // 缺 issuer/expiry 等数据源事实缺失）显式计数绝不静默（§33）。
+    const capabilityProjectionIssues: string[] = [];
+    const personRows = persons.map((p) => {
+      const projection = projectPersonCapabilities(p);
+      capabilityProjectionIssues.push(...projection.issues);
+      return { ...p, capabilityRecords: projection.records };
+    });
+    const deviceRows = deviceList.map((d) => {
+      const projection = projectDeviceCapabilities(d);
+      capabilityProjectionIssues.push(...projection.issues);
+      return { ...d, capabilityRecords: projection.records };
+    });
+    const stationRows = stations.map((s) => {
+      const projection = projectStationCapabilities(s);
+      capabilityProjectionIssues.push(...projection.issues);
+      return { ...s, capabilityRecords: projection.records };
+    });
+
     const taskList = tasks.map((t) => {
       // 派生字段标记：本快照中这些字段来自派生而非真实列（P1-T2）。
       const derived: string[] = [];
@@ -246,6 +272,7 @@ export class WorldStateSnapshotService {
 
       return {
         id: t.id,
+        entityId: `task:${t.id}`,
         title: t.title,
         taskType: t.taskType,
         priority: t.priority,
@@ -572,16 +599,16 @@ export class WorldStateSnapshotService {
     for (const v of Object.values(entityVersions)) versionSum += v;
     const worldVersion = 1000 + versionSum + reservationList.length;
 
-    return {
+    const snapshot = {
       worldVersion,
       entityVersions,
       reservations: reservationList,
       safetyBlockedPersonIds: Array.from(safetyBlockedPersonIds),
       safetyBlockedDeviceIds: Array.from(safetyBlockedDeviceIds),
-      persons,
+      persons: personRows,
       tasks: taskList,
-      devices: deviceList,
-      stations,
+      devices: deviceRows,
+      stations: stationRows,
       backlog,
       events: eventList,
       // P0-2：事件影响 scope（供 PriorityEngine 只消费相关事件）。
@@ -591,7 +618,25 @@ export class WorldStateSnapshotService {
       routeEdgeTaskIndex,
       forbiddenZones,
       lockedAssignments,
+      // NO-12u / ADR-044：能力投影缺口显式计数（certification 缺 issuer/expiry 等）。
+      capabilityProjectionIssues,
     };
+
+    // ADR-008 / NO-03b：快照构建时的契约自检（entityVersions 键 + 实体规范身份引用）。
+    // 自检失败显式留痕（errors 落快照 + warn 日志），不静默吞掉也不中断投影构建
+    // （投影词表已由 ADR-007 收敛；此处防御未来漂移并给出可观测证据）。
+    const contractErrors = validateCloudWorldSnapshot(snapshot);
+    if (contractErrors.length > 0) {
+      this.logger.warn(
+        `world snapshot contract check failed: ${contractErrors.join(', ')}`,
+      );
+    }
+    (snapshot as { contractCheck?: { valid: boolean; errors: string[] } }).contractCheck = {
+      valid: contractErrors.length === 0,
+      errors: contractErrors,
+    };
+
+    return snapshot;
   }
 
   /**

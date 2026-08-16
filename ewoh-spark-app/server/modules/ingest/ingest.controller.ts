@@ -17,8 +17,11 @@ import type {
   LocationFrameDto,
   IngestResponse,
   BatchIngestResponse,
+  EnvelopeEventDto,
+  IngestEventBatchResponse,
 } from '@shared/api.interface';
 import { Public } from '../shared/public.decorator';
+import type { OrgContext } from '../shared/org-context.interceptor';
 
 /**
  * Ingestion 接入网关 Controller（皮肤+肢体数据汇聚）
@@ -69,11 +72,14 @@ export class IngestController {
   }
 
   @Post('environment')
-  async ingestEnvironment(@Body() frame: EnvironmentFrameDto): Promise<IngestResponse> {
+  async ingestEnvironment(
+    @Body() frame: EnvironmentFrameDto,
+    @Req() request?: { userContext?: OrgContext },
+  ): Promise<IngestResponse> {
     if (!frame.sensor_id || !frame.event_time) {
       throw new BadRequestException('sensor_id 和 event_time 必填');
     }
-    return this.ingestService.ingestEnvironment(frame);
+    return this.ingestService.ingestEnvironment(frame, request?.userContext?.primaryOrgId ?? null);
   }
 
   @Post('camera')
@@ -111,6 +117,22 @@ export class IngestController {
       throw new BadRequestException('entity_id、locator、ts 必填');
     }
     return this.ingestService.ingestLocation(loc);
+  }
+
+  /** NO-04b：Edge→Cloud 事件批量上行（ADR-009 信封 + 传输级幂等去重）。 */
+  @Post('events')
+  async ingestEvents(
+    @Body() body: EnvelopeEventDto[] | { events: EnvelopeEventDto[] },
+    @Req() request: { userContext?: { userId: string; primaryOrgId: string; accessibleOrgIds: string[]; isGlobalAdmin: boolean } },
+  ): Promise<IngestEventBatchResponse> {
+    const events = Array.isArray(body) ? body : body?.events ?? [];
+    if (events.length === 0) {
+      throw new BadRequestException('events 为空');
+    }
+    if (events.length > 100) {
+      throw new BadRequestException('批量上限 100 条');
+    }
+    return this.ingestService.ingestEventBatch(events, request.userContext as never);
   }
 
   private validateExoskeletonFrame(frame: ExoskeletonFrameDto): void {

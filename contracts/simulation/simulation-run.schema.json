@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///simulation/simulation-run/v1",
+  "title": "EWOH Canonical Simulation Run",
+  "description": "EWOH Digital Twin Simulation 体系契约（ADR-025 / NO-12a，§13）。仿真运行一等资产：kind ∈ 封闭注册表（what_if/capacity/layout/material_flow——v1 四类全部有确定性评估器，绝不注册无引擎空类型）；isolation 强制——record.isSimulation 必须 true（§13 模拟数据显式标记的契约面；配合 standalone_044 表级 CHECK + 绝不写生产 World State 表三层强制）；baseRef 声明基准世界快照（what-if 可追溯「从什么状态改了什么」）；completed 必须带 results；failed 必须带非空 failureReason；auditTrail 必须 true。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kindRegistry", "statusRegistry", "rules"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "kindRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z_]{1,32}$" }
+    },
+    "statusRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z]{1,16}$" }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["isolationContract", "baseRefContract", "parametersContract", "resultsContract", "failureContract", "auditContract", "noEmptyKind"],
+      "properties": {
+        "isolationContract": {
+          "type": "string",
+          "const": "isSimulation 必须 true——§13 模拟数据显式标记的契约面（配合表级 CHECK 与绝不写生产 World State 表三层强制）"
+        },
+        "baseRefContract": {
+          "type": "string",
+          "const": "baseRef 必填（snapshotVersion ≥ 0 整数）——仿真从什么状态改了什么可追溯（§3）"
+        },
+        "parametersContract": {
+          "type": "string",
+          "const": "parameters 必填对象——评估器输入显式（缺参数 fail-closed 拒绝，不猜测）"
+        },
+        "resultsContract": {
+          "type": "string",
+          "const": "status=completed 必须带 results 对象（成功仿真的输出契约面）"
+        },
+        "failureContract": {
+          "type": "string",
+          "const": "status=failed 必须带非空 failureReason（失败显式理由，§33 不静默）"
+        },
+        "auditContract": {
+          "type": "string",
+          "const": "auditTrail 必须 true（与 ADR-016/018/020/021/024 同规则）"
+        },
+        "noEmptyKind": {
+          "type": "string",
+          "const": "kindRegistry 仅含具备确定性评估器的类型——绝不注册无引擎空类型（§33/§36）"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "kindRegistry": ["what_if", "capacity", "layout", "material_flow"],
+  "statusRegistry": ["created", "running", "completed", "failed"],
+  "rules": {
+    "isolationContract": "isSimulation 必须 true——§13 模拟数据显式标记的契约面（配合表级 CHECK 与绝不写生产 World State 表三层强制）",
+    "baseRefContract": "baseRef 必填（snapshotVersion ≥ 0 整数）——仿真从什么状态改了什么可追溯（§3）",
+    "parametersContract": "parameters 必填对象——评估器输入显式（缺参数 fail-closed 拒绝，不猜测）",
+    "resultsContract": "status=completed 必须带 results 对象（成功仿真的输出契约面）",
+    "failureContract": "status=failed 必须带非空 failureReason（失败显式理由，§33 不静默）",
+    "auditContract": "auditTrail 必须 true（与 ADR-016/018/020/021/024 同规则）",
+    "noEmptyKind": "kindRegistry 仅含具备确定性评估器的类型——绝不注册无引擎空类型（§33/§36）"
+  }
+}

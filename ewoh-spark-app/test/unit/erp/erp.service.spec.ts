@@ -21,6 +21,17 @@ describe('ErpService inbound orders', () => {
     };
     const { insert, entries } = createInsertMock([orderRow]);
     const execute = jest.fn().mockResolvedValue([]);
+    // ADR-079：findByEvidence 走 drizzle select 链——补链式假库（execute 保留为兼容字段）。
+    const dbSelect = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => {
+          const q: any = Promise.resolve([]);
+          q.where = () => q;
+          q.limit = () => q;
+          return q;
+        }),
+      })),
+    };
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const writeScheduleOrder = jest.fn().mockResolvedValue({
       scheduleTaskId: 'WO-ERP-1',
@@ -29,7 +40,7 @@ describe('ErpService inbound orders', () => {
     });
     const mesService = { writeScheduleOrder };
     const service = new ErpService(
-      { execute, insert } as never,
+      { execute, insert, ...dbSelect } as never,
       audit as never,
       mesService as never,
     );
@@ -74,9 +85,20 @@ describe('ErpService inbound orders', () => {
   it('is idempotent for duplicate external order ids', async () => {
     const existing = { eventId: 'ERP-O-1', status: 'received' };
     const execute = jest.fn().mockResolvedValue([existing]);
+    // ADR-079：findByEvidence drizzle select 假库（返回既有订单行 → 幂等命中）。
+    const selectChain = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => {
+          const q: any = Promise.resolve([existing]);
+          q.where = () => q;
+          q.limit = () => q;
+          return q;
+        }),
+      })),
+    };
     const audit = { appendAuditLog: jest.fn() };
     const service = new ErpService(
-      { execute, insert: jest.fn() } as never,
+      { execute, insert: jest.fn(), ...selectChain } as never,
       audit as never,
       {} as never,
     );
@@ -101,6 +123,7 @@ describe('ErpService outbound queue', () => {
     };
     const { insert, entries } = createInsertMock([outboundRow]);
     const execute = jest.fn().mockResolvedValue([]);
+    let selectCalls = 0;
     const selectWhere = jest.fn().mockResolvedValue([
       {
         eventId: 'ERP-X-1',
@@ -116,7 +139,21 @@ describe('ErpService outbound queue', () => {
       execute,
       insert,
       select: jest.fn(() => ({
-        from: jest.fn(() => ({ where: selectWhere })),
+        from: jest.fn(() => ({
+          where: jest.fn(() => {
+            // ADR-079：第一次 select = 入站预检（空→非重复）；后续 = ackOutbound 读取（行）。
+            selectCalls += 1;
+            const rows = selectCalls === 1 ? [] : [{
+              eventId: 'ERP-X-1',
+              eventCode: 'ERP_OUTBOUND',
+              status: 'pending',
+              evidenceJson: { outboundId: 'OB-1', attempts: 0 },
+            }];
+            const w: any = Promise.resolve(rows);
+            w.limit = () => w;
+            return w;
+          }),
+        })),
       })),
       update: jest.fn(() => ({
         set: jest.fn(() => ({

@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "MetricsRegistry 契约共享测试向量（ADR-023 / NO-10b）。Python（src/edge_platform/contracts/metrics_registry.py）、TypeScript（ewoh-spark-app/shared/metrics-registry.ts）与 scripts/audit-domain-contracts.js 独立仲裁共用同一份向量。",
+  "records": [
+    {
+      "name": "valid_counter",
+      "record": {
+        "metricName": "agent_command_executed_total",
+        "metricType": "counter",
+        "value": 3,
+        "labels": { "role": "Knowledge", "command": "register_knowledge" }
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_gauge",
+      "record": {
+        "metricName": "scheduler_feasible_ratio",
+        "metricType": "gauge",
+        "value": 1,
+        "labels": {}
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_histogram_le",
+      "record": {
+        "metricName": "scheduler_run_duration_ms",
+        "metricType": "histogram",
+        "value": 4,
+        "labels": { "le": "500" }
+      },
+      "expectError": null
+    },
+    {
+      "name": "unknown_metric",
+      "record": {
+        "metricName": "teleport_gauge",
+        "metricType": "gauge",
+        "value": 1,
+        "labels": {}
+      },
+      "expectError": "unknown_metric"
+    },
+    {
+      "name": "type_mismatch",
+      "record": {
+        "metricName": "agent_command_executed_total",
+        "metricType": "gauge",
+        "value": 3,
+        "labels": { "role": "Knowledge", "command": "register_knowledge" }
+      },
+      "expectError": "metric_type_mismatch"
+    },
+    {
+      "name": "unknown_label",
+      "record": {
+        "metricName": "agent_command_executed_total",
+        "metricType": "counter",
+        "value": 3,
+        "labels": { "teleport_label": "x" }
+      },
+      "expectError": "unknown_label"
+    },
+    {
+      "name": "negative_counter",
+      "record": {
+        "metricName": "agent_command_executed_total",
+        "metricType": "counter",
+        "value": -1,
+        "labels": {}
+      },
+      "expectError": "bad_value"
+    },
+    {
+      "name": "histogram_missing_le",
+      "record": {
+        "metricName": "scheduler_run_duration_ms",
+        "metricType": "histogram",
+        "value": 4,
+        "labels": {}
+      },
+      "expectError": "histogram_le_required"
+    }
+  ]
+}

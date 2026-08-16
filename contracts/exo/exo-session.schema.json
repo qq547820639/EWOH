@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///exo/exo-session/v1",
+  "title": "EWOH Canonical Exo Session",
+  "description": "外骨骼↔人员绑定会话契约（ADR-032 / §7：绑定必须是显式、临时且可审计的 Session，不得永久假定一台设备属于某个人）。status ∈ {active, ended, aborted} 状态机（active→ended/aborted 终态不可复开——会话是新事实不重开旧会话）；active 同一外骨骼唯一（服务层 + DB 部分唯一索引双强制）；ended/aborted 必须 actualEndAt（结束事实完整）；exoId/personId 规范身份（ADR-006 device:/person:）；actualEndAt ≥ startedAt；auditTrail 必须 true。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "statusRegistry", "rules"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "statusRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z]{3,12}$" }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uniquenessContract", "terminationContract", "timeContract", "identityContract", "auditContract"],
+      "properties": {
+        "uniquenessContract": {
+          "type": "string",
+          "const": "同一外骨骼同时至多一个 active 会话（服务层 + DB 部分唯一索引双强制）"
+        },
+        "terminationContract": {
+          "type": "string",
+          "const": "ended/aborted 必须 actualEndAt（结束事实完整，绝不悬空）"
+        },
+        "timeContract": {
+          "type": "string",
+          "const": "actualEndAt ≥ startedAt（时间语义不倒退）"
+        },
+        "identityContract": {
+          "type": "string",
+          "const": "exoId/personId 规范身份（ADR-006 device:/person: 前缀）"
+        },
+        "auditContract": {
+          "type": "string",
+          "const": "auditTrail 必须 true（与既有契约同规则）"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "statusRegistry": ["active", "ended", "aborted"],
+  "rules": {
+    "uniquenessContract": "同一外骨骼同时至多一个 active 会话（服务层 + DB 部分唯一索引双强制）",
+    "terminationContract": "ended/aborted 必须 actualEndAt（结束事实完整，绝不悬空）",
+    "timeContract": "actualEndAt ≥ startedAt（时间语义不倒退）",
+    "identityContract": "exoId/personId 规范身份（ADR-006 device:/person: 前缀）",
+    "auditContract": "auditTrail 必须 true（与既有契约同规则）"
+  }
+}

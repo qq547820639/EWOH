@@ -89,8 +89,8 @@ class EventGraphTest(unittest.TestCase):
     def _three_node_chain(self):
         g = EventGraph()
         a = g.add_node("ENTER_ZONE", {"person_id": "P-1", "zone_id": "A"}, ts(1))
-        b = g.add_node("BIND_EXO", {"person_id": "P-1", "device_id": "D-1"}, ts(2))
-        c = g.add_node("CLAIM_TASK", {"person_id": "P-1", "task_id": "T-1"}, ts(3))
+        b = g.add_node("BIND_EXO", {"person_id": "P-1", "device_id": "exo:NY-A1-SN-0007"}, ts(2))
+        c = g.add_node("CLAIM_TASK", {"person_id": "P-1", "task_id": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"}, ts(3))
         g.link_causal(b.node_id, a.node_id)
         g.link_causal(c.node_id, b.node_id)
         return g, a, b, c
@@ -137,29 +137,29 @@ class EventGraphTest(unittest.TestCase):
 class ShiftChainTest(unittest.TestCase):
     def _sample_events(self):
         return [
-            {"node_type": "ENTER_ZONE", "ts": ts(1), "payload": {"zone_id": "Z-A"}},
-            {"node_type": "BIND_EXO", "ts": ts(2), "payload": {"device_id": "D-1"}},
-            {"node_type": "CLAIM_TASK", "ts": ts(3), "payload": {"task_id": "T-1"}},
-            {"node_type": "ARRIVE_STATION", "ts": ts(4), "payload": {"station_id": "S-1"}},
+            {"node_type": "ENTER_ZONE", "ts": ts(1), "payload": {"zone_id": "zone:Z-A"}},
+            {"node_type": "BIND_EXO", "ts": ts(2), "payload": {"device_id": "exo:NY-A1-SN-0007"}},
+            {"node_type": "CLAIM_TASK", "ts": ts(3), "payload": {"task_id": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"}},
+            {"node_type": "ARRIVE_STATION", "ts": ts(4), "payload": {"station_id": "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"}},
             {"node_type": "START_ACTION", "ts": ts(5), "payload": {"action": "搬运"}},
             {"node_type": "LOAD_RISE", "ts": ts(6), "payload": {"load_score": 85}},
             {"node_type": "BATTERY_DROP", "ts": ts(7), "payload": {"battery_pct": 18}},
-            {"node_type": "STATION_BACKLOG", "ts": ts(8), "payload": {"station_id": "S-1", "backlog": 3}},
+            {"node_type": "STATION_BACKLOG", "ts": ts(8), "payload": {"station_id": "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", "backlog": 3}},
             {"node_type": "SUGGESTION", "ts": ts(9), "payload": {"suggestion": "建议 P-2 接替"}},
             {"node_type": "CONFIRM", "ts": ts(10), "payload": {"action": "confirm", "confirmed_by": "L-1"}},
-            {"node_type": "REALLOCATE", "ts": ts(11), "payload": {"task_id": "T-1", "new_assignee": "P-2"}},
+            {"node_type": "REALLOCATE", "ts": ts(11), "payload": {"task_id": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", "new_assignee": "P-2"}},
             {"node_type": "FEEDBACK", "ts": ts(12), "payload": {"outcome": "P-2 已接替，负荷回落"}},
         ]
 
     def test_full_12_step_chain_in_order(self):
         g = EventGraph()
-        nodes = build_shift_chain(g, "P-1", self._sample_events())
+        nodes = build_shift_chain(g, "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", self._sample_events())
         # 12 步且顺序与规范一致
         self.assertEqual(len(nodes), 12)
         self.assertEqual([n.node_type for n in nodes], SHIFT_CHAIN_NODE_TYPES)
         # 每个节点载荷都带 person_id
         for n in nodes:
-            self.assertEqual(n.payload_json.get("person_id"), "P-1")
+            self.assertEqual(n.payload_json.get("person_id"), "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11")
         # 因果链回溯：最后一个的 chain 应为根→叶 12 步
         chain = g.chain(nodes[-1].node_id)
         self.assertEqual([n.node_type for n in chain], SHIFT_CHAIN_NODE_TYPES)
@@ -167,10 +167,19 @@ class ShiftChainTest(unittest.TestCase):
         self.assertEqual(len(g.descendants(nodes[0].node_id)), 11)
 
 
+
+    def test_non_canonical_refs_rejected(self):
+        # NO-03b：因果链实体引用必须是规范身份；裸 ID fail-closed 拒绝
+        with self.assertRaises(ValueError):
+            build_shift_chain(EventGraph(), "P-1", self._sample_events())
+        bad_events = [{"node_type": "BIND_EXO", "ts": ts(1), "payload": {"device_id": "D-1"}}]
+        with self.assertRaises(ValueError):
+            build_shift_chain(EventGraph(), "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", bad_events)
+
 # ---------- 预测 ----------
 class PredictorTest(unittest.TestCase):
     def test_low_battery_high_drain_returns_prediction(self):
-        p = Predictor().predict_low_battery("D-1", battery_pct=50, drain_per_min=1.0, threshold=20, horizon_min=60)
+        p = Predictor().predict_low_battery("exo:NY-A1-SN-0007", battery_pct=50, drain_per_min=1.0, threshold=20, horizon_min=60)
         self.assertIsNotNone(p)
         self.assertEqual(p.prediction_type, "LOW_BATTERY")
         self.assertGreater(p.probability, 0.0)
@@ -180,64 +189,71 @@ class PredictorTest(unittest.TestCase):
         self.assertEqual(p.model_version, "rules-v1")
 
     def test_low_battery_low_drain_returns_none(self):
-        p = Predictor().predict_low_battery("D-1", battery_pct=80, drain_per_min=0.05, threshold=20, horizon_min=60)
+        p = Predictor().predict_low_battery("exo:NY-A1-SN-0007", battery_pct=80, drain_per_min=0.05, threshold=20, horizon_min=60)
         self.assertIsNone(p)
 
     def test_fatigue_above_threshold(self):
-        p = Predictor().predict_fatigue("P-1", current_load_score=70, load_trend_per_min=0.5, horizon_min=30)
+        p = Predictor().predict_fatigue("person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", current_load_score=70, load_trend_per_min=0.5, horizon_min=30)
         self.assertIsNotNone(p)
         self.assertEqual(p.prediction_type, "FATIGUE")
         # 70 + 0.5*30 = 85 > 80
         self.assertGreater(p.predicted_value["predicted_load_score"], 80)
 
     def test_fatigue_below_threshold_returns_none(self):
-        p = Predictor().predict_fatigue("P-1", current_load_score=50, load_trend_per_min=0.1, horizon_min=30)
+        p = Predictor().predict_fatigue("person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", current_load_score=50, load_trend_per_min=0.1, horizon_min=30)
         # 50 + 3 = 53 < 80
         self.assertIsNone(p)
 
     def test_zone_congestion(self):
-        p = Predictor().predict_zone_congestion("S-1", current_occupancy=8, trend=0.5, capacity=10)
+        p = Predictor().predict_zone_congestion("station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", current_occupancy=8, trend=0.5, capacity=10)
         self.assertIsNotNone(p)
         self.assertEqual(p.prediction_type, "ZONE_CONGESTION")
 
     def test_task_delay(self):
         # 进度 10%，已耗 10 分钟，SLA 20 分钟：速率 1%/min，投影 100 分钟 > 20 → 延误
-        p = Predictor().predict_task_delay("T-1", progress_pct=10, elapsed_min=10, sla_min=20)
+        p = Predictor().predict_task_delay("task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", progress_pct=10, elapsed_min=10, sla_min=20)
         self.assertIsNotNone(p)
         self.assertEqual(p.prediction_type, "TASK_DELAY")
 
     def test_low_confidence_flagged(self):
         # 趋势为 0 且已超阈值（当前 85 > 80）→ FATIGUE 但低置信度
-        p = Predictor().predict_fatigue("P-1", current_load_score=85, load_trend_per_min=0.0, horizon_min=30)
+        p = Predictor().predict_fatigue("person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", current_load_score=85, load_trend_per_min=0.0, horizon_min=30)
         self.assertIsNotNone(p)
         self.assertLess(p.confidence, 0.5)
         self.assertEqual(p.assumptions.get("flag"), "low_confidence")
+
+
+
+    def test_non_canonical_target_rejected(self):
+        # NO-03b：预测目标必须是规范身份（kind:value）；裸 ID fail-closed 拒绝
+        with self.assertRaises(ValueError):
+            Predictor().predict_fatigue("P-1", current_load_score=70, load_trend_per_min=0.5)
 
 
 # ---------- 回放 ----------
 class ReplayTest(unittest.TestCase):
     def _setup(self):
         store = StateStore()
-        store.set("P-1", "load", {"load_score": 30}, "real", 0.9, ts(1))
-        store.set("P-1", "load", {"load_score": 85}, "real", 0.95, ts(6))
-        store.set("D-1", "battery", {"pct": 90}, "real", 1.0, ts(1))
-        store.set("D-1", "battery", {"pct": 18}, "real", 1.0, ts(7))
+        store.set("person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", "load", {"load_score": 30}, "real", 0.9, ts(1))
+        store.set("person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", "load", {"load_score": 85}, "real", 0.95, ts(6))
+        store.set("exo:NY-A1-SN-0007", "battery", {"pct": 90}, "real", 1.0, ts(1))
+        store.set("exo:NY-A1-SN-0007", "battery", {"pct": 18}, "real", 1.0, ts(7))
         g = EventGraph()
         events = [
-            {"node_type": "ENTER_ZONE", "ts": ts(1), "payload": {"zone_id": "Z-A"}},
-            {"node_type": "BIND_EXO", "ts": ts(2), "payload": {"device_id": "D-1"}},
-            {"node_type": "CLAIM_TASK", "ts": ts(3), "payload": {"task_id": "T-1"}},
-            {"node_type": "ARRIVE_STATION", "ts": ts(4), "payload": {"station_id": "S-1"}},
+            {"node_type": "ENTER_ZONE", "ts": ts(1), "payload": {"zone_id": "zone:Z-A"}},
+            {"node_type": "BIND_EXO", "ts": ts(2), "payload": {"device_id": "exo:NY-A1-SN-0007"}},
+            {"node_type": "CLAIM_TASK", "ts": ts(3), "payload": {"task_id": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"}},
+            {"node_type": "ARRIVE_STATION", "ts": ts(4), "payload": {"station_id": "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"}},
             {"node_type": "START_ACTION", "ts": ts(5), "payload": {"action": "搬运"}},
             {"node_type": "LOAD_RISE", "ts": ts(6), "payload": {"load_score": 85}},
             {"node_type": "BATTERY_DROP", "ts": ts(7), "payload": {"battery_pct": 18}},
-            {"node_type": "STATION_BACKLOG", "ts": ts(8), "payload": {"station_id": "S-1", "backlog": 3}},
+            {"node_type": "STATION_BACKLOG", "ts": ts(8), "payload": {"station_id": "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", "backlog": 3}},
             {"node_type": "SUGGESTION", "ts": ts(9), "payload": {"suggestion": "建议 P-2 接替"}},
             {"node_type": "CONFIRM", "ts": ts(10), "payload": {"action": "confirm", "confirmed_by": "L-1"}},
-            {"node_type": "REALLOCATE", "ts": ts(11), "payload": {"task_id": "T-1", "new_assignee": "P-2"}},
+            {"node_type": "REALLOCATE", "ts": ts(11), "payload": {"task_id": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", "new_assignee": "P-2"}},
             {"node_type": "FEEDBACK", "ts": ts(12), "payload": {"outcome": "P-2 已接替"}},
         ]
-        nodes = build_shift_chain(g, "P-1", events)
+        nodes = build_shift_chain(g, "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", events)
         return store, g, nodes
 
     def test_at_reconstructs_snapshot(self):
@@ -245,9 +261,9 @@ class ReplayTest(unittest.TestCase):
         replay = Replay(store, g)
         snap = replay.at(ts(6))
         # 状态：P-1 在 ts(6) 的 load 应为 85（第 2 条 valid_from=ts(6)）
-        self.assertEqual(snap["states"]["P-1"]["load"]["state_json"], {"load_score": 85})
+        self.assertEqual(snap["states"]["person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"]["load"]["state_json"], {"load_score": 85})
         # D-1 在 ts(6) 的 battery 仍为 90（第 2 条 valid_from=ts(7)）
-        self.assertEqual(snap["states"]["D-1"]["battery"]["state_json"], {"pct": 90})
+        self.assertEqual(snap["states"]["exo:NY-A1-SN-0007"]["battery"]["state_json"], {"pct": 90})
         # 事件：ts(6) 及之前的事件
         self.assertGreaterEqual(len(snap["events"]), 6)
         self.assertEqual(snap["events"][-1]["node_type"], "LOAD_RISE")
@@ -255,7 +271,7 @@ class ReplayTest(unittest.TestCase):
     def test_compare(self):
         store, g, nodes = self._setup()
         replay = Replay(store, g)
-        diff = replay.compare(ts(1), ts(6), "P-1")
+        diff = replay.compare(ts(1), ts(6), "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11")
         self.assertEqual(diff["before"]["load"]["state_json"], {"load_score": 30})
         self.assertEqual(diff["after"]["load"]["state_json"], {"load_score": 85})
 
@@ -283,8 +299,8 @@ class ReplayTest(unittest.TestCase):
     def test_shift_summary(self):
         store, g, nodes = self._setup()
         replay = Replay(store, g)
-        summary = replay.shift_summary("P-1", ts(0), ts(15))
-        self.assertEqual(summary["person_id"], "P-1")
+        summary = replay.shift_summary("person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", ts(0), ts(15))
+        self.assertEqual(summary["person_id"], "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11")
         self.assertEqual(summary["action_count"], 1)
         self.assertEqual(summary["peak_load"], 85)
         self.assertEqual(summary["suggestion_count"], 1)

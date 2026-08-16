@@ -31,15 +31,17 @@ describe('reconcile-authoritative-artifacts', () => {
     expect(check.ok).toBe(true);
   });
 
-  it('computes the 57-table managed footprint consistently with CHANGELOG/state/release-manifest', () => {
+  it('computes the 74-table managed footprint consistently with CHANGELOG/state/release-manifest', () => {
     const report = reconcile(REPO_ROOT);
     const check = report.checks.find((entry) => entry.name === 'db_table_footprint_reconcile');
     expect(check).toBeDefined();
-    // 受管表口径：managed_tables list 共 57 表，与 CHANGELOG(48→57)/state.json/release-manifest 声称一致。
-    // additional_hardened_existing_tables（如 ewoh_organization/ewoh_personnel）是既有已加固表，不计入受管 57 表口径。
+    // 受管表口径：managed_tables list 共 74 表（Round 73 后与
+    // CHANGELOG(73→74)/state.json/release-manifest 声称一致）。
+    // additional_hardened_existing_tables（如 ewoh_organization/ewoh_personnel）
+    // 是既有已加固表，不计入受管表口径。
     expect(check.ok).toBe(true);
-    expect(check.detail).toMatch(/computed=57/);
-    expect(check.detail).toMatch(/claimed: changelog=57/);
+    expect(check.detail).toMatch(/computed=74/);
+    expect(check.detail).toMatch(/claimed: changelog=74/);
   });
 
   it('never silently rewrites authoritative sources (read-only reconcile)', () => {

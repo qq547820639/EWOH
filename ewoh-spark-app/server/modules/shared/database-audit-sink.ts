@@ -16,7 +16,7 @@ export class DatabaseAuditSink implements AuditLogSink {
     }
 
     await this.db.execute(sql`
-      select public.ewoh_append_audit_log(
+      select ewoh_append_audit_log(
         ${entry.orgId || null}::uuid,
         ${entry.actorId},
         ${entry.action},

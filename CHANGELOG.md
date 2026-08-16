@@ -6,6 +6,1300 @@
 ## [Unreleased]
 
 ### Added
+- **Model Training Policy v1（租户隔离强制，NO-13u，ADR-070，R-91，§15/§16/§33）**：
+  - 仓库事实发现真实泄漏风险（retrain 无 org 过滤混合全租户反馈训练
+    全局模型）→ v1 政策 = **租户作用域训练**（跨租户聚合显式 OFF，
+    无授权/匿名化机制前禁止）；
+  - modelId org 命名空间：`task-duration-empirical:<orgId>` /
+    `:<orgId>:<taskType>`（orgIdFromModelId 解析；旧全局模型显式
+    弃用不回填）；provider org 键控（orgModels + refreshForOrg；
+    预测必须携带 task.orgId，缺 → 确定性基线显式 §33）；
+  - `retrain(orgId)` / `hydrateFromRegistry(orgId)` 强制（缺 orgId
+    → 400；feedback org_id 过滤）；controller 端点注入 userContext
+    org；cardJson 携带 orgId 判定事实；
+  - 测试：provider spec org 键控更新 + training spec 跨租户隔离
+    + 缺 org 400（9 例）；default jest 266 suites 1976→**1978**
+    tests；
+  - 无 schema/OpenAPI/env 变更；§15/§16 机器强制收口（ADR-056/067
+    遗留边界关闭）。
+- **Exo Support Mode 观测边界复核与锁定（NO-13t，ADR-069，R-90，§7/§33）**：
+  - 仓库事实复核：NY-EXO-A1 协议确认书 2.3 TELEMETRY 20B 布局无
+    mode 字节（assist_pct 为助力强度连续量非模式分类）；IDENT/
+    FAULT/HEARTBEAT 无 mode；VENDOR_TO_UNIFIED 无 mode 语义路径；
+    UnifiedExoFrame 无 supportMode 字段——**阻塞仍成立**（厂商协议
+    升级前不伪造观测）；
+  - 机器锁定边界：test_ny_exo_a1_contract.py +3 例（TELEMETRY
+    字段集锁定 / 统一语义帧无 support_mode / VENDOR_TO_UNIFIED
+    无 mode 语义路径——协议升级触发失败即漂移信号）；pytest
+    1340 passed/10 skipped 全绿（含 +3）；
+  - assist_level 数值事实照常观测（与配置 mode 并列，不推导
+    分类）；无实现变更（仅测试 + 文档）。
+- **SimulationConsole 数据型页面渲染 smoke（NO-13s，ADR-068，R-89，§17/§18/§31/§33）**：
+  - 提取 `SimulationRunList` 纯展示组件（rows/selectedRunId/
+    onSelectRun props 零网络；控制台委托渲染行为逐字一致，
+    data-testid 保留）；TONE_TEXT/TONE_BORDER 上移
+    simulationConsoleLogic（§31 单一来源）；
+  - 渲染 smoke 2 例（数据行契约字段透出 / 失败行 failureReason
+    显式头条 + aria-pressed 选中态——R-87 模式推广）；client jest
+    119→120 suites 968→**970** tests；
+  - 数据型页面渲染 smoke 缺口第二项关闭；无 DB/OpenAPI/env 变更。
+- **per-taskType 经验时长模型分组（NO-13r，ADR-067，R-88，§10/§21/§33）**：
+  - modelId 词表：全局 `task-duration-empirical`（v1 语义不变）+
+    分组 `task-duration-empirical:<taskType>`（taskType 为任务登记
+    事实非猜测；无类型仅计全局）；
+  - 预测两级回退显式：taskType 分组模型 → 全局模型 → 确定性基线
+    （source/modelVersion 如实标注，§33 不静默）；
+  - `retrain` = 全局 + 分组独立落版（每 modelId 版本链 supersede +
+    递增；分组样本 < MIN_SAMPLES → 显式 skipped 不落版；cardJson
+    携带 taskType 判定事实）；RetrainSummary.perTaskType additive；
+  - `hydrateFromRegistry` 全量回填（isEmpiricalModelId 前缀过滤 +
+    按 modelId 最新 active 重建分组映射，冷启动恢复分组训练态）；
+  - 测试：empirical-duration-prediction.spec +2 例（分组优先 /
+    两级回退）+ duration-model-training.service.spec +2 例（分组
+    独立 modelId 链 + 不足跳过 / hydrate 映射重建）；default jest
+    266 suites 1972→**1976** tests；
+  - shadow-only 边界不变；无 DB/OpenAPI/env 变更；ADR-056 决策 3
+    后续收口。
+- **Decision History 控制台 UI（NO-13q，ADR-066，R-87，§17/§18/§33）**：
+  - 数据型页面三层：`decisionHistoryLogic`（8 kind / 5 status /
+    5 authority 标签 + 风险档 tone + 行模型——未知词表值原样透出
+    不猜测 + sources 摘要）/ `DecisionHistoryTable`（纯展示，契约
+    字段透出零网络）/ `DecisionHistoryConsole`（react-query 消费
+    ADR-065 端点 + kind/status 过滤 + "加载更多"分页 +
+    skippedInvalid 显式横幅（§33 非法记录绝不静默）+ 错误/空/
+    加载态）；
+  - `fetchDecisionHistory`（client/api/decisions.ts，类型复用
+    @shared/decision §31）；路由 /decision-history + 侧边栏 nav 项
+    （决策历史，dispatcher/workshop_lead/global_admin）；
+  - 测试：decisionHistoryLogic.test 4 例 + DecisionHistoryTable
+    .render.test 2 例（数据行透出 / 非法横幅 + 空态）；client jest
+    117→119 suites 962→**968** tests；
+  - 另修复 rule-based-scheduling-solver.spec 重放 deep-equal 的
+    createdAt 墙钟 flake（strip 纳入 createdAt——测试确定性卫生）；
+  - 无 DB/OpenAPI/env 变更；数据型页面渲染 smoke 缺口关闭。
+- **Decision History 跨 kind 检索端点（NO-13p，ADR-065，R-86，§12/§15/§18/§33）**：
+  - `DecisionHistoryService`：Decision Catalog 8 类 kind 跨四表统一
+    读面（schedule_plan.decision_records_json + agent_approval /
+    learning_proposal / scheduling_policy .decision_json）——记录级
+    租户过滤统一面（plan 表无 org_id 列显式边界；org 作用域表
+    org_id 列过滤 + 记录过滤双保险；scheduling_policy 全局 null 行
+    不进入租户查询显式边界）；全部记录过 validateDecision（§31
+    单一校验器），非法 → 显式 skippedInvalid 计数（§33 绝不静默
+    丢弃）；decidedAt 降序 + decisionId 字典序稳定排序；limit 缺省
+    50 cap 100；kind/status 过滤器 fail-closed（未知值 400）；
+  - `GET /api/scheduler/decision-history`（只读；零写入零事件）；
+    OpenAPI +1 路径（397→398 controllers / 588→590 spec）+ client
+    types 再生成；
+  - 测试：decision-history.service.spec 3 例（四表聚合 + 他租户
+    剔除 + sources 扫描量审计 / kind+status 过滤 + fail-closed +
+    cap + offset / 非法 skippedInvalid + 缺租户 400）；default jest
+    265→266 suites 1969→**1972** tests、client jest 117/962 全绿；
+  - 无 DB/env 变更；决策历史面板 UI 后续立项。
+- **Policy Activation Decision 接线（NO-13o，ADR-064，R-85，§2/§8/§12/§18/§33）**：
+  - `projectPolicyActivationDecision`：Decision Catalog kind #8——
+    decisionId=`decision:policy:v<version>:activation` 确定性幂等
+    （单记录列重复激活同 id 覆盖为最新决策，语义显式）；kind=
+    policy_activation / status=executed / authority=human
+    （approver 强制人审门）/ subject=policy:v\<v\> / riskLevel=
+    'high' 类型推导规则锁测试（策略激活直接翻转生产调度行为）/
+    requiresApproval=false（本记录即人审激活事实）/ selected.reason
+    =[人审理由||'activated'] / approver 判定事实 / evidence=
+    version:\<v\>；
+  - `SchedulingPolicyService.activatePolicyVersion` active 翻转与
+    decisionJson **同一 UPDATE 原子写**（reason 由
+    SchedulerPlanApplicationService 透传 body.reason）+ savePolicy
+    直接激活路径 INSERT 携带（reason 缺省 policy-save-activated）；
+    投影缺口 log 显式留 NULL 不阻断激活主流程（§2/§33；全局策略
+    orgId null 缺口显式边界——契约强制 tenantId 不伪造）；
+  - standalone_054 原地加固（计数不变 74/77；旧行 NULL=未投影）：
+    runner 全套注册 + check script 成对回滚 + CI step + state.json +
+    schema-manifest new→altered；
+  - 测试：decision-projection.spec +3 例（判定事实 / 缺省理由 +
+    幂等 / 缺口显式）+ policy-version.spec +2 例（activate 行翻转
+    decisionJson 落库 + validateDecision 门 / savePolicy 路径）；
+    default jest 265 suites 1964→**1969** tests；
+  - **Decision Catalog 8 类 kind 全收敛收口**（§12 Decision History
+    全链覆盖：task_assignment / plan_approval / agent_approval /
+    resource_reservation / dispatch / replan / learning_proposal_
+    activation / policy_activation）；无 OpenAPI/env 变更。
+- **Learning Proposal Activation Decision 接线（NO-13n，ADR-063，R-84，§2/§10/§12/§18/§33）**：
+  - `projectLearningProposalActivationDecision`：Decision Catalog
+    kind #7——decisionId=`decision:<proposalId>:activation` 确定性
+    幂等（状态机单向转移）；kind=learning_proposal_activation；
+    status 映射：approve→approved / reject→rejected / rollback→
+    superseded（激活决策被回滚取代）；authority=human（三路径强制
+    人审身份+理由）；subject=proposal:\<id\>；riskLevel='medium'
+    类型推导规则锁测试（阈值激活间接触发调度建议面）；
+    requiresApproval=false（本决策即人审事实）；selected：
+    approve→opt:activate（缺省 approved）/ reject·rollback→
+    opt:keep（必填理由事实）；approver 判定事实；evidence=
+    proposal+kind 链接；
+  - `approve`/`reject`/`rollback` 与状态终态**同一 UPDATE 语句**
+    原子写 decision_json（standalone_053 原地加固，计数不变
+    74/77；旧行 NULL=未投影）；投影缺口 log 显式留 NULL 绝不阻断
+    提案主流程（§2/§33）；
+  - 测试：decision-projection.spec +3 例（approve 判定事实 /
+    reject·rollback 状态映射+理由强制 / 幂等 + 缺口显式）+
+    learning-proposal.service.spec +3 例（三路径 decisionJson
+    落库 + validateDecision 门）；default jest 265 suites
+    1958→**1964** tests；
+  - Decision Catalog kind #7 接线（§12 Decision History 覆盖学习
+    提案激活全链；其余 1 类后续逐类收敛）；无 OpenAPI/env 变更。
+- **Replan Decision 接线（NO-13m，ADR-062，R-83，§2/§8/§12/§18/§31/§33）**：
+  - `projectReplanDecision`：Decision Catalog kind #6——
+    decisionId=`decision:<planId>:replan` 确定性幂等（同一 planId 至多
+    持久化一次）；kind=replan / status=proposed（新方案 shadow 待
+    审批）/ authority=policy（触发链=政策驱动）/ subject=plan:\<id\> /
+    riskLevel=触发类型推导规则锁测试（SAFETY_EVENT / ZONE_RESTRICTED
+    →high；PERSON_UNAVAILABLE / DEVICE_OFFLINE→medium；其余→low）/
+    requiresApproval=true / selected.reason=trigger:\<type\>:
+    affected:\<n\> / evidence=run+trigger+affected+entity 链接 /
+    auditTrail actor=policy:replan-trigger（自动触发不伪造 human
+    身份）；
+  - `replan-coordinator` persistPlan 后逐方案追加（handleTrigger +
+    handleConflictBatch 双路径；投影缺口/追加失败 log 显式绝不阻断
+    重排主流程，§2/§33；抑制路径（debounce/storm/low-improvement）
+    不产生记录——事实一致）；
+  - **§31 收口**：`decision-ledger.ts`（appendPlanDecisionRecords
+    读-追加-回写单一实现）——plan.service（审批追加）+
+    dispatch-coordinator（派工追加）+ replan-coordinator（重排追加）
+    三处消费收敛（既有 spec 回归锁定）；
+  - 测试：decision-projection.spec +3 例（判定事实 / 风险类型规则 /
+    幂等 + 缺口显式）+ replan-decision-persistence.spec 2 例（kind
+    #6 台账 + validateDecision 门 + 去抖幂等）；default jest 264
+    suites 1953→**1958** tests；
+  - Decision Catalog kind #6 接线（其余 2 类后续逐类收敛）；无
+    DB/OpenAPI/env 变更。
+- **Dispatch Decision 接线（NO-13l，ADR-061，R-82，§2/§12/§18/§33）**：
+  - `projectDispatchDecision`：Decision Catalog kind #5——
+    decisionId=`decision:<planId>:dispatch` 确定性幂等（double-
+    dispatch CAS）；kind=dispatch / status=executed（执行步骤留痕）/
+    authority=policy（派工链含政策门 SAFETY_BLOCK_DISPATCH /
+    ADVISORY fail-closed / 快照新鲜度强校验）/ subject=plan:\<id\> /
+    riskLevel=分配风险档聚合 max 规则（任一 high→high / 否则任一
+    medium→medium / 否则 low——复用 ADR-048 决策 2 单条映射，聚合
+    规则锁测试）/ requiresApproval=false（审批事实在 kind #2）/
+    selected.reason=dispatched:\<count\>（真实派工数）/ evidence=
+    outbox 事件 id 链接；
+  - `DispatchCoordinator.dispatch` 事务末与 kind #4 记录**单次**
+    读-追加-回写 decision_records_json（projectReservationDecision
+    Records + appendDecisionRecords 重构；投影缺口/追加失败 log
+    显式绝不阻断派工主流程，§2/§33）；getPlan 读回自动携带；
+  - 测试：decision-projection.spec +3 例（判定事实 / 风险聚合 max
+    规则 / 缺口显式）+ dispatch-integration.spec 主链路断言补强
+    （kind #5 台账 + getPlan 读回携带）；default jest 264 suites
+    1950→**1953** tests；
+  - Decision Catalog kind #5 接线（派工链全链留痕：kind #2 审批 →
+    kind #4 预占 → kind #5 派工；其余 3 类后续逐类收敛）；无
+    DB/OpenAPI/env 变更。
+- **Resource Reservation Decision 接线（NO-13k，ADR-060，R-81，§2/§12/§18/§33）**：
+  - `projectResourceReservationDecision`：Decision Catalog kind #4——
+    decisionId=`decision:<planId>:reservation:<assignmentId>:<reservationId>`
+    确定性幂等（reservationId 单次生成 + double-dispatch CAS）；
+    kind=resource_reservation / status=executed（执行步骤留痕非提议）/
+    authority=rule_based（预占输入由 assignment 字段确定性推导）/
+    subject=`resource:<type>:<id>` / riskLevel 复用 ADR-048 决策 2
+    映射规则（§31 单一规则）/ requiresApproval=false（审批事实在
+    kind #2）/ selected.reason=台账行唯一链接（reservationId:type:
+    id:窗口）/ auditTrail actor=user:\<id\>|system:dispatch；
+  - `DispatchCoordinator.dispatch` 预占循环收集真实 reserve() 结果 →
+    **与派工同事务**读-追加-回写 decision_records_json（无第二事实源；
+    投影缺口/追加失败 log 显式绝不阻断派工主流程，§2/§33）；
+    getPlan 读回自动携带；
+  - 测试：decision-projection.spec +3 例（判定事实 / 缺省 actor +
+    幂等 / 缺口显式）+ dispatch-integration.spec 主链路断言补强
+    （派工后方案决策台账含 kind #4 + getPlan 读回携带）；default
+    jest 264 suites 1947→**1950** tests；
+  - Decision Catalog kind #4 接线（§12 Decision History 覆盖派工
+    预占全链；其余 4 类后续逐类收敛）；无 DB/OpenAPI/env 变更。
+- **Agent Approval Decision 接线（NO-13j，ADR-059，R-80，§2/§11/§12/§18/§33）**：
+  - `projectAgentApprovalDecision`：Decision Catalog kind #3——
+    decisionId=`decision:<approvalId>:agent-approval` 确定性幂等
+    （ADR-039 CAS 单次解析）；kind=agent_approval；status=approved/
+    rejected（expired → rejected，reason=approval_expired）；
+    authority 区分人工=human / TTL 超期=policy（不伪造 human 身份）；
+    riskLevel 映射自 manifest.riskLevel 真实清单事实（critical 收敛
+    high + evidence `manifest_risk:<level>` 留原始档）；
+    requiresApproval=false（本决策即审批事实）；approver 判定事实
+    （user:\<id\> / policy:agent-approval-ttl）；validateDecision 门；
+  - `resolveApproval` 三路径（approved/rejected/expired）投影 +
+    resolveRow 唯一权威写路径：decision_json 与解析终态**同事务原子
+    落库**（standalone_052 原地加固，计数不变 74/77；旧行 NULL=
+    未投影）；投影缺口/契约失败 log 显式留 NULL，绝不阻断审批主流程
+    （§2/§33，与 ADR-057 同纪律）；
+  - 测试：decision-projection.spec +5 例（kind #3 判定事实 / 驳回
+    缺省理由 + 幂等 / expired policy / 风险映射规则 / 缺口显式）+
+    agent.service.spec +3 例（approved/rejected/expired decisionJson
+    落库 + validateDecision 门）；default jest 264 suites
+    1939→**1947** tests；
+  - Decision Catalog kind #3 接线（§12 Decision History 覆盖 Agent
+    审批解析全链；其余 5 类后续逐类收敛；跨 kind 检索端点后续立项）。
+- **MILP Scheduling Solver 接入（NO-13i，ADR-058，R-79，§8/§9/§31/§33）**：
+  - `milp-scheduling-solver.ts`（HiGHS 1.15.2 WASM 真实 MILP 求解器，
+    MIT，进程内无外部服务依赖；`highs` npm 依赖无传递依赖）——§8
+    求解器阶梯第 4 类落地（CP-SAT / heuristic / rule-based / MILP）；
+  - 语义（ADR-058 决策 1，§9 差异边界显式）：共享 CandidateEngine
+    候选面（§31）→ 二元变量 + 联合行（每任务至多一候选 / 人员·设备
+    重叠互斥 / 工位窗口容量（capacity K 大 M 线性化）/ DAG 闭包与
+    时序冲突对）；目标 = 与 heuristic 同一 per-candidate 加性评分 +
+    M·未分配罚（M=1+⌈Σcost⌉ 可证明"先最大化分配数、再最小化成本"）；
+    heuristic=顺序贪心 vs MILP=联合精确最优（唯一差异边界）；
+  - `solver.service` 路由 `policy.solverVersion='milp-v1'` 显式选择
+    （不参与 CP-SAT 激活阶梯、无隐式回退；solverActivation.state=
+    'MILP' 如实标记，SolverActivationState 联合 additive）；
+    solverVersion='milp-v1' + solverStatus='OPTIMAL' 如实标记；
+    HiGHS 非 Optimal/加载失败显式抛出（§33 不静默降级）；
+  - 测试：milp-scheduling-solver.spec 9 例（真实 HiGHS 求解：最优性
+    vs 穷举 / 容量冲突 / DAG 闭包·时序 / 工位容量互斥 / 重放
+    deep-equal / 空任务 / WASM 失败显式抛出）；default jest
+    263→264 suites 1930→**1939** tests；
+  - OPEN-DECISIONS MILP 环境阻塞解除（ADR-053 决策 3 再评估）；剩余
+    缺口 = CP-SAT 生产启用（部署环境，OPEN-DECISIONS 唯一项）；
+    solver-pluggability 矩阵保持 Partial（§36 口径不提前升级）。
+- **Plan Approval Decision 接线（NO-13h，ADR-057，R-78，§12/§18/§33）**：
+  - `projectPlanApprovalDecision`：Decision Catalog kind #2——
+    decisionId=`decision:<planId>:approval:v<version>` 确定性幂等；
+    kind=plan_approval / authority=human + approver 判定事实 /
+    riskLevel='high'（类型推导规则锁测试）/ requiresApproval=false
+    （本决策即审批事实）/ selected.reason=审批理由（缺省结果动作词）；
+  - `approvePlan` / `rejectPlan` 台账追加：审批决策以契约形态追加进
+    `decision_records_json`（读-追加-回写 CAS；投影缺口/失败 log 显式
+    绝不阻断审批主流程，§2 人审门语义不变）；getPlan 读回自动携带；
+  - 测试：decision-projection.spec +3 例 + plan-decision-persistence
+    .spec +2 例（approve 追加既有保留 / reject 追加）；
+  - Decision Catalog kind #2 接线（§12 Decision History 覆盖求解提议
+    + 人审结果全链；其余 6 类后续逐类收敛）；无 DB/OpenAPI/env 变更。
+- **经验时长统计模型 + 模型重训/激活闭环（NO-13g，ADR-056，R-77，§10/§12/§33）**：
+  - `empirical-duration-model`：真实执行反馈 → 非参数经验分布（median/p90
+    最近秩百分位/count/spread；确定性可重放）；置信度由样本量与离散度
+    真实推导（0.1..0.95）；样本 < 5 → `not_enough_data` 显式 OOD；
+  - `EmpiricalDurationPredictionProvider` 替换 PREDICTION_PROVIDER
+    （shadow-only 边界不变）：任务自带时长 = 任务级真实事实 → 确定性
+    路径；已训练 → median + ml 来源 + 真实置信度；未训练 → 显式回退
+    确定性基线（§33 绝不静默）；
+  - `DurationModelTrainingService` 唯一权威写路径：真实反馈 → 训练 →
+    `ewoh_model_registry` 落版（版本 = 既有最大数字版本 + 1，旧 active
+    supersede）+ 内存刷新；冷启动 `hydrateFromRegistry` 回填；
+    POST /api/scheduler/predictions/task-duration/retrain 显式触发
+    （OpenAPI 397/588 零漂移）；
+  - 测试：empirical-duration-prediction.spec 8 例 + duration-model-
+    training.service.spec 5 例；default jest 261→263 suites
+    1912→**1925** tests；无 DB/env 变更；
+  - intelligence-l7-learning §36 升 **Implemented**（矩阵
+    53/2/0/1→54/1/0/1——L7 四腿闭环：决策→结果 / 策略阈值 / Outcome
+    标注 / 模型重训激活全部落地）；per-taskType 分组与跨租户训练政策
+    为后续（显式边界）。
+- **Console 手动主题切换 + 页面渲染测试补强（NO-13f，ADR-055，R-76，§17/§31/§33）**：
+  - 主题偏好单一事实源（contrastMode：ThemePreference=system/dark/light，
+    localStorage `ewoh.theme`——system 移除键显式默认；三态循环
+    system→dark→light→system 纯函数锁定）；index.tsx 启动偏好感知
+    （system 时媒体变化才重放，manual 忽略媒体变化）；
+  - `ThemeToggle` 组件（图标+文字双重表达）+ Layout 侧栏接线——
+    手动主题切换闭环（偏好持久化 + data-theme 即时同步）；
+  - 页面渲染 smoke 补强：ThemeToggle 3 例 + Forbidden/NotFound 静态页
+    2 例（MemoryRouter + auth mock）；client jest 115→117 suites
+    952→**962** tests；walkthrough 三项缺口全部关闭——
+    factory-operating-console §36 升 **Implemented**（矩阵
+    52/3/0/1→53/2/0/1）；无 DB/OpenAPI/env 变更。
+- **Factory Operating Console 深化（NO-13e，ADR-054，R-75，§17/§33）**：
+  - 视口 culling 生产接线：`worldBoundsFromTransform` 变换数学纯函数
+    （xMidYMid meet 居中偏移 + pan/zoom 屏幕↔世界映射；非法输入
+    fail-safe 全量渲染）；FactoryMap `onTransform` 上报 +
+    `onVisibleBoundsChange`（lastBounds 等值守卫防渲染循环）；
+    CommandMapShell → store `viewport.visibleBounds` 唯一写点——
+    pan/zoom → 世界可视范围 → 实体剔除进入生产调用链（此前纯函数/
+    消费面/store 全备唯缺生产者断点）；
+  - 深色模式半成品收口：index.tsx 启动 `applyDarkClass` +
+    prefers-color-scheme 监听（tokens.css 暗色令牌生效，系统偏好跟随）；
+  - 页面级渲染 smoke：MapViewport.render.test 3 例（模式分支/叠加层/
+    接线面，renderToStaticMarkup 同栈）+ viewportCulling 变换数学
+    5 例；client jest 114→115 suites 944→**952** tests；
+  - factory-operating-console 证据深化（矩阵保持 Partial：手动主题
+    切换 + 更广页面渲染覆盖为后续）；无 DB/OpenAPI/env 变更。
+- **Rule-based Scheduling Solver（NO-13d，ADR-053，R-74，§8/§9/§18/§31/§33）**：
+  - `rule-based-scheduling-solver.ts`：求解器插拔阶梯第 3 类——确定性
+    L1 地板（任务序 due 升序→priority 降序→id 字典序 + first-eligible
+    纯规则；共享 CandidateEngine 硬约束语义 §31；**不做软成本 argmin**
+    （与 heuristic 8 权重优化的差异边界显式）；无可行/前置未就绪 →
+    `UNASSIGNED_RULE_BASED` 显式（§33 不伪造分配）；统一评估器
+    （P0-5）；status=shadow / solverStatus=`RULE_BASED` /
+    solverVersion=`rule-based-v1` 如实标记（绝不冒充 heuristic/CP-SAT）；
+  - 策略显式选择：`policy.solverVersion='rule-based-v1'` → solver.service
+    路由（无隐式自动回退）；SolverStatus/SolverActivationState additive
+    +RULE_BASED；
+  - `rule-based-scheduling-solver.spec` 7 例（确定性重放 deep-equal /
+    任务序 / priority tie-break / first-eligible+rejectedHard / DAG 前置
+    UNASSIGNED / lockedAssignments 透传 / routeCost 映射）；
+  - solver-pluggability 证据深化（矩阵保持 Partial：MILP 环境阻塞 +
+    CP-SAT 生产启用待部署环境）；无 DB/OpenAPI/env 变更。
+- **Canonical Exo Configuration Model 契约层（NO-13b，ADR-051，R-72，§3/§7/§33）**：
+  - `contracts/exo/exo-config.schema.json` + `exo-config.test-vectors.json`
+    （22 向量）：§7 Support Mode / Assist Profile / Fit / Calibration
+    跨运行时契约——kind 封闭注册表（assist_profile/fit/calibration）；
+    supportMode 封闭 8 类 v1 目录（vendor_specific 显式桶：
+    vendorModeName 必填，未知厂商模式绝不静默改写）；calibrationKind
+    封闭（zeroing/load_cell/imu）；status 按 kind 封闭；
+  - 判定事实完整：assist_profile 必带 supportMode + effectiveFrom +
+    superseded 必带 supersededBy + assistLevel∈[0,1]；fit 必带
+    personId（person:）+ fittedAt + fitter；calibration 必带
+    calibrationKind + result + calibratedAt/calibratedBy；时间不倒退；
+    configId 前缀 `exo-config:` / exoId `device:` / tenantId 必填 /
+    auditTrail 非空强制；
+  - Python/TS 双实现锁步（`src/edge_platform/contracts/exo_config.py` +
+    `ewoh-spark-app/shared/exo-config.ts`）；audit-domain-contracts
+    exo-config 域独立 JS 仲裁 545→**581/581**；Golden 第 25 场景
+    `exo_config_contract`（9 案例双执行器）；本机 pytest 23 例 +
+    jest 8 例；
+  - 台账（standalone_051）+ 边缘 Support Mode 观测 = NO-13c（§30
+    先修契约再修实现；exoskeleton-domain-model 保持 Partial）；
+    无 DB/OpenAPI/env 变更。
+- **Exo Configuration 台账与写路径接线（NO-13c，ADR-052，R-73，§5/§7/§15）**：
+  - `ewoh_exo_config` 台账（standalone_051，TENANT_SCOPED + RLS
+    exo_config_org_isolation + 唯一 (org_id, config_id) + kind/status
+    按 kind/support_mode/profile·fit·calibration 判定事实/时间 CHECK）；
+    record_json = ADR-051 契约形态全量留痕；
+  - `ExoConfigService` 唯一权威写路径：record（validateExoConfig 契约门
+    fail-closed → 幂等（同 org+configId 返回既有行）→ insert + audit +
+    目录事件 ExoConfigRecorded）；activateProfile（同 (org, exo, mode)
+    既有 active CAS→superseded（supersededBy=新 id）→ 新 active）；
+    list/get 租户作用域（§15）；
+  - API：POST /api/exo/configs + GET /api/exo/configs + GET
+    /api/exo/configs/:id + POST /api/exo/configs/:id/activate（OpenAPI
+    再生成，路由审计零漂移）；事件目录 64→65（ExoConfigRecorded +
+    channel exo.config_recorded + 双投影锁步）；
+  - 边缘 Support Mode 自动观测 = NO-13d（NY-EXO-A1 协议 2.3 无 mode
+    字节，§33 不伪造观测——显式边界）；exoskeleton-domain-model §36
+    全绿升 **Implemented**（矩阵 51/4/0/1→52/3/0/1）；
+  - 全 lockstep：迁移 + 回滚 + verify（10 自证拒绝 + 控制组）+ runner
+    dispatch/verify handler/rollback 链 + CI 专属步骤 + check.sh 成对
+    回滚 + state.json verification_state + **受管表 73 → 74**、
+    verify 列表 67→68、reconcile spec 74、release-manifest gate 74。
+- **执行反馈完成腿（NO-13a，ADR-050，R-71，§5/§20/§21/§33）**：
+  - `recordActuals` 回填真实执行事实后追加状态推进：assignment
+    dispatched→executing（actualStart）/ {dispatched,executing}→completed
+    （actualEnd）——CAS 幂等 + `ewohAssignmentEvent` 事件留痕；
+    task 经 `taskActionPath`（task.yaml 锁步图 BFS 最短合法链）逐动作
+    `transitionTaskState`（每步 CAS + 审计）；
+  - 边界显式：start 源集 assignment={dispatched}·task={dispatched,
+    received}；end 源集 assignment={dispatched,executing}·task=
+    {executing,received,paused}；exception 不隐式 resolve（dispatcher
+    显式动作）；pending_dispatch 不收 start（乱序 skip+log）；终态
+    no-op；无 start 观测时 dispatched→completed 单事件（不伪造中间态）；
+  - 推进 summary additive 透出（advancedAssignments/advancedTaskSteps/
+    skips）——失败只 log 不阻断反馈写入（§33 不吞异常）；
+  - canonical-execution-model §36 全绿升 **Implemented**（矩阵
+    50/5/0/1→51/4/0/1）；无 DB/OpenAPI/env 变更。
+- **Canonical Execution Model 语义审计 + 跨运行时锁步（NO-12z，ADR-049，R-70，§3/§9/§31）**：
+  - §9 审计确认 R-3 遗留已收口（边缘 ADR-029 task↔assignment 双向同步 +
+    云侧 dispatch→transitionTaskState('dispatch')）；审计结论入档；
+  - TS 任务状态机数据化为 `TASK_ACTIONS` / `TASK_NON_TERMINAL` /
+    `TASK_TERMINAL` 契约消费面（行为逐字一致，task.service.spec 回归绿）；
+  - 新增 `task-state-machine-contract.spec`（7 例）：task.yaml 逐条比对
+    （无缺失/无契约外转换）+ 11 状态 × 14 动作穷举负例 + 检查器负测试
+    + task-lifecycle 分类集合锁步——TS↔契约漂移构建期显式暴露
+    （与 Python contract-state-machine 门禁同纪律）；
+  - 三套执行词汇表（task 11 态 / AssignmentStatus 9 态 / execution
+    词汇表）差异边界显式声明；执行反馈完成腿 NO-13a 立项
+    （canonical-execution-model 保持 Partial）；
+  - walkthrough R-3 行复核更正；无 DB/OpenAPI/env 变更。
+- **Decision 契约生产投影接线（NO-12y，ADR-048，R-69，§3/§12/§18/§33）**：
+  - `decision-projection.ts` 纯模块：DecisionTrace→DecisionRecord
+    （ADR-047 契约形态）唯一投影点——kind=task_assignment / status=
+    proposed / authority=optimization；decisionId 确定性幂等
+    （`decision:<planId>:<taskId>`）；options←candidates（optionId 组合
+    确定性推导；baseline reuse 快速路径 selected 补入保契约不变式）；
+    selected.reason 非空过滤（空→显式缺口）；rejectedAlternatives←
+    rejectedAlternatives+rejectedHard（空原因跳过，绝不伪造）；
+  - riskLevel 映射自真实 route-graph 风险事实（high→high /
+    medium→medium / null→low——null=路径无被标记高/中风险边，
+    确定性映射锁测试，§33 非伪造）；requiresApproval=true 恒真
+    （task_assignment 提议必经方案审批，§2 人审留痕）；
+  - `persistPlan` 唯一投影点：生成记录必过 `validateDecision`（共享
+    契约实现 §31）；缺口显式计数 `decisionProjectionIssues`
+    （decision_tenant_unknown / decision_no_selected_reason /
+    decision_no_trace / decision_invalid:<code>）——绝不静默丢弃；
+  - standalone_050：`ewoh_schedule_plan` += `decision_records_json`
+    JSONB（既有受管表原地加固，计数不变 73/76；runner/check script/
+    CI/state.json/schema-manifest 全 lockstep）；persist→getPlan 读回
+    一致；canonical-decision-model §36 全绿升 **Implemented**
+    （矩阵 49/6/0/1→50/5/0/1）；
+  - 测试：decision-projection.spec 7 例 + plan-decision-persistence
+    .spec 3 例；无 OpenAPI/env 变更。
+- **Canonical Decision Model 契约层（NO-12x，ADR-047，R-68，§2/§3/§18/§24）**：
+  - `contracts/decision/decision.schema.json` + `decision.test-vectors.json`
+    （23 向量）：Decision Catalog v1 封闭注册表（kind 8 类 / status 5 态 /
+    decisionAuthority 5 类）；riskLevel 复用 risk 契约 SEVERITY_LADDER
+    （§31 单一事实源，仲裁逐位比对）；
+  - 判定事实完整：decisionId 规范前缀 `decision:` / subject 规范身份 /
+    tenantId 必填 / requiresApproval 显式布尔 / selected.reason 非空强制 /
+    selected∈options / options 内 optionId 唯一 / human 决策或
+    approved·rejected 状态必带 approver / approver.at≥decidedAt /
+    auditTrail 非空强制（actor 规范身份 + action 非空 + at ISO）；
+  - Python/TS 双实现锁步（`src/edge_platform/contracts/decision.py` +
+    `ewoh-spark-app/shared/decision.ts`）；audit-domain-contracts decision
+    域独立 JS 仲裁 511→**545/545**；Golden 第 24 场景 `decision_contract`
+    （9 案例双执行器）；本机 pytest 25 例 + jest 10 例；
+  - DecisionTrace→DecisionRecord 生产投影为下一轮（NO-12y，§30 先修
+    契约再修实现）；无 DB/OpenAPI/env 变更。
+- **邮件 STARTTLS 升级（NO-12w，ADR-046，R-67，§20/§33）**：
+  - SMTP 客户端机会式 STARTTLS（RFC 3207 子集）：凭据 + 明文 →
+    STARTTLS（期望 220）→ `tls.connect({socket, servername})` 升级
+    （secureConnect 等待 + 10s 超时）→ 重新 EHLO → AUTH LOGIN；
+  - 服务器不支持（502）→ `smtp_auth_requires_tls`（与 v1 错误码
+    兼容，客户端重试语义不变）；升级失败 → `smtp_starttls_failed`
+    显式；无凭据明文不发起 STARTTLS（内网中继路径不变）；
+  - 凭据安全不变式延续（AUTH 仅 TLS 后，绝不明文传凭据）；无新
+    env 键（`EWOH_SMTP_SECURE=1` 隐式 TLS 语义保留）；
+  - email-transport.spec 10→12 例（+STARTTLS 升级序 / 502 拒绝 /
+    无凭据不发起）；default jest 250 suites / 1856 tests 全绿。
+- **Record 化匹配收敛（NO-12v，ADR-045，R-66，§3/§30/§31）**：
+  - capability-projection 增补 5 纯函数（capabilityNames /
+    personSkillNames / deviceCapabilityNames / stationCapabilityNames /
+    personCertificationExpiryMap——契约形态优先 + legacy 直呼同源投影
+    回退，§31 单一语义）；
+  - eligibility 技能/设备能力/工位能力匹配 + 证书到期事实改读契约
+    形态（证书存在性保持 raw——certification 记录缺 issuer/expiry 被
+    契约缺口丢弃是显式特性，改按记录存在性会改变语义）；求解器
+    personBySkill/deviceByCapability 预筛索引 + candidate-engine/
+    solver 上下文 stationCapabilityRecordsById 同步收敛；
+  - 等价断言锁定（records 与 raw 语义逐字一致）；capability-projection
+    .spec 14 例；default jest 250 suites / 1854 tests 全绿；
+  - canonical-capability-model 证据深化（矩阵计数不变 49/6/0/1）。
+- **Capability 契约消费方投影接线（NO-12u，ADR-044，R-65，§3/§30/§33）**：
+  - `capability-projection.ts` 纯模块：人员技能/认证、设备能力、工位
+    能力 → Canonical CapabilityRecord（ADR-043 契约）；certification
+    缺到期事实 → `certification_missing_expiry` 显式缺口、数据源无
+    issuer → 契约门拒绝后 `certification_missing_issuer` 显式缺口
+    （绝不伪造，§33）、违规记录 `projection_invalid` 显式计数；
+  - `buildSnapshot` 唯一投影点：WorldStateSnapshot 实体 +=
+    `capabilityRecords` + 顶层 `capabilityProjectionIssues`（additive，
+    世界契约自检不受影响）；能力事实首次以契约形态进入生产调用链；
+  - 测试：capability-projection.spec 8 例；default jest 250 suites /
+    1848 tests、client jest 114 suites / 944 tests 全绿；
+  - canonical-capability-model 证据深化（矩阵计数不变 49/6/0/1）。
+- **Canonical Capability Model 契约（NO-12t，ADR-043，R-64，§3/§4）**：
+  - `contracts/capability/`（schema + 13 条共享向量）：CapabilityRecord
+    ——kind（5 类）/providerType（7 类）封闭注册表 + name 开放词表
+    （knownValues 平台已知值登记）+ certification issuer/expiresAt
+    判定事实完整 + 时间不倒退 + subject 规范身份形状 + auditTrail 强制；
+  - Python（`edge_platform/contracts/capability.py`）/ TS（`shared/
+    capability.ts` + 8 例 spec）双实现语义逐项一致；audit-domain-contracts
+    capability 域（**493→511/511**：schema 形状 + rules 实例 + 13 向量
+    JS 仲裁 + 3 注册表跨语言锁步）；Golden 第 23 场景（7 案例双执行器）
+    + pytest `test_capability_contract.py`（14 例）；
+  - canonical-capability-model 升 Implemented（矩阵 **49/6/0/1**）；
+    既有消费方（人员技能/认证、设备能力匹配、工位能力匹配）向契约
+    逐点接线为后续轮次（§30 先契约后实现）。
+- **审批前自动布局仿真预验证（NO-12s，ADR-042，R-63，§8/§13/§18）**：
+  - `pre-approval-simulation.ts` 纯函数：方案分配 + 快照工位坐标 →
+    人员移动图（按人分组 / plannedStart 排序 / 相邻异工位 = trips=1 边；
+    缺 plannedStart/personId/stationId 与坐标 null 显式跳过计数，不伪造）；
+  - `PlanService.approvePlan` 硬守卫通过后自动运行 layout 仿真
+    （runId 确定性 `plan-approval:<planId>` 台账幂等；scenarioId=
+    `plan:<planId>`）——结果入审批审计 `after.preApprovalSimulation` +
+    `getPlan` 附 `preApprovalSimulation` 字段（台账回读），求解器
+    walkingMeters 的独立确定性交叉可审计；
+  - advisory 语义：仿真失败/未装配/无移动链 → error/skippedReason
+    显式留痕，**绝不阻断审批**（§2 人工决策门）；SchedulingPlanV2
+    加可选字段（additive）；scheduler.module += SimulationModule；
+  - 测试：推导 7 例 + 服务接线 3 例；default jest 250 suites /
+    1831 tests、client jest 114 suites / 944 tests 全绿；
+  - intelligence-l6-simulation 证据深化（矩阵计数不变 48/7/0/1）。
+- **邮件推送渠道（NO-12r，ADR-041，R-62，andon-loop 收口，§17/§20/§33）**：
+  - `email-transport.ts` 标准库最小 SMTP 客户端（RFC 5321 子集：EHLO /
+    AUTH LOGIN / MAIL FROM / RCPT TO / DATA+dot-stuffing / QUIT + 多行
+    回复 + 10s 超时，无新依赖）；传输形态显式：无凭据=明文（内网中继）、
+    带凭据必须 `EWOH_SMTP_SECURE=1` 隐式 TLS（非 TLS+凭据 →
+    `smtp_auth_requires_tls` 绝不明文传凭据；STARTTLS 升级为后续演进）；
+  - 派发器渠道注册表 `PUSH_CHANNELS=['lark','email']`（按启用集动态
+    领取 + 逐行分派 + 单行失败独立）；`insertAndonNotifications` 三渠道
+    同语义（app/lark/email，oee+ingest 共用 §31）；通知中心渠道标签
+    += 邮件；env 7 键（env-inventory 117→124 PASS）；
+  - 测试：email-transport 10 例 + dispatcher +3 例 + oee +1 例 +
+    client 标签；default jest 248 suites / 1821 tests、client jest
+    114 suites / 944 tests 全绿；
+  - andon-loop 按 §36 升 Implemented（矩阵 **48/7/0/1**）。
+- **边缘 AndonRaised 上行（NO-12q，ADR-040，R-61，§3/§6）**：
+  - 边缘一等开灯 API `POST /api/andon/raise`（device: 规范身份 + 标题必填 +
+    severity 封闭词表 + slaSeconds 校验 fail-closed；AndonRaised Catalog
+    信封 source=edge:andon 经 STREAM_EVENTS → EventUplink 离线续传上行）；
+  - 云侧 ingest 将边缘 AndonRaised 投影为 canonical andon evidence 形状
+    （eventCode=ANDON / severity=normalizeEventSeverity / andonId /
+    slaMinutes / escalationLevel / timeline——与 oee.openAndon 同形状，
+    listAndons/transitionAndon/SLA 升级统一消费）+ 开灯通知经共享助手
+    `insertAndonNotifications`（oee 与 ingest 共用，§31）；
+  - 修复 registry POST 分发缺口（exo 绑定 API 从未经 HTTP 分发，直接
+    handler 测试掩盖）+ dispatch 级回归锁定；测试：edge 9 例
+    （unittest 954→963 OK）+ ingest +3 例（default jest 248 suites /
+    1807 tests 全绿）；
+  - andon-loop 缺口收窄为邮件 SMTP 渠道（矩阵计数不变 47/8/0/1）。
+- **Agent 审批跨重启持久化（NO-12p，ADR-039，standalone_049，§11/§20）**：
+  - `ewoh_agent_approval` 台账（TENANT_SCOPED + RLS agent_approval_org_isolation +
+    唯一 (org_id, approval_id) + status/resolved/roles CHECK）——Agent 待批
+    命令从进程内存迁至台账（ADR-030 决策 4 边界收口）：propose 落 pending、
+    resolve 经 CAS 写 approved/rejected/expired + resolved_at/resolved_by/
+    resolution_json（重复解析显式拒绝，§20）；待批清单/解析全部台账读，
+    进程重启后审批不消失不失效（新服务实例解析既有待批已 spec 实证）；
+  - 全 lockstep：迁移 + 回滚 + verify（4 自证拒绝 + 控制组）+ runner
+    dispatch/verify handler/rollback 链 + CI 专属步骤 + check.sh 成对回滚 +
+    state.json verification_state + **受管表 72 → 73**、verify 列表 66→67、
+    reconcile spec 73；
+  - AgentService 移除 ApprovalModule 内存状态机依赖（agent-policy-approval
+    已知边界消除，矩阵计数不变 47/8/0/1）。
+- **Shadow Plan 隔离 DB 纵深防御（NO-12o，ADR-038，standalone_048，§13）**：
+  - `ewoh_schedule_plan` 新增 CHECK `chk_ewoh_schedule_plan_shadow_not_production`：
+    `is_shadow=true` 行禁止生产状态（approved/dispatched/executing/completed
+    + 遗留 confirmed/proposed）且禁止确认事实（confirmed_by/confirmed_at）——
+    服务层 hard guard 之外的数据库兜底；
+  - 全 lockstep：迁移 + 回滚 + verify（5 自证拒绝 + 2 控制组）+ runner
+    dispatch/verify handler/rollback 链 + CI 专属步骤 + check.sh 成对回滚 +
+    state.json verification_state + schema-manifest 原地加固注记
+    （受管表计数 72 不变——既有表原地加固，无新表）；
+  - simulation-production-isolation 升 Implemented（矩阵 **47/8/0/1**）。
+- **Andon 通知推送渠道（NO-12n，ADR-037，R-58，§15/§17/§20）**：
+  - `channel-dispatcher.service`：封闭渠道注册表 `PUSH_CHANNELS=['lark']`
+    （只注册有真实投递实现的渠道，§33）+ 飞书自定义机器人 webhook 真实
+    投递（fetch POST / 5s 超时 / 非 2xx 显式抛错）+ 15s 派发 tick 领取
+    pending 推送行 CAS 写回 sent/failed（多实例防重复投递）+ 未配置
+    webhook = 渠道显式禁用（不建 doomed 行）；
+  - `POST /api/notifications/:id/retry` 人工重试（failed → pending；
+    dispatcher/workshop_lead/global_admin；app 通知/非 failed 显式拒绝）；
+  - oee `openAndon` + SLA 升级双触发点入通知（app 恒建 + lark 配置时建）
+    + **§15 修复通知缺 orgId（孤儿行）**；
+  - 审批控制台通知中心「推送状态（飞书）」分组（渠道标签 + 待投递/
+    已投递/失败 + 重试按钮）+ `toNotification` 增补 sentAt/errorMessage；
+  - env `EWOH_LARK_WEBHOOK_URL` / `EWOH_NOTIFICATION_DISPATCH_INTERVAL_MS`
+    （env-inventory 117/118 PASS）；OpenAPI +1 路由 392 零漂移；
+  - 测试：dispatcher 11 例 + notification.service +5 例 + oee +2 例 +
+    client 通知逻辑 +4 例；default jest 248 suites / 1802 tests 全绿、
+    client jest 114 suites / 944 tests 全绿；
+  - andon-loop 缺口收窄为邮件渠道（SMTP）+ 边缘 AndonRaised 上行。
+- **仿真运行控制台（NO-12m，ADR-036，L6 生产消费面，§10/§13/§17）**：
+  - `/simulation` 页面（决策支持组，dispatcher/workshop_lead/global_admin）：
+    四类确定性评估器运行面板（What-if / 产能 / 布局 / 物料流）+ 基准快照
+    引用 + 参数 JSON 编辑（示例模板预填）+ 本租户台账 30s 轮询 + 详情 /
+    原始参数；
+  - 纯逻辑 `simulationConsoleLogic`：四类参数预检（镜像评估器输入契约，
+    服务端仍权威 fail-closed）+ 结果摘要（字段缺失显式 '—'、未知 kind
+    原样透出）+ 运行列表行（状态文案/语调/失败理由头条）；18 例 node 测试；
+  - `api/simulation.ts`（POST/GET /api/simulation/runs）+ queryKeys +
+    导航/路由注册；client jest 113→114 suites / 923→941 tests；
+  - intelligence-l6-simulation 升 Implemented（矩阵 **46/9/0/1**）。
+  - 无 DB/契约/服务端变更（复用 ADR-025 SimulationRun 全资产）。
+- **地图端执行偏差图层（NO-12k，ADR-035，R-6 收口，§17/§37）**：
+  - 纯 VM `executionDeviationMapVM`（executions + 快照坐标 → 地图视图：
+    deviated=deviationType 非空（含终态历史可见）/ ontrack=无偏差进行中；
+    计划点=任务工位（回退 execution.stationId）、实际点=执行人当前位置
+    （回退设备）；坐标缺失显式 null + missingCoordinates 禁止伪坐标；
+    delta 按偏差类型取事实对 + 带符号 label；未知 deviationType 原样
+    透出（§33 不静默））；13 例 node 测试。
+  - `ExecutionDeviationLayer`（多通道视觉：空心方框=计划 / 实心圆点=
+    实际 / 虚线=偏差 / 实线=进行中 + 偏差徽标 + title 全事实）；
+  - executions 入 CommandMapAggregate（30s 轮询 enabled=有选中方案，
+    React Query 与列表面板同缓存；executionsError 显式错误提示）；
+  - `CommandMapLayer` += execution-deviation + `toggleLayer` 纯函数 +
+    地图视口桌面端图层开关 chip 组（activeLayers 首次生产可操作）。
+  - logistics-task-loop / closed-loop-execution-feedback 升 Implemented
+    （矩阵 **45/10/0/1**）；无 DB/契约变更（纯 UI/VM 投影层）。
+- **Outcome 标注面（NO-12j，ADR-034，§10 Level 7 模型腿前置）**：
+  - `contracts/learning/outcome-annotation.schema.json` + 共享向量
+    （8 条：targetType/outcomeKind 封闭注册表 + judgedBy/judgedAt 判定
+    事实完整 + measured 有限数值（缺省=显式不携带）；Python/TS 双实现 +
+    门禁 outcome_annotation 域（**493/493**）+ Golden 第 22 场景。
+  - standalone_047 `ewoh_outcome_annotation`（TENANT_SCOPED RLS +
+    target/kind/judger CHECK + 唯一 (org_id, annotation_id)；全 lockstep：
+    受管表 71 → 72、verify 列表 65→66、回滚链、CI、state.json）。
+  - 云侧 OutcomeAnnotationService（create 契约 fail-closed + annotationId
+    幂等回读 / listByTarget / listRecent org 作用域）+ 目录事件
+    OutcomeAnnotationRecorded（**63→64**）+ OpenAPI 3 路由 391 零漂移。
+  - modelAccuracy 保持显式 unknown 直至真实可训练模型 + 最小样本门槛
+    （§33 不造假——模型重训闭环随真实模型落地后立项）。
+  - intelligence-l7-learning 缺口收窄为模型重训/激活（矩阵 44/11/0/1）。
+- **边缘绑定事实→云 ExoSession 台账端到端（NO-12i，ADR-033，§7 收口）**：
+  - 边缘一等绑定 API：`exo_binding` 存储表 + `POST /api/exo/bind|unbind`
+    （规范身份 fail-closed / 活跃绑定唯一冲突显式 / 状态机 + ended_by
+    必填）；6 例 unittest；
+  - 绑定事实经既有事件骨干上行（ExoSessionStarted/Ended Catalog 信封 →
+    EventUplink at-least-once 断点续传，无第二上传路径）；
+  - 云侧 ingest 投影：ExoSessionService 应用层幂等（同 sessionId start
+    回读 / 重复 end 原样返回；投影失败显式留痕不阻断事件主事实）；
+    目录 payload 增补 startedAt/endedBy/actualEndAt（additive）；
+  - worker-exoskeleton-loop 按 §36 升 Implemented（矩阵 **44/11/0/1**）。
+- **外骨骼↔人员 Session 域模型（NO-12h，ADR-032，§7 一等实体绑定）**：
+  - `contracts/exo/exo-session.schema.json` + 共享向量（9 条：status 状态机
+    active→ended/aborted 终态 + 规范身份 device:/person: + 结束事实完整 +
+    时间不倒退 + auditTrail）；Python/TS 双实现 + 门禁 exo 域
+    （**479/479**）+ Golden 第 21 场景。
+  - standalone_046 `ewoh_exo_session`（TENANT_SCOPED RLS + 部分唯一索引
+    (org_id, exo_id) WHERE status=active——**一台外骨骼同时一个活跃会话
+    机器强制** + 四类 CHECK；全 lockstep：
+    受管表 70 → 71、verify 列表 64→65、回滚链、CI、state.json）。
+  - 云侧 ExoSessionService（start 契约 fail-closed + 活跃冲突显式 /
+    end/abort 状态机 + endedBy 必填 + list org 作用域）+ 目录事件
+    ExoSessionStarted/Ended（**61→63**）+ OpenAPI 5 路由 388 零漂移。
+  - worker-exoskeleton-loop 缺口收窄为边缘上行贯通（矩阵 43/12/0/1）。
+- **Andon Loop 贯通（NO-12g，ADR-031，§6 Phase 6 Andon Loop）**：
+  - 状态机单一事实源：`contracts/state-machines/alert.yaml` →
+    `shared/alert-state-machine.ts` 锁定表 + 门禁
+    `alert_state_machine_ts_vs_yaml`（**465→466/466**）；alert/andon
+    双面复用（消除两份手写 switch，§31）；reopen 仅 safety_admin
+    角色条件机器执行；
+  - `AndonRaised` 目录事件真实产出（OEE openAndon：canonical
+    eventType + envelope 嵌入 + level=规范词表 + slaMinutes 派生）；
+    历史 'andon' 行查询侧过渡兼容；
+  - shared/alert-state-machine.spec 7 例；oee spec 8 例（+AndonRaised
+    产出 + reopen 角色强制）。
+  - andon-loop 缺口收窄为通知推送渠道 + 边缘上行（矩阵 43/12/0/1）。
+- **客户端审批控制台（NO-12f 收口，ADR-030 延续，§17 "是否批准？"）**：
+  - `/approval-console` 页面：Agent 命令审批批准/驳回（过期显式禁用操作，
+    §33）+ 调度审批展开详情按 pending step 批准/驳回（stepAction 真实
+    闭环）+ 通知中心未读列表/标记已读（通知读写消费面）；
+  - `src/api/approvals.ts`（6 API 函数）+ 纯逻辑 4 例（剩余时间格式化/
+    两清单合并排序/过期显式禁用/通知分组）；
+  - 路由 + 导航注册（dispatcher/workshop_lead/global_admin）；
+  - client jest 110→**111 suites / 898→902 tests**；client tsc PASS。
+  - agent-policy-approval 按 §36 升 Implemented（矩阵 **43/12/0/1**；
+    已知边界=Agent 审批 pendingCommands 进程内存，ADR-030 决策 4）。
+- **Agent 审批交互面（NO-12f，ADR-030，§17 人工审批闭环交互面）**：
+  - 统一待批清单：`GET /api/approvals/pending`（调度审批持久化清单）+ 
+    `GET /api/agents/approvals`（Agent 命令审批清单，过期显式标记绝不
+    静默消失，§33）；
+  - 通知闭环：审批创建即插 `ewoh_notification`（role 通知，externalRef=
+    approvalId 可追溯）+ 新 Notification 模块（`GET /api/notifications`
+    租户+角色作用域（无角色 fail-closed 不猜）/ `POST /api/notifications/
+    :id/read` 幂等乐观已读）；ewoh_notification drizzle 补 org_id 映射；
+  - 审批角色配置化：`EWOH_AGENT_APPROVAL_ROLES`（逗号分隔，默认
+    workshop_lead；env-inventory 115/116 PASS）；
+  - OEE 安灯通知 severity 'L2'→'high'（ADR-027 词表收口补漏）；
+  - OpenAPI +4 路由 **383 零漂移**；agent.service.spec 21→24、
+    notification.service.spec 5 例。
+  - agent-policy-approval 缺口收窄为客户端审批 UI（矩阵计数不变）。
+- **边缘任务↔派工状态机同步（NO-12e，ADR-029，R-3 收口，§3 任务事实单一化）**：
+  - `execute()` 派工落账后同步推进 Task（pending_dispatch→dispatched，
+    乐观锁 + TASK_TRANSITIONS 状态机校验 + 幂等跳过 + 任务缺失显式跳过）；
+  - `update_task()` 推进任务 → 其派工沿同一状态机收敛（最短合法链补全，
+    不回调任务防递归）；`set_assignment_status` 重构为共享转换器
+    `_apply_assignment_transition`（消除内联重复）；
+  - 同步失败显式留痕绝不静默（ADR-029 决策 4）；7 例新回归
+    （test_task_assignment_sync）+ edge unittest **941→948**；
+  - R-3 风险闭合（CR-EDGE-HYDRATE-COMPLETENESS）；logistics-task-loop
+    缺口收窄为地图端偏差图层（矩阵计数不变）。
+- **Edge→Cloud 指标上行（NO-12d，ADR-028，§19 观测腿补全）**：
+  - 边缘 ewoh_* 18 家族入规范注册表（**15→33 家族**，labelKeys +=
+    table/edge_id，connector_active_total += connector_id）——命名收敛
+    不重命名（单一事实源，重命名会破坏本地 Prometheus 消费方）；
+  - 边缘 `MetricsUplink`（周期快照 → 规范样本批次 POST
+    /api/observability/edge-metrics；与 EventUplink 显式差异边界：指标
+    为 latest-wins 快照不建磁盘队列，失败显式 logging/stats + 指数退避，
+    exporter METRIC_DEFS 单一映射源）+ 8 例 unittest + 5 项 env 配置
+    （env-inventory 114/115 PASS）；
+  - 云侧 `EdgeMetricsService`（逐条 validateMetricSample fail-closed
+    违规显式、per-org 有界 TTL 快照注册表、IngestGuard 机器通道）+
+    导出面 org 作用域 + 上行健康 connector_* 家族计数（无新事件类型——
+    指标批次非工业事实）；spec 7 例；
+  - OpenAPI +1 路由 **379 零漂移**；Golden metrics 场景 +3 边缘案例
+    （11 案例双执行器）。
+  - observability 证据深化（矩阵计数不变）。
+- **云侧严重度词表收敛（NO-02c-b，ADR-027，§3 Factory Truth 接线）**：
+  - 同一 severity 列两套相反词表（边缘 L1=最严重 vs 云 UI L3=最严重）→
+    唯一词表 Canonical Risk Ladder（critical>high>medium>low；无风险判定
+    显式 `unknown`，§33 绝不伪装 normal）；
+  - 12 个服务写入点按生产者意图逐类确定性迁移（ERP L1/L2→critical/high；
+    信息性生命周期事件 L3→low；DeadLetter→medium；ingest 边缘事件→
+    unknown；world 时间线标记→low）+ 入口归一化 `normalizeEventSeverity`
+    （规范直通/L1-L3 映射/其余显式 unknown，与 `normalizeSeverity`
+    fail-closed 分工：域契约校验拒绝、事件事实落账显式标记）；
+  - 消费方收敛：priority-engine {critical,high,medium}=risky、supervisor
+    critical/high、learning riskOutcomeRate canonical（过渡期 legacy
+    UNION 注释兼容存量行）、gamification critical 风暴；
+  - 客户端全量收敛：EventCenterPanel 筛选与徽章、Timeline/TimelinePanel
+    配色（critical=红/high=橙/medium=黄/low=绿/unknown=灰）、AlertToast
+    `aggregateL3`→`aggregateCriticalEvents`、DeviceConfigDrawer、perf fixture。
+  - canonical-risk-model 按 §36 升 Implemented（矩阵 43/12/0/1）。
+- **持续学习回路反馈腿 v2（NO-12b，ADR-026，§10 Level 7 + §12 反馈腿）**：
+  - `contracts/learning/learning-proposal.schema.json` + 共享向量（kind 封闭
+    注册表 v1=rule_threshold——只有具备确定性影子评估器的类型才允许注册 +
+    thresholdRules 白名单（⊆ reasoning-trace 注册表，门禁交叉校验）+
+    影子评估前置（无影子证据的激活在验证层被拒绝）+ 人审激活阶梯
+    （approved 必须 approver+时间，§2 绝不隐式自动执行）+ rejected/
+    rolled_back 理由强制）；Python/TS 双实现 + 确定性影子评估器
+    （历史事实重放 fired 差集 + riskLevel 阶梯）+ 门禁 learning_proposal
+    域（**465/465**）+ Golden 第 20 场景（8 契约 + 2 影子评估 + 1 状态机
+    执行跨语言仲裁）。
+  - standalone_045 `ewoh_learning_proposal`（TENANT_SCOPED RLS + kind/
+    status/rule/parameter/values/shadow-gate/approval/rejection/rollback
+    CHECK + 唯一 (org_id, proposal_id)；全 lockstep：
+    受管表 69 → 70、verify 列表 63→64、回滚链、CI、state.json）。
+  - 云侧学习提案运行时（propose 契约 fail-closed + 影子评估落账 +
+    shadow/approve/reject/rollback 状态机 + getActiveThresholds 激活面）+
+    **真实激活接线**：ReasoningService 评估时应用本租户 approved 提案的
+    阈值覆盖（evaluateReasoningRules thresholds 参数，Python/TS 语义
+    逐项一致；回滚即回落内置常量）；LearningProposalCreated/Resolved
+    目录事件（**61/61**）+ OpenAPI 7 路由 378 零漂移。
+  - intelligence-l7-learning 缺口收窄为模型腿（矩阵计数不变）。
+- **Digital Twin 仿真体系（NO-12a，ADR-025，§13 数字孪生成体系）**：
+  - `contracts/simulation/simulation-run.schema.json` + 共享向量（4 kind /
+    4 status 封闭注册表 + isSimulation=true 隔离强制 + baseRef 可追溯 +
+    completed/failed 终态契约）；Python/TS 双实现 + 四类确定性评估器
+    （what-if 结论差集 / capacity 瓶颈 / layout 行程 / material-flow 载荷）
+    + 门禁 simulation 域（**444/444**）+ Golden 第 19 场景。
+  - standalone_044 `ewoh_simulation_run`（TENANT_SCOPED RLS + kind/status/
+    is_simulation=true 表级 CHECK 隔离（§13 三层强制之 DB 层）+ completed/
+    failed CHECK + 唯一 (org_id, run_id)；全 lockstep：
+    受管表 68 → 69、verify 列表 62→63、回滚链、CI、state.json）。
+  - 云侧 `simulation` 模块（run 契约 fail-closed / 评估器确定性执行 /
+    completed|failed 终态落账）；SimulationRunCreated/Completed 目录事件
+    （**59/59**）。
+  - digital-twin-simulation 按 §36 升 Implemented（矩阵 42/13/0/1）。
+- **Dead Letter 体系（NO-11a，ADR-024，§20 Reliability 收口）**：
+  - `contracts/reliability/dead-letter.schema.json` + 共享向量（5 reason /
+    3 status 封闭注册表 + envelope 快照必填 + 人审重放语义 + discard 理由
+    强制）；Python/TS 双实现 + 门禁 reliability 域（**427/427**）+
+    Golden 第 18 场景。
+  - standalone_043 `ewoh_dead_letter`（TENANT_SCOPED RLS + reason/status/
+    attempts/discard CHECK + 唯一 (org_id, letter_id)；全 lockstep：
+    受管表 67 → 68、verify 列表 61→62、回滚链、CI、state.json）。
+  - 云侧 `reliability` 模块（record 契约 fail-closed / 幂等 / 人审
+    requeue（attempts+1，杜绝自动无限重试）/ discard 必带理由）；
+    首个生产接线 = ingest 事件上行永久失败（envelope_invalid /
+    unknown_event_type fail-closed 拒绝 → 死信）；DeadLetterRecorded
+    目录事件（**57/57**）。
+  - reliability-hybrid 按 §36 升 Implemented（矩阵 41/14/0/1）。
+- **全链路 trace 贯通（NO-10a，ADR-022，§19 Observability trace 腿）**：
+  - standalone_042 `ewoh_trace_span`（span 持久化追踪索引：7 天 TTL + 行上限
+    bounded；trace_span_org_or_global 可见性策略（org lineage 或全局管理员，
+    非 loose）；全 lockstep：受管表 66 → 67、verify 列表 60→61、回滚链、
+    CI、state.json）。
+  - HTTP traceId = §19 端到端 correlation id：事件信封 correlationId 六类
+    规范生产者贯通（workorder/agent/knowledge/inference/reasoning/learning；
+    非 HTTP 路径显式 null 绝不伪造）+ 审计 request_id 既有自动关联；
+    缝合查询 GET /api/observability/traces/:traceId（spans + events + audit
+    三面，§19「从一次用户操作追踪到…」查询面）。
+  - Scheduler/Agent/Connector 指标体系留 NO-10b（observability 矩阵保持
+    Partial 至指标腿成体系）。
+- **持续学习回路 v1（NO-09a，ADR-021，Phase 12）**：
+  - `contracts/learning/learning-evaluation.schema.json` + 共享向量（七项指标
+    封闭注册表 + null 语义（无数据/显式 unknown，绝不伪造）+ period 契约 +
+    basis 非空）；Python/TS 双实现 + 门禁 learning 域（**400/400**）+
+    Golden 第 16 场景。
+  - standalone_041 `ewoh_learning_evaluation`（TENANT_SCOPED RLS + 唯一
+    (org_id, eval_id) + type/period CHECK；全 lockstep：受管表 65 → 66、
+    verify 列表 59→60、回滚链、CI、state.json）。
+  - 云侧 `learning` 模块（真实事实聚合：A2→A3 接受率 / KpiService 复用 /
+    事件结局 / override 计数；modelAccuracy=unknown 显式声明；幂等重评估
+    不重发事件）；LearningEvaluationRecorded 目录事件（**56/56**）；
+    OpenAPI 3 路由。
+  - continuous-learning 按 §36 升 Implemented（矩阵 39/16/0/1）。
+- **独立工业推理层（NO-08b，ADR-020，Phase 8 Level 4）**：
+  - `contracts/reasoning/reasoning-trace.schema.json` + 共享向量（六规则封闭
+    注册表 / premises+evidenceIds 非空规范身份 / canonical severity 阶梯 /
+    确定性置信度=1 / 空结论显式语义）；Python/TS 双实现（Python 含标准库
+    规则评估器供跨语言仲裁）。
+  - 门禁 reasoning_trace 域（**390/390**）+ Golden 第 15 场景
+    `reasoning_trace_contract`（11 案例：8 契约仲裁 + 3 引擎执行跨语言仲裁，
+    Python 2 tests / TS 16 tests）。
+  - 云侧 `reasoning` 模块：确定性规则引擎（§18 模板渲染非 LLM 编造；输入
+    fail-closed；trace 契约自检违规绝不返回；结论逐条 L4 InferenceResult
+    台账落账——ADR-019 台账复用不新建表）；OpenAPI `/api/reasoning/*`
+    2 路由（**358 零漂移**）；service spec 8 例 + shared spec 7 例 +
+    pytest 11 例。
+  - intelligence-l4-reasoning 独立推理层缺口闭合（矩阵证据深化）。
+- **云侧推理结果运行时（NO-08a，ADR-019，Phase 8 深化）**：
+  - standalone_040 `ewoh_inference_result`（TENANT_SCOPED RLS + 唯一
+    (org_id, inference_id) + level/confidence/dataQuality/OOD 一致性 CHECK；
+    全 lockstep：受管表 64 → 65、verify 列表 58→59、回滚链、CI、state.json）。
+  - 云侧 `inference` 模块（record 契约 fail-closed / 创建幂等回读不重发事件 /
+    list/get 租户作用域）；InferenceResultRecorded 目录事件（**55/55**，
+    双运行时投影）；OpenAPI `/api/inference/results*` 3 路由（**356 零漂移**）；
+    spec 10 例。
+  - 首个真实生产接线：A2 建议流确定性规则基础 → L1 InferenceResult 台账
+    （confidence=1 如实声明 + 快照完备度→dataQuality；LLM 文本增强继续由
+    ReasoningResult 承载，两契约分工不混用）；ai.service.spec +3 例。
+  - 修复 schema-manifest 结构漂移：032-040 的 8 张表条目自 Round 12 起误挂
+    `additional_hardened_existing_tables` 段，已移回 `managed_tables`
+    （computed=65 与 reconcile 口径一致；run_migrations 的 core 期望值与
+    001 verify 列表 59 名对齐）。
+- **Factory Knowledge System 运行时（NO-07b，ADR-018 Amendment 1，Phase 12 收口）**：
+  - standalone_039 硬化既有 `ewoh_knowledge_entry`（ALTER 不新建同义表）：
+    content→body 单一事实源 + 契约列（kind/scope/summary/source_evidence_ids/
+    provenance/verified_by/valid_from/valid_to/audit_trail）+ scope-tenant
+    一致性 CHECK（共享层 global/industry=哨兵 org
+    00000000-0000-4000-8000-000000000000、租户层=真实 org）+ provenance
+    CHECK + RLS `knowledge_entry_service_all`（替换遗留通用策略，租户行仅本
+    租户可见、共享行全租户可读）+ UNIQUE (org_id, entry_id)；非法
+    kind/scope/status、共享层落租户 org、private_operational 带 provenance
+    由 verify 自证拒绝；全 lockstep（runner 映射 + 专用 verify handler +
+    回滚链 + CI 步骤 + state.json 记录）。
+  - 云侧 `knowledge` 模块（注册契约 fail-closed / 跨租户注册显式拒绝 /
+    创建幂等回读不重发事件 / 检索五层阶梯（共享层 ∪ 本租户层，他租户行
+    物理不可见）/ 共享检索仅 global+industry fail-closed（绝不越过
+    private_operational）/ 状态转移 draft→verified 必须 verifiedBy、
+    superseded 终态、共享层租户只读）；spec 13 例。
+  - Knowledge Agent（ADR-016 Manifest 注册：role=Knowledge，L1 人审；
+    契约命令注册表 +`register_knowledge`（schema/Python/TS lockstep 扩展）+
+    新 Tool ×2；agent.service.spec +4 例，共 21 例）。
+  - 事件目录 +KnowledgeEntryCreated（**54/54**，双运行时投影）；
+    OpenAPI `/api/knowledge/*` 5 路由（**353 零漂移**）。
+  - knowledge-system 按 §36 升 **Implemented**（矩阵 **38/17/0/1**）。
+- **Factory Knowledge System 立项契约层（NO-07，ADR-018，Phase 12）**：
+  - `contracts/knowledge/`（6 kind / 5 层 scope 有序阶梯 / 3 status 注册表 +
+    证据链非空可追溯 + 五层租户语义 + provenance 声明（global/industry 必填、
+    private_operational 禁止）+ 双时态 + auditTrail 强制）。
+  - Python/TS 双实现 + 门禁 knowledge 域独立仲裁（**374/374**）+ Golden 第
+    14 场景 + spec 6 例。
+  - **矩阵 Missing 清零（37/18/0/1）**——56 项能力全部至少 Partial；
+    cross-factory 知识隔离政策并入五层 scope 语义。
+- **AgentTask 编排引擎运行时（NO-06f，AD-LC-026，Phase 9 主体收口）**：
+  - standalone_038 `ewoh_agent_task`（TENANT_SCOPED RLS + 唯一 (org_id,task_id)
+    + kind/priority/status CHECK；全 lockstep：manifest 63→64/66→67、
+    verify 列表 57→58、回滚链、CI）。
+  - `AgentOrchestratorService`：创建唯一入口（契约校验 + 依赖环 BFS 检测 +
+    每角色并发预算上限 10 fail-closed + AgentTaskCreated 事件）；状态推进
+    唯一写者（状态机 + DB CAS）；dispatch 依赖门控（依赖未 completed 拒绝）；
+    终态 AgentTaskCompleted 事件 + 审计。
+  - OpenAPI `/api/agents/tasks*` 6 路由（**348 零漂移**）；orchestrator
+    spec 10 例；intelligence-l5-agentic 升 **Implemented**（矩阵 37/17/1/1）。
+- **AgentTask 编排契约（NO-06e，ADR-017，intelligence-l5-agentic 立项）**：
+  - `contracts/agent_task/`（3 kind / 4 priority / 6 status 注册表 +
+    dependencies DAG 自引用拒绝 + assignedRole 与 agent-manifest 同源 +
+    dueTime 时间语义 + budget/auditTrail 同规则）+
+    `contracts/state-machines/agent-task.yaml`。
+  - Python/TS 双实现 + 门禁 agent_task 域独立仲裁（**351/351**，含角色注册表
+    交叉核对）+ Golden 第 13 场景 + shared spec 6 例。
+  - 事件目录 +AgentTaskCreated/AgentTaskCompleted（53/53，双运行时投影）；
+    intelligence-l5-agentic 矩阵 Missing→Partial（**36/18/1/1**）。
+- **领域命令执行器与审批超时（NO-06d，AD-LC-024，Phase 9）**：
+  - `create_work_order` 接入真实 WorkOrderService 权威写路径（载荷校验
+    fail-closed；失败经 fallback 语义 delegateHuman→delegated 不假装执行）；
+    `record_evidence` 落审计事实。
+  - 审批超时语义（24h TTL，超期解析为拒绝留痕不无限悬挂）。
+  - intelligence-l5-agentic 评估立项（多 Agent 结构化任务编排面，NO-06e
+    契约先行）；agent.service.spec 17 例。
+- **Agent 审批桥接与首个真实 Agent（NO-06c，AD-LC-023，Phase 9）**：
+  - 审批桥接：needsApproval → 正式审批实例（复用 approval 状态机，
+    roles=workshop_lead）+ 待执行命令登记；`resolveApproval` 批准→执行/
+    驳回→拒绝闭环（批准仍受 budget/fallback 强制）。
+  - FactorySupervisor L1 建议型端到端：世界状态 → 事实数字驱动的确定性建议
+    → propose_plan → 审批（`/api/agents/supervisor/run`）。
+  - Agent Policy TCK 决策表 10 例（等级×门控×预算×回退矩阵）；
+    agent-runtime 升 Implemented、agent-policy-approval 升 Partial
+    （矩阵 **36/17/2/1**）；OpenAPI 342 路由零漂移。
+- **Agent Runtime 运行时（NO-06b，AD-LC-022，Phase 9）**：
+  - standalone_037 `ewoh_agent_manifest`（TENANT_SCOPED RLS + 唯一
+    (org_id,agent_id) + CHECK（**L4 由 DB 兜底排除**）；全 lockstep：
+    manifest 62→63/65→66、verify 列表 56→57、回滚链、CI）。
+  - 云侧 agent 模块：注册唯一入口（契约校验 + Tool 注册表 fail-closed +
+    版本单调幂等）；执行强制（writeScope 白名单 / L0 advisory_only / L1
+    一律人审 / L2-L3 approvalRequiredFor 门控 / budget-timeout 强制 /
+    fallback 四策略显式语义）；AgentTaskProposed / AgentDecisionRecorded
+    目录事件（51/51）+ 审计同源。
+  - OpenAPI `/api/agents/*` 4 路由（340 零漂移）；agent.service.spec 10 例。
+- **Agent Runtime 立项契约层（NO-06，ADR-016，Phase 9 启动）**：
+  - ADR-016 目标架构：Agent 不得绕过系统架构（正式 Tools + 结构化 Command +
+    World Model 依赖 + 禁止直连 DB）；Autonomous Level 显式阶梯 L0..L3
+    （L4 永不允许，§2）。
+  - `contracts/agent/`（agent-manifest.schema.json + test-vectors.json 15 条）：
+    15 角色 / 12 作用域 token / 8 命令 / 风险等级 / 自治阶梯 / 回退策略六注册表
+    ＋十六字段校验——L2/L3 必须显式审批、critical 仅 L0/L1、Safety 仅 L0/L1
+    且写空、auditTrail 强制、budget/timeout 下界。
+  - Python/TS 双实现 + 门禁 agent 域独立仲裁（**329/329**）+ Golden 第 12
+    场景 `agent_manifest_contract`（双执行器）+ shared spec 6 例；
+    agent-runtime 矩阵 Missing→Partial（35/17/3/1）。
+- **Event Backbone 收口（NO-04c，AD-LC-020，Phase 4 主体完成）**：
+  - 上行队列跨重启断点续传：`EventUplink` 侧车持久化（`<db>.uplink-queue.json`
+    入队即落盘/原子替换/成功截断；加载损坏显式 ERROR 空队列启动）。
+  - 云侧乱序/回放补全策略：事件行按 occurredAt 落库（createdAt=occurredAt），
+    消费端按发生时刻排序；历史回放补全幂等接受 + isLate 标记不改写。
+  - 时钟漂移运行态策略：flag-only 不修正（修正会制造第二事实源）。
+  - `event-backbone` / `time-semantics` 按 §36 升 Implemented（矩阵 35/16/4/1）。
+- **Edge→Cloud 事件上行通道（NO-04b，AD-LC-019，Phase 4 事件骨干）**：
+  - 事件目录类型双运行时锁定投影（`shared/event-catalog.ts` +
+    `contracts/event_catalog.py`，audit-event-catalog 集合核对，单一事实源）。
+  - standalone_036 `ewoh_ingest_event_dedup`（TENANT_SCOPED RLS + 唯一
+    (org_id,source,event_id) + is_late/clock_drift 时间语义列 + 重复插入自证；
+    全 lockstep：runner/manifest/verify 列表 55→56/回滚链/CI）。
+  - 云侧 `POST /api/ingest/events`：信封契约校验 + Catalog 白名单 fail-closed +
+    传输级幂等去重（duplicate 不重复投递）+ 迟到/漂移随台账落库；OpenAPI
+    336 路由零漂移。
+  - 边缘 `EventUplink`（STREAM_EVENTS → 契约校验 → 批量上行 + 内存缓冲退避，
+    at-least-once 由云端幂等去重兜底）；EWOH_EVENT_UPLINK_* 配置 +
+    /api/status 健康。
+  - edge unittest 932 OK、pytest 224 passed、ingest spec 21 例、truth 族全 PASS。
+- **Event Backbone 第一批（NO-04a，AD-LC-018，Phase 4 启动）**：
+  - 事件目录 +EntityDeclared/EntityStateObserved（49 messages / 49 channels，
+    audit-event-catalog PASS）——实体声明/观测随事件骨干上行的事实载体。
+  - 边缘 `TelemetryWorldProjector` 发射 Catalog 信封事件（ADR-009 契约校验
+    fail-closed；落边缘事件库 + STREAM_EVENTS；声明/首观测各单次发射防风暴）。
+  - 云侧 ingest 帧级时间语义：isLate（>10min 迟到标记不丢弃）/ clockDrift
+    （越 5min 容忍界标记不重写）逐帧透出 + late_count/clock_drift_count
+    批量聚合；同批次 DataQualityAlert (eventCode,device) 语义去重（防风暴）。
+  - edge unittest 927 OK、pytest 224 passed、ingest spec 15 例、truth 族全 PASS。
+- **感知自动接线（NO-03c，AD-LC-017，Phase 3 收口）**：
+  - E-03 修复：config 驱动适配器工厂（`edge/adapter_factory.py`，EWOH_ADAPTERS
+    四类 kind——ny_exo_a1/camera/environment/mes；未知 kind/参数/构造失败
+    fail-closed；空列表=合法空管理器）；run.py 注册 + 启动输出每适配器 health，
+    真实模式"永不产生遥测"的链路性失效终结。
+  - `TelemetryWorldProjector`（`world_model/projection.py`）：订阅
+    STREAM_TELEMETRY 自动投影进 ContractWorldStore——EWOH_WORLD_TENANT_ID/
+    FACTORY_ID/KIND_MAP 三项缺一显式关闭（绝不猜测实体类别）；首帧
+    declare_entity + 每帧 set_state + ENTITY_OBSERVED 因果事件；非契约
+    source_type 拒绝计数；/api/status 暴露 world_projection 健康。
+  - deploy/.env.example 增 4 项（audit-env-inventory 106/107 零漂移）；
+    云侧联动评估：实体声明上行随 Phase 4 事件骨干走 envelope 事件，不新开
+    旁路通道。edge unittest 925 OK、pytest 224 passed、truth 族全 PASS。
+- **Entity Model 生产调用链收口（NO-03b 收口，ADR-015 Amendment 2，Phase 3）**：
+  - 因果链实体引用强制规范身份（`build_shift_chain`/`ContractWorldStore.record_event`
+    对 person_id/device_id/task_id/station_id/zone_id fail-closed，裸 ID 拒绝）。
+  - 边缘世界模型六端点（`routes/replay.py`）：`/api/world/{snapshot,entities,states,
+    replay,events,predictions}`——声明登记/状态写入（声明-状态机器互锁）/契约快照/
+    时间轴回放/因果事件/短期预测；`server.Context` 注入 `world_store`（未装配一律
+    503 fail-closed，绝不静默降级）。
+  - 离线持久化：`run.py` 启动恢复 + 停机落盘 `<db>.worldstate.json`（状态+声明+
+    因果事件整体序列化，失败显式 ERROR）。
+  - Entity Contract 生成器 `scripts/gen-contract-registries.js`：schema 单一事实源
+    生成 Python/TS 注册表代码块，`--check` 挂 `make truth-check`；
+    audit-domain-contracts 独立仲裁双保险。
+  - `canonical-entity-model` 按 §36 升 Implemented（矩阵 35/16/4/1）；
+    edge unittest 912 OK、pytest 224 passed、truth 族全 PASS。
+- **Entity Model 运行时接线（NO-03b，ADR-015 Amendment 1，Phase 3）**：
+  - kind 前缀一致性机器规则（entityId kind 前缀 ∈ 45 类且等于声明 kind；
+    身份专属 kind device/session 拒绝承载实体声明：kind_prefix_mismatch /
+    kind_prefix_unknown）+ projectionDivision（stateProjectable 22 /
+    identityOnly 2 / entityOnly 5）与 projectionBuckets（person/device/station/
+    task，device 桶 = 遗留身份桶 + 设备类实体 kind）以 schema 实例值锁定；
+    门禁 277→299/299（前缀仲裁 + 差集独立推导核对 + 投影桶双运行时一致）。
+  - 边缘 `ContractWorldStore.declare_entity`（不可变字段/版本单调/来源不可回改/
+    时间不回拨）+ set_state 交叉校验（entity_not_state_projectable /
+    entity_type_mismatch / state_precedes_declaration）+ to_dict/from_dict
+    持久化；Predictor 目标实体规范身份 fail-closed（夹具 4 处裸 ID 现代化）。
+  - 云侧 `validateCloudWorldSnapshot` 改由投影桶校验（device 桶接受
+    device/exo/machine/robot/agv/sensor）；Golden #11 扩至 9 案例双执行器。
+- **Factory Entity Model 契约（ADR-015 / NO-03a，Phase 3 世界模型契约层）**：
+  - `contracts/entity/`（entity-model.schema.json + test-vectors.json）：45 类
+    entityKindRegistry 唯一权威清单 + EntityKind 常量 + EntityDeclaration
+    字段契约；22（世界快照）⊆ 45（实体模型）由审计门强制；命名 `exo` 与
+    Identity/World 一致（不引入 exoskeleton 别名）。
+  - Python（`src/edge_platform/contracts/entity_model.py`，stdlib-only）+
+    TypeScript（`ewoh-spark-app/shared/entity-model.ts`）同构锁定实现 +
+    共享向量 + 门禁扩展（audit-domain-contracts 258→277 项 + entity 域 +
+    entity_snapshot_subset 交叉校验）+ Golden Scenario 第 11 场景
+    `entity_model_contract`（双执行器）+ shared spec 5 例。
+- **ReasoningResult 生产接线（NO-08d，Phase 8 推理双契约收官）**：
+  - `ark.service.ts` `buildReasoningResult`：Ark 文本结果 → Canonical
+    ReasoningResult（level 按 kind 登记、modelVersion 缺省 unversioned 如实
+    标注、confidence 必须 null + confidenceBasis uncalibrated、契约自检
+    contract_violations 留痕）；chat/ask 透传 kind/inputVersion；旧字段
+    ok/text/model/error 兼容保留。
+  - `ai.service.ts` 建议/分析流附着 reasoning（成功解析/失败回退/解析失败三
+    路径均留痕；规则模板回退不伪造）；AiSuggestion 增可选 reasoning 字段。
+  - 测试：ark.service.spec +3 例、ai.service.spec 3 例；
+    capability-matrix intelligence-l4-reasoning 升 Implemented（34/17/4/1）。
+- **Level 4/5 文本结果元数据契约（ADR-014 / NO-08c，Phase 8）**：
+  - `contracts/reasoning/`（reasoning-result.schema.json + test-vectors.json）：
+    LLM/Ark 文本结果（建议/解释/分析/聊天）无标定置信度——confidence 必须 null
+    （伪造数值拒绝 confidence_forbidden）、confidenceBasis 显式 uncalibrated、
+    ok=false 必带 error、content 成功必填、subjectId null 合法或规范身份、
+    evidence.generatedAt；与 InferenceResult（统计判定）显式分工。
+  - Python（`src/edge_platform/contracts/reasoning_result.py`）+ TypeScript
+    （`ewoh-spark-app/shared/reasoning-result.ts`）锁定实现 + 共享向量 + 门禁
+    扩展（audit-domain-contracts 238→257 项）+ Golden Scenario 第 10 场景
+    `reasoning_result_contract`（双执行器）+ shared spec 6 例。
+- **Inference Result 生产接线（NO-08b，Phase 8）**：
+  - 边缘 `pipeline._infer` 结果规范化：level（L1 规则/L2 模型）、input_version
+    （模型卡 dataset_version，缺省 unversioned 如实标注）、subject_id
+    （device:<id>，云端 identity mapping 解析）、ood_indicator（unknown 六路
+    归一）；契约自检 validate_inference_result fail-closed 留痕
+    （contract_violations 字段，不阻断推理主路）；旧字段兼容保留。
+  - 云侧 Model Registry inputVersion 元数据对齐（cardJson.inputVersion，
+    缺省不伪造）。
+  - 测试：edge unittest 891→894（+3 wiring）；model.service.spec 3 例；
+    capability-matrix intelligence-l2-ml 升 Implemented（33/18/4/1）。
+- **Industrial Intelligence 契约层（ADR-013 / NO-08a，Phase 8 启动）**：
+  - `contracts/intelligence/`（inference-result.schema.json + test-vectors.json）：
+    Level 1-7 分层注册表 + 模型结果元数据必填（modelId/modelVersion/
+    inputVersion）+ confidence∈[0,1] 越界拒绝 + OOD 六路封闭注册表
+    flag↔reasons 双向一致 + **Unknown 合法化**（unknown 必带 OOD 理由）+
+    dataQuality {good,degraded,invalid}（边缘窗口质量词表入契约）+
+    evidence 窗口时间戳/isRule。
+  - Python（`src/edge_platform/contracts/inference_result.py`）+ TypeScript
+    （`ewoh-spark-app/shared/inference-result.ts`）锁定实现 + 共享向量 + 门禁
+    扩展（audit-domain-contracts 216→238 项）+ Golden Scenario 第 9 场景
+    `inference_result_contract`（双执行器）+ shared spec 6 例。
+- **Golden Scheduler TCK 补全重排/反馈段（NO-07c，Phase 7 收官）**：
+  - 共享场景 `execution_feedback_and_replan`（scheduler-workflow-golden.json
+    第二场景）：执行反馈回流（真实 SchedulingFeedbackService.recordActuals 幂等
+    覆盖）→ 事件驱动重排（PlanService.replan：版本+1、新 planId={planId}-R{v+1}、
+    旧方案 superseded + supersededBy、**真实求解器**对新快照求解并 persistPlan）
+    → 新版本审批收敛。
+  - TS 执行器升级为真实求解器（solve→persistPlan→supersede 全真实）+ feedback/
+    replan 操作处理器；Python 标准库状态机重放同步扩展；调度黄金 TCK 覆盖
+    完整闭环（快照→候选→求解→审批→预约→派工→反馈→重排）。
+- **Golden Scheduler Workflow TCK（NO-07b，Phase 7 工作流段）**：
+  - 共享场景 `tests/golden-fixtures/scheduler-workflow-golden.json`
+    （方案全生命周期）：审批 CAS 双校验（plan version / 快照新鲜度 →
+    PLAN_STALE 拒绝且状态不变 + 观测型 stale_plan 通知）→ 审批收敛 →
+    预约重叠冲突（RESOURCE_CONFLICT）→ 派工前置与收敛（dispatched +
+    outbox assignment.dispatched / plan.dispatched）。
+  - TS 执行器 `golden-scheduler-workflow.spec.ts`（3 例）：真实 PlanService /
+    ResourceReservationService / DispatchCoordinatorService 在状态化 fake-db
+    上执行（外设 mock 边界显式声明），结果制品漂移门禁。
+  - Python 执行器 `tests/test_golden_scheduler_workflow.py`（3 例）：标准库
+    状态机重放独立仲裁（不依赖 ortools/TS 运行时）；Makefile scheduler-golden
+    扩至求解段 + 工作流段；CI 步骤更新。
+- **Golden Scheduler TCK + 调度语义统一（NO-07，Phase 7）**：
+  - heuristic 求解器补齐 NO-05c/05d 接线：枚举路径 eligiblePerson/eligibleDevice
+    增 maintenance/qualityFindings、station 维护/质量封锁映射进 eligibility ctx；
+    reuseBaseline 快速路径增三守卫（人员/设备/工位）——消除"快照带事实、
+    求解器无视"的路径分叉。
+  - 共享场景定义 `tests/golden-fixtures/scheduler-golden-scenarios.json`
+    （skill 基线 / 维护封锁设备·人员 / 质量封锁工位四场景）+ TS 求解器
+    `golden-scheduler-scenarios.spec.ts`（6 例，结果制品漂移门禁）+
+    Python 标准库独立硬约束仲裁 `tests/test_golden_scheduler_scenarios.py`
+    （3 例，不依赖 ortools）；Makefile `scheduler-golden` + CI 步骤。
+  - `solver-maintenance-quality.spec.ts` 4 例 reuse 守卫回归；
+    capability-matrix cross-language-scheduler-conformance 证据扩充。
+- **Work Order 持久化与模块（ADR-012 / NO-05e-b，Phase 6 工单闭环收官）**：
+  - 迁移 `db/migrations/standalone_035_work_order.sql`（+rollback+verify）：
+    ewoh_work_order（TENANT_SCOPED、RLS work_order_org_isolation、
+    type/origin/severity/status/completion/cancellation CHECK、
+    唯一 (org_id, work_order_id)）；schema-manifest managed_count 60→61、
+    001/standalone_001 verify 列表 54→55 lockstep；standalone-postgres-check.sh
+    apply + 成对回滚链；CI standalone.yml 专用步骤。
+  - 云侧 `server/modules/workorder/`：create（契约 fail-closed + ID 确定性推导 +
+    唯一键冲突幂等回读）/transition（in_progress 起不可取消、completed/closed
+    落 completedAt、cancelled 必带 reason）/list；WorkOrderCreated/Completed
+    信封事件；9 例 spec。
+  - maintenance/quality 服务委托 WorkOrderService（工单唯一权威写路径，消除
+    双写）；OpenAPI +3 路由（audit 332→335 零漂移）。
+  - **修复潜伏缺陷**：run_migrations.js 专项迁移（032/034/035）which 映射与
+    专用 verify handler 缺失（命令在 read(undefined) 崩溃，CI 从未运行未提交
+    改动故未触发）；standalone-postgres-check destructive rollback 链缺成对
+    回滚（"回滚到 0 对象"断言必然失败）；001_verify.sql 孪生列表 51→55。
+- **Canonical Work Order（ADR-012 / NO-05e-a，Phase 6 维护/质量工单闭环契约层）**：
+  - `contracts/workorder/`（work-order.schema.json + test-vectors.json）：
+    workOrderType {maintenance, quality_rework, inspection} + origin
+    {maintenance_condition, quality_finding} 必填可追溯 + 六态生命周期
+    （in_progress 起不可取消；completed/closed 必带 completedAt；cancelled 必带
+    reason；severity 走 Risk 契约、subject 走 Identity 契约）。
+  - Python（`src/edge_platform/contracts/workorder.py`）+ TypeScript
+    （`ewoh-spark-app/shared/workorder.ts`）锁定实现 + 共享向量 + 门禁扩展
+    （audit-domain-contracts 182→216 项）+ Golden Scenario 第 8 场景
+    `workorder_loop`（双执行器）。
+  - 事件目录 +2 类型：WorkOrderCreated / WorkOrderCompleted（47 messages /
+    47 channels）。
+  - 云侧事件发端：maintenance 转 work_order_created（带引用）/ quality
+    disposition=rework（links[0] 为执行落点）→ WorkOrderCreated 信封事件；
+    内部 workOrderId=wo:sha256(originKind:originId)[:12] 确定性推导
+    （server/common/workorder-ids.ts），MES 工单号仅作 evidence alias。
+- **Quality State 入调度（ADR-011 / NO-05d，Phase 6 Quality Incident Loop 收口）**：
+  - `shared/quality.ts` 增 `QualityFindingProjection` + `qualityFindingsBlockDispatch`
+    （critical/high 硬封锁、medium/low 仅事实可见、未知严重度 fail-closed 按封锁）；
+    ResourceState / WorldStateSnapshot persons/devices/stations 增可选
+    `qualityFindings` 事实视图（向后兼容）。
+  - ResourceProjectionService `loadActiveQualityFindings()`：活跃发现
+    （status ∈ {open, under_review}）按 links 中 station/device/person 规范身份
+    附着（order/material/batch 不误锁）；质量事实不改变资源状态。
+  - EligibilityService 增 `person/device/station_quality_blocked`（legacy L1-L3
+    归一化触发；dispositioned/closed 即解除）；candidate-engine 建
+    stationQualityBlockedById。
+  - 测试：quality-projection.spec.ts 12 例；scheduler+shared 123 suites /
+    883 tests 全绿。决策：docs/decisions/ADR-011 + 决策日志 AD-LC-006。
+- **Identity §36 收口（NO-02d，Phase 2）**：canonical-identity-model 证据核实——
+  Golden Scenario `identity_mapping_conflict`（Python/TS 双执行器共享）+
+  scripts/reconcile-identity-legacy.mjs（UUIDv5 确定性、append-only、dry-run
+  默认、CI 真实 PG 幂等链）均在，capability-matrix 摘要文本漂移修正。
+- **Maintenance / Quality 生产接线 + 调度集成（ADR-010 / NO-05b + NO-05c，Phase 6）**：
+  - 迁移 `db/migrations/standalone_034_maintenance_quality.sql`（+rollback+verify）：
+    ewoh_maintenance_condition + ewoh_quality_finding（TENANT_SCOPED、RLS
+    maintenance_condition_org_isolation / quality_finding_org_isolation、
+    lifecycle 与 disposition-required CHECK）；schema-manifest managed_count
+    58→60、001/standalone_001 verify 列表 52→54 lockstep；CI standalone.yml 步骤。
+  - 云侧模块 `server/modules/{maintenance,quality}/`：create/list/transition 契约
+    fail-closed + severity 归一化 + 生命周期顺序强制 + 信封事件落库
+    （MaintenanceConditionDetected/Resolved、QualityFindingDetected/Dispositioned）；
+    16 例 spec。
+  - OpenAPI +4 路径（/api/maintenance/conditions{,…}、/api/quality/findings{,…}）
+    + 8 schemas；route audit 326→332 零漂移。
+  - NO-05c 调度集成：ResourceState / WorldStateSnapshot 增 maintenance 事实视图；
+    ResourceProjection 状态收敛（critical→OFFLINE、其余→DEGRADED、绝不升级）；
+    Eligibility 对活跃维护事实 fail-closed 拒派（person/device/station
+    *_maintenance_blocked，人审解除）；11 例 spec。
+  - 门禁：jest 全量 210 suites / 1441 tests 全绿；make truth-check、
+    repo-facts 39/39（counts-generative 漂移修复）、feature-status 31/31、
+    reconcile 6/6 全 PASS；capability-matrix maintenance-loop /
+    quality-incident-loop 升 Implemented（32 Implemented / 19 Partial /
+    4 Missing / 1 Prototype）。
+- **Maintenance / Quality 契约层（ADR-010 / NO-05a，Phase 6）**：
+  - `contracts/maintenance/` + `contracts/quality/`：MaintenanceCondition
+    （conditionType 注册表 6 类 + 生命周期含 work_order 前置 + overdue 判定）与
+    QualityFinding（findingType 注册表 5 类 + 处置生命周期 + disposition 必带决策
+    accept/rework/scrap/return）；severity 走 Risk 契约、引用走 Identity 契约。
+  - Python（`src/edge_platform/contracts/{maintenance,quality}.py`，零依赖）与
+    TypeScript（`ewoh-spark-app/shared/{maintenance,quality}.ts`）锁定实现，
+    消费同一份共享向量。
+  - 门禁 `scripts/audit-domain-contracts.js` 增两域独立仲裁（182/182）；
+    Golden Scenario 第 7 场景 `maintenance_quality_loop`（双执行器）；
+    事件目录增补 MaintenanceConditionDetected/Resolved +
+    QualityFindingDetected/Dispositioned（45 messages / 45 channels）。
+  - 测试：tests/test_mq_contracts.py 7 例 + shared/maintenance-quality.spec.ts 3 例
+    （pytest 218 passed / jest 1414 passed）；capability-matrix maintenance-loop
+    升 Partial（30 Implemented / 21 Partial / 4 Missing / 1 Prototype）。
+- **Phase 5 收尾与 Phase 6 启动（NO-05 / ADR-010）**：
+  - 设备数据质量透出：`GET /api/devices/{id}/quality`（adapter DQ 计数器
+    bad_crc/malformed/packet_loss/backfill/duplicates/dropped + 遥测质量分布
+    storage.quality_stats）；`GET /api/status` 新增 `ingest_chain`
+    {ok, adapters_registered, adapters_healthy, details}（无注册如实 false，
+    防"真实模式空转"无感）。
+  - ADR-010 Maintenance/Quality 领域模型决策（MaintenanceCondition 生命周期+
+    逾期判定+维护状态入调度；QualityFinding 处置生命周期+质量状态入调度；
+    Event→Outcome 闭环；事件目录 +4 类型计划）。
+  - 测试：edge unittest 891 OK（+3 端点例）；capability-matrix
+    device-discovery-health-dq 按 §36 升 Implemented
+    （30 Implemented / 20 Partial / 5 Missing / 1 Prototype）。
+- **Event Envelope 全链路接线（ADR-009 / NO-04b，Phase 4 收口）**：
+  - 事件目录增补 6 类规则事件（DeviceLowBattery / WorkerHighLoad /
+    WorkerPostureRisk / DeviceOffline / DataDegraded / DataQualityAlert），
+    audit-event-catalog 41 messages / 41 channels（修复云侧规则引擎事件类型
+    不在目录的既有漂移）。
+  - 边缘 EventEngine 开事件产出信封（occurred/observed/received + schemaVersion +
+    目录 eventType，EVENT_CODE_CATALOG_TYPE 映射）；既有字段兼容保留。
+  - 云侧 rule-engine（RULE_EVENT_TYPE_MAP）/ ingest（DataQualityAlert）/
+    identity 三条事件写路径收敛目录类型 + evidenceJson 内嵌 envelope 与
+    envelopeSemantics（兼容层，不破坏既有列语义）。
+  - shared/event-envelope.ts 新增 buildEventEnvelope / envelopeForEvidence。
+  - 测试：edge unittest 888 OK（+2 wiring）；jest 1410 passed（+2 rule-engine
+    envelope）；capability-matrix event-backbone / time-semantics 按 §36 升
+    Implemented（29 Implemented / 21 Partial / 5 Missing / 1 Prototype）。
+- **Canonical Event Envelope 契约（ADR-009 / NO-04，Phase 4 启动）**：
+  - `contracts/events/envelope.schema.json` + envelope-test-vectors.json：
+    16 字段信封（必填 eventId/eventType/schemaVersion/occurredAt/source）+ 确定性
+    规则（时间三态漂移容忍 5min 标记 clockDrift 不改写 / 迟到 10min 标记 isLate
+    不丢弃 / (source,eventId) 幂等去重 / actor-subject 规范身份 /
+    eventType 必须命中事件目录）。
+  - Python（`src/edge_platform/contracts/envelope.py`，零第三方依赖）与 TypeScript
+    （`ewoh-spark-app/shared/event-envelope.ts`）锁定实现，消费同一份共享向量。
+  - 独立仲裁门禁 `scripts/audit-event-envelope.js`（24 项断言：schema + 向量 JS
+    重实现仲裁 + eventType 与 event-catalog.yaml 交叉校验 + 双运行时常量一致），
+    挂 `make truth-check` 与新增 `make contract-envelope`，CI test.yml 新增步骤。
+  - Golden Scenario 增补第 6 场景 `event_envelope_semantics`（双执行器扩展）。
+  - 测试：tests/test_event_envelope.py + shared/event-envelope.spec.ts
+    （pytest 211 passed / jest 1408 passed）。
+- **Canonical World State 生产接线（ADR-008 / NO-03b，Phase 3 收口）**：
+  - 云侧：`validateCloudWorldSnapshot` 快照构建自检（worldVersion / entityVersions
+    规范身份键 / 实体规范引用 kind 匹配），collectState 附 `contractCheck`
+    {valid, errors} + 失败 warn 留痕；WorldStateSnapshot/ResourceState 实体增可选
+    `entityId`（person:/device:/station:/task: 规范身份引用，与原 id 并存），
+    两路投影填充。
+  - 边缘：`ContractWorldStore`（set_state 契约校验 fail-closed + 双时态/版本递增 +
+    snapshot 自检 + 来源画像）进入真实装配链（production/development 均产出
+    world_store 组件，real_components 快照含之）。
+  - 测试：edge unittest 886 OK（+contract_world_store 8 例）；jest 1403 passed
+    （+validateCloudWorldSnapshot 4 例 + entityId 投影 1 例）。
+  - capability-matrix：factory-world-model / world-state-store-history 按 §36
+    升 Implemented（27 Implemented / 23 Partial / 5 Missing / 1 Prototype）。
+- **Canonical Factory World State 契约（ADR-008 / NO-03，Phase 3 启动）**：
+  - `contracts/world/world-state.schema.json` + test-vectors.json：StateRecord
+    双时态（[valid_from, valid_to) + sourceType real/simulated/derived +
+    confidence [0,1] + version）+ 22 类实体注册表 + Snapshot（entityVersions 键
+    必须规范身份）+ 确定性规则（区间不重叠 / 版本单调（快照单记录豁免）/
+    模拟隔离 simulated 绝不参与 real 判定 / fail-closed）。
+  - Python（`src/edge_platform/contracts/world.py`，零第三方依赖）与 TypeScript
+    （`ewoh-spark-app/shared/world-contract.ts`）锁定实现，消费同一份共享向量。
+  - 门禁 `scripts/audit-domain-contracts.js` 增 world 域独立仲裁（JS 重实现三套
+    校验语义 + Python/TS 注册表一致），134/134。
+  - Golden Scenario 增补第 5 场景 `world_state_projection_rules`（双执行器扩展）。
+  - 测试：tests/test_world_contract.py + shared/world-contract.spec.ts
+    （pytest 207 passed / jest 1398 passed）。
+- **Canonical Contract Golden Scenarios 与 legacy reconcile（§26 / NO-02d，Phase 2 收口）**：
+  - 共享场景定义 `tests/golden-fixtures/contract-golden-scenarios.json`（四域：
+    身份映射冲突 fail-closed / legacy 严重度归一 / 脏空间类型拒绝 / 资源新鲜度
+    fail-closed）+ Python（tests/test_golden_contract_scenarios.py）与 TS
+    （shared/golden-contract-scenarios.spec.ts）双执行器；`make contract-golden` +
+    CI test.yml 步骤（§26 每次架构变更重跑）。
+  - `scripts/reconcile-identity-legacy.mjs`：legacy 设备 → identity_mapping 的
+    append-only reconcile（ON CONFLICT DO NOTHING 绝不改写存量；确定性 RFC 4122
+    UUIDv5 目标身份；dry-run 默认 + --apply 显式；幂等可重入）；CI standalone.yml
+    真实 PG 验证 dry-run → apply → 复跑 planned=0。
+  - capability-matrix：canonical-identity / risk / location / resource 四域按 §36
+    判据升 Implemented（25 Implemented / 25 Partial / 5 Missing / 1 Prototype）。
+- **Canonical Risk / Location / Resource 生产接线（ADR-007 / NO-02c-b）**：
+  - Risk：规则引擎/ingest 写路径 severity 归一化（`normalizeSeverity`，
+    L2→high/L3→medium，未知值 fail-closed 不落事件）；identity 事件 severity 收敛
+    'low'；dashboard 统计口径 legacy+canonical 并集（存量/新量不漂移）。
+  - Location：`SpatialEntityType = SpatialKind`（移除 `| string` 逃生舱）；
+    ingestSpatialScan 拒绝非注册表 entity_type（fail-closed）；spatial 读边界
+    校验存量脏行。
+  - Resource：`ResourceState.status: ResourceStatus`（六态+UNKNOWN 锁定）；
+    ResourceProjection `toCanonicalStatus` 显式归一（fault→DEGRADED/
+    online→AVAILABLE/offline→OFFLINE/active→AVAILABLE/working→BUSY/
+    unavailable→UNKNOWN，未知→UNKNOWN+warn 不猜测），覆盖 getUnifiedResourceState
+    与 projectForSnapshot；eligibility/solver/conflict/前端消费点切换规范词表。
+  - 回归：25 个调度 spec + 14 个 JSON fixture + benchmark 生成器词表规范化，
+    jest 全量 202 suites / 1388 tests 全绿。
+- **Canonical Risk / Location / Resource 契约（ADR-007 / NO-02c，Phase 2 收尾）**：
+  - 契约层 `contracts/{risk,location,resource}/`：risk（severity 阶梯
+    critical>high>medium>low + legacy 映射 L1→critical/L2→high/L3→medium +
+    生命周期含复开边 + category 注册表）、location（空间类型封闭注册表 21 类 +
+    坐标类型 FACTORY_CARTESIAN/WGS84/UNKNOWN + 记录校验：米制 +X 东 +Y 北 +Z 上、
+    yaw [0,360)、WGS84 边界、UNKNOWN 禁止坐标冒泡）、resource（六态+UNKNOWN +
+    FRESH/STALE/UNKNOWN + AUTHORITATIVE/DERIVED + 可用性 fail-closed
+    「仅 AVAILABLE ∧ FRESH 可用」）。
+  - Python（`src/edge_platform/contracts/{risk,location,resource}.py`，零第三方依赖）
+    与 TypeScript（`ewoh-spark-app/shared/{risk,location,resource}.ts`）锁定实现，
+    消费同一份共享测试向量（§31 跨语言一致性）。
+  - 独立仲裁门禁 `scripts/audit-domain-contracts.js`（113 项断言：schema 形状 +
+    向量 JS 重实现仲裁 + Python/TS 注册表与 schema 一致，有序注册表逐位比较），
+    挂 `make truth-check` 与新增 `make contract-domain`，CI test.yml 新增
+    「Domain 契约一致性门禁」步骤。
+  - 测试：`tests/test_domain_contracts.py` 13 例 + `shared/domain-contracts.spec.ts`
+    5 例（pytest 全量 200 passed）。
+- **Canonical Industrial Identity 生产接线（ADR-006 / NO-02b）**：
+  - 迁移 `standalone_032_identity_mapping`：`ewoh_identity_mapping`
+    （TENANT_SCOPED：org_id NOT NULL + RLS `identity_mapping_org_isolation` +
+    CHECK 约束 + 唯一业务键 (org_id, source_system, source_id)）+ 
+    `ewoh_telemetry.entity_id`（additive 可空 + 索引）；成对 rollback +
+    verify（表/RLS/策略/约束/自证）+ CI 迁移链（apply → verify → rollback → re-apply）。
+  - 云侧 Identity 模块（`server/modules/identity/`）：注册幂等（同目标版本递增 /
+    异目标 superseded + 新 active）、契约校验 fail-closed、解析走共享
+    `resolveIdentityMapping`（active/时间窗口/ambiguous_identity）、
+    `resolveBatch`（ingest 一次 IN 查询）、注册写 `EntityIdentityMapped` 事件
+    （ewoh_event，org 归属）。
+  - ingest 生产调用链：单帧/批量解析（`edge-device` 命名空间）→
+    `ewoh_telemetry.entity_id`；未映射/无租户上下文 → NULL（legacy 行为不变）。
+  - OpenAPI：`POST /api/identity/mappings`、`GET /api/identity/mappings`、
+    `GET /api/identity/mappings/resolve` + 5 个 schema；gen:openapi 再生成；
+    audit-openapi-routes 326 controllers / 0 漂移；route-manifest 再生成。
+  - 治理接线：runner 注册 032 三命令；schema-manifest managed_count 57→58 +
+    verify expected 列表 56→57 锁步；standalone-postgres-check 先应用 032；
+    schema.ts 与迁移对齐（031 同纪律）。
+  - 测试：identity.service.spec 8 例；ingest spec 补 IdentityService mock；
+    audit-repo-facts 39/39（counts-generative 告警清零）。
+- **Canonical Industrial Identity（ADR-006，Phase 2 首项）**：
+  - 契约层 `contracts/identity/`：`identity.schema.json`（kind:value 语法 + 42 类封闭
+    注册表 + 确定性规则，唯一事实源）、`identity-mapping.schema.json`（第三方 ID →
+    规范身份映射记录：active/时间窗口/ambiguous_identity fail-closed）、
+    `test-vectors.json`（43 valid / 15 invalid / 6 mapping 场景，跨语言共享向量）。
+  - Python 实现 `src/edge_platform/contracts/identity.py`（零第三方依赖）与 TypeScript
+    实现 `ewoh-spark-app/shared/identity.ts`：parse/format/解析映射/记录校验，语义逐项
+    一致（内部 ID 必须 EWOH 生成，第三方 ID 仅 alias）。
+  - 独立仲裁门禁 `scripts/audit-identity-contracts.js`（22 项断言：契约形状 + 向量
+    JS 重实现仲裁 + Python KINDS / TS IDENTITY_KINDS 与 schema 注册表逐项一致），
+    挂入 `make truth-check` 与新增 `make contract-identity`，CI test.yml 新增
+    「Identity 契约一致性门禁」步骤；jest testMatch 纳入 `shared/**/*.spec.ts`。
+  - 事件目录新增 `EntityIdentityMapped`（`com.ewoh.identity.mapped`，35 messages/35 channels）。
+  - 测试：`tests/test_identity_contract.py` 18 例 + `shared/identity.spec.ts` 13 例
+    （pytest 187 passed / shared jest 13/13）。
+- **长期架构治理层（long-cycle-governance）**：
+  - 新增长期 Agent 外置记忆 `docs/agent/project-state.yaml`（current_phase / 已完成 /
+    部分 / 缺失能力 / 架构债 / 关键风险 / 迁移 / 下一目标 / 阻塞项 / 决策 /
+    权威事实源 / 测试状态）+ 回合报告 `docs/agent/round-reports/2026-08-14-round-01.md`。
+  - 新增 Phase 0/1 架构工件：`docs/architecture/current-state.md`、`target-state.md`、
+    `domain-map.md`、`data-flow.md`、`runtime-map.md`、`decision-log.md`（决策日志索引，
+    指向既有 docs/decisions/ 体系）、`docs/capabilities/capability-matrix.yaml`
+    （56 项能力 × 状态词表 × 证据路径：21 Implemented / 28 Partial / 6 Missing /
+    1 Prototype）、`docs/contracts/index.md`（契约权威源导航）。
+  - 基线复测：仓库级 pytest 169 passed / 10 skipped；truth-feature-status 31/31；
+    audit-repo-facts 39/39（本回合实测，与 feature-status.yaml 单一事实源一致）。
 - **产品化深化批（close-loop-and-converge，路线图执行）**：
   - **执行反馈可视化（SchedulePanel）**：新增 `ExecutionDeviationList`——真实消费
     `GET /api/scheduler/executions?planId=`（计划 vs 实际 + 偏差事实），30s 轮询 +

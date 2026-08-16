@@ -1,9 +1,11 @@
+import { and, eq, gte, sql } from 'drizzle-orm';
+import { ewohResourceBinding } from '@server/database/schema';
 import {
   ResourceService,
   availableQuantity,
   canIssue,
 } from '../../../server/modules/resource/resource.service';
-import { FakeSqlDb } from '../../helpers/fake-sql-db';
+import { makeResourceDb } from '../../helpers/fake-resource-db';
 
 describe('resource preorder math', () => {
   const preorders = [
@@ -22,145 +24,121 @@ describe('resource preorder math', () => {
   });
 });
 
-describe('ResourceService persistence', () => {
-  const preorderRow = {
-    preorder_id: 'p1',
-    resource_id: 'mat-a',
-    quantity: 5,
-    reserved_qty: 5,
-    issued_qty: 0,
-    status: 'pending',
-  };
+const INVENTORY_BINDING = {
+  binding_id: 'b1',
+  binding_type: 'inventory',
+  resource_type: 'inventory',
+  resource_id: 'mat-a',
+  target_type: 'inventory',
+  target_id: 'mat-a',
+  status: 'active',
+  quantity: 5,
+};
 
+const PENDING_PREORDER = {
+  preorder_id: 'p1',
+  resource_id: 'mat-a',
+  quantity: 5,
+  reserved_qty: 5,
+  issued_qty: 0,
+  status: 'pending',
+};
+
+describe('ResourceService persistence（ADR-081 drizzle 链式语义假库）', () => {
   it('persists preorders and rejects oversell', async () => {
-    const singleRow = { ...preorderRow, quantity: 1, reserved_qty: 1 };
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([singleRow])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([singleRow])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([singleRow]);
-    const service = new ResourceService({ execute } as never);
+    const fake = makeResourceDb();
+    const service = new ResourceService(fake.db as never);
     service.seedInventory([{ resourceId: 'mat-a', quantity: 1 }]);
 
     const preorder = await service.createPreorder('mat-a', 1);
 
-    expect(preorder.id).toBe('p1');
+    expect(preorder.resourceId).toBe('mat-a');
+    expect(preorder.quantity).toBe(1);
+    expect(preorder.status).toBe('pending');
+    expect(fake.preorderRows).toHaveLength(1);
+    expect(fake.preorderRows[0].resource_id).toBe('mat-a');
+    expect(
+      fake.bindingRows.some(
+        (r) => r.binding_type === 'inventory' && Number(r.quantity) === 1,
+      ),
+    ).toBe(true);
     await expect(service.createPreorder('mat-a', 1)).rejects.toThrow(
       'Insufficient available quantity',
     );
-    expect(execute).toHaveBeenCalledTimes(6);
-    expect(JSON.stringify(execute.mock.calls[0][0])).toContain('ewoh_resource_binding');
-    expect(JSON.stringify(execute.mock.calls[0][0])).toContain('inventory');
-    expect(JSON.stringify(execute.mock.calls[1][0])).toContain('quantity');
-    expect(JSON.stringify(execute.mock.calls[3][0])).toContain('ewoh_resource_preorder');
+    expect(fake.preorderRows).toHaveLength(1);
   });
 
   it('persists issue updates, inventory deduction, and a resource binding', async () => {
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([preorderRow])
-      .mockResolvedValueOnce([preorderRow])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ quantity: 5 }])
-      .mockResolvedValueOnce([{ quantity: 3 }])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ ...preorderRow, issued_qty: 2, reserved_qty: 3 }]);
-    const service = new ResourceService({ execute } as never);
+    const fake = makeResourceDb();
+    const service = new ResourceService(fake.db as never);
     service.seedInventory([{ resourceId: 'mat-a', quantity: 5 }]);
+    const preorder = await service.createPreorder('mat-a', 5);
 
-    const result = await service.issue('p1', 2);
+    const result = await service.issue(preorder.id, 2);
 
     expect(result.issuedQty).toBe(2);
     expect(service.getInventory('mat-a')).toBe(3);
-    expect(JSON.stringify(execute.mock.calls[2][0])).toContain('ewoh_resource_binding');
-    expect(JSON.stringify(execute.mock.calls[3][0])).toContain('quantity');
-    expect(JSON.stringify(execute.mock.calls[4][0])).toContain('quantity -');
-    expect(JSON.stringify(execute.mock.calls[5][0])).toContain('ewoh_resource_preorder');
-    expect(JSON.stringify(execute.mock.calls[6][0])).toContain('ewoh_resource_binding');
-  });
-
-  it('persists inventory via FakeSqlDb and issues without oversell', async () => {
-    const db = new FakeSqlDb();
-    const service = new ResourceService({ execute: db.execute.bind(db) } as never);
-    service.seedInventory([{ resourceId: 'mat-a', quantity: 2 }]);
-
-    const preorder = await service.createPreorder('mat-a', 2);
-    await service.issue(preorder.id, 2);
-
-    expect(service.getInventory('mat-a')).toBe(0);
-    await expect(service.createPreorder('mat-a', 1)).rejects.toThrow(
-      'Insufficient available quantity',
-    );
+    const inventoryRow = fake.bindingRows.find((r) => r.binding_type === 'inventory');
+    expect(Number(inventoryRow?.quantity)).toBe(3);
+    expect(
+      fake.bindingRows.some(
+        (r) => r.binding_type === 'issue' && r.target_type === 'preorder',
+      ),
+    ).toBe(true);
+    expect(Number(fake.preorderRows[0].issued_qty)).toBe(2);
+    expect(Number(fake.preorderRows[0].reserved_qty)).toBe(3);
   });
 
   it('returns released quantity to inventory and records a release binding', async () => {
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([{ ...preorderRow, issued_qty: 2 }])
-      .mockResolvedValueOnce([{ ...preorderRow, issued_qty: 2 }])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ quantity: 6 }])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ ...preorderRow, issued_qty: 2, status: 'released' }]);
-    const service = new ResourceService({ execute } as never);
-    service.seedInventory([{ resourceId: 'mat-a', quantity: 3 }]);
+    const fake = makeResourceDb({
+      preorders: [
+        { ...PENDING_PREORDER, reserved_qty: 3, issued_qty: 2 },
+      ],
+      bindings: [{ ...INVENTORY_BINDING, quantity: 6 }],
+    });
+    const service = new ResourceService(fake.db as never);
 
     const result = await service.release('p1');
 
     expect(result.status).toBe('released');
-    expect(service.getInventory('mat-a')).toBe(6);
-    expect(JSON.stringify(execute.mock.calls[2][0])).toContain('ewoh_resource_binding');
-    expect(JSON.stringify(execute.mock.calls[3][0])).toContain('quantity +');
-    expect(JSON.stringify(execute.mock.calls[5][0])).toContain('ewoh_resource_binding');
+    expect(service.getInventory('mat-a')).toBe(9);
+    expect(
+      fake.bindingRows.some((r) => r.binding_type === 'release' && r.status === 'released'),
+    ).toBe(true);
+    expect(fake.preorderRows[0].status).toBe('released');
+    expect(Number(fake.preorderRows[0].returned_qty)).toBe(3);
+    expect(Number(fake.preorderRows[0].reserved_qty)).toBe(0);
   });
 
-  it('rejects issue when the conditional inventory update affects zero rows', async () => {
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([preorderRow])
-      .mockResolvedValueOnce([preorderRow])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ quantity: 5 }])
-      .mockResolvedValueOnce([]);
-    const service = new ResourceService({ execute } as never);
-    service.seedInventory([{ resourceId: 'mat-a', quantity: 5 }]);
+  it('persists released inventory when no inventory binding row exists', async () => {
+    const fake = makeResourceDb({
+      preorders: [{ ...PENDING_PREORDER, reserved_qty: 3, issued_qty: 2 }],
+    });
+    const service = new ResourceService(fake.db as never);
 
-    await expect(service.issue('p1', 2)).rejects.toThrow(
-      'Insufficient issue quantity',
-    );
+    const result = await service.release('p1');
 
-    expect(service.getInventory('mat-a')).toBe(5);
-    expect(JSON.stringify(execute.mock.calls[4][0])).toContain('ewoh_resource_binding');
-    expect(JSON.stringify(execute.mock.calls[4][0])).toContain('quantity');
+    expect(result.status).toBe('released');
+    expect(service.getInventory('mat-a')).toBe(3);
+    const seeded = fake.bindingRows.find((r) => r.binding_type === 'inventory');
+    expect(seeded).toBeDefined();
+    expect(Number(seeded?.quantity)).toBe(3);
+  });
+
+  it('rejects issue when the inventory binding quantity is below the issue quantity', async () => {
+    const fake = makeResourceDb({
+      preorders: [PENDING_PREORDER],
+      bindings: [{ ...INVENTORY_BINDING, quantity: 1 }],
+    });
+    const service = new ResourceService(fake.db as never);
+
+    await expect(service.issue('p1', 2)).rejects.toThrow('Insufficient issue quantity');
+    expect(service.getInventory('mat-a')).toBe(1);
   });
 
   it('serializes concurrent preorders so inventory is never oversold', async () => {
-    let active: Array<Record<string, unknown>> = [];
-    const execute = jest.fn(async (statement: unknown) => {
-      const sql = JSON.stringify(statement);
-      if (sql.includes('select') && sql.includes('ewoh_resource_preorder')) {
-        return active.map((row) => ({ ...row }));
-      }
-      if (sql.includes('insert') && sql.includes('ewoh_resource_preorder')) {
-        const row = {
-          preorder_id: `p-${active.length + 1}`,
-          resource_id: 'mat-a',
-          quantity: 1,
-          reserved_qty: 1,
-          issued_qty: 0,
-          status: 'pending',
-        };
-        active = [...active, row];
-        return [row];
-      }
-      return [];
-    });
-    const service = new ResourceService({ execute } as never);
+    const fake = makeResourceDb();
+    const service = new ResourceService(fake.db as never);
     service.seedInventory([{ resourceId: 'mat-a', quantity: 1 }]);
 
     const results = await Promise.allSettled([
@@ -170,40 +148,65 @@ describe('ResourceService persistence', () => {
 
     expect(results[0].status).toBe('fulfilled');
     expect(results[1].status).toBe('rejected');
-    expect(active).toHaveLength(1);
+    expect(fake.preorderRows).toHaveLength(1);
+  });
+
+  it('throws NotFound for a missing preorder', async () => {
+    const service = new ResourceService(makeResourceDb().db as never);
+
+    await expect(service.getPreorder('missing')).rejects.toThrow('Preorder missing not found');
   });
 
   it('surfaces database failures as explainable errors', async () => {
-    const execute = jest.fn().mockRejectedValue(new Error('connection refused'));
-    const service = new ResourceService({ execute } as never);
+    const service = new ResourceService(makeResourceDb({ failSelect: true }).db as never);
 
-    await expect(service.getPreorder('missing')).rejects.toThrow(/failed/);
+    await expect(service.getPreorder('p1')).rejects.toThrow(/failed/);
+  });
+});
+
+describe('fake-resource-db conditional authority（gte 守卫，§31）', () => {
+  const deductChain = (fake: { db: any; bindingRows: Array<Record<string, unknown>> }) =>
+    fake.db.update(ewohResourceBinding)
+      .set({ quantity: sql`${ewohResourceBinding.quantity} - ${2}` })
+      .where(and(
+        eq(ewohResourceBinding.bindingType, 'inventory'),
+        eq(ewohResourceBinding.resourceId, 'mat-a'),
+        eq(ewohResourceBinding.status, 'active'),
+        gte(ewohResourceBinding.quantity, sql`${2}`),
+      ))
+      .returning({ quantity: ewohResourceBinding.quantity });
+
+  it('conditional quantity update returns zero rows when quantity is insufficient', async () => {
+    const fake = makeResourceDb({
+      bindings: [{ ...INVENTORY_BINDING, quantity: 1 }],
+    });
+
+    const rows = await deductChain(fake as never);
+
+    expect(rows).toHaveLength(0);
+    expect(Number(fake.bindingRows[0].quantity)).toBe(1);
+  });
+
+  it('conditional quantity update deducts when quantity suffices', async () => {
+    const fake = makeResourceDb({
+      bindings: [{ ...INVENTORY_BINDING, quantity: 5 }],
+    });
+
+    const rows = await deductChain(fake as never);
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0].quantity)).toBe(3);
+    expect(Number(fake.bindingRows[0].quantity)).toBe(3);
   });
 });
 
 describe('ResourceService audit', () => {
   const ACTOR = { userId: 'user-1', primaryOrgId: 'org-1' };
-  const preorderRow = {
-    preorder_id: 'p1',
-    resource_id: 'mat-a',
-    quantity: 5,
-    reserved_qty: 5,
-    issued_qty: 0,
-    status: 'pending',
-  };
 
-  it('audits preorder reservation with the acting user and after state', async () => {
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ ...preorderRow, quantity: 1, reserved_qty: 1 }]);
+  it('audits preorder reservation with the acting user, org, and after state', async () => {
+    const fake = makeResourceDb();
     const auditService = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
-    const service = new ResourceService(
-      { execute } as never,
-      auditService as never,
-    );
+    const service = new ResourceService(fake.db as never, auditService as never);
     service.seedInventory([{ resourceId: 'mat-a', quantity: 1 }]);
 
     await service.createPreorder('mat-a', 1, ACTOR);
@@ -214,7 +217,7 @@ describe('ResourceService audit', () => {
         orgId: 'org-1',
         action: 'resource.preorder',
         entityType: 'resource_preorder',
-        entityId: 'p1',
+        entityId: expect.any(String),
         before: null,
         after: expect.objectContaining({
           resourceId: 'mat-a',
@@ -223,25 +226,17 @@ describe('ResourceService audit', () => {
         }),
       }),
     );
+    // ADR-075/081：写入携带 actor orgId（租户闭合）。
+    expect(fake.preorderRows[0].org_id).toBe('org-1');
   });
 
-  it('audits issue with before/after issued quantity', async () => {
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([preorderRow])
-      .mockResolvedValueOnce([preorderRow])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ quantity: 5 }])
-      .mockResolvedValueOnce([{ quantity: 3 }])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ ...preorderRow, issued_qty: 2, reserved_qty: 3 }]);
+  it('audits issue with before/after issued quantity and org-scoped binding', async () => {
+    const fake = makeResourceDb({
+      preorders: [PENDING_PREORDER],
+      bindings: [INVENTORY_BINDING],
+    });
     const auditService = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
-    const service = new ResourceService(
-      { execute } as never,
-      auditService as never,
-    );
-    service.seedInventory([{ resourceId: 'mat-a', quantity: 5 }]);
+    const service = new ResourceService(fake.db as never, auditService as never);
 
     await service.issue('p1', 2, ACTOR);
 
@@ -256,26 +251,16 @@ describe('ResourceService audit', () => {
         after: expect.objectContaining({ issuedQty: 2, status: 'pending' }),
       }),
     );
+    expect(fake.bindingRows.find((r) => r.binding_type === 'issue')?.org_id).toBe('org-1');
   });
 
-  it('audits release with before/after state', async () => {
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([{ ...preorderRow, issued_qty: 2 }])
-      .mockResolvedValueOnce([{ ...preorderRow, issued_qty: 2 }])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ quantity: 6 }])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        { ...preorderRow, issued_qty: 2, status: 'released' },
-      ]);
+  it('audits release with before/after state and org-scoped release binding', async () => {
+    const fake = makeResourceDb({
+      preorders: [{ ...PENDING_PREORDER, reserved_qty: 3, issued_qty: 2 }],
+      bindings: [{ ...INVENTORY_BINDING, quantity: 6 }],
+    });
     const auditService = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
-    const service = new ResourceService(
-      { execute } as never,
-      auditService as never,
-    );
-    service.seedInventory([{ resourceId: 'mat-a', quantity: 3 }]);
+    const service = new ResourceService(fake.db as never, auditService as never);
 
     await service.release('p1', ACTOR);
 
@@ -294,5 +279,6 @@ describe('ResourceService audit', () => {
         }),
       }),
     );
+    expect(fake.bindingRows.find((r) => r.binding_type === 'release')?.org_id).toBe('org-1');
   });
 });

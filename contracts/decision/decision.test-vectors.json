@@ -1,0 +1,452 @@
+{
+  "schemaVersion": "1.0.0",
+  "contractId": "ewoh:///decision/decision/v1",
+  "description": "Canonical Decision Model 共享测试向量（ADR-047 / NO-12x）：Python（src/edge_platform/contracts/decision.py）、TypeScript（ewoh-spark-app/shared/decision.ts）与 audit-domain-contracts decision 域独立 JS 仲裁三方锁步消费同一份向量。语义：kind/status/decisionAuthority 封闭注册表；riskLevel 复用 risk 契约阶梯；判定事实完整（selected.reason 非空、selected∈options、human 决策或 approved/rejected 必带 approver、auditTrail 非空）；fail-closed 返回首个错误码。",
+  "records": [
+    {
+      "name": "valid_task_assignment_proposed",
+      "record": {
+        "decisionId": "decision:g24-ta-1",
+        "kind": "task_assignment",
+        "status": "proposed",
+        "decisionAuthority": "optimization",
+        "subject": "task:t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "policyVersion": "8",
+        "solverVersion": "heuristic-v2",
+        "snapshotRef": "world:v42",
+        "options": [
+          { "optionId": "opt:person-a", "score": 92.5, "reasons": ["skill-match", "low-fatigue"] },
+          { "optionId": "opt:person-b", "score": 71.0, "reasons": [] },
+          { "optionId": "opt:person-c", "score": null, "reasons": ["far-from-station"] }
+        ],
+        "selected": { "optionId": "opt:person-a", "reason": ["highest-score", "skill-match"] },
+        "rejectedAlternatives": [
+          { "optionId": "opt:person-c", "rejectReasons": ["certification-expired"] }
+        ],
+        "hardConstraints": ["skill-match", "certification-valid"],
+        "weightsSnapshot": { "on_time": 0.4, "workload": 0.3 },
+        "evidence": ["ref:eligibility:v42"],
+        "auditTrail": [
+          { "actor": "solver:heuristic-v2", "action": "decided", "at": "2026-08-16T08:00:00Z" }
+        ]
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_plan_approval_approved",
+      "record": {
+        "decisionId": "decision:g24-pa-2",
+        "kind": "plan_approval",
+        "status": "approved",
+        "decisionAuthority": "human",
+        "subject": "plan:p-77",
+        "tenantId": "t-org-1",
+        "riskLevel": "high",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T09:00:00Z",
+        "options": [
+          { "optionId": "opt:approve", "score": null, "reasons": ["pre-approval-simulation-passed"] },
+          { "optionId": "opt:reject", "score": null, "reasons": [] }
+        ],
+        "selected": { "optionId": "opt:approve", "reason": ["layout-verified", "no-conflict"] },
+        "approver": { "actor": "person:op-1", "at": "2026-08-16T09:30:00Z" },
+        "policyVersion": "8",
+        "auditTrail": [
+          { "actor": "system:scheduler", "action": "proposed", "at": "2026-08-16T09:00:00Z" },
+          { "actor": "person:op-1", "action": "approved", "at": "2026-08-16T09:30:00Z" }
+        ]
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_executed_with_outcome",
+      "record": {
+        "decisionId": "decision:g24-dp-3",
+        "kind": "dispatch",
+        "status": "executed",
+        "decisionAuthority": "human",
+        "subject": "assignment:asg-9",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T10:00:00Z",
+        "options": [
+          { "optionId": "opt:dispatch-now", "score": null, "reasons": ["plan-approved"] }
+        ],
+        "selected": { "optionId": "opt:dispatch-now", "reason": ["plan-approved", "resource-reserved"] },
+        "approver": { "actor": "person:op-1", "at": "2026-08-16T10:05:00Z" },
+        "outcomeRef": "outcome:ann-7",
+        "auditTrail": [
+          { "actor": "person:op-1", "action": "dispatched", "at": "2026-08-16T10:05:00Z" }
+        ]
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_low_risk_auto_policy",
+      "record": {
+        "decisionId": "decision:g24-pc-4",
+        "kind": "policy_activation",
+        "status": "approved",
+        "decisionAuthority": "rule_based",
+        "subject": "policy:EWOH-1",
+        "tenantId": "t-org-1",
+        "riskLevel": "low",
+        "requiresApproval": false,
+        "decidedAt": "2026-08-16T07:00:00Z",
+        "options": [
+          { "optionId": "opt:activate", "score": null, "reasons": ["rule-threshold-met"] }
+        ],
+        "selected": { "optionId": "opt:activate", "reason": ["rule-threshold-met"] },
+        "approver": { "actor": "policy:EWOH-1", "at": "2026-08-16T07:00:00Z" },
+        "auditTrail": [
+          { "actor": "system:policy-activation", "action": "decided", "at": "2026-08-16T07:00:00Z" }
+        ]
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_agent_proposal",
+      "record": {
+        "decisionId": "decision:g24-ag-5",
+        "kind": "agent_approval",
+        "status": "proposed",
+        "decisionAuthority": "agent",
+        "subject": "task:at-3",
+        "tenantId": "t-org-1",
+        "riskLevel": "critical",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T11:00:00Z",
+        "options": [
+          { "optionId": "opt:run-command", "score": null, "reasons": ["scope-token-valid"] }
+        ],
+        "selected": { "optionId": "opt:run-command", "reason": ["scope-token-valid"] },
+        "auditTrail": [
+          { "actor": "agent:logistics-1", "action": "proposed", "at": "2026-08-16T11:00:00Z" }
+        ]
+      },
+      "expectError": null
+    },
+    {
+      "name": "unknown_kind_rejected",
+      "record": {
+        "decisionId": "decision:g24-x-6",
+        "kind": "future_kind",
+        "status": "proposed",
+        "decisionAuthority": "optimization",
+        "subject": "task:t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "selected": { "optionId": "opt:a", "reason": ["r"] },
+        "auditTrail": [{ "actor": "solver:s", "action": "decided", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "unknown_kind"
+    },
+    {
+      "name": "unknown_status_rejected",
+      "record": {
+        "decisionId": "decision:g24-x-7",
+        "kind": "task_assignment",
+        "status": "confirmed",
+        "decisionAuthority": "optimization",
+        "subject": "task:t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "selected": { "optionId": "opt:a", "reason": ["r"] },
+        "auditTrail": [{ "actor": "solver:s", "action": "decided", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "unknown_status"
+    },
+    {
+      "name": "unknown_authority_rejected",
+      "record": {
+        "decisionId": "decision:g24-x-8",
+        "kind": "task_assignment",
+        "status": "proposed",
+        "decisionAuthority": "llm",
+        "subject": "task:t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "selected": { "optionId": "opt:a", "reason": ["r"] },
+        "auditTrail": [{ "actor": "solver:s", "action": "decided", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "unknown_authority"
+    },
+    {
+      "name": "bad_decision_id_rejected",
+      "record": {
+        "decisionId": "d-1",
+        "kind": "task_assignment",
+        "status": "proposed",
+        "decisionAuthority": "optimization",
+        "subject": "task:t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "selected": { "optionId": "opt:a", "reason": ["r"] },
+        "auditTrail": [{ "actor": "solver:s", "action": "decided", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "bad_decision_id"
+    },
+    {
+      "name": "bad_subject_rejected",
+      "record": {
+        "decisionId": "decision:g24-x-10",
+        "kind": "task_assignment",
+        "status": "proposed",
+        "decisionAuthority": "optimization",
+        "subject": "task-t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "selected": { "optionId": "opt:a", "reason": ["r"] },
+        "auditTrail": [{ "actor": "solver:s", "action": "decided", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "bad_subject"
+    },
+    {
+      "name": "bad_tenant_rejected",
+      "record": {
+        "decisionId": "decision:g24-x-11",
+        "kind": "task_assignment",
+        "status": "proposed",
+        "decisionAuthority": "optimization",
+        "subject": "task:t-1001",
+        "tenantId": "",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "selected": { "optionId": "opt:a", "reason": ["r"] },
+        "auditTrail": [{ "actor": "solver:s", "action": "decided", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "bad_tenant"
+    },
+    {
+      "name": "unknown_risk_level_rejected",
+      "record": {
+        "decisionId": "decision:g24-x-12",
+        "kind": "task_assignment",
+        "status": "proposed",
+        "decisionAuthority": "optimization",
+        "subject": "task:t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "severe",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "selected": { "optionId": "opt:a", "reason": ["r"] },
+        "auditTrail": [{ "actor": "solver:s", "action": "decided", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "unknown_risk_level"
+    },
+    {
+      "name": "bad_approval_flag_rejected",
+      "record": {
+        "decisionId": "decision:g24-x-13",
+        "kind": "task_assignment",
+        "status": "proposed",
+        "decisionAuthority": "optimization",
+        "subject": "task:t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": "yes",
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "selected": { "optionId": "opt:a", "reason": ["r"] },
+        "auditTrail": [{ "actor": "solver:s", "action": "decided", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "bad_approval_flag"
+    },
+    {
+      "name": "selected_reason_required",
+      "record": {
+        "decisionId": "decision:g24-x-14",
+        "kind": "task_assignment",
+        "status": "proposed",
+        "decisionAuthority": "optimization",
+        "subject": "task:t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "options": [
+          { "optionId": "opt:a", "score": 90, "reasons": ["skill-match"] }
+        ],
+        "selected": { "optionId": "opt:a", "reason": [] },
+        "auditTrail": [{ "actor": "solver:s", "action": "decided", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "selected_reason_required"
+    },
+    {
+      "name": "unknown_selected_option",
+      "record": {
+        "decisionId": "decision:g24-x-15",
+        "kind": "task_assignment",
+        "status": "proposed",
+        "decisionAuthority": "optimization",
+        "subject": "task:t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "options": [
+          { "optionId": "opt:a", "score": 90, "reasons": ["skill-match"] }
+        ],
+        "selected": { "optionId": "opt:ghost", "reason": ["r"] },
+        "auditTrail": [{ "actor": "solver:s", "action": "decided", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "unknown_selected_option"
+    },
+    {
+      "name": "duplicate_option_rejected",
+      "record": {
+        "decisionId": "decision:g24-x-16",
+        "kind": "task_assignment",
+        "status": "proposed",
+        "decisionAuthority": "optimization",
+        "subject": "task:t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "options": [
+          { "optionId": "opt:a", "score": 90, "reasons": [] },
+          { "optionId": "opt:a", "score": 80, "reasons": [] }
+        ],
+        "selected": { "optionId": "opt:a", "reason": ["r"] },
+        "auditTrail": [{ "actor": "solver:s", "action": "decided", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "duplicate_option"
+    },
+    {
+      "name": "approver_required_human_decided",
+      "record": {
+        "decisionId": "decision:g24-x-17",
+        "kind": "task_assignment",
+        "status": "proposed",
+        "decisionAuthority": "human",
+        "subject": "task:t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "selected": { "optionId": "opt:a", "reason": ["r"] },
+        "auditTrail": [{ "actor": "solver:s", "action": "decided", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "approver_required"
+    },
+    {
+      "name": "approver_required_decided_status",
+      "record": {
+        "decisionId": "decision:g24-x-18",
+        "kind": "task_assignment",
+        "status": "approved",
+        "decisionAuthority": "optimization",
+        "subject": "task:t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "selected": { "optionId": "opt:a", "reason": ["r"] },
+        "auditTrail": [{ "actor": "solver:s", "action": "decided", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "approver_required"
+    },
+    {
+      "name": "time_order_violation",
+      "record": {
+        "decisionId": "decision:g24-x-19",
+        "kind": "plan_approval",
+        "status": "approved",
+        "decisionAuthority": "human",
+        "subject": "plan:p-77",
+        "tenantId": "t-org-1",
+        "riskLevel": "high",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T09:00:00Z",
+        "selected": { "optionId": "opt:approve", "reason": ["r"] },
+        "approver": { "actor": "person:op-1", "at": "2026-08-16T08:00:00Z" },
+        "auditTrail": [{ "actor": "person:op-1", "action": "approved", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "time_order_violation"
+    },
+    {
+      "name": "audit_required",
+      "record": {
+        "decisionId": "decision:g24-x-20",
+        "kind": "task_assignment",
+        "status": "proposed",
+        "decisionAuthority": "optimization",
+        "subject": "task:t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "selected": { "optionId": "opt:a", "reason": ["r"] },
+        "auditTrail": []
+      },
+      "expectError": "audit_required"
+    },
+    {
+      "name": "bad_audit_entry",
+      "record": {
+        "decisionId": "decision:g24-x-21",
+        "kind": "task_assignment",
+        "status": "proposed",
+        "decisionAuthority": "optimization",
+        "subject": "task:t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "selected": { "optionId": "opt:a", "reason": ["r"] },
+        "auditTrail": [{ "actor": "solver:s", "action": "decided", "at": "not-a-time" }]
+      },
+      "expectError": "bad_audit_entry"
+    },
+    {
+      "name": "bad_weights_rejected",
+      "record": {
+        "decisionId": "decision:g24-x-22",
+        "kind": "task_assignment",
+        "status": "proposed",
+        "decisionAuthority": "optimization",
+        "subject": "task:t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "selected": { "optionId": "opt:a", "reason": ["r"] },
+        "weightsSnapshot": { "on_time": "0.4" },
+        "auditTrail": [{ "actor": "solver:s", "action": "decided", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "bad_weights"
+    },
+    {
+      "name": "missing_selected_rejected",
+      "record": {
+        "decisionId": "decision:g24-x-23",
+        "kind": "task_assignment",
+        "status": "proposed",
+        "decisionAuthority": "optimization",
+        "subject": "task:t-1001",
+        "tenantId": "t-org-1",
+        "riskLevel": "medium",
+        "requiresApproval": true,
+        "decidedAt": "2026-08-16T08:00:00Z",
+        "auditTrail": [{ "actor": "solver:s", "action": "decided", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "missing_field:selected"
+    }
+  ]
+}

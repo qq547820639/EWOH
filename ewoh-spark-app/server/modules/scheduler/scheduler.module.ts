@@ -33,11 +33,15 @@ import { SchedulingContextService } from './scheduling-context.service';
 import { CandidateEngineService } from './candidate-engine.service';
 import { OverridePreviewService } from './override-preview.service';
 import { ReplanPreviewService } from './replan-preview.service';
-import { DeterministicPredictionProvider } from './prediction/prediction-provider';
+import { EmpiricalDurationPredictionProvider } from './prediction/empirical-duration-prediction-provider';
+import { DurationModelTrainingService } from './prediction/duration-model-training.service';
+import { DecisionHistoryService } from './decision-history.service';
 import { ShadowEvaluatorService } from './prediction/shadow-evaluator.service';
 import { TaskModule } from '../task/task.module';
 // P1-6：跨实例 replan 守卫降级状态持有（readiness 上报 ReplanGuardStatusService）。
 import { HealthModule } from '../health/health.module';
+// NO-12s / ADR-042：审批前自动布局仿真预验证（SimulationService 注入 PlanService）。
+import { SimulationModule } from '../simulation/simulation.module';
 
 /** 预测提供者注入 token（shadow only）：消费者应将其视为可选。 */
 export const PREDICTION_PROVIDER = 'PREDICTION_PROVIDER';
@@ -67,7 +71,7 @@ const SCHEDULER_NOTIFY_PROVIDERS = SCHEDULER_NOTIFY_URL
   : [];
 
 @Module({
-  imports: [TaskModule, HealthModule],
+  imports: [TaskModule, HealthModule, SimulationModule],
   controllers: [SchedulerController, SchedulerMetricsController],
   providers: [
     SchedulerMetricsService,
@@ -103,9 +107,15 @@ const SCHEDULER_NOTIFY_PROVIDERS = SCHEDULER_NOTIFY_URL
     OverridePreviewService,
     ReplanPreviewService,
     ShadowEvaluatorService,
-    // Task 5 / PredictionProvider（shadow only）：确定性基线。预测只是优化器输入，
+    // Task 5 / PredictionProvider（shadow only）：预测只是优化器输入，
     // 绝不写生产调度、绝不替代 hard constraints。消费者应将其视为可选。
-    { provide: PREDICTION_PROVIDER, useClass: DeterministicPredictionProvider },
+    // NO-13g / ADR-056：经验时长模型优先（真实统计，训练自执行反馈；
+    // 未训练/OOD 显式回退确定性基线）。
+    { provide: PREDICTION_PROVIDER, useClass: EmpiricalDurationPredictionProvider },
+    // NO-13g / ADR-056：模型重训/激活闭环（唯一权威写路径）。
+    DurationModelTrainingService,
+    // NO-13p / ADR-065：Decision History 跨 kind 检索（只读聚合读面）。
+    DecisionHistoryService,
     // Task 6：NOTIFY wake-up 监听器（条件装配，默认不提供）。
     ...SCHEDULER_NOTIFY_PROVIDERS,
   ],

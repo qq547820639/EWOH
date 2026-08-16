@@ -279,7 +279,7 @@ export class WorldService {
         if (!ts) continue;
         addTimelineEvent(ts, {
           eventId: `TSK-${task.scheduleTaskId}`,
-          severity: 'L1',
+          severity: 'low',
           title: `工单 ${task.scheduleTaskId} ${task.status}`,
           lane: 'task',
           entityId: task.scheduleTaskId,
@@ -294,7 +294,7 @@ export class WorldService {
         if (!ts) continue;
         addTimelineEvent(ts, {
           eventId: `STP-${step.stepId}`,
-          severity: 'L1',
+          severity: 'low',
           title: `工序 ${step.stepId} ${step.status}`,
           lane: 'task',
           entityId: step.stepId,
@@ -309,7 +309,7 @@ export class WorldService {
         if (!ts) continue;
         addTimelineEvent(ts, {
           eventId: `MAT-${binding.bindingId}`,
-          severity: 'L1',
+          severity: 'low',
           title: `物料 ${binding.resourceId} ${binding.bindingType}`,
           lane: 'material',
           entityId: binding.targetId,

@@ -62,7 +62,7 @@ describe('T03 / P1-4 station 决策变量', () => {
     const { solver } = makeSolver();
     const snapshot = makeSnapshot({
       persons: [
-        { id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 },
+        { id: 'p1', name: 'p1', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 },
       ],
       tasks: [
         {
@@ -75,7 +75,7 @@ describe('T03 / P1-4 station 决策变量', () => {
         },
       ],
       devices: [
-        { id: 'd1', workerName: null, deviceModel: null, batteryPct: 100, online: true, status: 'online', capabilities: [], x: 0, y: 0 },
+        { id: 'd1', workerName: null, deviceModel: null, batteryPct: 100, online: true, status: 'AVAILABLE', capabilities: [], x: 0, y: 0 },
       ],
       stations: [
         { id: 'S1', name: 'S1', x: 0, y: 0, capacity: 1 },
@@ -107,7 +107,7 @@ describe('T03 / P1-4 station 决策变量', () => {
     const { solver } = makeSolver();
     const snapshot = makeSnapshot({
       persons: [
-        { id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 },
+        { id: 'p1', name: 'p1', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 },
       ],
       tasks: [
         {
@@ -119,7 +119,7 @@ describe('T03 / P1-4 station 决策变量', () => {
         },
       ],
       devices: [
-        { id: 'd1', workerName: null, deviceModel: null, batteryPct: 100, online: true, status: 'online', capabilities: [], x: 0, y: 0 },
+        { id: 'd1', workerName: null, deviceModel: null, batteryPct: 100, online: true, status: 'AVAILABLE', capabilities: [], x: 0, y: 0 },
       ],
       stations: [
         { id: 'S1', name: 'S1', x: 0, y: 0, capacity: 0 }, // 无容量 → 不可分配
@@ -146,7 +146,7 @@ describe('T03 / P1-4 station 决策变量', () => {
     const { solver } = makeSolver();
     const snapshot = makeSnapshot({
       persons: [
-        { id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 },
+        { id: 'p1', name: 'p1', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 },
       ],
       tasks: [
         {
@@ -189,7 +189,7 @@ describe('T03 / P1-4 station 决策变量', () => {
     const { solver } = makeSolver();
     const snapshot = makeSnapshot({
       persons: [
-        { id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 },
+        { id: 'p1', name: 'p1', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 },
       ],
       tasks: [
         {

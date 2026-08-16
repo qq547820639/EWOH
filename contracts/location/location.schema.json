@@ -1,0 +1,138 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///location/location/v1",
+  "title": "EWOH Canonical Location Model",
+  "description": "EWOH 统一空间契约（Canonical Location Model，ADR-007）。空间类型封闭注册表（v1 21 类，云侧 SpatialEntityType 收敛目标）；坐标类型 FACTORY_CARTESIAN|WGS84|UNKNOWN（P0-3 语义：UNKNOWN=无坐标可用，禁止 0,0 冒泡）；FACTORY_CARTESIAN 约定 = 米制、+X 东 +Y 北 +Z 上、yaw 自北顺时针 [0,360)。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "spatialKindRegistry",
+    "coordinateTypes",
+    "wgs84Bounds",
+    "rules"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "coordinateTypes": {
+      "type": "array",
+      "const": [
+        "FACTORY_CARTESIAN",
+        "WGS84",
+        "UNKNOWN"
+      ]
+    },
+    "wgs84Bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "latMin",
+        "latMax",
+        "lngMin",
+        "lngMax",
+        "yawMin",
+        "yawMax"
+      ],
+      "properties": {
+        "latMin": {
+          "type": "number",
+          "const": -90
+        },
+        "latMax": {
+          "type": "number",
+          "const": 90
+        },
+        "lngMin": {
+          "type": "number",
+          "const": -180
+        },
+        "lngMax": {
+          "type": "number",
+          "const": 180
+        },
+        "yawMin": {
+          "type": "number",
+          "const": 0
+        },
+        "yawMax": {
+          "type": "number",
+          "const": 360
+        }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "closedRegistry",
+        "unknownSemantics",
+        "cartesianConvention",
+        "validation"
+      ],
+      "properties": {
+        "closedRegistry": {
+          "type": "string",
+          "const": "空间类型必须命中 spatialKindRegistry，否则拒绝（fail-closed）"
+        },
+        "unknownSemantics": {
+          "type": "string",
+          "const": "UNKNOWN=无坐标可用；UNKNOWN 记录不得携带 x/y/z/yaw 值"
+        },
+        "cartesianConvention": {
+          "type": "string",
+          "const": "米制；+X 东 +Y 北 +Z 上；yaw 自北顺时针 [0,360)"
+        },
+        "validation": {
+          "type": "string",
+          "const": "WGS84 要求 lat∈[-90,90] 且 lng∈[-180,180]；yaw∈[0,360)；越界拒绝"
+        }
+      }
+    }
+  },
+  "spatialKindRegistry": [
+    "factory",
+    "building",
+    "floor",
+    "area",
+    "workshop",
+    "production_line",
+    "zone",
+    "workstation",
+    "station",
+    "dock",
+    "warehouse_location",
+    "route",
+    "restricted_zone",
+    "device",
+    "person",
+    "task",
+    "camera",
+    "sensor",
+    "uwb_station",
+    "charging_area",
+    "staging_area"
+  ],
+  "schemaVersion": "1.0.0",
+  "coordinateTypes": [
+    "FACTORY_CARTESIAN",
+    "WGS84",
+    "UNKNOWN"
+  ],
+  "wgs84Bounds": {
+    "latMin": -90,
+    "latMax": 90,
+    "lngMin": -180,
+    "lngMax": 180,
+    "yawMin": 0,
+    "yawMax": 360
+  },
+  "rules": {
+    "closedRegistry": "空间类型必须命中 spatialKindRegistry，否则拒绝（fail-closed）",
+    "unknownSemantics": "UNKNOWN=无坐标可用；UNKNOWN 记录不得携带 x/y/z/yaw 值",
+    "cartesianConvention": "米制；+X 东 +Y 北 +Z 上；yaw 自北顺时针 [0,360)",
+    "validation": "WGS84 要求 lat∈[-90,90] 且 lng∈[-180,180]；yaw∈[0,360)；越界拒绝"
+  }
+}

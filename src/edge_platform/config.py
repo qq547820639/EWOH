@@ -73,6 +73,23 @@ def _parse_roles(raw):
     return tuple(r.strip() for r in raw.split(",") if r.strip())
 
 
+def _parse_json_field(raw, env_name, label, expected_type):
+    """解析 JSON 环境变量字段；空串返回空 expected_type；非法 JSON/类型抛 ValueError。
+
+    raw 由调用方经 os.environ.get(env_name) 取得（env 审计门禁据此识别读取点）。
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return expected_type()
+    try:
+        value = json.loads(raw)
+    except ValueError as e:
+        raise ValueError(f"{env_name}（{label}）JSON 解析失败: {e}") from e
+    if not isinstance(value, expected_type):
+        raise ValueError(f"{env_name}（{label}）必须为 {expected_type.__name__}，实际: {type(value).__name__}")
+    return value
+
+
 class Settings:
     """平台运行配置（单例）。
 
@@ -123,6 +140,40 @@ class Settings:
             "EWOH_ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"
         )
         self.ark_model = os.environ.get("EWOH_ARK_MODEL", "doubao-seed-2-1-pro-260628")
+        # ---- NO-03c：适配器工厂（E-03 修复，config 驱动的注册入口）----
+        # EWOH_ADAPTERS = JSON 列表，每项 {kind, ...params}；空列表 = 合法空
+        # 管理器（无设备接入），不是 stub；未知 kind fail-closed 抛 ValueError。
+        self.adapters = _parse_json_field(
+            os.environ.get("EWOH_ADAPTERS", ""), "EWOH_ADAPTERS", "适配器列表", list
+        )
+        # ---- NO-03c：遥测 → 世界模型自动投影 ----
+        # EWOH_WORLD_TENANT_ID / EWOH_WORLD_FACTORY_ID：投影声明的租户/工厂边界；
+        # EWOH_WORLD_KIND_MAP = JSON 对象 {设备 ID 前缀: 实体 kind}（如 {"EXO-": "exo"}）；
+        # 未配置 tenant/factory 或 kind_map 为空 → 投影显式关闭（绝不猜实体类别）。
+        self.world_tenant_id = (os.environ.get("EWOH_WORLD_TENANT_ID") or "").strip()
+        self.world_factory_id = (os.environ.get("EWOH_WORLD_FACTORY_ID") or "").strip()
+        self.world_kind_map = _parse_json_field(
+            os.environ.get("EWOH_WORLD_KIND_MAP", ""), "EWOH_WORLD_KIND_MAP", "实体类别映射", dict
+        )
+        # ---- NO-04b：Edge→Cloud 事件上行（Catalog 信封批量上行 + 离线缓冲）----
+        # EWOH_EVENT_UPLINK_URL 为空 = 上行显式关闭（启动打印原因）；KEY/ORG_ID
+        # 对应云侧 IngestGuard 的 X-Ingest-Key / X-Org-Id。
+        self.event_uplink_url = (os.environ.get("EWOH_EVENT_UPLINK_URL") or "").strip()
+        self.event_uplink_key = (os.environ.get("EWOH_EVENT_UPLINK_KEY") or "").strip()
+        self.event_uplink_org_id = (os.environ.get("EWOH_EVENT_UPLINK_ORG_ID") or "").strip()
+        # ---- NO-12d：Edge→Cloud 指标上行（周期快照，ADR-028）----
+        # EWOH_METRICS_UPLINK_URL 为空 = 上行显式关闭；KEY/ORG_ID 与事件上行
+        # 同语义（IngestGuard X-Ingest-Key / X-Org-Id 机器通道）。
+        self.metrics_uplink_url = (os.environ.get("EWOH_METRICS_UPLINK_URL") or "").strip()
+        self.metrics_uplink_key = (os.environ.get("EWOH_METRICS_UPLINK_KEY") or "").strip()
+        self.metrics_uplink_org_id = (os.environ.get("EWOH_METRICS_UPLINK_ORG_ID") or "").strip()
+        try:
+            self.metrics_uplink_interval_sec = float(
+                os.environ.get("EWOH_METRICS_UPLINK_INTERVAL_SEC", "60")
+            )
+        except ValueError:
+            self.metrics_uplink_interval_sec = 60.0
+        self.edge_id = (os.environ.get("EWOH_EDGE_ID") or "edge-default").strip()
 
     @classmethod
     def load(cls, force_reload=False):

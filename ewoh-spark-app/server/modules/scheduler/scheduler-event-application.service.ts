@@ -251,7 +251,13 @@ export class SchedulerEventApplicationService {
   async recordTaskActuals(
     input: RecordActualsRequest,
     actor?: OrgContext,
-  ): Promise<{ ok: boolean; matched: boolean }> {
+  ): Promise<{
+    ok: boolean;
+    matched: boolean;
+    advancedAssignments?: number;
+    advancedTaskSteps?: number;
+    skips?: string[];
+  }> {
     if (
       !input.assignmentId &&
       !input.planId &&
@@ -262,7 +268,9 @@ export class SchedulerEventApplicationService {
       );
     }
     const ctx = toOrgContext(actor);
-    await this.feedbackService.recordActuals(
+    // NO-13a / ADR-050：recordActuals 返回推进 summary（additive 透出，供调用方可观测）。
+    // ?? 兜底：既有测试/调用方 stub 返回 undefined 时保持向后兼容（不读取推进字段）。
+    const advancement = (await this.feedbackService.recordActuals(
       {
         planId: input.planId,
         assignmentId: input.assignmentId,
@@ -274,7 +282,7 @@ export class SchedulerEventApplicationService {
         actualResource: input.actualResource ?? null,
       },
       ctx,
-    );
+    )) ?? { advancedAssignments: 0, advancedTaskSteps: 0, skips: [] };
     // v0.7 B3：执行偏差实时推送（SSE execution.deviation），供地图执行偏差图层消费。
     // 观测型：推送失败仅记日志，不影响回填主流程。
     if (this.outboxService) {
@@ -298,7 +306,13 @@ export class SchedulerEventApplicationService {
       });
     }
     // recordActuals 为更新语义（无行则不写）；matched 交由调用方以查询反馈行确认，
-    // 此处统一返回 ok（观测型回填不阻断执行方）。
-    return { ok: true, matched: true };
+    // 此处统一返回 ok（观测型回填不阻断执行方）；推进 summary additive 透出（NO-13a）。
+    return {
+      ok: true,
+      matched: true,
+      advancedAssignments: advancement.advancedAssignments,
+      advancedTaskSteps: advancement.advancedTaskSteps,
+      skips: advancement.skips,
+    };
   }
 }

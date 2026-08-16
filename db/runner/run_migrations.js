@@ -109,6 +109,75 @@ const FILES = {
   standalone_snapshot_version_counter: path.join(root, 'db/migrations/standalone_031_snapshot_version_counter.sql'),
   standalone_snapshot_version_counter_rollback: path.join(root, 'db/migrations/standalone_031_snapshot_version_counter.rollback.sql'),
   standalone_snapshot_version_counter_verify: path.join(root, 'db/verify/standalone_031_snapshot_version_counter.verify.sql'),
+  standalone_identity_mapping: path.join(root, 'db/migrations/standalone_032_identity_mapping.sql'),
+  standalone_identity_mapping_rollback: path.join(root, 'db/migrations/standalone_032_identity_mapping.rollback.sql'),
+  standalone_identity_mapping_verify: path.join(root, 'db/verify/standalone_032_identity_mapping.verify.sql'),
+  standalone_maintenance_quality: path.join(root, 'db/migrations/standalone_034_maintenance_quality.sql'),
+  standalone_maintenance_quality_rollback: path.join(root, 'db/migrations/standalone_034_maintenance_quality.rollback.sql'),
+  standalone_maintenance_quality_verify: path.join(root, 'db/verify/standalone_034_maintenance_quality.verify.sql'),
+  standalone_work_order: path.join(root, 'db/migrations/standalone_035_work_order.sql'),
+  standalone_work_order_rollback: path.join(root, 'db/migrations/standalone_035_work_order.rollback.sql'),
+  standalone_work_order_verify: path.join(root, 'db/verify/standalone_035_work_order.verify.sql'),
+  standalone_event_dedup: path.join(root, 'db/migrations/standalone_036_event_dedup.sql'),
+  standalone_event_dedup_rollback: path.join(root, 'db/migrations/standalone_036_event_dedup.rollback.sql'),
+  standalone_event_dedup_verify: path.join(root, 'db/verify/standalone_036_event_dedup.verify.sql'),
+  standalone_agent_manifest: path.join(root, 'db/migrations/standalone_037_agent_manifest.sql'),
+  standalone_agent_manifest_rollback: path.join(root, 'db/migrations/standalone_037_agent_manifest.rollback.sql'),
+  standalone_agent_manifest_verify: path.join(root, 'db/verify/standalone_037_agent_manifest.verify.sql'),
+  standalone_agent_task: path.join(root, 'db/migrations/standalone_038_agent_task.sql'),
+  standalone_agent_task_rollback: path.join(root, 'db/migrations/standalone_038_agent_task.rollback.sql'),
+  standalone_agent_task_verify: path.join(root, 'db/verify/standalone_038_agent_task.verify.sql'),
+  standalone_knowledge_entry: path.join(root, 'db/migrations/standalone_039_knowledge_entry.sql'),
+  standalone_knowledge_entry_rollback: path.join(root, 'db/migrations/standalone_039_knowledge_entry.rollback.sql'),
+  standalone_knowledge_entry_verify: path.join(root, 'db/verify/standalone_039_knowledge_entry.verify.sql'),
+  standalone_inference_result: path.join(root, 'db/migrations/standalone_040_inference_result.sql'),
+  standalone_inference_result_rollback: path.join(root, 'db/migrations/standalone_040_inference_result.rollback.sql'),
+  standalone_inference_result_verify: path.join(root, 'db/verify/standalone_040_inference_result.verify.sql'),
+  standalone_learning_evaluation: path.join(root, 'db/migrations/standalone_041_learning_evaluation.sql'),
+  standalone_learning_evaluation_rollback: path.join(root, 'db/migrations/standalone_041_learning_evaluation.rollback.sql'),
+  standalone_learning_evaluation_verify: path.join(root, 'db/verify/standalone_041_learning_evaluation.verify.sql'),
+  standalone_trace_span: path.join(root, 'db/migrations/standalone_042_trace_span.sql'),
+  standalone_trace_span_rollback: path.join(root, 'db/migrations/standalone_042_trace_span.rollback.sql'),
+  standalone_trace_span_verify: path.join(root, 'db/verify/standalone_042_trace_span.verify.sql'),
+  standalone_dead_letter: path.join(root, 'db/migrations/standalone_043_dead_letter.sql'),
+  standalone_dead_letter_rollback: path.join(root, 'db/migrations/standalone_043_dead_letter.rollback.sql'),
+  standalone_dead_letter_verify: path.join(root, 'db/verify/standalone_043_dead_letter.verify.sql'),
+  standalone_simulation_run: path.join(root, 'db/migrations/standalone_044_simulation_run.sql'),
+  standalone_simulation_run_rollback: path.join(root, 'db/migrations/standalone_044_simulation_run.rollback.sql'),
+  standalone_simulation_run_verify: path.join(root, 'db/verify/standalone_044_simulation_run.verify.sql'),
+  standalone_learning_proposal: path.join(root, 'db/migrations/standalone_045_learning_proposal.sql'),
+  standalone_exo_session: path.join(root, 'db/migrations/standalone_046_exo_session.sql'),
+  standalone_outcome_annotation: path.join(root, 'db/migrations/standalone_047_outcome_annotation.sql'),
+  standalone_shadow_plan_isolation: path.join(root, 'db/migrations/standalone_048_shadow_plan_isolation.sql'),
+  standalone_agent_approval: path.join(root, 'db/migrations/standalone_049_agent_approval.sql'),
+  standalone_decision_records: path.join(root, 'db/migrations/standalone_050_decision_records.sql'),
+  standalone_exo_config: path.join(root, 'db/migrations/standalone_051_exo_config.sql'),
+  standalone_agent_approval_decision: path.join(root, 'db/migrations/standalone_052_agent_approval_decision.sql'),
+  standalone_learning_proposal_decision: path.join(root, 'db/migrations/standalone_053_learning_proposal_decision.sql'),
+  standalone_policy_activation_decision: path.join(root, 'db/migrations/standalone_054_policy_activation_decision.sql'),
+  standalone_route_org_isolation: path.join(root, 'db/migrations/standalone_056_route_org_isolation.sql'),
+  standalone_learning_proposal_rollback: path.join(root, 'db/migrations/standalone_045_learning_proposal.rollback.sql'),
+  standalone_exo_session_rollback: path.join(root, 'db/migrations/standalone_046_exo_session.rollback.sql'),
+  standalone_outcome_annotation_rollback: path.join(root, 'db/migrations/standalone_047_outcome_annotation.rollback.sql'),
+  standalone_shadow_plan_isolation_rollback: path.join(root, 'db/migrations/standalone_048_shadow_plan_isolation.rollback.sql'),
+  standalone_agent_approval_rollback: path.join(root, 'db/migrations/standalone_049_agent_approval.rollback.sql'),
+  standalone_decision_records_rollback: path.join(root, 'db/migrations/standalone_050_decision_records.rollback.sql'),
+  standalone_exo_config_rollback: path.join(root, 'db/migrations/standalone_051_exo_config.rollback.sql'),
+  standalone_agent_approval_decision_rollback: path.join(root, 'db/migrations/standalone_052_agent_approval_decision.rollback.sql'),
+  standalone_learning_proposal_decision_rollback: path.join(root, 'db/migrations/standalone_053_learning_proposal_decision.rollback.sql'),
+  standalone_policy_activation_decision_rollback: path.join(root, 'db/migrations/standalone_054_policy_activation_decision.rollback.sql'),
+  standalone_route_org_isolation_rollback: path.join(root, 'db/migrations/standalone_056_route_org_isolation.rollback.sql'),
+  standalone_learning_proposal_verify: path.join(root, 'db/verify/standalone_045_learning_proposal.verify.sql'),
+  standalone_exo_session_verify: path.join(root, 'db/verify/standalone_046_exo_session.verify.sql'),
+  standalone_outcome_annotation_verify: path.join(root, 'db/verify/standalone_047_outcome_annotation.verify.sql'),
+  standalone_shadow_plan_isolation_verify: path.join(root, 'db/verify/standalone_048_shadow_plan_isolation.verify.sql'),
+  standalone_agent_approval_verify: path.join(root, 'db/verify/standalone_049_agent_approval.verify.sql'),
+  standalone_decision_records_verify: path.join(root, 'db/verify/standalone_050_decision_records.verify.sql'),
+  standalone_exo_config_verify: path.join(root, 'db/verify/standalone_051_exo_config.verify.sql'),
+  standalone_agent_approval_decision_verify: path.join(root, 'db/verify/standalone_052_agent_approval_decision.verify.sql'),
+  standalone_learning_proposal_decision_verify: path.join(root, 'db/verify/standalone_053_learning_proposal_decision.verify.sql'),
+  standalone_policy_activation_decision_verify: path.join(root, 'db/verify/standalone_054_policy_activation_decision.verify.sql'),
+  standalone_route_org_isolation_verify: path.join(root, 'db/verify/standalone_056_route_org_isolation.verify.sql'),
 };
 
 const PLAN_NAMES = Object.freeze(Object.keys(FILES));
@@ -144,6 +213,27 @@ const ROLLBACK_COMMANDS = new Set([
   '--rollback-standalone-prediction-shadow-observation',
   '--rollback-standalone-snapshot-version-counter',
   '--rollback-standalone-solver-activation',
+  '--rollback-standalone-identity-mapping',
+  '--rollback-standalone-maintenance-quality',
+  '--rollback-standalone-work-order',
+  '--rollback-standalone-event-dedup',
+  '--rollback-standalone-agent-manifest',
+  '--rollback-standalone-agent-task',
+  '--rollback-standalone-knowledge-entry',
+  '--rollback-standalone-inference-result',
+  '--rollback-standalone-learning-evaluation',
+  '--rollback-standalone-trace-span',
+  '--rollback-standalone-dead-letter',
+  '--rollback-standalone-simulation-run',
+  '--rollback-standalone-learning-proposal',
+  '--rollback-standalone-exo-session',
+  '--rollback-standalone-outcome-annotation',
+  '--rollback-standalone-decision-records',
+  '--rollback-standalone-exo-config',
+  '--rollback-standalone-agent-approval-decision',
+  '--rollback-standalone-learning-proposal-decision',
+  '--rollback-standalone-policy-activation-decision',
+  '--rollback-standalone-route-org-isolation',
 ]);
 const EXECUTE_COMMANDS = new Set([
   '--apply',
@@ -245,6 +335,69 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-snapshot-version-counter',
   '--rollback-standalone-snapshot-version-counter',
   '--verify-standalone-snapshot-version-counter',
+  '--apply-standalone-identity-mapping',
+  '--rollback-standalone-identity-mapping',
+  '--verify-standalone-identity-mapping',
+  '--apply-standalone-maintenance-quality',
+  '--rollback-standalone-maintenance-quality',
+  '--verify-standalone-maintenance-quality',
+  '--apply-standalone-work-order',
+  '--rollback-standalone-work-order',
+  '--verify-standalone-work-order',
+  '--apply-standalone-event-dedup',
+  '--rollback-standalone-event-dedup',
+  '--verify-standalone-event-dedup',
+  '--apply-standalone-agent-manifest',
+  '--rollback-standalone-agent-manifest',
+  '--verify-standalone-agent-manifest',
+  '--apply-standalone-agent-task',
+  '--rollback-standalone-agent-task',
+  '--verify-standalone-agent-task',
+  '--apply-standalone-knowledge-entry',
+  '--rollback-standalone-knowledge-entry',
+  '--verify-standalone-knowledge-entry',
+  '--apply-standalone-inference-result',
+  '--rollback-standalone-inference-result',
+  '--verify-standalone-inference-result',
+  '--apply-standalone-learning-evaluation',
+  '--rollback-standalone-learning-evaluation',
+  '--verify-standalone-learning-evaluation',
+  '--apply-standalone-trace-span',
+  '--rollback-standalone-trace-span',
+  '--verify-standalone-trace-span',
+  '--apply-standalone-dead-letter',
+  '--rollback-standalone-dead-letter',
+  '--verify-standalone-dead-letter',
+  '--apply-standalone-simulation-run',
+  '--rollback-standalone-simulation-run',
+  '--verify-standalone-simulation-run',
+  '--apply-standalone-learning-proposal',
+  '--rollback-standalone-learning-proposal',
+  '--verify-standalone-learning-proposal',
+  '--apply-standalone-exo-session',
+  '--rollback-standalone-exo-session',
+  '--verify-standalone-exo-session',
+  '--apply-standalone-outcome-annotation',
+  '--rollback-standalone-outcome-annotation',
+  '--verify-standalone-outcome-annotation',
+  '--apply-standalone-decision-records',
+  '--rollback-standalone-decision-records',
+  '--verify-standalone-decision-records',
+  '--apply-standalone-exo-config',
+  '--rollback-standalone-exo-config',
+  '--verify-standalone-exo-config',
+  '--apply-standalone-agent-approval-decision',
+  '--rollback-standalone-agent-approval-decision',
+  '--verify-standalone-agent-approval-decision',
+  '--apply-standalone-learning-proposal-decision',
+  '--rollback-standalone-learning-proposal-decision',
+  '--verify-standalone-learning-proposal-decision',
+  '--apply-standalone-policy-activation-decision',
+  '--rollback-standalone-policy-activation-decision',
+  '--verify-standalone-policy-activation-decision',
+  '--apply-standalone-route-org-isolation',
+  '--rollback-standalone-route-org-isolation',
+  '--verify-standalone-route-org-isolation',
 ]);
 
 const TOKEN = '__EWOH_SCHEMA__';
@@ -427,7 +580,7 @@ function main() {
     console.error('EWOH_DATABASE_URL or SUDA_DATABASE_URL is required.');
     process.exit(2);
   }
-  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod', '--verify-standalone-outbox-sequence', '--verify-standalone-domain-columns', '--verify-standalone-route-cost-matrix', '--verify-standalone-policy-weights', '--verify-standalone-conflict-lifecycle', '--verify-standalone-task-requirement', '--verify-standalone-scheduling-tables-fix', '--verify-standalone-execution-feedback', '--verify-standalone-kpi-replay', '--verify-standalone-policy-lifecycle', '--verify-standalone-sse-envelope', '--verify-standalone-reservation-capacity', '--verify-standalone-scheduler-incremental', '--verify-standalone-scheduler-outbox-notify', '--verify-standalone-scheduler-rls', '--verify-standalone-route-cost-matrix-full-key', '--verify-standalone-resource-time-windows', '--verify-standalone-assignment-event-tenancy', '--verify-standalone-prediction-shadow-observation', '--verify-standalone-snapshot-version-counter', '--verify-standalone-solver-activation'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
+  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod', '--verify-standalone-outbox-sequence', '--verify-standalone-domain-columns', '--verify-standalone-route-cost-matrix', '--verify-standalone-policy-weights', '--verify-standalone-conflict-lifecycle', '--verify-standalone-task-requirement', '--verify-standalone-scheduling-tables-fix', '--verify-standalone-execution-feedback', '--verify-standalone-kpi-replay', '--verify-standalone-policy-lifecycle', '--verify-standalone-sse-envelope', '--verify-standalone-reservation-capacity', '--verify-standalone-scheduler-incremental', '--verify-standalone-scheduler-outbox-notify', '--verify-standalone-scheduler-rls', '--verify-standalone-route-cost-matrix-full-key', '--verify-standalone-resource-time-windows', '--verify-standalone-assignment-event-tenancy', '--verify-standalone-prediction-shadow-observation', '--verify-standalone-snapshot-version-counter', '--verify-standalone-solver-activation', '--verify-standalone-identity-mapping', '--verify-standalone-maintenance-quality', '--verify-standalone-work-order', '--verify-standalone-event-dedup', '--verify-standalone-agent-manifest', '--verify-standalone-agent-task', '--verify-standalone-knowledge-entry', '--verify-standalone-inference-result', '--verify-standalone-learning-evaluation', '--verify-standalone-trace-span', '--verify-standalone-dead-letter', '--verify-standalone-simulation-run', '--verify-standalone-learning-proposal', '--verify-standalone-exo-session', '--verify-standalone-outcome-annotation', '--verify-standalone-shadow-plan-isolation', '--verify-standalone-agent-approval', '--verify-standalone-decision-records', '--verify-standalone-exo-config', '--verify-standalone-agent-approval-decision', '--verify-standalone-learning-proposal-decision', '--verify-standalone-policy-activation-decision', '--verify-standalone-route-org-isolation'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
     console.error('EWOH_ALLOW_DDL=1 is required for --apply and --rollback.');
     process.exit(2);
   }
@@ -904,6 +1057,304 @@ function main() {
       return;
     }
 
+    if (command === '--verify-standalone-identity-mapping') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_identity_mapping_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_032_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_032 identity mapping verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_032 identity mapping (TENANT_SCOPED + RLS + unique)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-maintenance-quality') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_maintenance_quality_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_034_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_034 maintenance/quality verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_034 maintenance/quality (TENANT_SCOPED + RLS + CHECK)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-work-order') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_work_order_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_035_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_035 work order verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_035 work order (TENANT_SCOPED + RLS + CHECK)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-outcome-annotation') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_outcome_annotation_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_047_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_047 outcome annotation verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_047 outcome annotation (TENANT_SCOPED + RLS + registry CHECK)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-shadow-plan-isolation') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_shadow_plan_isolation_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_048_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_048 shadow plan isolation verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_048 shadow plan isolation (CHECK 纵深防御：shadow 行禁生产状态/确认事实)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-agent-approval') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_agent_approval_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_049_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_049 agent approval verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_049 agent approval (TENANT_SCOPED + RLS + status/resolved/roles CHECK + unique)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-decision-records') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_decision_records_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_050_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_050 decision records verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_050 decision records (decision_records_json jsonb 列 + DecisionRecord 形状 roundtrip + NULL 存量语义)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-exo-config') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_exo_config_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_051_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_051 exo config verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_051 exo config (TENANT_SCOPED + RLS exo_config_org_isolation + kind/status/mode/facts/time CHECK + unique)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-agent-approval-decision') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_agent_approval_decision_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_052_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_052 agent approval decision verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_052 agent approval decision (decision_json jsonb 列 + agent_approval DecisionRecord 形状 roundtrip + NULL 存量语义)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-learning-proposal-decision') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_learning_proposal_decision_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_053_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_053 learning proposal decision verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_053 learning proposal decision (decision_json jsonb 列 + learning_proposal_activation DecisionRecord 形状 roundtrip + NULL 存量语义)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-policy-activation-decision') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_policy_activation_decision_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_054_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_054 policy activation decision verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_054 policy activation decision (decision_json jsonb 列 + policy_activation DecisionRecord 形状 roundtrip + NULL 存量语义)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-route-org-isolation') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_route_org_isolation_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_056_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_056 route org isolation verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_056 route org isolation (route_node/edge org_id 列 + RLS org 匹配或 NULL 存量放行 + SET LOCAL GUC 可见性自证)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-exo-session') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_exo_session_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_046_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_046 exo session verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_046 exo session (TENANT_SCOPED + RLS + active-unique + end CHECK)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-learning-proposal') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_learning_proposal_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_045_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_045 learning proposal verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_045 learning proposal (TENANT_SCOPED + RLS + shadow-gate/approval CHECK)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-simulation-run') {      const rows = await sql.unsafe(substitute(read(FILES.standalone_simulation_run_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_044_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_044 simulation run verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_044 simulation run (TENANT_SCOPED + RLS + isolation CHECK)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-dead-letter') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_dead_letter_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_043_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_043 dead letter verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_043 dead letter (TENANT_SCOPED + RLS + CHECK + unique)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-trace-span') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_trace_span_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_042_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_042 trace span verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_042 trace span (span checks + org/global visibility policy + unique)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-learning-evaluation') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_learning_evaluation_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_041_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_041 learning evaluation verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_041 learning evaluation (TENANT_SCOPED + RLS + CHECK + unique)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-inference-result') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_inference_result_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_040_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_040 inference result verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_040 inference result (TENANT_SCOPED + RLS + CHECK + unique)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-knowledge-entry') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_knowledge_entry_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_039_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_039 knowledge entry verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_039 knowledge entry (TENANT_SCOPED + RLS + scope CHECK + unique)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-agent-task') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_agent_task_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_038_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_038 agent task verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_038 agent task (TENANT_SCOPED + RLS + CHECK + unique)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-agent-manifest') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_agent_manifest_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_037_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_037 agent manifest verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_037 agent manifest (TENANT_SCOPED + RLS + CHECK + unique)');
+      }
+      return;
+    }
+
+    if (command === '--verify-standalone-event-dedup') {
+      const rows = await sql.unsafe(substitute(read(FILES.standalone_event_dedup_verify), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row.standalone_036_verified || 0) !== 1) {
+        console.error('VERIFY FAILED: standalone_036 event dedup verify did not return 1');
+        process.exitCode = 1;
+      } else {
+        console.log('VERIFY OK: standalone_036 event dedup (TENANT_SCOPED + RLS + unique + time-semantics)');
+      }
+      return;
+    }
+
     if (['--verify', '--verify-standalone'].includes(command)) {
       const verifyFile = command === '--verify-standalone' ? FILES.standalone_verify : FILES.verify;
       const rows = await sql.unsafe(substitute(read(verifyFile), schema));
@@ -1006,6 +1457,56 @@ function main() {
       '--rollback-standalone-snapshot-version-counter': 'standalone_snapshot_version_counter_rollback',
       '--apply-standalone-solver-activation': 'standalone_solver_activation',
       '--rollback-standalone-solver-activation': 'standalone_solver_activation_rollback',
+      // NO-02b / NO-05b / NO-05e-b：专项迁移计划（apply/rollback 走通用执行路径；
+      // verify 走上方专用 handler）。此前缺失这些条目导致命令在 which 映射处
+      // read(undefined) 崩溃——CI 从未运行未提交改动，故该潜伏缺陷未被触发；
+      // 本轮随 standalone_035 一并补齐（032/034/035 全部覆盖）。
+      '--apply-standalone-identity-mapping': 'standalone_identity_mapping',
+      '--rollback-standalone-identity-mapping': 'standalone_identity_mapping_rollback',
+      '--apply-standalone-maintenance-quality': 'standalone_maintenance_quality',
+      '--rollback-standalone-maintenance-quality': 'standalone_maintenance_quality_rollback',
+      '--apply-standalone-work-order': 'standalone_work_order',
+      '--rollback-standalone-work-order': 'standalone_work_order_rollback',
+      '--apply-standalone-event-dedup': 'standalone_event_dedup',
+      '--rollback-standalone-event-dedup': 'standalone_event_dedup_rollback',
+      '--apply-standalone-agent-manifest': 'standalone_agent_manifest',
+      '--rollback-standalone-agent-manifest': 'standalone_agent_manifest_rollback',
+      '--apply-standalone-agent-task': 'standalone_agent_task',
+      '--rollback-standalone-agent-task': 'standalone_agent_task_rollback',
+      '--apply-standalone-knowledge-entry': 'standalone_knowledge_entry',
+      '--rollback-standalone-knowledge-entry': 'standalone_knowledge_entry_rollback',
+      '--apply-standalone-inference-result': 'standalone_inference_result',
+      '--rollback-standalone-inference-result': 'standalone_inference_result_rollback',
+      '--apply-standalone-learning-evaluation': 'standalone_learning_evaluation',
+      '--rollback-standalone-learning-evaluation': 'standalone_learning_evaluation_rollback',
+      '--apply-standalone-trace-span': 'standalone_trace_span',
+      '--rollback-standalone-trace-span': 'standalone_trace_span_rollback',
+      '--apply-standalone-dead-letter': 'standalone_dead_letter',
+      '--rollback-standalone-dead-letter': 'standalone_dead_letter_rollback',
+      '--apply-standalone-simulation-run': 'standalone_simulation_run',
+      '--rollback-standalone-simulation-run': 'standalone_simulation_run_rollback',
+      '--apply-standalone-learning-proposal': 'standalone_learning_proposal',
+      '--rollback-standalone-learning-proposal': 'standalone_learning_proposal_rollback',
+      '--apply-standalone-exo-session': 'standalone_exo_session',
+      '--rollback-standalone-exo-session': 'standalone_exo_session_rollback',
+      '--apply-standalone-outcome-annotation': 'standalone_outcome_annotation',
+      '--rollback-standalone-outcome-annotation': 'standalone_outcome_annotation_rollback',
+      '--apply-standalone-shadow-plan-isolation': 'standalone_shadow_plan_isolation',
+      '--rollback-standalone-shadow-plan-isolation': 'standalone_shadow_plan_isolation_rollback',
+      '--apply-standalone-agent-approval': 'standalone_agent_approval',
+      '--rollback-standalone-agent-approval': 'standalone_agent_approval_rollback',
+      '--apply-standalone-decision-records': 'standalone_decision_records',
+      '--rollback-standalone-decision-records': 'standalone_decision_records_rollback',
+      '--apply-standalone-exo-config': 'standalone_exo_config',
+      '--rollback-standalone-exo-config': 'standalone_exo_config_rollback',
+      '--apply-standalone-agent-approval-decision': 'standalone_agent_approval_decision',
+      '--rollback-standalone-agent-approval-decision': 'standalone_agent_approval_decision_rollback',
+      '--apply-standalone-learning-proposal-decision': 'standalone_learning_proposal_decision',
+      '--rollback-standalone-learning-proposal-decision': 'standalone_learning_proposal_decision_rollback',
+      '--apply-standalone-policy-activation-decision': 'standalone_policy_activation_decision',
+      '--rollback-standalone-policy-activation-decision': 'standalone_policy_activation_decision_rollback',
+      '--apply-standalone-route-org-isolation': 'standalone_route_org_isolation',
+      '--rollback-standalone-route-org-isolation': 'standalone_route_org_isolation_rollback',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {

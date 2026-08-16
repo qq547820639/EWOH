@@ -32,11 +32,17 @@ from edge_platform.runtime.protocols import (
 from . import SAMPLE_HZ, STEP_SEC, WINDOW_SEC, new_id
 from .events import EventEngine
 from .features import extract_features
+from edge_platform.contracts.inference_result import validate_inference_result
 
 logger = logging.getLogger("ewoh.inference.pipeline")
 
 WINDOW_SIZE = WINDOW_SEC * SAMPLE_HZ  # 40
 STEP_SIZE = STEP_SEC * SAMPLE_HZ  # 20
+
+# NO-08b（ADR-013）：输入版本缺省标记。规则路径的输入是"实时规则注册表 +
+# 特征窗口"，无单一发布版本号；模型路径无 dataset_version 时同样以
+# unversioned 如实标注（契约要求非空，绝不伪造版本号）。
+UNVERSIONED_INPUT = "unversioned"
 
 # 规则降级模式的启发式量纲（用于 key_features 排序）
 _HEURISTIC_SCALE = {
@@ -397,6 +403,17 @@ class InferencePipeline:
             if triggered:
                 label = "unknown"
                 reason = triggered
+        # NO-08b（ADR-013）：Canonical Inference Result 元数据归一化。
+        # level 按路径显式登记；input_version 取模型卡 dataset_version（无则
+        # unversioned 如实标注）；subject_id 用边缘既有 device_id（语法合法，
+        # 云端经 identity mapping 解析为 EWOH 内部身份）。
+        level = "L1_deterministic_rules" if is_rule else "L2_statistical_ml"
+        input_version = UNVERSIONED_INPUT
+        if not is_rule and meta is not None and meta.get("dataset_version"):
+            input_version = str(meta["dataset_version"])
+        elif not is_rule and model is not None and getattr(model, "dataset_version", None):
+            input_version = str(model.dataset_version)
+        ood_reasons = [reason] if (label == "unknown" and reason) else []
         res = {
             "inference_id": new_id("INF"),
             "device_id": dev,
@@ -414,7 +431,40 @@ class InferencePipeline:
             "entered_event_judgment": entered,
             "unknown_reason": reason,
             "source_type": window[-1].get("source_type"),
+            # NO-08b（ADR-013）新增规范字段（旧字段兼容保留，存储/订阅方不受影响）
+            "level": level,
+            "input_version": input_version,
+            "subject_id": f"device:{dev}",
+            "ood_indicator": {"flag": label == "unknown", "reasons": ood_reasons},
         }
+        # NO-08b：契约自检（fail-closed 留痕）——校验失败不阻断推理主路，
+        # 但必须显式记录 violations（绝不静默吞掉契约漂移）。
+        violations = validate_inference_result({
+            "inferenceId": res["inference_id"],
+            "subjectId": res["subject_id"],
+            "level": level,
+            "modelId": model_id,
+            "modelVersion": model_version,
+            "inputVersion": input_version,
+            "label": label,
+            "confidence": conf,
+            "oodIndicator": res["ood_indicator"],
+            "dataQuality": res["data_quality"],
+            "evidence": {
+                "tsStart": res["ts_start"],
+                "tsEnd": res["ts_end"],
+                "isRule": is_rule,
+                "inferenceMs": res["inference_ms"],
+                "keyFeatures": key_features,
+            },
+        })
+        if violations:
+            logger.error(
+                "inference result contract violations: %s | record=%s",
+                violations,
+                {k: res.get(k) for k in ("inference_id", "label", "model_id", "level", "ood_indicator")},
+            )
+        res["contract_violations"] = violations
         self.storage.insert_inference(res)
         self.bus.publish(STREAM_INFERENCE, res)
         # Task 33：记录推理指标到 MetricsCollector（若已注入）

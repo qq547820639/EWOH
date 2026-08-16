@@ -15,6 +15,7 @@ build_shift_chain 把一个人员班次的原始事件序列链接为 spec 旗�
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from edge_platform.contracts.identity import is_canonical_identity
 from edge_platform.inference import ts_to_ms
 from edge_platform.spatial import new_id, now_iso
 
@@ -219,13 +220,48 @@ class EventGraph:
         return g
 
 
+# 载荷中指向实体的引用键（NO-03b：因果节点强制规范实体引用——Factory Truth，
+# 因果链上的实体引用必须可追溯；非法即 fail-closed 拒绝）
+ENTITY_REF_KEYS = ("person_id", "device_id", "task_id", "station_id", "zone_id")
+
+
+def validate_event_entity_refs(person_id=None, payload=None) -> list[str]:
+    """校验因果节点实体引用（person_id 与载荷中的 *_id 键必须是规范身份）。
+
+    返回错误码列表（空 = 合法）：bad_person_ref / bad_entity_ref:<key>。
+    """
+    errors: list[str] = []
+    if person_id is not None and (
+        not isinstance(person_id, str) or not is_canonical_identity(person_id)
+    ):
+        errors.append("bad_person_ref")
+    for key in ENTITY_REF_KEYS:
+        value = (payload or {}).get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str) or not is_canonical_identity(value):
+            errors.append(f"bad_entity_ref:{key}")
+    return errors
+
+
 def build_shift_chain(graph, person_id, events):
     """把人员班次原始事件序列链接为 spec 旗舰 12 步因果链。
 
     events 为 dict 列表，每项可含 node_type/ts/payload/source_type/confidence/parent_id；
     按列表顺序依次建节点，相邻节点以 'caused' 边相连（前为父），返回建好的节点列表（顺序与输入一致）。
     每个节点载荷自动补 person_id，便于按人员检索与摘要。
+
+    NO-03b：person_id 与载荷实体引用（person_id/device_id/task_id/station_id/zone_id）
+    必须是规范身份（kind:value，ADR-006），非法 fail-closed 拒绝（ValueError）——
+    因果链是工厂事实载体，绝不携带不可追溯的裸 ID。
     """
+    ref_errors = validate_event_entity_refs(person_id=person_id, payload=None)
+    if ref_errors:
+        raise ValueError(f"因果链实体引用非法: {ref_errors}")
+    for ev in events:
+        payload = ev.get("payload") or {}
+        for err in validate_event_entity_refs(person_id=None, payload=payload):
+            raise ValueError(f"因果链实体引用非法（node_type={ev.get('node_type')}）: {err}")
     nodes = []
     prev_id = None
     for ev in events:

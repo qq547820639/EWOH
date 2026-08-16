@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { sql, eq, and, desc } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import {
   ewohEvent,
@@ -94,7 +94,7 @@ export class ErpService {
         eventId,
         eventCode: ERP_ORDER,
         eventType: 'erp_order',
-        severity: 'L2',
+        severity: 'high',
         title: `ERP订单 ${body.externalOrderId}`,
         status: 'received',
         createdAt: now,
@@ -163,7 +163,7 @@ export class ErpService {
         eventId,
         eventCode: ERP_OUTBOUND,
         eventType: 'erp_outbound',
-        severity: 'L1',
+        severity: 'critical',
         title: `ERP出站 ${body.type}`,
         status: 'pending',
         createdAt: new Date(),
@@ -290,13 +290,17 @@ export class ErpService {
     key: string,
     value: string,
   ) {
-    const rows = await this.db.execute(sql`
-      select *
-      from public.ewoh_event
-      where event_code = ${eventCode}
-        and evidence_json->>${key} = ${value}
-      limit 1
-    `);
+    // ADR-079：drizzle 类型安全（raw SQL 完整清零）。
+    const rows = await this.db
+      .select()
+      .from(ewohEvent)
+      .where(
+        and(
+          eq(ewohEvent.eventCode, eventCode),
+          sql`evidence_json->>${key} = ${value}`,
+        ),
+      )
+      .limit(1);
     const row = rows[0] as Record<string, unknown> | undefined;
     if (!row) {
       return null;

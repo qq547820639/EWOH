@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///reliability/dead-letter/v1",
+  "title": "EWOH Canonical Dead Letter Record",
+  "description": "EWOH Dead Letter 体系契约（ADR-024 / NO-11a，§20 Reliability 失败终态）。永久失败消息的终态台账：envelope 快照必填（失败证据可审计，§3）；reason ∈ 封闭注册表（contract_violation/unknown_event_type/permanent_failure/ttl_expired/max_attempts_exceeded）；status ∈ {pending, requeued, discarded}（人审重放语义：requeue 时 attempts+1，杜绝自动无限重试）；discarded 必须带非空 discardedReason（丢弃显式理由，§33 不静默）；sourceId 声明失败源；auditTrail 必须 true。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "reasonRegistry", "statusRegistry", "rules"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "reasonRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z_]{1,32}$" }
+    },
+    "statusRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z_]{1,24}$" }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["envelopeContract", "reasonContract", "attemptContract", "discardContract", "sourceContract", "auditContract", "noAutoRetry"],
+      "properties": {
+        "envelopeContract": {
+          "type": "string",
+          "const": "envelope 快照必填——失败证据可审计（§3 Factory Truth，失败也要回答为什么）"
+        },
+        "reasonContract": {
+          "type": "string",
+          "const": "reason ∈ reasonRegistry 封闭注册表（未注册失败原因整体拒绝）"
+        },
+        "attemptContract": {
+          "type": "string",
+          "const": "attempts ≥ 1 整数；requeue 时 attempts+1（人审重放显式递增，杜绝自动无限重试）"
+        },
+        "discardContract": {
+          "type": "string",
+          "const": "status=discarded 必须带非空 discardedReason（丢弃显式理由，§33 不静默）"
+        },
+        "sourceContract": {
+          "type": "string",
+          "const": "sourceId 非空——失败源（管道归属）声明；correlationId 可空（无云端关联显式 null）"
+        },
+        "auditContract": {
+          "type": "string",
+          "const": "auditTrail 必须 true（与 ADR-016/018/020/021 同规则）"
+        },
+        "noAutoRetry": {
+          "type": "string",
+          "const": "v1 禁止自动重试：requeue 仅人审触发（自动无限重试 = 事实层噪音源，§2 人审边界同源）"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "reasonRegistry": [
+    "contract_violation", "unknown_event_type", "permanent_failure",
+    "ttl_expired", "max_attempts_exceeded"
+  ],
+  "statusRegistry": ["pending", "requeued", "discarded"],
+  "rules": {
+    "envelopeContract": "envelope 快照必填——失败证据可审计（§3 Factory Truth，失败也要回答为什么）",
+    "reasonContract": "reason ∈ reasonRegistry 封闭注册表（未注册失败原因整体拒绝）",
+    "attemptContract": "attempts ≥ 1 整数；requeue 时 attempts+1（人审重放显式递增，杜绝自动无限重试）",
+    "discardContract": "status=discarded 必须带非空 discardedReason（丢弃显式理由，§33 不静默）",
+    "sourceContract": "sourceId 非空——失败源（管道归属）声明；correlationId 可空（无云端关联显式 null）",
+    "auditContract": "auditTrail 必须 true（与 ADR-016/018/020/021 同规则）",
+    "noAutoRetry": "v1 禁止自动重试：requeue 仅人审触发（自动无限重试 = 事实层噪音源，§2 人审边界同源）"
+  }
+}

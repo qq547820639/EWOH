@@ -7,8 +7,8 @@ source:
 managed_package:
   new_group_count: 36
   frozen_alter_count: 12
-  managed_count: 57
-  physical_create_count: 60
+  managed_count: 73
+  physical_create_count: 76
   mapped_existing_count_in_group: 1
 notes:
   - "Authoritative plan table 77 lists 38 logical new names under the label \"36 new tables\"."
@@ -17,7 +17,30 @@ notes:
   - "No frozen capability is silently dropped; the capability map in tmp/ddl/capability-map.csv is the acceptance basis."
   - "F61-02 (2.A): 6 domain persistence tables (ewoh_resource_locks, ewoh_handoffs, ewoh_git_sync_state, ewoh_evidence_metadata, ewoh_factory_replication_sessions, ewoh_idempotency_keys) added as managed tables via standalone_004_ewoh_domain.sql. managed_count 48->54, physical_create_count 38->44."
   - "Task 3 (ADR-004): scheduler V2 runtime tenancy. ewoh_replan_trigger added to the manifest. org_id_policy=GLOBAL_SHARED for ewoh_outbox / ewoh_world_state_snapshot / ewoh_assignment_event: org_id is recorded for lineage only, NOT an RLS isolation boundary (RLS stays OFF per ADR-004; ewoh_assignment_event is DERIVED_TENANT_OWNERSHIP via standalone_028)."
-  - "口径说明（51 vs 57 非漂移）：managed_count=57 是 managed_tables 全量逻辑受管表数（51 张核心受管表 + 6 张 F61-02 域表）。db/verify/001_verify.sql 与 db/verify/standalone_001_verify.sql 的 expected 列表只统计 51 张核心受管表，其 managed_table_count / rls_enabled 期望值=51（run_migrations.js 从本 manifest 派生）；6 张域表由 standalone_004_ewoh_domain.sql 单独创建，并由 --verify-standalone-domain 单独验证（期望值=6）。"
+  - "NO-02b (ADR-006): ewoh_identity_mapping added as TENANT_SCOPED managed table (RLS identity_mapping_org_isolation, standalone_032). managed_count 57->58, physical_create_count 60->61; core managed tables 51->52 (001_verify / standalone_001_verify expected lists updated in lockstep)."
+  - "NO-05b (ADR-010): ewoh_maintenance_condition + ewoh_quality_finding added as TENANT_SCOPED managed tables (RLS maintenance_condition_org_isolation / quality_finding_org_isolation, lifecycle + disposition CHECK, standalone_034). managed_count 58->60, physical_create_count 61->63; 001_verify / standalone_001_verify expected lists 52->54 in lockstep."
+  - "NO-05e-b (ADR-012): ewoh_work_order added as TENANT_SCOPED managed table (RLS work_order_org_isolation, type/origin/severity/status/completion/cancellation CHECK, unique (org_id, work_order_id), standalone_035). managed_count 60->61, physical_create_count 63->64; 001_verify / standalone_001_verify expected lists 54->55 in lockstep."
+  - "NO-04b (ADR-009): ewoh_ingest_event_dedup added as TENANT_SCOPED managed table (RLS ingest_event_dedup_org_isolation, unique (org_id, source, event_id), time-semantics columns, standalone_036). managed_count 61->62, physical_create_count 64->65; 001_verify / standalone_001_verify expected lists 55->56 in lockstep."
+  - "NO-06b (ADR-016): ewoh_agent_manifest added as TENANT_SCOPED managed table (RLS agent_manifest_org_isolation, unique (org_id, agent_id), status/risk/level CHECK (L4 excluded), standalone_037). managed_count 62->63, physical_create_count 65->66; 001_verify / standalone_001_verify expected lists 56->57 in lockstep."
+  - "NO-06f (ADR-017): ewoh_agent_task added as TENANT_SCOPED managed table (RLS agent_task_org_isolation, unique (org_id, task_id), kind/priority/status CHECK, standalone_038). managed_count 63->64, physical_create_count 66->67; 001_verify / standalone_001_verify expected lists 57->58 in lockstep."
+  - "NO-07b (ADR-018 Amendment 1): ewoh_knowledge_entry HARDENED in place via standalone_039 (table physically exists since the original managed-tables package, so no count change): contract columns + scope-tenant consistency CHECK (shared global/industry = sentinel org 00000000-0000-4000-8000-000000000000; tenant scopes = real org) + provenance CHECK + knowledge_entry_service_all RLS (replaces legacy generic policies on this table) + UNIQUE (org_id, entry_id). managed_count/physical_create_count unchanged (64/67); 001_verify / standalone_001_verify expected lists unchanged (table already counted)."
+  - "NO-11a (ADR-024): ewoh_dead_letter added as TENANT_SCOPED managed table (RLS dead_letter_org_isolation, unique (org_id, letter_id), reason/status/attempts/discard CHECK, standalone_043). managed_count 67->68, physical_create_count 70->71; 001_verify / standalone_001_verify expected lists 61->62 in lockstep."
+  - "NO-12a (ADR-025): ewoh_simulation_run added as TENANT_SCOPED managed table (RLS simulation_run_org_isolation, unique (org_id, run_id), kind/status/isolation/completed/failed CHECK, standalone_044). managed_count 68->69, physical_create_count 71->72; 001_verify / standalone_001_verify expected lists 62->63 in lockstep."
+  - "NO-12b (ADR-026): ewoh_learning_proposal added as TENANT_SCOPED managed table (RLS learning_proposal_org_isolation, unique (org_id, proposal_id), kind/status/rule/parameter/values/shadow-gate/approval/rejection/rollback CHECK, standalone_045). managed_count 69->70, physical_create_count 72->73; 001_verify / standalone_001_verify expected lists 63->64 in lockstep."
+  - "NO-12h (ADR-032): ewoh_exo_session added as TENANT_SCOPED managed table (RLS exo_session_org_isolation, unique (org_id, session_id), partial unique (org_id, exo_id) WHERE status=active, status/identity/end-complete/time-order CHECK, standalone_046). managed_count 70->71, physical_create_count 73->74; 001_verify / standalone_001_verify expected lists 64->65 in lockstep."
+  - "NO-12j (ADR-034): ewoh_outcome_annotation added as TENANT_SCOPED managed table (RLS outcome_annotation_org_isolation, unique (org_id, annotation_id), target/kind/judger CHECK, standalone_047). managed_count 71->72, physical_create_count 74->75; 001_verify / standalone_001_verify expected lists 65->66 in lockstep."
+  - "NO-12o (ADR-038): ewoh_schedule_plan HARDENED in place via standalone_048 (existing managed table, no count change): CHECK chk_ewoh_schedule_plan_shadow_not_production (is_shadow=true rows forbidden from production statuses approved/dispatched/executing/completed/confirmed/proposed and from confirmation facts confirmed_by/confirmed_at). managed_count/physical_create_count unchanged (72/75); 001_verify / standalone_001_verify expected lists unchanged (table already counted)."
+  - "NO-12p (ADR-039): ewoh_agent_approval added as TENANT_SCOPED managed table (RLS agent_approval_org_isolation, unique (org_id, approval_id), status/resolved/roles CHECK, standalone_049). managed_count 72->73, physical_create_count 75->76; 001_verify / standalone_001_verify expected lists 66->67 in lockstep."
+  - "NO-13c (ADR-052): ewoh_exo_config added as TENANT_SCOPED managed table (RLS exo_config_org_isolation, unique (org_id, config_id), kind/status-by-kind/support_mode/profile/fit/calibration/time-order CHECK, standalone_051). managed_count 73->74, physical_create_count 76->77; 001_verify / standalone_001_verify expected lists 67->68 in lockstep."
+  - "NO-12y (ADR-048): ewoh_schedule_plan HARDENED in place via standalone_050 (existing managed table, no count change): ADD COLUMN decision_records_json jsonb (Canonical DecisionRecord[] per ADR-047 contract, persistPlan unique projection point; decision history single fact source §12/§18). managed_count/physical_create_count unchanged (73/76); 001_verify / standalone_001_verify expected lists unchanged (table already counted)."
+  - "NO-13j (ADR-059): ewoh_agent_approval HARDENED in place via standalone_052 (existing managed table, no count change): ADD COLUMN decision_json jsonb (Canonical DecisionRecord kind=agent_approval per ADR-047 contract, resolveRow unique authoritative write path atomic with resolution terminal state; decision history single fact source §12/§18). managed_count/physical_create_count unchanged (74/77); 001_verify / standalone_001_verify expected lists unchanged (table already counted)."
+  - "NO-13n (ADR-063): ewoh_learning_proposal HARDENED in place via standalone_053 (existing managed table, no count change): ADD COLUMN decision_json jsonb (Canonical DecisionRecord kind=learning_proposal_activation per ADR-047 contract, approve/reject/rollback written atomically in the same UPDATE as the terminal status; decision history single fact source §12/§18). managed_count/physical_create_count unchanged (74/77); 001_verify / standalone_001_verify expected lists unchanged (table already counted)."
+  - "NO-13o (ADR-064): ewoh_scheduling_policy HARDENED in place via standalone_054 (existing managed table, no count change): ADD COLUMN decision_json jsonb (Canonical DecisionRecord kind=policy_activation per ADR-047 contract, active flip/direct save activation written atomically with the status write; decision history single fact source §12/§18 — Decision Catalog 8 kinds fully wired). managed_count/physical_create_count unchanged (74/77); 001_verify / standalone_001_verify expected lists unchanged (table already counted)."
+  - "NO-13y (ADR-074): ewoh_route_node / ewoh_route_edge HARDENED in place via standalone_056 (existing tables, no count change): ADD COLUMN org_id varchar(255) + RLS route_node_org_isolation / route_edge_org_isolation (org match on app.current_org_id or NULL legacy rows allowed, aligned with standalone_025 semantics; World Model read surface route topology cross-tenant layout leak closed; no app write path today, future writers ctx-inject org_id). managed_count/physical_create_count unchanged (74/77); 001_verify / standalone_001_verify expected lists unchanged."
+  - "NO-10a (ADR-022): ewoh_trace_span added as GLOBAL_SHARED-semantics managed table (trace_span_org_or_global policy: org lineage or global admin, NOT loose; status/duration/time CHECK, unique (trace_id, span_id), standalone_042). managed_count 66->67, physical_create_count 69->70; 001_verify / standalone_001_verify expected lists 60->61 in lockstep."
+  - "NO-09a (ADR-021): ewoh_learning_evaluation added as TENANT_SCOPED managed table (RLS learning_evaluation_org_isolation, unique (org_id, eval_id), evaluation_type/period CHECK, standalone_041). managed_count 65->66, physical_create_count 68->69; 001_verify / standalone_001_verify expected lists 59->60 in lockstep."
+  - "NO-08a (ADR-019): ewoh_inference_result added as TENANT_SCOPED managed table (RLS inference_result_org_isolation, unique (org_id, inference_id), level/confidence/data_quality/ood-consistency CHECK, standalone_040). managed_count 64->65, physical_create_count 67->68; 001_verify / standalone_001_verify expected lists 58->59 in lockstep."
+  - "口径说明（Round 39 结构修复，59 core 非漂移）：managed_count=65 是 managed_tables 全量逻辑受管表数（52 张核心受管表 + 6 张 F61-02 域表 + 2 张 NO-05b 维护/质量表 + 1 张 NO-05e-b 工单表）。db/verify/001_verify.sql 与 db/verify/standalone_001_verify.sql 的 expected 列表只统计 55 张核心受管表（核心 = 52 原始受管 + identity_mapping/maintenance_condition/quality_finding/work_order/ingest_event_dedup/agent_manifest/agent_task 共 7 张历轮 TENANT_SCOPED 表，Round 39 起 +inference_result 与 knowledge_entry 硬化同计数）。db/verify/001_verify.sql 与 db/verify/standalone_001_verify.sql 的 expected 列表只统计 59 张核心受管表，其 managed_table_count / rls_enabled 期望值=59（run_migrations.js 从本 manifest 派生）；6 张域表由 standalone_004_ewoh_domain.sql 单独创建，并由 --verify-standalone-domain 单独验证（期望值=6）。Round 39 修复：032-040 的 8 张表条目此前误挂 additional_hardened_existing_tables 段（YAML 缩进归属），已移回 managed_tables——修复后 computed=65 与 reconcile 口径一致。"
 managed_tables:
   - domain: "Scale"
     logical_name: "ewoh_asset_package"
@@ -117,6 +140,10 @@ managed_tables:
     org_id_policy: "NOT NULL"
     status: "new"
     capability_mapping: ["knowledge.entry"]
+    # NO-07b（ADR-018 Amendment 1，standalone_039）：五层 scope 硬化——
+    # 共享层（global/industry）= 哨兵 org 00000000-0000-4000-8000-000000000000；
+    # 租户层（customer/factory/private_operational）= 真实 org；
+    # RLS knowledge_entry_service_all 强制租户行隔离 + 共享行全租户可读。
   - domain: "Model"
     logical_name: "ewoh_model_asset"
     physical_table: "ewoh_model_asset"
@@ -418,6 +445,165 @@ managed_tables:
     org_id_policy: "special"
     status: "new"
     capability_mapping: ["domain.idempotency"]
+  # TENANT_SCOPED（ADR-006，standalone_032）：第三方 ID → 规范身份映射；RLS 强制 org 隔离。
+  - domain: "Identity"
+    logical_name: "ewoh_identity_mapping"
+    physical_table: "ewoh_identity_mapping"
+    business_key_columns: ["org_id","source_system","source_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["identity.mapping"]
+  # TENANT_SCOPED（ADR-010，standalone_034）：维护状态与质量发现；RLS 强制 org 隔离。
+  - domain: "Maintenance"
+    logical_name: "ewoh_maintenance_condition"
+    physical_table: "ewoh_maintenance_condition"
+    business_key_columns: ["org_id","condition_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["maintenance.condition"]
+  - domain: "Quality"
+    logical_name: "ewoh_quality_finding"
+    physical_table: "ewoh_quality_finding"
+    business_key_columns: ["org_id","finding_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["quality.finding"]
+  # TENANT_SCOPED（ADR-012，standalone_035）：工单 Execution 事实；RLS 强制 org 隔离。
+  - domain: "Maintenance"
+    logical_name: "ewoh_work_order"
+    physical_table: "ewoh_work_order"
+    business_key_columns: ["org_id","work_order_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["workorder.execution"]
+  # TENANT_SCOPED（ADR-009，standalone_036）：Edge→Cloud 事件上行传输级幂等去重台账；
+  # 去重键 (org_id, source, event_id)；is_late/clock_drift 时间语义随台账落库。
+  - domain: "EventBackbone"
+    logical_name: "ewoh_ingest_event_dedup"
+    physical_table: "ewoh_ingest_event_dedup"
+    business_key_columns: ["org_id","source","event_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["event-backbone.dedup"]
+  # TENANT_SCOPED（ADR-016，standalone_037）：Agent 注册清单；RLS 强制 org 隔离；
+  # 契约校验（validateAgentManifest）为注册唯一入口，L4 由 CHECK 兜底排除。
+  - domain: "MultiAgent"
+    logical_name: "ewoh_agent_manifest"
+    physical_table: "ewoh_agent_manifest"
+    business_key_columns: ["org_id","agent_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["agent.runtime"]
+  # TENANT_SCOPED（ADR-017，standalone_038）：结构化编排任务；RLS 强制 org 隔离；
+  # 状态推进唯一写者=编排服务（状态机 + CAS），DB CHECK 守护枚举。
+  - domain: "MultiAgent"
+    logical_name: "ewoh_agent_task"
+    physical_table: "ewoh_agent_task"
+    business_key_columns: ["org_id","task_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["agent.orchestration"]
+  # TENANT_SCOPED（ADR-019，standalone_040）：云侧推理结果台账；RLS 强制 org 隔离；
+  # 写入唯一入口=InferenceResultService（契约校验 fail-closed），DB CHECK 守护
+  # level/confidence/dataQuality/OOD 一致性。
+  - domain: "Intelligence"
+    logical_name: "ewoh_inference_result"
+    physical_table: "ewoh_inference_result"
+    business_key_columns: ["org_id","inference_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["intelligence.inference_result"]
+  # TENANT_SCOPED（ADR-021，standalone_041）：学习评估台账；RLS 强制 org 隔离；
+  # 写入唯一入口=LearningService.evaluate（契约校验 fail-closed）；观测层
+  # （绝不自动回写生产规则，§2）。
+  - domain: "Learning"
+    logical_name: "ewoh_learning_evaluation"
+    physical_table: "ewoh_learning_evaluation"
+    business_key_columns: ["org_id","eval_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["learning.evaluation"]
+  # GLOBAL_SHARED 语义（ADR-022，standalone_042）：trace span 追踪索引；
+  # org_id 仅 lineage（可空）；可见性 = 本租户行或全局管理员
+  # （trace_span_org_or_global 策略，非 loose）。观测基建，非审计资产。
+  - domain: "Observability"
+    logical_name: "ewoh_trace_span"
+    physical_table: "ewoh_trace_span"
+    business_key_columns: ["trace_id","span_id"]
+    org_id_policy: "GLOBAL_SHARED"
+    status: "new"
+    capability_mapping: ["observability.trace"]
+  # TENANT_SCOPED（ADR-024，standalone_043）：死信终态台账；RLS 强制 org 隔离；
+  # 写入唯一入口=DeadLetterService.record（契约校验 fail-closed）；
+  # letterId=(sourceId, eventId) 确定性推导幂等；v1 禁止自动重试（人审 requeue）。
+  - domain: "Reliability"
+    logical_name: "ewoh_dead_letter"
+    physical_table: "ewoh_dead_letter"
+    business_key_columns: ["org_id","letter_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["reliability.dead_letter"]
+  # TENANT_SCOPED（ADR-025，standalone_044）：数字孪生仿真运行台账；
+  # is_simulation=true 表级 CHECK 兜底（§13 三层强制之 DB 层）；RLS 强制 org
+  # 隔离；写入唯一入口=SimulationService.run（契约校验 fail-closed）；
+  # completed 必须 results、failed 必须 failureReason（CHECK 兜底，§33 不静默）。
+  - domain: "Simulation"
+    logical_name: "ewoh_simulation_run"
+    physical_table: "ewoh_simulation_run"
+    business_key_columns: ["org_id","run_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["simulation.digital_twin"]
+  # TENANT_SCOPED（ADR-026，standalone_045）：学习回路 v2 反馈腿台账；
+  # 影子评估前置 + 人审激活阶梯（approved 必须 approver+时间）+ 回滚理由
+  # CHECK 兜底（§2/§33）；RLS 强制 org 隔离；写入唯一入口=
+  # LearningProposalService（契约校验 fail-closed）。
+  - domain: "Learning"
+    logical_name: "ewoh_learning_proposal"
+    physical_table: "ewoh_learning_proposal"
+    business_key_columns: ["org_id","proposal_id"]
+    org_id_policy: "NOT NULL"
+    status: "altered"
+    capability_mapping: ["learning.feedback_loop", "learning.proposal_activation_decision"]
+  # TENANT_SCOPED（ADR-032，standalone_046）：外骨骼↔人员绑定会话台账；
+  # 部分唯一索引（org_id, exo_id WHERE status=active）机器强制一台外骨骼
+  # 同时一个活跃会话（§7）；ended/aborted 必须 actual_end_at。
+  - domain: "Exoskeleton"
+    logical_name: "ewoh_exo_session"
+    physical_table: "ewoh_exo_session"
+    business_key_columns: ["org_id","session_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["worker.exo_session"]
+  # TENANT_SCOPED（ADR-034，standalone_047）：结果标注台账；
+  # Decision→Outcome 结构化事实（学习回路模型腿真值来源前置）。
+  - domain: "Learning"
+    logical_name: "ewoh_outcome_annotation"
+    physical_table: "ewoh_outcome_annotation"
+    business_key_columns: ["org_id","annotation_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["learning.outcome_annotation"]
+  # TENANT_SCOPED（ADR-039，standalone_049）：Agent 命令审批台账；
+  # 待批命令跨重启持久化（ADR-030 决策 4 边界收口，§11）。
+  - domain: "Agent"
+    logical_name: "ewoh_agent_approval"
+    physical_table: "ewoh_agent_approval"
+    business_key_columns: ["org_id","approval_id"]
+    org_id_policy: "NOT NULL"
+    status: "altered"
+    capability_mapping: ["agent.approval_persistence", "agent.approval_decision"]
+  # TENANT_SCOPED（ADR-051/ADR-052，standalone_051）：外骨骼配置台账；
+  # Support Mode/Assist Profile/Fit/Calibration 配置事实（kind/status 按 kind/
+  # 判定事实/时间 CHECK + record_json 契约形态留痕，§7）。
+  - domain: "Exoskeleton"
+    logical_name: "ewoh_exo_config"
+    physical_table: "ewoh_exo_config"
+    business_key_columns: ["org_id","config_id"]
+    org_id_policy: "NOT NULL"
+    status: "new"
+    capability_mapping: ["worker.exo_configuration"]
+
 additional_hardened_existing_tables:
   - domain: "Organization"
     logical_name: "ewoh_organization"
@@ -480,8 +666,8 @@ additional_hardened_existing_tables:
     physical_table: "ewoh_scheduling_policy"
     business_key_columns: ["org_id","version"]
     org_id_policy: "NOT NULL"
-    status: "new"
-    capability_mapping: ["scheduler.policy"]
+    status: "altered"
+    capability_mapping: ["scheduler.policy", "scheduler.policy_activation_decision"]
   - domain: "Scheduling"
     logical_name: "ewoh_replan_trigger"
     physical_table: "ewoh_replan_trigger"

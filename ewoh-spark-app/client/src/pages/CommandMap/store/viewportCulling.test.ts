@@ -4,6 +4,7 @@ import {
   isPointWithinBounds,
   makeVisibleBounds,
   cullPaddingFor,
+  worldBoundsFromTransform,
   type VisibleBounds,
 } from './viewportCulling';
 
@@ -62,5 +63,61 @@ describe('cullPaddingFor', () => {
   it('取 bbox 半长边作为 padding（大图形跨边界不被误删）', () => {
     expect(cullPaddingFor({ x: 0, y: 0, bboxW: 100, bboxH: 40 })).toBe(50);
     expect(cullPaddingFor({ x: 0, y: 0 })).toBe(0);
+  });
+});
+
+describe('worldBoundsFromTransform（NO-13e / ADR-054）', () => {
+  const VB = { minX: -100, minY: -50, w: 400, h: 300 };
+
+  it('未缩放（scale=1, 无位移）：全视口 = 世界全范围（容器与 vb 等比时）', () => {
+    const bounds = worldBoundsFromTransform(
+      { scale: 1, positionX: 0, positionY: 0 },
+      { width: 400, height: 300 },
+      VB,
+    );
+    expect(bounds).toEqual({ minX: -100, minY: -50, maxX: 300, maxY: 250 });
+  });
+
+  it('xMidYMid meet 居中偏移：容器比例不匹配时世界范围向中间收缩', () => {
+    const bounds = worldBoundsFromTransform(
+      { scale: 1, positionX: 0, positionY: 0 },
+      { width: 400, height: 150 }, // fit = min(1, 0.5) = 0.5
+      VB,
+    );
+    expect(bounds).toEqual({ minX: -300, minY: -50, maxX: 500, maxY: 250 });
+  });
+
+  it('zoom in（scale=2）→ 可视世界范围减半（以屏幕中心为中心）', () => {
+    const bounds = worldBoundsFromTransform(
+      { scale: 2, positionX: 0, positionY: 0 },
+      { width: 400, height: 300 },
+      VB,
+    );
+    expect(bounds).toEqual({ minX: -100, minY: -50, maxX: 100, maxY: 100 });
+  });
+
+  it('pan（位移）→ 世界范围平移（反方向）', () => {
+    const bounds = worldBoundsFromTransform(
+      { scale: 1, positionX: -100, positionY: 50 },
+      { width: 400, height: 300 },
+      VB,
+    );
+    expect(bounds).toEqual({ minX: 0, minY: -100, maxX: 400, maxY: 200 });
+  });
+
+  it('非法输入（null/NaN/非正 scale/零尺寸）→ null（保持默认全量渲染，§33 不猜）', () => {
+    expect(worldBoundsFromTransform(null, { width: 400, height: 300 }, VB)).toBeNull();
+    expect(
+      worldBoundsFromTransform({ scale: Number.NaN, positionX: 0, positionY: 0 }, { width: 400, height: 300 }, VB),
+    ).toBeNull();
+    expect(
+      worldBoundsFromTransform({ scale: 0, positionX: 0, positionY: 0 }, { width: 400, height: 300 }, VB),
+    ).toBeNull();
+    expect(
+      worldBoundsFromTransform({ scale: 1, positionX: 0, positionY: 0 }, { width: 0, height: 0 }, VB),
+    ).toBeNull();
+    expect(
+      worldBoundsFromTransform({ scale: 1, positionX: 0, positionY: 0 }, { width: 400, height: 300 }, { minX: 0, minY: 0, w: 0, h: 0 }),
+    ).toBeNull();
   });
 });

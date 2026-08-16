@@ -354,7 +354,7 @@ describe('P0-5: SchedulingObjectiveEvaluator', () => {
           dueAtMs: FIXED_NOW + 40 * MIN,
         },
       ],
-      devices: [{ id: 'd1', workerName: null, deviceModel: null, batteryPct: 100, online: true, status: 'online', capabilities: [] }],
+      devices: [{ id: 'd1', workerName: null, deviceModel: null, batteryPct: 100, online: true, status: 'AVAILABLE', capabilities: [] }],
       stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 1 }],
     });
     jest.spyOn(Date, 'now').mockReturnValue(FIXED_NOW);

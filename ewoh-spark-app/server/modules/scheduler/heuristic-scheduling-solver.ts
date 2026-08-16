@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { qualityFindingsBlockDispatch } from '@shared/quality';
 import type {
   DecisionTrace,
   SchedulingAssignment,
@@ -15,6 +16,8 @@ import {
   type EligiblePerson,
   type EligibleTask,
 } from './eligibility.service';
+import type { CapabilityRecord } from '@shared/capability';
+import { deviceCapabilityNames, personSkillNames } from './capability-projection';
 import { RoutingService } from './routing.service';
 import { RouteCostProvider } from './route-cost.provider';
 import { createRouteCostMemo, type RouteCostMemo, type RouteCostMemoStats } from './route-cost-memo';
@@ -116,7 +119,11 @@ interface ReuseContext {
   deviceById: Map<string, WorldStateSnapshot['devices'][number]>;
   stationById: Map<string, WorldStateSnapshot['stations'][number]>;
   stationCapabilitiesById: Map<string, string[]>;
+  /** NO-12v / ADR-045：契约形态工位能力（匹配优先）。 */
+  stationCapabilityRecordsById: Map<string, CapabilityRecord[]>;
   stationCapacityById: Map<string, number | null>;
+  stationMaintenanceBlockedById: Map<string, boolean>;
+  stationQualityBlockedById: Map<string, boolean>;
   personPointById: Map<string, { x: number | null; y: number | null } | undefined>;
   routeCostMemo: RouteCostMemo;
   eligiblePersonById: Map<string, EligiblePerson>;
@@ -354,15 +361,26 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     // ---- P0 性能：任务无关索引一次性构建（hoist 出任务循环） ----
     // 工位 capability/capacity（原实现每任务重建）。
     const stationCapabilitiesById = new Map<string, string[]>();
+    const stationCapabilityRecordsById = new Map<string, CapabilityRecord[]>();
     const stationCapacityById = new Map<string, number | null>();
+    // NO-05c / NO-05d（ADR-010/011）：工位维护/质量封锁（与 candidate-engine 同源
+    // 语义——活跃维护事实 / critical·high 活跃质量发现 → 封锁，fail-closed）。
+    const stationMaintenanceBlockedById = new Map<string, boolean>();
+    const stationQualityBlockedById = new Map<string, boolean>();
     for (const s of snapshot.stations) {
       stationCapabilitiesById.set(s.id, s.capabilities ?? []);
+      stationCapabilityRecordsById.set(s.id, s.capabilityRecords ?? []);
       stationCapacityById.set(s.id, s.capacity ?? null);
+      stationMaintenanceBlockedById.set(s.id, (s.maintenance?.length ?? 0) > 0);
+      stationQualityBlockedById.set(
+        s.id,
+        qualityFindingsBlockDispatch(s.qualityFindings ?? null),
+      );
     }
     // 人员技能索引（staged candidate pipeline：按技能预筛人员）。
     const personBySkill = new Map<string, WorldStateSnapshot['persons'][number][]>();
     for (const p of snapshot.persons) {
-      for (const skill of p.skills ?? []) {
+      for (const skill of personSkillNames(p)) {
         let arr = personBySkill.get(skill);
         if (!arr) {
           arr = [];
@@ -377,7 +395,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       WorldStateSnapshot['devices'][number][]
     >();
     for (const d of snapshot.devices) {
-      for (const cap of d.capabilities ?? []) {
+      for (const cap of deviceCapabilityNames(d)) {
         let arr = deviceByCapability.get(cap);
         if (!arr) {
           arr = [];
@@ -423,6 +441,9 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         availableWindows: personExt.availableWindows ?? null,
         dataQuality: p.dataQuality,
         source: personExt.source,
+        // NO-05c / NO-05d：活跃维护/质量事实（fail-closed 拒派）。
+        maintenance: p.maintenance ?? null,
+        qualityFindings: p.qualityFindings ?? null,
       });
     }
     const eligibleDeviceById = new Map<string, EligibleDevice>();
@@ -441,6 +462,9 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         maintenanceWindows: deviceExt.maintenanceWindows ?? null,
         dataQuality: d.dataQuality,
         source: deviceExt.source,
+        // NO-05c / NO-05d：活跃维护/质量事实（fail-closed 拒派）。
+        maintenance: d.maintenance ?? null,
+        qualityFindings: d.qualityFindings ?? null,
       });
     }
     // run-local 确定性路径成本 memo（per-solve-call，几何点对键）。
@@ -751,7 +775,10 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           deviceById,
           stationById,
           stationCapabilitiesById,
+          stationCapabilityRecordsById,
           stationCapacityById,
+          stationMaintenanceBlockedById,
+          stationQualityBlockedById,
           personPointById,
           routeCostMemo,
           eligiblePersonById,
@@ -1042,7 +1069,11 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
                 candidateStationId: stationId,
                 stationCapacityById,
                 stationCapabilitiesById,
+                stationCapabilityRecordsById,
                 bookedStationCounts,
+                // NO-05c / NO-05d：候选工位维护/质量封锁（fail-closed 拒派）。
+                stationMaintenanceBlockedById,
+                stationQualityBlockedById,
               },
             );
 
@@ -1618,10 +1649,13 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     if (entry.stationId && !station) return null;
 
     // person 级校验（与 eligibility 对应原因一致；任一失败即不可复用）。
-    if (person.status !== 'available') return null;
+    if (person.status !== 'AVAILABLE') return null;
     if (person.loadLevel > ctx.effectiveMaxLoad) return null;
     if (ctx.safetyBlockedPersonIds.includes(person.id)) return null;
     if (!this.personMatchesLock(person.id, task.id, ctx.lockedPersonByTask)) return null;
+    // NO-05c / NO-05d：活跃维护/质量事实 → 不可复用（fail-closed，与枚举路径同判据）。
+    if ((person.maintenance?.length ?? 0) > 0) return null;
+    if (qualityFindingsBlockDispatch(person.qualityFindings ?? null)) return null;
     if (
       this.isExcludedResource(
         task.id,
@@ -1679,6 +1713,9 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       }
       if (!device.online || device.batteryPct < ctx.effectiveMinBattery) return null;
       if (device.status === 'fault' || device.status === 'maintenance') return null;
+      // NO-05c / NO-05d：活跃维护/质量事实 → 不可复用（fail-closed）。
+      if ((device.maintenance?.length ?? 0) > 0) return null;
+      if (qualityFindingsBlockDispatch(device.qualityFindings ?? null)) return null;
       const requiredCaps = task.requiredDeviceCapabilities ?? [];
       if (
         requiredCaps.length > 0 &&
@@ -1708,6 +1745,9 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         const caps = ctx.stationCapabilitiesById.get(entry.stationId) ?? [];
         if (!requiredStationCaps.every((c) => caps.includes(c))) return null;
       }
+      // NO-05c / NO-05d：候选工位维护/质量封锁 → 不可复用（fail-closed）。
+      if (ctx.stationMaintenanceBlockedById.get(entry.stationId)) return null;
+      if (ctx.stationQualityBlockedById.get(entry.stationId)) return null;
     }
     if (task.zoneId && ctx.forbiddenZoneIds.includes(task.zoneId)) return null;
 

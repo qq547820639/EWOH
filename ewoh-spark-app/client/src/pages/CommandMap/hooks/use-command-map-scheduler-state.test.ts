@@ -27,7 +27,7 @@ describe('buildCommandMapState（聚合选择器）', () => {
   it('聚合查询结果 + UI state（冲突经 conflictVM 分组）', () => {
     const state = buildCommandMapState({
       snapshot: SNAPSHOT,
-      resources: [{ id: 'p1', type: 'person', status: 'available', capabilities: [], certifications: [], location: { stationId: null, zoneId: null, x: 0, y: 0 }, availableWindows: [], reservations: [], telemetry: {}, version: 1 } as ResourceState],
+      resources: [{ id: 'p1', type: 'person', status: 'AVAILABLE', capabilities: [], certifications: [], location: { stationId: null, zoneId: null, x: 0, y: 0 }, availableWindows: [], reservations: [], telemetry: {}, version: 1 } as ResourceState],
       plans: [{ planId: 'P1', planName: '方案A', version: 1, status: 'shadow', trigger: { type: 'MANUAL', entityId: null }, snapshotVersion: 'WS-1', assignments: [], metrics: {}, baselineDelta: {}, violations: [], createdAt: '' } as unknown as SchedulingPlanV2],
       routes: null,
       conflicts: [

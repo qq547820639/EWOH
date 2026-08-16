@@ -177,7 +177,7 @@ function buildResourceItems(
             ? info.online
               ? 'online'
               : 'offline'
-            : (d?.status ?? e.status ?? 'online'),
+            : (d?.status ?? e.status ?? 'AVAILABLE'),
       });
     } else if (e.entityType === 'workstation') {
       const w = worldState?.workstations.find((x) => x.entityId === e.entityId);

@@ -9,6 +9,7 @@
  * - 反馈驱动（SchedulingFeedback KPI）的 shadow 对比生效
  */
 import { NotFoundException } from '@nestjs/common';
+import { validateDecision } from '@shared/decision';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { ewohSchedulingPolicy } from '@server/database/schema';
 import { EligibilityService } from '../eligibility.service';
@@ -549,5 +550,46 @@ describe('P2-T2: Solver Objective 8 权重版本化', () => {
     // 缺失项用默认常量。
     expect(policy.weights.lateness).toBe(3);
     expect(policy.weights.station).toBe(1);
+  });
+
+  // ── NO-13o / ADR-064：policy_activation 决策留痕（kind #8——8 类收口） ──
+
+  it('NO-13o：activate 行翻转 → decisionJson 与 active 同 UPDATE 落库（契约门内 + 判定事实）', async () => {
+    const config = defaultConfig();
+    const { db, policies } = makePolicyDb(seedPolicyRows(config, 1));
+    const { svc } = makeScheduler(db);
+
+    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 });
+    const { config: activated } = await svc.activatePolicyVersion(
+      2,
+      { approver: 'op1', reason: '人工审批激活' },
+      { userId: 'op1', primaryOrgId: 'org1' } as never,
+    );
+    expect(activated.configVersion).toBe(2);
+    const v2 = policies.find((p) => p.configVersion === 2);
+    const decision = v2?.decisionJson as Record<string, unknown>;
+    expect(decision).toBeDefined();
+    expect(decision.decisionId).toBe('decision:policy:v2:activation');
+    expect(decision.kind).toBe('policy_activation');
+    expect(decision.status).toBe('executed');
+    expect(decision.decisionAuthority).toBe('human');
+    expect(decision.subject).toBe('policy:v2');
+    expect(decision.riskLevel).toBe('high');
+    expect((decision.selected as Record<string, unknown>).reason).toEqual(['人工审批激活']);
+    expect((decision.approver as Record<string, unknown>).actor).toBe('user:op1');
+    expect(validateDecision(decision)).toEqual([]);
+  });
+
+  it('NO-13o：savePolicy 直接保存即激活路径 → decisionJson 落库（reason 缺省）', async () => {
+    const { db, policies } = makePolicyDb(seedPolicyRows(defaultConfig(), 1));
+    const policyService = new SchedulingPolicyService(db);
+    const saved = await policyService.savePolicy(defaultConfig(), 'org1', 'admin');
+    expect(saved.configVersion).toBe(2);
+    const v2 = policies.find((p) => p.configVersion === 2);
+    const decision = v2?.decisionJson as Record<string, unknown>;
+    expect(decision).toBeDefined();
+    expect(decision.decisionId).toBe('decision:policy:v2:activation');
+    expect((decision.selected as Record<string, unknown>).reason).toEqual(['policy-save-activated']);
+    expect(validateDecision(decision)).toEqual([]);
   });
 });

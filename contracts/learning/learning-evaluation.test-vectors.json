@@ -1,0 +1,151 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "LearningEvaluation 契约共享测试向量（ADR-021 / NO-09a）。Python（src/edge_platform/contracts/learning_evaluation.py）、TypeScript（ewoh-spark-app/shared/learning-evaluation.ts）与 scripts/audit-domain-contracts.js 独立仲裁共用同一份向量。",
+  "records": [
+    {
+      "name": "valid_full_metrics",
+      "record": {
+        "evalId": "le:periodic:2026-08-16T00:00:00Z",
+        "orgId": "org-1",
+        "evaluationType": "periodic",
+        "periodStart": "2026-08-16T00:00:00Z",
+        "periodEnd": "2026-08-16T08:00:00Z",
+        "engineVersion": "1.0.0",
+        "metrics": {
+          "recommendationAcceptanceRate": 0.75,
+          "planSuccessRate": 0.9,
+          "taskDelayP95Ms": 45000,
+          "riskOutcomeRate": 0.8,
+          "humanOverrideRate": 0.05,
+          "modelAccuracy": null,
+          "schedulerQualityRate": 0.12
+        },
+        "basis": [
+          "ewoh_ai_suggestion.plan_content（A2→A3 接受率）",
+          "KpiService delivery（completion/lateness，真实聚合复用）",
+          "ewoh_event severity/status（L1-L2 结局）",
+          "ewoh_scheduling_feedback override_count",
+          "modelAccuracy=unknown（台账无 outcome 标注，§10）",
+          "KpiService solver.heuristicFallbackRate"
+        ],
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "missing_metric_key",
+      "record": {
+        "evalId": "le:periodic:2026-08-16T00:00:00Z",
+        "orgId": "org-1",
+        "evaluationType": "periodic",
+        "periodStart": "2026-08-16T00:00:00Z",
+        "periodEnd": "2026-08-16T08:00:00Z",
+        "engineVersion": "1.0.0",
+        "metrics": {
+          "recommendationAcceptanceRate": 0.75,
+          "planSuccessRate": 0.9,
+          "taskDelayP95Ms": 45000,
+          "riskOutcomeRate": 0.8,
+          "humanOverrideRate": 0.05,
+          "schedulerQualityRate": 0.12
+        },
+        "basis": ["x"],
+        "auditTrail": true
+      },
+      "expectError": "metric_missing"
+    },
+    {
+      "name": "unknown_metric_key",
+      "record": {
+        "evalId": "le:periodic:2026-08-16T00:00:00Z",
+        "orgId": "org-1",
+        "evaluationType": "periodic",
+        "periodStart": "2026-08-16T00:00:00Z",
+        "periodEnd": "2026-08-16T08:00:00Z",
+        "engineVersion": "1.0.0",
+        "metrics": {
+          "recommendationAcceptanceRate": 0.75,
+          "planSuccessRate": 0.9,
+          "taskDelayP95Ms": 45000,
+          "riskOutcomeRate": 0.8,
+          "humanOverrideRate": 0.05,
+          "modelAccuracy": null,
+          "schedulerQualityRate": 0.12,
+          "teleportRate": 0.99
+        },
+        "basis": ["x"],
+        "auditTrail": true
+      },
+      "expectError": "unknown_metric"
+    },
+    {
+      "name": "bad_period_order",
+      "record": {
+        "evalId": "le:periodic:2026-08-16T00:00:00Z",
+        "orgId": "org-1",
+        "evaluationType": "periodic",
+        "periodStart": "2026-08-16T08:00:00Z",
+        "periodEnd": "2026-08-16T00:00:00Z",
+        "engineVersion": "1.0.0",
+        "metrics": {
+          "recommendationAcceptanceRate": null,
+          "planSuccessRate": null,
+          "taskDelayP95Ms": null,
+          "riskOutcomeRate": null,
+          "humanOverrideRate": null,
+          "modelAccuracy": null,
+          "schedulerQualityRate": null
+        },
+        "basis": ["x"],
+        "auditTrail": true
+      },
+      "expectError": "bad_period"
+    },
+    {
+      "name": "empty_basis",
+      "record": {
+        "evalId": "le:periodic:2026-08-16T00:00:00Z",
+        "orgId": "org-1",
+        "evaluationType": "periodic",
+        "periodStart": "2026-08-16T00:00:00Z",
+        "periodEnd": "2026-08-16T08:00:00Z",
+        "engineVersion": "1.0.0",
+        "metrics": {
+          "recommendationAcceptanceRate": null,
+          "planSuccessRate": null,
+          "taskDelayP95Ms": null,
+          "riskOutcomeRate": null,
+          "humanOverrideRate": null,
+          "modelAccuracy": null,
+          "schedulerQualityRate": null
+        },
+        "basis": [],
+        "auditTrail": true
+      },
+      "expectError": "basis_required"
+    },
+    {
+      "name": "audit_missing",
+      "record": {
+        "evalId": "le:periodic:2026-08-16T00:00:00Z",
+        "orgId": "org-1",
+        "evaluationType": "periodic",
+        "periodStart": "2026-08-16T00:00:00Z",
+        "periodEnd": "2026-08-16T08:00:00Z",
+        "engineVersion": "1.0.0",
+        "metrics": {
+          "recommendationAcceptanceRate": null,
+          "planSuccessRate": null,
+          "taskDelayP95Ms": null,
+          "riskOutcomeRate": null,
+          "humanOverrideRate": null,
+          "modelAccuracy": null,
+          "schedulerQualityRate": null
+        },
+        "basis": ["x"],
+        "auditTrail": false
+      },
+      "expectError": "audit_required"
+    }
+  ]
+}

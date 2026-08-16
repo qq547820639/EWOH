@@ -1,0 +1,128 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "DeadLetter 契约共享测试向量（ADR-024 / NO-11a）。Python（src/edge_platform/contracts/dead_letter.py）、TypeScript（ewoh-spark-app/shared/dead-letter.ts）与 scripts/audit-domain-contracts.js 独立仲裁共用同一份向量。",
+  "records": [
+    {
+      "name": "valid_pending",
+      "record": {
+        "letterId": "dl:abc123:EVT-1",
+        "sourceId": "cloud:ingest",
+        "reason": "unknown_event_type",
+        "attempts": 1,
+        "status": "pending",
+        "envelope": {
+          "eventId": "EVT-1",
+          "eventType": "TeleportEvent",
+          "source": "edge:world-projection",
+          "occurredAt": "2026-08-16T08:00:00Z"
+        },
+        "correlationId": null,
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_requeued_attempts_incremented",
+      "record": {
+        "letterId": "dl:abc123:EVT-1",
+        "sourceId": "cloud:ingest",
+        "reason": "unknown_event_type",
+        "attempts": 2,
+        "status": "requeued",
+        "envelope": {
+          "eventId": "EVT-1",
+          "eventType": "TeleportEvent",
+          "source": "edge:world-projection",
+          "occurredAt": "2026-08-16T08:00:00Z"
+        },
+        "correlationId": null,
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_discarded_with_reason",
+      "record": {
+        "letterId": "dl:abc123:EVT-2",
+        "sourceId": "cloud:ingest",
+        "reason": "contract_violation",
+        "attempts": 1,
+        "status": "discarded",
+        "discardedReason": "上游设备固件错误，人工确认丢弃",
+        "envelope": { "eventId": "EVT-2" },
+        "correlationId": null,
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "unknown_reason",
+      "record": {
+        "letterId": "dl:abc123:EVT-3",
+        "sourceId": "cloud:ingest",
+        "reason": "teleport_failure",
+        "attempts": 1,
+        "status": "pending",
+        "envelope": { "eventId": "EVT-3" },
+        "correlationId": null,
+        "auditTrail": true
+      },
+      "expectError": "unknown_reason"
+    },
+    {
+      "name": "zero_attempts",
+      "record": {
+        "letterId": "dl:abc123:EVT-4",
+        "sourceId": "cloud:ingest",
+        "reason": "permanent_failure",
+        "attempts": 0,
+        "status": "pending",
+        "envelope": { "eventId": "EVT-4" },
+        "correlationId": null,
+        "auditTrail": true
+      },
+      "expectError": "bad_attempts"
+    },
+    {
+      "name": "discarded_without_reason",
+      "record": {
+        "letterId": "dl:abc123:EVT-5",
+        "sourceId": "cloud:ingest",
+        "reason": "permanent_failure",
+        "attempts": 1,
+        "status": "discarded",
+        "envelope": { "eventId": "EVT-5" },
+        "correlationId": null,
+        "auditTrail": true
+      },
+      "expectError": "discard_reason_required"
+    },
+    {
+      "name": "missing_envelope",
+      "record": {
+        "letterId": "dl:abc123:EVT-6",
+        "sourceId": "cloud:ingest",
+        "reason": "permanent_failure",
+        "attempts": 1,
+        "status": "pending",
+        "correlationId": null,
+        "auditTrail": true
+      },
+      "expectError": "missing_field:envelope"
+    },
+    {
+      "name": "audit_missing",
+      "record": {
+        "letterId": "dl:abc123:EVT-7",
+        "sourceId": "cloud:ingest",
+        "reason": "permanent_failure",
+        "attempts": 1,
+        "status": "pending",
+        "envelope": { "eventId": "EVT-7" },
+        "correlationId": null,
+        "auditTrail": false
+      },
+      "expectError": "audit_required"
+    }
+  ]
+}

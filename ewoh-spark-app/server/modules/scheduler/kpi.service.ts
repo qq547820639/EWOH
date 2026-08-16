@@ -79,10 +79,10 @@ export class KpiService {
       .map((e) => e.actualDistanceM ?? e.plannedDistanceM)
       .filter((v): v is number => v != null && Number.isFinite(v));
 
-    // ---- Stability / Solver：复用 Feedback 的派生 KPI（真实事实，不伪造） ----
+    // ---- Stability / Solver：复用 Feedback 的派生 KPI（真实事实，不伪造；ADR-073 org 作用域） ----
     let feedbackKpis;
     try {
-      feedbackKpis = await this.feedbackService.deriveKpis();
+      feedbackKpis = await this.feedbackService.deriveKpis(orgId);
     } catch {
       feedbackKpis = null;
     }
@@ -94,7 +94,11 @@ export class KpiService {
     // 冲突计数（conflict service 数据源，实时）
     let conflictCount = 0;
     try {
-      const conflicts = await this.conflictService.listConflicts({});
+      // ADR-073：冲突计数按本租户 actor（聚合不混租户）。
+      const conflicts = await this.conflictService.listConflicts(
+        {},
+        orgId ? { userId: 'system', primaryOrgId: orgId } : undefined,
+      );
       conflictCount = conflicts.conflicts.length;
     } catch {
       // 冲突服务不可用时不计（不伪造）

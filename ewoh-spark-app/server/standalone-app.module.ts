@@ -50,6 +50,19 @@ import { TracingInterceptor } from './modules/tracing/tracing.interceptor';
 import { WorkOrchestrationModule } from './modules/work-orchestration/work-orchestration.module';
 import { ObservabilityModule } from './modules/observability/observability.module';
 import { TimelineModule } from './modules/timeline/timeline.module';
+import { IdentityModule } from './modules/identity/identity.module';
+import { MaintenanceModule } from './modules/maintenance/maintenance.module';
+import { QualityModule } from './modules/quality/quality.module';
+import { WorkOrderModule } from './modules/workorder/workorder.module';
+import { AgentModule } from './modules/agent/agent.module';
+import { KnowledgeModule } from './modules/knowledge/knowledge.module';
+import { InferenceModule } from './modules/inference/inference.module';
+import { ReasoningModule } from './modules/reasoning/reasoning.module';
+import { LearningModule } from './modules/learning/learning.module';
+import { ReliabilityModule } from './modules/reliability/reliability.module';
+import { SimulationModule } from './modules/simulation/simulation.module';
+import { NotificationModule } from './modules/notification/notification.module';
+import { ExoSessionModule } from './modules/exo/exo-session.module';
 
 @Module({
   imports: [
@@ -91,6 +104,19 @@ import { TimelineModule } from './modules/timeline/timeline.module';
     ParametersModule,
     AasModule,
     TracingModule,
+    IdentityModule,
+    MaintenanceModule,
+    QualityModule,
+    WorkOrderModule,
+    AgentModule,
+    KnowledgeModule,
+    InferenceModule,
+    ReasoningModule,
+    LearningModule,
+    ReliabilityModule,
+    SimulationModule,
+    NotificationModule,
+    ExoSessionModule,
     WorkOrchestrationModule,
     TimelineModule,
     ObservabilityModule,

@@ -1,0 +1,1130 @@
+# ============================================================================
+# docs/capabilities/capability-matrix.yaml — Vision Gap Analysis（Phase 1）
+#
+# 状态词表（总提示词 §28 Phase 1）：
+#   Implemented | Partial | Interface Only | Prototype | Legacy | Missing |
+#   Deprecated | Unknown
+# 每项必须提供 evidence（文件路径/测试名/门禁名）。本矩阵面向"Factory Embodied
+# Intelligence OS"目标状态（docs/architecture/target-state.md），与
+# feature-status.yaml（功能实现布尔事实）互补：本矩阵回答"目标能力差距"，
+# feature-status.yaml 回答"功能是否实现/测试/可部署/生产启用"。
+# 维护：每轮工作结束更新状态与 evidence；状态升级必须附测试/门禁证据。
+# ============================================================================
+
+meta:
+  updated_at: "2026-08-16"
+  version_baseline: "0.6.0-rc4"
+  phases:
+    phase2: canonical-contracts
+    phase3: world-model
+    phase4: event-backbone
+    phase5: connectivity
+    phase6: closed-loops
+    phase7: unified-scheduler
+    phase8: industrial-intelligence
+    phase9: multi-agent
+    phase10: digital-twin
+    phase11: multi-factory
+    phase12: continuous-learning
+
+capabilities:
+  # ── Phase 2：Canonical Contracts ─────────────────────────────────────────
+  - id: canonical-identity-model
+    status: Implemented
+    summary: >
+      NO-02b 生产接线：standalone_032 ewoh_identity_mapping（TENANT_SCOPED +
+      RLS identity_mapping_org_isolation + 成对 rollback + verify）+ 云侧 Identity
+      模块（注册/解析/列表 API，契约校验 fail-closed，EntityIdentityMapped 事件落库）+
+      ingest 批量解析写 ewoh_telemetry.entity_id（未映射 → NULL legacy 行为不变）。
+      NO-02d 收口：Golden Scenario `identity_mapping_conflict`（ambiguous_identity
+      fail-closed，Python/TS 双执行器共享场景）+ legacy 存量 reconcile 工具
+      （scripts/reconcile-identity-legacy.mjs：UUIDv5 确定性推导、append-only、
+      dry-run 默认 --apply 显式、CI standalone.yml 真实 PG 幂等验证链）。
+      唯一未实证项：032/034 迁移链真实 PG 执行（CI 待首推，CR-STANDALONE-034-
+      CI-UNVERIFIED 风险登记）。
+    evidence:
+      - docs/decisions/ADR-006-canonical-identity.md
+      - contracts/identity/identity.schema.json
+      - contracts/identity/identity-mapping.schema.json
+      - contracts/identity/test-vectors.json
+      - src/edge_platform/contracts/identity.py
+      - ewoh-spark-app/shared/identity.ts
+      - ewoh-spark-app/shared/identity.spec.ts
+      - tests/test_identity_contract.py（18 passed）
+      - scripts/audit-identity-contracts.js（22/22，已挂 make truth-check + CI test.yml）
+      - contracts/events/event-catalog.yaml（EntityIdentityMapped）
+      - db/migrations/standalone_032_identity_mapping.sql + .rollback.sql + verify
+      - ewoh-spark-app/server/modules/identity/（service/controller/module + 8 例测试）
+      - ewoh-spark-app/server/modules/ingest/ingest.service.ts（entity_id 落点）
+      - openapi/ewoh.yaml（/api/identity/mappings ×3 路由）
+      - tests/golden-fixtures/contract-golden-scenarios.json（identity_mapping_conflict）
+      - scripts/reconcile-identity-legacy.mjs + .github/workflows/standalone.yml
+  - id: canonical-entity-model
+    status: Implemented
+    summary: >
+      §36 判据全绿（Round 26 收口）：契约（ADR-015 45 类注册表 + 实体声明字段 +
+      kind 前缀一致性 + projectionDivision/projectionBuckets 实例值，门禁
+      299/299）+ 双运行时锁定实现由生成器产出（scripts/gen-contract-registries.js，
+      schema 单一事实源，挂 truth-check）+ 生产调用链（边缘 /api/world/{snapshot,
+      entities,states,replay,events,predictions} 六端点 + 云侧 validateCloudWorldSnapshot
+      投影桶校验）+ 事件（record_event 因果节点规范实体引用 fail-closed）+
+      世界状态更新（declare_entity/set_state 机器互锁）+ 离线持久化
+      （<db>.worldstate.json 整体恢复）+ Golden 场景 9 案例
+    evidence:
+      - contracts/entity/entity-model.schema.json + test-vectors.json（14 条）
+      - scripts/gen-contract-registries.js（生成器 + --check 挂 make truth-check）
+      - src/edge_platform/contracts/entity_model.py（生成区 + 校验规则）
+      - ewoh-spark-app/shared/entity-model.ts + entity-model.spec.ts（7 例）
+      - scripts/audit-domain-contracts.js（299/299，独立仲裁双保险）
+      - src/edge_platform/world_model/contract_store.py（declare_entity/record_event/replay/predict/持久化）
+      - src/edge_platform/routes/replay.py（六端点）+ run.py（world_store 装配与持久化）
+      - src/edge_platform/tests/test_contract_world_store.py（18 例）+ test_world_api.py（7 例）
+      - src/edge_platform/world_model/prediction.py（规范身份 fail-closed）
+      - ewoh-spark-app/shared/world-contract.ts（投影桶校验）
+      - tests/golden-fixtures/contract-golden-scenarios.json（entity_model_contract 9 案例）
+      - docs/decisions/ADR-015-factory-entity-model.md（Amendment 1/2）
+      - contracts/world/world-state.schema.json（22 类快照注册表）
+      - 云侧 56 表 schema.ts 由 PG 反向生成（数据库实体定义仍以迁移为权威源，契约层
+        为跨运行时事实源——生成器已覆盖 Python/TS 双实现注册表）
+      - contracts/artifact-schemas/*.schema.json
+      - contracts/factory/factory-profile.schema.json
+      - ewoh-spark-app/server/database/schema.ts
+      - tests/test_ts_python_contract_parity.py
+  - id: canonical-event-model
+    status: Implemented
+    summary: CloudEvents 1.0 事件目录（30+ 类型）为集成契约；audit-event-catalog 门禁守护。
+    evidence:
+      - contracts/events/event-catalog.yaml
+      - scripts/audit-event-catalog.js
+  - id: canonical-task-model
+    status: Implemented
+    summary: task 状态机契约 + 边缘 Task + 云侧 task 模块双消费；契约测试门禁。
+    evidence:
+      - contracts/state-machines/task.yaml
+      - src/edge_platform/contracts/state_machine_loader.py
+      - ewoh-spark-app/server/modules/task/
+      - tests/test_state_machine_contract.py
+  - id: canonical-resource-model
+    status: Implemented
+    summary: >
+      NO-02c-b 生产接线完成：ResourceState.status 枚举锁定为六态+UNKNOWN；
+      ResourceProjection（getUnifiedResourceState + projectForSnapshot）经
+      toCanonicalStatus 显式归一（fault→DEGRADED/online→AVAILABLE/offline→OFFLINE/
+      active→AVAILABLE，未知→UNKNOWN+warn 不猜测）；eligibility/solver/conflict/
+      前端消费点全部切换规范词表。剩余 §36 缺口：Golden Scenario 覆盖，故仍为 Partial。
+    evidence:
+      - ewoh-spark-app/shared/scheduler.ts（status: ResourceStatus）
+      - ewoh-spark-app/server/modules/scheduler/resource-projection.service.ts（toCanonicalStatus）
+      - ewoh-spark-app/server/modules/scheduler/{eligibility,conflict}.service.ts
+      - ewoh-spark-app/server/modules/scheduler/heuristic-scheduling-solver.ts
+      - docs/decisions/ADR-007-risk-location-resource-contracts.md
+      - contracts/resource/resource.schema.json + test-vectors.json
+      - src/edge_platform/contracts/resource.py
+      - ewoh-spark-app/shared/resource.ts + domain-contracts.spec.ts
+      - tests/test_domain_contracts.py
+      - scripts/audit-domain-contracts.js
+  - id: canonical-state-model
+    status: Implemented
+    summary: 六态机（alert/approval/control/fleet/plan/task）契约 + Python 加载器 + 测试。
+    evidence:
+      - contracts/state-machines/*.yaml
+      - tests/test_state_machine_contract.py
+  - id: canonical-location-model
+    status: Implemented
+    summary: >
+      NO-02c-b 生产接线完成：SpatialEntityType 收敛为封闭注册表（移除 | string 逃生舱）、
+      ingest 空间扫描入口拒绝非注册表类型（fail-closed）、spatial 读边界校验存量脏行。
+      剩余 §36 缺口：Golden Scenario 覆盖，故仍为 Partial。
+    evidence:
+      - ewoh-spark-app/shared/api.interface.ts（SpatialEntityType = SpatialKind）
+      - ewoh-spark-app/server/modules/ingest/sensor-ingest.service.ts（ingestSpatialScan 校验）
+      - ewoh-spark-app/server/modules/spatial/spatial.service.ts（mapEntity 校验）
+      - docs/decisions/ADR-007-risk-location-resource-contracts.md
+      - contracts/location/location.schema.json + test-vectors.json
+      - src/edge_platform/contracts/location.py
+      - ewoh-spark-app/shared/location.ts + domain-contracts.spec.ts
+      - tests/test_domain_contracts.py
+      - scripts/audit-domain-contracts.js
+  - id: canonical-capability-model
+    status: Implemented
+    summary: Canonical Capability Model 契约层落地（Round 64/ADR-043）：
+      CapabilityRecord（kind/providerType 封闭注册表 + name 开放词表
+      （knownValues 平台已知值登记）+ certification issuer/expiresAt
+      判定事实完整 + 时间不倒退 + subject 规范身份形状 + auditTrail
+      强制）；Python/TS 双实现 + audit-domain-contracts capability 域
+      （493→511/511 跨语言注册表锁步 + 13 向量仲裁）+ Golden 第 23
+      场景（7 案例双执行器）+ 本机 pytest 回归（14 例）；生产接线已
+      落地（Round 65/ADR-044：buildSnapshot 唯一投影点——人员技能/
+      认证、设备能力、工位能力 → CapabilityRecord 入快照，数据源缺口
+      （认证缺 issuer/expiry）显式计数绝不伪造，§3 可回答「为什么
+      认为…」）；Record 化匹配收敛已闭环（Round 66/ADR-045：
+      eligibility 技能/证书到期/设备能力/工位能力 + 求解器预筛索引
+      改读契约形态，语义逐字不变（等价断言锁定），raw 数组降级为
+      同源 legacy 回退）。
+    evidence:
+      - contracts/capability/capability.schema.json + capability.test-vectors.json（13 条）
+      - src/edge_platform/contracts/capability.py
+      - ewoh-spark-app/shared/capability.ts + capability.spec.ts（8 例）
+      - scripts/audit-domain-contracts.js（capability 域）
+      - tests/test_capability_contract.py（14 例）
+      - tests/golden-fixtures/contract-golden-scenarios.json（第 23 场景）
+      - ewoh-spark-app/server/modules/scheduler/capability-projection.ts（R-65 接线 + R-66 匹配收敛）
+      - ewoh-spark-app/server/modules/scheduler/world-state.service.ts（buildSnapshot 投影）
+      - ewoh-spark-app/server/modules/scheduler/eligibility.service.ts（R-66 Record 匹配）
+      - src/edge_platform/connectors/manifests/*.json
+      - ewoh-spark-app/server/modules/task/（skill/certification 字段）
+  - id: canonical-risk-model
+    status: Implemented
+    summary: >
+      Canonical Risk Ladder 全链路接线完成（ADR-007 契约 + ADR-027 词表收敛）：
+      同一 severity 列唯一词表 critical>high>medium>low（无风险判定显式
+      unknown，§33 不伪装 normal）；12 个服务写入点按生产者意图逐类确定性
+      迁移 + 入口归一化 normalizeEventSeverity（与 normalizeSeverity
+      fail-closed 分工）+ 消费方收敛（priority-engine/supervisor/learning/
+      gamification）+ 客户端全量收敛（EventCenterPanel/Timeline/TimelinePanel/
+      AlertToast/DeviceConfigDrawer）+ Golden legacy_severity_normalization。
+    evidence:
+      - docs/decisions/ADR-007-risk-location-resource-contracts.md
+      - docs/decisions/ADR-027-severity-vocabulary-convergence.md
+      - contracts/risk/risk.schema.json + test-vectors.json
+      - src/edge_platform/contracts/risk.py
+      - ewoh-spark-app/shared/risk.ts（+normalizeEventSeverity/EVENT_SEVERITY_UNKNOWN）
+      - scripts/audit-domain-contracts.js（risk 域仲裁，挂 truth-check + CI）
+      - ewoh-spark-app/server/modules/rule-engine/rule-engine.service.ts（tryFire 归一化）
+      - ewoh-spark-app/server/modules/ingest/ingest.service.ts（边缘事件显式 unknown）
+      - ewoh-spark-app/server/modules/{learning,scheduler,agent,gamification}/（消费方收敛）
+      - ewoh-spark-app/client/src/pages/CommandMap/panels/EventCenterPanel.tsx + components/（客户端收敛）
+      - tests/golden-fixtures/contract-golden-scenarios.json（legacy_severity_normalization）
+  - id: canonical-decision-model
+    status: Implemented
+    summary: DecisionTrace 结构化决策记录（约束违反/评分/排除原因）真实；
+      跨运行时 Decision 契约 + Decision Catalog 已建立（Round 68/ADR-047：
+      contracts/decision/ 契约层——kind 8 类封闭注册表/status 5 态/
+      decisionAuthority 5 类 + 判定事实完整 + Python/TS 双实现 +
+      audit-domain-contracts 545/545 + Golden 第 24 场景）；生产投影已
+      接线（Round 69/ADR-048：persistPlan 唯一投影点——
+      DecisionTrace→DecisionRecord 入方案并随 standalone_050
+      decision_records_json 持久化，getPlan 读回，风险映射自真实
+      route-graph 事实，缺口显式计数绝不伪造；Round 78/ADR-057：
+      kind2 plan_approval 审批事实入台账；Round 80/ADR-059：
+      kind3 agent_approval 三解析路径同事务落 decision_json；
+      Round 81/ADR-060：kind4 resource_reservation 派工预占与派工
+      同事务入 decision_records_json；Round 82/ADR-061：kind5
+      dispatch 派工动作与派工同事务入 decision_records_json——
+      派工链全链留痕（审批→预占→派工）；Round 83/ADR-062：kind6
+      replan 重排触发→新方案决策留痕 + §31 收口（decision-ledger
+      单一实现三处消费）；Round 84/ADR-063：kind7 learning_
+      proposal_activation 三路径与状态同 UPDATE 原子落
+      decision_json；Round 85/ADR-064：kind8 policy_activation
+      active 翻转同 UPDATE 原子落 decision_json——**Decision
+      Catalog 8 类 kind 全收敛收口**；Round 86/ADR-065：跨 kind
+      检索端点（GET /api/scheduler/decision-history 四表只读聚合
+      + 记录级租户过滤 + 非法显式计数）——读面收口）——
+      §36 全绿（生产调用链 ✓/Contract ✓/可解释 ✓/可审计 ✓）。
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/（DecisionTrace）
+      - contracts/artifact-schemas/decision.schema.json
+      - contracts/decision/decision.schema.json + decision.test-vectors.json（23 条）
+      - src/edge_platform/contracts/decision.py
+      - ewoh-spark-app/shared/decision.ts + decision.spec.ts（10 例）
+      - scripts/audit-domain-contracts.js（decision 域，545/545）
+      - tests/test_decision_contract.py（25 例）
+      - tests/golden-fixtures/contract-golden-scenarios.json（第 24 场景）
+      - docs/decisions/ADR-047-canonical-decision-model.md
+      - ewoh-spark-app/server/modules/scheduler/decision-projection.ts（R-69 投影）
+      - ewoh-spark-app/server/modules/scheduler/plan.service.ts（persistPlan 唯一投影点）
+      - db/migrations/standalone_050_decision_records.sql（decision_records_json）
+      - ewoh-spark-app/test/unit/scheduler/decision-projection.spec.ts（7 例）
+      - ewoh-spark-app/test/unit/scheduler/plan-decision-persistence.spec.ts（3 例）
+  - id: canonical-execution-model
+    status: Implemented
+    summary: §9 语义审计（Round 70/ADR-049）+ 执行反馈完成腿（Round
+      71/ADR-050）全链路收口：task.yaml 契约 ↔ Python TASK_TRANSITIONS
+      锁步（contract-state-machine 门禁）✓；task.yaml ↔ TS 锁步
+      （TASK_ACTIONS 数据化消费面 + task-state-machine-contract.spec
+      逐条比对 + 穷举负例 + 检查器负测试 + task-lifecycle 分类锁步）✓；
+      边缘 execute→Task 推进（ADR-029）✓；云侧 dispatch→transition
+      TaskState('dispatch') ✓；云侧反馈完成腿（recordActuals →
+      assignment CAS 推进 + ewohAssignmentEvent 事件 + taskActionPath
+      契约最短链逐动作推进，边界显式 exception 不隐式 resolve）✓——
+      §36 全绿（生产调用链 ✓/Contract ✓/Event ✓/幂等 ✓/多租户 ✓/
+      可审计 ✓）。三套执行词汇表差异边界声明（ADR-049 决策 2）。
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/（assignment lifecycle）
+      - docs/reviews/codebase-walkthrough-2026-08-14.md §6 (R-3，已复核收口)
+      - contracts/state-machines/task.yaml
+      - src/edge_platform/scheduler/models.py（TASK_TRANSITIONS）
+      - tests/test_state_machine_contract.py（Python↔yaml 门禁）
+      - ewoh-spark-app/server/modules/task/task.service.ts（TASK_ACTIONS + taskActionPath）
+      - ewoh-spark-app/test/unit/task/task-state-machine-contract.spec.ts（8 例）
+      - ewoh-spark-app/server/modules/scheduler/task-lifecycle.ts（分类锁步）
+      - docs/decisions/ADR-049-canonical-execution-model-lockstep.md
+      - ewoh-spark-app/server/modules/scheduler/scheduling-feedback.service.ts（NO-13a 推进）
+      - ewoh-spark-app/test/unit/scheduler/execution-feedback-advancement.spec.ts（6 例）
+      - docs/decisions/ADR-050-execution-feedback-completion-leg.md
+  - id: canonical-evidence-model
+    status: Implemented
+    summary: 证据窗口（±30s）+ 回放派生 Evidence + evidence.schema.json。
+    evidence:
+      - contracts/artifact-schemas/evidence.schema.json
+      - src/edge_platform/inference/events.py（证据窗口）
+      - ewoh-spark-app/server/modules/world/（replay/items → Evidence）
+  - id: contract-generation
+    status: Implemented
+    summary: gen:openapi / gen:db-schema（PG 反向生成 schema.ts）/ artifact-schemas index.js。
+    evidence:
+      - openapi/ewoh.yaml（生成）
+      - ewoh-spark-app/server/database/schema.ts（反向生成）
+      - contracts/artifact-schemas/index.js
+  - id: contract-tck
+    status: Implemented
+    summary: connector/aas/rego/scenario/deployment/cross-tenant 六套 TCK 脚本 + 仓库级
+      契约 pytest（169 项实测通过）。
+    evidence:
+      - scripts/connector-tck.py scripts/aas-tck.py scripts/rego-tck.py
+      - scripts/scenario-tck.js scripts/deployment-tck.js scripts/cross-tenant-tck.sh
+      - tests/（169 passed, 10 skipped，本回合实测）
+
+  # ── Phase 3：World Model ─────────────────────────────────────────────────
+  - id: factory-world-model
+    status: Implemented
+    summary: >
+      §36 判据全绿：契约（ADR-008）+ 双实现 + 门禁 world 域仲裁 + 生产接线
+      （NO-03b：云侧 WorldStateSnapshot 构建自检 validateCloudWorldSnapshot +
+      实体规范身份引用 entityId 并存 + 边缘 ContractWorldStore 进入真实装配链，
+      production/development 均产出）+ Golden Scenario（world_state_projection_rules）；
+      Round 25 增投影桶校验（ADR-015 projectionBuckets：device 桶 = 遗留身份桶
+      + 设备类实体 kind）与 Predictor 目标规范身份 fail-closed
+    evidence:
+      - docs/decisions/ADR-008-world-state-contract.md
+      - contracts/world/world-state.schema.json + test-vectors.json
+      - src/edge_platform/contracts/world.py
+      - ewoh-spark-app/shared/world-contract.ts + world-contract.spec.ts
+      - tests/test_world_contract.py
+      - scripts/audit-domain-contracts.js（world 域仲裁，134/134 基线；299/299 全量）
+      - ewoh-spark-app/server/modules/world/
+      - src/edge_platform/world_model/
+      - docs/reviews/codebase-walkthrough-2026-08-14.md §6
+  - id: exoskeleton-domain-model
+    status: Implemented
+    summary: §7 外骨骼领域模型全链路收口：遥测（NY-EXO-A1 适配器 +
+      UnifiedExoFrame）✓；Session 绑定（ADR-032 契约 + standalone_046 +
+      R-54 端到端）✓；Support Mode/Assist Profile/Fit/Calibration 契约
+      （Round 72/ADR-051：kind 封闭 3 类 + supportMode 封闭 8 类
+      vendor_specific 显式桶 + 判定事实完整 + 双实现 + 581/581 +
+      Golden 第 25 场景）✓；台账与写路径（Round 73/ADR-052：
+      standalone_051 ewoh_exo_config + ExoConfigService 契约门写路径 +
+      activateProfile CAS supersede + 事件 ExoConfigRecorded + API
+      4 端点）✓——§36 全绿（生产调用链 ✓/Contract ✓/Event ✓/幂等 ✓/
+      多租户 ✓/可审计 ✓）。边缘 Support Mode 自动观测 = NO-13d
+      （NY-EXO-A1 协议 2.3 无 mode 字节——显式边界，§33 不伪造观测）。
+    evidence:
+      - src/edge_platform/edge/adapters/ny_exo_a1/
+      - src/edge_platform/edge/exo_semantic.py
+      - contracts/mapping/examples/exoskeleton-telemetry.yaml
+      - contracts/exo/exo-session.schema.json（ADR-032 Session）
+      - contracts/exo/exo-config.schema.json + exo-config.test-vectors.json（22 条）
+      - src/edge_platform/contracts/exo_config.py
+      - ewoh-spark-app/shared/exo-config.ts + exo-config.spec.ts（8 例）
+      - scripts/audit-domain-contracts.js（exo-config 域，581/581）
+      - tests/test_exo_config_contract.py（23 例）
+      - tests/golden-fixtures/contract-golden-scenarios.json（第 25 场景）
+      - docs/decisions/ADR-051-canonical-exo-configuration-model.md
+      - db/migrations/standalone_051_exo_config.sql（台账）
+      - ewoh-spark-app/server/modules/exo/exo-config.service.ts + exo-config.controller.ts
+      - ewoh-spark-app/server/modules/exo/__tests__/exo-config.service.spec.ts（5 例）
+      - docs/decisions/ADR-052-exo-configuration-ledger-wiring.md
+  - id: world-state-store-history
+    status: Implemented
+    summary: 云侧版本化快照（031 原子分配）+ 边缘 StateStore 双时态历史（NO-03b 经
+      ContractWorldStore 契约校验入装配：set_state fail-closed + snapshot 自检 +
+      来源画像）+ 共享区间/版本规则向量双运行时一致。
+    evidence:
+      - db/migrations/standalone_031_snapshot_version_counter.sql
+      - src/edge_platform/world_model/state_store.py
+      - contracts/world/*（ADR-008）
+
+  # ── Phase 4：Event Backbone ──────────────────────────────────────────────
+  - id: event-backbone
+    status: Implemented
+    summary: >
+      边缘 MessageBus/EventBus + 云侧 Outbox(DB 序列)/SSE(sequence/Last-Event-ID/
+      resync/轮询兜底) 真实；Canonical Event Envelope 全链路强制（ADR-009：
+      边缘规则/投影写路径 + Edge→Cloud 上行 EventUplink + 云侧落库）；事件目录
+      49 类双运行时锁定投影（audit-event-catalog 集合核对）；传输级
+      (org,source,eventId) 幂等去重（standalone_036，重复不重复投递）+ 帧级/
+      事件级 Late/Drift 语义落库；上行队列跨重启断点续传（<db>.uplink-queue.json，
+      NO-04c）——§36 判据全绿（Round 30）
+    evidence:
+      - src/edge_platform/edge/bus.py
+      - src/edge_platform/scheduler/events.py
+      - src/edge_platform/edge/bridge/event_uplink.py（断点续传 + at-least-once）
+      - ewoh-spark-app/server/modules/scheduler/outbox.service.ts
+      - ewoh-spark-app/server/modules/ingest/ingest.service.ts（frameSemantics + ingestEventBatch）
+      - db/migrations/standalone_011_outbox_sequence.sql
+      - db/migrations/standalone_036_event_dedup.sql
+      - contracts/events/event-catalog.yaml（49 类型）+ shared/event-catalog.ts +
+        contracts/event_catalog.py
+      - scripts/audit-event-catalog.js（YAML=TS=PY 集合核对）
+  - id: event-replay
+    status: Implemented
+    summary: 云侧时间轴回放（时间归并 + 事件前后快照）+ 边缘 replay 路由 + 审计哈希链。
+    evidence:
+      - ewoh-spark-app/server/modules/world/（replay）
+      - src/edge_platform/routes/replay.py
+  - id: time-semantics
+    status: Implemented
+    summary: >
+      Envelope 契约（ADR-009）锁定时间三态语义（occurredAt ≤ observedAt ≤
+      receivedAt；漂移容忍 5min 标记 clockDrift 不改写；迟到 10min 标记 isLate
+      不丢弃）+ 双运行时实现 + 共享向量；全链路接线（NO-04b/NO-04c）：云侧
+      ingest 帧级 isLate/clockDrift + 事件级时间语义随 dedup 台账落库
+      （occurred_at/received_at/is_late/clock_drift）；事件行按发生时刻落库，
+      乱序批次由消费端按 occurred_at 排序恢复时序；时钟漂移运行态策略 =
+      flag-only 不修正（AD-LC-020，修正会制造第二事实源）
+    evidence:
+      - src/edge_platform/edge/backfill.py
+      - contracts/events/envelope.schema.json（ADR-009 规则）
+      - src/edge_platform/contracts/envelope.py（envelope_semantics）
+      - ewoh-spark-app/shared/event-envelope.ts
+      - ewoh-spark-app/server/modules/ingest/ingest.service.ts（frameSemantics + ingestEventBatch）
+      - db/migrations/standalone_036_event_dedup.sql
+      - docs/architecture/decision-log.md（AD-LC-020）
+
+  # ── Phase 5：Connectivity ────────────────────────────────────────────────
+  - id: connector-sdk
+    status: Implemented
+    summary: connectors/runtime.py + 5 协议连接器 + 8 manifest + connector-contract
+      schema + TCK。
+    evidence:
+      - src/edge_platform/connectors/（runtime.py + modbus/opcua/sparkplug/webhook/csvfile）
+      - src/edge_platform/connectors/manifests/（8 份）
+      - catalog/connectors/connector-contract.schema.json
+      - scripts/connector-tck.py
+  - id: device-discovery-health-dq
+    status: Implemented
+    summary: >
+      NO-05 Phase 5 收尾：/api/devices/{id}/quality（adapter DQ 计数器
+      bad_crc/malformed/packet_loss/backfill/duplicates/dropped + 遥测质量分布
+      quality_stats）+ /api/status ingest_chain（ok/注册数/健康数/明细，无注册
+      如实 false 不冒充，防"真实模式空转"无感）。
+    evidence:
+      - src/edge_platform/routes/world.py（api_device_quality）
+      - src/edge_platform/routes/health.py（ingest_chain）
+      - src/edge_platform/edge/storage.py（quality_stats）
+      - src/edge_platform/tests/test_api_endpoints.py（46 tests OK，含 3 新例）
+  - id: edge-runtime-offline
+    status: Implemented
+    summary: 本地 HTTP/SSE API 离线可用 + Bridge 补传/回填（批量≤100）。
+    evidence:
+      - src/edge_platform/edge/bridge/edge_to_spark.py
+      - src/edge_platform/edge/backfill.py
+
+  # ── Phase 6：Closed-loop Operations ──────────────────────────────────────
+  - id: logistics-task-loop
+    status: Implemented
+    summary: 云侧 触发→求解→审批→派工→Outbox→SSE 端到端真实；执行反馈已消费于
+      决策驾驶舱；边缘任务↔派工状态机同步已闭环（Round 49/ADR-029：execute→
+      Task dispatched、set_assignment_status→Task、update_task→Assignments
+      双向同状态机收敛）；地图端偏差图层已闭环（Round 56/ADR-035：
+      planned vs actual——计划点=任务工位、实际点=执行人当前位置、偏差徽标/
+      delta/tone 多通道表达，executionDeviationMapVM 纯映射 + 图层开关 UI）。
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/
+      - src/edge_platform/scheduler/scheduler_service.py（任务↔派工同步）
+      - src/edge_platform/tests/test_task_assignment_sync.py（7 例）
+      - ewoh-spark-app/client/src/pages/CommandMap/panels/DecisionCockpit.tsx
+      - ewoh-spark-app/client/src/pages/CommandMap/vm/executionDeviationMapVM.ts
+      - ewoh-spark-app/client/src/pages/CommandMap/layers/SchedulerLayers.tsx
+      - ewoh-spark-app/client/src/pages/CommandMap/MapViewport.tsx（图层开关）
+  - id: andon-loop
+    status: Implemented
+    summary: >
+      Andon 处置闭环全腿贯通（Round 52/ADR-031 + 58/ADR-037 + 61/ADR-040
+      + 62/ADR-041）：状态机单一事实源（alert.yaml → shared/alert-state-
+      machine 锁定表 + 门禁交叉核对，alert/andon 双面复用，reopen 仅
+      safety_admin）+ AndonRaised 目录事件真实产出（openAndon canonical
+      + envelope + level 规范词表 + slaMinutes）+ SLA 升级通知；飞书
+      webhook 推送（CAS 投递状态 + 人工重试 + 通知中心推送状态面 +
+      §15 orgId 修复）；边缘 AndonRaised 上行（POST /api/andon/raise
+      fail-closed + Catalog 信封离线续传 + 云侧 canonical 投影 + 通知
+      共享助手 §31 + exo POST 分发缺口修复）；邮件推送（标准库 SMTP
+      客户端：EHLO/STARTTLS/AUTH LOGIN/MAIL/RCPT/DATA+dot-stuffing/
+      QUIT（R-67/ADR-046 STARTTLS 升级），TLS 凭据 fail-closed，
+      渠道注册表 ['lark','email']）——§36 全项
+      可答：真实调用链/契约（ewoh_notification 状态事实）/事件
+      （AndonRaised）/失败显式可重试/多租户/TCK（状态机门禁 466）。
+    evidence:
+      - contracts/state-machines/alert.yaml（单一事实源）
+      - ewoh-spark-app/shared/alert-state-machine.ts（+ 门禁 466/466）
+      - ewoh-spark-app/server/modules/oee/oee.service.ts（AndonRaised 产出 + 状态机复用 + 通知创建）
+      - ewoh-spark-app/server/modules/notification/{channel-dispatcher.service.ts,email-transport.ts,andon-notifications.ts}
+      - src/edge_platform/routes/andon.py + tests/test_andon_raise.py（9 例）
+      - ewoh-spark-app/server/modules/ingest/ingest.service.ts（canonical 投影）
+      - ewoh-spark-app/server/modules/alert/alert.service.ts（状态机复用）
+      - src/edge_platform/routes/andon.py（边缘开灯 API + 信封上行）
+      - src/edge_platform/tests/test_andon_raise.py（9 例）
+      - ewoh-spark-app/server/modules/ingest/ingest.service.ts（canonical 投影）
+      - ewoh-spark-app/server/modules/notification/andon-notifications.ts（共享助手）
+      - ewoh-spark-app/server/modules/notification/channel-dispatcher.service.ts（R-58 飞书投递）
+      - ewoh-spark-app/server/modules/notification/notification.service.ts（retryPush + sentAt/errorMessage）
+      - scripts/audit-domain-contracts.js（alert_state_machine_ts_vs_yaml）
+  - id: worker-exoskeleton-loop
+    status: Implemented
+    summary: >
+      §7 闭环端到端贯通（Round 53-54/ADR-032+033）：ExoSession 契约 +
+      standalone_046 台账（活跃唯一机器强制）+ 边缘一等绑定 API（领用/
+      归还 fail-closed + 活跃冲突显式）+ 事件骨干上行（at-least-once 断点
+      续传）+ 云侧 ingest 投影（应用层幂等）；绑定是显式、临时且可审计的
+      Session，不永久假定设备属于某人。
+    evidence:
+      - contracts/exo/exo-session.schema.json
+      - db/migrations/standalone_046_exo_session.sql
+      - src/edge_platform/edge/storage.py + routes/exo.py
+      - ewoh-spark-app/server/modules/exo/ + ingest 投影
+      - src/edge_platform/tests/test_exo_binding.py（6 例）
+      - src/edge_platform/edge/storage.py
+  - id: maintenance-loop
+    status: Implemented
+    summary: >
+      ADR-010 全链路落地（NO-05a 契约层 + NO-05b 生产接线 + NO-05c 调度集成）：
+      MaintenanceCondition（conditionType 注册表 + 生命周期含 work_order 前置 +
+      overdue 机器可执行 + severity 走 Risk 契约）+ Python/TS 双实现 + 共享向量 +
+      门禁仲裁 + Golden Scenario（maintenance_quality_loop）+ 事件目录
+      MaintenanceConditionDetected/Resolved + standalone_034 ewoh_maintenance_condition
+      （TENANT_SCOPED RLS + CHECK + rollback + verify）+ 云侧 Maintenance 模块
+      （create/list/transition 契约 fail-closed + 信封事件落库）+ ResourceProjection/
+      Eligibility 维护封锁（critical→OFFLINE，其余→DEGRADED，派工 fail-closed 拒派）。
+    evidence:
+      - docs/decisions/ADR-010-maintenance-quality-domains.md
+      - contracts/maintenance/maintenance.schema.json + test-vectors.json
+      - src/edge_platform/contracts/maintenance.py
+      - ewoh-spark-app/shared/maintenance.ts + maintenance-quality.spec.ts
+      - ewoh-spark-app/server/modules/maintenance/（service/controller/module + 8 tests）
+      - ewoh-spark-app/server/modules/scheduler/__tests__/maintenance-projection.spec.ts（11 tests）
+      - db/migrations/standalone_034_maintenance_quality.sql（+rollback+verify）
+      - tests/test_mq_contracts.py
+      - scripts/audit-domain-contracts.js（216/216，含 workorder 域）
+      - contracts/events/event-catalog.yaml（MaintenanceConditionDetected/Resolved）
+      - docs/decisions/ADR-012-canonical-work-order.md + contracts/workorder/（NO-05e-a 工单闭环）
+      - ewoh-spark-app/server/modules/maintenance/maintenance.service.ts（WorkOrderCreated 发端）
+      - db/migrations/standalone_035_work_order.sql（+rollback+verify，NO-05e-b）
+      - ewoh-spark-app/server/modules/workorder/（9 例 spec；maintenance/quality 委托唯一权威写路径）
+  - id: quality-incident-loop
+    status: Implemented
+    summary: >
+      ADR-010 全链路落地（NO-05a 契约层 + NO-05b 生产接线）：QualityFinding
+      （findingType 注册表 + 处置生命周期含 disposition 必带决策
+      accept/rework/scrap/return + links 规范身份 + severity 走 Risk 契约）+
+      Python/TS 双实现 + 共享向量 + 门禁仲裁 + Golden Scenario + 事件目录
+      QualityFindingDetected/Dispositioned + standalone_034 ewoh_quality_finding
+      （TENANT_SCOPED RLS + disposition-required CHECK + rollback + verify）+
+      云侧 Quality 模块（create/list/transition 契约 fail-closed + 信封事件落库）。
+    evidence:
+      - catalog/scenarios/quality-trace/manifest.yaml
+      - docs/decisions/ADR-010-maintenance-quality-domains.md
+      - contracts/quality/quality.schema.json + test-vectors.json
+      - src/edge_platform/contracts/quality.py
+      - ewoh-spark-app/shared/quality.ts + maintenance-quality.spec.ts
+      - ewoh-spark-app/server/modules/quality/（service/controller/module + 11 例测试）
+      - db/migrations/standalone_034_maintenance_quality.sql（+rollback+verify）
+      - tests/test_mq_contracts.py
+      - scripts/audit-domain-contracts.js（216/216，含 workorder 域）
+      - contracts/events/event-catalog.yaml（QualityFindingDetected/Dispositioned）
+      - docs/decisions/ADR-012-canonical-work-order.md + contracts/workorder/（NO-05e-a 工单闭环）
+      - ewoh-spark-app/server/modules/quality/quality.service.ts（rework→WorkOrderCreated 发端）
+      - db/migrations/standalone_035_work_order.sql（+rollback+verify，NO-05e-b）
+      - ewoh-spark-app/server/modules/workorder/（9 例 spec；maintenance/quality 委托唯一权威写路径）
+
+  # ── Phase 7：Unified Scheduler ───────────────────────────────────────────
+  - id: unified-scheduler-semantics
+    status: Implemented
+    summary: Scheduler V2 完整闭环；heuristic 为 Production Canonical；CP-SAT 激活阶梯
+      fail-closed（solverStatus/fallbackReason 如实落库）；NO-07 维护/质量封锁语义
+      统一（枚举 + reuseBaseline 快速路径同判据，Round 17 接线补齐）。
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/（50+ 文件）
+      - feature-status.yaml（schedulerV2/heuristicSolver/cpSat）
+      - ewoh-spark-app/server/modules/scheduler/heuristic-scheduling-solver.ts（NO-05c/05d 接线）
+      - README.md §2.3
+  - id: cross-language-scheduler-conformance
+    status: Implemented
+    summary: TS heuristic 与 Python CP-SAT 语义对齐 + 跨语言一致性/契约测试
+      （parity/invariants/cp-sat-contract/ts-python-contract-parity）+ Golden
+      Scheduler TCK（四场景共享定义：TS 求解漂移门禁 + Python 标准库独立硬约束
+      仲裁，不依赖 ortools）。
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/__tests__/solver-contract-parity.spec.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/solver-invariants.spec.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/cp-sat-contract.spec.ts
+      - tests/test_ts_python_contract_parity.py
+      - tests/golden-fixtures/scheduler-golden-scenarios.json + scheduler-golden-results.json
+      - ewoh-spark-app/server/modules/scheduler/__tests__/golden-scheduler-scenarios.spec.ts
+      - tests/test_golden_scheduler_scenarios.py
+      - tests/golden-fixtures/scheduler-workflow-golden.json + scheduler-workflow-golden-results.json
+      - ewoh-spark-app/server/modules/scheduler/__tests__/golden-scheduler-workflow.spec.ts
+      - tests/test_golden_scheduler_workflow.py
+  - id: scheduler-explainability
+    status: Implemented
+    summary: DecisionTrace/约束违反/候选排除原因/评分分解结构化输出。
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/（DecisionTrace + candidates 排除原因）
+  - id: scheduler-human-approval
+    status: Implemented
+    summary: approve/reject/override（version+snapshotVersion 双校验，过期 PLAN_STALE）；
+      SAFETY_BLOCK 不可被覆盖绕过；审批/预约/派工工作流不变量入 Golden Scheduler
+      Workflow TCK（跨语言仲裁）。
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/plan.service.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/golden-scheduler-workflow.spec.ts
+      - tests/test_golden_scheduler_workflow.py
+      - README.md §6.3
+  - id: scheduler-reservation-dispatch
+    status: Implemented
+    summary: 预约冲突检测 + CAS 防重复派工 + 容量预占 + 安全关键锁定。
+    evidence:
+      - db/migrations/standalone_009_reservation_conflict.sql
+      - ewoh-spark-app/server/modules/scheduler/（dispatch CAS）
+  - id: scheduler-replan-feedback
+    status: Implemented
+    summary: replan-coordinator + 影子策略守卫 + 最低改进门 + 调度反馈 KPI。
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/replan-coordinator.service.ts
+      - ewoh-spark-app/server/modules/scheduler/shadow-policy.service.ts
+  - id: solver-pluggability
+    status: Partial
+    summary: §8 求解器阶梯四类落地：CP-SAT（部署形态与激活阶梯既有，
+      ortools 无环境从未真实求解——OPEN-DECISIONS 唯一项，10 项测试
+      skip）+ heuristic（canonical，8 权重软目标优化）+ rule-based
+      （Round 74/ADR-053：rule-based-v1 确定性 L1 地板——任务序
+      due→priority→id + first-eligible 纯规则（共享 CandidateEngine
+      硬约束语义 §31）+ 统一评估器 + 重放 deep-equal + 策略显式选择
+      policy.solverVersion='rule-based-v1'，solverStatus=RULE_BASED
+      如实标记）+ MILP（Round 79/ADR-058：milp-v1 精确联合整数规划
+      ——HiGHS 1.15.2 WASM 真实求解器（MIT 无传递依赖），共享候选面
+      + 联合行（资源重叠互斥/工位窗口容量/DAG 闭包与时序）+ 目标 =
+      与 heuristic 同一 per-candidate 评分 + M·未分配罚（可证明
+      字典序：先最大化分配数再最小化成本）；策略显式选择
+      policy.solverVersion='milp-v1'；solverStatus=OPTIMAL 如实标记；
+      非 Optimal/加载失败显式抛出 §33）。剩余缺口 = CP-SAT 生产启用
+      （部署环境，OPEN-DECISIONS 唯一项）。
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/heuristic-scheduling-solver.ts
+      - src/edge_platform/scheduler/cpsat/solver.py
+      - docs/decisions/OPEN-DECISIONS.md（唯一 OPEN 项 = CP-SAT 生产启用）
+      - ewoh-spark-app/server/modules/scheduler/rule-based-scheduling-solver.ts
+      - ewoh-spark-app/server/modules/scheduler/solver.service.ts（策略路由）
+      - ewoh-spark-app/server/modules/scheduler/__tests__/rule-based-scheduling-solver.spec.ts（7 例）
+      - docs/decisions/ADR-053-rule-based-scheduling-solver.md
+      - ewoh-spark-app/server/modules/scheduler/milp-scheduling-solver.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/milp-scheduling-solver.spec.ts（9 例）
+      - docs/decisions/ADR-058-milp-scheduling-solver.md
+      - ewoh-spark-app/package.json（highs 依赖）
+
+  # ── Phase 8：Industrial Intelligence ─────────────────────────────────────
+  - id: intelligence-l1-rules
+    status: Implemented
+    summary: 边缘 RuleEngine + 云侧 rule-engine 模块。
+    evidence:
+      - src/edge_platform/inference/rules.py
+      - ewoh-spark-app/server/modules/rule-engine/
+  - id: intelligence-l2-ml
+    status: Implemented
+    summary: 规则+模型混合推理、疲劳模型、Ark 视觉；双侧 Model Registry；
+      Canonical Inference Result 契约全链路（ADR-013）：契约+双实现+门禁
+      （238/238）+Golden 场景（NO-08a）+ 边缘 pipeline._infer 生产接线
+      （level/inputVersion/oodIndicator/subjectId + 契约自检 fail-closed 留痕，
+      NO-08b）+ 云侧 Model Registry inputVersion 元数据对齐（NO-08b）。
+      Round 39（NO-08a/ADR-019）：云侧推理结果运行时——standalone_040
+      ewoh_inference_result（TENANT_SCOPED + level/confidence/dataQuality/OOD
+      一致性 CHECK）+ inference 模块（契约 fail-closed/幂等/事件）+ A2 建议流
+      L1 规则基础生产接线——OOD/confidence/dataQuality 云侧统一落账。
+      LLM/Ark 文本结果无标定置信度由 ReasoningResult（ADR-014）承载
+      （confidence 必须 null），两契约分工不混用。
+    evidence:
+      - src/edge_platform/inference/pipeline.py（unknown 六路 + NO-08b 规范化）
+      - src/edge_platform/tests/test_inference.py（InferenceResultContractWiringTest 3 例）
+      - src/edge_platform/inference/fatigue.py
+      - src/edge_platform/perception/ark_vision.py
+      - ewoh-spark-app/server/modules/model/（inputVersion 元数据对齐 + 3 例 spec）
+      - docs/decisions/ADR-013-industrial-intelligence.md
+      - contracts/intelligence/inference-result.schema.json + test-vectors.json
+      - src/edge_platform/contracts/inference_result.py
+      - ewoh-spark-app/shared/inference-result.ts + inference-result.spec.ts（6 例）
+      - scripts/audit-domain-contracts.js（238/238，含 intelligence 域）
+      - tests/golden-fixtures/contract-golden-scenarios.json（inference_result_contract）
+      - docs/decisions/ADR-019-cloud-inference-result-runtime.md（NO-08a）
+      - db/migrations/standalone_040_inference_result.sql + db/verify/standalone_040_inference_result.verify.sql
+      - ewoh-spark-app/server/modules/inference/（service/controller/module + 10 例 spec）
+      - ewoh-spark-app/server/modules/ai/ai.service.ts（A2 规则基础 → L1 台账 + 3 例 spec）
+      - contracts/events/event-catalog.yaml（InferenceResultRecorded，55 类）
+  - id: intelligence-l3-optimization
+    status: Implemented
+    summary: heuristic canonical（确定性贪心+多目标评分）+ CP-SAT（实验，fail-closed）。
+    evidence:
+      - feature-status.yaml（heuristicSolver/cpSat）
+  - id: intelligence-l4-reasoning
+    status: Implemented
+    summary: DecisionTrace 结构化解释真实（非 LLM，可审计）；LLM 文本结果
+      ReasoningResult 契约全链路（ADR-014）：契约+双实现+门禁（257/257）+Golden
+      场景（NO-08c）+ ark.chat/ask 包裹（成功/失败路径均附着，契约自检
+      contract_violations 留痕）+ ai.suggestion/enrichPlan 建议流元数据附着
+      （NO-08d）；无标定置信度显式声明（confidence null + uncalibrated）。
+      DecisionTrace 保持结构化事实，不套用文本契约（边界显式）。
+      Round 40（NO-08b/ADR-020）：**独立工业推理层**落地——ReasoningTrace
+      契约（六规则封闭注册表 + 前提/证据链 + 确定性置信度，Python/TS 双实现
+      + 门禁 390/390 + Golden 第 15 场景含跨语言引擎执行仲裁）+ 云侧
+      reasoning 模块（确定性规则引擎：§18 模板渲染非 LLM 编造，输入
+      fail-closed，trace 契约自检，结论逐条 L4 台账落账）。
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/（DecisionTrace）
+      - docs/decisions/ADR-014-reasoning-result.md
+      - contracts/reasoning/reasoning-result.schema.json + test-vectors.json
+      - src/edge_platform/contracts/reasoning_result.py
+      - ewoh-spark-app/shared/reasoning-result.ts + reasoning-result.spec.ts（6 例）
+      - ewoh-spark-app/server/modules/ai/ark.service.ts（buildReasoningResult）
+      - ewoh-spark-app/server/modules/ai/ark.service.spec.ts（+3 例）
+      - ewoh-spark-app/server/modules/ai/__tests__/ai.service.spec.ts（3 例）
+      - scripts/audit-domain-contracts.js（257/257，含 reasoning 域）
+      - tests/golden-fixtures/contract-golden-scenarios.json（reasoning_result_contract）
+      - docs/decisions/ADR-020-industrial-reasoning-layer.md（NO-08b）
+      - contracts/reasoning/reasoning-trace.schema.json + reasoning-trace.test-vectors.json
+      - src/edge_platform/contracts/reasoning_trace.py（验证器 + 标准库规则评估器）
+      - ewoh-spark-app/shared/reasoning-trace.ts + reasoning-trace.spec.ts（7 例）
+      - ewoh-spark-app/server/modules/reasoning/（service/controller/module + 8 例 spec）
+      - scripts/audit-domain-contracts.js（390/390，reasoning_trace 域）
+      - tests/golden-fixtures/contract-golden-scenarios.json（reasoning_trace_contract 第 15 场景）
+  - id: intelligence-l5-agentic
+    status: Implemented
+    summary: >
+      §36 判据全绿（Round 36，NO-06e+06f）：ADR-017 AgentTask 契约（注册表/
+      DAG/时间语义/状态机，门禁 351/351 + Golden 第 13 场景）+ 编排引擎运行时
+      （standalone_037 同族：standalone_038 TENANT_SCOPED 任务注册表 + 创建
+      唯一入口 fail-closed + 依赖环检测 + 依赖未 completed 不得 dispatch +
+      每角色并发预算 + 状态推进唯一写者（状态机 + CAS）+ AgentTaskCreated/
+      Completed 事件落库 + 审计 + OpenAPI 348 路由）；多 Agent 协作 =
+      结构化任务 + Catalog 信封事件（非自由文本）
+    evidence:
+      - docs/decisions/ADR-017-agent-task-orchestration.md
+      - contracts/agent_task/ + contracts/state-machines/agent-task.yaml
+      - src/edge_platform/contracts/agent_task.py + ewoh-spark-app/shared/agent-task.ts
+      - scripts/audit-domain-contracts.js（351/351）+ Golden 第 13 场景
+      - db/migrations/standalone_038_agent_task.sql + .rollback.sql + verify
+      - ewoh-spark-app/server/modules/agent/agent-orchestrator.service.ts
+      - ewoh-spark-app/test/unit/agent/agent-orchestrator.spec.ts（10 例）
+      - openapi/ewoh.yaml（/api/agents/tasks* 6 路由）
+      - contracts/events/event-catalog.yaml（AgentTaskCreated/Completed，53/53）
+  - id: intelligence-l6-simulation
+    status: Implemented
+    summary: 仿真运行控制台（Round 57/ADR-036，L6 生产消费面）：/simulation
+      页面（四类评估器运行面板 + 本租户台账 30s 轮询 + 详情/原始参数；
+      预检=UX 提示服务端仍权威 fail-closed；失败/错误显式呈现可重试）；
+      契约/台账/事件/三层隔离复用 ADR-025 既有资产（§10 Level 6
+      Input/Output/Audit/权限/风险 全部闭环）；调度决策自动消费仿真
+      （Round 63/ADR-042：审批前自动布局仿真预验证——人员移动图确定性
+      推导 + layout 评估器独立重算行程成本 + 确定性 runId 台账幂等 +
+      审计/getPlan 三面可见；advisory 绝不阻断审批，§2/§13）。
+    evidence:
+      - ewoh-spark-app/client/src/pages/Simulation/SimulationConsole.tsx
+      - ewoh-spark-app/client/src/pages/Simulation/simulationConsoleLogic.ts
+      - ewoh-spark-app/client/src/api/simulation.ts
+      - contracts/simulation/simulation-run.schema.json（ADR-025）
+      - ewoh-spark-app/server/modules/simulation/
+      - ewoh-spark-app/server/modules/scheduler/pre-approval-simulation.ts（R-63 推导）
+      - ewoh-spark-app/server/modules/scheduler/plan.service.ts（approvePlan 接线）
+  - id: intelligence-l7-learning
+    status: Implemented
+    summary: >
+      L7 学习回路四腿闭环：决策→结果回流（NO-09a 七指标快照）✓；策略
+      （规则阈值）自动更新闭环（NO-12b/ADR-026）✓；Outcome 标注面
+      （NO-12j/ADR-034：真值标注契约 + standalone_047 台账 + 云侧写
+      路径 + OutcomeAnnotationRecorded 事件）✓；模型重训/激活闭环
+      （Round 77/ADR-056：经验时长统计模型——真实执行反馈 → median/
+      p90 非参数统计 → ewoh_model_registry 落版 supersede + 版本递增
+      + 内存刷新 + 显式 API 触发；预测提供者替换（shadow-only 边界
+      不变，OOD/未训练显式回退确定性基线 §33 不伪造））✓——§36 全绿
+      （真实可训练模型 ✓/注册与激活 ✓/可审计 ✓/可解释置信度 ✓）。
+      per-taskType 分组与跨租户训练政策为后续立项（显式边界）。
+    evidence:
+      - db/migrations/standalone_010_scheduling_feedback.sql
+      - ewoh-spark-app/server/modules/scheduler/metrics/（feedback KPI）
+      - contracts/learning/learning-proposal.schema.json
+      - contracts/learning/outcome-annotation.schema.json
+      - ewoh-spark-app/server/modules/learning/{learning-proposal,outcome-annotation}.service.ts
+      - ewoh-spark-app/server/modules/scheduler/prediction/empirical-duration-model.ts
+      - ewoh-spark-app/server/modules/scheduler/prediction/empirical-duration-prediction-provider.ts
+      - ewoh-spark-app/server/modules/scheduler/prediction/duration-model-training.service.ts
+      - ewoh-spark-app/server/modules/scheduler/prediction/__tests__/empirical-duration-prediction.spec.ts（8 例）
+      - ewoh-spark-app/server/modules/scheduler/prediction/__tests__/duration-model-training.service.spec.ts（5 例）
+      - ewoh-spark-app/server/modules/scheduler/scheduler.module.ts + scheduler.controller.ts（retrain 端点）
+      - docs/decisions/ADR-056-empirical-duration-model-and-retrain-loop.md
+
+  # ── Phase 9：Multi-Agent Factory ─────────────────────────────────────────
+  - id: agent-runtime
+    status: Implemented
+    summary: >
+      §36 判据全绿（Round 33，NO-06+06b+06c）：ADR-016 目标架构 + Agent Manifest
+      契约（15 角色/自治阶梯 L0..L3（L4 永不允许）/审计强制/安全边界机器规则，
+      门禁 329/329 + Golden 第 12 场景）+ 云侧运行时（standalone_037
+      TENANT_SCOPED 注册表 + 注册唯一入口 fail-closed + 执行强制（writeScope/
+      L0 advisory_only/L1 一律人审/L2-L3 门控/budget-timeout/fallback）+
+      AgentTaskProposed/AgentDecisionRecorded 事件 + 审计）+ NO-06c 审批桥接
+      （复用 approval 状态机，批准→执行/驳回→拒绝闭环）+ FactorySupervisor
+      L1 建议型端到端（世界状态→建议→审批）+ Agent Policy TCK 决策表
+    evidence:
+      - docs/decisions/ADR-016-agent-runtime.md
+      - contracts/agent/agent-manifest.schema.json + test-vectors.json（15 条）
+      - src/edge_platform/contracts/agent.py + ewoh-spark-app/shared/agent-manifest.ts
+      - scripts/audit-domain-contracts.js（329/329）+ Golden 第 12 场景
+      - db/migrations/standalone_037_agent_manifest.sql + .rollback.sql + verify
+      - ewoh-spark-app/server/modules/agent/（service/controller/module/tools）
+      - ewoh-spark-app/test/unit/agent/agent.service.spec.ts（14 例）+ agent-policy-tck.spec.ts（10 例）
+      - openapi/ewoh.yaml（/api/agents/* 6 路由）
+      - contracts/events/event-catalog.yaml（AgentTaskProposed/AgentDecisionRecorded，51/51）
+  - id: agent-policy-approval
+    status: Implemented
+    summary: >
+      Agent Policy 审批闭环全链路（Round 33-34 + 50-51 + 60）：审批桥接（needsApproval
+      正式审批实例 + 批准→执行/驳回→拒绝闭环）+ Policy TCK 决策表（10 例）+
+      审批超时语义（24h TTL 超期拒绝留痕）+ 交互面（ADR-030/NO-12f：统一待批
+      清单 GET /api/approvals/pending + /api/agents/approvals（过期显式标记）、
+      通知读写闭环（Notification 模块）、审批角色配置化 EWOH_AGENT_APPROVAL_ROLES）
+      + 客户端审批控制台（/approval-console：待批清单批准/驳回 + 调度审批 step
+      操作 + 通知中心标记已读；过期显式禁用操作）+ 跨重启持久化
+      （Round 60/ADR-039：ewoh_agent_approval 台账 + CAS 解析 + 重复解析
+      显式拒绝——ADR-030 决策 4 进程内存边界消除）+ Decision 留痕
+      （Round 80/ADR-059：agent_approval 决策投影（Decision Catalog
+      kind #3）三解析路径同事务落 decision_json——§12 决策历史覆盖
+      Agent 审批；缺口/契约失败显式不阻断审批主流程）。
+    evidence:
+      - ewoh-spark-app/server/modules/agent/agent.service.ts（台账桥接）
+      - ewoh-spark-app/server/modules/scheduler/decision-projection.ts（projectAgentApprovalDecision）
+      - ewoh-spark-app/server/modules/approval/
+      - db/migrations/standalone_049_agent_approval.sql
+      - db/migrations/standalone_052_agent_approval_decision.sql
+      - docs/decisions/ADR-059-agent-approval-decision-wiring.md
+      - ewoh-spark-app/test/unit/agent/agent-policy-tck.spec.ts（10 例）
+      - ewoh-spark-app/client/src/pages/ApprovalConsole/
+      - ewoh-spark-app/server/modules/agent/agent.service.ts（审批桥接 + resolveApproval +
+        listPendingApprovals + notifyApprovalPending + agentApprovalRoles）
+      - ewoh-spark-app/server/modules/approval/（listPending + persistence + controller）
+      - ewoh-spark-app/server/modules/notification/（读写闭环）
+      - ewoh-spark-app/test/unit/agent/agent-policy-tck.spec.ts（10 例决策表）
+      - ewoh-spark-app/client/src/pages/ApprovalConsole/（页面 + 纯逻辑 4 例）
+      - openapi/ewoh.yaml（+4 路由，383 零漂移）
+  - id: scoped-assistant
+    status: Prototype
+    summary: 边缘 assistant.local_llm 白名单问答（8 可答 7 拒绝）；云侧 ai 为视觉服务。
+    evidence:
+      - src/edge_platform/assistant/local_llm.py
+      - ewoh-spark-app/server/modules/ai/
+
+  # ── Phase 10：Digital Twin ───────────────────────────────────────────────
+  - id: digital-twin-replay
+    status: Implemented
+    summary: 云侧世界回放 + 事件上下文 + 回放派生工件（Issue/Task/Evidence）。
+    evidence:
+      - ewoh-spark-app/server/modules/world/
+      - README.md §5.2
+  - id: digital-twin-simulation
+    status: Implemented
+    summary: 数字孪生仿真体系成体系（ADR-025）：SimulationRun 契约（4 kind 封闭
+      注册表 + isSimulation=true 隔离强制 + baseRef 可追溯 + 终态契约）+
+      四类确定性评估器（what-if 结论差集/容量瓶颈/布局行程/物料流载荷）
+      Python/TS 双实现 + 门禁 + Golden No.19 + standalone_044 台账 +
+      云侧 simulation 模块 + SimulationRunCreated/Completed 目录事件。
+    evidence:
+      - contracts/simulation/simulation-run.schema.json
+      - src/edge_platform/contracts/simulation_run.py
+      - ewoh-spark-app/shared/simulation-run.ts
+      - ewoh-spark-app/server/modules/simulation/
+      - db/migrations/standalone_044_simulation_run.sql
+  - id: simulation-production-isolation
+    status: Implemented
+    summary: 三层强制齐备（Round 45/57/59）：SimulationRun 路径——契约
+      isSimulation=true + standalone_044 表级 CHECK + 服务层唯一写路径；
+      shadow-plan 路径——服务端 hard guard（plan.service 拒绝 is_shadow
+      业务动作）+ is_shadow DB 标识 + standalone_048 表级 CHECK
+      chk_ewoh_schedule_plan_shadow_not_production（shadow 行禁生产状态
+      V2 approved/dispatched/executing/completed + 遗留 confirmed/proposed
+      且禁确认事实，5 自证拒绝 + 2 控制组 verify）——§13 隔离红线
+      数据库兜底不再依赖服务层正确性（ADR-038）。
+    evidence:
+      - feature-status.yaml（predictionShadow：isShadow 不激活候选）
+      - ewoh-spark-app/server/modules/scheduler/shadow-policy.service.ts
+      - ewoh-spark-app/server/modules/scheduler/plan.service.ts（ShadowPlanGuard）
+      - db/migrations/standalone_044_simulation_run.sql
+      - db/migrations/standalone_048_shadow_plan_isolation.sql + db/verify/standalone_048_shadow_plan_isolation.verify.sql
+
+  # ── Phase 11：Multi-factory Platform ─────────────────────────────────────
+  - id: factory-template-replication
+    status: Implemented
+    summary: 工厂模板/场景包/连接器资产目录 + factory-profile schema + 复制报告 +
+      fleet 状态机 + onboarding/scale 模块。
+    evidence:
+      - catalog/factory-sites/ catalog/scenarios/ catalog/connectors/ catalog/mappings/
+      - contracts/factory/factory-profile.schema.json
+      - contracts/factory/replication-report.schema.json
+      - contracts/state-machines/fleet.yaml
+      - ewoh-spark-app/server/modules/scale/ ewoh-spark-app/server/modules/onboarding/
+  - id: cross-tenant-isolation
+    status: Implemented
+    summary: >
+      PG17 RLS + 请求级 GUC + 组织树 + Cross-Tenant TCK + DB 级 E2E 门禁。
+      R-92（ADR-071）方案行组织隔离闭环：应用层守卫（getPlan/approve/
+      reject/dispatch/replan/legacy confirm/applyOverrides/预览读面 + query
+      getPlans/getActivePlans org 条件，语义与 standalone_025 RLS 分支逐字
+      对齐）+ replan 抑制门基线按 org 作用域（修复全局取基线跨租户事实
+      污染）+ gamification 直插路径方案行 orgId 归属写入（不再落全局行）+
+      SchedulingPlanV2 读模型 orgId 透出。R-93（ADR-072）读面第二波：
+      守卫泛化 assertTenantVisible + getRun 守卫 + getAudit 父方案归属
+      子查询过滤（audit 无 org 列/RLS 边界闭合）+ listPlanConstraints
+      org 条件 + decision-history 方案来源 SQL org 条件。R-94（ADR-073）
+      读面第三波：conflict list/detail org 条件（无 RLS 表应用层唯一
+      执行面）+ feedback/kpi 跨租户聚合关闭 + execution 读面接线 +
+      plan compare 守卫接线 + policy versions org 条件 + activations
+      org 改自 ctx（query 参数欺骗废弃）。R-95（ADR-074/standalone_056）
+      路由拓扑组织隔离：ewoh_route_node/edge += org_id + RLS（org 匹配
+      或 NULL 存量放行，与 025 语义对齐）+ verify SET LOCAL GUC 可见性
+      自证 + loadGraph org 条件——World Model 中枢读面闭合。R-96
+      （ADR-075）Legacy 受管表 org_id 映射漂移闭合：17 张受管表
+      schema.ts 补 orgId 映射 + 001 基线同补 + 活跃写路径归属注入
+      （audit/telemetry/device/model_registry/simulator）——生产 RLS
+      写拒绝/读空潜伏故障消除。R-97（ADR-076）无 ctx 写路径 org
+      归属闭合：sensor-ingest environment（ctx 注入）+ organization
+      create（自身 id 归属）+ dashboard createDevice（ctx 注入）——
+      ADR-075 三处显式边界全部闭合。R-98（ADR-077）控制面持久化
+      修复：三表映射 + raw SQL（public. 硬编码）→ drizzle 重写 +
+      org 归属与读面守卫——workspace 部署潜伏不可用修复。R-99
+      （ADR-078）raw-SQL schema 硬编码清零：tracing/audit/learning/
+      ai drizzle 重写（ewohAuditLog 映射 + 学习/AI 聚合 orgId 过滤
+      ——跨租户混合消除）+ ark/erp/resource/world-cursor 去前缀；
+      server 代码 public.ewoh_ 清零。R-100（ADR-079）剩余 raw-SQL
+      模块 drizzle 化：world-cursor 全路径 + ark 配置读写 upsert +
+      erp 证据查询（resource 列 NO-13ae）。R-102（ADR-081）resource.
+      service 完整 drizzle 化：ewohResourcePreorder 映射补全 + 12 处
+      raw SQL → 链式重写 + 写入 orgId 注入（ADR-075/076 闭合加深）+
+      §31 语义假库 fake-resource-db.ts（gte 守卫条件权威语义）——
+      server raw-SQL 表操作清零（仅存 3 处存储函数 SQL 显式保留）；
+      读面 org 守卫列 NO-13ag。
+    evidence:
+      - db/migrations/standalone_025_scheduler_rls.sql
+      - scripts/verify-scheduler-multitenant.mjs
+      - scripts/cross-tenant-tck.sh
+      - docs/decisions/ADR-071-plan-org-isolation-closure.md
+      - docs/decisions/ADR-072-scheduler-read-org-isolation.md
+      - ewoh-spark-app/server/modules/scheduler/plan-tenant-guard.ts
+      - ewoh-spark-app/server/modules/scheduler/plan.service.ts
+      - ewoh-spark-app/server/modules/scheduler/scheduler-query.service.ts
+      - ewoh-spark-app/server/modules/scheduler/decision-history.service.ts
+      - ewoh-spark-app/server/modules/scheduler/replan-coordinator.service.ts
+      - ewoh-spark-app/server/modules/gamification/gamification.service.ts
+      - ewoh-spark-app/test/unit/scheduler/plan-org-isolation.spec.ts
+      - docs/decisions/ADR-081-resource-service-drizzle.md
+      - ewoh-spark-app/server/modules/resource/resource.service.ts
+      - ewoh-spark-app/test/helpers/fake-resource-db.ts
+      - ewoh-spark-app/test/unit/resource/resource.service.spec.ts
+
+  # ── Phase 12：Continuous Learning ────────────────────────────────────────
+  - id: decision-outcome-mapping
+    status: Implemented
+    summary: >
+      NO-09a（Round 41 / ADR-021）：通用 Decision→Outcome 映射 + 七项学习
+      指标统一快照——LearningEvaluation 契约（七指标封闭注册表 / null 语义
+      （无数据/显式 unknown 绝不伪造）/ period 契约 / basis 声明，Python/TS
+      双实现 + 门禁 learning 域 400/400 + Golden 第 16 场景）+ standalone_041
+      ewoh_learning_evaluation（TENANT_SCOPED RLS + type/period CHECK +
+      幂等重评估）+ 云侧 learning 模块（真实事实聚合：A2→A3 接受率 /
+      KpiService 复用 / 事件结局 / override 计数；LearningEvaluationRecorded
+      56 类事件）。模型重训/策略自动更新闭环为 v2（需 outcome 标注面 +
+      影子评估 + 人审激活阶梯，§2）——学习回路反馈腿另行立项。
+    evidence:
+      - db/migrations/standalone_010_scheduling_feedback.sql
+      - ewoh-spark-app/server/modules/scheduler/kpi.service.ts
+      - docs/decisions/ADR-021-continuous-learning-loop.md
+      - contracts/learning/learning-evaluation.schema.json + test-vectors.json（6 条）
+      - src/edge_platform/contracts/learning_evaluation.py
+      - ewoh-spark-app/shared/learning-evaluation.ts + learning-evaluation.spec.ts（7 例）
+      - scripts/audit-domain-contracts.js（400/400，learning 域）
+      - db/migrations/standalone_041_learning_evaluation.sql + db/verify/standalone_041_learning_evaluation.verify.sql
+      - ewoh-spark-app/server/modules/learning/（service/controller/module + 7 例 spec）
+      - contracts/events/event-catalog.yaml（LearningEvaluationRecorded，56 类）
+      - tests/golden-fixtures/contract-golden-scenarios.json（learning_evaluation_contract 第 16 场景）
+  - id: knowledge-system
+    status: Implemented
+    summary: >
+      NO-07+NO-07b（Round 37-38 / ADR-018 + Amendment 1）：Factory Knowledge
+      System 全链路——契约层（6 kind / 5 层 scope 有序阶梯 / provenance 声明 /
+      证据链非空 / 双时态 / auditTrail，门禁 374/374 + Golden 第 14 场景）+
+      运行时（standalone_039 ewoh_knowledge_entry 硬化：契约列 + scope-tenant
+      一致性 CHECK（共享层=哨兵 org）+ provenance CHECK + RLS
+      knowledge_entry_service_all + UNIQUE (org_id, entry_id)）+ 云侧 knowledge
+      模块（注册契约 fail-closed/创建幂等/检索五层阶梯/共享检索 fail-closed/
+      状态转移人工 verifiedBy）+ Knowledge Agent（ADR-016 Manifest，L1 人审）+
+      KnowledgeEntryCreated 目录事件（54 类）——五层隔离为数据库级不变量，
+      private_operational 永不出租户（§15/§16 机器执行面）
+    evidence:
+      - docs/decisions/ADR-018-factory-knowledge-system.md（+ Amendment 1 决策 1-8）
+      - contracts/knowledge/knowledge-entry.schema.json + test-vectors.json（13 条）
+      - src/edge_platform/contracts/knowledge.py
+      - ewoh-spark-app/shared/knowledge-entry.ts + knowledge-entry.spec.ts（6 例）
+      - scripts/audit-domain-contracts.js（374/374，knowledge 域独立仲裁）
+      - tests/golden-fixtures/contract-golden-scenarios.json（knowledge_entry_contract 第 14 场景）
+      - db/migrations/standalone_039_knowledge_entry.sql + .rollback.sql + db/verify/standalone_039_knowledge_entry.verify.sql
+      - ewoh-spark-app/server/modules/knowledge/（service/controller/module + 13 例 spec）
+      - ewoh-spark-app/server/modules/agent/agent.service.ts（BUILTIN_KNOWLEDGE_MANIFEST + register_knowledge 接线）
+      - contracts/events/event-catalog.yaml（KnowledgeEntryCreated，54 类）+ 双运行时投影
+      - .codex/artifacts/state.json（knowledge_entry_039 记录）
+
+  # ── 横切能力 ─────────────────────────────────────────────────────────────
+  - id: observability
+    status: Implemented
+    summary: >
+      metrics/logs/request-id/审计哈希链/observability+tracing 模块真实；
+      Round 42（NO-10a/ADR-022）trace 腿贯通（traceId 端到端 correlation id +
+      span 持久化 + 三面缝合）；Round 43（NO-10b/ADR-023）指标腿成体系——
+      统一指标注册表契约（15 家族 closed registry + type/label 规则，Python/TS
+      双实现 + 门禁 415/415 + Golden 第 17 场景）+ 云侧统一导出面
+      （/api/observability/metrics：JSON 契约校验 + Prometheus 兼容 +
+      registryViolations 显式——§33 unknown 不当 normal）+ Agent 指标埋点
+      成体系（6 counter，AgentService 真实调用点）+ connector 面命名收敛
+      （边缘 Prometheus 事实源，云端零样本显式不伪造）。Edge→Device 段指标
+      与 Edge→Cloud 指标上行留后续（按 §34 问题驱动立项）。
+    evidence:
+      - ewoh-spark-app/server/modules/observability/
+      - ewoh-spark-app/server/modules/tracing/
+      - src/edge_platform/monitoring/
+      - docs/decisions/ADR-022-trace-correlation.md
+      - docs/decisions/ADR-023-metrics-registry.md
+      - db/migrations/standalone_042_trace_span.sql + db/verify/standalone_042_trace_span.verify.sql
+      - ewoh-spark-app/server/modules/tracing/（TracingService 持久化 + 缝合 + interceptor lineage + 9 例 spec）
+      - ewoh-spark-app/server/common/request-context.ts（currentTraceId）
+      - ewoh-spark-app/server/modules/{workorder,agent,knowledge,inference,learning}/*.service.ts（correlationId 接线）
+      - contracts/observability/metrics-registry.schema.json + test-vectors.json（8 条）
+      - src/edge_platform/contracts/metrics_registry.py
+      - ewoh-spark-app/shared/metrics-registry.ts + metrics-registry.spec.ts（8 例）
+      - scripts/audit-domain-contracts.js（415/415，metrics 域 + REGISTRY_DEEP）
+      - ewoh-spark-app/server/modules/agent/agent-metrics.service.ts（+ AgentService 埋点）
+      - ewoh-spark-app/server/modules/observability/metrics-export.service.ts（+ 5 例 spec）
+      - tests/golden-fixtures/contract-golden-scenarios.json（metrics_registry_contract 第 17 场景）
+  - id: reliability-patterns
+    status: Implemented
+    summary: >
+      幂等派工（CAS）/离线队列（上行断点续传）/补传/SSE 缺口重同步/熔断真实；
+      乱序（SequenceBuffer + 云侧按 occurred_at 落库恢复时序）；回放补全
+      （上行队列重放 + 去重台账幂等接受 is_late 标记，NO-04b/04c）；Round 44
+      （NO-11a/ADR-024）：Dead Letter 体系——dead-letter 契约（5 reason / 3
+      status 注册表 + envelope 快照 + 人审重放 + discard 理由强制，Python/TS
+      双实现 + 门禁 427/427 + Golden 第 18 场景）+ standalone_043
+      ewoh_dead_letter（TENANT_SCOPED RLS + CHECK + 确定性幂等键）+ 云侧
+      reliability 模块 + ingest 永久失败真实接线（unknown_event_type/
+      contract_violation → 死信）+ DeadLetterRecorded 目录事件（57 类）。
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/（dispatch CAS）
+      - src/edge_platform/edge/backfill.py
+      - src/edge_platform/edge/bridge/event_uplink.py（断点续传 + 回放）
+      - docs/decisions/ADR-024-dead-letter-system.md
+      - contracts/reliability/dead-letter.schema.json + dead-letter.test-vectors.json（8 条）
+      - src/edge_platform/contracts/dead_letter.py
+      - ewoh-spark-app/shared/dead-letter.ts + dead-letter.spec.ts（8 例）
+      - scripts/audit-domain-contracts.js（427/427，dead_letter 域）
+      - db/migrations/standalone_043_dead_letter.sql + db/verify/standalone_043_dead_letter.verify.sql
+      - ewoh-spark-app/server/modules/reliability/（service/controller/module + 9 例 spec）
+      - ewoh-spark-app/server/modules/ingest/ingest.service.ts（永久失败接线 + 4 例）
+      - contracts/events/event-catalog.yaml（DeadLetterRecorded，57 类）
+      - tests/golden-fixtures/contract-golden-scenarios.json（dead_letter_contract 第 18 场景）
+  - id: golden-scenarios
+    status: Implemented
+    summary: 4 个场景包 + golden-factory + tests/golden-fixtures + audit-golden-factory +
+      scenario-tck。
+    evidence:
+      - catalog/scenarios/*/manifest.yaml
+      - contracts/factory/golden-factory.yaml
+      - tests/golden-fixtures/
+      - scripts/audit-golden-factory.js scripts/scenario-tck.js
+  - id: factory-operating-console
+    status: Implemented
+    summary: §17 Factory Operating Console 全链路收口：CommandMap/决策驾驶
+      舱/RoleWorkbench/MobileWorkbench 真实接线 ✓；视口 culling 生产
+      接线 ✓（Round 75/ADR-054：worldBoundsFromTransform 变换数学 +
+      FactoryMap onTransform 上报 + store 唯一写点）；深色模式 ✓
+      （Round 75 系统偏好跟随 + Round 76/ADR-055 手动三态切换——偏好
+      localStorage 单一事实源 + ThemeToggle + data-theme 同步）；页面级
+      渲染 smoke ✓（MapViewport 3 例 + Forbidden/NotFound 静态页 2 例 +
+      ThemeToggle 3 例 + viewportCulling 变换数学 5 例）——walkthrough
+      三项缺口全部关闭。数据型页面渲染 smoke：Round 87/ADR-066
+      DecisionHistoryTable.render 2 例 + logic 4 例（决策历史控制台
+      消费 ADR-065 端点，§12/§18 读面消费闭环——数据型页面缺口首项
+      关闭）；Round 89/ADR-068 SimulationRunList.render 2 例（仿真
+      台账列表面——缺口第二项关闭）；Round 101/ADR-080
+      CommandCenter（指挥中心态势总览——commandCenterLogic 4 例
+      KPI 派生/副标题/时间戳显式 + CommandCenterView.render 3 例
+      ——缺口第三项关闭）；其余数据型页面为后续按需跟进
+      （显式边界，不阻塞）。
+    evidence:
+      - ewoh-spark-app/client/src/pages/CommandMap/
+      - docs/reviews/codebase-walkthrough-2026-08-14.md §6 P2
+      - ewoh-spark-app/client/src/pages/CommandMap/store/viewportCulling.ts（worldBoundsFromTransform）
+      - ewoh-spark-app/client/src/pages/CommandMap/FactoryMap.tsx（onTransform 上报 + onVisibleBoundsChange）
+      - ewoh-spark-app/client/src/pages/CommandMap/CommandMapShell.tsx（setViewportBounds 接线）
+      - ewoh-spark-app/client/src/index.tsx（暗色启动接线）
+      - ewoh-spark-app/client/src/pages/CommandMap/MapViewport.render.test.tsx（3 例）
+      - ewoh-spark-app/client/src/pages/CommandMap/store/viewportCulling.test.ts（+5 例）
+      - docs/decisions/ADR-054-factory-operating-console-deepening.md
+      - ewoh-spark-app/client/src/lib/contrastMode.ts（主题偏好单一事实源）
+      - ewoh-spark-app/client/src/components/app-shell/ThemeToggle.tsx
+      - ewoh-spark-app/client/src/components/Layout.tsx（ThemeToggle 接线）
+      - ewoh-spark-app/client/src/components/app-shell/ThemeToggle.render.test.tsx（3 例）
+      - ewoh-spark-app/client/src/pages/static-pages.render.test.tsx（2 例）
+      - docs/decisions/ADR-055-console-theme-toggle-and-render-tests.md
+
+summary:
+  total: 56
+  implemented: 54
+  partial: 1
+  missing: 0
+  prototype: 1
+  interface_only: 0
+  legacy: 0
+  deprecated: 0
+  unknown: 0
+  notes: >
+    计数为本矩阵 capability 条目状态统计（2026-08-16，total=56 条）。
+    Implemented 38 项（含 Round 21 intelligence-l2-ml、Round 23
+    intelligence-l4-reasoning、Round 26 canonical-entity-model、Round 33
+    agent-runtime、Round 36 intelligence-l5-agentic、Round 38
+    knowledge-system 经契约+运行时全链路升 Implemented；Round 39
+    NO-08a/ADR-019 云侧推理结果运行时为 intelligence-l2-ml 证据深化；
+    Round 40 NO-08b/ADR-020 独立工业推理层为 intelligence-l4-reasoning
+    证据深化，计数不变；Round 41 NO-09a/ADR-021 持续学习回路 v1
+    （Decision→Outcome 映射 + 七指标快照）升 decision-outcome-mapping；
+    Round 42-43 NO-10a/b（ADR-022/023 trace 腿 + 指标腿成体系）升
+    observability；Round 44 NO-11a/ADR-024 Dead Letter 体系收口升
+    reliability-patterns；Round 45 NO-12a/ADR-025 Digital Twin 仿真体系
+    （SimulationRun 契约 + 四类确定性评估器 + standalone_044 台账 + 云侧
+    simulation 模块）升 digital-twin-simulation；Round 51 NO-12f/ADR-030
+    Agent 审批交互面全链路（待批清单 + 通知闭环 + 角色配置化 + 客户端
+    审批控制台）升 agent-policy-approval；Round 54 NO-12i/ADR-033 边缘
+    绑定事实→云台账端到端升 worker-exoskeleton-loop；Round 56
+    NO-12k/ADR-035 地图端偏差图层（planned vs actual）升
+    logistics-task-loop；Round 57 NO-12m/ADR-036 仿真运行控制台
+    （L6 生产消费面）升 intelligence-l6-simulation；Round 59
+    NO-12o/ADR-038 shadow plan 隔离 DB CHECK 纵深防御
+    （standalone_048）升 simulation-production-isolation；Round 62
+    NO-12r/ADR-041 邮件推送渠道（标准库 SMTP）升 andon-loop；Round 64
+    NO-12t/ADR-043 Canonical Capability Model 契约升
+    canonical-capability-model；Round 69 NO-12y/ADR-048 Decision 契约
+    生产投影接线（persistPlan 唯一投影点 + standalone_050 持久化 +
+    getPlan 读回）升 canonical-decision-model；Round 73
+    NO-13c/ADR-052 Exo Configuration 台账与写路径（standalone_051 +
+    ExoConfigService 契约门写路径 + activateProfile supersede + 事件 +
+    API）升 exoskeleton-domain-model；Round 76 NO-13f/ADR-055 手动主题
+    切换 + 页面渲染 smoke（walkthrough 三项缺口全部关闭）升
+    factory-operating-console；Round 77 NO-13g/ADR-056 经验时长统计
+    模型 + 模型重训/激活闭环（L7 四腿闭环）升 intelligence-l7-learning；
+    Round 71
+    NO-13a/ADR-050 执行反馈完成腿（feedback→assignment/task 推进链 +
+    taskActionPath 契约最短链）升 canonical-execution-model）；**Missing 清零
+    （Round 37）**
+    ——全部 56 项能力至少 Partial，与 docs/agent/project-state.yaml
+    missing_capabilities 对齐（空）。

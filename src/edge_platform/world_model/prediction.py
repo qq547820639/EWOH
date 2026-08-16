@@ -11,6 +11,7 @@ assumptions 中置 flag，不静默丢弃。
 from dataclasses import dataclass
 from typing import Any
 
+from edge_platform.contracts.identity import is_canonical_identity
 from edge_platform.inference import ts_to_ms
 from edge_platform.spatial import new_id, now_iso
 
@@ -86,7 +87,13 @@ class Predictor:
     def _make(
         self, target_entity_id, prediction_type, horizon_min, predicted_value, probability, confidence, assumptions
     ):
-        """构造 Prediction；低置信度在 assumptions 中置 flag 但仍输出。"""
+        """构造 Prediction；低置信度在 assumptions 中置 flag 但仍输出。
+
+        NO-03b 接线：target_entity_id 必须是规范身份（kind:value，ADR-006），
+        非法即 fail-closed 拒绝——预测是工厂事实候选，绝不携带不可追溯的实体引用。
+        """
+        if not isinstance(target_entity_id, str) or not is_canonical_identity(target_entity_id):
+            raise ValueError(f"预测目标必须是规范身份（kind:value）: {target_entity_id!r}")
         assumptions = dict(assumptions or {})
         assumptions.setdefault("model", "rules-linear-extrapolation")
         if confidence < LOW_CONFIDENCE_THRESHOLD:

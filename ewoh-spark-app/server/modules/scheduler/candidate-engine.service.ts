@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { qualityFindingsBlockDispatch } from '@shared/quality';
 import type {
   CandidateEvaluation,
   CandidateRejectReason,
@@ -11,6 +12,7 @@ import type {
 import { WorldStateSnapshotService } from './world-state.service';
 import { ResourceProjectionService } from './resource-projection.service';
 import { EligibilityService } from './eligibility.service';
+import type { CapabilityRecord } from '@shared/capability';
 import { RouteCostProvider } from './route-cost.provider';
 import type { RouteCost } from './travel-cost.service';
 import { SchedulingPolicyService } from './scheduling-policy.service';
@@ -235,17 +237,30 @@ export class CandidateEngineService {
     const safetyBlockedPersonIds = snapshot.safetyBlockedPersonIds ?? [];
     const forbiddenZones = (snapshot.forbiddenZones ?? []).map((f) => f.zoneId);
 
-    // station 维度索引（capability + capacity + P1-A availableWindows）。
+    // station 维度索引（capability + capacity + P1-A availableWindows + NO-05c 维护
+    // 封锁 + NO-05d 质量封锁）。
     const stationCapabilitiesById = new Map<string, string[]>();
+    // NO-12v / ADR-045：契约形态工位能力（匹配优先）。
+    const stationCapabilityRecordsById = new Map<string, CapabilityRecord[]>();
     const stationCapacityById = new Map<string, number | null>();
     const stationAvailableWindowsById = new Map<
       string,
       Array<{ startMs: number; endMs: number }>
     >();
+    const stationMaintenanceBlockedById = new Map<string, boolean>();
+    const stationQualityBlockedById = new Map<string, boolean>();
     for (const s of snapshot.stations) {
       stationCapabilitiesById.set(s.id, s.capabilities ?? []);
+      stationCapabilityRecordsById.set(s.id, s.capabilityRecords ?? []);
       stationCapacityById.set(s.id, s.capacity ?? null);
       stationAvailableWindowsById.set(s.id, s.availableWindows ?? []);
+      // NO-05c（ADR-010）：活跃维护事实 → 工位封锁（fail-closed）。
+      stationMaintenanceBlockedById.set(s.id, (s.maintenance?.length ?? 0) > 0);
+      // NO-05d（ADR-011）：critical/high 活跃质量发现 → 工位封锁（fail-closed）。
+      stationQualityBlockedById.set(
+        s.id,
+        qualityFindingsBlockDispatch(s.qualityFindings ?? null),
+      );
     }
 
     const candidatePersons = snapshot.persons.filter(
@@ -328,9 +343,14 @@ export class CandidateEngineService {
               candidateStationId: stationId,
               stationCapacityById,
               stationCapabilitiesById,
+              stationCapabilityRecordsById,
               bookedStationCounts,
               // P1-A：候选工位可用窗口（正空间交集；无数据不限制）。
               stationAvailableWindowsById,
+              // NO-05c（ADR-010）：候选工位维护封锁（fail-closed 拒派）。
+              stationMaintenanceBlockedById,
+              // NO-05d（ADR-011）：候选工位质量封锁（critical/high 拒派）。
+              stationQualityBlockedById,
             },
             routeInfeasible: stationRouteInfeasible,
             mustFinishByMs,
@@ -506,12 +526,14 @@ export class CandidateEngineService {
       person as WorldStateSnapshot['persons'][number] & {
         source?: 'AUTHORITATIVE' | 'DERIVED';
         availableWindows?: Array<{ startMs: number; endMs: number }>;
+        maintenance?: import('@shared/maintenance').MaintenanceConditionProjection[] | null;
       }
     );
     const deviceSource = device
       ? (device as WorldStateSnapshot['devices'][number] & {
           source?: 'AUTHORITATIVE' | 'DERIVED';
           maintenanceWindows?: Array<{ startMs: number; endMs: number }>;
+          maintenance?: import('@shared/maintenance').MaintenanceConditionProjection[] | null;
         })
       : null;
     const eligibility = this.eligibilityService.check(
@@ -529,6 +551,10 @@ export class CandidateEngineService {
         availableWindows: personSource.availableWindows ?? [],
         dataQuality: person.dataQuality,
         source: personSource.source,
+        // NO-05c（ADR-010）：活跃维护事实（fail-closed 拒派）。
+        maintenance: personSource.maintenance ?? null,
+        // NO-05d（ADR-011）：活跃质量发现事实（critical/high 拒派）。
+        qualityFindings: person.qualityFindings ?? null,
       },
       {
         id: task.id,
@@ -559,6 +585,10 @@ export class CandidateEngineService {
             maintenanceWindows: deviceSource?.maintenanceWindows ?? [],
             dataQuality: device.dataQuality,
             source: deviceSource?.source,
+            // NO-05c（ADR-010）：活跃维护事实（fail-closed 拒派）。
+            maintenance: deviceSource?.maintenance ?? null,
+            // NO-05d（ADR-011）：活跃质量发现事实（critical/high 拒派）。
+            qualityFindings: device?.qualityFindings ?? null,
           }
         : null,
       ctx,

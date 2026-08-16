@@ -4,7 +4,14 @@
  * 路由/冲突/策略等）。api.interface.ts 通过 `export * from './scheduler'`
  * 保持向后兼容；新代码可 `import ... from '@shared/scheduler'`。
  * 本文件类型自包含，不依赖 api.interface 其他域。
+ * ADR-007：ResourceState.status 收敛为 Canonical Resource 契约枚举
+ * （import type 自 './resource'，无运行时依赖）。
  */
+
+import type { ResourceStatus } from './resource';
+import type { MaintenanceConditionProjection } from './maintenance';
+import type { QualityFindingProjection } from './quality';
+import type { DecisionRecord } from './decision';
 
 export type ScheduleStrategy =
   | 'keep_status'
@@ -339,7 +346,10 @@ export type SolverStatus =
   | 'FALLBACK'
   | 'INFEASIBLE'
   | 'TIMEOUT'
-  | 'UNAVAILABLE';
+  | 'UNAVAILABLE'
+  // NO-13d / ADR-053：rule-based 求解器（策略显式选择的确定性地板；
+  // 如实标记，绝不冒充 heuristic/CP-SAT）。
+  | 'RULE_BASED';
 
 export interface SolverRequest {
   requestId: string;
@@ -493,8 +503,11 @@ export interface ScoreBreakdown {
 
 export interface ResourceState {
   id: string;
+  /** ADR-008：规范身份引用（person:/device:/station:<id>），与 id 并存。 */
+  entityId?: string;
   type: 'person' | 'device' | 'station' | 'tool' | 'material' | 'vehicle';
-  status: string;
+  /** ADR-007：锁定为 Canonical Resource 契约六态 + UNKNOWN。 */
+  status: ResourceStatus;
   capabilities: string[];
   certifications: string[];
   location: { stationId: string | null; zoneId: string | null; x: number | null; y: number | null };
@@ -525,6 +538,19 @@ export interface ResourceState {
    * device 专用；两列均无数据（NULL）→ 不填充/空数组（不伪造窗口，不产生约束）。
    */
   maintenanceWindows?: Array<{ startMs: number; endMs: number }>;
+  /**
+   * NO-05c：活跃维护状态事实（ADR-010，ewoh_maintenance_condition，status ∉
+   * {resolved, closed}）。critical → status=OFFLINE，其余 → DEGRADED；资格评估对
+   * 其 fail-closed 拒绝派工。无活跃条件 → null（不伪造事实）。
+   */
+  maintenance?: MaintenanceConditionProjection[] | null;
+  /**
+   * NO-05d：活跃质量发现事实（ADR-011，ewoh_quality_finding，status ∈
+   * {open, under_review}，links 含本资源规范身份）。critical/high → 资格评估
+   * fail-closed 拒派；medium/low 仅事实可见。质量事实不改变资源状态。
+   * 无关联活跃发现 → null（不伪造事实）。
+   */
+  qualityFindings?: QualityFindingProjection[] | null;
   /** 当前任务 id（person/device 有背衬列时填充，无则 null，不虚构）。 */
   currentTask?: string | null;
   /** 班组（person 有 team_name 列，其余资源无则 null）。 */
@@ -727,6 +753,8 @@ export interface WorldStateSnapshot {
   worldVersion: number;
   /** 各类实体的版本摘要（entityId → version）。 */
   entityVersions: Record<string, number>;
+  /** ADR-008 / NO-03b：快照构建时的契约自检结果（entityVersions 键/实体规范身份引用）。 */
+  contractCheck?: { valid: boolean; errors: string[] };
   /** 当前生效的 reservation 列表（资源占用）。 */
   reservations: Array<{
     reservationId: string;
@@ -741,6 +769,8 @@ export interface WorldStateSnapshot {
   safetyBlockedDeviceIds?: string[];
   persons: Array<{
     id: string;
+    /** ADR-008：规范身份引用 person:<id>（与原 id 并存，逐点收敛）。 */
+    entityId?: string;
     name: string;
     status: string;
     healthStatus: string | null;
@@ -769,11 +799,26 @@ export interface WorldStateSnapshot {
     freshnessMs?: number | null;
     /** 数据质量：FRESH / STALE / UNKNOWN（STALE/UNKNOWN 不被视为可用）。 */
     dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
+    /** NO-12u / ADR-044：能力投影（Canonical CapabilityRecord；契约合法记录）。 */
+    capabilityRecords?: import('./capability').CapabilityRecord[];
+    /**
+     * NO-05c：活跃维护状态事实（ADR-010；status ∉ {resolved, closed}）。
+     * critical → status=OFFLINE；其余 → DEGRADED；资格评估对其 fail-closed
+     * 拒绝派工。无活跃条件 → null（不伪造事实）。
+     */
+    maintenance?: MaintenanceConditionProjection[] | null;
+    /**
+     * NO-05d：活跃质量发现事实（ADR-011；status ∈ {open, under_review}，
+     * links 含本资源）。critical/high → 资格评估 fail-closed 拒派；
+     * medium/low 仅事实可见；不改变资源状态。无关联 → null。
+     */
+    qualityFindings?: QualityFindingProjection[] | null;
     // --- Command Map 增量（Phase 0 / P0-3）：坐标判别联合（可选） ---
     coordinate?: CoordinateReference;
   }>;
-  tasks: Array<{
-    id: string;
+  tasks: Array<{    id: string;
+    /** ADR-008：规范身份引用 task:<id>（与原 id 并存，逐点收敛）。 */
+    entityId?: string;
     title: string;
     taskType: string;
     priority: string;
@@ -824,6 +869,8 @@ export interface WorldStateSnapshot {
   }>;
   devices: Array<{
     id: string;
+    /** ADR-008：规范身份引用 device:<id>（与原 id 并存，逐点收敛）。 */
+    entityId?: string;
     workerName: string | null;
     deviceModel: string | null;
     batteryPct: number;
@@ -850,13 +897,29 @@ export interface WorldStateSnapshot {
     freshnessMs?: number | null;
     /** 数据质量：FRESH / STALE / UNKNOWN（STALE/UNKNOWN 不被视为可用）。 */
     dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
+    /** NO-12u / ADR-044：能力投影（Canonical CapabilityRecord；契约合法记录）。 */
+    capabilityRecords?: import('./capability').CapabilityRecord[];
     /** 派生字段标记（如 capabilities 来自型号白名单兜底）。 */
     derived?: string[];
+    /**
+     * NO-05c：活跃维护状态事实（ADR-010；status ∉ {resolved, closed}）。
+     * critical → status=OFFLINE + online=false；其余 → DEGRADED；资格评估对其
+     * fail-closed 拒绝派工。无活跃条件 → null（不伪造事实）。
+     */
+    maintenance?: MaintenanceConditionProjection[] | null;
+    /**
+     * NO-05d：活跃质量发现事实（ADR-011；status ∈ {open, under_review}，
+     * links 含本资源）。critical/high → 资格评估 fail-closed 拒派；
+     * medium/low 仅事实可见；不改变资源状态。无关联 → null。
+     */
+    qualityFindings?: QualityFindingProjection[] | null;
     // --- Command Map 增量（Phase 0 / P0-3）：坐标判别联合（可选） ---
     coordinate?: CoordinateReference;
   }>;
   stations: Array<{
     id: string;
+    /** ADR-008：规范身份引用 station:<id>（与原 id 并存，逐点收敛）。 */
+    entityId?: string;
     name: string;
     /** 坐标 UNKNOWN 时显式 null（禁止 0,0 伪坐标；无坐标工位不参与定位决策）。 */
     x: number | null;
@@ -869,9 +932,26 @@ export interface WorldStateSnapshot {
     availableWindows?: Array<{ startMs: number; endMs: number }>;
     /** 工位能力（P1-3：requiredStationCapabilities 匹配；来源为空间实体 entityType 基础能力）。 */
     capabilities?: string[];
+    /**
+     * NO-05c：活跃维护状态事实（ADR-010；status ∉ {resolved, closed}）。
+     * 工位快照无 status 字段，资格评估经 candidate-engine 的
+     * stationMaintenanceBlockedById 对其 fail-closed 拒绝派工。无活跃条件 → null。
+     */
+    maintenance?: MaintenanceConditionProjection[] | null;
+    /**
+     * NO-05d：活跃质量发现事实（ADR-011；status ∈ {open, under_review}，
+     * links 含本工位）。critical/high → 资格评估经 candidate-engine 的
+     * stationQualityBlockedById fail-closed 拒派；medium/low 仅事实可见。
+     * 无关联 → null。
+     */
+    qualityFindings?: QualityFindingProjection[] | null;
+    /** NO-12u / ADR-044：能力投影（Canonical CapabilityRecord；契约合法记录）。 */
+    capabilityRecords?: import('./capability').CapabilityRecord[];
     // --- Command Map 增量（Phase 0 / P0-3）：坐标判别联合（可选） ---
     coordinate?: CoordinateReference;
   }>;
+  /** NO-12u / ADR-044：能力投影缺口显式计数（certification 缺 issuer/expiry 等）。 */
+  capabilityProjectionIssues?: string[];
   backlog: Array<{ taskId: string; count: number }>;
   events: Array<{
     eventId: string;
@@ -1071,6 +1151,8 @@ export interface SchedulingPlanMetrics {
 export interface SchedulingPlanV2 {
   planId: string;
   planName?: string;
+  /** 方案归属租户（ADR-071；ewoh_schedule_plan.org_id；缺省=standalone_025 存量/全局过渡行）。 */
+  orgId?: string;
   version: number;
   status: PlanStatus;
   trigger: { type: SchedulingTrigger | string; entityId: string | null };
@@ -1109,6 +1191,32 @@ export interface SchedulingPlanV2 {
   baselineDelta: Record<string, unknown>;
   violations: Array<Record<string, unknown>>;
   createdAt: string;
+  /**
+   * NO-12s / ADR-042：审批前自动布局仿真预验证结果（advisory，绝不阻断
+   * 审批）。runId 确定性 = `plan-approval:${planId}`（台账幂等回读）；
+   * 无多工位移动链 → skippedReason 显式留痕；仿真失败 → error 显式。
+   */
+  preApprovalSimulation?: {
+    runId: string;
+    status: string;
+    totalTravelDistanceM?: number;
+    routesCount?: number;
+    engineVersion?: string;
+    error?: string;
+    skippedReason?: string;
+  };
+  /**
+   * NO-12y / ADR-048：Canonical DecisionRecord[]（ADR-047 契约形态）——
+   * persistPlan 唯一投影点产出，随方案持久化（决策历史单一事实源，§12/§18）。
+   * 缺省 = 未投影（存量行/测试构造）。
+   */
+  decisionRecords?: DecisionRecord[];
+  /**
+   * NO-12y / ADR-048：决策投影显式缺口（§33 绝不静默丢弃）——
+   * decision_tenant_unknown / decision_no_selected_reason /
+   * decision_invalid:<errorCode> 等；空 = 无缺口。
+   */
+  decisionProjectionIssues?: Array<{ assignmentId: string; reason: string }>;
 }
 
 export interface SchedulingFeedbackResource {
@@ -1235,7 +1343,10 @@ export interface SchedulingPolicy {
  *   或环境变量 EWOH_SOLVER_PRODUCTION_ENABLED=1 允许；否则 fail-closed 回退 heuristic）。
  * 解析优先级：EWOH_SOLVER_ACTIVATION 环境变量 > SchedulingPolicyConfig.cpSat.activation > 'OFF'。
  */
-export type SolverActivationState = 'OFF' | 'SHADOW' | 'CANARY' | 'PRODUCTION';
+export type SolverActivationState = 'OFF' | 'SHADOW' | 'CANARY' | 'PRODUCTION' | 'RULE_BASED'
+  // NO-13i / ADR-058：MILP（HiGHS 精确联合整数规划；策略显式选择 milp-v1，
+  // 不参与 CP-SAT 激活阶梯；solverActivation 如实标记）。
+  | 'MILP';
 
 export interface SchedulingPolicyConfig {
   configVersion: number;

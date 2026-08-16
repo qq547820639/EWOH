@@ -52,7 +52,8 @@ export class OverridePreviewService {
     body: PlanOverrideRequest,
     ctx: OrgContext,
   ): Promise<OverridePreviewResponse> {
-    const baseline = await this.planService.getPlan(planId).catch(() => null);
+    // ADR-071：预览读面透传 ctx（跨租户方案与不存在同语义 → 404）。
+    const baseline = await this.planService.getPlan(planId, ctx).catch(() => null);
     if (!baseline) throw new NotFoundException(`Plan ${planId} not found`);
 
     const snapshot = await this.worldStateSnapshotService.buildSnapshot(ctx);

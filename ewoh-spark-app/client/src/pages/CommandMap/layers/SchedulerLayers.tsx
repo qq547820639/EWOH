@@ -16,6 +16,10 @@ import {
   replanChangeOverlay,
   humanLockedTaskIds,
 } from '../replanOverlayVM';
+import {
+  buildExecutionDeviationMapView,
+  type ExecutionDeviationMapEntry,
+} from '../vm/executionDeviationMapVM';
 import { HUMAN_LOCKED_COLOR } from '../entityColors';
 
 interface LayerProps {
@@ -101,7 +105,7 @@ export const ResourceLayer = memo(function ResourceLayer({ state }: LayerProps):
       {persons.map((p) =>
         p.x == null || p.y == null ? null : (
           <g key={`res-${p.id}`} transform={`translate(${p.x} ${p.y})`}>
-            <circle r={6} fill={p.status === 'available' ? '#22c55e' : '#f43f5e'} stroke="#0f172a" strokeWidth={1} />
+            <circle r={6} fill={p.status === 'AVAILABLE' ? '#22c55e' : '#f43f5e'} stroke="#0f172a" strokeWidth={1} />
             <title>{`${p.name} ${p.status}`}</title>
           </g>
         ),
@@ -109,7 +113,7 @@ export const ResourceLayer = memo(function ResourceLayer({ state }: LayerProps):
       {devices.map((d) =>
         d.x == null || d.y == null ? null : (
           <g key={`res-${d.id}`} transform={`translate(${d.x} ${d.y})`}>
-            <rect x={-5} y={-5} width={10} height={10} rx={2} fill={d.status === 'online' ? '#0ea5e9' : '#64748b'} stroke="#0f172a" strokeWidth={1} />
+            <rect x={-5} y={-5} width={10} height={10} rx={2} fill={d.status === 'AVAILABLE' ? '#0ea5e9' : '#64748b'} stroke="#0f172a" strokeWidth={1} />
             <title>{`${d.name} ${d.status}`}</title>
           </g>
         ),
@@ -264,6 +268,131 @@ export const RiskLayer = memo(function RiskLayer({ state }: LayerProps): React.R
 });
 
 /**
+ * R-6 / ADR-035：执行偏差图层（planned vs actual，纯视觉）。
+ *
+ * 数据 = buildExecutionDeviationMapView（服务端 deviationType 权威分类 +
+ * 快照坐标事实）；本组件绝不重新判定偏差、绝不伪造坐标。
+ * 表达组合（不依赖颜色唯一通道）：计划=空心方框、实际=实心圆点、
+ * 计划→实际=虚线连接（偏差）/实线连接（进行中）、偏差徽标文案 + title 详情。
+ */
+const DEVIATION_COLORS: Record<ExecutionDeviationMapEntry['tone'], string> = {
+  critical: '#ef4444',
+  warning: '#f59e0b',
+  neutral: '#94a3b8',
+};
+const ONTRACK_COLOR = '#10b981';
+
+function DeviationMarker({ entry }: { entry: ExecutionDeviationMapEntry }): React.ReactElement | null {
+  const color = DEVIATION_COLORS[entry.tone];
+  const hasConnector = entry.plannedPoint != null && entry.actualPoint != null;
+  const mx =
+    entry.plannedPoint && entry.actualPoint
+      ? (entry.plannedPoint.x + entry.actualPoint.x) / 2
+      : (entry.plannedPoint?.x ?? entry.actualPoint?.x ?? 0);
+  const my =
+    entry.plannedPoint && entry.actualPoint
+      ? (entry.plannedPoint.y + entry.actualPoint.y) / 2
+      : (entry.plannedPoint?.y ?? entry.actualPoint?.y ?? 0);
+  return (
+    <g>
+      {hasConnector && entry.plannedPoint && entry.actualPoint && (
+        <line
+          x1={entry.plannedPoint.x}
+          y1={entry.plannedPoint.y}
+          x2={entry.actualPoint.x}
+          y2={entry.actualPoint.y}
+          stroke={color}
+          strokeWidth={1.5}
+          strokeDasharray="5 3"
+        />
+      )}
+      {entry.plannedPoint && (
+        <g transform={`translate(${entry.plannedPoint.x} ${entry.plannedPoint.y})`}>
+          <rect x={-5} y={-5} width={10} height={10} fill="none" stroke={color} strokeWidth={1.5} />
+        </g>
+      )}
+      {entry.actualPoint && (
+        <g transform={`translate(${entry.actualPoint.x} ${entry.actualPoint.y})`}>
+          <circle r={4.5} fill={color} stroke="#0f172a" strokeWidth={1} />
+        </g>
+      )}
+      <g transform={`translate(${mx} ${my})`}>
+        <text
+          textAnchor="middle"
+          fontSize={7}
+          fill={color}
+          stroke="#0f172a"
+          strokeWidth={2}
+          paintOrder="stroke"
+          dy={-4}
+        >
+          {entry.deviationLabel ?? ''}
+        </text>
+        {entry.deltaLabel && (
+          <text textAnchor="middle" fontSize={6.5} fill="#e2e8f0" stroke="#0f172a" strokeWidth={2} paintOrder="stroke" dy={6}>
+            {entry.deltaLabel}
+          </text>
+        )}
+      </g>
+      <title>{`${entry.taskId} ${entry.statusLabel}${
+        entry.deviationLabel ? ` · ${entry.deviationLabel}` : ''
+      }${entry.deviationReason ? ` · ${entry.deviationReason}` : ''}${
+        entry.deltaLabel ? ` · ${entry.deltaLabel}` : ''
+      }（计划→实际）`}</title>
+    </g>
+  );
+}
+
+function OntrackMarker({ entry }: { entry: ExecutionDeviationMapEntry }): React.ReactElement | null {
+  const hasConnector = entry.plannedPoint != null && entry.actualPoint != null;
+  return (
+    <g>
+      {hasConnector && entry.plannedPoint && entry.actualPoint && (
+        <line
+          x1={entry.plannedPoint.x}
+          y1={entry.plannedPoint.y}
+          x2={entry.actualPoint.x}
+          y2={entry.actualPoint.y}
+          stroke={ONTRACK_COLOR}
+          strokeWidth={1}
+        />
+      )}
+      {entry.plannedPoint && (
+        <g transform={`translate(${entry.plannedPoint.x} ${entry.plannedPoint.y})`}>
+          <rect x={-4} y={-4} width={8} height={8} fill="none" stroke={ONTRACK_COLOR} strokeWidth={1} />
+        </g>
+      )}
+      {entry.actualPoint && (
+        <g transform={`translate(${entry.actualPoint.x} ${entry.actualPoint.y})`}>
+          <circle r={3} fill={ONTRACK_COLOR} stroke="#0f172a" strokeWidth={1} />
+        </g>
+      )}
+      <title>{`${entry.taskId} ${entry.statusLabel}（执行中，计划→实际）`}</title>
+    </g>
+  );
+}
+
+export const ExecutionDeviationLayer = memo(function ExecutionDeviationLayer({
+  state,
+}: LayerProps): React.ReactElement | null {
+  const view = buildExecutionDeviationMapView({
+    executions: state.executions,
+    snapshot: state.snapshot,
+  });
+  if (view.deviated.length === 0 && view.ontrack.length === 0) return EMPTY;
+  return (
+    <g data-layer="execution-deviation">
+      {view.ontrack.map((e) => (
+        <OntrackMarker key={e.executionId} entry={e} />
+      ))}
+      {view.deviated.map((e) => (
+        <DeviationMarker key={e.executionId} entry={e} />
+      ))}
+    </g>
+  );
+});
+
+/**
  * 多图层组合渲染（P0）：工厂 Base 恒在底层，其余按 activeLayers 全量叠加。
  * 同时开启 Resource + Route + Plan + Conflict 是调度驾驶舱的正常使用场景。
  * React.memo：state/selectedPlanId/replanPreview 引用未变（仅 store 其他 slice 写入）时跳过重渲染。
@@ -284,6 +413,8 @@ export const SchedulerLayersOverlay = memo(function SchedulerLayersOverlay({
   if (active.has('route')) layers.push(<RouteLayer key="route" state={state} />);
   if (active.has('conflict')) layers.push(<ConflictLayer key="conflict" state={state} />);
   if (active.has('risk')) layers.push(<RiskLayer key="risk" state={state} />);
+  if (active.has('execution-deviation'))
+    layers.push(<ExecutionDeviationLayer key="execution-deviation" state={state} />);
   if (active.has('changed-by-replan'))
     layers.push(<ReplanChangeLayer key="replan-change" state={state} replanPreview={replanPreview} />);
   if (active.has('human-locked'))

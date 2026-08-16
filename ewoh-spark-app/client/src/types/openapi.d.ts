@@ -2479,6 +2479,465 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/identity/mappings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List identity mappings (tenant-scoped) */
+        get: {
+            parameters: {
+                query?: {
+                    system?: string;
+                    status?: "active" | "superseded" | "revoked";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Mapping records in the caller tenant */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IdentityMappingRecord"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /** Register a third-party ID → canonical identity mapping (ADR-006) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["IdentityRegisterRequest"];
+                };
+            };
+            responses: {
+                /** @description Registered mapping record (idempotent re-register bumps version) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IdentityRegisterResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/identity/mappings/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resolve a third-party (system, id) to a canonical identity (fail-closed) */
+        get: {
+            parameters: {
+                query: {
+                    system: string;
+                    id: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Resolution result (unmapped → entityId null + reason unmapped_identity) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IdentityResolveResult"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/conditions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List maintenance conditions (tenant-scoped) */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "detected" | "acknowledged" | "work_order_created" | "resolved" | "closed";
+                    overdue?: boolean;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Maintenance conditions in the caller tenant */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MaintenanceCondition"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /** Register a maintenance condition on a subject entity (ADR-010) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MaintenanceConditionCreateRequest"];
+                };
+            };
+            responses: {
+                /** @description Created maintenance condition (status=detected; severity normalized to canonical ladder) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MaintenanceCondition"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/conditions/{conditionId}/transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Advance a maintenance condition lifecycle state (ADR-010) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    conditionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MaintenanceTransitionRequest"];
+                };
+            };
+            responses: {
+                /** @description Transition result (illegal transitions rejected fail-closed) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MaintenanceTransitionResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quality/findings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List quality findings (tenant-scoped) */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "open" | "under_review" | "dispositioned" | "closed";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Quality findings in the caller tenant */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["QualityFinding"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /** Register a quality finding (ADR-010) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["QualityFindingCreateRequest"];
+                };
+            };
+            responses: {
+                /** @description Created quality finding (status=open; severity normalized to canonical ladder) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["QualityFinding"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quality/findings/{findingId}/transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Advance a quality finding lifecycle state (ADR-010) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    findingId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["QualityFindingTransitionRequest"];
+                };
+            };
+            responses: {
+                /** @description Transition result (dispositioned requires valid disposition) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["QualityFindingTransitionResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workorders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List work orders (tenant-scoped) */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "created" | "scheduled" | "in_progress" | "completed" | "closed" | "cancelled";
+                    originKind?: "maintenance_condition" | "quality_finding";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Work orders in the caller tenant */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkOrder"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /** Create a canonical work order (ADR-012) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["WorkOrderCreateRequest"];
+                };
+            };
+            responses: {
+                /** @description Created work order (idempotent re-create returns existing row) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkOrderCreateResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workorders/{workOrderId}/transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Advance a work order lifecycle state (ADR-012) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    workOrderId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["WorkOrderTransitionRequest"];
+                };
+            };
+            responses: {
+                /** @description Transition result (completed/closed requires completedAt; cancelled requires reason) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkOrderTransitionResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workflows/examples": {
         parameters: {
             query?: never;
@@ -6060,6 +6519,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/approvals/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List pending approvals for the tenant (ADR-030 unified view) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Pending approval instances (approvalId/entityType/entityId/createdAt) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>[];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/approvals": {
         parameters: {
             query?: never;
@@ -8279,6 +8777,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scheduler/predictions/task-duration/retrain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retrain the empirical task-duration model (NO-13g / ADR-056: real feedback -> statistical model -> model registry)
+         * @description DurationModelTrainingService.retrain()（NO-13g / ADR-056）：真实执行反馈 （ewoh_scheduling_feedback.actual_start/actual_end）→ 经验时长统计模型 → ewoh_model_registry 落版（supersede 旧 active + 版本递增）+ 内存刷新。 样本不足 → 400 retrain_not_enough_data（§33 不落版不伪造）。预测面 shadow-only。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Retrained model summary */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            ok?: boolean;
+                            modelId?: string;
+                            version?: string;
+                            n?: number;
+                            medianMs?: number;
+                            p90Ms?: number;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/decision-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cross-kind Decision History retrieval (NO-13p / ADR-065: unified read surface over Decision Catalog 8 kinds)
+         * @description DecisionHistoryService.listDecisions()（NO-13p / ADR-065）：只读聚合四表 （schedule_plan.decision_records_json + agent_approval / learning_proposal / scheduling_policy .decision_json）→ 记录级租户过滤（统一面 §15）→ validateDecision（非法显式 skippedInvalid 计数 §33）→ decidedAt 降序 + decisionId 字典序稳定 → 分页（limit 缺省 50 cap 100）。kind/status 过滤器 fail-closed（未知值 400）。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    kind?: string;
+                    status?: string;
+                    limit?: number;
+                    offset?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Aggregated decision history */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items?: Record<string, never>[];
+                            total?: number;
+                            skippedInvalid?: number;
+                            sources?: {
+                                plans?: number;
+                                agentApprovals?: number;
+                                learningProposals?: number;
+                                policies?: number;
+                            };
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scheduler/conflicts": {
         parameters: {
             query?: never;
@@ -9617,6 +10221,1517 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ingest/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ingest edge envelope event batch (ADR-009 + transport dedup) */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description Target organization UUID for machine-to-machine ingestion */
+                    "X-Org-Id": components["parameters"]["OrgIdHeader"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        events: components["schemas"]["EnvelopeEventDto"][];
+                    };
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IngestEventBatchResponse"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                TooManyRequests: components["responses"]["TooManyRequests"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/manifests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List registered agent manifests (tenant scoped) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentManifestView"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /** Register an agent manifest (ADR-016 contract, fail-closed) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AgentManifestInput"];
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentManifestInput"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/manifests/{agentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one agent manifest */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    agentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentManifestView"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Execute a structured agent command (approval gating + budget/timeout/fallback) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        agentId: string;
+                        command: string;
+                        payload?: Record<string, never>;
+                    };
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ExecuteAgentCommandResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/supervisor/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run factory supervisor suggestion flow (world state → proposal → approval) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            suggestion?: Record<string, never>;
+                            result?: components["schemas"]["ExecuteAgentCommandResult"];
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List agent tasks (tenant scoped) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>[];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /** Create a structured agent task (ADR-017 contract, fail-closed) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/tasks/{taskId}/dispatch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dispatch an agent task (dependency gating fail-closed) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/tasks/{taskId}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start an agent task (dispatched → in_progress) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/tasks/{taskId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete an agent task (in_progress → completed|failed, terminal event) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "completed" | "failed";
+                        outcomeJson?: Record<string, never>;
+                    };
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/tasks/{taskId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel an agent task (non-terminal → cancelled) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List pending agent command approvals (ADR-030; expired is explicit) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Pending agent command approvals with expiry metadata */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>[];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/approvals/{approvalId}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve an agent command approval (approve → execute / reject → record) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    approvalId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        approved: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ExecuteAgentCommandResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/knowledge/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List knowledge entries (tenant ladder = shared global/industry + tenant customer/factory/private_operational) */
+        get: {
+            parameters: {
+                query?: {
+                    kind?: "incident" | "resolution" | "failure_pattern" | "process_knowledge" | "decision_history" | "evidence";
+                    scope?: "global" | "industry" | "customer" | "factory" | "private_operational";
+                    status?: "draft" | "verified" | "superseded";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Knowledge entries visible to the caller tenant */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["KnowledgeEntry"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /** Register a canonical knowledge entry (ADR-018 Amendment 1 / NO-07b) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["KnowledgeEntryRegisterRequest"];
+                };
+            };
+            responses: {
+                /** @description Created knowledge entry (idempotent re-create returns existing row) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["KnowledgeEntryRegisterResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/knowledge/shared": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cross-tenant shared knowledge catalog (global/industry only; tenant scopes fail-closed) */
+        get: {
+            parameters: {
+                query?: {
+                    kind?: "incident" | "resolution" | "failure_pattern" | "process_knowledge" | "decision_history" | "evidence";
+                    scope?: "global" | "industry";
+                    status?: "draft" | "verified" | "superseded";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Shared knowledge entries (never crosses private_operational) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["KnowledgeEntry"][];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/knowledge/entries/{entryId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a single knowledge entry (tenant ladder; out-of-scope returns 400) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    entryId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Knowledge entry */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["KnowledgeEntry"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/knowledge/entries/{entryId}/transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Advance a knowledge entry status (draft→verified needs verifiedBy; superseded terminal) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    entryId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["KnowledgeEntryTransitionRequest"];
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["KnowledgeEntryTransitionResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inference/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List inference results (tenant-scoped ledger) */
+        get: {
+            parameters: {
+                query?: {
+                    level?: "L1_deterministic_rules" | "L2_statistical_ml" | "L3_optimization" | "L4_industrial_reasoning" | "L5_agentic_workflow" | "L6_simulation_digital_twin" | "L7_learning_loop";
+                    subjectId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Inference results in the caller tenant */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InferenceResult"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /** Record a canonical inference result (ADR-019 / NO-08a) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InferenceResultRecordRequest"];
+                };
+            };
+            responses: {
+                /** @description Recorded inference result (idempotent re-record returns existing row) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InferenceResultRecordResponse"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inference/results/{inferenceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a single inference result (tenant-scoped; out-of-scope returns 400) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    inferenceId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Inference result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InferenceResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reasoning/evaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Evaluate deterministic industrial reasoning rules (ADR-020 / NO-08b) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReasoningEvaluateRequest"];
+                };
+            };
+            responses: {
+                /** @description Reasoning trace with per-conclusion inference ledger ids */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReasoningEvaluateResponse"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reasoning/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the builtin reasoning rule registry (explainability surface) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Rule registry with trigger conditions and severities */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReasoningRule"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/evaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Evaluate the seven continuous-learning metrics for a period (ADR-021 / NO-09a) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LearningEvaluateRequest"];
+                };
+            };
+            responses: {
+                /** @description Learning evaluation snapshot (idempotent re-evaluate returns existing row) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningEvaluateResponse"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/evaluations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List learning evaluations (tenant-scoped ledger) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Learning evaluations in the caller tenant */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningEvaluation"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Latest learning evaluation (tenant-scoped) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Latest learning evaluation */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningEvaluation"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/annotations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List outcome annotations by target (tenant-scoped) */
+        get: {
+            parameters: {
+                query: {
+                    targetType: "plan" | "decision" | "proposal" | "agent_command";
+                    targetId: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Annotations for the target */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>[];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /** Record a decision outcome annotation (ADR-034: ground-truth surface, idempotent) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        annotationId?: string;
+                        /** @enum {string} */
+                        targetType: "plan" | "decision" | "proposal" | "agent_command";
+                        targetId: string;
+                        /** @enum {string} */
+                        outcomeKind: "success" | "partial_success" | "failure" | "invalid";
+                        judgedBy: string;
+                        /** Format: date-time */
+                        judgedAt?: string;
+                        measured?: {
+                            [key: string]: number;
+                        };
+                        comment?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Recorded annotation (idempotent re-record returns existing) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/annotations/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List recent outcome annotations (tenant-scoped, optional outcomeKind filter) */
+        get: {
+            parameters: {
+                query?: {
+                    outcomeKind?: "success" | "partial_success" | "failure" | "invalid";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Recent annotations in the caller tenant */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>[];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List learning proposals (tenant-scoped ledger) */
+        get: {
+            parameters: {
+                query?: {
+                    kind?: "rule_threshold";
+                    status?: "proposed" | "shadow_evaluated" | "approved" | "rolled_back" | "rejected";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Learning proposals in the caller tenant */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningProposal"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /** Propose a learning feedback change (ADR-026: shadow evaluation + human-approval ladder) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LearningProposalRequest"];
+                };
+            };
+            responses: {
+                /** @description Learning proposal (proposed or shadow_evaluated when facts supplied) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningProposalResponse"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/proposals/{proposalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one learning proposal (tenant-scoped) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    proposalId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Learning proposal record */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningProposal"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/proposals/{proposalId}/shadow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Attach deterministic shadow evaluation to a proposed change (proposed → shadow_evaluated) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    proposalId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        facts: Record<string, never>[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Shadow-evaluated proposal */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningProposal"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/proposals/{proposalId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Human approval of a shadow-evaluated proposal (ADR-026 activation ladder; no auto-approve) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    proposalId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Approved proposal (activates threshold override for the tenant) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningProposal"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/proposals/{proposalId}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Human rejection of a proposal (reason required) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    proposalId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        reason: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Rejected proposal */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningProposal"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/proposals/{proposalId}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Human rollback of an approved proposal (reason required; deactivates the override) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    proposalId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        reason: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Rolled-back proposal */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningProposal"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/simulator/start": {
         parameters: {
             query?: never;
@@ -10221,6 +12336,48 @@ export interface paths {
                 InternalError: components["responses"]["InternalError"];
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/observability/traces/{traceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stitch a full-chain trace by correlation id (spans + events + audit, ADR-022) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    traceId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Stitched trace (spans, correlated events, correlated audit) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TraceStitch"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -11885,6 +14042,938 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reliability/dead-letters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List dead letters (tenant-scoped ledger) */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "pending" | "requeued" | "discarded";
+                    sourceId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Dead letters in the caller tenant */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DeadLetter"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /** Record a permanently failed message to the dead letter ledger (ADR-024) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["DeadLetterRecordRequest"];
+                };
+            };
+            responses: {
+                /** @description Dead letter record (idempotent re-record returns existing row) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DeadLetterRecordResponse"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reliability/dead-letters/{letterId}/requeue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Human-triggered replay of a dead letter (attempts incremented; no auto-retry) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    letterId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Requeued result */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DeadLetterTransitionResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reliability/dead-letters/{letterId}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discard a dead letter (reason required, human decision recorded) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    letterId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        reason: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Discarded result */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DeadLetterTransitionResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/simulation/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List simulation runs (tenant-scoped ledger) */
+        get: {
+            parameters: {
+                query?: {
+                    kind?: "what_if" | "capacity" | "layout" | "material_flow";
+                    status?: "created" | "running" | "completed" | "failed";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Simulation runs in the caller tenant */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SimulationRun"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /** Run a digital twin simulation (ADR-025: deterministic evaluator, isSimulation=true isolation) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SimulationRunRequest"];
+                };
+            };
+            responses: {
+                /** @description Simulation run (created → evaluated → terminal completed|failed) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SimulationRunResponse"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/simulation/runs/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one simulation run (tenant-scoped) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    runId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Simulation run record */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SimulationRun"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/observability/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Unified metric registry export (JSON with metrics + registryViolations, ADR-023) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Registry-validated metric samples with explicit violations */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MetricsExport"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/observability/metrics/text": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Unified metric registry export (Prometheus text compatible) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Prometheus text format with registry violations as comments */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": string;
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/observability/metrics/edge-metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Edge metrics uplink (ADR-028: registry-validated periodic snapshot ingest) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["EdgeMetricsBatchRequest"];
+                };
+            };
+            responses: {
+                /** @description Ingest result (accepted/rejected/violations explicit) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EdgeMetricsIngestResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exo/configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List exo config facts (tenant-scoped ledger) */
+        get: {
+            parameters: {
+                query?: {
+                    kind?: "assist_profile" | "fit" | "calibration";
+                    exoId?: string;
+                    status?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Config facts in the caller tenant */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>[];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /** Record an exoskeleton configuration fact (ADR-051/ADR-052: contract gate fail-closed + idempotent) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        configId?: string;
+                        /** @enum {string} */
+                        kind: "assist_profile" | "fit" | "calibration";
+                        exoId: string;
+                        status: string;
+                        supportMode?: string;
+                        vendorModeName?: string;
+                        parameters?: {
+                            assistLevel?: number;
+                            torqueLimitNm?: number;
+                        };
+                        /** Format: date-time */
+                        effectiveFrom?: string;
+                        /** Format: date-time */
+                        effectiveTo?: string;
+                        supersededBy?: string;
+                        setBy?: string;
+                        personId?: string;
+                        /** Format: date-time */
+                        fittedAt?: string;
+                        fitter?: string;
+                        measuredValues?: {
+                            [key: string]: number;
+                        };
+                        /** @enum {string} */
+                        calibrationKind?: "zeroing" | "load_cell" | "imu";
+                        result?: string;
+                        /** Format: date-time */
+                        calibratedAt?: string;
+                        calibratedBy?: string;
+                        /** Format: date-time */
+                        nextDueAt?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Recorded exo config fact */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exo/configs/{configId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an exo config fact (tenant-scoped) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    configId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Config fact */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exo/configs/{configId}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activate an assist profile (active-unique per exo+mode; prior active CAS superseded) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    configId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        setBy?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Activated profile */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exo/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List exo sessions (tenant-scoped ledger, includes history) */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "active" | "ended" | "aborted";
+                    exoId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sessions in the caller tenant */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>[];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /** Start an exoskeleton-person binding session (ADR-032: contract fail-closed + active-unique) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        sessionId?: string;
+                        exoId: string;
+                        personId: string;
+                        /** Format: date-time */
+                        startedAt?: string;
+                        /** Format: date-time */
+                        expectedEndAt?: string;
+                        operatorId?: string;
+                        reason?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Started session */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exo/sessions/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one exo session (tenant-scoped) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session record */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exo/sessions/{sessionId}/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** End a session normally (state machine + endedBy required) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        endedBy: string;
+                        reason?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Ended session */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exo/sessions/{sessionId}/abort": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Abort a session (state machine + endedBy required) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        endedBy: string;
+                        reason?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Aborted session */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List in-app notifications (tenant + role scoped, ADR-030) */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "pending" | "read";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Notifications visible to the caller */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>[];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark a notification as read (idempotent, tenant scoped) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Updated notification */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry a failed push notification (failed -> pending, tenant scoped) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Notification re-queued for dispatch */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/observability/traces": {
         parameters: {
             query?: never;
@@ -12898,6 +15987,558 @@ export interface components {
             matched: boolean;
             decision: string;
             reasons: string[];
+        };
+        /** @description 第三方系统 ID → EWOH 规范身份（kind:value）的映射记录（ADR-006）。 契约权威源：contracts/identity/identity-mapping.schema.json。 */
+        IdentityMappingRecord: {
+            mappingId: string;
+            version: number;
+            source: {
+                system: string;
+                id: string;
+                idKind?: string;
+            };
+            target: {
+                entityId: string;
+            };
+            /** @enum {string} */
+            authority: "registration" | "adapter" | "manual";
+            /** @enum {string} */
+            status: "active" | "superseded" | "revoked";
+            /** Format: date-time */
+            recordedAt: string;
+            /** Format: date-time */
+            validFrom?: string | null;
+            /** Format: date-time */
+            validTo?: string | null;
+            evidenceId?: string | null;
+        };
+        IdentityRegisterRequest: {
+            /** @description 可选；缺省由服务端生成 map:<uuid> */
+            mappingId?: string;
+            version?: number;
+            source: {
+                system: string;
+                id: string;
+                idKind?: string;
+            };
+            target: {
+                /** @description EWOH 规范身份 kind:value（内部 value 必须由 EWOH 生成） */
+                entityId: string;
+            };
+            /** @enum {string} */
+            authority: "registration" | "adapter" | "manual";
+            /** Format: date-time */
+            validFrom?: string | null;
+            /** Format: date-time */
+            validTo?: string | null;
+            evidenceId?: string | null;
+        };
+        IdentityResolveResult: {
+            entityId?: string | null;
+            /** @enum {string|null} */
+            reason?: "unmapped_identity" | null;
+        };
+        IdentityRegisterResult: {
+            record: components["schemas"]["IdentityMappingRecord"];
+            created: boolean;
+            superseded: boolean;
+        };
+        /** @description 维护状态注册请求（ADR-010）。契约权威源： contracts/maintenance/maintenance.schema.json（条件类型/lifecycle/逾期规则）。 */
+        MaintenanceConditionCreateRequest: {
+            conditionId: string;
+            /** @description EWOH 规范身份 kind:value（ADR-006） */
+            subjectEntityId: string;
+            /** @enum {string} */
+            conditionType: "wear" | "calibration_due" | "fault_recurring" | "overdue_inspection" | "battery_degradation" | "anomaly";
+            /** @description canonical ladder（critical/high/medium/low）；legacy L1-L3 服务端归一化 */
+            severity: string;
+            /** Format: date-time */
+            dueAt?: string | null;
+            evidenceId?: string | null;
+        };
+        MaintenanceCondition: {
+            id?: string;
+            orgId?: string;
+            conditionId: string;
+            subjectEntityId: string;
+            subjectKind?: string;
+            conditionType: string;
+            severity: string;
+            /** @enum {string} */
+            status: "detected" | "acknowledged" | "work_order_created" | "resolved" | "closed";
+            /** Format: date-time */
+            dueAt?: string | null;
+            /** Format: date-time */
+            detectedAt?: string;
+            /** Format: date-time */
+            resolvedAt?: string | null;
+            workOrderRef?: string | null;
+            evidenceId?: string | null;
+            /** @description dueAt < now 且 status ∉ {resolved, closed}（机器可执行） */
+            overdue: boolean;
+        };
+        MaintenanceTransitionRequest: {
+            /** @enum {string} */
+            to: "acknowledged" | "work_order_created" | "resolved" | "closed";
+            workOrderRef?: string | null;
+        };
+        MaintenanceTransitionResult: {
+            conditionId: string;
+            from: string;
+            to: string;
+        };
+        /** @description 质量发现注册请求（ADR-010）。契约权威源： contracts/quality/quality.schema.json（类型/lifecycle/disposition 规则）。 */
+        QualityFindingCreateRequest: {
+            findingId: string;
+            /** @enum {string} */
+            findingType: "defect" | "dimension_out_of_tolerance" | "nonconformance" | "material_mismatch" | "process_deviation";
+            /** @description canonical ladder（critical/high/medium/low）；legacy L1-L3 服务端归一化 */
+            severity: string;
+            links?: string[];
+            evidenceId?: string | null;
+        };
+        QualityFinding: {
+            id?: string;
+            orgId?: string;
+            findingId: string;
+            findingType: string;
+            severity: string;
+            /** @enum {string} */
+            status: "open" | "under_review" | "dispositioned" | "closed";
+            /** @enum {string|null} */
+            disposition?: "accept" | "rework" | "scrap" | "return" | null;
+            links?: string[];
+            /** Format: date-time */
+            detectedAt?: string;
+            /** Format: date-time */
+            dispositionedAt?: string | null;
+            evidenceId?: string | null;
+        };
+        QualityFindingTransitionRequest: {
+            /** @enum {string} */
+            to: "under_review" | "dispositioned" | "closed";
+            /**
+             * @description to=dispositioned 时必填
+             * @enum {string|null}
+             */
+            disposition?: "accept" | "rework" | "scrap" | "return" | null;
+        };
+        QualityFindingTransitionResult: {
+            findingId: string;
+            from: string;
+            to: string;
+            disposition?: string | null;
+        };
+        /** @description 工单创建请求（ADR-012）。契约权威源： contracts/workorder/work-order.schema.json（type/origin/lifecycle/completion/cancellation 规则）。 workOrderId 缺省由服务端按 origin 确定性推导（wo:sha256(originKind:originId)[:12]）。 */
+        WorkOrderCreateRequest: {
+            workOrderId?: string | null;
+            /** @enum {string} */
+            workOrderType: "maintenance" | "quality_rework" | "inspection";
+            origin: {
+                /** @enum {string} */
+                kind: "maintenance_condition" | "quality_finding";
+                id: string;
+            };
+            /** @description 执行落点规范身份 kind:value（ADR-006） */
+            subjectEntityId: string;
+            /** @description canonical ladder（critical/high/medium/low）；legacy L1-L3 服务端归一化 */
+            severity: string;
+            /** Format: date-time */
+            scheduledFor?: string | null;
+            /** @description 第三方工单号（MES）alias——绝不充当内部 ID（ADR-006） */
+            externalRef?: string | null;
+            evidenceId?: string | null;
+        };
+        WorkOrder: {
+            id?: string;
+            orgId?: string;
+            workOrderId: string;
+            workOrderType: string;
+            originKind: string;
+            originId: string;
+            subjectEntityId: string;
+            subjectKind?: string;
+            severity: string;
+            /** @enum {string} */
+            status: "created" | "scheduled" | "in_progress" | "completed" | "closed" | "cancelled";
+            /** Format: date-time */
+            scheduledFor?: string | null;
+            /** Format: date-time */
+            completedAt?: string | null;
+            cancelledReason?: string | null;
+            externalRef?: string | null;
+            evidenceId?: string | null;
+        };
+        WorkOrderCreateResult: {
+            record: components["schemas"]["WorkOrder"];
+            created: boolean;
+        };
+        WorkOrderTransitionRequest: {
+            /** @enum {string} */
+            to: "scheduled" | "in_progress" | "completed" | "closed" | "cancelled";
+            /** Format: date-time */
+            completedAt?: string | null;
+            /** @description to=cancelled 时必填（契约 + DB CHECK 双强制） */
+            cancelledReason?: string | null;
+        };
+        WorkOrderTransitionResult: {
+            workOrderId: string;
+            from: string;
+            to: string;
+        };
+        /** @description 知识条目注册请求（ADR-018 Amendment 1 / NO-07b）。契约权威源： contracts/knowledge/knowledge-entry.schema.json（6 kind / 5 层 scope / provenance 规则 / 证据链非空 / auditTrail）。共享层（global/industry） 必须 provenance 声明且忽略 tenantId；租户层（customer/factory/ private_operational）tenantId 必须与调用租户一致。 */
+        KnowledgeEntryRegisterRequest: {
+            /** @description knowledge:value 规范身份；缺省由服务端确定性生成 */
+            knowledgeId?: string | null;
+            /** @enum {string} */
+            kind: "incident" | "resolution" | "failure_pattern" | "process_knowledge" | "decision_history" | "evidence";
+            /** @enum {string} */
+            scope: "global" | "industry" | "customer" | "factory" | "private_operational";
+            title: string;
+            summary?: string | null;
+            body: string;
+            sourceEvidenceIds: string[];
+            relatedEntityIds?: string[];
+            tags?: string[];
+            version?: number;
+            verifiedBy?: string | null;
+            tenantId?: string | null;
+            /** Format: date-time */
+            validFrom?: string | null;
+            /** Format: date-time */
+            validTo?: string | null;
+            provenance?: Record<string, never> | null;
+        };
+        /** @description 知识条目（五层 scope 阶梯；tenantId 仅租户层条目返回） */
+        KnowledgeEntry: {
+            knowledgeId: string;
+            /** @enum {string} */
+            kind: "incident" | "resolution" | "failure_pattern" | "process_knowledge" | "decision_history" | "evidence";
+            /** @enum {string} */
+            scope: "global" | "industry" | "customer" | "factory" | "private_operational";
+            title: string;
+            summary: string;
+            body: string;
+            tags?: string[];
+            version: number;
+            /** @enum {string} */
+            status: "draft" | "verified" | "superseded";
+            sourceEvidenceIds: string[];
+            relatedEntityIds?: string[];
+            provenance?: Record<string, never> | null;
+            verifiedBy?: string | null;
+            timeSemantics?: Record<string, never>;
+            auditTrail: boolean;
+            tenantId?: string;
+        };
+        KnowledgeEntryRegisterResult: {
+            record: components["schemas"]["KnowledgeEntry"];
+            created: boolean;
+        };
+        KnowledgeEntryTransitionRequest: {
+            /** @enum {string} */
+            to: "verified" | "superseded";
+            /** @description to=verified 时必填（规范身份，人工可审计） */
+            verifiedBy?: string | null;
+        };
+        KnowledgeEntryTransitionResult: {
+            entryId: string;
+            from: string;
+            to: string;
+        };
+        /** @description 推理结果记录请求（ADR-019 / NO-08a）。契约权威源： contracts/intelligence/inference-result.schema.json（level 七级注册表 / confidence∈[0,1] / OOD 一致性 / dataQuality 三态 / evidence 三要素）。 inferenceId 缺省由服务端 EWOH 内部生成。 */
+        InferenceResultRecordRequest: {
+            inferenceId?: string | null;
+            /** @description 规范身份 kind:value（ADR-006） */
+            subjectId: string;
+            /** @enum {string} */
+            level: "L1_deterministic_rules" | "L2_statistical_ml" | "L3_optimization" | "L4_industrial_reasoning" | "L5_agentic_workflow" | "L6_simulation_digital_twin" | "L7_learning_loop";
+            modelId: string;
+            modelVersion: string;
+            inputVersion: string;
+            label: string;
+            confidence: number;
+            oodIndicator: {
+                flag: boolean;
+                reasons: string[];
+            };
+            /** @enum {string} */
+            dataQuality: "good" | "degraded" | "invalid";
+            evidence: {
+                /** Format: date-time */
+                tsStart: string;
+                /** Format: date-time */
+                tsEnd: string;
+                isRule: boolean;
+            };
+        };
+        /** @description 规范推理结果（ADR-013；tenant 作用域台账视图） */
+        InferenceResult: {
+            inferenceId: string;
+            subjectId: string;
+            /** @enum {string} */
+            level: "L1_deterministic_rules" | "L2_statistical_ml" | "L3_optimization" | "L4_industrial_reasoning" | "L5_agentic_workflow" | "L6_simulation_digital_twin" | "L7_learning_loop";
+            modelId: string;
+            modelVersion: string;
+            inputVersion: string;
+            label: string;
+            confidence: number;
+            oodIndicator: {
+                flag?: boolean;
+                reasons?: string[];
+            };
+            /** @enum {string} */
+            dataQuality: "good" | "degraded" | "invalid";
+            evidence: {
+                /** Format: date-time */
+                tsStart?: string;
+                /** Format: date-time */
+                tsEnd?: string;
+                isRule?: boolean;
+            };
+        };
+        InferenceResultRecordResponse: {
+            record: components["schemas"]["InferenceResult"];
+            created: boolean;
+        };
+        /** @description 工业推理评估请求（ADR-020 / NO-08b）。契约权威源： contracts/reasoning/reasoning-trace.schema.json（六规则封闭注册表 / canonical severity 阶梯 / 确定性置信度 / 前提与证据链）。 */
+        ReasoningEvaluateRequest: {
+            /** @description 缺省由服务端生成 */
+            traceId?: string | null;
+            snapshotVersion: number;
+            facts: {
+                /** @description 规范身份 kind:value（ADR-006） */
+                subjectId: string;
+                /** @enum {string} */
+                kind: "person" | "exo" | "machine" | "material" | "station" | "alert";
+                values: Record<string, never>;
+                evidenceIds: string[];
+            }[];
+            eventIds?: string[];
+            window?: {
+                /** Format: date-time */
+                from?: string;
+                /** Format: date-time */
+                to?: string;
+            } | null;
+        };
+        ReasoningConclusion: {
+            conclusionId: string;
+            /** @enum {string} */
+            ruleId: "rule:worker-overload" | "rule:exo-low-battery" | "rule:machine-vibration-risk" | "rule:material-shortage" | "rule:station-quality-blocked" | "rule:andon-escalation";
+            subjectId: string;
+            /** @enum {string} */
+            severity: "critical" | "high" | "medium" | "low";
+            confidence: number;
+            /** @enum {string} */
+            confidenceBasis: "deterministic" | "statistical";
+            premises: string[];
+            evidenceIds: string[];
+            explanation: string;
+        };
+        ReasoningTrace: {
+            traceId: string;
+            engineVersion: string;
+            factsRef: Record<string, never>;
+            conclusions: components["schemas"]["ReasoningConclusion"][];
+            auditTrail: boolean;
+        };
+        ReasoningEvaluateResponse: {
+            trace: components["schemas"]["ReasoningTrace"];
+            inferenceIds: {
+                conclusionId?: string;
+                inferenceId?: string;
+            }[];
+        };
+        ReasoningRule: {
+            /** @enum {string} */
+            ruleId: "rule:worker-overload" | "rule:exo-low-battery" | "rule:machine-vibration-risk" | "rule:material-shortage" | "rule:station-quality-blocked" | "rule:andon-escalation";
+            name: string;
+            /** @enum {string} */
+            factKind: "person" | "exo" | "machine" | "material" | "station" | "alert";
+            /** @enum {string} */
+            severity: "critical" | "high" | "medium" | "low";
+            trigger: string;
+        };
+        /** @description 学习评估请求（ADR-021 / NO-09a）。契约权威源： contracts/learning/learning-evaluation.schema.json（七项指标注册表 / null 语义 / period 契约 / basis 非空）。 */
+        LearningEvaluateRequest: {
+            /** @enum {string} */
+            evaluationType?: "periodic" | "on_demand";
+            /** Format: int64 */
+            periodStartMs?: number;
+            /** Format: int64 */
+            periodEndMs?: number;
+        };
+        /** @description 七项学习指标快照（modelAccuracy v1 恒 null=显式 unknown，§10） */
+        LearningEvaluation: {
+            evalId: string;
+            orgId: string;
+            /** @enum {string} */
+            evaluationType: "periodic" | "on_demand";
+            /** Format: date-time */
+            periodStart: string;
+            /** Format: date-time */
+            periodEnd: string;
+            engineVersion: string;
+            metrics: {
+                recommendationAcceptanceRate?: number | null;
+                planSuccessRate?: number | null;
+                taskDelayP95Ms?: number | null;
+                riskOutcomeRate?: number | null;
+                humanOverrideRate?: number | null;
+                modelAccuracy?: number | null;
+                schedulerQualityRate?: number | null;
+            };
+            basis: string[];
+            auditTrail: boolean;
+        };
+        /** @description 学习提案请求（ADR-026 / NO-12b）。契约权威源： contracts/learning/learning-proposal.schema.json（kind 封闭注册表 + 影子评估前置 + 人审激活阶梯）。 */
+        LearningProposalRequest: {
+            /** @description 可选幂等键；缺省由服务端生成 */
+            proposalId?: string;
+            /** @enum {string} */
+            kind: "rule_threshold";
+            change: {
+                /** @enum {string} */
+                ruleId: "rule:worker-overload";
+                /** @enum {string} */
+                parameter: "workloadThreshold";
+                baselineValue: number;
+                candidateValue: number;
+            };
+            /** @description 历史事实窗口（可选；提供即确定性影子评估落 shadow_evaluated） */
+            facts?: Record<string, never>[];
+            evaluationRef?: {
+                evalId?: string;
+            };
+        };
+        LearningProposal: {
+            proposalId: string;
+            /** @enum {string} */
+            kind: "rule_threshold";
+            /** @enum {string} */
+            status: "proposed" | "shadow_evaluated" | "approved" | "rolled_back" | "rejected";
+            change: Record<string, never>;
+            shadowEval?: Record<string, never>;
+            approvedBy?: string;
+            /** Format: date-time */
+            approvedAt?: string;
+            rejectedBy?: string;
+            rejectedReason?: string;
+            rolledBackBy?: string;
+            rolledBackReason?: string;
+            evaluationRef?: Record<string, never>;
+            auditTrail: boolean;
+        };
+        LearningProposalResponse: {
+            proposal: components["schemas"]["LearningProposal"];
+            created: boolean;
+        };
+        LearningEvaluateResponse: {
+            record: components["schemas"]["LearningEvaluation"];
+            created: boolean;
+        };
+        /** @description 全链路 trace 三面缝合（ADR-022 / NO-10a，§19）：spans（ewoh_trace_span）+ events（evidence_json.envelope.correlationId = traceId）+ audit （ewoh_audit_log.request_id = traceId）。 */
+        TraceStitch: {
+            traceId: string;
+            spans: Record<string, never>[];
+            events: Record<string, never>[];
+            audit: Record<string, never>[];
+        };
+        /** @description Edge→Cloud 指标上行批次（ADR-028 / NO-12d）：边缘 Prometheus 事实源 的 ewoh_* 规范家族样本（metricName 必须命中 metrics-registry 注册表， 未注册 = violation 显式，绝不静默并入）。 */
+        EdgeMetricsBatchRequest: {
+            metrics: {
+                metricName: string;
+                /** @enum {string} */
+                metricType: "counter" | "gauge" | "histogram";
+                value: number;
+                labels: {
+                    [key: string]: string;
+                };
+            }[];
+        };
+        EdgeMetricsIngestResult: {
+            accepted: number;
+            rejected: number;
+            totalReceived: number;
+            violations: string[];
+        };
+        /** @description 统一指标导出（ADR-023 / NO-10b）：registry-validated 样本 + registryViolations 显式列表（未注册名/类型失配/未知标签——§33 unknown 不当 normal，绝不静默丢弃）。 */
+        MetricsExport: {
+            metrics: {
+                metricName?: string;
+                /** @enum {string} */
+                metricType?: "counter" | "gauge" | "histogram";
+                value?: number;
+                labels?: Record<string, never>;
+            }[];
+            registryViolations: string[];
+        };
+        /** @description 死信落账请求（ADR-024 / NO-11a）。契约权威源： contracts/reliability/dead-letter.schema.json（5 reason / 3 status 封闭注册表 + envelope 快照必填 + 人审重放 + discard 理由强制）。 */
+        DeadLetterRecordRequest: {
+            /** @description 失败源（管道归属），如 cloud:ingest */
+            sourceId: string;
+            /** @enum {string} */
+            reason: "contract_violation" | "unknown_event_type" | "permanent_failure" | "ttl_expired" | "max_attempts_exceeded";
+            /** @description 失败消息信封快照（§3 失败证据可审计） */
+            envelope: Record<string, never>;
+            correlationId?: string | null;
+        };
+        DeadLetter: {
+            letterId: string;
+            sourceId: string;
+            /** @enum {string} */
+            reason: "contract_violation" | "unknown_event_type" | "permanent_failure" | "ttl_expired" | "max_attempts_exceeded";
+            attempts: number;
+            /** @enum {string} */
+            status: "pending" | "requeued" | "discarded";
+            envelope: Record<string, never>;
+            correlationId?: string | null;
+            discardedReason?: string | null;
+            auditTrail: boolean;
+        };
+        DeadLetterRecordResponse: {
+            record: components["schemas"]["DeadLetter"];
+            created: boolean;
+        };
+        DeadLetterTransitionResult: {
+            letterId: string;
+            from: string;
+            to: string;
+            attempts?: number;
+        };
+        /** @description 仿真运行请求（ADR-025 / NO-12a）。契约权威源： contracts/simulation/simulation-run.schema.json（4 kind / 4 status 封闭注册表 + isSimulation=true 隔离强制 + baseRef 可追溯 + completed/failed 终态契约）。 */
+        SimulationRunRequest: {
+            /** @description 可选幂等键；缺省由服务端确定性生成 */
+            runId?: string;
+            /** @enum {string} */
+            kind: "what_if" | "capacity" | "layout" | "material_flow";
+            /** @description 基准世界快照引用（snapshotVersion ≥ 0 + 可选 scenarioId） */
+            baseRef: {
+                snapshotVersion: number;
+                scenarioId?: string;
+            };
+            /** @description 评估器输入（kind 决定形状，fail-closed） */
+            parameters: Record<string, never>;
+            engineVersion?: string;
+        };
+        SimulationRun: {
+            runId: string;
+            /** @enum {string} */
+            kind: "what_if" | "capacity" | "layout" | "material_flow";
+            /** @enum {string} */
+            status: "created" | "running" | "completed" | "failed";
+            isSimulation: boolean;
+            baseRef: Record<string, never>;
+            parameters: Record<string, never>;
+            results?: Record<string, never>;
+            failureReason?: string;
+            engineVersion: string;
+            auditTrail: boolean;
+        };
+        SimulationRunResponse: {
+            run: components["schemas"]["SimulationRun"];
+            created: boolean;
         };
         WorkflowStepDefinition: {
             name: string;
@@ -13998,12 +17639,85 @@ export interface components {
             events_triggered: number;
             record_id?: string;
             error?: string;
+            is_late?: boolean;
+            clock_drift?: boolean;
         };
         BatchIngestResponse: {
             total: number;
             accepted: number;
             skipped: number;
+            late_count: number;
+            clock_drift_count: number;
             results: components["schemas"]["IngestResponse"][];
+        };
+        EnvelopeEventDto: {
+            eventId: string;
+            eventType: string;
+            schemaVersion: string;
+            occurredAt: string;
+            observedAt?: string;
+            receivedAt?: string;
+            source: string;
+            subject?: string;
+            causationId?: string;
+            correlationId?: string;
+            confidence?: number;
+            payload?: Record<string, never>;
+            evidence?: Record<string, never>;
+        };
+        IngestEventResult: {
+            eventId: string;
+            source: string;
+            accepted: boolean;
+            duplicate: boolean;
+            is_late: boolean;
+            clock_drift: boolean;
+            error?: string;
+        };
+        IngestEventBatchResponse: {
+            total: number;
+            accepted: number;
+            duplicates: number;
+            rejected: number;
+            results: components["schemas"]["IngestEventResult"][];
+        };
+        AgentManifestInput: {
+            agentId: string;
+            name: string;
+            version: number;
+            role: string;
+            purpose: string;
+            allowedTools: string[];
+            readScope: string[];
+            writeScope: Record<string, never>;
+            approvalRequirement: Record<string, never>;
+            riskLevel: string;
+            inputContract: Record<string, never>;
+            outputContract: Record<string, never>;
+            auditTrail: boolean;
+            budget: Record<string, never>;
+            timeoutSec: number;
+            fallback: Record<string, never>;
+        };
+        AgentManifestView: {
+            agentId: string;
+            name: string;
+            version: number;
+            role: string;
+            status: string;
+            autonomousLevel: string;
+            riskLevel: string;
+            manifest: Record<string, never>;
+        };
+        ExecuteAgentCommandResult: {
+            executed: boolean;
+            needsApproval: boolean;
+            /** @enum {string} */
+            outcome: "proposed" | "executed" | "rejected" | "failed" | "delegated";
+            delegated?: boolean;
+            safeIdle?: boolean;
+            approvalId?: string;
+            detail?: string;
         };
         PlayerRoleInfo: {
             /** @enum {string} */

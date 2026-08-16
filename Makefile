@@ -3,7 +3,7 @@
 # 开发环境推荐以进程方式运行（make run），docker-compose 用于试点部署。
 # 代码采用 src/ 布局，运行入口通过 PYTHONPATH=src 解析 edge_platform 包。
 
-.PHONY: run run-stub demo test test-contract production-smoke connector-tck aas-tck rego-tck cross-tenant-tck pilot-readiness lint lint-fix security format clean help
+.PHONY: run run-stub demo test test-contract production-smoke connector-tck aas-tck rego-tck cross-tenant-tck contract-identity contract-domain contract-golden contract-envelope pilot-readiness lint lint-fix security format clean help
 
 PYTHON ?= python3
 
@@ -27,6 +27,25 @@ test-contract:  ## 运行契约测试（tests/，需 pytest；也可用 unittest
 
 contract-state-machine:  ## P1-contract：校验 Python 状态机与 contracts/state-machines/*.yaml 一致
 	PYTHONPATH=src $(PYTHON) -m pytest tests/test_state_machine_contract.py -q
+
+contract-identity:  ## ADR-006：跨运行时 Identity 契约门禁（schema/vectors/Python/TS 一致）+ 契约测试
+	@node scripts/audit-identity-contracts.js
+	PYTHONPATH=src $(PYTHON) -m pytest tests/test_identity_contract.py -q
+
+contract-domain:  ## ADR-007：跨运行时 Risk/Location/Resource 契约门禁（独立仲裁 + 注册表一致）+ 契约测试
+	@node scripts/audit-domain-contracts.js
+	@node scripts/audit-event-envelope.js
+	PYTHONPATH=src $(PYTHON) -m pytest tests/test_domain_contracts.py -q
+
+contract-golden:  ## §26：Canonical Contract Golden Scenarios（八域共享场景定义，Python 侧执行；TS 侧在 jest）
+	PYTHONPATH=src $(PYTHON) -m pytest tests/test_golden_contract_scenarios.py tests/test_domain_contracts.py tests/test_identity_contract.py tests/test_world_contract.py tests/test_event_envelope.py tests/test_mq_contracts.py -q
+
+scheduler-golden:  ## Phase 7 / NO-07+NO-07b：Golden Scheduler TCK（求解段 + 审批/预约/派工工作流段；共享场景，Python 侧独立仲裁；TS 侧在 jest 并漂移门禁）
+	PYTHONPATH=src $(PYTHON) -m pytest tests/test_golden_scheduler_scenarios.py tests/test_golden_scheduler_workflow.py -q
+
+contract-envelope:  ## ADR-009：Event Envelope 契约门禁（独立仲裁 + 目录交叉校验）+ 契约测试
+	@node scripts/audit-event-envelope.js
+	PYTHONPATH=src $(PYTHON) -m pytest tests/test_event_envelope.py -q
 
 production-smoke:  ## P0-EDGE-006：Production Runtime Assembly 门禁（真实装配 + no-stub + Bus 契约）
 	PYTHONPATH=src $(PYTHON) -m pytest tests/test_production_assembly.py tests/test_bus_contract.py -q
@@ -59,6 +78,10 @@ truth-check:  ## 生成并列示单一事实源证据清单（无漂移，P0 门
 	@node scripts/truth-manifest.js --out output/evidence-manifest.json
 	@node scripts/truth-manifest.js --check --out output/evidence-manifest.json
 	@node scripts/audit-repo-facts.js --strict
+	@node scripts/audit-identity-contracts.js
+	@node scripts/audit-domain-contracts.js
+	@node scripts/audit-event-envelope.js
+	@node scripts/gen-contract-registries.js --check
 
 format:  ## 代码格式化（ruff format）
 	ruff format src/edge_platform

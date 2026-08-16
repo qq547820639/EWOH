@@ -9,7 +9,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { eq, inArray, asc, desc } from 'drizzle-orm';
+import { eq, inArray, asc, desc, or, isNull, and } from 'drizzle-orm';
 import { ewohSchedulingConflict, ewohSchedulePlan } from '@server/database/schema';
 import type {
   ConflictsListRequest,
@@ -78,9 +78,10 @@ export class ConflictService {
    */
   async listConflicts(
     params: ConflictsListRequest = {},
+    actor?: OrgContext,
   ): Promise<ConflictsListResponse> {
     const derived = await this.derive();
-    const merged = await this.mergeWithDbReadOnly(derived);
+    const merged = await this.mergeWithDbReadOnly(derived, actor);
     let conflicts = merged;
     if (params.type) conflicts = conflicts.filter((c) => c.type === params.type);
     if (params.severity)
@@ -111,8 +112,9 @@ export class ConflictService {
    */
   private async mergeWithDbReadOnly(
     derived: SchedulingConflict[],
+    actor?: OrgContext,
   ): Promise<SchedulingConflict[]> {
-    const persisted = await this.loadAllRows();
+    const persisted = await this.loadAllRows(actor);
     const byId = new Map(persisted.map((r) => [r.conflictId, r]));
     return derived.map((c) => {
       const row = byId.get(c.conflictId);
@@ -132,12 +134,15 @@ export class ConflictService {
   }
 
   /** 冲突详情；当前真实数据中不存在且无落库行时抛 NotFoundException。 */
-  async getConflictDetail(conflictId: string): Promise<SchedulingConflict> {
-    const { conflicts } = await this.listConflicts({});
+  async getConflictDetail(
+    conflictId: string,
+    actor?: OrgContext,
+  ): Promise<SchedulingConflict> {
+    const { conflicts } = await this.listConflicts({}, actor);
     const found = conflicts.find((c) => c.conflictId === conflictId);
     if (!found) {
       // 兜底：已落库但当前不再推导的冲突（如已 RESOLVED/SUPPRESSED 历史行）。
-      const row = await this.findRowByConflictId(conflictId);
+      const row = await this.findRowByConflictId(conflictId, actor);
       if (!row) throw new NotFoundException(`Conflict ${conflictId} not found`);
       return this.rowToConflict(row);
     }
@@ -397,7 +402,7 @@ export class ConflictService {
 
     // 3. person unavailable：数据新鲜但状态不可用。
     for (const p of state.persons) {
-      if (p.dataQuality === 'FRESH' && p.status === 'unavailable') {
+      if (p.dataQuality === 'FRESH' && p.status === 'UNKNOWN') {
         conflicts.push(
           this.mkConflict(`person_unavailable:${p.id}`, {
             type: 'person_unavailable',
@@ -417,7 +422,7 @@ export class ConflictService {
 
     // 4. device offline：数据新鲜但设备离线。
     for (const d of state.devices) {
-      if (d.dataQuality === 'FRESH' && d.status === 'offline') {
+      if (d.dataQuality === 'FRESH' && d.status === 'OFFLINE') {
         conflicts.push(
           this.mkConflict(`device_offline:${d.id}`, {
             type: 'device_offline',
@@ -439,7 +444,7 @@ export class ConflictService {
     for (const d of state.devices) {
       if (
         d.dataQuality === 'FRESH' &&
-        d.status !== 'offline' &&
+        d.status !== 'OFFLINE' &&
         (d.batteryPct ?? 100) < minBatteryPct
       ) {
         conflicts.push(
@@ -614,7 +619,7 @@ export class ConflictService {
     for (const r of state.reservations ?? []) {
       const offline =
         r.resourceType === 'device' &&
-        state.devices.some((d) => d.id === r.resourceId && d.status === 'offline');
+        state.devices.some((d) => d.id === r.resourceId && d.status === 'OFFLINE');
       const stale =
         r.resourceType === 'person' &&
         state.persons.some(
@@ -788,19 +793,40 @@ export class ConflictService {
 
   // ===== 内部：DB 访问 =====
 
-  private async loadAllRows() {
+  private async loadAllRows(actor?: OrgContext) {
+    // ADR-073：conflict 表无 RLS——读面 org 条件（org 匹配或 NULL 存量）为
+    // 应用层唯一执行面（写路径已 ctx 注入 orgId）。
     const rows = await this.db
       .select()
       .from(ewohSchedulingConflict)
+      .where(
+        actor
+          ? or(
+              isNull(ewohSchedulingConflict.orgId),
+              eq(ewohSchedulingConflict.orgId, actor.primaryOrgId),
+            )
+          : undefined,
+      )
       .orderBy(asc(ewohSchedulingConflict.detectedAt));
     return rows;
   }
 
-  private async findRowByConflictId(conflictId: string) {
+  private async findRowByConflictId(conflictId: string, actor?: OrgContext) {
+    const idEq = eq(ewohSchedulingConflict.conflictId, conflictId);
+    // 无 actor 时保持原查询形状（内部可信流/旧 mock 兼容）。
+    const where = actor
+      ? and(
+          idEq,
+          or(
+            isNull(ewohSchedulingConflict.orgId),
+            eq(ewohSchedulingConflict.orgId, actor.primaryOrgId),
+          ),
+        )
+      : idEq;
     const rows = await this.db
       .select()
       .from(ewohSchedulingConflict)
-      .where(eq(ewohSchedulingConflict.conflictId, conflictId))
+      .where(where)
       .limit(1);
     return rows[0] ?? null;
   }

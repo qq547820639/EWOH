@@ -30,7 +30,7 @@ function personRow(over: Record<string, unknown> = {}) {
     id: 'P1',
     name: 'P1',
     employeeNo: 'E1',
-    status: 'available',
+    status: 'AVAILABLE',
     skills: ['work'],
     certifications: [],
     currentLoad: null,
@@ -145,9 +145,9 @@ describe('差异化新鲜度策略（FreshnessPolicy）', () => {
     const person = states.find((s) => s.id === 'P-STALE')!;
     const device = states.find((s) => s.id === 'D-STALE')!;
     expect(person.dataQuality).toBe('STALE');
-    expect(person.status).toBe('unavailable');
+    expect(person.status).toBe('UNKNOWN');
     expect(device.dataQuality).toBe('STALE');
-    expect(device.status).toBe('offline');
+    expect(device.status).toBe('OFFLINE');
   });
 
   it('UNKNOWN（null sourceTs）不被视为可派工：person→unavailable、device→offline', async () => {
@@ -167,9 +167,9 @@ describe('差异化新鲜度策略（FreshnessPolicy）', () => {
     const person = states.find((s) => s.id === 'P-UNK')!;
     const device = states.find((s) => s.id === 'D-UNK')!;
     expect(person.dataQuality).toBe('UNKNOWN');
-    expect(person.status).toBe('unavailable');
+    expect(person.status).toBe('UNKNOWN');
     expect(device.dataQuality).toBe('UNKNOWN');
-    expect(device.status).toBe('offline');
+    expect(device.status).toBe('OFFLINE');
   });
 
   it('safety-critical fail-closed 不变量：未知/过时资源投影为不可用', async () => {
@@ -196,12 +196,12 @@ describe('差异化新鲜度策略（FreshnessPolicy）', () => {
     const unknownDevice = states.find((s) => s.id === 'D-UNK')!;
     const freshPerson = states.find((s) => s.id === 'P-FRESH')!;
     expect(freshPerson.dataQuality).toBe('FRESH');
-    expect(freshPerson.status).toBe('available');
+    expect(freshPerson.status).toBe('AVAILABLE');
     // 未知资源 → 不可用（无 available/online 泄露）。
     expect(unknownPerson.dataQuality).toBe('UNKNOWN');
-    expect(unknownPerson.status).not.toBe('available');
+    expect(unknownPerson.status).not.toBe('AVAILABLE');
     expect(unknownDevice.dataQuality).toBe('UNKNOWN');
-    expect(unknownDevice.status).not.toBe('online');
+    expect(unknownDevice.status).not.toBe('AVAILABLE');
   });
 });
 

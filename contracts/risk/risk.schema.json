@@ -1,0 +1,125 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///risk/risk/v1",
+  "title": "EWOH Canonical Risk Model",
+  "description": "EWOH 统一风险契约（Canonical Risk Model，ADR-007）。规范严重度阶梯 critical>high>medium>low；legacy 映射 L1→critical / L2→high / L3→medium（边缘 sev_order L1 最严重）。生命周期 open→acknowledged→resolving→resolved→closed，resolving/resolved→open 允许（复开）。subjectEntityId 引用规范身份（ADR-006）。",
+  "schemaVersion": "1.0.0",
+  "severityLadder": [
+    "critical",
+    "high",
+    "medium",
+    "low"
+  ],
+  "legacySeverityMap": {
+    "L1": "critical",
+    "L2": "high",
+    "L3": "medium"
+  },
+  "lifecycle": [
+    "open",
+    "acknowledged",
+    "resolving",
+    "resolved",
+    "closed"
+  ],
+  "categoryRegistry": [
+    "posture",
+    "load",
+    "battery",
+    "offline",
+    "sensor_degraded",
+    "time_sync",
+    "packet_loss",
+    "action_anomaly",
+    "quality",
+    "equipment",
+    "environment",
+    "other"
+  ],
+  "rules": {
+    "normalizeSeverity": "接受规范值直通；接受 legacy L1/L2/L3 → critical/high/medium；未知值拒绝（fail-closed，禁止猜测）",
+    "transition": "open→acknowledged→resolving→resolved→closed；resolving/resolved→open 允许（复开）；其余非法转移拒绝",
+    "closedRegistry": "category 必须命中 categoryRegistry，否则拒绝（fail-closed）"
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "severityLadder",
+    "legacySeverityMap",
+    "lifecycle",
+    "rules",
+    "categoryRegistry"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "severityLadder": {
+      "type": "array",
+      "const": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "legacySeverityMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "L1",
+        "L2",
+        "L3"
+      ],
+      "properties": {
+        "L1": {
+          "type": "string",
+          "const": "critical"
+        },
+        "L2": {
+          "type": "string",
+          "const": "high"
+        },
+        "L3": {
+          "type": "string",
+          "const": "medium"
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "array",
+      "const": [
+        "open",
+        "acknowledged",
+        "resolving",
+        "resolved",
+        "closed"
+      ]
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "normalizeSeverity",
+        "transition",
+        "closedRegistry"
+      ],
+      "properties": {
+        "normalizeSeverity": {
+          "type": "string",
+          "const": "接受规范值直通；接受 legacy L1/L2/L3 → critical/high/medium；未知值拒绝（fail-closed，禁止猜测）"
+        },
+        "transition": {
+          "type": "string",
+          "const": "open→acknowledged→resolving→resolved→closed；resolving/resolved→open 允许（复开）；其余非法转移拒绝"
+        },
+        "closedRegistry": {
+          "type": "string",
+          "const": "category 必须命中 categoryRegistry，否则拒绝（fail-closed）"
+        }
+      }
+    }
+  }
+}

@@ -13,6 +13,7 @@ import {
   getSchedulerContext,
   getRoutes,
   getConflicts,
+  listExecutions,
 } from '@client/src/api/scheduler';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import {
@@ -78,6 +79,16 @@ export function useCommandMapSchedulerState(): CommandMapSchedulerState {
     queryFn: () => getConflicts({}),
     staleTime: 10_000,
   });
+  // R-6 / ADR-035：所选方案的执行记录（计划 vs 实际 + 偏差事实）。
+  // 无选中方案时不请求（enabled=false → executions 显式空态）。
+  const executionsQuery = useQuery({
+    queryKey: queryKeys.schedulerExecutions(ui.selectedPlanId ?? undefined),
+    queryFn: () =>
+      listExecutions(ui.selectedPlanId ? { planId: ui.selectedPlanId } : undefined),
+    enabled: !!ui.selectedPlanId,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+  });
 
   // 注意：SSE 增量订阅由 CommandMap 顶层的 SchedulerRealtimeProvider（单例）拥有，
   // 本 Hook 不再独立建立连接，仅消费 React Query 权威查询。
@@ -90,6 +101,8 @@ export function useCommandMapSchedulerState(): CommandMapSchedulerState {
         routes: routesQuery.data,
         conflicts: conflictsQuery.data?.conflicts,
         context: contextQuery.data ?? null,
+        executions: executionsQuery.data?.executions,
+        executionsError: executionsQuery.isError,
         ui,
         loading:
           snapshotQuery.isLoading ||
@@ -119,6 +132,8 @@ export function useCommandMapSchedulerState(): CommandMapSchedulerState {
       conflictsQuery.data,
       conflictsQuery.isLoading,
       conflictsQuery.isError,
+      executionsQuery.data,
+      executionsQuery.isError,
       ui,
     ],
   );

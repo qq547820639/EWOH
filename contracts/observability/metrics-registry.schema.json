@@ -1,0 +1,384 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///observability/metrics-registry/v1",
+  "title": "EWOH Canonical Industrial Metrics Registry",
+  "description": "EWOH 统一工业指标注册表（ADR-023 / NO-10b，§19 Observability 指标腿）。跨模块指标命名契约：metricName 必须命中封闭注册表（未注册 = violation，导出面显式列出，绝不静默并入正常——§33 unknown 不当 normal）；metricType 必须与注册表一致；labelKey 必须命中注册表；counter 非负有限数值；histogram 样本必须带 le 标签。Cloud 侧统一导出面（/api/observability/metrics）与边缘 Prometheus /metrics 共用本注册表（connector 面云端零样本显式，事实源=边缘）。 ADR-028：边缘 ewoh_* 指标家族（18 项）入注册表，Edge→Cloud 指标上行命名收敛。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "metricRegistry",
+    "metricTypeRegistry",
+    "labelKeyRegistry",
+    "rules"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "metricRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "type",
+          "labelKeys"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,63}$"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "counter",
+              "gauge",
+              "histogram"
+            ]
+          },
+          "labelKeys": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "metricTypeRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "counter",
+          "gauge",
+          "histogram"
+        ]
+      }
+    },
+    "labelKeyRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,31}$"
+      }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registrationContract",
+        "typeContract",
+        "labelContract",
+        "valueContract",
+        "histogramContract",
+        "violationContract"
+      ],
+      "properties": {
+        "registrationContract": {
+          "type": "string",
+          "const": "metricName 必须命中 metricRegistry（未注册 = violation 显式列出，绝不静默并入正常）"
+        },
+        "typeContract": {
+          "type": "string",
+          "const": "metricType 必须与注册表声明一致（counter/gauge/histogram）"
+        },
+        "labelContract": {
+          "type": "string",
+          "const": "labels 的键必须命中该指标注册表 labelKeys（未知键整体拒绝）"
+        },
+        "valueContract": {
+          "type": "string",
+          "const": "value 为有限数值；counter 非负（拒绝负数/NaN/Infinity）"
+        },
+        "histogramContract": {
+          "type": "string",
+          "const": "histogram 样本必须带 le 标签（Prometheus 兼容）"
+        },
+        "violationContract": {
+          "type": "string",
+          "const": "导出面必须携带 registryViolations 显式列表——unknown 不当 normal（§33）"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "metricRegistry": [
+    {
+      "name": "http_requests_total",
+      "type": "counter",
+      "labelKeys": [
+        "method",
+        "route",
+        "status"
+      ]
+    },
+    {
+      "name": "http_active_requests",
+      "type": "gauge",
+      "labelKeys": []
+    },
+    {
+      "name": "db_ready_checks_total",
+      "type": "counter",
+      "labelKeys": [
+        "result"
+      ]
+    },
+    {
+      "name": "scheduler_run_total",
+      "type": "counter",
+      "labelKeys": [
+        "solver_version",
+        "status",
+        "feasible"
+      ]
+    },
+    {
+      "name": "scheduler_run_duration_ms",
+      "type": "histogram",
+      "labelKeys": [
+        "le"
+      ]
+    },
+    {
+      "name": "scheduler_feasible_ratio",
+      "type": "gauge",
+      "labelKeys": []
+    },
+    {
+      "name": "agent_manifest_registered_total",
+      "type": "counter",
+      "labelKeys": [
+        "role"
+      ]
+    },
+    {
+      "name": "agent_command_proposed_total",
+      "type": "counter",
+      "labelKeys": [
+        "role",
+        "command"
+      ]
+    },
+    {
+      "name": "agent_command_executed_total",
+      "type": "counter",
+      "labelKeys": [
+        "role",
+        "command"
+      ]
+    },
+    {
+      "name": "agent_command_rejected_total",
+      "type": "counter",
+      "labelKeys": [
+        "role",
+        "command"
+      ]
+    },
+    {
+      "name": "agent_command_delegated_total",
+      "type": "counter",
+      "labelKeys": [
+        "role",
+        "command"
+      ]
+    },
+    {
+      "name": "agent_approval_resolved_total",
+      "type": "counter",
+      "labelKeys": [
+        "outcome"
+      ]
+    },
+    {
+      "name": "connector_telemetry_samples_total",
+      "type": "counter",
+      "labelKeys": [
+        "connector_id",
+        "connector_type"
+      ]
+    },
+    {
+      "name": "connector_active_total",
+      "type": "gauge",
+      "labelKeys": [
+        "connector_id",
+        "connector_type"
+      ]
+    },
+    {
+      "name": "connector_error_total",
+      "type": "counter",
+      "labelKeys": [
+        "connector_id",
+        "connector_type"
+      ]
+    },
+    {
+      "name": "ewoh_uptime_seconds",
+      "type": "gauge",
+      "labelKeys": [
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_db_count",
+      "type": "gauge",
+      "labelKeys": [
+        "table",
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_device_online_count",
+      "type": "gauge",
+      "labelKeys": [
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_device_offline_count",
+      "type": "gauge",
+      "labelKeys": [
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_device_avg_packet_loss_pct",
+      "type": "gauge",
+      "labelKeys": [
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_device_low_battery_count",
+      "type": "gauge",
+      "labelKeys": [
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_inference_count_total",
+      "type": "counter",
+      "labelKeys": [
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_inference_p50_ms",
+      "type": "gauge",
+      "labelKeys": [
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_inference_p95_ms",
+      "type": "gauge",
+      "labelKeys": [
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_inference_unknown_count_total",
+      "type": "counter",
+      "labelKeys": [
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_inference_error_count_total",
+      "type": "counter",
+      "labelKeys": [
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_event_open_count",
+      "type": "gauge",
+      "labelKeys": [
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_event_open_total",
+      "type": "counter",
+      "labelKeys": [
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_event_avg_close_hours",
+      "type": "gauge",
+      "labelKeys": [
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_assignment_recommendation_count_total",
+      "type": "counter",
+      "labelKeys": [
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_assignment_confirmed_count_total",
+      "type": "counter",
+      "labelKeys": [
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_assignment_adoption_rate",
+      "type": "gauge",
+      "labelKeys": [
+        "edge_id"
+      ]
+    },
+    {
+      "name": "ewoh_event_bus_handler_errors_total",
+      "type": "counter",
+      "labelKeys": [
+        "edge_id"
+      ]
+    }
+  ],
+  "metricTypeRegistry": [
+    "counter",
+    "gauge",
+    "histogram"
+  ],
+  "labelKeyRegistry": [
+    "method",
+    "route",
+    "status",
+    "result",
+    "solver_version",
+    "feasible",
+    "le",
+    "role",
+    "command",
+    "outcome",
+    "connector_id",
+    "connector_type",
+    "table",
+    "edge_id"
+  ],
+  "rules": {
+    "registrationContract": "metricName 必须命中 metricRegistry（未注册 = violation 显式列出，绝不静默并入正常）",
+    "typeContract": "metricType 必须与注册表声明一致（counter/gauge/histogram）",
+    "labelContract": "labels 的键必须命中该指标注册表 labelKeys（未知键整体拒绝）",
+    "valueContract": "value 为有限数值；counter 非负（拒绝负数/NaN/Infinity）",
+    "histogramContract": "histogram 样本必须带 le 标签（Prometheus 兼容）",
+    "violationContract": "导出面必须携带 registryViolations 显式列表——unknown 不当 normal（§33）"
+  }
+}

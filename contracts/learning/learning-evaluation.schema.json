@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///learning/learning-evaluation/v1",
+  "title": "EWOH Canonical Learning Evaluation",
+  "description": "EWOH Continuous Learning Loop（ADR-021 / NO-09a，Phase 12）学习评估快照契约。每 (org, 周期) 的七项学习指标（§28 一一对应）统一快照：metrics 必须覆盖全部七键，每值 number|null——null 仅两种合法语义（无数据=窗口内零事实；显式 unknown=如 modelAccuracy v1 恒定 null，§10 unknown 是合法结果，绝不伪造）；periodEnd ≥ periodStart；basis 非空（事实来源声明，§3 可追溯）；auditTrail 必须 true。v1 为观测层（绝不自动回写生产规则，§2 安全边界）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "metricRegistry", "evaluationTypeRegistry", "rules"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "metricRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-zA-Z0-9]{0,47}$" }
+    },
+    "evaluationTypeRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z_]{1,24}$" }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metricCompleteness", "nullSemantics", "periodContract", "basisContract", "auditContract", "observationalOnly"],
+      "properties": {
+        "metricCompleteness": {
+          "type": "string",
+          "const": "metrics 必须覆盖 metricRegistry 全部七键（封闭注册表，缺键/未知键整体拒绝）"
+        },
+        "nullSemantics": {
+          "type": "string",
+          "const": "指标值 number|null；null 仅两种合法语义——无数据（窗口内零事实）或显式 unknown（如 modelAccuracy v1 恒定 null）；绝不伪造"
+        },
+        "periodContract": {
+          "type": "string",
+          "const": "periodStart/periodEnd 必须 ISO 时间戳且 periodEnd ≥ periodStart（ADR-009 时间语义同源）"
+        },
+        "basisContract": {
+          "type": "string",
+          "const": "basis 非空字符串数组——指标事实来源声明（§3 可追溯）"
+        },
+        "auditContract": {
+          "type": "string",
+          "const": "auditTrail 必须 true（与 ADR-016/018/020 同规则）"
+        },
+        "observationalOnly": {
+          "type": "string",
+          "const": "v1 观测层：学习评估绝不自动回写生产调度规则/策略（§2 安全边界；变更走人审激活链）"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "metricRegistry": [
+    "recommendationAcceptanceRate", "planSuccessRate", "taskDelayP95Ms",
+    "riskOutcomeRate", "humanOverrideRate", "modelAccuracy", "schedulerQualityRate"
+  ],
+  "evaluationTypeRegistry": ["periodic", "on_demand"],
+  "rules": {
+    "metricCompleteness": "metrics 必须覆盖 metricRegistry 全部七键（封闭注册表，缺键/未知键整体拒绝）",
+    "nullSemantics": "指标值 number|null；null 仅两种合法语义——无数据（窗口内零事实）或显式 unknown（如 modelAccuracy v1 恒定 null）；绝不伪造",
+    "periodContract": "periodStart/periodEnd 必须 ISO 时间戳且 periodEnd ≥ periodStart（ADR-009 时间语义同源）",
+    "basisContract": "basis 非空字符串数组——指标事实来源声明（§3 可追溯）",
+    "auditContract": "auditTrail 必须 true（与 ADR-016/018/020 同规则）",
+    "observationalOnly": "v1 观测层：学习评估绝不自动回写生产调度规则/策略（§2 安全边界；变更走人审激活链）"
+  }
+}

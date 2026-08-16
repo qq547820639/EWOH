@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///workorder/workorder/v1",
+  "title": "EWOH Canonical Work Order Model",
+  "description": "EWOH 统一工单契约（ADR-012，Phase 6 NO-05e）。工单是维护/质量闭环的 Execution 载体（Event→Outcome）：origin 必填可追溯（maintenance_condition / quality_finding）；subjectEntityId 引用规范身份（ADR-006）；severity 走 Canonical Risk 阶梯（ADR-007）；生命周期 created→scheduled→in_progress→completed→closed（created/scheduled 可取消；in_progress 起不可取消；completed/closed 必须带 completedAt；cancelled 必须带 cancelledReason）。工单不替代 MES 原生工单，MES 工单号仅作 alias（ADR-006）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "workOrderTypeRegistry", "originKindRegistry", "lifecycle", "rules"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "workOrderTypeRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" }
+    },
+    "originKindRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" }
+    },
+    "lifecycle": {
+      "type": "array",
+      "const": ["created", "scheduled", "in_progress", "completed", "closed", "cancelled"]
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transition", "origin", "completion", "cancellation", "severityContract"],
+      "properties": {
+        "transition": {
+          "type": "string",
+          "const": "created→scheduled→in_progress→completed→closed；created/scheduled→cancelled；in_progress 起不可取消；closed/cancelled 终态；其余非法转移拒绝"
+        },
+        "origin": {
+          "type": "string",
+          "const": "origin={kind∈{maintenance_condition,quality_finding}, id} 必填，工单必须可追溯起源事实"
+        },
+        "completion": {
+          "type": "string",
+          "const": "status ∈ {completed, closed} 必须带 completedAt，否则拒绝"
+        },
+        "cancellation": {
+          "type": "string",
+          "const": "status=cancelled 必须带非空 cancelledReason，否则拒绝"
+        },
+        "severityContract": {
+          "type": "string",
+          "const": "severity 走 Canonical Risk 阶梯（critical/high/medium/low，legacy L1-L3 映射），否则拒绝"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "workOrderTypeRegistry": ["maintenance", "quality_rework", "inspection"],
+  "originKindRegistry": ["maintenance_condition", "quality_finding"],
+  "lifecycle": ["created", "scheduled", "in_progress", "completed", "closed", "cancelled"],
+  "rules": {
+    "transition": "created→scheduled→in_progress→completed→closed；created/scheduled→cancelled；in_progress 起不可取消；closed/cancelled 终态；其余非法转移拒绝",
+    "origin": "origin={kind∈{maintenance_condition,quality_finding}, id} 必填，工单必须可追溯起源事实",
+    "completion": "status ∈ {completed, closed} 必须带 completedAt，否则拒绝",
+    "cancellation": "status=cancelled 必须带非空 cancelledReason，否则拒绝",
+    "severityContract": "severity 走 Canonical Risk 阶梯（critical/high/medium/low，legacy L1-L3 映射），否则拒绝"
+  }
+}

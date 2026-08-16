@@ -244,7 +244,7 @@ const DeviceConfigDrawer = ({
           currentState:
             t.qualityStatus ??
             (t.batteryPct != null ? `电量 ${t.batteryPct}%` : null),
-          severity: t.qualityStatus === 'fault' ? 'L2' : undefined,
+          severity: t.qualityStatus === 'fault' ? 'high' : undefined,
           title: `设备遥测 · ${t.deviceId}`,
           status: t.qualityStatus ?? undefined,
           meta: {

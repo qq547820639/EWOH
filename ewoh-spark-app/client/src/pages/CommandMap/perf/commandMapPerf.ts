@@ -313,7 +313,7 @@ export function buildLargeFixture(params: {
     id: `EV-${String(i + 1).padStart(3, '0')}`,
     eventId: `EV-${String(i + 1).padStart(3, '0')}`,
     title: `事件 ${i + 1}`,
-    severity: (['L1', 'L2', 'L3'] as const)[i % 3],
+    severity: (['critical', 'high', 'medium'] as const)[i % 3],
     status: i % 3 === 0 ? 'handled' : 'open',
     deviceId: `D-${(i % deviceCount) + 1}`,
     eventCode: `EC-${1000 + i}`,

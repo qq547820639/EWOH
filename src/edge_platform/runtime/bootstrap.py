@@ -65,6 +65,7 @@ class RuntimeComponents:
     rules: object = None
     pipeline: object = None
     manager: object = None
+    world_store: object = None  # ADR-008 / NO-03b：契约校验的世界状态存储（真实装配）
     simulator: object = None  # 仅 simulation 模式非空
     is_simulation: bool = False
     warnings: list = field(default_factory=list)
@@ -79,6 +80,7 @@ class RuntimeComponents:
             "rules": self.rules,
             "pipeline": self.pipeline,
             "manager": self.manager,
+            "world_store": self.world_store,
         }
 
 
@@ -116,6 +118,7 @@ class RuntimeFactory:
             rules=comps["rules"],
             pipeline=comps["pipeline"],
             manager=comps["manager"],
+            world_store=comps["world_store"],
             is_simulation=False,
         )
 
@@ -140,6 +143,7 @@ class RuntimeFactory:
                     rules=comps["rules"],
                     pipeline=comps["pipeline"],
                     manager=comps["manager"],
+                    world_store=comps["world_store"],
                     is_simulation=False,
                 )
             except RealAssemblyError as exc:
@@ -165,6 +169,7 @@ class RuntimeFactory:
             rules=comps["rules"],
             pipeline=comps["pipeline"],
             manager=comps["manager"],
+            world_store=comps["world_store"],
             is_simulation=False,
         )
 

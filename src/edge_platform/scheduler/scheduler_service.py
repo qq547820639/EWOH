@@ -561,6 +561,7 @@ class SchedulerService:
             )
             self._assignments[assignment.assignment_id] = assignment
             self._persist_assignment(assignment)
+            self._sync_task_status_on_dispatch(assignment)
             self._publish(
                 "assignment.updated",
                 entity_id=assignment.assignment_id,
@@ -711,33 +712,12 @@ class SchedulerService:
         执行状态更新由 NestJS 控制面经 execution feedback 统一收集。
         """
         self._assert_writable()
-        from .models import validate_task_transition
-
         a = self.get_assignment(assignment_id)
         before = a.to_dict()
-        if not force:
-            # 沿任务状态机自动推进最短合法链（如 dispatched→received→executing、
-            # paused→executing→completed），非法终点仍由 validate_task_transition 拒绝。
-            for mid in shortest_task_path(a.status, new_status):
-                validate_task_transition(a.status, mid)
-                a.status = mid
-            validate_task_transition(a.status, new_status)
-        a.status = new_status
-        if new_status in ("executing", "received"):
-            a.actual_start = a.actual_start or now_iso()
-        elif new_status in ("completed", "cancelled"):
-            a.actual_end = now_iso()
-        a.version = int(a.version or 1) + 1
+        self._apply_assignment_transition(a, new_status, force=force)
         self._persist_assignment(a)
-        # 同步任务状态（若任务存在）
-        if self.repository is not None and self.repository.get_task(a.task_id) is not None:
-            try:
-                task = self.repository.get_task(a.task_id)
-                self.repository.update_task(
-                    a.task_id, int(task.get("version") or 1), status=new_status
-                )
-            except Exception as e:  # noqa: BLE001 - 任务同步失败不影响派工主流程
-                logger.warning("set_assignment_status: 同步任务 %s 状态失败: %s", a.task_id, e)
+        # 同步任务状态（若任务存在；ADR-029 决策 2：Task 事实与派工同状态机收敛）
+        self._sync_task_status(a.task_id, new_status, a.assignment_id, force=force)
         self._publish(
             "assignment.updated",
             entity_id=a.assignment_id,
@@ -754,6 +734,85 @@ class SchedulerService:
             reason,
         )
         return a
+
+    # ---- 任务↔派工状态机同步（ADR-029 / R-3 收口） ----
+
+    def _apply_assignment_transition(self, a, new_status, force=False):
+        """共享转换器：沿任务状态机推进派工状态（含最短合法链补全）。
+
+        与 set_assignment_status / update_task 复用（§31 消除内联重复）；
+        同步异常在调用方显式留痕，绝不静默。
+        """
+        from .models import validate_task_transition
+
+        if not force:
+            # 沿任务状态机自动推进最短合法链（如 dispatched→received→executing、
+            # paused→executing→completed），非法终点仍由 validate_task_transition 拒绝。
+            for mid in shortest_task_path(a.status, new_status):
+                validate_task_transition(a.status, mid)
+                a.status = mid
+            validate_task_transition(a.status, new_status)
+        a.status = new_status
+        if new_status in ("executing", "received"):
+            a.actual_start = a.actual_start or now_iso()
+        elif new_status in ("completed", "cancelled"):
+            a.actual_end = now_iso()
+        a.version = int(a.version or 1) + 1
+
+    def _sync_task_status(self, task_id, new_status, assignment_id="", force=False):
+        """派工推进 → 同步 Task 状态（乐观锁；失败显式留痕不阻断派工主流程）。"""
+        if self.repository is None:
+            return
+        try:
+            if self.repository.get_task(task_id) is None:
+                return
+            task = self.repository.get_task(task_id)
+            current = task.get("status")
+            if current == new_status:
+                return  # 已一致（幂等），不重复更新
+            if not force:
+                from .models import validate_task_transition
+
+                for mid in shortest_task_path(current, new_status):
+                    validate_task_transition(current, mid)
+                    current = mid
+                validate_task_transition(current, new_status)
+            self.repository.update_task(
+                task_id, int(task.get("version") or 1), status=new_status
+            )
+        except Exception as e:  # noqa: BLE001 - 同步失败显式留痕不影响主事实
+            logger.warning(
+                "task↔assignment 同步任务 %s → %s 失败（%s%s）: %s",
+                task_id, new_status,
+                "assignment=" + assignment_id if assignment_id else "",
+                "", e,
+            )
+
+    def _sync_task_status_on_dispatch(self, assignment):
+        """execute() 派工落账后推进 Task（pending_dispatch → dispatched，ADR-029 决策 2）。"""
+        self._sync_task_status(assignment.task_id, TASK_DISPATCHED, assignment.assignment_id)
+
+    def _sync_assignments_for_task(self, task_id, new_status):
+        """任务 API 推进 → 同步其派工（ADR-029 决策 3；不回调任务防递归）。"""
+        for a in list(self._assignments.values()):
+            if getattr(a, "task_id", "") != task_id:
+                continue
+            if getattr(a, "status", "") == new_status:
+                continue
+            try:
+                self._apply_assignment_transition(a, new_status)
+                self._persist_assignment(a)
+                self._publish(
+                    "assignment.updated",
+                    entity_id=a.assignment_id,
+                    version=a.version,
+                    payload={"task_id": task_id, "status": new_status, "reason": "task.synced"},
+                )
+            except Exception as e:  # noqa: BLE001 - 派工无法跟随（终态/非法）显式留痕
+                logger.warning(
+                    "task↔assignment 同步派工 %s → %s 失败（任务 %s）: %s",
+                    getattr(a, "assignment_id", "?"), new_status, task_id, e,
+                )
 
     # ---- 任务（Phase 6 API） ----
 
@@ -797,10 +856,18 @@ class SchedulerService:
         ver = int(expected_version) if expected_version is not None else int(current.get("version") or 1)
         new_status = fields.get("status")
         if new_status and new_status != current.get("status"):
+            # ADR-029：任务推进与派工同状态机（最短合法链补全，非法终点仍拒绝）
             from .models import validate_task_transition
 
-            validate_task_transition(current.get("status", ""), new_status)
+            walked = current.get("status", "")
+            for mid in shortest_task_path(walked, new_status):
+                validate_task_transition(walked, mid)
+                walked = mid
+            validate_task_transition(walked, new_status)
         updated = self.repository.update_task(task_id, ver, **fields)
+        # ADR-029 决策 3：任务推进 → 其派工同状态机收敛（不回调任务防递归）
+        if new_status and new_status != current.get("status"):
+            self._sync_assignments_for_task(task_id, new_status)
         self._publish(
             "task.updated",
             entity_id=task_id,

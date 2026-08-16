@@ -221,6 +221,7 @@ function reconcile(rootDir) {
 
   // 仅匹配「受管表 N → M」口径行（如「ewoh_asset_package，受管表 48 → 57。」），
   // 排除 OpenAPI「304 → 306 条路径」等非表口径的箭头行，避免误把路径数当受管表数。
+  // 语义：取文件中最靠前（最新，Keep a Changelog 序）的匹配行——历史条目不覆盖新值。
   const changelogTo = (() => {
     if (!changelog) return undefined;
     for (const line of changelog.split('\n')) {

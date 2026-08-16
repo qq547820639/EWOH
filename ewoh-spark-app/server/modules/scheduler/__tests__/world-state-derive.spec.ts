@@ -558,7 +558,7 @@ describe('P1-T2: 领域新列优先装配（新列真实值 > 派生兜底 + der
   it('device 位置读 location_lat/lng，不再借用人员坐标；无位置 → UNKNOWN(null) 而非 0', async () => {
     const svc = makeSvc({
       personnel: [
-        { id: 'p1', name: 'p1', status: 'available', spatialEntityId: 'SE-P1', updatedAt: new Date() },
+        { id: 'p1', name: 'p1', status: 'AVAILABLE', spatialEntityId: 'SE-P1', updatedAt: new Date() },
       ],
       device: [
         // 有自身位置：与绑定人员位置不同，应取设备自身坐标。
@@ -646,8 +646,8 @@ describe('P1-T2: 领域新列优先装配（新列真实值 > 派生兜底 + der
   it('person 坐标缺失 → UNKNOWN(null) 而非 0', async () => {
     const svc = makeSvc({
       personnel: [
-        { id: 'p1', name: 'p1', status: 'available', spatialEntityId: null, updatedAt: new Date() },
-        { id: 'p2', name: 'p2', status: 'available', spatialEntityId: 'SE-P2', updatedAt: new Date() },
+        { id: 'p1', name: 'p1', status: 'AVAILABLE', spatialEntityId: null, updatedAt: new Date() },
+        { id: 'p2', name: 'p2', status: 'AVAILABLE', spatialEntityId: 'SE-P2', updatedAt: new Date() },
       ],
       device: [],
       task: [],
@@ -675,7 +675,7 @@ describe('P1-T2: 领域新列优先装配（新列真实值 > 派生兜底 + der
     const svc = makeSvc({
       personnel: [
         {
-          id: 'p1', name: 'p1', status: 'available', spatialEntityId: null, updatedAt: new Date(),
+          id: 'p1', name: 'p1', status: 'AVAILABLE', spatialEntityId: null, updatedAt: new Date(),
           shift: 'A班', workload: 0.4, currentTaskId: 't1',
           certificationExpiry: [{ name: 'cert-a', expiresAtMs: 1234 }],
         },
@@ -720,7 +720,7 @@ describe('T02 / P0-1: world-state 消费 ResourceProjectionService（双源一�
       projectForSnapshot: jest.fn().mockResolvedValue({
         persons: [
           {
-            id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal',
+            id: 'p1', name: 'p1', status: 'AVAILABLE', healthStatus: 'normal',
             skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0,
             stationId: 'S-1', zoneId: 'Z-1', x: 10, y: 20,
             availableFromMs: null, shift: null, workload: null, currentTaskId: null,
@@ -731,7 +731,7 @@ describe('T02 / P0-1: world-state 消费 ResourceProjectionService（双源一�
         devices: [
           {
             id: 'd1', workerName: null, deviceModel: null, batteryPct: 100,
-            capabilities: [], online: true, status: 'online', x: 30, y: 40,
+            capabilities: [], online: true, status: 'AVAILABLE', x: 30, y: 40,
             locationStationId: null, availableWindows: [], locationConfidence: null,
             locationUpdatedAt: null, telemetryUpdatedAt: null, sourceTs: null,
             freshnessMs: 300000, dataQuality: 'UNKNOWN', derived: [],
@@ -810,7 +810,7 @@ describe('T02 / P0-1: world-state 消费 ResourceProjectionService（双源一�
   it('P0-3: WGS84 坐标不进笛卡尔 x/y（仅 coordinate 承载 lat/lng）', async () => {
     const svc = makeSvc({
       personnel: [
-        { id: 'p1', name: 'p1', status: 'available', spatialEntityId: 'SE-P1', updatedAt: new Date() },
+        { id: 'p1', name: 'p1', status: 'AVAILABLE', spatialEntityId: 'SE-P1', updatedAt: new Date() },
       ],
       device: [
         // WGS84 设备：location_lat/lng 为经纬度；x/y 必须为 null（避免当笛卡尔）。
@@ -873,7 +873,7 @@ describe('P0-2: 事件影响范围 eventImpacts 构建', () => {
       event: [
         {
           eventId: 'evt1',
-          severity: 'L2',
+          severity: 'high',
           status: 'open',
           eventType: 'DEVICE_OFFLINE',
           deviceId: 'D-001',
@@ -890,7 +890,7 @@ describe('P0-2: 事件影响范围 eventImpacts 构建', () => {
     expect(state.eventImpacts).toHaveLength(1);
     const imp = state.eventImpacts[0];
     expect(imp.eventId).toBe('evt1');
-    expect(imp.severity).toBe('L2');
+    expect(imp.severity).toBe('high');
     expect(imp.status).toBe('open');
     // 事件设备进入受影响设备集合；其空间实体解析出 zone。
     expect(imp.affectedDeviceIds).toContain('D-001');
@@ -909,7 +909,7 @@ describe('P0-2: 事件影响范围 eventImpacts 构建', () => {
       event: [
         {
           eventId: 'evt2',
-          severity: 'L3',
+          severity: 'medium',
           status: 'open',
           eventType: 'SAFETY',
           deviceId: null,

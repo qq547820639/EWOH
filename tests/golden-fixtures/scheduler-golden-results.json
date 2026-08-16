@@ -1,0 +1,51 @@
+[
+  {
+    "scenarioId": "skill_match_baseline",
+    "assignments": [
+      {
+        "taskId": "t1",
+        "personId": "p1",
+        "deviceId": null,
+        "stationId": null
+      },
+      {
+        "taskId": "t2",
+        "personId": "p2",
+        "deviceId": null,
+        "stationId": null
+      }
+    ],
+    "unassigned": [],
+    "violationReasons": []
+  },
+  {
+    "scenarioId": "maintenance_blocked_device_fail_closed",
+    "assignments": [],
+    "unassigned": [
+      "t1"
+    ],
+    "violationReasons": [
+      "t1:device_maintenance_blocked"
+    ]
+  },
+  {
+    "scenarioId": "maintenance_blocked_person_fail_closed",
+    "assignments": [],
+    "unassigned": [
+      "t1"
+    ],
+    "violationReasons": [
+      "t1:person_maintenance_blocked"
+    ]
+  },
+  {
+    "scenarioId": "quality_blocked_station_fail_closed",
+    "assignments": [],
+    "unassigned": [
+      "t1"
+    ],
+    "violationReasons": [
+      "t1:station_quality_blocked"
+    ]
+  }
+]

@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///knowledge/knowledge-entry/v1",
+  "title": "EWOH Canonical Knowledge Entry",
+  "description": "EWOH Factory Knowledge System 知识条目契约（ADR-018，NO-07）。知识条目是 Evidence 之上的派生资产：必须引用 sourceEvidenceIds（可追溯证据链，§3 Factory Truth）；relatedEntityIds 形成知识图边。五层知识分类（scope 有序阶梯）：global/industry（跨租户共享，必须 provenance 声明且禁止 tenantId）/customer/factory（租户内，tenantId 必填）/private_operational（永不出租户，provenance 禁止）。跨工厂知识不得直接泄露客户数据（§12/§15/§16 机器可判定执行面）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "knowledgeKindRegistry", "knowledgeScopeRegistry", "knowledgeStatusRegistry", "rules"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "knowledgeKindRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z_]{1,32}$" }
+    },
+    "knowledgeScopeRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z_]{1,32}$" }
+    },
+    "knowledgeStatusRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z_]{1,24}$" }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identityContract", "evidenceContract", "scopeContract", "tenantContract", "provenanceContract", "timeContract", "auditContract", "statusContract"],
+      "properties": {
+        "identityContract": {
+          "type": "string",
+          "const": "knowledgeId 必须是规范身份 knowledge:value（ADR-006）；sourceEvidenceIds/relatedEntityIds/verifiedBy 必须是规范身份"
+        },
+        "evidenceContract": {
+          "type": "string",
+          "const": "sourceEvidenceIds 非空（知识可追溯证据链，§3）；relatedEntityIds 为知识图边（实体锚点）"
+        },
+        "scopeContract": {
+          "type": "string",
+          "const": "scope ∈ 五层有序阶梯（global/industry/customer/factory/private_operational）"
+        },
+        "tenantContract": {
+          "type": "string",
+          "const": "customer/factory/private_operational → tenantId 必填；global/industry → tenantId 禁止（跨租户共享条目无租户归属）"
+        },
+        "provenanceContract": {
+          "type": "string",
+          "const": "global/industry 必须 provenance 声明（trainingDataSources=非空字符串数组；anonymizationPolicy/dataAuthorization/modelVersion=非空字符串，§15/§16）；private_operational 禁止 provenance（永不出租户）"
+        },
+        "timeContract": {
+          "type": "string",
+          "const": "timeSemantics 双时态（validFrom 必填 ISO；validTo 可选且不得早于 validFrom，与 ADR-008 同源）"
+        },
+        "auditContract": {
+          "type": "string",
+          "const": "auditTrail 必须 true（与 ADR-016 同规则）"
+        },
+        "statusContract": {
+          "type": "string",
+          "const": "status ∈ {draft, verified, superseded}（人工 verifiedBy 可审计，无隐式生命周期）"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "knowledgeKindRegistry": [
+    "incident", "resolution", "failure_pattern", "process_knowledge",
+    "decision_history", "evidence"
+  ],
+  "knowledgeScopeRegistry": ["global", "industry", "customer", "factory", "private_operational"],
+  "knowledgeStatusRegistry": ["draft", "verified", "superseded"],
+  "rules": {
+    "identityContract": "knowledgeId 必须是规范身份 knowledge:value（ADR-006）；sourceEvidenceIds/relatedEntityIds/verifiedBy 必须是规范身份",
+    "evidenceContract": "sourceEvidenceIds 非空（知识可追溯证据链，§3）；relatedEntityIds 为知识图边（实体锚点）",
+    "scopeContract": "scope ∈ 五层有序阶梯（global/industry/customer/factory/private_operational）",
+    "tenantContract": "customer/factory/private_operational → tenantId 必填；global/industry → tenantId 禁止（跨租户共享条目无租户归属）",
+    "provenanceContract": "global/industry 必须 provenance 声明（trainingDataSources=非空字符串数组；anonymizationPolicy/dataAuthorization/modelVersion=非空字符串，§15/§16）；private_operational 禁止 provenance（永不出租户）",
+    "timeContract": "timeSemantics 双时态（validFrom 必填 ISO；validTo 可选且不得早于 validFrom，与 ADR-008 同源）",
+    "auditContract": "auditTrail 必须 true（与 ADR-016 同规则）",
+    "statusContract": "status ∈ {draft, verified, superseded}（人工 verifiedBy 可审计，无隐式生命周期）"
+  }
+}

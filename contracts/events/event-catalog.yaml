@@ -44,6 +44,37 @@ x-event-types:
   - ExecutionDeviation
   - PolicyActivated
   - PolicyRolledBack
+  - EntityIdentityMapped
+  - DeviceLowBattery
+  - WorkerHighLoad
+  - WorkerPostureRisk
+  - DeviceOffline
+  - DataDegraded
+  - DataQualityAlert
+  - MaintenanceConditionDetected
+  - MaintenanceConditionResolved
+  - QualityFindingDetected
+  - QualityFindingDispositioned
+  - WorkOrderCreated
+  - WorkOrderCompleted
+  - EntityDeclared
+  - EntityStateObserved
+  - AgentTaskProposed
+  - AgentDecisionRecorded
+  - AgentTaskCreated
+  - AgentTaskCompleted
+  - KnowledgeEntryCreated
+  - InferenceResultRecorded
+  - LearningEvaluationRecorded
+  - DeadLetterRecorded
+  - SimulationRunCreated
+  - SimulationRunCompleted
+  - LearningProposalCreated
+  - LearningProposalResolved
+  - ExoConfigRecorded
+  - ExoSessionStarted
+  - ExoSessionEnded
+  - OutcomeAnnotationRecorded
 channels:
   device.birth:
     publish:
@@ -182,6 +213,130 @@ channels:
     publish:
       message:
         $ref: '#/components/messages/PolicyRolledBack'
+  identity.mapped:
+    publish:
+      message:
+        $ref: '#/components/messages/EntityIdentityMapped'
+  device.low_battery:
+    publish:
+      message:
+        $ref: '#/components/messages/DeviceLowBattery'
+  worker.high_load:
+    publish:
+      message:
+        $ref: '#/components/messages/WorkerHighLoad'
+  worker.posture_risk:
+    publish:
+      message:
+        $ref: '#/components/messages/WorkerPostureRisk'
+  device.offline:
+    publish:
+      message:
+        $ref: '#/components/messages/DeviceOffline'
+  data.degraded:
+    publish:
+      message:
+        $ref: '#/components/messages/DataDegraded'
+  data.quality_alert:
+    publish:
+      message:
+        $ref: '#/components/messages/DataQualityAlert'
+  maintenance.condition_detected:
+    publish:
+      message:
+        $ref: '#/components/messages/MaintenanceConditionDetected'
+  maintenance.condition_resolved:
+    publish:
+      message:
+        $ref: '#/components/messages/MaintenanceConditionResolved'
+  quality.finding_detected:
+    publish:
+      message:
+        $ref: '#/components/messages/QualityFindingDetected'
+  quality.finding_dispositioned:
+    publish:
+      message:
+        $ref: '#/components/messages/QualityFindingDispositioned'
+  workorder.created:
+    publish:
+      message:
+        $ref: '#/components/messages/WorkOrderCreated'
+  workorder.completed:
+    publish:
+      message:
+        $ref: '#/components/messages/WorkOrderCompleted'
+  entity.declared:
+    publish:
+      message:
+        $ref: '#/components/messages/EntityDeclared'
+  entity.state_observed:
+    publish:
+      message:
+        $ref: '#/components/messages/EntityStateObserved'
+  agent.task_proposed:
+    publish:
+      message:
+        $ref: '#/components/messages/AgentTaskProposed'
+  agent.decision_recorded:
+    publish:
+      message:
+        $ref: '#/components/messages/AgentDecisionRecorded'
+  agent.task_created:
+    publish:
+      message:
+        $ref: '#/components/messages/AgentTaskCreated'
+  agent.task_completed:
+    publish:
+      message:
+        $ref: '#/components/messages/AgentTaskCompleted'
+  knowledge.entry_created:
+    publish:
+      message:
+        $ref: '#/components/messages/KnowledgeEntryCreated'
+  inference.result_recorded:
+    publish:
+      message:
+        $ref: '#/components/messages/InferenceResultRecorded'
+  learning.evaluation_recorded:
+    publish:
+      message:
+        $ref: '#/components/messages/LearningEvaluationRecorded'
+  reliability.dead_letter_recorded:
+    publish:
+      message:
+        $ref: '#/components/messages/DeadLetterRecorded'
+  simulation.run_created:
+    publish:
+      message:
+        $ref: '#/components/messages/SimulationRunCreated'
+  simulation.run_completed:
+    publish:
+      message:
+        $ref: '#/components/messages/SimulationRunCompleted'
+  learning.proposal_created:
+    publish:
+      message:
+        $ref: '#/components/messages/LearningProposalCreated'
+  learning.proposal_resolved:
+    publish:
+      message:
+        $ref: '#/components/messages/LearningProposalResolved'
+  exo.session_started:
+    publish:
+      message:
+        $ref: '#/components/messages/ExoSessionStarted'
+  exo.session_ended:
+    publish:
+      message:
+        $ref: '#/components/messages/ExoSessionEnded'
+  learning.outcome_annotation_recorded:
+    publish:
+      message:
+        $ref: '#/components/messages/OutcomeAnnotationRecorded'
+  exo.config_recorded:
+    publish:
+      message:
+        $ref: '#/components/messages/ExoConfigRecorded'
 components:
   messages:
     DeviceBirth:
@@ -1233,4 +1388,861 @@ components:
           - orgId
           - eventId
           - policyVersion
+          - occurredAt
+    EntityIdentityMapped:
+      name: EntityIdentityMapped
+      title: Entity Identity Mapped
+      summary: >
+        A third-party system identity (MES/WMS/ERP/PLC tag/device serial) was mapped
+        to an EWOH canonical identity (ADR-006). Canonical form: kind:value, see
+        contracts/identity/identity.schema.json.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.identity.mapped
+        source: ewoh:///organizations/{orgId}/identity/{entityId}
+        subject: identity/{entityId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          mappingId: { type: string, description: 'map:<token> 映射记录 ID' }
+          sourceSystem: { type: string, description: '第三方系统标识（mes/wms/erp/...）' }
+          sourceId: { type: string, description: '第三方系统内原始 ID（仅 alias，不作为内部 ID）' }
+          entityId: { type: string, description: 'EWOH 规范身份 kind:value' }
+          authority: { type: string, enum: [registration, adapter, manual] }
+          recordedAt: { type: string, format: date-time }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - mappingId
+          - sourceSystem
+          - sourceId
+          - entityId
+          - authority
+          - recordedAt
+          - occurredAt
+    DeviceLowBattery:
+      name: DeviceLowBattery
+      title: Device Low Battery
+      summary: A wearable/exoskeleton device battery fell below the low-battery threshold.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.device.low_battery
+        source: ewoh:///organizations/{orgId}/devices/{deviceId}
+        subject: device/{deviceId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          deviceId: { type: string }
+          batteryPct: { type: number }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - deviceId
+          - occurredAt
+    WorkerHighLoad:
+      name: WorkerHighLoad
+      title: Worker High Load
+      summary: A worker's cumulative load exceeded the high-load threshold.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.worker.high_load
+        source: ewoh:///organizations/{orgId}/devices/{deviceId}
+        subject: device/{deviceId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          deviceId: { type: string }
+          loadScore: { type: number }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - deviceId
+          - occurredAt
+    WorkerPostureRisk:
+      name: WorkerPostureRisk
+      title: Worker Posture Risk
+      summary: A worker's posture exceeded the bend threshold (ergonomic risk).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.worker.posture_risk
+        source: ewoh:///organizations/{orgId}/devices/{deviceId}
+        subject: device/{deviceId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          deviceId: { type: string }
+          pitchDeg: { type: number }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - deviceId
+          - occurredAt
+    DeviceOffline:
+      name: DeviceOffline
+      title: Device Offline
+      summary: A device stopped emitting telemetry (offline detected).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.device.offline
+        source: ewoh:///organizations/{orgId}/devices/{deviceId}
+        subject: device/{deviceId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          deviceId: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - deviceId
+          - occurredAt
+    DataDegraded:
+      name: DataDegraded
+      title: Data Degraded
+      summary: Consecutive telemetry frames were degraded (data quality).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.data.degraded
+        source: ewoh:///organizations/{orgId}/devices/{deviceId}
+        subject: device/{deviceId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          deviceId: { type: string }
+          consecutive: { type: integer }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - deviceId
+          - occurredAt
+    DataQualityAlert:
+      name: DataQualityAlert
+      title: Data Quality Alert
+      summary: A data-quality gate rejected or flagged an ingested record.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.data.quality_alert
+        source: ewoh:///organizations/{orgId}/ingest/{recordId}
+        subject: ingest/{recordId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          deviceId: { type: string }
+          eventCode: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - occurredAt
+    MaintenanceConditionDetected:
+      name: MaintenanceConditionDetected
+      title: Maintenance Condition Detected
+      summary: A maintenance condition was detected on a subject entity (ADR-010).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.maintenance.condition_detected
+        source: ewoh:///organizations/{orgId}/maintenance/{conditionId}
+        subject: maintenance/{conditionId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          conditionId: { type: string }
+          subjectEntityId: { type: string }
+          conditionType: { type: string }
+          severity: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - conditionId
+          - subjectEntityId
+          - conditionType
+          - severity
+          - occurredAt
+    MaintenanceConditionResolved:
+      name: MaintenanceConditionResolved
+      title: Maintenance Condition Resolved
+      summary: A maintenance condition was resolved (work order completed).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.maintenance.condition_resolved
+        source: ewoh:///organizations/{orgId}/maintenance/{conditionId}
+        subject: maintenance/{conditionId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          conditionId: { type: string }
+          subjectEntityId: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - conditionId
+          - subjectEntityId
+          - occurredAt
+    QualityFindingDetected:
+      name: QualityFindingDetected
+      title: Quality Finding Detected
+      summary: A quality finding was detected (ADR-010).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.quality.finding_detected
+        source: ewoh:///organizations/{orgId}/quality/{findingId}
+        subject: quality/{findingId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          findingId: { type: string }
+          findingType: { type: string }
+          severity: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - findingId
+          - findingType
+          - severity
+          - occurredAt
+    QualityFindingDispositioned:
+      name: QualityFindingDispositioned
+      title: Quality Finding Dispositioned
+      summary: A quality finding was dispositioned (accept/rework/scrap/return).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.quality.finding_dispositioned
+        source: ewoh:///organizations/{orgId}/quality/{findingId}
+        subject: quality/{findingId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          findingId: { type: string }
+          disposition: { type: string, enum: [accept, rework, scrap, return] }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - findingId
+          - disposition
+          - occurredAt
+    WorkOrderCreated:
+      name: WorkOrderCreated
+      title: Work Order Created
+      summary: A canonical work order was created from a maintenance condition or quality finding (ADR-012).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.workorder.created
+        source: ewoh:///organizations/{orgId}/workorders/{workOrderId}
+        subject: workorder/{workOrderId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          workOrderId: { type: string }
+          workOrderType: { type: string, enum: [maintenance, quality_rework, inspection] }
+          originKind: { type: string, enum: [maintenance_condition, quality_finding] }
+          originId: { type: string }
+          subjectEntityId: { type: string }
+          severity: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - workOrderId
+          - workOrderType
+          - originKind
+          - originId
+          - subjectEntityId
+          - severity
+          - occurredAt
+    WorkOrderCompleted:
+      name: WorkOrderCompleted
+      title: Work Order Completed
+      summary: A canonical work order reached a terminal completion state (ADR-012).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.workorder.completed
+        source: ewoh:///organizations/{orgId}/workorders/{workOrderId}
+        subject: workorder/{workOrderId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          workOrderId: { type: string }
+          workOrderType: { type: string, enum: [maintenance, quality_rework, inspection] }
+          originKind: { type: string, enum: [maintenance_condition, quality_finding] }
+          originId: { type: string }
+          subjectEntityId: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - workOrderId
+          - workOrderType
+          - originKind
+          - originId
+          - subjectEntityId
+          - occurredAt
+    EntityDeclared:
+      name: EntityDeclared
+      title: Factory Entity Declared
+      summary: An edge world-model projection declared a canonical factory entity (ADR-015).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.entity.declared
+        source: ewoh:///organizations/{orgId}/entities/{entityId}
+        subject: entity/{entityId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          entityId: { type: string }
+          kind: { type: string }
+          factoryId: { type: string }
+          source: { type: string, enum: [real, simulated, derived] }
+          version: { type: integer, minimum: 1 }
+          status: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - entityId
+          - kind
+          - factoryId
+          - source
+          - version
+          - occurredAt
+    EntityStateObserved:
+      name: EntityStateObserved
+      title: Factory Entity State Observed
+      summary: An edge world-model projection observed a canonical entity state (ADR-008/ADR-015).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.entity.state_observed
+        source: ewoh:///organizations/{orgId}/entities/{entityId}
+        subject: entity/{entityId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          entityId: { type: string }
+          kind: { type: string }
+          stateVersion: { type: integer, minimum: 1 }
+          stateJson: { type: object }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - entityId
+          - kind
+          - stateVersion
+          - occurredAt
+    AgentTaskProposed:
+      name: AgentTaskProposed
+      title: Agent Task Proposed
+      summary: An agent proposed a structured task for human approval (ADR-016, L1/L2).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.agent.task_proposed
+        source: ewoh:///organizations/{orgId}/agents/{agentId}
+        subject: agent/{agentId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          agentId: { type: string }
+          agentRole: { type: string }
+          taskKind: { type: string }
+          command: { type: string }
+          proposalJson: { type: object }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - agentId
+          - command
+          - occurredAt
+    AgentDecisionRecorded:
+      name: AgentDecisionRecorded
+      title: Agent Decision Recorded
+      summary: An agent decision was recorded for audit (ADR-016; decisions are facts, never silent).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.agent.decision_recorded
+        source: ewoh:///organizations/{orgId}/agents/{agentId}
+        subject: agent/{agentId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          agentId: { type: string }
+          agentRole: { type: string }
+          command: { type: string }
+          outcome: { type: string, enum: [proposed, executed, rejected, failed, delegated] }
+          decisionJson: { type: object }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - agentId
+          - outcome
+          - occurredAt
+    AgentTaskCreated:
+      name: AgentTaskCreated
+      title: Agent Task Created
+      summary: A structured agent task was created by the orchestration layer (ADR-017).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.agent.task_created
+        source: ewoh:///organizations/{orgId}/tasks/{taskId}
+        subject: task/{taskId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          taskId: { type: string }
+          kind: { type: string, enum: [analysis, suggestion, execution] }
+          assignedRole: { type: string }
+          priority: { type: string, enum: [low, medium, high, critical] }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - taskId
+          - kind
+          - assignedRole
+          - priority
+          - occurredAt
+    AgentTaskCompleted:
+      name: AgentTaskCompleted
+      title: Agent Task Completed
+      summary: A structured agent task reached a terminal state (ADR-017).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.agent.task_completed
+        source: ewoh:///organizations/{orgId}/tasks/{taskId}
+        subject: task/{taskId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          taskId: { type: string }
+          status: { type: string, enum: [completed, failed, cancelled] }
+          outcomeJson: { type: object }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - taskId
+          - status
+          - occurredAt
+    KnowledgeEntryCreated:
+      name: KnowledgeEntryCreated
+      title: Knowledge Entry Created
+      summary: A canonical knowledge entry was registered in the Factory Knowledge System (ADR-018, NO-07b).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.knowledge.entry_created
+        source: ewoh:///organizations/{orgId}/knowledge/{knowledgeId}
+        subject: knowledge/{knowledgeId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          knowledgeId: { type: string }
+          kind: { type: string, enum: [incident, resolution, failure_pattern, process_knowledge, decision_history, evidence] }
+          scope: { type: string, enum: [global, industry, customer, factory, private_operational] }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - knowledgeId
+          - kind
+          - scope
+          - occurredAt
+    InferenceResultRecorded:
+      name: InferenceResultRecorded
+      title: Inference Result Recorded
+      summary: A canonical inference result (ADR-013) was recorded to the cloud ledger (ADR-019, NO-08a).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.inference.result_recorded
+        source: ewoh:///organizations/{orgId}/inference/{inferenceId}
+        subject: inference/{inferenceId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          inferenceId: { type: string }
+          level: { type: string, enum: [L1_deterministic_rules, L2_statistical_ml, L3_optimization, L4_industrial_reasoning, L5_agentic_workflow, L6_simulation_digital_twin, L7_learning_loop] }
+          label: { type: string }
+          confidence: { type: number }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - inferenceId
+          - level
+          - label
+          - confidence
+          - occurredAt
+
+    LearningEvaluationRecorded:
+      name: LearningEvaluationRecorded
+      title: Learning Evaluation Recorded
+      summary: A seven-metric continuous-learning evaluation snapshot was recorded (ADR-021, NO-09a).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.learning.evaluation_recorded
+        source: ewoh:///organizations/{orgId}/learning/{evalId}
+        subject: learning/{evalId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          evalId: { type: string }
+          evaluationType: { type: string, enum: [periodic, on_demand] }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - evalId
+          - evaluationType
+          - occurredAt
+
+    DeadLetterRecorded:
+      name: DeadLetterRecorded
+      title: Dead Letter Recorded
+      summary: A permanently failed message was recorded to the dead letter ledger (ADR-024, NO-11a).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.reliability.dead_letter_recorded
+        source: ewoh:///organizations/{orgId}/reliability/{letterId}
+        subject: reliability/{letterId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          letterId: { type: string }
+          reason: { type: string, enum: [contract_violation, unknown_event_type, permanent_failure, ttl_expired, max_attempts_exceeded] }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - letterId
+          - reason
+          - occurredAt
+
+    SimulationRunCreated:
+      name: SimulationRunCreated
+      title: Simulation Run Created
+      summary: A digital twin simulation run was registered (ADR-025, NO-12a, isSimulation=true isolation).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.simulation.run_created
+        source: ewoh:///organizations/{orgId}/simulation/{runId}
+        subject: simulation/{runId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          runId: { type: string }
+          kind: { type: string, enum: [what_if, capacity, layout, material_flow] }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - runId
+          - kind
+          - occurredAt
+
+    SimulationRunCompleted:
+      name: SimulationRunCompleted
+      title: Simulation Run Completed
+      summary: A digital twin simulation run reached a terminal state (completed or failed, ADR-025, NO-12a).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.simulation.run_completed
+        source: ewoh:///organizations/{orgId}/simulation/{runId}
+        subject: simulation/{runId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          runId: { type: string }
+          kind: { type: string, enum: [what_if, capacity, layout, material_flow] }
+          status: { type: string, enum: [completed, failed] }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - runId
+          - kind
+          - status
+          - occurredAt
+
+    LearningProposalCreated:
+      name: LearningProposalCreated
+      title: Learning Proposal Created
+      summary: A learning feedback proposal was registered (ADR-026, NO-12b, human-approval activation ladder).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.learning.proposal_created
+        source: ewoh:///organizations/{orgId}/learning/proposals/{proposalId}
+        subject: learning/proposals/{proposalId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          proposalId: { type: string }
+          kind: { type: string, enum: [rule_threshold] }
+          status: { type: string, enum: [proposed, shadow_evaluated] }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - proposalId
+          - kind
+          - status
+          - occurredAt
+
+    LearningProposalResolved:
+      name: LearningProposalResolved
+      title: Learning Proposal Resolved
+      summary: A learning feedback proposal reached a terminal state (approved, rejected or rolled_back, ADR-026, NO-12b).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.learning.proposal_resolved
+        source: ewoh:///organizations/{orgId}/learning/proposals/{proposalId}
+        subject: learning/proposals/{proposalId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          proposalId: { type: string }
+          kind: { type: string, enum: [rule_threshold] }
+          status: { type: string, enum: [approved, rejected, rolled_back] }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - proposalId
+          - kind
+          - status
+          - occurredAt
+
+    ExoConfigRecorded:
+      name: ExoConfigRecorded
+      title: Exo Config Recorded
+      summary: "An exoskeleton configuration fact (assist profile / fit / calibration) recorded (ADR-051/ADR-052, section 7)."
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.exo.config_recorded
+        source: ewoh:///organizations/{orgId}/exo/configs/{configId}
+        subject: exo/configs/{configId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          configId: { type: string }
+          kind: { type: string }
+          exoId: { type: string }
+          status: { type: string }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - configId
+          - kind
+          - exoId
+          - occurredAt
+
+    ExoSessionStarted:
+      name: ExoSessionStarted
+      title: Exo Session Started
+      summary: "An exoskeleton-person binding session started (ADR-032, section 7: explicit, temporary, auditable)."
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.exo.session_started
+        source: ewoh:///organizations/{orgId}/exo/sessions/{sessionId}
+        subject: exo/sessions/{sessionId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sessionId: { type: string }
+          exoId: { type: string }
+          personId: { type: string }
+          startedAt: { type: string, format: date-time }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - sessionId
+          - exoId
+          - personId
+          - occurredAt
+
+    ExoSessionEnded:
+      name: ExoSessionEnded
+      title: Exo Session Ended
+      summary: "An exoskeleton-person binding session terminated (ended or aborted, ADR-032, section 7)."
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.exo.session_ended
+        source: ewoh:///organizations/{orgId}/exo/sessions/{sessionId}
+        subject: exo/sessions/{sessionId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          sessionId: { type: string }
+          exoId: { type: string }
+          personId: { type: string }
+          status: { type: string, enum: [ended, aborted] }
+          endedBy: { type: string }
+          actualEndAt: { type: string, format: date-time }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - sessionId
+          - exoId
+          - personId
+          - status
+          - occurredAt
+
+    OutcomeAnnotationRecorded:
+      name: OutcomeAnnotationRecorded
+      title: Outcome Annotation Recorded
+      summary: A decision outcome annotation was recorded (ADR-034, ground-truth surface for the learning loop).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.learning.outcome_annotation_recorded
+        source: ewoh:///organizations/{orgId}/learning/annotations/{annotationId}
+        subject: learning/annotations/{annotationId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          annotationId: { type: string }
+          targetType: { type: string, enum: [plan, decision, proposal, agent_command] }
+          targetId: { type: string }
+          outcomeKind: { type: string, enum: [success, partial_success, failure, invalid] }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - annotationId
+          - targetType
+          - targetId
+          - outcomeKind
           - occurredAt

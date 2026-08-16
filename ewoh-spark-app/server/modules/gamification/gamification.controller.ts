@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Req } from '@nestjs/common';
 import { GamificationService } from './gamification.service';
 import type {
   ResourceAllocationRequest,
@@ -8,6 +8,7 @@ import type {
   ApplyBrainSuggestionRequest,
 } from '@shared/api.interface';
 import { Roles } from '../shared/roles.decorator';
+import type { OrgContext } from '../shared/org-context.interceptor';
 
 @Controller('api/gamification')
 // 指挥地图面向指挥层开放：调度员/班组长/安全/管理员均可编排、下发、查看大脑建议、分配资源。
@@ -21,18 +22,28 @@ export class GamificationController {
   }
 
   @Post('resources/allocate')
-  async allocateResources(@Body() body: ResourceAllocationRequest) {
-    return this.gamificationService.allocateResources(body);
+  async allocateResources(
+    @Body() body: ResourceAllocationRequest,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    return this.gamificationService.allocateResources(body, request?.userContext);
   }
 
   @Post('tasks/orchestrate')
-  async orchestrateTask(@Body() body: TaskOrchestrationRequest) {
-    return this.gamificationService.orchestrateTask(body);
+  async orchestrateTask(
+    @Body() body: TaskOrchestrationRequest,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    return this.gamificationService.orchestrateTask(body, request?.userContext);
   }
 
   @Post('schedule/:planId/dispatch')
-  async dispatchPlan(@Param('planId') planId: string, @Body() body: DispatchRequest) {
-    return this.gamificationService.dispatchPlan(planId, body);
+  async dispatchPlan(
+    @Param('planId') planId: string,
+    @Body() body: DispatchRequest,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    return this.gamificationService.dispatchPlan(planId, body, request?.userContext);
   }
 
   @Post('exo/:deviceId/feedback')
@@ -41,12 +52,15 @@ export class GamificationController {
   }
 
   @Get('brain/suggestions')
-  async getBrainSuggestions() {
-    return this.gamificationService.getBrainSuggestions();
+  async getBrainSuggestions(@Req() request?: { userContext?: OrgContext }) {
+    return this.gamificationService.getBrainSuggestions(request?.userContext);
   }
 
   @Post('brain/apply')
-  async applyBrainSuggestion(@Body() body: ApplyBrainSuggestionRequest) {
-    return this.gamificationService.applyBrainSuggestion(body);
+  async applyBrainSuggestion(
+    @Body() body: ApplyBrainSuggestionRequest,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    return this.gamificationService.applyBrainSuggestion(body, request?.userContext);
   }
 }

@@ -1,0 +1,339 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Golden Scheduler Workflow TCK（Phase 7 / NO-07b）：审批 CAS / 资源预约冲突 / 派工前置于预约 的共享场景。TS 侧以真实 PlanService + DispatchCoordinatorService + ResourceReservationService（fake-db 状态化替身，外设 mock 仅限 outbox/task/audit 等非不变量外设）执行并落 scheduler-workflow-golden-results.json（漂移门禁）；Python 侧以标准库重实现工作流不变量（plan 版本 CAS / 预约重叠冲突 / 派工前置条件）对同一结果独立仲裁。",
+  "scenarios": [
+    {
+      "id": "plan_lifecycle_cas_reserve_dispatch",
+      "name": "方案全生命周期：审批 CAS 双校验 → 预约冲突拒绝 → 派工（预约前置 + 状态/事件闭环）",
+      "snapshot": {
+        "persons": [
+          {
+            "id": "p1",
+            "name": "p1",
+            "status": "AVAILABLE",
+            "healthStatus": "normal",
+            "skills": [
+              "work"
+            ],
+            "certifications": [],
+            "loadLevel": 0,
+            "fatigueLevel": 0,
+            "stationId": null,
+            "zoneId": null,
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "tasks": [
+          {
+            "id": "TASK-1",
+            "title": "TASK-1",
+            "taskType": "work",
+            "priority": "medium",
+            "status": "pending",
+            "assigneeId": null,
+            "deviceId": null,
+            "stationId": null,
+            "zoneId": null,
+            "planStart": null,
+            "planEnd": null,
+            "progress": 0,
+            "predecessorIds": [],
+            "requiredSkills": [
+              "work"
+            ],
+            "requiredCertifications": []
+          }
+        ],
+        "devices": [
+          {
+            "id": "d1",
+            "workerName": null,
+            "deviceModel": null,
+            "batteryPct": 90,
+            "online": true,
+            "status": "AVAILABLE",
+            "capabilities": []
+          }
+        ],
+        "stations": [],
+        "reservations": [],
+        "backlog": [],
+        "events": [],
+        "routeStatus": [],
+        "forbiddenZones": [],
+        "lockedAssignments": []
+      },
+      "seed": {
+        "plans": [
+          {
+            "planId": "PLAN-1",
+            "planName": "golden-plan",
+            "strategy": "scheduling_v2",
+            "status": "shadow",
+            "version": 1,
+            "snapshotVersion": "WS-GOLDEN-0001"
+          }
+        ],
+        "assignments": [
+          {
+            "planId": "PLAN-1",
+            "assignmentId": "ASG-1",
+            "taskId": "TASK-1",
+            "personId": "p1",
+            "deviceId": "d1",
+            "status": "shadow"
+          }
+        ],
+        "tasks": [
+          {
+            "id": "TASK-1",
+            "status": "pending_dispatch",
+            "version": 1
+          }
+        ]
+      },
+      "ops": [
+        {
+          "op": "approve",
+          "params": {
+            "version": 0,
+            "snapshotVersion": "WS-GOLDEN-0001",
+            "staleSnapshot": false
+          },
+          "expectKey": "approve_stale_version"
+        },
+        {
+          "op": "approve",
+          "params": {
+            "version": 1,
+            "snapshotVersion": "WS-GOLDEN-0001",
+            "staleSnapshot": true
+          },
+          "expectKey": "approve_stale_snapshot"
+        },
+        {
+          "op": "approve",
+          "params": {
+            "version": 1,
+            "snapshotVersion": "WS-GOLDEN-0001",
+            "staleSnapshot": false
+          },
+          "expectKey": "approve_ok"
+        },
+        {
+          "op": "reserve",
+          "params": {
+            "planId": "PLAN-1",
+            "assignmentId": "ASG-1",
+            "taskId": "TASK-1",
+            "resourceType": "person",
+            "resourceId": "p1",
+            "startMs": 0,
+            "endMs": 3600000
+          },
+          "expectKey": "reserve_first"
+        },
+        {
+          "op": "reserve",
+          "params": {
+            "planId": "PLAN-1",
+            "assignmentId": "ASG-2",
+            "taskId": "TASK-1",
+            "resourceType": "person",
+            "resourceId": "p1",
+            "startMs": 1800000,
+            "endMs": 5400000
+          },
+          "expectKey": "reserve_overlap"
+        },
+        {
+          "op": "dispatch",
+          "params": {
+            "planId": "PLAN-1"
+          },
+          "expectKey": "dispatch_ok"
+        }
+      ],
+      "expect": {
+        "approve_stale_version": {
+          "ok": false,
+          "reason": "PLAN_STALE"
+        },
+        "approve_stale_snapshot": {
+          "ok": false,
+          "reason": "PLAN_STALE"
+        },
+        "approve_ok": {
+          "ok": true,
+          "planStatus": "approved",
+          "assignmentStatuses": [
+            "approved"
+          ]
+        },
+        "reserve_first": {
+          "ok": true,
+          "reservationIdPrefix": "RSV-"
+        },
+        "reserve_overlap": {
+          "ok": false,
+          "reason": "RESOURCE_CONFLICT"
+        },
+        "dispatch_ok": {
+          "ok": true,
+          "planStatus": "dispatched",
+          "assignmentStatuses": [
+            "dispatched"
+          ],
+          "outboxEvents": [
+            "assignment.dispatched",
+            "plan.dispatched"
+          ]
+        }
+      }
+    },
+    {
+      "id": "execution_feedback_and_replan",
+      "name": "执行反馈回流 → 事件驱动重排（版本+1、旧方案 superseded）→ 新方案审批收敛",
+      "snapshot": {
+        "snapshotVersion": "WS-GOLDEN-0003",
+        "persons": [
+          {
+            "id": "p1",
+            "name": "p1",
+            "status": "AVAILABLE",
+            "healthStatus": "normal",
+            "skills": [
+              "work"
+            ],
+            "certifications": [],
+            "loadLevel": 0,
+            "fatigueLevel": 0,
+            "stationId": null,
+            "zoneId": null,
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "tasks": [
+          {
+            "id": "TASK-2",
+            "title": "TASK-2",
+            "taskType": "work",
+            "priority": "medium",
+            "status": "pending",
+            "assigneeId": null,
+            "deviceId": null,
+            "stationId": null,
+            "zoneId": null,
+            "planStart": null,
+            "planEnd": null,
+            "progress": 0,
+            "predecessorIds": [],
+            "requiredSkills": [
+              "work"
+            ],
+            "requiredCertifications": []
+          }
+        ],
+        "devices": [],
+        "stations": [],
+        "reservations": [],
+        "backlog": [],
+        "events": [],
+        "routeStatus": [],
+        "forbiddenZones": [],
+        "lockedAssignments": []
+      },
+      "seed": {
+        "plans": [
+          {
+            "planId": "PLAN-2",
+            "planName": "golden-plan-2",
+            "strategy": "scheduling_v2",
+            "status": "dispatched",
+            "version": 2,
+            "snapshotVersion": "WS-GOLDEN-0002",
+            "horizonMinutes": null,
+            "policyVersion": null
+          }
+        ],
+        "assignments": [
+          {
+            "planId": "PLAN-2",
+            "assignmentId": "ASG-2",
+            "taskId": "TASK-2",
+            "personId": "p1",
+            "deviceId": null,
+            "stationId": null,
+            "zoneId": null,
+            "plannedStart": "2026-08-16T08:00:00Z",
+            "plannedEnd": "2026-08-16T08:30:00Z",
+            "status": "dispatched"
+          }
+        ],
+        "tasks": [
+          {
+            "id": "TASK-2",
+            "status": "in_progress",
+            "version": 1
+          }
+        ]
+      },
+      "ops": [
+        {
+          "op": "feedback",
+          "expectKey": "feedback_ok",
+          "params": {
+            "planId": "PLAN-2",
+            "assignmentId": "ASG-2",
+            "taskId": "TASK-2",
+            "actualStart": "2026-08-16T08:05:00Z",
+            "actualEnd": "2026-08-16T09:10:00Z",
+            "actualResource": {
+              "personId": "p1"
+            }
+          }
+        },
+        {
+          "op": "replan",
+          "expectKey": "replan_ok",
+          "params": {
+            "planId": "PLAN-2",
+            "lockedConstraints": [],
+            "reason": "execution_deviation"
+          }
+        },
+        {
+          "op": "approve",
+          "expectKey": "approve_new",
+          "params": {
+            "planId": "PLAN-2-R3",
+            "version": 3,
+            "snapshotVersion": "WS-GOLDEN-0003",
+            "staleSnapshot": false
+          }
+        }
+      ],
+      "expect": {
+        "feedback_ok": {
+          "ok": true
+        },
+        "replan_ok": {
+          "ok": true,
+          "newPlanId": "PLAN-2-R3",
+          "newVersion": 3,
+          "oldPlanStatus": "superseded",
+          "supersededBy": "PLAN-2-R3",
+          "newAssignments": [
+            "TASK-2"
+          ]
+        },
+        "approve_new": {
+          "ok": true,
+          "planStatus": "approved"
+        }
+      }
+    }
+  ]
+}

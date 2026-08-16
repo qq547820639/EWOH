@@ -2,6 +2,8 @@ import { Injectable, Inject, Logger } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { ewohEvent, ewohEventChain, ewohTelemetry, ewohDevice } from '@server/database/schema';
 import { eq, and, desc, gte, sql } from 'drizzle-orm';
+import { normalizeSeverity } from '@shared/risk';
+import { buildEventEnvelope, envelopeForEvidence } from '@shared/event-envelope';
 
 /**
  * 规则引擎服务（大脑-感知层）
@@ -11,6 +13,15 @@ import { eq, and, desc, gte, sql } from 'drizzle-orm';
  * 数据库查询为准，进程内 Map 仅作缓存，避免每个遥测都重复查库。
  * 证据链：写入 source_type / trigger_record_id / evidence_json
  */
+/** ADR-009：规则事件码 → Canonical Event Catalog 类型（NO-04b）。 */
+const RULE_EVENT_TYPE_MAP: Readonly<Record<string, string>> = {
+  LOW_BATTERY: 'DeviceLowBattery',
+  HIGH_LOAD: 'WorkerHighLoad',
+  POSTURE_RISK: 'WorkerPostureRisk',
+  DEVICE_OFFLINE: 'DeviceOffline',
+  DATA_DEGRADED: 'DataDegraded',
+};
+
 @Injectable()
 export class RuleEngineService {
   private readonly logger = new Logger(RuleEngineService.name);
@@ -141,6 +152,12 @@ export class RuleEngineService {
     title: string,
     evidence: Record<string, unknown>,
   ): Promise<boolean> {
+    // ADR-007 接线：写入前归一化到规范严重度阶梯（L1→critical/L2→high/L3→medium；
+    // 未知值 fail-closed 抛错 → 调用方 catch → 不落事件，绝不静默改写）。
+    const canonicalSeverity = normalizeSeverity(severity);
+    // ADR-009 / NO-04b：事件类型收敛到 Canonical Event Catalog + 信封嵌入
+    // （occurred/observed/received 同刻 = 云侧本地生成；Late 语义由共享 helper 计算）。
+    const catalogEventType = RULE_EVENT_TYPE_MAP[eventCode] ?? eventType;
     const dedupKey = `${eventCode}:${row.deviceId}`;
     if (!this.canTrigger(dedupKey)) return false;
 
@@ -162,12 +179,23 @@ export class RuleEngineService {
     try {
       const eventId = this.genEventId();
       const now = new Date();
+      const nowIso = now.toISOString();
+      const envelope = buildEventEnvelope({
+        eventId,
+        eventType: catalogEventType,
+        occurredAt: nowIso,
+        observedAt: nowIso,
+        receivedAt: nowIso,
+        source: 'cloud:rule-engine',
+        subject: `device:${row.deviceId}`,
+      });
+      const envelopeRecord = envelopeForEvidence(envelope);
       await this.db.insert(ewohEvent).values({
         eventId,
         deviceId: row.deviceId,
         eventCode,
-        eventType,
-        severity,
+        eventType: catalogEventType,
+        severity: canonicalSeverity,
         title,
         status: 'open',
         createdAt: now,
@@ -177,7 +205,9 @@ export class RuleEngineService {
           ...evidence,
           telemetry_id: row.recordId ?? null,
           device_id: row.deviceId,
-          fired_at: now.toISOString(),
+          fired_at: nowIso,
+          envelope: envelopeRecord.envelope,
+          envelopeSemantics: envelopeRecord.envelopeSemantics,
         },
       });
       await this.db.insert(ewohEventChain).values({

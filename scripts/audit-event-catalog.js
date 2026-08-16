@@ -88,6 +88,57 @@ for (const [channel, value] of Object.entries(catalog.channels ?? {})) {
   );
 }
 
+// NO-04b：TS 锁定投影（shared/event-catalog.ts EVENT_CATALOG_TYPES）与 YAML 目录
+// 集合逐项一致（单一事实源 = catalog YAML；TS 为锁定投影）。
+try {
+  const tsPath = path.join(root, 'ewoh-spark-app', 'shared', 'event-catalog.ts');
+  const tsSource = fs.readFileSync(tsPath, 'utf-8');
+  const match = tsSource.match(
+    /export const EVENT_CATALOG_TYPES = \[([\s\S]*?)\](?: as const)?;/,
+  );
+  const tsTypes = match
+    ? [...match[1].matchAll(/'([A-Za-z0-9_]+)'/g)].map((x) => x[1])
+    : null;
+  expect(
+    Array.isArray(tsTypes) && tsTypes.length === messageTypes.length,
+    `shared/event-catalog.ts EVENT_CATALOG_TYPES count mismatch: ts=${tsTypes ? tsTypes.length : 'missing'} catalog=${messageTypes.length}`,
+  );
+  if (Array.isArray(tsTypes) && tsTypes.length === messageTypes.length) {
+    const tsSet = [...tsTypes].sort();
+    const catalogSet = [...messageTypes].sort();
+    expect(
+      JSON.stringify(tsSet) === JSON.stringify(catalogSet),
+      'shared/event-catalog.ts EVENT_CATALOG_TYPES must match catalog types (set-equal)',
+    );
+  }
+} catch (err) {
+  expect(false, `event-catalog.ts check failed: ${err.message}`);
+}
+
+// Python 锁定投影（src/edge_platform/contracts/event_catalog.py EVENT_CATALOG_TYPES）。
+try {
+  const pyPath = path.join(root, 'src', 'edge_platform', 'contracts', 'event_catalog.py');
+  const pySource = fs.readFileSync(pyPath, 'utf-8');
+  const match = pySource.match(
+    /EVENT_CATALOG_TYPES: tuple\[str, \.\.\.\] = \(([\s\S]*?)\)/,
+  );
+  const pyTypes = match
+    ? [...match[1].matchAll(/"([A-Za-z0-9_]+)"/g)].map((x) => x[1])
+    : null;
+  expect(
+    Array.isArray(pyTypes) && pyTypes.length === messageTypes.length,
+    `contracts/event_catalog.py EVENT_CATALOG_TYPES count mismatch: py=${pyTypes ? pyTypes.length : 'missing'} catalog=${messageTypes.length}`,
+  );
+  if (Array.isArray(pyTypes) && pyTypes.length === messageTypes.length) {
+    expect(
+      JSON.stringify([...pyTypes].sort()) === JSON.stringify([...messageTypes].sort()),
+      'contracts/event_catalog.py EVENT_CATALOG_TYPES must match catalog types (set-equal)',
+    );
+  }
+} catch (err) {
+  expect(false, `event_catalog.py check failed: ${err.message}`);
+}
+
 if (errors.length > 0) {
   console.error('EVENT CATALOG AUDIT FAILED');
   for (const error of errors) {

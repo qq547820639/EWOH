@@ -6,7 +6,7 @@ describe('EligibilityService reservation 冲突（Task 0.2）', () => {
 
   const person: EligiblePerson = {
     id: 'p1',
-    status: 'available',
+    status: 'AVAILABLE',
     skills: ['work'],
     certifications: [],
     stationId: null,
@@ -59,7 +59,7 @@ describe('EligibilityService reservation 冲突（Task 0.2）', () => {
     const res = svc.check(
       person,
       baseTask,
-      { id: 'd1', batteryPct: 100, online: true, status: 'online', capabilities: [] },
+      { id: 'd1', batteryPct: 100, online: true, status: 'AVAILABLE', capabilities: [] },
       makeEligibilityCtx({
         bookedDeviceSlots: [{ deviceId: 'd1', start: 9 * 3600_000, end: 10 * 3600_000 }],
         candidateStartMs: 9.5 * 3600_000,

@@ -1,0 +1,253 @@
+{
+  "schemaVersion": "1.0.0",
+  "records": [
+    {
+      "name": "valid-person-real",
+      "record": {
+        "entityId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "person",
+        "tenantId": "org-1",
+        "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "timeSemantics": {
+          "validFrom": "2026-08-16T08:00:00Z",
+          "validTo": null
+        },
+        "status": "active",
+        "source": "real",
+        "version": 3,
+        "confidence": null,
+        "refs": [
+          "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+        ],
+        "eventRefs": [
+          "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+        ]
+      }
+    },
+    {
+      "name": "valid-simulated-machine",
+      "record": {
+        "entityId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "machine",
+        "tenantId": "org-1",
+        "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "timeSemantics": {
+          "validFrom": "2026-08-16T08:00:00Z",
+          "validTo": "2026-08-16T09:00:00Z"
+        },
+        "status": "idle",
+        "source": "simulated",
+        "version": 1,
+        "confidence": 0.9,
+        "refs": [],
+        "eventRefs": []
+      }
+    },
+    {
+      "name": "unknown-kind-rejected",
+      "record": {
+        "entityId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "gizmo",
+        "tenantId": "org-1",
+        "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "timeSemantics": {
+          "validFrom": "2026-08-16T08:00:00Z",
+          "validTo": null
+        },
+        "status": "active",
+        "source": "real",
+        "version": 1
+      },
+      "expectError": "unknown_kind"
+    },
+    {
+      "name": "unknown-source-rejected",
+      "record": {
+        "entityId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "machine",
+        "tenantId": "org-1",
+        "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "timeSemantics": {
+          "validFrom": "2026-08-16T08:00:00Z",
+          "validTo": null
+        },
+        "status": "idle",
+        "source": "guessed",
+        "version": 1
+      },
+      "expectError": "unknown_source"
+    },
+    {
+      "name": "non-canonical-entity-id-rejected",
+      "record": {
+        "entityId": "not-canonical",
+        "kind": "machine",
+        "tenantId": "org-1",
+        "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "timeSemantics": {
+          "validFrom": "2026-08-16T08:00:00Z",
+          "validTo": null
+        },
+        "status": "idle",
+        "source": "real",
+        "version": 1
+      },
+      "expectError": "bad_entity_id"
+    },
+    {
+      "name": "missing-tenant-rejected",
+      "record": {
+        "entityId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "machine",
+        "tenantId": "",
+        "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "timeSemantics": {
+          "validFrom": "2026-08-16T08:00:00Z",
+          "validTo": null
+        },
+        "status": "idle",
+        "source": "real",
+        "version": 1
+      },
+      "expectError": "bad_tenant"
+    },
+    {
+      "name": "missing-factory-rejected",
+      "record": {
+        "entityId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "machine",
+        "tenantId": "org-1",
+        "timeSemantics": {
+          "validFrom": "2026-08-16T08:00:00Z",
+          "validTo": null
+        },
+        "status": "idle",
+        "source": "real",
+        "version": 1
+      },
+      "expectError": "missing_field:factoryId"
+    },
+    {
+      "name": "invalid-time-order-rejected",
+      "record": {
+        "entityId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "machine",
+        "tenantId": "org-1",
+        "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "timeSemantics": {
+          "validFrom": "2026-08-16T09:00:00Z",
+          "validTo": "2026-08-16T08:00:00Z"
+        },
+        "status": "idle",
+        "source": "real",
+        "version": 1
+      },
+      "expectError": "bad_time"
+    },
+    {
+      "name": "bad-version-rejected",
+      "record": {
+        "entityId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "machine",
+        "tenantId": "org-1",
+        "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "timeSemantics": {
+          "validFrom": "2026-08-16T08:00:00Z",
+          "validTo": null
+        },
+        "status": "idle",
+        "source": "real",
+        "version": 0
+      },
+      "expectError": "bad_version"
+    },
+    {
+      "name": "confidence-out-of-range-rejected",
+      "record": {
+        "entityId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "machine",
+        "tenantId": "org-1",
+        "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "timeSemantics": {
+          "validFrom": "2026-08-16T08:00:00Z",
+          "validTo": null
+        },
+        "status": "idle",
+        "source": "real",
+        "version": 1,
+        "confidence": 1.7
+      },
+      "expectError": "bad_confidence"
+    },
+    {
+      "name": "bad-ref-rejected",
+      "record": {
+        "entityId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "machine",
+        "tenantId": "org-1",
+        "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "timeSemantics": {
+          "validFrom": "2026-08-16T08:00:00Z",
+          "validTo": null
+        },
+        "status": "idle",
+        "source": "real",
+        "version": 1,
+        "refs": [
+          "not-canonical"
+        ]
+      },
+      "expectError": "bad_ref"
+    },
+    {
+      "name": "kind-prefix-mismatch-rejected",
+      "record": {
+        "entityId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "station",
+        "tenantId": "org-1",
+        "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "timeSemantics": {
+          "validFrom": "2026-08-16T08:00:00Z",
+          "validTo": null
+        },
+        "status": "active",
+        "source": "real",
+        "version": 1
+      },
+      "expectError": "kind_prefix_mismatch"
+    },
+    {
+      "name": "identity-only-prefix-rejected",
+      "record": {
+        "entityId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "machine",
+        "tenantId": "org-1",
+        "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "timeSemantics": {
+          "validFrom": "2026-08-16T08:00:00Z",
+          "validTo": null
+        },
+        "status": "idle",
+        "source": "real",
+        "version": 1
+      },
+      "expectError": "kind_prefix_unknown"
+    },
+    {
+      "name": "valid-exo-declarative",
+      "record": {
+        "entityId": "exo:NY-A1-SN-0007",
+        "kind": "exo",
+        "tenantId": "org-1",
+        "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "timeSemantics": {
+          "validFrom": "2026-08-16T08:00:00Z",
+          "validTo": null
+        },
+        "status": "active",
+        "source": "real",
+        "version": 1
+      }
+    }
+  ]
+}

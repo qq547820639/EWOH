@@ -10,7 +10,7 @@ import {
   ewohSchedulePlan,
   ewohScheduleAudit,
 } from '@server/database/schema';
-import { eq, desc, and, sql, gte, inArray } from 'drizzle-orm';
+import { eq, desc, and, sql, gte, inArray, or, isNull } from 'drizzle-orm';
 import type {
   PlayerRole,
   PlayerRoleInfo,
@@ -29,6 +29,8 @@ import type {
   ApplyBrainSuggestionRequest,
   ApplyBrainSuggestionResult,
 } from '@shared/api.interface';
+import type { OrgContext } from '../shared/org-context.interceptor';
+import { assertPlanTenantVisible } from '../scheduler/plan-tenant-guard';
 
 /**
  * 游戏化玩法 + 具身智能服务（工厂即具身机器人）
@@ -99,7 +101,10 @@ export class GamificationService {
 
   // ===== G3.2 资源分配 =====
 
-  async allocateResources(req: ResourceAllocationRequest): Promise<ResourceAllocationResult> {
+  async allocateResources(
+    req: ResourceAllocationRequest,
+    actor?: OrgContext,
+  ): Promise<ResourceAllocationResult> {
     try {
       if (!req.allocations || req.allocations.length === 0) {
         throw new BadRequestException('allocations is required');
@@ -239,6 +244,9 @@ export class GamificationService {
           conflicts,
         } as Record<string, unknown>,
         reason: req.reason ?? `资源分配 ${req.allocations.length} 项，综合评估 ${overall}`,
+        // ADR-071（NO-13v）：方案行租户归属（写 org 行由请求级 GUC 满足 RLS WITH CHECK；
+        // 无上下文退 NULL 与 persistPlan 语义一致）。
+        orgId: actor?.primaryOrgId ?? null,
         createdAt: now,
       });
 
@@ -252,6 +260,9 @@ export class GamificationService {
           operator,
           reason: req.reason ?? `资源分配 ${req.allocations.length} 项`,
           createdAt: now,
+          // ADR-075：audit 行归属注入（001 ewoh_org_visible RLS 对齐）。
+orgId: actor?.primaryOrgId ?? null,
+
         })
         .returning();
 
@@ -273,7 +284,10 @@ export class GamificationService {
 
   // ===== G3.3 任务编排 =====
 
-  async orchestrateTask(req: TaskOrchestrationRequest): Promise<TaskOrchestrationResult> {
+  async orchestrateTask(
+    req: TaskOrchestrationRequest,
+    actor?: OrgContext,
+  ): Promise<TaskOrchestrationResult> {
     try {
       if (!req.nodes || req.nodes.length === 0) {
         throw new BadRequestException('nodes is required');
@@ -409,6 +423,8 @@ export class GamificationService {
           assignedEntities,
         } as Record<string, unknown>,
         reason: `工单 ${req.orderId} 编排 ${nodes.length} 道工序，瓶颈节拍 ${bottleneckTakt.toFixed(1)}s，预计完成 ${estimatedCompletionSec}s`,
+        // ADR-071（NO-13v）：方案行租户归属（与 allocateResources 同语义）。
+        orgId: actor?.primaryOrgId ?? null,
         createdAt: now,
       });
 
@@ -421,6 +437,9 @@ export class GamificationService {
           action: 'orchestrate',
           operator,
           reason: `工单 ${req.orderId} 任务编排`,
+          // ADR-075：audit 行归属注入（001 ewoh_org_visible RLS 对齐）。
+orgId: actor?.primaryOrgId ?? null,
+
           createdAt: now,
         })
         .returning();
@@ -443,7 +462,11 @@ export class GamificationService {
 
   // ===== G3.5 调度下发 =====
 
-  async dispatchPlan(planId: string, req: DispatchRequest): Promise<DispatchResult> {
+  async dispatchPlan(
+    planId: string,
+    req: DispatchRequest,
+    actor?: OrgContext,
+  ): Promise<DispatchResult> {
     try {
       // 1. 校验方案存在且已确认
       const [existing] = await this.db
@@ -455,6 +478,8 @@ export class GamificationService {
       if (!existing) {
         throw new NotFoundException(`Schedule plan ${planId} not found`);
       }
+      // ADR-071（NO-13v）：下发变面租户守卫（反枚举 404；与 RLS 语义等价）。
+      assertPlanTenantVisible(existing.orgId, actor, planId);
       if (existing.status !== 'confirmed') {
         throw new BadRequestException(`Schedule plan ${planId} is not confirmed (current: ${existing.status})`);
       }
@@ -490,6 +515,9 @@ export class GamificationService {
               ? `下发冲突：${conflicts.join('; ')}`
               : req.executionNote ?? `方案下发执行`,
           createdAt: now,
+          // ADR-075：audit 行归属注入（001 ewoh_org_visible RLS 对齐）。
+orgId: actor?.primaryOrgId ?? null,
+
         })
         .returning();
 
@@ -616,7 +644,7 @@ export class GamificationService {
    * 后续轮询（前端每 10s）命中缓存后返回增强结果。
    * 返回前会为建议回填已存在的可审批方案 planId，打通「采纳 → 定位方案」闭环。
    */
-  async getBrainSuggestions(): Promise<BrainSuggestion[]> {
+  async getBrainSuggestions(actor?: OrgContext): Promise<BrainSuggestion[]> {
     try {
       // 1. 先构造规则建议（毫秒级，不依赖 LLM）
       const suggestions = await this.buildRuleSuggestions();
@@ -627,7 +655,7 @@ export class GamificationService {
         this.logger.log(
           `getBrainSuggestions serving ${this.brainCache.length} cached (LLM) suggestions`,
         );
-        return this.attachPlanIds(this.brainCache);
+        return this.attachPlanIds(this.brainCache, actor);
       }
 
       // 3. 返回规则建议，同时后台异步触发 LLM 增强并回写缓存
@@ -636,6 +664,7 @@ export class GamificationService {
       this.logger.log(`getBrainSuggestions returned ${suggestions.length} rule suggestions`);
       return this.attachPlanIds(
         suggestions.map((s) => ({ ...s, enhancing: this.brainEnhancing })),
+        actor,
       );
     } catch (error) {
       this.logger.error('getBrainSuggestions 失败', error);
@@ -647,7 +676,10 @@ export class GamificationService {
    * 为建议回填已存在的可审批（proposed/confirmed）方案 planId。
    * 按建议类型映射到对应调度策略，取最近一条同策略方案关联。
    */
-  private async attachPlanIds(suggestions: BrainSuggestion[]): Promise<BrainSuggestion[]> {
+  private async attachPlanIds(
+    suggestions: BrainSuggestion[],
+    actor?: OrgContext,
+  ): Promise<BrainSuggestion[]> {
     if (suggestions.length === 0) return suggestions;
     try {
       const strategyByType = this.brainStrategyMap();
@@ -656,6 +688,16 @@ export class GamificationService {
       );
       if (strategies.length === 0) return suggestions;
 
+      const conditions = [
+        inArray(ewohSchedulePlan.strategy, strategies),
+        inArray(ewohSchedulePlan.status, ['proposed', 'confirmed']),
+      ];
+      // ADR-071（NO-13v）：建议关联方案只读本租户（org 匹配或 NULL 存量行）。
+      if (actor) {
+        conditions.push(
+          or(isNull(ewohSchedulePlan.orgId), eq(ewohSchedulePlan.orgId, actor.primaryOrgId)),
+        );
+      }
       const rows = await this.db
         .select({
           planId: ewohSchedulePlan.planId,
@@ -663,12 +705,7 @@ export class GamificationService {
           status: ewohSchedulePlan.status,
         })
         .from(ewohSchedulePlan)
-        .where(
-          and(
-            inArray(ewohSchedulePlan.strategy, strategies),
-            inArray(ewohSchedulePlan.status, ['proposed', 'confirmed']),
-          ),
-        )
+        .where(and(...conditions))
         .orderBy(desc(ewohSchedulePlan.createdAt));
 
       const latestByStrategy = new Map<string, string>();
@@ -703,6 +740,7 @@ export class GamificationService {
    */
   async applyBrainSuggestion(
     body: ApplyBrainSuggestionRequest,
+    actor?: OrgContext,
   ): Promise<ApplyBrainSuggestionResult> {
     const operator = body.operator ?? 'supervisor';
     const strategy = this.brainStrategyMap()[body.type] ?? 'load_balance';
@@ -733,6 +771,8 @@ export class GamificationService {
       operator,
       reason: `采纳大脑建议：${body.title}`,
       createdAt: new Date(),
+      // ADR-075：audit 行归属注入（001 ewoh_org_visible RLS 对齐）。
+      orgId: actor?.primaryOrgId ?? null,
     });
 
     this.logger.log(`applyBrainSuggestion planId=${planId} strategy=${strategy} operator=${operator}`);
@@ -768,7 +808,7 @@ export class GamificationService {
 
     const highLoadDevices = telemetryRows.filter((r) => (r.avgLoad ?? 0) > 0.7);
     const overloadDevices = telemetryRows.filter((r) => (r.avgLoad ?? 0) > 0.8);
-    const l3Events = openEvents.filter((e) => e.severity === 'L3');
+    const criticalEvents = openEvents.filter((e) => e.severity === 'critical');
 
     // 建议 1: 负荷均衡（avg load > 0.8）
     if (overloadDevices.length > 0) {
@@ -799,12 +839,12 @@ export class GamificationService {
     }
 
     // 建议 3: 安全介入（L3 事件）
-    if (l3Events.length > 0) {
+    if (criticalEvents.length > 0) {
       suggestions.push({
         type: 'safety_intervene',
         title: 'L3 安全事件介入',
-        description: `检测到 ${l3Events.length} 项 L3 级未结安全事件，建议立即介入处理。`,
-        affectedEntities: l3Events.map((e) => e.eventId),
+        description: `检测到 ${criticalEvents.length} 项 L3 级未结安全事件，建议立即介入处理。`,
+        affectedEntities: criticalEvents.map((e) => e.eventId),
         expectedBenefit: '及时处置可避免安全事故升级，降低人员受伤风险',
         confidence: 0.9,
       });

@@ -9,6 +9,9 @@ const CommandCenter = React.lazy(() => import('./pages/CommandCenter/CommandCent
 const DigitalWorld = React.lazy(() => import('./pages/DigitalWorld/DigitalWorld'));
 const Scheduling = React.lazy(() => import('./pages/Scheduling/Scheduling'));
 const AiDecision = React.lazy(() => import('./pages/AiDecision/AiDecision'));
+const SimulationConsole = React.lazy(() => import('./pages/Simulation/SimulationConsole'));
+const ApprovalConsole = React.lazy(() => import('./pages/ApprovalConsole/ApprovalConsole'));
+const DecisionHistoryConsole = React.lazy(() => import('./pages/DecisionHistory/DecisionHistoryConsole'));
 const Devices = React.lazy(() => import('./pages/Devices/Devices'));
 const Personnel = React.lazy(() => import('./pages/Personnel/Personnel'));
 const Alerts = React.lazy(() => import('./pages/Alerts/Alerts'));
@@ -78,6 +81,9 @@ const RoutesComponent = () => {
           <Route path="digital-world" element={<RequireRole path="/digital-world"><DigitalWorld /></RequireRole>} />
           <Route path="scheduling" element={<RequireRole path="/scheduling"><Scheduling /></RequireRole>} />
           <Route path="ai-decision" element={<RequireRole path="/ai-decision"><AiDecision /></RequireRole>} />
+          <Route path="simulation" element={<RequireRole path="/simulation"><SimulationConsole /></RequireRole>} />
+          <Route path="approval-console" element={<RequireRole path="/approval-console"><ApprovalConsole /></RequireRole>} />
+          <Route path="decision-history" element={<RequireRole path="/decision-history"><DecisionHistoryConsole /></RequireRole>} />
           <Route path="devices" element={<RequireRole path="/devices"><Devices /></RequireRole>} />
           <Route path="personnel" element={<RequireRole path="/personnel"><Personnel /></RequireRole>} />
           <Route path="alerts" element={<RequireRole path="/alerts"><Alerts /></RequireRole>} />

@@ -3,8 +3,10 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, or, isNull } from 'drizzle-orm';
 import { ewohSchedulingPolicy } from '@server/database/schema';
+import { projectPolicyActivationDecision } from './decision-projection';
+import type { DecisionRecord } from '@shared/decision';
 import type {
   ObjectiveWeights,
   SchedulingPolicy,
@@ -294,6 +296,12 @@ export class SchedulingPolicyService {
         configVersion: nextVersion,
       };
 
+      // NO-13o / ADR-064：直接保存即激活路径的决策留痕（reason 缺省
+      // 'policy-save-activated'；缺口显式留 NULL 不阻断主流程）。
+      const decisionJson = this.projectPolicyActivationDecision(
+        nextVersion, orgId, updatedBy, 'policy-save-activated',
+      );
+
       await this.db
         .update(ewohSchedulingPolicy)
         .set({ active: false })
@@ -307,6 +315,7 @@ export class SchedulingPolicyService {
         active: true,
         orgId,
         updatedBy,
+        ...(decisionJson ? { decisionJson } : {}),
       });
 
       this.logger.log(
@@ -326,11 +335,20 @@ export class SchedulingPolicyService {
    * 列出全部策略版本（含 active 标志、操作人、创建时间），按 configVersion 降序。
    * 供命令图「策略版本」面板展示当前生效版本与候选版本。
    */
-  async listVersions(): Promise<SchedulingPolicyVersionSummary[]> {
-    const rows = await this.db
-      .select()
-      .from(ewohSchedulingPolicy)
-      .orderBy(desc(ewohSchedulingPolicy.configVersion));
+  async listVersions(orgId?: string | null): Promise<SchedulingPolicyVersionSummary[]> {
+    // ADR-073：policy versions 读面 org 条件（org 匹配或 NULL 存量）。
+    const rows = orgId
+      ? await this.db
+          .select()
+          .from(ewohSchedulingPolicy)
+          .where(
+            or(isNull(ewohSchedulingPolicy.orgId), eq(ewohSchedulingPolicy.orgId, orgId)),
+          )
+          .orderBy(desc(ewohSchedulingPolicy.configVersion))
+      : await this.db
+          .select()
+          .from(ewohSchedulingPolicy)
+          .orderBy(desc(ewohSchedulingPolicy.configVersion));
     return rows.map((r) => ({
       configVersion: r.configVersion,
       active: r.active,
@@ -377,6 +395,7 @@ export class SchedulingPolicyService {
     configVersion: number,
     orgId: string | null,
     updatedBy: string,
+    reason?: string,
   ): Promise<SchedulingPolicyConfig> {
     const row = await this.findByVersion(configVersion);
     if (!row) {
@@ -389,14 +408,51 @@ export class SchedulingPolicyService {
       .update(ewohSchedulingPolicy)
       .set({ active: false })
       .where(eq(ewohSchedulingPolicy.active, true));
-    // 2) 激活目标版本。
+    // 2) 激活目标版本（NO-13o / ADR-064：激活决策与 active 翻转同一
+    // UPDATE 原子写 decisionJson；缺口显式留 NULL 不阻断主流程）。
+    const decisionJson = this.projectPolicyActivationDecision(
+      configVersion, orgId, updatedBy, reason,
+    );
     await this.db
       .update(ewohSchedulingPolicy)
-      .set({ active: true, updatedBy, orgId, updatedAt: new Date() })
+      .set({
+        active: true,
+        updatedBy,
+        orgId,
+        updatedAt: new Date(),
+        ...(decisionJson ? { decisionJson } : {}),
+      })
       .where(eq(ewohSchedulingPolicy.configVersion, configVersion));
     this.logger.log(`activated scheduling policy v${configVersion} by ${updatedBy}`);
     const config = this.parseConfig(row.configJson);
     return { ...config, configVersion };
+  }
+
+  /**
+   * NO-13o / ADR-064：policy_activation 决策投影（契约门内）。
+   * 缺口/契约失败 → log 显式 + 返回 null（decision_json 不写，留 NULL），
+   * 绝不阻断激活主流程（§2/§33）。
+   */
+  private projectPolicyActivationDecision(
+    configVersion: number,
+    orgId: string | null,
+    approver: string,
+    reason?: string,
+  ): DecisionRecord | null {
+    const { record, issues } = projectPolicyActivationDecision({
+      configVersion,
+      orgId,
+      approver,
+      reason,
+      now: new Date(),
+    });
+    if (!record) {
+      this.logger.warn(
+        `policy activation 决策投影缺口 v${configVersion}（不阻断激活主流程）：${issues.join(',')}`,
+      );
+      return null;
+    }
+    return record;
   }
 
   /** 查询当前生效行（active=true 最新一条）。 */

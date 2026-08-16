@@ -8,7 +8,8 @@ import {
   Optional,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { ewohResourcePreorder, ewohResourceBinding } from '@server/database/schema';
 import { AuditService, type AuditLogEntry } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
@@ -28,9 +29,9 @@ export interface Preorder {
 interface PreorderRow {
   preorder_id: string;
   resource_id: string;
-  quantity: number;
-  reserved_qty: number;
-  issued_qty: number;
+  quantity: number | string;
+  reserved_qty: number | string;
+  issued_qty: number | string;
   status: string;
 }
 
@@ -57,6 +58,17 @@ export function canIssue(preorder: Preorder, inventoryQty: number, issueQty: num
   return unissued >= issueQty && inventoryQty >= issueQty;
 }
 
+/**
+ * 资源预占/发放/释放（ADR-081：drizzle 链式全量重写，raw SQL 清零）。
+ *
+ * 语义不变（与 ADR-078 前缀清理版逐一对应）：
+ *  - 库存事实层 = ewoh_resource_binding（binding_type='inventory'，quantity 为权威值）；
+ *  - 预占 = ewoh_resource_preorder（pending → issued → consumed/released）；
+ *  - 发放扣减为条件更新（quantity >= issueQty 守卫，跨进程不超卖权威）；
+ *  - 进程内 resourceLocks 串行化 + 条件更新双保险；
+ *  - 写入携带 actor orgId（ADR-075/076 租户闭合；缺省走 DB GUC 默认）。
+ * 读面按全局唯一 preorder_id 定位；读面 org 守卫列后续候选（NO-13ag）。
+ */
 @Injectable()
 export class ResourceService {
   private readonly inventory = new Map<string, number>();
@@ -88,7 +100,7 @@ export class ResourceService {
       throw new BadRequestException('resourceId and positive quantity are required');
     }
     return this.withResourceLock(resourceId, async () => {
-      await this.ensureSeededInventory(resourceId);
+      await this.ensureSeededInventory(resourceId, actor);
       const inventoryQty = await this.loadInventoryQuantity(resourceId);
       const active = await this.loadActivePreorders(resourceId);
       if (availableQuantity(inventoryQty, active) < quantity) {
@@ -101,16 +113,28 @@ export class ResourceService {
         issuedQty: 0,
         status: 'pending',
       };
-      const [row] = await this.safeExecute<PreorderRow>('create resource preorder', sql`
-        insert into public.ewoh_resource_preorder (
-          preorder_id, resource_type, resource_id, quantity, reserved_qty,
-          issued_qty, consumed_qty, returned_qty, status
-        ) values (
-          ${preorder.id}, 'inventory', ${resourceId}, ${quantity}, ${quantity},
-          0, 0, 0, 'pending'
-        )
-        returning preorder_id, resource_id, quantity, reserved_qty, issued_qty, status
-      `);
+      const [row] = await this.safeExecute<PreorderRow>('create resource preorder', this.db
+        .insert(ewohResourcePreorder)
+        .values({
+          preorderId: preorder.id,
+          resourceType: 'inventory',
+          resourceId,
+          quantity: sql`${quantity}`,
+          reservedQty: sql`${quantity}`,
+          issuedQty: sql`${0}`,
+          consumedQty: sql`${0}`,
+          returnedQty: sql`${0}`,
+          status: 'pending',
+          ...(actor?.primaryOrgId ? { orgId: actor.primaryOrgId } : {}),
+        })
+        .returning({
+          preorder_id: ewohResourcePreorder.preorderId,
+          resource_id: ewohResourcePreorder.resourceId,
+          quantity: ewohResourcePreorder.quantity,
+          reserved_qty: ewohResourcePreorder.reservedQty,
+          issued_qty: ewohResourcePreorder.issuedQty,
+          status: ewohResourcePreorder.status,
+        }));
       const created = this.mapPreorder(row);
       await this.recordAudit(
         {
@@ -141,7 +165,7 @@ export class ResourceService {
     const preorder = await this.getPreorder(preorderId);
     return this.withResourceLock(preorder.resourceId, async () => {
       const fresh = await this.getPreorder(preorderId);
-      await this.ensureSeededInventory(fresh.resourceId);
+      await this.ensureSeededInventory(fresh.resourceId, actor);
       const inventoryQty = await this.loadInventoryQuantity(fresh.resourceId);
       if (!canIssue(fresh, inventoryQty, issueQty)) {
         throw new BadRequestException('Insufficient issue quantity');
@@ -151,36 +175,48 @@ export class ResourceService {
       const status = afterIssued === fresh.quantity ? 'issued' : fresh.status;
       const [inventoryRow] = await this.safeExecute<InventoryRow>(
         'deduct inventory',
-        sql`
-          update public.ewoh_resource_binding
-          set quantity = quantity - ${issueQty}, _updated_at = now()
-          where binding_type = 'inventory' and resource_id = ${fresh.resourceId}
-            and status = 'active' and quantity >= ${issueQty}
-          returning quantity
-        `,
+        this.db
+          .update(ewohResourceBinding)
+          .set({
+            quantity: sql`${ewohResourceBinding.quantity} - ${issueQty}`,
+            updatedAt: sql`now()`,
+          })
+          .where(and(
+            eq(ewohResourceBinding.bindingType, 'inventory'),
+            eq(ewohResourceBinding.resourceId, fresh.resourceId),
+            eq(ewohResourceBinding.status, 'active'),
+            gte(ewohResourceBinding.quantity, sql`${issueQty}`),
+          ))
+          .returning({ quantity: ewohResourceBinding.quantity }),
       );
       if (!inventoryRow) {
         throw new BadRequestException('Insufficient issue quantity');
       }
       this.inventory.set(fresh.resourceId, Number(inventoryRow.quantity));
-      await this.safeExecute('issue resource preorder', sql`
-        update public.ewoh_resource_preorder
-        set issued_qty = ${afterIssued},
-            reserved_qty = ${Math.max(0, fresh.quantity - afterIssued)},
-            status = ${status},
-            _updated_at = now()
-        where preorder_id = ${preorderId}
-      `);
-      await this.safeExecute('persist resource binding', sql`
-        insert into public.ewoh_resource_binding (
-          binding_id, binding_type, resource_type, resource_id, target_type, target_id,
-          start_time, reason, status, version
-        ) values (
-          ${nextId('bind')}, 'issue', 'inventory', ${fresh.resourceId}, 'preorder',
-          ${`${preorderId}#${beforeIssued + 1}-${afterIssued}`}, now(),
-          ${`issue ${issueQty} of ${fresh.quantity}`}, 'active', 1
-        )
-      `);
+      await this.safeExecute('issue resource preorder', this.db
+        .update(ewohResourcePreorder)
+        .set({
+          issuedQty: sql`${afterIssued}`,
+          reservedQty: sql`${Math.max(0, fresh.quantity - afterIssued)}`,
+          status,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(ewohResourcePreorder.preorderId, preorderId)));
+      await this.safeExecute('persist resource binding', this.db
+        .insert(ewohResourceBinding)
+        .values({
+          bindingId: nextId('bind'),
+          bindingType: 'issue',
+          resourceType: 'inventory',
+          resourceId: fresh.resourceId,
+          targetType: 'preorder',
+          targetId: `${preorderId}#${beforeIssued + 1}-${afterIssued}`,
+          startTime: sql`now()`,
+          reason: `issue ${issueQty} of ${fresh.quantity}`,
+          status: 'active',
+          version: 1,
+          ...(actor?.primaryOrgId ? { orgId: actor.primaryOrgId } : {}),
+        }));
       await this.recordAudit(
         {
           action: 'resource.issue',
@@ -206,46 +242,68 @@ export class ResourceService {
     return this.withResourceLock(preorder.resourceId, async () => {
       const fresh = await this.getPreorder(preorderId);
       const remaining = fresh.quantity - fresh.issuedQty;
-      await this.ensureSeededInventory(fresh.resourceId);
+      await this.ensureSeededInventory(fresh.resourceId, actor);
       const [releasedRow] = await this.safeExecute<InventoryRow>(
         'add back inventory quantity',
-        sql`
-          update public.ewoh_resource_binding
-          set quantity = quantity + ${remaining}, _updated_at = now()
-          where binding_type = 'inventory' and resource_id = ${fresh.resourceId}
-            and status = 'active'
-          returning quantity
-        `,
+        this.db
+          .update(ewohResourceBinding)
+          .set({
+            quantity: sql`${ewohResourceBinding.quantity} + ${remaining}`,
+            updatedAt: sql`now()`,
+          })
+          .where(and(
+            eq(ewohResourceBinding.bindingType, 'inventory'),
+            eq(ewohResourceBinding.resourceId, fresh.resourceId),
+            eq(ewohResourceBinding.status, 'active'),
+          ))
+          .returning({ quantity: ewohResourceBinding.quantity }),
       );
       if (releasedRow) {
         this.inventory.set(fresh.resourceId, Number(releasedRow.quantity));
       } else {
-        await this.safeExecute('persist released inventory', sql`
-          insert into public.ewoh_resource_binding (
-            binding_id, binding_type, resource_type, resource_id, target_type, target_id,
-            start_time, reason, status, quantity
-          ) values (
-            ${nextId('inventory')}, 'inventory', 'inventory', ${fresh.resourceId}, 'inventory',
-            ${fresh.resourceId}, now(), 'release returned quantity', 'active', ${remaining}
-          )
-        `);
+        await this.safeExecute('persist released inventory', this.db
+          .insert(ewohResourceBinding)
+          .values({
+            bindingId: nextId('inventory'),
+            bindingType: 'inventory',
+            resourceType: 'inventory',
+            resourceId: fresh.resourceId,
+            targetType: 'inventory',
+            targetId: fresh.resourceId,
+            startTime: sql`now()`,
+            reason: 'release returned quantity',
+            status: 'active',
+            quantity: sql`${remaining}`,
+            ...(actor?.primaryOrgId ? { orgId: actor.primaryOrgId } : {}),
+          }));
         this.inventory.set(fresh.resourceId, remaining);
       }
-      await this.safeExecute('release resource preorder', sql`
-        update public.ewoh_resource_preorder
-        set status = 'released', reserved_qty = 0, returned_qty = ${remaining},
-            end_time = now(), _updated_at = now()
-        where preorder_id = ${preorderId}
-      `);
-      await this.safeExecute('persist resource release binding', sql`
-        insert into public.ewoh_resource_binding (
-          binding_id, binding_type, resource_type, resource_id, target_type, target_id,
-          start_time, end_time, reason, status, version
-        ) values (
-          ${nextId('bind')}, 'release', 'inventory', ${fresh.resourceId}, 'preorder',
-          ${preorderId}, now(), now(), 'release reservation', 'released', 1
-        )
-      `);
+      await this.safeExecute('release resource preorder', this.db
+        .update(ewohResourcePreorder)
+        .set({
+          status: 'released',
+          reservedQty: sql`${0}`,
+          returnedQty: sql`${remaining}`,
+          endTime: sql`now()`,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(ewohResourcePreorder.preorderId, preorderId)));
+      await this.safeExecute('persist resource release binding', this.db
+        .insert(ewohResourceBinding)
+        .values({
+          bindingId: nextId('bind'),
+          bindingType: 'release',
+          resourceType: 'inventory',
+          resourceId: fresh.resourceId,
+          targetType: 'preorder',
+          targetId: preorderId,
+          startTime: sql`now()`,
+          endTime: sql`now()`,
+          reason: 'release reservation',
+          status: 'released',
+          version: 1,
+          ...(actor?.primaryOrgId ? { orgId: actor.primaryOrgId } : {}),
+        }));
       await this.recordAudit(
         {
           action: 'resource.release',
@@ -268,11 +326,17 @@ export class ResourceService {
   }
 
   async getPreorder(preorderId: string): Promise<Preorder> {
-    const rows = await this.safeExecute<PreorderRow>('read resource preorder', sql`
-      select preorder_id, resource_id, quantity, reserved_qty, issued_qty, status
-      from public.ewoh_resource_preorder
-      where preorder_id = ${preorderId}
-    `);
+    const rows = await this.safeExecute<PreorderRow>('read resource preorder', this.db
+      .select({
+        preorder_id: ewohResourcePreorder.preorderId,
+        resource_id: ewohResourcePreorder.resourceId,
+        quantity: ewohResourcePreorder.quantity,
+        reserved_qty: ewohResourcePreorder.reservedQty,
+        issued_qty: ewohResourcePreorder.issuedQty,
+        status: ewohResourcePreorder.status,
+      })
+      .from(ewohResourcePreorder)
+      .where(eq(ewohResourcePreorder.preorderId, preorderId)));
     const row = rows[0];
     if (!row) {
       throw new NotFoundException(`Preorder ${preorderId} not found`);
@@ -281,11 +345,20 @@ export class ResourceService {
   }
 
   private async loadActivePreorders(resourceId: string): Promise<Preorder[]> {
-    const rows = await this.safeExecute<PreorderRow>('read active resource preorders', sql`
-      select preorder_id, resource_id, quantity, reserved_qty, issued_qty, status
-      from public.ewoh_resource_preorder
-      where resource_id = ${resourceId} and status in ('pending', 'issued')
-    `);
+    const rows = await this.safeExecute<PreorderRow>('read active resource preorders', this.db
+      .select({
+        preorder_id: ewohResourcePreorder.preorderId,
+        resource_id: ewohResourcePreorder.resourceId,
+        quantity: ewohResourcePreorder.quantity,
+        reserved_qty: ewohResourcePreorder.reservedQty,
+        issued_qty: ewohResourcePreorder.issuedQty,
+        status: ewohResourcePreorder.status,
+      })
+      .from(ewohResourcePreorder)
+      .where(and(
+        eq(ewohResourcePreorder.resourceId, resourceId),
+        inArray(ewohResourcePreorder.status, ['pending', 'issued']),
+      )));
     return rows.map((row) => this.mapPreorder(row));
   }
 
@@ -300,13 +373,15 @@ export class ResourceService {
   }
 
   private async loadInventoryQuantity(resourceId: string): Promise<number> {
-    const rows = await this.safeExecute<InventoryRow>('read inventory quantity', sql`
-      select quantity
-      from public.ewoh_resource_binding
-      where binding_type = 'inventory' and resource_id = ${resourceId}
-        and status = 'active'
-      limit 1
-    `);
+    const rows = await this.safeExecute<InventoryRow>('read inventory quantity', this.db
+      .select({ quantity: ewohResourceBinding.quantity })
+      .from(ewohResourceBinding)
+      .where(and(
+        eq(ewohResourceBinding.bindingType, 'inventory'),
+        eq(ewohResourceBinding.resourceId, resourceId),
+        eq(ewohResourceBinding.status, 'active'),
+      ))
+      .limit(1));
     const row = rows[0];
     if (!row) {
       return this.getInventory(resourceId);
@@ -316,22 +391,39 @@ export class ResourceService {
     return quantity;
   }
 
-  private async ensureSeededInventory(resourceId: string): Promise<void> {
+  private async ensureSeededInventory(resourceId: string, actor?: OrgContext): Promise<void> {
     const seededQuantity = this.inventory.get(resourceId);
     if (seededQuantity === undefined || this.persistedSeeds.has(resourceId)) {
       return;
     }
-    await this.safeExecute('persist seeded inventory', sql`
-      insert into public.ewoh_resource_binding (
-        binding_id, binding_type, resource_type, resource_id, target_type, target_id,
-        start_time, reason, status, quantity
-      ) values (
-        ${nextId('inventory')}, 'inventory', 'inventory', ${resourceId}, 'inventory',
-        ${resourceId}, now(), 'seeded inventory baseline', 'active', ${seededQuantity}
-      )
-      on conflict (org_id, resource_id, target_id, binding_type)
-      do update set quantity = ${seededQuantity}, status = 'active', _updated_at = now()
-    `);
+    await this.safeExecute('persist seeded inventory', this.db
+      .insert(ewohResourceBinding)
+      .values({
+        bindingId: nextId('inventory'),
+        bindingType: 'inventory',
+        resourceType: 'inventory',
+        resourceId,
+        targetType: 'inventory',
+        targetId: resourceId,
+        startTime: sql`now()`,
+        reason: 'seeded inventory baseline',
+        status: 'active',
+        quantity: sql`${seededQuantity}`,
+        ...(actor?.primaryOrgId ? { orgId: actor.primaryOrgId } : {}),
+      })
+      .onConflictDoUpdate({
+        target: [
+          ewohResourceBinding.orgId,
+          ewohResourceBinding.resourceId,
+          ewohResourceBinding.targetId,
+          ewohResourceBinding.bindingType,
+        ],
+        set: {
+          quantity: sql`${seededQuantity}`,
+          status: 'active',
+          updatedAt: sql`now()`,
+        },
+      }));
     this.persistedSeeds.add(resourceId);
   }
 
@@ -361,9 +453,9 @@ export class ResourceService {
     });
   }
 
-  private async safeExecute<T>(context: string, query: SQL): Promise<T[]> {
+  private async safeExecute<T>(context: string, query: Promise<T[]>): Promise<T[]> {
     try {
-      return (await this.db.execute(query)) as T[];
+      return await query;
     } catch (error) {
       this.logger.error(
         `${context} failed`,

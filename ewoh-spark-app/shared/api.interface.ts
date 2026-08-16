@@ -6,6 +6,8 @@
  */
 export * from './scheduler';
 
+import type { SpatialKind } from './location';
+
 import type {
   SchedulingConstraint,
   SchedulingFeedback,
@@ -238,20 +240,8 @@ export interface PersonnelQuery {
 
 // ===== 空间实体与拓扑 =====
 
-/** 空间实体类型 */
-export type SpatialEntityType =
-  | 'factory'
-  | 'workshop'
-  | 'production_line'
-  | 'zone'
-  | 'workstation'
-  | 'device'
-  | 'person'
-  | 'camera'
-  | 'uwb_station'
-  | 'route'
-  | 'restricted_zone'
-  | string;
+/** 空间实体类型（ADR-007：收敛为 Canonical Location 契约的封闭注册表，移除 `| string` 逃生舱）。 */
+export type SpatialEntityType = SpatialKind;
 
 /** 空间实体（ewoh_spatial_entity） */
 export interface SpatialEntity {
@@ -591,6 +581,10 @@ export interface IngestResponse {
   data_quality: DataQuality;
   events_triggered: number;
   error?: string;
+  /** NO-04a：ADR-009 时间语义（occurredAt→receivedAt > 10min 迟到，标记不丢弃） */
+  is_late?: boolean;
+  /** NO-04a：ADR-009 时间语义（越 5min 时钟漂移容忍界，标记不重写） */
+  clock_drift?: boolean;
 }
 
 /** 批量 Ingestion 响应 */
@@ -598,7 +592,50 @@ export interface BatchIngestResponse {
   total: number;
   accepted: number;
   skipped: number;
+  /** NO-04a：迟到帧计数（is_late=true 帧数） */
+  late_count: number;
+  /** NO-04a：时钟漂移帧计数（clock_drift=true 帧数） */
+  clock_drift_count: number;
   results: IngestResponse[];
+}
+
+// ===== NO-04b：Edge→Cloud 事件上行（ADR-009 信封 + 传输级幂等去重） =====
+
+/** 信封事件上行 DTO（契约 contracts/events/envelope.schema.json + event-catalog） */
+export interface EnvelopeEventDto {
+  eventId: string;
+  eventType: string;
+  schemaVersion: string;
+  occurredAt: string;
+  observedAt?: string;
+  receivedAt?: string;
+  source: string;
+  subject?: string;
+  causationId?: string;
+  correlationId?: string;
+  confidence?: number;
+  payload?: Record<string, unknown>;
+  evidence?: Record<string, unknown>;
+}
+
+/** 单事件上行结果（传输级去重：duplicate=同 (org,source,eventId) 已落账，不重复投递） */
+export interface IngestEventResult {
+  eventId: string;
+  source: string;
+  accepted: boolean;
+  duplicate: boolean;
+  is_late: boolean;
+  clock_drift: boolean;
+  error?: string;
+}
+
+/** 事件批量上行响应 */
+export interface IngestEventBatchResponse {
+  total: number;
+  accepted: number;
+  duplicates: number;
+  rejected: number;
+  results: IngestEventResult[];
 }
 
 // ===== 场景直接建模 DTO（多源融合） =====

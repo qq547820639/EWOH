@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Inject, Logger, BadRequestException, Optional } from '@nestjs/common';
 import { randomUUID, createHash } from 'crypto';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import {
@@ -6,6 +6,7 @@ import {
   ewohTelemetry,
   ewohEvent,
   ewohSpatialEntity,
+  ewohIngestEventDedup,
 } from '@server/database/schema';
 import { eq, and, sql, inArray } from 'drizzle-orm';
 import type {
@@ -15,6 +16,9 @@ import type {
   MesOrderDto,
   IngestResponse,
   BatchIngestResponse,
+  EnvelopeEventDto,
+  IngestEventResult,
+  IngestEventBatchResponse,
   DataQuality,
   DataSourceType,
 } from '@shared/api.interface';
@@ -22,7 +26,22 @@ import { RuleEngineService } from '../rule-engine/rule-engine.service';
 import { MesService } from '../mes/mes.service';
 import { SensorIngestService } from './sensor-ingest.service';
 import { ReplanCoordinatorService } from '../scheduler/replan-coordinator.service';
+import { IdentityService } from '../identity/identity.service';
+import { normalizeSeverity, normalizeEventSeverity } from '@shared/risk';
+import {
+  buildEventEnvelope,
+  envelopeForEvidence,
+  envelopeSemantics,
+  validateEventEnvelope,
+} from '@shared/event-envelope';
+import { DeadLetterService } from '../reliability/dead-letter.service';
+import { ExoSessionService } from '../exo/exo-session.service';
+import { insertAndonNotifications } from '../notification/andon-notifications';
+import { isCatalogEventType, EVENT_CATALOG_TYPES } from '@shared/event-catalog';
 import type { OrgContext } from '../shared/org-context.interceptor';
+
+/** NO-04b：事件上行 Catalog 类型白名单（锁定投影的 Set，单次构建）。 */
+const CATALOG_TYPE_SET: ReadonlySet<string> = new Set(EVENT_CATALOG_TYPES);
 
 /**
  * Ingestion 服务（真机接入网关 - 皮肤+肢体数据汇聚）
@@ -50,6 +69,12 @@ export class IngestService {
   private static readonly PACKET_LOSS_DEGRADED = 5;
   /** 批量上限 */
   private static readonly BATCH_LIMIT = 100;
+  /**
+   * 身份解析的第三方系统命名空间（ADR-006/NO-02b）：
+   * 边缘桥接上报的设备标识（vendor 序列号/配置 ID）经 ewoh_identity_mapping
+   * 登记后解析为规范身份；未登记 → 遥测 entity_id 为 NULL（legacy 行为不变）。
+   */
+  private static readonly EDGE_DEVICE_SYSTEM = 'edge-device';
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
@@ -58,6 +83,12 @@ export class IngestService {
     private readonly sensorIngest: SensorIngestService,
     // v0.7 B1：设备故障/离线转换 → DEVICE_OFFLINE 局部重排（事件驱动调度闭环）。
     private readonly replanCoordinator: ReplanCoordinatorService,
+    // ADR-006 / NO-02b：设备 ID → 规范身份解析（ewoh_telemetry.entity_id 落点）。
+    private readonly identityService: IdentityService,
+    // NO-11a（ADR-024）：永久失败 → 死信终态台账（best-effort 旁路）。
+    @Optional() private readonly deadLetterService?: DeadLetterService,
+    // ADR-033 / §7：边缘绑定事件 → 云 ExoSession 台账投影（幂等）
+    @Optional() private readonly exoSessionService?: ExoSessionService,
   ) {}
 
   // ===== 外骨骼数据接入 =====
@@ -132,25 +163,52 @@ export class IngestService {
       }
     }
 
+    // 3.5 批量身份解析（ADR-006/NO-02b）：一次 IN 查询解析设备规范身份。
+    //     未登记 / 无租户上下文 → legacy 行为（entity_id 为 NULL，不阻断遥测入库）。
+    const batchOrgId = ctx?.primaryOrgId?.trim();
+    let resolvedEntities = new Map<string, string>();
+    if (batchOrgId) {
+      try {
+        resolvedEntities = await this.identityService.resolveBatch(
+          IngestService.EDGE_DEVICE_SYSTEM,
+          Array.from(new Set(parsed.map((p) => p.deviceId).filter((id) => !!id))),
+          batchOrgId,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `批量身份解析失败（fail-closed 回退 legacy 行为）：${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
     // 4. 逐帧：质量评估 + 字段映射（纯计算）；批量插入
     const results: IngestResponse[] = [];
     const now = new Date();
     const telemetryRows: Array<typeof ewohTelemetry.$inferInsert> = [];
     const deviceUpserts = new Map<string, typeof ewohDevice.$inferInsert>();
     const acceptedIdx: Array<{ parsedIdx: number; telemetryRow: (typeof ewohTelemetry.$inferInsert) }> = [];
+    // NO-04a：Late/ClockDrift 时间语义（ADR-009）+ 同批次数据质量事件语义去重。
+    const firedDataQualityEvents = new Set<string>();
+    let lateCount = 0;
+    let driftCount = 0;
 
     for (let i = 0; i < parsed.length; i++) {
       const p = parsed[i];
+      const frameSemantics = this.frameSemantics(p.frame);
       if (p.entityId && !existingEntityIds.has(p.entityId)) {
-        // 写告警事件（批量路径仅对缺失 entity 写一次事件，避免批量风暴）
-        await this.fireDataQualityEvent(
-          p.deviceId,
-          p.sourceType,
-          p.recordId,
-          'ENTITY_NOT_FOUND',
-          `entity_id ${p.entityId} 不存在`,
-          { entity_id: p.entityId },
-        );
+        // 写告警事件（同一批次内同 (eventCode,device) 只写一次，避免批量风暴与重试重复投递）
+        const dedupKey = `ENTITY_NOT_FOUND|${p.deviceId}`;
+        if (!firedDataQualityEvents.has(dedupKey)) {
+          firedDataQualityEvents.add(dedupKey);
+          await this.fireDataQualityEvent(
+            p.deviceId,
+            p.sourceType,
+            p.recordId,
+            'ENTITY_NOT_FOUND',
+            `entity_id ${p.entityId} 不存在`,
+            { entity_id: p.entityId },
+          );
+        }
         results.push({
           accepted: false,
           skipped: false,
@@ -158,6 +216,8 @@ export class IngestService {
           data_quality: 'invalid',
           events_triggered: 1,
           error: `entity_id ${p.entityId} 不存在`,
+          is_late: frameSemantics.isLate,
+          clock_drift: frameSemantics.clockDrift,
         });
         continue;
       }
@@ -174,6 +234,10 @@ export class IngestService {
 
       const dataQuality = this.assessQuality(p.frame);
       const row = this.mapExoskeletonRow(p.frame, p.deviceId, p.sourceType, p.recordId, p.rawRef, dataQuality, now);
+      // ADR-006/NO-02b：规范身份落点（未映射 → null，legacy 行为不变）。
+      row.entityId = resolvedEntities.get(p.deviceId) ?? null;
+      // ADR-075：telemetry 行归属注入（001 ewoh_org_visible RLS 对齐）。
+      row.orgId = batchOrgId || null;
       telemetryRows.push(row);
       acceptedIdx.push({ parsedIdx: i, telemetryRow: row });
 
@@ -184,10 +248,10 @@ export class IngestService {
         if (newFaultCode) {
           this.detectFaultTransition(deviceId, newFaultCode, ctx);
         }
-        deviceUpserts.set(
-          deviceId,
-          this.mapDeviceRow(p.frame, deviceId, p.sourceType, now, p.rawRef),
-        );
+        const deviceRow = this.mapDeviceRow(p.frame, deviceId, p.sourceType, now, p.rawRef);
+        // ADR-075：device 行归属注入（001 ewoh_org_visible RLS 对齐）。
+        deviceRow.orgId = batchOrgId || null;
+        deviceUpserts.set(deviceId, deviceRow);
       }
       results.push({
         accepted: true,
@@ -195,7 +259,11 @@ export class IngestService {
         record_id: p.recordId,
         data_quality: dataQuality,
         events_triggered: 0, // 规则评估后补记
+        is_late: frameSemantics.isLate,
+        clock_drift: frameSemantics.clockDrift,
       });
+      if (frameSemantics.isLate) lateCount += 1;
+      if (frameSemantics.clockDrift) driftCount += 1;
     }
 
     // 5. 批量 upsert devices（一次）
@@ -265,7 +333,255 @@ export class IngestService {
 
     const accepted = results.filter((r) => r.accepted).length;
     const skipped = results.filter((r) => r.skipped).length;
-    return { total: list.length, accepted, skipped, results };
+    return { total: list.length, accepted, skipped, late_count: lateCount, clock_drift_count: driftCount, results };
+  }
+
+  /**
+   * NO-04a：帧时间语义（ADR-009）——occurredAt=设备事件时间、receivedAt=云端接收
+   * 时刻；isLate（>10min 迟到，标记不丢弃）与 clockDrift（越 5min 容忍界）由
+   * envelope 契约语义函数判定。observedAt 缺省（边缘未上行接收时刻），契约
+   * 语义对缺失 observed 的比对自动跳过。
+   */
+  private frameSemantics(frame: ExoskeletonFrameDto): { clockDrift: boolean; isLate: boolean } {
+    const occurredAt = frame.event_time;
+    const receivedAt = new Date().toISOString();
+    return envelopeSemantics({
+      eventId: '',
+      eventType: 'TelemetryObserved',
+      schemaVersion: '1.0.0',
+      occurredAt,
+      receivedAt,
+      source: 'cloud:ingest',
+    } as Record<string, unknown>);
+  }
+
+  /**
+   * NO-04b：Edge→Cloud 事件批量上行（ADR-009 信封 + 传输级幂等去重）。
+   *
+   * 语义：
+   *  - 每个信封 validateEventEnvelope 契约校验 + Catalog 类型白名单
+   *    （未知类型 fail-closed 拒绝）；
+   *  - 去重键 (org_id, source, event_id) 落 ewoh_ingest_event_dedup
+   *    （ON CONFLICT DO NOTHING）：已落账 → duplicate（不重复写 ewoh_event，
+   *    不重复投递）；首次 → 写 ewoh_event 事实行 + dedup 台账；
+   *  - isLate/clockDrift 由 envelopeSemantics 判定并随台账落库（全链路可审计）；
+   *  - org 上下文缺失显式失败（RLS 下不静默写全局，B4 同款语义）。
+   */
+  async ingestEventBatch(
+    events: EnvelopeEventDto[],
+    ctx?: OrgContext,
+  ): Promise<IngestEventBatchResponse> {
+    const orgId = ctx?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException('org 上下文缺失（X-Org-Id / IngestGuard），事件上行显式失败');
+    }
+    const list = events.slice(0, IngestService.BATCH_LIMIT);
+    const results: IngestEventResult[] = [];
+    let accepted = 0;
+    let duplicates = 0;
+    let rejected = 0;
+    const now = new Date();
+    for (const envelope of list) {
+      const base = {
+        eventId: String(envelope.eventId ?? ''),
+        source: String(envelope.source ?? ''),
+        is_late: false,
+        clock_drift: false,
+      };
+      const contractErrors = validateEventEnvelope(
+        envelope,
+        CATALOG_TYPE_SET,
+      );
+      if (contractErrors.length > 0) {
+        rejected += 1;
+        // NO-11a（ADR-024）：永久失败（重试无意义）→ 死信终态台账（best-effort）。
+        // 信封校验器对未知目录类型返回 unknown_event_type（目录不会因重试变化）——
+        // 其余契约违规映射 contract_violation（修复上游契约后才可人审重放）。
+        const dlReason =
+          contractErrors[0] === 'unknown_event_type' ? 'unknown_event_type' : 'contract_violation';
+        void this.deadLetterService
+          ?.record(
+            {
+              sourceId: 'cloud:ingest',
+              reason: dlReason,
+              envelope: envelope as unknown as Record<string, unknown>,
+              correlationId: String(envelope.correlationId ?? '') || null,
+            },
+            orgId,
+          )
+          .catch((err) => {
+            this.logger.warn(`死信落账失败（ingest 响应已含 rejected）: ${String(err)}`);
+          });
+        results.push({
+          ...base,
+          accepted: false,
+          duplicate: false,
+          error: `envelope_invalid:${contractErrors[0]}`,
+        });
+        continue;
+      }
+      const eventType = envelope.eventType as string;
+      if (!isCatalogEventType(eventType)) {
+        rejected += 1;
+        // NO-11a（ADR-024）：永久失败（目录不会因重试变化）→ 死信终态台账
+        void this.deadLetterService
+          ?.record(
+            {
+              sourceId: 'cloud:ingest',
+              reason: 'unknown_event_type',
+              envelope: envelope as unknown as Record<string, unknown>,
+              correlationId: String(envelope.correlationId ?? '') || null,
+            },
+            orgId,
+          )
+          .catch((err) => {
+            this.logger.warn(`死信落账失败（ingest 响应已含 rejected）: ${String(err)}`);
+          });
+        results.push({
+          ...base,
+          accepted: false,
+          duplicate: false,
+          error: `unknown_event_type:${eventType}`,
+        });
+        continue;
+      }
+      const semantics = envelopeSemantics(envelope as unknown as Record<string, unknown>);
+      const occurredAt = new Date(envelope.occurredAt);
+      // 传输级幂等：ON CONFLICT (org_id, source, event_id) DO NOTHING，
+      // returning 为空 = 已落账 → duplicate（绝不重复投递）。
+      let dedupInserted = false;
+      try {
+        const inserted = await this.db
+          .insert(ewohIngestEventDedup)
+          .values({
+            orgId,
+            source: envelope.source,
+            eventId: envelope.eventId,
+            eventType,
+            occurredAt: Number.isNaN(occurredAt.getTime()) ? null : occurredAt,
+            receivedAt: now,
+            isLate: semantics.isLate,
+            clockDrift: semantics.clockDrift,
+          })
+          .onConflictDoNothing({ target: [ewohIngestEventDedup.orgId, ewohIngestEventDedup.source, ewohIngestEventDedup.eventId] })
+          .returning({ id: ewohIngestEventDedup.id });
+        dedupInserted = inserted.length > 0;
+      } catch (error) {
+        this.logger.error(
+          `事件上行去重落账失败 ${envelope.eventId}：${error instanceof Error ? error.message : String(error)}`,
+        );
+        rejected += 1;
+        results.push({ ...base, accepted: false, duplicate: false, error: 'dedup_write_failed' });
+        continue;
+      }
+      if (!dedupInserted) {
+        duplicates += 1;
+        results.push({ ...base, accepted: false, duplicate: true, is_late: semantics.isLate, clock_drift: semantics.clockDrift });
+        continue;
+      }
+      // ADR-033 决策 3：绑定事实投影到 ExoSession 台账（应用层幂等——
+      // start 同 sessionId 回读、end 同终态原样返回；投影失败显式留痕不阻断
+      // 事件主事实——事件行仍落账，投影缺口可重放修复）。
+      if (eventType === 'ExoSessionStarted' || eventType === 'ExoSessionEnded') {
+        try {
+          await this.projectExoSessionEvent(eventType, envelope, orgId);
+        } catch (error) {
+          this.logger.warn(
+            `exo session 投影失败 ${eventType} ${envelope.eventId}: ${String(error)}`,
+          );
+        }
+      }
+      // ADR-040：边缘 AndonRaised 投影为 canonical andon evidence 形状
+      // （与 oee.openAndon 同形状：andonId/deviceId/level/slaMinutes/
+      // escalationLevel/timeline）——云侧 listAndons/transitionAndon 统一消费，
+      // 边缘与云侧开灯事实同台账同语义（§3 单一事实层）。
+      const isEdgeAndon =
+        eventType === 'AndonRaised' && String(envelope.source ?? '').startsWith('edge:');
+      const andonPayload = isEdgeAndon
+        ? ((envelope.payload ?? {}) as Record<string, unknown>)
+        : null;
+      const eventTitle = isEdgeAndon && andonPayload
+        ? String(andonPayload.title ?? 'edge:AndonRaised')
+        : `edge:${eventType}`;
+      const eventSeverity = isEdgeAndon && andonPayload
+        ? normalizeEventSeverity(andonPayload.level != null ? String(andonPayload.level) : 'high')
+        : 'unknown'; // ADR-027：非安灯边缘上行事件无风险判定 → 显式 unknown（§33）
+      const eventCode = isEdgeAndon ? 'ANDON' : `EDGE_${eventType}`;
+      const slaSeconds = isEdgeAndon && andonPayload
+        ? Number(andonPayload.slaSeconds ?? 900)
+        : null;
+      const evidenceJson = isEdgeAndon && andonPayload
+        ? {
+            andonId: envelope.eventId,
+            deviceId: andonPayload.deviceId ?? envelope.subject ?? null,
+            reason: andonPayload.reason ?? null,
+            slaSeconds,
+            slaMinutes: Math.ceil(slaSeconds / 60),
+            level: eventSeverity,
+            assignee: andonPayload.assignee ?? null,
+            openedAt: Number.isNaN(occurredAt.getTime()) ? now.toISOString() : occurredAt.toISOString(),
+            escalationLevel: 0,
+            timeline: [{ at: occurredAt.toISOString(), type: 'open', actor: null }],
+            envelope,
+            envelopeSemantics: semantics,
+            payload: envelope.payload ?? null,
+          }
+        : {
+            envelope,
+            envelopeSemantics: semantics,
+            payload: envelope.payload ?? null,
+            subject: envelope.subject ?? null,
+          };
+      try {
+        await this.db.insert(ewohEvent).values({
+          eventId: envelope.eventId,
+          deviceId: isEdgeAndon && andonPayload ? String(andonPayload.deviceId ?? null) : null,
+          eventCode,
+          eventType,
+          severity: eventSeverity,
+          title: eventTitle,
+          status: 'open',
+          createdAt: Number.isNaN(occurredAt.getTime()) ? now : occurredAt,
+          sourceType: 'real',
+          orgId,
+          evidenceJson,
+        });
+      } catch (error) {
+        this.logger.error(
+          `事件行写入失败 ${envelope.eventId}：${error instanceof Error ? error.message : String(error)}`,
+        );
+        rejected += 1;
+        results.push({ ...base, accepted: false, duplicate: false, error: 'event_write_failed' });
+        continue;
+      }
+      // ADR-040：边缘安灯开灯 → 通知闭环（app 恒建 + lark 配置时建，ADR-037）；
+      // 失败显式留痕不阻断事件主事实（通知是派生事实，投影缺口可补）。
+      if (isEdgeAndon && andonPayload) {
+        try {
+          await insertAndonNotifications(this.db, orgId, {
+            recipientId: String(andonPayload.assignee ?? 'dispatcher'),
+            externalRef: envelope.eventId,
+            title: `安灯 ${eventTitle}`,
+            body: `设备 ${String(andonPayload.deviceId ?? '')} 安灯已开（${eventSeverity}，边缘上行）`,
+            severity: eventSeverity,
+          });
+        } catch (error) {
+          this.logger.warn(
+            `边缘安灯通知创建失败 ${envelope.eventId}: ${String(error)}`,
+          );
+        }
+      }
+      accepted += 1;
+      results.push({
+        eventId: envelope.eventId,
+        source: envelope.source,
+        accepted: true,
+        duplicate: false,
+        is_late: semantics.isLate,
+        clock_drift: semantics.clockDrift,
+      });
+    }
+    return { total: list.length, accepted, duplicates, rejected, results };
   }
 
   /** 字段映射 → ewoh_telemetry 行（纯计算，供单帧/批量共用）。 */
@@ -281,6 +597,7 @@ export class IngestService {
     const eventTime = new Date(frame.event_time);
     return {
       deviceId,
+      entityId: null,
       ts: eventTime,
       pitchDeg: frame.pose?.trunk_pitch_deg ?? frame.pitch_deg ?? null,
       loadScore: this.normalizeLoadScore(
@@ -384,6 +701,23 @@ export class IngestService {
     // 3. 数据质量评估
     const dataQuality = this.assessQuality(frame);
 
+    // 3.5 身份解析（ADR-006/NO-02b）：登记过映射 → 规范身份；否则 null（legacy）。
+    let canonicalEntityId: string | null = null;
+    const singleOrgId = ctx?.primaryOrgId?.trim();
+    if (singleOrgId) {
+      try {
+        canonicalEntityId = await this.identityService.resolveMapping(
+          IngestService.EDGE_DEVICE_SYSTEM,
+          deviceId,
+          singleOrgId,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `单帧身份解析失败（fail-closed 回退 legacy 行为）：${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
     // 4. 字段映射 → ewoh_telemetry
     const now = new Date();
     const eventTime = new Date(frame.event_time);
@@ -416,6 +750,7 @@ export class IngestService {
 
     const telemetryRow = {
       deviceId,
+      entityId: canonicalEntityId,
       ts: eventTime,
       pitchDeg: pitchDeg != null ? Number(pitchDeg.toFixed(2)) : null,
       loadScore: loadScore != null ? Number(loadScore.toFixed(3)) : null,
@@ -436,6 +771,8 @@ export class IngestService {
       packetLossPct,
       dataConfidence,
       dataQuality,
+      // ADR-075：telemetry 行归属注入（001 ewoh_org_visible RLS 对齐）。
+      orgId: singleOrgId || null,
     };
 
     // 5. upsert ewoh_device（v0.7 B1：传入 ctx 以支持设备离线重排）
@@ -479,8 +816,48 @@ export class IngestService {
 
   // ===== 环境传感器接入 =====
 
-  async ingestEnvironment(frame: EnvironmentFrameDto): Promise<IngestResponse> {
-    return this.sensorIngest.ingestEnvironment(frame);
+  /** ADR-033：边缘绑定事件 → ExoSession 台账投影（契约校验 + 幂等）。 */
+  private async projectExoSessionEvent(
+    eventType: string,
+    envelope: EnvelopeEventDto,
+    orgId: string,
+  ): Promise<void> {
+    if (!this.exoSessionService) return;
+    const payload = (envelope.payload ?? {}) as Record<string, unknown>;
+    const sessionId = String(payload.sessionId ?? '');
+    const exoId = String(payload.exoId ?? '');
+    const personId = String(payload.personId ?? '');
+    if (!sessionId || !exoId || !personId) {
+      this.logger.warn(`exo session 投影跳过（载荷缺 sessionId/exoId/personId）: ${envelope.eventId}`);
+      return;
+    }
+    if (eventType === 'ExoSessionStarted') {
+      await this.exoSessionService.start(
+        {
+          sessionId,
+          exoId,
+          personId,
+          startedAt: String(payload.startedAt ?? envelope.occurredAt),
+        },
+        orgId,
+      );
+    } else {
+      const status = String(payload.status ?? 'ended');
+      const endedBy = String(payload.endedBy ?? 'system');
+      if (status === 'aborted') {
+        await this.exoSessionService.abortSession(orgId, sessionId, endedBy);
+      } else {
+        await this.exoSessionService.endSession(orgId, sessionId, endedBy);
+      }
+    }
+  }
+
+  async ingestEnvironment(
+    frame: EnvironmentFrameDto,
+    orgId?: string | null,
+  ): Promise<IngestResponse> {
+    // NO-13aa：环境传感器行归属经 ctx 注入（无 ctx → NULL 显式 legacy）。
+    return this.sensorIngest.ingestEnvironment(frame, orgId ?? null);
   }
 
 
@@ -659,6 +1036,8 @@ export class IngestService {
           batteryPct: frame.device?.battery_pct ?? frame.battery_pct ?? 100,
           online: true,
           lastTelemetryAt: now,
+          // ADR-075：device 行归属注入（001 ewoh_org_visible RLS 对齐）。
+          orgId: ctx?.primaryOrgId ?? null,
           sourceType,
           firmwareVersion: frame.firmware_version ?? null,
           hardwareVersion: frame.hardware_version ?? null,
@@ -776,18 +1155,36 @@ export class IngestService {
     try {
       const eventId = `EVT-${Math.floor(Date.now() / 1000)}-${randomUUID().slice(0, 8)}`;
       const now = new Date();
+      const nowIso = now.toISOString();
+      // ADR-009 / NO-04b：事件类型收敛到 Canonical Event Catalog + 信封嵌入。
+      const envelope = buildEventEnvelope({
+        eventId,
+        eventType: 'DataQualityAlert',
+        occurredAt: nowIso,
+        observedAt: nowIso,
+        receivedAt: nowIso,
+        source: 'cloud:ingest',
+        subject: `device:${deviceId}`,
+      });
+      const envelopeRecord = envelopeForEvidence(envelope);
       await this.db.insert(ewohEvent).values({
         eventId,
         deviceId,
         eventCode,
-        eventType: 'data',
-        severity: 'L2',
+        eventType: 'DataQualityAlert',
+        severity: normalizeSeverity('L2'),
         title,
         status: 'open',
         createdAt: now,
         sourceType,
         triggerRecordId: recordId,
-        evidenceJson: { ...evidence, device_id: deviceId, fired_at: now.toISOString() },
+        evidenceJson: {
+          ...evidence,
+          device_id: deviceId,
+          fired_at: nowIso,
+          envelope: envelopeRecord.envelope,
+          envelopeSemantics: envelopeRecord.envelopeSemantics,
+        },
       });
     } catch (error) {
       this.logger.error(`写入数据质量事件失败 ${eventCode}`, error);

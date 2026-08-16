@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///world/world-state/v1",
+  "title": "EWOH Canonical Factory World State Contract",
+  "description": "EWOH 统一工厂世界状态契约（Canonical Factory World Model，ADR-008）。StateRecord 对齐边缘 WorldState 双时态核心（[valid_from, valid_to) 半开区间 + sourceType + confidence + version）；entityId 引用规范身份（ADR-006）；模拟隔离（§13）与新鲜度（ADR-007）上升为可验证规则。权威性分工：云侧 WorldStateSnapshot 为工厂级权威投影、边缘 StateStore 为本地运行时状态，本契约是共享形状与校验语义，不新建第三存储。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "entityTypeRegistry",
+    "sourceTypeRegistry",
+    "rules"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "entityTypeRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,31}$"
+      }
+    },
+    "sourceTypeRegistry": {
+      "type": "array",
+      "const": [
+        "real",
+        "simulated",
+        "derived"
+      ]
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bitemporalInterval",
+        "versionMonotonicity",
+        "simulationIsolation",
+        "closedRegistry"
+      ],
+      "properties": {
+        "bitemporalInterval": {
+          "type": "string",
+          "const": "validFrom <= validTo（缺失 validTo = 当前生效）；同 (entityId, stateType) 区间不得重叠（新状态开启时旧状态 validTo = 新 validFrom）"
+        },
+        "versionMonotonicity": {
+          "type": "string",
+          "const": "同 (entityId, stateType) 新状态 version = 旧状态 version + 1；version >= 1"
+        },
+        "simulationIsolation": {
+          "type": "string",
+          "const": "sourceType=simulated 的状态绝不参与 real 投影判定；混合来源快照必须显式标记（§13）"
+        },
+        "closedRegistry": {
+          "type": "string",
+          "const": "entityType 必须命中 entityTypeRegistry、entityId 必须是规范身份、confidence∈[0,1]，否则拒绝（fail-closed）"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "entityTypeRegistry": [
+    "person",
+    "exo",
+    "machine",
+    "robot",
+    "agv",
+    "tool",
+    "material",
+    "container",
+    "inventory",
+    "order",
+    "operation",
+    "work_instruction",
+    "task",
+    "station",
+    "zone",
+    "route",
+    "factory",
+    "warehouse",
+    "sensor",
+    "event",
+    "risk",
+    "knowledge"
+  ],
+  "sourceTypeRegistry": [
+    "real",
+    "simulated",
+    "derived"
+  ],
+  "rules": {
+    "bitemporalInterval": "validFrom <= validTo（缺失 validTo = 当前生效）；同 (entityId, stateType) 区间不得重叠（新状态开启时旧状态 validTo = 新 validFrom）",
+    "versionMonotonicity": "同 (entityId, stateType) 多记录时版本从 1 起连续递增（快照可只含当前记录，其 version>=1 即合法）",
+    "simulationIsolation": "sourceType=simulated 的状态绝不参与 real 投影判定；混合来源快照必须显式标记（§13）",
+    "closedRegistry": "entityType 必须命中 entityTypeRegistry、entityId 必须是规范身份、confidence∈[0,1]，否则拒绝（fail-closed）"
+  }
+}

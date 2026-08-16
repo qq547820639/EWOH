@@ -10,7 +10,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ewohEvent, ewohEventChain } from '@server/database/schema';
 import type {
@@ -104,6 +104,32 @@ export class ApprovalPersistenceService {
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly auditService: AuditService,
   ) {}
+
+  /** NO-12f/ADR-030：待批清单（org 作用域，最近创建优先）。 */
+  async listPending(orgId: string): Promise<Array<Record<string, unknown>>> {
+    if (!orgId?.trim()) {
+      throw new BadRequestException('orgId 缺失：审批待批查询必须带租户上下文');
+    }
+    const rows = await this.db
+      .select()
+      .from(ewohEvent)
+      .where(and(
+        eq(ewohEvent.orgId, orgId),
+        eq(ewohEvent.eventType, 'approval_instance'),
+        eq(ewohEvent.status, 'pending'),
+      ))
+      .orderBy(desc(ewohEvent.createdAt))
+      .limit(200);
+    return rows.map((r) => {
+      const evidence = (r.evidenceJson ?? {}) as Record<string, unknown>;
+      return {
+        approvalId: r.eventId,
+        entityType: evidence.entityType ?? null,
+        entityId: evidence.entityId ?? null,
+        createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : null,
+      };
+    });
+  }
 
   async createApproval(
     input: CreateApprovalRequest,

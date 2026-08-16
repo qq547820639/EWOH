@@ -1,0 +1,211 @@
+{
+  "schemaVersion": "1.0.0",
+  "records": [
+    {
+      "name": "valid-suggestion",
+      "record": {
+        "reasoningId": "RS-9f1c4a0e",
+        "level": "L4_industrial_reasoning",
+        "kind": "suggestion",
+        "modelId": "ark-chat",
+        "modelVersion": "doubao-pro",
+        "inputVersion": "scheduler-suggestion-v2",
+        "subjectId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "content": "建议将任务 t1 分配给具备焊接资质的人员。",
+        "ok": true,
+        "error": null,
+        "confidence": null,
+        "confidenceBasis": "uncalibrated",
+        "evidence": { "generatedAt": "2026-08-16T09:00:00Z" }
+      }
+    },
+    {
+      "name": "valid-chat-no-subject",
+      "record": {
+        "reasoningId": "RS-9f1c4a0f",
+        "level": "L5_agentic_workflow",
+        "kind": "chat",
+        "modelId": "ark-chat",
+        "modelVersion": "doubao-pro",
+        "inputVersion": "chat-v1",
+        "subjectId": null,
+        "content": "分析：当前班次人员负荷偏高。",
+        "ok": true,
+        "error": null,
+        "confidence": null,
+        "confidenceBasis": "uncalibrated",
+        "evidence": { "generatedAt": "2026-08-16T09:01:00Z" }
+      }
+    },
+    {
+      "name": "valid-error-result",
+      "record": {
+        "reasoningId": "RS-9f1c4a10",
+        "level": "L4_industrial_reasoning",
+        "kind": "analysis",
+        "modelId": "ark-chat",
+        "modelVersion": "doubao-pro",
+        "inputVersion": "chat-v1",
+        "subjectId": null,
+        "content": "",
+        "ok": false,
+        "error": "HTTP 429: rate limited",
+        "confidence": null,
+        "confidenceBasis": "uncalibrated",
+        "evidence": { "generatedAt": "2026-08-16T09:02:00Z" }
+      },
+      "expectError": null
+    },
+    {
+      "name": "confidence-forbidden-rejected",
+      "record": {
+        "reasoningId": "RS-9f1c4a11",
+        "level": "L4_industrial_reasoning",
+        "kind": "suggestion",
+        "modelId": "ark-chat",
+        "modelVersion": "doubao-pro",
+        "inputVersion": "chat-v1",
+        "subjectId": null,
+        "content": "建议文本",
+        "ok": true,
+        "error": null,
+        "confidence": 0.9,
+        "confidenceBasis": "uncalibrated",
+        "evidence": { "generatedAt": "2026-08-16T09:03:00Z" }
+      },
+      "expectError": "confidence_forbidden"
+    },
+    {
+      "name": "missing-confidence-basis-rejected",
+      "record": {
+        "reasoningId": "RS-9f1c4a12",
+        "level": "L4_industrial_reasoning",
+        "kind": "suggestion",
+        "modelId": "ark-chat",
+        "modelVersion": "doubao-pro",
+        "inputVersion": "chat-v1",
+        "subjectId": null,
+        "content": "建议文本",
+        "ok": true,
+        "error": null,
+        "confidence": null,
+        "confidenceBasis": "calibrated",
+        "evidence": { "generatedAt": "2026-08-16T09:04:00Z" }
+      },
+      "expectError": "confidence_basis_required"
+    },
+    {
+      "name": "ok-false-without-error-rejected",
+      "record": {
+        "reasoningId": "RS-9f1c4a13",
+        "level": "L4_industrial_reasoning",
+        "kind": "analysis",
+        "modelId": "ark-chat",
+        "modelVersion": "doubao-pro",
+        "inputVersion": "chat-v1",
+        "subjectId": null,
+        "content": "",
+        "ok": false,
+        "error": null,
+        "confidence": null,
+        "confidenceBasis": "uncalibrated",
+        "evidence": { "generatedAt": "2026-08-16T09:05:00Z" }
+      },
+      "expectError": "error_required"
+    },
+    {
+      "name": "unknown-level-rejected",
+      "record": {
+        "reasoningId": "RS-9f1c4a14",
+        "level": "L2_statistical_ml",
+        "kind": "suggestion",
+        "modelId": "ark-chat",
+        "modelVersion": "doubao-pro",
+        "inputVersion": "chat-v1",
+        "subjectId": null,
+        "content": "建议文本",
+        "ok": true,
+        "error": null,
+        "confidence": null,
+        "confidenceBasis": "uncalibrated",
+        "evidence": { "generatedAt": "2026-08-16T09:06:00Z" }
+      },
+      "expectError": "unknown_level"
+    },
+    {
+      "name": "unknown-kind-rejected",
+      "record": {
+        "reasoningId": "RS-9f1c4a15",
+        "level": "L4_industrial_reasoning",
+        "kind": "poem",
+        "modelId": "ark-chat",
+        "modelVersion": "doubao-pro",
+        "inputVersion": "chat-v1",
+        "subjectId": null,
+        "content": "建议文本",
+        "ok": true,
+        "error": null,
+        "confidence": null,
+        "confidenceBasis": "uncalibrated",
+        "evidence": { "generatedAt": "2026-08-16T09:07:00Z" }
+      },
+      "expectError": "unknown_kind"
+    },
+    {
+      "name": "empty-content-rejected",
+      "record": {
+        "reasoningId": "RS-9f1c4a16",
+        "level": "L4_industrial_reasoning",
+        "kind": "suggestion",
+        "modelId": "ark-chat",
+        "modelVersion": "doubao-pro",
+        "inputVersion": "chat-v1",
+        "subjectId": null,
+        "content": "",
+        "ok": true,
+        "error": null,
+        "confidence": null,
+        "confidenceBasis": "uncalibrated",
+        "evidence": { "generatedAt": "2026-08-16T09:08:00Z" }
+      },
+      "expectError": "empty_content"
+    },
+    {
+      "name": "non-canonical-subject-rejected",
+      "record": {
+        "reasoningId": "RS-9f1c4a17",
+        "level": "L4_industrial_reasoning",
+        "kind": "suggestion",
+        "modelId": "ark-chat",
+        "modelVersion": "doubao-pro",
+        "inputVersion": "chat-v1",
+        "subjectId": "not-canonical",
+        "content": "建议文本",
+        "ok": true,
+        "error": null,
+        "confidence": null,
+        "confidenceBasis": "uncalibrated",
+        "evidence": { "generatedAt": "2026-08-16T09:09:00Z" }
+      },
+      "expectError": "bad_subject"
+    },
+    {
+      "name": "missing-model-version-rejected",
+      "record": {
+        "reasoningId": "RS-9f1c4a18",
+        "level": "L4_industrial_reasoning",
+        "kind": "suggestion",
+        "modelId": "ark-chat",
+        "inputVersion": "chat-v1",
+        "subjectId": null,
+        "content": "建议文本",
+        "ok": true,
+        "error": null,
+        "confidence": null,
+        "confidenceBasis": "uncalibrated",
+        "evidence": { "generatedAt": "2026-08-16T09:10:00Z" }
+      },
+      "expectError": "missing_field:modelVersion"
+    }
+  ]
+}

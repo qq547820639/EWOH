@@ -62,6 +62,7 @@ const FEATURE_DOC_KEYWORDS = {
   schedulerV2: ['Scheduler V2', '调度 V2'],
   heuristicSolver: ['HeuristicSchedulingSolver', 'heuristic'],
   cpSat: ['CP-SAT', 'cp-sat', 'cpsat'],
+  milpSolver: ['MILP', 'milp'],
   predictionShadow: ['影子评估', 'shadow'],
   schedulerRls: ['RLS', '多租户'],
   commandMap: ['Command Map', 'CommandMap', '指挥地图'],

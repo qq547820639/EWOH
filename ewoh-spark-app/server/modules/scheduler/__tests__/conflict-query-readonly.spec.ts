@@ -192,7 +192,7 @@ describe('T04 / P1-5 GET /conflicts 纯读无副作用', () => {
         persons: [],
         tasks: [],
         devices: [
-          { id: 'd1', workerName: null, deviceModel: null, batteryPct: 100, online: false, status: 'offline', dataQuality: 'FRESH' },
+          { id: 'd1', workerName: null, deviceModel: null, batteryPct: 100, online: false, status: 'OFFLINE', dataQuality: 'FRESH' },
         ],
         stations: [],
         backlog: [],

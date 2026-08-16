@@ -16,7 +16,7 @@ const snapshots: ReplaySnapshot[] = [
     ts: '2026-08-03T00:01:00.000Z',
     persons: [{ entityId: 'p1', x: 10, y: 20, status: 'active' }],
     devices: [],
-    events: [{ eventId: 'e-1', severity: 'L3', title: '高温' }],
+    events: [{ eventId: 'e-1', severity: 'critical', title: '高温' }],
   },
   {
     ts: '2026-08-03T00:02:00.000Z',

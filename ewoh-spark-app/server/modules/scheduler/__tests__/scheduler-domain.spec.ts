@@ -46,7 +46,7 @@ function person(seed: PersonSeed) {
   return {
     id: seed.id,
     name: seed.id,
-    status: seed.status ?? 'available',
+    status: seed.status ?? 'AVAILABLE',
     healthStatus: 'normal',
     skills: seed.skills ?? ['work'],
     certifications: [],
@@ -86,7 +86,7 @@ function device(seed: DeviceSeed) {
     deviceModel: null,
     batteryPct: seed.battery ?? 100,
     online: seed.online ?? true,
-    status: 'online',
+    status: 'AVAILABLE',
   };
 }
 
@@ -207,7 +207,7 @@ describe('EligibilityService.check', () => {
     const result = svc.check(
       {
         id: 'p1',
-        status: 'available',
+        status: 'AVAILABLE',
         skills: ['welding'],
         certifications: [],
         stationId: null,
@@ -235,7 +235,7 @@ describe('EligibilityService.check', () => {
     const result = svc.check(
       {
         id: 'p1',
-        status: 'available',
+        status: 'AVAILABLE',
         skills: ['work'],
         certifications: [],
         stationId: null,
@@ -433,7 +433,7 @@ describe('WorldStateSnapshotService.assertFreshForApprove', () => {
     devices: [],
     stations: [],
     backlog: [],
-    events: [{ eventId: 'e1', severity: 'L1', status: 'open', eventType: null }],
+    events: [{ eventId: 'e1', severity: 'low', status: 'open', eventType: null }],
     routeStatus: [],
     forbiddenZones: [],
     lockedAssignments: [],
@@ -456,7 +456,7 @@ describe('WorldStateSnapshotService.assertFreshForApprove', () => {
   });
 
   it('快照仍新鲜时审批通过（不抛异常）', async () => {
-    // 当前世界状态（空 person/task/device，仅 L1 open 事件）经 entityVersion
+    // 当前世界状态（空 person/task/device，仅 low open 事件）经 entityVersion
     // 序列化得到的 safety 指纹，与快照捕获时刻一致 → 视为新鲜。
     const freshSnapshotRow = {
       snapshotVersion: 'WS-OLD',
@@ -467,7 +467,7 @@ describe('WorldStateSnapshotService.assertFreshForApprove', () => {
       createdAt: new Date(),
     };
     const { db } = makeWorldDb(freshSnapshotRow, [
-      { eventId: 'e1', severity: 'L1', status: 'open', eventType: null },
+      { eventId: 'e1', severity: 'low', status: 'open', eventType: null },
     ]);
     const svc = new WorldStateSnapshotService(
       db as never,
@@ -857,21 +857,21 @@ describe('WorldStateSnapshotService.isPlanStale / 资源新鲜度（Task C/D）'
 
   it('STALE 数据的人员/设备不被视为可用（不可调度）', async () => {
     const { db } = makeWorldDb(null, {
-      personnel: [{ id: 'p1', name: 'p1', status: 'available', updatedAt: new Date(Date.now() - 10_000) }],
+      personnel: [{ id: 'p1', name: 'p1', status: 'AVAILABLE', updatedAt: new Date(Date.now() - 10_000) }],
       devices: [{ id: 'd1', online: true, batteryPct: 100, lastTelemetryAt: new Date(Date.now() - 10_000), updatedAt: new Date() }],
     });
     // 新鲜度判定已迁至 ResourceProjectionService；此处注入其 STALE 输出（mock 模拟投影结果）。
     const svc = new WorldStateSnapshotService(db as never, { runInTransaction: jest.fn() } as never, {
       projectForSnapshot: jest.fn().mockResolvedValue({
         persons: [{
-          id: 'p1', name: 'p1', status: 'unavailable', healthStatus: 'normal',
+          id: 'p1', name: 'p1', status: 'UNKNOWN', healthStatus: 'normal',
           loadLevel: 0, fatigueLevel: 0, x: null, y: null, skills: [], certifications: [],
           shift: null, workload: null, currentTaskId: null, certificationExpiry: null,
           sourceTs: Date.now() - 10_000, freshnessMs: 1000, dataQuality: 'STALE',
         }],
         devices: [{
           id: 'd1', workerName: null, deviceModel: null, batteryPct: 100, capabilities: [],
-          online: false, status: 'offline', x: null, y: null, locationStationId: null,
+          online: false, status: 'OFFLINE', x: null, y: null, locationStationId: null,
           availableWindows: [], locationConfidence: null, locationUpdatedAt: null,
           telemetryUpdatedAt: null, sourceTs: Date.now() - 10_000, freshnessMs: 1000,
           dataQuality: 'STALE', derived: [],
@@ -881,20 +881,20 @@ describe('WorldStateSnapshotService.isPlanStale / 资源新鲜度（Task C/D）'
     } as never);
     const state = (await (svc as unknown as { collectState(): Promise<WorldStateSnapshot> }).collectState()) as WorldStateSnapshot;
     expect(state.persons[0].dataQuality).toBe('STALE');
-    expect(state.persons[0].status).toBe('unavailable');
+    expect(state.persons[0].status).toBe('UNKNOWN');
     expect(state.devices[0].dataQuality).toBe('STALE');
     expect(state.devices[0].online).toBe(false);
   });
 
   it('UNKNOWN（无时间戳）数据的人员不被视为可用', async () => {
     const { db } = makeWorldDb(null, {
-      personnel: [{ id: 'p1', name: 'p1', status: 'available', updatedAt: null }],
+      personnel: [{ id: 'p1', name: 'p1', status: 'AVAILABLE', updatedAt: null }],
     });
     // 新鲜度判定已迁至 ResourceProjectionService；此处注入其 UNKNOWN 输出（mock 模拟投影结果）。
     const svc = new WorldStateSnapshotService(db as never, { runInTransaction: jest.fn() } as never, {
       projectForSnapshot: jest.fn().mockResolvedValue({
         persons: [{
-          id: 'p1', name: 'p1', status: 'unavailable', healthStatus: 'normal',
+          id: 'p1', name: 'p1', status: 'UNKNOWN', healthStatus: 'normal',
           loadLevel: 0, fatigueLevel: 0, x: null, y: null, skills: [], certifications: [],
           shift: null, workload: null, currentTaskId: null, certificationExpiry: null,
           sourceTs: null, freshnessMs: 300000, dataQuality: 'UNKNOWN',
@@ -905,6 +905,6 @@ describe('WorldStateSnapshotService.isPlanStale / 资源新鲜度（Task C/D）'
     } as never);
     const state = (await (svc as unknown as { collectState(): Promise<WorldStateSnapshot> }).collectState()) as WorldStateSnapshot;
     expect(state.persons[0].dataQuality).toBe('UNKNOWN');
-    expect(state.persons[0].status).toBe('unavailable');
+    expect(state.persons[0].status).toBe('UNKNOWN');
   });
 });

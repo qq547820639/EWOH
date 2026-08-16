@@ -121,8 +121,8 @@ function planRow(overrides: Record<string, unknown> = {}) {
 describe('Task 2: GET /api/scheduler/conflicts 统一冲突列表', () => {
   it('无冲突时返回空列表（不虚构）', async () => {
     const { svc } = makeSvc({
-      persons: [{ id: 'p1', name: '张三', status: 'available', dataQuality: 'FRESH' }],
-      devices: [{ id: 'd1', batteryPct: 100, online: true, status: 'online', dataQuality: 'FRESH' }],
+      persons: [{ id: 'p1', name: '张三', status: 'AVAILABLE', dataQuality: 'FRESH' }],
+      devices: [{ id: 'd1', batteryPct: 100, online: true, status: 'AVAILABLE', dataQuality: 'FRESH' }],
       routeStatus: [{ edgeId: 'e1', status: 'open', riskLevel: null }],
       tasks: [{ id: 't1', status: 'pending', predecessorIds: [] }],
       stations: [{ id: 's1', name: '工位1', capacity: 5 }],
@@ -154,7 +154,7 @@ describe('Task 2: GET /api/scheduler/conflicts 统一冲突列表', () => {
   it('检测到设备离线（device offline）', async () => {
     const { svc } = makeSvc({
       devices: [
-        { id: 'd1', batteryPct: 100, online: false, status: 'offline', dataQuality: 'FRESH' },
+        { id: 'd1', batteryPct: 100, online: false, status: 'OFFLINE', dataQuality: 'FRESH' },
       ],
       tasks: [{ id: 't1', status: 'pending', deviceId: 'd1', assigneeId: null }],
     });
@@ -181,7 +181,7 @@ describe('Task 2: GET /api/scheduler/conflicts 统一冲突列表', () => {
   it('检测到低电量设备（low battery，低于阈值）', async () => {
     const { svc } = makeSvc({
       devices: [
-        { id: 'd1', batteryPct: 20, online: true, status: 'online', dataQuality: 'FRESH' },
+        { id: 'd1', batteryPct: 20, online: true, status: 'AVAILABLE', dataQuality: 'FRESH' },
       ],
     });
 
@@ -210,7 +210,7 @@ describe('Task 2: GET /api/scheduler/conflicts 统一冲突列表', () => {
   it('按 type / severity / resourceId 过滤', async () => {
     const { svc } = makeSvc({
       devices: [
-        { id: 'd1', batteryPct: 10, online: false, status: 'offline', dataQuality: 'FRESH' },
+        { id: 'd1', batteryPct: 10, online: false, status: 'OFFLINE', dataQuality: 'FRESH' },
       ],
     });
 
@@ -227,7 +227,7 @@ describe('Task 2: GET /api/scheduler/conflicts/:id 冲突详情', () => {
   it('返回存在的冲突详情', async () => {
     const { svc } = makeSvc({
       devices: [
-        { id: 'd1', batteryPct: 100, online: false, status: 'offline', dataQuality: 'FRESH' },
+        { id: 'd1', batteryPct: 100, online: false, status: 'OFFLINE', dataQuality: 'FRESH' },
       ],
     });
 

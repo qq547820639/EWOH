@@ -67,7 +67,8 @@ export class ConflictPreviewService {
     let baselinePlan: SchedulingPlanV2 | null = null;
     if (baselinePlanId) {
       try {
-        baselinePlan = await this.planService.getPlan(baselinePlanId);
+        // ADR-071：预览基线读面透传 ctx（跨租户方案与不存在同语义）。
+        baselinePlan = await this.planService.getPlan(baselinePlanId, ctx);
       } catch {
         baselinePlan = null;
       }

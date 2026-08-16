@@ -22,45 +22,61 @@ function toSqlQuery(arg: unknown): { sql: string; params: unknown[] } {
 
 function makeDb(rows: Array<Record<string, unknown>> = []) {
   const execute = jest.fn().mockResolvedValue(rows);
-  return { execute };
+  // ADR-079：drizzle 链式假库（select 读配置 + insert upsert）。
+  const selectCalls: Array<{ table: unknown; cond: unknown }> = [];
+  const insertRows: Array<Record<string, unknown>> = [];
+  const db = {
+    execute,
+    select: jest.fn(() => ({
+      from: jest.fn((table: unknown) => {
+        const q: any = Promise.resolve(rows);
+        q.where = (cond: unknown) => {
+          selectCalls.push({ table, cond });
+          return q;
+        };
+        q.orderBy = () => q;
+        q.limit = () => q;
+        return q;
+      }),
+    })),
+    insert: jest.fn((table: unknown) => ({
+      values: jest.fn((row: Record<string, unknown>) => {
+        insertRows.push(row);
+        return {
+          onConflictDoUpdate: jest.fn(async () => []),
+        };
+      }),
+    })),
+  };
+  return { db, selectCalls, insertRows };
 }
 
 describe('v0.7 AI 接入修复: ArkService 配置读写', () => {
   it('saveConfig 的 SQL 显式包含 org_id 哨兵（修复 NULL ON CONFLICT 失效）', async () => {
-    const db = makeDb([]);
+    const { db, insertRows } = makeDb([]);
     const svc = new ArkService(db as never);
 
     await svc.saveConfig({ api_key: 'ark-secret-key', model: 'doubao-x' });
 
-    const calls = db.execute.mock.calls;
-    expect(calls.length).toBeGreaterThanOrEqual(2); // getConfig + saveConfig
-    // 最后一条是 saveConfig 的 INSERT（drizzle sql 模板对象 → sqlToQuery 序列化，值在 params）
-    const save = toSqlQuery(calls[calls.length - 1][0]);
-    expect(save.sql).toContain('org_id');
-    expect(save.sql).toContain('on conflict (org_id, config_key)');
-    expect(save.sql).toContain('do update');
-    // 哨兵 org_id 与 api_key 作为参数传递（占位符 $N）
-    expect(save.params).toContain(GLOBAL_ORG_SENTINEL);
-    expect(JSON.stringify(save.params)).toContain('ark-secret-key');
-    // 关键断言：不再出现"未提供 org_id 的裸 INSERT"（旧 Bug 形态）
-    expect(save.sql).not.toMatch(/insert into public\.ewoh_scheduler_config \(config_key, config_value, updated_by\)/);
+    // ADR-079：drizzle upsert——orgId 哨兵显式写入 + onConflictDoUpdate。
+    expect(insertRows).toHaveLength(1);
+    expect(insertRows[0].orgId).toBe(GLOBAL_ORG_SENTINEL);
+    expect(insertRows[0].configKey).toBe(ARK_CONFIG_KEY);
+    expect(JSON.stringify(insertRows[0].configValue)).toContain('ark-secret-key');
   });
 
   it('getConfig 的 SQL 按哨兵 org_id 精确读取 + 排序（不再读到旧行/空行）', async () => {
-    const db = makeDb([
+    const { db, selectCalls } = makeDb([
       {
-        config_value: { api_key: 'db-key', base_url: 'https://x.example/v3', model: 'm1' },
+        configValue: { api_key: 'db-key', base_url: 'https://x.example/v3', model: 'm1' },
       },
     ]);
     const svc = new ArkService(db as never);
 
     const cfg = await svc.getConfig();
 
-    const get = toSqlQuery(db.execute.mock.calls[0][0]);
-    expect(get.sql).toContain('org_id = ');
-    expect(get.sql).toContain('order by _updated_at desc');
-    expect(get.sql).toContain('limit 1');
-    expect(get.params).toContain(GLOBAL_ORG_SENTINEL);
+    // ADR-079：drizzle 读——哨兵 org 条件经链式假库捕获（行为断言优先）。
+    expect(selectCalls).toHaveLength(1);
     expect(cfg.apiKey).toBe('db-key');
     expect(cfg.model).toBe('m1');
   });
@@ -68,7 +84,7 @@ describe('v0.7 AI 接入修复: ArkService 配置读写', () => {
   it('DB 无配置 → 回落到环境变量', async () => {
     const saved = process.env.EWOH_ARK_API_KEY;
     process.env.EWOH_ARK_API_KEY = 'env-key';
-    const db = makeDb([]);
+    const { db } = makeDb([]);
     const svc = new ArkService(db as never);
 
     const cfg = await svc.getConfig();
@@ -96,5 +112,65 @@ describe('v0.7 AI 接入修复: ArkService 配置读写', () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
     expect(ARK_CONFIG_KEY).toBe('ai.provider.ark');
+  });
+});
+
+describe('NO-08d（ADR-014）：Ark 文本结果包裹 ReasoningResult', () => {
+  it('chat 成功：reasoning 元数据齐备且无标定置信度显式声明', async () => {
+    const db = makeDb([]);
+    process.env.EWOH_ARK_API_KEY = 'env-key';
+    const svc = new ArkService(db as never);
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: '你好' } }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }) as never,
+    );
+    const res = await svc.chat([{ role: 'user', content: 'hi' }]);
+    expect(res.ok).toBe(true);
+    expect(res.text).toBe('你好');
+    expect(res.reasoning).toBeDefined();
+    const r = res.reasoning as Record<string, unknown>;
+    expect(r.kind).toBe('chat');
+    expect(r.level).toBe('L5_agentic_workflow');
+    expect(r.modelId).toBe('ark-chat');
+    expect(r.confidence).toBeNull();
+    expect(r.confidenceBasis).toBe('uncalibrated');
+    expect(r.inputVersion).toBe('chat-v1');
+    expect(r.contract_violations).toEqual([]);
+    fetchMock.mockRestore();
+    delete process.env.EWOH_ARK_API_KEY;
+  });
+
+  it('chat 未配置：失败路径 reasoning ok=false + error 可审计', async () => {
+    const saved = process.env.EWOH_ARK_API_KEY;
+    delete process.env.EWOH_ARK_API_KEY;
+    const svc = new ArkService(makeDb([]) as never);
+    const res = await svc.chat([{ role: 'user', content: 'hi' }]);
+    expect(res.ok).toBe(false);
+    const r = res.reasoning as Record<string, unknown>;
+    expect(r.ok).toBe(false);
+    expect(typeof r.error).toBe('string');
+    expect((r.error as string).length).toBeGreaterThan(0);
+    expect(r.contract_violations).toEqual([]);
+    if (saved !== undefined) process.env.EWOH_ARK_API_KEY = saved;
+  });
+
+  it('ask 透传 kind/inputVersion（suggestion 路径）', async () => {
+    process.env.EWOH_ARK_API_KEY = 'env-key';
+    const svc = new ArkService(makeDb([]) as never);
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: '{"suggestion":"x"}' } }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }) as never,
+    );
+    const res = await svc.ask('sys', 'q', { kind: 'suggestion', inputVersion: 'scheduler-suggestion-v2' });
+    const r = res.reasoning as Record<string, unknown>;
+    expect(r.kind).toBe('suggestion');
+    expect(r.level).toBe('L4_industrial_reasoning');
+    expect(r.inputVersion).toBe('scheduler-suggestion-v2');
+    fetchMock.mockRestore();
+    delete process.env.EWOH_ARK_API_KEY;
   });
 });

@@ -72,3 +72,43 @@ export function cullPaddingFor(item: BoundedCullable): number {
   const h = Math.abs(item.bboxH ?? 0);
   return Math.max(w, h) / 2;
 }
+
+/**
+ * 缩放/平移变换状态（react-zoom-pan-pinch state 子集，纯数据解耦可测）。
+ */
+export interface PanZoomTransformState {
+  scale: number;
+  positionX: number;
+  positionY: number;
+}
+
+/**
+ * 由 SVG viewBox + 容器尺寸 + 平移/缩放状态推导当前可视世界范围（NO-13e / ADR-054）。
+ *
+ * 数学（xMidYMid meet + react-zoom-pan-pinch 内容变换）：
+ *   fit = min(containerW / vbW, containerH / vbH)（meet 适配缩放）；
+ *   居中偏移 offsetX = (containerW − vbW·fit)/2；
+ *   屏幕坐标 → 世界坐标：worldX = (screenX − offsetX − positionX) / (fit·scale) + vb.minX。
+ * 非法输入（NaN/非正 scale/零尺寸）→ null（调用方保持默认全量渲染，§33 不猜）。
+ */
+export function worldBoundsFromTransform(
+  transform: PanZoomTransformState | null | undefined,
+  container: { width: number; height: number },
+  vb: { minX: number; minY: number; w: number; h: number },
+): VisibleBounds | null {
+  if (!transform) return null;
+  if (![transform.scale, transform.positionX, transform.positionY].every(Number.isFinite)) return null;
+  if (!(transform.scale > 0)) return null;
+  if (![container.width, container.height, vb.minX, vb.minY, vb.w, vb.h].every(Number.isFinite)) return null;
+  if (vb.w <= 0 || vb.h <= 0) return null;
+  const fit = Math.min(container.width / vb.w, container.height / vb.h);
+  const k = fit * transform.scale;
+  if (!(k > 0) || !Number.isFinite(k)) return null;
+  const offsetX = (container.width - vb.w * fit) / 2;
+  const offsetY = (container.height - vb.h * fit) / 2;
+  const worldLeft = (0 - offsetX - transform.positionX) / k + vb.minX;
+  const worldRight = (container.width - offsetX - transform.positionX) / k + vb.minX;
+  const worldTop = (0 - offsetY - transform.positionY) / k + vb.minY;
+  const worldBottom = (container.height - offsetY - transform.positionY) / k + vb.minY;
+  return makeVisibleBounds(worldLeft, worldTop, worldRight, worldBottom);
+}

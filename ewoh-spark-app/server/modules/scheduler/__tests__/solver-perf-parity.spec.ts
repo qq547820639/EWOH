@@ -60,7 +60,7 @@ function buildBenchSnapshot(
     return {
       id: `P-${String(i + 1).padStart(3, '0')}`,
       name: `人员${i + 1}`,
-      status: 'available',
+      status: 'AVAILABLE',
       healthStatus: 'normal',
       skills: hasWork ? ['work', 'skill-' + (i % 3)] : ['aux'],
       certifications: [],
@@ -82,7 +82,7 @@ function buildBenchSnapshot(
     deviceModel: 'EWOH-L1',
     batteryPct: Math.round(20 + rnd() * 80),
     online: true,
-    status: 'online',
+    status: 'AVAILABLE',
     capabilities: ['lift', 'assist'],
     sourceTs: nowMs,
     freshnessMs: 60_000,

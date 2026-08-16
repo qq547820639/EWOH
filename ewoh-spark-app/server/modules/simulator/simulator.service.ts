@@ -380,19 +380,7 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async performMainTick(now: Date): Promise<void> {
-    const telemetryRows: Array<{
-      deviceId: string;
-      ts: Date;
-      pitchDeg: number;
-      loadScore: number;
-      fatigueTrend: number;
-      batteryPct: number;
-      qualityStatus: string;
-      sourceType: string;
-      recordId: string;
-      ingestedAt: Date;
-      dataQuality: string;
-    }> = [];
+    const telemetryRows: Array<typeof ewohTelemetry.$inferInsert> = [];
     const worldStateRows: Array<{
       entityId: string;
       stateJson: Record<string, unknown>;
@@ -455,6 +443,8 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
         recordId: randomUUID(),
         ingestedAt: now,
         dataQuality: 'good',
+        // ADR-075：模拟遥测归属 = EWOH_SIMULATOR_ORG_ID（与 GUC 同源，§13 显式标记）。
+        orgId: this.simulatorOrgId(),
       });
 
       // 更新 ewoh_device（upsert）
@@ -533,7 +523,7 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
           deviceId: person.deviceId,
           eventCode: 'RESTRICTED_ZONE',
           eventType: 'safety',
-          severity: 'L3',
+          severity: 'low',
           title: `人员 ${person.entityId} 进入禁区`,
         });
       }

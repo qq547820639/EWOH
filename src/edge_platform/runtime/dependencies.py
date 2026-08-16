@@ -72,7 +72,7 @@ def build_adapter_manager(storage, bus, adapter_ports=None):
 def build_real_components(db_path, adapter_ports=None, metrics=None, models_dir=None):
     """按真实生产路径装配全部 Edge 组件。
 
-    Returns: dict with storage/bus/registry/rules/pipeline/manager.
+    Returns: dict with storage/bus/registry/rules/pipeline/manager/world_store.
     Raises: RealAssemblyError on any real-component failure.
     """
     if models_dir is None:
@@ -84,6 +84,9 @@ def build_real_components(db_path, adapter_ports=None, metrics=None, models_dir=
         rules = build_rule_engine()
         pipeline = build_inference_pipeline(storage, bus, registry, rules, metrics=metrics)
         manager = build_adapter_manager(storage, bus, adapter_ports)
+        # ADR-008 / NO-03b：world_model 进入真实装配链（契约校验的世界状态存储，
+        # 纯标准库，装配失败同真实组件语义 → RealAssemblyError）。
+        world_store = build_world_store()
     except Exception as exc:  # noqa: BLE001 - 任何真实装配失败都必须显式暴露
         raise RealAssemblyError(
             f"real edge component assembly failed: {exc!r}"
@@ -95,4 +98,12 @@ def build_real_components(db_path, adapter_ports=None, metrics=None, models_dir=
         "rules": rules,
         "pipeline": pipeline,
         "manager": manager,
+        "world_store": world_store,
     }
+
+
+def build_world_store():
+    """装配契约校验的世界状态存储（Canonical World State，ADR-008）。"""
+    from edge_platform.world_model.contract_store import ContractWorldStore
+
+    return ContractWorldStore()

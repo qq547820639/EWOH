@@ -47,12 +47,17 @@ function createDbMock(selectRows: unknown[], updateRows: unknown[]) {
 }
 
 describe('alert state machine', () => {
-  it('walks acknowledge/process/close and reopen', () => {
-    expect(nextAlertStatus('open', 'acknowledge')).toBe('acknowledged');
-    expect(nextAlertStatus('acknowledged', 'process')).toBe('processing');
-    expect(nextAlertStatus('processing', 'close')).toBe('closed');
-    expect(nextAlertStatus('closed', 'reopen')).toBe('reopened');
-    expect(nextAlertStatus('reopened', 'process')).toBe('processing');
+  it('walks acknowledge/process/close and reopen（ADR-031 角色条件）', () => {
+    expect(nextAlertStatus('open', 'acknowledge', 'dispatcher')).toBe('acknowledged');
+    expect(nextAlertStatus('acknowledged', 'process', 'workshop_lead')).toBe('processing');
+    expect(nextAlertStatus('processing', 'close', 'device_ops')).toBe('closed');
+    expect(nextAlertStatus('closed', 'reopen', 'safety_admin')).toBe('reopened');
+    expect(nextAlertStatus('reopened', 'process', 'dispatcher')).toBe('processing');
+  });
+
+  it('reopen 角色强制：非 safety_admin 拒绝', () => {
+    expect(nextAlertStatus('closed', 'reopen', 'dispatcher')).toBeNull();
+    expect(nextAlertStatus('closed', 'reopen')).toBeNull();
   });
 
   it('rejects illegal transitions', () => {

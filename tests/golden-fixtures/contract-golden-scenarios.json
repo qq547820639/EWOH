@@ -1,0 +1,4391 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Canonical Contract Golden Scenarios（总提示词 §26；ADR-006/ADR-007）。Python（tests/test_golden_contract_scenarios.py）与 TypeScript（ewoh-spark-app/shared/golden-contract-scenarios.spec.ts）消费同一份定义，场景输入/期望逐项一致；每次契约或接线变更必须重跑（已挂 make contract-golden + CI）。",
+  "scenarios": [
+    {
+      "id": "identity_mapping_conflict",
+      "domain": "identity",
+      "name": "身份映射冲突 fail-closed 与 supersede 恢复",
+      "cases": [
+        {
+          "name": "ambiguous_fails_closed",
+          "system": "mes",
+          "sourceId": "WO-CONFLICT",
+          "now": "2026-08-14T10:00:00Z",
+          "mappings": [
+            {
+              "mappingId": "map:gc1",
+              "version": 1,
+              "source": {
+                "system": "mes",
+                "id": "WO-CONFLICT"
+              },
+              "target": {
+                "entityId": "order:00000000-0000-4000-8000-0000000000a1"
+              },
+              "authority": "registration",
+              "status": "active",
+              "recordedAt": "2026-08-14T08:00:00Z",
+              "validFrom": null,
+              "validTo": null,
+              "evidenceId": null
+            },
+            {
+              "mappingId": "map:gc2",
+              "version": 1,
+              "source": {
+                "system": "mes",
+                "id": "WO-CONFLICT"
+              },
+              "target": {
+                "entityId": "order:00000000-0000-4000-8000-0000000000a2"
+              },
+              "authority": "adapter",
+              "status": "active",
+              "recordedAt": "2026-08-14T09:00:00Z",
+              "validFrom": null,
+              "validTo": null,
+              "evidenceId": null
+            }
+          ],
+          "expectError": "ambiguous_identity",
+          "expect": null
+        },
+        {
+          "name": "supersede_restores_uniqueness",
+          "system": "mes",
+          "sourceId": "WO-CONFLICT",
+          "now": "2026-08-14T10:00:00Z",
+          "mappings": [
+            {
+              "mappingId": "map:gc1",
+              "version": 1,
+              "source": {
+                "system": "mes",
+                "id": "WO-CONFLICT"
+              },
+              "target": {
+                "entityId": "order:00000000-0000-4000-8000-0000000000a1"
+              },
+              "authority": "registration",
+              "status": "superseded",
+              "recordedAt": "2026-08-14T08:00:00Z",
+              "validFrom": null,
+              "validTo": null,
+              "evidenceId": null
+            },
+            {
+              "mappingId": "map:gc2",
+              "version": 2,
+              "source": {
+                "system": "mes",
+                "id": "WO-CONFLICT"
+              },
+              "target": {
+                "entityId": "order:00000000-0000-4000-8000-0000000000a2"
+              },
+              "authority": "registration",
+              "status": "active",
+              "recordedAt": "2026-08-14T09:00:00Z",
+              "validFrom": null,
+              "validTo": null,
+              "evidenceId": null
+            }
+          ],
+          "expectError": null,
+          "expect": "order:00000000-0000-4000-8000-0000000000a2"
+        }
+      ]
+    },
+    {
+      "id": "legacy_severity_normalization",
+      "domain": "risk",
+      "name": "legacy L1-L3 严重度归一 + 未知 fail-closed",
+      "cases": [
+        {
+          "name": "L1_to_critical",
+          "input": "L1",
+          "expect": "critical",
+          "expectError": null
+        },
+        {
+          "name": "L2_to_high",
+          "input": "L2",
+          "expect": "high",
+          "expectError": null
+        },
+        {
+          "name": "L3_to_medium",
+          "input": "L3",
+          "expect": "medium",
+          "expectError": null
+        },
+        {
+          "name": "canonical_passthrough",
+          "input": "critical",
+          "expect": "critical",
+          "expectError": null
+        },
+        {
+          "name": "unknown_rejected",
+          "input": "L4",
+          "expect": null,
+          "expectError": "unknown_severity"
+        },
+        {
+          "name": "transition_reopen_allowed",
+          "from": "resolved",
+          "to": "open",
+          "allowed": true
+        },
+        {
+          "name": "transition_skip_rejected",
+          "from": "open",
+          "to": "resolved",
+          "allowed": false
+        }
+      ]
+    },
+    {
+      "id": "dirty_spatial_type_rejection",
+      "domain": "location",
+      "name": "脏空间类型/坐标在边界被拒绝（不进入 World State）",
+      "cases": [
+        {
+          "name": "unknown_kind_rejected",
+          "kind": "machine",
+          "valid": false
+        },
+        {
+          "name": "registered_kind_ok",
+          "kind": "workstation",
+          "valid": true
+        },
+        {
+          "name": "unknown_with_coords_rejected",
+          "record": {
+            "coordinateType": "UNKNOWN",
+            "x": 1
+          },
+          "expectError": "bad_coordinate"
+        },
+        {
+          "name": "wgs84_out_of_range_rejected",
+          "record": {
+            "coordinateType": "WGS84",
+            "x": 91,
+            "y": 0
+          },
+          "expectError": "bad_coordinate"
+        },
+        {
+          "name": "cartesian_valid",
+          "record": {
+            "coordinateType": "FACTORY_CARTESIAN",
+            "x": 5,
+            "y": 5,
+            "yawDeg": 90
+          },
+          "expectError": null
+        }
+      ]
+    },
+    {
+      "id": "resource_freshness_fail_closed",
+      "domain": "resource",
+      "name": "资源新鲜度 fail-closed：STALE/UNKNOWN 绝不视为可用",
+      "cases": [
+        {
+          "name": "fresh_available",
+          "status": "AVAILABLE",
+          "dataQuality": "FRESH",
+          "expect": {
+            "available": true,
+            "reason": null
+          },
+          "expectError": null
+        },
+        {
+          "name": "stale_not_available",
+          "status": "AVAILABLE",
+          "dataQuality": "STALE",
+          "expect": {
+            "available": false,
+            "reason": "stale_data"
+          },
+          "expectError": null
+        },
+        {
+          "name": "unknown_not_available",
+          "status": "AVAILABLE",
+          "dataQuality": "UNKNOWN",
+          "expect": {
+            "available": false,
+            "reason": "stale_data"
+          },
+          "expectError": null
+        },
+        {
+          "name": "offline_reasoned",
+          "status": "OFFLINE",
+          "dataQuality": "FRESH",
+          "expect": {
+            "available": false,
+            "reason": "offline"
+          },
+          "expectError": null
+        },
+        {
+          "name": "invalid_status_rejected",
+          "status": "IDLE",
+          "dataQuality": "FRESH",
+          "expect": null,
+          "expectError": "unknown_status"
+        }
+      ]
+    },
+    {
+      "id": "world_state_projection_rules",
+      "domain": "world",
+      "name": "世界状态投影规则：双时态/版本单调/模拟隔离",
+      "cases": [
+        {
+          "name": "valid_state_record",
+          "record": {
+            "stateId": "STS-G1",
+            "entityId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "entityType": "person",
+            "stateJson": {
+              "zone": "Z1"
+            },
+            "validFrom": "2026-08-14T08:00:00Z",
+            "validTo": null,
+            "sourceType": "real",
+            "confidence": 1.0,
+            "version": 1
+          },
+          "expectError": null
+        },
+        {
+          "name": "simulated_marked_explicitly",
+          "record": {
+            "stateId": "STS-G2",
+            "entityId": "exo:NY-A1-SN-0007",
+            "entityType": "exo",
+            "stateJson": {
+              "battery": 80
+            },
+            "validFrom": "2026-08-14T08:00:00Z",
+            "validTo": null,
+            "sourceType": "simulated",
+            "confidence": 0.9,
+            "version": 1
+          },
+          "expectProfile": {
+            "simulatedOnly": true,
+            "hasReal": false
+          },
+          "expectError": null
+        },
+        {
+          "name": "unknown_entity_type_rejected",
+          "record": {
+            "stateId": "STS-G3",
+            "entityId": "machine:m1",
+            "entityType": "maintenance_condition",
+            "stateJson": {},
+            "validFrom": "2026-08-14T08:00:00Z",
+            "validTo": null,
+            "sourceType": "real",
+            "confidence": 1.0,
+            "version": 1
+          },
+          "expectError": "unknown_entity_type"
+        },
+        {
+          "name": "overlapping_intervals_rejected",
+          "states": [
+            {
+              "validFrom": "2026-08-14T08:00:00Z",
+              "validTo": "2026-08-14T10:00:00Z",
+              "version": 1
+            },
+            {
+              "validFrom": "2026-08-14T09:00:00Z",
+              "validTo": null,
+              "version": 2
+            }
+          ],
+          "expectError": "overlapping_interval"
+        },
+        {
+          "name": "version_not_monotonic_rejected",
+          "states": [
+            {
+              "validFrom": "2026-08-14T08:00:00Z",
+              "validTo": null,
+              "version": 1
+            },
+            {
+              "validFrom": "2026-08-14T09:00:00Z",
+              "validTo": null,
+              "version": 3
+            }
+          ],
+          "expectError": "version_not_monotonic"
+        }
+      ]
+    },
+    {
+      "id": "event_envelope_semantics",
+      "domain": "envelope",
+      "name": "事件信封语义：时间三态/迟到标记/规范引用/幂等键",
+      "cases": [
+        {
+          "name": "valid_full_envelope",
+          "envelope": {
+            "eventId": "EVT-G1",
+            "eventType": "TaskStateChanged",
+            "schemaVersion": "1.0.0",
+            "occurredAt": "2026-08-14T08:00:00Z",
+            "observedAt": "2026-08-14T08:00:01Z",
+            "receivedAt": "2026-08-14T08:00:03Z",
+            "actor": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "subject": "task:t-42",
+            "source": "cloud:scheduler"
+          },
+          "expect": {
+            "clockDrift": false,
+            "isLate": false
+          },
+          "expectError": null
+        },
+        {
+          "name": "late_event_marked_not_dropped",
+          "envelope": {
+            "eventId": "EVT-G2",
+            "eventType": "AndonRaised",
+            "schemaVersion": "1.0.0",
+            "occurredAt": "2026-08-14T08:00:00Z",
+            "receivedAt": "2026-08-14T09:00:00Z",
+            "source": "cloud:andon"
+          },
+          "expect": {
+            "clockDrift": false,
+            "isLate": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "non_canonical_subject_rejected",
+          "envelope": {
+            "eventId": "EVT-G3",
+            "eventType": "TaskStateChanged",
+            "schemaVersion": "1.0.0",
+            "occurredAt": "2026-08-14T08:00:00Z",
+            "source": "cloud:scheduler",
+            "subject": "t42"
+          },
+          "expect": null,
+          "expectError": "bad_subject"
+        },
+        {
+          "name": "dedup_key_idempotent",
+          "envelope": {
+            "eventId": "EVT-G4",
+            "eventType": "TelemetryObserved",
+            "schemaVersion": "1.0.0",
+            "occurredAt": "2026-08-14T08:00:00Z",
+            "source": "edge:ny-exo-a1"
+          },
+          "dedupKey": [
+            "edge:ny-exo-a1",
+            "EVT-G4"
+          ],
+          "expectError": null
+        }
+      ]
+    },
+    {
+      "id": "maintenance_quality_loop",
+      "domain": "maintenance_quality",
+      "name": "维护/质量闭环：条件生命周期+逾期判定+处置必带决策（Event→Outcome 地基）",
+      "cases": [
+        {
+          "name": "condition_lifecycle_full",
+          "condition": {
+            "conditionId": "MC-G1",
+            "subjectEntityId": "machine:cnc-03",
+            "conditionType": "wear",
+            "severity": "high",
+            "status": "work_order_created",
+            "detectedAt": "2026-08-14T08:00:00Z",
+            "dueAt": "2026-08-14T09:00:00Z"
+          },
+          "path": [
+            "detected",
+            "acknowledged",
+            "work_order_created",
+            "resolved",
+            "closed"
+          ],
+          "expectValid": true,
+          "expectError": null
+        },
+        {
+          "name": "skip_work_order_rejected",
+          "path": [
+            "detected",
+            "acknowledged",
+            "resolved"
+          ],
+          "expectValid": false,
+          "expectError": null
+        },
+        {
+          "name": "overdue_detected",
+          "dueAt": "2026-08-14T07:00:00Z",
+          "now": "2026-08-14T08:00:00Z",
+          "status": "detected",
+          "expectOverdue": true,
+          "expectError": null
+        },
+        {
+          "name": "finding_disposition_required",
+          "finding": {
+            "findingId": "QF-G1",
+            "findingType": "nonconformance",
+            "severity": "critical",
+            "status": "dispositioned",
+            "links": [
+              "order:wo-2026-0814-1"
+            ],
+            "detectedAt": "2026-08-14T08:00:00Z",
+            "disposition": null
+          },
+          "expectError": "disposition_required"
+        },
+        {
+          "name": "finding_dispositioned_ok",
+          "finding": {
+            "findingId": "QF-G2",
+            "findingType": "nonconformance",
+            "severity": "critical",
+            "status": "dispositioned",
+            "links": [
+              "order:wo-2026-0814-1"
+            ],
+            "detectedAt": "2026-08-14T08:00:00Z",
+            "disposition": "rework",
+            "dispositionedAt": "2026-08-14T09:00:00Z"
+          },
+          "expectError": null
+        }
+      ]
+    },
+    {
+      "id": "workorder_loop",
+      "domain": "workorder",
+      "name": "维护/质量工单闭环契约语义",
+      "cases": [
+        {
+          "name": "valid_maintenance_workorder",
+          "record": {
+            "workOrderId": "wo:g1",
+            "workOrderType": "maintenance",
+            "origin": {
+              "kind": "maintenance_condition",
+              "id": "mc:g1"
+            },
+            "subjectEntityId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "severity": "high",
+            "status": "created"
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_rework_workorder",
+          "record": {
+            "workOrderId": "wo:g2",
+            "workOrderType": "quality_rework",
+            "origin": {
+              "kind": "quality_finding",
+              "id": "qf:g1"
+            },
+            "subjectEntityId": "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "severity": "critical",
+            "status": "scheduled",
+            "scheduledFor": "2026-08-16T10:00:00Z"
+          },
+          "expectError": null
+        },
+        {
+          "name": "full_path_valid",
+          "path": [
+            "created",
+            "scheduled",
+            "in_progress",
+            "completed",
+            "closed"
+          ],
+          "expectValid": true,
+          "expectError": null
+        },
+        {
+          "name": "skip_steps_rejected",
+          "path": [
+            "created",
+            "completed"
+          ],
+          "expectValid": false,
+          "expectError": null
+        },
+        {
+          "name": "in_progress_no_cancel",
+          "path": [
+            "created",
+            "scheduled",
+            "in_progress",
+            "cancelled"
+          ],
+          "expectValid": false,
+          "expectError": null
+        },
+        {
+          "name": "cancellation_before_start_valid",
+          "path": [
+            "created",
+            "scheduled",
+            "cancelled"
+          ],
+          "expectValid": true,
+          "expectError": null
+        },
+        {
+          "name": "completed_without_completed_at",
+          "record": {
+            "workOrderId": "wo:g3",
+            "workOrderType": "maintenance",
+            "origin": {
+              "kind": "maintenance_condition",
+              "id": "mc:g2"
+            },
+            "subjectEntityId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "severity": "high",
+            "status": "completed"
+          },
+          "expectError": "completed_at_required"
+        },
+        {
+          "name": "cancelled_without_reason",
+          "record": {
+            "workOrderId": "wo:g4",
+            "workOrderType": "maintenance",
+            "origin": {
+              "kind": "maintenance_condition",
+              "id": "mc:g3"
+            },
+            "subjectEntityId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "severity": "high",
+            "status": "cancelled"
+          },
+          "expectError": "cancelled_reason_required"
+        },
+        {
+          "name": "missing_origin_rejected",
+          "record": {
+            "workOrderId": "wo:g5",
+            "workOrderType": "inspection",
+            "subjectEntityId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "severity": "medium",
+            "status": "created"
+          },
+          "expectError": "missing_field:origin"
+        }
+      ]
+    },
+    {
+      "id": "inference_result_contract",
+      "domain": "intelligence",
+      "name": "模型推理结果元数据契约（confidence 边界 / OOD 六路 / Unknown 合法化）",
+      "cases": [
+        {
+          "name": "valid_model_inference",
+          "record": {
+            "inferenceId": "INF-G1",
+            "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "level": "L2_statistical_ml",
+            "modelId": "action-classifier",
+            "modelVersion": "v3",
+            "inputVersion": "features-v7",
+            "label": "lift",
+            "confidence": 0.87,
+            "oodIndicator": {
+              "flag": false,
+              "reasons": []
+            },
+            "dataQuality": "good",
+            "evidence": {
+              "tsStart": "2026-08-16T08:00:00Z",
+              "tsEnd": "2026-08-16T08:00:12Z",
+              "isRule": false,
+              "keyFeatures": []
+            }
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_rule_fallback",
+          "record": {
+            "inferenceId": "INF-G2",
+            "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "level": "L1_deterministic_rules",
+            "modelId": "rules",
+            "modelVersion": "rule-fallback",
+            "inputVersion": "rules-v12",
+            "label": "walk",
+            "confidence": 0.65,
+            "oodIndicator": {
+              "flag": false,
+              "reasons": []
+            },
+            "dataQuality": "degraded",
+            "evidence": {
+              "tsStart": "2026-08-16T08:01:00Z",
+              "tsEnd": "2026-08-16T08:01:12Z",
+              "isRule": true,
+              "keyFeatures": []
+            }
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_unknown_with_ood",
+          "record": {
+            "inferenceId": "INF-G3",
+            "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "level": "L2_statistical_ml",
+            "modelId": "action-classifier",
+            "modelVersion": "v3",
+            "inputVersion": "features-v7",
+            "label": "unknown",
+            "confidence": 0.31,
+            "oodIndicator": {
+              "flag": true,
+              "reasons": [
+                "low_confidence"
+              ]
+            },
+            "dataQuality": "good",
+            "evidence": {
+              "tsStart": "2026-08-16T08:00:00Z",
+              "tsEnd": "2026-08-16T08:00:12Z",
+              "isRule": false,
+              "keyFeatures": []
+            }
+          },
+          "expectError": null
+        },
+        {
+          "name": "confidence_out_of_range",
+          "record": {
+            "inferenceId": "INF-G4",
+            "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "level": "L2_statistical_ml",
+            "modelId": "action-classifier",
+            "modelVersion": "v3",
+            "inputVersion": "features-v7",
+            "label": "lift",
+            "confidence": 1.4,
+            "oodIndicator": {
+              "flag": false,
+              "reasons": []
+            },
+            "dataQuality": "good",
+            "evidence": {
+              "tsStart": "2026-08-16T08:00:00Z",
+              "tsEnd": "2026-08-16T08:00:12Z",
+              "isRule": false,
+              "keyFeatures": []
+            }
+          },
+          "expectError": "bad_confidence"
+        },
+        {
+          "name": "ood_flag_without_reason",
+          "record": {
+            "inferenceId": "INF-G5",
+            "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "level": "L2_statistical_ml",
+            "modelId": "action-classifier",
+            "modelVersion": "v3",
+            "inputVersion": "features-v7",
+            "label": "unknown",
+            "confidence": 0.31,
+            "oodIndicator": {
+              "flag": true,
+              "reasons": []
+            },
+            "dataQuality": "good",
+            "evidence": {
+              "tsStart": "2026-08-16T08:00:00Z",
+              "tsEnd": "2026-08-16T08:00:12Z",
+              "isRule": false,
+              "keyFeatures": []
+            }
+          },
+          "expectError": "ood_reason_required"
+        },
+        {
+          "name": "unknown_without_ood",
+          "record": {
+            "inferenceId": "INF-G6",
+            "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "level": "L2_statistical_ml",
+            "modelId": "action-classifier",
+            "modelVersion": "v3",
+            "inputVersion": "features-v7",
+            "label": "unknown",
+            "confidence": 0.87,
+            "oodIndicator": {
+              "flag": false,
+              "reasons": []
+            },
+            "dataQuality": "good",
+            "evidence": {
+              "tsStart": "2026-08-16T08:00:00Z",
+              "tsEnd": "2026-08-16T08:00:12Z",
+              "isRule": false,
+              "keyFeatures": []
+            }
+          },
+          "expectError": "unknown_requires_ood"
+        }
+      ]
+    },
+    {
+      "id": "reasoning_result_contract",
+      "domain": "reasoning",
+      "name": "Level 4/5 文本结果元数据契约（无标定置信度显式声明）",
+      "cases": [
+        {
+          "name": "valid_suggestion",
+          "record": {
+            "reasoningId": "RS-G1",
+            "level": "L4_industrial_reasoning",
+            "kind": "suggestion",
+            "modelId": "ark-chat",
+            "modelVersion": "doubao-pro",
+            "inputVersion": "scheduler-suggestion-v2",
+            "subjectId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "content": "建议将任务分配给具备焊接资质的人员。",
+            "ok": true,
+            "error": null,
+            "confidence": null,
+            "confidenceBasis": "uncalibrated",
+            "evidence": {
+              "generatedAt": "2026-08-16T09:00:00Z"
+            }
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_chat_no_subject",
+          "record": {
+            "reasoningId": "RS-G2",
+            "level": "L5_agentic_workflow",
+            "kind": "chat",
+            "modelId": "ark-chat",
+            "modelVersion": "doubao-pro",
+            "inputVersion": "chat-v1",
+            "subjectId": null,
+            "content": "建议将任务分配给具备焊接资质的人员。",
+            "ok": true,
+            "error": null,
+            "confidence": null,
+            "confidenceBasis": "uncalibrated",
+            "evidence": {
+              "generatedAt": "2026-08-16T09:00:00Z"
+            }
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_error_result",
+          "record": {
+            "reasoningId": "RS-G3",
+            "level": "L4_industrial_reasoning",
+            "kind": "analysis",
+            "modelId": "ark-chat",
+            "modelVersion": "doubao-pro",
+            "inputVersion": "scheduler-suggestion-v2",
+            "subjectId": null,
+            "content": "",
+            "ok": false,
+            "error": "HTTP 429: rate limited",
+            "confidence": null,
+            "confidenceBasis": "uncalibrated",
+            "evidence": {
+              "generatedAt": "2026-08-16T09:00:00Z"
+            }
+          },
+          "expectError": null
+        },
+        {
+          "name": "confidence_forbidden",
+          "record": {
+            "reasoningId": "RS-G4",
+            "level": "L4_industrial_reasoning",
+            "kind": "suggestion",
+            "modelId": "ark-chat",
+            "modelVersion": "doubao-pro",
+            "inputVersion": "scheduler-suggestion-v2",
+            "subjectId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "content": "建议将任务分配给具备焊接资质的人员。",
+            "ok": true,
+            "error": null,
+            "confidence": 0.9,
+            "confidenceBasis": "uncalibrated",
+            "evidence": {
+              "generatedAt": "2026-08-16T09:00:00Z"
+            }
+          },
+          "expectError": "confidence_forbidden"
+        },
+        {
+          "name": "ok_false_without_error",
+          "record": {
+            "reasoningId": "RS-G5",
+            "level": "L4_industrial_reasoning",
+            "kind": "analysis",
+            "modelId": "ark-chat",
+            "modelVersion": "doubao-pro",
+            "inputVersion": "scheduler-suggestion-v2",
+            "subjectId": null,
+            "content": "",
+            "ok": false,
+            "error": null,
+            "confidence": null,
+            "confidenceBasis": "uncalibrated",
+            "evidence": {
+              "generatedAt": "2026-08-16T09:00:00Z"
+            }
+          },
+          "expectError": "error_required"
+        },
+        {
+          "name": "unknown_kind",
+          "record": {
+            "reasoningId": "RS-G6",
+            "level": "L4_industrial_reasoning",
+            "kind": "poem",
+            "modelId": "ark-chat",
+            "modelVersion": "doubao-pro",
+            "inputVersion": "scheduler-suggestion-v2",
+            "subjectId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "content": "建议将任务分配给具备焊接资质的人员。",
+            "ok": true,
+            "error": null,
+            "confidence": null,
+            "confidenceBasis": "uncalibrated",
+            "evidence": {
+              "generatedAt": "2026-08-16T09:00:00Z"
+            }
+          },
+          "expectError": "unknown_kind"
+        }
+      ]
+    },
+    {
+      "id": "entity_model_contract",
+      "domain": "entity",
+      "name": "工厂实体模型契约（45 类注册表 / 双时态 / 来源显式标记 / 可追溯引用）",
+      "cases": [
+        {
+          "name": "valid_real_person",
+          "record": {
+            "entityId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "kind": "person",
+            "tenantId": "org-1",
+            "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T08:00:00Z",
+              "validTo": null
+            },
+            "status": "active",
+            "source": "real",
+            "version": 1,
+            "refs": [
+              "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "eventRefs": [
+              "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ]
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_simulated_machine",
+          "record": {
+            "entityId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "kind": "machine",
+            "tenantId": "org-1",
+            "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T08:00:00Z",
+              "validTo": "2026-08-16T09:00:00Z"
+            },
+            "status": "idle",
+            "source": "simulated",
+            "version": 1,
+            "confidence": 0.9
+          },
+          "expectError": null
+        },
+        {
+          "name": "unknown_kind",
+          "record": {
+            "entityId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "kind": "gizmo",
+            "tenantId": "org-1",
+            "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T08:00:00Z",
+              "validTo": null
+            },
+            "status": "idle",
+            "source": "real",
+            "version": 1
+          },
+          "expectError": "unknown_kind"
+        },
+        {
+          "name": "unknown_source",
+          "record": {
+            "entityId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "kind": "machine",
+            "tenantId": "org-1",
+            "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T08:00:00Z",
+              "validTo": null
+            },
+            "status": "idle",
+            "source": "guessed",
+            "version": 1
+          },
+          "expectError": "unknown_source"
+        },
+        {
+          "name": "invalid_time_order",
+          "record": {
+            "entityId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "kind": "machine",
+            "tenantId": "org-1",
+            "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T09:00:00Z",
+              "validTo": "2026-08-16T08:00:00Z"
+            },
+            "status": "idle",
+            "source": "real",
+            "version": 1
+          },
+          "expectError": "bad_time"
+        },
+        {
+          "name": "bad_ref",
+          "record": {
+            "entityId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "kind": "machine",
+            "tenantId": "org-1",
+            "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T08:00:00Z",
+              "validTo": null
+            },
+            "status": "idle",
+            "source": "real",
+            "version": 1,
+            "refs": [
+              "not-canonical"
+            ]
+          },
+          "expectError": "bad_ref"
+        },
+        {
+          "name": "kind_prefix_mismatch",
+          "record": {
+            "entityId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "kind": "station",
+            "tenantId": "org-1",
+            "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T08:00:00Z",
+              "validTo": null
+            },
+            "status": "idle",
+            "source": "real",
+            "version": 1
+          },
+          "expectError": "kind_prefix_mismatch"
+        },
+        {
+          "name": "identity_only_prefix",
+          "record": {
+            "entityId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "kind": "machine",
+            "tenantId": "org-1",
+            "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T08:00:00Z",
+              "validTo": null
+            },
+            "status": "idle",
+            "source": "real",
+            "version": 1
+          },
+          "expectError": "kind_prefix_unknown"
+        },
+        {
+          "name": "valid_exo_prefix",
+          "record": {
+            "entityId": "exo:NY-A1-SN-0007",
+            "kind": "exo",
+            "tenantId": "org-1",
+            "factoryId": "factory:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T08:00:00Z",
+              "validTo": null
+            },
+            "status": "idle",
+            "source": "real",
+            "version": 1
+          },
+          "expectError": null
+        }
+      ]
+    },
+    {
+      "id": "agent_manifest_contract",
+      "domain": "agent",
+      "name": "Agent Manifest 契约（15 角色注册表 / Autonomous Level 阶梯 / 审计强制 / 安全边界）",
+      "cases": [
+        {
+          "name": "valid_advisory_supervisor",
+          "record": {
+            "agentId": "agent:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "name": "测试 Agent",
+            "version": 1,
+            "role": "FactorySupervisor",
+            "purpose": "测试用途",
+            "allowedTools": [
+              "tool:world-snapshot"
+            ],
+            "readScope": [
+              "worldSnapshot"
+            ],
+            "writeScope": {
+              "tokens": [],
+              "commands": []
+            },
+            "approvalRequirement": {
+              "autonomousLevel": "L1",
+              "approvalRequiredFor": [
+                "propose_plan"
+              ]
+            },
+            "riskLevel": "medium",
+            "inputContract": {
+              "schemaRef": "catalog://x"
+            },
+            "outputContract": {
+              "schemaRef": "catalog://y"
+            },
+            "auditTrail": true,
+            "budget": {
+              "maxSteps": 8,
+              "maxTokens": 20000,
+              "maxDurationSec": 300
+            },
+            "timeoutSec": 60,
+            "fallback": {
+              "onFailure": "delegateHuman"
+            }
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_supervised_l2",
+          "record": {
+            "agentId": "agent:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "name": "测试 Agent",
+            "version": 1,
+            "role": "Logistics",
+            "purpose": "测试用途",
+            "allowedTools": [
+              "tool:world-snapshot"
+            ],
+            "readScope": [
+              "worldSnapshot"
+            ],
+            "writeScope": {
+              "tokens": [
+                "schedulingData"
+              ],
+              "commands": [
+                "reserve_resource"
+              ]
+            },
+            "approvalRequirement": {
+              "autonomousLevel": "L2",
+              "approvalRequiredFor": [
+                "dispatch_task"
+              ]
+            },
+            "riskLevel": "high",
+            "inputContract": {
+              "schemaRef": "catalog://x"
+            },
+            "outputContract": {
+              "schemaRef": "catalog://y"
+            },
+            "auditTrail": true,
+            "budget": {
+              "maxSteps": 8,
+              "maxTokens": 20000,
+              "maxDurationSec": 300
+            },
+            "timeoutSec": 60,
+            "fallback": {
+              "onFailure": "delegateHuman"
+            }
+          },
+          "expectError": null
+        },
+        {
+          "name": "audit_trail_false",
+          "record": {
+            "agentId": "agent:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "name": "测试 Agent",
+            "version": 1,
+            "role": "FactorySupervisor",
+            "purpose": "测试用途",
+            "allowedTools": [
+              "tool:world-snapshot"
+            ],
+            "readScope": [
+              "worldSnapshot"
+            ],
+            "writeScope": {
+              "tokens": [],
+              "commands": []
+            },
+            "approvalRequirement": {
+              "autonomousLevel": "L1",
+              "approvalRequiredFor": [
+                "propose_plan"
+              ]
+            },
+            "riskLevel": "medium",
+            "inputContract": {
+              "schemaRef": "catalog://x"
+            },
+            "outputContract": {
+              "schemaRef": "catalog://y"
+            },
+            "auditTrail": false,
+            "budget": {
+              "maxSteps": 8,
+              "maxTokens": 20000,
+              "maxDurationSec": 300
+            },
+            "timeoutSec": 60,
+            "fallback": {
+              "onFailure": "delegateHuman"
+            }
+          },
+          "expectError": "audit_required"
+        },
+        {
+          "name": "l2_missing_approval",
+          "record": {
+            "agentId": "agent:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "name": "测试 Agent",
+            "version": 1,
+            "role": "FactorySupervisor",
+            "purpose": "测试用途",
+            "allowedTools": [
+              "tool:world-snapshot"
+            ],
+            "readScope": [
+              "worldSnapshot"
+            ],
+            "writeScope": {
+              "tokens": [],
+              "commands": []
+            },
+            "approvalRequirement": {
+              "autonomousLevel": "L2",
+              "approvalRequiredFor": []
+            },
+            "riskLevel": "medium",
+            "inputContract": {
+              "schemaRef": "catalog://x"
+            },
+            "outputContract": {
+              "schemaRef": "catalog://y"
+            },
+            "auditTrail": true,
+            "budget": {
+              "maxSteps": 8,
+              "maxTokens": 20000,
+              "maxDurationSec": 300
+            },
+            "timeoutSec": 60,
+            "fallback": {
+              "onFailure": "delegateHuman"
+            }
+          },
+          "expectError": "approval_required"
+        },
+        {
+          "name": "critical_l2_conflict",
+          "record": {
+            "agentId": "agent:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "name": "测试 Agent",
+            "version": 1,
+            "role": "FactorySupervisor",
+            "purpose": "测试用途",
+            "allowedTools": [
+              "tool:world-snapshot"
+            ],
+            "readScope": [
+              "worldSnapshot"
+            ],
+            "writeScope": {
+              "tokens": [],
+              "commands": []
+            },
+            "approvalRequirement": {
+              "autonomousLevel": "L2",
+              "approvalRequiredFor": [
+                "dispatch_task"
+              ]
+            },
+            "riskLevel": "critical",
+            "inputContract": {
+              "schemaRef": "catalog://x"
+            },
+            "outputContract": {
+              "schemaRef": "catalog://y"
+            },
+            "auditTrail": true,
+            "budget": {
+              "maxSteps": 8,
+              "maxTokens": 20000,
+              "maxDurationSec": 300
+            },
+            "timeoutSec": 60,
+            "fallback": {
+              "onFailure": "delegateHuman"
+            }
+          },
+          "expectError": "level_risk_conflict"
+        },
+        {
+          "name": "safety_write_forbidden",
+          "record": {
+            "agentId": "agent:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "name": "测试 Agent",
+            "version": 1,
+            "role": "Safety",
+            "purpose": "测试用途",
+            "allowedTools": [
+              "tool:world-snapshot"
+            ],
+            "readScope": [
+              "worldSnapshot"
+            ],
+            "writeScope": {
+              "tokens": [
+                "incidentData"
+              ],
+              "commands": []
+            },
+            "approvalRequirement": {
+              "autonomousLevel": "L1",
+              "approvalRequiredFor": [
+                "propose_plan"
+              ]
+            },
+            "riskLevel": "critical",
+            "inputContract": {
+              "schemaRef": "catalog://x"
+            },
+            "outputContract": {
+              "schemaRef": "catalog://y"
+            },
+            "auditTrail": true,
+            "budget": {
+              "maxSteps": 8,
+              "maxTokens": 20000,
+              "maxDurationSec": 300
+            },
+            "timeoutSec": 60,
+            "fallback": {
+              "onFailure": "delegateHuman"
+            }
+          },
+          "expectError": "safety_role_write_forbidden"
+        },
+        {
+          "name": "unknown_role",
+          "record": {
+            "agentId": "agent:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "name": "测试 Agent",
+            "version": 1,
+            "role": "Wizard",
+            "purpose": "测试用途",
+            "allowedTools": [
+              "tool:world-snapshot"
+            ],
+            "readScope": [
+              "worldSnapshot"
+            ],
+            "writeScope": {
+              "tokens": [],
+              "commands": []
+            },
+            "approvalRequirement": {
+              "autonomousLevel": "L1",
+              "approvalRequiredFor": [
+                "propose_plan"
+              ]
+            },
+            "riskLevel": "medium",
+            "inputContract": {
+              "schemaRef": "catalog://x"
+            },
+            "outputContract": {
+              "schemaRef": "catalog://y"
+            },
+            "auditTrail": true,
+            "budget": {
+              "maxSteps": 8,
+              "maxTokens": 20000,
+              "maxDurationSec": 300
+            },
+            "timeoutSec": 60,
+            "fallback": {
+              "onFailure": "delegateHuman"
+            }
+          },
+          "expectError": "unknown_role"
+        },
+        {
+          "name": "bad_tool",
+          "record": {
+            "agentId": "agent:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "name": "测试 Agent",
+            "version": 1,
+            "role": "FactorySupervisor",
+            "purpose": "测试用途",
+            "allowedTools": [
+              "not-canonical"
+            ],
+            "readScope": [
+              "worldSnapshot"
+            ],
+            "writeScope": {
+              "tokens": [],
+              "commands": []
+            },
+            "approvalRequirement": {
+              "autonomousLevel": "L1",
+              "approvalRequiredFor": [
+                "propose_plan"
+              ]
+            },
+            "riskLevel": "medium",
+            "inputContract": {
+              "schemaRef": "catalog://x"
+            },
+            "outputContract": {
+              "schemaRef": "catalog://y"
+            },
+            "auditTrail": true,
+            "budget": {
+              "maxSteps": 8,
+              "maxTokens": 20000,
+              "maxDurationSec": 300
+            },
+            "timeoutSec": 60,
+            "fallback": {
+              "onFailure": "delegateHuman"
+            }
+          },
+          "expectError": "bad_tool"
+        }
+      ]
+    },
+    {
+      "id": "agent_task_contract",
+      "domain": "agent_task",
+      "name": "Agent Task 编排契约（3 kind/依赖 DAG/状态机/时间语义，ADR-017）",
+      "cases": [
+        {
+          "name": "valid_analysis",
+          "record": {
+            "taskId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "name": "测试任务",
+            "version": 1,
+            "kind": "analysis",
+            "assignedRole": "FactorySupervisor",
+            "dependencies": [],
+            "inputContract": {
+              "schemaRef": "catalog://x"
+            },
+            "outputContract": {
+              "schemaRef": "catalog://y"
+            },
+            "priority": "medium",
+            "createdAt": "2026-08-16T08:00:00Z",
+            "budget": {
+              "maxSteps": 5,
+              "maxTokens": 10000,
+              "maxDurationSec": 300
+            },
+            "status": "created",
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_execution_with_deps",
+          "record": {
+            "taskId": "task:5c1b2a3d-1111-4222-8333-9a8b7c6d5e4f",
+            "name": "测试任务",
+            "version": 1,
+            "kind": "execution",
+            "assignedRole": "Logistics",
+            "dependencies": [
+              "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "inputContract": {
+              "schemaRef": "catalog://x"
+            },
+            "outputContract": {
+              "schemaRef": "catalog://y"
+            },
+            "priority": "high",
+            "createdAt": "2026-08-16T08:00:00Z",
+            "budget": {
+              "maxSteps": 5,
+              "maxTokens": 10000,
+              "maxDurationSec": 300
+            },
+            "status": "created",
+            "auditTrail": true,
+            "dueTime": "2026-08-16T18:00:00Z"
+          },
+          "expectError": null
+        },
+        {
+          "name": "self_dependency",
+          "record": {
+            "taskId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "name": "测试任务",
+            "version": 1,
+            "kind": "analysis",
+            "assignedRole": "FactorySupervisor",
+            "dependencies": [
+              "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "inputContract": {
+              "schemaRef": "catalog://x"
+            },
+            "outputContract": {
+              "schemaRef": "catalog://y"
+            },
+            "priority": "medium",
+            "createdAt": "2026-08-16T08:00:00Z",
+            "budget": {
+              "maxSteps": 5,
+              "maxTokens": 10000,
+              "maxDurationSec": 300
+            },
+            "status": "created",
+            "auditTrail": true
+          },
+          "expectError": "self_dependency"
+        },
+        {
+          "name": "unknown_role",
+          "record": {
+            "taskId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "name": "测试任务",
+            "version": 1,
+            "kind": "analysis",
+            "assignedRole": "Wizard",
+            "dependencies": [],
+            "inputContract": {
+              "schemaRef": "catalog://x"
+            },
+            "outputContract": {
+              "schemaRef": "catalog://y"
+            },
+            "priority": "medium",
+            "createdAt": "2026-08-16T08:00:00Z",
+            "budget": {
+              "maxSteps": 5,
+              "maxTokens": 10000,
+              "maxDurationSec": 300
+            },
+            "status": "created",
+            "auditTrail": true
+          },
+          "expectError": "unknown_role"
+        },
+        {
+          "name": "bad_priority",
+          "record": {
+            "taskId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "name": "测试任务",
+            "version": 1,
+            "kind": "analysis",
+            "assignedRole": "FactorySupervisor",
+            "dependencies": [],
+            "inputContract": {
+              "schemaRef": "catalog://x"
+            },
+            "outputContract": {
+              "schemaRef": "catalog://y"
+            },
+            "priority": "urgent-now",
+            "createdAt": "2026-08-16T08:00:00Z",
+            "budget": {
+              "maxSteps": 5,
+              "maxTokens": 10000,
+              "maxDurationSec": 300
+            },
+            "status": "created",
+            "auditTrail": true
+          },
+          "expectError": "bad_priority"
+        },
+        {
+          "name": "bad_status",
+          "record": {
+            "taskId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "name": "测试任务",
+            "version": 1,
+            "kind": "analysis",
+            "assignedRole": "FactorySupervisor",
+            "dependencies": [],
+            "inputContract": {
+              "schemaRef": "catalog://x"
+            },
+            "outputContract": {
+              "schemaRef": "catalog://y"
+            },
+            "priority": "medium",
+            "createdAt": "2026-08-16T08:00:00Z",
+            "budget": {
+              "maxSteps": 5,
+              "maxTokens": 10000,
+              "maxDurationSec": 300
+            },
+            "status": "teleported",
+            "auditTrail": true
+          },
+          "expectError": "bad_status"
+        },
+        {
+          "name": "audit_false",
+          "record": {
+            "taskId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "name": "测试任务",
+            "version": 1,
+            "kind": "analysis",
+            "assignedRole": "FactorySupervisor",
+            "dependencies": [],
+            "inputContract": {
+              "schemaRef": "catalog://x"
+            },
+            "outputContract": {
+              "schemaRef": "catalog://y"
+            },
+            "priority": "medium",
+            "createdAt": "2026-08-16T08:00:00Z",
+            "budget": {
+              "maxSteps": 5,
+              "maxTokens": 10000,
+              "maxDurationSec": 300
+            },
+            "status": "created",
+            "auditTrail": false
+          },
+          "expectError": "audit_required"
+        },
+        {
+          "name": "bad_budget",
+          "record": {
+            "taskId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "name": "测试任务",
+            "version": 1,
+            "kind": "analysis",
+            "assignedRole": "FactorySupervisor",
+            "dependencies": [],
+            "inputContract": {
+              "schemaRef": "catalog://x"
+            },
+            "outputContract": {
+              "schemaRef": "catalog://y"
+            },
+            "priority": "medium",
+            "createdAt": "2026-08-16T08:00:00Z",
+            "budget": {
+              "maxSteps": 0,
+              "maxTokens": 1,
+              "maxDurationSec": 1
+            },
+            "status": "created",
+            "auditTrail": true
+          },
+          "expectError": "bad_budget"
+        }
+      ]
+    },
+    {
+      "id": "knowledge_entry_contract",
+      "domain": "knowledge",
+      "name": "知识条目契约（五层 scope 隔离 / 证据链 / provenance 声明，ADR-018）",
+      "cases": [
+        {
+          "name": "valid_factory_incident",
+          "record": {
+            "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "kind": "incident",
+            "scope": "factory",
+            "tenantId": "org-1",
+            "title": "工位 A 线边缺料处置记录",
+            "summary": "线边缺料导致停线的处置过程与根因",
+            "body": "缺料根因为 AGV 调度拥塞。",
+            "sourceEvidenceIds": [
+              "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "relatedEntityIds": [
+              "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "tags": [
+              "缺料"
+            ],
+            "version": 1,
+            "status": "verified",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T08:00:00Z",
+              "validTo": null
+            },
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_global_failure_pattern",
+          "record": {
+            "knowledgeId": "knowledge:5c1b2a3d-1111-4222-8333-9a8b7c6d5e4f",
+            "kind": "failure_pattern",
+            "scope": "global",
+            "tenantId": null,
+            "title": "工位 A 线边缺料处置记录",
+            "summary": "线边缺料导致停线的处置过程与根因",
+            "body": "缺料根因为 AGV 调度拥塞。",
+            "sourceEvidenceIds": [
+              "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "relatedEntityIds": [
+              "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "tags": [
+              "缺料"
+            ],
+            "version": 1,
+            "status": "verified",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T08:00:00Z",
+              "validTo": null
+            },
+            "auditTrail": true,
+            "provenance": {
+              "trainingDataSources": [
+                "anonymized-aggregates-2026H1"
+              ],
+              "anonymizationPolicy": "k-anonymity>=5",
+              "dataAuthorization": "opt-in-2026-01",
+              "modelVersion": "pattern-v2"
+            }
+          },
+          "expectError": null
+        },
+        {
+          "name": "missing_tenant_for_factory",
+          "record": {
+            "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "kind": "incident",
+            "scope": "factory",
+            "tenantId": null,
+            "title": "工位 A 线边缺料处置记录",
+            "summary": "线边缺料导致停线的处置过程与根因",
+            "body": "缺料根因为 AGV 调度拥塞。",
+            "sourceEvidenceIds": [
+              "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "relatedEntityIds": [
+              "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "tags": [
+              "缺料"
+            ],
+            "version": 1,
+            "status": "verified",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T08:00:00Z",
+              "validTo": null
+            },
+            "auditTrail": true
+          },
+          "expectError": "tenant_required"
+        },
+        {
+          "name": "tenant_forbidden_for_global",
+          "record": {
+            "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "kind": "incident",
+            "scope": "global",
+            "tenantId": "org-1",
+            "title": "工位 A 线边缺料处置记录",
+            "summary": "线边缺料导致停线的处置过程与根因",
+            "body": "缺料根因为 AGV 调度拥塞。",
+            "sourceEvidenceIds": [
+              "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "relatedEntityIds": [
+              "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "tags": [
+              "缺料"
+            ],
+            "version": 1,
+            "status": "verified",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T08:00:00Z",
+              "validTo": null
+            },
+            "auditTrail": true,
+            "provenance": {
+              "trainingDataSources": [
+                "a"
+              ],
+              "anonymizationPolicy": "p",
+              "dataAuthorization": "d",
+              "modelVersion": "v1"
+            }
+          },
+          "expectError": "tenant_forbidden"
+        },
+        {
+          "name": "provenance_missing_for_global",
+          "record": {
+            "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "kind": "incident",
+            "scope": "global",
+            "tenantId": null,
+            "title": "工位 A 线边缺料处置记录",
+            "summary": "线边缺料导致停线的处置过程与根因",
+            "body": "缺料根因为 AGV 调度拥塞。",
+            "sourceEvidenceIds": [
+              "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "relatedEntityIds": [
+              "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "tags": [
+              "缺料"
+            ],
+            "version": 1,
+            "status": "verified",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T08:00:00Z",
+              "validTo": null
+            },
+            "auditTrail": true
+          },
+          "expectError": "provenance_required"
+        },
+        {
+          "name": "provenance_forbidden_for_private",
+          "record": {
+            "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "kind": "incident",
+            "scope": "private_operational",
+            "tenantId": "org-1",
+            "title": "工位 A 线边缺料处置记录",
+            "summary": "线边缺料导致停线的处置过程与根因",
+            "body": "缺料根因为 AGV 调度拥塞。",
+            "sourceEvidenceIds": [
+              "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "relatedEntityIds": [
+              "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "tags": [
+              "缺料"
+            ],
+            "version": 1,
+            "status": "verified",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T08:00:00Z",
+              "validTo": null
+            },
+            "auditTrail": true,
+            "provenance": {
+              "trainingDataSources": [
+                "a"
+              ],
+              "anonymizationPolicy": "p",
+              "dataAuthorization": "d",
+              "modelVersion": "v1"
+            }
+          },
+          "expectError": "provenance_forbidden"
+        },
+        {
+          "name": "empty_evidence",
+          "record": {
+            "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "kind": "incident",
+            "scope": "factory",
+            "tenantId": "org-1",
+            "title": "工位 A 线边缺料处置记录",
+            "summary": "线边缺料导致停线的处置过程与根因",
+            "body": "缺料根因为 AGV 调度拥塞。",
+            "sourceEvidenceIds": [],
+            "relatedEntityIds": [
+              "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "tags": [
+              "缺料"
+            ],
+            "version": 1,
+            "status": "verified",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T08:00:00Z",
+              "validTo": null
+            },
+            "auditTrail": true
+          },
+          "expectError": "empty_evidence"
+        },
+        {
+          "name": "unknown_scope",
+          "record": {
+            "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "kind": "incident",
+            "scope": "galactic",
+            "tenantId": "org-1",
+            "title": "工位 A 线边缺料处置记录",
+            "summary": "线边缺料导致停线的处置过程与根因",
+            "body": "缺料根因为 AGV 调度拥塞。",
+            "sourceEvidenceIds": [
+              "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "relatedEntityIds": [
+              "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+            ],
+            "tags": [
+              "缺料"
+            ],
+            "version": 1,
+            "status": "verified",
+            "timeSemantics": {
+              "validFrom": "2026-08-16T08:00:00Z",
+              "validTo": null
+            },
+            "auditTrail": true
+          },
+          "expectError": "unknown_scope"
+        }
+      ]
+    },
+    {
+      "id": "reasoning_trace_contract",
+      "domain": "reasoning_trace",
+      "name": "工业推理轨迹契约（Level 4：封闭规则注册表 / 前提证据链 / 确定性置信度，ADR-020）",
+      "cases": [
+        {
+          "name": "valid_worker_overload",
+          "record": {
+            "traceId": "rt-g1",
+            "engineVersion": "1.0.0",
+            "factsRef": {
+              "snapshotVersion": 3,
+              "eventIds": [
+                "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ]
+            },
+            "conclusions": [
+              {
+                "conclusionId": "decision:rt-g1-worker-overload",
+                "ruleId": "rule:worker-overload",
+                "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "severity": "high",
+                "confidence": 1,
+                "confidenceBasis": "deterministic",
+                "premises": [
+                  "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ],
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ],
+                "explanation": "人员 person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11 负荷 0.9，疲劳 0.8，工效风险 0.3——建议轮换或减负（人工复核）"
+              }
+            ],
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_empty_conclusions",
+          "record": {
+            "traceId": "rt-g2",
+            "engineVersion": "1.0.0",
+            "factsRef": {
+              "snapshotVersion": 0,
+              "eventIds": []
+            },
+            "conclusions": [],
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "unknown_rule",
+          "record": {
+            "traceId": "rt-g3",
+            "engineVersion": "1.0.0",
+            "factsRef": {
+              "snapshotVersion": 0,
+              "eventIds": []
+            },
+            "conclusions": [
+              {
+                "conclusionId": "decision:rt-g3-teleport",
+                "ruleId": "rule:teleport",
+                "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "severity": "high",
+                "confidence": 1,
+                "confidenceBasis": "deterministic",
+                "premises": [
+                  "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ],
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ],
+                "explanation": "x"
+              }
+            ],
+            "auditTrail": true
+          },
+          "expectError": "unknown_rule"
+        },
+        {
+          "name": "bad_conclusion_identity",
+          "record": {
+            "traceId": "rt-g4",
+            "engineVersion": "1.0.0",
+            "factsRef": {
+              "snapshotVersion": 0,
+              "eventIds": []
+            },
+            "conclusions": [
+              {
+                "conclusionId": "not-an-id",
+                "ruleId": "rule:worker-overload",
+                "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "severity": "high",
+                "confidence": 1,
+                "confidenceBasis": "deterministic",
+                "premises": [
+                  "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ],
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ],
+                "explanation": "x"
+              }
+            ],
+            "auditTrail": true
+          },
+          "expectError": "bad_conclusion_id"
+        },
+        {
+          "name": "empty_premises",
+          "record": {
+            "traceId": "rt-g5",
+            "engineVersion": "1.0.0",
+            "factsRef": {
+              "snapshotVersion": 0,
+              "eventIds": []
+            },
+            "conclusions": [
+              {
+                "conclusionId": "decision:rt-g5-worker-overload",
+                "ruleId": "rule:worker-overload",
+                "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "severity": "high",
+                "confidence": 1,
+                "confidenceBasis": "deterministic",
+                "premises": [],
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ],
+                "explanation": "x"
+              }
+            ],
+            "auditTrail": true
+          },
+          "expectError": "empty_premises"
+        },
+        {
+          "name": "empty_evidence",
+          "record": {
+            "traceId": "rt-g6",
+            "engineVersion": "1.0.0",
+            "factsRef": {
+              "snapshotVersion": 0,
+              "eventIds": []
+            },
+            "conclusions": [
+              {
+                "conclusionId": "decision:rt-g6-worker-overload",
+                "ruleId": "rule:worker-overload",
+                "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "severity": "high",
+                "confidence": 1,
+                "confidenceBasis": "deterministic",
+                "premises": [
+                  "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ],
+                "evidenceIds": [],
+                "explanation": "x"
+              }
+            ],
+            "auditTrail": true
+          },
+          "expectError": "empty_evidence"
+        },
+        {
+          "name": "confidence_out_of_range",
+          "record": {
+            "traceId": "rt-g7",
+            "engineVersion": "1.0.0",
+            "factsRef": {
+              "snapshotVersion": 0,
+              "eventIds": []
+            },
+            "conclusions": [
+              {
+                "conclusionId": "decision:rt-g7-worker-overload",
+                "ruleId": "rule:worker-overload",
+                "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "severity": "high",
+                "confidence": 0.5,
+                "confidenceBasis": "deterministic",
+                "premises": [
+                  "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ],
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ],
+                "explanation": "x"
+              }
+            ],
+            "auditTrail": true
+          },
+          "expectError": "bad_confidence"
+        },
+        {
+          "name": "audit_missing",
+          "record": {
+            "traceId": "rt-g8",
+            "engineVersion": "1.0.0",
+            "factsRef": {
+              "snapshotVersion": 0,
+              "eventIds": []
+            },
+            "conclusions": [],
+            "auditTrail": false
+          },
+          "expectError": "audit_required"
+        },
+        {
+          "name": "execute_six_rules",
+          "input": {
+            "traceId": "rt-exec-1",
+            "facts": [
+              {
+                "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "kind": "person",
+                "values": {
+                  "workload": 0.9,
+                  "fatigue": 0.8,
+                  "ergonomicRisk": 0.3
+                },
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ]
+              },
+              {
+                "subjectId": "exo:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "kind": "exo",
+                "values": {
+                  "batteryPct": 12
+                },
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ]
+              },
+              {
+                "subjectId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "kind": "machine",
+                "values": {
+                  "vibrationExceeded": true
+                },
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ]
+              },
+              {
+                "subjectId": "material:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "kind": "material",
+                "values": {
+                  "inventory": 5,
+                  "minThreshold": 10
+                },
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ]
+              },
+              {
+                "subjectId": "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "kind": "station",
+                "values": {
+                  "qualityBlocked": true
+                },
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ]
+              },
+              {
+                "subjectId": "alert:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "kind": "alert",
+                "values": {
+                  "andonRaised": true,
+                  "unacknowledgedMinutes": 40
+                },
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ]
+              }
+            ]
+          },
+          "expect": [
+            {
+              "conclusionId": "decision:rt-exec-1-worker-overload",
+              "ruleId": "rule:worker-overload",
+              "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+              "severity": "high",
+              "confidence": 1,
+              "confidenceBasis": "deterministic",
+              "premises": [
+                "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "evidenceIds": [
+                "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "explanation": "人员 person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11 负荷 0.9，疲劳 0.8，工效风险 0.3——建议轮换或减负（人工复核）"
+            },
+            {
+              "conclusionId": "decision:rt-exec-1-exo-low-battery",
+              "ruleId": "rule:exo-low-battery",
+              "subjectId": "exo:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+              "severity": "high",
+              "confidence": 1,
+              "confidenceBasis": "deterministic",
+              "premises": [
+                "exo:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "evidenceIds": [
+                "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "explanation": "外骨骼 exo:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11 电量 12%——建议换电或下线充电"
+            },
+            {
+              "conclusionId": "decision:rt-exec-1-machine-vibration-risk",
+              "ruleId": "rule:machine-vibration-risk",
+              "subjectId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+              "severity": "critical",
+              "confidence": 1,
+              "confidenceBasis": "deterministic",
+              "premises": [
+                "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "evidenceIds": [
+                "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "explanation": "设备 machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11 振动阈值超限——建议停机检查（人工复核，勿自动处置）"
+            },
+            {
+              "conclusionId": "decision:rt-exec-1-material-shortage",
+              "ruleId": "rule:material-shortage",
+              "subjectId": "material:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+              "severity": "high",
+              "confidence": 1,
+              "confidenceBasis": "deterministic",
+              "premises": [
+                "material:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "evidenceIds": [
+                "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "explanation": "物料 material:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11 库存 5 低于安全阈值 10——建议补料"
+            },
+            {
+              "conclusionId": "decision:rt-exec-1-station-quality-blocked",
+              "ruleId": "rule:station-quality-blocked",
+              "subjectId": "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+              "severity": "critical",
+              "confidence": 1,
+              "confidenceBasis": "deterministic",
+              "premises": [
+                "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "evidenceIds": [
+                "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "explanation": "工位 station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11 存在活跃质量封锁——禁止派工（人审解除）"
+            },
+            {
+              "conclusionId": "decision:rt-exec-1-andon-escalation",
+              "ruleId": "rule:andon-escalation",
+              "subjectId": "alert:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+              "severity": "high",
+              "confidence": 1,
+              "confidenceBasis": "deterministic",
+              "premises": [
+                "alert:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "evidenceIds": [
+                "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "explanation": "安灯 alert:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11 未确认 40 分钟——升级值班长"
+            }
+          ]
+        },
+        {
+          "name": "execute_below_thresholds_no_trigger",
+          "input": {
+            "traceId": "rt-exec-2",
+            "facts": [
+              {
+                "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "kind": "person",
+                "values": {
+                  "workload": 0.5,
+                  "fatigue": 0.2,
+                  "ergonomicRisk": 0.1
+                },
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ]
+              },
+              {
+                "subjectId": "exo:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "kind": "exo",
+                "values": {
+                  "batteryPct": 88
+                },
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ]
+              },
+              {
+                "subjectId": "alert:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "kind": "alert",
+                "values": {
+                  "andonRaised": true,
+                  "unacknowledgedMinutes": 5
+                },
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ]
+              }
+            ]
+          },
+          "expect": []
+        },
+        {
+          "name": "execute_worker_overload_only",
+          "input": {
+            "traceId": "rt-exec-3",
+            "facts": [
+              {
+                "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "kind": "person",
+                "values": {
+                  "workload": 0.85,
+                  "fatigue": 0.75,
+                  "ergonomicRisk": 0.2
+                },
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ]
+              }
+            ]
+          },
+          "expect": [
+            {
+              "conclusionId": "decision:rt-exec-3-worker-overload",
+              "ruleId": "rule:worker-overload",
+              "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+              "severity": "high",
+              "confidence": 1,
+              "confidenceBasis": "deterministic",
+              "premises": [
+                "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "evidenceIds": [
+                "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "explanation": "人员 person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11 负荷 0.85，疲劳 0.75，工效风险 0.2——建议轮换或减负（人工复核）"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "learning_evaluation_contract",
+      "domain": "learning",
+      "name": "学习评估契约（七项指标封闭注册表 / null 语义 / period 契约，ADR-021）",
+      "cases": [
+        {
+          "name": "valid_full_metrics",
+          "record": {
+            "evalId": "le:periodic:2026-08-16T00:00:00Z",
+            "orgId": "org-1",
+            "evaluationType": "periodic",
+            "periodStart": "2026-08-16T00:00:00Z",
+            "periodEnd": "2026-08-16T08:00:00Z",
+            "engineVersion": "1.0.0",
+            "metrics": {
+              "recommendationAcceptanceRate": 0.75,
+              "planSuccessRate": 0.9,
+              "taskDelayP95Ms": 45000,
+              "riskOutcomeRate": 0.8,
+              "humanOverrideRate": 0.05,
+              "modelAccuracy": null,
+              "schedulerQualityRate": 0.12
+            },
+            "basis": [
+              "ewoh_ai_suggestion.plan_content（A2→A3 接受率）",
+              "KpiService delivery（completion/lateness，真实聚合复用）",
+              "ewoh_event severity/status（L1-L2 结局）",
+              "ewoh_scheduling_feedback override_count",
+              "modelAccuracy=unknown（台账无 outcome 标注，§10）",
+              "KpiService solver.heuristicFallbackRate"
+            ],
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "missing_metric_key",
+          "record": {
+            "evalId": "le:periodic:2026-08-16T00:00:00Z",
+            "orgId": "org-1",
+            "evaluationType": "periodic",
+            "periodStart": "2026-08-16T00:00:00Z",
+            "periodEnd": "2026-08-16T08:00:00Z",
+            "engineVersion": "1.0.0",
+            "metrics": {
+              "recommendationAcceptanceRate": 0.75,
+              "planSuccessRate": 0.9,
+              "taskDelayP95Ms": 45000,
+              "riskOutcomeRate": 0.8,
+              "humanOverrideRate": 0.05,
+              "schedulerQualityRate": 0.12
+            },
+            "basis": [
+              "x"
+            ],
+            "auditTrail": true
+          },
+          "expectError": "metric_missing"
+        },
+        {
+          "name": "unknown_metric_key",
+          "record": {
+            "evalId": "le:periodic:2026-08-16T00:00:00Z",
+            "orgId": "org-1",
+            "evaluationType": "periodic",
+            "periodStart": "2026-08-16T00:00:00Z",
+            "periodEnd": "2026-08-16T08:00:00Z",
+            "engineVersion": "1.0.0",
+            "metrics": {
+              "recommendationAcceptanceRate": 0.75,
+              "planSuccessRate": 0.9,
+              "taskDelayP95Ms": 45000,
+              "riskOutcomeRate": 0.8,
+              "humanOverrideRate": 0.05,
+              "modelAccuracy": null,
+              "schedulerQualityRate": 0.12,
+              "teleportRate": 0.99
+            },
+            "basis": [
+              "x"
+            ],
+            "auditTrail": true
+          },
+          "expectError": "unknown_metric"
+        },
+        {
+          "name": "bad_period_order",
+          "record": {
+            "evalId": "le:periodic:2026-08-16T00:00:00Z",
+            "orgId": "org-1",
+            "evaluationType": "periodic",
+            "periodStart": "2026-08-16T08:00:00Z",
+            "periodEnd": "2026-08-16T00:00:00Z",
+            "engineVersion": "1.0.0",
+            "metrics": {
+              "recommendationAcceptanceRate": null,
+              "planSuccessRate": null,
+              "taskDelayP95Ms": null,
+              "riskOutcomeRate": null,
+              "humanOverrideRate": null,
+              "modelAccuracy": null,
+              "schedulerQualityRate": null
+            },
+            "basis": [
+              "x"
+            ],
+            "auditTrail": true
+          },
+          "expectError": "bad_period"
+        },
+        {
+          "name": "empty_basis",
+          "record": {
+            "evalId": "le:periodic:2026-08-16T00:00:00Z",
+            "orgId": "org-1",
+            "evaluationType": "periodic",
+            "periodStart": "2026-08-16T00:00:00Z",
+            "periodEnd": "2026-08-16T08:00:00Z",
+            "engineVersion": "1.0.0",
+            "metrics": {
+              "recommendationAcceptanceRate": null,
+              "planSuccessRate": null,
+              "taskDelayP95Ms": null,
+              "riskOutcomeRate": null,
+              "humanOverrideRate": null,
+              "modelAccuracy": null,
+              "schedulerQualityRate": null
+            },
+            "basis": [],
+            "auditTrail": true
+          },
+          "expectError": "basis_required"
+        },
+        {
+          "name": "audit_missing",
+          "record": {
+            "evalId": "le:periodic:2026-08-16T00:00:00Z",
+            "orgId": "org-1",
+            "evaluationType": "periodic",
+            "periodStart": "2026-08-16T00:00:00Z",
+            "periodEnd": "2026-08-16T08:00:00Z",
+            "engineVersion": "1.0.0",
+            "metrics": {
+              "recommendationAcceptanceRate": null,
+              "planSuccessRate": null,
+              "taskDelayP95Ms": null,
+              "riskOutcomeRate": null,
+              "humanOverrideRate": null,
+              "modelAccuracy": null,
+              "schedulerQualityRate": null
+            },
+            "basis": [
+              "x"
+            ],
+            "auditTrail": false
+          },
+          "expectError": "audit_required"
+        }
+      ]
+    },
+    {
+      "id": "metrics_registry_contract",
+      "domain": "metrics",
+      "name": "指标注册表契约（封闭注册表 / 类型一致 / 标签注册 / histogram le，ADR-023）",
+      "cases": [
+        {
+          "name": "valid_counter",
+          "record": {
+            "metricName": "agent_command_executed_total",
+            "metricType": "counter",
+            "value": 3,
+            "labels": {
+              "role": "Knowledge",
+              "command": "register_knowledge"
+            }
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_gauge",
+          "record": {
+            "metricName": "scheduler_feasible_ratio",
+            "metricType": "gauge",
+            "value": 1,
+            "labels": {}
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_histogram_le",
+          "record": {
+            "metricName": "scheduler_run_duration_ms",
+            "metricType": "histogram",
+            "value": 4,
+            "labels": {
+              "le": "500"
+            }
+          },
+          "expectError": null
+        },
+        {
+          "name": "unknown_metric",
+          "record": {
+            "metricName": "teleport_gauge",
+            "metricType": "gauge",
+            "value": 1,
+            "labels": {}
+          },
+          "expectError": "unknown_metric"
+        },
+        {
+          "name": "type_mismatch",
+          "record": {
+            "metricName": "agent_command_executed_total",
+            "metricType": "gauge",
+            "value": 3,
+            "labels": {
+              "role": "Knowledge",
+              "command": "register_knowledge"
+            }
+          },
+          "expectError": "metric_type_mismatch"
+        },
+        {
+          "name": "unknown_label",
+          "record": {
+            "metricName": "agent_command_executed_total",
+            "metricType": "counter",
+            "value": 3,
+            "labels": {
+              "teleport_label": "x"
+            }
+          },
+          "expectError": "unknown_label"
+        },
+        {
+          "name": "negative_counter",
+          "record": {
+            "metricName": "agent_command_executed_total",
+            "metricType": "counter",
+            "value": -1,
+            "labels": {}
+          },
+          "expectError": "bad_value"
+        },
+        {
+          "name": "histogram_missing_le",
+          "record": {
+            "metricName": "scheduler_run_duration_ms",
+            "metricType": "histogram",
+            "value": 4,
+            "labels": {}
+          },
+          "expectError": "histogram_le_required"
+        },
+        {
+          "name": "valid_edge_sample",
+          "record": {
+            "metricName": "ewoh_device_online_count",
+            "metricType": "gauge",
+            "value": 3,
+            "labels": {
+              "edge_id": "edge-a"
+            }
+          },
+          "expectError": null
+        },
+        {
+          "name": "edge_sample_unknown_metric",
+          "record": {
+            "metricName": "ewoh_gizmo_total",
+            "metricType": "counter",
+            "value": 1,
+            "labels": {
+              "edge_id": "edge-a"
+            }
+          },
+          "expectError": "unknown_metric"
+        },
+        {
+          "name": "edge_sample_unknown_label",
+          "record": {
+            "metricName": "ewoh_uptime_seconds",
+            "metricType": "gauge",
+            "value": 1,
+            "labels": {
+              "edge_id": "edge-a",
+              "weird": "x"
+            }
+          },
+          "expectError": "unknown_label"
+        }
+      ]
+    },
+    {
+      "id": "dead_letter_contract",
+      "domain": "dead_letter",
+      "name": "死信契约（失败证据快照 / reason 注册表 / 人审重放语义 / discard 理由强制，ADR-024）",
+      "cases": [
+        {
+          "name": "valid_pending",
+          "record": {
+            "letterId": "dl:abc123:EVT-1",
+            "sourceId": "cloud:ingest",
+            "reason": "unknown_event_type",
+            "attempts": 1,
+            "status": "pending",
+            "envelope": {
+              "eventId": "EVT-1",
+              "eventType": "TeleportEvent",
+              "source": "edge:world-projection",
+              "occurredAt": "2026-08-16T08:00:00Z"
+            },
+            "correlationId": null,
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_requeued_attempts_incremented",
+          "record": {
+            "letterId": "dl:abc123:EVT-1",
+            "sourceId": "cloud:ingest",
+            "reason": "unknown_event_type",
+            "attempts": 2,
+            "status": "requeued",
+            "envelope": {
+              "eventId": "EVT-1",
+              "eventType": "TeleportEvent",
+              "source": "edge:world-projection",
+              "occurredAt": "2026-08-16T08:00:00Z"
+            },
+            "correlationId": null,
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_discarded_with_reason",
+          "record": {
+            "letterId": "dl:abc123:EVT-2",
+            "sourceId": "cloud:ingest",
+            "reason": "contract_violation",
+            "attempts": 1,
+            "status": "discarded",
+            "discardedReason": "上游设备固件错误，人工确认丢弃",
+            "envelope": {
+              "eventId": "EVT-2"
+            },
+            "correlationId": null,
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "unknown_reason",
+          "record": {
+            "letterId": "dl:abc123:EVT-3",
+            "sourceId": "cloud:ingest",
+            "reason": "teleport_failure",
+            "attempts": 1,
+            "status": "pending",
+            "envelope": {
+              "eventId": "EVT-3"
+            },
+            "correlationId": null,
+            "auditTrail": true
+          },
+          "expectError": "unknown_reason"
+        },
+        {
+          "name": "zero_attempts",
+          "record": {
+            "letterId": "dl:abc123:EVT-4",
+            "sourceId": "cloud:ingest",
+            "reason": "permanent_failure",
+            "attempts": 0,
+            "status": "pending",
+            "envelope": {
+              "eventId": "EVT-4"
+            },
+            "correlationId": null,
+            "auditTrail": true
+          },
+          "expectError": "bad_attempts"
+        },
+        {
+          "name": "discarded_without_reason",
+          "record": {
+            "letterId": "dl:abc123:EVT-5",
+            "sourceId": "cloud:ingest",
+            "reason": "permanent_failure",
+            "attempts": 1,
+            "status": "discarded",
+            "envelope": {
+              "eventId": "EVT-5"
+            },
+            "correlationId": null,
+            "auditTrail": true
+          },
+          "expectError": "discard_reason_required"
+        },
+        {
+          "name": "missing_envelope",
+          "record": {
+            "letterId": "dl:abc123:EVT-6",
+            "sourceId": "cloud:ingest",
+            "reason": "permanent_failure",
+            "attempts": 1,
+            "status": "pending",
+            "correlationId": null,
+            "auditTrail": true
+          },
+          "expectError": "missing_field:envelope"
+        },
+        {
+          "name": "audit_missing",
+          "record": {
+            "letterId": "dl:abc123:EVT-7",
+            "sourceId": "cloud:ingest",
+            "reason": "permanent_failure",
+            "attempts": 1,
+            "status": "pending",
+            "envelope": {
+              "eventId": "EVT-7"
+            },
+            "correlationId": null,
+            "auditTrail": false
+          },
+          "expectError": "audit_required"
+        }
+      ]
+    },
+    {
+      "id": "simulation_run_contract",
+      "domain": "simulation",
+      "name": "数字孪生仿真运行契约（isSimulation 隔离 / kind 注册表 / 终态契约 / 四类确定性评估器跨语言一致，ADR-025）",
+      "cases": [
+        {
+          "name": "valid_created",
+          "record": {
+            "runId": "sim:g19:1",
+            "kind": "what_if",
+            "status": "created",
+            "isSimulation": true,
+            "baseRef": {
+              "snapshotVersion": 3
+            },
+            "parameters": {},
+            "engineVersion": "1.0.0",
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_completed_with_results",
+          "record": {
+            "runId": "sim:g19:2",
+            "kind": "capacity",
+            "status": "completed",
+            "isSimulation": true,
+            "baseRef": {
+              "snapshotVersion": 3
+            },
+            "parameters": {
+              "stations": [
+                {
+                  "stationId": "station:s1",
+                  "capacityPerHour": 10
+                }
+              ],
+              "demandPerHour": 12
+            },
+            "results": {
+              "overloaded": true
+            },
+            "engineVersion": "1.0.0",
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_failed_with_reason",
+          "record": {
+            "runId": "sim:g19:3",
+            "kind": "layout",
+            "status": "failed",
+            "isSimulation": true,
+            "baseRef": {
+              "snapshotVersion": 3
+            },
+            "parameters": {},
+            "failureReason": "参数契约违规：stations 为空数组",
+            "engineVersion": "1.0.0",
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "isolation_violation",
+          "record": {
+            "runId": "sim:g19:4",
+            "kind": "what_if",
+            "status": "created",
+            "isSimulation": false,
+            "baseRef": {
+              "snapshotVersion": 3
+            },
+            "parameters": {},
+            "engineVersion": "1.0.0",
+            "auditTrail": true
+          },
+          "expectError": "isolation_required"
+        },
+        {
+          "name": "unknown_kind",
+          "record": {
+            "runId": "sim:g19:5",
+            "kind": "teleport",
+            "status": "created",
+            "isSimulation": true,
+            "baseRef": {
+              "snapshotVersion": 3
+            },
+            "parameters": {},
+            "engineVersion": "1.0.0",
+            "auditTrail": true
+          },
+          "expectError": "unknown_kind"
+        },
+        {
+          "name": "completed_missing_results",
+          "record": {
+            "runId": "sim:g19:6",
+            "kind": "capacity",
+            "status": "completed",
+            "isSimulation": true,
+            "baseRef": {
+              "snapshotVersion": 3
+            },
+            "parameters": {},
+            "engineVersion": "1.0.0",
+            "auditTrail": true
+          },
+          "expectError": "results_required"
+        },
+        {
+          "name": "failed_missing_reason",
+          "record": {
+            "runId": "sim:g19:7",
+            "kind": "capacity",
+            "status": "failed",
+            "isSimulation": true,
+            "baseRef": {
+              "snapshotVersion": 3
+            },
+            "parameters": {},
+            "engineVersion": "1.0.0",
+            "auditTrail": true
+          },
+          "expectError": "failure_reason_required"
+        },
+        {
+          "name": "audit_missing",
+          "record": {
+            "runId": "sim:g19:8",
+            "kind": "capacity",
+            "status": "created",
+            "isSimulation": true,
+            "baseRef": {
+              "snapshotVersion": 3
+            },
+            "parameters": {},
+            "engineVersion": "1.0.0",
+            "auditTrail": false
+          },
+          "expectError": "audit_required"
+        },
+        {
+          "name": "execute_capacity",
+          "input": {
+            "engine": "capacity",
+            "stations": [
+              {
+                "stationId": "station:s1",
+                "capacityPerHour": 10
+              },
+              {
+                "stationId": "station:s2",
+                "capacityPerHour": 25
+              },
+              {
+                "stationId": "station:s3",
+                "capacityPerHour": 18.5
+              }
+            ],
+            "demandPerHour": 24
+          },
+          "expect": {
+            "bottleneckStationId": "station:s1",
+            "lineThroughputPerHour": 10,
+            "utilization": 2.4,
+            "overloaded": true
+          }
+        },
+        {
+          "name": "execute_layout",
+          "input": {
+            "engine": "layout",
+            "stations": [
+              {
+                "stationId": "station:s1",
+                "x": 0,
+                "y": 0
+              },
+              {
+                "stationId": "station:s2",
+                "x": 3,
+                "y": 4
+              },
+              {
+                "stationId": "station:s3",
+                "x": 8,
+                "y": 0
+              }
+            ],
+            "moves": [
+              {
+                "fromStationId": "station:s1",
+                "toStationId": "station:s2",
+                "trips": 10
+              },
+              {
+                "fromStationId": "station:s2",
+                "toStationId": "station:s3",
+                "trips": 4
+              },
+              {
+                "fromStationId": "station:s3",
+                "toStationId": "station:s1",
+                "trips": 2
+              }
+            ]
+          },
+          "expect": {
+            "totalTravelDistance": 91.612496,
+            "routes": [
+              {
+                "fromStationId": "station:s1",
+                "toStationId": "station:s2",
+                "distance": 5.0,
+                "trips": 10,
+                "totalDistance": 50.0
+              },
+              {
+                "fromStationId": "station:s2",
+                "toStationId": "station:s3",
+                "distance": 6.403124,
+                "trips": 4,
+                "totalDistance": 25.612496
+              },
+              {
+                "fromStationId": "station:s3",
+                "toStationId": "station:s1",
+                "distance": 8.0,
+                "trips": 2,
+                "totalDistance": 16.0
+              }
+            ]
+          }
+        },
+        {
+          "name": "execute_material_flow",
+          "input": {
+            "engine": "material_flow",
+            "stations": [
+              {
+                "stationId": "station:s1",
+                "capacityPerHour": 10,
+                "inflowPerHour": 8
+              },
+              {
+                "stationId": "station:s2",
+                "capacityPerHour": 20,
+                "inflowPerHour": 25.5
+              },
+              {
+                "stationId": "station:s3",
+                "capacityPerHour": 15,
+                "inflowPerHour": 15
+              }
+            ]
+          },
+          "expect": {
+            "bottleneckStationId": "station:s2",
+            "bottleneckLoadRatio": 1.275,
+            "stations": [
+              {
+                "stationId": "station:s1",
+                "loadRatio": 0.8,
+                "overloaded": false
+              },
+              {
+                "stationId": "station:s2",
+                "loadRatio": 1.275,
+                "overloaded": true
+              },
+              {
+                "stationId": "station:s3",
+                "loadRatio": 1.0,
+                "overloaded": false
+              }
+            ]
+          }
+        },
+        {
+          "name": "execute_what_if",
+          "input": {
+            "engine": "what_if",
+            "traceId": "trace:whatif:g19",
+            "baseFacts": [
+              {
+                "ruleId": "rule:r1",
+                "subjectId": "station:s1",
+                "conclusion": "overload",
+                "confidence": 0.8
+              },
+              {
+                "ruleId": "rule:r1",
+                "subjectId": "station:s2",
+                "conclusion": "overload",
+                "confidence": 0.6
+              }
+            ],
+            "deltaFacts": [
+              {
+                "ruleId": "rule:r1",
+                "subjectId": "station:s1",
+                "conclusion": "overload",
+                "confidence": 0.95
+              },
+              {
+                "ruleId": "rule:r2",
+                "subjectId": "station:s3",
+                "conclusion": "normal",
+                "confidence": 0.9
+              }
+            ]
+          },
+          "expect": {
+            "traceId": "trace:whatif:g19",
+            "baseCount": 2,
+            "scenarioCount": 2,
+            "added": [
+              {
+                "ruleId": "rule:r2",
+                "subjectId": "station:s3",
+                "conclusion": "normal",
+                "confidence": 0.9
+              }
+            ],
+            "removed": [
+              {
+                "ruleId": "rule:r1",
+                "subjectId": "station:s2",
+                "conclusion": "overload",
+                "confidence": 0.6
+              }
+            ],
+            "changed": [
+              {
+                "ruleId": "rule:r1",
+                "subjectId": "station:s1",
+                "conclusion": "overload",
+                "baseConfidence": 0.8,
+                "scenarioConfidence": 0.95
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "learning_proposal_contract",
+      "domain": "learning_proposal",
+      "name": "学习提案契约（反馈腿：影子评估前置 / 人审激活阶梯 / 回滚理由强制 / 确定性影子评估器跨语言一致，ADR-026）",
+      "cases": [
+        {
+          "name": "valid_proposed",
+          "record": {
+            "proposalId": "lp:g20:1",
+            "kind": "rule_threshold",
+            "status": "proposed",
+            "change": {
+              "ruleId": "rule:worker-overload",
+              "parameter": "workloadThreshold",
+              "baselineValue": 0.8,
+              "candidateValue": 0.75
+            },
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_shadow_evaluated",
+          "record": {
+            "proposalId": "lp:g20:2",
+            "kind": "rule_threshold",
+            "status": "shadow_evaluated",
+            "change": {
+              "ruleId": "rule:worker-overload",
+              "parameter": "workloadThreshold",
+              "baselineValue": 0.8,
+              "candidateValue": 0.75
+            },
+            "shadowEval": {
+              "baselineThreshold": 0.8,
+              "candidateThreshold": 0.75,
+              "factsCount": 3,
+              "baselineFires": 2,
+              "candidateFires": 3,
+              "addedSubjects": [
+                "person:p2"
+              ],
+              "removedSubjects": [],
+              "riskLevel": "low"
+            },
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_approved",
+          "record": {
+            "proposalId": "lp:g20:3",
+            "kind": "rule_threshold",
+            "status": "approved",
+            "change": {
+              "ruleId": "rule:worker-overload",
+              "parameter": "workloadThreshold",
+              "baselineValue": 0.8,
+              "candidateValue": 0.75
+            },
+            "shadowEval": {
+              "baselineThreshold": 0.8,
+              "candidateThreshold": 0.75,
+              "factsCount": 3,
+              "baselineFires": 2,
+              "candidateFires": 3,
+              "addedSubjects": [
+                "person:p2"
+              ],
+              "removedSubjects": [],
+              "riskLevel": "low"
+            },
+            "approvedBy": "person:approver-1",
+            "approvedAt": "2026-08-16T10:00:00Z",
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "unknown_kind",
+          "record": {
+            "proposalId": "lp:g20:4",
+            "kind": "policy_weight",
+            "status": "proposed",
+            "change": {
+              "ruleId": "rule:worker-overload",
+              "parameter": "workloadThreshold",
+              "baselineValue": 0.8,
+              "candidateValue": 0.75
+            },
+            "auditTrail": true
+          },
+          "expectError": "unknown_kind"
+        },
+        {
+          "name": "unsupported_threshold",
+          "record": {
+            "proposalId": "lp:g20:5",
+            "kind": "rule_threshold",
+            "status": "proposed",
+            "change": {
+              "ruleId": "rule:exo-low-battery",
+              "parameter": "workloadThreshold",
+              "baselineValue": 0.8,
+              "candidateValue": 0.75
+            },
+            "auditTrail": true
+          },
+          "expectError": "unsupported_threshold"
+        },
+        {
+          "name": "approved_missing_shadow",
+          "record": {
+            "proposalId": "lp:g20:6",
+            "kind": "rule_threshold",
+            "status": "approved",
+            "change": {
+              "ruleId": "rule:worker-overload",
+              "parameter": "workloadThreshold",
+              "baselineValue": 0.8,
+              "candidateValue": 0.75
+            },
+            "approvedBy": "person:approver-1",
+            "approvedAt": "2026-08-16T10:00:00Z",
+            "auditTrail": true
+          },
+          "expectError": "shadow_eval_required"
+        },
+        {
+          "name": "approved_missing_approver",
+          "record": {
+            "proposalId": "lp:g20:7",
+            "kind": "rule_threshold",
+            "status": "approved",
+            "change": {
+              "ruleId": "rule:worker-overload",
+              "parameter": "workloadThreshold",
+              "baselineValue": 0.8,
+              "candidateValue": 0.75
+            },
+            "shadowEval": {
+              "baselineThreshold": 0.8,
+              "candidateThreshold": 0.75,
+              "factsCount": 1,
+              "baselineFires": 0,
+              "candidateFires": 1,
+              "addedSubjects": [
+                "person:p1"
+              ],
+              "removedSubjects": [],
+              "riskLevel": "low"
+            },
+            "approvedAt": "2026-08-16T10:00:00Z",
+            "auditTrail": true
+          },
+          "expectError": "approver_required"
+        },
+        {
+          "name": "rollback_missing_reason",
+          "record": {
+            "proposalId": "lp:g20:8",
+            "kind": "rule_threshold",
+            "status": "rolled_back",
+            "change": {
+              "ruleId": "rule:worker-overload",
+              "parameter": "workloadThreshold",
+              "baselineValue": 0.8,
+              "candidateValue": 0.75
+            },
+            "shadowEval": {
+              "baselineThreshold": 0.8,
+              "candidateThreshold": 0.75,
+              "factsCount": 1,
+              "baselineFires": 0,
+              "candidateFires": 1,
+              "addedSubjects": [
+                "person:p1"
+              ],
+              "removedSubjects": [],
+              "riskLevel": "low"
+            },
+            "approvedBy": "person:approver-1",
+            "approvedAt": "2026-08-16T10:00:00Z",
+            "rolledBackBy": "person:approver-1",
+            "auditTrail": true
+          },
+          "expectError": "rollback_reason_required"
+        },
+        {
+          "name": "execute_shadow_tighten",
+          "input": {
+            "engine": "shadow",
+            "ruleId": "rule:worker-overload",
+            "baselineThreshold": 0.8,
+            "candidateThreshold": 0.75,
+            "facts": [
+              {
+                "subjectId": "person:p1",
+                "kind": "person",
+                "values": {
+                  "workload": 0.82,
+                  "fatigue": 0.8,
+                  "ergonomicRisk": 0.2
+                }
+              },
+              {
+                "subjectId": "person:p2",
+                "kind": "person",
+                "values": {
+                  "workload": 0.78,
+                  "fatigue": 0.75,
+                  "ergonomicRisk": 0.1
+                }
+              },
+              {
+                "subjectId": "person:p3",
+                "kind": "person",
+                "values": {
+                  "workload": 0.9,
+                  "fatigue": 0.9,
+                  "ergonomicRisk": 0.9
+                }
+              }
+            ]
+          },
+          "expect": {
+            "baselineThreshold": 0.8,
+            "candidateThreshold": 0.75,
+            "factsCount": 3,
+            "baselineFires": 2,
+            "candidateFires": 3,
+            "addedSubjects": [
+              "person:p2"
+            ],
+            "removedSubjects": [],
+            "riskLevel": "low"
+          }
+        },
+        {
+          "name": "execute_shadow_loosen_high",
+          "input": {
+            "engine": "shadow",
+            "ruleId": "rule:worker-overload",
+            "baselineThreshold": 0.7,
+            "candidateThreshold": 0.95,
+            "facts": [
+              {
+                "subjectId": "person:p1",
+                "kind": "person",
+                "values": {
+                  "workload": 0.82,
+                  "fatigue": 0.8,
+                  "ergonomicRisk": 0.2
+                }
+              },
+              {
+                "subjectId": "person:p3",
+                "kind": "person",
+                "values": {
+                  "workload": 0.9,
+                  "fatigue": 0.9,
+                  "ergonomicRisk": 0.9
+                }
+              }
+            ]
+          },
+          "expect": {
+            "baselineThreshold": 0.7,
+            "candidateThreshold": 0.95,
+            "factsCount": 2,
+            "baselineFires": 2,
+            "candidateFires": 0,
+            "addedSubjects": [],
+            "removedSubjects": [
+              "person:p1",
+              "person:p3"
+            ],
+            "riskLevel": "high"
+          }
+        },
+        {
+          "name": "execute_transitions",
+          "input": {
+            "engine": "transition",
+            "pairs": [
+              [
+                "proposed",
+                "shadow_evaluated"
+              ],
+              [
+                "proposed",
+                "approved"
+              ],
+              [
+                "shadow_evaluated",
+                "approved"
+              ],
+              [
+                "shadow_evaluated",
+                "rejected"
+              ],
+              [
+                "approved",
+                "rolled_back"
+              ],
+              [
+                "rejected",
+                "approved"
+              ],
+              [
+                "rolled_back",
+                "approved"
+              ]
+            ]
+          },
+          "expect": [
+            true,
+            false,
+            true,
+            true,
+            true,
+            false,
+            false
+          ]
+        }
+      ]
+    },
+    {
+      "id": "exo_session_contract",
+      "domain": "exo_session",
+      "name": "外骨骼会话契约（§7 绑定 Session：状态机/规范身份/结束事实完整/时间语义，ADR-032）",
+      "cases": [
+        {
+          "name": "valid_active",
+          "record": {
+            "sessionId": "exo-session:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "exoId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "personId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "status": "active",
+            "startedAt": "2026-08-16T08:00:00Z",
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_ended",
+          "record": {
+            "sessionId": "exo-session:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "exoId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "personId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "status": "ended",
+            "startedAt": "2026-08-16T08:00:00Z",
+            "actualEndAt": "2026-08-16T10:00:00Z",
+            "endedBy": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a99",
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "bad_exo_identity",
+          "record": {
+            "sessionId": "exo-session:x1",
+            "exoId": "EXO-001",
+            "personId": "person:p1",
+            "status": "active",
+            "startedAt": "2026-08-16T08:00:00Z",
+            "auditTrail": true
+          },
+          "expectError": "bad_exo_identity"
+        },
+        {
+          "name": "bad_person_identity",
+          "record": {
+            "sessionId": "exo-session:x1",
+            "exoId": "device:e1",
+            "personId": "P-001",
+            "status": "active",
+            "startedAt": "2026-08-16T08:00:00Z",
+            "auditTrail": true
+          },
+          "expectError": "bad_person_identity"
+        },
+        {
+          "name": "ended_missing_end",
+          "record": {
+            "sessionId": "exo-session:x1",
+            "exoId": "device:e1",
+            "personId": "person:p1",
+            "status": "ended",
+            "startedAt": "2026-08-16T08:00:00Z",
+            "endedBy": "person:op1",
+            "auditTrail": true
+          },
+          "expectError": "actual_end_required"
+        },
+        {
+          "name": "end_before_start",
+          "record": {
+            "sessionId": "exo-session:x1",
+            "exoId": "device:e1",
+            "personId": "person:p1",
+            "status": "ended",
+            "startedAt": "2026-08-16T10:00:00Z",
+            "actualEndAt": "2026-08-16T08:00:00Z",
+            "endedBy": "person:op1",
+            "auditTrail": true
+          },
+          "expectError": "bad_time_order"
+        },
+        {
+          "name": "unknown_status",
+          "record": {
+            "sessionId": "exo-session:x1",
+            "exoId": "device:e1",
+            "personId": "person:p1",
+            "status": "paused",
+            "startedAt": "2026-08-16T08:00:00Z",
+            "auditTrail": true
+          },
+          "expectError": "unknown_status"
+        },
+        {
+          "name": "execute_transitions",
+          "input": {
+            "engine": "transition",
+            "pairs": [
+              [
+                "active",
+                "ended"
+              ],
+              [
+                "active",
+                "aborted"
+              ],
+              [
+                "ended",
+                "active"
+              ],
+              [
+                "aborted",
+                "active"
+              ],
+              [
+                "active",
+                "active"
+              ]
+            ]
+          },
+          "expect": [
+            true,
+            true,
+            false,
+            false,
+            false
+          ]
+        }
+      ]
+    },
+    {
+      "id": "outcome_annotation_contract",
+      "domain": "outcome_annotation",
+      "name": "结果标注契约（Decision→Outcome 真值标注面：注册表/判定事实完整/度量有限数值，ADR-034）",
+      "cases": [
+        {
+          "name": "valid_success",
+          "record": {
+            "annotationId": "oa:g22:1",
+            "targetType": "plan",
+            "targetId": "PLAN-1",
+            "outcomeKind": "success",
+            "judgedBy": "person:op1",
+            "judgedAt": "2026-08-16T12:00:00Z",
+            "measured": {
+              "delayMs": 0
+            },
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_partial_without_measured",
+          "record": {
+            "annotationId": "oa:g22:2",
+            "targetType": "decision",
+            "targetId": "decision:d1",
+            "outcomeKind": "partial_success",
+            "judgedBy": "person:op1",
+            "judgedAt": "2026-08-16T12:00:00Z",
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_failure_proposal",
+          "record": {
+            "annotationId": "oa:g22:3",
+            "targetType": "proposal",
+            "targetId": "lp:1",
+            "outcomeKind": "failure",
+            "judgedBy": "person:op1",
+            "judgedAt": "2026-08-16T12:00:00Z",
+            "measured": {
+              "acceptance": 0
+            },
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "unknown_target_type",
+          "record": {
+            "annotationId": "oa:g22:4",
+            "targetType": "gizmo",
+            "targetId": "X-1",
+            "outcomeKind": "success",
+            "judgedBy": "person:op1",
+            "judgedAt": "2026-08-16T12:00:00Z",
+            "auditTrail": true
+          },
+          "expectError": "unknown_target_type"
+        },
+        {
+          "name": "unknown_outcome_kind",
+          "record": {
+            "annotationId": "oa:g22:5",
+            "targetType": "plan",
+            "targetId": "PLAN-1",
+            "outcomeKind": "meh",
+            "judgedBy": "person:op1",
+            "judgedAt": "2026-08-16T12:00:00Z",
+            "auditTrail": true
+          },
+          "expectError": "unknown_outcome_kind"
+        },
+        {
+          "name": "judger_missing",
+          "record": {
+            "annotationId": "oa:g22:6",
+            "targetType": "plan",
+            "targetId": "PLAN-1",
+            "outcomeKind": "success",
+            "judgedAt": "2026-08-16T12:00:00Z",
+            "auditTrail": true
+          },
+          "expectError": "missing_field:judgedBy"
+        },
+        {
+          "name": "bad_measured",
+          "record": {
+            "annotationId": "oa:g22:7",
+            "targetType": "plan",
+            "targetId": "PLAN-1",
+            "outcomeKind": "success",
+            "judgedBy": "person:op1",
+            "judgedAt": "2026-08-16T12:00:00Z",
+            "measured": {
+              "delayMs": "NaN"
+            },
+            "auditTrail": true
+          },
+          "expectError": "bad_measured"
+        },
+        {
+          "name": "audit_missing",
+          "record": {
+            "annotationId": "oa:g22:8",
+            "targetType": "plan",
+            "targetId": "PLAN-1",
+            "outcomeKind": "success",
+            "judgedBy": "person:op1",
+            "judgedAt": "2026-08-16T12:00:00Z",
+            "auditTrail": false
+          },
+          "expectError": "audit_required"
+        }
+      ]
+    },
+    {
+      "id": "capability_contract",
+      "domain": "capability",
+      "name": "Canonical Capability Model 契约（kind/providerType 封闭注册表 + certification 判定事实完整 + 时间不倒退 + auditTrail 强制，ADR-043）",
+      "cases": [
+        {
+          "name": "valid_skill",
+          "record": {
+            "capabilityId": "cap:g23:1",
+            "kind": "skill",
+            "name": "forklift",
+            "providerType": "person",
+            "subject": "person:p1",
+            "evidence": [],
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_certification",
+          "record": {
+            "capabilityId": "cap:g23:2",
+            "kind": "certification",
+            "name": "first_aid",
+            "providerType": "person",
+            "subject": "person:p1",
+            "grantedAt": "2026-08-01T00:00:00Z",
+            "expiresAt": "2027-08-01T00:00:00Z",
+            "issuer": "org:red-cross",
+            "evidence": [],
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_device_capability",
+          "record": {
+            "capabilityId": "cap:g23:3",
+            "kind": "device_capability",
+            "name": "exo-lift",
+            "providerType": "device",
+            "subject": "device:exo-1",
+            "evidence": [],
+            "auditTrail": true
+          },
+          "expectError": null
+        },
+        {
+          "name": "unknown_kind_rejected",
+          "record": {
+            "capabilityId": "cap:g23:4",
+            "kind": "future_kind",
+            "name": "x",
+            "providerType": "person",
+            "subject": "person:p1",
+            "auditTrail": true
+          },
+          "expectError": "unknown_kind"
+        },
+        {
+          "name": "certification_missing_issuer_rejected",
+          "record": {
+            "capabilityId": "cap:g23:5",
+            "kind": "certification",
+            "name": "first_aid",
+            "providerType": "person",
+            "subject": "person:p1",
+            "expiresAt": "2027-08-01T00:00:00Z",
+            "auditTrail": true
+          },
+          "expectError": "certification_missing_issuer"
+        },
+        {
+          "name": "time_order_rejected",
+          "record": {
+            "capabilityId": "cap:g23:6",
+            "kind": "certification",
+            "name": "first_aid",
+            "providerType": "person",
+            "subject": "person:p1",
+            "grantedAt": "2027-08-01T00:00:00Z",
+            "expiresAt": "2026-08-01T00:00:00Z",
+            "issuer": "org:red-cross",
+            "auditTrail": true
+          },
+          "expectError": "time_order_violation"
+        },
+        {
+          "name": "audit_required_rejected",
+          "record": {
+            "capabilityId": "cap:g23:7",
+            "kind": "skill",
+            "name": "x",
+            "providerType": "person",
+            "subject": "person:p1",
+            "auditTrail": false
+          },
+          "expectError": "audit_required"
+        }
+      ]
+    },
+    {
+      "id": "decision_contract",
+      "domain": "decision",
+      "name": "Canonical Decision Model 契约（Decision Catalog 8 类封闭注册表 + 审批判定事实完整 + 可解释选择强制 + 时间不倒退 + auditTrail 强制，ADR-047）",
+      "cases": [
+        {
+          "name": "valid_task_assignment_proposed",
+          "record": {
+            "decisionId": "decision:g24-ta-1",
+            "kind": "task_assignment",
+            "status": "proposed",
+            "decisionAuthority": "optimization",
+            "subject": "task:t-1001",
+            "tenantId": "t-org-1",
+            "riskLevel": "medium",
+            "requiresApproval": true,
+            "decidedAt": "2026-08-16T08:00:00Z",
+            "policyVersion": "8",
+            "solverVersion": "heuristic-v2",
+            "snapshotRef": "world:v42",
+            "options": [
+              {
+                "optionId": "opt:person-a",
+                "score": 92.5,
+                "reasons": [
+                  "skill-match",
+                  "low-fatigue"
+                ]
+              },
+              {
+                "optionId": "opt:person-b",
+                "score": 71.0,
+                "reasons": []
+              },
+              {
+                "optionId": "opt:person-c",
+                "score": null,
+                "reasons": [
+                  "far-from-station"
+                ]
+              }
+            ],
+            "selected": {
+              "optionId": "opt:person-a",
+              "reason": [
+                "highest-score",
+                "skill-match"
+              ]
+            },
+            "rejectedAlternatives": [
+              {
+                "optionId": "opt:person-c",
+                "rejectReasons": [
+                  "certification-expired"
+                ]
+              }
+            ],
+            "hardConstraints": [
+              "skill-match",
+              "certification-valid"
+            ],
+            "weightsSnapshot": {
+              "on_time": 0.4,
+              "workload": 0.3
+            },
+            "evidence": [
+              "ref:eligibility:v42"
+            ],
+            "auditTrail": [
+              {
+                "actor": "solver:heuristic-v2",
+                "action": "decided",
+                "at": "2026-08-16T08:00:00Z"
+              }
+            ]
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_plan_approval_approved",
+          "record": {
+            "decisionId": "decision:g24-pa-2",
+            "kind": "plan_approval",
+            "status": "approved",
+            "decisionAuthority": "human",
+            "subject": "plan:p-77",
+            "tenantId": "t-org-1",
+            "riskLevel": "high",
+            "requiresApproval": true,
+            "decidedAt": "2026-08-16T09:00:00Z",
+            "options": [
+              {
+                "optionId": "opt:approve",
+                "score": null,
+                "reasons": [
+                  "pre-approval-simulation-passed"
+                ]
+              },
+              {
+                "optionId": "opt:reject",
+                "score": null,
+                "reasons": []
+              }
+            ],
+            "selected": {
+              "optionId": "opt:approve",
+              "reason": [
+                "layout-verified",
+                "no-conflict"
+              ]
+            },
+            "approver": {
+              "actor": "person:op-1",
+              "at": "2026-08-16T09:30:00Z"
+            },
+            "policyVersion": "8",
+            "auditTrail": [
+              {
+                "actor": "system:scheduler",
+                "action": "proposed",
+                "at": "2026-08-16T09:00:00Z"
+              },
+              {
+                "actor": "person:op-1",
+                "action": "approved",
+                "at": "2026-08-16T09:30:00Z"
+              }
+            ]
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_executed_with_outcome",
+          "record": {
+            "decisionId": "decision:g24-dp-3",
+            "kind": "dispatch",
+            "status": "executed",
+            "decisionAuthority": "human",
+            "subject": "assignment:asg-9",
+            "tenantId": "t-org-1",
+            "riskLevel": "medium",
+            "requiresApproval": true,
+            "decidedAt": "2026-08-16T10:00:00Z",
+            "options": [
+              {
+                "optionId": "opt:dispatch-now",
+                "score": null,
+                "reasons": [
+                  "plan-approved"
+                ]
+              }
+            ],
+            "selected": {
+              "optionId": "opt:dispatch-now",
+              "reason": [
+                "plan-approved",
+                "resource-reserved"
+              ]
+            },
+            "approver": {
+              "actor": "person:op-1",
+              "at": "2026-08-16T10:05:00Z"
+            },
+            "outcomeRef": "outcome:ann-7",
+            "auditTrail": [
+              {
+                "actor": "person:op-1",
+                "action": "dispatched",
+                "at": "2026-08-16T10:05:00Z"
+              }
+            ]
+          },
+          "expectError": null
+        },
+        {
+          "name": "unknown_kind_rejected",
+          "record": {
+            "decisionId": "decision:g24-x-6",
+            "kind": "future_kind",
+            "status": "proposed",
+            "decisionAuthority": "optimization",
+            "subject": "task:t-1001",
+            "tenantId": "t-org-1",
+            "riskLevel": "medium",
+            "requiresApproval": true,
+            "decidedAt": "2026-08-16T08:00:00Z",
+            "selected": {
+              "optionId": "opt:a",
+              "reason": [
+                "r"
+              ]
+            },
+            "auditTrail": [
+              {
+                "actor": "solver:s",
+                "action": "decided",
+                "at": "2026-08-16T08:00:00Z"
+              }
+            ]
+          },
+          "expectError": "unknown_kind"
+        },
+        {
+          "name": "bad_subject_rejected",
+          "record": {
+            "decisionId": "decision:g24-x-10",
+            "kind": "task_assignment",
+            "status": "proposed",
+            "decisionAuthority": "optimization",
+            "subject": "task-t-1001",
+            "tenantId": "t-org-1",
+            "riskLevel": "medium",
+            "requiresApproval": true,
+            "decidedAt": "2026-08-16T08:00:00Z",
+            "selected": {
+              "optionId": "opt:a",
+              "reason": [
+                "r"
+              ]
+            },
+            "auditTrail": [
+              {
+                "actor": "solver:s",
+                "action": "decided",
+                "at": "2026-08-16T08:00:00Z"
+              }
+            ]
+          },
+          "expectError": "bad_subject"
+        },
+        {
+          "name": "selected_reason_required",
+          "record": {
+            "decisionId": "decision:g24-x-14",
+            "kind": "task_assignment",
+            "status": "proposed",
+            "decisionAuthority": "optimization",
+            "subject": "task:t-1001",
+            "tenantId": "t-org-1",
+            "riskLevel": "medium",
+            "requiresApproval": true,
+            "decidedAt": "2026-08-16T08:00:00Z",
+            "options": [
+              {
+                "optionId": "opt:a",
+                "score": 90,
+                "reasons": [
+                  "skill-match"
+                ]
+              }
+            ],
+            "selected": {
+              "optionId": "opt:a",
+              "reason": []
+            },
+            "auditTrail": [
+              {
+                "actor": "solver:s",
+                "action": "decided",
+                "at": "2026-08-16T08:00:00Z"
+              }
+            ]
+          },
+          "expectError": "selected_reason_required"
+        },
+        {
+          "name": "unknown_selected_option",
+          "record": {
+            "decisionId": "decision:g24-x-15",
+            "kind": "task_assignment",
+            "status": "proposed",
+            "decisionAuthority": "optimization",
+            "subject": "task:t-1001",
+            "tenantId": "t-org-1",
+            "riskLevel": "medium",
+            "requiresApproval": true,
+            "decidedAt": "2026-08-16T08:00:00Z",
+            "options": [
+              {
+                "optionId": "opt:a",
+                "score": 90,
+                "reasons": [
+                  "skill-match"
+                ]
+              }
+            ],
+            "selected": {
+              "optionId": "opt:ghost",
+              "reason": [
+                "r"
+              ]
+            },
+            "auditTrail": [
+              {
+                "actor": "solver:s",
+                "action": "decided",
+                "at": "2026-08-16T08:00:00Z"
+              }
+            ]
+          },
+          "expectError": "unknown_selected_option"
+        },
+        {
+          "name": "approver_required_human_decided",
+          "record": {
+            "decisionId": "decision:g24-x-17",
+            "kind": "task_assignment",
+            "status": "proposed",
+            "decisionAuthority": "human",
+            "subject": "task:t-1001",
+            "tenantId": "t-org-1",
+            "riskLevel": "medium",
+            "requiresApproval": true,
+            "decidedAt": "2026-08-16T08:00:00Z",
+            "selected": {
+              "optionId": "opt:a",
+              "reason": [
+                "r"
+              ]
+            },
+            "auditTrail": [
+              {
+                "actor": "solver:s",
+                "action": "decided",
+                "at": "2026-08-16T08:00:00Z"
+              }
+            ]
+          },
+          "expectError": "approver_required"
+        },
+        {
+          "name": "audit_required",
+          "record": {
+            "decisionId": "decision:g24-x-20",
+            "kind": "task_assignment",
+            "status": "proposed",
+            "decisionAuthority": "optimization",
+            "subject": "task:t-1001",
+            "tenantId": "t-org-1",
+            "riskLevel": "medium",
+            "requiresApproval": true,
+            "decidedAt": "2026-08-16T08:00:00Z",
+            "selected": {
+              "optionId": "opt:a",
+              "reason": [
+                "r"
+              ]
+            },
+            "auditTrail": []
+          },
+          "expectError": "audit_required"
+        }
+      ]
+    },
+    {
+      "id": "exo_config_contract",
+      "domain": "exo_config",
+      "name": "Canonical Exo Configuration Model 契约（Support Mode/Assist Profile/Fit/Calibration：kind 封闭注册表 + vendor_specific 显式桶 + 判定事实完整 + 时间不倒退 + auditTrail 强制，ADR-051）",
+      "cases": [
+        {
+          "name": "valid_active_lift_profile",
+          "record": {
+            "configId": "exo-config:g25-ap-1",
+            "kind": "assist_profile",
+            "exoId": "device:exo-1",
+            "tenantId": "t-org-1",
+            "status": "active",
+            "supportMode": "lift_assist",
+            "parameters": {
+              "assistLevel": 0.6,
+              "torqueLimitNm": 25.0
+            },
+            "effectiveFrom": "2026-08-16T08:00:00Z",
+            "setBy": "person:op-1",
+            "auditTrail": [
+              {
+                "actor": "person:op-1",
+                "action": "activated",
+                "at": "2026-08-16T08:00:00Z"
+              }
+            ]
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_vendor_specific_profile",
+          "record": {
+            "configId": "exo-config:g25-ap-2",
+            "kind": "assist_profile",
+            "exoId": "device:exo-2",
+            "tenantId": "t-org-1",
+            "status": "active",
+            "supportMode": "vendor_specific",
+            "vendorModeName": "NY-LIFT-3",
+            "effectiveFrom": "2026-08-16T08:00:00Z",
+            "auditTrail": [
+              {
+                "actor": "person:op-1",
+                "action": "activated",
+                "at": "2026-08-16T08:00:00Z"
+              }
+            ]
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_fit",
+          "record": {
+            "configId": "exo-config:g25-ft-4",
+            "kind": "fit",
+            "exoId": "device:exo-1",
+            "tenantId": "t-org-1",
+            "status": "fitted",
+            "personId": "person:p1",
+            "fittedAt": "2026-08-16T09:00:00Z",
+            "fitter": "person:op-2",
+            "measuredValues": {
+              "strap_length_cm": 42.0
+            },
+            "auditTrail": [
+              {
+                "actor": "person:op-2",
+                "action": "fitted",
+                "at": "2026-08-16T09:00:00Z"
+              }
+            ]
+          },
+          "expectError": null
+        },
+        {
+          "name": "valid_calibration",
+          "record": {
+            "configId": "exo-config:g25-cl-5",
+            "kind": "calibration",
+            "exoId": "device:exo-1",
+            "tenantId": "t-org-1",
+            "status": "passed",
+            "calibrationKind": "load_cell",
+            "result": "passed",
+            "calibratedAt": "2026-08-16T10:00:00Z",
+            "calibratedBy": "person:op-3",
+            "auditTrail": [
+              {
+                "actor": "person:op-3",
+                "action": "calibrated",
+                "at": "2026-08-16T10:00:00Z"
+              }
+            ]
+          },
+          "expectError": null
+        },
+        {
+          "name": "unknown_kind_rejected",
+          "record": {
+            "configId": "exo-config:g25-x-6",
+            "kind": "future_kind",
+            "exoId": "device:exo-1",
+            "tenantId": "t-org-1",
+            "status": "active",
+            "auditTrail": [
+              {
+                "actor": "person:op-1",
+                "action": "x",
+                "at": "2026-08-16T08:00:00Z"
+              }
+            ]
+          },
+          "expectError": "unknown_kind"
+        },
+        {
+          "name": "unknown_support_mode_rejected",
+          "record": {
+            "configId": "exo-config:g25-x-7",
+            "kind": "assist_profile",
+            "exoId": "device:exo-1",
+            "tenantId": "t-org-1",
+            "status": "active",
+            "supportMode": "turbo",
+            "effectiveFrom": "2026-08-16T08:00:00Z",
+            "auditTrail": [
+              {
+                "actor": "person:op-1",
+                "action": "x",
+                "at": "2026-08-16T08:00:00Z"
+              }
+            ]
+          },
+          "expectError": "unknown_support_mode"
+        },
+        {
+          "name": "vendor_mode_name_required",
+          "record": {
+            "configId": "exo-config:g25-x-8",
+            "kind": "assist_profile",
+            "exoId": "device:exo-1",
+            "tenantId": "t-org-1",
+            "status": "active",
+            "supportMode": "vendor_specific",
+            "effectiveFrom": "2026-08-16T08:00:00Z",
+            "auditTrail": [
+              {
+                "actor": "person:op-1",
+                "action": "x",
+                "at": "2026-08-16T08:00:00Z"
+              }
+            ]
+          },
+          "expectError": "vendor_mode_name_required"
+        },
+        {
+          "name": "fit_person_required",
+          "record": {
+            "configId": "exo-config:g25-x-12",
+            "kind": "fit",
+            "exoId": "device:exo-1",
+            "tenantId": "t-org-1",
+            "status": "fitted",
+            "fittedAt": "2026-08-16T09:00:00Z",
+            "fitter": "person:op-2",
+            "auditTrail": [
+              {
+                "actor": "person:op-2",
+                "action": "x",
+                "at": "2026-08-16T09:00:00Z"
+              }
+            ]
+          },
+          "expectError": "fit_person_required"
+        },
+        {
+          "name": "time_order_violation",
+          "record": {
+            "configId": "exo-config:g25-x-10",
+            "kind": "assist_profile",
+            "exoId": "device:exo-1",
+            "tenantId": "t-org-1",
+            "status": "active",
+            "supportMode": "lift_assist",
+            "effectiveFrom": "2026-08-16T08:00:00Z",
+            "effectiveTo": "2026-08-15T08:00:00Z",
+            "auditTrail": [
+              {
+                "actor": "person:op-1",
+                "action": "x",
+                "at": "2026-08-16T08:00:00Z"
+              }
+            ]
+          },
+          "expectError": "time_order_violation"
+        }
+      ]
+    }
+  ]
+}

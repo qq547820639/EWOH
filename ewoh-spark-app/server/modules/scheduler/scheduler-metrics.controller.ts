@@ -1,10 +1,11 @@
-import { Controller, Get, Header } from '@nestjs/common';
+import { Controller, Get, Header, Req } from '@nestjs/common';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { SchedulingFeedbackService } from './scheduling-feedback.service';
 import type {
   SchedulingFeedback,
   SchedulingFeedbackKpis,
 } from '@shared/api.interface';
+import type { OrgContext } from '../shared/org-context.interceptor';
 
 /**
  * 调度可观测指标端点（Phase 3.2 / Task 7）。
@@ -16,6 +17,7 @@ import type {
  *   GET /api/scheduler/metrics/feedback/rows     → raw feedback rows
  *
  * 该端点只读，不触碰任何受保护文件，也不修改任何调度规则。
+ * ADR-073：feedback 派生面按认证上下文 org 作用域（跨租户聚合关闭）。
  */
 @Controller('api/scheduler/metrics')
 export class SchedulerMetricsController {
@@ -32,13 +34,13 @@ export class SchedulerMetricsController {
 
   /** 由反馈表派生的调度 KPI（acceptanceRate / overrideRate / fallbackRate / solverRuntime）。 */
   @Get('feedback')
-  feedback(): Promise<SchedulingFeedbackKpis> {
-    return this.feedbackSvc.deriveKpis();
+  feedback(@Req() request?: { userContext?: OrgContext }): Promise<SchedulingFeedbackKpis> {
+    return this.feedbackSvc.deriveKpis(request?.userContext?.primaryOrgId ?? null);
   }
 
-  /** 全部反馈行（离线评估视图）。 */
+  /** 本租户反馈行（离线评估视图；ADR-073 org 作用域）。 */
   @Get('feedback/rows')
-  feedbackRows(): Promise<SchedulingFeedback[]> {
-    return this.feedbackSvc.list();
+  feedbackRows(@Req() request?: { userContext?: OrgContext }): Promise<SchedulingFeedback[]> {
+    return this.feedbackSvc.list(request?.userContext?.primaryOrgId ?? null);
   }
 }

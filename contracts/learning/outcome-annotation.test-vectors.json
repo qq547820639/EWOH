@@ -1,0 +1,120 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "OutcomeAnnotation 契约共享测试向量（ADR-034 / §10 Level 7）。Python（src/edge_platform/contracts/outcome_annotation.py）、TypeScript（ewoh-spark-app/shared/outcome-annotation.ts）与 scripts/audit-domain-contracts.js 独立仲裁共用同一份向量。",
+  "records": [
+    {
+      "name": "valid_success",
+      "record": {
+        "annotationId": "oa:1234:abcd",
+        "targetType": "plan",
+        "targetId": "PLAN-1",
+        "outcomeKind": "success",
+        "judgedBy": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a99",
+        "judgedAt": "2026-08-16T12:00:00Z",
+        "measured": {
+          "delayMs": 0,
+          "deviation": 0
+        },
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_partial_without_measured",
+      "record": {
+        "annotationId": "oa:1234:ef01",
+        "targetType": "decision",
+        "targetId": "decision:d1",
+        "outcomeKind": "partial_success",
+        "judgedBy": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a99",
+        "judgedAt": "2026-08-16T12:00:00Z",
+        "comment": "部分达成，缺料延迟",
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_failure_proposal",
+      "record": {
+        "annotationId": "oa:1234:5678",
+        "targetType": "proposal",
+        "targetId": "lp:1234:abcd",
+        "outcomeKind": "failure",
+        "judgedBy": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a99",
+        "judgedAt": "2026-08-16T12:00:00Z",
+        "measured": {
+          "acceptance": 0
+        },
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "unknown_target_type",
+      "record": {
+        "annotationId": "oa:x1",
+        "targetType": "gizmo",
+        "targetId": "X-1",
+        "outcomeKind": "success",
+        "judgedBy": "person:op1",
+        "judgedAt": "2026-08-16T12:00:00Z",
+        "auditTrail": true
+      },
+      "expectError": "unknown_target_type"
+    },
+    {
+      "name": "unknown_outcome_kind",
+      "record": {
+        "annotationId": "oa:x1",
+        "targetType": "plan",
+        "targetId": "PLAN-1",
+        "outcomeKind": "meh",
+        "judgedBy": "person:op1",
+        "judgedAt": "2026-08-16T12:00:00Z",
+        "auditTrail": true
+      },
+      "expectError": "unknown_outcome_kind"
+    },
+    {
+      "name": "missing_judger",
+      "record": {
+        "annotationId": "oa:x1",
+        "targetType": "plan",
+        "targetId": "PLAN-1",
+        "outcomeKind": "success",
+        "judgedAt": "2026-08-16T12:00:00Z",
+        "auditTrail": true
+      },
+      "expectError": "missing_field:judgedBy"
+    },
+    {
+      "name": "bad_measured",
+      "record": {
+        "annotationId": "oa:x1",
+        "targetType": "plan",
+        "targetId": "PLAN-1",
+        "outcomeKind": "success",
+        "judgedBy": "person:op1",
+        "judgedAt": "2026-08-16T12:00:00Z",
+        "measured": {
+          "delayMs": "NaN"
+        },
+        "auditTrail": true
+      },
+      "expectError": "bad_measured"
+    },
+    {
+      "name": "audit_missing",
+      "record": {
+        "annotationId": "oa:x1",
+        "targetType": "plan",
+        "targetId": "PLAN-1",
+        "outcomeKind": "success",
+        "judgedBy": "person:op1",
+        "judgedAt": "2026-08-16T12:00:00Z",
+        "auditTrail": false
+      },
+      "expectError": "audit_required"
+    }
+  ]
+}

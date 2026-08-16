@@ -1,0 +1,95 @@
+[
+  {
+    "scenarioId": "plan_lifecycle_cas_reserve_dispatch",
+    "ops": [
+      {
+        "op": "approve",
+        "outcome": {
+          "ok": false,
+          "reason": "PLAN_STALE"
+        }
+      },
+      {
+        "op": "approve",
+        "outcome": {
+          "ok": false,
+          "reason": "PLAN_STALE"
+        }
+      },
+      {
+        "op": "approve",
+        "outcome": {
+          "ok": true,
+          "planStatus": "approved",
+          "assignmentStatuses": [
+            "approved"
+          ]
+        }
+      },
+      {
+        "op": "reserve",
+        "outcome": {
+          "ok": true,
+          "reservationIdPrefix": "RSV-"
+        }
+      },
+      {
+        "op": "reserve",
+        "outcome": {
+          "ok": false,
+          "reason": "RESOURCE_CONFLICT"
+        }
+      },
+      {
+        "op": "dispatch",
+        "outcome": {
+          "ok": true,
+          "planStatus": "dispatched",
+          "assignmentStatuses": [
+            "dispatched"
+          ],
+          "outboxEvents": [
+            "stale_plan",
+            "stale_plan",
+            "assignment.dispatched",
+            "plan.dispatched"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "scenarioId": "execution_feedback_and_replan",
+    "ops": [
+      {
+        "op": "feedback",
+        "outcome": {
+          "ok": true
+        }
+      },
+      {
+        "op": "replan",
+        "outcome": {
+          "ok": true,
+          "newPlanId": "PLAN-2-R3",
+          "newVersion": 3,
+          "oldPlanStatus": "superseded",
+          "supersededBy": "PLAN-2-R3",
+          "newAssignments": [
+            "TASK-2"
+          ]
+        }
+      },
+      {
+        "op": "approve",
+        "outcome": {
+          "ok": true,
+          "planStatus": "approved",
+          "assignmentStatuses": [
+            "approved"
+          ]
+        }
+      }
+    ]
+  }
+]

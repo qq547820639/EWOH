@@ -183,6 +183,21 @@ def main():
     manager = components.manager
     sim = components.simulator
 
+    # NO-03b：边缘本地认知层持久化（离线重启恢复）——世界状态 + 实体声明 + 因果
+    # 事件整体落盘 JSON；加载失败显式 ERROR（本地认知可由云端权威投影 reconcile
+    # 重建），保存失败显式 ERROR（绝不静默吞异常）。
+    world_store = components.world_store
+    world_state_path = str(Path(args.db).with_suffix(".worldstate.json"))
+    if world_store is not None and Path(world_state_path).exists():
+        try:
+            import json as _json
+
+            with open(world_state_path, encoding="utf-8") as fh:
+                world_store = type(world_store).from_dict(_json.load(fh))
+            print(f"[EWOH] 本地世界状态已恢复: {world_state_path}")
+        except Exception as exc:  # 显式记录，不静默吞
+            print(f"[EWOH] ERROR: 本地世界状态恢复失败（以空认知启动）: {exc}")
+
     # storage 就绪后绑定到 collector，用于 snapshot() 派生 db_counts / open_event_count
     metrics.bind_storage(storage)
 
@@ -193,10 +208,29 @@ def main():
     # - pipeline.start()：订阅 STREAM_TELEMETRY，启动推理/规则/事件链路。
     # 真实装配下启动失败 → fail-fast（不静默降级，与 production 装配语义一致）。
     if mode != "simulation":
+        # NO-03c（E-03 修复）：config 驱动的适配器注册入口——EWOH_ADAPTERS 指定
+        # kind+参数；未知 kind/参数/构造失败 fail-closed 抛错（绝不静默跳过设备）。
+        from edge_platform.edge.adapter_factory import build_adapters
+
+        adapters = build_adapters(settings.adapters)
+        for adapter in adapters:
+            manager.register(adapter)
+        print(f"[EWOH] 适配器注册: {len(adapters)} 个（EWOH_ADAPTERS）")
         if hasattr(manager, "start") and callable(manager.start):
             manager.start()
         if hasattr(pipeline, "start") and callable(pipeline.start):
             pipeline.start()
+        # 启动即输出每适配器 health（E-03 防"真实模式空转"无感）
+        try:
+            for entry in manager.health() or []:
+                print(
+                    "[EWOH] adapter health: device=%s type=%s status=%s",
+                    entry.get("device_id"),
+                    entry.get("type"),
+                    entry.get("status"),
+                )
+        except Exception:
+            print("[EWOH] adapter health 汇总失败（详见日志）")
         print("[EWOH] 真实模式：适配器采集与推理管线已启动")
 
     # 智能调度持久化仓储：调度数据落库，服务重启后不丢失（Phase 2，API 接线留到 Phase 6）。
@@ -231,6 +265,71 @@ def main():
     from edge_platform import services
 
     services.register_scheduler_hook(scheduler)
+    # NO-03c：遥测 → 世界模型自动投影（感知自动接线）——配置驱动（EWOH_WORLD_TENANT_ID/
+    # EWOH_WORLD_FACTORY_ID/EWOH_WORLD_KIND_MAP），缺配置显式关闭并打印原因（绝不猜测
+    # 实体类别）；启用后订阅 STREAM_TELEMETRY 后台投影声明/状态/因果事件。
+    world_projection = None
+    if world_store is not None:
+        from edge_platform.world_model.projection import TelemetryWorldProjector
+
+        world_projection = TelemetryWorldProjector(
+            world_store,
+            bus,
+            tenant_id=settings.world_tenant_id,
+            factory_id=settings.world_factory_id,
+            kind_map=settings.world_kind_map,
+            storage=storage,
+        )
+        if world_projection.enabled:
+            world_projection.start()
+            print(
+                "[EWOH] 遥测→世界模型投影已启用"
+                f"（kind_map={settings.world_kind_map}）"
+            )
+        else:
+            print(
+                "[EWOH] 遥测→世界模型投影未启用（需 EWOH_WORLD_TENANT_ID / "
+                "EWOH_WORLD_FACTORY_ID / EWOH_WORLD_KIND_MAP；绝不猜测实体类别）"
+            )
+    # NO-04b：Edge→Cloud 事件上行（Catalog 信封批量上行 + 离线缓冲）。
+    # EWOH_EVENT_UPLINK_URL 为空 = 显式关闭（启动打印原因，不静默）。
+    event_uplink = None
+    if settings.event_uplink_url:
+        from edge_platform.edge.bridge.event_uplink import EventUplink
+
+        event_uplink = EventUplink(
+            bus,
+            settings.event_uplink_url,
+            ingest_key=settings.event_uplink_key,
+            org_id=settings.event_uplink_org_id,
+            # NO-04c：断点续传队列（未发送信封跨重启保留，发送成功即截断）
+            queue_path=str(Path(args.db).with_suffix(".uplink-queue.json")),
+        )
+        event_uplink.start()
+        print(f"[EWOH] 事件上行已启用 → {settings.event_uplink_url}/api/ingest/events")
+    else:
+        print("[EWOH] 事件上行未启用（需 EWOH_EVENT_UPLINK_URL）")
+    # NO-12d：Edge→Cloud 指标上行（周期快照，ADR-028）。
+    # EWOH_METRICS_UPLINK_URL 为空 = 显式关闭（启动打印原因，不静默）。
+    metrics_uplink = None
+    if settings.metrics_uplink_url:
+        from edge_platform.edge.bridge.metrics_uplink import MetricsUplink
+
+        metrics_uplink = MetricsUplink(
+            metrics,
+            settings.metrics_uplink_url,
+            ingest_key=settings.metrics_uplink_key,
+            org_id=settings.metrics_uplink_org_id,
+            edge_id=settings.edge_id,
+            interval_sec=settings.metrics_uplink_interval_sec,
+        )
+        metrics_uplink.start()
+        print(
+            f"[EWOH] 指标上行已启用 → {settings.metrics_uplink_url}/api/observability/edge-metrics"
+            f"（edge_id={settings.edge_id}，周期 {settings.metrics_uplink_interval_sec}s）"
+        )
+    else:
+        print("[EWOH] 指标上行未启用（需 EWOH_METRICS_UPLINK_URL）")
     ctx = server.Context(
         storage,
         bus=bus,
@@ -244,6 +343,10 @@ def main():
         scheduler=scheduler,
         resource_state_service=resource_state_service,
         kafka=event_bus,
+        world_store=world_store,
+        world_projection=world_projection,
+        event_uplink=event_uplink,
+        metrics_uplink=metrics_uplink,
     )
     httpd = server.build_server((args.host, args.port), ctx)
     print(f"[EWOH] 平台运行于 http://{args.host}:{int(args.port)} （无公网依赖，可离线演示）")
@@ -254,6 +357,15 @@ def main():
         pass
     finally:
         httpd.shutdown()
+        if world_store is not None:
+            try:
+                import json as _json
+
+                with open(world_state_path, "w", encoding="utf-8") as fh:
+                    _json.dump(world_store.to_dict(), fh, ensure_ascii=False)
+                print(f"[EWOH] 本地世界状态已持久化: {world_state_path}")
+            except Exception as exc:  # 显式记录，不静默吞
+                print(f"[EWOH] ERROR: 本地世界状态持久化失败: {exc}")
         if sim:
             sim.stop()
         manager.stop()

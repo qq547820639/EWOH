@@ -1,0 +1,136 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Golden Scheduler TCK（Phase 7 / NO-07）：同一份共享场景定义，TS heuristic 求解器产出 assignments（确定性，落 tests/golden-fixtures/scheduler-golden-results.json，漂移门禁），Python 标准库 plan-checker 对同一结果做独立硬约束仲裁（跨语言一致性，不依赖 ortools）。",
+  "scenarios": [
+    {
+      "id": "skill_match_baseline",
+      "name": "技能匹配基线：确定性分配、零违规",
+      "snapshot": {
+        "persons": [
+          { "id": "p1", "name": "p1", "status": "AVAILABLE", "healthStatus": "normal", "skills": ["work"], "certifications": [], "loadLevel": 0, "fatigueLevel": 0, "stationId": null, "zoneId": null, "x": 0, "y": 0 },
+          { "id": "p2", "name": "p2", "status": "AVAILABLE", "healthStatus": "normal", "skills": ["welding"], "certifications": [], "loadLevel": 0, "fatigueLevel": 0, "stationId": null, "zoneId": null, "x": 0, "y": 0 }
+        ],
+        "tasks": [
+          { "id": "t1", "title": "t1", "taskType": "work", "priority": "medium", "status": "pending", "assigneeId": null, "deviceId": null, "stationId": null, "zoneId": null, "planStart": null, "planEnd": null, "progress": 0, "predecessorIds": [], "requiredSkills": ["work"], "requiredCertifications": [] },
+          { "id": "t2", "title": "t2", "taskType": "weld", "priority": "medium", "status": "pending", "assigneeId": null, "deviceId": null, "stationId": null, "zoneId": null, "planStart": null, "planEnd": null, "progress": 0, "predecessorIds": [], "requiredSkills": ["welding"], "requiredCertifications": [] }
+        ],
+        "devices": [],
+        "stations": [],
+        "reservations": [],
+        "backlog": [],
+        "events": [],
+        "routeStatus": [],
+        "forbiddenZones": [],
+        "lockedAssignments": []
+      },
+      "expect": {
+        "assignments": [
+          { "taskId": "t1", "personId": "p1", "deviceId": null, "stationId": null },
+          { "taskId": "t2", "personId": "p2", "deviceId": null, "stationId": null }
+        ],
+        "unassigned": [],
+        "blockedReasons": []
+      }
+    },
+    {
+      "id": "maintenance_blocked_device_fail_closed",
+      "name": "设备活跃维护条件（critical）+ 能力要求 → fail-closed 拒派（能力要求任务绝不回退纯手工，任务如实 unassigned + 原因可审计）",
+      "snapshot": {
+        "persons": [
+          { "id": "p1", "name": "p1", "status": "AVAILABLE", "healthStatus": "normal", "skills": ["work"], "certifications": [], "loadLevel": 0, "fatigueLevel": 0, "stationId": null, "zoneId": null, "x": 0, "y": 0 }
+        ],
+        "tasks": [
+          { "id": "t1", "title": "t1", "taskType": "work", "priority": "medium", "status": "pending", "assigneeId": null, "deviceId": null, "stationId": null, "zoneId": null, "planStart": null, "planEnd": null, "progress": 0, "predecessorIds": [], "requiredSkills": ["work"], "requiredCertifications": [], "requiredDeviceCapabilities": ["vacuum"] }
+        ],
+        "devices": [
+          {
+            "id": "d1", "workerName": null, "deviceModel": null, "batteryPct": 90, "online": true, "status": "AVAILABLE", "capabilities": ["vacuum"],
+            "maintenance": [
+              { "conditionId": "mc:1", "conditionType": "wear", "severity": "critical", "status": "detected", "dueAt": null, "overdue": false }
+            ]
+          }
+        ],
+        "stations": [],
+        "reservations": [],
+        "backlog": [],
+        "events": [],
+        "routeStatus": [],
+        "forbiddenZones": [],
+        "lockedAssignments": []
+      },
+      "expect": {
+        "assignments": [],
+        "unassigned": ["t1"],
+        "blockedReasons": [
+          { "taskId": "t1", "reason": "device_maintenance_blocked" }
+        ]
+      }
+    },
+    {
+      "id": "maintenance_blocked_person_fail_closed",
+      "name": "人员活跃维护条件（critical）→ fail-closed 拒派（任务如实 unassigned + 原因可审计）",
+      "snapshot": {
+        "persons": [
+          {
+            "id": "p1", "name": "p1", "status": "AVAILABLE", "healthStatus": "normal", "skills": ["work"], "certifications": [], "loadLevel": 0, "fatigueLevel": 0, "stationId": null, "zoneId": null, "x": 0, "y": 0,
+            "maintenance": [
+              { "conditionId": "mc:p1", "conditionType": "wear", "severity": "critical", "status": "detected", "dueAt": null, "overdue": false }
+            ]
+          }
+        ],
+        "tasks": [
+          { "id": "t1", "title": "t1", "taskType": "work", "priority": "medium", "status": "pending", "assigneeId": null, "deviceId": null, "stationId": null, "zoneId": null, "planStart": null, "planEnd": null, "progress": 0, "predecessorIds": [], "requiredSkills": ["work"], "requiredCertifications": [] }
+        ],
+        "devices": [],
+        "stations": [],
+        "reservations": [],
+        "backlog": [],
+        "events": [],
+        "routeStatus": [],
+        "forbiddenZones": [],
+        "lockedAssignments": []
+      },
+      "expect": {
+        "assignments": [],
+        "unassigned": ["t1"],
+        "blockedReasons": [
+          { "taskId": "t1", "reason": "person_maintenance_blocked" }
+        ]
+      }
+    },
+    {
+      "id": "quality_blocked_station_fail_closed",
+      "name": "工位 critical 活跃质量发现 → fail-closed 拒派（任务如实 unassigned）",
+      "snapshot": {
+        "persons": [
+          { "id": "p1", "name": "p1", "status": "AVAILABLE", "healthStatus": "normal", "skills": ["work"], "certifications": [], "loadLevel": 0, "fatigueLevel": 0, "stationId": null, "zoneId": null, "x": 0, "y": 0 }
+        ],
+        "tasks": [
+          { "id": "t1", "title": "t1", "taskType": "work", "priority": "medium", "status": "pending", "assigneeId": null, "deviceId": null, "stationId": null, "zoneId": null, "planStart": null, "planEnd": null, "progress": 0, "predecessorIds": [], "requiredSkills": ["work"], "requiredCertifications": [], "candidateStations": ["S1"] }
+        ],
+        "devices": [],
+        "stations": [
+          {
+            "id": "S1", "name": "Station 1", "x": 0, "y": 0, "capacity": null, "queue": [], "availableWindows": [], "capabilities": ["station"],
+            "qualityFindings": [
+              { "findingId": "qf:1", "findingType": "process_deviation", "severity": "critical", "status": "open", "disposition": null, "links": ["station:S1"], "detectedAt": "2026-08-16T08:00:00Z" }
+            ]
+          }
+        ],
+        "reservations": [],
+        "backlog": [],
+        "events": [],
+        "routeStatus": [],
+        "forbiddenZones": [],
+        "lockedAssignments": []
+      },
+      "expect": {
+        "assignments": [],
+        "unassigned": ["t1"],
+        "blockedReasons": [
+          { "taskId": "t1", "reason": "station_quality_blocked" }
+        ]
+      }
+    }
+  ]
+}

@@ -34,6 +34,8 @@ export interface TaskSeed {
   predecessorIds?: string[];
   requiredSkills?: string[];
   requiredCertifications?: string[];
+  requiredDeviceCapabilities?: string[];
+  candidateStations?: string[];
   zoneId?: string | null;
 }
 
@@ -48,7 +50,7 @@ export function person(seed: PersonSeed) {
   return {
     id: seed.id,
     name: seed.id,
-    status: seed.status ?? 'available',
+    status: seed.status ?? 'AVAILABLE',
     healthStatus: 'normal',
     skills: seed.skills ?? ['work'],
     certifications: seed.certifications ?? [],
@@ -78,6 +80,10 @@ export function task(seed: TaskSeed) {
     predecessorIds: seed.predecessorIds ?? [],
     requiredSkills: seed.requiredSkills ?? [seed.taskType ?? 'work'],
     requiredCertifications: seed.requiredCertifications ?? [],
+    ...(seed.requiredDeviceCapabilities
+      ? { requiredDeviceCapabilities: seed.requiredDeviceCapabilities }
+      : {}),
+    ...(seed.candidateStations ? { candidateStations: seed.candidateStations } : {}),
   };
 }
 
@@ -88,7 +94,7 @@ export function device(seed: DeviceSeed) {
     deviceModel: null,
     batteryPct: seed.battery ?? 100,
     online: seed.online ?? true,
-    status: seed.status ?? 'online',
+    status: seed.status ?? 'AVAILABLE',
   };
 }
 

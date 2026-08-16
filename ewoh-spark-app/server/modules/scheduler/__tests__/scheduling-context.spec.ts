@@ -67,7 +67,7 @@ function makeResources(): ResourceState[] {
     {
       id: 'p1',
       type: 'person',
-      status: 'unavailable',
+      status: 'UNKNOWN',
       capabilities: [],
       certifications: [],
       location: { stationId: null, zoneId: null, x: null, y: null },
@@ -81,7 +81,7 @@ function makeResources(): ResourceState[] {
     {
       id: 'd1',
       type: 'device',
-      status: 'online',
+      status: 'AVAILABLE',
       capabilities: [],
       certifications: [],
       location: { stationId: 'S-1', zoneId: null, x: 10, y: 20 },
@@ -95,7 +95,7 @@ function makeResources(): ResourceState[] {
     {
       id: 's1',
       type: 'station',
-      status: 'unavailable',
+      status: 'UNKNOWN',
       capabilities: [],
       certifications: [],
       location: { stationId: 's1', zoneId: null, x: null, y: null },

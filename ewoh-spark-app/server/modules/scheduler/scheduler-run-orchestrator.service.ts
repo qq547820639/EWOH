@@ -88,7 +88,8 @@ export class SchedulerRunOrchestrator {
     let baselineAssignee: Map<string, string | null> | undefined;
     if (body.baselinePlanId) {
       try {
-        const baseline = await this.planService.getPlan(body.baselinePlanId);
+        // ADR-071：churn 基线读面透传 ctx（跨租户方案与不存在同语义）。
+        const baseline = await this.planService.getPlan(body.baselinePlanId, ctx);
         baselineAssignee = new Map(
           baseline.assignments.map((a) => [a.taskId, a.personId ?? null]),
         );

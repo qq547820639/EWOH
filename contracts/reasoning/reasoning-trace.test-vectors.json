@@ -1,0 +1,169 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "ReasoningTrace 契约共享测试向量（ADR-020 / NO-08b）。Python（src/edge_platform/contracts/reasoning_trace.py）、TypeScript（ewoh-spark-app/shared/reasoning-trace.ts）与 scripts/audit-domain-contracts.js 独立仲裁共用同一份向量。",
+  "records": [
+    {
+      "name": "valid_worker_overload",
+      "record": {
+        "traceId": "rt-0001",
+        "engineVersion": "1.0.0",
+        "factsRef": {
+          "snapshotVersion": 3,
+          "eventIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"]
+        },
+        "conclusions": [
+          {
+            "conclusionId": "decision:rt-0001-worker-overload",
+            "ruleId": "rule:worker-overload",
+            "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "severity": "high",
+            "confidence": 1,
+            "confidenceBasis": "deterministic",
+            "premises": ["person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+            "evidenceIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+            "explanation": "人员 person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11 负荷 0.9，疲劳 0.8——建议轮换或减负（人工复核）"
+          }
+        ],
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_empty_conclusions",
+      "record": {
+        "traceId": "rt-0002",
+        "engineVersion": "1.0.0",
+        "factsRef": { "snapshotVersion": 3, "eventIds": [] },
+        "conclusions": [],
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "unknown_rule",
+      "record": {
+        "traceId": "rt-0003",
+        "engineVersion": "1.0.0",
+        "factsRef": { "snapshotVersion": 3, "eventIds": [] },
+        "conclusions": [
+          {
+            "conclusionId": "decision:rt-0003-gizmo",
+            "ruleId": "rule:teleport-factory",
+            "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "severity": "high",
+            "confidence": 1,
+            "confidenceBasis": "deterministic",
+            "premises": ["person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+            "evidenceIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+            "explanation": "未注册规则"
+          }
+        ],
+        "auditTrail": true
+      },
+      "expectError": "unknown_rule"
+    },
+    {
+      "name": "bad_conclusion_identity",
+      "record": {
+        "traceId": "rt-0004",
+        "engineVersion": "1.0.0",
+        "factsRef": { "snapshotVersion": 3, "eventIds": [] },
+        "conclusions": [
+          {
+            "conclusionId": "not-an-identity",
+            "ruleId": "rule:worker-overload",
+            "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "severity": "high",
+            "confidence": 1,
+            "confidenceBasis": "deterministic",
+            "premises": ["person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+            "evidenceIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+            "explanation": "x"
+          }
+        ],
+        "auditTrail": true
+      },
+      "expectError": "bad_conclusion_id"
+    },
+    {
+      "name": "empty_premises",
+      "record": {
+        "traceId": "rt-0005",
+        "engineVersion": "1.0.0",
+        "factsRef": { "snapshotVersion": 3, "eventIds": [] },
+        "conclusions": [
+          {
+            "conclusionId": "decision:rt-0005-worker-overload",
+            "ruleId": "rule:worker-overload",
+            "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "severity": "high",
+            "confidence": 1,
+            "confidenceBasis": "deterministic",
+            "premises": [],
+            "evidenceIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+            "explanation": "x"
+          }
+        ],
+        "auditTrail": true
+      },
+      "expectError": "empty_premises"
+    },
+    {
+      "name": "empty_evidence",
+      "record": {
+        "traceId": "rt-0006",
+        "engineVersion": "1.0.0",
+        "factsRef": { "snapshotVersion": 3, "eventIds": [] },
+        "conclusions": [
+          {
+            "conclusionId": "decision:rt-0006-worker-overload",
+            "ruleId": "rule:worker-overload",
+            "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "severity": "high",
+            "confidence": 1,
+            "confidenceBasis": "deterministic",
+            "premises": ["person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+            "evidenceIds": [],
+            "explanation": "x"
+          }
+        ],
+        "auditTrail": true
+      },
+      "expectError": "empty_evidence"
+    },
+    {
+      "name": "confidence_out_of_range",
+      "record": {
+        "traceId": "rt-0007",
+        "engineVersion": "1.0.0",
+        "factsRef": { "snapshotVersion": 3, "eventIds": [] },
+        "conclusions": [
+          {
+            "conclusionId": "decision:rt-0007-worker-overload",
+            "ruleId": "rule:worker-overload",
+            "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "severity": "high",
+            "confidence": 1.5,
+            "confidenceBasis": "deterministic",
+            "premises": ["person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+            "evidenceIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+            "explanation": "x"
+          }
+        ],
+        "auditTrail": true
+      },
+      "expectError": "bad_confidence"
+    },
+    {
+      "name": "audit_missing",
+      "record": {
+        "traceId": "rt-0008",
+        "engineVersion": "1.0.0",
+        "factsRef": { "snapshotVersion": 3, "eventIds": [] },
+        "conclusions": [],
+        "auditTrail": false
+      },
+      "expectError": "audit_required"
+    }
+  ]
+}

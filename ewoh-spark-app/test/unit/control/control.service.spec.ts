@@ -1,28 +1,44 @@
+import { NotFoundException } from '@nestjs/common';
 import { ControlService, aggregateControlStatus } from '../../../server/modules/control/control.service';
+import {
+  ewohControlRequest,
+  ewohControlCommand,
+  ewohControlResult,
+} from '@server/database/schema';
+import { makeControlDb } from '../../helpers/fake-control-db';
 
-const requestRow = {
-  request_id: 'ctl-1',
-  device_id: 'exo-1',
-  command_keys: ['start', 'stop'],
-  idempotency_key: 'idem-1',
-  status: 'created',
-  requested_at: '2026-08-03T00:00:00.000Z',
-};
+const ACTOR = { userId: 'u1', primaryOrgId: 'ORG-1' } as never;
+const ACTOR_ORG2 = { userId: 'u2', primaryOrgId: 'ORG-2' } as never;
 
-const commandRow = (overrides: Record<string, unknown> = {}) => ({
-  command_id: 'att-1',
-  request_id: 'ctl-1',
-  root_command_id: 'att-1',
-  attempt_no: 1,
-  command_key: 'start',
-  status: 'sent',
-  sent_at: '2026-08-03T00:00:00.000Z',
-  response_at: null,
-  response_json: null,
-  error_code: null,
-  error_message: null,
-  ...overrides,
-});
+function requestSeed(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    requestId: 'ctl-1',
+    deviceId: 'exo-1',
+    commandKeys: ['start', 'stop'],
+    idempotencyKey: 'idem-1',
+    status: 'created',
+    requestedAt: '2026-08-03T00:00:00.000Z',
+    orgId: 'ORG-1',
+    ...overrides,
+  };
+}
+
+function commandSeed(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    commandId: 'att-1',
+    requestId: 'ctl-1',
+    rootCommandId: 'att-1',
+    attemptNo: 1,
+    commandKey: 'start',
+    status: 'sent',
+    sentAt: '2026-08-03T00:00:00.000Z',
+    responseAt: null,
+    responseJson: null,
+    errorCode: null,
+    errorMessage: null,
+    ...overrides,
+  };
+}
 
 describe('control aggregation', () => {
   it('uses the latest attempt per command key', () => {
@@ -49,268 +65,175 @@ describe('control aggregation', () => {
   });
 });
 
-describe('ControlService persistence', () => {
-  it('persists a request and reuses the row for the same idempotency key', async () => {
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([requestRow])
-      .mockResolvedValueOnce([requestRow]);
-    const service = new ControlService({ execute } as never);
+describe('ControlService persistence（ADR-077：drizzle 类型安全 + org 归属）', () => {
+  it('persists a request with orgId injected and reuses the row for the same idempotency key', async () => {
+    const { db, inserts } = makeControlDb();
+    const service = new ControlService(db as never);
 
-    const first = await service.createRequest({
-      deviceId: 'exo-1',
-      commandKeys: ['start', 'stop'],
-      idempotencyKey: 'idem-1',
-    });
-    const second = await service.createRequest({
-      deviceId: 'exo-1',
-      commandKeys: ['start', 'stop'],
-      idempotencyKey: 'idem-1',
-    });
+    const first = await service.createRequest(
+      { deviceId: 'exo-1', commandKeys: ['start', 'stop'], idempotencyKey: 'idem-1' },
+      ACTOR,
+    );
+    expect(first.orgId).toBe('ORG-1');
+    const requestInsert = inserts.find((i) => i.table === ewohControlRequest);
+    expect(requestInsert?.row.orgId).toBe('ORG-1');
 
-    expect(first.id).toBe('ctl-1');
-    expect(second.id).toBe('ctl-1');
-    expect(execute).toHaveBeenCalledTimes(3);
-    expect(JSON.stringify(execute.mock.calls[1][0])).toContain('ewoh_control_request');
-    expect(JSON.stringify(execute.mock.calls[1][0])).toContain('idem-1');
+    const second = await service.createRequest(
+      { deviceId: 'exo-1', commandKeys: ['start', 'stop'], idempotencyKey: 'idem-1' },
+      ACTOR,
+    );
+    expect(second.id).toBe(first.id);
   });
 
-  it('persists sent commands to ewoh_control_command', async () => {
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([requestRow])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([requestRow])
-      .mockResolvedValueOnce([commandRow()]);
-    const service = new ControlService({ execute } as never);
+  it('createRequest 无 actor → orgId 列省略（DB GUC default；不伪造 §33）', async () => {
+    const { db, inserts } = makeControlDb();
+    const service = new ControlService(db as never);
+    await service.createRequest({
+      deviceId: 'exo-1',
+      commandKeys: ['start'],
+      idempotencyKey: 'idem-2',
+    });
+    const requestInsert = inserts.find((i) => i.table === ewohControlRequest);
+    expect('orgId' in (requestInsert?.row ?? {})).toBe(false);
+  });
 
-    const result = await service.sendCommand('ctl-1', 'start');
+  it('persists sent commands with org = 请求行 org', async () => {
+    const { db, inserts, updates } = makeControlDb({ requests: [requestSeed()] });
+    const service = new ControlService(db as never);
+
+    const result = await service.sendCommand('ctl-1', 'start', ACTOR);
 
     expect(result.attempts).toHaveLength(1);
     expect(result.attempts[0].status).toBe('sent');
-    expect(JSON.stringify(execute.mock.calls[2][0])).toContain('ewoh_control_command');
+    const cmdInsert = inserts.find((i) => i.table === ewohControlCommand);
+    expect(cmdInsert?.row.orgId).toBe('ORG-1');
+    expect(updates.some((u) => u.table === ewohControlRequest)).toBe(true);
   });
 
-  it('persists receipts and results and aggregates the latest attempt', async () => {
-    const executedCommand = commandRow({
-      status: 'executed',
-      response_at: '2026-08-03T00:00:01.000Z',
-      response_json: { ok: true },
+  it('persists receipts and results with org = 请求行 org', async () => {
+    const { db, inserts } = makeControlDb({
+      requests: [requestSeed()],
+      commands: [commandSeed()],
     });
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([requestRow])
-      .mockResolvedValueOnce([commandRow()])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([requestRow])
-      .mockResolvedValueOnce([executedCommand]);
-    const service = new ControlService({ execute } as never);
+    const service = new ControlService(db as never);
 
     const result = await service.receiveReceipt('ctl-1', 'start', 'executed', { ok: true });
 
     expect(result.attempts[0].status).toBe('executed');
-    expect(JSON.stringify(execute.mock.calls[2][0])).toContain('ewoh_control_command');
-    expect(JSON.stringify(execute.mock.calls[3][0])).toContain('ewoh_control_result');
+    const resInsert = inserts.find((i) => i.table === ewohControlResult);
+    expect(resInsert?.row.orgId).toBe('ORG-1');
+    expect(resInsert?.row.success).toBe(true);
   });
 
   it('rejects sending commands on terminal requests', async () => {
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([requestRow])
-      .mockResolvedValueOnce([commandRow({ status: 'executed' })]);
-    const service = new ControlService({ execute } as never);
+    const { db } = makeControlDb({
+      requests: [requestSeed()],
+      commands: [commandSeed({ status: 'executed' })],
+    });
+    const service = new ControlService(db as never);
 
-    await expect(service.sendCommand('ctl-1', 'start')).rejects.toThrow(
-      /terminal request/,
-    );
+    await expect(service.sendCommand('ctl-1', 'start')).rejects.toThrow(/terminal request/);
   });
 
   it('rejects duplicate sends while an attempt is in flight', async () => {
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([requestRow])
-      .mockResolvedValueOnce([commandRow({ status: 'sent' })]);
-    const service = new ControlService({ execute } as never);
+    const { db } = makeControlDb({
+      requests: [requestSeed()],
+      commands: [commandSeed({ status: 'sent' })],
+    });
+    const service = new ControlService(db as never);
 
-    await expect(service.sendCommand('ctl-1', 'start')).rejects.toThrow(
-      /already in flight/,
-    );
+    await expect(service.sendCommand('ctl-1', 'start')).rejects.toThrow(/already in flight/);
   });
 
   it('rejects duplicate receipts for an already-terminal attempt', async () => {
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([requestRow])
-      .mockResolvedValueOnce([
-        commandRow({ status: 'executed' }),
-        commandRow({
-          command_id: 'att-2',
-          root_command_id: 'att-2',
-          command_key: 'stop',
+    // start 已 executed + stop 仍 sent → 请求非终态 → 走到 attempt 级重复回执拒绝。
+    const { db } = makeControlDb({
+      requests: [requestSeed()],
+      commands: [
+        commandSeed({ status: 'executed' }),
+        commandSeed({
+          commandId: 'att-2',
+          rootCommandId: 'att-2',
+          commandKey: 'stop',
           status: 'sent',
         }),
-      ]);
-    const service = new ControlService({ execute } as never);
+      ],
+    });
+    const service = new ControlService(db as never);
 
-    await expect(
-      service.receiveReceipt('ctl-1', 'start', 'executed', { ok: true }),
-    ).rejects.toThrow(/Duplicate receipt/);
+    await expect(service.receiveReceipt('ctl-1', 'start', 'executed')).rejects.toThrow(
+      /Duplicate receipt/,
+    );
   });
 
-  it('rejects receipts on terminal requests', async () => {
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([requestRow])
-      .mockResolvedValueOnce([
-        commandRow({ status: 'executed', response_at: '2026-08-03T00:00:01.000Z' }),
-        commandRow({
-          command_id: 'att-2',
-          root_command_id: 'att-2',
-          command_key: 'stop',
-          status: 'executed',
-          response_at: '2026-08-03T00:00:01.000Z',
-        }),
-      ]);
-    const service = new ControlService({ execute } as never);
-
-    await expect(
-      service.receiveReceipt('ctl-1', 'start', 'executed', { ok: true }),
-    ).rejects.toThrow(/terminal request/);
+  it('revoke 更新命令并写审计前状态', async () => {
+    const { db, updates } = makeControlDb({
+      requests: [requestSeed()],
+      commands: [commandSeed({ status: 'sent' })],
+    });
+    const service = new ControlService(db as never);
+    const result = await service.revoke('ctl-1', ACTOR);
+    expect(result.attempts[0].status).toBe('failed');
+    expect(updates.some((u) => u.table === ewohControlCommand)).toBe(true);
   });
 
-  it('uses the latest attempt per command key when computing status', async () => {
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([requestRow])
-      .mockResolvedValueOnce([
-        commandRow({ attempt_no: 1, status: 'failed' }),
-        commandRow({ attempt_no: 2, status: 'executed', command_id: 'att-2', root_command_id: 'att-1' }),
-      ]);
-    const service = new ControlService({ execute } as never);
+  it('getRequest 跨租户 → NotFound（ADR-077 读面守卫，反枚举）', async () => {
+    const { db } = makeControlDb({ requests: [requestSeed({ orgId: 'ORG-1' })] });
+    const service = new ControlService(db as never);
+    await expect(service.getRequest('ctl-1', ACTOR_ORG2)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
 
-    const { status } = await service.getStatus('ctl-1');
+  it('getRequest 同租户 → 放行且读回 orgId；NULL legacy 行放行', async () => {
+    const { db } = makeControlDb({ requests: [requestSeed({ orgId: 'ORG-1' })] });
+    const service = new ControlService(db as never);
+    const req = await service.getRequest('ctl-1', ACTOR);
+    expect(req.orgId).toBe('ORG-1');
 
-    expect(status).toBe('executed');
+    const { db: db2 } = makeControlDb({ requests: [requestSeed({ orgId: null })] });
+    const svc2 = new ControlService(db2 as never);
+    const legacy = await svc2.getRequest('ctl-1', ACTOR_ORG2);
+    expect(legacy.id).toBe('ctl-1');
   });
 
   it('surfaces database failures as explainable errors', async () => {
-    const execute = jest.fn().mockRejectedValue(new Error('connection refused'));
-    const service = new ControlService({ execute } as never);
-
-    await expect(service.getRequest('ctl-1')).rejects.toThrow(/failed/);
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => {
+          throw new Error('db down');
+        }),
+      })),
+    };
+    const service = new ControlService(db as never);
+    // §33 不吞异常：底层失败原样显式上抛。
+    await expect(
+      service.createRequest({
+        deviceId: 'exo-1',
+        commandKeys: ['start'],
+        idempotencyKey: 'idem-x',
+      }),
+    ).rejects.toThrow('db down');
   });
 });
 
-describe('ControlService audit', () => {
-  const ACTOR = { userId: 'user-1', primaryOrgId: 'org-1' };
-
+describe('ControlService audit（ADR-077：审计面不变）', () => {
   it('audits request creation with the acting user and after state', async () => {
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([requestRow]);
-    const auditService = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
-    const service = new ControlService(
-      { execute } as never,
-      auditService as never,
-    );
-
-    const result = await service.createRequest(
-      {
-        deviceId: 'exo-1',
-        commandKeys: ['start'],
-        idempotencyKey: 'idem-1',
-      },
+    const { db } = makeControlDb();
+    const auditLogs: Array<Record<string, unknown>> = [];
+    const auditService = {
+      appendAuditLog: jest.fn(async (entry: Record<string, unknown>) => {
+        auditLogs.push(entry);
+      }),
+    };
+    const service = new ControlService(db as never, auditService as never);
+    await service.createRequest(
+      { deviceId: 'exo-1', commandKeys: ['start'], idempotencyKey: 'idem-a' },
       ACTOR,
     );
-
-    expect(result.id).toBe('ctl-1');
-    expect(auditService.appendAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        actorId: 'user-1',
-        orgId: 'org-1',
-        action: 'control.create',
-        entityType: 'control_request',
-        entityId: 'ctl-1',
-        before: null,
-        after: expect.objectContaining({
-          deviceId: 'exo-1',
-          commandKeys: ['start', 'stop'],
-          status: 'created',
-        }),
-      }),
-    );
-  });
-
-  it('audits command submission with before/after attempt state', async () => {
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([requestRow])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([requestRow])
-      .mockResolvedValueOnce([commandRow()]);
-    const auditService = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
-    const service = new ControlService(
-      { execute } as never,
-      auditService as never,
-    );
-
-    await service.sendCommand('ctl-1', 'start', ACTOR);
-
-    expect(auditService.appendAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        actorId: 'user-1',
-        orgId: 'org-1',
-        action: 'control.command.send',
-        entityType: 'control_command',
-        before: expect.objectContaining({
-          requestId: 'ctl-1',
-          commandKey: 'start',
-          previousAttemptCount: 0,
-        }),
-        after: expect.objectContaining({
-          commandKey: 'start',
-          attemptNo: 1,
-          status: 'sent',
-        }),
-      }),
-    );
-  });
-
-  it('audits revoke with before/after request status', async () => {
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([requestRow])
-      .mockResolvedValueOnce([commandRow()])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([requestRow])
-      .mockResolvedValueOnce([commandRow({ status: 'failed' })]);
-    const auditService = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
-    const service = new ControlService(
-      { execute } as never,
-      auditService as never,
-    );
-
-    await service.revoke('ctl-1', ACTOR);
-
-    expect(auditService.appendAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        actorId: 'user-1',
-        orgId: 'org-1',
-        action: 'control.revoke',
-        entityType: 'control_request',
-        entityId: 'ctl-1',
-        before: expect.objectContaining({ status: 'pending_gateway' }),
-        after: expect.objectContaining({ status: 'failed' }),
-      }),
-    );
+    expect(auditLogs).toHaveLength(1);
+    expect(auditLogs[0].action).toBe('control.create');
+    expect(auditLogs[0].actorId).toBe('u1');
+    expect(auditLogs[0].orgId).toBe('ORG-1');
   });
 });

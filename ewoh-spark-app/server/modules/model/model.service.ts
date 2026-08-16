@@ -20,6 +20,12 @@ export interface RegisterModelDto {
   modelName: string;
   version: string;
   type: string;
+  /**
+   * NO-08b（ADR-013）：输入版本（特征/数据版本）。Model Registry 无独立列，
+   * 存入 cardJson.inputVersion（Model Card 本就是数据/特征/模型/阈值版本的
+   * 治理载体，与边缘 model_card.py 对齐）。
+   */
+  inputVersion?: string | null;
   cardJson?: Record<string, unknown>;
 }
 
@@ -85,7 +91,14 @@ export class ModelService {
         version: body.version.trim(),
         type: body.type.trim(),
         status: 'candidate',
-        cardJson: body.cardJson ?? null,
+        // NO-08b（ADR-013）：inputVersion 对齐 InferenceResult 契约元数据
+        //（无独立列，落 cardJson.inputVersion；缺省不伪造）。
+        cardJson: {
+          ...(body.cardJson ?? {}),
+          ...(body.inputVersion?.trim()
+            ? { inputVersion: body.inputVersion.trim() }
+            : {}),
+        },
       })
       .returning();
     return row;

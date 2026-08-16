@@ -1,4 +1,4 @@
-import { memo, useMemo, useEffect, useRef } from 'react';
+import { memo, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   TransformWrapper,
   TransformComponent,
@@ -16,7 +16,14 @@ import type {
 import { fitLabel, truncateLabel } from './labels';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
 import { getEntityColor, getDeviceColor, priorityLevelColor, resourceStatusColor, isExoDevice } from './entityColors';
-import { cullByBounds, cullPaddingFor, isPointWithinBounds, type VisibleBounds } from './store/viewportCulling';
+import {
+  cullByBounds,
+  cullPaddingFor,
+  isPointWithinBounds,
+  worldBoundsFromTransform,
+  type PanZoomTransformState,
+  type VisibleBounds,
+} from './store/viewportCulling';
 
 /** P0：ETA 格式化（后端秒 → 分:秒 / 分钟）；缺失返回空串（不前端估算）。 */
 function formatEta(etaSeconds: number): string {
@@ -52,6 +59,12 @@ interface FactoryMapProps {
    * 由 CommandMap 从 store viewport slice 注入（Task 4 / P1）。
    */
   visibleBounds?: VisibleBounds | null;
+  /**
+   * NO-13e / ADR-054：视口变换上报——FactoryMap 由当前 pan/zoom 状态推导
+   * 世界可视范围并回调（CommandMapShell → store viewport.visibleBounds，
+   * culling 生产接线）。缺省不启用（纯展示面不受影响）。
+   */
+  onVisibleBoundsChange?: (bounds: VisibleBounds | null) => void;
 }
 
 /** 摄像头视锥三角形顶点（yaw=0 朝右，按 yaw 旋转） */
@@ -217,6 +230,7 @@ const FactoryMap = ({
   candidates = null,
   selectedTaskId = null,
   visibleBounds = null,
+  onVisibleBoundsChange,
 }: FactoryMapProps): React.ReactElement => {
   // 视口 culling：bounds 非空时剔除视野外实体；null 保持默认（渲染全部）。
   const cullBounds = visibleBounds ?? null;
@@ -364,6 +378,26 @@ const FactoryMap = ({
   const zoomToElementRef = useRef<ZoomToElement | null>(null);
   const resetTransformRef = useRef<(() => void) | null>(null);
 
+  // NO-13e / ADR-054：视口 culling 生产接线——由当前变换状态推导世界可视范围上报。
+  const viewportContainerRef = useRef<HTMLDivElement | null>(null);
+  const lastBoundsRef = useRef<string>('');
+  const reportViewportBounds = useCallback(
+    (transform: PanZoomTransformState | null) => {
+      if (!onVisibleBoundsChange) return;
+      const el = viewportContainerRef.current;
+      const bounds = worldBoundsFromTransform(
+        transform,
+        el ? { width: el.clientWidth, height: el.clientHeight } : { width: 0, height: 0 },
+        viewBox,
+      );
+      const key = bounds ? `${bounds.minX}|${bounds.minY}|${bounds.maxX}|${bounds.maxY}` : '';
+      if (key === lastBoundsRef.current) return;
+      lastBoundsRef.current = key;
+      onVisibleBoundsChange(bounds);
+    },
+    [onVisibleBoundsChange, viewBox],
+  );
+
   // 进入近景或焦点变化时，自动缩放到目标实体
   useEffect(() => {
     if (!isNearView || !focus) return;
@@ -395,7 +429,7 @@ const FactoryMap = ({
   }, [isNearView]);
 
   return (
-    <div className="relative flex-1 min-w-0 bg-[hsl(220_14%_8%)] overflow-hidden">
+    <div ref={viewportContainerRef} className="relative flex-1 min-w-0 bg-[hsl(220_14%_8%)] overflow-hidden">
       <TransformWrapper
         initialScale={1}
         minScale={0.3}
@@ -405,6 +439,21 @@ const FactoryMap = ({
         wheel={{ step: 0.0012 }}
         doubleClick={{ mode: 'zoomIn', step: 0.7 }}
         zoomAnimation={{ disabled: false, size: 0.4, animationTime: 200, animationType: 'easeOut' }}
+        // NO-13e / ADR-054：变换上报（初始化 + 每次 pan/zoom）→ 世界可视范围 → culling。
+        onInit={(ref) =>
+          reportViewportBounds({
+            scale: ref.state.scale,
+            positionX: ref.state.positionX,
+            positionY: ref.state.positionY,
+          })
+        }
+        onTransform={(ref) =>
+          reportViewportBounds({
+            scale: ref.state.scale,
+            positionX: ref.state.positionX,
+            positionY: ref.state.positionY,
+          })
+        }
       >
         {({ zoomIn, zoomOut, resetTransform, zoomToElement }) => {
           zoomToElementRef.current = zoomToElement;

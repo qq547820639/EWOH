@@ -4,10 +4,11 @@ import type {
   OrganizationInfo,
   PersonnelInfo,
   SpatialEntity,
+  SpatialEntityType,
 } from '@shared/api.interface';
 import { resolveEntityDetailData } from './entityDetailData';
 
-function entity(entityId: string, entityType: string, extra: Record<string, unknown> | null = null): SpatialEntity {
+function entity(entityId: string, entityType: SpatialEntityType, extra: Record<string, unknown> | null = null): SpatialEntity {
   return {
     id: entityId,
     entityId,
@@ -82,7 +83,7 @@ const events: EventInfo[] = [
     deviceId: 'EXO-001',
     eventCode: 'HIGH_LOAD',
     eventType: 'safety',
-    severity: 'L2',
+    severity: 'high',
     title: '张三负荷过高',
     status: 'open',
     createdAt: '2026-08-04T00:30:00.000Z',
@@ -95,7 +96,7 @@ const events: EventInfo[] = [
     deviceId: 'OTHER',
     eventCode: 'UNRELATED',
     eventType: 'maintenance',
-    severity: 'L1',
+    severity: 'low',
     title: '其他设备保养',
     status: 'open',
     createdAt: '2026-08-04T00:20:00.000Z',

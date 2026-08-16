@@ -38,51 +38,101 @@ export type TaskEventListener = (
   actor?: OrgContext,
 ) => void;
 
+export interface TaskActionTransition {
+  action: string;
+  from: string;
+  to: string;
+}
+
+/**
+ * Canonical Execution Model 任务状态机运行时消费面（ADR-049 / NO-12z，§3/§31）。
+ *
+ * 单一事实源 = contracts/state-machines/task.yaml；本表为其 TS 消费面，
+ * 由 test/unit/task/task-state-machine-contract.spec.ts 逐条锁步
+ * （显式转换 + 穷举负例 + 检查器负测试）——修改本表必须同步契约，
+ * 漂移在构建期显式暴露（§31 单一语义，无第二事实源）。
+ */
+export const TASK_ACTIONS: TaskActionTransition[] = [
+  { action: 'submit', from: 'draft', to: 'pending_confirm' },
+  { action: 'request_approval', from: 'pending_confirm', to: 'pending_approval' },
+  { action: 'skip_approval', from: 'pending_confirm', to: 'pending_dispatch' },
+  { action: 'approve', from: 'pending_approval', to: 'pending_dispatch' },
+  { action: 'reject', from: 'pending_approval', to: 'draft' },
+  { action: 'dispatch', from: 'pending_dispatch', to: 'dispatched' },
+  { action: 'receive', from: 'dispatched', to: 'received' },
+  { action: 'start', from: 'received', to: 'executing' },
+  { action: 'pause', from: 'executing', to: 'paused' },
+  { action: 'resume', from: 'paused', to: 'executing' },
+  { action: 'exception', from: 'executing', to: 'exception' },
+  { action: 'resolve', from: 'exception', to: 'executing' },
+  { action: 'complete', from: 'executing', to: 'completed' },
+];
+
+/** 契约 any_non_terminal → cancelled 的非终态集合（task.yaml 锁步）。 */
+export const TASK_NON_TERMINAL = [
+  'draft',
+  'pending_confirm',
+  'pending_approval',
+  'pending_dispatch',
+  'dispatched',
+  'received',
+  'executing',
+  'paused',
+  'exception',
+] as const;
+
+/** 契约 terminal 集合（task.yaml 锁步）。 */
+export const TASK_TERMINAL = ['completed', 'cancelled'] as const;
+
 export function nextTaskStatus(current: string, action: string): string | null {
-  switch (action) {
-    case 'submit':
-      return current === 'draft' ? 'pending_confirm' : null;
-    case 'request_approval':
-      return current === 'pending_confirm' ? 'pending_approval' : null;
-    case 'skip_approval':
-      return current === 'pending_confirm' ? 'pending_dispatch' : null;
-    case 'approve':
-      return current === 'pending_approval' ? 'pending_dispatch' : null;
-    case 'reject':
-      return current === 'pending_approval' ? 'draft' : null;
-    case 'dispatch':
-      return current === 'pending_dispatch' ? 'dispatched' : null;
-    case 'receive':
-      return current === 'dispatched' ? 'received' : null;
-    case 'start':
-      return current === 'received' ? 'executing' : null;
-    case 'pause':
-      return current === 'executing' ? 'paused' : null;
-    case 'resume':
-      return current === 'paused' ? 'executing' : null;
-    case 'exception':
-      return current === 'executing' ? 'exception' : null;
-    case 'resolve':
-      return current === 'exception' ? 'executing' : null;
-    case 'complete':
-      return current === 'executing' ? 'completed' : null;
-    case 'cancel':
-      return [
-        'draft',
-        'pending_confirm',
-        'pending_approval',
-        'pending_dispatch',
-        'dispatched',
-        'received',
-        'executing',
-        'paused',
-        'exception',
-      ].includes(current)
-        ? 'cancelled'
-        : null;
-    default:
-      return null;
+  if (action === 'cancel') {
+    return (TASK_NON_TERMINAL as readonly string[]).includes(current)
+      ? 'cancelled'
+      : null;
   }
+  for (const transition of TASK_ACTIONS) {
+    if (transition.action === action && transition.from === current) {
+      return transition.to;
+    }
+  }
+  return null;
+}
+
+/**
+ * 最短合法动作链（ADR-050 / NO-13a，与边缘 shortest_task_path 同语义，
+ * §31：双实现各自锁步于同一契约图 task.yaml）。
+ *
+ * 返回从 current 到 target 的最短 action 序列（BFS）；不可达 → null；
+ * current == target → []（已一致，no-op）。
+ */
+export function taskActionPath(current: string, target: string): string[] | null {
+  if (current === target) return [];
+  const edges = new Map<string, Array<{ to: string; action: string }>>();
+  for (const t of TASK_ACTIONS) {
+    if (!edges.has(t.from)) edges.set(t.from, []);
+    edges.get(t.from)!.push({ to: t.to, action: t.action });
+  }
+  const queue: string[] = [current];
+  const prev = new Map<string, { state: string; action: string } | null>([
+    [current, null],
+  ]);
+  while (queue.length > 0) {
+    const state = queue.shift()!;
+    if (state === target) break;
+    for (const edge of edges.get(state) ?? []) {
+      if (prev.has(edge.to)) continue;
+      prev.set(edge.to, { state, action: edge.action });
+      queue.push(edge.to);
+    }
+  }
+  if (!prev.has(target)) return null;
+  const actions: string[] = [];
+  let cursor = prev.get(target);
+  while (cursor != null) {
+    actions.unshift(cursor.action);
+    cursor = prev.get(cursor.state);
+  }
+  return actions;
 }
 
 @Injectable()

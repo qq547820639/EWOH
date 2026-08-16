@@ -150,7 +150,49 @@ def route_devices_detail(ctx, h, req_meta):
         return api_device_detail(ctx, h, parts[0])
     if len(parts) == 2 and parts[1] == "health":
         return api_device_health(ctx, h, parts[0])
+    if len(parts) == 2 and parts[1] == "quality":
+        return api_device_quality(ctx, h, parts[0])
     return h._new_error("not_found", "路径不存在", 404)
+
+
+def api_device_quality(ctx, h, device_id):
+    """GET /api/devices/{device_id}/quality — 设备数据质量统计（NO-05）。
+
+    adapter 计数器（bad_crc/malformed/packet_loss/backfill/duplicates/dropped）+
+    存储遥测质量分布（good/degraded/invalid/...）；设备不存在 404。
+    """
+    d = next((x for x in ctx.storage.list_devices() if x.get("device_id") == device_id), None)
+    if not d:
+        return h._new_error("not_found", "设备不存在", 404)
+    adapter_stats = None
+    if ctx.manager:
+        try:
+            for entry in ctx.manager.health() or []:
+                if entry.get("device_id") == device_id:
+                    adapter_stats = {
+                        "status": entry.get("status"),
+                        "packet_loss_pct": entry.get("packet_loss_pct"),
+                        "bad_crc_frames": entry.get("bad_crc_frames"),
+                        "malformed_frames": entry.get("malformed_frames"),
+                        "backfill_frames": entry.get("backfill_frames"),
+                        "backfill_duplicates": entry.get("backfill_duplicates"),
+                        "dropped_frames": entry.get("dropped_frames"),
+                        "sink_errors": entry.get("sink_errors"),
+                    }
+                    break
+        except Exception:
+            adapter_stats = None
+    telemetry_quality = (
+        ctx.storage.quality_stats(device_id) if hasattr(ctx.storage, "quality_stats") else {}
+    )
+    return h.send_json(
+        {
+            "device_id": device_id,
+            "adapter": adapter_stats,
+            "telemetry_quality": telemetry_quality,
+            "now": now_iso(),
+        }
+    )
 
 
 def api_event_detail_v2(ctx, h, event_id):

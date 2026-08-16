@@ -681,5 +681,46 @@ class TestStorageRoundTrip(unittest.TestCase):
         self.assertEqual(to_storage_dict(restored), d)
 
 
+
+class SupportModeObservationBoundaryTest(unittest.TestCase):
+    """NO-13t / ADR-069：Support Mode 观测边界锁（§33 不伪造观测）。
+
+    NY-EXO-A1 协议确认书 2.3：TELEMETRY 20B 布局无 mode 字节——
+    厂商帧只提供 assist_pct（助力强度 %，连续量），不提供 categorical
+    Support Mode（passive/lift_assist/…）。本测试机器锁定该边界：
+    适配器与统一语义帧不得出现任何 support_mode 字段；assist_level
+    为数值强度事实（可与契约 assistProfile.supportMode 配置并列，
+    但绝不推导/伪造模式分类）。
+    """
+
+    def test_telemetry_payload_has_no_mode_byte(self):
+        # 协议确认书 2.3 的 20B 布局：9×i16 + assist_pct + battery_pct（无 mode 字节）。
+        payload = protocol.parse_telemetry_payload(bytes(20))
+        self.assertNotIn("mode", payload)
+        self.assertNotIn("support_mode", payload)
+        # 恰好 9 个字段（契约形状锁定：多出字段即协议变化，需回此边界复核）。
+        self.assertEqual(
+            set(payload.keys()),
+            {"pitch_deg", "roll_deg", "accel_mg", "gyro_dps", "torque_nm", "assist_pct", "battery_pct"},
+        )
+
+    def test_unified_frame_has_no_support_mode_field(self):
+        frame = UnifiedExoFrame(entity_id="exo:boundary-1")
+        storage = to_storage_dict(frame)
+        self.assertNotIn("support_mode", storage)
+        self.assertNotIn("supportMode", storage)
+        # assist_level 为数值强度事实（load 组），非模式分类。
+        self.assertIn("assist_level", storage.get("load", {}))
+        # 契约面：supportMode 只存在于 ADR-051 ExoConfigRecord（人工声明配置），
+        # 遥测观测面绝不伪造（§33）。
+        self.assertNotIn("support_mode", json.dumps(storage, ensure_ascii=False))
+
+    def test_vendor_mapping_has_no_mode_path(self):
+        # VENDOR_TO_UNIFIED 映射不得出现 mode 语义路径。
+        for path in VENDOR_TO_UNIFIED.values():
+            self.assertNotIn("mode", path.lower())
+            self.assertNotIn("support", path.lower())
+
+
 if __name__ == "__main__":
     unittest.main()

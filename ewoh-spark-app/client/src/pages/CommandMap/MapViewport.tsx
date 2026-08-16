@@ -25,6 +25,7 @@ import { MODES as MODE_ITEMS } from './ModePanel';
 import { SchedulerLayersOverlay, computeAggregateViewBox } from './layers/SchedulerLayers';
 import { PlanCompareLayer } from './layers/PlanCompareLayer';
 import type { CommandMapSchedulerState } from './hooks/useCommandMapSchedulerState';
+import { toggleLayer, type CommandMapLayer } from './hooks/commandMapSelector';
 import type { MapLevel, MapMode } from './map-mode-machine';
 import type { VisibleBounds } from './store/viewportCulling';
 import type { PlanCompareMapVM, PlanCompareUiState } from './vm/planCompareVM';
@@ -51,6 +52,11 @@ interface MapViewportProps {
   selectedTaskId: string | null;
   /** 视口 culling 可见范围（世界坐标）；null = 不启用 culling。 */
   visibleBounds: VisibleBounds | null;
+  /**
+   * NO-13e / ADR-054：视口变换上报（FactoryMap pan/zoom → 世界可视范围），
+   * CommandMapShell → store viewport.visibleBounds（culling 生产接线）。
+   */
+  onVisibleBoundsChange?: (bounds: VisibleBounds | null) => void;
   /** 调度聚合状态（P3-T3 hook，供叠加层渲染）。 */
   schedulerState: CommandMapSchedulerState;
   selectedPlanId: string | null;
@@ -83,6 +89,21 @@ interface MapViewportProps {
 /** 冲突预览叠加层无 diff 聚焦（模块级稳定 no-op，保持 PlanCompareLayer memo 生效）。 */
 const handleNoopFocusTask = (): void => undefined;
 
+/** R-6：调度叠加图层开关清单（base 恒为底层不在清单内）。 */
+const LAYER_ITEMS: Array<{ key: CommandMapLayer; label: string }> = [
+  { key: 'task', label: '任务' },
+  { key: 'resource', label: '资源' },
+  { key: 'availability', label: '可用性' },
+  { key: 'reservation', label: '预占' },
+  { key: 'plan', label: '方案' },
+  { key: 'route', label: '路线' },
+  { key: 'conflict', label: '冲突' },
+  { key: 'risk', label: '风险' },
+  { key: 'execution-deviation', label: '执行偏差' },
+  { key: 'changed-by-replan', label: '重排变更' },
+  { key: 'human-locked', label: '人工锁定' },
+];
+
 const MapViewport = ({
   entities,
   worldState,
@@ -99,6 +120,7 @@ const MapViewport = ({
   candidates,
   selectedTaskId,
   visibleBounds,
+  onVisibleBoundsChange,
   schedulerState,
   selectedPlanId,
   showCompare,
@@ -139,6 +161,7 @@ const MapViewport = ({
       candidates={candidates}
       selectedTaskId={selectedTaskId}
       visibleBounds={visibleBounds}
+      onVisibleBoundsChange={onVisibleBoundsChange}
     />
 
     {/* Phase 3 / P3-T3：纯视觉叠加层（conflict/risk/reservation/availability 等，数据来自 hook 聚合状态） */}
@@ -205,6 +228,35 @@ const MapViewport = ({
       onOpenDiff={onFocusCompareTask}
       onCloseDiff={onCloseDiff}
     />
+
+    {/* R-6 / ADR-035：调度叠加图层开关（桌面端；移动端小屏控件见下）。 */}
+    <div className="absolute left-2 top-2 z-30 hidden max-w-[calc(100%-1rem)] items-center gap-1.5 md:flex">
+      <div className="flex flex-wrap gap-0.5 rounded-md border border-white/10 bg-[hsl(220_14%_14%)]/95 p-0.5">
+        {LAYER_ITEMS.map((item) => {
+          const active = schedulerState.ui.activeLayers.includes(item.key);
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => schedulerState.updateUi({ activeLayers: toggleLayer(schedulerState.ui.activeLayers, item.key) })}
+              aria-pressed={active}
+              aria-label={`切换${item.label}图层`}
+              className={`h-6 rounded px-1.5 text-[10px] font-medium ${
+                active ? 'bg-semantic-info text-white' : 'text-white/60 hover:text-white/90'
+              }`}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+      {schedulerState.ui.activeLayers.includes('execution-deviation') &&
+        schedulerState.executionsError && (
+          <span className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[10px] text-red-300">
+            执行记录加载失败
+          </span>
+        )}
+    </div>
 
     {/* 小屏模式/层级控件 */}
     <div className="absolute left-2 top-2 z-30 flex max-w-[calc(100%-1rem)] items-center gap-1.5 md:hidden">

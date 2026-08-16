@@ -15,6 +15,15 @@ import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { HeuristicSchedulingSolver } from './heuristic-scheduling-solver';
 import { CandidateEngineService } from './candidate-engine.service';
 import {
+  RuleBasedSchedulingSolver,
+  RULE_BASED_SOLVER_VERSION,
+} from './rule-based-scheduling-solver';
+import {
+  MilpSchedulingSolver,
+  MILP_SOLVER_VERSION,
+} from './milp-scheduling-solver';
+import { SchedulingObjectiveEvaluator } from './scheduling-objective-evaluator.service';
+import {
   CpSatSchedulingSolver,
   type CpSatSolverConfig,
 } from './cp-sat-scheduling-solver';
@@ -69,6 +78,8 @@ export class SolverService {
   private readonly logger = new Logger(SolverService.name);
   private readonly heuristicSolver: HeuristicSchedulingSolver;
   private readonly cpSatSolver: CpSatSchedulingSolver;
+  private readonly ruleBasedSolver: RuleBasedSchedulingSolver;
+  private readonly milpSolver: MilpSchedulingSolver;
 
   constructor(
     private readonly policyService: SchedulingPolicyService,
@@ -85,6 +96,8 @@ export class SolverService {
     @Optional() private readonly shadowEvaluatorService?: ShadowEvaluatorService,
     // Task A / P0：CANARY 回滚 outbox 审计事件（模块内已提供，测试直构时可空）。
     @Optional() private readonly outboxService?: OutboxService,
+    // NO-13d / ADR-053：目标评估器（P0-5 统一评估语义；缺省时 rule-based 直构同款）。
+    @Optional() objectiveEvaluator?: SchedulingObjectiveEvaluator,
   ) {
     this.heuristicSolver = new HeuristicSchedulingSolver(
       policyService,
@@ -102,6 +115,17 @@ export class SolverService {
       // P2-T1：routeCostProvider 即 TravelCostService（兼容别名），供矩阵可行性过滤。
       routeCostProvider,
       metricsService,
+    );
+    this.ruleBasedSolver = new RuleBasedSchedulingSolver(
+      policyService,
+      candidateEngine,
+      objectiveEvaluator ?? new SchedulingObjectiveEvaluator(),
+    );
+    // NO-13i / ADR-058：MILP 求解器（HiGHS WASM 进程内；策略显式选择 milp-v1）。
+    this.milpSolver = new MilpSchedulingSolver(
+      policyService,
+      candidateEngine,
+      objectiveEvaluator ?? new SchedulingObjectiveEvaluator(),
     );
   }
 
@@ -203,8 +227,36 @@ export class SolverService {
     opts: SolveOptions,
   ): Promise<SchedulingPlanV2> {
     const started = Date.now();
-    const activation = await this.resolveActivation(opts);
-    const plan = await this.runByActivation(activation, snapshot, constraints, opts);
+    // NO-13d / ADR-053：策略显式选择 rule-based-v1（差异边界 §9——策略驱动，
+    // 不参与 CP-SAT 激活阶梯，亦不隐式回退）。
+    const policy = opts.policy ?? (await this.policyService.getActivePolicy());
+    let activation: {
+      state: SolverActivationState;
+      canaryFraction: number;
+      orgAllowlist: string[];
+      orgAllowlisted: boolean;
+    };
+    let plan: SchedulingPlanV2;
+    if (policy.solverVersion === RULE_BASED_SOLVER_VERSION) {
+      activation = { state: 'RULE_BASED', canaryFraction: 0, orgAllowlist: [], orgAllowlisted: false };
+      plan = await this.ruleBasedSolver.solve(
+        snapshot,
+        this.toSchedulingConstraints(constraints),
+        opts,
+      );
+    } else if (policy.solverVersion === MILP_SOLVER_VERSION) {
+      // NO-13i / ADR-058：MILP 显式策略选择（差异边界 §9——不参与 CP-SAT 激活阶梯，
+      // 亦不隐式回退；solverActivation 如实标记 MILP）。
+      activation = { state: 'MILP', canaryFraction: 0, orgAllowlist: [], orgAllowlisted: false };
+      plan = await this.milpSolver.solve(
+        snapshot,
+        this.toSchedulingConstraints(constraints),
+        opts,
+      );
+    } else {
+      activation = await this.resolveActivation(opts);
+      plan = await this.runByActivation(activation, snapshot, constraints, opts);
+    }
     // Task A / P0：solverActivation 审计（state/canaryFraction/orgAllowlisted 随 baselineDelta 落库）。
     plan.baselineDelta = {
       ...(plan.baselineDelta ?? {}),

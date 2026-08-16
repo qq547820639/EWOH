@@ -1,0 +1,278 @@
+{
+  "schemaVersion": "1.0.0",
+  "records": [
+    {
+      "name": "valid-factory-incident",
+      "record": {
+        "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "incident",
+        "scope": "factory",
+        "tenantId": "org-1",
+        "title": "工位 A 线边缺料处置记录",
+        "summary": "线边缺料导致停线的处置过程与根因",
+        "body": "缺料根因为 AGV 调度拥塞；处置为临时补员 + 调整补料窗口。",
+        "sourceEvidenceIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+        "relatedEntityIds": ["station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+        "tags": ["缺料", "AGV"],
+        "version": 1,
+        "status": "verified",
+        "verifiedBy": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "timeSemantics": { "validFrom": "2026-08-16T08:00:00Z", "validTo": null },
+        "auditTrail": true
+      }
+    },
+    {
+      "name": "valid-global-failure-pattern",
+      "record": {
+        "knowledgeId": "knowledge:5c1b2a3d-1111-4222-8333-9a8b7c6d5e4f",
+        "kind": "failure_pattern",
+        "scope": "global",
+        "title": "外骨骼电量骤降共性模式",
+        "summary": "跨工厂匿名化聚合的电量骤降模式",
+        "body": "电量骤降与高助力档位连续使用的相关性模式（匿名化聚合）。",
+        "sourceEvidenceIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+        "relatedEntityIds": [],
+        "tags": ["battery", "assist"],
+        "version": 1,
+        "status": "verified",
+        "provenance": {
+          "trainingDataSources": ["anonymized-aggregates-2026H1"],
+          "anonymizationPolicy": "k-anonymity>=5, 无人员/订单标识",
+          "dataAuthorization": "opt-in-2026-01",
+          "modelVersion": "pattern-v2"
+        },
+        "timeSemantics": { "validFrom": "2026-08-16T08:00:00Z", "validTo": null },
+        "auditTrail": true
+      }
+    },
+    {
+      "name": "missing-tenant-for-factory-rejected",
+      "record": {
+        "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "incident",
+        "scope": "factory",
+        "title": "无租户工厂知识",
+        "summary": "s",
+        "body": "b",
+        "sourceEvidenceIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+        "relatedEntityIds": [],
+        "tags": ["x"],
+        "version": 1,
+        "status": "draft",
+        "timeSemantics": { "validFrom": "2026-08-16T08:00:00Z", "validTo": null },
+        "auditTrail": true
+      },
+      "expectError": "tenant_required"
+    },
+    {
+      "name": "tenant-forbidden-for-global-rejected",
+      "record": {
+        "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "failure_pattern",
+        "scope": "global",
+        "tenantId": "org-1",
+        "title": "带租户的全局知识",
+        "summary": "s",
+        "body": "b",
+        "sourceEvidenceIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+        "relatedEntityIds": [],
+        "tags": ["x"],
+        "version": 1,
+        "status": "draft",
+        "provenance": {
+          "trainingDataSources": ["a"],
+          "anonymizationPolicy": "p",
+          "dataAuthorization": "d",
+          "modelVersion": "v1"
+        },
+        "timeSemantics": { "validFrom": "2026-08-16T08:00:00Z", "validTo": null },
+        "auditTrail": true
+      },
+      "expectError": "tenant_forbidden"
+    },
+    {
+      "name": "provenance-missing-for-global-rejected",
+      "record": {
+        "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "failure_pattern",
+        "scope": "global",
+        "title": "无来源声明的全局知识",
+        "summary": "s",
+        "body": "b",
+        "sourceEvidenceIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+        "relatedEntityIds": [],
+        "tags": ["x"],
+        "version": 1,
+        "status": "draft",
+        "timeSemantics": { "validFrom": "2026-08-16T08:00:00Z", "validTo": null },
+        "auditTrail": true
+      },
+      "expectError": "provenance_required"
+    },
+    {
+      "name": "provenance-forbidden-for-private-rejected",
+      "record": {
+        "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "evidence",
+        "scope": "private_operational",
+        "tenantId": "org-1",
+        "title": "私有知识带共享声明",
+        "summary": "s",
+        "body": "b",
+        "sourceEvidenceIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+        "relatedEntityIds": [],
+        "tags": ["x"],
+        "version": 1,
+        "status": "draft",
+        "provenance": {
+          "trainingDataSources": ["a"],
+          "anonymizationPolicy": "p",
+          "dataAuthorization": "d",
+          "modelVersion": "v1"
+        },
+        "timeSemantics": { "validFrom": "2026-08-16T08:00:00Z", "validTo": null },
+        "auditTrail": true
+      },
+      "expectError": "provenance_forbidden"
+    },
+    {
+      "name": "bad-evidence-ref-rejected",
+      "record": {
+        "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "incident",
+        "scope": "factory",
+        "tenantId": "org-1",
+        "title": "坏证据引用",
+        "summary": "s",
+        "body": "b",
+        "sourceEvidenceIds": ["not-canonical"],
+        "relatedEntityIds": [],
+        "tags": ["x"],
+        "version": 1,
+        "status": "draft",
+        "timeSemantics": { "validFrom": "2026-08-16T08:00:00Z", "validTo": null },
+        "auditTrail": true
+      },
+      "expectError": "bad_evidence_ref"
+    },
+    {
+      "name": "empty-evidence-rejected",
+      "record": {
+        "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "incident",
+        "scope": "factory",
+        "tenantId": "org-1",
+        "title": "无证据知识",
+        "summary": "s",
+        "body": "b",
+        "sourceEvidenceIds": [],
+        "relatedEntityIds": [],
+        "tags": ["x"],
+        "version": 1,
+        "status": "draft",
+        "timeSemantics": { "validFrom": "2026-08-16T08:00:00Z", "validTo": null },
+        "auditTrail": true
+      },
+      "expectError": "empty_evidence"
+    },
+    {
+      "name": "unknown-kind-rejected",
+      "record": {
+        "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "gizmo",
+        "scope": "factory",
+        "tenantId": "org-1",
+        "title": "未知类型",
+        "summary": "s",
+        "body": "b",
+        "sourceEvidenceIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+        "relatedEntityIds": [],
+        "tags": ["x"],
+        "version": 1,
+        "status": "draft",
+        "timeSemantics": { "validFrom": "2026-08-16T08:00:00Z", "validTo": null },
+        "auditTrail": true
+      },
+      "expectError": "unknown_kind"
+    },
+    {
+      "name": "unknown-scope-rejected",
+      "record": {
+        "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "incident",
+        "scope": "galactic",
+        "title": "未知层级",
+        "summary": "s",
+        "body": "b",
+        "sourceEvidenceIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+        "relatedEntityIds": [],
+        "tags": ["x"],
+        "version": 1,
+        "status": "draft",
+        "timeSemantics": { "validFrom": "2026-08-16T08:00:00Z", "validTo": null },
+        "auditTrail": true
+      },
+      "expectError": "unknown_scope"
+    },
+    {
+      "name": "bad-status-rejected",
+      "record": {
+        "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "incident",
+        "scope": "factory",
+        "tenantId": "org-1",
+        "title": "坏状态",
+        "summary": "s",
+        "body": "b",
+        "sourceEvidenceIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+        "relatedEntityIds": [],
+        "tags": ["x"],
+        "version": 1,
+        "status": "published",
+        "timeSemantics": { "validFrom": "2026-08-16T08:00:00Z", "validTo": null },
+        "auditTrail": true
+      },
+      "expectError": "bad_status"
+    },
+    {
+      "name": "audit-false-rejected",
+      "record": {
+        "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "incident",
+        "scope": "factory",
+        "tenantId": "org-1",
+        "title": "无审计知识",
+        "summary": "s",
+        "body": "b",
+        "sourceEvidenceIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+        "relatedEntityIds": [],
+        "tags": ["x"],
+        "version": 1,
+        "status": "draft",
+        "timeSemantics": { "validFrom": "2026-08-16T08:00:00Z", "validTo": null },
+        "auditTrail": false
+      },
+      "expectError": "audit_required"
+    },
+    {
+      "name": "bad-tag-rejected",
+      "record": {
+        "knowledgeId": "knowledge:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "kind": "incident",
+        "scope": "factory",
+        "tenantId": "org-1",
+        "title": "坏标签",
+        "summary": "s",
+        "body": "b",
+        "sourceEvidenceIds": ["event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+        "relatedEntityIds": [],
+        "tags": ["ok", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"],
+        "version": 1,
+        "status": "draft",
+        "timeSemantics": { "validFrom": "2026-08-16T08:00:00Z", "validTo": null },
+        "auditTrail": true
+      },
+      "expectError": "bad_tag"
+    }
+  ]
+}

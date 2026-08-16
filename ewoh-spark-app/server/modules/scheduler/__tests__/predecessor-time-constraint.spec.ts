@@ -101,7 +101,7 @@ describe('P0-1: predecessor 显式时间约束', () => {
         {
           id: 'p1',
           name: 'p1',
-          status: 'available',
+          status: 'AVAILABLE',
           healthStatus: 'normal',
           skills: ['work'],
           certifications: [],
@@ -115,7 +115,7 @@ describe('P0-1: predecessor 显式时间约束', () => {
         {
           id: 'p2',
           name: 'p2',
-          status: 'available',
+          status: 'AVAILABLE',
           healthStatus: 'normal',
           skills: ['work'],
           certifications: [],
@@ -233,7 +233,7 @@ describe('P0-1: predecessor 显式时间约束', () => {
         {
           id: 'p1',
           name: 'p1',
-          status: 'available',
+          status: 'AVAILABLE',
           healthStatus: 'normal',
           skills: ['work'],
           certifications: [],
@@ -321,7 +321,7 @@ describe('P0-1: predecessor 显式时间约束', () => {
         {
           id: 'p1',
           name: 'p1',
-          status: 'available',
+          status: 'AVAILABLE',
           healthStatus: 'normal',
           skills: ['work'],
           certifications: [],
@@ -335,7 +335,7 @@ describe('P0-1: predecessor 显式时间约束', () => {
         {
           id: 'p2',
           name: 'p2',
-          status: 'available',
+          status: 'AVAILABLE',
           healthStatus: 'normal',
           skills: ['work'],
           certifications: [],

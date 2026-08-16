@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Canonical Resource 跨语言一致性测试向量（ADR-007）。语义权威源：contracts/resource/resource.schema.json。",
+  "statuses": [
+    { "value": "AVAILABLE", "valid": true },
+    { "value": "RESERVED", "valid": true },
+    { "value": "BUSY", "valid": true },
+    { "value": "DEGRADED", "valid": true },
+    { "value": "OFFLINE", "valid": true },
+    { "value": "MAINTENANCE", "valid": true },
+    { "value": "UNKNOWN", "valid": true },
+    { "value": "available", "valid": false },
+    { "value": "IDLE", "valid": false },
+    { "value": "", "valid": false }
+  ],
+  "availability": [
+    { "name": "available-fresh", "status": "AVAILABLE", "dataQuality": "FRESH", "expect": { "available": true, "reason": null } },
+    { "name": "available-stale-fail-closed", "status": "AVAILABLE", "dataQuality": "STALE", "expect": { "available": false, "reason": "stale_data" } },
+    { "name": "available-unknown-fail-closed", "status": "AVAILABLE", "dataQuality": "UNKNOWN", "expect": { "available": false, "reason": "stale_data" } },
+    { "name": "reserved", "status": "RESERVED", "dataQuality": "FRESH", "expect": { "available": false, "reason": "reserved" } },
+    { "name": "busy", "status": "BUSY", "dataQuality": "FRESH", "expect": { "available": false, "reason": "busy" } },
+    { "name": "degraded", "status": "DEGRADED", "dataQuality": "FRESH", "expect": { "available": false, "reason": "degraded" } },
+    { "name": "offline", "status": "OFFLINE", "dataQuality": "FRESH", "expect": { "available": false, "reason": "offline" } },
+    { "name": "maintenance", "status": "MAINTENANCE", "dataQuality": "FRESH", "expect": { "available": false, "reason": "maintenance" } },
+    { "name": "unknown-status", "status": "UNKNOWN", "dataQuality": "FRESH", "expect": { "available": false, "reason": "unknown_status" } },
+    { "name": "invalid-status-rejected", "status": "IDLE", "dataQuality": "FRESH", "expectError": "unknown_status" }
+  ],
+  "resourceTypes": [
+    { "value": "person", "valid": true },
+    { "value": "device", "valid": true },
+    { "value": "station", "valid": true },
+    { "value": "tool", "valid": true },
+    { "value": "material", "valid": true },
+    { "value": "vehicle", "valid": true },
+    { "value": "agv", "valid": false },
+    { "value": "Person", "valid": false }
+  ]
+}

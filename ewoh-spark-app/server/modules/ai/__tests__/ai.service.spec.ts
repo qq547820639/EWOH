@@ -1,0 +1,147 @@
+/* AiService 建议流 ReasoningResult 附着测试（NO-08d / ADR-014）。
+ *
+ * 覆盖：LLM 成功/失败路径均附着 Canonical ReasoningResult（无标定置信度
+ * 显式声明 + ok/error 映射）；规则模板回退（无 Ark）不附着 reasoning。
+ */
+/// <reference types="jest" />
+import { AiService } from '../ai.service';
+import { ArkService } from '../ark.service';
+
+const INPUT = {
+  triggeredBy: 'u1',
+  snapshot: { version: 3, from: '2026-08-16T08:00:00Z', to: '2026-08-16T09:00:00Z', records: 12 },
+  problem: '测试问题',
+};
+
+function makeArk(result: Record<string, unknown>) {
+  return {
+    ask: jest.fn().mockResolvedValue(result),
+  };
+}
+
+describe('AiService（NO-08d 建议流元数据附着）', () => {
+  it('LLM 成功：suggestion 附着 ReasoningResult（L4/suggestion/无置信度）', async () => {
+    const ark = makeArk({
+      ok: true,
+      text: JSON.stringify({ suggestion: '调整人员排班' }),
+      model: 'doubao-pro',
+      reasoning: {
+        reasoningId: 'RS-1',
+        level: 'L4_industrial_reasoning',
+        kind: 'suggestion',
+        modelId: 'ark-chat',
+        modelVersion: 'doubao-pro',
+        inputVersion: 'scheduler-suggestion-v2',
+        subjectId: null,
+        content: JSON.stringify({ suggestion: '调整人员排班' }),
+        ok: true,
+        error: null,
+        confidence: null,
+        confidenceBasis: 'uncalibrated',
+        evidence: { generatedAt: '2026-08-16T09:00:00Z' },
+        contract_violations: [],
+      },
+    });
+    const service = new AiService(undefined, ark as unknown as ArkService);
+    const suggestion = await service.createSuggestion(INPUT);
+    expect(suggestion.suggestion).toBe('调整人员排班');
+    const r = suggestion.reasoning as Record<string, unknown>;
+    expect(r.kind).toBe('suggestion');
+    expect(r.level).toBe('L4_industrial_reasoning');
+    expect(r.confidence).toBeNull();
+    expect(r.contract_violations).toEqual([]);
+  });
+
+  it('LLM 失败：suggestion 附着 ok=false reasoning + basis 记录不可用', async () => {
+    const ark = makeArk({
+      ok: false,
+      text: '',
+      model: 'doubao-pro',
+      error: 'HTTP 500',
+      reasoning: {
+        reasoningId: 'RS-2',
+        level: 'L4_industrial_reasoning',
+        kind: 'suggestion',
+        modelId: 'ark-chat',
+        modelVersion: 'doubao-pro',
+        inputVersion: 'scheduler-suggestion-v2',
+        subjectId: null,
+        content: '',
+        ok: false,
+        error: 'HTTP 500',
+        confidence: null,
+        confidenceBasis: 'uncalibrated',
+        evidence: { generatedAt: '2026-08-16T09:01:00Z' },
+        contract_violations: [],
+      },
+    });
+    const service = new AiService(undefined, ark as unknown as ArkService);
+    const suggestion = await service.createSuggestion(INPUT);
+    expect(suggestion.basis.some((b) => b.includes('LLM 不可用'))).toBe(true);
+    const r = suggestion.reasoning as Record<string, unknown>;
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('HTTP 500');
+  });
+
+  it('规则模板回退（无 Ark）：不附着 reasoning（不伪造）', async () => {
+    const service = new AiService(undefined, undefined);
+    const suggestion = await service.createSuggestion(INPUT);
+    expect(suggestion.reasoning).toBeUndefined();
+    expect(suggestion.suggestion).toContain('人工复核');
+  });
+
+  // ── NO-08a（ADR-019）：确定性规则基础 → L1 InferenceResult 台账 ──────────
+
+  function makeInference(record: Record<string, unknown> = {}) {
+    return {
+      recordInferenceResult: jest.fn().mockResolvedValue({
+        record: {
+          inferenceId: 'inf-test-1',
+          subjectId: 'decision:sug-1',
+          level: 'L1_deterministic_rules',
+          confidence: 1,
+          ...record,
+        },
+        created: true,
+      }),
+    };
+  }
+
+  it('NO-08a：规则基础落账 L1 InferenceResult（confidence=1 如实声明 + inputVersion 快照版本）', async () => {
+    const inference = makeInference();
+    const service = new AiService(undefined, undefined, inference as never);
+    const suggestion = await service.createSuggestion({ ...INPUT, orgId: 'org-a' });
+    expect(inference.recordInferenceResult).toHaveBeenCalledTimes(1);
+    const [payload, orgId] = inference.recordInferenceResult.mock.calls[0] as unknown as [
+      Record<string, unknown>,
+      string,
+    ];
+    expect(orgId).toBe('org-a');
+    expect(payload.level).toBe('L1_deterministic_rules');
+    expect(payload.confidence).toBe(1);
+    expect(payload.inputVersion).toBe('snapshot-v3');
+    expect(payload.modelId).toBe('rule-a2-suggestion');
+    expect((payload.oodIndicator as { flag: boolean; reasons: string[] }).flag).toBe(false);
+    expect((payload.evidence as { isRule: boolean }).isRule).toBe(true);
+    expect(suggestion.inference).toBeDefined();
+    expect((suggestion.inference as Record<string, unknown>).confidence).toBe(1);
+  });
+
+  it('NO-08a：org 上下文缺失 → 显式跳过落账（不伪造租户）', async () => {
+    const inference = makeInference();
+    const service = new AiService(undefined, undefined, inference as never);
+    const suggestion = await service.createSuggestion(INPUT);
+    expect(inference.recordInferenceResult).not.toHaveBeenCalled();
+    expect(suggestion.inference).toBeUndefined();
+  });
+
+  it('NO-08a：台账写入失败 → 主流程不中断（logger 留痕，建议照常返回）', async () => {
+    const inference = {
+      recordInferenceResult: jest.fn().mockRejectedValue(new Error('db down')),
+    };
+    const service = new AiService(undefined, undefined, inference as never);
+    const suggestion = await service.createSuggestion({ ...INPUT, orgId: 'org-a' });
+    expect(suggestion.suggestion).toContain('人工复核');
+    expect(suggestion.inference).toBeUndefined();
+  });
+});

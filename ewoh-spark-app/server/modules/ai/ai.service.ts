@@ -1,7 +1,16 @@
-import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { ewohAiSuggestion, ewohTelemetry, ewohEvent, ewohProductionTask } from '@server/database/schema';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { DRIZZLE_DATABASE } from '@lark-apaas/fullstack-nestjs-core';
-import { sql } from 'drizzle-orm';
+import { sql, eq, and } from 'drizzle-orm';
 import { ArkService } from './ark.service';
+import { InferenceResultService } from '../inference/inference.service';
 
 export interface AiSuggestion {
   id: string;
@@ -17,6 +26,17 @@ export interface AiSuggestion {
   uncertainty: string[];
   confirmItems: string[];
   expiryConditions: string[];
+  /**
+   * NO-08d（ADR-014）：LLM 生成路径附带的 Canonical ReasoningResult 元数据
+   * （无标定置信度显式声明 + 契约自检留痕）；规则模板回退路径无此字段。
+   */
+  reasoning?: Record<string, unknown>;
+  /**
+   * NO-08a（ADR-019）：确定性规则基础的 Canonical InferenceResult 元数据
+   * （L1，confidence=1 如实声明；快照完备度→dataQuality）。LLM 文本增强由
+   * reasoning 字段承载（两契约分工不混用）。
+   */
+  inference?: Record<string, unknown>;
 }
 
 export interface AiPlan {
@@ -61,6 +81,7 @@ function buildSuggestion(input: {
 
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
   private readonly suggestions = new Map<string, AiSuggestion>();
   private readonly plans = new Map<string, AiPlan>();
   private snapshotVersion = 0;
@@ -68,19 +89,19 @@ export class AiService {
   constructor(
     @Optional() @Inject(DRIZZLE_DATABASE) private readonly db?: any,
     private readonly ark?: ArkService,
+    @Optional() private readonly inference?: InferenceResultService,
   ) {}
 
-  async getSnapshotVersion(): Promise<number> {
+  async getSnapshotVersion(orgId?: string | null): Promise<number> {
     if (!this.db) {
       return this.snapshotVersion;
     }
-    const rows = await this.db.execute(
-      sql`
-        select coalesce(max((content::jsonb->>'snapshotVersion')::bigint), 0)::int as version
-        from public.ewoh_ai_suggestion
-      `,
-    );
-    return Number((rows[0] as Record<string, unknown>)?.version ?? 0);
+    // ADR-078：drizzle 类型安全 + 可选 org 过滤（跨租户版本号混读关闭）。
+    const rows = await this.db
+      .select({ version: sql`coalesce(max((content::jsonb->>'snapshotVersion')::bigint), 0)::int` })
+      .from(ewohAiSuggestion)
+      .where(orgId ? eq(ewohAiSuggestion.orgId, orgId) : undefined);
+    return Number((rows[0] as { version: number } | undefined)?.version ?? 0);
   }
 
   /** Manual A2 trigger only; never called during initialization. */
@@ -88,31 +109,79 @@ export class AiService {
     triggeredBy: string;
     snapshot: { version: number; from: string; to: string; records: number };
     problem: string;
+    /** NO-08a（ADR-019）：推理结果台账的租户上下文（缺省不落账，显式告警）。 */
+    orgId?: string;
   }): Promise<AiSuggestion> {
     if (!input.triggeredBy?.trim() || !input.problem?.trim()) {
       throw new BadRequestException('triggeredBy and problem are required');
     }
     // 真实调用 Ark 大模型生成建议；失败时回落到规则模板，保证流程可用。
-    const suggestion = await this.generateSuggestionWithLlm(input);
+    let suggestion = await this.generateSuggestionWithLlm(input);
+    // NO-08a（ADR-019）：把确定性规则基础记录为 L1 InferenceResult 台账
+    // （与 LLM 文本增强的 ReasoningResult 分工——统计确定 vs 文本生成）。
+    suggestion = await this.attachRuleBasisInference(suggestion, input);
     if (!this.db) {
       this.snapshotVersion = input.snapshot.version;
       this.suggestions.set(suggestion.id, suggestion);
       return suggestion;
     }
-    const [row] = await this.db.execute(
-      sql`
-        insert into public.ewoh_ai_suggestion (
-          suggestion_id, title, suggestion_type, status, input_summary,
-          content, risk_assessment, triggered_by, ai_level
-        ) values (
-          ${suggestion.id}, ${input.problem}, 'A2', 'generated', ${input.problem},
-          ${JSON.stringify(suggestion)}, ${JSON.stringify(suggestion.risk)},
-          ${input.triggeredBy}, 'A2'
-        )
-        returning content
-      `,
-    );
-    return JSON.parse(String((row as Record<string, unknown>).content)) as AiSuggestion;
+    // ADR-078：drizzle 类型安全（消除 public. 硬编码）+ org 归属注入。
+    const [row] = await this.db
+      .insert(ewohAiSuggestion)
+      .values({
+        suggestionId: suggestion.id,
+        title: input.problem,
+        suggestionType: 'A2',
+        status: 'generated',
+        inputSummary: input.problem,
+        content: JSON.stringify(suggestion),
+        riskAssessment: JSON.stringify(suggestion.risk),
+        triggeredBy: input.triggeredBy,
+        aiLevel: 'A2',
+        ...(input.orgId ? { orgId: input.orgId } : {}),
+      })
+      .returning({ content: ewohAiSuggestion.content });
+    return JSON.parse(String(row?.content)) as AiSuggestion;
+  }
+
+  /**
+   * NO-08a（ADR-019 决策 3/6）：A2 建议的确定性规则基础 → L1 InferenceResult。
+   * 台账写入失败 logger.error 留痕、主流程不中断（建议生成主契约不被审计旁路阻断）。
+   */
+  private async attachRuleBasisInference(
+    suggestion: AiSuggestion,
+    input: { snapshot: { version: number; from: string; to: string; records: number }; problem: string; orgId?: string },
+  ): Promise<AiSuggestion> {
+    if (!this.inference) return suggestion;
+    if (!input.orgId?.trim()) {
+      this.logger.warn('A2 建议无租户上下文，跳过推理结果落账（显式，非静默）');
+      return suggestion;
+    }
+    try {
+      const result = await this.inference.recordInferenceResult(
+        {
+          subjectId: `decision:${suggestion.id}`,
+          level: 'L1_deterministic_rules',
+          modelId: 'rule-a2-suggestion',
+          modelVersion: 'v1',
+          inputVersion: `snapshot-v${input.snapshot.version}`,
+          label: input.problem,
+          confidence: 1,
+          oodIndicator: { flag: false, reasons: [] },
+          dataQuality: suggestion.completeness >= 0.5 ? 'good' : 'degraded',
+          evidence: {
+            tsStart: input.snapshot.from,
+            tsEnd: input.snapshot.to,
+            isRule: true,
+          },
+        },
+        input.orgId,
+      );
+      return { ...suggestion, inference: result.record };
+    } catch (error) {
+      this.logger.error(`A2 建议推理结果落账失败: ${String(error)}`);
+      return suggestion;
+    }
   }
 
   /** 调用 Ark 大模型生成 A2 建议；无配置或失败时回落到规则模板。 */
@@ -132,10 +201,15 @@ export class AiService {
       `触发人：${input.triggeredBy}`,
       `数据快照：version=${input.snapshot.version}, from=${input.snapshot.from}, to=${input.snapshot.to}, records=${input.snapshot.records}`,
     ].join('\n');
-    const result = await this.ark.ask(systemPrompt, userPrompt, { temperature: 0.4 });
+    const result = await this.ark.ask(systemPrompt, userPrompt, {
+      temperature: 0.4,
+      kind: 'suggestion',
+      inputVersion: 'scheduler-suggestion-v2',
+    });
     if (!result.ok) {
       base.basis.push(`LLM 不可用：${result.error}`);
-      return base;
+      // NO-08d：失败路径同样留痕 ReasoningResult（ok=false + error 可审计）。
+      return { ...base, reasoning: result.reasoning };
     }
     try {
       const parsed = JSON.parse(result.text) as Partial<AiSuggestion>;
@@ -148,10 +222,11 @@ export class AiService {
           Array.isArray(parsed.uncertainty) && parsed.uncertainty.length ? parsed.uncertainty : base.uncertainty,
         confirmItems:
           Array.isArray(parsed.confirmItems) && parsed.confirmItems.length ? parsed.confirmItems : base.confirmItems,
+        ...(result.reasoning ? { reasoning: result.reasoning } : {}),
       };
     } catch {
       base.suggestion = `${base.suggestion}\n（LLM 原始输出：${result.text.slice(0, 500)}）`;
-      return base;
+      return { ...base, reasoning: result.reasoning };
     }
   }
 
@@ -173,9 +248,10 @@ export class AiService {
       return plan;
     }
 
-    const [suggestionRow] = await this.db.execute(
-      sql`select content from public.ewoh_ai_suggestion where suggestion_id = ${suggestionId}`,
-    );
+    const [suggestionRow] = await this.db
+      .select({ content: ewohAiSuggestion.content })
+      .from(ewohAiSuggestion)
+      .where(eq(ewohAiSuggestion.suggestionId, suggestionId));
     if (!suggestionRow) {
       throw new NotFoundException(`Suggestion ${suggestionId} not found`);
     }
@@ -191,13 +267,10 @@ export class AiService {
       status: 'shadow',
       content: enrichedContent,
     };
-    await this.db.execute(
-      sql`
-        update public.ewoh_ai_suggestion
-        set plan_content = ${JSON.stringify(plan)}::jsonb
-        where suggestion_id = ${suggestionId}
-      `,
-    );
+    await this.db
+      .update(ewohAiSuggestion)
+      .set({ planContent: plan as unknown as Record<string, unknown> })
+      .where(eq(ewohAiSuggestion.suggestionId, suggestionId));
     return plan;
   }
 
@@ -211,15 +284,32 @@ export class AiService {
       '你是工厂调度专家。基于 A2 建议生成 A3 模拟调度方案要点。仅输出 JSON 对象，可包含 shift, actions, kpis, note 等键。' +
       '不要输出 markdown 代码块或其他文字。';
     const userPrompt = `A2 建议：${suggestionText}\n已有的方案上下文：${JSON.stringify(content)}`;
-    const result = await this.ark.ask(systemPrompt, userPrompt, { temperature: 0.4 });
+    const result = await this.ark.ask(systemPrompt, userPrompt, {
+      temperature: 0.4,
+      kind: 'analysis',
+      inputVersion: 'plan-analysis-v1',
+    });
     if (!result.ok) {
-      return { ...content, llmNote: `LLM 不可用：${result.error}` };
+      return {
+        ...content,
+        llmNote: `LLM 不可用：${result.error}`,
+        ...(result.reasoning ? { reasoning: result.reasoning } : {}),
+      };
     }
     try {
       const parsed = JSON.parse(result.text) as Record<string, unknown>;
-      return { ...content, ...parsed, llmNote: `由 Ark 模型生成（${result.model}）` };
+      return {
+        ...content,
+        ...parsed,
+        llmNote: `由 Ark 模型生成（${result.model}）`,
+        ...(result.reasoning ? { reasoning: result.reasoning } : {}),
+      };
     } catch {
-      return { ...content, llmNote: `LLM 原始输出：${result.text.slice(0, 500)}` };
+      return {
+        ...content,
+        llmNote: `LLM 原始输出：${result.text.slice(0, 500)}`,
+        ...(result.reasoning ? { reasoning: result.reasoning } : {}),
+      };
     }
   }
 
@@ -231,9 +321,10 @@ export class AiService {
       }
       return suggestion;
     }
-    const [row] = await this.db.execute(
-      sql`select content from public.ewoh_ai_suggestion where suggestion_id = ${id}`,
-    );
+    const [row] = await this.db
+      .select({ content: ewohAiSuggestion.content })
+      .from(ewohAiSuggestion)
+      .where(eq(ewohAiSuggestion.suggestionId, id));
     if (!row) {
       throw new NotFoundException(`Suggestion ${id} not found`);
     }
@@ -248,13 +339,10 @@ export class AiService {
       }
       return plan;
     }
-    const [row] = await this.db.execute(
-      sql`
-        select plan_content
-        from public.ewoh_ai_suggestion
-        where plan_content->>'id' = ${id}
-      `,
-    );
+    const [row] = await this.db
+      .select({ planContent: ewohAiSuggestion.planContent })
+      .from(ewohAiSuggestion)
+      .where(sql`plan_content->>'id' = ${id}`);
     if (!row) {
       throw new NotFoundException(`Plan ${id} not found`);
     }
@@ -262,14 +350,14 @@ export class AiService {
   }
 
   /** 自然语言问答：采集系统实时上下文并调用 Ark 回答。 */
-  async chatWithContext(question: string): Promise<{
+  async chatWithContext(question: string, orgId?: string | null): Promise<{
     ok: boolean;
     answer: string;
     model: string;
     error?: string;
     context?: string;
   }> {
-    const context = await this.collectSystemContext();
+    const context = await this.collectSystemContext(orgId ?? null);
     if (!this.ark) {
       return { ok: false, answer: '', model: '', error: 'AI 服务未就绪。', context };
     }
@@ -288,24 +376,29 @@ export class AiService {
   }
 
   /** 采集系统实时上下文（遥测负荷电量、开放事件、生产任务统计）。 */
-  private async collectSystemContext(): Promise<string> {
+  private async collectSystemContext(orgId?: string | null): Promise<string> {
     if (!this.db) return '（无数据库连接，无法采集实时上下文）';
     const lines: string[] = [];
     try {
-      const tele: Array<{ deviceId: string; avgLoad: number | null; avgBattery: number | null; cnt: number }> =
-        await this.db.execute(
-          sql`
-            select device_id as "deviceId",
-                   round(avg(load_score)::numeric, 2) as "avgLoad",
-                   round(avg(battery_pct)::numeric, 1) as "avgBattery",
-                   count(*)::int as cnt
-            from public.ewoh_telemetry
-            where ts > now() - interval '1 hour'
-            group by device_id
-            order by "avgLoad" desc
-            limit 8
-          `,
-        );
+      // ADR-078：drizzle 类型安全 + org 过滤（AI 上下文不跨租户，§15/§16）。
+      const tele: Array<{ deviceId: string | null; avgLoad: string | null; avgBattery: string | null; cnt: number }> =
+        await this.db
+          .select({
+            deviceId: ewohTelemetry.deviceId,
+            avgLoad: sql`round(avg(load_score)::numeric, 2)`,
+            avgBattery: sql`round(avg(battery_pct)::numeric, 1)`,
+            cnt: sql`count(*)::int`,
+          })
+          .from(ewohTelemetry)
+          .where(
+            and(
+              sql`ts > now() - interval '1 hour'`,
+              ...(orgId ? [eq(ewohTelemetry.orgId, orgId)] : []),
+            ),
+          )
+          .groupBy(ewohTelemetry.deviceId)
+          .orderBy(sql`"avgLoad" desc`)
+          .limit(8);
       if (tele?.length) {
         lines.push('【近1小时设备负荷/电量】');
         for (const t of tele) {
@@ -318,15 +411,17 @@ export class AiService {
       // 忽略遥测采集失败
     }
     try {
-      const events: Array<{ severity: string; status: string; cnt: number }> = await this.db.execute(
-        sql`
-          select severity, status, count(*)::int as cnt
-          from public.ewoh_event
-          group by severity, status
-          order by cnt desc
-          limit 8
-        `,
-      );
+      const events: Array<{ severity: string | null; status: string | null; cnt: number }> = await this.db
+        .select({
+          severity: ewohEvent.severity,
+          status: ewohEvent.status,
+          cnt: sql`count(*)::int`,
+        })
+        .from(ewohEvent)
+        .where(orgId ? eq(ewohEvent.orgId, orgId) : undefined)
+        .groupBy(ewohEvent.severity, ewohEvent.status)
+        .orderBy(sql`cnt desc`)
+        .limit(8);
       if (events?.length) {
         lines.push('【事件统计】');
         for (const e of events) {
@@ -337,14 +432,15 @@ export class AiService {
       // 忽略事件采集失败
     }
     try {
-      const tasks: Array<{ status: string; cnt: number }> = await this.db.execute(
-        sql`
-          select status, count(*)::int as cnt
-          from public.ewoh_production_task
-          group by status
-          order by cnt desc
-        `,
-      );
+      const tasks: Array<{ status: string | null; cnt: number }> = await this.db
+        .select({
+          status: ewohProductionTask.status,
+          cnt: sql`count(*)::int`,
+        })
+        .from(ewohProductionTask)
+        .where(orgId ? eq(ewohProductionTask.orgId, orgId) : undefined)
+        .groupBy(ewohProductionTask.status)
+        .orderBy(sql`cnt desc`);
       if (tasks?.length) {
         lines.push('【生产任务】');
         for (const t of tasks) {

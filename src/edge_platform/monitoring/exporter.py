@@ -12,7 +12,7 @@
 # - source_key: snapshot() 返回 dict 中的键
 # - labels_spec: None 表示标量；tuple 表示从 dict 派生出的 (label_name, value) 对，
 #   这里仅用于 db_counts 这种 dict 类型，固定使用 table 标签
-_METRIC_DEFS = [
+METRIC_DEFS = [
     # 系统级
     ("ewoh_uptime_seconds", "gauge", "Platform uptime since collector start in seconds.", "uptime_seconds", None),
     ("ewoh_db_count", "gauge", "Database row counts grouped by table.", "db_counts", ("table",)),
@@ -124,7 +124,7 @@ class PrometheusExporter:
             raise TypeError("metrics 必须是 dict（来自 MetricsCollector.snapshot()）")
 
         lines = []
-        for prom_name, mtype, help_text, source_key, labels_spec in _METRIC_DEFS:
+        for prom_name, mtype, help_text, source_key, labels_spec in METRIC_DEFS:
             lines.append(f"# HELP {prom_name} {help_text}")
             lines.append(f"# TYPE {prom_name} {mtype}")
             value = metrics.get(source_key)

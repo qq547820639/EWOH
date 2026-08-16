@@ -45,7 +45,9 @@ export interface PriorityInput {
   horizonEndMs: number;
   downstreamCount: Map<string, number>;
   manualBoostIds: Set<string>;
-  /** T03 / P1-1（G4）：开放事件（open 且 severity L2/L3 或 DEADLINE_AT_RISK → deadlineAtRisk=true）。eventId 可选（P0-2 scope 匹配保留）。 */
+  /** T03 / P1-1（G4）：开放事件（open 且 severity ∈ {critical, high, medium}
+   * 或 DEADLINE_AT_RISK → deadlineAtRisk=true；ADR-027 规范词表）。
+   * eventId 可选（P0-2 scope 匹配保留）。 */
   events?: Array<{ eventType: string | null; severity: string; eventId?: string }>;
   /** 显式截止风险标记（事件驱动推导结果；缺省由 events 推导）。 */
   deadlineAtRisk?: boolean;
@@ -135,13 +137,14 @@ export class PriorityEngine {
     }
 
     // 事件严重度 / 截止风险标记（T03 / P1-1 G4：死路径修复——从 events 推导 deadlineAtRisk）。
-    // 开放（status=open）且 severity L2/L3 或 eventType=DEADLINE_AT_RISK 的事件触发。
+    // 开放（status=open）且 severity ∈ {critical, high, medium}（ADR-027 规范
+    // 词表：除 low/unknown 外均为风险事件）或 eventType=DEADLINE_AT_RISK 触发。
     const taskExt = input.task as typeof input.task & {
       deadlineAtRisk?: boolean;
     };
     const eventRisky = (input.events ?? []).some(
       (e) =>
-        (e.severity === 'L2' || e.severity === 'L3') ||
+        (e.severity === 'critical' || e.severity === 'high' || e.severity === 'medium') ||
         e.eventType === 'DEADLINE_AT_RISK',
     );
     const deadlineAtRisk =

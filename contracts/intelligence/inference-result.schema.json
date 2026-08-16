@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///intelligence/inference-result/v1",
+  "title": "EWOH Canonical Inference Result Model",
+  "description": "EWOH 统一模型推理结果契约（ADR-013，Phase 8 NO-08a）。Level 1-7 分层工业智能的所有结果必须携带本元数据：model_id/model_version/input_version/confidence/OOD indicator/data quality/evidence。confidence ∈ [0,1] 越界拒绝；OOD flag=true 必须带 oodReasonRegistry 封闭理由（六路：data_quality/low_confidence/ambiguous/firmware_unverified/out_of_distribution/sensor_channel_missing），flag=false 时 reasons 必须为空；Unknown 是合法结果（低置信度禁止伪装确定答案）；dataQuality ∈ {good,degraded,invalid}（边缘窗口质量词表入契约）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "levelRegistry", "oodReasonRegistry", "dataQualityRegistry", "rules"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "levelRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^L[1-7]_[a-z0-9_]+$" }
+    },
+    "oodReasonRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" }
+    },
+    "dataQualityRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z]{1,16}$" }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["confidenceRange", "oodIndicator", "unknownLegal", "metadataRequired", "evidenceRequired"],
+      "properties": {
+        "confidenceRange": {
+          "type": "string",
+          "const": "confidence ∈ [0,1]，越界拒绝（fail-closed）；低置信度必须显式 unknown，禁止伪装确定答案"
+        },
+        "oodIndicator": {
+          "type": "string",
+          "const": "oodIndicator.flag=true 必须携带 ≥1 个 oodReasonRegistry 封闭理由；flag=false 时 reasons 必须为空（禁止无理由 OOD 与有理由未标记两种漂移）"
+        },
+        "unknownLegal": {
+          "type": "string",
+          "const": "label=unknown 是合法结果，且必须携带 oodIndicator 理由（Unknown 合法化）"
+        },
+        "metadataRequired": {
+          "type": "string",
+          "const": "modelId/modelVersion/inputVersion 必填非空（模型/数据版本可追溯，可审计）"
+        },
+        "evidenceRequired": {
+          "type": "string",
+          "const": "evidence 必带窗口时间戳 tsStart/tsEnd 与 isRule 标记（区分模型/规则路径，可审计）"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "levelRegistry": [
+    "L1_deterministic_rules", "L2_statistical_ml", "L3_optimization",
+    "L4_industrial_reasoning", "L5_agentic_workflow",
+    "L6_simulation_digital_twin", "L7_learning_loop"
+  ],
+  "oodReasonRegistry": [
+    "data_quality", "low_confidence", "ambiguous", "firmware_unverified",
+    "out_of_distribution", "sensor_channel_missing"
+  ],
+  "dataQualityRegistry": ["good", "degraded", "invalid"],
+  "rules": {
+    "confidenceRange": "confidence ∈ [0,1]，越界拒绝（fail-closed）；低置信度必须显式 unknown，禁止伪装确定答案",
+    "oodIndicator": "oodIndicator.flag=true 必须携带 ≥1 个 oodReasonRegistry 封闭理由；flag=false 时 reasons 必须为空（禁止无理由 OOD 与有理由未标记两种漂移）",
+    "unknownLegal": "label=unknown 是合法结果，且必须携带 oodIndicator 理由（Unknown 合法化）",
+    "metadataRequired": "modelId/modelVersion/inputVersion 必填非空（模型/数据版本可追溯，可审计）",
+    "evidenceRequired": "evidence 必带窗口时间戳 tsStart/tsEnd 与 isRule 标记（区分模型/规则路径，可审计）"
+  }
+}

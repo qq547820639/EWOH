@@ -40,7 +40,7 @@ export function getEntityColor(
       // 仅外骨骼装备按其在线态着色，其余设备统一灰色
       if (entity.entityType === 'device' && isExoDevice(entity)) {
         const dev = worldState?.devices.find((d) => d.entityId === entity.entityId);
-        return dev && dev.status !== 'offline' ? '#10b981' : '#6b7280';
+        return dev && dev.status !== 'OFFLINE' ? '#10b981' : '#6b7280';
       }
       return '#4b5563';
     case 'body_load':
@@ -59,7 +59,7 @@ export function getEntityColor(
     case 'device':
       if (entity.entityType === 'device') {
         const dev = worldState?.devices.find((d) => d.entityId === entity.entityId);
-        return dev && dev.status !== 'offline' ? '#10b981' : '#6b7280';
+        return dev && dev.status !== 'OFFLINE' ? '#10b981' : '#6b7280';
       }
       return '#4b5563';
     case 'environment':
@@ -89,11 +89,11 @@ export function getDeviceColor(
     // 外骨骼装备按在线态着色，其余设备统一灰色
     if (!isExoDevice(entity)) return '#4b5563';
     const dev = worldState?.devices.find((d) => d.entityId === entity.entityId);
-    return dev && dev.status !== 'offline' ? '#10b981' : '#6b7280';
+    return dev && dev.status !== 'OFFLINE' ? '#10b981' : '#6b7280';
   }
   if (mode === 'device' || mode === 'production') {
     const dev = worldState?.devices.find((d) => d.entityId === entity.entityId);
-    return dev && dev.status !== 'offline' ? '#10b981' : '#6b7280';
+    return dev && dev.status !== 'OFFLINE' ? '#10b981' : '#6b7280';
   }
   return '#4b5563';
 }

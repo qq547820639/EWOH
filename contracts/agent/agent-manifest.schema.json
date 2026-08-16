@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///agent/agent-manifest/v1",
+  "title": "EWOH Canonical Agent Manifest",
+  "description": "EWOH Multi-Agent Factory Agent 注册清单契约（ADR-016，Phase 9）。Agent 不得绕过系统架构：通过正式 Tools 行动、写动作必须转换为结构化 Command、依赖 World Model（ADR-008/015）、Audit 强制、Autonomous Level 显式阶梯（L0..L3，L4 永不允许——§2 安全边界）；高风险默认人审。注册规则：auditTrail 必须 true；L2/L3 必须显式非空 approvalRequiredFor；budget/timeout 下界；riskLevel=critical 仅允许 L0/L1；Safety 角色仅 L0/L1 且写范围为空。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "agentRoleRegistry", "scopeTokenRegistry", "commandRegistry", "riskLevels", "autonomousLevels", "fallbackStrategies", "rules"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "agentRoleRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9]{1,47}$" }
+    },
+    "scopeTokenRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][A-Za-z0-9]{1,47}$" }
+    },
+    "commandRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,47}$" }
+    },
+    "riskLevels": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z]{1,16}$" }
+    },
+    "autonomousLevels": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^L[0-3]$" }
+    },
+    "fallbackStrategies": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-zA-Z]{1,24}$" }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identityContract", "roleRegistry", "toolContract", "scopeContract", "approvalContract", "auditContract", "budgetContract", "fallbackContract"],
+      "properties": {
+        "identityContract": {
+          "type": "string",
+          "const": "agentId 必须是规范身份 agent:value（ADR-006）；allowedTools/fallbackAgentId 必须是规范身份"
+        },
+        "roleRegistry": {
+          "type": "string",
+          "const": "role ∈ agentRoleRegistry（15 类封闭注册表，ADR-016）"
+        },
+        "toolContract": {
+          "type": "string",
+          "const": "allowedTools 为 tool:<value> 规范身份数组；未注册 Tool 运行时拒绝（Tool 注册表另行契约）"
+        },
+        "scopeContract": {
+          "type": "string",
+          "const": "readScope/writeScope ∈ scopeTokenRegistry；writeScope.commands ⊆ commandRegistry（写能力显式最小化）"
+        },
+        "approvalContract": {
+          "type": "string",
+          "const": "autonomousLevel ∈ L0..L3（L4 永不允许，§2）；L2/L3 必须显式非空 approvalRequiredFor；riskLevel=critical 仅 L0/L1；Safety 角色仅 L0/L1 且 writeScope 为空"
+        },
+        "auditContract": {
+          "type": "string",
+          "const": "auditTrail 必须 true（false 拒绝注册）"
+        },
+        "budgetContract": {
+          "type": "string",
+          "const": "budget.maxSteps/maxTokens/maxDurationSec ≥ 1；timeoutSec ≥ 1"
+        },
+        "fallbackContract": {
+          "type": "string",
+          "const": "fallback.onFailure ∈ {fail, retry, delegateHuman, safeIdle}；失败显式语义，无静默吞"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "agentRoleRegistry": [
+    "FactorySupervisor", "Logistics", "Production", "Maintenance", "Quality",
+    "Safety", "Scheduling", "Material", "Energy", "WorkerSupport",
+    "Exoskeleton", "Incident", "Knowledge", "Simulation", "Operations"
+  ],
+  "scopeTokenRegistry": [
+    "worldSnapshot", "worldReplay", "personnelData", "equipmentData",
+    "materialData", "schedulingData", "maintenanceData", "qualityData",
+    "incidentData", "energyData", "simulationData", "knowledgeData"
+  ],
+  "commandRegistry": [
+    "propose_plan", "reserve_resource", "dispatch_task", "create_work_order",
+    "notify_personnel", "request_approval", "run_simulation", "record_evidence",
+    "register_knowledge"
+  ],
+  "riskLevels": ["low", "medium", "high", "critical"],
+  "autonomousLevels": ["L0", "L1", "L2", "L3"],
+  "fallbackStrategies": ["fail", "retry", "delegateHuman", "safeIdle"],
+  "rules": {
+    "identityContract": "agentId 必须是规范身份 agent:value（ADR-006）；allowedTools/fallbackAgentId 必须是规范身份",
+    "roleRegistry": "role ∈ agentRoleRegistry（15 类封闭注册表，ADR-016）",
+    "toolContract": "allowedTools 为 tool:<value> 规范身份数组；未注册 Tool 运行时拒绝（Tool 注册表另行契约）",
+    "scopeContract": "readScope/writeScope ∈ scopeTokenRegistry；writeScope.commands ⊆ commandRegistry（写能力显式最小化）",
+    "approvalContract": "autonomousLevel ∈ L0..L3（L4 永不允许，§2）；L2/L3 必须显式非空 approvalRequiredFor；riskLevel=critical 仅 L0/L1；Safety 角色仅 L0/L1 且 writeScope 为空",
+    "auditContract": "auditTrail 必须 true（false 拒绝注册）",
+    "budgetContract": "budget.maxSteps/maxTokens/maxDurationSec ≥ 1；timeoutSec ≥ 1",
+    "fallbackContract": "fallback.onFailure ∈ {fail, retry, delegateHuman, safeIdle}；失败显式语义，无静默吞"
+  }
+}

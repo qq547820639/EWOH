@@ -36,12 +36,15 @@ function makeReplanService(opts: {
     update: jest.fn(() => ({ set: setMock })),
     select: jest.fn(() => ({
       from: jest.fn(() => ({
-        orderBy: jest.fn(() => ({
-          limit: jest.fn().mockResolvedValue(
-            opts.latestPlanTotal != null
-              ? [{ scoreBreakdownJson: { total: opts.latestPlanTotal } }]
-              : [],
-          ),
+        // ADR-071：loadLatestPlanObjective 按 org 过滤基线（where → orderBy → limit）。
+        where: jest.fn(() => ({
+          orderBy: jest.fn(() => ({
+            limit: jest.fn().mockResolvedValue(
+              opts.latestPlanTotal != null
+                ? [{ scoreBreakdownJson: { total: opts.latestPlanTotal } }]
+                : [],
+            ),
+          })),
         })),
       })),
     })),

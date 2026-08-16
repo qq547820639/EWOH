@@ -1264,3 +1264,69 @@ class ConsentHookTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------- NO-08b（ADR-013）：推理结果规范化接线 ----------
+class InferenceResultContractWiringTest(unittest.TestCase):
+    """推理结果携带 Canonical Inference Result 元数据并做契约自检（fail-closed 留痕）。"""
+
+    def _pipeline(self, **kw):
+        return InferencePipeline(
+            FakeStorage(), FakeBus(), None,
+            RuleEngine(config={"cooldown_sec": 30}), **kw
+        )
+
+    def test_rule_fallback_carries_canonical_fields(self):
+        pipe = self._pipeline()
+        res = None
+        for m in subset_stream("D1", "P1", BASE_TS, 40, gyro_dps=120.0):
+            r = pipe.handle_telemetry(m)
+            if r is not None:
+                res = r
+        self.assertIsNotNone(res)
+        self.assertTrue(res["is_rule"])
+        self.assertEqual(res["level"], "L1_deterministic_rules")
+        self.assertEqual(res["input_version"], "unversioned")
+        self.assertEqual(res["subject_id"], "device:D1")
+        self.assertEqual(res["ood_indicator"], {"flag": False, "reasons": []})
+        self.assertEqual(res["contract_violations"], [])
+
+    def test_unknown_ood_indicator_and_selfcheck(self):
+        # firmware 白名单未命中 → unknown（firmware_unverified）+ OOD 标记 + 自检通过。
+        pipe = self._pipeline(firmware_whitelist=["verified-fw"])
+        res = None
+        for m in subset_stream("D1", "P1", BASE_TS, 40, gyro_dps=120.0):
+            r = pipe.handle_telemetry(m)
+            if r is not None:
+                res = r
+        self.assertIsNotNone(res)
+        self.assertEqual(res["label"], "unknown")
+        self.assertEqual(res["unknown_reason"], "firmware_unverified")
+        self.assertEqual(res["ood_indicator"], {"flag": True, "reasons": ["firmware_unverified"]})
+        self.assertEqual(res["contract_violations"], [])
+
+    def test_model_path_level_and_input_version(self):
+        pipe = self._pipeline()
+        fake_model = type("M", (), {
+            "feature_names": ["pitch_mean"],
+            "dataset_version": "ds-2026-08",
+            "model_id": "action-classifier",
+            "version": "v3",
+            "mean": [10.0],
+            "std": [1.0],
+            "predict": lambda self, feats: {
+                "label": "lift", "confidence": 0.8, "unknown_reason": None,
+            },
+        })()
+        pipe._get_model = lambda: (fake_model, {"version": "v3", "dataset_version": "ds-2026-08"})
+        res = None
+        for m in stream("D1", "P1", BASE_TS, 40, torque=40.0, assist=0.9):
+            r = pipe.handle_telemetry(m)
+            if r is not None:
+                res = r
+        self.assertIsNotNone(res)
+        self.assertFalse(res["is_rule"])
+        self.assertEqual(res["level"], "L2_statistical_ml")
+        self.assertEqual(res["input_version"], "ds-2026-08")
+        self.assertEqual(res["model_id"], "action-classifier")
+        self.assertEqual(res["contract_violations"], [])

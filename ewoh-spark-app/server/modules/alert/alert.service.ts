@@ -13,27 +13,22 @@ import { and, desc, eq } from 'drizzle-orm';
 import { ewohEvent } from '@server/database/schema';
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { alertActionToState, alertStateTransitionAllowed } from '@shared/alert-state-machine';
 
+/**
+ * ADR-031：alert/andon 处置状态机收敛到 shared/alert-state-machine
+ * （alert.yaml 单一事实源 + 门禁交叉核对）；保留函数名兼容既有调用方。
+ */
 export function nextAlertStatus(
   current: string,
   action: string,
+  actorRole?: string,
 ): string | null {
-  switch (action) {
-    case 'acknowledge':
-      return current === 'open' || current === 'reopened'
-        ? 'acknowledged'
-        : null;
-    case 'process':
-      return current === 'acknowledged' || current === 'reopened'
-        ? 'processing'
-        : null;
-    case 'close':
-      return current === 'processing' ? 'closed' : null;
-    case 'reopen':
-      return current === 'closed' ? 'reopened' : null;
-    default:
-      return null;
-  }
+  const target = alertActionToState(action);
+  if (!target) return null;
+  return alertStateTransitionAllowed(current, target.to, actorRole)
+    ? target.to
+    : null;
 }
 
 @Injectable()
@@ -61,7 +56,7 @@ export class AlertService {
   async transitionAlert(eventId: string, action: string, actor?: OrgContext) {
     const alert = await this.getAlert(eventId);
     const currentStatus = alert.status ?? 'open';
-    const status = nextAlertStatus(currentStatus, action);
+    const status = nextAlertStatus(currentStatus, action, actor?.role);
     if (!status) {
       throw new BadRequestException(
         `Transition ${action} not allowed from ${alert.status}`,

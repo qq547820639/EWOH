@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///reasoning/reasoning-result/v1",
+  "title": "EWOH Canonical Reasoning Result Model",
+  "description": "EWOH 统一 Level 4/5 文本结果契约（ADR-014，Phase 8 NO-08c）。LLM/Ark 文本结果（建议/解释/分析/聊天）无标定置信度：confidence 必须为 null（禁止伪造），confidenceBasis 必须显式为 uncalibrated；ok=false 必须带非空 error；modelId/modelVersion/inputVersion 必填（inputVersion=提示词/输入 schema 版本）；subjectId null 合法（无主体分析/聊天）或规范身份（ADR-006）；evidence.generatedAt 必填。与 InferenceResult（统计判定，confidence 必填）显式分工，不混用。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "levelRegistry", "kindRegistry", "rules"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "levelRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^L[45]_[a-z0-9_]+$" }
+    },
+    "kindRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["confidenceForbidden", "confidenceBasisExplicit", "errorContract", "contentRequired", "subjectContract", "evidenceContract"],
+      "properties": {
+        "confidenceForbidden": {
+          "type": "string",
+          "const": "confidence 必须为 null——LLM 无标定置信度，禁止伪造（出现数值即拒绝 confidence_forbidden）"
+        },
+        "confidenceBasisExplicit": {
+          "type": "string",
+          "const": "confidenceBasis 必须为 uncalibrated（显式声明，拒绝缺省）"
+        },
+        "errorContract": {
+          "type": "string",
+          "const": "ok=false 必须带非空 error（失败原因可审计）；ok=true 时 error 必须为 null"
+        },
+        "contentRequired": {
+          "type": "string",
+          "const": "ok=true 时 content 必填非空（成功文本结果不得为空）；ok=false 时 content 可为空（失败原因由 error 承载）"
+        },
+        "subjectContract": {
+          "type": "string",
+          "const": "subjectId null 合法（无主体分析/聊天）或必须是规范身份（ADR-006）"
+        },
+        "evidenceContract": {
+          "type": "string",
+          "const": "evidence.generatedAt 必填 ISO 时间戳（时间语义可审计）"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "levelRegistry": ["L4_industrial_reasoning", "L5_agentic_workflow"],
+  "kindRegistry": ["suggestion", "explanation", "analysis", "chat"],
+  "rules": {
+    "confidenceForbidden": "confidence 必须为 null——LLM 无标定置信度，禁止伪造（出现数值即拒绝 confidence_forbidden）",
+    "confidenceBasisExplicit": "confidenceBasis 必须为 uncalibrated（显式声明，拒绝缺省）",
+    "errorContract": "ok=false 必须带非空 error（失败原因可审计）；ok=true 时 error 必须为 null",
+    "contentRequired": "ok=true 时 content 必填非空（成功文本结果不得为空）；ok=false 时 content 可为空（失败原因由 error 承载）",
+    "subjectContract": "subjectId null 合法（无主体分析/聊天）或必须是规范身份（ADR-006）",
+    "evidenceContract": "evidence.generatedAt 必填 ISO 时间戳（时间语义可审计）"
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Canonical Location 跨语言一致性测试向量（ADR-007）。语义权威源：contracts/location/location.schema.json。",
+  "spatialKinds": [
+    { "value": "factory", "valid": true },
+    { "value": "workshop", "valid": true },
+    { "value": "production_line", "valid": true },
+    { "value": "workstation", "valid": true },
+    { "value": "restricted_zone", "valid": true },
+    { "value": "dock", "valid": true },
+    { "value": "warehouse_location", "valid": true },
+    { "value": "charging_area", "valid": true },
+    { "value": "Workshop", "valid": false },
+    { "value": "machine", "valid": false },
+    { "value": "", "valid": false }
+  ],
+  "records": [
+    {
+      "name": "cartesian-valid",
+      "record": { "coordinateType": "FACTORY_CARTESIAN", "x": 12.5, "y": -3.2, "z": 1.5, "yawDeg": 270 },
+      "expectError": null
+    },
+    {
+      "name": "cartesian-no-yaw-ok",
+      "record": { "coordinateType": "FACTORY_CARTESIAN", "x": 0, "y": 0 },
+      "expectError": null
+    },
+    {
+      "name": "wgs84-valid",
+      "record": { "coordinateType": "WGS84", "x": 31.2304, "y": 121.4737 },
+      "expectError": null
+    },
+    {
+      "name": "wgs84-lat-out-of-range",
+      "record": { "coordinateType": "WGS84", "x": 91, "y": 121.4737 },
+      "expectError": "bad_coordinate"
+    },
+    {
+      "name": "wgs84-lng-out-of-range",
+      "record": { "coordinateType": "WGS84", "x": 31.2, "y": -181 },
+      "expectError": "bad_coordinate"
+    },
+    {
+      "name": "unknown-with-coords-rejected",
+      "record": { "coordinateType": "UNKNOWN", "x": 1, "y": 2 },
+      "expectError": "bad_coordinate"
+    },
+    {
+      "name": "unknown-bare-ok",
+      "record": { "coordinateType": "UNKNOWN" },
+      "expectError": null
+    },
+    {
+      "name": "missing-type-rejected",
+      "record": { "x": 1 },
+      "expectError": "bad_coordinate"
+    },
+    {
+      "name": "yaw-out-of-range",
+      "record": { "coordinateType": "FACTORY_CARTESIAN", "x": 1, "y": 2, "yawDeg": 360 },
+      "expectError": "bad_coordinate"
+    },
+    {
+      "name": "yaw-boundary-ok",
+      "record": { "coordinateType": "FACTORY_CARTESIAN", "x": 1, "y": 2, "yawDeg": 0 },
+      "expectError": null
+    }
+  ]
+}

@@ -62,6 +62,10 @@ export class ApprovalService {
     return instance;
   }
 
+  listPending(): ApprovalInstance[] {
+    return [...this.instances.values()].filter((i) => i.status === 'pending');
+  }
+
   getApproval(id: string): ApprovalInstance {
     const instance = this.instances.get(id);
     if (!instance) {

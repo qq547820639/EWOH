@@ -1,0 +1,345 @@
+{
+  "schemaVersion": "1.0.0",
+  "contractId": "ewoh:///exo/exo-config/v1",
+  "description": "Canonical Exo Configuration Model 共享测试向量（ADR-051 / NO-13b）：Python（src/edge_platform/contracts/exo_config.py）、TypeScript（ewoh-spark-app/shared/exo-config.ts）与 audit-domain-contracts exo-config 域独立 JS 仲裁三方锁步消费同一份向量。语义：kind/supportMode/calibrationKind 封闭注册表；status 按 kind 封闭；vendor_specific 模式显式桶（vendorModeName 必填）；判定事实完整（assist_profile 必带 supportMode/effectiveFrom/superseded 必带 supersededBy；fit 必带 personId/fittedAt/fitter；calibration 必带 calibrationKind/result/calibratedAt/calibratedBy）；时间不倒退；auditTrail 非空强制；fail-closed 返回首个错误码。",
+  "records": [
+    {
+      "name": "valid_active_lift_profile",
+      "record": {
+        "configId": "exo-config:g25-ap-1",
+        "kind": "assist_profile",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "active",
+        "supportMode": "lift_assist",
+        "parameters": { "assistLevel": 0.6, "torqueLimitNm": 25.0 },
+        "effectiveFrom": "2026-08-16T08:00:00Z",
+        "setBy": "person:op-1",
+        "auditTrail": [
+          { "actor": "person:op-1", "action": "activated", "at": "2026-08-16T08:00:00Z" }
+        ]
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_vendor_specific_profile",
+      "record": {
+        "configId": "exo-config:g25-ap-2",
+        "kind": "assist_profile",
+        "exoId": "device:exo-2",
+        "tenantId": "t-org-1",
+        "status": "active",
+        "supportMode": "vendor_specific",
+        "vendorModeName": "NY-LIFT-3",
+        "effectiveFrom": "2026-08-16T08:00:00Z",
+        "auditTrail": [
+          { "actor": "person:op-1", "action": "activated", "at": "2026-08-16T08:00:00Z" }
+        ]
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_superseded_profile",
+      "record": {
+        "configId": "exo-config:g25-ap-3",
+        "kind": "assist_profile",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "superseded",
+        "supportMode": "lift_assist",
+        "parameters": { "assistLevel": 0.5 },
+        "effectiveFrom": "2026-08-01T08:00:00Z",
+        "effectiveTo": "2026-08-16T08:00:00Z",
+        "supersededBy": "exo-config:g25-ap-1",
+        "auditTrail": [
+          { "actor": "person:op-1", "action": "superseded", "at": "2026-08-16T08:00:00Z" }
+        ]
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_fit",
+      "record": {
+        "configId": "exo-config:g25-ft-4",
+        "kind": "fit",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "fitted",
+        "personId": "person:p1",
+        "fittedAt": "2026-08-16T09:00:00Z",
+        "fitter": "person:op-2",
+        "measuredValues": { "strap_length_cm": 42.0, "torso_width_cm": 38.5 },
+        "auditTrail": [
+          { "actor": "person:op-2", "action": "fitted", "at": "2026-08-16T09:00:00Z" }
+        ]
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_calibration",
+      "record": {
+        "configId": "exo-config:g25-cl-5",
+        "kind": "calibration",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "passed",
+        "calibrationKind": "load_cell",
+        "result": "passed",
+        "calibratedAt": "2026-08-16T10:00:00Z",
+        "calibratedBy": "person:op-3",
+        "nextDueAt": "2026-09-16T10:00:00Z",
+        "auditTrail": [
+          { "actor": "person:op-3", "action": "calibrated", "at": "2026-08-16T10:00:00Z" }
+        ]
+      },
+      "expectError": null
+    },
+    {
+      "name": "unknown_kind_rejected",
+      "record": {
+        "configId": "exo-config:g25-x-6",
+        "kind": "future_kind",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "active",
+        "auditTrail": [{ "actor": "person:op-1", "action": "x", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "unknown_kind"
+    },
+    {
+      "name": "unknown_support_mode_rejected",
+      "record": {
+        "configId": "exo-config:g25-x-7",
+        "kind": "assist_profile",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "active",
+        "supportMode": "turbo",
+        "effectiveFrom": "2026-08-16T08:00:00Z",
+        "auditTrail": [{ "actor": "person:op-1", "action": "x", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "unknown_support_mode"
+    },
+    {
+      "name": "vendor_mode_name_required",
+      "record": {
+        "configId": "exo-config:g25-x-8",
+        "kind": "assist_profile",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "active",
+        "supportMode": "vendor_specific",
+        "effectiveFrom": "2026-08-16T08:00:00Z",
+        "auditTrail": [{ "actor": "person:op-1", "action": "x", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "vendor_mode_name_required"
+    },
+    {
+      "name": "bad_assist_level_rejected",
+      "record": {
+        "configId": "exo-config:g25-x-9",
+        "kind": "assist_profile",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "active",
+        "supportMode": "lift_assist",
+        "parameters": { "assistLevel": 1.7 },
+        "effectiveFrom": "2026-08-16T08:00:00Z",
+        "auditTrail": [{ "actor": "person:op-1", "action": "x", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "bad_assist_level"
+    },
+    {
+      "name": "time_order_violation",
+      "record": {
+        "configId": "exo-config:g25-x-10",
+        "kind": "assist_profile",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "active",
+        "supportMode": "lift_assist",
+        "effectiveFrom": "2026-08-16T08:00:00Z",
+        "effectiveTo": "2026-08-15T08:00:00Z",
+        "auditTrail": [{ "actor": "person:op-1", "action": "x", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "time_order_violation"
+    },
+    {
+      "name": "superseded_without_ref_rejected",
+      "record": {
+        "configId": "exo-config:g25-x-11",
+        "kind": "assist_profile",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "superseded",
+        "supportMode": "lift_assist",
+        "effectiveFrom": "2026-08-01T08:00:00Z",
+        "auditTrail": [{ "actor": "person:op-1", "action": "x", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "superseded_by_required"
+    },
+    {
+      "name": "fit_person_required",
+      "record": {
+        "configId": "exo-config:g25-x-12",
+        "kind": "fit",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "fitted",
+        "fittedAt": "2026-08-16T09:00:00Z",
+        "fitter": "person:op-2",
+        "auditTrail": [{ "actor": "person:op-2", "action": "x", "at": "2026-08-16T09:00:00Z" }]
+      },
+      "expectError": "fit_person_required"
+    },
+    {
+      "name": "bad_person_id_rejected",
+      "record": {
+        "configId": "exo-config:g25-x-13",
+        "kind": "fit",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "fitted",
+        "personId": "p1",
+        "fittedAt": "2026-08-16T09:00:00Z",
+        "fitter": "person:op-2",
+        "auditTrail": [{ "actor": "person:op-2", "action": "x", "at": "2026-08-16T09:00:00Z" }]
+      },
+      "expectError": "bad_person_id"
+    },
+    {
+      "name": "calibration_result_required",
+      "record": {
+        "configId": "exo-config:g25-x-14",
+        "kind": "calibration",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "passed",
+        "calibrationKind": "imu",
+        "calibratedAt": "2026-08-16T10:00:00Z",
+        "calibratedBy": "person:op-3",
+        "auditTrail": [{ "actor": "person:op-3", "action": "x", "at": "2026-08-16T10:00:00Z" }]
+      },
+      "expectError": "calibration_result_required"
+    },
+    {
+      "name": "unknown_calibration_kind_rejected",
+      "record": {
+        "configId": "exo-config:g25-x-15",
+        "kind": "calibration",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "passed",
+        "calibrationKind": "gyro",
+        "result": "passed",
+        "calibratedAt": "2026-08-16T10:00:00Z",
+        "calibratedBy": "person:op-3",
+        "auditTrail": [{ "actor": "person:op-3", "action": "x", "at": "2026-08-16T10:00:00Z" }]
+      },
+      "expectError": "unknown_calibration_kind"
+    },
+    {
+      "name": "unknown_status_rejected",
+      "record": {
+        "configId": "exo-config:g25-x-16",
+        "kind": "assist_profile",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "fitted",
+        "supportMode": "lift_assist",
+        "effectiveFrom": "2026-08-16T08:00:00Z",
+        "auditTrail": [{ "actor": "person:op-1", "action": "x", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "unknown_status"
+    },
+    {
+      "name": "bad_exo_id_rejected",
+      "record": {
+        "configId": "exo-config:g25-x-17",
+        "kind": "assist_profile",
+        "exoId": "exo-1",
+        "tenantId": "t-org-1",
+        "status": "active",
+        "supportMode": "lift_assist",
+        "effectiveFrom": "2026-08-16T08:00:00Z",
+        "auditTrail": [{ "actor": "person:op-1", "action": "x", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "bad_exo_id"
+    },
+    {
+      "name": "audit_required",
+      "record": {
+        "configId": "exo-config:g25-x-18",
+        "kind": "assist_profile",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "active",
+        "supportMode": "lift_assist",
+        "effectiveFrom": "2026-08-16T08:00:00Z",
+        "auditTrail": []
+      },
+      "expectError": "audit_required"
+    },
+    {
+      "name": "bad_audit_entry",
+      "record": {
+        "configId": "exo-config:g25-x-19",
+        "kind": "assist_profile",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "active",
+        "supportMode": "lift_assist",
+        "effectiveFrom": "2026-08-16T08:00:00Z",
+        "auditTrail": [{ "actor": "person:op-1", "action": "x", "at": "not-a-time" }]
+      },
+      "expectError": "bad_audit_entry"
+    },
+    {
+      "name": "bad_measured_values_rejected",
+      "record": {
+        "configId": "exo-config:g25-x-20",
+        "kind": "fit",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "fitted",
+        "personId": "person:p1",
+        "fittedAt": "2026-08-16T09:00:00Z",
+        "fitter": "person:op-2",
+        "measuredValues": { "strap_length_cm": "42" },
+        "auditTrail": [{ "actor": "person:op-2", "action": "x", "at": "2026-08-16T09:00:00Z" }]
+      },
+      "expectError": "bad_measured_values"
+    },
+    {
+      "name": "calibration_time_order_violation",
+      "record": {
+        "configId": "exo-config:g25-x-21",
+        "kind": "calibration",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "passed",
+        "calibrationKind": "zeroing",
+        "result": "passed",
+        "calibratedAt": "2026-08-16T10:00:00Z",
+        "calibratedBy": "person:op-3",
+        "nextDueAt": "2026-08-15T10:00:00Z",
+        "auditTrail": [{ "actor": "person:op-3", "action": "x", "at": "2026-08-16T10:00:00Z" }]
+      },
+      "expectError": "time_order_violation"
+    },
+    {
+      "name": "bad_config_id_rejected",
+      "record": {
+        "configId": "cfg-1",
+        "kind": "assist_profile",
+        "exoId": "device:exo-1",
+        "tenantId": "t-org-1",
+        "status": "active",
+        "supportMode": "lift_assist",
+        "effectiveFrom": "2026-08-16T08:00:00Z",
+        "auditTrail": [{ "actor": "person:op-1", "action": "x", "at": "2026-08-16T08:00:00Z" }]
+      },
+      "expectError": "bad_config_id"
+    }
+  ]
+}

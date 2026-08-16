@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///reasoning/reasoning-trace/v1",
+  "title": "EWOH Canonical Industrial Reasoning Trace",
+  "description": "EWOH 独立工业推理层（Level 4，ADR-020 / NO-08b）结构化推理轨迹契约。结构化事实 → 结论的确定性推理层输出：每条结论必须可追溯到 ruleId（封闭规则注册表）/ premises（非空规范身份）/ evidenceIds（非空规范身份，§3 证据链）/ severity（ADR-007 canonical 阶梯）/ confidence + confidenceBasis（deterministic 规则=1，禁止伪造）；explanation 必须来自事实模板渲染（§18：LLM 只允许翻译，不允许编造原因）。conclusions 可为空数组 = 「无规则触发」的显式语义（§33：不是 unknown 冒充 normal）。与 InferenceResult（模型结果台账，ADR-019）和 ReasoningResult（LLM 文本，ADR-014）显式分工。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "ruleRegistry", "severityRegistry", "confidenceBasisRegistry", "factKindRegistry", "rules"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "ruleRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^rule:[a-z][a-z0-9-]{0,63}$" }
+    },
+    "severityRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z]{1,16}$" }
+    },
+    "confidenceBasisRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z]{1,24}$" }
+    },
+    "factKindRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z_]{1,32}$" }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ruleRegistration", "identityContract", "premisesContract", "evidenceContract", "conclusionContract", "severityContract", "explanationContract", "traceContract", "auditContract"],
+      "properties": {
+        "ruleRegistration": {
+          "type": "string",
+          "const": "conclusion.ruleId 必须命中 ruleRegistry（封闭注册表，未注册规则 fail-closed 拒绝）"
+        },
+        "identityContract": {
+          "type": "string",
+          "const": "conclusionId/subjectId/premises/evidenceIds/eventIds 必须是规范身份（ADR-006 kind:value）"
+        },
+        "premisesContract": {
+          "type": "string",
+          "const": "premises 非空——结论必须声明所依据的事实主体（可追溯推理链）"
+        },
+        "evidenceContract": {
+          "type": "string",
+          "const": "evidenceIds 非空——结论必须可追溯到证据（§3 Factory Truth）"
+        },
+        "conclusionContract": {
+          "type": "string",
+          "const": "confidence ∈ [0,1]；confidenceBasis ∈ 注册表；deterministic 规则 confidence=1（如实声明，禁止伪装确定）"
+        },
+        "severityContract": {
+          "type": "string",
+          "const": "severity ∈ canonical risk 阶梯（critical/high/medium/low，ADR-007 同源）"
+        },
+        "explanationContract": {
+          "type": "string",
+          "const": "explanation 非空且来自事实模板渲染（§18：解释来自真实事实，LLM 只允许翻译不允许编造）"
+        },
+        "traceContract": {
+          "type": "string",
+          "const": "traceId 非空；engineVersion 语义版本；factsRef.snapshotVersion ≥ 0 整数；conclusions 可空数组 = 无规则触发显式语义"
+        },
+        "auditContract": {
+          "type": "string",
+          "const": "auditTrail 必须 true（与 ADR-016/ADR-018 同规则）"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "ruleRegistry": [
+    "rule:worker-overload", "rule:exo-low-battery", "rule:machine-vibration-risk",
+    "rule:material-shortage", "rule:station-quality-blocked", "rule:andon-escalation"
+  ],
+  "severityRegistry": ["critical", "high", "medium", "low"],
+  "confidenceBasisRegistry": ["deterministic", "statistical"],
+  "factKindRegistry": ["person", "exo", "machine", "material", "station", "alert"],
+  "rules": {
+    "ruleRegistration": "conclusion.ruleId 必须命中 ruleRegistry（封闭注册表，未注册规则 fail-closed 拒绝）",
+    "identityContract": "conclusionId/subjectId/premises/evidenceIds/eventIds 必须是规范身份（ADR-006 kind:value）",
+    "premisesContract": "premises 非空——结论必须声明所依据的事实主体（可追溯推理链）",
+    "evidenceContract": "evidenceIds 非空——结论必须可追溯到证据（§3 Factory Truth）",
+    "conclusionContract": "confidence ∈ [0,1]；confidenceBasis ∈ 注册表；deterministic 规则 confidence=1（如实声明，禁止伪装确定）",
+    "severityContract": "severity ∈ canonical risk 阶梯（critical/high/medium/low，ADR-007 同源）",
+    "explanationContract": "explanation 非空且来自事实模板渲染（§18：解释来自真实事实，LLM 只允许翻译不允许编造）",
+    "traceContract": "traceId 非空；engineVersion 语义版本；factsRef.snapshotVersion ≥ 0 整数；conclusions 可空数组 = 无规则触发显式语义",
+    "auditContract": "auditTrail 必须 true（与 ADR-016/ADR-018 同规则）"
+  }
+}

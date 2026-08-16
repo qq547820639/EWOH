@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///resource/resource/v1",
+  "title": "EWOH Canonical Resource Model",
+  "description": "EWOH 统一资源契约（Canonical Resource Model，ADR-007）。锁定双侧已收敛六态 AVAILABLE|RESERVED|BUSY|DEGRADED|OFFLINE|MAINTENANCE + UNKNOWN 合法态；新鲜度 dataQuality FRESH|STALE|UNKNOWN；来源 source AUTHORITATIVE|DERIVED；可用性判定确定性 fail-closed：仅 AVAILABLE ∧ FRESH 视为可用。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "statusRegistry",
+    "dataQualityRegistry",
+    "sourceRegistry",
+    "resourceTypeRegistry",
+    "rules"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "statusRegistry": {
+      "type": "array",
+      "const": [
+        "AVAILABLE",
+        "RESERVED",
+        "BUSY",
+        "DEGRADED",
+        "OFFLINE",
+        "MAINTENANCE",
+        "UNKNOWN"
+      ]
+    },
+    "dataQualityRegistry": {
+      "type": "array",
+      "const": [
+        "FRESH",
+        "STALE",
+        "UNKNOWN"
+      ]
+    },
+    "sourceRegistry": {
+      "type": "array",
+      "const": [
+        "AUTHORITATIVE",
+        "DERIVED"
+      ]
+    },
+    "resourceTypeRegistry": {
+      "type": "array",
+      "const": [
+        "person",
+        "device",
+        "station",
+        "tool",
+        "material",
+        "vehicle"
+      ]
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "availability",
+        "closedRegistry"
+      ],
+      "properties": {
+        "availability": {
+          "type": "string",
+          "const": "仅 status==AVAILABLE ∧ dataQuality==FRESH 视为可用；STALE/UNKNOWN 一律 fail-closed 不可用；其余状态不可用并区分原因"
+        },
+        "closedRegistry": {
+          "type": "string",
+          "const": "status/dataQuality/source/resourceType 必须命中各自注册表，否则拒绝（fail-closed）"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "statusRegistry": [
+    "AVAILABLE",
+    "RESERVED",
+    "BUSY",
+    "DEGRADED",
+    "OFFLINE",
+    "MAINTENANCE",
+    "UNKNOWN"
+  ],
+  "dataQualityRegistry": [
+    "FRESH",
+    "STALE",
+    "UNKNOWN"
+  ],
+  "sourceRegistry": [
+    "AUTHORITATIVE",
+    "DERIVED"
+  ],
+  "resourceTypeRegistry": [
+    "person",
+    "device",
+    "station",
+    "tool",
+    "material",
+    "vehicle"
+  ],
+  "rules": {
+    "availability": "仅 status==AVAILABLE ∧ dataQuality==FRESH 视为可用；STALE/UNKNOWN 一律 fail-closed 不可用；其余状态不可用并区分原因",
+    "closedRegistry": "status/dataQuality/source/resourceType 必须命中各自注册表，否则拒绝（fail-closed）"
+  }
+}

@@ -11,7 +11,7 @@ from edge_platform import services
 from edge_platform.monitoring import PrometheusExporter
 from edge_platform.scheduler.cpsat import solver as cpsat_solver
 
-from . import NOT_HANDLED, Route, dispatch_routes, exact
+from . import Route, dispatch_routes, exact
 from ._util import SOURCE_LABELS, now_iso
 
 
@@ -26,6 +26,37 @@ def _svc_health(svc, rules):
     if getattr(svc, "_running", False) is True:
         return "healthy"
     return "not_running" if rules is None else "rules_only"
+
+
+def _ingest_chain(ctx):
+    """ingest 链路健康（NO-05）：{ok, adapters_registered, adapters_healthy, details}。
+
+    ok = 注册数 > 0 且存在 healthy 适配器；无注册（生产装配缺适配器注册入口 E-03
+    的现状）时如实 false，绝不冒充正常。"""
+    try:
+        health = ctx.manager.health() if ctx.manager else []
+    except Exception:
+        health = []
+    details = []
+    healthy = 0
+    for entry in health or []:
+        status = entry.get("status")
+        details.append(
+            {
+                "device_id": entry.get("device_id"),
+                "status": status,
+                "type": entry.get("type"),
+            }
+        )
+        if status == "online" or status == "healthy":
+            healthy += 1
+    registered = len(health)
+    return {
+        "ok": registered > 0 and healthy > 0,
+        "adapters_registered": registered,
+        "adapters_healthy": healthy,
+        "details": details,
+    }
 
 
 def api_status(ctx, h, req_meta):
@@ -58,6 +89,27 @@ def api_status(ctx, h, req_meta):
         "assistant": "healthy",  # 本地白名单助手，无外部依赖
         "adapters": _svc_health(ctx.manager, None),
     }
+    # NO-05：ingest 链路诚实指标（E-03 防"真实模式空转"无感）：
+    # 注册适配器数 + 健康适配器数 + 明细；ok = 已注册且有 healthy 适配器。
+    ingest_chain = _ingest_chain(ctx)
+    # NO-03c：遥测→世界模型投影健康（缺配置 enabled=false 如实上报）
+    world_projection = (
+        ctx.world_projection.health()
+        if getattr(ctx, "world_projection", None) is not None
+        else {"enabled": False}
+    )
+    # NO-04b：Edge→Cloud 事件上行健康（缺配置 enabled=false 如实上报）
+    event_uplink = (
+        ctx.event_uplink.health()
+        if getattr(ctx, "event_uplink", None) is not None
+        else {"enabled": False}
+    )
+    # NO-12d：Edge→Cloud 指标上行健康（缺配置 enabled=false 如实上报）
+    metrics_uplink = (
+        ctx.metrics_uplink.health()
+        if getattr(ctx, "metrics_uplink", None) is not None
+        else {"enabled": False}
+    )
     return h.send_json(
         {
             "offline": True,
@@ -70,6 +122,10 @@ def api_status(ctx, h, req_meta):
             "rule_version": getattr(ctx.rules, "rule_version", None),
             "listeners": getattr(ctx.manager, "listeners", {}),
             "source_labels": SOURCE_LABELS,
+            "ingest_chain": ingest_chain,
+            "world_projection": world_projection,
+            "event_uplink": event_uplink,
+            "metrics_uplink": metrics_uplink,
             "safety_boundary": "平台与大模型不得写入急停、限扭、关节实时控制等安全闭环参数。",
         }
     )

@@ -207,7 +207,7 @@ function generateSnapshot(nTasks: number, nPersons: number, nDevices: number, se
     return {
       id: `P-${String(i + 1).padStart(3, '0')}`,
       name: `人员${i + 1}`,
-      status: 'available',
+      status: 'AVAILABLE',
       healthStatus: 'normal',
       skills: ['work', 'skill-' + (i % 3)],
       certifications: [],
@@ -230,7 +230,7 @@ function generateSnapshot(nTasks: number, nPersons: number, nDevices: number, se
       deviceModel: 'EWOH-L1',
       batteryPct: Math.round(20 + rnd() * 80),
       online: true,
-      status: 'online',
+      status: 'AVAILABLE',
       capabilities: ['lift', 'assist'],
       sourceTs: nowMs,
       freshnessMs: 60_000,

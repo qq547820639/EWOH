@@ -16,7 +16,7 @@ import {
   startWebVitalsCollection,
 } from './lib/observability';
 import { initSessionSecurity } from './lib/sessionSecurity';
-import { applyContrastClass } from './lib/contrastMode';
+import { applyContrastClass, applyThemePreference, getThemePreference } from './lib/contrastMode';
 import { toast } from 'sonner';
 import { registerServiceWorker } from './lib/swRegistration';
 import { openOfflineDb } from './lib/offlineDb';
@@ -143,6 +143,23 @@ initSessionSecurity({
     mql.addEventListener('change', onContrastChange);
   } else {
     mql.addListener(onContrastChange);
+  }
+}
+
+// 工业 UX：暗色模式（NO-13f / ADR-055）——偏好单一事实源（localStorage 'ewoh.theme'：
+// system/dark/light），启动应用偏好；偏好为 system 时跟随系统媒体查询变化。
+{
+  const mqlDark = window.matchMedia('(prefers-color-scheme: dark)');
+  applyThemePreference(getThemePreference(), mqlDark);
+  const onThemeChange = (): void => {
+    if (getThemePreference() === 'system') {
+      applyThemePreference('system', mqlDark);
+    }
+  };
+  if (mqlDark.addEventListener) {
+    mqlDark.addEventListener('change', onThemeChange);
+  } else {
+    mqlDark.addListener(onThemeChange);
   }
 }
 

@@ -6,15 +6,15 @@
   "snapshot": {
     "snapshotVersion": "WS-FIXTURE-LOCKED-ASSIGNMENT",
     "persons": [
-      { "id": "p1", "name": "p1", "status": "available", "skills": ["work"], "certifications": [], "loadLevel": 0, "fatigueLevel": 0, "stationId": "S1", "zoneId": "Z1", "x": 0, "y": 0 },
-      { "id": "p2", "name": "p2", "status": "available", "skills": ["work"], "certifications": [], "loadLevel": 0, "fatigueLevel": 0, "stationId": "S1", "zoneId": "Z1", "x": 5, "y": 0 }
+      { "id": "p1", "name": "p1", "status": "AVAILABLE", "skills": ["work"], "certifications": [], "loadLevel": 0, "fatigueLevel": 0, "stationId": "S1", "zoneId": "Z1", "x": 0, "y": 0 },
+      { "id": "p2", "name": "p2", "status": "AVAILABLE", "skills": ["work"], "certifications": [], "loadLevel": 0, "fatigueLevel": 0, "stationId": "S1", "zoneId": "Z1", "x": 5, "y": 0 }
     ],
     "tasks": [
       { "id": "t-exec", "title": "t-exec", "taskType": "work", "priority": "medium", "status": "executing", "assigneeId": "p1", "deviceId": null, "stationId": "S1", "zoneId": "Z1", "planStart": null, "planEnd": null, "progress": 50, "predecessorIds": [], "requiredSkills": ["work"], "requiredCertifications": [] },
       { "id": "t-pending", "title": "t-pending", "taskType": "work", "priority": "medium", "status": "pending", "assigneeId": null, "deviceId": null, "stationId": "S1", "zoneId": "Z1", "planStart": null, "planEnd": null, "progress": 0, "predecessorIds": [], "requiredSkills": ["work"], "requiredCertifications": [] }
     ],
     "devices": [
-      { "id": "d1", "workerName": null, "deviceModel": null, "batteryPct": 100, "online": true, "status": "online", "capabilities": [] }
+      { "id": "d1", "workerName": null, "deviceModel": null, "batteryPct": 100, "online": true, "status": "AVAILABLE", "capabilities": [] }
     ],
     "stations": [
       { "id": "S1", "name": "S1", "x": 0, "y": 0, "capacity": 2 }

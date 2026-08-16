@@ -36,12 +36,32 @@ describe('AI manual decision flow', () => {
       confirmItems: ['confirm'],
       expiryConditions: ['version changes'],
     };
-    const execute = jest
-      .fn()
-      .mockResolvedValueOnce([{ content: JSON.stringify(dbSuggestion) }])
-      .mockResolvedValueOnce([{ suggestion_id: 'sug-db' }])
-      .mockResolvedValueOnce([]);
-    const service = new AiService({ execute } as never);
+    // ADR-078：drizzle 链式假库（insert 返回 content；select/update 兼容既有断言）。
+    const execute = jest.fn();
+    const db = {
+      execute,
+      insert: jest.fn(() => ({
+        values: jest.fn(() => ({
+          returning: jest.fn().mockResolvedValue([{ content: JSON.stringify(dbSuggestion) }]),
+        })),
+      })),
+      select: jest.fn(() => ({
+        from: jest.fn(() => {
+          const q: any = Promise.resolve([{ suggestionId: 'sug-db', content: JSON.stringify(dbSuggestion) }]);
+          q.where = () => q;
+          q.groupBy = () => q;
+          q.orderBy = () => q;
+          q.limit = () => q;
+          return q;
+        }),
+      })),
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn(() => Promise.resolve([])),
+        })),
+      })),
+    };
+    const service = new AiService(db as never);
 
     const suggestion = await service.createSuggestion({
       triggeredBy: 'user-1',
@@ -51,6 +71,7 @@ describe('AI manual decision flow', () => {
     expect(suggestion.id).toBe('sug-db');
     const plan = await service.createPlan(suggestion.id, { shift: 'A' });
     expect(plan.id).toBe('plan-sug-db');
-    expect(execute).toHaveBeenCalledTimes(3);
+    // ADR-078：持久化走 drizzle 链式路径，raw SQL（execute）已清零。
+    expect(execute).toHaveBeenCalledTimes(0);
   });
 });

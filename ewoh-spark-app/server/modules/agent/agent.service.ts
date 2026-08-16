@@ -1,0 +1,769 @@
+import { BadRequestException, Injectable, Inject, Logger, Optional } from '@nestjs/common';
+import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
+import { ewohAgentApproval, ewohAgentManifest, ewohEvent, ewohNotification } from '@server/database/schema';
+import { eq, and, desc } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { validateAgentManifest } from '@shared/agent-manifest';
+import { isCatalogEventType } from '@shared/event-catalog';
+import { buildEventEnvelope, envelopeForEvidence } from '@shared/event-envelope';
+import { isRegisteredAgentTool } from './agent-tools';
+import { AuditService } from '../shared/audit.service';
+import { WorldStateSnapshotService } from '../scheduler/world-state.service';
+import { WorkOrderService, type CreateWorkOrderInput } from '../workorder/workorder.service';
+import { KnowledgeService, type RegisterKnowledgeEntryInput } from '../knowledge/knowledge.service';
+import { AgentMetricsService } from './agent-metrics.service';
+import { currentTraceId } from '../../common/request-context';
+import {
+  projectAgentApprovalDecision,
+  type AgentApprovalDecisionInput,
+} from '../scheduler/decision-projection';
+import type { DecisionRecord } from '@shared/decision';
+
+/** NO-06d：Agent 审批有效期（超期解析为拒绝留痕，不无限悬挂）。 */
+export const AGENT_APPROVAL_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** NO-12f/ADR-030：Agent 审批角色（部署级默认，逗号分隔；可经 env 配置）。 */
+export function agentApprovalRoles(): string[] {
+  const raw = (process.env.EWOH_AGENT_APPROVAL_ROLES || '').trim();
+  const roles = raw
+    .split(',')
+    .map((r) => r.trim())
+    .filter((r) => r !== '');
+  return roles.length > 0 ? roles : ['workshop_lead'];
+}
+
+export type RegisterAgentManifestInput = Record<string, unknown>;
+
+export interface ExecuteAgentCommandInput {
+  command: string;
+  payload?: Record<string, unknown>;
+}
+
+export interface ExecuteAgentCommandResult {
+  executed: boolean;
+  needsApproval: boolean;
+  outcome: 'proposed' | 'executed' | 'rejected' | 'failed' | 'delegated';
+  delegated?: boolean;
+  safeIdle?: boolean;
+  approvalId?: string;
+  detail?: string;
+}
+
+/** 内置 FactorySupervisor（L1 建议型）注册清单——首个真实 Agent（NO-06c）。 */
+export const BUILTIN_SUPERVISOR_MANIFEST: RegisterAgentManifestInput = {
+  agentId: 'agent:ewoh-factory-supervisor',
+  name: '工厂主管 Agent',
+  version: 1,
+  role: 'FactorySupervisor',
+  purpose: '读取工厂世界状态，生成结构化运营建议（L1：建议一律人工审批，绝不自动执行）',
+  allowedTools: ['tool:world-snapshot', 'tool:world-replay', 'tool:record-evidence'],
+  readScope: ['worldSnapshot', 'worldReplay'],
+  writeScope: { tokens: [], commands: ['propose_plan', 'record_evidence'] },
+  approvalRequirement: { autonomousLevel: 'L1', approvalRequiredFor: ['propose_plan', 'record_evidence'] },
+  riskLevel: 'medium',
+  inputContract: { schemaRef: 'catalog://agent/inputs/supervisor-summary' },
+  outputContract: { schemaRef: 'catalog://agent/outputs/supervisor-suggestion' },
+  auditTrail: true,
+  budget: { maxSteps: 8, maxTokens: 20000, maxDurationSec: 300 },
+  timeoutSec: 60,
+  fallback: { onFailure: 'delegateHuman' },
+};
+
+/** 内置 Knowledge Agent（L1 建议型）注册清单——NO-07b 知识运行时入口。 */
+export const BUILTIN_KNOWLEDGE_MANIFEST: RegisterAgentManifestInput = {
+  agentId: 'agent:ewoh-knowledge-agent',
+  name: '知识 Agent',
+  version: 1,
+  role: 'Knowledge',
+  purpose: '检索工厂知识库（五层 scope 阶梯，绝不越过 private_operational 边界）并沉淀结构化知识条目（注册需人工审批）',
+  allowedTools: ['tool:knowledge-search', 'tool:knowledge-register', 'tool:record-evidence'],
+  readScope: ['knowledgeData'],
+  writeScope: { tokens: [], commands: ['register_knowledge'] },
+  approvalRequirement: { autonomousLevel: 'L1', approvalRequiredFor: ['register_knowledge'] },
+  riskLevel: 'medium',
+  inputContract: { schemaRef: 'catalog://agent/inputs/knowledge-query' },
+  outputContract: { schemaRef: 'catalog://agent/outputs/knowledge-summary' },
+  auditTrail: true,
+  budget: { maxSteps: 8, maxTokens: 20000, maxDurationSec: 300 },
+  timeoutSec: 60,
+  fallback: { onFailure: 'delegateHuman' },
+};
+
+/**
+ * Agent 运行时服务（ADR-016 / NO-06b）。
+ *
+ * 注册唯一入口：validateAgentManifest 契约校验 fail-closed + Tool 注册表
+ * 校验 + ewoh_agent_manifest 持久化（TENANT_SCOPED RLS，standalone_037）。
+ * 执行强制：command ∈ writeScope.commands；L0 无写能力；L1 写命令一律
+ * needsApproval；L2/L3 按 approvalRequiredFor 门控；budget.maxSteps /
+ * timeoutSec 强制（超时/超步数 fail-closed）；fallback.onFailure 显式语义
+ * （fail/retry/delegateHuman/safeIdle——无静默吞）。
+ * 事件：AgentTaskProposed / AgentDecisionRecorded（Canonical Catalog 信封，
+ * evidenceJson 落库，审计同源）。
+ */
+@Injectable()
+export class AgentService {
+  private readonly logger = new Logger(AgentService.name);
+
+  constructor(
+    @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
+    private readonly auditService: AuditService,
+    private readonly worldStateService: WorldStateSnapshotService,
+    private readonly workOrderService: WorkOrderService,
+    private readonly knowledgeService: KnowledgeService,
+    @Optional() private readonly agentMetrics?: AgentMetricsService,
+  ) {}
+
+  // ── 注册（唯一入口，契约校验 fail-closed） ────────────────────────────────
+
+  async registerManifest(
+    manifest: RegisterAgentManifestInput,
+    orgId: string,
+    actor?: { userId: string },
+  ): Promise<Record<string, unknown>> {
+    if (!orgId?.trim()) {
+      throw new BadRequestException('org 上下文缺失，Agent 注册显式失败（RLS 下不静默写全局）');
+    }
+    const errors = validateAgentManifest(manifest);
+    if (errors.length > 0) {
+      throw new BadRequestException(`agent_manifest_invalid:${errors[0]}`);
+    }
+    const tools = manifest.allowedTools as string[];
+    for (const tool of tools) {
+      if (!isRegisteredAgentTool(tool)) {
+        throw new BadRequestException(`unregistered_tool:${tool}`);
+      }
+    }
+    const agentId = manifest.agentId as string;
+    const existing = await this.db
+      .select()
+      .from(ewohAgentManifest)
+      .where(and(eq(ewohAgentManifest.orgId, orgId), eq(ewohAgentManifest.agentId, agentId)));
+    if (existing.length > 0) {
+      const currentVersion = existing[0]?.version ?? 0;
+      const newVersion = manifest.version as number;
+      if (newVersion < currentVersion) {
+        throw new BadRequestException(`agent_version_regression:${newVersion}<${currentVersion}`);
+      }
+      if (newVersion === currentVersion) {
+        return existing[0]?.manifestJson as Record<string, unknown>; // 幂等重注册
+      }
+      await this.db
+        .update(ewohAgentManifest)
+        .set({
+          name: manifest.name as string,
+          version: newVersion,
+          role: manifest.role as string,
+          purpose: manifest.purpose as string,
+          allowedTools: tools,
+          readScope: manifest.readScope as string[],
+          writeScope: manifest.writeScope as Record<string, unknown>,
+          autonomousLevel: (manifest.approvalRequirement as Record<string, unknown>)
+            .autonomousLevel as string,
+          riskLevel: manifest.riskLevel as string,
+          manifestJson: manifest,
+        })
+        .where(and(eq(ewohAgentManifest.orgId, orgId), eq(ewohAgentManifest.agentId, agentId)));
+      this.agentMetrics?.recordManifestRegistered(manifest.role as string);
+      await this.auditAppend(orgId, 'agent.manifest.update', agentId, actor);
+      return manifest;
+    }
+    const approval = manifest.approvalRequirement as Record<string, unknown>;
+    this.agentMetrics?.recordManifestRegistered(manifest.role as string);
+    await this.db.insert(ewohAgentManifest).values({
+      orgId,
+      agentId,
+      name: manifest.name as string,
+      version: manifest.version as number,
+      role: manifest.role as string,
+      purpose: manifest.purpose as string,
+      allowedTools: tools,
+      readScope: manifest.readScope as string[],
+      writeScope: manifest.writeScope as Record<string, unknown>,
+      autonomousLevel: approval.autonomousLevel as string,
+      riskLevel: manifest.riskLevel as string,
+      status: 'registered',
+      manifestJson: manifest,
+    });
+    await this.auditAppend(orgId, 'agent.manifest.register', agentId, actor);
+    return manifest;
+  }
+
+  async listManifests(orgId: string): Promise<Record<string, unknown>[]> {
+    if (!orgId?.trim()) {
+      throw new BadRequestException('org 上下文缺失');
+    }
+    const rows = await this.db
+      .select()
+      .from(ewohAgentManifest)
+      .where(eq(ewohAgentManifest.orgId, orgId))
+      .orderBy(desc(ewohAgentManifest.createdAt));
+    return rows.map((r) => ({
+      agentId: r.agentId,
+      name: r.name,
+      version: r.version,
+      role: r.role,
+      status: r.status,
+      autonomousLevel: r.autonomousLevel,
+      riskLevel: r.riskLevel,
+      manifest: r.manifestJson,
+    }));
+  }
+
+  async getManifest(orgId: string, agentId: string): Promise<Record<string, unknown> | null> {
+    const rows = await this.db
+      .select()
+      .from(ewohAgentManifest)
+      .where(and(eq(ewohAgentManifest.orgId, orgId), eq(ewohAgentManifest.agentId, agentId)));
+    if (rows.length === 0) return null;
+    const r = rows[0];
+    return {
+      agentId: r.agentId,
+      name: r.name,
+      version: r.version,
+      role: r.role,
+      status: r.status,
+      autonomousLevel: r.autonomousLevel,
+      riskLevel: r.riskLevel,
+      manifest: r.manifestJson,
+    };
+  }
+
+  // ── 执行（审批门控 + 预算/超时/回退强制） ─────────────────────────────────
+
+  async executeCommand(
+    orgId: string,
+    agentId: string,
+    input: ExecuteAgentCommandInput,
+    actor?: { userId: string },
+  ): Promise<ExecuteAgentCommandResult> {
+    const manifest = await this.getManifest(orgId, agentId);
+    if (!manifest) {
+      throw new BadRequestException('agent_not_registered');
+    }
+    if (manifest.status === 'suspended') {
+      throw new BadRequestException('agent_suspended');
+    }
+    const full = manifest.manifest as Record<string, unknown>;
+    const writeScope = full.writeScope as Record<string, unknown>;
+    const commands = (writeScope.commands ?? []) as string[];
+    const approval = full.approvalRequirement as Record<string, unknown>;
+    const level = approval.autonomousLevel as string;
+    const approvalRequiredFor = (approval.approvalRequiredFor ?? []) as string[];
+    const budget = full.budget as Record<string, unknown>;
+    const maxSteps = budget.maxSteps as number;
+    const timeoutSec = full.timeoutSec as number;
+    const fallback = full.fallback as Record<string, unknown>;
+    const onFailure = fallback.onFailure as string;
+
+    if (!commands.includes(input.command)) {
+      throw new BadRequestException(`command_not_allowed:${input.command}`);
+    }
+    if (level === 'L0') {
+      throw new BadRequestException('advisory_only: L0 无写命令能力');
+    }
+    // 审批门控：L1 写命令一律人审；L2/L3 按 approvalRequiredFor。
+    const needsApproval =
+      level === 'L1' || approvalRequiredFor.includes(input.command);
+    if (needsApproval) {
+      // NO-12p/ADR-039：审批桥接——待批事实落 ewoh_agent_approval 台账
+      // （跨重启持久化，ADR-030 决策 4 边界收口）；批准后经 resolveApproval
+      // 读台账重放执行。
+      const roles = agentApprovalRoles();
+      const approvalId = `appr-${randomUUID().slice(0, 12)}`;
+      await this.db.insert(ewohAgentApproval).values({
+        orgId,
+        approvalId,
+        agentId,
+        command: input.command,
+        payloadJson: input.payload ?? {},
+        rolesJson: roles,
+        status: 'pending',
+      });
+      // NO-12f/ADR-030：通知闭环——审批创建即插 in-app 通知（指向真实审批实例）
+      await this.notifyApprovalPending(orgId, agentId, input.command, approvalId, roles);
+      await this.recordDecisionEvent(orgId, full, input, 'proposed', {
+        needsApproval: true,
+        command: input.command,
+        approvalId,
+      });
+      this.agentMetrics?.recordCommand('proposed', String(full.role ?? ''), input.command);
+      await this.auditAppend(orgId, 'agent.command.proposed', agentId, actor);
+      return {
+        executed: false,
+        needsApproval: true,
+        outcome: 'proposed',
+        approvalId,
+        detail: `command ${input.command} 需要人工审批（level=${level}，approval=${approvalId}）`,
+      };
+    }
+
+    const stepsUsed = (input.payload?.stepsUsed as number | undefined) ?? 0;
+    if (stepsUsed >= maxSteps) {
+      throw new BadRequestException(`budget_exceeded:maxSteps=${maxSteps}`);
+    }
+
+    const run = async (): Promise<ExecuteAgentCommandResult> => {
+      const result = await this.dispatchCommand(orgId, full, input);
+      this.agentMetrics?.recordCommand('executed', String(full.role ?? ''), input.command);
+      await this.recordDecisionEvent(orgId, full, input, 'executed', result);
+      return { executed: true, needsApproval: false, outcome: 'executed' };
+    };
+
+    try {
+      return await this.withTimeout(run(), timeoutSec);
+    } catch (error) {
+      this.logger.warn(`agent 执行失败 agent=${agentId} command=${input.command}: ${String(error)}`);
+      await this.recordDecisionEvent(orgId, full, input, 'failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // fallback 显式语义（无静默吞）
+      if (onFailure === 'fail') {
+        throw error;
+      }
+      if (onFailure === 'retry') {
+        try {
+          await this.dispatchCommand(orgId, full, input);
+          this.agentMetrics?.recordCommand('executed', String(full.role ?? ''), input.command);
+          await this.recordDecisionEvent(orgId, full, input, 'executed', { retried: true });
+          return { executed: true, needsApproval: false, outcome: 'executed' };
+        } catch (retryError) {
+          await this.recordDecisionEvent(orgId, full, input, 'failed', {
+            error: `retry_failed:${retryError instanceof Error ? retryError.message : String(retryError)}`,
+          });
+          throw retryError;
+        }
+      }
+      if (onFailure === 'delegateHuman') {
+        this.agentMetrics?.recordCommand('delegated', String(full.role ?? ''), input.command);
+        await this.recordDecisionEvent(orgId, full, input, 'delegated', {});
+        return { executed: false, needsApproval: false, outcome: 'delegated', delegated: true };
+      }
+      // safeIdle
+      this.agentMetrics?.recordCommand('rejected', String(full.role ?? ''), input.command);
+      await this.recordDecisionEvent(orgId, full, input, 'rejected', { safeIdle: true });
+      return { executed: false, needsApproval: false, outcome: 'rejected', safeIdle: true };
+    }
+  }
+
+  private async dispatchCommand(
+    orgId: string,
+    full: Record<string, unknown>,
+    input: ExecuteAgentCommandInput,
+  ): Promise<Record<string, unknown>> {
+    if (input.command === 'record_evidence') {
+      // 真实落账：审计事实 + 决策事件（executeCommand 成功路径已记 decision 事件）
+      await this.auditAppend(orgId, 'agent.evidence.recorded', String(full.agentId ?? ''));
+      return { command: input.command, payload: input.payload ?? {} };
+    }
+    if (input.command === 'propose_plan') {
+      return { command: input.command, proposal: input.payload ?? {} };
+    }
+    if (input.command === 'create_work_order') {
+      // NO-06d：接入真实 Domain Service（WorkOrder 权威写路径，契约 fail-closed）
+      const body = input.payload as unknown as CreateWorkOrderInput;
+      if (!body?.origin?.kind || !body?.origin?.id || !body?.subjectEntityId) {
+        throw new BadRequestException('create_work_order 载荷缺 origin/subjectEntityId');
+      }
+      const workOrder = await this.workOrderService.createWorkOrder(body, orgId);
+      return { command: input.command, workOrder };
+    }
+    if (input.command === 'register_knowledge') {
+      // NO-07b：接入真实 Domain Service（Knowledge 权威写路径，契约 fail-closed；
+      // 五层 scope 阶梯 + RLS 双强制，L1 注册一律经审批桥接）
+      const body = input.payload as unknown as RegisterKnowledgeEntryInput;
+      if (!body?.kind || !body?.scope || !body?.title || !body?.body) {
+        throw new BadRequestException('register_knowledge 载荷缺 kind/scope/title/body');
+      }
+      if (!Array.isArray(body.sourceEvidenceIds)) {
+        throw new BadRequestException('register_knowledge 载荷缺 sourceEvidenceIds（非空证据链）');
+      }
+      const entry = await this.knowledgeService.registerEntry(body, orgId);
+      return { command: input.command, entry };
+    }
+    // 其余命令的领域服务接线随后续轮次（fail-closed：绝不静默假装执行成功）
+    throw new BadRequestException(`tool_execution_not_implemented:${input.command}`);
+  }
+
+  // ── NO-12f/ADR-030：待批清单 + 通知闭环 ────────────────────────────────────
+
+  /** 待批清单（org 作用域）：ewoh_agent_approval 台账（跨重启持久化，
+   *  ADR-039/NO-12p）；过期是显式状态（expired=true），绝不静默消失（§33）。 */
+  async listPendingApprovals(orgId: string): Promise<Array<Record<string, unknown>>> {
+    const rows = await this.db
+      .select()
+      .from(ewohAgentApproval)
+      .where(and(eq(ewohAgentApproval.orgId, orgId), eq(ewohAgentApproval.status, 'pending')))
+      .orderBy(desc(ewohAgentApproval.createdAt));
+    const now = Date.now();
+    return rows.map((row) => {
+      const createdAtMs = row.createdAt.getTime();
+      return {
+        approvalId: row.approvalId,
+        agentId: row.agentId,
+        command: row.command,
+        payload: (row.payloadJson ?? {}) as Record<string, unknown>,
+        roles: Array.isArray(row.rolesJson) ? (row.rolesJson as string[]) : [],
+        createdAt: row.createdAt.toISOString(),
+        expiresAtMs: createdAtMs + AGENT_APPROVAL_TTL_MS,
+        remainingMs: Math.max(0, createdAtMs + AGENT_APPROVAL_TTL_MS - now),
+        expired: now - createdAtMs > AGENT_APPROVAL_TTL_MS,
+      };
+    });
+  }
+
+  private async notifyApprovalPending(
+    orgId: string,
+    agentId: string,
+    command: string,
+    approvalId: string,
+    roles: string[],
+  ): Promise<void> {
+    try {
+      await this.db.insert(ewohNotification).values({
+        notificationId: `NTF-${randomUUID().slice(0, 8)}`,
+        orgId,
+        recipientType: 'role',
+        recipientId: roles[0] ?? 'workshop_lead',
+        channel: 'app',
+        title: `Agent 命令待审批：${command}`,
+        body: `Agent ${agentId} 请求执行 ${command}，请值班长审批（approval=${approvalId}）`,
+        severity: 'high',
+        status: 'pending',
+        externalRef: approvalId,
+      });
+    } catch (error) {
+      // 通知旁路：失败显式留痕不阻断审批主流程（审批实例本身是事实源）
+      this.logger.warn(`agent approval 通知写入失败 ${approvalId}: ${String(error)}`);
+    }
+  }
+
+  // ── NO-12p/ADR-039：审批解析（台账 CAS + 批准→执行 / 驳回→拒绝留痕，
+  //    跨重启持久化，闭环无静默） ────────────────────────────────────────────
+
+  async resolveApproval(
+    approvalId: string,
+    approved: boolean,
+    actor?: { userId: string },
+  ): Promise<ExecuteAgentCommandResult> {
+    // 待批事实 = ewoh_agent_approval 台账行（进程重启后仍可解析，ADR-039）。
+    const [row] = await this.db
+      .select()
+      .from(ewohAgentApproval)
+      .where(eq(ewohAgentApproval.approvalId, approvalId))
+      .limit(1);
+    if (!row) {
+      throw new BadRequestException('approval_not_found_for_agent_command');
+    }
+    if (row.status !== 'pending') {
+      throw new BadRequestException(`approval_already_resolved:${row.status}`);
+    }
+    const orgId = row.orgId;
+    const agentId = row.agentId;
+    const command = row.command;
+    const payload = (row.payloadJson ?? {}) as Record<string, unknown>;
+    const pendingInput: ExecuteAgentCommandInput = { command, payload };
+
+    const manifest = await this.getManifest(orgId, agentId);
+    if (!manifest) {
+      throw new BadRequestException('agent_not_registered');
+    }
+    const full = manifest.manifest as Record<string, unknown>;
+    const createdAtMs = row.createdAt.getTime();
+    // NO-06d：审批超时语义（超 24h 解析为拒绝留痕，不无限悬挂）
+    if (Date.now() - createdAtMs > AGENT_APPROVAL_TTL_MS) {
+      // NO-13j / ADR-059：TTL 超期解析 = policy 权威决策（无人工操作者）。
+      const expiredDecision = this.projectApprovalDecision({
+        approvalId, agentId, command, orgId,
+        manifestRiskLevel: typeof full.riskLevel === 'string' ? full.riskLevel : null,
+        outcome: 'expired', now: new Date(),
+      });
+      await this.resolveRow(approvalId, orgId, 'expired', actor, { approved: false, expired: true }, expiredDecision);
+      await this.recordDecisionEvent(orgId, full, pendingInput, 'rejected', {
+        approvalId,
+        approved: false,
+        expired: true,
+      });
+      await this.auditAppend(orgId, 'agent.command.approval_expired', agentId, actor);
+      return {
+        executed: false,
+        needsApproval: false,
+        outcome: 'rejected',
+        detail: 'approval_expired（超 24h，拒绝留痕）',
+      };
+    }
+    if (!approved) {
+      // NO-13j / ADR-059：人工驳回决策留痕（决策记录随台账行同事务落库）。
+      const rejectedDecision = this.projectApprovalDecision({
+        approvalId, agentId, command, orgId,
+        manifestRiskLevel: typeof full.riskLevel === 'string' ? full.riskLevel : null,
+        outcome: 'rejected', operator: actor?.userId ?? null, now: new Date(),
+      });
+      await this.resolveRow(approvalId, orgId, 'rejected', actor, { approved: false }, rejectedDecision);
+      await this.recordDecisionEvent(orgId, full, pendingInput, 'rejected', {
+        approvalId,
+        approved: false,
+      });
+      this.agentMetrics?.recordApprovalResolved('rejected');
+      this.agentMetrics?.recordCommand('rejected', String(full.role ?? ''), command);
+      await this.auditAppend(orgId, 'agent.command.rejected', agentId, actor);
+      return { executed: false, needsApproval: false, outcome: 'rejected', detail: '人工驳回' };
+    }
+    // 批准：先 CAS 落 approved 再执行（重复解析显式拒绝；执行仍受
+    // budget/timeout/fallback 强制）。
+    const approvedDecision = this.projectApprovalDecision({
+      approvalId, agentId, command, orgId,
+      manifestRiskLevel: typeof full.riskLevel === 'string' ? full.riskLevel : null,
+      outcome: 'approved', operator: actor?.userId ?? null, now: new Date(),
+    });
+    await this.resolveRow(approvalId, orgId, 'approved', actor, { approved: true }, approvedDecision);
+    this.agentMetrics?.recordApprovalResolved('approved');
+    return this.executeAuthorized(orgId, agentId, pendingInput, actor);
+  }
+
+  /**
+   * NO-13j / ADR-059：agent_approval 决策投影（ADR-047 契约门）。
+   * 缺口/契约失败 → log 显式 + 返回 null（decision_json 留 NULL），
+   * 绝不阻断审批主流程（§2/§33，与 ADR-057 同纪律）。
+   */
+  private projectApprovalDecision(
+    input: Omit<AgentApprovalDecisionInput, 'operator' | 'reason'> &
+      Partial<Pick<AgentApprovalDecisionInput, 'operator' | 'reason'>>,
+  ): DecisionRecord | null {
+    const { record, issues } = projectAgentApprovalDecision(input as AgentApprovalDecisionInput);
+    if (!record) {
+      this.logger.warn(
+        `agent approval 决策投影缺口 ${input.approvalId}（不阻断审批主流程）：${issues.join(',')}`,
+      );
+      return null;
+    }
+    return record;
+  }
+
+  /** CAS 落解析状态（WHERE status='pending' RETURNING；未命中=他请求已解析）。 */
+  private async resolveRow(
+    approvalId: string,
+    orgId: string,
+    status: 'approved' | 'rejected' | 'expired',
+    actor: { userId?: string } | undefined,
+    resolution: Record<string, unknown>,
+    decisionJson?: DecisionRecord | null,
+  ): Promise<void> {
+    const [updated] = await this.db
+      .update(ewohAgentApproval)
+      .set({
+        status,
+        resolvedAt: new Date(),
+        resolvedBy: actor?.userId ?? 'system',
+        resolutionJson: resolution,
+        ...(decisionJson ? { decisionJson } : {}),
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(ewohAgentApproval.orgId, orgId),
+        eq(ewohAgentApproval.approvalId, approvalId),
+        eq(ewohAgentApproval.status, 'pending'),
+      ))
+      .returning();
+    if (!updated) {
+      throw new BadRequestException(`approval_already_resolved:${status}`);
+    }
+  }
+
+  private async executeAuthorized(
+    orgId: string,
+    agentId: string,
+    input: ExecuteAgentCommandInput,
+    actor?: { userId: string },
+  ): Promise<ExecuteAgentCommandResult> {
+    const manifest = await this.getManifest(orgId, agentId);
+    if (!manifest) {
+      throw new BadRequestException('agent_not_registered');
+    }
+    const full = manifest.manifest as Record<string, unknown>;
+    const budget = full.budget as Record<string, unknown>;
+    const maxSteps = budget.maxSteps as number;
+    const fallback = full.fallback as Record<string, unknown>;
+    const onFailure = fallback.onFailure as string;
+    const stepsUsed = (input.payload?.stepsUsed as number | undefined) ?? 0;
+    if (stepsUsed >= maxSteps) {
+      throw new BadRequestException(`budget_exceeded:maxSteps=${maxSteps}`);
+    }
+    try {
+      await this.dispatchCommand(orgId, full, input);
+      this.agentMetrics?.recordCommand('executed', String(full.role ?? ''), input.command);
+      await this.recordDecisionEvent(orgId, full, input, 'executed', { approved: true });
+      await this.auditAppend(orgId, 'agent.command.executed', agentId, actor);
+      return { executed: true, needsApproval: false, outcome: 'executed' };
+    } catch (error) {
+      await this.recordDecisionEvent(orgId, full, input, 'failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      if (onFailure === 'delegateHuman') {
+        this.agentMetrics?.recordCommand('delegated', String(full.role ?? ''), input.command);
+        await this.recordDecisionEvent(orgId, full, input, 'delegated', {});
+        return { executed: false, needsApproval: false, outcome: 'delegated', delegated: true };
+      }
+      throw error;
+    }
+  }
+
+  // ── NO-06c：内置 FactorySupervisor（L1 建议型）端到端 ─────────────────────
+
+  async ensureBuiltinSupervisor(orgId: string): Promise<Record<string, unknown>> {
+    return this.registerManifest(BUILTIN_SUPERVISOR_MANIFEST, orgId);
+  }
+
+  // ── NO-07b：内置 Knowledge Agent（L1 建议型）端到端 ────────────────────────
+
+  async ensureBuiltinKnowledge(orgId: string): Promise<Record<string, unknown>> {
+    return this.registerManifest(BUILTIN_KNOWLEDGE_MANIFEST, orgId);
+  }
+
+  /**
+   * 知识 Agent 检索流：五层 scope 阶梯（共享层 ∪ 本租户层；绝不越过
+   * private_operational 边界——由 KnowledgeService + RLS 双强制）。
+   */
+  async runKnowledgeSearch(
+    orgId: string,
+    filters?: { kind?: string; scope?: string },
+  ): Promise<Record<string, unknown>[]> {
+    await this.ensureBuiltinKnowledge(orgId);
+    return this.knowledgeService.retrieveEntries(orgId, filters);
+  }
+
+  /**
+   * 工厂主管 Agent 建议流：读世界状态 → 确定性建议 → propose_plan → 审批桥接。
+   * 建议内容来自真实 World State 数字（可解释，非编造）；L1 一律人审。
+   */
+  async runSupervisorSuggestion(
+    orgId: string,
+    actor?: { userId: string },
+  ): Promise<{ suggestion: Record<string, unknown>; result: ExecuteAgentCommandResult }> {
+    await this.ensureBuiltinSupervisor(orgId);
+    const world = await this.worldStateService.getCurrentWorldState();
+    const highSeverityEvents = (world.events ?? []).filter(
+      (e) => e.severity === 'critical' || e.severity === 'high',
+    ).length;
+    const backlogStations = (world.stations ?? []).filter(
+      (s) => (s.queue ?? []).length > 0,
+    ).length;
+    const deviceCount = (world.devices ?? []).length;
+    const personCount = (world.persons ?? []).length;
+    const suggestion: Record<string, unknown> = {
+      kind: 'supervisor_advisory',
+      generatedAt: new Date().toISOString(),
+      facts: {
+        highSeverityEvents,
+        backlogStations,
+        deviceCount,
+        personCount,
+      },
+      recommendations: [] as string[],
+    };
+    if (highSeverityEvents > 0) {
+      (suggestion.recommendations as string[]).push(
+        `存在 ${highSeverityEvents} 条 critical/high 事件，建议值班长复核事件处置状态`,
+      );
+    }
+    if (backlogStations > 0) {
+      (suggestion.recommendations as string[]).push(
+        `${backlogStations} 个工位存在积压，建议复核派工与补员`,
+      );
+    }
+    const result = await this.executeCommand(
+      orgId,
+      BUILTIN_SUPERVISOR_MANIFEST.agentId as string,
+      { command: 'propose_plan', payload: suggestion },
+      actor,
+    );
+    return { suggestion, result };
+  }
+
+  private async withTimeout<T>(promise: Promise<T>, timeoutSec: number): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`agent_timeout:${timeoutSec}s`)), timeoutSec * 1000);
+    });
+    try {
+      return await Promise.race([promise, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  private async recordDecisionEvent(
+    orgId: string,
+    full: Record<string, unknown>,
+    input: ExecuteAgentCommandInput,
+    outcome: 'proposed' | 'executed' | 'rejected' | 'failed' | 'delegated',
+    detail: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const agentId = full.agentId as string;
+      const eventType = input.command === 'propose_plan' && outcome === 'proposed'
+        ? 'AgentTaskProposed'
+        : 'AgentDecisionRecorded';
+      if (!isCatalogEventType(eventType)) {
+        this.logger.error(`agent 事件类型不在目录: ${eventType}`);
+        return;
+      }
+      const envelope = buildEventEnvelope({
+        eventId: `EVT-${Math.floor(Date.now() / 1000)}-${randomUUID().slice(0, 8)}`,
+        eventType,
+        occurredAt: nowIso,
+        observedAt: nowIso,
+        receivedAt: nowIso,
+        source: 'cloud:agent-runtime',
+        subject: agentId,
+        correlationId: currentTraceId() ?? null,
+      });
+      const envelopeRecord = envelopeForEvidence(envelope);
+      await this.db.insert(ewohEvent).values({
+        eventId: envelope.eventId,
+        deviceId: null,
+        eventCode: eventType === 'AgentTaskProposed' ? 'AGENT_TASK_PROPOSED' : 'AGENT_DECISION_RECORDED',
+        eventType,
+        severity: 'low',
+        title: `agent:${full.role ?? ''} ${input.command} ${outcome}`,
+        status: 'open',
+        createdAt: now,
+        sourceType: 'real',
+        orgId,
+        evidenceJson: {
+          envelope: envelopeRecord.envelope,
+          envelopeSemantics: envelopeRecord.envelopeSemantics,
+          agentId,
+          command: input.command,
+          outcome,
+          ...detail,
+        },
+      });
+    } catch (error) {
+      this.logger.error(`agent 决策事件写入失败: ${String(error)}`);
+    }
+  }
+
+  private async auditAppend(
+    orgId: string,
+    action: string,
+    agentId: string,
+    actor?: { userId: string },
+  ): Promise<void> {
+    try {
+      await this.auditService.appendAuditLog({
+        actorId: actor?.userId ?? 'agent-runtime',
+        orgId,
+        action,
+        entityType: 'agent',
+        entityId: agentId,
+        before: null,
+        after: { agentId },
+      });
+    } catch (error) {
+      this.logger.warn(`agent 审计写入失败: ${String(error)}`);
+    }
+  }
+}

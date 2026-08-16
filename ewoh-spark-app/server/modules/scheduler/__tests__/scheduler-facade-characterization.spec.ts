@@ -630,7 +630,8 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
       const { svc, mocks } = makeSvc({ plans: [PLAN_ROW] });
       const plan = await svc.getPlanDetail('P-1');
       expect(plan.planId).toBe('P-1');
-      expect(mocks.planService.getPlan).toHaveBeenCalledWith('P-1');
+      // ADR-071：actor 可选透传（无 actor 时为 undefined）。
+      expect(mocks.planService.getPlan).toHaveBeenCalledWith('P-1', undefined);
     });
 
     it('getPolicy 返回 { policy, config }', async () => {
@@ -711,7 +712,7 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
         tasks: [
           { id: 't1', title: 'T1', taskType: 'work', status: 'pending', stationId: 's1', requiredSkills: ['work'], requiredCertifications: [], requiredDeviceCapabilities: [], predecessorIds: [] },
         ],
-        persons: [{ id: 'p1', name: 'P1', status: 'available', skills: ['work'], certifications: [], stationId: 's1', loadLevel: 0 }],
+        persons: [{ id: 'p1', name: 'P1', status: 'AVAILABLE', skills: ['work'], certifications: [], stationId: 's1', loadLevel: 0 }],
         devices: [],
       });
       mocks.eligibilityService.check.mockReturnValue({ eligible: true, reasons: [] });
@@ -730,7 +731,8 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
     it('listPlanConstraintsV2 / deactivateConstraintV2 委托 planService', async () => {
       const { svc, mocks } = makeSvc();
       await svc.listPlanConstraintsV2('P-1');
-      expect(mocks.planService.listPlanConstraints).toHaveBeenCalledWith('P-1');
+      // ADR-072：actor 可选透传（无 actor 时为 undefined）。
+      expect(mocks.planService.listPlanConstraints).toHaveBeenCalledWith('P-1', undefined);
       await svc.deactivateConstraintV2('C-1', ACTOR, 'reason');
       expect(mocks.planService.deactivateConstraint).toHaveBeenCalledWith(
         'C-1',
@@ -813,7 +815,7 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
       const { svc, mocks } = makeSvc();
       const res = await svc.activatePolicyVersion(2, { approver: 'op', reason: 'r' }, ACTOR);
       expect(res.config.configVersion).toBe(2);
-      expect(mocks.policyService.activatePolicyVersion).toHaveBeenCalledWith(2, 'org1', 'op');
+      expect(mocks.policyService.activatePolicyVersion).toHaveBeenCalledWith(2, 'org1', 'op', 'r');
       expect(mocks.auditService.appendAuditLog).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'scheduler.policy.activate' }),
       );
@@ -915,7 +917,7 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
           { reservationId: 'r1', resourceType: 'person', resourceId: 'p1', startMs: 100, endMs: 200 },
           { reservationId: 'r2', resourceType: 'person', resourceId: 'p1', startMs: 150, endMs: 250 },
         ],
-        devices: [{ id: 'd1', batteryPct: 5, online: true, status: 'online', dataQuality: 'FRESH' }],
+        devices: [{ id: 'd1', batteryPct: 5, online: true, status: 'AVAILABLE', dataQuality: 'FRESH' }],
       });
       const res = await svc.listConflicts({});
       expect(res.total).toBeGreaterThanOrEqual(2);
@@ -928,7 +930,7 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
       const { svc, mocks } = makeSvc({}, { noConflict: true });
       mocks.worldStateSnapshotService.getCurrentWorldState.mockResolvedValue({
         ...makeSnapshot(),
-        devices: [{ id: 'd1', batteryPct: 5, online: true, status: 'online', dataQuality: 'FRESH' }],
+        devices: [{ id: 'd1', batteryPct: 5, online: true, status: 'AVAILABLE', dataQuality: 'FRESH' }],
       });
       await svc.listConflicts({});
       const first = mocks.outboxService.enqueue.mock.calls.length;
@@ -976,7 +978,12 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
       const { svc, mocks } = makeSvc();
       const res = await svc.executionList({ planId: 'P-1', limit: 10 });
       expect(res).toEqual({ executions: [], total: 0 });
-      expect(mocks.executionService.list).toHaveBeenCalledWith({ planId: 'P-1', limit: 10 });
+      // ADR-073：queryService 转发时合并 orgId（无 actor → null）。
+      expect(mocks.executionService.list).toHaveBeenCalledWith({
+        planId: 'P-1',
+        limit: 10,
+        orgId: null,
+      });
     });
 
     it('executionList 未注入 executionService → 抛错', async () => {
@@ -1015,7 +1022,14 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
         { taskId: 't1', actualStart: '2026-08-09T10:00:00Z' },
         ACTOR,
       );
-      expect(res).toEqual({ ok: true, matched: true });
+      // NO-13a / ADR-050：响应 additive 透出推进 summary（stub 返回 undefined → 兜底零值）。
+      expect(res).toEqual({
+        ok: true,
+        matched: true,
+        advancedAssignments: 0,
+        advancedTaskSteps: 0,
+        skips: [],
+      });
       expect(mocks.feedbackService.recordActuals).toHaveBeenCalledWith(
         expect.objectContaining({ taskId: 't1', actualStart: '2026-08-09T10:00:00Z' }),
         expect.any(Object),

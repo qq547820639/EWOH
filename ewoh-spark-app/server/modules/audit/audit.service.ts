@@ -1,11 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, sql, type SQL } from 'drizzle-orm';
+import { ewohAuditLog } from '@server/database/schema';
+import { and, sql, eq, desc, type SQL } from 'drizzle-orm';
 
 export interface AuditQuery {
   entityType?: string;
   action?: string;
   actorId?: string;
+  /** ADR-078：可选 org 过滤（缺失=RLS 语义现状）。 */
+  orgId?: string;
   limit: number;
   offset: number;
   includeClientIp?: boolean;
@@ -60,37 +63,77 @@ export class AuditQueryService {
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
 
   async list(query: AuditQuery): Promise<{ items: AuditLogRow[]; total: number; limit: number; offset: number }> {
+    // ADR-078：drizzle 类型安全路径（消除 public. 硬编码）。
     const conditions: SQL[] = [];
     if (query.entityType) {
-      conditions.push(sql`entity_type = ${query.entityType}`);
+      conditions.push(eq(ewohAuditLog.entityType, query.entityType));
     }
     if (query.action) {
-      conditions.push(sql`action = ${query.action}`);
+      conditions.push(eq(ewohAuditLog.action, query.action));
     }
     if (query.actorId) {
-      conditions.push(sql`actor_id = ${query.actorId}`);
+      conditions.push(eq(ewohAuditLog.actorId, query.actorId));
     }
-    const where = conditions.length > 0 ? sql`where ${and(...conditions)}` : sql``;
+    if (query.orgId) {
+      conditions.push(eq(ewohAuditLog.orgId, query.orgId));
+    }
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const [countRow] = await this.db.execute(
-      sql`select count(*)::int as total from public.ewoh_audit_log ${where}`,
-    );
-    const rows = await this.db.execute(
-      sql`
-        select id, org_id, audit_seq, actor_id, action, entity_type, entity_id,
-               before_json, after_json, reason, client_ip, request_id,
-               risk_level, is_high_risk, occurred_at, chain_seq, prev_hash, hash
-        from public.ewoh_audit_log
-        ${where}
-        order by audit_seq desc
-        limit ${query.limit}
-        offset ${query.offset}
-      `,
-    );
+    const [countRows, rows] = await Promise.all([
+      this.db
+        .select({ total: sql`count(*)::int` })
+        .from(ewohAuditLog)
+        .where(where),
+      this.db
+        .select({
+          id: ewohAuditLog.id,
+          orgId: ewohAuditLog.orgId,
+          auditSeq: ewohAuditLog.auditSeq,
+          actorId: ewohAuditLog.actorId,
+          action: ewohAuditLog.action,
+          entityType: ewohAuditLog.entityType,
+          entityId: ewohAuditLog.entityId,
+          beforeJson: ewohAuditLog.beforeJson,
+          afterJson: ewohAuditLog.afterJson,
+          reason: ewohAuditLog.reason,
+          clientIp: ewohAuditLog.clientIp,
+          requestId: ewohAuditLog.requestId,
+          riskLevel: ewohAuditLog.riskLevel,
+          isHighRisk: ewohAuditLog.isHighRisk,
+          occurredAt: ewohAuditLog.occurredAt,
+          chainSeq: ewohAuditLog.chainSeq,
+          prevHash: ewohAuditLog.prevHash,
+          hash: ewohAuditLog.hash,
+        })
+        .from(ewohAuditLog)
+        .where(where)
+        .orderBy(desc(ewohAuditLog.auditSeq))
+        .limit(query.limit)
+        .offset(query.offset),
+    ]);
 
     return {
-      items: rows.map((row) => toRow(row as Record<string, unknown>, query.includeClientIp === true)),
-      total: Number((countRow as Record<string, unknown>).total),
+      items: rows.map((row) => toRow({
+        id: row.id,
+        org_id: row.orgId,
+        audit_seq: row.auditSeq,
+        actor_id: row.actorId,
+        action: row.action,
+        entity_type: row.entityType,
+        entity_id: row.entityId,
+        before_json: row.beforeJson,
+        after_json: row.afterJson,
+        reason: row.reason,
+        client_ip: row.clientIp,
+        request_id: row.requestId,
+        risk_level: row.riskLevel,
+        is_high_risk: row.isHighRisk,
+        occurred_at: row.occurredAt,
+        chain_seq: row.chainSeq,
+        prev_hash: row.prevHash,
+        hash: row.hash,
+      } as Record<string, unknown>, query.includeClientIp === true)),
+      total: Number((countRows[0] as { total: number } | undefined)?.total ?? 0),
       limit: query.limit,
       offset: query.offset,
     };

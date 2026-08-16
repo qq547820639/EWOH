@@ -1,0 +1,266 @@
+{
+  "schemaVersion": "1.0.0",
+  "records": [
+    {
+      "name": "valid-model-inference",
+      "record": {
+        "inferenceId": "INF-9f1c4a0e",
+        "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "level": "L2_statistical_ml",
+        "modelId": "action-classifier",
+        "modelVersion": "v3",
+        "inputVersion": "features-v7",
+        "label": "lift",
+        "confidence": 0.87,
+        "oodIndicator": { "flag": false, "reasons": [] },
+        "dataQuality": "good",
+        "evidence": {
+          "tsStart": "2026-08-16T08:00:00Z",
+          "tsEnd": "2026-08-16T08:00:12Z",
+          "isRule": false,
+          "inferenceMs": 4.2,
+          "keyFeatures": ["torque_mean", "assist_mean"]
+        }
+      }
+    },
+    {
+      "name": "valid-rule-fallback",
+      "record": {
+        "inferenceId": "INF-9f1c4a0f",
+        "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "level": "L1_deterministic_rules",
+        "modelId": "rules",
+        "modelVersion": "rule-fallback",
+        "inputVersion": "rules-v12",
+        "label": "walk",
+        "confidence": 0.65,
+        "oodIndicator": { "flag": false, "reasons": [] },
+        "dataQuality": "degraded",
+        "evidence": {
+          "tsStart": "2026-08-16T08:01:00Z",
+          "tsEnd": "2026-08-16T08:01:12Z",
+          "isRule": true,
+          "keyFeatures": ["gyro_mag_mean"]
+        }
+      }
+    },
+    {
+      "name": "valid-unknown-with-ood-reason",
+      "record": {
+        "inferenceId": "INF-9f1c4a10",
+        "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "level": "L2_statistical_ml",
+        "modelId": "action-classifier",
+        "modelVersion": "v3",
+        "inputVersion": "features-v7",
+        "label": "unknown",
+        "confidence": 0.31,
+        "oodIndicator": { "flag": true, "reasons": ["low_confidence"] },
+        "dataQuality": "good",
+        "evidence": {
+          "tsStart": "2026-08-16T08:02:00Z",
+          "tsEnd": "2026-08-16T08:02:12Z",
+          "isRule": false,
+          "keyFeatures": []
+        }
+      }
+    },
+    {
+      "name": "confidence-out-of-range-rejected",
+      "record": {
+        "inferenceId": "INF-9f1c4a11",
+        "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "level": "L2_statistical_ml",
+        "modelId": "action-classifier",
+        "modelVersion": "v3",
+        "inputVersion": "features-v7",
+        "label": "lift",
+        "confidence": 1.4,
+        "oodIndicator": { "flag": false, "reasons": [] },
+        "dataQuality": "good",
+        "evidence": {
+          "tsStart": "2026-08-16T08:03:00Z",
+          "tsEnd": "2026-08-16T08:03:12Z",
+          "isRule": false,
+          "keyFeatures": []
+        }
+      },
+      "expectError": "bad_confidence"
+    },
+    {
+      "name": "ood-flag-without-reason-rejected",
+      "record": {
+        "inferenceId": "INF-9f1c4a12",
+        "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "level": "L2_statistical_ml",
+        "modelId": "action-classifier",
+        "modelVersion": "v3",
+        "inputVersion": "features-v7",
+        "label": "unknown",
+        "confidence": 0.31,
+        "oodIndicator": { "flag": true, "reasons": [] },
+        "dataQuality": "good",
+        "evidence": {
+          "tsStart": "2026-08-16T08:04:00Z",
+          "tsEnd": "2026-08-16T08:04:12Z",
+          "isRule": false,
+          "keyFeatures": []
+        }
+      },
+      "expectError": "ood_reason_required"
+    },
+    {
+      "name": "ood-reason-without-flag-rejected",
+      "record": {
+        "inferenceId": "INF-9f1c4a13",
+        "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "level": "L2_statistical_ml",
+        "modelId": "action-classifier",
+        "modelVersion": "v3",
+        "inputVersion": "features-v7",
+        "label": "lift",
+        "confidence": 0.87,
+        "oodIndicator": { "flag": false, "reasons": ["low_confidence"] },
+        "dataQuality": "good",
+        "evidence": {
+          "tsStart": "2026-08-16T08:05:00Z",
+          "tsEnd": "2026-08-16T08:05:12Z",
+          "isRule": false,
+          "keyFeatures": []
+        }
+      },
+      "expectError": "ood_flag_required"
+    },
+    {
+      "name": "unknown-ood-reason-rejected",
+      "record": {
+        "inferenceId": "INF-9f1c4a14",
+        "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "level": "L2_statistical_ml",
+        "modelId": "action-classifier",
+        "modelVersion": "v3",
+        "inputVersion": "features-v7",
+        "label": "lift",
+        "confidence": 0.87,
+        "oodIndicator": { "flag": true, "reasons": ["alien_invasion"] },
+        "dataQuality": "good",
+        "evidence": {
+          "tsStart": "2026-08-16T08:06:00Z",
+          "tsEnd": "2026-08-16T08:06:12Z",
+          "isRule": false,
+          "keyFeatures": []
+        }
+      },
+      "expectError": "unknown_ood_reason"
+    },
+    {
+      "name": "unknown-label-without-ood-rejected",
+      "record": {
+        "inferenceId": "INF-9f1c4a15",
+        "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "level": "L2_statistical_ml",
+        "modelId": "action-classifier",
+        "modelVersion": "v3",
+        "inputVersion": "features-v7",
+        "label": "unknown",
+        "confidence": 0.9,
+        "oodIndicator": { "flag": false, "reasons": [] },
+        "dataQuality": "good",
+        "evidence": {
+          "tsStart": "2026-08-16T08:07:00Z",
+          "tsEnd": "2026-08-16T08:07:12Z",
+          "isRule": false,
+          "keyFeatures": []
+        }
+      },
+      "expectError": "unknown_requires_ood"
+    },
+    {
+      "name": "unknown-level-rejected",
+      "record": {
+        "inferenceId": "INF-9f1c4a16",
+        "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "level": "L8_quantum",
+        "modelId": "action-classifier",
+        "modelVersion": "v3",
+        "inputVersion": "features-v7",
+        "label": "lift",
+        "confidence": 0.87,
+        "oodIndicator": { "flag": false, "reasons": [] },
+        "dataQuality": "good",
+        "evidence": {
+          "tsStart": "2026-08-16T08:08:00Z",
+          "tsEnd": "2026-08-16T08:08:12Z",
+          "isRule": false,
+          "keyFeatures": []
+        }
+      },
+      "expectError": "unknown_level"
+    },
+    {
+      "name": "missing-input-version-rejected",
+      "record": {
+        "inferenceId": "INF-9f1c4a17",
+        "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "level": "L2_statistical_ml",
+        "modelId": "action-classifier",
+        "modelVersion": "v3",
+        "label": "lift",
+        "confidence": 0.87,
+        "oodIndicator": { "flag": false, "reasons": [] },
+        "dataQuality": "good",
+        "evidence": {
+          "tsStart": "2026-08-16T08:09:00Z",
+          "tsEnd": "2026-08-16T08:09:12Z",
+          "isRule": false,
+          "keyFeatures": []
+        }
+      },
+      "expectError": "missing_field:inputVersion"
+    },
+    {
+      "name": "non-canonical-subject-rejected",
+      "record": {
+        "inferenceId": "INF-9f1c4a18",
+        "subjectId": "not-canonical",
+        "level": "L2_statistical_ml",
+        "modelId": "action-classifier",
+        "modelVersion": "v3",
+        "inputVersion": "features-v7",
+        "label": "lift",
+        "confidence": 0.87,
+        "oodIndicator": { "flag": false, "reasons": [] },
+        "dataQuality": "good",
+        "evidence": {
+          "tsStart": "2026-08-16T08:10:00Z",
+          "tsEnd": "2026-08-16T08:10:12Z",
+          "isRule": false,
+          "keyFeatures": []
+        }
+      },
+      "expectError": "bad_subject"
+    },
+    {
+      "name": "bad-data-quality-rejected",
+      "record": {
+        "inferenceId": "INF-9f1c4a19",
+        "subjectId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "level": "L2_statistical_ml",
+        "modelId": "action-classifier",
+        "modelVersion": "v3",
+        "inputVersion": "features-v7",
+        "label": "lift",
+        "confidence": 0.87,
+        "oodIndicator": { "flag": false, "reasons": [] },
+        "dataQuality": "excellent",
+        "evidence": {
+          "tsStart": "2026-08-16T08:11:00Z",
+          "tsEnd": "2026-08-16T08:11:12Z",
+          "isRule": false,
+          "keyFeatures": []
+        }
+      },
+      "expectError": "bad_data_quality"
+    }
+  ]
+}

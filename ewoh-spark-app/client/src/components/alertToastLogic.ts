@@ -1,12 +1,12 @@
-// alertToastLogic.ts — L3 告警聚合纯函数（node 可测）。
+// alertToastLogic.ts — critical 告警聚合纯函数（node 可测；ADR-027 规范词表，旧词表 L3=最严重）。
 //
-// L3 风暴时同一设备在短窗口内可能连续触发多条事件；逐条 toast 会刷屏。
-// 本模块把近窗口内的 L3 事件按设备聚合为「设备 → 最新事件 + 计数」，
+// critical 风暴时同一设备在短窗口内可能连续触发多条事件；逐条 toast 会刷屏。
+// 本模块把近窗口内的 critical 事件按设备聚合为「设备 → 最新事件 + 计数」，
 // UI 只弹一张聚合卡（标题/设备/计数），处置与查看均作用于最新事件。
 
 import type { EventInfo } from '@shared/api.interface';
 
-export interface AggregatedL3 {
+export interface AggregatedCriticalEvents {
   deviceId: string | null;
   /** 聚合键（deviceId 为空时归入「未知设备」）。 */
   deviceLabel: string;
@@ -16,15 +16,15 @@ export interface AggregatedL3 {
 
 const UNKNOWN_DEVICE_LABEL = '未知设备';
 
-export function aggregateL3(
+export function aggregateCriticalEvents(
   events: EventInfo[] | undefined,
   nowMs: number,
   windowMs: number,
-): AggregatedL3[] {
+): AggregatedCriticalEvents[] {
   if (!events || events.length === 0) return [];
   const cutoff = nowMs - windowMs;
   const inWindow = events.filter((e) => {
-    if (e.severity !== 'L3') return false;
+    if (e.severity !== 'critical') return false;
     if (!e.createdAt) return false;
     return new Date(e.createdAt).getTime() >= cutoff;
   });
@@ -43,7 +43,7 @@ export function aggregateL3(
     }
   }
 
-  const aggregated: AggregatedL3[] = [];
+  const aggregated: AggregatedCriticalEvents[] = [];
   for (const [key, bucket] of byDevice) {
     aggregated.push({
       deviceId: key === UNKNOWN_DEVICE_LABEL ? null : key,

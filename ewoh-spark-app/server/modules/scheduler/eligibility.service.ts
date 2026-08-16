@@ -1,5 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { EligibilityResult } from '@shared/api.interface';
+import type { MaintenanceConditionProjection } from '@shared/maintenance';
+import {
+  qualityFindingsBlockDispatch,
+  type QualityFindingProjection,
+} from '@shared/quality';
+import type { CapabilityRecord } from '@shared/capability';
+import {
+  deviceCapabilityNames,
+  personCertificationExpiryMap,
+  personSkillNames,
+  stationCapabilityNames,
+} from './capability-projection';
 
 /** 参与资格判定的人员描述。 */
 export interface EligiblePerson {
@@ -20,6 +32,19 @@ export interface EligiblePerson {
   dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
   /** 字段来源维度（P1-B fail-close；DERIVED + safety-critical → derived_data_fail_closed）。 */
   source?: 'AUTHORITATIVE' | 'DERIVED';
+  /**
+   * NO-05c：活跃维护状态事实（ADR-010）。存在即拒绝派工
+   * （person_maintenance_blocked，fail-closed，人审解除）。
+   */
+  maintenance?: MaintenanceConditionProjection[] | null;
+  /**
+   * NO-05d：活跃质量发现事实（ADR-011）。critical/high → 拒绝派工
+   * （person_quality_blocked，fail-closed，人审经 dispositioned/closed 解除）；
+   * medium/low 仅事实可见、不封锁。
+   */
+  qualityFindings?: QualityFindingProjection[] | null;
+  /** NO-12v / ADR-045：能力契约记录（快照投影）；匹配优先契约形态。 */
+  capabilityRecords?: CapabilityRecord[];
 }
 
 /** 参与资格判定的设备描述。 */
@@ -39,6 +64,19 @@ export interface EligibleDevice {
   dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
   /** 字段来源维度（P1-B fail-close；DERIVED + safety-critical → derived_data_fail_closed）。 */
   source?: 'AUTHORITATIVE' | 'DERIVED';
+  /**
+   * NO-05c：活跃维护状态事实（ADR-010）。存在即拒绝派工
+   * （device_maintenance_blocked，fail-closed，人审解除）。
+   */
+  maintenance?: MaintenanceConditionProjection[] | null;
+  /**
+   * NO-05d：活跃质量发现事实（ADR-011）。critical/high → 拒绝派工
+   * （device_quality_blocked，fail-closed，人审经 dispositioned/closed 解除）；
+   * medium/low 仅事实可见、不封锁。
+   */
+  qualityFindings?: QualityFindingProjection[] | null;
+  /** NO-12v / ADR-045：能力契约记录（快照投影）；匹配优先契约形态。 */
+  capabilityRecords?: CapabilityRecord[];
 }
 
 /** 参与资格判定的任务描述。 */
@@ -97,10 +135,23 @@ export interface EligibilityContext {
   stationCapacityById?: Map<string, number | null>;
   /** T03 / P1-3：候选工位能力（stationId → capabilities[]）。 */
   stationCapabilitiesById?: Map<string, string[]>;
+  /** NO-12v / ADR-045：候选工位能力契约记录（匹配优先契约形态）。 */
+  stationCapabilityRecordsById?: Map<string, CapabilityRecord[]>;
   /** T03 / P1-3：候选工位已占用（stationId → 时间区间），用于容量计数。 */
   bookedStationCounts?: Map<string, number>;
   /** P1-A：候选工位可用窗口（stationId → 窗口列表）；无数据不限制（缺数据不伪造）。 */
   stationAvailableWindowsById?: Map<string, Array<{ startMs: number; endMs: number }>>;
+  /**
+   * NO-05c：候选工位维护封锁（stationId → true 表示存在活跃维护状态事实）。
+   * 命中即拒绝派工（station_maintenance_blocked，fail-closed，人审解除）。
+   */
+  stationMaintenanceBlockedById?: Map<string, boolean>;
+  /**
+   * NO-05d：候选工位质量封锁（stationId → true 表示存在 critical/high 活跃
+   * 质量发现）。命中即拒绝派工（station_quality_blocked，fail-closed，
+   * 人审经 dispositioned/closed 解除）。
+   */
+  stationQualityBlockedById?: Map<string, boolean>;
 }
 
 /**
@@ -109,6 +160,23 @@ export interface EligibilityContext {
  */
 @Injectable()
 export class EligibilityService {
+  private readonly logger = new Logger(EligibilityService.name);
+
+  /**
+   * NO-05d（ADR-011）：qualityFindings 中 critical/high 触发硬封锁；
+   * medium/low 不封锁（仅事实可见）。未知严重度按封锁处理并留痕
+   * （fail-closed，不把未知当作安全）。
+   */
+  private qualityBlocks(
+    findings: QualityFindingProjection[] | null | undefined,
+  ): boolean {
+    return qualityFindingsBlockDispatch(findings, (findingId, severity) => {
+      this.logger.warn(
+        `质量发现严重度非契约值，按封锁处理（fail-closed）: ${findingId} ${severity}`,
+      );
+    });
+  }
+
   /**
    * 硬约束检查。返回 eligible=false 并附带全部未通过原因。
    */
@@ -120,30 +188,33 @@ export class EligibilityService {
   ): EligibilityResult {
     const reasons: string[] = [];
 
-    // 1) 技能匹配
+    // 1) 技能匹配（NO-12v / ADR-045：契约形态优先，无记录就地同源投影——语义不变）
     if (task.requiredSkills.length > 0) {
       const matchMode = task.skillMatchMode ?? 'ALL';
-      // ALL=全部必需（.every），ANY=任一即可（.some）
+      const skillNames = personSkillNames(person);
       const hasSkill =
         matchMode === 'ALL'
-          ? task.requiredSkills.every((s) => person.skills.includes(s))
-          : task.requiredSkills.some((s) => person.skills.includes(s));
+          ? task.requiredSkills.every((s) => skillNames.includes(s))
+          : task.requiredSkills.some((s) => skillNames.includes(s));
       if (!hasSkill) reasons.push('missing_skill');
     }
 
     // 1b) 证书到期（T03 / P1-2）：requiredCertifications 命中已过期证书 → cert_expired。
+    // NO-12v / ADR-045：到期事实优先契约记录（certification expiresAt），
+    // 无记录回退 raw certificationExpiry——存在性仍以 person.certifications 为准
+    // （certification 记录因缺 issuer/expiry 被契约缺口丢弃，若改按记录存在性
+    // 会改变既有语义，§30 语义不变）。
     if (task.requiredCertifications.length > 0) {
       const certOk = task.requiredCertifications.every((c) =>
         person.certifications.includes(c),
       );
       if (!certOk) reasons.push('missing_certification');
       else {
-        const expired = (person.certificationExpiry ?? []).some(
-          (e) =>
-            e.expiresAtMs != null &&
-            e.expiresAtMs < ctx.now &&
-            task.requiredCertifications.includes(e.name),
-        );
+        const expiryByName = personCertificationExpiryMap(person);
+        const expired = task.requiredCertifications.some((name) => {
+          const expiresAtMs = expiryByName.get(name);
+          return expiresAtMs != null && expiresAtMs < ctx.now;
+        });
         if (expired) reasons.push('cert_expired');
       }
     }
@@ -157,6 +228,17 @@ export class EligibilityService {
       reasons.push('health_blocked');
     }
 
+    // 1d) NO-05c（ADR-010）：活跃维护状态事实 → 拒绝派工（fail-closed，人审解除）。
+    if (person.maintenance != null && person.maintenance.length > 0) {
+      reasons.push('person_maintenance_blocked');
+    }
+
+    // 1e) NO-05d（ADR-011）：critical/high 活跃质量发现 → 拒绝派工
+    // （fail-closed，人审经 dispositioned/closed 解除）；medium/low 不封锁。
+    if (this.qualityBlocks(person.qualityFindings)) {
+      reasons.push('person_quality_blocked');
+    }
+
     // 2) 资质认证（证书存在性；1b 已处理过期）
     if (task.requiredCertifications.length > 0 && !reasons.includes('cert_expired')) {
       const certOk = task.requiredCertifications.every((c) =>
@@ -166,7 +248,7 @@ export class EligibilityService {
     }
 
     // 3) 在岗状态（人员可用）
-    if (person.status !== 'available') reasons.push('person_unavailable');
+    if (person.status !== 'AVAILABLE') reasons.push('person_unavailable');
 
     // 4) 时间冲突（人员不被双重预订，用候选时间区间判定）
     const candidateStart = ctx.candidateStartMs;
@@ -198,6 +280,17 @@ export class EligibilityService {
       if (stationConflict) reasons.push('station_reserved');
     }
 
+    // 4c2) NO-05c（ADR-010）：候选工位维护封锁 → 拒绝派工（fail-closed，人审解除）。
+    if (stationId && ctx.stationMaintenanceBlockedById?.get(stationId)) {
+      reasons.push('station_maintenance_blocked');
+    }
+
+    // 4c3) NO-05d（ADR-011）：候选工位质量封锁（critical/high）→ 拒绝派工
+    // （fail-closed，人审经 dispositioned/closed 解除）。
+    if (stationId && ctx.stationQualityBlockedById?.get(stationId)) {
+      reasons.push('station_quality_blocked');
+    }
+
     // 4d) T03 / P1-3：候选工位范围（candidateStations 非空且候选工位不在其中 → 拒绝）。
     if (
       stationId &&
@@ -214,7 +307,10 @@ export class EligibilityService {
       Array.isArray(task.requiredStationCapabilities) &&
       task.requiredStationCapabilities.length > 0
     ) {
-      const caps = ctx.stationCapabilitiesById?.get(stationId) ?? [];
+      const caps = stationCapabilityNames(
+        ctx.stationCapabilityRecordsById?.get(stationId),
+        ctx.stationCapabilitiesById?.get(stationId),
+      );
       const missing = task.requiredStationCapabilities.filter((c) => !caps.includes(c));
       if (missing.length > 0) reasons.push('station_capability_mismatch');
     }
@@ -298,11 +394,21 @@ export class EligibilityService {
       if (device.batteryPct < ctx.minBatteryPct) reasons.push('battery_low');
       if (device.status === 'fault' || device.status === 'maintenance')
         reasons.push('device_unavailable');
+      // 6a) NO-05c（ADR-010）：活跃维护状态事实 → 拒绝派工（fail-closed，人审解除）。
+      if (device.maintenance != null && device.maintenance.length > 0) {
+        reasons.push('device_maintenance_blocked');
+      }
+      // 6b) NO-05d（ADR-011）：critical/high 活跃质量发现 → 拒绝派工
+      // （fail-closed，人审经 dispositioned/closed 解除）；medium/low 不封锁。
+      if (this.qualityBlocks(device.qualityFindings)) {
+        reasons.push('device_quality_blocked');
+      }
       // 6b) 设备能力匹配：任务要求的任一能力缺失 → 设备不可用（即使在线且电量充足）。
       const requiredCaps = task.requiredDeviceCapabilities ?? [];
       if (requiredCaps.length > 0) {
+        const capabilityNames = deviceCapabilityNames(device);
         const missing = requiredCaps.filter(
-          (cap) => !device.capabilities.includes(cap),
+          (cap) => !capabilityNames.includes(cap),
         );
         if (missing.length > 0) reasons.push('missing_device_capability');
       }

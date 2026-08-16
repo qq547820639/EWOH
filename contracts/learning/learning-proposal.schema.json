@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///learning/learning-proposal/v1",
+  "title": "EWOH Canonical Learning Proposal",
+  "description": "EWOH 持续学习回路 v2 反馈腿契约（ADR-026 / NO-12b，§10 Level 7 + §12）。策略(规则阈值)更新提案一等资产：kind ∈ 封闭注册表（v1 仅 rule_threshold——只有具备确定性影子评估器的类型才允许注册，§33 绝不注册无引擎空类型）；status 状态机 proposed→shadow_evaluated→approved→rolled_back / rejected；激活阶梯 = 人审（§2：approved 必须 approvedBy+approvedAt，绝不隐式自动执行）；shadowEval 前置强制（shadow_evaluated/approved/rolled_back 必须带影子评估结论——无影子证据的激活在验证层即被拒绝）；rejected/rolled_back 必须带非空理由（§33 不静默）；auditTrail 必须 true。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kindRegistry", "statusRegistry", "thresholdRules", "rules"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "kindRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z_]{1,32}$" }
+    },
+    "statusRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z_]{1,24}$" }
+    },
+    "thresholdRules": {
+      "type": "array",
+      "uniqueItems": true,
+      "description": "支持阈值影子评估的 (ruleId, parameter) 组合注册表——每个组合都有确定性评估器；⊆ reasoning-trace ruleRegistry（门禁交叉校验）",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ruleId", "parameter"],
+        "properties": {
+          "ruleId": { "type": "string", "pattern": "^rule:[a-z0-9-]{1,48}$" },
+          "parameter": { "type": "string", "pattern": "^[a-zA-Z]{1,32}$" }
+        }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["noEngineNoKind", "shadowGateContract", "approvalContract", "rollbackContract", "rejectionContract", "auditContract"],
+      "properties": {
+        "noEngineNoKind": {
+          "type": "string",
+          "const": "kindRegistry 仅含具备确定性影子评估器的类型——绝不注册无引擎空类型（§33/§36）"
+        },
+        "shadowGateContract": {
+          "type": "string",
+          "const": "status ∈ {shadow_evaluated, approved, rolled_back} 必须带 shadowEval——无影子证据的激活在验证层即被拒绝"
+        },
+        "approvalContract": {
+          "type": "string",
+          "const": "approved 必须 approvedBy 非空 + approvedAt ISO——激活阶梯 = 人审（§2 绝不隐式自动执行）"
+        },
+        "rollbackContract": {
+          "type": "string",
+          "const": "rolled_back 必须 rolledBackBy 非空 + rolledBackReason 非空——回滚可审计"
+        },
+        "rejectionContract": {
+          "type": "string",
+          "const": "rejected 必须 rejectedBy 非空 + rejectedReason 非空（§33 不静默拒绝）"
+        },
+        "auditContract": {
+          "type": "string",
+          "const": "auditTrail 必须 true（与 ADR-016/018/020/021/024/025 同规则）"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "kindRegistry": ["rule_threshold"],
+  "statusRegistry": ["proposed", "shadow_evaluated", "approved", "rolled_back", "rejected"],
+  "thresholdRules": [
+    { "ruleId": "rule:worker-overload", "parameter": "workloadThreshold" }
+  ],
+  "rules": {
+    "noEngineNoKind": "kindRegistry 仅含具备确定性影子评估器的类型——绝不注册无引擎空类型（§33/§36）",
+    "shadowGateContract": "status ∈ {shadow_evaluated, approved, rolled_back} 必须带 shadowEval——无影子证据的激活在验证层即被拒绝",
+    "approvalContract": "approved 必须 approvedBy 非空 + approvedAt ISO——激活阶梯 = 人审（§2 绝不隐式自动执行）",
+    "rollbackContract": "rolled_back 必须 rolledBackBy 非空 + rolledBackReason 非空——回滚可审计",
+    "rejectionContract": "rejected 必须 rejectedBy 非空 + rejectedReason 非空（§33 不静默拒绝）",
+    "auditContract": "auditTrail 必须 true（与 ADR-016/018/020/021/024/025 同规则）"
+  }
+}

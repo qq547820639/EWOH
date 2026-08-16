@@ -14,6 +14,7 @@ import PageSkeleton from './app-shell/PageSkeleton';
 import PendingInbox from './app-shell/PendingInbox';
 import RecentAccessMenu from './app-shell/RecentAccessMenu';
 import AiAssistant from './app-shell/AiAssistant';
+import ThemeToggle from './app-shell/ThemeToggle';
 import { useOfflineSnapshot } from './app-shell/useOfflineSnapshot';
 import OnboardingQuickStart from './OnboardingQuickStart';
 import { prefetchRoute } from '../lib/routePrefetch';
@@ -157,6 +158,8 @@ const Layout = () => {
                 外骨骼作业健康监测
               </p>
             </div>
+            {/* NO-13f / ADR-055：手动主题切换（system → dark → light 三态循环，偏好持久化）。 */}
+            <ThemeToggle />
             <button
               type="button"
               onClick={handleLogout}

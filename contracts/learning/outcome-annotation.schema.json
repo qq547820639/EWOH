@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///learning/outcome-annotation/v1",
+  "title": "EWOH Canonical Outcome Annotation",
+  "description": "决策结果标注契约（ADR-034 / §10 Level 7 + §12：Decision→Outcome 结构化事实）。targetType ∈ {plan, decision, proposal, agent_command}；outcomeKind ∈ {success, partial_success, failure, invalid}；judgedBy 非空（判定事实完整，§33）+ judgedAt ISO；measured 为可测度量快照（缺省=显式不携带不猜测；值必须有限数值）；auditTrail 必须 true。本契约是学习回路模型腿的真值来源前置——modelAccuracy 在真实可训练模型落地前保持显式 unknown（§33 不造假）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "targetTypeRegistry", "outcomeKindRegistry", "rules"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "targetTypeRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z_]{1,32}$" }
+    },
+    "outcomeKindRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z_]{1,32}$" }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["judgerContract", "measuredContract", "auditContract"],
+      "properties": {
+        "judgerContract": {
+          "type": "string",
+          "const": "judgedBy 非空 + judgedAt ISO（判定事实完整，§33）"
+        },
+        "measuredContract": {
+          "type": "string",
+          "const": "measured 值必须有限数值；缺省 = 显式不携带（绝不猜测）"
+        },
+        "auditContract": {
+          "type": "string",
+          "const": "auditTrail 必须 true（与既有契约同规则）"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "targetTypeRegistry": ["plan", "decision", "proposal", "agent_command"],
+  "outcomeKindRegistry": ["success", "partial_success", "failure", "invalid"],
+  "rules": {
+    "judgerContract": "judgedBy 非空 + judgedAt ISO（判定事实完整，§33）",
+    "measuredContract": "measured 值必须有限数值；缺省 = 显式不携带（绝不猜测）",
+    "auditContract": "auditTrail 必须 true（与既有契约同规则）"
+  }
+}

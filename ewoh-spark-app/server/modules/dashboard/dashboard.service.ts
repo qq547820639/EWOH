@@ -55,7 +55,9 @@ export class DashboardService {
       const [eventStats] = await this.db
         .select({
           open: sql<number>`count(*) filter (where ${ewohEvent.status} = 'open')::int`,
-          critical: sql<number>`count(*) filter (where ${ewohEvent.severity} in ('L2','L3'))::int`,
+          // ADR-027：新写入规范阶梯（critical/high/medium）；legacy L2/L3 为存量兼容
+          // 并集统计，避免存量/新量口径漂移（真实 PG 首推后按需收紧）。
+          critical: sql<number>`count(*) filter (where ${ewohEvent.severity} in ('critical','high','medium','L2','L3'))::int`,
         })
         .from(ewohEvent);
 
@@ -519,7 +521,7 @@ export class DashboardService {
     }
   }
 
-  async createDevice(dto: CreateDeviceDto): Promise<DeviceInfo> {
+  async createDevice(dto: CreateDeviceDto, actor?: OrgContext): Promise<DeviceInfo> {
     try {
       const [existing] = await this.db
         .select({ deviceId: ewohDevice.deviceId })
@@ -542,6 +544,8 @@ export class DashboardService {
           firmwareVersion: dto.firmwareVersion ?? null,
           hardwareVersion: dto.hardwareVersion ?? null,
           protocolVersion: dto.protocolVersion ?? null,
+          // NO-13aa（ADR-075 续）：设备行归属注入（001 ewoh_org_visible RLS 对齐）。
+          orgId: actor?.primaryOrgId ?? null,
         })
         .returning();
 

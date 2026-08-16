@@ -175,6 +175,10 @@ class Context:
         scheduler=None,
         resource_state_service=None,
         kafka=None,
+        world_store=None,
+        world_projection=None,
+        event_uplink=None,
+        metrics_uplink=None,
     ):
         self.storage = storage
         self.bus = bus
@@ -194,6 +198,14 @@ class Context:
         self.resource_state_service = resource_state_service
         # 实时事件通道（兼容命名；当前复用 event_bus，供未来接入外部消息队列）
         self.kafka = kafka if kafka is not None else event_bus
+        # NO-03b：契约校验的世界状态存储（ADR-008/ADR-015 运行时接线；缺省 None，
+        # 路由 fail-closed 返回 503，绝不静默降级）
+        self.world_store = world_store
+        # NO-03c：遥测→世界模型自动投影（缺省 None；/api/status 如实报 enabled=false）
+        self.world_projection = world_projection
+        # NO-04b：Edge→Cloud 事件上行（缺省 None；/api/status 如实报 enabled=false）
+        self.event_uplink = event_uplink
+        self.metrics_uplink = metrics_uplink
         self.started_at = time.time()
         self.assignments = []  # 人工确认派工记录（演示会话级，不自动派工）
         self.lock = threading.Lock()

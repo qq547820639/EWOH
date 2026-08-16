@@ -79,8 +79,11 @@ export class DashboardController {
   }
 
   @Post('devices')
-  async createDevice(@Body() body: CreateDeviceDto) {
-    return this.dashboardService.createDevice(body);
+  async createDevice(
+    @Body() body: CreateDeviceDto,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    return this.dashboardService.createDevice(body, request?.userContext);
   }
 
   @Patch('devices/:deviceId')

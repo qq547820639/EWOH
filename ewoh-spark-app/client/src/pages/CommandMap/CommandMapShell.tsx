@@ -1101,6 +1101,7 @@ const CommandMapShell = (): React.ReactElement => {
           candidates={candidates ?? null}
           selectedTaskId={selectedTaskId}
           visibleBounds={ctl.viewportBounds}
+          onVisibleBoundsChange={ctl.setViewportBounds}
           schedulerState={schedulerState}
           selectedPlanId={selectedPlanId}
           showCompare={showCompare}

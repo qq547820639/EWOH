@@ -3,7 +3,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, isNull } from 'drizzle-orm';
 import { ewohSchedulingExecution } from '@server/database/schema';
 import type {
   ExecutionListResponse,
@@ -185,6 +185,15 @@ export class ExecutionService {
     if (opts.planId) conditions.push(eq(ewohSchedulingExecution.planId, opts.planId));
     if (opts.taskId) conditions.push(eq(ewohSchedulingExecution.taskId, opts.taskId));
     if (opts.status) conditions.push(eq(ewohSchedulingExecution.status, opts.status));
+    // ADR-073：execution 读面 org 条件（org 匹配或 NULL 存量）。
+    if (opts.orgId) {
+      conditions.push(
+        or(
+          isNull(ewohSchedulingExecution.orgId),
+          eq(ewohSchedulingExecution.orgId, opts.orgId),
+        ),
+      );
+    }
     const where = conditions.length > 0 ? and(...conditions) : undefined;
     const rows = await this.db
       .select()

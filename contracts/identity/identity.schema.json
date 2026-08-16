@@ -1,0 +1,138 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///identity/identity/v1",
+  "title": "EWOH Canonical Industrial Identity",
+  "description": "EWOH 统一工业身份契约（Canonical Identity Model）。本文件是身份语法的唯一事实源：kind 注册表、value 语法、身份引用与确定性规则。Python（src/edge_platform/contracts/identity.py）与 TypeScript（ewoh-spark-app/shared/identity.ts）必须与本注册表一致，由 scripts/audit-identity-contracts.js 门禁强制。设计决策见 docs/decisions/ADR-006-canonical-identity.md。",
+  "schemaVersion": "1.0.0",
+  "kindPattern": "^[a-z][a-z0-9_]{0,31}$",
+  "valuePattern": "^[A-Za-z0-9][A-Za-z0-9._~@-]{0,127}$",
+  "maxValueLength": 128,
+  "rules": {
+    "canonicalForm": "kind:value，恰好一个冒号，无空白；大小写敏感；字节相等即身份相等",
+    "equality": "规范形式字符串的精确相等（byte equality）",
+    "closedRegistry": "kind 必须命中 kindRegistry，否则整体拒绝（fail-closed），禁止猜测类型",
+    "internalValueOwnership": "内部唯一 ID 的 value 必须由 EWOH 生成（推荐 UUID v4）；禁止以 MES ID / WMS ID / PLC Tag / 设备序列号作为内部 value",
+    "thirdPartyIdSeparation": "第三方 ID 仅通过 identity-mapping 记录关联为 alias，不进入内部身份",
+    "mappingResolution": "仅 status==active 且时间窗口有效的记录参与解析；(source.system, source.id) 精确匹配；恰好 1 条返回 target.entityId；>=2 条抛 ambiguous_identity；0 条返回未映射（fail-closed 拒绝）"
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kindRegistry",
+    "kindPattern",
+    "valuePattern",
+    "maxValueLength",
+    "rules"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "kindRegistry": {
+      "type": "array",
+      "description": "封闭 kind 注册表（v1 共 42 类）。新增 kind = 契约小版本变更，必须同步 Python/TS 实现并通过门禁。",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,31}$"
+      },
+      "uniqueItems": true,
+      "minItems": 1
+    },
+    "kindPattern": {
+      "type": "string",
+      "const": "^[a-z][a-z0-9_]{0,31}$"
+    },
+    "valuePattern": {
+      "type": "string",
+      "const": "^[A-Za-z0-9][A-Za-z0-9._~@-]{0,127}$"
+    },
+    "maxValueLength": {
+      "type": "integer",
+      "const": 128
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonicalForm",
+        "equality",
+        "closedRegistry",
+        "internalValueOwnership",
+        "thirdPartyIdSeparation",
+        "mappingResolution"
+      ],
+      "properties": {
+        "canonicalForm": {
+          "type": "string",
+          "const": "kind:value，恰好一个冒号，无空白；大小写敏感；字节相等即身份相等"
+        },
+        "equality": {
+          "type": "string",
+          "const": "规范形式字符串的精确相等（byte equality）"
+        },
+        "closedRegistry": {
+          "type": "string",
+          "const": "kind 必须命中 kindRegistry，否则整体拒绝（fail-closed），禁止猜测类型"
+        },
+        "internalValueOwnership": {
+          "type": "string",
+          "const": "内部唯一 ID 的 value 必须由 EWOH 生成（推荐 UUID v4）；禁止以 MES ID / WMS ID / PLC Tag / 设备序列号作为内部 value"
+        },
+        "thirdPartyIdSeparation": {
+          "type": "string",
+          "const": "第三方 ID 仅通过 identity-mapping 记录关联为 alias，不进入内部身份"
+        },
+        "mappingResolution": {
+          "type": "string",
+          "const": "仅 status==active 且时间窗口有效的记录参与解析；(source.system, source.id) 精确匹配；恰好 1 条返回 target.entityId；>=2 条抛 ambiguous_identity；0 条返回未映射（fail-closed 拒绝）"
+        }
+      }
+    }
+  },
+  "kindRegistry": [
+    "person",
+    "exo",
+    "device",
+    "machine",
+    "robot",
+    "agv",
+    "tool",
+    "material",
+    "container",
+    "inventory",
+    "order",
+    "task",
+    "operation",
+    "work_instruction",
+    "station",
+    "zone",
+    "route",
+    "factory",
+    "warehouse",
+    "sensor",
+    "event",
+    "alert",
+    "incident",
+    "risk",
+    "quality_finding",
+    "maintenance_condition",
+    "reservation",
+    "assignment",
+    "plan",
+    "decision",
+    "approval",
+    "execution",
+    "outcome",
+    "policy",
+    "constraint",
+    "model",
+    "agent",
+    "knowledge",
+    "skill",
+    "certification",
+    "session",
+    "observation"
+  ]
+}

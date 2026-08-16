@@ -182,12 +182,12 @@ export class SchedulerService {
     return this.runOrchestrator.generatePlans(body);
   }
 
-  async getPlans(status?: string): Promise<SchedulePlan[]> {
-    return this.queryService.getPlans(status);
+  async getPlans(status?: string, actor?: OrgContext): Promise<SchedulePlan[]> {
+    return this.queryService.getPlans(status, actor);
   }
 
-  async getAudit(planId?: string): Promise<ScheduleAudit[]> {
-    return this.queryService.getAudit(planId);
+  async getAudit(planId?: string, actor?: OrgContext): Promise<ScheduleAudit[]> {
+    return this.queryService.getAudit(planId, actor);
   }
 
   async createRun(
@@ -197,32 +197,32 @@ export class SchedulerService {
     return this.runOrchestrator.createRun(body, actor);
   }
 
-  async getRun(runId: string): Promise<SchedulingRun | null> {
-    return this.queryService.getRun(runId);
+  async getRun(runId: string, actor?: OrgContext): Promise<SchedulingRun | null> {
+    return this.queryService.getRun(runId, actor);
   }
 
   async listRuns(params: ListRunsRequest = {}, actor?: OrgContext): Promise<ListRunsResponse> {
     return this.queryService.listRuns(params, actor);
   }
 
-  async getActivePlans(): Promise<SchedulingPlanV2[]> {
-    return this.queryService.getActivePlans();
+  async getActivePlans(actor?: OrgContext): Promise<SchedulingPlanV2[]> {
+    return this.queryService.getActivePlans(actor);
   }
 
   async getSnapshot(): Promise<WorldStateSnapshot> {
     return this.queryService.getSnapshot();
   }
 
-  async getPlanDetail(planId: string): Promise<SchedulingPlanV2> {
-    return this.queryService.getPlanDetail(planId);
+  async getPlanDetail(planId: string, actor?: OrgContext): Promise<SchedulingPlanV2> {
+    return this.queryService.getPlanDetail(planId, actor);
   }
 
   async getPolicy(): Promise<{ policy: SchedulingPolicy; config: SchedulingPolicyConfig }> {
     return this.queryService.getPolicy();
   }
 
-  async listPolicyVersions(): Promise<SchedulingPolicyVersionSummary[]> {
-    return this.queryService.listPolicyVersions();
+  async listPolicyVersions(actor?: OrgContext): Promise<SchedulingPolicyVersionSummary[]> {
+    return this.queryService.listPolicyVersions(actor);
   }
 
   async comparePolicyVersion(
@@ -232,12 +232,12 @@ export class SchedulerService {
     return this.queryService.comparePolicyVersion(configVersion, actor);
   }
 
-  async listPlanConstraintsV2(planId: string) {
-    return this.queryService.listPlanConstraintsV2(planId);
+  async listPlanConstraintsV2(planId: string, actor?: OrgContext) {
+    return this.queryService.listPlanConstraintsV2(planId, actor);
   }
 
-  async getRoutes(): Promise<RouteGraph> {
-    return this.queryService.getRoutes();
+  async getRoutes(actor?: OrgContext): Promise<RouteGraph> {
+    return this.queryService.getRoutes(actor);
   }
 
   async calculateRouteV2(
@@ -260,8 +260,9 @@ export class SchedulerService {
 
   async executionList(
     query: { planId?: string; taskId?: string; status?: string; limit?: number; offset?: number },
+    actor?: OrgContext,
   ): Promise<ExecutionListResponse> {
-    return this.queryService.executionList(query);
+    return this.queryService.executionList(query, actor);
   }
 
   // ==========================================================================

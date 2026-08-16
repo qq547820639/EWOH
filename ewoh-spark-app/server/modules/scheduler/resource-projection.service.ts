@@ -7,6 +7,8 @@ import {
   ewohPersonnel,
   ewohDevice,
   ewohSpatialEntity,
+  ewohMaintenanceCondition,
+  ewohQualityFinding,
 } from '@server/database/schema';
 import type {
   CoordinateReference,
@@ -14,6 +16,17 @@ import type {
   ResourceState,
   WorldStateSnapshot,
 } from '@shared/api.interface';
+import type { ResourceStatus } from '@shared/resource';
+import {
+  isMaintenanceOverdue,
+  type MaintenanceConditionProjection,
+} from '@shared/maintenance';
+import {
+  ACTIVE_QUALITY_STATUSES,
+  QUALITY_RESOURCE_LINK_KINDS,
+  type QualityFindingProjection,
+} from '@shared/quality';
+import { normalizeSeverity } from '@shared/risk';
 import {
   ResourceReservationService,
   type ReservationResult,
@@ -117,10 +130,14 @@ export class ResourceProjectionService {
       const dataQuality = this.classifyFreshness(sourceTs, now, 'person', 'master');
       return {
         id: p.id,
+        entityId: `person:${p.id}`,
         type: 'person',
-        // 数据过时（STALE/UNKNOWN）时不得显示为可派工：与调度 world-state 语义一致。
-        status:
-          dataQuality === 'FRESH' ? (p.status ?? 'available') : 'unavailable',
+        // ADR-007：投影状态收敛为 Canonical Resource 六态；数据过时
+        // （STALE/UNKNOWN）→ status 显式 UNKNOWN（evaluateAvailability fail-closed），
+        // 不再使用非契约词表 'available'/'unavailable'。
+        status: this.toCanonicalStatus(
+          dataQuality === 'FRESH' ? (p.status ?? 'AVAILABLE') : 'UNKNOWN',
+        ),
         capabilities: this.asStringArray(p.skills),
         certifications: this.asStringArray(p.certifications),
         location: {
@@ -192,13 +209,17 @@ export class ResourceProjectionService {
       const hasDeviceLocation = d.locationLat != null && d.locationLng != null;
       return {
         id: d.id,
+        entityId: `device:${d.id}`,
         type: 'device',
-        // 数据过时（STALE/UNKNOWN）→ 视为离线；faultCode 存在 → fault（优先）。
-        status: d.faultCode
-          ? 'fault'
-          : deviceDataQuality === 'FRESH'
-            ? 'online'
-            : 'offline',
+        // ADR-007：投影状态收敛为 Canonical Resource 六态（fault→DEGRADED、
+        // 离线→OFFLINE、在线→AVAILABLE；新鲜度由 dataQuality 承载）。
+        status: this.toCanonicalStatus(
+          d.faultCode
+            ? 'fault'
+            : deviceDataQuality === 'FRESH'
+              ? 'online'
+              : 'OFFLINE',
+        ),
         capabilities,
         certifications: [],
         location: {
@@ -261,13 +282,15 @@ export class ResourceProjectionService {
         const stationDataQuality = this.classifyFreshness(sourceTs, now, 'station', 'master');
         return {
           id: se.entityId,
+          entityId: `station:${se.entityId}`,
           type: 'station',
-          // 禁止虚构：无数据（STALE/UNKNOWN）→ unavailable；FRESH 时取真实状态
-          // （空间实体的 status 列，如 active），否则 unavailable 而非臆造 available。
-          status:
+          // ADR-007：投影状态收敛为 Canonical Resource 六态；禁止虚构
+          // （STALE/UNKNOWN → UNKNOWN；FRESH 取真实状态并归一化）。
+          status: this.toCanonicalStatus(
             stationDataQuality === 'FRESH'
-              ? (se.status ?? 'available')
-              : 'unavailable',
+              ? (se.status ?? 'AVAILABLE')
+              : 'UNKNOWN',
+          ),
           capabilities: [se.entityType],
           certifications: [],
           location: {
@@ -313,13 +336,189 @@ export class ResourceProjectionService {
         };
       });
 
-    return [...persons, ...deviceResources, ...stations];
+    // NO-05c（ADR-010）：活跃维护状态事实 → 状态收敛 + 事实附着
+    // （critical → OFFLINE fail-closed 禁派；其余 → DEGRADED；UNKNOWN/OFFLINE 不升级）。
+    const maintenanceByEntity = await this.loadActiveMaintenance();
+    const applyMaintenance = (state: ResourceState): ResourceState =>
+      this.applyMaintenance(state, maintenanceByEntity.get(state.entityId ?? '') ?? []);
+
+    // NO-05d（ADR-011）：活跃质量发现事实 → 仅事实附着（不改资源状态；
+    // critical/high 封锁由 Eligibility 执行，medium/low 仅可见）。
+    const qualityByEntity = await this.loadActiveQualityFindings();
+    const applyQuality = (state: ResourceState): ResourceState =>
+      this.attachQualityFindings(state, qualityByEntity.get(state.entityId ?? '') ?? []);
+
+    return [...persons, ...deviceResources, ...stations]
+      .map(applyMaintenance)
+      .map(applyQuality);
   }
 
   /** 按资源类型过滤投影；tool / material / vehicle 无对应表，返回空数组。 */
   async projectByType(type: ResourceState['type']): Promise<ResourceState[]> {
     const all = await this.getUnifiedResourceState();
     return all.filter((r) => r.type === type);
+  }
+
+  /**
+   * NO-05c（ADR-010）：加载活跃维护状态事实（status ∉ {resolved, closed}），
+   * 按 subjectEntityId（规范身份 kind:value）索引。
+   *
+   * 终态过滤在行守卫内完成（唯一代码路径）：真实表行必带 conditionId /
+   * subjectEntityId / conditionType / severity / status 形状；形状守卫同时兼容
+   * 单元层链式 fake（fake 对任意 select 返回同集合，非维护行在此被过滤——不做
+   * 任何静默兜底或数据猜测）。
+   */
+  private async loadActiveMaintenance(): Promise<
+    Map<string, MaintenanceConditionProjection[]>
+  > {
+    const rows = await this.db.select().from(ewohMaintenanceCondition);
+    const nowIso = new Date().toISOString();
+    const byEntity = new Map<string, MaintenanceConditionProjection[]>();
+    for (const raw of rows as Array<Record<string, unknown>>) {
+      const { subjectEntityId, conditionId, conditionType, severity, status } = raw;
+      if (
+        typeof subjectEntityId !== 'string' ||
+        typeof conditionId !== 'string' ||
+        typeof conditionType !== 'string' ||
+        typeof severity !== 'string' ||
+        typeof status !== 'string'
+      ) {
+        continue;
+      }
+      // 终态排除（与 SQL where 双保险；unit 层链式 fake 无法执行 where 谓词）。
+      if (status === 'resolved' || status === 'closed') continue;
+      const due =
+        raw.dueAt instanceof Date
+          ? raw.dueAt.toISOString()
+          : typeof raw.dueAt === 'string'
+            ? raw.dueAt
+            : null;
+      const list = byEntity.get(subjectEntityId) ?? [];
+      list.push({
+        conditionId,
+        conditionType,
+        severity,
+        status,
+        dueAt: due,
+        overdue: isMaintenanceOverdue(due, status, nowIso),
+      });
+      byEntity.set(subjectEntityId, list);
+    }
+    return byEntity;
+  }
+
+  /**
+   * NO-05c（ADR-010）：维护事实 → 资源状态收敛。
+   * critical → OFFLINE（fail-closed 禁派，人审解除）；其余活跃条件 → DEGRADED
+   * （可用性降级）；UNKNOWN / OFFLINE / MAINTENANCE 保持（绝不升级状态）。
+   * 未知严重度按 critical 处理并留痕（fail-closed，不把未知当作安全）。
+   */
+  private applyMaintenance(
+    state: ResourceState,
+    conditions: MaintenanceConditionProjection[],
+  ): ResourceState {
+    if (conditions.length === 0) {
+      return { ...state, maintenance: null };
+    }
+    return {
+      ...state,
+      // degradeByMaintenance 仅返回 'OFFLINE'/'DEGRADED' 或原 status（绝不升级），
+      // 因此投影为 ResourceStatus 是安全的。
+      status: this.degradeByMaintenance(state.status, conditions) as ResourceStatus,
+      maintenance: conditions,
+    };
+  }
+
+  /** NO-05c：维护事实 → 状态收敛（project / projectForSnapshot 共用）。 */
+  private degradeByMaintenance(
+    status: string,
+    conditions: MaintenanceConditionProjection[],
+  ): string {
+    if (conditions.length === 0) return status;
+    const critical = conditions.some((c) => {
+      try {
+        return normalizeSeverity(c.severity) === 'critical';
+      } catch (err) {
+        this.logger.warn(
+          `维护状态严重度非契约值，按 critical 禁派（fail-closed）: ${c.severity} (${err})`,
+        );
+        return true;
+      }
+    });
+    if (critical) return 'OFFLINE';
+    return status === 'AVAILABLE' || status === 'DEGRADED' ? 'DEGRADED' : status;
+  }
+
+  /**
+   * NO-05d（ADR-011）：加载活跃质量发现（status ∈ {open, under_review}），按
+   * links 中 kind ∈ {station, device, person} 的规范身份索引（其余 kind 如
+   * order/material/batch 是检验对象而非调度资源，不产生资源封锁，留待
+   * NO-05e MES/工单闭环消费）。
+   *
+   * 活跃过滤在行守卫内完成（唯一代码路径）：真实表行必带 findingId/findingType/
+   * severity/status/links 形状；形状守卫同时兼容单元层链式 fake（非质量行被过滤，
+   * 不做任何静默兜底或数据猜测）。
+   */
+  private async loadActiveQualityFindings(): Promise<
+    Map<string, QualityFindingProjection[]>
+  > {
+    const rows = await this.db.select().from(ewohQualityFinding);
+    const byEntity = new Map<string, QualityFindingProjection[]>();
+    for (const raw of rows as Array<Record<string, unknown>>) {
+      const { findingId, findingType, severity, status, links } = raw;
+      if (
+        typeof findingId !== 'string' ||
+        typeof findingType !== 'string' ||
+        typeof severity !== 'string' ||
+        typeof status !== 'string'
+      ) {
+        continue;
+      }
+      // 处置终态（dispositioned/closed）不参与调度（处置即解除，ADR-011）。
+      if (!ACTIVE_QUALITY_STATUSES.has(status)) continue;
+      const linkList = Array.isArray(links)
+        ? links.filter((l): l is string => typeof l === 'string')
+        : [];
+      const detectedAt =
+        raw.detectedAt instanceof Date
+          ? raw.detectedAt.toISOString()
+          : typeof raw.detectedAt === 'string'
+            ? raw.detectedAt
+            : '';
+      const disposition =
+        typeof raw.disposition === 'string' ? raw.disposition : null;
+      const projection: QualityFindingProjection = {
+        findingId,
+        findingType,
+        severity,
+        status,
+        disposition,
+        links: linkList,
+        detectedAt,
+      };
+      for (const link of linkList) {
+        const kind = link.split(':')[0];
+        if (!link.includes(':') || !QUALITY_RESOURCE_LINK_KINDS.has(kind)) continue;
+        const list = byEntity.get(link) ?? [];
+        list.push(projection);
+        byEntity.set(link, list);
+      }
+    }
+    return byEntity;
+  }
+
+  /**
+   * NO-05d（ADR-011）：质量发现事实附着——不改变资源状态（质量事实不改变
+   * 资源物理可用性，只影响派工决策）；无关联 → qualityFindings=null（不伪造）。
+   */
+  private attachQualityFindings(
+    state: ResourceState,
+    findings: QualityFindingProjection[],
+  ): ResourceState {
+    if (findings.length === 0) {
+      return { ...state, qualityFindings: null };
+    }
+    return { ...state, qualityFindings: findings };
   }
 
   /**
@@ -351,6 +550,45 @@ export class ResourceProjectionService {
   }
 
   /** 无时间戳 → UNKNOWN；距今超过（类型/信号差异化）阈值 → STALE；否则 FRESH。 */
+  /**
+   * ADR-007：把投影/DB 历史词表显式归一为 Canonical Resource 六态 + UNKNOWN。
+   * 未知值 → UNKNOWN + warn 留痕（fail-closed，绝不猜测为可用状态）。
+   */
+  private toCanonicalStatus(raw: string | null | undefined): ResourceStatus {
+    switch (raw) {
+      case 'AVAILABLE':
+      case 'available':
+      case 'online':
+      case 'active':
+        return 'AVAILABLE';
+      case 'RESERVED':
+      case 'reserved':
+        return 'RESERVED';
+      case 'BUSY':
+      case 'busy':
+      case 'working':
+        return 'BUSY';
+      case 'DEGRADED':
+      case 'degraded':
+      case 'fault':
+        return 'DEGRADED';
+      case 'OFFLINE':
+      case 'offline':
+        return 'OFFLINE';
+      case 'MAINTENANCE':
+      case 'maintenance':
+        return 'MAINTENANCE';
+      case 'UNKNOWN':
+      case 'unavailable':
+        return 'UNKNOWN';
+      default:
+        if (raw) {
+          this.logger.warn(`投影状态非契约词表，显式按 UNKNOWN 处理（fail-closed）: ${raw}`);
+        }
+        return 'UNKNOWN';
+    }
+  }
+
   private classifyFreshness(
     sourceTs: number | null,
     now: number,
@@ -442,6 +680,16 @@ export class ResourceProjectionService {
 
     const now = Date.now();
 
+    // NO-05c（ADR-010）：活跃维护状态事实（person:/device:/station:<id> 索引）。
+    const maintenanceByEntity = await this.loadActiveMaintenance();
+    const maintenanceFor = (entityId: string | undefined): MaintenanceConditionProjection[] =>
+      entityId ? (maintenanceByEntity.get(entityId) ?? []) : [];
+
+    // NO-05d（ADR-011）：活跃质量发现事实（links 资源 kind 索引；不改状态）。
+    const qualityByEntity = await this.loadActiveQualityFindings();
+    const qualityFor = (entityId: string | undefined): QualityFindingProjection[] =>
+      entityId ? (qualityByEntity.get(entityId) ?? []) : [];
+
     // P1-B：persons 附带字段来源维度（source），与 WorldStateSnapshot 形状兼容（可选超集）。
     const persons: Array<
       WorldStateSnapshot['persons'][number] & { source?: 'AUTHORITATIVE' | 'DERIVED' }
@@ -454,11 +702,19 @@ export class ResourceProjectionService {
       const load = (p.currentLoad as { loadLevel?: number; fatigueLevel?: number } | null) ?? {};
       const sourceTs = p.updatedAt ? p.updatedAt.getTime() : null;
       const dataQuality = this.classifyFreshness(sourceTs, now, 'person', 'master');
+      const maintenance = maintenanceFor(`person:${p.id}`);
+      const qualityFindings = qualityFor(`person:${p.id}`);
       return {
         id: p.id,
+        entityId: `person:${p.id}`,
         name: p.name,
-        status:
-          dataQuality === 'FRESH' ? (p.status ?? 'available') : 'unavailable',
+        // NO-05c：维护事实收敛（critical→OFFLINE；其余 AVAILABLE/DEGRADED→DEGRADED）。
+        status: this.degradeByMaintenance(
+          this.toCanonicalStatus(
+            dataQuality === 'FRESH' ? (p.status ?? 'AVAILABLE') : 'UNKNOWN',
+          ),
+          maintenance,
+        ),
         healthStatus: p.healthStatus ?? 'normal',
         skills: this.asStringArray(p.skills),
         certifications: this.asStringArray(p.certifications),
@@ -476,6 +732,10 @@ export class ResourceProjectionService {
         sourceTs,
         freshnessMs: this.resolveFreshnessMs('person', 'master'),
         dataQuality,
+        // NO-05c：活跃维护事实附着（无活跃条件 → null，不伪造）。
+        maintenance: maintenance.length > 0 ? maintenance : null,
+        // NO-05d：活跃质量发现事实附着（无关联 → null，不伪造）。
+        qualityFindings: qualityFindings.length > 0 ? qualityFindings : null,
         // P1-B：字段来源维度（与 dataQuality 正交）。person 投影无派生兜底字段 → AUTHORITATIVE。
         source: 'AUTHORITATIVE',
         coordinate: this.toCoordinateFromSpatial(se),
@@ -508,14 +768,22 @@ export class ResourceProjectionService {
       // P0-3：WGS84 坐标不进笛卡尔 x/y（仅 coordinate 承载 lat/lng）。
       const isWgs84 = (d.locationCoordinateType ?? 'FACTORY_CARTESIAN') === 'WGS84';
       const deviceSe = d.deviceId ? spatialByEntityId.get(d.deviceId) : undefined;
+      const maintenance = maintenanceFor(`device:${d.id}`);
+      const qualityFindings = qualityFor(`device:${d.id}`);
+      const degradedStatus = this.degradeByMaintenance(
+        this.toCanonicalStatus(d.faultCode ? 'fault' : stale ? 'offline' : 'online'),
+        maintenance,
+      );
       return {
         id: d.id,
+        entityId: `device:${d.id}`,
         workerName: d.workerName ?? null,
         deviceModel: d.deviceModel ?? null,
         batteryPct: d.batteryPct ?? 100,
         capabilities,
-        online: stale ? false : (d.online ?? false),
-        status: d.faultCode ? 'fault' : stale ? 'offline' : 'online',
+        // NO-05c：critical 维护 → 离线（fail-closed）；STALE 与 fault 语义不变。
+        online: stale ? false : degradedStatus === 'OFFLINE' ? false : (d.online ?? false),
+        status: degradedStatus,
         x: hasDeviceLocation && !isWgs84 ? lat : null,
         y: hasDeviceLocation && !isWgs84 ? lng : null,
         locationStationId: deviceSe ? (deviceSe.parentId ?? null) : null,
@@ -533,6 +801,10 @@ export class ResourceProjectionService {
           d.maintenanceStartMs,
           d.maintenanceEndMs,
         ),
+        // NO-05c：活跃维护事实附着（无活跃条件 → null，不伪造）。
+        maintenance: maintenance.length > 0 ? maintenance : null,
+        // NO-05d：活跃质量发现事实附着（无关联 → null，不伪造）。
+        qualityFindings: qualityFindings.length > 0 ? qualityFindings : null,
         derived,
         coordinate: this.toCoordinateFromDevice(d, hasDeviceLocation),
       };
@@ -547,8 +819,15 @@ export class ResourceProjectionService {
           typeof se.capacity === 'number' && se.capacity > 0 ? se.capacity : null;
         // P0-3：WGS84 坐标不进笛卡尔 x/y（仅 coordinate 承载 lat/lng）。
         const isWgs84 = (se.coordinateType ?? 'FACTORY_CARTESIAN') === 'WGS84';
+        // NO-05c：工位快照无 status 字段；活跃维护事实附着（无 → null），
+        // 资格评估经 stationMaintenanceBlockedById fail-closed 拒绝派工。
+        const maintenance = maintenanceFor(`station:${se.entityId}`);
+        // NO-05d：活跃质量发现事实附着（无关联 → null）；critical/high 封锁经
+        // stationQualityBlockedById（candidate-engine）执行，medium/low 仅可见。
+        const qualityFindings = qualityFor(`station:${se.entityId}`);
         return {
           id: se.entityId,
+          entityId: `station:${se.entityId}`,
           name: se.name,
           x: !isWgs84 ? (se.x ?? null) : null,
           y: !isWgs84 ? (se.y ?? null) : null,
@@ -557,6 +836,10 @@ export class ResourceProjectionService {
           availableWindows: this.parseWindows(se.availableWindows),
           // P1-3：工位基础能力（空间实体类型；供 requiredStationCapabilities 匹配）。
           capabilities: se.entityType ? [se.entityType] : [],
+          // NO-05c：活跃维护事实附着（无活跃条件 → null，不伪造）。
+          maintenance: maintenance.length > 0 ? maintenance : null,
+          // NO-05d：活跃质量发现事实附着（无关联 → null，不伪造）。
+          qualityFindings: qualityFindings.length > 0 ? qualityFindings : null,
           // P1-B：station 能力来自真实列 entityType（非白名单兜底）→ AUTHORITATIVE。
           source: 'AUTHORITATIVE',
           coordinate: this.toCoordinateFromSpatial(se),

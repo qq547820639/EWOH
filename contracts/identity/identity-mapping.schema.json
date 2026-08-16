@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///identity/identity-mapping/v1",
+  "title": "EWOH Identity Mapping Record",
+  "description": "第三方系统 ID → EWOH 规范身份的映射记录（v1）。解析规则见 identity.schema.json 的 rules.mappingResolution 与 docs/decisions/ADR-006-canonical-identity.md：仅 status==active 且时间窗口有效者参与解析；冲突（≥2 条 active）fail-closed 抛 ambiguous_identity。内部唯一 ID 的 value 必须由 EWOH 生成，第三方 ID 仅作 alias。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mappingId",
+    "version",
+    "source",
+    "target",
+    "authority",
+    "status",
+    "recordedAt"
+  ],
+  "properties": {
+    "mappingId": {
+      "type": "string",
+      "description": "映射记录自身 ID（map:<token>，token 遵循 identity value 语法）",
+      "pattern": "^map:[A-Za-z0-9][A-Za-z0-9._~@-]{0,127}$"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "system",
+        "id"
+      ],
+      "properties": {
+        "system": {
+          "type": "string",
+          "description": "第三方系统标识（如 mes/wms/erp/plc-tag/vendor-sn），自由格式但必须稳定",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "id": {
+          "type": "string",
+          "description": "第三方系统内的原始 ID（MES 工单号/WMS 库位/PLC Tag/设备序列号等）",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "idKind": {
+          "type": "string",
+          "description": "可选：第三方 ID 的类型注解（仅语义提示，不参与解析匹配）",
+          "maxLength": 64
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entityId"
+      ],
+      "properties": {
+        "entityId": {
+          "type": "string",
+          "description": "EWOH 规范身份 kind:value（kind 命中 identity.schema.json kindRegistry）",
+          "pattern": "^[a-z][a-z0-9_]{0,31}:[A-Za-z0-9][A-Za-z0-9._~@-]{0,127}$"
+        }
+      }
+    },
+    "authority": {
+      "type": "string",
+      "description": "映射登记权威来源",
+      "enum": [
+        "registration",
+        "adapter",
+        "manual"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "description": "仅 active 参与解析；superseded 表示已被新记录取代；revoked 表示撤销",
+      "enum": [
+        "active",
+        "superseded",
+        "revoked"
+      ]
+    },
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "validFrom": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "生效起点（含）；null 表示无下限"
+    },
+    "validTo": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "生效终点（不含）；null 表示无上限"
+    },
+    "evidenceId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "关联 Evidence（登记依据，可审计）"
+    }
+  }
+}

@@ -77,6 +77,7 @@ EWOH 定位为**只读监督、风险分析与受控工作流系统**：平台�
 | Scheduler V2 调度闭环（schedulerV2） | 是 | 是 | 是 | 否 | 否 | 是 |
 | Heuristic 启发式求解器（heuristicSolver） | 是 | 是 | 是 | 否 | 否 | 是 |
 | CP-SAT 求解器（cpSat） | 是 | 是 | 是 | 否 | 否 | 是 |
+| MILP 求解器（milpSolver） | 是 | 是 | 是 | 否 | 否 | 是 |
 | 预测/策略影子评估（predictionShadow） | 是 | 是 | 否 | 否 | 否 | 是 |
 | Scheduler V2 RLS 多租户（schedulerRls） | 是 | 是 | 是 | 否 | 是 | 是 |
 | Command Map 指挥地图（commandMap） | 是 | 是 | 是 | 否 | 否 | 是 |

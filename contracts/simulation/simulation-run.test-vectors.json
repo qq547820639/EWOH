@@ -1,0 +1,120 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "SimulationRun 契约共享测试向量（ADR-025 / NO-12a）。Python（src/edge_platform/contracts/simulation_run.py）、TypeScript（ewoh-spark-app/shared/simulation-run.ts）与 scripts/audit-domain-contracts.js 独立仲裁共用同一份向量。",
+  "records": [
+    {
+      "name": "valid_created",
+      "record": {
+        "runId": "sim:1234:abcd",
+        "kind": "what_if",
+        "status": "created",
+        "isSimulation": true,
+        "baseRef": { "snapshotVersion": 3 },
+        "parameters": { "deltaFacts": [] },
+        "engineVersion": "1.0.0",
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_completed_with_results",
+      "record": {
+        "runId": "sim:1234:abcd",
+        "kind": "capacity",
+        "status": "completed",
+        "isSimulation": true,
+        "baseRef": { "snapshotVersion": 3 },
+        "parameters": { "stations": [{ "stationId": "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", "capacityPerHour": 10 }], "demandPerHour": 12 },
+        "results": { "bottleneckStationId": "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", "lineThroughputPerHour": 10, "utilization": 1.2, "overloaded": true },
+        "engineVersion": "1.0.0",
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_failed_with_reason",
+      "record": {
+        "runId": "sim:1234:abcd",
+        "kind": "layout",
+        "status": "failed",
+        "isSimulation": true,
+        "baseRef": { "snapshotVersion": 3 },
+        "parameters": { "stations": [] },
+        "failureReason": "参数契约违规：stations 为空数组",
+        "engineVersion": "1.0.0",
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "isolation_violation",
+      "record": {
+        "runId": "sim:1234:abcd",
+        "kind": "what_if",
+        "status": "created",
+        "isSimulation": false,
+        "baseRef": { "snapshotVersion": 3 },
+        "parameters": {},
+        "engineVersion": "1.0.0",
+        "auditTrail": true
+      },
+      "expectError": "isolation_required"
+    },
+    {
+      "name": "unknown_kind",
+      "record": {
+        "runId": "sim:1234:abcd",
+        "kind": "teleport",
+        "status": "created",
+        "isSimulation": true,
+        "baseRef": { "snapshotVersion": 3 },
+        "parameters": {},
+        "engineVersion": "1.0.0",
+        "auditTrail": true
+      },
+      "expectError": "unknown_kind"
+    },
+    {
+      "name": "completed_missing_results",
+      "record": {
+        "runId": "sim:1234:abcd",
+        "kind": "capacity",
+        "status": "completed",
+        "isSimulation": true,
+        "baseRef": { "snapshotVersion": 3 },
+        "parameters": {},
+        "engineVersion": "1.0.0",
+        "auditTrail": true
+      },
+      "expectError": "results_required"
+    },
+    {
+      "name": "failed_missing_reason",
+      "record": {
+        "runId": "sim:1234:abcd",
+        "kind": "capacity",
+        "status": "failed",
+        "isSimulation": true,
+        "baseRef": { "snapshotVersion": 3 },
+        "parameters": {},
+        "engineVersion": "1.0.0",
+        "auditTrail": true
+      },
+      "expectError": "failure_reason_required"
+    },
+    {
+      "name": "audit_missing",
+      "record": {
+        "runId": "sim:1234:abcd",
+        "kind": "capacity",
+        "status": "created",
+        "isSimulation": true,
+        "baseRef": { "snapshotVersion": 3 },
+        "parameters": {},
+        "engineVersion": "1.0.0",
+        "auditTrail": false
+      },
+      "expectError": "audit_required"
+    }
+  ]
+}

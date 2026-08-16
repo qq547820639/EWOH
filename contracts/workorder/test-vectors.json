@@ -1,0 +1,160 @@
+{
+  "schemaVersion": "1.0.0",
+  "records": [
+    {
+      "name": "valid-maintenance-created",
+      "record": {
+        "workOrderId": "wo:9f1c4a0e",
+        "workOrderType": "maintenance",
+        "origin": { "kind": "maintenance_condition", "id": "mc:1" },
+        "subjectEntityId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "severity": "high",
+        "status": "created"
+      }
+    },
+    {
+      "name": "valid-quality-rework-scheduled",
+      "record": {
+        "workOrderId": "wo:9f1c4a0f",
+        "workOrderType": "quality_rework",
+        "origin": { "kind": "quality_finding", "id": "qf:1" },
+        "subjectEntityId": "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "severity": "critical",
+        "status": "scheduled",
+        "scheduledFor": "2026-08-16T10:00:00Z"
+      }
+    },
+    {
+      "name": "valid-completed-with-completedAt",
+      "record": {
+        "workOrderId": "wo:9f1c4a10",
+        "workOrderType": "inspection",
+        "origin": { "kind": "quality_finding", "id": "qf:2" },
+        "subjectEntityId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "severity": "medium",
+        "status": "completed",
+        "completedAt": "2026-08-16T12:00:00Z"
+      }
+    },
+    {
+      "name": "valid-cancelled-with-reason",
+      "record": {
+        "workOrderId": "wo:9f1c4a11",
+        "workOrderType": "maintenance",
+        "origin": { "kind": "maintenance_condition", "id": "mc:2" },
+        "subjectEntityId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "severity": "low",
+        "status": "cancelled",
+        "cancelledReason": "false_alarm"
+      }
+    },
+    {
+      "name": "missing-origin-rejected",
+      "record": {
+        "workOrderId": "wo:9f1c4a12",
+        "workOrderType": "maintenance",
+        "subjectEntityId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "severity": "high",
+        "status": "created"
+      },
+      "expectError": "missing_field:origin"
+    },
+    {
+      "name": "unknown-work-order-type-rejected",
+      "record": {
+        "workOrderId": "wo:9f1c4a13",
+        "workOrderType": "cleaning",
+        "origin": { "kind": "maintenance_condition", "id": "mc:3" },
+        "subjectEntityId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "severity": "high",
+        "status": "created"
+      },
+      "expectError": "unknown_work_order_type"
+    },
+    {
+      "name": "unknown-origin-kind-rejected",
+      "record": {
+        "workOrderId": "wo:9f1c4a14",
+        "workOrderType": "maintenance",
+        "origin": { "kind": "schedule_task", "id": "t1" },
+        "subjectEntityId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "severity": "high",
+        "status": "created"
+      },
+      "expectError": "unknown_origin_kind"
+    },
+    {
+      "name": "completed-without-completedAt-rejected",
+      "record": {
+        "workOrderId": "wo:9f1c4a15",
+        "workOrderType": "maintenance",
+        "origin": { "kind": "maintenance_condition", "id": "mc:4" },
+        "subjectEntityId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "severity": "high",
+        "status": "completed"
+      },
+      "expectError": "completed_at_required"
+    },
+    {
+      "name": "cancelled-without-reason-rejected",
+      "record": {
+        "workOrderId": "wo:9f1c4a16",
+        "workOrderType": "maintenance",
+        "origin": { "kind": "maintenance_condition", "id": "mc:5" },
+        "subjectEntityId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "severity": "high",
+        "status": "cancelled"
+      },
+      "expectError": "cancelled_reason_required"
+    },
+    {
+      "name": "unknown-severity-rejected",
+      "record": {
+        "workOrderId": "wo:9f1c4a17",
+        "workOrderType": "maintenance",
+        "origin": { "kind": "maintenance_condition", "id": "mc:6" },
+        "subjectEntityId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "severity": "apocalyptic",
+        "status": "created"
+      },
+      "expectError": "unknown_severity"
+    },
+    {
+      "name": "non-canonical-subject-rejected",
+      "record": {
+        "workOrderId": "wo:9f1c4a18",
+        "workOrderType": "maintenance",
+        "origin": { "kind": "maintenance_condition", "id": "mc:7" },
+        "subjectEntityId": "not-canonical",
+        "severity": "high",
+        "status": "created"
+      },
+      "expectError": "bad_subject"
+    },
+    {
+      "name": "legacy-severity-L1-normalized",
+      "record": {
+        "workOrderId": "wo:9f1c4a19",
+        "workOrderType": "maintenance",
+        "origin": { "kind": "maintenance_condition", "id": "mc:8" },
+        "subjectEntityId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "severity": "L1",
+        "status": "created"
+      }
+    }
+  ],
+  "transitions": [
+    { "from": "created", "to": "scheduled", "allowed": true },
+    { "from": "scheduled", "to": "in_progress", "allowed": true },
+    { "from": "in_progress", "to": "completed", "allowed": true },
+    { "from": "completed", "to": "closed", "allowed": true },
+    { "from": "created", "to": "cancelled", "allowed": true },
+    { "from": "scheduled", "to": "cancelled", "allowed": true },
+    { "from": "in_progress", "to": "cancelled", "allowed": false },
+    { "from": "completed", "to": "cancelled", "allowed": false },
+    { "from": "created", "to": "completed", "allowed": false },
+    { "from": "scheduled", "to": "closed", "allowed": false },
+    { "from": "cancelled", "to": "scheduled", "allowed": false },
+    { "from": "closed", "to": "created", "allowed": false }
+  ]
+}

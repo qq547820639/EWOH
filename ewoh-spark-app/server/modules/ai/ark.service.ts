@@ -1,7 +1,9 @@
-import { Injectable, Inject, Optional } from '@nestjs/common';
+import { Injectable, Inject, Optional, Logger } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { DRIZZLE_DATABASE } from '@lark-apaas/fullstack-nestjs-core';
-import { sql, eq } from 'drizzle-orm';
+import { sql, eq, and, desc } from 'drizzle-orm';
 import { ewohSchedulerConfig } from '@server/database/schema';
+import { validateReasoningResult } from '@shared/reasoning-result';
 
 /**
  * Ark 大模型通用客户端（文本对话）。
@@ -41,11 +43,52 @@ export interface ArkChatResult {
   text: string;
   model: string;
   error?: string;
+  /**
+   * NO-08d（ADR-014）：Canonical ReasoningResult 元数据（含契约自检
+   * contract_violations 留痕）。旧字段（ok/text/model/error）兼容保留。
+   */
+  reasoning?: Record<string, unknown>;
 }
 
 @Injectable()
 export class ArkService {
+  private readonly logger = new Logger(ArkService.name);
+
   constructor(@Optional() @Inject(DRIZZLE_DATABASE) private readonly db?: any) {}
+
+  /**
+   * NO-08d（ADR-014）：把 Ark 文本结果包裹为 Canonical ReasoningResult。
+   * confidence 必须 null（LLM 无标定置信度，禁止伪造）；契约自检失败 →
+   * error 日志 + contract_violations 留痕（绝不静默）。
+   */
+  private buildReasoningResult(
+    result: { ok: boolean; text: string; model: string; error?: string },
+    kind: 'chat' | 'suggestion' | 'analysis',
+    inputVersion: string,
+  ): Record<string, unknown> {
+    const record: Record<string, unknown> = {
+      reasoningId: `RS-${randomUUID().slice(0, 8)}`,
+      level: kind === 'chat' ? 'L5_agentic_workflow' : 'L4_industrial_reasoning',
+      kind,
+      modelId: 'ark-chat',
+      modelVersion: result.model || 'unversioned',
+      inputVersion,
+      subjectId: null,
+      content: result.text,
+      ok: result.ok,
+      error: result.error ?? null,
+      confidence: null,
+      confidenceBasis: 'uncalibrated',
+      evidence: { generatedAt: new Date().toISOString() },
+    };
+    const violations = validateReasoningResult(record);
+    if (violations.length > 0) {
+      this.logger.error(
+        `reasoning result contract violations: ${violations.join(', ')}`,
+      );
+    }
+    return { ...record, contract_violations: violations };
+  }
 
   /** 读取全局 AI 配置（系统配置表 > 环境变量 > 默认值）。 */
   async getConfig(): Promise<ArkConfig> {
@@ -56,18 +99,21 @@ export class ArkService {
       try {
         // v0.7 修复：按全局哨兵 org_id + config_key 精确读取（旧版无 org 过滤 + 无排序，
         // NULL 行 + limit 1 会读到不确定的旧行/空行）。
-        const rows = await this.db.execute(
-          sql`
-            select config_value from public.ewoh_scheduler_config
-            where config_key = ${ARK_CONFIG_KEY}
-              and org_id = ${GLOBAL_ORG_SENTINEL}::uuid
-            order by _updated_at desc
-            limit 1
-          `,
-        );
+        // ADR-079：drizzle 类型安全（raw SQL 完整清零）。
+        const rows = await this.db
+          .select({ configValue: ewohSchedulerConfig.configValue })
+          .from(ewohSchedulerConfig)
+          .where(
+            and(
+              eq(ewohSchedulerConfig.configKey, ARK_CONFIG_KEY),
+              eq(ewohSchedulerConfig.orgId, GLOBAL_ORG_SENTINEL),
+            ),
+          )
+          .orderBy(desc(ewohSchedulerConfig.updatedAt))
+          .limit(1);
         const row = rows?.[0];
-        if (row?.config_value && typeof row.config_value === 'object') {
-          const value = row.config_value as Record<string, unknown>;
+        if (row?.configValue && typeof row.configValue === 'object') {
+          const value = row.configValue as Record<string, unknown>;
           dbKey = String(value.api_key ?? '');
           dbBase = String(value.base_url ?? '');
           dbModel = String(value.model ?? '');
@@ -105,14 +151,22 @@ export class ArkService {
     };
     // v0.7 修复：显式提供 org_id（全局哨兵）而非依赖列默认值（默认可能为 NULL）。
     // 旧版未写 org_id → NULL → ON CONFLICT (org_id, config_key) 永不冲突 → 无限插入新行。
-    await this.db.execute(
-      sql`
-        insert into public.ewoh_scheduler_config (org_id, config_key, config_value, updated_by)
-        values (${GLOBAL_ORG_SENTINEL}::uuid, ${ARK_CONFIG_KEY}, ${JSON.stringify(next)}::jsonb, 'system-admin')
-        on conflict (org_id, config_key)
-        do update set config_value = excluded.config_value, updated_by = excluded.updated_by, _updated_at = now()
-      `,
-    );
+    await this.db
+      .insert(ewohSchedulerConfig)
+      .values({
+        orgId: GLOBAL_ORG_SENTINEL,
+        configKey: ARK_CONFIG_KEY,
+        configValue: next as unknown as Record<string, unknown>,
+        updatedBy: 'system-admin',
+      })
+      .onConflictDoUpdate({
+        target: [ewohSchedulerConfig.orgId, ewohSchedulerConfig.configKey],
+        set: {
+          configValue: next as unknown as Record<string, unknown>,
+          updatedBy: 'system-admin',
+          updatedAt: new Date(),
+        },
+      });
     return { apiKey: next.api_key, baseUrl: next.base_url, model: next.model };
   }
 
@@ -133,16 +187,38 @@ export class ArkService {
   /** 通用聊天：调用 Ark Chat Completions 文本对话。 */
   async chat(
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-    opts: { temperature?: number; maxTokens?: number; timeoutMs?: number } = {},
+    opts: {
+      temperature?: number;
+      maxTokens?: number;
+      timeoutMs?: number;
+      /** NO-08d（ADR-014）：ReasoningResult kind（缺省 chat）。 */
+      kind?: 'chat' | 'suggestion' | 'analysis';
+      /** NO-08d（ADR-014）：输入版本（提示词 schema 版本，缺省 chat-v1）。 */
+      inputVersion?: string;
+    } = {},
   ): Promise<ArkChatResult> {
+    const kind = opts.kind ?? 'chat';
+    const inputVersion = opts.inputVersion ?? 'chat-v1';
+    const finish = (r: {
+      ok: boolean;
+      text: string;
+      model: string;
+      error?: string;
+    }): ArkChatResult => ({
+      ok: r.ok,
+      text: r.text,
+      model: r.model,
+      ...(r.error ? { error: r.error } : {}),
+      reasoning: this.buildReasoningResult(r, kind, inputVersion),
+    });
     const cfg = await this.getConfig();
     if (!cfg.apiKey) {
-      return {
+      return finish({
         ok: false,
         text: '',
         model: cfg.model,
         error: '未配置 Ark API Key（可在 系统管理 → AI 能力接入 中配置，或设置 EWOH_ARK_API_KEY）。',
-      };
+      });
     }
     const url = cfg.baseUrl.replace(/\/+$/, '') + '/chat/completions';
     const body: Record<string, unknown> = {
@@ -164,22 +240,30 @@ export class ArkService {
         signal: AbortSignal.timeout(opts.timeoutMs ?? 300000),
       });
     } catch (e) {
-      return { ok: false, text: '', model: cfg.model, error: `请求失败: ${String(e)}` };
+      return finish({ ok: false, text: '', model: cfg.model, error: `请求失败: ${String(e)}` });
     }
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
-      return { ok: false, text: '', model: cfg.model, error: `HTTP ${res.status}: ${detail.slice(0, 500)}` };
+      return finish({ ok: false, text: '', model: cfg.model, error: `HTTP ${res.status}: ${detail.slice(0, 500)}` });
     }
     const raw = await res.json().catch(() => null);
     const text = this.extractText(raw);
     if (!text) {
-      return { ok: false, text: '', model: cfg.model, error: '模型未返回文本内容。' };
+      return finish({ ok: false, text: '', model: cfg.model, error: '模型未返回文本内容。' });
     }
-    return { ok: true, text, model: cfg.model };
+    return finish({ ok: true, text, model: cfg.model });
   }
 
   /** 便捷方法：系统提示 + 用户问题。 */
-  async ask(systemPrompt: string, userPrompt: string, opts: { temperature?: number } = {}): Promise<ArkChatResult> {
+  async ask(
+    systemPrompt: string,
+    userPrompt: string,
+    opts: {
+      temperature?: number;
+      kind?: 'chat' | 'suggestion' | 'analysis';
+      inputVersion?: string;
+    } = {},
+  ): Promise<ArkChatResult> {
     return this.chat(
       [
         { role: 'system', content: systemPrompt },

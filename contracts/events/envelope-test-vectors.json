@@ -1,0 +1,126 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Canonical Event Envelope 跨语言一致性测试向量（ADR-009）。语义权威源：contracts/events/envelope.schema.json；eventType 交叉校验契约：contracts/events/event-catalog.yaml。",
+  "envelopes": [
+    {
+      "name": "valid-minimal",
+      "envelope": {
+        "eventId": "EVT-1",
+        "eventType": "TelemetryObserved",
+        "schemaVersion": "1.0.0",
+        "occurredAt": "2026-08-14T08:00:00Z",
+        "source": "edge:ny-exo-a1"
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid-full-time-triad",
+      "envelope": {
+        "eventId": "EVT-2",
+        "eventType": "TaskStateChanged",
+        "schemaVersion": "1.0.0",
+        "occurredAt": "2026-08-14T08:00:00Z",
+        "observedAt": "2026-08-14T08:00:01Z",
+        "receivedAt": "2026-08-14T08:00:03Z",
+        "tenantId": "org-1",
+        "factoryId": "factory:f1",
+        "actor": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "subject": "task:t-42",
+        "causationId": "EVT-1",
+        "correlationId": "CORR-9",
+        "confidence": 0.95,
+        "source": "cloud:scheduler",
+        "payload": {
+          "from": "pending",
+          "to": "dispatched"
+        },
+        "evidence": [
+          "evidenceId:e-1"
+        ]
+      },
+      "expect": {
+        "clockDrift": false,
+        "isLate": false
+      },
+      "expectError": null
+    },
+    {
+      "name": "missing-event-type-rejected",
+      "envelope": {
+        "eventId": "EVT-3",
+        "schemaVersion": "1.0.0",
+        "occurredAt": "2026-08-14T08:00:00Z",
+        "source": "edge:ny-exo-a1"
+      },
+      "expectError": "missing_event_type"
+    },
+    {
+      "name": "unknown-catalog-type-rejected",
+      "envelope": {
+        "eventId": "EVT-4",
+        "eventType": "MachineVibrated",
+        "schemaVersion": "1.0.0",
+        "occurredAt": "2026-08-14T08:00:00Z",
+        "source": "edge:ny-exo-a1"
+      },
+      "expectError": "unknown_event_type"
+    },
+    {
+      "name": "non-canonical-actor-rejected",
+      "envelope": {
+        "eventId": "EVT-5",
+        "eventType": "TaskStateChanged",
+        "schemaVersion": "1.0.0",
+        "occurredAt": "2026-08-14T08:00:00Z",
+        "source": "cloud:scheduler",
+        "actor": "p1"
+      },
+      "expectError": "bad_actor"
+    },
+    {
+      "name": "confidence-out-of-range-rejected",
+      "envelope": {
+        "eventId": "EVT-6",
+        "eventType": "TelemetryObserved",
+        "schemaVersion": "1.0.0",
+        "occurredAt": "2026-08-14T08:00:00Z",
+        "source": "edge:ny-exo-a1",
+        "confidence": 1.5
+      },
+      "expectError": "bad_confidence"
+    },
+    {
+      "name": "clock-drift-flagged-not-rewritten",
+      "envelope": {
+        "eventId": "EVT-7",
+        "eventType": "TelemetryObserved",
+        "schemaVersion": "1.0.0",
+        "occurredAt": "2026-08-14T09:00:00Z",
+        "observedAt": "2026-08-14T08:50:00Z",
+        "receivedAt": "2026-08-14T09:00:10Z",
+        "source": "edge:ny-exo-a1"
+      },
+      "expect": {
+        "clockDrift": true,
+        "isLate": false
+      },
+      "expectError": null
+    },
+    {
+      "name": "late-but-valid-flagged",
+      "envelope": {
+        "eventId": "EVT-8",
+        "eventType": "AndonRaised",
+        "schemaVersion": "1.0.0",
+        "occurredAt": "2026-08-14T08:00:00Z",
+        "receivedAt": "2026-08-14T09:00:00Z",
+        "source": "cloud:andon"
+      },
+      "expect": {
+        "clockDrift": false,
+        "isLate": true
+      },
+      "expectError": null
+    }
+  ]
+}

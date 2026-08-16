@@ -38,6 +38,9 @@ import { TracingInterceptor } from './modules/tracing/tracing.interceptor';
 import { WorkOrchestrationModule } from './modules/work-orchestration/work-orchestration.module';
 import { ObservabilityModule } from './modules/observability/observability.module';
 import { TimelineModule } from './modules/timeline/timeline.module';
+import { SimulationModule } from './modules/simulation/simulation.module';
+import { NotificationModule } from './modules/notification/notification.module';
+import { ExoSessionModule } from './modules/exo/exo-session.module';
 
 @Module({
   imports: [
@@ -75,6 +78,9 @@ import { TimelineModule } from './modules/timeline/timeline.module';
     WorkOrchestrationModule,
     TimelineModule,
     ObservabilityModule,
+    SimulationModule,
+    NotificationModule,
+    ExoSessionModule,
     // ====== @route-section: business-modules END ======
 
     // ⚠️ @route-order: last

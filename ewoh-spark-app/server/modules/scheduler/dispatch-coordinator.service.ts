@@ -23,6 +23,12 @@ import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { WorldStateSnapshotService } from './world-state.service';
 import { ResourceReservationService, type ReservationInput } from './resource-reservation.service';
+import {
+  projectDispatchDecision,
+  projectResourceReservationDecision,
+} from './decision-projection';
+import { appendPlanDecisionRecords } from './decision-ledger';
+import type { DecisionRecord } from '@shared/decision';
 import { OutboxService } from './outbox.service';
 import { TaskService } from '../task/task.service';
 import { TaskLifecycle } from './task-lifecycle';
@@ -250,6 +256,12 @@ export class DispatchCoordinatorService {
         }
 
         // 6. 预占资源（person + device + station）。
+        // NO-13k / ADR-060：收集真实预占结果（台账事实），事务末统一
+        // 追加 resource_reservation 决策记录（§12 Decision History）。
+        const reservationDecisions: Array<{
+          assignment: typeof ewohSchedulingPlanAssignment.$inferSelect;
+          results: Awaited<ReturnType<ResourceReservationService['reserve']>>;
+        }> = [];
         for (const a of assignments) {
           const startMs = a.plannedStart
             ? a.plannedStart.getTime()
@@ -285,13 +297,14 @@ export class DispatchCoordinatorService {
             });
           }
           if (inputs.length > 0) {
-            await this.reservationService.reserve(
+            const results = await this.reservationService.reserve(
               planId,
               a.assignmentId,
               a.taskId ?? null,
               inputs,
               ctx,
             );
+            reservationDecisions.push({ assignment: a, results });
           }
         }
 
@@ -371,6 +384,41 @@ export class DispatchCoordinatorService {
           ctx.primaryOrgId,
         );
         outboxEventIds.push(planEvt.id);
+
+        // 12. NO-13k/NO-13l（ADR-060/061）：预占（kind #4）+ 派工（kind #5）
+        // 决策记录单次读-追加-回写进方案决策台账（与派工同事务原子；
+        // 投影缺口/追加失败 log 显式绝不阻断派工主流程，§2/§33）。
+        try {
+          const projected = this.projectReservationDecisionRecords(
+            planId,
+            reservationDecisions,
+            ctx,
+          );
+          const dispatchProjection = projectDispatchDecision({
+            planId,
+            assignmentRiskLevels: assignments.map((a) => a.riskLevel ?? null),
+            dispatchCount: assignmentCount,
+            outboxEventIds,
+            orgId: ctx.primaryOrgId ?? '',
+            operator: ctx.userId ?? null,
+            now: new Date(),
+          });
+          const issues = [...projected.issues];
+          if (dispatchProjection.record) {
+            projected.records.push(dispatchProjection.record);
+          }
+          issues.push(...dispatchProjection.issues);
+          if (issues.length > 0) {
+            this.logger.warn(
+              `派工决策投影缺口（显式跳过，§33）：${issues.join(',')}`,
+            );
+          }
+          await this.appendDecisionRecords(planId, projected.records);
+        } catch (err) {
+          this.logger.warn(
+            `派工决策台账追加失败（不阻断派工主流程）：${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       },
     );
 
@@ -391,6 +439,56 @@ export class DispatchCoordinatorService {
       taskIds,
       outboxEventIds,
     };
+  }
+
+  /**
+   * NO-13k / ADR-060：预占结果 → resource_reservation 决策记录（契约门内；
+   * 缺口显式计数，§33 绝不静默丢弃/伪造）。
+   */
+  private projectReservationDecisionRecords(
+    planId: string,
+    entries: Array<{
+      assignment: typeof ewohSchedulingPlanAssignment.$inferSelect;
+      results: Awaited<ReturnType<ResourceReservationService['reserve']>>;
+    }>,
+    ctx: OrgContext,
+  ): { records: DecisionRecord[]; issues: string[] } {
+    const records: DecisionRecord[] = [];
+    const issues: string[] = [];
+    const now = new Date();
+    for (const entry of entries) {
+      for (const reservation of entry.results) {
+        const projected = projectResourceReservationDecision({
+          planId,
+          assignmentId: entry.assignment.assignmentId,
+          taskId: entry.assignment.taskId ?? null,
+          reservation,
+          assignmentRiskLevel: entry.assignment.riskLevel ?? null,
+          orgId: ctx.primaryOrgId ?? '',
+          operator: ctx.userId ?? null,
+          now,
+        });
+        if (projected.record) {
+          records.push(projected.record);
+        }
+        for (const reason of projected.issues) {
+          issues.push(`${entry.assignment.assignmentId}:${reason}`);
+        }
+      }
+    }
+    return { records, issues };
+  }
+
+  /**
+   * NO-13k/NO-13l（ADR-060/061）：决策记录追加 decision_records_json
+   * （ADR-062 决策 2 §31 单一实现；与派工同事务原子；无 CAS——本事务内
+   * double-dispatch 已由 PLAN_CONCURRENT_DISPATCH 守卫）。
+   */
+  private async appendDecisionRecords(
+    planId: string,
+    records: DecisionRecord[],
+  ): Promise<void> {
+    await appendPlanDecisionRecords(this.db, planId, records);
   }
 
   private randomSuffix(): string {

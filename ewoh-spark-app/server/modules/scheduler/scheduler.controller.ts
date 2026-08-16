@@ -15,8 +15,11 @@ import {
   Logger,
 } from '@nestjs/common';
 import { filter, interval, map, merge, Observable } from 'rxjs';
+import { Optional } from '@nestjs/common';
 import { SchedulerService } from './scheduler.service';
 import { SchedulerStreamService } from './scheduler-stream.service';
+import { DurationModelTrainingService } from './prediction/duration-model-training.service';
+import { DecisionHistoryService } from './decision-history.service';
 import { SchedulingContextService } from './scheduling-context.service';
 import { ResourceProjectionService } from './resource-projection.service';
 import { ReplanCoordinatorService } from './replan-coordinator.service';
@@ -72,7 +75,41 @@ export class SchedulerController {
     // P0-2：统一调度上下文（GET /api/scheduler/context，org 隔离单一时间切片）。
     // 追加在末尾：保持既有测试 positional 注入不破坏（DI 按类型解析，顺序无关）。
     private readonly schedulingContextService: SchedulingContextService,
+    // NO-13g / ADR-056：经验时长模型重训（@Optional——既有直构测试不破坏；
+    // 生产模块必装配；缺失时端点显式报错不静默）。
+    @Optional() private readonly durationModelTrainingService?: DurationModelTrainingService,
+    // NO-13p / ADR-065：Decision History 跨 kind 检索（@Optional——既有直构
+    // 测试不破坏；生产模块必装配；缺失时端点显式报错不静默）。
+    @Optional() private readonly decisionHistoryService?: DecisionHistoryService,
   ) {}
+
+  /**
+   * NO-13g / ADR-056：经验时长模型重训/激活（真实执行反馈 → 统计模型 →
+   * ewoh_model_registry 落版 + 内存刷新）。样本不足 → 显式 not_enough_data
+   * （不落版不伪造，§33）。预测面 shadow-only（预测只是优化器输入）。
+   */
+  @Post('predictions/task-duration/retrain')
+  async retrainTaskDurationModel(@Req() request: { userContext?: OrgContext }) {
+    if (!this.durationModelTrainingService) {
+      throw new BadRequestException('duration model training not available（模块未装配）');
+    }
+    const orgId = request.userContext?.primaryOrgId;
+    if (!orgId?.trim()) {
+      throw new BadRequestException('orgId 缺失：模型训练必须租户作用域（§15/§16，ADR-070）');
+    }
+    const summary = await this.durationModelTrainingService.retrain(orgId.trim());
+    if (!summary.ok) {
+      throw new BadRequestException(`retrain_not_enough_data: ${summary.notEnoughDataReason ?? 'unknown'}`);
+    }
+    return {
+      ok: true,
+      modelId: 'task-duration-empirical',
+      version: summary.version,
+      n: summary.model?.count,
+      medianMs: summary.model?.medianMs,
+      p90Ms: summary.model?.p90Ms,
+    };
+  }
 
   /**
    * P1-CMAP-002：统一资源状态权威投影（ResourceProjection SSOT）。
@@ -96,6 +133,33 @@ export class SchedulerController {
   }
 
   /**
+   * NO-13p / ADR-065：Decision History 跨 kind 检索（只读聚合读面——
+   * Decision Catalog 8 类 kind 跨四表统一检索，§12/§15/§18/§33）。
+   * kind/status 过滤器 fail-closed；非法记录显式 skippedInvalid 计数。
+   */
+  @Get('decision-history')
+  async getDecisionHistory(
+    @Req() request: { userContext?: OrgContext },
+    @Query('kind') kind?: string,
+    @Query('status') status?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    if (!this.decisionHistoryService) {
+      throw new BadRequestException('decision history service not available（模块未装配）');
+    }
+    return this.decisionHistoryService.listDecisions(
+      request.userContext?.primaryOrgId ?? null,
+      {
+        kind,
+        status,
+        limit: limit != null && limit !== '' ? Number(limit) : undefined,
+        offset: offset != null && offset !== '' ? Number(offset) : undefined,
+      },
+    );
+  }
+
+  /**
    * @deprecated 请改用 V2 接口 POST /api/scheduler/runs
    */
   @Post('plans')
@@ -111,9 +175,12 @@ export class SchedulerController {
    * @deprecated 请改用 V2 接口 GET /api/scheduler/runs/:runId 或 GET /api/scheduler/plans/:planId
    */
   @Get('plans')
-  async getPlans(@Query('status') status?: string) {
+  async getPlans(
+    @Query('status') status?: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
     return this.legacyCompatibility(
-      this.schedulerService.getPlans(status),
+      this.schedulerService.getPlans(status, request?.userContext),
       'GET /plans',
       'GET /api/scheduler/plans/:planId',
     );
@@ -153,8 +220,11 @@ export class SchedulerController {
   }
 
   @Get('audit')
-  async getAudit(@Query('planId') planId?: string) {
-    return this.schedulerService.getAudit(planId);
+  async getAudit(
+    @Query('planId') planId?: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    return this.schedulerService.getAudit(planId, request?.userContext);
   }
 
   // ===== Scheduling V2 endpoints =====
@@ -226,8 +296,8 @@ export class SchedulerController {
    * 前端刷新 / SSE resync 必须调用此端点恢复权威方案列表。
    */
   @Get('active-plans')
-  async getActivePlans() {
-    return this.schedulerService.getActivePlans();
+  async getActivePlans(@Req() request?: { userContext?: OrgContext }) {
+    return this.schedulerService.getActivePlans(request?.userContext);
   }
 
   @Get('runs')
@@ -253,8 +323,11 @@ export class SchedulerController {
   }
 
   @Get('runs/:runId')
-  async getRun(@Param('runId') runId: string) {
-    return this.schedulerService.getRun(runId);
+  async getRun(
+    @Param('runId') runId: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    return this.schedulerService.getRun(runId, request?.userContext);
   }
 
   @Get('snapshot')
@@ -263,14 +336,20 @@ export class SchedulerController {
   }
 
   @Get('plans/:planId')
-  async getPlan(@Param('planId') planId: string) {
-    return this.schedulerService.getPlanDetail(planId);
+  async getPlan(
+    @Param('planId') planId: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    return this.schedulerService.getPlanDetail(planId, request?.userContext);
   }
 
   /** P0-2：查询方案仍生效的持久化人工约束。 */
   @Get('plans/:planId/constraints')
-  async getPlanConstraints(@Param('planId') planId: string) {
-    return this.schedulerService.listPlanConstraintsV2(planId);
+  async getPlanConstraints(
+    @Param('planId') planId: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    return this.schedulerService.listPlanConstraintsV2(planId, request?.userContext);
   }
 
   /** P0-2：解除一条人工约束（软删除 + 审计；解除后下次 replan 不再继承）。 */
@@ -342,8 +421,9 @@ export class SchedulerController {
   }
 
   @Get('routes')
-  async getRoutes() {
-    return this.schedulerService.getRoutes();
+  async getRoutes(@Req() request?: { userContext?: OrgContext }) {
+    // ADR-074：路由拓扑读面 org 条件（org 匹配或 NULL 存量）。
+    return this.schedulerService.getRoutes(request?.userContext);
   }
 
   @Post('routes/calculate')
@@ -358,18 +438,25 @@ export class SchedulerController {
     @Query('severity') severity?: ConflictSeverity,
     @Query('scope') scope?: SchedulingConflictScope,
     @Query('resourceId') resourceId?: string,
+    @Req() request?: { userContext?: OrgContext },
   ) {
-    return this.conflictService.listConflicts({
-      type,
-      severity,
-      scope,
-      resourceId,
-    } satisfies ConflictsListRequest);
+    return this.conflictService.listConflicts(
+      {
+        type,
+        severity,
+        scope,
+        resourceId,
+      } satisfies ConflictsListRequest,
+      request?.userContext,
+    );
   }
 
   @Get('conflicts/:id')
-  async getConflict(@Param('id') id: string) {
-    return this.conflictService.getConflictDetail(id);
+  async getConflict(
+    @Param('id') id: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    return this.conflictService.getConflictDetail(id, request?.userContext);
   }
 
   /** T04 / P1-5（G5）：显式冲突归并触发（写路径；GET /conflicts 为纯读）。 */
@@ -436,8 +523,8 @@ export class SchedulerController {
 
   /** 列出全部策略版本（含 active 标志、操作人、创建时间）。 */
   @Get('policy/versions')
-  async listPolicyVersions() {
-    return this.schedulerService.listPolicyVersions();
+  async listPolicyVersions(@Req() request?: { userContext?: OrgContext }) {
+    return this.schedulerService.listPolicyVersions(request?.userContext);
   }
 
   /** 注册候选策略版本（inactive，绝不自动激活）。 */
@@ -646,14 +733,18 @@ export class SchedulerController {
     @Query('status') status?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Req() request?: { userContext?: OrgContext },
   ) {
-    return this.schedulerService.executionList({
-      planId,
-      taskId,
-      status,
-      limit: limit ? Number(limit) : undefined,
-      offset: offset ? Number(offset) : undefined,
-    });
+    return this.schedulerService.executionList(
+      {
+        planId,
+        taskId,
+        status,
+        limit: limit ? Number(limit) : undefined,
+        offset: offset ? Number(offset) : undefined,
+      },
+      request?.userContext,
+    );
   }
 
   // ==========================================================================
@@ -661,9 +752,14 @@ export class SchedulerController {
   // ==========================================================================
 
   @Get('kpi')
-  async getKpi(@Query('persist') persist?: string) {
+  async getKpi(
+    @Query('persist') persist?: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    // ADR-073：KPI 聚合 org 作用域（跨租户聚合关闭，§15/§16）。
     return this.kpiService.aggregate({
       persist: persist === '1',
+      orgId: request?.userContext?.primaryOrgId ?? null,
     });
   }
 
@@ -675,10 +771,12 @@ export class SchedulerController {
   async comparePlansV2(
     @Param('planId') planId: string,
     @Param('otherPlanId') otherPlanId: string,
+    @Req() request?: { userContext?: OrgContext },
   ) {
+    // ADR-073：两个方案读取都经 ADR-071 getPlan 守卫（跨租户 404）。
     const [baseline, candidate] = await Promise.all([
-      this.schedulerService.getPlanDetail(planId),
-      this.schedulerService.getPlanDetail(otherPlanId),
+      this.schedulerService.getPlanDetail(planId, request?.userContext),
+      this.schedulerService.getPlanDetail(otherPlanId, request?.userContext),
     ]);
     return this.planCompareService.compare(baseline, candidate);
   }
@@ -801,8 +899,11 @@ export class SchedulerController {
   }
 
   @Get('policy/activations')
-  async listActivations(@Query('orgId') orgId?: string) {
-    return this.policyActivationService.listActivations(orgId ?? null);
+  async listActivations(@Req() request?: { userContext?: OrgContext }) {
+    // ADR-073：org 只允许来自认证上下文（query 参数 orgId 欺骗路径废弃，§3/§15）。
+    return this.policyActivationService.listActivations(
+      request?.userContext?.primaryOrgId ?? null,
+    );
   }
 
 }

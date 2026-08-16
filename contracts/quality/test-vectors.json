@@ -1,0 +1,95 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Canonical Quality 跨语言一致性测试向量（ADR-010）。语义权威源：contracts/quality/quality.schema.json。",
+  "findings": [
+    {
+      "name": "valid-open",
+      "record": {
+        "findingId": "QF-1",
+        "findingType": "defect",
+        "severity": "critical",
+        "status": "open",
+        "links": ["order:wo-2026-0814-1", "station:st-a1"],
+        "detectedAt": "2026-08-14T08:00:00Z",
+        "disposition": null,
+        "evidenceRef": null
+      },
+      "expectError": null
+    },
+    {
+      "name": "dispositioned-without-disposition-rejected",
+      "record": {
+        "findingId": "QF-2",
+        "findingType": "nonconformance",
+        "severity": "high",
+        "status": "dispositioned",
+        "links": [],
+        "detectedAt": "2026-08-14T08:00:00Z",
+        "disposition": null
+      },
+      "expectError": "disposition_required"
+    },
+    {
+      "name": "dispositioned-with-decision-ok",
+      "record": {
+        "findingId": "QF-3",
+        "findingType": "nonconformance",
+        "severity": "high",
+        "status": "dispositioned",
+        "links": [],
+        "detectedAt": "2026-08-14T08:00:00Z",
+        "disposition": "rework",
+        "dispositionedAt": "2026-08-14T09:00:00Z"
+      },
+      "expectError": null
+    },
+    {
+      "name": "unknown-finding-type-rejected",
+      "record": {
+        "findingId": "QF-4",
+        "findingType": "packaging",
+        "severity": "medium",
+        "status": "open",
+        "links": [],
+        "detectedAt": "2026-08-14T08:00:00Z",
+        "disposition": null
+      },
+      "expectError": "unknown_finding_type"
+    },
+    {
+      "name": "non-canonical-link-rejected",
+      "record": {
+        "findingId": "QF-5",
+        "findingType": "defect",
+        "severity": "medium",
+        "status": "open",
+        "links": ["WO-1"],
+        "detectedAt": "2026-08-14T08:00:00Z",
+        "disposition": null
+      },
+      "expectError": "bad_link"
+    },
+    {
+      "name": "unknown-disposition-decision-rejected",
+      "record": {
+        "findingId": "QF-6",
+        "findingType": "defect",
+        "severity": "medium",
+        "status": "dispositioned",
+        "links": [],
+        "detectedAt": "2026-08-14T08:00:00Z",
+        "disposition": "ignore"
+      },
+      "expectError": "unknown_disposition"
+    }
+  ],
+  "transitions": [
+    { "from": "open", "to": "under_review", "allowed": true },
+    { "from": "under_review", "to": "dispositioned", "allowed": true },
+    { "from": "dispositioned", "to": "closed", "allowed": true },
+    { "from": "open", "to": "dispositioned", "allowed": false },
+    { "from": "open", "to": "closed", "allowed": false },
+    { "from": "closed", "to": "open", "allowed": false },
+    { "from": "under_review", "to": "unknown", "allowed": false }
+  ]
+}

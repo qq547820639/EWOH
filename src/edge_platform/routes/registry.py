@@ -12,6 +12,8 @@
 
 from . import NOT_HANDLED
 from .admin import handle_admin
+from .andon import handle_andon
+from .exo import handle_exo
 from .auth import handle_auth
 from .health import handle_health
 from .inference import handle_inference
@@ -30,6 +32,7 @@ ROUTE_TABLE = {
         handle_scheduler,
         handle_auth,
         handle_admin,
+        handle_exo,
         handle_replay,
     ],
     "POST": [
@@ -38,6 +41,8 @@ ROUTE_TABLE = {
         handle_inference,
         handle_telemetry,
         handle_auth,
+        handle_exo,
+        handle_andon,
         handle_replay,
     ],
     "PATCH": [

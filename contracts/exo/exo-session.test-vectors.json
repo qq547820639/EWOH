@@ -1,0 +1,124 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "ExoSession 契约共享测试向量（ADR-032 / §7）。Python（src/edge_platform/contracts/exo_session.py）、TypeScript（ewoh-spark-app/shared/exo-session.ts）与 scripts/audit-domain-contracts.js 独立仲裁共用同一份向量。",
+  "records": [
+    {
+      "name": "valid_active",
+      "record": {
+        "sessionId": "exo-session:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "exoId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "personId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "status": "active",
+        "startedAt": "2026-08-16T08:00:00Z",
+        "operatorId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a99",
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_ended",
+      "record": {
+        "sessionId": "exo-session:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "exoId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "personId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "status": "ended",
+        "startedAt": "2026-08-16T08:00:00Z",
+        "actualEndAt": "2026-08-16T10:00:00Z",
+        "endedBy": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a99",
+        "operatorId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a99",
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_aborted",
+      "record": {
+        "sessionId": "exo-session:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "exoId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "personId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "status": "aborted",
+        "startedAt": "2026-08-16T08:00:00Z",
+        "actualEndAt": "2026-08-16T08:30:00Z",
+        "endedBy": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a99",
+        "reason": "设备故障",
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "bad_exo_identity",
+      "record": {
+        "sessionId": "exo-session:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "exoId": "EXO-001",
+        "personId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "status": "active",
+        "startedAt": "2026-08-16T08:00:00Z",
+        "auditTrail": true
+      },
+      "expectError": "bad_exo_identity"
+    },
+    {
+      "name": "bad_person_identity",
+      "record": {
+        "sessionId": "exo-session:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "exoId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "personId": "P-001",
+        "status": "active",
+        "startedAt": "2026-08-16T08:00:00Z",
+        "auditTrail": true
+      },
+      "expectError": "bad_person_identity"
+    },
+    {
+      "name": "ended_missing_actual_end",
+      "record": {
+        "sessionId": "exo-session:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "exoId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "personId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "status": "ended",
+        "startedAt": "2026-08-16T08:00:00Z",
+        "endedBy": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a99",
+        "auditTrail": true
+      },
+      "expectError": "actual_end_required"
+    },
+    {
+      "name": "end_before_start",
+      "record": {
+        "sessionId": "exo-session:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "exoId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "personId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "status": "ended",
+        "startedAt": "2026-08-16T10:00:00Z",
+        "actualEndAt": "2026-08-16T08:00:00Z",
+        "endedBy": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a99",
+        "auditTrail": true
+      },
+      "expectError": "bad_time_order"
+    },
+    {
+      "name": "unknown_status",
+      "record": {
+        "sessionId": "exo-session:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "exoId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "personId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "status": "paused",
+        "startedAt": "2026-08-16T08:00:00Z",
+        "auditTrail": true
+      },
+      "expectError": "unknown_status"
+    },
+    {
+      "name": "audit_missing",
+      "record": {
+        "sessionId": "exo-session:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "exoId": "device:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "personId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "status": "active",
+        "startedAt": "2026-08-16T08:00:00Z",
+        "auditTrail": false
+      },
+      "expectError": "audit_required"
+    }
+  ]
+}

@@ -22,6 +22,8 @@ export class TracingInterceptor implements NestInterceptor {
       method?: string;
       path?: string;
       route?: { path?: string };
+      /** NO-10a：OrgContextInterceptor 挂载的请求上下文（lineage，可缺省）。 */
+      userContext?: { primaryOrgId?: string; userId?: string };
     }>();
     const response = http.getResponse<{
       setHeader: (name: string, value: string) => void;
@@ -34,6 +36,9 @@ export class TracingInterceptor implements NestInterceptor {
     const startedIso = new Date(startedAt).toISOString();
     const method = request.method ?? 'UNKNOWN';
     const path = request.route?.path ?? request.path ?? '';
+    // NO-10a（ADR-022）：span lineage（org/user 可空；GLOBAL_SHARED 语义）。
+    const orgId = request.userContext?.primaryOrgId ?? null;
+    const requestUser = request.userContext?.userId ?? null;
 
     return defer(() =>
       withRequestContext({ requestId: traceId }, () =>
@@ -48,6 +53,9 @@ export class TracingInterceptor implements NestInterceptor {
                 response.statusCode ?? 200,
                 startedAt,
                 startedIso,
+                undefined,
+                orgId,
+                requestUser,
               );
             }),
             catchError((error: unknown) => {
@@ -68,6 +76,8 @@ export class TracingInterceptor implements NestInterceptor {
                   : error !== null && typeof error === 'object'
                     ? JSON.stringify(error)
                     : String(error),
+                orgId,
+                requestUser,
               );
               throw error;
             }),
@@ -86,6 +96,8 @@ export class TracingInterceptor implements NestInterceptor {
     startedAt: number,
     startedIso: string,
     error?: string,
+    orgId?: string | null,
+    requestUser?: string | null,
   ): void {
     const finishedAt = new Date().toISOString();
     const entry: TraceRecord = {
@@ -98,7 +110,11 @@ export class TracingInterceptor implements NestInterceptor {
       startedAt: startedIso,
       finishedAt,
       error,
+      orgId,
+      requestUser,
     };
     this.tracingService.record(entry);
+    // NO-10a：span 持久化（best-effort，失败在服务层留痕不阻断响应）。
+    void this.tracingService.persistSpan(entry);
   }
 }

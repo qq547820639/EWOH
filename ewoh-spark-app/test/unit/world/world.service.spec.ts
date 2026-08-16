@@ -34,7 +34,7 @@ describe('WorldService unified replay', () => {
           {
             eventId: 'EV-1',
             eventType: 'quality',
-            severity: 'L2',
+            severity: 'high',
             title: '质检',
             createdAt: ts,
             updatedAt: ts,
@@ -142,7 +142,7 @@ describe('WorldService unified replay', () => {
         ts: '2026-08-04T10:00:00.000Z',
         persons: [],
         devices: [],
-        events: [{ eventId: 'EV-1', severity: 'L2', title: 'x', lane: 'alert' }],
+        events: [{ eventId: 'EV-1', severity: 'high', title: 'x', lane: 'alert' }],
       },
       {
         ts: '2026-08-04T10:05:00.000Z',
@@ -168,7 +168,7 @@ describe('WorldService unified replay', () => {
               eventId: 'EV-1',
               deviceId: 'EXO-1',
               title: '原始告警',
-              severity: 'L3',
+              severity: 'medium',
               createdAt: new Date('2026-08-04T10:00:00.000Z'),
             },
           ]),

@@ -157,6 +157,397 @@ jobs:
           node db/runner/run_migrations.js --verify-standalone-domain
           node scripts/migrate-domain-state.js --dry-run
 
+      - name: "Identity mapping migrations (ADR-006/NO-02b: apply, verify, rollback, re-apply)"
+        # ewoh_identity_mapping（TENANT_SCOPED，RLS identity_mapping_org_isolation）+
+        # ewoh_telemetry.entity_id。apply → verify → rollback → re-apply 证明可逆且可重入。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          # Rollback drops the new table + additive column (destructive opt-in required).
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-identity-mapping
+          node db/runner/run_migrations.js --verify-standalone-identity-mapping
+          node db/runner/run_migrations.js --rollback-standalone-identity-mapping
+          node db/runner/run_migrations.js --apply-standalone-identity-mapping
+          # Re-applying the same migration again must be a no-op (re-entrant safety).
+          node db/runner/run_migrations.js --apply-standalone-identity-mapping
+          node db/runner/run_migrations.js --verify-standalone-identity-mapping
+
+      - name: "Maintenance/Quality migrations (ADR-010/NO-05b: apply, verify, rollback, re-apply)"
+        # ewoh_maintenance_condition + ewoh_quality_finding（TENANT_SCOPED + RLS +
+        # CHECK 约束）。apply → verify → rollback → re-apply 证明可逆且可重入。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-maintenance-quality
+          node db/runner/run_migrations.js --verify-standalone-maintenance-quality
+          node db/runner/run_migrations.js --rollback-standalone-maintenance-quality
+          node db/runner/run_migrations.js --apply-standalone-maintenance-quality
+          node db/runner/run_migrations.js --apply-standalone-maintenance-quality
+          node db/runner/run_migrations.js --verify-standalone-maintenance-quality
+
+      - name: "Work Order migrations (ADR-012/NO-05e-b: apply, verify, rollback, re-apply)"
+        # ewoh_work_order（TENANT_SCOPED + RLS work_order_org_isolation + completion/
+        # cancellation CHECK + 唯一业务键）。apply → verify → rollback → re-apply
+        # 证明可逆且可重入。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-work-order
+          node db/runner/run_migrations.js --verify-standalone-work-order
+          node db/runner/run_migrations.js --rollback-standalone-work-order
+          node db/runner/run_migrations.js --apply-standalone-work-order
+          node db/runner/run_migrations.js --apply-standalone-work-order
+          node db/runner/run_migrations.js --verify-standalone-work-order
+
+      - name: "Event dedup migrations (ADR-009/NO-04b: apply, verify, rollback, re-apply)"
+        # ewoh_ingest_event_dedup（TENANT_SCOPED + RLS ingest_event_dedup_org_isolation +
+        # 唯一 (org_id, source, event_id) + is_late/clock_drift 时间语义列）。
+        # apply → verify（含重复插入唯一约束自证）→ rollback → re-apply 证明可逆可重入。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-event-dedup
+          node db/runner/run_migrations.js --verify-standalone-event-dedup
+          node db/runner/run_migrations.js --rollback-standalone-event-dedup
+          node db/runner/run_migrations.js --apply-standalone-event-dedup
+          node db/runner/run_migrations.js --apply-standalone-event-dedup
+          node db/runner/run_migrations.js --verify-standalone-event-dedup
+
+      - name: "Agent manifest migrations (ADR-016/NO-06b: apply, verify, rollback, re-apply)"
+        # ewoh_agent_manifest（TENANT_SCOPED + RLS agent_manifest_org_isolation +
+        # 唯一 (org_id, agent_id) + status/risk/level CHECK（L4 排除））。
+        # apply → verify（含 L4/非法 status 自证拒绝）→ rollback → re-apply。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-agent-manifest
+          node db/runner/run_migrations.js --verify-standalone-agent-manifest
+          node db/runner/run_migrations.js --rollback-standalone-agent-manifest
+          node db/runner/run_migrations.js --apply-standalone-agent-manifest
+          node db/runner/run_migrations.js --apply-standalone-agent-manifest
+          node db/runner/run_migrations.js --verify-standalone-agent-manifest
+
+      - name: "Agent task migrations (ADR-017/NO-06f: apply, verify, rollback, re-apply)"
+        # ewoh_agent_task（TENANT_SCOPED + RLS agent_task_org_isolation +
+        # 唯一 (org_id, task_id) + kind/priority/status CHECK）。
+        # apply → verify（含非法 kind/status 自证拒绝）→ rollback → re-apply。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-agent-task
+          node db/runner/run_migrations.js --verify-standalone-agent-task
+          node db/runner/run_migrations.js --rollback-standalone-agent-task
+          node db/runner/run_migrations.js --apply-standalone-agent-task
+          node db/runner/run_migrations.js --apply-standalone-agent-task
+          node db/runner/run_migrations.js --verify-standalone-agent-task
+
+      - name: "Knowledge entry hardening (ADR-018-Amendment-1/NO-07b: apply, verify, rollback, re-apply)"
+        # ewoh_knowledge_entry 硬化（standalone_039：契约列 + 五层 scope CHECK
+        # （scope-tenant 一致性：共享层=哨兵 org）+ provenance CHECK +
+        # knowledge_entry_service_all RLS + UNIQUE (org_id, entry_id)）。
+        # apply → verify（含非法 kind/scope/status/共享层落租户 org/
+        # private_operational 带 provenance 自证拒绝 + 合法行写入清理）→
+        # rollback → 幂等 re-apply → verify。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-knowledge-entry
+          node db/runner/run_migrations.js --verify-standalone-knowledge-entry
+          node db/runner/run_migrations.js --rollback-standalone-knowledge-entry
+          node db/runner/run_migrations.js --apply-standalone-knowledge-entry
+          node db/runner/run_migrations.js --apply-standalone-knowledge-entry
+          node db/runner/run_migrations.js --verify-standalone-knowledge-entry
+
+      - name: "Inference result ledger (ADR-019/NO-08a: apply, verify, rollback, re-apply)"
+        # ewoh_inference_result（TENANT_SCOPED + RLS inference_result_org_isolation +
+        # 唯一 (org_id, inference_id) + level/confidence/data_quality/ood 一致性 CHECK）。
+        # apply → verify（含非法 level/confidence 越界/OOD 失配自证拒绝 + 合法行清理）→
+        # rollback → 幂等 re-apply → verify。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-inference-result
+          node db/runner/run_migrations.js --verify-standalone-inference-result
+          node db/runner/run_migrations.js --rollback-standalone-inference-result
+          node db/runner/run_migrations.js --apply-standalone-inference-result
+          node db/runner/run_migrations.js --apply-standalone-inference-result
+          node db/runner/run_migrations.js --verify-standalone-inference-result
+
+      - name: "Learning evaluation ledger (ADR-021/NO-09a: apply, verify, rollback, re-apply)"
+        # ewoh_learning_evaluation（TENANT_SCOPED + RLS learning_evaluation_org_isolation +
+        # 唯一 (org_id, eval_id) + evaluation_type/period CHECK）。
+        # apply → verify（含非法 type/倒置 period 自证拒绝 + 合法行清理）→
+        # rollback → 幂等 re-apply → verify。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-learning-evaluation
+          node db/runner/run_migrations.js --verify-standalone-learning-evaluation
+          node db/runner/run_migrations.js --rollback-standalone-learning-evaluation
+          node db/runner/run_migrations.js --apply-standalone-learning-evaluation
+          node db/runner/run_migrations.js --apply-standalone-learning-evaluation
+          node db/runner/run_migrations.js --verify-standalone-learning-evaluation
+
+      - name: "Trace span ledger (ADR-022/NO-10a: apply, verify, rollback, re-apply)"
+        # ewoh_trace_span（trace_span_org_or_global 可见性策略（org lineage 或全局
+        # 管理员，非 loose）+ status/duration/time CHECK + 唯一 (trace_id, span_id)）。
+        # apply → verify（含非法 status/负 duration 自证拒绝 + 合法行清理）→
+        # rollback → 幂等 re-apply → verify。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-trace-span
+          node db/runner/run_migrations.js --verify-standalone-trace-span
+          node db/runner/run_migrations.js --rollback-standalone-trace-span
+          node db/runner/run_migrations.js --apply-standalone-trace-span
+          node db/runner/run_migrations.js --apply-standalone-trace-span
+          node db/runner/run_migrations.js --verify-standalone-trace-span
+
+      - name: "Dead letter ledger (ADR-024/NO-11a: apply, verify, rollback, re-apply)"
+        # ewoh_dead_letter（TENANT_SCOPED + RLS dead_letter_org_isolation +
+        # 唯一 (org_id, letter_id) + reason/status/attempts/discard CHECK）。
+        # apply → verify（含非法 reason/零 attempts/无理由 discard 自证拒绝 +
+        # 合法行清理）→ rollback → 幂等 re-apply → verify。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-dead-letter
+          node db/runner/run_migrations.js --verify-standalone-dead-letter
+          node db/runner/run_migrations.js --rollback-standalone-dead-letter
+          node db/runner/run_migrations.js --apply-standalone-dead-letter
+          node db/runner/run_migrations.js --apply-standalone-dead-letter
+          node db/runner/run_migrations.js --verify-standalone-dead-letter
+
+      - name: "Digital twin simulation ledger (ADR-025/NO-12a: apply, verify, rollback, re-apply)"
+        # ewoh_simulation_run（TENANT_SCOPED + RLS simulation_run_org_isolation +
+        # 唯一 (org_id, run_id) + kind/status/isolation/completed/failed CHECK）。
+        # apply → verify（含非法 kind/is_simulation=false/completed 无 results/
+        # failed 无理由自证拒绝 + 合法行清理）→ rollback → 幂等 re-apply → verify。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-simulation-run
+          node db/runner/run_migrations.js --verify-standalone-simulation-run
+          node db/runner/run_migrations.js --rollback-standalone-simulation-run
+          node db/runner/run_migrations.js --apply-standalone-simulation-run
+          node db/runner/run_migrations.js --apply-standalone-simulation-run
+          node db/runner/run_migrations.js --verify-standalone-simulation-run
+
+      - name: "Learning proposal ledger (ADR-026/NO-12b: apply, verify, rollback, re-apply)"
+        # ewoh_learning_proposal（TENANT_SCOPED + RLS learning_proposal_org_isolation +
+        # 唯一 (org_id, proposal_id) + kind/status/values/shadow-gate/approval/rollback CHECK）。
+        # apply → verify（含非法 kind/approved 无影子证据/approved 无 approver/
+        # rolled_back 无理由/no-op 变更自证拒绝 + 合法行清理）→ rollback →
+        # 幂等 re-apply → verify。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-learning-proposal
+          node db/runner/run_migrations.js --verify-standalone-learning-proposal
+          node db/runner/run_migrations.js --rollback-standalone-learning-proposal
+          node db/runner/run_migrations.js --apply-standalone-learning-proposal
+          node db/runner/run_migrations.js --apply-standalone-learning-proposal
+          node db/runner/run_migrations.js --verify-standalone-learning-proposal
+
+      - name: "Exo session ledger (ADR-032/§7: apply, verify, rollback, re-apply)"
+        # ewoh_exo_session（TENANT_SCOPED + RLS exo_session_org_isolation +
+        # 唯一 (org_id, session_id) + 部分唯一 (org_id, exo_id) WHERE active +
+        # status/identity/end-complete/time-order CHECK）。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-exo-session
+          node db/runner/run_migrations.js --verify-standalone-exo-session
+          node db/runner/run_migrations.js --rollback-standalone-exo-session
+          node db/runner/run_migrations.js --apply-standalone-exo-session
+          node db/runner/run_migrations.js --apply-standalone-exo-session
+          node db/runner/run_migrations.js --verify-standalone-exo-session
+
+      - name: "Outcome annotation ledger (ADR-034/§10: apply, verify, rollback, re-apply)"
+        # ewoh_outcome_annotation（TENANT_SCOPED + RLS outcome_annotation_org_isolation +
+        # 唯一 (org_id, annotation_id) + target/kind/judger CHECK）。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-outcome-annotation
+          node db/runner/run_migrations.js --verify-standalone-outcome-annotation
+          node db/runner/run_migrations.js --rollback-standalone-outcome-annotation
+          node db/runner/run_migrations.js --apply-standalone-outcome-annotation
+          node db/runner/run_migrations.js --apply-standalone-outcome-annotation
+          node db/runner/run_migrations.js --verify-standalone-outcome-annotation
+
+      - name: "Shadow plan isolation (ADR-038/§13: apply, verify, rollback, re-apply)"
+        # ewoh_schedule_plan CHECK 纵深防御（chk_ewoh_schedule_plan_shadow_not_production：
+        # is_shadow 行禁生产状态/确认事实——服务层 guard 之外的 DB 兜底）。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-shadow-plan-isolation
+          node db/runner/run_migrations.js --verify-standalone-shadow-plan-isolation
+          node db/runner/run_migrations.js --rollback-standalone-shadow-plan-isolation
+          node db/runner/run_migrations.js --apply-standalone-shadow-plan-isolation
+          node db/runner/run_migrations.js --apply-standalone-shadow-plan-isolation
+          node db/runner/run_migrations.js --verify-standalone-shadow-plan-isolation
+
+      - name: "Agent approval ledger (ADR-039/NO-12p: apply, verify, rollback, re-apply)"
+        # ewoh_agent_approval（TENANT_SCOPED + RLS agent_approval_org_isolation +
+        # 唯一 (org_id, approval_id) + status/resolved/roles CHECK——
+        # Agent 待批命令跨重启持久化，ADR-030 决策 4 边界收口）。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-agent-approval
+          node db/runner/run_migrations.js --verify-standalone-agent-approval
+          node db/runner/run_migrations.js --rollback-standalone-agent-approval
+          node db/runner/run_migrations.js --apply-standalone-agent-approval
+          node db/runner/run_migrations.js --apply-standalone-agent-approval
+          node db/runner/run_migrations.js --verify-standalone-agent-approval
+
+      - name: "Decision records column (ADR-048/NO-12y: apply, verify, rollback, re-apply)"
+        # ewoh_schedule_plan += decision_records_json jsonb（既有受管表原地加固，
+        # 计数不变 73/76）：Canonical DecisionRecord[] 持久化（ADR-047 契约形态，
+        # persistPlan 唯一投影点写入；决策历史单一事实源 §12/§18）。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-decision-records
+          node db/runner/run_migrations.js --verify-standalone-decision-records
+          node db/runner/run_migrations.js --rollback-standalone-decision-records
+          node db/runner/run_migrations.js --apply-standalone-decision-records
+          node db/runner/run_migrations.js --apply-standalone-decision-records
+          node db/runner/run_migrations.js --verify-standalone-decision-records
+
+      - name: "Agent approval decision column (ADR-059/NO-13j: apply, verify, rollback, re-apply)"
+        # ewoh_agent_approval += decision_json jsonb（既有受管表原地加固，计数不变
+        # 74/77）：agent_approval DecisionRecord 持久化（ADR-047 契约形态，
+        # resolveRow 唯一权威写路径与解析终态同事务；决策历史单一事实源 §12/§18）。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-agent-approval-decision
+          node db/runner/run_migrations.js --verify-standalone-agent-approval-decision
+          node db/runner/run_migrations.js --rollback-standalone-agent-approval-decision
+          node db/runner/run_migrations.js --apply-standalone-agent-approval-decision
+          node db/runner/run_migrations.js --apply-standalone-agent-approval-decision
+          node db/runner/run_migrations.js --verify-standalone-agent-approval-decision
+
+      - name: "Policy activation decision column (ADR-064/NO-13o: apply, verify, rollback, re-apply)"
+        # ewoh_scheduling_policy += decision_json jsonb（既有受管表原地加固，计数不变
+        # 74/77）：policy_activation DecisionRecord 持久化（ADR-047 契约形态，
+        # active 翻转/直接保存激活与状态同写原子写入；决策历史单一事实源 §12/§18——
+        # Decision Catalog 8 类 kind 全收敛收口）。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-policy-activation-decision
+          node db/runner/run_migrations.js --verify-standalone-policy-activation-decision
+          node db/runner/run_migrations.js --rollback-standalone-policy-activation-decision
+          node db/runner/run_migrations.js --apply-standalone-policy-activation-decision
+          node db/runner/run_migrations.js --apply-standalone-policy-activation-decision
+          node db/runner/run_migrations.js --verify-standalone-policy-activation-decision
+
+      - name: "Route topology org isolation (ADR-074/NO-13y: apply, verify, rollback, re-apply)"
+        # ewoh_route_node / ewoh_route_edge += org_id varchar(255) + RLS
+        # route_node/edge_org_isolation（org 匹配或 NULL 存量放行，与 standalone_025
+        # 语义对齐；既有受管表原地加固，计数不变 74/77）：World Model 中枢读面
+        # （§4）路由拓扑跨租户布局事实泄漏闭合；verify 含 SET LOCAL GUC 可见性
+        # 自证（org-a/org-b/NULL 三态）。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-route-org-isolation
+          node db/runner/run_migrations.js --verify-standalone-route-org-isolation
+          node db/runner/run_migrations.js --rollback-standalone-route-org-isolation
+          node db/runner/run_migrations.js --apply-standalone-route-org-isolation
+          node db/runner/run_migrations.js --apply-standalone-route-org-isolation
+          node db/runner/run_migrations.js --verify-standalone-route-org-isolation
+
+      - name: "Learning proposal decision column (ADR-063/NO-13n: apply, verify, rollback, re-apply)"
+        # ewoh_learning_proposal += decision_json jsonb（既有受管表原地加固，计数不变
+        # 74/77）：learning_proposal_activation DecisionRecord 持久化（ADR-047 契约形态，
+        # approve/reject/rollback 与状态终态同 UPDATE 原子写入；决策历史单一事实源 §12/§18）。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-learning-proposal-decision
+          node db/runner/run_migrations.js --verify-standalone-learning-proposal-decision
+          node db/runner/run_migrations.js --rollback-standalone-learning-proposal-decision
+          node db/runner/run_migrations.js --apply-standalone-learning-proposal-decision
+          node db/runner/run_migrations.js --apply-standalone-learning-proposal-decision
+          node db/runner/run_migrations.js --verify-standalone-learning-proposal-decision
+
+      - name: "Exo config ledger (ADR-051/ADR-052/NO-13c: apply, verify, rollback, re-apply)"
+        # ewoh_exo_config（TENANT_SCOPED + RLS exo_config_org_isolation +
+        # 唯一 (org_id, config_id) + kind/status/support_mode/profile/fit/
+        # calibration/time CHECK——§7 Support Mode/Assist Profile/Fit/Calibration
+        # 配置事实台账，ADR-051 契约形态 record_json 全量留痕）。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-exo-config
+          node db/runner/run_migrations.js --verify-standalone-exo-config
+          node db/runner/run_migrations.js --rollback-standalone-exo-config
+          node db/runner/run_migrations.js --apply-standalone-exo-config
+          node db/runner/run_migrations.js --apply-standalone-exo-config
+          node db/runner/run_migrations.js --verify-standalone-exo-config
+
+      - name: "Identity legacy reconcile (ADR-006/NO-02d: dry-run, apply, idempotent re-run)"
+        # 存量 ewoh_device → ewoh_identity_mapping 只增不改的 reconcile 任务：
+        # dry-run 计划 → --apply 落库 → 再次运行 planned=0（幂等，零新增），
+        # 验证确定性 UUIDv5 推导与 ON CONFLICT DO NOTHING 语义（真实 PG）。
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+        run: |
+          node scripts/reconcile-identity-legacy.mjs --org 00000000-0000-4000-8000-000000000001
+          node scripts/reconcile-identity-legacy.mjs --org 00000000-0000-4000-8000-000000000001 --apply
+          node scripts/reconcile-identity-legacy.mjs --org 00000000-0000-4000-8000-000000000001 --apply
+
       - name: Scheduler V2 multi-tenant isolation E2E (Org A vs Org B)
         # Task 3 / ADR-004：Scheduler V2 运行时表多租户/RLS 边界 DB 级 E2E。
         #   - 8 张 org-scoped 表（025 RLS）org-b 对 org-a 行 SELECT/UPDATE/DELETE 均 0 行；

@@ -108,7 +108,7 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
       }),
     });
     const snapshot = baseSnapshot({
-      persons: [{ id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
+      persons: [{ id: 'p1', name: 'p1', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
       stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
     });
     const matrix = await svc.buildMatrix(snapshot, TASK, [
@@ -138,7 +138,7 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
       }),
     });
     const snapshot = baseSnapshot({
-      persons: [{ id: 'p-unknown', name: 'p-unknown', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: null, zoneId: null, x: null, y: null }],
+      persons: [{ id: 'p-unknown', name: 'p-unknown', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: null, zoneId: null, x: null, y: null }],
       stations: [],
     });
     const matrix = await svc.buildMatrix(snapshot, TASK, [
@@ -159,7 +159,7 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
       }),
     });
     const snapshot = baseSnapshot({
-      persons: [{ id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z-FORBIDDEN', x: 0, y: 0 }],
+      persons: [{ id: 'p1', name: 'p1', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z-FORBIDDEN', x: 0, y: 0 }],
       stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
       forbiddenZones: [{ zoneId: 'Z-FORBIDDEN', reason: 'restricted_zone' }],
     });
@@ -181,7 +181,7 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
       }),
     });
     const snapshot = baseSnapshot({
-      persons: [{ id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
+      persons: [{ id: 'p1', name: 'p1', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
       stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
       routeStatus: [{ edgeId: 'e1', status: 'blocked', riskLevel: null }],
     });
@@ -240,7 +240,7 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
       calculateRouteBetween: jest.fn().mockResolvedValue(routeOk),
     });
     const snapshot = baseSnapshot({
-      persons: [{ id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
+      persons: [{ id: 'p1', name: 'p1', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
       stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
     });
     const candidates = [{ personId: 'p1', deviceId: 'd1', stationId: 'S1' }];
@@ -270,8 +270,8 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
     });
     const snapshot = baseSnapshot({
       persons: [
-        { id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 },
-        { id: 'p2', name: 'p2', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 },
+        { id: 'p1', name: 'p1', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 },
+        { id: 'p2', name: 'p2', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 },
       ],
       stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
     });
@@ -293,7 +293,7 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
       calculateRouteBetween: jest.fn().mockResolvedValue(routeOk),
     });
     const snapshot = baseSnapshot({
-      persons: [{ id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
+      persons: [{ id: 'p1', name: 'p1', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
       stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
     });
     const candidates = [{ personId: 'p1', deviceId: 'd1', stationId: 'S1' }];
@@ -357,13 +357,13 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
     const snapshot = baseSnapshot({
       tasks: [TASK],
       persons: [
-        { id: 'p-feasible', name: 'p-feasible', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 },
-        { id: 'p-unknown', name: 'p-unknown', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: null, zoneId: null, x: null, y: null },
+        { id: 'p-feasible', name: 'p-feasible', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 },
+        { id: 'p-unknown', name: 'p-unknown', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: null, zoneId: null, x: null, y: null },
       ],
       stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
       devices: [
-        { id: 'd1', workerName: null, deviceModel: null, batteryPct: 100, online: true, status: 'online', x: 1, y: 1 },
-        { id: 'd2', workerName: null, deviceModel: null, batteryPct: 100, online: true, status: 'online', x: null, y: null },
+        { id: 'd1', workerName: null, deviceModel: null, batteryPct: 100, online: true, status: 'AVAILABLE', x: 1, y: 1 },
+        { id: 'd2', workerName: null, deviceModel: null, batteryPct: 100, online: true, status: 'AVAILABLE', x: null, y: null },
       ],
     });
     // p-unknown 走 calculateRoute（spatial 解析失败 → 不可行）。
@@ -391,7 +391,7 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
     });
     (policy.getConfig as jest.Mock).mockResolvedValue({ walkingSpeedMps: 1, routeCostMode: 'STRICT' });
     const snapshot = baseSnapshot({
-      persons: [{ id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
+      persons: [{ id: 'p1', name: 'p1', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
       stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
     });
     const matrix = await svc.buildMatrix(snapshot, TASK, [
@@ -415,7 +415,7 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
     });
     // makeSvc 缺省 getConfig 返回 { walkingSpeedMps: 1 }（无 routeCostMode → 缺省 DEGRADED 行为）。
     const snapshot = baseSnapshot({
-      persons: [{ id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
+      persons: [{ id: 'p1', name: 'p1', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
       stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
     });
     const matrix = await svc.buildMatrix(snapshot, TASK, [
@@ -437,7 +437,7 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
       }),
     });
     const snapshot = baseSnapshot({
-      persons: [{ id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
+      persons: [{ id: 'p1', name: 'p1', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: 'S1', zoneId: 'Z1', x: 0, y: 0 }],
       stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
     });
     const matrix = await svc.buildMatrix(snapshot, TASK, [

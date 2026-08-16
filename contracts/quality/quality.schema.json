@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///quality/quality/v1",
+  "title": "EWOH Canonical Quality Finding Model",
+  "description": "EWOH 统一质量发现契约（ADR-010，Phase 6 NO-05a）。links 引用规范身份（order/material/station/task，ADR-006）；severity 走 Canonical Risk 阶梯；处置生命周期 open→under_review→dispositioned→closed（dispositioned 必带 disposition 决策 accept/rework/scrap/return；closed 终态）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "findingTypeRegistry", "lifecycle", "dispositionRegistry", "rules"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "findingTypeRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" }
+    },
+    "lifecycle": {
+      "type": "array",
+      "const": ["open", "under_review", "dispositioned", "closed"]
+    },
+    "dispositionRegistry": {
+      "type": "array",
+      "const": ["accept", "rework", "scrap", "return"]
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transition", "dispositionRequired", "canonicalRefs", "severityContract"],
+      "properties": {
+        "transition": {
+          "type": "string",
+          "const": "open→under_review→dispositioned→closed；closed 终态；其余非法转移拒绝"
+        },
+        "dispositionRequired": {
+          "type": "string",
+          "const": "dispositioned 状态必须携带 disposition 决策（accept/rework/scrap/return），否则拒绝"
+        },
+        "canonicalRefs": {
+          "type": "string",
+          "const": "links 中每个引用必须是规范身份（kind:value，ADR-006），否则拒绝"
+        },
+        "severityContract": {
+          "type": "string",
+          "const": "severity 走 Canonical Risk 阶梯（critical/high/medium/low，legacy L1-L3 映射），否则拒绝"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "findingTypeRegistry": [
+    "defect", "dimension_out_of_tolerance", "nonconformance",
+    "material_mismatch", "process_deviation"
+  ],
+  "lifecycle": ["open", "under_review", "dispositioned", "closed"],
+  "dispositionRegistry": ["accept", "rework", "scrap", "return"],
+  "rules": {
+    "transition": "open→under_review→dispositioned→closed；closed 终态；其余非法转移拒绝",
+    "dispositionRequired": "dispositioned 状态必须携带 disposition 决策（accept/rework/scrap/return），否则拒绝",
+    "canonicalRefs": "links 中每个引用必须是规范身份（kind:value，ADR-006），否则拒绝",
+    "severityContract": "severity 走 Canonical Risk 阶梯（critical/high/medium/low，legacy L1-L3 映射），否则拒绝"
+  }
+}

@@ -6,13 +6,13 @@
   "snapshot": {
     "snapshotVersion": "WS-FIXTURE-LOW-BATTERY",
     "persons": [
-      { "id": "p1", "name": "p1", "status": "available", "skills": ["work"], "certifications": [], "loadLevel": 0, "fatigueLevel": 0, "stationId": "S1", "zoneId": "Z1", "x": 0, "y": 0 }
+      { "id": "p1", "name": "p1", "status": "AVAILABLE", "skills": ["work"], "certifications": [], "loadLevel": 0, "fatigueLevel": 0, "stationId": "S1", "zoneId": "Z1", "x": 0, "y": 0 }
     ],
     "tasks": [
       { "id": "t1", "title": "t1", "taskType": "work", "priority": "medium", "status": "pending", "assigneeId": null, "deviceId": null, "stationId": "S1", "zoneId": "Z1", "planStart": null, "planEnd": null, "progress": 0, "predecessorIds": [], "requiredSkills": ["work"], "requiredCertifications": [] }
     ],
     "devices": [
-      { "id": "d1", "workerName": null, "deviceModel": null, "batteryPct": 5, "online": true, "status": "online", "capabilities": [] }
+      { "id": "d1", "workerName": null, "deviceModel": null, "batteryPct": 5, "online": true, "status": "AVAILABLE", "capabilities": [] }
     ],
     "stations": [
       { "id": "S1", "name": "S1", "x": 0, "y": 0, "capacity": 2 }

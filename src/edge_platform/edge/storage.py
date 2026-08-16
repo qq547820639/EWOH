@@ -52,6 +52,13 @@ CREATE TABLE IF NOT EXISTS device_protocol_version (
   audit_ref TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_device_protocol_version_device ON device_protocol_version(device_id);
+-- ADR-033 / §7：边缘外骨骼绑定事实账（Edge 采集面；云端 ewoh_exo_session 为权威）。
+CREATE TABLE IF NOT EXISTS exo_binding (
+  binding_id TEXT PRIMARY KEY, exo_id TEXT NOT NULL, person_id TEXT NOT NULL,
+  status TEXT NOT NULL, started_at TEXT NOT NULL, ended_at TEXT,
+  ended_by TEXT, reason TEXT);
+CREATE INDEX IF NOT EXISTS idx_exo_binding_exo ON exo_binding(exo_id);
+CREATE INDEX IF NOT EXISTS idx_exo_binding_status ON exo_binding(status);
 CREATE TABLE IF NOT EXISTS event_handling (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_id TEXT NOT NULL,
@@ -314,6 +321,22 @@ class Storage:
             ).fetchone()
             return self._tele_row(row)
 
+    def quality_stats(self, device_id):
+        """设备遥测数据质量分布（NO-05：/api/devices/{id}/quality 数据源）。
+
+        返回 {quality_status: count}；无数据返回 {}。容错：查询失败返回空
+        （上层组合 adapter 计数器后如实报告）。"""
+        try:
+            with self._lock:
+                rows = self._db.execute(
+                    "SELECT quality_status, COUNT(*) AS n FROM telemetry "
+                    "WHERE device_id=? GROUP BY quality_status",
+                    (device_id,),
+                ).fetchall()
+            return {r["quality_status"]: r["n"] for r in rows}
+        except Exception:
+            return {}
+
     def query_telemetry(self, device_id, start, end, limit):
         start_ms, end_ms = _ts_ms(start), _ts_ms(end)
         if start_ms is None or end_ms is None:
@@ -375,6 +398,78 @@ class Storage:
                     d.get("last_seen"),
                 ),
             )
+
+    def start_binding(self, binding_id, exo_id, person_id, started_at):
+        """ADR-033：开始外骨骼绑定（同外骨骼活跃绑定唯一，服务层冲突显式）。"""
+        self._db.execute(
+            "INSERT INTO exo_binding (binding_id, exo_id, person_id, status, started_at) "
+            "VALUES (?, ?, ?, 'active', ?)",
+            (binding_id, exo_id, person_id, started_at),
+        )
+        return {
+            "binding_id": binding_id, "exo_id": exo_id, "person_id": person_id,
+            "status": "active", "started_at": started_at, "ended_at": None,
+            "ended_by": None, "reason": None,
+        }
+
+    def end_binding(self, binding_id, ended_at, ended_by, reason=""):
+        """ADR-033：结束绑定（状态机 active→ended；无行返回 None 显式）。"""
+        cur = self._db.execute(
+            "UPDATE exo_binding SET status='ended', ended_at=?, ended_by=?, reason=? "
+            "WHERE binding_id=? AND status='active'",
+            (ended_at, ended_by, reason, binding_id),
+        )
+        return cur.rowcount > 0
+
+    def get_binding(self, binding_id):
+        row = self._db.execute(
+            "SELECT binding_id, exo_id, person_id, status, started_at, ended_at, "
+            "ended_by, reason FROM exo_binding WHERE binding_id=?",
+            (binding_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "binding_id": row[0], "exo_id": row[1], "person_id": row[2],
+            "status": row[3], "started_at": row[4], "ended_at": row[5],
+            "ended_by": row[6], "reason": row[7],
+        }
+
+    def list_active_binding_for_exo(self, exo_id):
+        row = self._db.execute(
+            "SELECT binding_id, exo_id, person_id, status, started_at, ended_at, "
+            "ended_by, reason FROM exo_binding WHERE exo_id=? AND status='active' "
+            "ORDER BY started_at DESC LIMIT 1",
+            (exo_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "binding_id": row[0], "exo_id": row[1], "person_id": row[2],
+            "status": row[3], "started_at": row[4], "ended_at": row[5],
+            "ended_by": row[6], "reason": row[7],
+        }
+
+    def list_bindings(self, status=None):
+        if status:
+            rows = self._db.execute(
+                "SELECT binding_id, exo_id, person_id, status, started_at, ended_at, "
+                "ended_by, reason FROM exo_binding WHERE status=? ORDER BY started_at DESC",
+                (status,),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT binding_id, exo_id, person_id, status, started_at, ended_at, "
+                "ended_by, reason FROM exo_binding ORDER BY started_at DESC",
+            ).fetchall()
+        return [
+            {
+                "binding_id": r[0], "exo_id": r[1], "person_id": r[2],
+                "status": r[3], "started_at": r[4], "ended_at": r[5],
+                "ended_by": r[6], "reason": r[7],
+            }
+            for r in rows
+        ]
 
     def upsert_person(self, **p):
         with self._lock, self._db:

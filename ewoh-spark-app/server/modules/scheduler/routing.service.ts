@@ -3,8 +3,9 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { eq } from 'drizzle-orm';
+import { eq, or, isNull } from 'drizzle-orm';
 import { ewohRouteNode, ewohRouteEdge, ewohSpatialEntity } from '@server/database/schema';
+import type { OrgContext } from '../shared/org-context.interceptor';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import type {
   Route,
@@ -71,10 +72,19 @@ export class RoutingService {
   ) {}
 
   /** 加载完整路由图。 */
-  async loadGraph(): Promise<RouteGraph> {
+  async loadGraph(actor?: OrgContext): Promise<RouteGraph> {
+    // ADR-074：路由拓扑读面 org 条件（org 匹配或 NULL 存量，与 RLS 语义等价）。
+    const orgCond = actor
+      ? (col: { orgId: unknown }) =>
+          or(isNull(col.orgId as never), eq(col.orgId as never, actor.primaryOrgId))
+      : undefined;
     const [nodeRows, edgeRows] = await Promise.all([
-      this.db.select().from(ewohRouteNode),
-      this.db.select().from(ewohRouteEdge),
+      orgCond
+        ? this.db.select().from(ewohRouteNode).where(orgCond(ewohRouteNode))
+        : this.db.select().from(ewohRouteNode),
+      orgCond
+        ? this.db.select().from(ewohRouteEdge).where(orgCond(ewohRouteEdge))
+        : this.db.select().from(ewohRouteEdge),
     ]);
 
     const nodes: RouteGraphNode[] = nodeRows.map((n) => ({

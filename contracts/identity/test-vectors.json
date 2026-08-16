@@ -1,0 +1,210 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Canonical Identity 跨语言一致性测试向量（Python tests/test_identity_contract.py 与 TypeScript ewoh-spark-app/shared/identity.spec.ts 必须消费同一份文件，结果逐项一致）。向量只依赖 identity.schema.json 的语法定义，不得在实现中另造语义。",
+  "valid": [
+    "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+    "exo:NY-A1-SN-0007",
+    "device:edge-a1",
+    "machine:cnc-03",
+    "robot:agv-12",
+    "agv:wh-07",
+    "tool:torque-wrench-2",
+    "material:mat-steel-2026",
+    "container:bin-8821",
+    "inventory:inv-0001",
+    "order:wo-2026-0814-1",
+    "task:t-42",
+    "operation:op-07",
+    "work_instruction:wi-lift-01",
+    "station:st-a1",
+    "zone:z-dock",
+    "route:r-3",
+    "factory:f1",
+    "warehouse:wh-sh",
+    "sensor:env-temp-01",
+    "event:evt-abc123",
+    "alert:al-0001",
+    "incident:inc-77",
+    "risk:rk-9",
+    "quality_finding:qf-3",
+    "maintenance_condition:mc-15",
+    "reservation:res-2026",
+    "assignment:asgn-8",
+    "plan:pln-101",
+    "decision:dec-4",
+    "approval:apr-2",
+    "execution:exe-5",
+    "outcome:out-6",
+    "policy:pol-load-balance",
+    "constraint:con-19",
+    "model:mdl-fatigue-v2",
+    "agent:agt-supervisor",
+    "knowledge:knw-100",
+    "skill:skl-carry",
+    "certification:cert-forklift",
+    "session:ses-20260814-0001",
+    "observation:obs-20260814T0800",
+    "device:A1.B2-C3_D4~E5@F6"
+  ],
+  "invalid": [
+    { "value": "person:", "reason": "empty_value" },
+    { "value": "person:a b", "reason": "space_in_value" },
+    { "value": "person:a:b", "reason": "extra_colon" },
+    { "value": ":value", "reason": "empty_kind" },
+    { "value": "Person:x", "reason": "uppercase_kind" },
+    { "value": "person:/x", "reason": "slash_in_value" },
+    { "value": "person:x%20y", "reason": "percent_in_value" },
+    { "value": "unknownkind:x", "reason": "kind_not_in_registry" },
+    { "value": "9person:x", "reason": "kind_starts_with_digit" },
+    { "value": "person:-starts-with-dash", "reason": "value_starts_with_dash" },
+    { "value": "person:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "reason": "value_too_long_129" },
+    { "value": "PERSON:x", "reason": "uppercase_kind_2" },
+    { "value": "person:é", "reason": "non_ascii_value" },
+    { "value": "exo_skeleton:x", "reason": "kind_pattern_ok_but_not_in_registry" }
+  ],
+  "mappingScenarios": [
+    {
+      "name": "exact_active_match",
+      "system": "mes",
+      "sourceId": "WO-1001",
+      "now": "2026-08-14T10:00:00Z",
+      "mappings": [
+        {
+          "mappingId": "map:m1",
+          "version": 1,
+          "source": { "system": "mes", "id": "WO-1001" },
+          "target": { "entityId": "order:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11" },
+          "authority": "registration",
+          "status": "active",
+          "recordedAt": "2026-08-14T08:00:00Z",
+          "validFrom": null,
+          "validTo": null,
+          "evidenceId": null
+        }
+      ],
+      "expect": "order:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+      "expectError": null
+    },
+    {
+      "name": "unmapped_fails_closed",
+      "system": "wms",
+      "sourceId": "LOC-A1",
+      "now": "2026-08-14T10:00:00Z",
+      "mappings": [],
+      "expect": null,
+      "expectError": null
+    },
+    {
+      "name": "revoked_not_resolved",
+      "system": "mes",
+      "sourceId": "WO-2002",
+      "now": "2026-08-14T10:00:00Z",
+      "mappings": [
+        {
+          "mappingId": "map:m2",
+          "version": 1,
+          "source": { "system": "mes", "id": "WO-2002" },
+          "target": { "entityId": "order:00000000-0000-4000-8000-000000000002" },
+          "authority": "manual",
+          "status": "revoked",
+          "recordedAt": "2026-08-14T08:00:00Z",
+          "validFrom": null,
+          "validTo": null,
+          "evidenceId": null
+        }
+      ],
+      "expect": null,
+      "expectError": null
+    },
+    {
+      "name": "superseded_not_resolved_active_wins",
+      "system": "erp",
+      "sourceId": "SO-3003",
+      "now": "2026-08-14T10:00:00Z",
+      "mappings": [
+        {
+          "mappingId": "map:m3",
+          "version": 1,
+          "source": { "system": "erp", "id": "SO-3003" },
+          "target": { "entityId": "order:00000000-0000-4000-8000-000000000003" },
+          "authority": "registration",
+          "status": "superseded",
+          "recordedAt": "2026-08-14T08:00:00Z",
+          "validFrom": null,
+          "validTo": null,
+          "evidenceId": null
+        },
+        {
+          "mappingId": "map:m4",
+          "version": 2,
+          "source": { "system": "erp", "id": "SO-3003" },
+          "target": { "entityId": "order:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11" },
+          "authority": "registration",
+          "status": "active",
+          "recordedAt": "2026-08-14T09:00:00Z",
+          "validFrom": null,
+          "validTo": null,
+          "evidenceId": null
+        }
+      ],
+      "expect": "order:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+      "expectError": null
+    },
+    {
+      "name": "time_window_expired_not_resolved",
+      "system": "mes",
+      "sourceId": "WO-4004",
+      "now": "2026-08-14T10:00:00Z",
+      "mappings": [
+        {
+          "mappingId": "map:m5",
+          "version": 1,
+          "source": { "system": "mes", "id": "WO-4004" },
+          "target": { "entityId": "order:00000000-0000-4000-8000-000000000004" },
+          "authority": "registration",
+          "status": "active",
+          "recordedAt": "2026-08-01T08:00:00Z",
+          "validFrom": null,
+          "validTo": "2026-08-10T00:00:00Z",
+          "evidenceId": null
+        }
+      ],
+      "expect": null,
+      "expectError": null
+    },
+    {
+      "name": "ambiguous_active_conflict_fails_closed",
+      "system": "mes",
+      "sourceId": "WO-5005",
+      "now": "2026-08-14T10:00:00Z",
+      "mappings": [
+        {
+          "mappingId": "map:m6",
+          "version": 1,
+          "source": { "system": "mes", "id": "WO-5005" },
+          "target": { "entityId": "order:00000000-0000-4000-8000-000000000005" },
+          "authority": "registration",
+          "status": "active",
+          "recordedAt": "2026-08-14T08:00:00Z",
+          "validFrom": null,
+          "validTo": null,
+          "evidenceId": null
+        },
+        {
+          "mappingId": "map:m7",
+          "version": 1,
+          "source": { "system": "mes", "id": "WO-5005" },
+          "target": { "entityId": "order:00000000-0000-4000-8000-000000000006" },
+          "authority": "adapter",
+          "status": "active",
+          "recordedAt": "2026-08-14T09:00:00Z",
+          "validFrom": null,
+          "validTo": null,
+          "evidenceId": null
+        }
+      ],
+      "expect": null,
+      "expectError": "ambiguous_identity"
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///events/envelope/v1",
+  "title": "EWOH Canonical Event Envelope",
+  "description": "EWOH 统一事件信封契约（Canonical Event Envelope，ADR-009）。事件目录（contracts/events/event-catalog.yaml）= 类型语义；本信封 = 形状 + 时间/因果/置信度语义。时间三态 occurredAt ≤ observedAt ≤ receivedAt（时钟漂移容忍 5min，越界标记 clockDrift 不改写）；迟到事件标记不丢弃；同一 (source, eventId) 重放幂等；actor/subject 必须是规范身份（ADR-006）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requiredFields",
+    "rules"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "requiredFields": {
+      "type": "array",
+      "const": ["eventId", "eventType", "schemaVersion", "occurredAt", "source"]
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timeOrdering",
+        "lateEvent",
+        "idempotency",
+        "canonicalRefs",
+        "catalogReference"
+      ],
+      "properties": {
+        "timeOrdering": {
+          "type": "string",
+          "const": "occurredAt ≤ observedAt ≤ receivedAt；时钟漂移容忍 5min，越界标记 clockDrift=true 不静默改写"
+        },
+        "lateEvent": {
+          "type": "string",
+          "const": "receivedAt − occurredAt > 10min → isLate=true（标记不丢弃）"
+        },
+        "idempotency": {
+          "type": "string",
+          "const": "同一 (source, eventId) 重放幂等；消费者按 eventId 去重，重放不得产生副作用"
+        },
+        "canonicalRefs": {
+          "type": "string",
+          "const": "actor/subject 存在时必须是规范身份（kind:value，ADR-006），否则拒绝"
+        },
+        "catalogReference": {
+          "type": "string",
+          "const": "eventType 必须命中 contracts/events/event-catalog.yaml 的 x-event-types（门禁交叉校验）"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "requiredFields": ["eventId", "eventType", "schemaVersion", "occurredAt", "source"],
+  "clockDriftToleranceMs": 300000,
+  "lateThresholdMs": 600000,
+  "rules": {
+    "timeOrdering": "occurredAt ≤ observedAt ≤ receivedAt；时钟漂移容忍 5min，越界标记 clockDrift=true 不静默改写",
+    "lateEvent": "receivedAt − occurredAt > 10min → isLate=true（标记不丢弃）",
+    "idempotency": "同一 (source, eventId) 重放幂等；消费者按 eventId 去重，重放不得产生副作用",
+    "canonicalRefs": "actor/subject 存在时必须是规范身份（kind:value，ADR-006），否则拒绝",
+    "catalogReference": "eventType 必须命中 contracts/events/event-catalog.yaml 的 x-event-types（门禁交叉校验）"
+  }
+}

@@ -28,6 +28,15 @@ QUERY_LIMIT = 5000
 # Task 22: 聚合窗口（秒）
 AGGREGATE_WINDOW_SEC = 5
 
+# ADR-009 / NO-04b：规则事件码 → Canonical Event Catalog 类型。
+EVENT_CODE_CATALOG_TYPE = {
+    "LOW_BATTERY": "DeviceLowBattery",
+    "LOAD_CONTINUOUS": "WorkerHighLoad",
+    "POSTURE_BEND_LONG": "WorkerPostureRisk",
+    "DEVICE_OFFLINE": "DeviceOffline",
+    "DATA_DEGRADED": "DataDegraded",
+}
+
 # Task 17: 证据摘要关注的遥测字段（pitch 均值 / torque 峰值等）
 _EVIDENCE_METRIC_FIELDS = ("pitch_deg", "torque_nm", "load_score", "battery_percent")
 
@@ -150,6 +159,7 @@ class EventEngine:
 
     def _open_event(self, draft):
         start_ms = ts_to_ms(draft["start_time"])
+        now_iso = _now_iso()
         evt = {
             "event_id": new_id("EVT"),
             "event_code": draft["event_code"],
@@ -169,6 +179,18 @@ class EventEngine:
                 "handled_at": None,
             },
             "source_type": draft.get("source_type"),
+        }
+        # ADR-009 / NO-04b：事件信封（occurred=规则触发时刻；observed/received=边缘
+        # 本地生成时刻；eventType 收敛到 Canonical Event Catalog；Late 语义由云侧
+        # 重生成/重放时按契约计算）。
+        evt["envelope"] = {
+            "eventId": evt["event_id"],
+            "eventType": EVENT_CODE_CATALOG_TYPE.get(evt["event_code"], "DeviceStateChanged"),
+            "schemaVersion": "1.0.0",
+            "occurredAt": draft["start_time"],
+            "observedAt": now_iso,
+            "receivedAt": now_iso,
+            "source": "edge:rule-engine",
         }
         self.storage.insert_event(evt)
         self._open[(evt["event_code"], evt["device_id"])] = evt["event_id"]

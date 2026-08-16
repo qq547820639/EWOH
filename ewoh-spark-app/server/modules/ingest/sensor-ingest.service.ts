@@ -1,6 +1,7 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
+import { isValidSpatialKind } from '@shared/location';
 import {
   ewohEnvironment,
   ewohWorldState,
@@ -32,7 +33,10 @@ export class SensorIngestService {
 
   // ===== 环境传感器接入 =====
 
-  async ingestEnvironment(frame: EnvironmentFrameDto): Promise<IngestResponse> {
+  async ingestEnvironment(
+    frame: EnvironmentFrameDto,
+    orgId?: string | null,
+  ): Promise<IngestResponse> {
     const sourceType: DataSourceType = frame.source_type ?? 'real';
     const recordId = frame.record_id ?? randomUUID();
     const now = new Date();
@@ -47,6 +51,8 @@ export class SensorIngestService {
         ts: new Date(frame.event_time),
         sourceType,
         recordId,
+        // ADR-075 续（NO-13aa）：环境传感器行归属注入（001 ewoh_org_visible RLS 对齐）。
+        orgId: orgId ?? null,
         dataConfidence: frame.data_confidence ?? 1.0,
       });
       return {
@@ -123,6 +129,19 @@ export class SensorIngestService {
   ): Promise<IngestResponse> {
     const recordId = randomUUID();
     const now = new Date();
+    // ADR-007：空间类型必须在 Canonical Location 契约注册表内；未知类型拒绝
+    // （fail-closed，不把脏类型写进 ewoh_spatial_entity）。
+    const entityType = scan.entity_type ?? 'workstation';
+    if (!isValidSpatialKind(entityType)) {
+      return {
+        accepted: false,
+        skipped: false,
+        record_id: recordId,
+        data_quality: 'invalid',
+        events_triggered: 0,
+        error: `entity_type ${entityType} 不在空间类型注册表（ADR-007）`,
+      };
+    }
     try {
       const extra = {
         splat_url: scan.splat_url ?? null,
@@ -135,7 +154,7 @@ export class SensorIngestService {
         .insert(ewohSpatialEntity)
         .values({
           entityId: scan.entity_id,
-          entityType: scan.entity_type ?? 'workstation',
+          entityType,
           parentId: scan.parent_id ?? null,
           name: scan.name ?? scan.entity_id,
           x: scan.x ?? 0,

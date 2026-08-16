@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import {
@@ -139,9 +140,14 @@ export class OrganizationService {
     if (!body.name?.trim() || !body.orgType?.trim()) {
       throw new BadRequestException('name and orgType are required');
     }
+    // NO-13aa（ADR-075 续）：org 行归属 = 自身 id（应用侧确定性 UUID，
+    // 001 ewoh_org_visible RLS 下组织行对自身/全局管理员可见，§3 单一事实源）。
+    const newOrgId = randomUUID();
     const [row] = await this.db
       .insert(ewohOrganization)
       .values({
+        id: newOrgId,
+        orgId: newOrgId,
         name: body.name.trim(),
         orgType: body.orgType.trim(),
         parentId: body.parentId ?? null,

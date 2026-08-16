@@ -20,7 +20,7 @@ function personRow(over: Record<string, unknown> = {}) {
     id: 'P1',
     name: 'P1',
     employeeNo: 'E1',
-    status: 'available',
+    status: 'AVAILABLE',
     skills: ['work'],
     certifications: [],
     currentLoad: null,
@@ -215,16 +215,26 @@ describe('ResourceProjectionService（统一资源状态聚合器）', () => {
     const states = await svc.getUnifiedResourceState();
     const byId = (id: string) => states.find((s) => s.id === id)!;
     // person：STALE → unavailable，不虚构 available
-    expect(byId('P-OLD').status).toBe('unavailable');
-    expect(byId('P-NEW').status).toBe('available');
+    expect(byId('P-OLD').status).toBe('UNKNOWN');
+    expect(byId('P-NEW').status).toBe('AVAILABLE');
     // device：STALE → offline
-    expect(byId('D-OLD').status).toBe('offline');
-    expect(byId('D-NEW').status).toBe('online');
-    // station：STALE → unavailable，不虚构 available（station id = entityId）
-    expect(byId('ST-OLD').status).toBe('unavailable');
-    expect(byId('ST-NEW').status).toBe('active');
+    expect(byId('D-OLD').status).toBe('OFFLINE');
+    expect(byId('D-NEW').status).toBe('AVAILABLE');
+    // station：STALE → UNKNOWN，不虚构 available（station id = entityId；FRESH 且
+    // 空间实体 status='active' 经 ADR-007 归一为 AVAILABLE）
+    expect(byId('ST-OLD').status).toBe('UNKNOWN');
+    expect(byId('ST-NEW').status).toBe('AVAILABLE');
   });
 
+
+  it('ADR-008：投影实体携带规范身份引用 entityId（person:/device:/station:）', async () => {
+    const svc = makeSvc([personRow()], [deviceRow()], [], []);
+    const states = await svc.getUnifiedResourceState();
+    const person = states.find((s) => s.type === 'person')!;
+    const device = states.find((s) => s.type === 'device')!;
+    expect(person.entityId).toBe(`person:${person.id}`);
+    expect(device.entityId).toBe(`device:${device.id}`);
+  });
 
   it('可选字段：team 来自真实 team_name，currentTask/shift 无背衬列故为 null', async () => {
     const svc = makeSvc([personRow()], [deviceRow()], [], []);

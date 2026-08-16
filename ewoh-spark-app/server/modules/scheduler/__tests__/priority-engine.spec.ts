@@ -149,22 +149,22 @@ describe('PriorityEngine（Task 0.4）', () => {
       horizonEndMs,
       downstreamCount: new Map(),
       manualBoostIds: new Set(),
-      events: [{ eventType: 'DEVICE_OFFLINE', severity: 'L2' }],
+      events: [{ eventType: 'DEVICE_OFFLINE', severity: 'high' }],
     });
     const sev = r.factors.find((f) => f.name === 'event_severity');
     expect(sev).toBeDefined();
     expect(r.explanation.some((e) => e.startsWith('event_severity='))).toBe(true);
-    // L1 不触发；DEADLINE_AT_RISK 触发。
-    const l1 = engine.compute(policy, {
+    // low 不触发；DEADLINE_AT_RISK 触发。
+    const benign = engine.compute(policy, {
       task: { id: 'e2', priority: 'medium' },
       config, now, horizonEndMs, downstreamCount: new Map(), manualBoostIds: new Set(),
-      events: [{ eventType: 'X', severity: 'L1' }],
+      events: [{ eventType: 'X', severity: 'low' }],
     });
-    expect(l1.factors.some((f) => f.name === 'event_severity')).toBe(false);
+    expect(benign.factors.some((f) => f.name === 'event_severity')).toBe(false);
     const deadline = engine.compute(policy, {
       task: { id: 'e3', priority: 'medium' },
       config, now, horizonEndMs, downstreamCount: new Map(), manualBoostIds: new Set(),
-      events: [{ eventType: 'DEADLINE_AT_RISK', severity: 'L1' }],
+      events: [{ eventType: 'DEADLINE_AT_RISK', severity: 'low' }],
     });
     expect(deadline.factors.some((f) => f.name === 'event_severity')).toBe(true);
   });
@@ -226,11 +226,11 @@ describe('PriorityEngine（Task 下 P0-2：eventImpacts 作用域）', () => {
     const irrelevant = resultsFor(
       buildSnapshot({
         tasks: [taskRow()],
-        events: [{ eventId: 'evt-x', severity: 'L2', status: 'open', eventType: 'DEVICE_OFFLINE' }],
+        events: [{ eventId: 'evt-x', severity: 'high', status: 'open', eventType: 'DEVICE_OFFLINE' }],
         eventImpacts: [
           {
             eventId: 'evt-x',
-            severity: 'L2',
+            severity: 'high',
             status: 'open',
             affectedTaskIds: ['other-task'],
             affectedPersonIds: [],
@@ -252,11 +252,11 @@ describe('PriorityEngine（Task 下 P0-2：eventImpacts 作用域）', () => {
     const related = resultsFor(
       buildSnapshot({
         tasks: [taskRow({ deviceId: 'D-1' })],
-        events: [{ eventId: 'evt-d', severity: 'L2', status: 'open', eventType: 'DEVICE_OFFLINE' }],
+        events: [{ eventId: 'evt-d', severity: 'high', status: 'open', eventType: 'DEVICE_OFFLINE' }],
         eventImpacts: [
           {
             eventId: 'evt-d',
-            severity: 'L2',
+            severity: 'high',
             status: 'open',
             affectedTaskIds: [],
             affectedPersonIds: [],
@@ -275,11 +275,11 @@ describe('PriorityEngine（Task 下 P0-2：eventImpacts 作用域）', () => {
     const results = resultsFor(
       buildSnapshot({
         tasks: [taskRow({ id: 't-related', deviceId: 'D-1' }), taskRow({ id: 't-unrelated' })],
-        events: [{ eventId: 'evt-s', severity: 'L3', status: 'open', eventType: 'SAFETY' }],
+        events: [{ eventId: 'evt-s', severity: 'critical', status: 'open', eventType: 'SAFETY' }],
         eventImpacts: [
           {
             eventId: 'evt-s',
-            severity: 'L3',
+            severity: 'critical',
             status: 'open',
             affectedTaskIds: [],
             affectedPersonIds: [],
@@ -301,11 +301,11 @@ describe('PriorityEngine（Task 下 P0-2：eventImpacts 作用域）', () => {
     const resolved = resultsFor(
       buildSnapshot({
         tasks: [taskRow({ deviceId: 'D-1' })],
-        events: [{ eventId: 'evt-r', severity: 'L2', status: 'closed', eventType: 'DEVICE_OFFLINE' }],
+        events: [{ eventId: 'evt-r', severity: 'high', status: 'closed', eventType: 'DEVICE_OFFLINE' }],
         eventImpacts: [
           {
             eventId: 'evt-r',
-            severity: 'L2',
+            severity: 'high',
             status: 'closed',
             affectedTaskIds: [],
             affectedPersonIds: [],

@@ -1,0 +1,18 @@
+version: 1.0.0
+owner: NO-06e
+states:
+  - created
+  - dispatched
+  - in_progress
+  - completed
+  - failed
+  - cancelled
+transitions:
+  - { from: created, to: dispatched, role: orchestrator, condition: dispatch }
+  - { from: dispatched, to: in_progress, role: agent, condition: start }
+  - { from: in_progress, to: completed, role: agent, condition: complete }
+  - { from: in_progress, to: failed, role: agent, condition: fail }
+  - { from: created, to: cancelled, role: orchestrator, condition: cancel }
+  - { from: dispatched, to: cancelled, role: orchestrator, condition: cancel }
+  - { from: in_progress, to: cancelled, role: orchestrator, condition: cancel }
+terminal: [completed, failed, cancelled]

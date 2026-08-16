@@ -1683,6 +1683,355 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/identity/mappings:
+    post:
+      tags:
+        - identity
+      summary: Register a third-party ID → canonical identity mapping (ADR-006)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityRegisterRequest'
+      responses:
+        '201':
+          description: Registered mapping record (idempotent re-register bumps version)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityRegisterResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - identity
+      summary: List identity mappings (tenant-scoped)
+      parameters:
+        - in: query
+          name: system
+          schema:
+            type: string
+          required: false
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, superseded, revoked]
+          required: false
+      responses:
+        '200':
+          description: Mapping records in the caller tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/IdentityMappingRecord'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/identity/mappings/resolve:
+    get:
+      tags:
+        - identity
+      summary: Resolve a third-party (system, id) to a canonical identity (fail-closed)
+      parameters:
+        - in: query
+          name: system
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: id
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Resolution result (unmapped → entityId null + reason unmapped_identity)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityResolveResult'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/maintenance/conditions:
+    post:
+      tags:
+        - maintenance
+      summary: Register a maintenance condition on a subject entity (ADR-010)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceConditionCreateRequest'
+      responses:
+        '201':
+          description: Created maintenance condition (status=detected; severity normalized to canonical ladder)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceCondition'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - maintenance
+      summary: List maintenance conditions (tenant-scoped)
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [detected, acknowledged, work_order_created, resolved, closed]
+          required: false
+        - in: query
+          name: overdue
+          schema:
+            type: boolean
+          required: false
+      responses:
+        '200':
+          description: Maintenance conditions in the caller tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MaintenanceCondition'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/maintenance/conditions/{conditionId}/transition:
+    post:
+      tags:
+        - maintenance
+      summary: Advance a maintenance condition lifecycle state (ADR-010)
+      parameters:
+        - in: path
+          name: conditionId
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceTransitionRequest'
+      responses:
+        '201':
+          description: Transition result (illegal transitions rejected fail-closed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceTransitionResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/quality/findings:
+    post:
+      tags:
+        - quality
+      summary: Register a quality finding (ADR-010)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QualityFindingCreateRequest'
+      responses:
+        '201':
+          description: Created quality finding (status=open; severity normalized to canonical ladder)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QualityFinding'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - quality
+      summary: List quality findings (tenant-scoped)
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [open, under_review, dispositioned, closed]
+          required: false
+      responses:
+        '200':
+          description: Quality findings in the caller tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/QualityFinding'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/quality/findings/{findingId}/transition:
+    post:
+      tags:
+        - quality
+      summary: Advance a quality finding lifecycle state (ADR-010)
+      parameters:
+        - in: path
+          name: findingId
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QualityFindingTransitionRequest'
+      responses:
+        '201':
+          description: Transition result (dispositioned requires valid disposition)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QualityFindingTransitionResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/workorders:
+    post:
+      tags:
+        - workorders
+      summary: Create a canonical work order (ADR-012)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkOrderCreateRequest'
+      responses:
+        '201':
+          description: Created work order (idempotent re-create returns existing row)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkOrderCreateResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - workorders
+      summary: List work orders (tenant-scoped)
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [created, scheduled, in_progress, completed, closed, cancelled]
+          required: false
+        - in: query
+          name: originKind
+          schema:
+            type: string
+            enum: [maintenance_condition, quality_finding]
+          required: false
+      responses:
+        '200':
+          description: Work orders in the caller tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkOrder'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/workorders/{workOrderId}/transition:
+    post:
+      tags:
+        - workorders
+      summary: Advance a work order lifecycle state (ADR-012)
+      parameters:
+        - in: path
+          name: workOrderId
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkOrderTransitionRequest'
+      responses:
+        '201':
+          description: Transition result (completed/closed requires completedAt; cancelled requires reason)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkOrderTransitionResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/workflows/examples:
     get:
       tags:
@@ -4176,6 +4525,26 @@ paths:
           $ref: '#/components/responses/Conflict'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/approvals/pending:
+    get:
+      tags:
+        - approvals
+      summary: "List pending approvals for the tenant (ADR-030 unified view)"
+      responses:
+        '200':
+          description: Pending approval instances (approvalId/entityType/entityId/createdAt)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/approvals:
     post:
       tags:
@@ -5629,6 +5998,89 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scheduler/predictions/task-duration/retrain:
+    post:
+      tags:
+        - scheduler
+      summary: "Retrain the empirical task-duration model (NO-13g / ADR-056: real feedback -> statistical model -> model registry)"
+      description: >
+        DurationModelTrainingService.retrain()（NO-13g / ADR-056）：真实执行反馈
+        （ewoh_scheduling_feedback.actual_start/actual_end）→ 经验时长统计模型 →
+        ewoh_model_registry 落版（supersede 旧 active + 版本递增）+ 内存刷新。
+        样本不足 → 400 retrain_not_enough_data（§33 不落版不伪造）。预测面 shadow-only。
+      responses:
+        '201':
+          description: Retrained model summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  modelId: { type: string }
+                  version: { type: string }
+                  n: { type: number }
+                  medianMs: { type: number }
+                  p90Ms: { type: number }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/decision-history:
+    get:
+      tags:
+        - scheduler
+      summary: "Cross-kind Decision History retrieval (NO-13p / ADR-065: unified read surface over Decision Catalog 8 kinds)"
+      description: >
+        DecisionHistoryService.listDecisions()（NO-13p / ADR-065）：只读聚合四表
+        （schedule_plan.decision_records_json + agent_approval / learning_proposal /
+        scheduling_policy .decision_json）→ 记录级租户过滤（统一面 §15）→
+        validateDecision（非法显式 skippedInvalid 计数 §33）→ decidedAt 降序 +
+        decisionId 字典序稳定 → 分页（limit 缺省 50 cap 100）。kind/status
+        过滤器 fail-closed（未知值 400）。
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema: { type: string }
+        - name: status
+          in: query
+          required: false
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: number }
+        - name: offset
+          in: query
+          required: false
+          schema: { type: number }
+      responses:
+        '200':
+          description: Aggregated decision history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object } }
+                  total: { type: number }
+                  skippedInvalid: { type: number }
+                  sources:
+                    type: object
+                    properties:
+                      plans: { type: number }
+                      agentApprovals: { type: number }
+                      learningProposals: { type: number }
+                      policies: { type: number }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scheduler/conflicts:
     get:
       tags:
@@ -6468,6 +6920,1026 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/ingest/events:
+    post:
+      tags:
+        - ingest
+      summary: Ingest edge envelope event batch (ADR-009 + transport dedup)
+      security: *ref_8
+      parameters: *ref_ingest_org
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                events:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/EnvelopeEventDto'
+              required:
+                - events
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestEventBatchResponse'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        TooManyRequests:
+          $ref: '#/components/responses/TooManyRequests'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/agents/manifests:
+    post:
+      tags:
+        - agents
+      summary: Register an agent manifest (ADR-016 contract, fail-closed)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentManifestInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentManifestInput'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - agents
+      summary: List registered agent manifests (tenant scoped)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AgentManifestView'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/agents/manifests/{agentId}:
+    get:
+      tags:
+        - agents
+      summary: Get one agent manifest
+      parameters:
+        - name: agentId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentManifestView'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/agents/execute:
+    post:
+      tags:
+        - agents
+      summary: Execute a structured agent command (approval gating + budget/timeout/fallback)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agentId: { type: string }
+                command: { type: string }
+                payload: { type: object }
+              required:
+                - agentId
+                - command
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecuteAgentCommandResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/agents/supervisor/run:
+    post:
+      tags:
+        - agents
+      summary: Run factory supervisor suggestion flow (world state → proposal → approval)
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  suggestion: { type: object }
+                  result:
+                    $ref: '#/components/schemas/ExecuteAgentCommandResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/agents/tasks:
+    post:
+      tags:
+        - agents
+      summary: Create a structured agent task (ADR-017 contract, fail-closed)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { type: object }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - agents
+      summary: List agent tasks (tenant scoped)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object }
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/agents/tasks/{taskId}/dispatch:
+    post:
+      tags:
+        - agents
+      summary: Dispatch an agent task (dependency gating fail-closed)
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { type: object }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/agents/tasks/{taskId}/start:
+    post:
+      tags:
+        - agents
+      summary: Start an agent task (dispatched → in_progress)
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { type: object }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/agents/tasks/{taskId}/complete:
+    post:
+      tags:
+        - agents
+      summary: Complete an agent task (in_progress → completed|failed, terminal event)
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [completed, failed] }
+                outcomeJson: { type: object }
+              required: [status]
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { type: object }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/agents/tasks/{taskId}/cancel:
+    post:
+      tags:
+        - agents
+      summary: Cancel an agent task (non-terminal → cancelled)
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { type: object }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/agents/approvals:
+    get:
+      tags:
+        - agents
+      summary: "List pending agent command approvals (ADR-030; expired is explicit)"
+      responses:
+        '200':
+          description: Pending agent command approvals with expiry metadata
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/agents/approvals/{approvalId}/resolve:
+    post:
+      tags:
+        - agents
+      summary: Resolve an agent command approval (approve → execute / reject → record)
+      parameters:
+        - name: approvalId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                approved: { type: boolean }
+              required:
+                - approved
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecuteAgentCommandResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/knowledge/entries:
+    post:
+      tags:
+        - knowledge
+      summary: Register a canonical knowledge entry (ADR-018 Amendment 1 / NO-07b)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KnowledgeEntryRegisterRequest'
+      responses:
+        '201':
+          description: Created knowledge entry (idempotent re-create returns existing row)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeEntryRegisterResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - knowledge
+      summary: List knowledge entries (tenant ladder = shared global/industry + tenant customer/factory/private_operational)
+      parameters:
+        - in: query
+          name: kind
+          schema:
+            type: string
+            enum: [incident, resolution, failure_pattern, process_knowledge, decision_history, evidence]
+          required: false
+        - in: query
+          name: scope
+          schema:
+            type: string
+            enum: [global, industry, customer, factory, private_operational]
+          required: false
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [draft, verified, superseded]
+          required: false
+      responses:
+        '200':
+          description: Knowledge entries visible to the caller tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KnowledgeEntry'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/knowledge/shared:
+    get:
+      tags:
+        - knowledge
+      summary: Cross-tenant shared knowledge catalog (global/industry only; tenant scopes fail-closed)
+      parameters:
+        - in: query
+          name: kind
+          schema:
+            type: string
+            enum: [incident, resolution, failure_pattern, process_knowledge, decision_history, evidence]
+          required: false
+        - in: query
+          name: scope
+          schema:
+            type: string
+            enum: [global, industry]
+          required: false
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [draft, verified, superseded]
+          required: false
+      responses:
+        '200':
+          description: Shared knowledge entries (never crosses private_operational)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KnowledgeEntry'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/knowledge/entries/{entryId}:
+    get:
+      tags:
+        - knowledge
+      summary: Get a single knowledge entry (tenant ladder; out-of-scope returns 400)
+      parameters:
+        - in: path
+          name: entryId
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Knowledge entry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeEntry'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/knowledge/entries/{entryId}/transition:
+    post:
+      tags:
+        - knowledge
+      summary: Advance a knowledge entry status (draft→verified needs verifiedBy; superseded terminal)
+      parameters:
+        - in: path
+          name: entryId
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KnowledgeEntryTransitionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeEntryTransitionResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/inference/results:
+    post:
+      tags:
+        - inference
+      summary: Record a canonical inference result (ADR-019 / NO-08a)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InferenceResultRecordRequest'
+      responses:
+        '201':
+          description: Recorded inference result (idempotent re-record returns existing row)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceResultRecordResponse'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - inference
+      summary: List inference results (tenant-scoped ledger)
+      parameters:
+        - in: query
+          name: level
+          schema:
+            type: string
+            enum: [L1_deterministic_rules, L2_statistical_ml, L3_optimization, L4_industrial_reasoning, L5_agentic_workflow, L6_simulation_digital_twin, L7_learning_loop]
+          required: false
+        - in: query
+          name: subjectId
+          schema:
+            type: string
+          required: false
+      responses:
+        '200':
+          description: Inference results in the caller tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InferenceResult'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/inference/results/{inferenceId}:
+    get:
+      tags:
+        - inference
+      summary: Get a single inference result (tenant-scoped; out-of-scope returns 400)
+      parameters:
+        - in: path
+          name: inferenceId
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Inference result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/reasoning/evaluate:
+    post:
+      tags:
+        - reasoning
+      summary: Evaluate deterministic industrial reasoning rules (ADR-020 / NO-08b)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasoningEvaluateRequest'
+      responses:
+        '201':
+          description: Reasoning trace with per-conclusion inference ledger ids
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasoningEvaluateResponse'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/reasoning/rules:
+    get:
+      tags:
+        - reasoning
+      summary: List the builtin reasoning rule registry (explainability surface)
+      responses:
+        '200':
+          description: Rule registry with trigger conditions and severities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReasoningRule'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/evaluate:
+    post:
+      tags:
+        - learning
+      summary: Evaluate the seven continuous-learning metrics for a period (ADR-021 / NO-09a)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LearningEvaluateRequest'
+      responses:
+        '201':
+          description: Learning evaluation snapshot (idempotent re-evaluate returns existing row)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningEvaluateResponse'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/evaluations:
+    get:
+      tags:
+        - learning
+      summary: List learning evaluations (tenant-scoped ledger)
+      responses:
+        '200':
+          description: Learning evaluations in the caller tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LearningEvaluation'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/latest:
+    get:
+      tags:
+        - learning
+      summary: Latest learning evaluation (tenant-scoped)
+      responses:
+        '200':
+          description: Latest learning evaluation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningEvaluation'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/annotations:
+    post:
+      tags:
+        - learning
+      summary: "Record a decision outcome annotation (ADR-034: ground-truth surface, idempotent)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                annotationId: { type: string }
+                targetType: { type: string, enum: [plan, decision, proposal, agent_command] }
+                targetId: { type: string }
+                outcomeKind: { type: string, enum: [success, partial_success, failure, invalid] }
+                judgedBy: { type: string }
+                judgedAt: { type: string, format: date-time }
+                measured:
+                  type: object
+                  additionalProperties: { type: number }
+                comment: { type: string }
+              required:
+                - targetType
+                - targetId
+                - outcomeKind
+                - judgedBy
+      responses:
+        '201':
+          description: Recorded annotation (idempotent re-record returns existing)
+          content:
+            application/json:
+              schema:
+                type: object
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - learning
+      summary: List outcome annotations by target (tenant-scoped)
+      parameters:
+        - in: query
+          name: targetType
+          schema:
+            type: string
+            enum: [plan, decision, proposal, agent_command]
+          required: true
+        - in: query
+          name: targetId
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Annotations for the target
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/annotations/recent:
+    get:
+      tags:
+        - learning
+      summary: List recent outcome annotations (tenant-scoped, optional outcomeKind filter)
+      parameters:
+        - in: query
+          name: outcomeKind
+          schema:
+            type: string
+            enum: [success, partial_success, failure, invalid]
+          required: false
+      responses:
+        '200':
+          description: Recent annotations in the caller tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/proposals:
+    post:
+      tags:
+        - learning
+      summary: "Propose a learning feedback change (ADR-026: shadow evaluation + human-approval ladder)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LearningProposalRequest'
+      responses:
+        '201':
+          description: Learning proposal (proposed or shadow_evaluated when facts supplied)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningProposalResponse'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - learning
+      summary: List learning proposals (tenant-scoped ledger)
+      parameters:
+        - in: query
+          name: kind
+          schema:
+            type: string
+            enum: [rule_threshold]
+          required: false
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [proposed, shadow_evaluated, approved, rolled_back, rejected]
+          required: false
+      responses:
+        '200':
+          description: Learning proposals in the caller tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LearningProposal'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/proposals/{proposalId}:
+    get:
+      tags:
+        - learning
+      summary: Get one learning proposal (tenant-scoped)
+      parameters:
+        - in: path
+          name: proposalId
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Learning proposal record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningProposal'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/proposals/{proposalId}/shadow:
+    post:
+      tags:
+        - learning
+      summary: Attach deterministic shadow evaluation to a proposed change (proposed → shadow_evaluated)
+      parameters:
+        - in: path
+          name: proposalId
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                facts:
+                  type: array
+                  items:
+                    type: object
+              required:
+                - facts
+      responses:
+        '201':
+          description: Shadow-evaluated proposal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningProposal'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/proposals/{proposalId}/approve:
+    post:
+      tags:
+        - learning
+      summary: Human approval of a shadow-evaluated proposal (ADR-026 activation ladder; no auto-approve)
+      parameters:
+        - in: path
+          name: proposalId
+          schema:
+            type: string
+          required: true
+      responses:
+        '201':
+          description: Approved proposal (activates threshold override for the tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningProposal'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/proposals/{proposalId}/reject:
+    post:
+      tags:
+        - learning
+      summary: Human rejection of a proposal (reason required)
+      parameters:
+        - in: path
+          name: proposalId
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+              required:
+                - reason
+      responses:
+        '201':
+          description: Rejected proposal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningProposal'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/proposals/{proposalId}/rollback:
+    post:
+      tags:
+        - learning
+      summary: Human rollback of an approved proposal (reason required; deactivates the override)
+      parameters:
+        - in: path
+          name: proposalId
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+              required:
+                - reason
+      responses:
+        '201':
+          description: Rolled-back proposal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningProposal'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/simulator/start:
     post:
       tags:
@@ -6805,6 +8277,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MaintenanceAsset'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/observability/traces/{traceId}:
+    get:
+      tags:
+        - observability
+      summary: Stitch a full-chain trace by correlation id (spans + events + audit, ADR-022)
+      parameters:
+        - name: traceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Stitched trace (spans, correlated events, correlated audit)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraceStitch'
         BadRequest:
           $ref: '#/components/responses/BadRequest'
         Unauthorized:
@@ -8063,6 +9561,669 @@ paths:
           $ref: '#/components/responses/Forbidden'
         NotFound:
           $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/reliability/dead-letters:
+    post:
+      tags:
+        - reliability
+      summary: Record a permanently failed message to the dead letter ledger (ADR-024)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeadLetterRecordRequest'
+      responses:
+        '201':
+          description: Dead letter record (idempotent re-record returns existing row)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeadLetterRecordResponse'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - reliability
+      summary: List dead letters (tenant-scoped ledger)
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, requeued, discarded]
+          required: false
+        - in: query
+          name: sourceId
+          schema:
+            type: string
+          required: false
+      responses:
+        '200':
+          description: Dead letters in the caller tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeadLetter'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/reliability/dead-letters/{letterId}/requeue:
+    post:
+      tags:
+        - reliability
+      summary: Human-triggered replay of a dead letter (attempts incremented; no auto-retry)
+      parameters:
+        - in: path
+          name: letterId
+          schema:
+            type: string
+          required: true
+      responses:
+        '201':
+          description: Requeued result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeadLetterTransitionResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/reliability/dead-letters/{letterId}/discard:
+    post:
+      tags:
+        - reliability
+      summary: Discard a dead letter (reason required, human decision recorded)
+      parameters:
+        - in: path
+          name: letterId
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+              required:
+                - reason
+      responses:
+        '201':
+          description: Discarded result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeadLetterTransitionResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/simulation/runs:
+    post:
+      tags:
+        - simulation
+      summary: "Run a digital twin simulation (ADR-025: deterministic evaluator, isSimulation=true isolation)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulationRunRequest'
+      responses:
+        '201':
+          description: Simulation run (created → evaluated → terminal completed|failed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationRunResponse'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - simulation
+      summary: List simulation runs (tenant-scoped ledger)
+      parameters:
+        - in: query
+          name: kind
+          schema:
+            type: string
+            enum: [what_if, capacity, layout, material_flow]
+          required: false
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [created, running, completed, failed]
+          required: false
+      responses:
+        '200':
+          description: Simulation runs in the caller tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SimulationRun'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/simulation/runs/{runId}:
+    get:
+      tags:
+        - simulation
+      summary: Get one simulation run (tenant-scoped)
+      parameters:
+        - in: path
+          name: runId
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Simulation run record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationRun'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/observability/metrics:
+    get:
+      tags:
+        - observability
+      summary: Unified metric registry export (JSON with metrics + registryViolations, ADR-023)
+      responses:
+        '200':
+          description: Registry-validated metric samples with explicit violations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsExport'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/observability/metrics/text:
+    get:
+      tags:
+        - observability
+      summary: Unified metric registry export (Prometheus text compatible)
+      responses:
+        '200':
+          description: Prometheus text format with registry violations as comments
+          content:
+            text/plain:
+              schema:
+                type: string
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/observability/metrics/edge-metrics:
+    post:
+      tags:
+        - observability
+      summary: "Edge metrics uplink (ADR-028: registry-validated periodic snapshot ingest)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EdgeMetricsBatchRequest'
+      responses:
+        '201':
+          description: Ingest result (accepted/rejected/violations explicit)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EdgeMetricsIngestResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/exo/configs:
+    post:
+      tags:
+        - exo
+      summary: "Record an exoskeleton configuration fact (ADR-051/ADR-052: contract gate fail-closed + idempotent)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                configId: { type: string }
+                kind: { type: string, enum: [assist_profile, fit, calibration] }
+                exoId: { type: string }
+                status: { type: string }
+                supportMode: { type: string }
+                vendorModeName: { type: string }
+                parameters:
+                  type: object
+                  properties:
+                    assistLevel: { type: number }
+                    torqueLimitNm: { type: number }
+                effectiveFrom: { type: string, format: date-time }
+                effectiveTo: { type: string, format: date-time }
+                supersededBy: { type: string }
+                setBy: { type: string }
+                personId: { type: string }
+                fittedAt: { type: string, format: date-time }
+                fitter: { type: string }
+                measuredValues:
+                  type: object
+                  additionalProperties: { type: number }
+                calibrationKind: { type: string, enum: [zeroing, load_cell, imu] }
+                result: { type: string }
+                calibratedAt: { type: string, format: date-time }
+                calibratedBy: { type: string }
+                nextDueAt: { type: string, format: date-time }
+              required:
+                - kind
+                - exoId
+                - status
+      responses:
+        '201':
+          description: Recorded exo config fact
+          content:
+            application/json:
+              schema:
+                type: object
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - exo
+      summary: List exo config facts (tenant-scoped ledger)
+      parameters:
+        - in: query
+          name: kind
+          schema:
+            type: string
+            enum: [assist_profile, fit, calibration]
+          required: false
+        - in: query
+          name: exoId
+          schema:
+            type: string
+          required: false
+        - in: query
+          name: status
+          schema:
+            type: string
+          required: false
+      responses:
+        '200':
+          description: Config facts in the caller tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/exo/configs/{configId}:
+    get:
+      tags:
+        - exo
+      summary: Get an exo config fact (tenant-scoped)
+      parameters:
+        - in: path
+          name: configId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Config fact
+          content:
+            application/json:
+              schema:
+                type: object
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/exo/configs/{configId}/activate:
+    post:
+      tags:
+        - exo
+      summary: "Activate an assist profile (active-unique per exo+mode; prior active CAS superseded)"
+      parameters:
+        - in: path
+          name: configId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                setBy: { type: string }
+      responses:
+        '200':
+          description: Activated profile
+          content:
+            application/json:
+              schema:
+                type: object
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/exo/sessions:
+    post:
+      tags:
+        - exo
+      summary: "Start an exoskeleton-person binding session (ADR-032: contract fail-closed + active-unique)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId: { type: string }
+                exoId: { type: string }
+                personId: { type: string }
+                startedAt: { type: string, format: date-time }
+                expectedEndAt: { type: string, format: date-time }
+                operatorId: { type: string }
+                reason: { type: string }
+              required:
+                - exoId
+                - personId
+      responses:
+        '201':
+          description: Started session
+          content:
+            application/json:
+              schema:
+                type: object
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - exo
+      summary: List exo sessions (tenant-scoped ledger, includes history)
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, ended, aborted]
+          required: false
+        - in: query
+          name: exoId
+          schema:
+            type: string
+          required: false
+      responses:
+        '200':
+          description: Sessions in the caller tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/exo/sessions/{sessionId}:
+    get:
+      tags:
+        - exo
+      summary: Get one exo session (tenant-scoped)
+      parameters:
+        - in: path
+          name: sessionId
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Session record
+          content:
+            application/json:
+              schema:
+                type: object
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/exo/sessions/{sessionId}/end:
+    post:
+      tags:
+        - exo
+      summary: End a session normally (state machine + endedBy required)
+      parameters:
+        - in: path
+          name: sessionId
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                endedBy: { type: string }
+                reason: { type: string }
+              required:
+                - endedBy
+      responses:
+        '201':
+          description: Ended session
+          content:
+            application/json:
+              schema:
+                type: object
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/exo/sessions/{sessionId}/abort:
+    post:
+      tags:
+        - exo
+      summary: Abort a session (state machine + endedBy required)
+      parameters:
+        - in: path
+          name: sessionId
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                endedBy: { type: string }
+                reason: { type: string }
+              required:
+                - endedBy
+      responses:
+        '201':
+          description: Aborted session
+          content:
+            application/json:
+              schema:
+                type: object
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/notifications:
+    get:
+      tags:
+        - notifications
+      summary: List in-app notifications (tenant + role scoped, ADR-030)
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, read]
+          required: false
+      responses:
+        '200':
+          description: Notifications visible to the caller
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/notifications/{id}/read:
+    post:
+      tags:
+        - notifications
+      summary: Mark a notification as read (idempotent, tenant scoped)
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+      responses:
+        '201':
+          description: Updated notification
+          content:
+            application/json:
+              schema:
+                type: object
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/notifications/{id}/retry:
+    post:
+      tags:
+        - notifications
+      summary: Retry a failed push notification (failed -> pending, tenant scoped)
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+      responses:
+        '201':
+          description: Notification re-queued for dispatch
+          content:
+            application/json:
+              schema:
+                type: object
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
   /api/observability/traces:
@@ -9460,6 +11621,1275 @@ components:
         - matched
         - decision
         - reasons
+    IdentityMappingRecord:
+      type: object
+      description: >
+        第三方系统 ID → EWOH 规范身份（kind:value）的映射记录（ADR-006）。
+        契约权威源：contracts/identity/identity-mapping.schema.json。
+      properties:
+        mappingId:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        source:
+          type: object
+          properties:
+            system:
+              type: string
+            id:
+              type: string
+            idKind:
+              type: string
+          required:
+            - system
+            - id
+        target:
+          type: object
+          properties:
+            entityId:
+              type: string
+          required:
+            - entityId
+        authority:
+          type: string
+          enum: [registration, adapter, manual]
+        status:
+          type: string
+          enum: [active, superseded, revoked]
+        recordedAt:
+          type: string
+          format: date-time
+        validFrom:
+          type: [string, 'null']
+          format: date-time
+        validTo:
+          type: [string, 'null']
+          format: date-time
+        evidenceId:
+          type: [string, 'null']
+      required:
+        - mappingId
+        - version
+        - source
+        - target
+        - authority
+        - status
+        - recordedAt
+    IdentityRegisterRequest:
+      type: object
+      properties:
+        mappingId:
+          type: string
+          description: 可选；缺省由服务端生成 map:<uuid>
+        version:
+          type: integer
+          minimum: 1
+        source:
+          type: object
+          properties:
+            system:
+              type: string
+            id:
+              type: string
+            idKind:
+              type: string
+          required:
+            - system
+            - id
+        target:
+          type: object
+          properties:
+            entityId:
+              type: string
+              description: EWOH 规范身份 kind:value（内部 value 必须由 EWOH 生成）
+          required:
+            - entityId
+        authority:
+          type: string
+          enum: [registration, adapter, manual]
+        validFrom:
+          type: [string, 'null']
+          format: date-time
+        validTo:
+          type: [string, 'null']
+          format: date-time
+        evidenceId:
+          type: [string, 'null']
+      required:
+        - source
+        - target
+        - authority
+    IdentityResolveResult:
+      type: object
+      properties:
+        entityId:
+          type: [string, 'null']
+        reason:
+          type: [string, 'null']
+          enum: [unmapped_identity, null]
+    IdentityRegisterResult:
+      type: object
+      properties:
+        record:
+          $ref: '#/components/schemas/IdentityMappingRecord'
+        created:
+          type: boolean
+        superseded:
+          type: boolean
+      required:
+        - record
+        - created
+        - superseded
+    MaintenanceConditionCreateRequest:
+      type: object
+      description: >
+        维护状态注册请求（ADR-010）。契约权威源：
+        contracts/maintenance/maintenance.schema.json（条件类型/lifecycle/逾期规则）。
+      properties:
+        conditionId:
+          type: string
+        subjectEntityId:
+          type: string
+          description: EWOH 规范身份 kind:value（ADR-006）
+        conditionType:
+          type: string
+          enum: [wear, calibration_due, fault_recurring, overdue_inspection, battery_degradation, anomaly]
+        severity:
+          type: string
+          description: canonical ladder（critical/high/medium/low）；legacy L1-L3 服务端归一化
+        dueAt:
+          type: [string, 'null']
+          format: date-time
+        evidenceId:
+          type: [string, 'null']
+      required:
+        - conditionId
+        - subjectEntityId
+        - conditionType
+        - severity
+    MaintenanceCondition:
+      type: object
+      properties:
+        id:
+          type: string
+        orgId:
+          type: string
+        conditionId:
+          type: string
+        subjectEntityId:
+          type: string
+        subjectKind:
+          type: string
+        conditionType:
+          type: string
+        severity:
+          type: string
+        status:
+          type: string
+          enum: [detected, acknowledged, work_order_created, resolved, closed]
+        dueAt:
+          type: [string, 'null']
+          format: date-time
+        detectedAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: [string, 'null']
+          format: date-time
+        workOrderRef:
+          type: [string, 'null']
+        evidenceId:
+          type: [string, 'null']
+        overdue:
+          type: boolean
+          description: dueAt < now 且 status ∉ {resolved, closed}（机器可执行）
+      required:
+        - conditionId
+        - subjectEntityId
+        - conditionType
+        - severity
+        - status
+        - overdue
+    MaintenanceTransitionRequest:
+      type: object
+      properties:
+        to:
+          type: string
+          enum: [acknowledged, work_order_created, resolved, closed]
+        workOrderRef:
+          type: [string, 'null']
+      required:
+        - to
+    MaintenanceTransitionResult:
+      type: object
+      properties:
+        conditionId:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+      required:
+        - conditionId
+        - from
+        - to
+    QualityFindingCreateRequest:
+      type: object
+      description: >
+        质量发现注册请求（ADR-010）。契约权威源：
+        contracts/quality/quality.schema.json（类型/lifecycle/disposition 规则）。
+      properties:
+        findingId:
+          type: string
+        findingType:
+          type: string
+          enum: [defect, dimension_out_of_tolerance, nonconformance, material_mismatch, process_deviation]
+        severity:
+          type: string
+          description: canonical ladder（critical/high/medium/low）；legacy L1-L3 服务端归一化
+        links:
+          type: array
+          items:
+            type: string
+            description: 关联规范身份（订单/工单/批次等 kind:value）
+        evidenceId:
+          type: [string, 'null']
+      required:
+        - findingId
+        - findingType
+        - severity
+    QualityFinding:
+      type: object
+      properties:
+        id:
+          type: string
+        orgId:
+          type: string
+        findingId:
+          type: string
+        findingType:
+          type: string
+        severity:
+          type: string
+        status:
+          type: string
+          enum: [open, under_review, dispositioned, closed]
+        disposition:
+          type: [string, 'null']
+          enum: [accept, rework, scrap, return, null]
+        links:
+          type: array
+          items:
+            type: string
+        detectedAt:
+          type: string
+          format: date-time
+        dispositionedAt:
+          type: [string, 'null']
+          format: date-time
+        evidenceId:
+          type: [string, 'null']
+      required:
+        - findingId
+        - findingType
+        - severity
+        - status
+    QualityFindingTransitionRequest:
+      type: object
+      properties:
+        to:
+          type: string
+          enum: [under_review, dispositioned, closed]
+        disposition:
+          type: [string, 'null']
+          enum: [accept, rework, scrap, return, null]
+          description: to=dispositioned 时必填
+      required:
+        - to
+    QualityFindingTransitionResult:
+      type: object
+      properties:
+        findingId:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+        disposition:
+          type: [string, 'null']
+      required:
+        - findingId
+        - from
+        - to
+    WorkOrderCreateRequest:
+      type: object
+      description: >
+        工单创建请求（ADR-012）。契约权威源：
+        contracts/workorder/work-order.schema.json（type/origin/lifecycle/completion/cancellation 规则）。
+        workOrderId 缺省由服务端按 origin 确定性推导（wo:sha256(originKind:originId)[:12]）。
+      properties:
+        workOrderId:
+          type: [string, 'null']
+        workOrderType:
+          type: string
+          enum: [maintenance, quality_rework, inspection]
+        origin:
+          type: object
+          properties:
+            kind:
+              type: string
+              enum: [maintenance_condition, quality_finding]
+            id:
+              type: string
+          required:
+            - kind
+            - id
+        subjectEntityId:
+          type: string
+          description: 执行落点规范身份 kind:value（ADR-006）
+        severity:
+          type: string
+          description: canonical ladder（critical/high/medium/low）；legacy L1-L3 服务端归一化
+        scheduledFor:
+          type: [string, 'null']
+          format: date-time
+        externalRef:
+          type: [string, 'null']
+          description: 第三方工单号（MES）alias——绝不充当内部 ID（ADR-006）
+        evidenceId:
+          type: [string, 'null']
+      required:
+        - workOrderType
+        - origin
+        - subjectEntityId
+        - severity
+    WorkOrder:
+      type: object
+      properties:
+        id:
+          type: string
+        orgId:
+          type: string
+        workOrderId:
+          type: string
+        workOrderType:
+          type: string
+        originKind:
+          type: string
+        originId:
+          type: string
+        subjectEntityId:
+          type: string
+        subjectKind:
+          type: string
+        severity:
+          type: string
+        status:
+          type: string
+          enum: [created, scheduled, in_progress, completed, closed, cancelled]
+        scheduledFor:
+          type: [string, 'null']
+          format: date-time
+        completedAt:
+          type: [string, 'null']
+          format: date-time
+        cancelledReason:
+          type: [string, 'null']
+        externalRef:
+          type: [string, 'null']
+        evidenceId:
+          type: [string, 'null']
+      required:
+        - workOrderId
+        - workOrderType
+        - originKind
+        - originId
+        - subjectEntityId
+        - severity
+        - status
+    WorkOrderCreateResult:
+      type: object
+      properties:
+        record:
+          $ref: '#/components/schemas/WorkOrder'
+        created:
+          type: boolean
+      required:
+        - record
+        - created
+    WorkOrderTransitionRequest:
+      type: object
+      properties:
+        to:
+          type: string
+          enum: [scheduled, in_progress, completed, closed, cancelled]
+        completedAt:
+          type: [string, 'null']
+          format: date-time
+        cancelledReason:
+          type: [string, 'null']
+          description: to=cancelled 时必填（契约 + DB CHECK 双强制）
+      required:
+        - to
+    WorkOrderTransitionResult:
+      type: object
+      properties:
+        workOrderId:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+      required:
+        - workOrderId
+        - from
+        - to
+    KnowledgeEntryRegisterRequest:
+      type: object
+      description: >
+        知识条目注册请求（ADR-018 Amendment 1 / NO-07b）。契约权威源：
+        contracts/knowledge/knowledge-entry.schema.json（6 kind / 5 层 scope /
+        provenance 规则 / 证据链非空 / auditTrail）。共享层（global/industry）
+        必须 provenance 声明且忽略 tenantId；租户层（customer/factory/
+        private_operational）tenantId 必须与调用租户一致。
+      properties:
+        knowledgeId:
+          type: [string, 'null']
+          description: knowledge:value 规范身份；缺省由服务端确定性生成
+        kind:
+          type: string
+          enum: [incident, resolution, failure_pattern, process_knowledge, decision_history, evidence]
+        scope:
+          type: string
+          enum: [global, industry, customer, factory, private_operational]
+        title:
+          type: string
+        summary:
+          type: [string, 'null']
+        body:
+          type: string
+        sourceEvidenceIds:
+          type: array
+          items:
+            type: string
+        relatedEntityIds:
+          type: array
+          items:
+            type: string
+        tags:
+          type: array
+          items:
+            type: string
+        version:
+          type: integer
+        verifiedBy:
+          type: [string, 'null']
+        tenantId:
+          type: [string, 'null']
+        validFrom:
+          type: [string, 'null']
+          format: date-time
+        validTo:
+          type: [string, 'null']
+          format: date-time
+        provenance:
+          type: [object, 'null']
+      required:
+        - kind
+        - scope
+        - title
+        - body
+        - sourceEvidenceIds
+    KnowledgeEntry:
+      type: object
+      description: 知识条目（五层 scope 阶梯；tenantId 仅租户层条目返回）
+      properties:
+        knowledgeId:
+          type: string
+        kind:
+          type: string
+          enum: [incident, resolution, failure_pattern, process_knowledge, decision_history, evidence]
+        scope:
+          type: string
+          enum: [global, industry, customer, factory, private_operational]
+        title:
+          type: string
+        summary:
+          type: string
+        body:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        version:
+          type: integer
+        status:
+          type: string
+          enum: [draft, verified, superseded]
+        sourceEvidenceIds:
+          type: array
+          items:
+            type: string
+        relatedEntityIds:
+          type: array
+          items:
+            type: string
+        provenance:
+          type: [object, 'null']
+        verifiedBy:
+          type: [string, 'null']
+        timeSemantics:
+          type: object
+        auditTrail:
+          type: boolean
+        tenantId:
+          type: string
+      required:
+        - knowledgeId
+        - kind
+        - scope
+        - title
+        - summary
+        - body
+        - version
+        - status
+        - sourceEvidenceIds
+        - auditTrail
+    KnowledgeEntryRegisterResult:
+      type: object
+      properties:
+        record:
+          $ref: '#/components/schemas/KnowledgeEntry'
+        created:
+          type: boolean
+      required:
+        - record
+        - created
+    KnowledgeEntryTransitionRequest:
+      type: object
+      properties:
+        to:
+          type: string
+          enum: [verified, superseded]
+        verifiedBy:
+          type: [string, 'null']
+          description: to=verified 时必填（规范身份，人工可审计）
+      required:
+        - to
+    KnowledgeEntryTransitionResult:
+      type: object
+      properties:
+        entryId:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+      required:
+        - entryId
+        - from
+        - to
+    InferenceResultRecordRequest:
+      type: object
+      description: >
+        推理结果记录请求（ADR-019 / NO-08a）。契约权威源：
+        contracts/intelligence/inference-result.schema.json（level 七级注册表 /
+        confidence∈[0,1] / OOD 一致性 / dataQuality 三态 / evidence 三要素）。
+        inferenceId 缺省由服务端 EWOH 内部生成。
+      properties:
+        inferenceId:
+          type: [string, 'null']
+        subjectId:
+          type: string
+          description: 规范身份 kind:value（ADR-006）
+        level:
+          type: string
+          enum: [L1_deterministic_rules, L2_statistical_ml, L3_optimization, L4_industrial_reasoning, L5_agentic_workflow, L6_simulation_digital_twin, L7_learning_loop]
+        modelId:
+          type: string
+        modelVersion:
+          type: string
+        inputVersion:
+          type: string
+        label:
+          type: string
+        confidence:
+          type: number
+        oodIndicator:
+          type: object
+          properties:
+            flag:
+              type: boolean
+            reasons:
+              type: array
+              items:
+                type: string
+          required:
+            - flag
+            - reasons
+        dataQuality:
+          type: string
+          enum: [good, degraded, invalid]
+        evidence:
+          type: object
+          properties:
+            tsStart:
+              type: string
+              format: date-time
+            tsEnd:
+              type: string
+              format: date-time
+            isRule:
+              type: boolean
+          required:
+            - tsStart
+            - tsEnd
+            - isRule
+      required:
+        - subjectId
+        - level
+        - modelId
+        - modelVersion
+        - inputVersion
+        - label
+        - confidence
+        - oodIndicator
+        - dataQuality
+        - evidence
+    InferenceResult:
+      type: object
+      description: 规范推理结果（ADR-013；tenant 作用域台账视图）
+      properties:
+        inferenceId:
+          type: string
+        subjectId:
+          type: string
+        level:
+          type: string
+          enum: [L1_deterministic_rules, L2_statistical_ml, L3_optimization, L4_industrial_reasoning, L5_agentic_workflow, L6_simulation_digital_twin, L7_learning_loop]
+        modelId:
+          type: string
+        modelVersion:
+          type: string
+        inputVersion:
+          type: string
+        label:
+          type: string
+        confidence:
+          type: number
+        oodIndicator:
+          type: object
+          properties:
+            flag:
+              type: boolean
+            reasons:
+              type: array
+              items:
+                type: string
+        dataQuality:
+          type: string
+          enum: [good, degraded, invalid]
+        evidence:
+          type: object
+          properties:
+            tsStart:
+              type: string
+              format: date-time
+            tsEnd:
+              type: string
+              format: date-time
+            isRule:
+              type: boolean
+      required:
+        - inferenceId
+        - subjectId
+        - level
+        - modelId
+        - modelVersion
+        - inputVersion
+        - label
+        - confidence
+        - oodIndicator
+        - dataQuality
+        - evidence
+    InferenceResultRecordResponse:
+      type: object
+      properties:
+        record:
+          $ref: '#/components/schemas/InferenceResult'
+        created:
+          type: boolean
+      required:
+        - record
+        - created
+    ReasoningEvaluateRequest:
+      type: object
+      description: >
+        工业推理评估请求（ADR-020 / NO-08b）。契约权威源：
+        contracts/reasoning/reasoning-trace.schema.json（六规则封闭注册表 /
+        canonical severity 阶梯 / 确定性置信度 / 前提与证据链）。
+      properties:
+        traceId:
+          type: [string, 'null']
+          description: 缺省由服务端生成
+        snapshotVersion:
+          type: integer
+        facts:
+          type: array
+          items:
+            type: object
+            properties:
+              subjectId:
+                type: string
+                description: 规范身份 kind:value（ADR-006）
+              kind:
+                type: string
+                enum: [person, exo, machine, material, station, alert]
+              values:
+                type: object
+              evidenceIds:
+                type: array
+                items:
+                  type: string
+            required:
+              - subjectId
+              - kind
+              - values
+              - evidenceIds
+        eventIds:
+          type: array
+          items:
+            type: string
+        window:
+          type: [object, 'null']
+          properties:
+            from:
+              type: string
+              format: date-time
+            to:
+              type: string
+              format: date-time
+      required:
+        - snapshotVersion
+        - facts
+    ReasoningConclusion:
+      type: object
+      properties:
+        conclusionId:
+          type: string
+        ruleId:
+          type: string
+          enum: [rule:worker-overload, rule:exo-low-battery, rule:machine-vibration-risk, rule:material-shortage, rule:station-quality-blocked, rule:andon-escalation]
+        subjectId:
+          type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+        confidence:
+          type: number
+        confidenceBasis:
+          type: string
+          enum: [deterministic, statistical]
+        premises:
+          type: array
+          items:
+            type: string
+        evidenceIds:
+          type: array
+          items:
+            type: string
+        explanation:
+          type: string
+      required:
+        - conclusionId
+        - ruleId
+        - subjectId
+        - severity
+        - confidence
+        - confidenceBasis
+        - premises
+        - evidenceIds
+        - explanation
+    ReasoningTrace:
+      type: object
+      properties:
+        traceId:
+          type: string
+        engineVersion:
+          type: string
+        factsRef:
+          type: object
+        conclusions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReasoningConclusion'
+        auditTrail:
+          type: boolean
+      required:
+        - traceId
+        - engineVersion
+        - factsRef
+        - conclusions
+        - auditTrail
+    ReasoningEvaluateResponse:
+      type: object
+      properties:
+        trace:
+          $ref: '#/components/schemas/ReasoningTrace'
+        inferenceIds:
+          type: array
+          items:
+            type: object
+            properties:
+              conclusionId:
+                type: string
+              inferenceId:
+                type: string
+      required:
+        - trace
+        - inferenceIds
+    ReasoningRule:
+      type: object
+      properties:
+        ruleId:
+          type: string
+          enum: [rule:worker-overload, rule:exo-low-battery, rule:machine-vibration-risk, rule:material-shortage, rule:station-quality-blocked, rule:andon-escalation]
+        name:
+          type: string
+        factKind:
+          type: string
+          enum: [person, exo, machine, material, station, alert]
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+        trigger:
+          type: string
+      required:
+        - ruleId
+        - name
+        - factKind
+        - severity
+        - trigger
+    LearningEvaluateRequest:
+      type: object
+      description: >
+        学习评估请求（ADR-021 / NO-09a）。契约权威源：
+        contracts/learning/learning-evaluation.schema.json（七项指标注册表 /
+        null 语义 / period 契约 / basis 非空）。
+      properties:
+        evaluationType:
+          type: string
+          enum: [periodic, on_demand]
+        periodStartMs:
+          type: integer
+          format: int64
+        periodEndMs:
+          type: integer
+          format: int64
+    LearningEvaluation:
+      type: object
+      description: 七项学习指标快照（modelAccuracy v1 恒 null=显式 unknown，§10）
+      properties:
+        evalId:
+          type: string
+        orgId:
+          type: string
+        evaluationType:
+          type: string
+          enum: [periodic, on_demand]
+        periodStart:
+          type: string
+          format: date-time
+        periodEnd:
+          type: string
+          format: date-time
+        engineVersion:
+          type: string
+        metrics:
+          type: object
+          properties:
+            recommendationAcceptanceRate:
+              type: [number, 'null']
+            planSuccessRate:
+              type: [number, 'null']
+            taskDelayP95Ms:
+              type: [number, 'null']
+            riskOutcomeRate:
+              type: [number, 'null']
+            humanOverrideRate:
+              type: [number, 'null']
+            modelAccuracy:
+              type: [number, 'null']
+            schedulerQualityRate:
+              type: [number, 'null']
+        basis:
+          type: array
+          items:
+            type: string
+        auditTrail:
+          type: boolean
+      required:
+        - evalId
+        - orgId
+        - evaluationType
+        - periodStart
+        - periodEnd
+        - engineVersion
+        - metrics
+        - basis
+        - auditTrail
+    LearningProposalRequest:
+      type: object
+      description: >
+        学习提案请求（ADR-026 / NO-12b）。契约权威源：
+        contracts/learning/learning-proposal.schema.json（kind 封闭注册表 +
+        影子评估前置 + 人审激活阶梯）。
+      properties:
+        proposalId:
+          type: string
+          description: 可选幂等键；缺省由服务端生成
+        kind:
+          type: string
+          enum: [rule_threshold]
+        change:
+          type: object
+          properties:
+            ruleId:
+              type: string
+              enum: [rule:worker-overload]
+            parameter:
+              type: string
+              enum: [workloadThreshold]
+            baselineValue:
+              type: number
+            candidateValue:
+              type: number
+          required:
+            - ruleId
+            - parameter
+            - baselineValue
+            - candidateValue
+        facts:
+          type: array
+          description: 历史事实窗口（可选；提供即确定性影子评估落 shadow_evaluated）
+          items:
+            type: object
+        evaluationRef:
+          type: object
+          properties:
+            evalId: { type: string }
+      required:
+        - kind
+        - change
+    LearningProposal:
+      type: object
+      properties:
+        proposalId:
+          type: string
+        kind:
+          type: string
+          enum: [rule_threshold]
+        status:
+          type: string
+          enum: [proposed, shadow_evaluated, approved, rolled_back, rejected]
+        change:
+          type: object
+        shadowEval:
+          type: object
+        approvedBy:
+          type: string
+        approvedAt:
+          type: string
+          format: date-time
+        rejectedBy:
+          type: string
+        rejectedReason:
+          type: string
+        rolledBackBy:
+          type: string
+        rolledBackReason:
+          type: string
+        evaluationRef:
+          type: object
+        auditTrail:
+          type: boolean
+      required:
+        - proposalId
+        - kind
+        - status
+        - change
+        - auditTrail
+    LearningProposalResponse:
+      type: object
+      properties:
+        proposal:
+          $ref: '#/components/schemas/LearningProposal'
+        created:
+          type: boolean
+      required:
+        - proposal
+        - created
+    LearningEvaluateResponse:
+      type: object
+      properties:
+        record:
+          $ref: '#/components/schemas/LearningEvaluation'
+        created:
+          type: boolean
+      required:
+        - record
+        - created
+    TraceStitch:
+      type: object
+      description: >
+        全链路 trace 三面缝合（ADR-022 / NO-10a，§19）：spans（ewoh_trace_span）+
+        events（evidence_json.envelope.correlationId = traceId）+ audit
+        （ewoh_audit_log.request_id = traceId）。
+      properties:
+        traceId:
+          type: string
+        spans:
+          type: array
+          items:
+            type: object
+        events:
+          type: array
+          items:
+            type: object
+        audit:
+          type: array
+          items:
+            type: object
+      required:
+        - traceId
+        - spans
+        - events
+        - audit
+    EdgeMetricsBatchRequest:
+      type: object
+      description: >
+        Edge→Cloud 指标上行批次（ADR-028 / NO-12d）：边缘 Prometheus 事实源
+        的 ewoh_* 规范家族样本（metricName 必须命中 metrics-registry 注册表，
+        未注册 = violation 显式，绝不静默并入）。
+      properties:
+        metrics:
+          type: array
+          items:
+            type: object
+            properties:
+              metricName: { type: string }
+              metricType: { type: string, enum: [counter, gauge, histogram] }
+              value: { type: number }
+              labels:
+                type: object
+                additionalProperties: { type: string }
+            required:
+              - metricName
+              - metricType
+              - value
+              - labels
+      required:
+        - metrics
+    EdgeMetricsIngestResult:
+      type: object
+      properties:
+        accepted: { type: integer }
+        rejected: { type: integer }
+        totalReceived: { type: integer }
+        violations:
+          type: array
+          items: { type: string }
+      required:
+        - accepted
+        - rejected
+        - totalReceived
+        - violations
+    MetricsExport:
+      type: object
+      description: >
+        统一指标导出（ADR-023 / NO-10b）：registry-validated 样本 +
+        registryViolations 显式列表（未注册名/类型失配/未知标签——§33
+        unknown 不当 normal，绝不静默丢弃）。
+      properties:
+        metrics:
+          type: array
+          items:
+            type: object
+            properties:
+              metricName:
+                type: string
+              metricType:
+                type: string
+                enum: [counter, gauge, histogram]
+              value:
+                type: number
+              labels:
+                type: object
+        registryViolations:
+          type: array
+          items:
+            type: string
+      required:
+        - metrics
+        - registryViolations
+    DeadLetterRecordRequest:
+      type: object
+      description: >
+        死信落账请求（ADR-024 / NO-11a）。契约权威源：
+        contracts/reliability/dead-letter.schema.json（5 reason / 3 status
+        封闭注册表 + envelope 快照必填 + 人审重放 + discard 理由强制）。
+      properties:
+        sourceId:
+          type: string
+          description: 失败源（管道归属），如 cloud:ingest
+        reason:
+          type: string
+          enum: [contract_violation, unknown_event_type, permanent_failure, ttl_expired, max_attempts_exceeded]
+        envelope:
+          type: object
+          description: 失败消息信封快照（§3 失败证据可审计）
+        correlationId:
+          type: [string, 'null']
+      required:
+        - sourceId
+        - reason
+        - envelope
+    DeadLetter:
+      type: object
+      properties:
+        letterId:
+          type: string
+        sourceId:
+          type: string
+        reason:
+          type: string
+          enum: [contract_violation, unknown_event_type, permanent_failure, ttl_expired, max_attempts_exceeded]
+        attempts:
+          type: integer
+        status:
+          type: string
+          enum: [pending, requeued, discarded]
+        envelope:
+          type: object
+        correlationId:
+          type: [string, 'null']
+        discardedReason:
+          type: [string, 'null']
+        auditTrail:
+          type: boolean
+      required:
+        - letterId
+        - sourceId
+        - reason
+        - attempts
+        - status
+        - envelope
+        - auditTrail
+    DeadLetterRecordResponse:
+      type: object
+      properties:
+        record:
+          $ref: '#/components/schemas/DeadLetter'
+        created:
+          type: boolean
+      required:
+        - record
+        - created
+    DeadLetterTransitionResult:
+      type: object
+      properties:
+        letterId:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+        attempts:
+          type: integer
+      required:
+        - letterId
+        - from
+        - to
+    SimulationRunRequest:
+      type: object
+      description: >
+        仿真运行请求（ADR-025 / NO-12a）。契约权威源：
+        contracts/simulation/simulation-run.schema.json（4 kind / 4 status
+        封闭注册表 + isSimulation=true 隔离强制 + baseRef 可追溯 +
+        completed/failed 终态契约）。
+      properties:
+        runId:
+          type: string
+          description: 可选幂等键；缺省由服务端确定性生成
+        kind:
+          type: string
+          enum: [what_if, capacity, layout, material_flow]
+        baseRef:
+          type: object
+          description: 基准世界快照引用（snapshotVersion ≥ 0 + 可选 scenarioId）
+          properties:
+            snapshotVersion:
+              type: integer
+              minimum: 0
+            scenarioId:
+              type: string
+          required:
+            - snapshotVersion
+        parameters:
+          type: object
+          description: 评估器输入（kind 决定形状，fail-closed）
+        engineVersion:
+          type: string
+      required:
+        - kind
+        - baseRef
+        - parameters
+    SimulationRun:
+      type: object
+      properties:
+        runId:
+          type: string
+        kind:
+          type: string
+          enum: [what_if, capacity, layout, material_flow]
+        status:
+          type: string
+          enum: [created, running, completed, failed]
+        isSimulation:
+          type: boolean
+        baseRef:
+          type: object
+        parameters:
+          type: object
+        results:
+          type: object
+        failureReason:
+          type: string
+        engineVersion:
+          type: string
+        auditTrail:
+          type: boolean
+      required:
+        - runId
+        - kind
+        - status
+        - isSimulation
+        - baseRef
+        - parameters
+        - engineVersion
+        - auditTrail
+    SimulationRunResponse:
+      type: object
+      properties:
+        run:
+          $ref: '#/components/schemas/SimulationRun'
+        created:
+          type: boolean
+      required:
+        - run
+        - created
     WorkflowStepDefinition:
       type: object
       properties:
@@ -11881,6 +15311,10 @@ components:
           type: string
         error:
           type: string
+        is_late:
+          type: boolean
+        clock_drift:
+          type: boolean
       required:
         - accepted
         - skipped
@@ -11896,6 +15330,10 @@ components:
           type: integer
         skipped:
           type: integer
+        late_count:
+          type: integer
+        clock_drift_count:
+          type: integer
         results:
           type: array
           items:
@@ -11904,7 +15342,141 @@ components:
         - total
         - accepted
         - skipped
+        - late_count
+        - clock_drift_count
         - results
+      additionalProperties: false
+    EnvelopeEventDto:
+      type: object
+      properties:
+        eventId: { type: string }
+        eventType: { type: string }
+        schemaVersion: { type: string }
+        occurredAt: { type: string }
+        observedAt: { type: string }
+        receivedAt: { type: string }
+        source: { type: string }
+        subject: { type: string }
+        causationId: { type: string }
+        correlationId: { type: string }
+        confidence: { type: number }
+        payload: { type: object }
+        evidence: { type: object }
+      required:
+        - eventId
+        - eventType
+        - schemaVersion
+        - occurredAt
+        - source
+      additionalProperties: false
+    IngestEventResult:
+      type: object
+      properties:
+        eventId: { type: string }
+        source: { type: string }
+        accepted: { type: boolean }
+        duplicate: { type: boolean }
+        is_late: { type: boolean }
+        clock_drift: { type: boolean }
+        error: { type: string }
+      required:
+        - eventId
+        - source
+        - accepted
+        - duplicate
+        - is_late
+        - clock_drift
+      additionalProperties: false
+    IngestEventBatchResponse:
+      type: object
+      properties:
+        total: { type: integer }
+        accepted: { type: integer }
+        duplicates: { type: integer }
+        rejected: { type: integer }
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/IngestEventResult'
+      required:
+        - total
+        - accepted
+        - duplicates
+        - rejected
+        - results
+      additionalProperties: false
+    AgentManifestInput:
+      type: object
+      properties:
+        agentId: { type: string }
+        name: { type: string }
+        version: { type: integer }
+        role: { type: string }
+        purpose: { type: string }
+        allowedTools: { type: array, items: { type: string } }
+        readScope: { type: array, items: { type: string } }
+        writeScope: { type: object }
+        approvalRequirement: { type: object }
+        riskLevel: { type: string }
+        inputContract: { type: object }
+        outputContract: { type: object }
+        auditTrail: { type: boolean }
+        budget: { type: object }
+        timeoutSec: { type: integer }
+        fallback: { type: object }
+      required:
+        - agentId
+        - name
+        - version
+        - role
+        - purpose
+        - allowedTools
+        - readScope
+        - writeScope
+        - approvalRequirement
+        - riskLevel
+        - inputContract
+        - outputContract
+        - auditTrail
+        - budget
+        - timeoutSec
+        - fallback
+      additionalProperties: false
+    AgentManifestView:
+      type: object
+      properties:
+        agentId: { type: string }
+        name: { type: string }
+        version: { type: integer }
+        role: { type: string }
+        status: { type: string }
+        autonomousLevel: { type: string }
+        riskLevel: { type: string }
+        manifest: { type: object }
+      required:
+        - agentId
+        - name
+        - version
+        - role
+        - status
+        - autonomousLevel
+        - riskLevel
+        - manifest
+      additionalProperties: false
+    ExecuteAgentCommandResult:
+      type: object
+      properties:
+        executed: { type: boolean }
+        needsApproval: { type: boolean }
+        outcome: { type: string, enum: [proposed, executed, rejected, failed, delegated] }
+        delegated: { type: boolean }
+        safeIdle: { type: boolean }
+        approvalId: { type: string }
+        detail: { type: string }
+      required:
+        - executed
+        - needsApproval
+        - outcome
       additionalProperties: false
     PlayerRoleInfo:
       type: object

@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Put, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body, Req } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { ArkService } from './ark.service';
 import { Roles } from '../shared/roles.decorator';
+import type { OrgContext } from '../shared/org-context.interceptor';
 
 const EDGE_PLATFORM_URL = (process.env.EDGE_PLATFORM_URL || 'http://127.0.0.1:8765').replace(/\/+$/, '');
 
@@ -38,17 +39,22 @@ export class AiController {
 
   /** POST /api/ai/chat — 自然语言问答（采集系统实时上下文调用 Ark）。 */
   @Post('chat')
-  chat(@Body() body: { question?: string }) {
+  chat(
+    @Body() body: { question?: string },
+    @Req() request?: { userContext?: OrgContext },
+  ) {
     const question = (body.question ?? '').trim();
     if (!question) {
       return { ok: false, answer: '', model: '', error: 'question 不能为空。' };
     }
-    return this.aiService.chatWithContext(question);
+    // ADR-078：AI 上下文按本租户采集（跨租户混读关闭）。
+    return this.aiService.chatWithContext(question, request?.userContext?.primaryOrgId ?? null);
   }
 
   @Get('snapshot-version')
-  snapshotVersion() {
-    return { version: this.aiService.getSnapshotVersion() };
+  snapshotVersion(@Req() request?: { userContext?: OrgContext }) {
+    // ADR-078：版本号按本租户聚合（跨租户混读关闭）。
+    return { version: this.aiService.getSnapshotVersion(request?.userContext?.primaryOrgId ?? null) };
   }
 
   @Post('suggestions')
@@ -59,8 +65,13 @@ export class AiController {
       problem: string;
       snapshot: { version: number; from: string; to: string; records: number };
     },
+    @Req() request: { userContext?: OrgContext },
   ) {
-    return this.aiService.createSuggestion(body);
+    // NO-08a（ADR-019）：推理结果台账的租户上下文（请求级 GUC 注入）。
+    return this.aiService.createSuggestion({
+      ...body,
+      orgId: request.userContext?.primaryOrgId?.trim() || '',
+    });
   }
 
   @Post('plans')

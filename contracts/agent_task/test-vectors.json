@@ -1,0 +1,215 @@
+{
+  "schemaVersion": "1.0.0",
+  "records": [
+    {
+      "name": "valid-analysis-task",
+      "record": {
+        "taskId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "name": "工厂态势分析",
+        "version": 1,
+        "kind": "analysis",
+        "assignedRole": "FactorySupervisor",
+        "dependencies": [],
+        "inputContract": { "schemaRef": "catalog://agent-task/inputs/snapshot" },
+        "outputContract": { "schemaRef": "catalog://agent-task/outputs/analysis" },
+        "priority": "medium",
+        "createdAt": "2026-08-16T08:00:00Z",
+        "budget": { "maxSteps": 5, "maxTokens": 10000, "maxDurationSec": 300 },
+        "status": "created",
+        "auditTrail": true
+      }
+    },
+    {
+      "name": "valid-execution-with-dependencies",
+      "record": {
+        "taskId": "task:5c1b2a3d-1111-4222-8333-9a8b7c6d5e4f",
+        "name": "依赖执行任务",
+        "version": 1,
+        "kind": "execution",
+        "assignedRole": "Logistics",
+        "assigneeAgentId": "agent:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "dependencies": ["task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+        "inputContract": { "schemaRef": "catalog://agent-task/inputs/logistics" },
+        "outputContract": { "schemaRef": "catalog://agent-task/outputs/logistics" },
+        "priority": "high",
+        "dueTime": "2026-08-16T18:00:00Z",
+        "createdAt": "2026-08-16T08:00:00Z",
+        "budget": { "maxSteps": 10, "maxTokens": 20000, "maxDurationSec": 600 },
+        "status": "created",
+        "correlationId": "corr-1",
+        "auditTrail": true
+      }
+    },
+    {
+      "name": "self-dependency-rejected",
+      "record": {
+        "taskId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "name": "自引用任务",
+        "version": 1,
+        "kind": "analysis",
+        "assignedRole": "FactorySupervisor",
+        "dependencies": ["task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+        "inputContract": { "schemaRef": "catalog://x" },
+        "outputContract": { "schemaRef": "catalog://y" },
+        "priority": "low",
+        "createdAt": "2026-08-16T08:00:00Z",
+        "budget": { "maxSteps": 1, "maxTokens": 1, "maxDurationSec": 1 },
+        "status": "created",
+        "auditTrail": true
+      },
+      "expectError": "self_dependency"
+    },
+    {
+      "name": "bad-task-id-rejected",
+      "record": {
+        "taskId": "not-canonical",
+        "name": "无身份任务",
+        "version": 1,
+        "kind": "analysis",
+        "assignedRole": "FactorySupervisor",
+        "dependencies": [],
+        "inputContract": { "schemaRef": "catalog://x" },
+        "outputContract": { "schemaRef": "catalog://y" },
+        "priority": "low",
+        "createdAt": "2026-08-16T08:00:00Z",
+        "budget": { "maxSteps": 1, "maxTokens": 1, "maxDurationSec": 1 },
+        "status": "created",
+        "auditTrail": true
+      },
+      "expectError": "bad_task_id"
+    },
+    {
+      "name": "unknown-role-rejected",
+      "record": {
+        "taskId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "name": "神秘角色任务",
+        "version": 1,
+        "kind": "analysis",
+        "assignedRole": "Wizard",
+        "dependencies": [],
+        "inputContract": { "schemaRef": "catalog://x" },
+        "outputContract": { "schemaRef": "catalog://y" },
+        "priority": "low",
+        "createdAt": "2026-08-16T08:00:00Z",
+        "budget": { "maxSteps": 1, "maxTokens": 1, "maxDurationSec": 1 },
+        "status": "created",
+        "auditTrail": true
+      },
+      "expectError": "unknown_role"
+    },
+    {
+      "name": "unknown-kind-rejected",
+      "record": {
+        "taskId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "name": "未知类型任务",
+        "version": 1,
+        "kind": "gizmo",
+        "assignedRole": "FactorySupervisor",
+        "dependencies": [],
+        "inputContract": { "schemaRef": "catalog://x" },
+        "outputContract": { "schemaRef": "catalog://y" },
+        "priority": "low",
+        "createdAt": "2026-08-16T08:00:00Z",
+        "budget": { "maxSteps": 1, "maxTokens": 1, "maxDurationSec": 1 },
+        "status": "created",
+        "auditTrail": true
+      },
+      "expectError": "unknown_kind"
+    },
+    {
+      "name": "bad-priority-rejected",
+      "record": {
+        "taskId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "name": "坏优先级任务",
+        "version": 1,
+        "kind": "analysis",
+        "assignedRole": "FactorySupervisor",
+        "dependencies": [],
+        "inputContract": { "schemaRef": "catalog://x" },
+        "outputContract": { "schemaRef": "catalog://y" },
+        "priority": "urgent-now",
+        "createdAt": "2026-08-16T08:00:00Z",
+        "budget": { "maxSteps": 1, "maxTokens": 1, "maxDurationSec": 1 },
+        "status": "created",
+        "auditTrail": true
+      },
+      "expectError": "bad_priority"
+    },
+    {
+      "name": "bad-status-rejected",
+      "record": {
+        "taskId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "name": "坏状态任务",
+        "version": 1,
+        "kind": "analysis",
+        "assignedRole": "FactorySupervisor",
+        "dependencies": [],
+        "inputContract": { "schemaRef": "catalog://x" },
+        "outputContract": { "schemaRef": "catalog://y" },
+        "priority": "low",
+        "createdAt": "2026-08-16T08:00:00Z",
+        "budget": { "maxSteps": 1, "maxTokens": 1, "maxDurationSec": 1 },
+        "status": "teleported",
+        "auditTrail": true
+      },
+      "expectError": "bad_status"
+    },
+    {
+      "name": "audit-trail-false-rejected",
+      "record": {
+        "taskId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "name": "无审计任务",
+        "version": 1,
+        "kind": "analysis",
+        "assignedRole": "FactorySupervisor",
+        "dependencies": [],
+        "inputContract": { "schemaRef": "catalog://x" },
+        "outputContract": { "schemaRef": "catalog://y" },
+        "priority": "low",
+        "createdAt": "2026-08-16T08:00:00Z",
+        "budget": { "maxSteps": 1, "maxTokens": 1, "maxDurationSec": 1 },
+        "status": "created",
+        "auditTrail": false
+      },
+      "expectError": "audit_required"
+    },
+    {
+      "name": "bad-budget-rejected",
+      "record": {
+        "taskId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "name": "超预算任务",
+        "version": 1,
+        "kind": "analysis",
+        "assignedRole": "FactorySupervisor",
+        "dependencies": [],
+        "inputContract": { "schemaRef": "catalog://x" },
+        "outputContract": { "schemaRef": "catalog://y" },
+        "priority": "low",
+        "createdAt": "2026-08-16T08:00:00Z",
+        "budget": { "maxSteps": 0, "maxTokens": 1, "maxDurationSec": 1 },
+        "status": "created",
+        "auditTrail": true
+      },
+      "expectError": "bad_budget"
+    },
+    {
+      "name": "bad-dependency-rejected",
+      "record": {
+        "taskId": "task:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "name": "坏依赖任务",
+        "version": 1,
+        "kind": "analysis",
+        "assignedRole": "FactorySupervisor",
+        "dependencies": ["not-canonical"],
+        "inputContract": { "schemaRef": "catalog://x" },
+        "outputContract": { "schemaRef": "catalog://y" },
+        "priority": "low",
+        "createdAt": "2026-08-16T08:00:00Z",
+        "budget": { "maxSteps": 1, "maxTokens": 1, "maxDurationSec": 1 },
+        "status": "created",
+        "auditTrail": true
+      },
+      "expectError": "bad_dependency"
+    }
+  ]
+}

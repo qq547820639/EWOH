@@ -23,7 +23,7 @@ import {
   ewohScheduleAudit,
   ewohSchedulingRun,
 } from '@server/database/schema';
-import { eq, desc, and, sql, gte, lte, inArray, type SQL } from 'drizzle-orm';
+import { eq, desc, and, sql, gte, lte, inArray, or, isNull, type SQL } from 'drizzle-orm';
 import type {
   SchedulePlan,
   ScheduleAudit,
@@ -49,6 +49,7 @@ import type {
   ExecutionListResponse,
 } from '@shared/api.interface';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { assertTenantVisible } from './plan-tenant-guard';
 import { WorldStateSnapshotService } from './world-state.service';
 import { PlanService } from './plan.service';
 import { RoutingService } from './routing.service';
@@ -102,9 +103,15 @@ export class SchedulerQueryService {
     private readonly outboxService?: OutboxService,
   ) {}
 
-  async getPlans(status?: string): Promise<SchedulePlan[]> {
+  async getPlans(status?: string, actor?: OrgContext): Promise<SchedulePlan[]> {
     try {
       const conditions = status ? [eq(ewohSchedulePlan.status, status)] : [];
+      // ADR-071：actor 提供时按 org 过滤（org 匹配或 NULL 存量行——与 RLS USING 等价）。
+      if (actor) {
+        conditions.push(
+          or(isNull(ewohSchedulePlan.orgId), eq(ewohSchedulePlan.orgId, actor.primaryOrgId)),
+        );
+      }
       const rows = await this.db
         .select()
         .from(ewohSchedulePlan)
@@ -118,9 +125,27 @@ export class SchedulerQueryService {
     }
   }
 
-  async getAudit(planId?: string): Promise<ScheduleAudit[]> {
+  async getAudit(planId?: string, actor?: OrgContext): Promise<ScheduleAudit[]> {
     try {
       const conditions = planId ? [eq(ewohScheduleAudit.planId, planId)] : [];
+      // ADR-072：audit 表无 org 列/RLS——归属经父方案事实推导过滤
+      // （planId ∈ 本租户可见方案：org 匹配或 NULL 存量），§3 单一事实源。
+      if (actor) {
+        conditions.push(
+          inArray(
+            ewohScheduleAudit.planId,
+            this.db
+              .select({ planId: ewohSchedulePlan.planId })
+              .from(ewohSchedulePlan)
+              .where(
+                or(
+                  isNull(ewohSchedulePlan.orgId),
+                  eq(ewohSchedulePlan.orgId, actor.primaryOrgId),
+                ),
+              ),
+          ),
+        );
+      }
       const rows = await this.db
         .select()
         .from(ewohScheduleAudit)
@@ -134,13 +159,15 @@ export class SchedulerQueryService {
     }
   }
 
-  async getRun(runId: string): Promise<SchedulingRun | null> {
+  async getRun(runId: string, actor?: OrgContext): Promise<SchedulingRun | null> {
     const [row] = await this.db
       .select()
       .from(ewohSchedulingRun)
       .where(eq(ewohSchedulingRun.runId, runId))
       .limit(1);
     if (!row) return null;
+    // ADR-072：run 读面守卫（NULL 存量放行、跨租户 404；与 RLS 语义等价）。
+    assertTenantVisible(row.orgId, actor, `Run ${runId}`);
     return this.mapRun(row);
   }
 
@@ -214,11 +241,20 @@ export class SchedulerQueryService {
    * 前端页面刷新 / SSE resync / 多终端必须从此处重新拉取权威方案，
    * SSE 仅作为增量更新机制，不作为唯一状态源。
    */
-  async getActivePlans(): Promise<SchedulingPlanV2[]> {
+  async getActivePlans(actor?: OrgContext): Promise<SchedulingPlanV2[]> {
+    const conditions: SQL[] = [
+      inArray(ewohSchedulePlan.status, SchedulerQueryService.ACTIVE_PLAN_STATUSES),
+    ];
+    // ADR-071：actor 提供时按 org 过滤（org 匹配或 NULL 存量行——与 RLS USING 等价）。
+    if (actor) {
+      conditions.push(
+        or(isNull(ewohSchedulePlan.orgId), eq(ewohSchedulePlan.orgId, actor.primaryOrgId)),
+      );
+    }
     const rows = await this.db
       .select()
       .from(ewohSchedulePlan)
-      .where(inArray(ewohSchedulePlan.status, SchedulerQueryService.ACTIVE_PLAN_STATUSES))
+      .where(and(...conditions))
       .orderBy(desc(ewohSchedulePlan.createdAt));
     // R-5 N+1 修复：批量加载（保留 per-plan 失败跳过语义——listPlansBatched 内部跳过损坏方案）。
     return this.planService.listPlansBatched(rows.map((p) => p.planId));
@@ -238,8 +274,8 @@ export class SchedulerQueryService {
     };
   }
 
-  async getPlanDetail(planId: string): Promise<SchedulingPlanV2> {
-    return this.planService.getPlan(planId);
+  async getPlanDetail(planId: string, actor?: OrgContext): Promise<SchedulingPlanV2> {
+    return this.planService.getPlan(planId, actor);
   }
 
   // ===== SchedulingPolicy versioning (Task 6: 命令图调度闭环) =====
@@ -254,8 +290,9 @@ export class SchedulerQueryService {
   }
 
   /** 列出全部策略版本（含 active 标志、操作人、创建时间）。 */
-  async listPolicyVersions(): Promise<SchedulingPolicyVersionSummary[]> {
-    return this.policyService.listVersions();
+  async listPolicyVersions(actor?: OrgContext): Promise<SchedulingPolicyVersionSummary[]> {
+    // ADR-073：policy versions 读面 org 条件（org 匹配或 NULL 存量）。
+    return this.policyService.listVersions(actor?.primaryOrgId ?? null);
   }
 
   /**
@@ -272,7 +309,8 @@ export class SchedulerQueryService {
     const [activeConfig, candidateConfig, feedbackKpis] = await Promise.all([
       this.policyService.getConfig(),
       this.policyService.getConfigByVersion(configVersion),
-      this.feedbackService.deriveKpis(),
+      // ADR-073：对比 KPI 按本租户反馈派生（跨租户聚合关闭）。
+      this.feedbackService.deriveKpis(ctx.primaryOrgId || null),
     ]);
     if (!candidateConfig) {
       throw new NotFoundException(
@@ -307,12 +345,12 @@ export class SchedulerQueryService {
   }
 
   /** P0-2：查询方案仍生效的持久化人工约束。 */
-  async listPlanConstraintsV2(planId: string) {
-    return this.planService.listPlanConstraints(planId);
+  async listPlanConstraintsV2(planId: string, actor?: OrgContext) {
+    return this.planService.listPlanConstraints(planId, actor);
   }
 
-  async getRoutes(): Promise<RouteGraph> {
-    return this.routingService.loadGraph();
+  async getRoutes(actor?: OrgContext): Promise<RouteGraph> {
+    return this.routingService.loadGraph(actor);
   }
 
   /**
@@ -625,9 +663,11 @@ export class SchedulerQueryService {
   /** 执行领域：查询。 */
   async executionList(
     query: { planId?: string; taskId?: string; status?: string; limit?: number; offset?: number },
+    actor?: OrgContext,
   ): Promise<ExecutionListResponse> {
     if (!this.executionService) throw new Error('executionService not injected');
-    return this.executionService.list(query);
+    // ADR-073：execution 读面 org 接线（org 匹配或 NULL 存量）。
+    return this.executionService.list({ ...query, orgId: actor?.primaryOrgId ?? null });
   }
 
   /** 从当前世界状态 / 预占 / 活跃方案推导全部真实冲突。 */

@@ -3,7 +3,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { eq, desc, sql } from 'drizzle-orm';
+import { eq, desc, sql, or, isNull } from 'drizzle-orm';
 import { ewohSchedulePlan, ewohSchedulingRun } from '@server/database/schema';
 import type {
   ReplanConfig,
@@ -26,6 +26,8 @@ import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { OutboxService } from './outbox.service';
 import { propagateImpact } from './impact-propagation';
 import { ReplanGuardStatusService } from '../health/replan-guard-status.service';
+import { projectReplanDecision } from './decision-projection';
+import { appendPlanDecisionRecords } from './decision-ledger';
 
 /** 影响分析结果：哪些任务需重排、哪些被冻结、原因说明。 */
 export interface ImpactAnalysis {
@@ -466,13 +468,15 @@ export class ReplanCoordinatorService {
     return lockedAssignments;
   }
 
-  /** 读取最近一次正式方案的目标总值（scoreBreakdownJson.total；jsonb，无则 null）。 */
-  private async loadLatestPlanObjective(): Promise<number | null> {
+  /** 读取本租户最近一次正式方案的目标总值（scoreBreakdownJson.total；jsonb，无则 null）。 */
+  private async loadLatestPlanObjective(ctx: OrgContext): Promise<number | null> {
     try {
-      // ewohSchedulePlan 无 orgId 列（schema 确认）：基线=全局最新方案（按 createdAt 降序）。
+      // ADR-071（NO-13v）：基线按 org 作用域（org 匹配或 NULL 存量行）——
+      // 此前全局 createdAt 倒序会把他租户方案目标值当成本租户基线（跨租户事实污染）。
       const [latestPlan] = await this.db
         .select()
         .from(ewohSchedulePlan)
+        .where(or(isNull(ewohSchedulePlan.orgId), eq(ewohSchedulePlan.orgId, ctx.primaryOrgId)))
         .orderBy(desc(ewohSchedulePlan.createdAt))
         .limit(1);
       const breakdown = (latestPlan?.scoreBreakdownJson ?? null) as { total?: number } | null;
@@ -499,6 +503,7 @@ export class ReplanCoordinatorService {
     snapshot: WorldStateSnapshot,
     triggerType: string,
     replan: ReplanConfig,
+    ctx: OrgContext,
   ): Promise<boolean> {
     // 1) critical 触发（安全/资源禁用类）不做目标门槛——必须重排。
     const criticalTrigger =
@@ -521,7 +526,7 @@ export class ReplanCoordinatorService {
       replan.minimumObjectiveImprovement ?? FALLBACK_REPLAN.minimumObjectiveImprovement!;
     if (minImprovement <= 0) return false;
     const candidateTotal = best.scoreBreakdown?.total;
-    const baselineTotal = await this.loadLatestPlanObjective();
+    const baselineTotal = await this.loadLatestPlanObjective(ctx);
     if (
       baselineTotal == null ||
       candidateTotal == null ||
@@ -648,6 +653,7 @@ export class ReplanCoordinatorService {
           snapshot,
           triggerType,
           replan,
+          ctx,
         ))
       ) {
         await this.requestDatabaseContext.runInTransaction(
@@ -677,6 +683,33 @@ export class ReplanCoordinatorService {
 
       for (const plan of plans) {
         await this.planService.persistPlan(plan, ctx);
+      }
+
+      // NO-13m / ADR-062：replan 决策追加进新方案决策台账（§12 Decision
+      // History；投影缺口/追加失败 log 显式绝不阻断重排主流程，§2/§33）。
+      try {
+        for (const plan of plans) {
+          const projected = projectReplanDecision({
+            planId: plan.planId,
+            runId: run.runId,
+            triggerType,
+            triggerEntityId: run.triggerEntityId ?? null,
+            affectedCount: impact.affectedTaskIds.length,
+            orgId: ctx.primaryOrgId ?? '',
+            now: new Date(),
+          });
+          if (projected.record) {
+            await appendPlanDecisionRecords(this.db, plan.planId, [projected.record]);
+          } else {
+            this.logger.warn(
+              `replan 决策投影缺口 ${plan.planId}（显式跳过，§33）：${projected.issues.join(',')}`,
+            );
+          }
+        }
+      } catch (err) {
+        this.logger.warn(
+          `replan 决策台账追加失败（不阻断重排主流程）：${err instanceof Error ? err.message : String(err)}`,
+        );
       }
 
       await this.requestDatabaseContext.runInTransaction(
@@ -822,6 +855,33 @@ export class ReplanCoordinatorService {
 
       for (const plan of plans) {
         await this.planService.persistPlan(plan, ctx);
+      }
+
+      // NO-13m / ADR-062：replan 决策追加进新方案决策台账（§12 Decision
+      // History；投影缺口/追加失败 log 显式绝不阻断重排主流程，§2/§33）。
+      try {
+        for (const plan of plans) {
+          const projected = projectReplanDecision({
+            planId: plan.planId,
+            runId: run.runId,
+            triggerType: 'RESERVATION_CONFLICT',
+            triggerEntityId: run.triggerEntityId ?? null,
+            affectedCount: impact.affectedTaskIds.length,
+            orgId: ctx.primaryOrgId ?? '',
+            now: new Date(),
+          });
+          if (projected.record) {
+            await appendPlanDecisionRecords(this.db, plan.planId, [projected.record]);
+          } else {
+            this.logger.warn(
+              `replan 决策投影缺口 ${plan.planId}（显式跳过，§33）：${projected.issues.join(',')}`,
+            );
+          }
+        }
+      } catch (err) {
+        this.logger.warn(
+          `replan 决策台账追加失败（不阻断重排主流程）：${err instanceof Error ? err.message : String(err)}`,
+        );
       }
 
       await this.requestDatabaseContext.runInTransaction(

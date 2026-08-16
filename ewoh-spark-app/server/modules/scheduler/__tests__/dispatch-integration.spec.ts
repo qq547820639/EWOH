@@ -1,5 +1,6 @@
 import { DispatchCoordinatorService } from '../dispatch-coordinator.service';
 import { PlanService } from '../plan.service';
+import { validateDecision } from '@shared/decision';
 import { RequestDatabaseContext } from '@server/database/request-database-context';
 import { WorldStateSnapshotService } from '../world-state.service';
 import { ResourceReservationService } from '../resource-reservation.service';
@@ -159,6 +160,35 @@ describe('智能调度执行闭环 - 集成链路', () => {
     const readBack = await planService.getPlan('PLAN-1');
     expect(readBack.status).toBe('dispatched');
     expect(readBack.assignments[0].status).toBe('dispatched');
+
+    // NO-13k / ADR-060：派工预占决策同事务追加进方案决策台账（kind #4）。
+    const planRow = state.plans.get('PLAN-1') as Record<string, unknown>;
+    const decisionRecords = Array.isArray(planRow?.decisionRecordsJson)
+      ? (planRow.decisionRecordsJson as Array<Record<string, unknown>>)
+      : [];
+    const reservationRecords = decisionRecords.filter(
+      (r) => r.kind === 'resource_reservation',
+    );
+    expect(reservationRecords.length).toBeGreaterThanOrEqual(1);
+    const first = reservationRecords[0];
+    expect(first.status).toBe('executed');
+    expect(first.decisionAuthority).toBe('rule_based');
+    expect(String(first.decisionId)).toContain(':reservation:');
+    expect(String(first.decisionId)).toContain('RSV-1');
+    expect(first.subject).toBe('resource:person:p1');
+    expect(validateDecision(first)).toEqual([]);
+    // NO-13l / ADR-061：派工决策同事务追加进方案决策台账（kind #5）。
+    const dispatchRecords = decisionRecords.filter((r) => r.kind === 'dispatch');
+    expect(dispatchRecords).toHaveLength(1);
+    expect(dispatchRecords[0].status).toBe('executed');
+    expect(dispatchRecords[0].decisionAuthority).toBe('policy');
+    expect(dispatchRecords[0].decisionId).toBe('decision:PLAN-1:dispatch');
+    expect(dispatchRecords[0].subject).toBe('plan:PLAN-1');
+    expect((dispatchRecords[0].selected as Record<string, unknown>).reason).toEqual(['dispatched:1']);
+    expect(validateDecision(dispatchRecords[0])).toEqual([]);
+    // getPlan 读回自动携带（决策历史单一事实源）。
+    expect(readBack.decisionRecords?.some((r) => r.kind === 'resource_reservation')).toBe(true);
+    expect(readBack.decisionRecords?.some((r) => r.kind === 'dispatch')).toBe(true);
   });
 
   it('审批时快照过期 → 抛 PLAN_STALE，方案状态不变', async () => {

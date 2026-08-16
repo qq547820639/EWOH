@@ -265,7 +265,7 @@ describe('Task 1: GET /api/scheduler/snapshot 当前权威世界状态', () => {
       worldVersion: 4321,
       entityVersions: { 'person:p1': 1 },
       reservations: [],
-      persons: [{ id: 'p1', name: '张三', status: 'available' }],
+      persons: [{ id: 'p1', name: '张三', status: 'AVAILABLE' }],
       tasks: [],
       devices: [],
       stations: [],

@@ -5,6 +5,7 @@ import {
   BadRequestException,
   NotFoundException,
   ConflictException,
+  Optional,
   forwardRef,
 } from '@nestjs/common';
 import {
@@ -16,6 +17,7 @@ import {
   ewohScheduleAudit,
   ewohSchedulingPlanAssignment,
   ewohSchedulingConstraint,
+  ewohSimulationRun,
 } from '@server/database/schema';
 import { eq, asc, and, inArray, desc, isNull, or, gte } from 'drizzle-orm';
 import type {
@@ -30,11 +32,16 @@ import type { OrgContext } from '../shared/org-context.interceptor';
 import { SolverService, type SolverConstraint } from './solver.service';
 import { WorldStateSnapshotService } from './world-state.service';
 import { DispatchCoordinatorService } from './dispatch-coordinator.service';
+import { projectPlanDecisionRecords, projectPlanApprovalDecision } from './decision-projection';
+import { appendPlanDecisionRecords } from './decision-ledger';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import { SchedulingFeedbackService } from './scheduling-feedback.service';
 import { ConstraintLoaderService } from './constraint-loader.service';
 import { ReplanCoordinatorService } from './replan-coordinator.service';
 import { OutboxService } from './outbox.service';
+import { SimulationService } from '../simulation/simulation.service';
+import { buildPlanLayoutParameters } from './pre-approval-simulation';
+import { assertPlanTenantVisible } from './plan-tenant-guard';
 
 /** 方案服务：持久化方案、审批/拒绝/下发/重排/对比。 */
 @Injectable()
@@ -58,6 +65,10 @@ export class PlanService {
     // T04 / P1-6：stale approve → scoped replan（forwardRef 打破 Plan↔Replan 循环依赖）。
     @Inject(forwardRef(() => ReplanCoordinatorService))
     private readonly replanCoordinator: ReplanCoordinatorService,
+    // NO-12s / ADR-042：审批前自动布局仿真预验证（advisory；模块装配生产必达，
+    // Optional 仅兼容直接构造的单测 seams——缺装配时显式 warn 跳过）。
+    @Optional()
+    private readonly simulationService?: SimulationService,
   ) {}
 
   /** 持久化一个 V2 方案（ewoh_schedule_plan + 分配明细）。 */
@@ -65,6 +76,11 @@ export class PlanService {
     plan: SchedulingPlanV2,
     ctx: OrgContext,
   ): Promise<SchedulingPlanV2> {
+    // NO-12y / ADR-048：Decision 契约唯一投影点——先投影后落库（所有持久化
+    // 方案必带 decisionRecords 或显式缺口计数 decisionProjectionIssues，§33）。
+    const projected = projectPlanDecisionRecords(plan, ctx);
+    plan.decisionRecords = projected.records;
+    plan.decisionProjectionIssues = projected.issues;
     await this.requestDatabaseContext.runInTransaction(
       buildGucSettings(ctx),
       async () => {
@@ -92,6 +108,11 @@ export class PlanService {
           // T02 / P0-2：求解所用 effective constraints 快照 + 稳定哈希（standalone_023）。
           constraintsJson: (plan.constraints ?? []) as unknown as Record<string, unknown>[],
           effectiveConstraintsHash: plan.effectiveConstraintsHash ?? null,
+          // NO-12y / ADR-048：Canonical DecisionRecord[] 持久化（standalone_050；
+          // 决策历史单一事实源，§12/§18；旧行 NULL=未投影）。
+          decisionRecordsJson: (projected.records.length > 0
+            ? projected.records
+            : null) as unknown as Record<string, unknown>[] | null,
           // standalone_025_scheduler_rls：租户隔离（null=全局/存量行，policy 放行）。
           orgId: ctx.primaryOrgId || null,
           createdAt: new Date(plan.createdAt),
@@ -140,14 +161,15 @@ export class PlanService {
     return plan;
   }
 
-  /** 读取完整方案（含分配明细）。 */
-  async getPlan(planId: string): Promise<SchedulingPlanV2> {
+  /** 读取完整方案（含分配明细）。actor 提供时执行租户可见性守卫（ADR-071）。 */
+  async getPlan(planId: string, actor?: OrgContext): Promise<SchedulingPlanV2> {
     const [plan] = await this.db
       .select()
       .from(ewohSchedulePlan)
       .where(eq(ewohSchedulePlan.planId, planId))
       .limit(1);
     if (!plan) throw new NotFoundException(`Plan ${planId} not found`);
+    assertPlanTenantVisible(plan.orgId, actor, planId);
 
     const assignments = await this.db
       .select()
@@ -155,7 +177,8 @@ export class PlanService {
       .where(eq(ewohSchedulingPlanAssignment.planId, planId))
       .orderBy(asc(ewohSchedulingPlanAssignment.taskId));
 
-    return this.toPlanV2(plan, assignments);
+    const result = await this.toPlanV2(plan, assignments);
+    return this.attachPreApprovalSimulation(result);
   }
 
   /**
@@ -265,6 +288,8 @@ export class PlanService {
       .where(eq(ewohSchedulePlan.planId, planId))
       .limit(1);
     if (!plan) throw new NotFoundException(`Plan ${planId} not found`);
+    // ADR-071：变面租户守卫（反枚举 404，先于一切业务校验；与 RLS 语义等价）。
+    assertPlanTenantVisible(plan.orgId, ctx, planId);
 
     // P4-SHADOW：Shadow Plan 服务端 hard guard——不可 approve（不靠前端隐藏按钮）。
     if (plan.isShadow) {
@@ -290,6 +315,10 @@ export class PlanService {
     // Phase 3 / P3-T4：方案不得改变安全关键任务的锁定分配。
     await this.assertNoSafetyCriticalChange(planId, 'approve', [], ctx);
 
+    // NO-12s / ADR-042：审批前自动布局仿真预验证（advisory——仿真失败/跳过
+    // 显式留痕，绝不阻断审批：审批仍是人工决策门，§13/§2）。
+    const preApprovalSimulation = await this.runPreApprovalSimulation(planId, ctx);
+
     const op = body.operator || ctx.userId;
     const now = new Date();
     await this.requestDatabaseContext.runInTransaction(
@@ -310,7 +339,7 @@ export class PlanService {
           .set({ status: 'approved' })
           .where(eq(ewohSchedulingPlanAssignment.planId, planId));
 
-        await this.insertAudit(planId, 'approve', op, body.reason ?? '', now);
+        await this.insertAudit(planId, 'approve', op, body.reason ?? '', now, ctx.primaryOrgId);
       },
     );
 
@@ -321,11 +350,147 @@ export class PlanService {
       entityType: 'schedule_plan',
       entityId: planId,
       before: { status: plan.status, version: plan.version },
-      after: { status: 'approved' },
+      after: { status: 'approved', preApprovalSimulation },
       reason: body.reason,
     });
+    // NO-13h / ADR-057：plan_approval 决策契约留痕（Decision Catalog kind #2；
+    // 投影失败显式 log 绝不阻断审批主流程，§2 人审门语义不变）。
+    await this.appendPlanApprovalDecision(
+      planId, plan.version, 'approved', op, body.reason, ctx, now,
+    );
     this.recordAcceptanceFeedback(planId, true, ctx);
     return this.getPlan(planId);
+  }
+
+  /**
+   * NO-13h / ADR-057：审批决策追加进方案决策台账（decision_records_json）。
+   * 投影缺口/回写失败显式 log 留痕（§33 不吞异常），不阻断审批主流程。
+   */
+  private async appendPlanApprovalDecision(
+    planId: string,
+    version: number,
+    outcome: 'approved' | 'rejected',
+    operator: string,
+    reason: string | undefined,
+    ctx: OrgContext,
+    now: Date,
+  ): Promise<void> {
+    const projected = projectPlanApprovalDecision(planId, version, outcome, operator, reason, ctx, now);
+    if (!projected.record) {
+      this.logger.warn(
+        `plan approval decision projection skipped for ${planId}: ${projected.issues.join(', ')}`,
+      );
+      return;
+    }
+    try {
+      // ADR-062 决策 2（§31）：台账读-追加-回写单一实现。
+      await appendPlanDecisionRecords(this.db, planId, [projected.record]);
+    } catch (err) {
+      this.logger.warn(
+        `plan approval decision append failed for ${planId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * NO-12s / ADR-042：审批前自动布局仿真预验证（advisory）。
+   * 从方案分配 + 快照工位坐标推导人员移动图 → SimulationService 确定性
+   * layout 评估器独立重算方案行程成本（runId 确定性幂等回读；scenarioId
+   * = plan:<planId> 台账可关联）。仿真装配缺失/参数不可推导/评估失败 →
+   * 显式留痕（error/skippedReason），绝不阻断审批。
+   */
+  private async runPreApprovalSimulation(
+    planId: string,
+    ctx: OrgContext,
+  ): Promise<SchedulingPlanV2['preApprovalSimulation']> {
+    const runId = `plan-approval:${planId}`;
+    if (!this.simulationService) {
+      this.logger.warn(`pre-approval simulation skipped（SimulationService 未装配）${planId}`);
+      return { runId, status: 'skipped', skippedReason: 'simulation_service_unavailable' };
+    }
+    try {
+      const assignmentRows = await this.db
+        .select()
+        .from(ewohSchedulingPlanAssignment)
+        .where(eq(ewohSchedulingPlanAssignment.planId, planId));
+      const snapshot = await this.worldStateSnapshotService.buildSnapshot(ctx);
+      const parameters = buildPlanLayoutParameters(
+        assignmentRows.map((row) => ({
+          personId: row.personId,
+          stationId: row.stationId,
+          plannedStart: row.plannedStart ? row.plannedStart.toISOString() : null,
+        })),
+        snapshot.stations.map((station) => ({
+          id: station.id,
+          x: station.x,
+          y: station.y,
+        })),
+      );
+      if (!parameters) {
+        return { runId, status: 'skipped', skippedReason: 'no_multi_station_route' };
+      }
+      const response = await this.simulationService.run(
+        {
+          runId,
+          kind: 'layout',
+          baseRef: { snapshotVersion: 0, scenarioId: `plan:${planId}` },
+          parameters: parameters as unknown as Record<string, unknown>,
+        },
+        ctx.primaryOrgId,
+      );
+      const run = response.run as Record<string, unknown>;
+      const results = (run.results ?? {}) as Record<string, unknown>;
+      if (run.status === 'failed') {
+        return { runId, status: 'failed', error: String(run.failureReason ?? 'simulation_failed') };
+      }
+      return {
+        runId,
+        status: String(run.status ?? 'completed'),
+        totalTravelDistanceM: typeof results.totalTravelDistance === 'number'
+          ? results.totalTravelDistance
+          : undefined,
+        routesCount: Array.isArray(results.routes) ? results.routes.length : undefined,
+        engineVersion: typeof run.engineVersion === 'string' ? run.engineVersion : undefined,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `pre-approval simulation failed ${planId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return { runId, status: 'failed', error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  /** getPlan 附审批前预验证结果（runId 确定性读取台账；无运行 → 不附加字段）。 */
+  private async attachPreApprovalSimulation(
+    plan: SchedulingPlanV2,
+  ): Promise<SchedulingPlanV2> {
+    try {
+      const [run] = await this.db
+        .select()
+        .from(ewohSimulationRun)
+        .where(eq(ewohSimulationRun.runId, `plan-approval:${plan.planId}`))
+        .limit(1);
+      if (!run) return plan;
+      const results = (run.resultsJson ?? {}) as Record<string, unknown>;
+      return {
+        ...plan,
+        preApprovalSimulation: {
+          runId: run.runId,
+          status: run.status,
+          totalTravelDistanceM: typeof results.totalTravelDistance === 'number'
+            ? results.totalTravelDistance
+            : undefined,
+          routesCount: Array.isArray(results.routes) ? results.routes.length : undefined,
+          engineVersion: run.engineVersion,
+          error: run.failureReason ?? undefined,
+        },
+      };
+    } catch (error) {
+      this.logger.warn(
+        `attach pre-approval simulation failed ${plan.planId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return plan;
+    }
   }
 
   /**
@@ -386,6 +551,8 @@ export class PlanService {
       .where(eq(ewohSchedulePlan.planId, planId))
       .limit(1);
     if (!plan) throw new NotFoundException(`Plan ${planId} not found`);
+    // ADR-071：变面租户守卫（反枚举 404；与 RLS 语义等价）。
+    assertPlanTenantVisible(plan.orgId, ctx, planId);
 
     const op = body.operator || ctx.userId;
     const now = new Date();
@@ -407,7 +574,7 @@ export class PlanService {
           .set({ status: 'cancelled' })
           .where(eq(ewohSchedulingPlanAssignment.planId, planId));
 
-        await this.insertAudit(planId, 'reject', op, body.reason ?? '', now);
+        await this.insertAudit(planId, 'reject', op, body.reason ?? '', now, ctx.primaryOrgId);
       },
     );
 
@@ -421,6 +588,10 @@ export class PlanService {
       after: { status: 'rejected' },
       reason: body.reason,
     });
+    // NO-13h / ADR-057：reject 决策同样契约留痕（Decision History 完整性，§12）。
+    await this.appendPlanApprovalDecision(
+      planId, plan.version, 'rejected', op, body.reason, ctx, now,
+    );
     return this.getPlan(planId);
   }
 
@@ -440,6 +611,8 @@ export class PlanService {
     if (planRow?.isShadow) {
       throw new ConflictException('SHADOW_PLAN_GUARD: shadow plan cannot be dispatched');
     }
+    // ADR-071：变面租户守卫（行缺失由 DispatchCoordinator 以 NotFound 处理）。
+    assertPlanTenantVisible(planRow?.orgId, ctx, planId);
     await this.dispatchCoordinator.dispatch(planId, ctx);
     return this.getPlan(planId);
   }
@@ -452,20 +625,29 @@ export class PlanService {
    */
   async listPlanConstraints(
     planId: string,
+    actor?: OrgContext,
   ): Promise<import('@shared/api.interface').SchedulingConstraint[]> {
+    const conditions = [
+      eq(ewohSchedulingConstraint.planId, planId),
+      eq(ewohSchedulingConstraint.active, true),
+      or(
+        isNull(ewohSchedulingConstraint.expiresAtMs),
+        gte(ewohSchedulingConstraint.expiresAtMs, Date.now()),
+      ),
+    ];
+    // ADR-072：约束读面 org 条件（org 匹配或 NULL 存量；与 RLS 语义等价）。
+    if (actor) {
+      conditions.push(
+        or(
+          isNull(ewohSchedulingConstraint.orgId),
+          eq(ewohSchedulingConstraint.orgId, actor.primaryOrgId),
+        ),
+      );
+    }
     const rows = await this.db
       .select()
       .from(ewohSchedulingConstraint)
-      .where(
-        and(
-          eq(ewohSchedulingConstraint.planId, planId),
-          eq(ewohSchedulingConstraint.active, true),
-          or(
-            isNull(ewohSchedulingConstraint.expiresAtMs),
-            gte(ewohSchedulingConstraint.expiresAtMs, Date.now()),
-          ),
-        ),
-      )
+      .where(and(...conditions))
       .orderBy(asc(ewohSchedulingConstraint.createdAt));
     return rows.map((r) => {
       const v = (r.valueJson ?? {}) as Record<string, unknown>;
@@ -543,6 +725,8 @@ export class PlanService {
           operator: actor.userId,
           reason: reason || `deactivate constraint ${constraintId}`,
           createdAt: new Date(),
+          // ADR-075：audit 行归属注入（001 ewoh_org_visible RLS 对齐）。
+          orgId: actor.primaryOrgId || null,
         });
       },
     );
@@ -574,6 +758,8 @@ export class PlanService {
       .where(eq(ewohSchedulePlan.planId, planId))
       .limit(1);
     if (!plan) throw new NotFoundException(`Plan ${planId} not found`);
+    // ADR-071：变面租户守卫（反枚举 404；与 RLS 语义等价）。
+    assertPlanTenantVisible(plan.orgId, ctx, planId);
 
     const snapshot = await this.worldStateSnapshotService.buildSnapshot(ctx);
     const newVersion = (plan.version ?? 1) + 1;
@@ -685,6 +871,7 @@ export class PlanService {
           body.operator || ctx.userId,
           [body.reason ?? '', policyChangeNote ?? ''].filter(Boolean).join('; '),
           new Date(),
+          ctx.primaryOrgId,
         );
       },
     );
@@ -755,6 +942,7 @@ export class PlanService {
     operator: string,
     reason: string,
     createdAt: Date,
+    orgId?: string | null,
   ): Promise<void> {
     await this.db.insert(ewohScheduleAudit).values({
       auditId: `AUDIT-${Date.now()}-${this.randomSuffix()}`,
@@ -763,6 +951,8 @@ export class PlanService {
       operator,
       reason,
       createdAt,
+      // ADR-075：audit 行归属注入（001 ewoh_org_visible RLS 对齐；null=legacy）。
+      orgId: orgId ?? null,
     });
   }
 
@@ -800,6 +990,8 @@ export class PlanService {
     return {
       planId: plan.planId,
       planName: plan.planName ?? undefined,
+      // ADR-071：读模型组织归属透出（NULL=standalone_025 存量/全局过渡行）。
+      orgId: plan.orgId ?? undefined,
       version: plan.version ?? 1,
       status: (plan.status ?? 'shadow') as PlanStatus,
       trigger: {
@@ -828,6 +1020,8 @@ export class PlanService {
       effectiveConstraintsHash: plan.effectiveConstraintsHash ?? null,
       baselineDelta: (plan.baselineDeltaJson ?? {}) as Record<string, unknown>,
       violations: (plan.violationsJson ?? []) as Array<Record<string, unknown>>,
+      // NO-12y / ADR-048：决策记录读回（契约形态；NULL=存量未投影行）。
+      decisionRecords: (plan.decisionRecordsJson ?? undefined) as SchedulingPlanV2['decisionRecords'],
       createdAt: plan.createdAt ? plan.createdAt.toISOString() : new Date().toISOString(),
     };
   }

@@ -1,0 +1,2693 @@
+# ============================================================================
+# docs/agent/project-state.yaml — EWOH 长期自治 Agent 外置记忆（单一事实源）
+#
+# 规范（与总提示词 §27/§35 对齐）：
+#   - 每次工作回合开始必须先读本文件；结束必须更新本文件。
+#   - 本文件描述"面向 Factory Embodied Intelligence OS 的收敛状态"，与
+#     feature-status.yaml（功能实现事实）、OPEN-DECISIONS.md（未决项）互补，
+#     不得互相矛盾；冲突时 feature-status.yaml 为功能实现事实源，本文件为
+#     阶段/目标/风险视图。
+#   - phase 字段与总提示词 §28 实施阶段（Phase 0..12）一一对应。
+# ============================================================================
+
+meta:
+  updated_at: "2026-08-16"
+  updated_by: "long-cycle-agent"
+  version_baseline: "0.6.0-rc4"          # version.json
+  git_head: "a149106"                     # 更新时的 main HEAD（git log -1）
+  rounds_elapsed: 102
+
+current_phase: "Phase 12 收口后深化（NO-13af 完成：resource.service 完整 drizzle 化 + 语义假库 ADR-081，R-102——§15/§31 收口）→ 剩余 1 项 Partial 深化推进（矩阵口径 54/1/0/1；NO-13ag resource 读面 org 守卫 + Scheduling/Devices 数据页渲染 smoke 下一候选）"
+phase_summary: >
+  Round 102 完成 NO-13af（ADR-081）：resource.service 完整 drizzle
+  化（§3/§15/§30/§31）——schema.ts 补 ewohResourcePreorder 映射 +
+  服务 12 处 raw SQL → drizzle 链式重写 + 写入 orgId 注入 +
+  §31 语义假库 fake-resource-db.ts（AST 结构遍历 =/in/>= 事实 +
+  相对 +/- 补丁 + gte 守卫零行真实语义）取代正则 FakeSqlDb
+  （零用户删除）；server raw-SQL 表操作清零（仅存 3 处存储函数
+  SQL 显式保留）；读面 org 守卫列 NO-13ag。default jest 269
+  suites/2045 tests 全绿、双 tsc PASS、全审计绿（581/581、
+  398/590、39/39、6/6 computed=74、32/32、124/125）；
+  无契约/DB/OpenAPI 变更。
+  Round 100 完成 NO-13ad（ADR-079）：剩余 raw-SQL 模块 drizzle 化
+  （§3/§15/§30）——world-cursor 全路径（delta/snapshot 子查询 sql
+  + seq identity 读回）+ ark（config 读 + onConflictDoUpdate
+  upsert）+ erp（findByEvidence JSON 路径条件）；resource.service
+  列 NO-13ae；fake-world-db.ts 共享助手（§31）；无 DB 迁移/
+  契约/OpenAPI 变更。default jest 269 suites 2041→2042 tests
+  全绿、client jest 120 suites/970 tests、双 tsc PASS、
+  audit-domain-contracts 581/581、openapi 398/590 零漂移、
+  repo-facts 39/39、reconcile 6/6 computed=74、feature-status
+  32/32、env-inventory 124/125。
+  Round 99 完成 NO-13ac（ADR-078）：raw-SQL schema 硬编码清零 +
+  聚合面 org 条件（§3/§15/§16/§30）——全仓库扫描 7 文件 30+ 处
+  public.ewoh_ 硬编码：tracing/audit/learning/ai drizzle 全量
+  重写（ewohAuditLog 映射新增 + AuditQuery orgId? + learning
+  三聚合/ai 上下文采集 orgId 过滤——跨租户混合消除）+ ark/erp/
+  resource/world-cursor/audit 函数调用去前缀（search_path 解析）
+  + ai controller userContext；server 代码 public.ewoh_ 清零；
+  无 DB 迁移/OpenAPI 变更。default jest 269 suites/2041 tests
+  全绿、client jest 120 suites/970 tests、双 tsc PASS、
+  audit-domain-contracts 581/581、openapi 398/590 零漂移、
+  repo-facts 39/39、reconcile 6/6 computed=74、feature-status
+  32/32、env-inventory 124/125。
+  Round 98 完成 NO-13ab（ADR-077）：控制面持久化修复（§2/§3/§15/
+  §30）——control.service raw SQL（public. 硬编码，workspace 部署
+  潜伏不可用）→ drizzle 全量重写 + schema.ts 三表映射（org_id
+  uuid NOT NULL GUC default fail-closed）+ 写侧 org 归属（请求
+  ctx 注入；命令/回执行归属 = 请求行 org）+ 读面守卫（跨租户
+  404）+ ControlRequest additive orgId；无 DB 迁移/OpenAPI 变更。
+  default jest 269 suites 2038→2041 tests 全绿（+3）、client
+  jest 120 suites/970 tests、双 tsc PASS、audit-domain-contracts
+  581/581、openapi 398/590 零漂移、repo-facts 39/39、reconcile
+  6/6 computed=74、feature-status 32/32、env-inventory 124/125。
+  Round 97 完成 NO-13aa（ADR-076）：无 ctx 写路径 org 归属闭合
+  （§3/§15/§30）——sensor-ingest ingestEnvironment(frame, orgId?)
+  （controller userContext 注入）+ organization.createOrganization
+  （randomUUID 同时作 id 与 orgId，组织对自身可见）+ dashboard.
+  createDevice(dto, actor?)（controller @Req）；无 ctx → NULL
+  显式 legacy；无 DB/契约/OpenAPI 变更。default jest 269 suites
+  2036→2038 tests 全绿（+2）、client jest 120 suites/970 tests、
+  双 tsc PASS、audit-domain-contracts 581/581、openapi 398/590
+  零漂移、repo-facts 39/39、reconcile 6/6 computed=74、
+  feature-status 32/32、env-inventory 124/125。
+  Round 96 完成 NO-13z（ADR-075）：Legacy 受管表 org_id 映射漂移
+  闭合（§3/§15/§30）——对照 001 ewoh_rls_normal 循环（49 表
+  ewoh_org_visible RLS）发现 17 张受管表 schema.ts 缺 org_id 映射
+  （应用写入 NULL org 行被生产 RLS 拒绝/读回空，潜伏 P0；
+  standalone 引导 RLS 引不存在列）。决策：schema.ts 全 17 表补
+  orgId varchar + 001 手写基线同补 + 活跃写路径归属注入
+  （schedule_audit 四文件 11 站点、ingest telemetry/device 批量
+  单帧、model_registry orgIdFromModelId、simulator GUC 同源）+
+  显式边界登记（sensor-ingest/organization/dashboard → NO-13aa）；
+  无 DB 迁移/契约/OpenAPI 变更。default jest 268/2018→269 suites/
+  2036 tests 全绿（+1 suite +18）、client jest 120 suites/970
+  tests、双 tsc PASS、audit-domain-contracts 581/581、openapi
+  398/590 零漂移、repo-facts 39/39、reconcile 6/6 computed=74、
+  feature-status 32/32、env-inventory 124/125。
+  Round 95 完成 NO-13y（ADR-074 / standalone_056）：路由拓扑组织
+  隔离（§4/§15/§23）——仓库事实复核发现 World Model 中枢读面唯一
+  无组织边界组件（ewoh_route_node/edge 无 org_id 无 RLS，GET
+  /routes 与 collectState 共享全局路由图，跨租户工厂布局事实
+  泄漏；应用无写路径，种子注入）；其余模块（inference/agent/exo/
+  learning/outcome-annotation）读面复核均已 org 作用域。决策：
+  standalone_056 原地加固（ADD COLUMN org_id + org 索引 + RLS
+  route_node/edge_org_isolation——org 匹配或 NULL 存量放行，与
+  025 语义对齐；显式不用 ewoh_org_visible 的过渡兼容理由）+
+  verify SET LOCAL GUC 可见性自证（org-a/org-b/NULL 三态）+ 全
+  lockstep（runner/check.sh/CI/state.json 236/manifest 注记，
+  计数不变 74/77）+ 读面 loadGraph(actor?) org 条件 + GET /routes
+  userContext（collectState 保持 RLS 单层显式边界）。default jest
+  268 suites 2016→2018 tests 全绿、client jest 120 suites/970
+  tests、双 tsc PASS、audit-domain-contracts 581/581、openapi
+  398/590 零漂移、repo-facts 39/39、reconcile 6/6 computed=74、
+  feature-status 32/32、env-inventory 124/125。
+completed_capabilities:
+  - id: resource-service-drizzle
+    summary: >
+      NO-13af（Round 102 / ADR-081）：resource.service 完整 drizzle
+      化——ewohResourcePreorder 映射补全 + 12 处 raw SQL → 链式
+      重写 + 写入 orgId 注入（ADR-075/076 闭合加深）+ §31 语义假库
+      fake-resource-db.ts（=/in/>= 事实 + 相对 +/- 补丁 + gte 守卫
+      零行真实语义）取代正则 FakeSqlDb；server raw-SQL 表操作清零
+      （仅存 3 处存储函数 SQL）；读面 org 守卫列 NO-13ag
+    evidence:
+      - docs/decisions/ADR-081-resource-service-drizzle.md
+      - ewoh-spark-app/server/database/schema.ts（ewohResourcePreorder）
+      - ewoh-spark-app/server/modules/resource/resource.service.ts
+      - ewoh-spark-app/test/helpers/fake-resource-db.ts
+      - ewoh-spark-app/test/unit/resource/resource.service.spec.ts
+      - ewoh-spark-app/test/scenarios/scenario-packages.spec.ts
+  - id: command-center-render-smoke
+    summary: >
+      NO-13ae（Round 101 / ADR-080）：CommandCenter 数据型页面
+      渲染 smoke——commandCenterLogic 纯逻辑（KPI 派生/副标题/
+      时间戳显式）+ CommandCenterView 纯展示 + 页壳委托；client
+      jest +2 suites/+7 tests；§17 消费面补强
+    evidence:
+      - docs/decisions/ADR-080-command-center-render-smoke.md
+      - ewoh-spark-app/client/src/pages/CommandCenter/commandCenterLogic.ts
+      - ewoh-spark-app/client/src/pages/CommandCenter/CommandCenterView.tsx
+      - ewoh-spark-app/client/src/pages/CommandCenter/commandCenterLogic.test.ts
+      - ewoh-spark-app/client/src/pages/CommandCenter/CommandCenterView.render.test.tsx
+  - id: remaining-raw-sql-drizzle
+    summary: >
+      NO-13ad（Round 100 / ADR-079）：剩余 raw-SQL 模块 drizzle 化
+      ——world-cursor 全路径 + ark 配置读写 upsert + erp 证据查询；
+      resource.service 列 NO-13ae；fake-world-db.ts 共享助手
+      （§31）
+    evidence:
+      - docs/decisions/ADR-079-remaining-raw-sql-drizzle.md
+      - ewoh-spark-app/server/modules/world-cursor/world-cursor.service.ts
+      - ewoh-spark-app/server/modules/ai/ark.service.ts
+      - ewoh-spark-app/server/modules/erp/erp.service.ts
+      - ewoh-spark-app/test/helpers/fake-world-db.ts
+  - id: raw-sql-schema-hardcode-clearance
+    summary: >
+      NO-13ac（Round 99 / ADR-078）：raw-SQL schema 硬编码清零 +
+      聚合面 org 条件——tracing/audit/learning/ai drizzle 重写
+      （ewohAuditLog 映射 + learning/ai 聚合 orgId 过滤，跨租户
+      混合消除）+ ark/erp/resource/world-cursor 去前缀；server
+      代码 public.ewoh_ 清零
+    evidence:
+      - docs/decisions/ADR-078-raw-sql-schema-hardcode-clearance.md
+      - ewoh-spark-app/server/modules/tracing/tracing.service.ts
+      - ewoh-spark-app/server/modules/audit/audit.service.ts
+      - ewoh-spark-app/server/modules/learning/learning.service.ts
+      - ewoh-spark-app/server/modules/ai/ai.service.ts
+      - ewoh-spark-app/server/database/schema.ts（ewohAuditLog）
+  - id: control-persistence-repair
+    summary: >
+      NO-13ab（Round 98 / ADR-077）：控制面持久化修复——schema.ts
+      三表映射 + raw SQL（public. 硬编码）→ drizzle 全量重写 +
+      写侧 org 归属（ctx 注入/请求行 org 同源）+ 读面守卫（跨租户
+      404）+ ControlRequest additive orgId；workspace 部署潜伏
+      不可用修复
+    evidence:
+      - docs/decisions/ADR-077-control-persistence-repair.md
+      - ewoh-spark-app/server/database/schema.ts（三表映射）
+      - ewoh-spark-app/server/modules/control/control.service.ts
+      - ewoh-spark-app/test/helpers/fake-control-db.ts（§31 单一假库）
+      - ewoh-spark-app/test/unit/control/control.service.spec.ts（14 例）
+  - id: no-ctx-write-path-org-closure
+    summary: >
+      NO-13aa（Round 97 / ADR-076）：无 ctx 写路径 org 归属闭合
+      ——sensor-ingest environment（ctx 注入）+ organization
+      create（自身 id 归属）+ dashboard createDevice（ctx 注入）；
+      ADR-075 决策 3 三处显式边界全部闭合；无 ctx → NULL 显式
+      legacy 不伪造
+    evidence:
+      - docs/decisions/ADR-076-no-ctx-write-path-org-closure.md
+      - ewoh-spark-app/server/modules/ingest/sensor-ingest.service.ts
+      - ewoh-spark-app/server/modules/organization/organization.service.ts
+      - ewoh-spark-app/server/modules/dashboard/dashboard.service.ts
+      - ewoh-spark-app/test/unit/ingest/sensor-ingest.service.spec.ts
+      - ewoh-spark-app/test/unit/organization/organization.service.spec.ts
+  - id: legacy-org-id-mapping-drift-closure
+    summary: >
+      NO-13z（Round 96 / ADR-075）：Legacy 受管表 org_id 映射漂移
+      闭合——17 张受管表（001 ewoh_org_visible RLS 循环内）schema.ts
+      补 orgId 映射 + 001 手写基线同补 + 活跃写路径归属注入
+      （schedule_audit/telemetry/device/model_registry/simulator）；
+      无 ctx 写路径显式登记 NO-13aa；无 DB 迁移（列已存在）
+    evidence:
+      - docs/decisions/ADR-075-legacy-org-id-mapping-drift.md
+      - ewoh-spark-app/server/database/schema.ts（17 表映射）
+      - ewoh-spark-app/server/modules/scheduler/plan.service.ts
+      - ewoh-spark-app/server/modules/ingest/ingest.service.ts
+      - ewoh-spark-app/server/modules/scheduler/prediction/duration-model-training.service.ts
+      - ewoh-spark-app/test/unit/scheduler/legacy-org-id-mapping.spec.ts（18 例）
+  - id: route-topology-org-isolation
+    summary: >
+      NO-13y（Round 95 / ADR-074 / standalone_056）：路由拓扑组织
+      隔离——ewoh_route_node/edge ADD COLUMN org_id + org 索引 +
+      RLS route_node/edge_org_isolation（org 匹配或 NULL 存量放行，
+      与 standalone_025 语义对齐）+ verify SET LOCAL GUC 可见性
+      自证（org-a/org-b/NULL 三态）+ 读面 loadGraph(actor?) org
+      条件 + GET /routes userContext；World Model 中枢读面（§4）
+      最后一块无组织边界组件闭合；计数不变（74/77）
+    evidence:
+      - docs/decisions/ADR-074-route-topology-org-isolation.md
+      - db/migrations/standalone_056_route_org_isolation.sql(+rollback)
+      - db/verify/standalone_056_route_org_isolation.verify.sql
+      - ewoh-spark-app/server/modules/scheduler/routing.service.ts
+      - ewoh-spark-app/server/database/schema.ts
+      - ewoh-spark-app/test/unit/scheduler/scheduler-read-org-isolation.spec.ts（9 例）
+  - id: scheduler-read-org-isolation-3
+    summary: >
+      NO-13x（Round 94 / ADR-073）：Scheduler 读面组织隔离第三波
+      ——conflict list/detail org 条件（无 RLS 表应用层唯一执行面）+
+      feedback list/deriveKpis + kpi.aggregate org 作用域（跨租户
+      聚合关闭）+ execution list opts.orgId 兑现（API 面接线）+
+      plan compare 双方案 ADR-071 守卫接线 + policy listVersions
+      org 条件 + policy activations org 改自 ctx（query 参数欺骗
+      废弃）+ metrics feedback 面 userContext；无 DB/契约/OpenAPI
+      变更
+    evidence:
+      - docs/decisions/ADR-073-scheduler-read-org-isolation-3.md
+      - ewoh-spark-app/server/modules/scheduler/conflict.service.ts
+      - ewoh-spark-app/server/modules/scheduler/scheduling-feedback.service.ts
+      - ewoh-spark-app/server/modules/scheduler/kpi.service.ts
+      - ewoh-spark-app/server/modules/scheduler/execution.service.ts
+      - ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts
+      - ewoh-spark-app/test/unit/scheduler/scheduler-read-org-isolation.spec.ts（7 例）
+  - id: scheduler-read-org-isolation
+    summary: >
+      NO-13w（Round 93 / ADR-072）：Scheduler 读面组织隔离第二波
+      ——守卫泛化 assertTenantVisible（§31 单一实现，ADR-071 别名
+      保留）+ getRun 守卫 + getAudit 父方案归属子查询过滤（audit
+      无 org 列/RLS 边界闭合）+ listPlanConstraints 读面 org 条件
+      + decision-history 方案来源 SQL org 条件（记录级过滤第二层）
+      + controller 三路由 userContext；无 DB/契约/OpenAPI 变更
+    evidence:
+      - docs/decisions/ADR-072-scheduler-read-org-isolation.md
+      - ewoh-spark-app/server/modules/scheduler/plan-tenant-guard.ts（守卫泛化）
+      - ewoh-spark-app/server/modules/scheduler/scheduler-query.service.ts
+      - ewoh-spark-app/server/modules/scheduler/decision-history.service.ts
+      - ewoh-spark-app/server/modules/scheduler/plan.service.ts
+      - ewoh-spark-app/test/unit/scheduler/plan-org-isolation.spec.ts（25 例）
+      - ewoh-spark-app/server/modules/scheduler/__tests__/decision-history.service.spec.ts
+  - id: plan-org-isolation-closure
+    summary: >
+      NO-13v（Round 92 / ADR-071）：方案行组织隔离闭环——§31 单一
+      守卫（plan-tenant-guard，与 standalone_025 RLS 分支逐字对齐：
+      org 匹配或 NULL 存量放行、跨租户 404 反枚举）+ 读/变面全接线
+      （getPlan/getPlans/getActivePlans/approve/reject/dispatch/
+      replan/legacy confirm/applyOverrides/预览）+ replan 抑制门
+      基线 org 作用域（修复跨租户事实污染）+ gamification 直插路径
+      orgId 归属写入 + SchedulingPlanV2 additive orgId 透出；
+      无 DB 迁移（列/RLS 已存在）
+    evidence:
+      - docs/decisions/ADR-071-plan-org-isolation-closure.md
+      - ewoh-spark-app/server/modules/scheduler/plan-tenant-guard.ts
+      - ewoh-spark-app/server/modules/scheduler/plan.service.ts
+      - ewoh-spark-app/server/modules/scheduler/scheduler-query.service.ts
+      - ewoh-spark-app/server/modules/scheduler/replan-coordinator.service.ts
+      - ewoh-spark-app/server/modules/gamification/gamification.service.ts
+      - ewoh-spark-app/test/unit/scheduler/plan-org-isolation.spec.ts（16 例）
+  - id: model-training-policy-v1
+    summary: >
+      NO-13u（Round 91 / ADR-070）：Model Training Policy v1——
+      租户作用域训练机器强制（retrain/hydrate org 强制 + modelId
+      org 命名空间 + provider org 键控 + 缺 org 显式回退/400）；
+      跨租户聚合显式 OFF；旧全局模型显式弃用；§15/§16 收口
+      （ADR-056/067 遗留边界关闭）
+    evidence:
+      - docs/decisions/ADR-070-model-training-policy-v1.md
+      - ewoh-spark-app/server/modules/scheduler/prediction/empirical-duration-model.ts（org 命名空间 helpers）
+      - ewoh-spark-app/server/modules/scheduler/prediction/empirical-duration-prediction-provider.ts（org 键控）
+      - ewoh-spark-app/server/modules/scheduler/prediction/duration-model-training.service.ts（org 强制 + 过滤）
+      - ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts（retrain org 注入）
+      - ewoh-spark-app/server/modules/scheduler/prediction/__tests__/（provider 10 例 + training 9 例）
+  - id: exo-support-mode-observation-boundary-lock
+    summary: >
+      NO-13t（Round 90 / ADR-069）：Exo Support Mode 观测边界复核
+      与锁定——阻塞确认仍成立（协议确认书 2.3 无 mode 字节）+
+      边界测试机器锁定（+3 例契约测试：协议升级即漂移信号）；
+      assist_level 数值事实照常观测不推导分类（§33）
+    evidence:
+      - docs/decisions/ADR-069-exo-support-mode-observation-boundary.md
+      - tests/test_ny_exo_a1_contract.py（+3 例边界锁）
+      - src/edge_platform/edge/adapters/ny_exo_a1/protocol.py（20B 布局事实）
+      - src/edge_platform/edge/exo_semantic.py（统一帧无 supportMode 字段）
+  - id: simulation-console-render-smoke
+    summary: >
+      NO-13s（Round 89 / ADR-068）：SimulationConsole 数据型页面
+      渲染 smoke——SimulationRunList 纯展示组件提取 + TONE 常量
+      上移 logic（§31 单一来源）+ 渲染测试 2 例（R-87 模式推广）；
+      数据型页面渲染 smoke 缺口第二项关闭
+    evidence:
+      - docs/decisions/ADR-068-simulation-console-render-smoke.md
+      - ewoh-spark-app/client/src/pages/Simulation/SimulationRunList.tsx（新）
+      - ewoh-spark-app/client/src/pages/Simulation/simulationConsoleLogic.ts（TONE 上移）
+      - ewoh-spark-app/client/src/pages/Simulation/SimulationConsole.tsx（委托渲染）
+      - ewoh-spark-app/client/src/pages/Simulation/SimulationRunList.render.test.tsx（新，2 例）
+  - id: per-tasktype-duration-model-grouping
+    summary: >
+      NO-13r（Round 88 / ADR-067）：per-taskType 经验时长模型分组
+      ——ADR-056 决策 3 后续收口（全局 + 分组独立 modelId 版本链 +
+      两级回退显式 + 不足分组显式跳过 + hydrate 前缀回填）；
+      shadow-only 边界不变
+    evidence:
+      - docs/decisions/ADR-067-per-tasktype-duration-model-grouping.md
+      - ewoh-spark-app/server/modules/scheduler/prediction/empirical-duration-model.ts（taskTypeModelId/isEmpiricalModelId）
+      - ewoh-spark-app/server/modules/scheduler/prediction/empirical-duration-prediction-provider.ts（分组预测两级回退）
+      - ewoh-spark-app/server/modules/scheduler/prediction/duration-model-training.service.ts（分组落版 + hydrate 前缀回填）
+      - ewoh-spark-app/server/modules/scheduler/prediction/__tests__/empirical-duration-prediction.spec.ts（+2 例）
+      - ewoh-spark-app/server/modules/scheduler/prediction/__tests__/duration-model-training.service.spec.ts（+2 例）
+  - id: decision-history-console-ui
+    summary: >
+      NO-13q（Round 87 / ADR-066）：Decision History 控制台 UI——
+      数据型页面三层（纯逻辑 + 纯展示 + react-query 控制台）消费
+      ADR-065 检索端点；skippedInvalid 显式横幅 + 未知词表值原样
+      透出；路由 + 侧边栏 nav；渲染 smoke + 逻辑测试；数据型页面
+      渲染 smoke 缺口首项关闭
+    evidence:
+      - docs/decisions/ADR-066-decision-history-console-ui.md
+      - ewoh-spark-app/client/src/api/decisions.ts（fetchDecisionHistory）
+      - ewoh-spark-app/client/src/pages/DecisionHistory/decisionHistoryLogic.ts(+test 4 例)
+      - ewoh-spark-app/client/src/pages/DecisionHistory/DecisionHistoryTable.tsx(+render test 2 例)
+      - ewoh-spark-app/client/src/pages/DecisionHistory/DecisionHistoryConsole.tsx
+      - ewoh-spark-app/client/src/App.tsx（路由）+ lib/navigation.ts（nav 项）
+  - id: decision-history-cross-kind-retrieval
+    summary: >
+      NO-13p（Round 86 / ADR-065）：Decision History 跨 kind 检索
+      端点——Decision Catalog 8 类 kind 四表只读聚合统一读面
+      （GET /api/scheduler/decision-history；记录级租户过滤 +
+      非法记录显式计数 + fail-closed 过滤器 + 稳定排序分页）
+    evidence:
+      - docs/decisions/ADR-065-decision-history-cross-kind-retrieval.md
+      - ewoh-spark-app/server/modules/scheduler/decision-history.service.ts（新）
+      - ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts（+GET 端点）
+      - ewoh-spark-app/server/modules/scheduler/__tests__/decision-history.service.spec.ts（新，3 例）
+      - openapi/ewoh.yaml（+1 路径）+ ewoh-spark-app/client/src/types/openapi.d.ts（再生成）
+  - id: policy-activation-decision-wiring
+    summary: >
+      NO-13o（Round 85 / ADR-064）：Policy Activation Decision 接线
+      ——Decision Catalog kind #8（active 翻转/直接保存激活与
+      decisionJson 同一 UPDATE 原子落库；reason 透传人审事实；
+      风险类型推导规则锁测试；缺口/失败显式不阻断激活主流程）；
+      **Decision Catalog 8 类 kind 全收敛收口**
+    evidence:
+      - docs/decisions/ADR-064-policy-activation-decision-wiring.md
+      - ewoh-spark-app/server/modules/scheduler/decision-projection.ts（projectPolicyActivationDecision）
+      - ewoh-spark-app/server/modules/scheduler/scheduling-policy.service.ts（同 UPDATE 原子写）
+      - ewoh-spark-app/server/modules/scheduler/scheduler-plan-application.service.ts（reason 透传）
+      - ewoh-spark-app/server/database/schema.ts（decisionJson 列）
+      - db/migrations/standalone_054_policy_activation_decision.sql(+rollback+verify)
+      - ewoh-spark-app/test/unit/scheduler/decision-projection.spec.ts（+3 例）
+      - ewoh-spark-app/server/modules/scheduler/__tests__/policy-version.spec.ts（+2 例）
+  - id: learning-proposal-activation-decision-wiring
+    summary: >
+      NO-13n（Round 84 / ADR-063）：Learning Proposal Activation
+      Decision 接线——Decision Catalog kind #7（approve/reject/
+      rollback 三路径与状态终态同 UPDATE 原子落 decision_json；
+      status 映射 approved/rejected/superseded；风险类型推导规则
+      锁测试；缺口/失败显式不阻断提案主流程）
+    evidence:
+      - docs/decisions/ADR-063-learning-proposal-activation-decision-wiring.md
+      - ewoh-spark-app/server/modules/scheduler/decision-projection.ts（projectLearningProposalActivationDecision）
+      - ewoh-spark-app/server/modules/learning/learning-proposal.service.ts（三路径同 UPDATE 原子写）
+      - ewoh-spark-app/server/database/schema.ts（decisionJson 列）
+      - db/migrations/standalone_053_learning_proposal_decision.sql(+rollback+verify)
+      - ewoh-spark-app/test/unit/scheduler/decision-projection.spec.ts（+3 例）
+      - ewoh-spark-app/server/modules/learning/__tests__/learning-proposal.service.spec.ts（+3 例）
+  - id: replan-decision-wiring
+    summary: >
+      NO-13m（Round 83 / ADR-062）：Replan Decision 接线——
+      Decision Catalog kind #6（重排触发→新方案决策留痕，handle
+      Trigger + handleConflictBatch 双路径）；§31 收口（decision-
+      ledger 单一实现：审批/派工/重排三处台账追加收敛）；风险类型
+      推导规则锁测试；缺口/失败显式不阻断重排主流程
+    evidence:
+      - docs/decisions/ADR-062-replan-decision-wiring.md
+      - ewoh-spark-app/server/modules/scheduler/decision-projection.ts（projectReplanDecision + replanRiskForTrigger）
+      - ewoh-spark-app/server/modules/scheduler/decision-ledger.ts（§31 单一实现，新）
+      - ewoh-spark-app/server/modules/scheduler/replan-coordinator.service.ts（双路径追加）
+      - ewoh-spark-app/server/modules/scheduler/plan.service.ts + dispatch-coordinator.service.ts（消费收敛）
+      - ewoh-spark-app/test/unit/scheduler/decision-projection.spec.ts（+3 例）
+      - ewoh-spark-app/test/unit/scheduler/replan-decision-persistence.spec.ts（新，2 例）
+  - id: dispatch-decision-wiring
+    summary: >
+      NO-13l（Round 82 / ADR-061）：Dispatch Decision 接线——
+      Decision Catalog kind #5（派工动作事实与派工同事务追加进
+      方案决策台账；风险档聚合 max 规则复用 ADR-048 单条映射；
+      outbox 事件链接；缺口/失败显式不阻断派工主流程）；派工链
+      全链留痕（kind2 审批 → kind4 预占 → kind5 派工）
+    evidence:
+      - docs/decisions/ADR-061-dispatch-decision-wiring.md
+      - ewoh-spark-app/server/modules/scheduler/decision-projection.ts（projectDispatchDecision + maxDecisionRisk）
+      - ewoh-spark-app/server/modules/scheduler/dispatch-coordinator.service.ts（单次追加重构）
+      - ewoh-spark-app/test/unit/scheduler/decision-projection.spec.ts（+3 例）
+      - ewoh-spark-app/server/modules/scheduler/__tests__/dispatch-integration.spec.ts（主链路断言补强）
+  - id: resource-reservation-decision-wiring
+    summary: >
+      NO-13k（Round 81 / ADR-060）：Resource Reservation Decision
+      接线——Decision Catalog kind #4（派工预占事实与派工同事务
+      追加进方案决策台账；台账行唯一链接 + 风险映射复用 ADR-048
+      规则；缺口/失败显式不阻断派工主流程）
+    evidence:
+      - docs/decisions/ADR-060-resource-reservation-decision-wiring.md
+      - ewoh-spark-app/server/modules/scheduler/decision-projection.ts（projectResourceReservationDecision）
+      - ewoh-spark-app/server/modules/scheduler/dispatch-coordinator.service.ts（appendReservationDecisions）
+      - ewoh-spark-app/test/unit/scheduler/decision-projection.spec.ts（+3 例）
+      - ewoh-spark-app/server/modules/scheduler/__tests__/dispatch-integration.spec.ts（主链路断言补强）
+  - id: agent-approval-decision-wiring
+    summary: >
+      NO-13j（Round 80 / ADR-059）：Agent Approval Decision 接线——
+      Decision Catalog kind #3（approved/rejected/expired 三解析路径
+      以契约形态同事务落 decision_json；authority 人工/策略区分 +
+      riskLevel 映射 manifest 真实事实；缺口/契约失败显式不阻断
+      审批主流程）
+    evidence:
+      - docs/decisions/ADR-059-agent-approval-decision-wiring.md
+      - ewoh-spark-app/server/modules/scheduler/decision-projection.ts（projectAgentApprovalDecision）
+      - ewoh-spark-app/server/modules/agent/agent.service.ts（resolveApproval 三路径 + resolveRow）
+      - ewoh-spark-app/server/database/schema.ts（decisionJson 列）
+      - db/migrations/standalone_052_agent_approval_decision.sql(+rollback+verify)
+      - ewoh-spark-app/test/unit/scheduler/decision-projection.spec.ts（+5 例）
+      - ewoh-spark-app/test/unit/agent/agent.service.spec.ts（+3 例）
+  - id: milp-scheduling-solver
+    summary: >
+      NO-13i（Round 79 / ADR-058）：MILP Scheduling Solver 接入——
+      HiGHS 1.15.2 WASM 真实 MILP 求解器（§8 阶梯第 4 类；ADR-053
+      决策 3 环境阻塞经仓库事实再评估解除）；共享候选面 + 联合行
+      精确整数规划 + 策略显式选择 milp-v1（无隐式回退）；solver-
+      pluggability 剩余缺口精确化为 CP-SAT 生产启用一项
+    evidence:
+      - docs/decisions/ADR-058-milp-scheduling-solver.md
+      - ewoh-spark-app/server/modules/scheduler/milp-scheduling-solver.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/milp-scheduling-solver.spec.ts（9 例真实 HiGHS）
+      - ewoh-spark-app/server/modules/scheduler/solver.service.ts（milp-v1 路由）
+      - ewoh-spark-app/shared/scheduler.ts（SolverActivationState += MILP）
+      - ewoh-spark-app/package.json（highs 依赖）
+      - feature-status.yaml（milpSolver）+ README.md（能力表行）
+      - docs/decisions/OPEN-DECISIONS.md（MILP 已关闭记录）
+  - id: plan-approval-decision-wiring
+    summary: >
+      NO-13h（Round 78 / ADR-057）：Plan Approval Decision 接线——
+      Decision Catalog kind #2（approve/reject 人审事实以契约形态
+      追加进方案决策台账）；approvePlan/rejectPlan 台账追加（不阻断
+      审批主流程）
+    evidence:
+      - docs/decisions/ADR-057-plan-approval-decision-wiring.md
+      - ewoh-spark-app/server/modules/scheduler/decision-projection.ts（projectPlanApprovalDecision）
+      - ewoh-spark-app/server/modules/scheduler/plan.service.ts（approve/reject 追加）
+      - ewoh-spark-app/test/unit/scheduler/decision-projection.spec.ts（+3 例）
+      - ewoh-spark-app/test/unit/scheduler/plan-decision-persistence.spec.ts（+2 例）
+  - id: empirical-duration-model-retrain-loop
+    summary: >
+      NO-13g（Round 77 / ADR-056）：经验时长统计模型（真实反馈非参数
+      统计）+ 模型重训/激活闭环（注册表落版 supersede + 版本递增 +
+      提供者替换 shadow-only 边界不变）；intelligence-l7-learning 升
+      Implemented
+    evidence:
+      - docs/decisions/ADR-056-empirical-duration-model-and-retrain-loop.md
+      - ewoh-spark-app/server/modules/scheduler/prediction/empirical-duration-model.ts
+      - ewoh-spark-app/server/modules/scheduler/prediction/empirical-duration-prediction-provider.ts
+      - ewoh-spark-app/server/modules/scheduler/prediction/duration-model-training.service.ts
+      - ewoh-spark-app/server/modules/scheduler/scheduler.module.ts + scheduler.controller.ts（retrain 端点）
+      - ewoh-spark-app/server/modules/scheduler/prediction/__tests__/empirical-duration-prediction.spec.ts（8 例）
+      - ewoh-spark-app/server/modules/scheduler/prediction/__tests__/duration-model-training.service.spec.ts（5 例）
+  - id: console-theme-toggle-and-render-tests
+    summary: >
+      NO-13f（Round 76 / ADR-055）：Console 手动主题切换（偏好单一
+      事实源 + 三态循环 + ThemeToggle + Layout 接线）+ 静态页面渲染
+      smoke（Forbidden/NotFound/ThemeToggle）；factory-operating-
+      console 升 Implemented
+    evidence:
+      - docs/decisions/ADR-055-console-theme-toggle-and-render-tests.md
+      - ewoh-spark-app/client/src/lib/contrastMode.ts（主题偏好单一事实源）
+      - ewoh-spark-app/client/src/components/app-shell/ThemeToggle.tsx
+      - ewoh-spark-app/client/src/components/Layout.tsx（接线）
+      - ewoh-spark-app/client/src/index.tsx（偏好感知启动）
+      - ewoh-spark-app/client/src/lib/contrastMode.test.ts（+5 例）
+      - ewoh-spark-app/client/src/components/app-shell/ThemeToggle.render.test.tsx（3 例）
+      - ewoh-spark-app/client/src/pages/static-pages.render.test.tsx（2 例）
+  - id: factory-operating-console-deepening
+    summary: >
+      NO-13e（Round 75 / ADR-054）：Factory Operating Console 深化——
+      视口 culling 生产接线（变换数学纯函数 + 唯一写点）+ 暗色模式
+      启动收口（系统偏好跟随）+ 页面级渲染 smoke（MapViewport 3 例 +
+      变换数学 5 例）
+    evidence:
+      - docs/decisions/ADR-054-factory-operating-console-deepening.md
+      - ewoh-spark-app/client/src/pages/CommandMap/store/viewportCulling.ts（worldBoundsFromTransform）
+      - ewoh-spark-app/client/src/pages/CommandMap/FactoryMap.tsx（onTransform 上报）
+      - ewoh-spark-app/client/src/pages/CommandMap/CommandMapShell.tsx（接线）
+      - ewoh-spark-app/client/src/index.tsx（暗色启动接线）
+      - ewoh-spark-app/client/src/pages/CommandMap/MapViewport.render.test.tsx（3 例）
+      - ewoh-spark-app/client/src/pages/CommandMap/store/viewportCulling.test.ts（+5 例）
+  - id: rule-based-scheduling-solver
+    summary: >
+      NO-13d（Round 74 / ADR-053）：Rule-based Scheduling Solver——
+      §8 求解器插拔阶梯第 3 类（确定性 L1 地板 + first-eligible 纯
+      规则 + 共享硬约束语义 + 统一评估器 + 策略显式选择）；差异
+      边界显式（不做软目标优化）
+    evidence:
+      - docs/decisions/ADR-053-rule-based-scheduling-solver.md
+      - ewoh-spark-app/server/modules/scheduler/rule-based-scheduling-solver.ts
+      - ewoh-spark-app/server/modules/scheduler/solver.service.ts（策略路由）
+      - ewoh-spark-app/server/modules/scheduler/__tests__/rule-based-scheduling-solver.spec.ts（7 例）
+      - ewoh-spark-app/shared/scheduler.ts（SolverStatus/SolverActivationState additive）
+  - id: exo-configuration-ledger
+    summary: >
+      NO-13c（Round 73 / ADR-052）：Exo Configuration 台账与写路径——
+      standalone_051 ewoh_exo_config（TENANT_SCOPED 受管表）+ ExoConfig
+      Service 契约门写路径（幂等 + activateProfile supersede）+ 目录
+      事件 + API 4 端点；exoskeleton-domain-model 升 Implemented
+    evidence:
+      - docs/decisions/ADR-052-exo-configuration-ledger-wiring.md
+      - db/migrations/standalone_051_exo_config.sql(+rollback+verify)
+      - ewoh-spark-app/server/modules/exo/exo-config.service.ts + exo-config.controller.ts
+      - ewoh-spark-app/server/modules/exo/__tests__/exo-config.service.spec.ts（5 例）
+      - openapi/ewoh.yaml（+4 路径）
+      - contracts/events/event-catalog.yaml（ExoConfigRecorded，64→65）
+  - id: exo-configuration-contract
+    summary: >
+      NO-13b（Round 72 / ADR-051）：Canonical Exo Configuration Model
+      契约层——§7 Support Mode/Assist Profile/Fit/Calibration 跨运行时
+      契约（kind/supportMode/calibrationKind 封闭注册表 + vendor_
+      specific 显式桶 + 判定事实完整）；Python/TS 双实现 + 581/581
+      门禁 + Golden 第 25 场景；台账/观测接线为 NO-13c
+    evidence:
+      - docs/decisions/ADR-051-canonical-exo-configuration-model.md
+      - contracts/exo/exo-config.schema.json + exo-config.test-vectors.json（22 条）
+      - src/edge_platform/contracts/exo_config.py
+      - ewoh-spark-app/shared/exo-config.ts + exo-config.spec.ts（8 例）
+      - scripts/audit-domain-contracts.js（exo-config 域，581/581）
+      - tests/test_exo_config_contract.py（23 例）
+      - tests/golden-fixtures/contract-golden-scenarios.json（第 25 场景）
+  - id: execution-feedback-completion-leg
+    summary: >
+      NO-13a（Round 71 / ADR-050）：执行反馈完成腿——recordActuals
+      执行事实 → assignment/task 状态推进（CAS + 事件 + 契约最短链
+      逐动作推进）；边界显式（exception 不隐式 resolve 等）；推进
+      summary additive 透出；canonical-execution-model 升 Implemented
+    evidence:
+      - docs/decisions/ADR-050-execution-feedback-completion-leg.md
+      - ewoh-spark-app/server/modules/scheduler/scheduling-feedback.service.ts（推进腿）
+      - ewoh-spark-app/server/modules/scheduler/scheduler-event-application.service.ts（summary 透出）
+      - ewoh-spark-app/server/modules/task/task.service.ts（taskActionPath）
+      - ewoh-spark-app/test/unit/scheduler/execution-feedback-advancement.spec.ts（6 例）
+      - ewoh-spark-app/test/unit/task/task-state-machine-contract.spec.ts（+1 例）
+  - id: canonical-execution-model-lockstep
+    summary: >
+      NO-12z（Round 70 / ADR-049）：Canonical Execution Model 语义
+      审计 + TS↔task.yaml 跨运行时锁步——R-3 遗留复核确认收口（边缘
+      ADR-029 / 云侧 dispatch 同步）；TS 状态机数据化为契约消费面 +
+      锁步 spec（穷举负例 + 检查器负测试）；三套执行词汇表差异边界
+      声明；执行反馈完成腿 NO-13a 立项
+    evidence:
+      - docs/decisions/ADR-049-canonical-execution-model-lockstep.md
+      - ewoh-spark-app/server/modules/task/task.service.ts（TASK_ACTIONS 数据化）
+      - ewoh-spark-app/test/unit/task/task-state-machine-contract.spec.ts（7 例）
+      - docs/reviews/codebase-walkthrough-2026-08-14.md（R-3 复核更正）
+      - contracts/state-machines/task.yaml（单一事实源）
+  - id: decision-projection-wiring
+    summary: >
+      NO-12y（Round 69 / ADR-048）：Decision 契约生产投影接线——
+      DecisionTrace→DecisionRecord 唯一投影点（persistPlan）随方案
+      持久化（standalone_050 decision_records_json）与读回；
+      riskLevel 映射自真实 route-graph 风险事实；缺口显式计数绝不
+      伪造；canonical-decision-model 升 Implemented
+    evidence:
+      - docs/decisions/ADR-048-decision-projection-wiring.md
+      - ewoh-spark-app/server/modules/scheduler/decision-projection.ts
+      - ewoh-spark-app/server/modules/scheduler/plan.service.ts（persistPlan 唯一投影点）
+      - ewoh-spark-app/server/database/schema.ts + db/migrations/standalone_050_decision_records.sql(+rollback+verify)
+      - ewoh-spark-app/shared/scheduler.ts（SchedulingPlanV2 additive）
+      - ewoh-spark-app/test/unit/scheduler/decision-projection.spec.ts（7 例）
+      - ewoh-spark-app/test/unit/scheduler/plan-decision-persistence.spec.ts（3 例）
+  - id: canonical-decision-model
+    summary: >
+      NO-12x（Round 68 / ADR-047）：Canonical Decision Model 契约层
+      ——跨运行时 Decision 契约 + Decision Catalog v1（8 类 kind 封闭
+      注册表）+ 判定事实完整（可解释选择/审批事实/时间/审计强制）；
+      Python/TS 双实现 + 545/545 门禁 + Golden 第 24 场景；风险阶梯
+      复用 risk 契约（§31 单一事实源）；生产投影接线为下一轮
+      NO-12y（§30 先修契约再修实现）
+    evidence:
+      - docs/decisions/ADR-047-canonical-decision-model.md
+      - contracts/decision/decision.schema.json + decision.test-vectors.json（23 条）
+      - src/edge_platform/contracts/decision.py
+      - ewoh-spark-app/shared/decision.ts + decision.spec.ts（10 例）
+      - scripts/audit-domain-contracts.js（decision 域，545/545）
+      - tests/test_decision_contract.py（25 例）
+      - tests/golden-fixtures/contract-golden-scenarios.json（第 24 场景）
+  - id: email-starttls-upgrade
+    summary: >
+      NO-12w（Round 67 / ADR-046）：邮件 STARTTLS 升级——587 端口
+      凭据投递可用（机会式 STARTTLS + 失败显式 + 凭据安全不变式
+      延续）；ADR-041 v1 传输形态边界消除
+    evidence:
+      - docs/decisions/ADR-046-email-starttls.md
+      - ewoh-spark-app/server/modules/notification/email-transport.ts（startTls + 会话升级）
+      - ewoh-spark-app/test/unit/notification/email-transport.spec.ts（12 例）
+      - ewoh-spark-app/test/unit/notification/channel-dispatcher.service.spec.ts（fake 适配）
+      - deploy/.env.example（传输形态 v2 注释）
+  - id: record-based-capability-matching
+    summary: >
+      NO-12v（Round 66 / ADR-045）：Record 化匹配收敛——能力匹配
+      端到端走契约形态（快照投影 → 资格判定 → 预筛索引），raw 数组
+      降级为同源 legacy 回退（语义逐字一致，等价断言锁定）
+    evidence:
+      - docs/decisions/ADR-045-record-based-matching.md
+      - ewoh-spark-app/server/modules/scheduler/capability-projection.ts（匹配辅助函数）
+      - ewoh-spark-app/server/modules/scheduler/eligibility.service.ts（Record 匹配）
+      - ewoh-spark-app/server/modules/scheduler/candidate-engine.service.ts（ctx 透传）
+      - ewoh-spark-app/server/modules/scheduler/heuristic-scheduling-solver.ts（预筛索引）
+      - ewoh-spark-app/test/unit/scheduler/capability-projection.spec.ts（14 例）
+  - id: capability-projection-wiring
+    summary: >
+      NO-12u（Round 65 / ADR-044）：Capability 契约消费方投影接线——
+      能力事实首次以 Canonical CapabilityRecord 形态进入生产调用链
+      （buildSnapshot 唯一投影点）；数据源缺口显式暴露（§3 可回答
+      「为什么认为…」）
+    evidence:
+      - docs/decisions/ADR-044-capability-projection-wiring.md
+      - ewoh-spark-app/server/modules/scheduler/capability-projection.ts
+      - ewoh-spark-app/server/modules/scheduler/world-state.service.ts（buildSnapshot 投影）
+      - ewoh-spark-app/shared/scheduler.ts（WorldStateSnapshot additive）
+      - ewoh-spark-app/test/unit/scheduler/capability-projection.spec.ts（8 例）
+  - id: canonical-capability-model
+    summary: >
+      NO-12t（Round 64 / ADR-043）：Canonical Capability Model 契约层
+      ——kind/providerType 结构封闭 + name 词表开放（§3 单一事实源）；
+      双实现 + 511 门禁 + Golden 第 23 场景
+    evidence:
+      - docs/decisions/ADR-043-canonical-capability-model.md
+      - contracts/capability/capability.schema.json + capability.test-vectors.json（13 条）
+      - src/edge_platform/contracts/capability.py
+      - ewoh-spark-app/shared/capability.ts + capability.spec.ts（8 例）
+      - scripts/audit-domain-contracts.js（capability 域，511/511）
+      - tests/test_capability_contract.py（14 例）
+      - tests/golden-fixtures/contract-golden-scenarios.json（第 23 场景）
+  - id: pre-approval-simulation
+    summary: >
+      NO-12s（Round 63 / ADR-042）：审批前自动布局仿真预验证——
+      调度决策时刻自动消费 L6 确定性仿真（advisory 证据，绝不
+      阻断人工审批门）；审计 + getPlan 三面可见
+    evidence:
+      - docs/decisions/ADR-042-pre-approval-simulation.md
+      - ewoh-spark-app/server/modules/scheduler/pre-approval-simulation.ts
+      - ewoh-spark-app/server/modules/scheduler/plan.service.ts（approvePlan 接线 + attachPreApprovalSimulation）
+      - ewoh-spark-app/server/modules/scheduler/scheduler.module.ts（SimulationModule）
+      - ewoh-spark-app/shared/scheduler.ts（SchedulingPlanV2.preApprovalSimulation）
+      - ewoh-spark-app/test/unit/scheduler/{pre-approval-simulation.spec.ts（7 例）,plan-pre-approval-simulation.spec.ts（3 例）}
+  - id: email-push-channel
+    summary: >
+      NO-12r（Round 62 / ADR-041）：邮件推送渠道——标准库 SMTP
+      客户端真实投递（TLS 凭据 fail-closed）+ 三渠道通知同语义；
+      andon-loop 收口（状态机/飞书/邮件/边缘上行全腿齐备）
+    evidence:
+      - docs/decisions/ADR-041-email-push-channel.md
+      - ewoh-spark-app/server/modules/notification/email-transport.ts
+      - ewoh-spark-app/server/modules/notification/channel-dispatcher.service.ts（多渠道）
+      - ewoh-spark-app/server/modules/notification/andon-notifications.ts（三渠道）
+      - ewoh-spark-app/test/unit/notification/email-transport.spec.ts（10 例）
+      - ewoh-spark-app/test/unit/notification/channel-dispatcher.service.spec.ts（+3 例）
+      - deploy/.env.example（EWOH_SMTP_* 7 键）
+      - ewoh-spark-app/client/src/pages/ApprovalConsole/（渠道标签 += 邮件）
+  - id: edge-andon-uplink
+    summary: >
+      NO-12q（Round 61 / ADR-040）：边缘 AndonRaised 上行——现场开灯
+      可在边缘触发（离线队列兜底），云侧台账/状态机/SLA/推送全链
+      复用既有闭环；exo POST 分发缺口修复（§30 边界）
+    evidence:
+      - docs/decisions/ADR-040-edge-andon-uplink.md
+      - src/edge_platform/routes/andon.py
+      - src/edge_platform/routes/registry.py（POST 表补 handle_exo + handle_andon）
+      - src/edge_platform/tests/test_andon_raise.py（9 例）
+      - ewoh-spark-app/server/modules/ingest/ingest.service.ts（canonical 投影）
+      - ewoh-spark-app/server/modules/notification/andon-notifications.ts（共享助手）
+      - ewoh-spark-app/test/unit/ingest/ingest.service.spec.ts（+3 例）
+  - id: agent-approval-persistence
+    summary: >
+      NO-12p（Round 60 / ADR-039）：Agent 审批跨重启持久化——待批
+      事实迁至 ewoh_agent_approval 台账（propose/resolve/list 全台账
+      化 + CAS 终态 + 重复解析显式拒绝）；ADR-030 决策 4 进程内存
+      边界消除；§20 人工审批门跨重启持久
+    evidence:
+      - docs/decisions/ADR-039-agent-approval-persistence.md
+      - db/migrations/standalone_049_agent_approval.sql + .rollback.sql
+      - db/verify/standalone_049_agent_approval.verify.sql
+      - ewoh-spark-app/server/database/schema.ts（ewohAgentApproval）
+      - ewoh-spark-app/server/modules/agent/agent.service.ts（台账桥接 + resolveRow CAS）
+      - ewoh-spark-app/server/modules/agent/agent.module.ts（去 ApprovalModule）
+      - ewoh-spark-app/test/unit/agent/agent.service.spec.ts（46 例，含跨重启新实例解析）
+  - id: shadow-plan-isolation-check
+    summary: >
+      NO-12o（Round 59 / ADR-038）：Shadow Plan 隔离 DB 纵深防御
+      （standalone_048）——§13 隔离红线的数据库兜底不再依赖服务层
+      正确性：服务端 hard guard + is_shadow 标识 + 表级 CHECK 三层；
+      verify 5 自证拒绝 + 2 控制组；无新表（原地加固）
+    evidence:
+      - docs/decisions/ADR-038-shadow-plan-isolation-check.md
+      - db/migrations/standalone_048_shadow_plan_isolation.sql + .rollback.sql
+      - db/verify/standalone_048_shadow_plan_isolation.verify.sql
+      - db/runner/run_migrations.js（dispatch/verify handler/rollback）
+      - scripts/standalone-postgres-check.sh + .github/workflows/standalone.yml
+      - .codex/artifacts/state.json（verification_state 229）
+      - db/contracts/schema-manifest.yaml（原地加固注记，72 不变）
+  - id: andon-lark-push-channel
+    summary: >
+      NO-12n（Round 58 / ADR-037）：Andon 飞书推送渠道——安灯开灯与
+      SLA 升级双触发点 → ewoh_notification(channel=lark) → webhook
+      真实投递（sent/failed 显式 + 人工重试）；§15 通知 orgId 修复
+      （孤儿行消除）；andon-loop 推送腿闭环（剩余：邮件 + 边缘上行）
+    evidence:
+      - docs/decisions/ADR-037-andon-push-channel.md
+      - ewoh-spark-app/server/modules/notification/channel-dispatcher.service.ts
+      - ewoh-spark-app/test/unit/notification/channel-dispatcher.service.spec.ts（11 例）
+      - ewoh-spark-app/server/modules/notification/notification.service.ts（retryPush）
+      - ewoh-spark-app/server/modules/oee/oee.service.ts（createAndonNotifications + orgId）
+      - ewoh-spark-app/client/src/pages/ApprovalConsole/（推送状态面 + 重试）
+      - deploy/.env.example（EWOH_LARK_WEBHOOK_URL / EWOH_NOTIFICATION_DISPATCH_INTERVAL_MS）
+  - id: simulation-console
+    summary: >
+      NO-12m（Round 57 / ADR-036）：仿真运行控制台（L6 生产消费面）——
+      四类确定性仿真首次进入生产操作面（操作员触发/台账可见/失败可
+      重试）；预检=UX 提示服务端权威 fail-closed；复用 ADR-025 契约/
+      台账/事件/三层隔离全资产（无新事实源）
+    evidence:
+      - docs/decisions/ADR-036-simulation-console.md
+      - ewoh-spark-app/client/src/pages/Simulation/SimulationConsole.tsx
+      - ewoh-spark-app/client/src/pages/Simulation/simulationConsoleLogic.ts + simulationConsoleLogic.test.ts（18 例）
+      - ewoh-spark-app/client/src/api/simulation.ts
+      - ewoh-spark-app/client/src/hooks/queryKeys.ts（simulationRuns）
+      - ewoh-spark-app/client/src/lib/navigation.ts + client/src/App.tsx（/simulation 路由）
+      - ewoh-spark-app/server/modules/simulation/（ADR-025 既有资产）
+  - id: execution-deviation-map-layer
+    summary: >
+      NO-12k（Round 56 / ADR-035）：地图端执行偏差图层（planned vs
+      actual 可视化，R-6）——派工→执行→反馈闭环的地图端收口
+      （§37「执行到哪里/结果如何」空间表达）；纯 UI/VM 投影层，
+      无新事实源（服务端 deviationType 权威分类 + 快照坐标事实）
+    evidence:
+      - docs/decisions/ADR-035-execution-deviation-map-layer.md
+      - ewoh-spark-app/client/src/pages/CommandMap/vm/executionDeviationMapVM.ts
+      - ewoh-spark-app/client/src/pages/CommandMap/vm/executionDeviationMapVM.test.ts（13 例）
+      - ewoh-spark-app/client/src/pages/CommandMap/layers/SchedulerLayers.tsx（ExecutionDeviationLayer）
+      - ewoh-spark-app/client/src/pages/CommandMap/hooks/commandMapSelector.ts（executions/toggleLayer）+ commandMapSelector.test.ts（6 例）
+      - ewoh-spark-app/client/src/pages/CommandMap/hooks/useCommandMapSchedulerState.ts（executions 查询）
+      - ewoh-spark-app/client/src/pages/CommandMap/MapViewport.tsx（图层开关 chip 组）
+  - id: outcome-annotation-surface
+    summary: >
+      NO-12j（Round 55 / ADR-034）：Outcome 标注面——Decision→Outcome
+      结构化真值事实层（契约 + 台账 + 云侧写路径 + 目录事件）；学习回路
+      模型腿前置补全，modelAccuracy 显式 unknown 直至真实模型落地
+    evidence:
+      - docs/decisions/ADR-034-outcome-annotation-surface.md
+      - contracts/learning/outcome-annotation.schema.json + test-vectors.json（8 条）
+      - src/edge_platform/contracts/outcome_annotation.py + ewoh-spark-app/shared/outcome-annotation.ts
+      - scripts/audit-domain-contracts.js（493/493，outcome_annotation 域）
+      - db/migrations/standalone_047_outcome_annotation.sql + .rollback.sql + db/verify/standalone_047_outcome_annotation.verify.sql
+      - db/runner/run_migrations.js + db/contracts/schema-manifest.yaml（受管表 71→72/74→75）
+      - db/verify/{001,standalone_001}_verify.sql（65→66）+ scripts/standalone-postgres-check.sh + .github/workflows/standalone.yml
+      - .codex/artifacts/state.json + docs/delivery/release-manifest.yaml（口径 72）
+      - ewoh-spark-app/server/database/schema.ts（ewohOutcomeAnnotation）
+      - ewoh-spark-app/server/modules/learning/outcome-annotation.{service,controller}.ts + 4 例 spec
+      - contracts/events/event-catalog.yaml（OutcomeAnnotationRecorded，64/64）+ 双运行时投影
+      - tests/golden-fixtures/contract-golden-scenarios.json（outcome_annotation_contract 第 22 场景）
+      - tests/test_outcome_annotation_contract.py（10 例）
+      - openapi/ewoh.yaml（/api/learning/annotations* 3 路由，391 零漂移）
+      - docs/capabilities/capability-matrix.yaml（intelligence-l7-learning 缺口收窄）
+      - docs/architecture/decision-log.md（AD-LC-045）
+  - id: edge-exo-binding-uplink
+    summary: >
+      NO-12i（Round 54 / ADR-033）：边缘绑定事实→云 ExoSession 台账端到
+      端——边缘一等绑定 API + 事件骨干上行 + 云侧幂等投影；§7 闭环收口，
+      worker-exoskeleton-loop 升 Implemented
+    evidence:
+      - docs/decisions/ADR-033-edge-exo-binding-uplink.md
+      - src/edge_platform/edge/storage.py（exo_binding 表 + 5 方法）
+      - src/edge_platform/routes/exo.py + routes/registry.py
+      - src/edge_platform/tests/test_exo_binding.py（6 例）
+      - ewoh-spark-app/server/modules/ingest/ingest.service.ts（projectExoSessionEvent）
+      - ewoh-spark-app/server/modules/ingest/ingest.module.ts（ExoSessionModule 依赖）
+      - ewoh-spark-app/server/modules/exo/exo-session.service.ts（幂等）
+      - ewoh-spark-app/test/unit/ingest/ingest.service.spec.ts（+3 投影例）
+      - contracts/events/event-catalog.yaml（payload 增补）
+      - docs/capabilities/capability-matrix.yaml（worker-exoskeleton-loop Implemented，44/11/0/1）
+      - docs/architecture/decision-log.md（AD-LC-044）
+  - id: exo-session-domain-model
+    summary: >
+      NO-12h（Round 53 / ADR-032）：外骨骼↔人员绑定 Session 域模型——
+      契约 + 台账（活跃唯一机器强制）+ 云侧写路径 + 目录事件；§7
+      「绑定是显式、临时且可审计的 Session」契约化落地
+    evidence:
+      - docs/decisions/ADR-032-exo-session-domain-model.md
+      - contracts/exo/exo-session.schema.json + exo-session.test-vectors.json（9 条）
+      - src/edge_platform/contracts/exo_session.py + ewoh-spark-app/shared/exo-session.ts
+      - scripts/audit-domain-contracts.js（479/479，exo 域）
+      - db/migrations/standalone_046_exo_session.sql + .rollback.sql + db/verify/standalone_046_exo_session.verify.sql
+      - db/runner/run_migrations.js + db/contracts/schema-manifest.yaml（受管表 70→71/73→74）
+      - db/verify/{001,standalone_001}_verify.sql（64→65）+ scripts/standalone-postgres-check.sh + .github/workflows/standalone.yml
+      - .codex/artifacts/state.json + docs/delivery/release-manifest.yaml（口径 71）
+      - ewoh-spark-app/server/database/schema.ts（ewohExoSession）
+      - ewoh-spark-app/server/modules/exo/（service/controller/module + 6 例 spec）
+      - contracts/events/event-catalog.yaml（ExoSessionStarted/Ended，63/63）+ 双运行时投影
+      - tests/golden-fixtures/contract-golden-scenarios.json（exo_session_contract 第 21 场景）
+      - tests/test_exo_session_contract.py（12 例）
+      - openapi/ewoh.yaml（/api/exo/sessions* 5 路由，388 零漂移）
+      - docs/capabilities/capability-matrix.yaml（worker-exoskeleton-loop 缺口收窄）
+      - docs/architecture/decision-log.md（AD-LC-043）
+  - id: andon-loop-state-machine
+    summary: >
+      NO-12g（Round 52 / ADR-031）：Andon Loop 贯通——状态机单一事实源
+      （yaml→TS 锁定表→门禁）+ AndonRaised 目录事件真实产出 + 角色条件
+      机器执行；§6 Andon 处置闭环端到端贯通
+    evidence:
+      - docs/decisions/ADR-031-andon-loop-state-machine.md
+      - contracts/state-machines/alert.yaml（单一事实源）
+      - ewoh-spark-app/shared/alert-state-machine.ts + alert-state-machine.spec.ts（7 例）
+      - ewoh-spark-app/server/modules/alert/alert.service.ts（状态机复用）
+      - ewoh-spark-app/server/modules/oee/oee.service.ts（AndonRaised 产出 + 状态机复用）
+      - scripts/audit-domain-contracts.js（alert_state_machine_ts_vs_yaml，466/466）
+      - ewoh-spark-app/test/unit/oee/oee.service.spec.ts（8 例）
+      - docs/capabilities/capability-matrix.yaml（andon-loop 缺口收窄）
+      - docs/architecture/decision-log.md（AD-LC-042）
+  - id: approval-console-client
+    summary: >
+      NO-12f 客户端（Round 51 / ADR-030）：审批控制台——待批清单批准/
+      驳回（Agent + 调度 step 双闭环）+ 通知中心消费面；agent-policy-
+      approval 升 Implemented（矩阵 43/12/0/1）
+    evidence:
+      - ewoh-spark-app/client/src/api/approvals.ts（6 个 API 函数）
+      - ewoh-spark-app/client/src/pages/ApprovalConsole/ApprovalConsole.tsx（页面）
+      - ewoh-spark-app/client/src/pages/ApprovalConsole/approvalConsoleLogic.ts + .test.ts（4 例）
+      - ewoh-spark-app/client/src/App.tsx（路由 approval-console）
+      - ewoh-spark-app/client/src/lib/navigation.ts（导航项）
+      - docs/capabilities/capability-matrix.yaml（agent-policy-approval Implemented，43/12/0/1）
+      - docs/architecture/decision-log.md（AD-LC-041）
+  - id: agent-approval-interaction-surface
+    summary: >
+      NO-12f（Round 50 / ADR-030）：Agent 审批交互面——统一待批清单 +
+      通知读写闭环 + 审批角色配置化；§17 审批闭环服务端交互面补齐
+    evidence:
+      - docs/decisions/ADR-030-agent-approval-interaction-surface.md
+      - ewoh-spark-app/server/modules/agent/agent.service.ts（listPendingApprovals/
+        notifyApprovalPending/agentApprovalRoles）
+      - ewoh-spark-app/server/modules/approval/approval.service.ts（listPending）
+      - ewoh-spark-app/server/modules/approval/approval-persistence.service.ts（listPending）
+      - ewoh-spark-app/server/modules/approval/approval.controller.ts（GET pending）
+      - ewoh-spark-app/server/modules/notification/（新模块 3 文件 + 5 例 spec）
+      - ewoh-spark-app/server/database/schema.ts（ewohNotification.orgId）
+      - ewoh-spark-app/server/modules/oee/oee.service.ts（severity 词表补漏）
+      - deploy/.env.example（EWOH_AGENT_APPROVAL_ROLES + env-inventory PASS）
+      - openapi/ewoh.yaml（+4 路由，383 零漂移）
+      - docs/architecture/decision-log.md（AD-LC-040）
+  - id: edge-task-assignment-state-sync
+    summary: >
+      NO-12e（Round 49 / ADR-029）：边缘任务↔派工状态机双向同步——
+      execute→Task dispatched、set_assignment_status→Task、update_task→
+      Assignments（同状态机 + 最短链补全 + 幂等跳过 + 失败显式留痕）；
+      R-3 收口，任务事实单一化
+    evidence:
+      - docs/decisions/ADR-029-task-assignment-state-sync.md
+      - src/edge_platform/scheduler/scheduler_service.py（_sync_task_status /
+        _sync_assignments_for_task / _apply_assignment_transition / execute 接线）
+      - src/edge_platform/tests/test_task_assignment_sync.py（7 例）
+      - docs/capabilities/capability-matrix.yaml（logistics-task-loop 缺口收窄）
+      - docs/architecture/decision-log.md（AD-LC-039）
+  - id: edge-cloud-metrics-uplink
+    summary: >
+      NO-12d（Round 48 / ADR-028）：Edge→Cloud 指标上行——边缘 ewoh_*
+      18 家族入规范注册表（33 家族）+ MetricsUplink 周期快照上行 +
+      云侧 EdgeMetricsService 契约 fail-closed 接收面 + 导出面 org
+      作用域 + connector_* 上行健康计数；§19 观测腿 Edge→Cloud 打通
+    evidence:
+      - docs/decisions/ADR-028-edge-cloud-metrics-uplink.md
+      - contracts/observability/metrics-registry.schema.json（15→33 家族）
+      - src/edge_platform/contracts/metrics_registry.py + ewoh-spark-app/shared/metrics-registry.ts（lockstep）
+      - src/edge_platform/edge/bridge/metrics_uplink.py（新）
+      - src/edge_platform/monitoring/exporter.py（METRIC_DEFS 公开单一映射源）
+      - src/edge_platform/{config,run,server}.py + routes/health.py（装配 + 健康透出）
+      - src/edge_platform/tests/test_metrics_uplink.py（8 例）
+      - ewoh-spark-app/server/modules/observability/edge-metrics.service.ts（新）
+      - ewoh-spark-app/server/modules/observability/metrics-export.{service,controller}.ts（org 作用域 + 合并）
+      - ewoh-spark-app/server/modules/observability/__tests__/edge-metrics.service.spec.ts（7 例）
+      - deploy/.env.example（5 项 + audit-env-inventory 114/115 PASS）
+      - openapi/ewoh.yaml（/api/observability/metrics/edge-metrics，379 零漂移）
+      - tests/golden-fixtures/contract-golden-scenarios.json（metrics 场景 +3 边缘案例）
+      - docs/architecture/decision-log.md（AD-LC-038）
+  - id: severity-vocabulary-convergence
+    summary: >
+      NO-02c-b（Round 47 / ADR-027）：云侧严重度词表收敛——唯一词表
+      Canonical Risk Ladder + 无风险判定显式 unknown；12 服务写入点逐类
+      确定性迁移 + 入口归一化 normalizeEventSeverity + 5 类消费方收敛 +
+      客户端全量收敛；canonical-risk-model 全链路接线收口
+    evidence:
+      - docs/decisions/ADR-027-severity-vocabulary-convergence.md
+      - ewoh-spark-app/shared/risk.ts（normalizeEventSeverity + EVENT_SEVERITY_UNKNOWN）
+      - ewoh-spark-app/server/modules/{learning,agent,knowledge,simulator,inference,simulation,reliability,erp,world,ingest}/（12 写入点）
+      - ewoh-spark-app/server/modules/scheduler/priority-engine.ts（{critical,high,medium}=risky）
+      - ewoh-spark-app/server/modules/agent/agent.service.ts（supervisor critical/high）
+      - ewoh-spark-app/server/modules/learning/learning.service.ts（riskOutcomeRate canonical + 过渡期 UNION）
+      - ewoh-spark-app/server/modules/gamification/gamification.service.ts（critical 风暴）
+      - ewoh-spark-app/server/modules/dashboard/dashboard.service.ts（口径注释修正）
+      - ewoh-spark-app/client/src/pages/CommandMap/panels/{EventCenterPanel,TimelinePanel}.tsx
+      - ewoh-spark-app/client/src/components/{Timeline,AlertToast,alertToastLogic}.tsx/ts（更名 aggregateCriticalEvents）
+      - ewoh-spark-app/client/src/pages/Devices/DeviceConfigDrawer.tsx + perf/commandMapPerf.ts
+      - docs/capabilities/capability-matrix.yaml（canonical-risk-model 证据深化）
+      - docs/architecture/decision-log.md（AD-LC-037）
+  - id: learning-feedback-policy-leg
+    summary: >
+      NO-12b（Round 46 / ADR-026）：学习回路反馈腿 v2（策略腿）——
+      LearningProposal 契约（kind 封闭注册表 + thresholdRules 白名单 +
+      影子评估前置 + 人审激活阶梯 + 回滚/拒绝理由强制）+ 确定性影子
+      评估器（历史重放 fired 差集 + riskLevel）+ Python/TS 双实现 +
+      门禁 465/465 + Golden 第 20 场景 + standalone_045 台账（全
+      lockstep）+ 云侧提案运行时 + ReasoningService 真实激活接线 +
+      LearningProposalCreated/Resolved（61 类）；intelligence-l7-learning
+      缺口收窄为模型腿
+    evidence:
+      - docs/decisions/ADR-026-learning-feedback-v2.md
+      - contracts/learning/learning-proposal.schema.json + learning-proposal.test-vectors.json（9 条）
+      - src/edge_platform/contracts/learning_proposal.py（验证器 + 影子评估器）
+      - ewoh-spark-app/shared/learning-proposal.ts + learning-proposal.spec.ts（13 例）
+      - src/edge_platform/contracts/reasoning_trace.py + ewoh-spark-app/shared/reasoning-trace.ts（thresholds 覆盖参数）
+      - scripts/audit-domain-contracts.js（465/465，learning_proposal 域 + 影子评估跨语言仲裁 + THRESHOLD_RULES 深比较）
+      - db/migrations/standalone_045_learning_proposal.sql + .rollback.sql + db/verify/standalone_045_learning_proposal.verify.sql
+      - db/runner/run_migrations.js + db/contracts/schema-manifest.yaml（受管表 69→70/72→73）
+      - db/verify/{001,standalone_001}_verify.sql（63→64）+ scripts/standalone-postgres-check.sh + .github/workflows/standalone.yml
+      - .codex/artifacts/state.json + docs/delivery/release-manifest.yaml（口径 70）
+      - ewoh-spark-app/server/database/schema.ts（ewohLearningProposal）
+      - ewoh-spark-app/server/modules/learning/（learning-proposal.service/controller + 10 例 spec）
+      - ewoh-spark-app/server/modules/reasoning/（激活接线 + spec 9 例含激活面）
+      - contracts/events/event-catalog.yaml（LearningProposalCreated/Resolved，61/61）+ 双运行时投影
+      - tests/golden-fixtures/contract-golden-scenarios.json（learning_proposal_contract 第 20 场景，11 案例）
+      - tests/test_learning_proposal_contract.py（15 例）
+      - openapi/ewoh.yaml（/api/learning/proposals* 7 路由，378 零漂移）
+      - docs/capabilities/capability-matrix.yaml（intelligence-l7-learning 证据深化）
+      - docs/architecture/decision-log.md（AD-LC-036）
+  - id: digital-twin-simulation
+    summary: >
+      NO-12a（Round 45 / ADR-025）：Digital Twin 仿真体系——SimulationRun
+      契约（4 kind/4 status 注册表 + isSimulation=true 三层强制隔离 +
+      baseRef 可追溯 + 终态契约）+ 四类确定性评估器（what-if/capacity/
+      layout/material_flow）+ Python/TS 双实现 + 门禁 444/444 + Golden 第
+      19 场景 + standalone_044 台账（TENANT_SCOPED RLS + CHECK，全
+      lockstep）+ 云侧 simulation 模块 + SimulationRunCreated/Completed
+      （59 类）；digital-twin-simulation 升 Implemented（矩阵 42/13/0/1）
+    evidence:
+      - docs/decisions/ADR-025-digital-twin-simulation.md
+      - contracts/simulation/simulation-run.schema.json + simulation-run.test-vectors.json（8 条）
+      - src/edge_platform/contracts/simulation_run.py（验证器 + 四评估器）
+      - ewoh-spark-app/shared/simulation-run.ts + simulation-run.spec.ts（13 例）
+      - scripts/audit-domain-contracts.js（444/444，simulation 域 + 评估器跨语言仲裁）
+      - db/migrations/standalone_044_simulation_run.sql + .rollback.sql + db/verify/standalone_044_simulation_run.verify.sql
+      - db/runner/run_migrations.js + db/contracts/schema-manifest.yaml（受管表 68→69/71→72）
+      - db/verify/{001,standalone_001}_verify.sql（62→63）+ scripts/standalone-postgres-check.sh + .github/workflows/standalone.yml
+      - .codex/artifacts/state.json + docs/delivery/release-manifest.yaml（口径 69）
+      - ewoh-spark-app/server/database/schema.ts（ewohSimulationRun）
+      - ewoh-spark-app/server/modules/simulation/（service/controller/module + 8 例 spec）
+      - contracts/events/event-catalog.yaml（SimulationRunCreated/Completed，59/59）+ 双运行时投影
+      - tests/golden-fixtures/contract-golden-scenarios.json（simulation_run_contract 第 19 场景，12 案例）
+      - tests/test_simulation_run_contract.py（12 例）
+      - openapi/ewoh.yaml（/api/simulation/runs* 3 路由，371 零漂移）
+      - docs/capabilities/capability-matrix.yaml（digital-twin-simulation Implemented，42/13/0/1）
+      - docs/architecture/decision-log.md（AD-LC-035）
+  - id: dead-letter-system
+    summary: >
+      NO-11a（Round 44 / ADR-024）：Dead Letter 体系——dead-letter 契约
+      （5 reason/3 status 注册表 + envelope 快照 + 人审重放 + discard 理由）
+      + Python/TS 双实现 + 门禁 427/427 + Golden 第 18 场景 + standalone_043
+      台账（TENANT_SCOPED RLS + CHECK + 确定性幂等键，全 lockstep）+ 云侧
+      reliability 模块 + ingest 永久失败真实接线 + DeadLetterRecorded
+      （57 类）；reliability-hybrid 升 Implemented（矩阵 41/14/0/1）
+    evidence:
+      - docs/decisions/ADR-024-dead-letter-system.md
+      - contracts/reliability/dead-letter.schema.json + dead-letter.test-vectors.json（8 条）
+      - src/edge_platform/contracts/dead_letter.py
+      - ewoh-spark-app/shared/dead-letter.ts + dead-letter.spec.ts（8 例）
+      - scripts/audit-domain-contracts.js（427/427，dead_letter 域）
+      - db/migrations/standalone_043_dead_letter.sql + .rollback.sql + db/verify/standalone_043_dead_letter.verify.sql
+      - db/runner/run_migrations.js + db/contracts/schema-manifest.yaml（受管表 67→68/70→71）
+      - db/verify/{001,standalone_001}_verify.sql（61→62）+ scripts/standalone-postgres-check.sh + .github/workflows/standalone.yml
+      - .codex/artifacts/state.json + docs/delivery/release-manifest.yaml（口径 68）
+      - ewoh-spark-app/server/database/schema.ts（ewohDeadLetter）
+      - ewoh-spark-app/server/modules/reliability/（service/controller/module + 9 例 spec）
+      - ewoh-spark-app/server/modules/ingest/ingest.service.ts（永久失败接线 + ingest.module.ts + 4 例 spec）
+      - contracts/events/event-catalog.yaml（DeadLetterRecorded，57/57）+ 双运行时投影
+      - tests/golden-fixtures/contract-golden-scenarios.json（dead_letter_contract 第 18 场景）
+      - openapi/ewoh.yaml（/api/reliability/dead-letters* 4 路由，368 零漂移）
+      - docs/capabilities/capability-matrix.yaml（reliability-patterns Implemented，41/14/0/1）
+      - docs/architecture/decision-log.md（AD-LC-034）
+  - id: observability-metrics-leg
+    summary: >
+      NO-10b（Round 43 / ADR-023）：observability 指标腿——统一指标注册表
+      契约（15 家族 + type/label/violation 规则）+ Python/TS 双实现 + 门禁
+      415/415 + Golden 第 17 场景 + 云侧统一导出面（JSON + Prometheus +
+      violations 显式）+ Agent 指标埋点；observability 升 Implemented
+      （矩阵 40/15/0/1）
+    evidence:
+      - docs/decisions/ADR-023-metrics-registry.md
+      - contracts/observability/metrics-registry.schema.json + metrics-registry.test-vectors.json（8 条）
+      - src/edge_platform/contracts/metrics_registry.py
+      - ewoh-spark-app/shared/metrics-registry.ts + metrics-registry.spec.ts（8 例）
+      - scripts/audit-domain-contracts.js（415/415，metrics 域 + REGISTRY_DEEP）
+      - tests/golden-fixtures/contract-golden-scenarios.json（metrics_registry_contract 第 17 场景）
+      - tests/test_metrics_registry_contract.py（11 例）
+      - ewoh-spark-app/server/modules/agent/agent-metrics.service.ts（+ agent.service.ts 埋点 + agent.module.ts 导出）
+      - ewoh-spark-app/server/modules/observability/metrics-export.service.ts（+ 5 例 spec + controller + module）
+      - openapi/ewoh.yaml（/api/observability/metrics* 2 路由，364 零漂移）
+      - docs/capabilities/capability-matrix.yaml（observability Implemented，40/15/0/1）
+      - docs/architecture/decision-log.md（AD-LC-033）
+  - id: trace-correlation-end-to-end
+    summary: >
+      NO-10a（Round 42 / ADR-022）：§19 全链路 trace 贯通——traceId 端到端
+      correlation id（审计自动关联 + 五生产者 envelope correlationId +
+      span 持久化 + 三面缝合查询）；observability trace 腿闭合（指标腿留
+      NO-10b）
+    evidence:
+      - docs/decisions/ADR-022-trace-correlation.md
+      - db/migrations/standalone_042_trace_span.sql + .rollback.sql + db/verify/standalone_042_trace_span.verify.sql
+      - db/runner/run_migrations.js + db/contracts/schema-manifest.yaml（受管表 66→67/69→70）
+      - db/verify/{001,standalone_001}_verify.sql（60→61）+ scripts/standalone-postgres-check.sh + .github/workflows/standalone.yml
+      - .codex/artifacts/state.json + docs/delivery/release-manifest.yaml（口径 67）
+      - ewoh-spark-app/server/common/request-context.ts（currentTraceId）
+      - ewoh-spark-app/server/modules/tracing/（TracingService 持久化/缝合 + interceptor lineage + controller :traceId + 9 例 spec）
+      - ewoh-spark-app/server/modules/{workorder,agent,knowledge,inference,learning}/*.service.ts（correlationId 接线）
+      - openapi/ewoh.yaml（/api/observability/traces/{traceId}，362 零漂移）
+      - docs/capabilities/capability-matrix.yaml（observability trace 腿证据）
+      - docs/architecture/decision-log.md（AD-LC-032）
+  - id: continuous-learning-loop-v1
+    summary: >
+      NO-09a（Round 41 / ADR-021）：持续学习回路 v1——LearningEvaluation
+      契约（七指标封闭注册表/null 语义/period 契约/basis 声明）+ Python/TS
+      双实现 + 门禁 learning 域（400/400）+ Golden 第 16 场景 + standalone_041
+      台账（TENANT_SCOPED RLS + CHECK + 幂等重评估，全 lockstep）+ 云侧
+      learning 模块（真实事实聚合）+ LearningEvaluationRecorded（56 类）；
+      decision-outcome-mapping 升 Implemented（矩阵 39/16/0/1）
+    evidence:
+      - docs/decisions/ADR-021-continuous-learning-loop.md
+      - contracts/learning/learning-evaluation.schema.json + learning-evaluation.test-vectors.json（6 条）
+      - src/edge_platform/contracts/learning_evaluation.py
+      - ewoh-spark-app/shared/learning-evaluation.ts + learning-evaluation.spec.ts（7 例）
+      - scripts/audit-domain-contracts.js（400/400，learning 域）
+      - db/migrations/standalone_041_learning_evaluation.sql + .rollback.sql + db/verify/standalone_041_learning_evaluation.verify.sql
+      - ewoh-spark-app/server/database/schema.ts（ewohLearningEvaluation）
+      - ewoh-spark-app/server/modules/learning/（service/controller/module + 7 例 spec）
+      - contracts/events/event-catalog.yaml（LearningEvaluationRecorded，56/56）+ 双运行时投影
+      - tests/golden-fixtures/contract-golden-scenarios.json（learning_evaluation_contract 第 16 场景）
+      - openapi/ewoh.yaml（/api/learning/* 3 路由，361 零漂移）
+      - docs/capabilities/capability-matrix.yaml（decision-outcome-mapping Implemented，39/16/0/1）
+      - docs/architecture/decision-log.md（AD-LC-031）
+  - id: industrial-reasoning-layer
+    summary: >
+      NO-08b（Round 40 / ADR-020）：Level 4 独立工业推理层——ReasoningTrace
+      契约（六规则封闭注册表/前提与证据链/确定性置信度/空结论显式语义）+
+      Python/TS 双实现（Python 侧含标准库规则评估器供跨语言仲裁）+ 门禁
+      reasoning_trace 域（374→390/390）+ Golden 第 15 场景（11 案例：8
+      契约仲裁 + 3 引擎执行仲裁）+ 云侧 reasoning 模块（确定性规则引擎 +
+      L4 台账落账 + OpenAPI 2 路由）；intelligence-l4-reasoning 缺口闭合
+    evidence:
+      - docs/decisions/ADR-020-industrial-reasoning-layer.md
+      - contracts/reasoning/reasoning-trace.schema.json + reasoning-trace.test-vectors.json（8 条）
+      - src/edge_platform/contracts/reasoning_trace.py（验证器 + evaluate_rules）
+      - ewoh-spark-app/shared/reasoning-trace.ts + reasoning-trace.spec.ts（7 例）
+      - ewoh-spark-app/server/modules/reasoning/（service/controller/module + 8 例 spec）
+      - scripts/audit-domain-contracts.js（390/390，reasoning_trace 域）
+      - tests/golden-fixtures/contract-golden-scenarios.json（reasoning_trace_contract 第 15 场景）
+      - tests/test_reasoning_trace_contract.py（11 例）
+      - openapi/ewoh.yaml（/api/reasoning/* 2 路由，358 零漂移）
+      - docs/capabilities/capability-matrix.yaml（intelligence-l4-reasoning 证据深化）
+      - docs/architecture/decision-log.md（AD-LC-030）
+  - id: cloud-inference-result-runtime
+    summary: >
+      NO-08a（Round 39 / ADR-019）：云侧 InferenceResult 运行时——
+      standalone_040 台账（TENANT_SCOPED RLS + 四类 CHECK + 唯一键，三类
+      自证拒绝，全 lockstep）+ inference 模块（契约 fail-closed/幂等/事件/
+      租户查询）+ A2 建议流规则基础 → L1 台账生产接线 + InferenceResultRecorded
+      （55 类）；industrial-intelligence-l2 云侧元数据缺口闭合；
+      修复 schema-manifest 结构漂移（032-040 八表条目回位 managed_tables）
+    evidence:
+      - docs/decisions/ADR-019-cloud-inference-result-runtime.md
+      - db/migrations/standalone_040_inference_result.sql + .rollback.sql + db/verify/standalone_040_inference_result.verify.sql
+      - db/runner/run_migrations.js + db/contracts/schema-manifest.yaml（managed 57+8 回位=65，受管表 64→65）
+      - ewoh-spark-app/server/database/schema.ts（ewohInferenceResult）
+      - ewoh-spark-app/server/modules/inference/（service/controller/module + 10 例 spec）
+      - ewoh-spark-app/server/modules/ai/ai.service.ts + ai.controller.ts（A2 规则基础接线 + 3 例 spec）
+      - contracts/events/event-catalog.yaml（InferenceResultRecorded，55/55）+ 双运行时投影
+      - openapi/ewoh.yaml（/api/inference/results* 3 路由，356 零漂移）
+      - .github/workflows/standalone.yml + scripts/standalone-postgres-check.sh + .codex/artifacts/state.json
+      - docs/capabilities/capability-matrix.yaml（intelligence-l2-ml 证据深化）
+      - docs/architecture/decision-log.md（AD-LC-029）
+  - id: knowledge-runtime
+    summary: >
+      NO-07b（Round 38 / ADR-018 Amendment 1）：Knowledge 运行时——
+      standalone_039 硬化既有 ewoh_knowledge_entry（契约列 + scope-tenant
+      一致性 CHECK + provenance CHECK + knowledge_entry_service_all RLS +
+      UNIQUE (org_id, entry_id)，五类自证拒绝，全 lockstep）+ 云侧 knowledge
+      模块（五层检索阶梯 + 共享检索 fail-closed + 创建幂等 + 状态转移人工
+      verifiedBy）+ Knowledge Agent + KnowledgeEntryCreated（54 类）；
+      knowledge-system 升 Implemented（矩阵 38/17/0/1）
+    evidence:
+      - docs/decisions/ADR-018-factory-knowledge-system.md（Amendment 1 决策 1-8）
+      - db/migrations/standalone_039_knowledge_entry.sql + .rollback.sql + db/verify/standalone_039_knowledge_entry.verify.sql
+      - db/runner/run_migrations.js + db/contracts/schema-manifest.yaml（64/67 计数不变，硬化在既有表）
+      - ewoh-spark-app/server/database/schema.ts（ewohKnowledgeEntry）
+      - ewoh-spark-app/server/modules/knowledge/（service/controller/module + 13 例 spec）
+      - ewoh-spark-app/server/modules/agent/agent.service.ts（BUILTIN_KNOWLEDGE_MANIFEST + register_knowledge + agent.service.spec 21 例）
+      - contracts/agent/agent-manifest.schema.json + agent.py + shared/agent-manifest.ts（+register_knowledge lockstep）
+      - contracts/events/event-catalog.yaml（KnowledgeEntryCreated，54/54）+ 双运行时投影
+      - openapi/ewoh.yaml（/api/knowledge/* 5 路由，353 零漂移）
+      - .github/workflows/standalone.yml + scripts/standalone-postgres-check.sh + .codex/artifacts/state.json
+      - docs/capabilities/capability-matrix.yaml（knowledge-system Implemented，38/17/0/1）
+      - docs/architecture/decision-log.md（AD-LC-028）
+  - id: knowledge-entry-contract
+    summary: >
+      NO-07（Round 37 / ADR-018）：Factory Knowledge System 目标架构 +
+      Knowledge Entry 契约层（五层 scope 隔离 + provenance 声明 + 证据链）+
+      双实现 + 门禁 374/374 + Golden 第 14 场景；矩阵 Missing 清零
+    evidence:
+      - docs/decisions/ADR-018-factory-knowledge-system.md
+      - contracts/knowledge/knowledge-entry.schema.json + test-vectors.json（13 条）
+      - src/edge_platform/contracts/knowledge.py
+      - ewoh-spark-app/shared/knowledge-entry.ts + knowledge-entry.spec.ts（6 例）
+      - scripts/audit-domain-contracts.js（374/374，knowledge 域）
+      - tests/golden-fixtures/contract-golden-scenarios.json（knowledge_entry_contract 第 14 场景）
+      - docs/capabilities/capability-matrix.yaml（knowledge-system Partial，37/18/0/1）
+      - docs/architecture/decision-log.md（ADR-018 + AD-LC-027）
+  - id: agent-task-orchestration-runtime
+    summary: >
+      NO-06f（Round 36 / AD-LC-026）：AgentTask 编排引擎运行时——
+      standalone_038 任务注册表（全 lockstep）+ AgentOrchestratorService
+      （创建唯一入口/环检测/并发预算/状态推进唯一写者/事件/审计）+
+      OpenAPI 6 路由；intelligence-l5-agentic 升 Implemented
+    evidence:
+      - db/migrations/standalone_038_agent_task.sql + .rollback.sql + db/verify/standalone_038_agent_task.verify.sql
+      - db/runner/run_migrations.js + db/contracts/schema-manifest.yaml（63→64/66→67）
+      - db/verify/{001,standalone_001}_verify.sql（57→58）+ scripts/standalone-postgres-check.sh + .github/workflows/standalone.yml
+      - ewoh-spark-app/server/modules/agent/agent-orchestrator.service.ts
+      - ewoh-spark-app/server/modules/agent/agent.controller.ts（tasks* 6 路由）
+      - ewoh-spark-app/server/database/schema.ts（ewohAgentTask）
+      - ewoh-spark-app/test/unit/agent/agent-orchestrator.spec.ts（10 例）
+      - openapi/ewoh.yaml（/api/agents/tasks*；348 零漂移）
+      - .codex/artifacts/state.json（agent_task_038 记录）
+      - docs/capabilities/capability-matrix.yaml（intelligence-l5-agentic Implemented，37/17/1/1）
+      - docs/architecture/decision-log.md（AD-LC-026）
+  - id: agent-task-contract
+    summary: >
+      NO-06e（Round 35 / ADR-017）：Canonical Agent Task 编排契约层——
+      注册表/DAG/时间语义/状态机 + 双实现 + 门禁 351/351 + Golden 第 13 场景
+      + AgentTaskCreated/Completed 目录事件；intelligence-l5-agentic 升 Partial
+    evidence:
+      - docs/decisions/ADR-017-agent-task-orchestration.md
+      - contracts/agent_task/agent-task.schema.json + test-vectors.json（11 条）
+      - contracts/state-machines/agent-task.yaml
+      - src/edge_platform/contracts/agent_task.py
+      - ewoh-spark-app/shared/agent-task.ts + agent-task.spec.ts（6 例）
+      - scripts/audit-domain-contracts.js（351/351，含角色注册表交叉核对）
+      - tests/golden-fixtures/contract-golden-scenarios.json（agent_task_contract 第 13 场景）
+      - contracts/events/event-catalog.yaml（53/53）+ 双运行时投影
+      - docs/capabilities/capability-matrix.yaml（intelligence-l5-agentic Partial，36/18/1/1）
+      - docs/architecture/decision-log.md（ADR-017 + AD-LC-025）
+  - id: agent-approval-bridge
+    summary: >
+      NO-06c（Round 33 / AD-LC-023）：审批桥接 + FactorySupervisor L1 建议型
+      端到端 + Agent Policy TCK；agent-runtime 升 Implemented、
+      agent-policy-approval 升 Partial（矩阵 36/17/2/1）
+    evidence:
+      - ewoh-spark-app/server/modules/agent/agent.service.ts（审批桥接 + resolveApproval + runSupervisorSuggestion + BUILTIN_SUPERVISOR_MANIFEST）
+      - ewoh-spark-app/server/modules/agent/agent.controller.ts（supervisor/run + approvals/{id}/resolve）
+      - ewoh-spark-app/test/unit/agent/agent.service.spec.ts（14 例）
+      - ewoh-spark-app/test/unit/agent/agent-policy-tck.spec.ts（10 例决策表）
+      - openapi/ewoh.yaml（/api/agents/* 6 路由，342 零漂移）
+      - docs/capabilities/capability-matrix.yaml（36/17/2/1）
+      - docs/architecture/decision-log.md（AD-LC-023）
+  - id: agent-runtime-core
+    summary: >
+      NO-06b（Round 32 / AD-LC-022）：云侧 Agent Runtime 运行时——standalone_037
+      Manifest 注册表（全 lockstep）+ agent 模块（注册/执行强制/事件/审计）+
+      AgentTaskProposed/AgentDecisionRecorded 目录类型 + OpenAPI 4 路由
+    evidence:
+      - db/migrations/standalone_037_agent_manifest.sql + .rollback.sql + db/verify/standalone_037_agent_manifest.verify.sql
+      - db/runner/run_migrations.js + db/contracts/schema-manifest.yaml（62→63/65→66）
+      - db/verify/{001,standalone_001}_verify.sql（56→57）+ scripts/standalone-postgres-check.sh + .github/workflows/standalone.yml
+      - ewoh-spark-app/server/modules/agent/（agent.service.ts + controller + module + agent-tools.ts）
+      - ewoh-spark-app/server/database/schema.ts（ewohAgentManifest）
+      - ewoh-spark-app/test/unit/agent/agent.service.spec.ts（10 例）
+      - contracts/events/event-catalog.yaml（51/51）+ shared/event-catalog.ts + contracts/event_catalog.py
+      - openapi/ewoh.yaml（/api/agents/* 4 路由，340 零漂移）
+      - .codex/artifacts/state.json（agent_manifest_037 记录）
+      - docs/architecture/decision-log.md（AD-LC-022）
+  - id: agent-manifest-contract
+    summary: >
+      NO-06（Round 31 / ADR-016）：Agent Runtime 目标架构 + Canonical Agent
+      Manifest 契约层（六注册表 + 十六字段 + 自治阶梯/审计强制/安全边界机器
+      规则）+ Python/TS 双实现 + 门禁 agent 域（329/329）+ Golden 第 12 场景
+    evidence:
+      - docs/decisions/ADR-016-agent-runtime.md
+      - contracts/agent/agent-manifest.schema.json + test-vectors.json（15 条）
+      - src/edge_platform/contracts/agent.py
+      - ewoh-spark-app/shared/agent-manifest.ts + agent-manifest.spec.ts（6 例）
+      - scripts/audit-domain-contracts.js（329/329，agent 域）
+      - tests/golden-fixtures/contract-golden-scenarios.json（agent_manifest_contract）
+      - docs/capabilities/capability-matrix.yaml（agent-runtime Missing→Partial）
+      - docs/architecture/decision-log.md（ADR-016 + AD-LC-021）
+  - id: event-backbone-closed
+    summary: >
+      NO-04c（Round 30 / AD-LC-020）：上行队列跨重启断点续传 + 乱序/回放补全
+      策略 + 时钟漂移 flag-only 运行态策略；event-backbone / time-semantics
+      按 §36 升 Implemented（Phase 4 事件骨干主体收口）
+    evidence:
+      - src/edge_platform/edge/bridge/event_uplink.py（queue_path 断点续传）
+      - src/edge_platform/run.py（<db>.uplink-queue.json 接线）
+      - src/edge_platform/tests/test_event_uplink.py（6 例，含跨重启恢复）
+      - ewoh-spark-app/server/modules/ingest/ingest.service.ts（createdAt=occurredAt 落库）
+      - ewoh-spark-app/test/unit/ingest/ingest.service.spec.ts（23 例，含乱序/回放补全 2 例）
+      - docs/capabilities/capability-matrix.yaml（event-backbone/time-semantics Implemented 证据更新）
+      - docs/architecture/decision-log.md（AD-LC-020）
+  - id: edge-cloud-event-uplink
+    summary: >
+      NO-04b（Round 29 / AD-LC-019）：Edge→Cloud 事件上行通道 + 传输级
+      (org,source,eventId) 幂等去重落库 + 迟到/漂移全链路落库——目录类型双运行时
+      锁定投影、standalone_036 去重台账、POST /api/ingest/events、边缘 EventUplink
+    evidence:
+      - db/migrations/standalone_036_event_dedup.sql + .rollback.sql + db/verify/standalone_036_event_dedup.verify.sql
+      - db/runner/run_migrations.js（FILES/命令表/verify handler/which 映射）
+      - db/contracts/schema-manifest.yaml（managed_count 62 / physical_create_count 65）
+      - db/verify/{001,standalone_001}_verify.sql（expected 55→56）
+      - scripts/standalone-postgres-check.sh + .github/workflows/standalone.yml（036 步骤）
+      - ewoh-spark-app/shared/event-catalog.ts + src/edge_platform/contracts/event_catalog.py（49 类锁定投影）
+      - scripts/audit-event-catalog.js（+PY/TS 投影集合核对）
+      - ewoh-spark-app/server/database/schema.ts（ewohIngestEventDedup）
+      - ewoh-spark-app/server/modules/ingest/ingest.{service,controller}.ts（ingestEventBatch + POST events）
+      - openapi/ewoh.yaml（/api/ingest/events + 3 schemas；336 路由零漂移）
+      - src/edge_platform/edge/bridge/event_uplink.py + src/edge_platform/tests/test_event_uplink.py（5 例）
+      - src/edge_platform/config.py + run.py + routes/health.py（EWOH_EVENT_UPLINK_* + 健康透出）
+      - ewoh-spark-app/test/unit/ingest/ingest.service.spec.ts（21 例，含 NO-04b 6 例）
+      - .codex/artifacts/state.json（event_dedup_036 记录）
+      - docs/architecture/decision-log.md（AD-LC-019）
+  - id: event-backbone-ingest-semantics
+    summary: >
+      NO-04a 第一批（Round 28）：事件目录 +EntityDeclared/EntityStateObserved
+      （49/49）；边缘投影发射 Catalog 信封事件（ADR-009 契约校验 fail-closed +
+      落事件库 + STREAM_EVENTS，首见单次发射）；云侧 ingest 帧级
+      isLate/clockDrift 语义（late_count/clock_drift_count 聚合）+ 同批次
+      DataQualityAlert 语义去重
+    evidence:
+      - contracts/events/event-catalog.yaml（49 messages / 49 channels）
+      - src/edge_platform/world_model/projection.py（_emit_catalog_event + 发射点）
+      - src/edge_platform/tests/test_world_projection.py（8 例，含 Catalog 事件 2 例）
+      - ewoh-spark-app/server/modules/ingest/ingest.service.ts（frameSemantics + 批次去重）
+      - ewoh-spark-app/shared/api.interface.ts（IngestResponse/BatchIngestResponse 扩展）
+      - ewoh-spark-app/test/unit/ingest/ingest.service.spec.ts（15 例，含 NO-04a 3 例）
+      - scripts/audit-event-catalog.js（49/49 PASS）
+  - id: world-model-perception-wiring
+    summary: >
+      NO-03c（Round 27 / AD-LC-017）：E-03 修复（config 驱动适配器工厂 +
+      启动 health 输出）+ 遥测→ContractWorldStore 自动投影
+      （TelemetryWorldProjector：首帧声明/每帧状态/ENTITY_OBSERVED 因果事件，
+      配置缺失显式关闭绝不猜测）+ 云侧联动评估（声明上行随 Phase 4 事件骨干）
+    evidence:
+      - src/edge_platform/edge/adapter_factory.py（EWOH_ADAPTERS 四类 kind fail-closed）
+      - src/edge_platform/world_model/projection.py（TelemetryWorldProjector）
+      - src/edge_platform/config.py（EWOH_ADAPTERS / EWOH_WORLD_TENANT_ID / EWOH_WORLD_FACTORY_ID / EWOH_WORLD_KIND_MAP）
+      - src/edge_platform/run.py（适配器注册 + health 输出 + 投影装配）
+      - src/edge_platform/routes/health.py（/api/status world_projection）
+      - src/edge_platform/tests/test_adapter_factory.py（7 例）
+      - src/edge_platform/tests/test_world_projection.py（6 例）
+      - deploy/.env.example（4 个新配置项，audit-env-inventory 106/107 PASS）
+      - docs/architecture/decision-log.md（AD-LC-017）
+  - id: entity-model-production-chain
+    summary: >
+      NO-03b 收口（Round 26 / ADR-015 Amendment 2）：因果事件规范实体引用 +
+      边缘六端点生产调用链 + <db>.worldstate.json 离线持久化 + Entity Contract
+      生成器；canonical-entity-model 按 §36 升 Implemented
+    evidence:
+      - docs/decisions/ADR-015-factory-entity-model.md（Amendment 2）
+      - scripts/gen-contract-registries.js（生成器，--check 挂 make truth-check）
+      - src/edge_platform/routes/replay.py（六端点：snapshot/entities/states/replay/events/predictions）
+      - src/edge_platform/server.py（Context.world_store 注入）
+      - src/edge_platform/run.py（world_store 装配 + <db>.worldstate.json 恢复/落盘）
+      - src/edge_platform/world_model/contract_store.py（record_event/replay/predict + 事件持久化）
+      - src/edge_platform/world_model/event_graph.py（validate_event_entity_refs + build_shift_chain 强制）
+      - src/edge_platform/tests/test_world_api.py（7 例，含未装配 503 fail-closed）
+      - src/edge_platform/tests/test_contract_world_store.py（18 例）
+      - src/edge_platform/tests/test_world_model.py（夹具现代化 + 负例）
+      - docs/capabilities/capability-matrix.yaml（canonical-entity-model Implemented，35/16/4/1）
+      - docs/architecture/decision-log.md（AD-LC-016）
+  - id: entity-model-runtime-wiring
+    summary: >
+      NO-03b 主体（Round 25 / ADR-015 Amendment 1）：kind 前缀一致性机器规则 +
+      projectionDivision/projectionBuckets schema 实例值 + 门禁 299/299 +
+      Golden 场景 9 案例 + 边缘 declare_entity/set_state 机器互锁 + Predictor
+      规范身份 fail-closed + 云侧投影桶校验
+    evidence:
+      - docs/decisions/ADR-015-factory-entity-model.md（Amendment 1）
+      - contracts/entity/entity-model.schema.json（projectionDivision/projectionBuckets）+ test-vectors.json（14 条）
+      - src/edge_platform/contracts/entity_model.py（前缀规则 + 投影分工常量）
+      - ewoh-spark-app/shared/entity-model.ts（同构）+ entity-model.spec.ts（7 例）
+      - scripts/audit-domain-contracts.js（299/299：前缀仲裁 + 差集推导 + 投影桶一致）
+      - src/edge_platform/world_model/contract_store.py（declare_entity + 交叉校验 + 持久化）
+      - src/edge_platform/tests/test_contract_world_store.py（13 例）
+      - src/edge_platform/world_model/prediction.py（规范身份 fail-closed）+ test_world_model.py 夹具现代化
+      - ewoh-spark-app/shared/world-contract.ts（投影桶校验）+ world-contract.spec.ts（8 例）
+      - tests/golden-fixtures/contract-golden-scenarios.json（entity_model_contract 9 案例）
+      - docs/architecture/decision-log.md（AD-LC-015）
+  - id: entity-model-contract
+    summary: >
+      NO-03a / ADR-015：Canonical Factory Entity Model 契约（45 类注册表 +
+      实体声明八项字段契约 + 快照子集交叉校验）+ Python/TS 双实现 + 门禁
+      entity 域仲裁（277/277）+ Golden Scenario 第 11 场景双执行器
+    evidence:
+      - docs/decisions/ADR-015-factory-entity-model.md
+      - contracts/entity/entity-model.schema.json + test-vectors.json
+      - src/edge_platform/contracts/entity_model.py
+      - ewoh-spark-app/shared/entity-model.ts + entity-model.spec.ts（5 例）
+      - scripts/audit-domain-contracts.js（277/277，含 entity_snapshot_subset 交叉校验）
+      - tests/golden-fixtures/contract-golden-scenarios.json（entity_model_contract）
+      - docs/architecture/decision-log.md（ADR-015 + AD-LC-014）
+  - id: reasoning-result-contract
+    summary: >
+      NO-08c + NO-08d / ADR-014 全链路：Level 4/5 文本结果元数据契约
+      （confidence 必须 null 禁止伪造 / confidenceBasis 显式 uncalibrated /
+      ok-error-content 状态契约）+ 门禁 257/257 + Golden 场景 +
+      ark.chat/ask 包裹（成功/失败路径附着 + contract_violations 留痕）+
+      ai.suggestion/enrichPlan 建议·分析流附着（规则回退不伪造）
+    evidence:
+      - docs/decisions/ADR-014-reasoning-result.md
+      - contracts/reasoning/reasoning-result.schema.json + test-vectors.json
+      - src/edge_platform/contracts/reasoning_result.py
+      - ewoh-spark-app/shared/reasoning-result.ts + reasoning-result.spec.ts（6 例）
+      - scripts/audit-domain-contracts.js（257/257）
+      - tests/golden-fixtures/contract-golden-scenarios.json（reasoning_result_contract）
+      - ewoh-spark-app/server/modules/ai/ark.service.ts（buildReasoningResult + 3 例 spec）
+      - ewoh-spark-app/server/modules/ai/__tests__/ai.service.spec.ts（3 例）
+      - docs/architecture/decision-log.md（ADR-014 + AD-LC-013）
+  - id: inference-result-contract
+    summary: >
+      NO-08a + NO-08b / ADR-013 全链路：Canonical Inference Result 契约
+      （Level 1-7 注册表 + 元数据 + confidence/OOD/Unknown/dataQuality 规则）+
+      Python/TS 双实现 + 门禁 intelligence 域仲裁（238/238）+ Golden 场景 +
+      边缘 pipeline._infer 生产接线（level/inputVersion/oodIndicator/subjectId
+      + 契约自检 fail-closed 留痕）+ 云侧 Model Registry inputVersion 元数据对齐
+    evidence:
+      - docs/decisions/ADR-013-industrial-intelligence.md
+      - contracts/intelligence/inference-result.schema.json + test-vectors.json
+      - src/edge_platform/contracts/inference_result.py
+      - ewoh-spark-app/shared/inference-result.ts + inference-result.spec.ts（6 例）
+      - scripts/audit-domain-contracts.js（238/238）
+      - tests/golden-fixtures/contract-golden-scenarios.json（inference_result_contract）
+      - src/edge_platform/inference/pipeline.py（NO-08b 规范化 + contract_violations）
+      - src/edge_platform/tests/test_inference.py（InferenceResultContractWiringTest 3 例）
+      - ewoh-spark-app/server/modules/model/（inputVersion 对齐 + 3 例 spec）
+      - docs/architecture/decision-log.md（ADR-013 + AD-LC-012）
+  - id: golden-scheduler-workflow-tck
+    summary: >
+      NO-07b + NO-07c / Phase 7 工作流+重排+反馈段：Golden Scheduler Workflow
+      TCK 两场景（方案全生命周期 CAS + 执行反馈回流→事件驱动重排→新方案审批
+      收敛）——共享场景定义 + TS 真实服务（PlanService/ResourceReservation/
+      Dispatch/SchedulingFeedback/真实求解器 replan）漂移门禁 + Python 标准库
+      状态机重放独立仲裁；调度黄金 TCK 覆盖完整闭环
+    evidence:
+      - tests/golden-fixtures/scheduler-workflow-golden.json + scheduler-workflow-golden-results.json
+      - ewoh-spark-app/server/modules/scheduler/__tests__/golden-scheduler-workflow.spec.ts（4 例）
+      - tests/test_golden_scheduler_workflow.py（3 例）
+      - Makefile scheduler-golden + .github/workflows/test.yml
+      - docs/architecture/decision-log.md（AD-LC-010/011）
+  - id: golden-scheduler-tck
+    summary: >
+      NO-07 / Phase 7：调度语义统一（维护/质量封锁接线 heuristic 枚举路径 +
+      reuseBaseline 快速路径守卫，消除路径分叉）+ Golden Scheduler TCK
+      （四场景共享定义：TS 求解漂移门禁 + Python 标准库独立硬约束仲裁，
+      不依赖 ortools）+ Makefile scheduler-golden + CI 步骤
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/heuristic-scheduling-solver.ts（NO-05c/05d 接线）
+      - ewoh-spark-app/server/modules/scheduler/__tests__/solver-maintenance-quality.spec.ts（4 例 reuse 守卫）
+      - tests/golden-fixtures/scheduler-golden-scenarios.json（四场景）
+      - tests/golden-fixtures/scheduler-golden-results.json（漂移门禁制品）
+      - ewoh-spark-app/server/modules/scheduler/__tests__/golden-scheduler-scenarios.spec.ts（6 例）
+      - tests/test_golden_scheduler_scenarios.py（3 例独立仲裁）
+      - Makefile scheduler-golden + .github/workflows/test.yml
+      - docs/architecture/decision-log.md（AD-LC-009）
+  - id: workorder-contract-and-event-loop
+    summary: >
+      NO-05e-a + NO-05e-b / ADR-012 全链路：Canonical Work Order 契约
+      （contracts/workorder/ + Python/TS 双实现 + 共享向量 + 门禁仲裁 216/216 +
+      Golden Scenario workorder_loop）+ 事件目录 WorkOrderCreated/Completed
+      （47/47）+ standalone_035 ewoh_work_order（TENANT_SCOPED RLS + CHECK +
+      成对 rollback + verify）+ 云侧 WorkOrder 模块（create 幂等回读/transition
+      契约 fail-closed/Completed 事件，9 例 spec）+ maintenance/quality 委托
+      唯一权威写路径（消除双写）+ OpenAPI 3 路由零漂移 + runner dispatch 缺口
+      与 rollback-to-0 链修复
+    evidence:
+      - docs/decisions/ADR-012-canonical-work-order.md
+      - contracts/workorder/work-order.schema.json + test-vectors.json
+      - src/edge_platform/contracts/workorder.py
+      - ewoh-spark-app/shared/workorder.ts + workorder.spec.ts（6 例）
+      - scripts/audit-domain-contracts.js（216/216）
+      - contracts/events/event-catalog.yaml（47 messages / 47 channels）
+      - tests/golden-fixtures/contract-golden-scenarios.json（workorder_loop 第 8 场景）
+      - db/migrations/standalone_035_work_order.sql + .rollback.sql
+      - db/verify/standalone_035_work_order.verify.sql
+      - ewoh-spark-app/server/common/workorder-ids.ts（deriveWorkOrderId）
+      - ewoh-spark-app/server/modules/workorder/（service/controller/module + 9 例 spec）
+      - ewoh-spark-app/server/modules/{maintenance,quality}/*.service.ts（委托建单）
+      - db/runner/run_migrations.js（which 映射 + 专用 verify handler 修复）
+      - scripts/standalone-postgres-check.sh（035 apply + 成对回滚链）
+      - .github/workflows/standalone.yml（035 步骤）
+  - id: quality-state-scheduler-integration
+    summary: >
+      NO-05d / ADR-011（Quality Incident Loop 收口）：活跃质量发现（status ∈
+      {open, under_review}）按 links 中 station/device/person 规范身份附着到资源
+      投影（qualityFindings 事实，不改资源状态）；critical/high → Eligibility
+      *_quality_blocked fail-closed 拒派（legacy L1-L3 归一化、未知严重度按封锁），
+      medium/low 仅事实可见；dispositioned/closed 即解除（无第二套状态源）
+    evidence:
+      - docs/decisions/ADR-011-quality-state-scheduler-integration.md
+      - ewoh-spark-app/shared/quality.ts（QualityFindingProjection + qualityFindingsBlockDispatch）
+      - ewoh-spark-app/server/modules/scheduler/resource-projection.service.ts（loadActiveQualityFindings）
+      - ewoh-spark-app/server/modules/scheduler/eligibility.service.ts（*_quality_blocked）
+      - ewoh-spark-app/server/modules/scheduler/__tests__/quality-projection.spec.ts（12 例）
+      - docs/architecture/decision-log.md（ADR-011 + AD-LC-006）
+  - id: maintenance-quality-production-wiring
+    summary: >
+      NO-05b + NO-05c（ADR-010 全链路）：standalone_034 双表（TENANT_SCOPED RLS +
+      lifecycle/disposition CHECK + 成对 rollback + verify）+ 云侧 Maintenance/Quality
+      模块（契约 fail-closed + 信封事件落库）+ OpenAPI 6 路由零漂移 + 调度集成
+      （投影状态收敛 critical→OFFLINE/其余→DEGRADED + person/device/station
+      资格封锁 fail-closed 拒派，人审解除）
+    evidence:
+      - db/migrations/standalone_034_maintenance_quality.sql + .rollback.sql
+      - db/verify/standalone_034_maintenance_quality.verify.sql
+      - ewoh-spark-app/server/modules/{maintenance,quality}/（service/controller/module + 16 例 spec）
+      - ewoh-spark-app/server/modules/scheduler/resource-projection.service.ts（loadActiveMaintenance/degradeByMaintenance）
+      - ewoh-spark-app/server/modules/scheduler/eligibility.service.ts（*_maintenance_blocked）
+      - ewoh-spark-app/server/modules/scheduler/__tests__/maintenance-projection.spec.ts（11 例）
+      - openapi/ewoh.yaml（/api/maintenance/* + /api/quality/*；audit 332 零漂移）
+      - docs/architecture/decision-log.md（ADR-010 全链路 + AD-LC-005 调度封锁语义）
+  - id: maintenance-quality-contracts
+    summary: >
+      ADR-010 + NO-05a：MaintenanceCondition / QualityFinding 契约 +
+      Python/TS 双实现 + 共享向量 + 门禁仲裁 + Golden Scenario + 事件目录 +4 类型
+    evidence:
+      - contracts/maintenance/maintenance.schema.json + test-vectors.json
+      - contracts/quality/quality.schema.json + test-vectors.json
+      - src/edge_platform/contracts/{maintenance,quality}.py
+      - ewoh-spark-app/shared/{maintenance,quality}.ts + maintenance-quality.spec.ts
+      - tests/test_mq_contracts.py（7 passed）
+      - scripts/audit-domain-contracts.js（182/182）
+      - contracts/events/event-catalog.yaml（45 messages / 45 channels）
+      - tests/golden-fixtures/contract-golden-scenarios.json（maintenance_quality_loop）
+  - id: device-quality-transparency
+    summary: >
+      NO-05 Phase 5 收尾：设备 DQ 统计透出 + ingest_chain 诚实指标
+    evidence:
+      - src/edge_platform/routes/world.py（api_device_quality）
+      - src/edge_platform/routes/health.py（ingest_chain）
+      - src/edge_platform/edge/storage.py（quality_stats）
+      - src/edge_platform/tests/test_api_endpoints.py（46 tests OK）
+      - docs/decisions/ADR-010-maintenance-quality-domains.md（Phase 6 启动决策）
+  - id: event-envelope-production-wiring
+    summary: >
+      NO-04b：事件目录 +6 规则事件类型；边缘 EventEngine 信封化；云侧 rule-engine/
+      ingest/identity 写路径收敛目录类型 + evidenceJson.envelope 兼容层；
+      event-backbone/time-semantics 按 §36 升 Implemented
+    evidence:
+      - contracts/events/event-catalog.yaml（41 messages / 41 channels）
+      - src/edge_platform/inference/events.py（envelope + EVENT_CODE_CATALOG_TYPE）
+      - src/edge_platform/tests/test_event_envelope_wiring.py（2 例，unittest 888 OK）
+      - ewoh-spark-app/server/modules/rule-engine/rule-engine.service.ts（RULE_EVENT_TYPE_MAP + envelope）
+      - ewoh-spark-app/server/modules/rule-engine/__tests__/event-envelope.spec.ts（2 例）
+      - ewoh-spark-app/server/modules/ingest/ingest.service.ts（DataQualityAlert + envelope）
+      - ewoh-spark-app/server/modules/identity/identity.service.ts（envelope）
+      - ewoh-spark-app/shared/event-envelope.ts（buildEventEnvelope/envelopeForEvidence）
+  - id: canonical-event-envelope
+    summary: >
+      ADR-009：16 字段信封 + 时间三态/漂移/迟到/幂等/规范引用/目录交叉校验规则；
+      Python/TS 双实现 + 共享向量 + 独立仲裁门禁（24/24）+ Golden Scenario
+    evidence:
+      - docs/decisions/ADR-009-event-envelope.md
+      - contracts/events/envelope.schema.json + envelope-test-vectors.json
+      - src/edge_platform/contracts/envelope.py
+      - ewoh-spark-app/shared/event-envelope.ts + event-envelope.spec.ts
+      - tests/test_event_envelope.py
+      - scripts/audit-event-envelope.js（24/24，挂 truth-check + CI）
+      - tests/golden-fixtures/contract-golden-scenarios.json（event_envelope_semantics）
+  - id: world-state-production-wiring
+    summary: >
+      NO-03b：云侧 snapshot 构建自检 + entityId 规范引用 + 边缘 ContractWorldStore
+      真实装配；双运行时测试全绿
+    evidence:
+      - ewoh-spark-app/shared/world-contract.ts（validateCloudWorldSnapshot）
+      - ewoh-spark-app/server/modules/scheduler/world-state.service.ts（contractCheck）
+      - ewoh-spark-app/server/modules/scheduler/resource-projection.service.ts（entityId）
+      - src/edge_platform/world_model/contract_store.py
+      - src/edge_platform/runtime/{bootstrap,dependencies}.py（world_store 装配）
+      - src/edge_platform/tests/test_contract_world_store.py（8 例，unittest 886 OK）
+      - ewoh-spark-app/shared/world-contract.spec.ts（8 例）
+  - id: canonical-world-state-contract
+    summary: >
+      ADR-008：StateRecord 双时态 + 22 类实体注册表 + Snapshot + 确定性规则
+      （区间不重叠/版本单调/模拟隔离/fail-closed）；Python/TS 双实现 + 共享向量 +
+      门禁 world 域仲裁 + Golden Scenario
+    evidence:
+      - docs/decisions/ADR-008-world-state-contract.md
+      - contracts/world/world-state.schema.json + test-vectors.json
+      - src/edge_platform/contracts/world.py
+      - ewoh-spark-app/shared/world-contract.ts + world-contract.spec.ts
+      - tests/test_world_contract.py
+      - scripts/audit-domain-contracts.js（134/134，含 world 域）
+      - tests/golden-fixtures/contract-golden-scenarios.json（world_state_projection_rules）
+  - id: contract-golden-scenarios
+    summary: >
+      §26 Golden Scenario 覆盖：tests/golden-fixtures/contract-golden-scenarios.json
+      四域共享场景（身份映射冲突 fail-closed / legacy 严重度归一 / 脏空间类型拒绝 /
+      资源新鲜度 fail-closed），Python 与 TS 消费同一份定义（跨语言场景一致性）
+    evidence:
+      - tests/golden-fixtures/contract-golden-scenarios.json
+      - tests/test_golden_contract_scenarios.py（5 passed）
+      - ewoh-spark-app/shared/golden-contract-scenarios.spec.ts（5 passed）
+      - Makefile contract-golden + CI test.yml 步骤
+  - id: identity-legacy-reconcile
+    summary: >
+      legacy 存量 reconcile 任务（ADR-006 Migration 步骤 3）：scripts/reconcile-identity-legacy.mjs
+      append-only（ON CONFLICT DO NOTHING，绝不改写存量）、确定性 UUIDv5 推导、
+      dry-run 默认 + --apply 显式、幂等可重入；CI standalone.yml 真实 PG 验证
+      （dry-run → apply → 复跑 planned=0）
+    evidence:
+      - scripts/reconcile-identity-legacy.mjs
+      - .github/workflows/standalone.yml（Identity legacy reconcile 步骤）
+  - id: canonical-risk-location-resource-contracts
+    summary: >
+      ADR-007 三域契约：risk（critical>high>medium>low + L1→critical/L2→high/L3→medium
+      映射 + 生命周期 + category 注册表）、location（21 类空间类型 + 坐标类型 +
+      记录校验）、resource（六态+UNKNOWN + 新鲜度 + 可用性 fail-closed）——
+      Python/TS 双实现 + 每域共享向量 + 独立仲裁门禁
+    evidence:
+      - docs/decisions/ADR-007-risk-location-resource-contracts.md
+      - contracts/risk/ contracts/location/ contracts/resource/（schema + test-vectors）
+      - src/edge_platform/contracts/{risk,location,resource}.py
+      - ewoh-spark-app/shared/{risk,location,resource}.ts + domain-contracts.spec.ts
+      - tests/test_domain_contracts.py（13 passed）
+      - scripts/audit-domain-contracts.js（113/113，挂 truth-check + CI test.yml）
+  - id: canonical-identity-production-wiring
+    summary: >
+      Identity 契约生产接线（ADR-006 Migration 步骤 2）+ NO-02d 收口：
+      standalone_032 ewoh_identity_mapping（TENANT_SCOPED + RLS + CHECK 约束 +
+      唯一业务键）+ ewoh_telemetry.entity_id + NestJS Identity 模块（注册幂等/
+      解析 fail-closed/EntityIdentityMapped 事件）+ ingest 批量解析 + OpenAPI
+      3 路由 + CI 迁移链 + Golden Scenario identity_mapping_conflict（双执行器）+
+      legacy 存量 reconcile 工具（UUIDv5 确定性、append-only、dry-run 默认，
+      CI 真实 PG 幂等验证链）
+    evidence:
+      - db/migrations/standalone_032_identity_mapping.sql + .rollback.sql
+      - db/verify/standalone_032_identity_mapping.verify.sql
+      - ewoh-spark-app/server/modules/identity/（service/controller/module + 8 例测试）
+      - ewoh-spark-app/server/modules/ingest/ingest.service.ts（entity_id 落点）
+      - openapi/ewoh.yaml（/api/identity/mappings ×3；audit 332 零漂移）
+      - .github/workflows/standalone.yml + scripts/standalone-postgres-check.sh
+      - db/contracts/schema-manifest.yaml（60 managed tables）
+      - tests/golden-fixtures/contract-golden-scenarios.json（identity_mapping_conflict）
+      - scripts/reconcile-identity-legacy.mjs（NO-02d）
+  - id: canonical-identity-contract
+    summary: >
+      ADR-006 统一工业身份契约：kind:value 语法 + 42 类封闭注册表 + 第三方 ID
+      映射契约（active/时间窗口/ambiguous_identity fail-closed）+ Python/TS 双运行时
+      锁定实现 + 共享测试向量 + 独立仲裁门禁 + EntityIdentityMapped 事件
+    evidence:
+      - docs/decisions/ADR-006-canonical-identity.md
+      - contracts/identity/identity.schema.json
+      - contracts/identity/identity-mapping.schema.json
+      - contracts/identity/test-vectors.json
+      - src/edge_platform/contracts/identity.py
+      - ewoh-spark-app/shared/identity.ts + identity.spec.ts
+      - tests/test_identity_contract.py（18 passed，本回合实测）
+      - scripts/audit-identity-contracts.js（22/22，挂 make truth-check + CI）
+partial_capabilities:
+  - id: learning-loop-feedback-v2
+    summary: >
+      策略(规则阈值)反馈腿已闭环（Round 46/NO-12b：LearningProposal 契约 +
+      确定性影子评估 + 人审激活阶梯 + ReasoningService 真实激活接线，
+      §2 绝不隐式自动执行）；剩余缺口 = 模型重训/激活闭环（outcome 标注面
+      结构化 + 模型影子评估 + 人审模型激活阶梯）
+    evidence:
+      - docs/decisions/ADR-026-learning-feedback-v2.md（决策 5-6 边界）
+      - contracts/learning/learning-proposal.schema.json
+      - ewoh-spark-app/server/modules/learning/learning-proposal.service.ts
+      - ewoh-spark-app/server/modules/reasoning/reasoning.service.ts（激活接线）
+
+missing_capabilities:
+  # 矩阵 Missing 清零（Round 37）：knowledge-system 经 ADR-018 契约层落地升
+  # Partial；cross-factory 知识隔离政策并入五层 scope 语义。全部 56 项能力
+  # 至少 Partial。运行时缺口见 partial_capabilities。
+
+architecture_debt:
+  - id: AD-EDGE-ADAPTER-DRIVERS
+    severity: Low
+    summary: 相机/环境/UWB 真实驱动仍为基类（无厂商 I/O 实现）；config 驱动工厂
+      已覆盖注册/生命周期/监督，具体设备 I/O 需厂商驱动子类接入（ny_exo_a1 有
+      injector/编解码，其余待接入）；E-03（真实模式永不产生遥测）已在 Round 27
+      修复（EWOH_ADAPTERS 注册入口 + 启动 health 输出）
+    evidence: src/edge_platform/edge/adapters/{camera,environment,uwb}/adapter.py（基类）
+  - id: AD-EVENT-ENVELOPE-GAP
+    severity: High
+    summary: 统一 Event Envelope（occurred/observed/received/causation/correlation/confidence）
+      未全链路强制，云侧 ingest 去重与迟到语义不完整
+    evidence: contracts/events/event-catalog.yaml（类型级目录，缺 envelope 强约束）
+  - id: AD-WORKSPACE-BLOAT
+    severity: Medium
+    summary: 工作区 2.4GB（ewoh-spark-app 2.1GB 含嵌套 node_modules/dist）；package.yml
+      源码 tarball 未排除 node_modules/dist（发布包 GB 级）
+    evidence: deliverables/ewoh-code-walkthrough-2026-08-13.md §8.1
+  - id: AD-FRONTEND-TOKEN-DEBT
+    severity: Low
+    summary: 设计 token 门禁存量违规 3647 处；深色模式半成品；视口 culling 基建闲置；
+      页面级渲染测试覆盖极低（107 测试仅 11 个 .tsx）
+    evidence: docs/reviews/codebase-walkthrough-2026-08-14.md §6 P2
+  - id: AD-SYSTEMATIC-WALKTHROUGH-STALE
+    severity: Low
+    summary: docs/reviews/systematic-code-walkthrough-2026-08-13.md 含多处"待回填"占位
+      （已被 08-14 完整版取代），deliverables/ 同名旧稿未归档
+    evidence:
+      - docs/reviews/systematic-code-walkthrough-2026-08-13.md
+      - deliverables/ewoh-code-walkthrough-2026-08-13.md
+
+critical_risks:
+  - id: CR-NO-PROD-RUNTIME-VERIFICATION
+    summary: 全部能力 productionEnabled=false；无真实 PG/Docker/真机环境验收。
+      CP-SAT 从未真实求解（ortools 未装，10 项 skip），真机链路（适配器注册、
+      动作分类）刚修复未经真机验证
+    mitigation: 部署试点环境；跑 pilot-readiness/pilot-soak；CP-SAT 影子评估后再议激活
+    evidence: feature-status.yaml（runtimeVerified 字段矩阵）
+  - id: CR-STANDALONE-032-048-CI-UNVERIFIED
+    summary: standalone_032-048 迁移链（含 048 shadow 隔离 CHECK）与 001
+      verify expected 列表（66 名）仅在 schema-manifest/runner 层
+      lockstep；本机无 PostgreSQL，从未真实验证 standalone_001 恰创建
+      expected 列表中的核心表（Round-3 基数假设从未被实证）。CI
+      standalone.yml 从未跑过未提交的 032-048 改动。Round 16 已修复
+      runner 专项迁移 dispatch 缺口（which 映射 + verify handler）与
+      rollback-to-0 链，但真实 PG 执行仍待首推 CI 实证。
+    mitigation: 推送后紧盯 standalone.yml PG 步骤；漂移按 verify 输出逐项校正
+      verify 期望，不改事实层
+    evidence: db/verify/standalone_001_verify.sql（expected 66 名）+ CI 从未运行未提交改动
+  - id: CR-TWIN-SIMULATION-ISOLATION
+    summary: 已闭合（Round 45 / ADR-025）——§13 三层强制齐备：契约面
+      isSimulation=true（validateSimulationRun fail-closed）+ 表级 CHECK
+      is_simulation=true（standalone_044 DB 兜底）+ 服务层唯一写路径
+      ewoh_simulation_run 绝不写生产 World State 表（spec 断言 writtenTables）
+    mitigation: 三层强制 + Golden #19 隔离向量 + standalone_044 verify 自证拒绝
+    evidence: contracts/simulation/* + db/migrations/standalone_044_* +
+      ewoh-spark-app/server/modules/simulation/__tests__/simulation.service.spec.ts
+  - id: CR-EDGE-HYDRATE-COMPLETENESS
+    summary: 已闭合（Round 49 / ADR-029）——任务↔派工状态机双向同步：
+      execute→Task dispatched、set_assignment_status→Task、update_task→
+      Assignments（同 TASK_TRANSITIONS 状态机 + 最短链补全 + 幂等跳过 +
+      失败显式留痕）；离线 hydrate 后继续执行不再分叉
+    mitigation: 并发双写窗口冲突靠乐观锁 + 显式留痕承载（ADR-029 决策 4）
+    evidence: src/edge_platform/scheduler/scheduler_service.py +
+      src/edge_platform/tests/test_task_assignment_sync.py（7 例）
+
+active_migrations: []
+
+blocked_items:
+  - id: BL-CPSAT-RUNTIME-VERIFY
+    summary: CP-SAT 真实求解验证需部署环境安装 ortools（本机/CI 均无）
+    resolves_when: 部署环境就绪后跑 solver-invariants + 影子评估
+    evidence: docs/decisions/OPEN-DECISIONS.md（唯一 OPEN 项）
+
+important_decisions:
+  - id: ADR-001..005
+    summary: 策略权重可配置 / 事件驱动重排 / CP-SAT worker / 调度多租户 RLS /
+      调度 ingest 分解——已决策，见 docs/decisions/
+    evidence:
+      - docs/decisions/ADR-001-policy-weights-configurable.md
+      - docs/decisions/ADR-002-event-driven-replan.md
+      - docs/decisions/ADR-003-cpsat-worker.md
+      - docs/decisions/ADR-004-scheduler-tenancy.md
+      - docs/architecture/adr-005-scheduler-ingest-decomposition.md
+  - id: ADR-006
+    summary: Canonical Industrial Identity：kind:value 语法 + 42 类封闭注册表 +
+      内部 ID 与第三方 ID 显式分离 + identity-mapping 解析规则（active/时间窗口/
+      ambiguous_identity fail-closed）+ 契约为唯一事实源、双运行时锁定注册表、
+      独立仲裁门禁（本回合已交付契约与实现；NO-02b 接线后续）
+    evidence:
+      - docs/decisions/ADR-006-canonical-identity.md
+      - contracts/identity/*
+      - scripts/audit-identity-contracts.js
+  - id: solver-canonical
+    summary: Production Canonical Solver = Heuristic；CP-SAT OPTIONAL/EXPERIMENTAL，
+      激活阶梯 OFF→SHADOW→CANARY→PRODUCTION 唯一事实源 EWOH_SOLVER_ACTIVATION，
+      fail-closed 回退
+    evidence: README.md §2.3, feature-status.yaml (cpSat)
+  - id: edge-advisory-only
+    summary: connected production 下边缘调度仅 advisory，调度写权限唯一归 NestJS
+      （P0-SCHED-OWNERSHIP，防 split-brain/double-dispatch）
+    evidence: src/edge_platform/run.py (ensure_scheduling_write_permitted)
+  - id: safety-boundary
+    summary: EWOH 为只读监督/受控工作流；急停/助力闭环等安全能力永久在设备控制器，
+      平台不参与实时安全控制
+    evidence: SECURITY.md, README.md §一
+
+authoritative_sources:
+  - path: feature-status.yaml
+    role: 功能实现事实（implemented/tested/deployable/productionEnabled/runtimeVerified/docsUpdated）
+  - path: db/migrations/standalone_*.sql
+    role: 云侧数据库 schema 唯一权威源（schema.ts 由 PG 反向生成）
+  - path: openapi/ewoh.yaml + openapi/work-orchestration.yaml
+    role: 云侧 API 契约（audit-openapi-routes 零漂移门禁）
+  - path: contracts/
+    role: 状态机/事件目录/工厂模板/策略/工件 schema 契约层
+  - path: contracts/identity/
+    role: 工业身份唯一事实源（ADR-006；audit-identity-contracts 门禁 + 共享测试向量）
+  - path: deploy/.env.example
+    role: 部署参数唯一事实源（audit-env-inventory --strict 门禁）
+  - path: docs/decisions/
+    role: 架构决策日志（ADR + OPEN-DECISIONS）
+  - path: docs/agent/project-state.yaml
+    role: 长期 Agent 外置记忆（本文件）
+
+test_status:
+  as_of: "2026-08-16"
+  gates:
+    - name: NO-13u Model Training Policy 测试（Round 91）
+      result: "provider spec org 键控更新（10 例：org 命中 ml / 他租户不共享确定性回退 / 缺 org 显式确定性回退 / 分组优先 org 全局两级回退）；training spec org 命名空间 + 跨租户隔离（他租户反馈不参与本租户训练）+ 缺 orgId 400（9 例）；default jest 266 suites 1976→1978 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 91）
+      result: "truth-check PASS；reconcile 6/6（computed=74）；feature-status 32/32；audit-openapi-routes 398/590 零漂移；env-inventory 124/125 PASS（无新 env）；治理 YAML 严格解析 OK（54/1/0/1）"
+      status: PASS
+    - name: §36 评估（Round 91）
+      result: "intelligence-l7-learning 证据深化（矩阵保持 Implemented）：§15/§16 机器强制收口（训练数据租户隔离 + 模型 org 命名空间 + 预测 org 键控 + 缺上下文显式回退）；ADR-056/067 遗留边界关闭；旧全局模型显式弃用（历史留档不回填）"
+      status: PASS
+    - name: NO-13t Exo Support Mode 边界测试（Round 90）
+      result: "test_ny_exo_a1_contract.py +3 例边界锁（TELEMETRY 20B 字段集锁定（无 mode/support_mode，恰好 7 字段）/ 统一语义帧 to_storage_dict 无 support_mode + load.assist_level 数值事实在 / VENDOR_TO_UNIFIED 无 mode/support 语义路径）；既有 53 例回归绿；pytest 1340 passed/10 skipped 全绿（含 +3）"
+      status: PASS
+    - name: 门禁（Round 90）
+      result: "truth-check PASS；reconcile 6/6（computed=74）；feature-status 32/32；audit-openapi-routes 398/590 零漂移；env-inventory 124/125 PASS（无新 env）；治理 YAML 严格解析 OK（54/1/0/1）"
+      status: PASS
+    - name: §36 评估（Round 90）
+      result: "exoskeleton-domain-model 证据深化（矩阵保持 Implemented）：Support Mode 观测边界机器锁定（阻塞仍成立 + 协议升级即漂移信号）；assist_level 数值事实与配置 mode 并列不推导分类（§33 不伪造观测）"
+      status: PASS
+    - name: NO-13s SimulationConsole 渲染测试（Round 89）
+      result: "SimulationRunList.render.test 2 例（数据行契约字段透出（runId/kind 标签/状态标签/结果摘要头条）/ 失败行 failureReason 显式头条 + aria-pressed 选中态）；simulationConsoleLogic.test 18 例回归绿（TONE 常量上移 §31）；client jest 119→120 suites 968→970 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 89）
+      result: "truth-check PASS；reconcile 6/6（computed=74）；feature-status 32/32；audit-openapi-routes 398/590 零漂移；env-inventory 124/125 PASS（无新 env）；治理 YAML 严格解析 OK（54/1/0/1）"
+      status: PASS
+    - name: §36 评估（Round 89）
+      result: "factory-operating-console 证据深化（矩阵保持 Implemented）：数据型页面渲染 smoke 缺口第二项关闭（SimulationConsole 台账列表面——纯展示组件提取 + TONE 单一来源 + 契约字段透出断言）；其余数据型页面后续按需跟进"
+      status: PASS
+    - name: NO-13r per-taskType 分组测试（Round 88）
+      result: "empirical-duration-prediction.spec +2 例（taskType 命中分组 → 分组模型优先（median + 分组版本链）/ 未知 taskType → 全局回退 → 无全局无分组 → 确定性基线（显式两级回退））；duration-model-training.service.spec +2 例（分组训练 → 每 taskType 独立注册表 modelId 链 + cardJson 携带 taskType + 不足分组显式 skipped 不落版 + provider 分组映射刷新 / hydrate 全量回填 → 分组映射重建）；default jest 266 suites 1972→1976 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 88）
+      result: "truth-check PASS；reconcile 6/6（computed=74）；feature-status 32/32；audit-openapi-routes 398/590 零漂移；env-inventory 124/125 PASS（无新 env）；治理 YAML 严格解析 OK（54/1/0/1）"
+      status: PASS
+    - name: §36 评估（Round 88）
+      result: "intelligence-l7-learning 证据深化（矩阵保持 Implemented）：ADR-056 决策 3 后续收口（per-taskType 分组——真实分布细分拟合 + 置信度真实表达 + 两级回退显式 + 注册表每分组独立版本链可审计）；跨租户训练政策仍为后续显式边界"
+      status: PASS
+    - name: NO-13q Decision History 控制台测试（Round 87）
+      result: "decisionHistoryLogic.test 4 例（8 kind/5 status/5 authority 标签全映射 / buildDecisionRows 契约字段→行模型（selected 首条/approver/evidence/风险 tone）/ 未知词表值原样透出 + unknown tone / sources 摘要）；DecisionHistoryTable.render.test 2 例（数据行契约字段透出 + skippedInvalid 显式横幅 + 空态）；client jest 117→119 suites 962→968 tests 全绿；default jest 266 suites 1972 tests 全绿；双 tsc PASS；另修复 rule-based 重放 deep-equal createdAt 墙钟 flake"
+      status: PASS
+    - name: 门禁（Round 87）
+      result: "truth-check PASS；reconcile 6/6（computed=74）；feature-status 32/32；audit-openapi-routes 398/590 零漂移；env-inventory 124/125 PASS（无新 env）；治理 YAML 严格解析 OK（54/1/0/1）"
+      status: PASS
+    - name: §36 评估（Round 87）
+      result: "factory-operating-console 证据深化（矩阵保持 Implemented）：数据型页面渲染 smoke 缺口首项关闭（决策历史控制台：纯逻辑 + 纯展示 + 消费端闭环 + 显式错误/空/加载态 + skippedInvalid 显式）；Decision History §12/§18 消费面闭环（端点 + UI 双层）；其余数据型页面（SimulationConsole 等）后续按需跟进"
+      status: PASS
+    - name: NO-13p Decision History 检索测试（Round 86）
+      result: "decision-history.service.spec 3 例（四表聚合 + 记录级租户过滤（他租户剔除）+ sources 扫描量审计 / kind+status 过滤 + fail-closed 400 + limit cap 100 + offset / 非法记录 skippedInvalid 显式计数 + 缺租户 400）；default jest 265→266 suites 1969→1972 tests 全绿；client jest 117 suites 962 tests 全绿（client types 再生成回归）；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 86）
+      result: "truth-check PASS；reconcile 6/6（computed=74）；feature-status 32/32；audit-openapi-routes 398 controllers/590 spec 零漂移（+1 路径）；env-inventory 124/125 PASS（无新 env）；治理 YAML 严格解析 OK（54/1/0/1）"
+      status: PASS
+    - name: §36 评估（Round 86）
+      result: "canonical-decision-model 证据深化（矩阵保持 Implemented）：Decision History 统一读面收口（8 类 kind 跨四表检索 + 记录级租户过滤 + 非法显式计数 + fail-closed）；§12/§18 消费面闭环（写路径 8 类全收敛 + 读面统一）；决策历史面板 UI 后续立项（非能力阻断）"
+      status: PASS
+    - name: NO-13o Policy Activation Decision 测试（Round 85）
+      result: "decision-projection.spec +3 例（判定事实（executed/human/approver/high 类型推导/evidence）/ 缺省理由 activated + 幂等确定性 / 缺口显式（全局策略无租户边界/非法版本/缺 approver））；policy-version.spec +2 例（activate 行翻转 → decisionJson 与 active 同 UPDATE 落库 + validateDecision 门 + 判定事实 / savePolicy 直接激活路径 reason 缺省）；facade-characterization oracle 补强（reason 透传 additive）；default jest 265 suites 1964→1969 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 85）
+      result: "truth-check PASS；reconcile 6/6（computed=74）；feature-status 32/32；audit-openapi-routes 397/588 零漂移；env-inventory 124/125 PASS（无新 env）；治理 YAML 严格解析 OK（54/1/0/1）；standalone_054 原地加固（无计数变化，verify 列表不变）"
+      status: PASS
+    - name: §36 评估（Round 85）
+      result: "canonical-decision-model 证据深化（矩阵保持 Implemented）：Decision Catalog kind #8（policy_activation）进入生产调用链（active 翻转同 UPDATE 原子落 decision_json + 契约门 + 判定事实 + 风险类型推导规则）；**Decision Catalog 8 类 kind 全收敛收口**（§12 Decision History 全链覆盖）"
+      status: PASS
+    - name: NO-13n Learning Proposal Activation Decision 测试（Round 84）
+      result: "decision-projection.spec +3 例（approve 判定事实（approved/human/approver/medium 类型推导/evidence）/ reject·rollback 状态映射（rejected/superseded）+ 理由强制 + selected=opt:keep / 幂等确定性 + 缺口显式（无租户/缺 proposalId/缺 operator/非批准缺理由））；learning-proposal.service.spec +3 例（approve/reject/rollback decisionJson 与状态同 UPDATE 落库 + validateDecision 门 + 判定事实）；default jest 265 suites 1958→1964 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 84）
+      result: "truth-check PASS；reconcile 6/6（computed=74）；feature-status 32/32；audit-openapi-routes 397/588 零漂移；env-inventory 124/125 PASS（无新 env）；治理 YAML 严格解析 OK（54/1/0/1）；standalone_053 原地加固（无计数变化，verify 列表不变）"
+      status: PASS
+    - name: §36 评估（Round 84）
+      result: "canonical-decision-model 证据深化（矩阵保持 Implemented）：Decision Catalog kind #7（learning_proposal_activation）进入生产调用链（三路径与状态同 UPDATE 原子落 decision_json + 契约门 + 判定事实 + 风险类型推导规则）；其余 1 类 kind 后续逐类收敛（目录已备，非能力阻断）"
+      status: PASS
+    - name: NO-13m Replan Decision 测试（Round 83）
+      result: "decision-projection.spec +3 例（判定事实（proposed/policy/触发类型+影响数/run 链接/evidence/actor）/ 风险类型推导规则（SAFETY_EVENT·ZONE_RESTRICTED→high、PERSON_UNAVAILABLE·DEVICE_OFFLINE→medium、其余→low）/ 幂等确定性 + 缺口显式（无租户/缺判定事实/非法影响数））；replan-decision-persistence.spec 2 例（handleTrigger 产方案 → 新方案决策台账含 kind #6 + validateDecision 门 + 判定事实 / 重复触发去抖不重复追加——decisionId 幂等）；plan-decision-persistence + dispatch-integration 回归绿（§31 台账追加单一实现重构）；default jest 264→265 suites 1953→1958 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 83）
+      result: "truth-check PASS；reconcile 6/6（computed=74）；feature-status 32/32；audit-openapi-routes 397/588 零漂移；env-inventory 124/125 PASS（无新 env）；治理 YAML 严格解析 OK（54/1/0/1）"
+      status: PASS
+    - name: §36 评估（Round 83）
+      result: "canonical-decision-model 证据深化（矩阵保持 Implemented）：Decision Catalog kind #6（replan）进入生产调用链（重排触发→新方案决策台账 + 契约门 + 风险类型推导规则 + run/trigger 链接）+ §31 收口（decision-ledger 单一实现三处消费）；其余 2 类 kind 后续逐类收敛（目录已备，非能力阻断）"
+      status: PASS
+    - name: NO-13l Dispatch Decision 测试（Round 82）
+      result: "decision-projection.spec +3 例（判定事实（executed/policy/派工数/outbox 链接/evidence）/ 风险聚合 max 规则（high 优先/medium 优先/全 low/空集 low）/ 缺省 operator → system:dispatch + 幂等确定性 + 缺口显式（无租户/缺 planId/非法派工数））；dispatch-integration.spec 主链路断言补强（kind #5 台账 + validateDecision 门 + getPlan 读回携带）；default jest 264 suites 1950→1953 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 82）
+      result: "truth-check PASS；reconcile 6/6（computed=74）；feature-status 32/32；audit-openapi-routes 397/588 零漂移；env-inventory 124/125 PASS（无新 env）；治理 YAML 严格解析 OK（54/1/0/1）"
+      status: PASS
+    - name: §36 评估（Round 82）
+      result: "canonical-decision-model 证据深化（矩阵保持 Implemented）：Decision Catalog kind #5（dispatch）进入生产调用链（派工动作与派工同事务入 decision_records_json + 契约门 + 风险聚合规则 + outbox 链接）；派工链全链留痕（kind2 审批→kind4 预占→kind5 派工）；其余 3 类 kind 后续逐类收敛（目录已备，非能力阻断）"
+      status: PASS
+    - name: NO-13k Resource Reservation Decision 测试（Round 81）
+      result: "decision-projection.spec +3 例（判定事实（executed/rule_based/台账链接/风险映射复用 ADR-048 规则/evidence/actor）/ 缺省 operator → system:dispatch + 幂等确定性 / 缺口显式（无租户/缺判定事实））；dispatch-integration.spec 主链路断言补强（派工后方案 decisionRecordsJson 含 kind #4 记录 + validateDecision 门 + getPlan 读回携带）；default jest 264 suites 1947→1950 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 81）
+      result: "truth-check PASS；reconcile 6/6（computed=74）；feature-status 32/32；audit-openapi-routes 397/588 零漂移；env-inventory 124/125 PASS（无新 env）；治理 YAML 严格解析 OK（54/1/0/1）"
+      status: PASS
+    - name: §36 评估（Round 81）
+      result: "canonical-decision-model 证据深化（矩阵保持 Implemented）：Decision Catalog kind #4（resource_reservation）进入生产调用链（派工预占与派工同事务入 decision_records_json + 契约门 + 台账链接 + 判定事实）；其余 4 类 kind 后续逐类收敛（目录已备，非能力阻断）"
+      status: PASS
+    - name: NO-13j Agent Approval Decision 测试（Round 80）
+      result: "decision-projection.spec +5 例（kind #3 判定事实（authority=human/approver/riskLevel 映射/evidence 原始档）/ 驳回缺省理由+幂等 / expired policy（无操作者 + critical 收敛留原始档）/ 风险映射规则（low/medium/high/critical→high、未知 null）/ 缺口显式（无租户/缺 operator/未知风险））；agent.service.spec +3 例（approved decisionJson 落库 validateDecision 门 / rejected + CAS 幂等不重复追加 / expired policy 权威 + evidence 原始档）；default jest 264 suites 1939→1947 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 80）
+      result: "truth-check PASS（exit 0，581/581 域契约 + 24/24 信封）；reconcile 6/6（computed=74）；feature-status 32/32；audit-openapi-routes 397/588 零漂移；env-inventory 124/125 PASS（无新 env）；治理 YAML 严格解析 OK（project-state/matrix/release-manifest/schema-manifest/feature-status，54/1/0/1）+ state.json JSON OK；runner --check 与 check script bash -n OK；standalone_052 原地加固（无计数变化，verify 列表不变）"
+      status: PASS
+    - name: §36 评估（Round 80）
+      result: "canonical-decision-model 证据深化（矩阵保持 Implemented）：Decision Catalog kind #3（agent_approval）进入生产调用链（resolveApproval 三解析路径同事务落 decision_json + 契约门 + 判定事实）；agent-policy-approval 证据深化（Decision 留痕）；其余 5 类 kind 后续逐类收敛（目录已备，非能力阻断）"
+      status: PASS
+    - name: NO-13i MILP Solver 测试（Round 79）
+      result: "milp-scheduling-solver.spec 9 例（真实 HiGHS 求解非 mock：单任务最优标记如实（OPTIMAL/milp-v1/shadow/selectedReason）/ 最优性 vs 穷举（2 任务×2 人员唯一最优 7）/ 容量冲突 1 人员 2 重叠 → 1 分配 + UNASSIGNED_MILP 显式 / DAG 闭包前置无可行 → 后继 predecessor_unassigned 显式封锁 / DAG 时序冲突保留低成本任务 / 工位容量 1 互斥 / 确定性重放 deep-equal / 空任务不调求解器 / WASM 加载失败显式抛出）；default jest 263→264 suites 1930→1939 tests 全绿；双 tsc PASS；license:check PASS"
+      status: PASS
+    - name: 门禁（Round 79）
+      result: "truth-check PASS（exit 0）；reconcile 6/6（computed=74）；feature-status 32/32（milpSolver 新行 + README 能力表行 + 关键词表；OPEN-DECISIONS 汇总行计数守恒 1 未决 + 3 已决）；audit-openapi-routes 397/588 零漂移；env-inventory 124/125 PASS（无新 env）；治理 YAML 严格解析 OK（project-state/matrix/release-manifest/feature-status，54/1/0/1）；license:check PASS（highs MIT）"
+      status: PASS
+    - name: §36 评估（Round 79）
+      result: "solver-pluggability 保持 Partial：阶梯四类 ✓（CP-SAT/heuristic/rule-based/MILP）+ 差异边界显式 ✓ + 确定性重放 ✓ + 可解释 ✓（rejectedHard/selectedReason/violations 三分）；剩余 = CP-SAT 生产启用（部署环境阻塞，OPEN-DECISIONS 唯一项）→ §36 口径不提前升 Implemented"
+      status: PASS
+    - name: NO-13h Plan Approval Decision 测试（Round 78）
+      result: "decision-projection.spec +3 例（approve 契约门+判定事实（authority=human/approver/riskLevel=high/requiresApproval=false）/ reject 缺省理由+幂等确定性 / 无租户·无 operator 缺口显式）；plan-decision-persistence.spec +2 例（approvePlan 追加 plan_approval 既有记录保留 / rejectPlan 追加 rejected）；default jest 263 suites 1925→1930 tests、client 117 suites 962 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 78）
+      result: "truth-check PASS（exit 0）；reconcile 6/6（computed=74）；feature-status 31/31；audit-openapi-routes 397/588 零漂移；env-inventory 124/125 PASS（无新 env）；治理 YAML 严格解析 OK（54/1/0/1——修复矩阵三处重复 evidence 键后严格解析真实覆盖）"
+      status: PASS
+    - name: §36 评估（Round 78）
+      result: "canonical-decision-model 证据深化（矩阵保持 Implemented）：Decision Catalog kind #2（plan_approval）进入生产调用链（approvePlan/rejectPlan 台账追加 + 契约门 + 判定事实）；其余 6 类 kind 后续逐类收敛（目录已备，非能力阻断）"
+      status: PASS
+    - name: NO-13g 经验模型与重训测试（Round 77）
+      result: "empirical-duration-prediction.spec 8 例（train median/p90 确定性重放 / 空·非有限·样本不足显式缺口 / 置信度样本量离散度推导与裁剪 / 版本串；provider 未训练显式回退 / 已训练 ml 路径 / 任务事实优先 / 其余维度基线）；duration-model-training.service.spec 5 例（落版 supersede + 版本解析递增 + provider 刷新 / 样本不足不落版 / 无数据显式 / hydrate 回填 / hydrate 非法数值防护）；default jest 261→263 suites 1912→1925 tests、client 117 suites 962 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 77）
+      result: "truth-check PASS；reconcile 6/6（computed=74）；feature-status 31/31；audit-openapi-routes 397 controllers/588 spec 零漂移；env-inventory 124/125 PASS（无新 env）；project-state/matrix YAML 严格解析 OK（54/1/0/1）"
+      status: PASS
+    - name: §36 评估（Round 77）
+      result: "intelligence-l7-learning 全绿升 Implemented：真实可训练模型 ✓（非参数经验统计，真实反馈训练）/ 生产调用链 ✓（PREDICTION_PROVIDER 替换 + retrain API）/ 注册与激活 ✓（ewoh_model_registry 落版 supersede）/ 可审计 ✓（cardJson + 版本链）/ 可解释 ✓（median + 真实置信度）/ OOD 显式 ✓（§33）；矩阵 53/2/0/1→54/1/0/1"
+      status: PASS
+    - name: NO-13f 主题切换与渲染测试（Round 76）
+      result: "contrastMode.test +5 例（偏好读回（dark/light/非法→system）/ 持久化（system 移除键）/ resolveThemeMode 媒体解析 / nextThemePreference 三态循环 / applyThemePreference data-theme 同步）；ThemeToggle.render.test 3 例（默认系统标签/dark 标签/light 标签）；static-pages.render.test 2 例（Forbidden 403 账号与动作 / NotFound 404 返回链接）；client jest 115→117 suites 952→962 tests 全绿；default jest 261 suites 1912 tests；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 76）
+      result: "truth-check PASS；reconcile 6/6（computed=74）；feature-status 31/31；audit-openapi-routes 396 零漂移；env-inventory 124/125 PASS（无新 env）；project-state/matrix YAML 严格解析 OK（53/2/0/1）"
+      status: PASS
+    - name: §36 评估（Round 76）
+      result: "factory-operating-console 全绿升 Implemented：生产调用链 ✓（CommandMap culling + 暗色/手动主题双路径）/ 真能力 ✓（决策驾驶舱/RoleWorkbench/MobileWorkbench 接线）/ 测试 ✓（vm/hook/渲染 smoke 三层）；walkthrough 三项缺口（culling 闲置/深色半成品/渲染测试低）全部关闭；矩阵 52/3/0/1→53/2/0/1"
+      status: PASS
+    - name: NO-13e Console 深化测试（Round 75）
+      result: "viewportCulling.test +5 例（worldBoundsFromTransform 等比/meet 居中偏移/zoom/pan/非法输入 fail-safe）；MapViewport.render.test 3 例（renderToStaticMarkup：非调度模式无叠加层/scheduling 模式叠加层出现/culling 边界透传——重依赖面板受控替身隔离）；client jest 114→115 suites 944→952 tests 全绿；default jest 261 suites 1912 tests；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 75）
+      result: "truth-check PASS；reconcile 6/6（computed=74）；feature-status 31/31；audit-openapi-routes 396 零漂移；env-inventory 124/125 PASS（无新 env）；project-state/matrix YAML 严格解析 OK（52/3/0/1）"
+      status: PASS
+    - name: §36 评估（Round 75）
+      result: "factory-operating-console 保持 Partial：生产调用链 ✓（culling pan/zoom→store 唯一写点 + 暗色启动接线）；剩余 = 手动主题切换 + 更广页面渲染覆盖（其它控制台页面）→ 后续轮次（§36 口径不提前升 Implemented）"
+      status: PASS
+    - name: NO-13d Rule-based Solver 测试（Round 74）
+      result: "rule-based-scheduling-solver.spec 7 例（确定性重放 deep-equal（solveDurationMs 墙钟除外）/ 任务序 due→priority→id / priority tie-break / first-eligible + rejectedHard 结构化 / DAG 前置 UNASSIGNED（no_eligible_candidate + predecessor_unassigned）/ lockedAssignments 透传 / routeCost 映射 risk→high）；default jest 261 suites 1905→1912 tests、client 114 suites 944 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 74）
+      result: "truth-check PASS；reconcile 6/6（computed=74）；feature-status 31/31；audit-openapi-routes 396 零漂移；env-inventory 124/125 PASS（无新 env）；project-state/matrix YAML 严格解析 OK（52/3/0/1）"
+      status: PASS
+    - name: §36 评估（Round 74）
+      result: "solver-pluggability 保持 Partial：阶梯三类 ✓（CP-SAT/heuristic/rule-based）+ 差异边界显式 ✓ + 确定性重放 ✓ + 可解释 ✓（rejectedHard/selectedReason）；MILP 环境阻塞（需求解器依赖，与 CP-SAT 生产启用同列 OPEN-DECISIONS）→ §36 口径不提前升 Implemented"
+      status: PASS
+    - name: NO-13c Exo Configuration 台账测试（Round 73）
+      result: "exo-config.service.spec 5 例（契约门 fail-closed 拒绝且不落库 / 台账往返 + 幂等 + ExoConfigRecorded 事件 / activateProfile supersede CAS + 幂等 / 非 profile 显式拒绝 / 租户作用域）；exo-session.service.spec 回归绿；event-catalog.spec 目录 65 类型 + 通道引用锁步；reconcile spec 73→74（computed=74 三源一致）；default jest 260 suites 1900→1905 tests、client 114 suites 944 tests 全绿；双 tsc PASS；pytest 374 passed/10 skipped"
+      status: PASS
+    - name: 门禁（Round 73）
+      result: "truth-check PASS；reconcile 6/6（computed=74）；feature-status 31/31；audit-openapi-routes 396 controllers/587 spec 零漂移；env-inventory 124/125 PASS（无新 env）；project-state/matrix YAML 严格解析 OK（52/3/0/1）"
+      status: PASS
+    - name: §36 评估（Round 73）
+      result: "exoskeleton-domain-model 全绿升 Implemented：生产调用链 ✓（API + 台账写路径 + 契约门）/ Contract ✓ / Event ✓（ExoConfigRecorded）/ 幂等 ✓ / 多租户 ✓（RLS + 租户作用域）/ 可审计 ✓（record_json + audit）；矩阵 51/4/0/1→52/3/0/1；边缘 Support Mode 自动观测 = NO-13d 显式边界（§33 不伪造）"
+      status: PASS
+    - name: NO-13b Exo Configuration 契约测试（Round 72）
+      result: "test_exo_config_contract.py 23 例（22 共享向量 + 注册表形状）；exo-config.spec.ts 8 例；golden 第 25 场景双执行器（Python + TS 各 9 案例）；audit-domain-contracts 545→581/581（exo-config 域 22 向量独立 JS 仲裁 + schema 形状/rules 实例 + 6 注册表 py/ts 三方锁步）；default jest 259 suites（+1 新 spec）、client 114 suites 944 tests；双 tsc PASS；pytest 351→374 passed/10 skipped"
+      status: PASS
+    - name: 门禁（Round 72）
+      result: "truth-check PASS；reconcile 6/6（computed=73）；feature-status 31/31；audit-openapi-routes 392 零漂移；env-inventory 124/125 PASS（无新 env）；project-state/matrix YAML 严格解析 OK（51/4/0/1）"
+      status: PASS
+    - name: §36 评估（Round 72）
+      result: "exoskeleton-domain-model 保持 Partial：契约 ✓（exo-config v1）/ 双实现 ✓ / 门禁 581/581 ✓ / Golden 第 25 场景 ✓；生产调用链未接线（台账 standalone_051 + 边缘 Support Mode 观测）→ NO-13c 立项（§36 口径不提前升 Implemented）"
+      status: PASS
+    - name: NO-13a 执行反馈完成腿测试（Round 71）
+      result: "execution-feedback-advancement.spec 6 例（start 链推进 + 事件审计 / end 链推进 / 无 start 观测单事件不伪造中间态 / 幂等 no-op / 乱序与 exception 边界 / 无执行事实不推进）；task-state-machine-contract.spec 7→8 例（+taskActionPath 最短链/不可达/空路径/链自洽）；task.service.spec 回归绿；scheduler-facade-characterization 更新响应契约（additive 透出）；default jest 258 suites 1884→1891 tests、client 114 suites 944 tests 全绿；双 tsc PASS；pytest 351 passed/10 skipped"
+      status: PASS
+    - name: 门禁（Round 71）
+      result: "truth-check PASS；reconcile 6/6（computed=73）；feature-status 31/31；audit-openapi-routes 392 零漂移；env-inventory 124/125 PASS（无新 env）；project-state/matrix YAML 严格解析 OK（51/4/0/1）"
+      status: PASS
+    - name: §36 评估（Round 71）
+      result: "canonical-execution-model 全绿升 Implemented：生产调用链 ✓（recordTaskActuals→recordActuals 推进）/ Contract ✓（task.yaml 锁步双实现）/ Event ✓（ewohAssignmentEvent）/ 幂等 ✓（CAS + no-op）/ 多租户 ✓（GUC）/ 可审计 ✓（transitionTaskState 审计 + 事件）/ 可解释 ✓（反馈事实 → 契约最短链）；矩阵 50/5/0/1→51/4/0/1"
+      status: PASS
+    - name: NO-12z Execution 锁步测试（Round 70）
+      result: "task-state-machine-contract.spec 7 例（task.yaml 逐条比对：TASK_ACTIONS 无缺失/无契约外转换 / 11 状态 × 14 动作穷举负例 / cancel any_non_terminal 语义 / TASK_NON_TERMINAL·TASK_TERMINAL 集合一致 / 检查器负测试检出人为缺失转换 / task-lifecycle 分类集合锁步）；task.service.spec 回归绿（数据化重构行为逐字一致）；Python test_state_machine_contract + golden 7 passed；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 70）
+      result: "truth-check PASS；reconcile 6/6（computed=73）；feature-status 31/31；audit-openapi-routes 392 零漂移；env-inventory 124/125 PASS（无新 env）；project-state/matrix YAML 严格解析 OK（50/5/0/1）"
+      status: PASS
+    - name: §36 评估（Round 70）
+      result: "canonical-execution-model 保持 Partial：契约 ✓（task.yaml）/ 跨语言锁步 ✓（Python + TS 双门禁）/ 边缘·云侧派工→任务同步 ✓；云侧执行反馈完成腿未接（feedback→assignment/task executing·completed）→ NO-13a 立项（§36 口径不提前升 Implemented）"
+      status: PASS
+    - name: NO-12y Decision 投影接线测试（Round 69）
+      result: "decision-projection.spec 7 例（字段等价逐字断言 / 风险映射规则 high→high/medium→medium/null→low / ID 确定性幂等 / baseline reuse selected 补入 / 缺口显式（无租户/无 selectedReason/无 trace）/ 空原因过滤不伪造 / 方案级多 assignment + 非有限权重过滤）；plan-decision-persistence.spec 3 例（persistPlan 投影+落库 / getPlan 读回 / 缺口列写 NULL）；default jest 256 suites 1867→1877 tests、client 114 suites 944 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 69）
+      result: "truth-check PASS（repo-facts 39/39、identity 22/22、domain 545/545、envelope 24/24、registries OK）；reconcile 6/6（computed=73）；feature-status 31/31；audit-openapi-routes 392 零漂移；env-inventory 124/125 PASS（无新 env）；project-state/matrix YAML 严格解析 OK（50/5/0/1）"
+      status: PASS
+    - name: §36 评估（Round 69）
+      result: "canonical-decision-model 全绿升 Implemented：生产调用链 ✓（persistPlan 唯一投影点 + standalone_050 持久化 + getPlan 读回）/ Contract ✓ / 可解释 ✓（selected.reason 强制）/ 可审计 ✓（auditTrail + 决策历史单一事实源）/ 多租户 ✓（tenantId 同源 org_id）/ Golden 第 24 场景 ✓；矩阵 49/6/0/1→50/5/0/1"
+      status: PASS
+    - name: NO-12x Decision 契约测试（Round 68）
+      result: "test_decision_contract.py 25 例（23 共享向量 + 注册表形状 + 风险阶梯单一事实源）；decision.spec.ts 10 例；golden 第 24 场景双执行器（Python + TS 各 9 案例）；audit-domain-contracts 511→545/545（decision 域 23 向量独立 JS 仲裁 + schema 形状/rules 实例/风险阶梯与 risk 契约一致 + py/ts 注册表三方锁步 + DECISION_RISK_LEVELS TS 源码级单一事实源门禁）；default jest 254 suites 1856→1867 tests、client 114 suites 944 tests 全绿；双 tsc PASS；pytest 351 passed/10 skipped"
+      status: PASS
+    - name: 门禁（Round 68）
+      result: "truth-check PASS（repo-facts 39/39、identity 22/22、domain 545/545、envelope 24/24、registries OK）；reconcile 6/6（computed=73）；feature-status 31/31；audit-openapi-routes 392 零漂移；env-inventory 124/125 PASS（无新 env）；project-state/matrix YAML 严格解析 OK"
+      status: PASS
+    - name: §36 评估（Round 68）
+      result: "canonical-decision-model 契约层为真实契约（非 Demo）：Contract ✓ / 双实现 ✓ / 门禁 545/545 ✓ / Golden 第 24 场景 ✓；生产调用链未接线（DecisionTrace→DecisionRecord 投影）→ 矩阵保持 Partial，NO-12y 立项"
+      status: PASS
+    - name: NO-12w 邮件 STARTTLS 测试（Round 67）
+      result: "email-transport.spec 10→12 例（+STARTTLS 升级序 EHLO→STARTTLS→EHLO→AUTH / 服务器 502 拒绝 → smtp_auth_requires_tls 错误码兼容 / 无凭据明文不发起 STARTTLS）；dispatcher spec fakes 适配回归；default jest 250 suites 1854→1856 tests、client jest 114 suites 944 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 67）
+      result: "truth-check PASS；reconcile 6/6（computed=73）；feature-status 31/31；audit-openapi-routes 392 零漂移；env-inventory 124/125 PASS（无新 env）；project-state/matrix YAML 严格解析 OK"
+      status: PASS
+    - name: §36 评估（Round 67）
+      result: "ADR-041 v1 传输形态边界消除（587 STARTTLS 凭据投递可用 + 错误码兼容 + 凭据安全不变式延续）；andon-loop 证据深化（矩阵计数不变 49/6/0/1）"
+      status: PASS
+    - name: NO-12v Record 化匹配测试（Round 66）
+      result: "capability-projection.spec 14 例（+6 等价断言：personSkillNames/deviceCapabilityNames/stationCapabilityNames records 与 raw 语义逐字一致 / 证书缺口到期未知不视为过期 / capabilityNames 过滤去重）；既有 scheduler 套件回归绿（语义不变）；default jest 250 suites 1848→1854 tests、client jest 114 suites 944 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 66）
+      result: "truth-check PASS；reconcile 6/6（computed=73）；feature-status 31/31；audit-openapi-routes 392 零漂移；env-inventory 124/125 PASS；audit-domain-contracts 511/511（无契约变更回归）；project-state/matrix YAML 严格解析 OK"
+      status: PASS
+    - name: §36 评估（Round 66）
+      result: "能力匹配端到端走契约形态（快照投影→资格判定→预筛索引）；raw 数组降级为同源 legacy 回退（等价断言锁定语义逐字一致）；canonical-capability-model 证据深化（矩阵计数不变 49/6/0/1）"
+      status: PASS
+    - name: NO-12u Capability 投影接线测试（Round 65）
+      result: "capability-projection.spec 8 例（技能投影/认证缺 issuer 契约门拒绝后显式缺口/缺 expiry 显式缺口/空投影/设备能力/工位能力/缺失不猜/非法名契约门拒绝 projection_invalid）；default jest 250 suites 1840→1848 tests、client jest 114 suites 944 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 65）
+      result: "truth-check PASS；reconcile 6/6（computed=73）；feature-status 31/31；audit-openapi-routes 392 零漂移；env-inventory 124/125 PASS；audit-domain-contracts 511/511（无契约变更回归）；project-state/matrix YAML 严格解析 OK"
+      status: PASS
+    - name: §36 评估（Round 65）
+      result: "能力事实以契约形态进入生产调用链（buildSnapshot 唯一投影点 + 数据源缺口显式暴露）；canonical-capability-model 证据深化（矩阵计数不变 49/6/0/1）"
+      status: PASS
+    - name: NO-12t Capability 契约测试（Round 64）
+      result: "audit-domain-contracts capability 域 493→511/511（schema 形状 + rules 实例 + 13 向量 JS 仲裁 + 3 注册表 Python/TS 逐位锁步）；pytest test_capability_contract 14 例 + Golden 第 23 场景（Python 2 tests / TS 32 tests 全绿）；capability.spec 8 例；default jest 250 suites 1831→1840 tests、client jest 114 suites 944 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 64）
+      result: "truth-check PASS；reconcile 6/6（computed=73）；feature-status 31/31；audit-openapi-routes 392 零漂移（无路由变更）；env-inventory 124/125 PASS；project-state/matrix YAML 严格解析 OK"
+      status: PASS
+    - name: §36 评估（Round 64）
+      result: "canonical-capability-model 按契约层里程碑升 Implemented（§3 Canonical Capability Model 单一事实源落地：契约/双实现/门禁/Golden 齐备；消费方逐点接线为后续轮次）；矩阵 48/7/0/1→49/6/0/1"
+      status: PASS
+    - name: NO-12s 审批前预验证测试（Round 63）
+      result: "pre-approval-simulation.spec 7 例（推导/同工位去重/多人分组/无链 null/缺事实跳过计数/缺坐标跳过/全缺 null）；plan-pre-approval-simulation.spec 3 例（多工位链自动运行 layout + runId/scenarioId/moves 断言 + 审计 after.preApprovalSimulation / 无移动链显式 skip 不运行 / 仿真失败 error 留痕审批照常通过）；default jest 248→250 suites 1821→1831 tests、client jest 114 suites 944 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 63）
+      result: "truth-check PASS；reconcile 6/6（computed=73）；feature-status 31/31；audit-openapi-routes 392 零漂移（无路由变更）；env-inventory 124/125 PASS（无新 env）；project-state/matrix YAML 严格解析 OK"
+      status: PASS
+    - name: §36 评估（Round 63）
+      result: "L6 调度决策自动消费仿真闭环（审批时刻自动预验证 + 台账/审计/getPlan 三面可见 + advisory 不阻断人工门）；intelligence-l6-simulation 证据深化（矩阵计数不变 48/7/0/1）"
+      status: PASS
+    - name: NO-12r 邮件推送测试（Round 62）
+      result: "email-transport.spec 10 例（配置解析 fail-closed/消息体渲染/SMTP 协议序（EHLO→MAIL→RCPT→DATA→QUIT）/AUTH LOGIN base64/非 TLS 凭据显式拒绝/5xx smtp_rejected_550/dot-stuffing）；dispatcher +3 例（email 投递/未配置禁用/混合渠道独立失败）；oee +1 例（SMTP 三渠道）；client 渠道标签 += 邮件；default jest 248 suites 1807→1821 tests、client jest 114 suites 944 tests 全绿；双 tsc PASS"
+      status: PASS
+    - name: 门禁（Round 62）
+      result: "truth-check PASS；reconcile 6/6（computed=73）；feature-status 31/31；audit-openapi-routes 392 零漂移（无路由变更）；env-inventory 117→124 documented/125 code-env PASS（SMTP 7 键双向一致）；project-state/matrix YAML 严格解析 OK"
+      status: PASS
+    - name: §36 评估（Round 62）
+      result: "andon-loop 按 §36 升 Implemented（状态机/飞书推送/邮件推送/边缘上行/canonical 投影全腿；失败显式可重试/多租户/TCK 466）；矩阵 47/8/0/1→48/7/0/1"
+      status: PASS
+    - name: NO-12q 边缘安灯上行测试（Round 61）
+      result: "edge test_andon_raise 9 例（规范身份/标题必填/severity 封闭词表/slaSeconds 校验/信封发射/坏 JSON + 3 例 registry POST 分发含 exo 分发缺口修复锁定；unittest 954→963 OK）；ingest spec +3 例（边缘 AndonRaised canonical 投影形状/开灯通知闭环/非 edge 源守卫边界，default jest 248 suites 1804→1807 tests 全绿）；oee+notification 30 例回归绿（共享助手重构）；双 tsc PASS；无 DB/契约/OpenAPI 变更"
+      status: PASS
+    - name: 门禁（Round 61）
+      result: "truth-check PASS；reconcile 6/6（computed=73）；feature-status 31/31；audit-openapi-routes 392 零漂移（无路由变更）；env-inventory 117/118 PASS（无新 env）；project-state completed_capabilities 结构修复（55 唯一条目，20 孤儿片段清除——历史编辑遗留 YAML 结构垃圾，§27 维护职责）"
+      status: PASS
+    - name: §36 评估（Round 61）
+      result: "andon-loop 边缘腿闭环（边缘开灯→信封离线续传→云侧 canonical 投影→状态机/SLA/推送全链复用）；缺口收窄为邮件 SMTP 渠道（矩阵计数不变 47/8/0/1）"
+      status: PASS
+    - name: NO-12p Agent 审批持久化测试（Round 60）
+      result: "agent.service.spec 46 例全绿（+5：台账落库断言/跨重启新服务实例解析既有待批→批准执行/重复解析 CAS 显式拒绝/审批超时台账化 expired/待批清单台账 org 作用域）；agent-policy-tck 46 例全绿（决策表台账 fake 化）；双 tsc（server+client）PASS；standalone_049（迁移+回滚+verify 静态完备：status/resolved/roles CHECK + 4 自证拒绝 + 控制组）"
+      status: PASS
+    - name: 门禁（Round 60）
+      result: "reconcile 6/6（computed=73——受管表 72→73，changelog/state/release 口径一致）；truth-check PASS；feature-status 31/31；audit-openapi-routes 392 零漂移（无路由变更）；env-inventory 117/118 PASS（无新 env）；project-state/matrix/schema-manifest/state.json 严格解析 OK；runner FILES 引用 150 项 0 缺失"
+      status: PASS
+    - name: §36 评估（Round 60）
+      result: "agent-policy-approval 已知边界消除（ADR-030 决策 4 收口：待批事实台账化 + CAS 终态 + 跨重启解析 spec 实证）；矩阵计数不变 47/8/0/1"
+      status: PASS
+    - name: NO-12o shadow 隔离迁移测试（Round 59）
+      result: "standalone_048（迁移+回滚+verify 静态完备：DROP IF EXISTS 幂等 + CHECK 语义与既有写路径兼容——求解器 shadow plan 以 status='shadow' 落库不触发；verify 5 自证拒绝 + 2 控制组）；runner 语法检查 + dispatch/verify handler/ALLOW_DDL/which 注册；check.sh 成对 apply/回滚 + CI 专属步骤；state.json verification_state 229；schema-manifest 原地加固注记（managed_count 72 不变）；真实 PG 实证待 CI 首次运行（CR-STANDALONE-048-CI-UNVERIFIED 新登记）"
+      status: PASS
+    - name: 门禁（Round 59）
+      result: "reconcile 6/6（computed=72——无新表口径不变）；truth-check PASS；feature-status 31/31；audit-openapi-routes 392 零漂移（无路由变更）；project-state/matrix/schema-manifest/state.json YAML/JSON 严格解析 OK；无服务端/客户端代码变更（纯 DB 约束层）"
+      status: PASS
+    - name: §36 评估（Round 59）
+      result: "simulation-production-isolation 按 §36 升 Implemented（三层强制齐备：服务层 hard guard + is_shadow 标识 + 表级 CHECK 数据库兜底；§13 隔离红线不再依赖服务层正确性）；矩阵 46/9/0/1→47/8/0/1"
+      status: PASS
+    - name: NO-12n 飞书推送测试（Round 58）
+      result: "channel-dispatcher 11 例（未配置跳过/成功 CAS 写 sent/失败写 failed+errorMessage/CAS 未命中不重复投递/单行失败独立/封闭渠道领取/防重叠/消息体/环境读取）；notification.service 10 例（+5：retryPush 仅 failed 推送行、app 与非 failed 显式拒绝、他租户 404、sentAt/errorMessage 透出）；oee +2 例（开灯 app 通知带 orgId、lark 配置时双渠道）；client approvalConsoleLogic +4 例（推送分组/渠道标签/状态分类）"
+      status: PASS
+    - name: 门禁（Round 58）
+      result: "env-inventory 117 documented/118 code-env PASS（+2 键双向一致）；audit-openapi-routes 391→392 零漂移（+retry 路由，spec 581）；truth-check PASS；reconcile 6/6（computed=72）；feature-status 31/31；双 tsc（server+client）PASS"
+      status: PASS
+    - name: 全量回归（Round 58）
+      result: "default jest 247→248 suites / 1785→1802 tests 全绿；client jest 114 suites / 941→944 tests 全绿；pytest/edge unittest 无 Python 变更未重跑（Round 55 基线保持）"
+      status: PASS
+    - name: §36 评估（Round 58）
+      result: "andon-loop 推送腿闭环（真实生产调用链=开灯→通知行→webhook 投递→sent/failed 状态→人工重试；失败显式可重试；无新事实源）；矩阵计数不变 46/9/0/1（邮件渠道+边缘上行仍 Partial 缺口）"
+      status: PASS
+    - name: NO-12m 仿真控制台测试（Round 57）
+      result: "simulationConsoleLogic 18 例（四类参数预检 fail-closed 提示/示例模板自身通过预检/JSON 解析显式错误/结果摘要字段缺失 '—'/未知 kind 透出/列表行状态文案语调失败理由头条）；client jest 113→114 suites / 923→941 tests 全绿；client tsc PASS"
+      status: PASS
+    - name: 门禁（Round 57）
+      result: "truth-check PASS；reconcile 6/6（computed=72）；audit-openapi-routes 391 零漂移；feature-status 31/31；truth-manifest 重基线（内容寻址按规范重生成）；默认 jest（server+shared+test）本轮无变更未重跑（Round 56 基线 247 suites/1785 tests 保持）"
+      status: PASS
+    - name: §36 评估（Round 57）
+      result: "intelligence-l6-simulation 按 §36 升 Implemented（契约=复用 ADR-025 SimulationRun 权威契约；真实生产调用链=/simulation → POST/GET /api/simulation/runs → 确定性评估器 → 台账+目录事件；可解释=评估器结果+engineVersion+baseRef 透传；可审计=台账只读+事件；失败=failed+failureReason 显式+可重试；多租户=服务端 org 作用域+RLS；TCK/Golden=ADR-025 #19）；矩阵 46/9/0/1"
+      status: PASS
+    - name: NO-12k 地图端偏差图层测试（Round 56）
+      result: "executionDeviationMapVM 13 例（空态/纳入范围/坐标解析与回退/缺失坐标显式/三型 delta/负 delta/未知类型透出/tone 映射/终态偏差/顺序保持）；commandMapSelector 6 例（toggleLayer 幂等不可变/base 禁开关/executions 透传与显式空态/executionsError）；既有 4 套 CommandMap 测试回归绿"
+      status: PASS
+    - name: 门禁（Round 56）
+      result: "truth-check PASS（repo-facts 39/39；identity 22/22；audit-domain-contracts 493/493；event-envelope 24/24；gen-contract-registries OK）；reconcile 6/6（computed=72）；audit-openapi-routes 391 零漂移；truth-manifest 重基线（内容寻址，本轮文件变更后按规范重生成）；client tsc PASS"
+      status: PASS
+    - name: §36 评估（Round 56）
+      result: "logistics-task-loop 与 closed-loop-execution-feedback 按 §36 升 Implemented（契约=复用 SchedulingExecution/WorldStateSnapshot 既有权威事实，无新事实源；真实生产调用链=CommandMap 地图视口图层；可解释=服务端偏差分类+徽标/title 事实；无写操作）；矩阵 45/10/0/1"
+      status: PASS
+    - name: 全量回归（Round 56）
+      result: "client jest 113 suites / 923 tests 全绿（+2 suites/+19 tests）；默认 jest（server+shared+test）247 suites / 1785 tests 全绿（本轮无变更，回归确认）；pytest/edge unittest 本轮无 Python 变更未重跑（Round 55 基线 312 passed/10 skipped、954 OK 保持）"
+      status: PASS
+    - name: NO-12j Outcome 标注面测试（Round 55）
+      result: "pytest test_outcome_annotation_contract 10 例；outcome-annotation.service.spec 4 例（fail-closed/幂等/租户作用域/事件）；Golden 第 22 场景双执行器（Python 2 tests / TS 23 tests）"
+      status: PASS
+    - name: 门禁（Round 55）
+      result: "audit-domain-contracts 493/493（+14 outcome_annotation 域）；audit-event-catalog 64/64（+OutcomeAnnotationRecorded）；audit-openapi-routes 391 零漂移（+3）；repo-facts 39/39；reconcile 6/6（computed=72）；truth-check PASS；feature-status 31/31；tsc server PASS"
+      status: PASS
+    - name: §36 评估（Round 55）
+      result: "intelligence-l7-learning 缺口收窄为模型重训/激活闭环（需真实可训练模型先落地，§33 不造假）；矩阵 44/11/0/1 计数不变"
+      status: PASS
+    - name: 全量回归（Round 55）
+      result: "jest 247 suites / 1785 tests 全绿；pytest 312 passed / 10 skipped；edge unittest 954 OK"
+      status: PASS
+    - name: NO-12i 边缘绑定上行测试（Round 54）
+      result: "test_exo_binding 6 例（bind 规范身份/活跃冲突/事件发射/unbind 状态机/404/终态 409）；ingest 投影 3 例（start 透传/end+abort 透传/投影失败不阻断主事实）；exo 幂等 2 例（重复 start 回读/重复 end 原样返回）"
+      status: PASS
+    - name: 门禁（Round 54）
+      result: "audit-event-catalog 63/63（payload 增补 additive）；audit-domain-contracts 479/479；audit-openapi-routes 388 零漂移；repo-facts 39/39；reconcile 6/6（computed=71）；truth-check PASS；feature-status 31/31；tsc server PASS"
+      status: PASS
+    - name: §36 升格（Round 54）
+      result: "worker-exoskeleton-loop → Implemented（矩阵 44/11/0/1 计数自洽）；project-state partial 移除 worker-exoskeleton-loop"
+      status: PASS
+    - name: 全量回归（Round 54）
+      result: "jest 246 suites / 1780 tests 全绿；pytest 302 passed / 10 skipped；edge unittest 954 OK（+6）"
+      status: PASS
+    - name: NO-12h ExoSession 测试（Round 53）
+      result: "pytest test_exo_session_contract 12 例；shared/exo-session.spec 6 例；exo-session.service.spec 6 例（契约 fail-closed/活跃冲突显式/状态机终态/租户作用域/双事件）；Golden 第 21 场景双执行器（Python 2 tests / TS 22 tests）"
+      status: PASS
+    - name: 门禁（Round 53）
+      result: "audit-domain-contracts 479/479（+13 exo 域）；audit-event-catalog 63/63（+2）；audit-openapi-routes 388 零漂移（+5）；repo-facts 39/39；reconcile 6/6（computed=71）；truth-check PASS；feature-status 31/31；tsc server PASS"
+      status: PASS
+    - name: §36 评估（Round 53）
+      result: "worker-exoskeleton-loop 缺口收窄为边缘上行贯通（矩阵 43/12/0/1 计数不变）"
+      status: PASS
+    - name: 全量回归（Round 53）
+      result: "jest 246 suites / 1775 tests 全绿；pytest 302 passed / 10 skipped；edge unittest 948 OK（test_adapter_supervisor 计时用例一次 flake 重跑绿，非本轮变更）"
+      status: PASS
+    - name: NO-12g Andon 状态机测试（Round 52）
+      result: "shared/alert-state-machine.spec 7 例（转移表逐条/复开角色强制/非法拒绝/action 映射）；oee spec 8 例（+AndonRaised 产出 + reopen 非 safety_admin 拒绝）；alert 套件回归绿；门禁 alert_state_machine_ts_vs_yaml PASS（465→466/466）"
+      status: PASS
+    - name: 门禁（Round 52）
+      result: "audit-domain-contracts 466/466；audit-event-catalog 61/61；audit-openapi-routes 383 零漂移（无新路由）；repo-facts 39/39；reconcile 6/6；truth-check PASS；feature-status 31/31；tsc server PASS"
+      status: PASS
+    - name: §36 评估（Round 52）
+      result: "andon-loop 缺口收窄为通知推送渠道 + 边缘 AndonRaised 上行（矩阵 43/12/0/1 计数不变）"
+      status: PASS
+    - name: 全量回归（Round 52）
+      result: "jest 244 suites / 1762 tests 全绿；pytest 290 passed / 10 skipped；edge unittest 948 OK"
+      status: PASS
+    - name: NO-12f 客户端测试（Round 51）
+      result: "approvalConsoleLogic 4 例（剩余时间格式化/两清单合并排序/过期显式禁用/通知分组）；client jest 111 suites / 902 tests 全绿；client tsc PASS（tsconfig.app.json）"
+      status: PASS
+    - name: 门禁（Round 51）
+      result: "audit-openapi-routes 383 零漂移（客户端消费既有路由）；audit-domain-contracts 465/465；audit-env-inventory 115/116 PASS；repo-facts 39/39；reconcile 6/6；truth-check PASS；feature-status 31/31"
+      status: PASS
+    - name: §36 升格（Round 51）
+      result: "agent-policy-approval → Implemented（矩阵 43/12/0/1 计数自洽；已知边界=Agent 审批 pendingCommands 进程内存，ADR-030 决策 4 记录）；project-state partial 移除 agent-policy-approval"
+      status: PASS
+    - name: 全量回归（Round 51）
+      result: "client jest 111 suites / 902 tests；client tsc PASS；服务端沿用 Round 50 全绿（jest 243/1753、pytest 290、edge unittest 948——本轮未触服务端）"
+      status: PASS
+    - name: NO-12f 审批交互面测试（Round 50）
+      result: "agent.service.spec 21→24（通知插入/角色配置化/待批清单 org 作用域 + 过期显式）；notification.service.spec 5 例（org 缺失/角色作用域/fail-closed/状态过滤/幂等已读 + 他租户 404）；approval 套件回归绿；tsc server PASS"
+      status: PASS
+    - name: 门禁（Round 50）
+      result: "audit-domain-contracts 465/465；audit-env-inventory 115/116 PASS；audit-openapi-routes 383 零漂移（+4）；audit-event-catalog 61/61；repo-facts 39/39；reconcile 6/6（computed=70）；truth-check PASS；feature-status 31/31"
+      status: PASS
+    - name: §36 评估（Round 50）
+      result: "agent-policy-approval 缺口收窄为客户端审批 UI + 跨重启审批持久化（ADR-030 决策 4 边界显式）；矩阵 42/13/0/1 计数不变"
+      status: PASS
+    - name: 全量回归（Round 50）
+      result: "jest 243 suites / 1753 tests 全绿；pytest 290 passed / 10 skipped；edge unittest 948 OK"
+      status: PASS
+    - name: NO-12e 任务↔派工同步测试（Round 49）
+      result: "test_task_assignment_sync 7 例（execute 同步/缺失任务跳过/幂等/双向收敛/重复推进一致性/端到端三方一致）；既有 scheduler 45 例回归绿；edge unittest 941→948 OK；ruff clean"
+      status: PASS
+    - name: 门禁（Round 49）
+      result: "audit-domain-contracts 465/465；audit-event-catalog 61/61；audit-openapi-routes 379 零漂移；repo-facts 39/39；reconcile 6/6（computed=70）；truth-check PASS；feature-status 31/31"
+      status: PASS
+    - name: §36 评估（Round 49）
+      result: "R-3 风险闭合（CR-EDGE-HYDRATE-COMPLETENESS）；logistics-task-loop 缺口收窄为地图端偏差图层（矩阵 42/13/0/1 计数不变）"
+      status: PASS
+    - name: 全量回归（Round 49）
+      result: "edge unittest 948 OK；pytest 290 passed / 10 skipped；jest 242 suites / 1745 tests（未触云侧，沿用 Round 48 全量）"
+      status: PASS
+    - name: NO-12d 指标上行测试（Round 48）
+      result: "test_metrics_uplink 8 例（映射一致性/POST 成功与失败路径/退避/健康/显式关闭）；edge-metrics.service.spec 7 例（契约 fail-closed/per-org 隔离/latest-wins/TTL/健康面）；observability 套件 12 例；Golden metrics 场景 11 案例双执行器（Python 2 tests / TS 21 tests）"
+      status: PASS
+    - name: 门禁（Round 48）
+      result: "audit-domain-contracts 465/465（REGISTRY_DEEP 33 家族一致）；audit-env-inventory 114/115 PASS；audit-openapi-routes 379 零漂移（+1）；audit-event-catalog 61/61；repo-facts 39/39；reconcile 6/6（computed=70）；truth-check PASS；feature-status 31/31；tsc server PASS"
+      status: PASS
+    - name: §36 评估（Round 48）
+      result: "observability 证据深化（connector 面零样本显式消除——边缘指标以规范命名进入统一导出面；矩阵 42/13/0/1 计数不变）"
+      status: PASS
+    - name: 全量回归（Round 48）
+      result: "jest 242 suites / 1745 tests 全绿；pytest 290 passed / 10 skipped；edge unittest 941 OK（+8 metrics_uplink）"
+      status: PASS
+    - name: NO-02c-b 词表收敛测试（Round 47）
+      result: "12 服务写入点 + 5 消费方 + 客户端全量收敛；相关套件全绿（scheduler 110 套、gamification、learning、world、timeline、oee、agent、shared risk）；client jest 110 suites / 898 tests 全绿（Timeline/alertToastLogic/CommandMap/DeviceConfigDrawer）；tsc server+client PASS"
+      status: PASS
+    - name: 门禁（Round 47）
+      result: "audit-domain-contracts 465/465；audit-event-catalog 61/61；audit-openapi-routes 378 零漂移；repo-facts 39/39；reconcile 6/6（computed=70）；truth-check PASS；feature-status 31/31"
+      status: PASS
+    - name: §36 评估（Round 47）
+      result: "canonical-risk-model 全链路接线收口（契约/生产调用链/入口归一化/客户端/Golden legacy_severity_normalization 全绿）；矩阵 42/13/0/1 计数不变（条目已 Implemented，本轮证据深化）；project-state partial 移除 canonical-risk-model"
+      status: PASS
+    - name: 全量回归（Round 47）
+      result: "jest 241 suites / 1738 tests 全绿；client jest 110 suites / 898 tests 全绿；pytest 290 passed / 10 skipped；edge unittest 933 OK"
+      status: PASS
+    - name: NO-12b 测试（Round 46）
+      result: "learning-proposal.service.spec 10 例全绿（契约 fail-closed/影子评估落账/幂等/状态机/人审 approve/reject-rollback 理由强制/激活面最新生效/租户作用域）；shared/learning-proposal.spec 13 例；reasoning.service.spec 9 例（+ADR-026 激活面）；pytest test_learning_proposal_contract 15 例；Golden 第 20 场景双执行器（Python 2 tests / TS 21 tests，含影子评估 + 状态机执行跨语言仲裁）"
+      status: PASS
+    - name: 门禁（Round 46）
+      result: "audit-domain-contracts 465/465（+21 learning_proposal 域：9 向量仲裁 + 2 形状 + 1 注册表子集交叉核对 + 3 影子评估独立 JS vs Python 仲裁 + 2×2 注册表一致 + THRESHOLD_RULES 深比较 + ts 扁平核对）；audit-event-catalog 61/61（+LearningProposalCreated/Resolved）；audit-openapi-routes 378 零漂移（+7）；repo-facts 39/39；reconcile 6/6（computed=70 口径一致）；truth-check PASS；feature-status 31/31；type-check PASS；ruff 新文件 clean"
+      status: PASS
+    - name: §36 评估（Round 46）
+      result: "intelligence-l7-learning 保持 Partial（缺口收窄为模型腿——模型重训/激活闭环需 outcome 标注面 + 模型影子评估，无真实可训练模型不造假）；project-state partial 条目 learning-loop-feedback-v2 更新"
+      status: PASS
+    - name: 全量回归（Round 46）
+      result: "jest 241 suites / 1738 tests 全绿；pytest 290 passed / 10 skipped；edge unittest 933 OK"
+      status: PASS
+    - name: NO-12a 测试（Round 45）
+      result: "simulation.service.spec 8 例全绿（契约 fail-closed/runId 幂等/四评估器终态落账/评估失败→failed+failureReason/§13 唯一写路径断言/租户作用域）；shared/simulation-run.spec 13 例（契约 + 四评估器 + fail-closed）；pytest test_simulation_run_contract 12 例；Golden 第 19 场景双执行器（Python 2 tests / TS 20 tests，含 4 引擎执行跨语言仲裁）"
+      status: PASS
+    - name: 门禁（Round 45）
+      result: "audit-domain-contracts 444/444（+17 simulation 域：8 向量仲裁 + 2 形状 + 3 评估器独立 JS vs Python 仲裁 + 2×2 注册表一致）；audit-event-catalog 59/59（+SimulationRunCreated/Completed）；audit-openapi-routes 371 零漂移（+3）；repo-facts 39/39；reconcile 6/6（computed=69 口径一致）；truth-check PASS；feature-status 31/31；type-check PASS"
+      status: PASS
+    - name: §36 升格（Round 45）
+      result: "digital-twin-simulation → Implemented（矩阵 42/13/0/1 计数自洽）；project-state partial 移除 digital-twin-simulation；CR-TWIN-SIMULATION-ISOLATION 闭合（三层强制齐备）"
+      status: PASS
+    - name: 全量回归（Round 45）
+      result: "jest 239 suites / 1713 tests 全绿；pytest 275 passed / 10 skipped；edge unittest 933 OK"
+      status: PASS
+    - name: NO-11a 测试（Round 44）
+      result: "dead-letter.service.spec 9 例全绿（契约 fail-closed/确定性幂等/人审 requeue attempts+1/discard 理由强制/租户作用域）；ingest spec 27 例（+4 永久失败死信接线）；shared/dead-letter.spec 8 例；pytest 10 例；Golden 第 18 场景双执行器（Python 2 tests / TS 26 tests）"
+      status: PASS
+    - name: 门禁（Round 44）
+      result: "audit-domain-contracts 427/427（+12 dead_letter 域：8 向量仲裁 + 2×2 注册表一致）；audit-event-catalog 57/57（+DeadLetterRecorded）；audit-openapi-routes 368 零漂移（+4）；repo-facts 39/39；reconcile 6/6（computed=68 口径一致）；truth-check PASS；type-check PASS"
+      status: PASS
+    - name: §36 升格（Round 44）
+      result: "reliability-patterns → Implemented（矩阵 41/14/0/1 计数自洽）；project-state partial 移除 reliability-hybrid"
+      status: PASS
+    - name: 全量回归（Round 44）
+      result: "jest 237 suites / 1690 tests 全绿；pytest 263 passed / 10 skipped；edge unittest 933 OK"
+      status: PASS
+    - name: NO-10b 测试（Round 43）
+      result: "metrics-export.service.spec 5 例全绿（四来源组装/violations 显式/agent 非法样本/文本渲染/未注入不伪造）；shared/metrics-registry.spec 8 例；pytest 指标契约 11 例；Golden 第 17 场景双执行器（Python 2 tests / TS 26 tests）"
+      status: PASS
+    - name: 门禁（Round 43）
+      result: "audit-domain-contracts 415/415（+15 metrics 域：8 向量仲裁 + 3×2 注册表一致 + REGISTRY_DEEP）；audit-openapi-routes 364 零漂移（+2）；audit-event-catalog 56/56；repo-facts 39/39；reconcile 6/6；truth-check PASS；type-check PASS"
+      status: PASS
+    - name: §36 升格（Round 43）
+      result: "observability → Implemented（矩阵 40/15/0/1 计数自洽）；project-state partial 移除 observability"
+      status: PASS
+    - name: 全量回归（Round 43）
+      result: "jest 235 suites / 1668 tests 全绿；pytest 253 passed / 10 skipped；edge unittest 933 OK"
+      status: PASS
+    - name: NO-10a 测试（Round 42）
+      result: "tracing.service.spec 9 例（span 持久化/失败留痕/三面缝合/内存退化/TTL 清理）+ interceptor 回归；correlationId 五生产者接线全量回归绿"
+      status: PASS
+    - name: 门禁（Round 42）
+      result: "audit-openapi-routes 362 零漂移（+1 缝合路由）；audit-domain-contracts 400/400；audit-event-catalog 56/56；repo-facts 39/39；reconcile 6/6（computed=67 口径一致）；truth-check PASS；type-check PASS"
+      status: PASS
+    - name: 全量回归（Round 42）
+      result: "jest 233 suites / 1654 tests 全绿；pytest 243 passed / 10 skipped；edge unittest 933 OK"
+      status: PASS
+    - name: NO-09a 测试（Round 41）
+      result: "learning.service.spec 7 例全绿（真实聚合/unknown 显式/幂等重评估/事件/租户作用域）；shared/learning-evaluation.spec 7 例；pytest 学习契约 8 例；Golden 第 16 场景双执行器（Python 2 tests / TS 17 tests）"
+      status: PASS
+    - name: 门禁（Round 41）
+      result: "audit-domain-contracts 400/400（+10 learning 域：6 向量仲裁 + 2×2 注册表一致）；audit-event-catalog 56/56（+LearningEvaluationRecorded）；audit-openapi-routes 361 零漂移（+3）；repo-facts 39/39；reconcile 6/6（computed=66 口径一致）；truth-check PASS；type-check PASS"
+      status: PASS
+    - name: §36 升格（Round 41）
+      result: "decision-outcome-mapping → Implemented（矩阵 39/16/0/1 计数自洽）；学习回路反馈腿 v2 另立项"
+      status: PASS
+    - name: 全量回归（Round 41）
+      result: "jest 233 suites / 1649 tests 全绿；pytest 243 passed / 10 skipped；edge unittest 933 OK"
+      status: PASS
+    - name: NO-08b 测试（Round 40）
+      result: "reasoning.service.spec 8 例全绿；shared/reasoning-trace.spec 7 例；pytest test_reasoning_trace_contract 11 例；Golden 第 15 场景双执行器（Python 2 tests / TS 16 tests）含引擎执行跨语言仲裁"
+      status: PASS
+    - name: 门禁（Round 40）
+      result: "audit-domain-contracts 390/390（+16 reasoning_trace 域：8 向量仲裁 + 4×2 注册表一致）；audit-openapi-routes 358 零漂移（+2）；audit-event-catalog 55/55（复用 InferenceResultRecorded）；repo-facts 39/39；reconcile 6/6；truth-check PASS；type-check PASS"
+      status: PASS
+    - name: §36 评估（Round 40）
+      result: "intelligence-l4-reasoning 独立推理层缺口闭合（矩阵证据深化，计数 38/17/0/1 不变）；project-state partial 移除 industrial-intelligence-l4-reasoning"
+      status: PASS
+    - name: 全量回归（Round 40）
+      result: "jest 231 suites / 1634 tests 全绿；pytest 235 passed / 10 skipped；edge unittest 933 OK；server type-check PASS"
+      status: PASS
+    - name: NO-08a 测试（Round 39）
+      result: "inference.service.spec 10 例全绿（契约 fail-closed/幂等/事件/租户查询）；ai.service.spec 6 例（+3 A2 规则基础落账/缺 org 跳过/失败不中断）"
+      status: PASS
+    - name: 门禁（Round 39）
+      result: "audit-event-catalog 55/55（+InferenceResultRecorded）；audit-openapi-routes 356 零漂移（+3）；audit-domain-contracts 374/374；audit-repo-facts 39/39；reconcile 6/6（db_table_footprint computed=65 口径一致）；truth-check PASS；type-check PASS"
+      status: PASS
+    - name: 结构修复（Round 39）
+      result: "schema-manifest：032-040 八表条目自 Round 12 误挂 additional_hardened 段 → 移回 managed_tables（57+8=65）；reconcile 单测 5 例更新；runner core 期望值与 001 verify 59 名对齐（修复潜伏 verify 失配）"
+      status: PASS
+    - name: 全量回归（Round 39）
+      result: "jest 229 suites / 1618 tests 全绿；pytest 224 passed / 10 skipped；edge unittest 933 OK；server+client type-check PASS"
+      status: PASS
+    - name: NO-07b 测试（Round 38）
+      result: "knowledge.service.spec 13 例全绿（契约 fail-closed/跨租户拒绝/幂等/阶梯/共享检索/转移）；agent.service.spec 21 例（+4 Knowledge Agent）"
+      status: PASS
+    - name: 门禁（Round 38）
+      result: "audit-domain-contracts 374/374（+register_knowledge 三处 lockstep）；audit-event-catalog 54/54；audit-openapi-routes 353 零漂移；audit-repo-facts 39/39（state.json 039 记录）；reconcile 6/6；truth-check PASS；gen:openapi:check OK"
+      status: PASS
+    - name: §36 升格（Round 38）
+      result: "knowledge-system → Implemented（矩阵 38/17/0/1 计数自洽）；Phase 12 Knowledge System 收口"
+      status: PASS
+    - name: 全量回归（Round 38）
+      result: "jest 228 suites / 1605 tests 全绿；pytest 224 passed / 10 skipped；edge unittest 933 OK；server+client type-check PASS"
+      status: PASS
+    - name: 仓库级 pytest (tests/)
+      result: "187 passed, 10 skipped（ortools 未装），1 warning（含新增 identity 18 例）"
+      status: PASS
+    - name: truth-feature-status.js
+      result: "31/31 passed"
+      status: PASS
+    - name: audit-identity-contracts.js
+      result: "22/22 passed（schema/vectors/Python/TS 注册表一致，独立仲裁）"
+      status: PASS
+    - name: make truth-check（truth-manifest + repo-facts + identity 门禁）
+      result: "PASS"
+      status: PASS
+    - name: audit-event-catalog.js
+      result: "35 messages / 35 channels PASS（含新增 EntityIdentityMapped）"
+      status: PASS
+    - name: spark-app type:check（server+client）
+      result: "PASS（shared/identity.ts 进入编译）"
+      status: PASS
+    - name: spark-app jest（server+shared，含 identity 契约 + 服务测试）
+      result: "201 suites / 1383 passed（Round 2 基线 200/1375 + identity.service 1 套 8 例）"
+      status: PASS
+    - name: audit-openapi-routes.js --strict
+      result: "326 controllers / 0 undocumented / 0 unimplemented（+3 identity 路由）"
+      status: PASS
+    - name: reconcile-authoritative-artifacts.js --strict
+      result: "PASS"
+      status: PASS
+    - name: audit-domain-contracts.js
+      result: "113/113 passed（三域 schema/向量独立仲裁 + Python/TS 注册表一致）"
+      status: PASS
+    - name: pytest tests/test_domain_contracts.py
+      result: "13 passed"
+      status: PASS
+    - name: spark-app jest shared/domain-contracts.spec.ts
+      result: "5 passed"
+      status: PASS
+    - name: spark-app jest 全量（server+shared）
+      result: "202 suites / 1388 tests 全绿（NO-02c-b 生产接线后词表收敛回归修复：25 个 spec + 14 fixture 规范化）"
+      status: PASS
+    - name: pytest tests/test_golden_contract_scenarios.py
+      result: "5 passed（四域 Golden Scenario，共享场景定义）"
+      status: PASS
+    - name: spark-app jest shared/golden-contract-scenarios.spec.ts
+      result: "5 passed（与 Python 消费同一份场景定义）"
+      status: PASS
+    - name: spark-app jest 全量（Round 6 复跑）
+      result: "203 suites / 1393 tests 全绿（+golden-contract-scenarios 1 套 5 例）"
+      status: PASS
+    - name: reconcile-identity-legacy.mjs
+      result: "语法/退出码/UUIDv5 确定性本地验证；真实 PG 幂等验证由 CI standalone.yml 承担"
+      status: PASS
+    - name: audit-domain-contracts.js（含 world 域）
+      result: "134/134 passed（三域 + world StateRecord/transition/snapshot 独立仲裁）"
+      status: PASS
+    - name: pytest tests/test_world_contract.py + golden
+      result: "7 passed + golden 5 passed（pytest 全量 207 passed）"
+      status: PASS
+    - name: spark-app jest（world-contract + golden + 全量）
+      result: "1403 passed 全绿（+validateCloudWorldSnapshot 4 例 + entityId 投影 1 例）"
+      status: PASS
+    - name: edge unittest 全量
+      result: "886 tests OK（含 contract_world_store 8 例）"
+      status: PASS
+    - name: audit-event-envelope.js
+      result: "24/24 passed（schema/向量独立仲裁 + 目录交叉校验 + 双运行时常量一致）"
+      status: PASS
+    - name: pytest tests/test_event_envelope.py + golden
+      result: "4 passed + golden 全场景通过（pytest 全量 211 passed）"
+      status: PASS
+    - name: spark-app jest（event-envelope + golden + 全量）
+      result: "1410 passed 全绿（+rule-engine envelope 接线 2 例）"
+      status: PASS
+    - name: edge unittest 全量（Round 10）
+      result: "888 tests OK（+event_envelope_wiring 2 例）"
+      status: PASS
+    - name: audit-event-catalog.js
+      result: "41 messages / 41 channels PASS（+6 规则事件类型）"
+      status: PASS
+    - name: edge unittest 全量（Round 11）
+      result: "891 tests OK（test_api_endpoints 46 OK，含 quality/ingest_chain 3 新例）"
+      status: PASS
+    - name: audit-domain-contracts.js（Round 12，含 maintenance/quality 域）
+      result: "182/182 passed（+48 项 MQ 域独立仲裁）"
+      status: PASS
+    - name: pytest tests/test_mq_contracts.py + golden
+      result: "7 passed + golden 全 7 场景通过（pytest 全量 218 passed）"
+      status: PASS
+    - name: spark-app jest（maintenance-quality + golden + 全量）
+      result: "1414 passed 全绿（+MQ spec 3 例 + golden 扩至 7 场景）"
+      status: PASS
+    - name: audit-event-catalog.js
+      result: "45 messages / 45 channels PASS（+4 维护/质量事件类型）"
+      status: PASS
+    - name: spark-app jest（maintenance/quality 模块 spec，Round 13）
+      result: "2 suites / 16 tests 全绿（契约 fail-closed + 生命周期强制 + 事件落库）"
+      status: PASS
+    - name: spark-app jest（NO-05c maintenance-projection.spec，Round 13）
+      result: "11 tests 全绿（投影状态收敛 + 资格封锁 person/device/station）"
+      status: PASS
+    - name: spark-app type:check:server + gen:openapi:check（Round 13）
+      result: "PASS（schema.ts 034 双表 + 新模块进入编译；openapi 输出同步）"
+      status: PASS
+    - name: audit-openapi-routes.js --strict（Round 13）
+      result: "332 controllers / 0 undocumented / 0 unimplemented（+6 MQ 路由）"
+      status: PASS
+    - name: audit-repo-facts.js --strict（Round 13）
+      result: "39/39 passed（counts-generative 漂移修复：state.json 034 记录 60 managed）"
+      status: PASS
+    - name: make truth-check（Round 13）
+      result: "PASS（truth-manifest + repo-facts 39/39 + identity 22/22 + domain 182/182 + envelope 24/24）"
+      status: PASS
+    - name: truth-feature-status.js（Round 13）
+      result: "31/31 passed"
+      status: PASS
+    - name: reconcile-authoritative-artifacts.js（Round 13）
+      result: "6/6 checks passed（route_manifest 332/494 与实时扫描一致）"
+      status: PASS
+    - name: pytest tests/ 全量（Round 13）
+      result: "218 passed, 10 skipped（ortools 未装）"
+      status: PASS
+    - name: edge unittest 全量（Round 13）
+      result: "891 tests OK"
+      status: PASS
+    - name: spark-app jest 全量（Round 13）
+      result: "210 suites / 1441 tests 全绿（Round 12 基线 1414 + MQ 16 + NO-05c 11）"
+      status: PASS
+    - name: spark-app jest（NO-05d quality-projection.spec，Round 14）
+      result: "12 tests 全绿（投影事实附着不升级状态 + critical/high 封锁 + medium/low 不封锁 + legacy/未知严重度 fail-closed）"
+      status: PASS
+    - name: spark-app jest 全量（Round 14）
+      result: "211 suites / 1453 tests 全绿（Round 13 基线 1441 + NO-05d 12）"
+      status: PASS
+    - name: spark-app type:check:server（Round 14）
+      result: "PASS（qualityFindings 视图进入 shared/投影/资格链路编译）"
+      status: PASS
+    - name: docs/decisions/ADR-011-quality-state-scheduler-integration.md（Round 14）
+      result: "Accepted（严重度门控 + 资源 kind 限定 + 不改资源状态 + 处置即解除 + 否决方案记录）"
+      status: PASS
+    - name: NO-02d 收口（Round 14）
+      result: "canonical-identity-model 证据核实：Golden Scenario identity_mapping_conflict + reconcile 工具/CI 链均在；matrix 摘要漂移修正、project-state partial 移除"
+      status: PASS
+    - name: audit-domain-contracts.js（Round 15，含 workorder 域）
+      result: "216/216 passed（+34 项 workorder 域独立仲裁：schema/记录/转移/双运行时注册表）"
+      status: PASS
+    - name: spark-app jest（workorder.spec + MQ 服务 spec，Round 15）
+      result: "6 + 25 tests 全绿（契约 fail-closed + WorkOrderCreated 发端断言）"
+      status: PASS
+    - name: audit-event-catalog.js（Round 15）
+      result: "47 messages / 47 channels PASS（+WorkOrderCreated/Completed）"
+      status: PASS
+    - name: golden workorder_loop（Round 15，双执行器）
+      result: "Python 2 tests + TS 8 场景全通过（第 8 场景 workorder_loop 共享定义）"
+      status: PASS
+    - name: spark-app jest 全量（Round 15）
+      result: "212 suites / 1463 tests 全绿（Round 14 基线 1453 + workorder 6 + MQ 4）"
+      status: PASS
+    - name: pytest tests/ + edge unittest（Round 15）
+      result: "218 passed, 10 skipped；891 tests OK"
+      status: PASS
+    - name: spark-app jest（workorder.service.spec，Round 16）
+      result: "9 tests 全绿（契约 fail-closed + ID 确定性推导 + 创建幂等回读 + 生命周期强制 + Completed 事件）"
+      status: PASS
+    - name: spark-app jest（maintenance/quality 委托建单回归，Round 16）
+      result: "2 suites / 19 tests 全绿（createWorkOrder 委托断言 + 不建单负例）"
+      status: PASS
+    - name: audit-openapi-routes.js --strict（Round 16）
+      result: "335 controllers / 0 undocumented / 0 unimplemented（+3 workorder 路由）"
+      status: PASS
+    - name: audit-repo-facts.js --strict（Round 16）
+      result: "39/39 passed（state.json 035 记录 61 managed，counts-generative 绿）"
+      status: PASS
+    - name: runner 专项迁移 dispatch 修复（Round 16）
+      result: "run_migrations.js which 映射 + 专用 verify handler 补齐（032/034/035）；dummy-URL 实测从 read(undefined) 崩溃 → 进入连接阶段；standalone-postgres-check 成对回滚链补齐；001_verify.sql 孪生列表 51→55"
+      status: PASS
+    - name: make truth-check + reconcile（Round 16）
+      result: "PASS（repo-facts 39/39、identity 22/22、domain 216/216、envelope 24/24；reconcile 6/6）"
+      status: PASS
+    - name: solver 语义统一接线（Round 17，NO-07）
+      result: "heuristic 枚举路径 + reuseBaseline 快速路径维护/质量封锁同判据；solver-maintenance-quality.spec 4 例全绿；scheduler 全量 97 suites / 764 tests 回归绿"
+      status: PASS
+    - name: Golden Scheduler TCK（Round 17，NO-07）
+      result: "TS golden-scheduler-scenarios.spec 6 例（含漂移门禁）+ Python test_golden_scheduler_scenarios.py 3 例独立仲裁全绿；四场景共享定义"
+      status: PASS
+    - name: make scheduler-golden + CI 步骤（Round 17）
+      result: "Makefile 新目标 + test.yml 步骤（Python 标准库仲裁，不依赖 ortools）"
+      status: PASS
+    - name: 全量回归（Round 17）
+      result: "jest 215 suites / 1482 tests（三次连续全量绿，一次未复现 flake 列观察）；pytest 221 passed / 10 skipped；edge unittest 891 OK；route audit 335/0/0"
+      status: PASS
+    - name: Golden Scheduler Workflow TCK（Round 18，NO-07b）
+      result: "TS golden-scheduler-workflow.spec 3 例（真实 PlanService/Reservation/Dispatch 服务 + 漂移门禁）+ Python test_golden_scheduler_workflow.py 3 例（标准库状态机重放仲裁）全绿"
+      status: PASS
+    - name: 全量回归（Round 18）
+      result: "jest 216 suites / 1485 tests 全绿；pytest 224 passed / 10 skipped；edge unittest 891 OK；make scheduler-golden 6 passed；truth 族全 PASS"
+      status: PASS
+    - name: NO-07c 重排+反馈段 TCK（Round 19）
+      result: "workflow 场景 2（execution_feedback_and_replan）：TS 4 例（真实求解器 replan + 真实反馈服务）+ Python 3 例（状态机重放扩场景）全绿；make scheduler-golden 6 passed"
+      status: PASS
+    - name: 全量回归（Round 19）
+      result: "jest 216 suites / 1486 tests 全绿；pytest 224 passed / 10 skipped；edge unittest 891 OK；truth 族全 PASS"
+      status: PASS
+    - name: audit-domain-contracts.js（Round 20，含 intelligence 域）
+      result: "238/238 passed（+22 项 intelligence 域：schema/记录仲裁/三注册表双运行时一致）"
+      status: PASS
+    - name: Golden Scenario #9 + shared spec（Round 20，NO-08a）
+      result: "inference_result_contract 双执行器通过（Python 2 tests / TS 10 tests）；shared/inference-result.spec 6 例全绿"
+      status: PASS
+    - name: 全量回归（Round 20）
+      result: "jest 217 suites / 1493 tests 全绿；pytest 224 passed / 10 skipped；edge unittest 891 OK；make contract-golden 49 passed；truth 族全 PASS"
+      status: PASS
+    - name: NO-08b 边缘/云侧接线（Round 21）
+      result: "pipeline._infer 规范化 + 契约自检（contract_violations 留痕）3 例 wiring 测试；Model Registry inputVersion 对齐 3 例 spec；edge unittest 891→894"
+      status: PASS
+    - name: 全量回归（Round 21）
+      result: "jest 218 suites / 1496 tests 全绿；pytest 224 passed / 10 skipped；edge unittest 894 OK；truth 族全 PASS"
+      status: PASS
+    - name: audit-domain-contracts.js（Round 22，含 reasoning 域）
+      result: "257/257 passed（+19 项 reasoning 域：schema/11 向量仲裁/双运行时注册表）"
+      status: PASS
+    - name: Golden Scenario #10 + shared spec（Round 22，NO-08c）
+      result: "reasoning_result_contract 双执行器通过（Python 2 tests / TS 11 tests）；shared/reasoning-result.spec 6 例全绿"
+      status: PASS
+    - name: 全量回归（Round 22）
+      result: "jest 219 suites / 1503 tests 全绿；pytest 224 passed / 10 skipped；edge unittest 894 OK；truth 族全 PASS"
+      status: PASS
+    - name: NO-08d Ark/AI 接线（Round 23）
+      result: "ark.chat/ask 包裹 ReasoningResult（成功/失败路径 + contract_violations 留痕）+ ai.suggestion/enrichPlan 附着；ark spec +3 例、ai.service.spec 3 例全绿"
+      status: PASS
+    - name: 全量回归（Round 23）
+      result: "jest 220 suites / 1509 tests 全绿；pytest 224 passed / 10 skipped；edge unittest 894 OK；truth 族全 PASS"
+      status: PASS
+    - name: audit-domain-contracts.js（Round 24，含 entity 域）
+      result: "277/277 passed（+19 entity 域 +1 snapshot 子集交叉校验；kind 命名修正 exo）"
+      status: PASS
+    - name: Golden Scenario #11 + shared spec（Round 24，NO-03a）
+      result: "entity_model_contract 双执行器通过（Python 2 tests / TS 12 tests）；shared/entity-model.spec 5 例全绿"
+      status: PASS
+    - name: 全量回归（Round 24）
+      result: "jest 221 suites / 1515 tests 全绿；pytest 224 passed / 10 skipped；edge unittest 894 OK；truth 族全 PASS"
+      status: PASS
+    - name: audit-domain-contracts.js（Round 25，投影分工加固）
+      result: "299/299 passed（+3 前缀向量仲裁 + 投影分工差集独立推导 + 5×2 投影桶/可投影注册表双运行时一致）"
+      status: PASS
+    - name: 边缘接线测试（Round 25，NO-03b）
+      result: "test_contract_world_store 13 例（+5 declare_entity/交叉校验/持久化）+ Predictor 规范身份 fail-closed 负例；Golden #11 扩至 9 案例双执行器通过"
+      status: PASS
+    - name: 全量回归（Round 25）
+      result: "jest 221 suites / 1519 tests 全绿；pytest 224 passed / 10 skipped；edge unittest 900 OK；truth 族全 PASS（repo-facts 39/39、identity 22/22、domain 299/299、envelope 24/24、feature-status 31/31、event-catalog 47/47）；type:check:server PASS"
+      status: PASS
+    - name: NO-03b 收口测试（Round 26）
+      result: "test_world_api 7 例（六端点 + 未装配 503 fail-closed）；test_contract_world_store 18 例（+record_event/replay/predict/持久化）；test_world_model 夹具现代化 + 因果链负例"
+      status: PASS
+    - name: gen-contract-registries.js（Round 26）
+      result: "--write/--check 生成区与 schema 一致；已挂 make truth-check（truth-check 全 PASS）"
+      status: PASS
+    - name: 全量回归（Round 26）
+      result: "edge unittest 912 OK；pytest 224 passed / 10 skipped；truth 族全 PASS（repo-facts 39/39、identity 22/22、domain 299/299、envelope 24/24 + 生成器 OK）；jest 全量见本轮收尾"
+      status: PASS
+    - name: NO-03c 测试（Round 27）
+      result: "test_adapter_factory 7 例 + test_world_projection 6 例全绿（工厂 fail-closed + 投影声明/状态/事件 + 总线集成 + 配置缺失显式关闭）"
+      status: PASS
+    - name: audit-env-inventory.js --strict（Round 27）
+      result: "106 documented / 107 code-env / 0 undocumented / 0 unused-docs PASS（EWOH_ADAPTERS/EWOH_WORLD_* 4 项入 deploy/.env.example）"
+      status: PASS
+    - name: 全量回归（Round 27）
+      result: "pytest 224 passed / 10 skipped；truth 族全 PASS（repo-facts 39/39、identity 22/22、domain 299/299、envelope 24/24、生成器 OK、feature-status 31/31）；edge unittest 见收尾"
+      status: PASS
+    - name: NO-04a 测试（Round 28）
+      result: "test_world_projection 8 例（+Catalog 信封事件 2 例：落事件库+STREAM_EVENTS+首见单次发射）；ingest.service.spec 15 例（+NO-04a 3 例：迟到/漂移标记+聚合、同批次 DataQualityAlert 语义去重）"
+      status: PASS
+    - name: audit-event-catalog.js（Round 28）
+      result: "49 messages / 49 channels PASS（+EntityDeclared/EntityStateObserved）"
+      status: PASS
+    - name: 全量回归（Round 28）
+      result: "edge unittest 927 OK；pytest 224 passed / 10 skipped；type:check:server PASS；truth 族全 PASS（repo-facts 39/39、identity 22/22、domain 299/299、envelope 24/24、生成器 OK、catalog 49/49）"
+      status: PASS
+    - name: NO-04b 测试（Round 29）
+      result: "test_event_uplink 5 例（契约校验/批量上行/失败重放/headers/loop 集成）；ingest.service.spec 21 例（+6：合法上行/重复去重/非法信封/未知类型/迟到标记/org 缺失显式失败）"
+      status: PASS
+    - name: OpenAPI/Env 门禁（Round 29）
+      result: "audit-openapi-routes 336 controllers / 0 undocumented / 0 unimplemented；audit-env-inventory 109/110 PASS；gen:openapi:check OK"
+      status: PASS
+    - name: 全量回归（Round 29）
+      result: "edge unittest 见收尾；pytest 224 passed / 10 skipped；truth 族全 PASS（repo-facts 39/39、identity 22/22、domain 299/299、envelope 24/24、生成器 OK、catalog 49/49 含 PY/TS 投影核对）"
+      status: PASS
+    - name: NO-04c 测试（Round 30）
+      result: "test_event_uplink 6 例（+跨重启队列恢复）；ingest.service.spec 23 例（+乱序按 occurred_at 落库、历史回放补全幂等接受）"
+      status: PASS
+    - name: §36 升格（Round 30）
+      result: "event-backbone / time-semantics 升 Implemented（矩阵证据更新，计数不变 35/16/4/1）；project-state partial 移除两条目"
+      status: PASS
+    - name: 全量回归（Round 30）
+      result: "edge unittest 见收尾；pytest 224 passed / 10 skipped；jest 见收尾；truth 族见收尾"
+      status: PASS
+    - name: NO-06 契约层测试（Round 31）
+      result: "agent-manifest.spec 6 例全绿；Golden 第 12 场景 agent_manifest_contract（8 案例）双执行器通过（Python 2 tests / TS golden 13 tests）"
+      status: PASS
+    - name: audit-domain-contracts.js（Round 31，含 agent 域）
+      result: "329/329 passed（+30：agent schema/15 向量仲裁/6×2 注册表一致）"
+      status: PASS
+    - name: §36 评估（Round 31）
+      result: "agent-runtime 矩阵 Missing→Partial（35/17/3/1 计数自洽）；missing_capabilities 对齐（agent-policy-approval/intelligence-l5-agentic 新增）"
+      status: PASS
+    - name: NO-06b 测试（Round 32）
+      result: "agent.service.spec 10 例全绿（注册 fail-closed/幂等/未注册 Tool/执行审批门控/白名单执行/写范围外拒绝/budget 超限/advisory_only/fallback 委托）"
+      status: PASS
+    - name: 门禁（Round 32）
+      result: "audit-event-catalog 51/51（+2 Agent 类型 + PY/TS 投影核对）；audit-openapi-routes 340 controllers 零漂移（+4）；repo-facts 39/39（037 lockstep）"
+      status: PASS
+    - name: 全量回归（Round 32）
+      result: "edge unittest / pytest / jest / truth 族 / type-check 见收尾"
+      status: PASS
+    - name: NO-06c 测试（Round 33）
+      result: "agent.service.spec 14 例（+审批桥接/批准执行/驳回留痕/主管端到端 4 例）；agent-policy-tck.spec 10 例决策表全绿"
+      status: PASS
+    - name: OpenAPI（Round 33）
+      result: "342 controllers / 0 undocumented / 0 unimplemented（+supervisor/run +approvals/{id}/resolve）；gen:openapi:check OK"
+      status: PASS
+    - name: §36 升格（Round 33）
+      result: "agent-runtime → Implemented、agent-policy-approval → Partial（矩阵 36/17/2/1 计数自洽）；missing_capabilities 对齐（剩 intelligence-l5-agentic / knowledge-system / cross-factory 政策）"
+      status: PASS
+    - name: NO-06d 测试（Round 34）
+      result: "agent.service.spec 17 例（+3：create_work_order 真实 Domain Service 执行/载荷缺 origin fallback 委托/审批超时拒绝留痕）；agent-policy-tck 10 例回归绿"
+      status: PASS
+    - name: NO-06e 契约层测试（Round 35）
+      result: "agent-task.spec 6 例全绿；Golden 第 13 场景 agent_task_contract（8 案例）双执行器通过（Python 2 tests / TS golden 14 tests）；audit-event-catalog 53/53"
+      status: PASS
+    - name: audit-domain-contracts.js（Round 35，含 agent_task 域）
+      result: "351/351 passed（+22：schema 4 + 角色注册表交叉核对 1 + 向量仲裁 11 + 注册表一致 6）"
+      status: PASS
+    - name: §36 评估（Round 35）
+      result: "intelligence-l5-agentic 矩阵 Missing→Partial（36/18/1/1 计数自洽）；missing_capabilities 对齐（唯一 Missing=knowledge-system + cross-factory 政策）"
+      status: PASS
+    - name: NO-06f 测试（Round 36）
+      result: "agent-orchestrator.spec 10 例全绿（创建契约 fail-closed/环检测/依赖门控/非法转移/终态事件/取消/并发预算/幂等）"
+      status: PASS
+    - name: 门禁（Round 36）
+      result: "audit-openapi-routes 348 controllers 零漂移（+6）；repo-facts 39/39（038 lockstep）；type:check PASS"
+      status: PASS
+    - name: §36 升格（Round 36）
+      result: "intelligence-l5-agentic → Implemented（矩阵 37/17/1/1 计数自洽）；Phase 9 主体收口；唯一 Missing=knowledge-system"
+      status: PASS
+    - name: NO-07 契约层测试（Round 37）
+      result: "knowledge-entry.spec 6 例全绿；Golden 第 14 场景 knowledge_entry_contract（8 案例）双执行器通过（Python 2 tests / TS golden 15 tests）"
+      status: PASS
+    - name: audit-domain-contracts.js（Round 37，含 knowledge 域）
+      result: "374/374 passed（+23：schema 4 + 向量仲裁 13 + 注册表一致 6）"
+      status: PASS
+    - name: §36 里程碑（Round 37）
+      result: "knowledge-system Missing→Partial（矩阵 37/18/0/1，Missing 清零）；56 项能力全部至少 Partial；cross-factory 隔离政策并入五层 scope 语义"
+      status: PASS
+  baseline_reference:
+    - name: 全仓门禁矩阵（最近一次完整运行）
+      result: >
+        edge unittest 852 passed / pytest 163 passed+10 skip / server jest 1362 /
+        client jest 879 / type:check PASS / feishu 63/63 /
+        audit-openapi-routes 323 controllers 0 drift / truth 族全 PASS
+      status: PASS
+      evidence: docs/reviews/codebase-walkthrough-2026-08-14.md §5
+
+next_objectives:
+  - id: NO-01
+    phase: Phase 1
+    summary: 完成 capability-matrix.yaml 与 target-state 的逐项差距确认（已建立骨架；
+      继续逐项复核证据，Unknown 项清零）
+  - id: NO-12
+    phase: Phase 10/12
+    summary: 剩余 1 项 Partial 深化立项（矩阵 54/1/0/1）：solver-pluggability
+      剩余 = CP-SAT 生产启用（部署环境阻塞，OPEN-DECISIONS 唯一项）；
+      深化候选（非 Partial 阻断）：其余数据型页面渲染 smoke 按需
+      跟进、Support Mode 观测随协议升级复核（边界测试守护）、
+      其余仓库事实缺口——每轮先读仓库事实定位缺口再立项。地图端
+      偏差图层（R-56/ADR-035）、仿真运行控制台（R-57/ADR-036）、
+      Andon 飞书推送（R-58/ADR-037）、Shadow 隔离 DB CHECK
+      （R-59/ADR-038）、Agent 审批持久化（R-60/ADR-039）、边缘安灯
+      上行（R-61/ADR-040）、邮件推送（R-62/ADR-041）、审批前仿真
+      预验证（R-63/ADR-042）、Capability 契约（R-64/ADR-043）、
+      投影接线（R-65/ADR-044）、Record 匹配收敛（R-66/ADR-045）、
+      邮件 STARTTLS（R-67/ADR-046）、Decision 契约层（R-68/ADR-047）、
+      Decision 投影接线（R-69/ADR-048）、Execution 锁步
+      （R-70/ADR-049）、执行反馈完成腿（R-71/ADR-050）、Exo
+      Configuration 契约层（R-72/ADR-051）、Exo 台账写路径
+      （R-73/ADR-052）、Rule-based Solver（R-74/ADR-053）、Console
+      深化（R-75/ADR-054）、主题切换与渲染测试（R-76/ADR-055）、
+      经验模型重训闭环（R-77/ADR-056）、Plan Approval Decision 接线
+      （R-78/ADR-057）、MILP Solver 接入（R-79/ADR-058）、Agent
+      Approval Decision 接线（R-80/ADR-059）、Resource Reservation
+      Decision 接线（R-81/ADR-060）、Dispatch Decision 接线
+      （R-82/ADR-061）、Replan Decision 接线（R-83/ADR-062）、
+      Learning Proposal Activation Decision 接线（R-84/ADR-063）、
+      Policy Activation Decision 接线（R-85/ADR-064——Decision
+      Catalog 8 类全收敛收口）、Decision History 跨 kind 检索端点
+      （R-86/ADR-065——统一读面收口）、Decision History 控制台 UI
+      （R-87/ADR-066——读面消费闭环）、per-taskType 模型分组
+      （R-88/ADR-067——ADR-056 决策 3 收口）、SimulationConsole
+      渲染 smoke（R-89/ADR-068——数据型页面缺口第二项关闭）、
+      Exo Support Mode 观测边界锁定（R-90/ADR-069——边界机器守护）、
+      Model Training Policy v1（R-91/ADR-070——§15/§16 机器强制收口）、
+      方案行组织隔离闭环（R-92/ADR-071——§15 方案域跨租户读/变/基线
+      污染三路径闭合，NO-13v 收口）、Scheduler 读面组织隔离第二波
+      （R-93/ADR-072——run/audit/constraint/decision-history 四读面
+      闭合，NO-13w 收口）、Scheduler 读面组织隔离第三波
+      （R-94/ADR-073——conflict/feedback/kpi/execution/compare/
+      policy-activation 六面闭合，NO-13x 收口）、路由拓扑组织隔离
+      （R-95/ADR-074/standalone_056——World Model 中枢读面闭合，
+      NO-13y 收口）、Legacy 受管表 org_id 映射漂移闭合
+      （R-96/ADR-075——17 表 schema↔物理漂移闭合，NO-13z 收口）、
+      无 ctx 写路径 org 归属闭合（R-97/ADR-076——ADR-075 三处显式
+      边界全部闭合，NO-13aa 收口）、控制面持久化修复
+      （R-98/ADR-077——schema 硬编码 + org 归属 + 读面守卫三修复，
+      NO-13ab 收口）、raw-SQL schema 硬编码清零
+      （R-99/ADR-078——缺陷类全局闭合 + 学习/AI 跨租户混合消除，
+      NO-13ac 收口）、剩余 raw-SQL 模块 drizzle 化
+      （R-100/ADR-079——§15 收口纵深 10 波，NO-13ad 收口）、
+      CommandCenter 数据型页面渲染 smoke（R-101/ADR-080——§17
+      消费面补强，NO-13ae 收口）、resource.service 完整 drizzle 化
+      + 语义假库（R-102/ADR-081——server raw-SQL 表操作清零 +
+      写入 orgId 闭合加深，NO-13af 收口）
+      已完成。每项按既有纪律：ADR → 契约/门禁 → 运行时 → Golden →
+      §36 评估
+
+round_report_file: docs/agent/round-reports/2026-08-16-round-102.md
+

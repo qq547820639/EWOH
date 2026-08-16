@@ -6,7 +6,7 @@ import dayjs from 'dayjs';
 import { getEvents } from '@client/src/api/dashboard';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import type { EventInfo } from '@shared/api.interface';
-import { aggregateL3, type AggregatedL3 } from './alertToastLogic';
+import { aggregateCriticalEvents, type AggregatedCriticalEvents } from './alertToastLogic';
 import { cn } from '@client/src/lib/utils';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
@@ -46,7 +46,7 @@ const AlertToast = ({
     if (!events) return [];
     const cutoff = Date.now() - RECENT_WINDOW_MS;
     return events
-      .filter((e) => e.severity === 'L3')
+      .filter((e) => e.severity === 'critical')
       .filter((e) => {
         if (!e.createdAt) return false;
         return new Date(e.createdAt).getTime() >= cutoff;
@@ -60,13 +60,13 @@ const AlertToast = ({
 
   // L3 风暴聚合：同一设备短窗口内多条事件合并为一张告警卡（防逐条刷屏）。
   const aggregatedL3 = useMemo(
-    () => aggregateL3(events, Date.now(), RECENT_WINDOW_MS),
+    () => aggregateCriticalEvents(events, Date.now(), RECENT_WINDOW_MS),
     [events],
   );
 
   // Track which aggregation batches (latest event ids) we have already toasted.
   const toastedRef = useRef<Set<string>>(new Set());
-  const [activeToast, setActiveToast] = useState<AggregatedL3 | null>(null);
+  const [activeToast, setActiveToast] = useState<AggregatedCriticalEvents | null>(null);
   const [unread, setUnread] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState(false);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

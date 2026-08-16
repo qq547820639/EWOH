@@ -1,0 +1,198 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "LearningProposal 契约共享测试向量（ADR-026 / NO-12b）。Python（src/edge_platform/contracts/learning_proposal.py）、TypeScript（ewoh-spark-app/shared/learning-proposal.ts）与 scripts/audit-domain-contracts.js 独立仲裁共用同一份向量。",
+  "records": [
+    {
+      "name": "valid_proposed",
+      "record": {
+        "proposalId": "lp:1234:abcd",
+        "kind": "rule_threshold",
+        "status": "proposed",
+        "change": {
+          "ruleId": "rule:worker-overload",
+          "parameter": "workloadThreshold",
+          "baselineValue": 0.8,
+          "candidateValue": 0.75
+        },
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_shadow_evaluated",
+      "record": {
+        "proposalId": "lp:1234:abcd",
+        "kind": "rule_threshold",
+        "status": "shadow_evaluated",
+        "change": {
+          "ruleId": "rule:worker-overload",
+          "parameter": "workloadThreshold",
+          "baselineValue": 0.8,
+          "candidateValue": 0.75
+        },
+        "shadowEval": {
+          "baselineThreshold": 0.8,
+          "candidateThreshold": 0.75,
+          "factsCount": 3,
+          "baselineFires": 2,
+          "candidateFires": 3,
+          "addedSubjects": ["person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+          "removedSubjects": [],
+          "riskLevel": "low"
+        },
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_approved",
+      "record": {
+        "proposalId": "lp:1234:abcd",
+        "kind": "rule_threshold",
+        "status": "approved",
+        "change": {
+          "ruleId": "rule:worker-overload",
+          "parameter": "workloadThreshold",
+          "baselineValue": 0.8,
+          "candidateValue": 0.75
+        },
+        "shadowEval": {
+          "baselineThreshold": 0.8,
+          "candidateThreshold": 0.75,
+          "factsCount": 3,
+          "baselineFires": 2,
+          "candidateFires": 3,
+          "addedSubjects": ["person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+          "removedSubjects": [],
+          "riskLevel": "low"
+        },
+        "approvedBy": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a99",
+        "approvedAt": "2026-08-16T10:00:00Z",
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "unknown_kind",
+      "record": {
+        "proposalId": "lp:1234:abcd",
+        "kind": "policy_weight",
+        "status": "proposed",
+        "change": {
+          "ruleId": "rule:worker-overload",
+          "parameter": "workloadThreshold",
+          "baselineValue": 0.8,
+          "candidateValue": 0.75
+        },
+        "auditTrail": true
+      },
+      "expectError": "unknown_kind"
+    },
+    {
+      "name": "unsupported_rule_parameter",
+      "record": {
+        "proposalId": "lp:1234:abcd",
+        "kind": "rule_threshold",
+        "status": "proposed",
+        "change": {
+          "ruleId": "rule:exo-low-battery",
+          "parameter": "workloadThreshold",
+          "baselineValue": 0.8,
+          "candidateValue": 0.75
+        },
+        "auditTrail": true
+      },
+      "expectError": "unsupported_threshold"
+    },
+    {
+      "name": "approved_missing_shadow",
+      "record": {
+        "proposalId": "lp:1234:abcd",
+        "kind": "rule_threshold",
+        "status": "approved",
+        "change": {
+          "ruleId": "rule:worker-overload",
+          "parameter": "workloadThreshold",
+          "baselineValue": 0.8,
+          "candidateValue": 0.75
+        },
+        "approvedBy": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a99",
+        "approvedAt": "2026-08-16T10:00:00Z",
+        "auditTrail": true
+      },
+      "expectError": "shadow_eval_required"
+    },
+    {
+      "name": "approved_missing_approver",
+      "record": {
+        "proposalId": "lp:1234:abcd",
+        "kind": "rule_threshold",
+        "status": "approved",
+        "change": {
+          "ruleId": "rule:worker-overload",
+          "parameter": "workloadThreshold",
+          "baselineValue": 0.8,
+          "candidateValue": 0.75
+        },
+        "shadowEval": {
+          "baselineThreshold": 0.8,
+          "candidateThreshold": 0.75,
+          "factsCount": 1,
+          "baselineFires": 0,
+          "candidateFires": 0,
+          "addedSubjects": [],
+          "removedSubjects": [],
+          "riskLevel": "low"
+        },
+        "approvedAt": "2026-08-16T10:00:00Z",
+        "auditTrail": true
+      },
+      "expectError": "approver_required"
+    },
+    {
+      "name": "rolled_back_missing_reason",
+      "record": {
+        "proposalId": "lp:1234:abcd",
+        "kind": "rule_threshold",
+        "status": "rolled_back",
+        "change": {
+          "ruleId": "rule:worker-overload",
+          "parameter": "workloadThreshold",
+          "baselineValue": 0.8,
+          "candidateValue": 0.75
+        },
+        "shadowEval": {
+          "baselineThreshold": 0.8,
+          "candidateThreshold": 0.75,
+          "factsCount": 1,
+          "baselineFires": 0,
+          "candidateFires": 1,
+          "addedSubjects": ["person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"],
+          "removedSubjects": [],
+          "riskLevel": "low"
+        },
+        "approvedBy": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a99",
+        "approvedAt": "2026-08-16T10:00:00Z",
+        "rolledBackBy": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a99",
+        "auditTrail": true
+      },
+      "expectError": "rollback_reason_required"
+    },
+    {
+      "name": "audit_missing",
+      "record": {
+        "proposalId": "lp:1234:abcd",
+        "kind": "rule_threshold",
+        "status": "proposed",
+        "change": {
+          "ruleId": "rule:worker-overload",
+          "parameter": "workloadThreshold",
+          "baselineValue": 0.8,
+          "candidateValue": 0.75
+        },
+        "auditTrail": false
+      },
+      "expectError": "audit_required"
+    }
+  ]
+}

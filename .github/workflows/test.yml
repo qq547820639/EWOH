@@ -144,6 +144,39 @@ jobs:
         # 读取的每个环境变量必须被文档化或显式白名单放行；--strict 任一违规即失败。
         run: node scripts/audit-env-inventory.js --strict
 
+      - name: Identity 契约一致性门禁（ADR-006：schema/vectors/Python/TS 跨运行时一致）
+        # Canonical Industrial Identity：契约语法独立仲裁（JS 门禁重实现解析规则）+
+        # 共享测试向量 + Python KINDS / TS IDENTITY_KINDS 与 schema.kindRegistry 逐项一致。
+        # 依赖 Node（本步骤之前已安装）+ python3/pytest（开发依赖步骤已安装）。
+        run: make contract-identity
+
+      - name: Domain 契约一致性门禁（ADR-007：Risk/Location/Resource 跨运行时一致）
+        # Canonical Risk/Location/Resource：三域 schema 形状 + 共享测试向量 JS 独立仲裁
+        # （severity 归一/转移、location 记录校验、resource 可用性判定）+
+        # Python/TS 锁定注册表与 schema 逐项一致（有序注册表逐位比较）。
+        run: make contract-domain
+
+      - name: Event Envelope 契约门禁（ADR-009：时间三态/迟到标记/目录交叉校验）
+        # Canonical Event Envelope：schema 形状 + 向量 JS 独立仲裁（时间语义/
+        # 规范引用/迟到）+ eventType 与 event-catalog.yaml 交叉校验 +
+        # Python/TS 容忍常量一致。
+        run: make contract-envelope
+
+      - name: Canonical Contract Golden Scenarios（§26：八域共享场景 Python 侧）
+        # 身份映射冲突 fail-closed / legacy 严重度归一 / 脏空间类型拒绝 /
+        # 资源新鲜度 fail-closed / 世界状态投影规则（双时态+版本单调+模拟隔离）/
+        # 维护质量闭环 / 工单闭环——场景定义 tests/golden-fixtures/
+        # contract-golden-scenarios.json，Python 与 TS
+        # （shared/golden-contract-scenarios.spec.ts，随 npm test）消费同一份。
+        run: make contract-golden
+
+      - name: Golden Scheduler TCK（Phase 7 / NO-07+NO-07b：共享场景 Python 独立仲裁）
+        # 同一份 scheduler-golden-scenarios.json / scheduler-workflow-golden.json +
+        # 对应 results 制品：TS 真实服务执行（jest，漂移门禁）与 Python 标准库
+        # 独立仲裁（硬约束 / 审批 CAS / 预约冲突 / 派工前置）对同一世界状态给出
+        # 同一可行解（不依赖 ortools）。
+        run: make scheduler-golden
+
       - name: Work Graph 不变量与阻塞诊断（P0-6/P0-7）
         run: |
           node tools/work-indexer/index.js --root "$GITHUB_WORKSPACE" --strict --invariants

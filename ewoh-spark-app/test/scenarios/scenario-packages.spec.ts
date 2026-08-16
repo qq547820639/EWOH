@@ -9,7 +9,9 @@ import { ResourceService } from '../../server/modules/resource/resource.service'
 import { WorldCursorService, CursorExpiredError } from '../../server/modules/world-cursor/world-cursor.service';
 import { AuditChainService } from '../../server/modules/shared/audit-chain.service';
 import { buildOrgTree, coarseHealthRisk } from '../../server/modules/organization/organization.service';
-import { FakeSqlDb } from '../helpers/fake-sql-db';
+import { makeResourceDb } from '../helpers/fake-resource-db';
+import { makeControlDb } from '../helpers/fake-control-db';
+import { makeWorldDb } from '../helpers/fake-world-db';
 
 // Unit smoke coverage for SP-01..SP-08. The real HTTP + PostgreSQL assertions
 // live in test/e2e/ewoh-http.e2e.spec.ts (npm run test:e2e).
@@ -33,7 +35,8 @@ describe('EWOH scenario packages (unit smoke)', () => {
     }
     expect(status).toBe('completed');
 
-    const resource = new ResourceService(new FakeSqlDb() as never);
+    // ADR-081：资源面 drizzle 链式语义假库（§31 单一助手）。
+    const resource = new ResourceService(makeResourceDb().db as never);
     resource.seedInventory([{ resourceId: 'tool-a', quantity: 2 }]);
     const preorder = await resource.createPreorder('tool-a', 2);
     await expect(resource.createPreorder('tool-a', 1)).rejects.toThrow();
@@ -59,7 +62,8 @@ describe('EWOH scenario packages (unit smoke)', () => {
   });
 
   it('SP-04 device control: retry, latest-attempt aggregation, idempotency', async () => {
-    const control = new ControlService(new FakeSqlDb() as never);
+    // ADR-077：控制面已改 drizzle 链式路径——共用 §31 单一假库。
+    const control = new ControlService(makeControlDb().db as never);
     const request = await control.createRequest({
       deviceId: 'exo-1',
       commandKeys: ['start'],
@@ -79,7 +83,8 @@ describe('EWOH scenario packages (unit smoke)', () => {
   });
 
   it('SP-05 digital world: snapshot, delta, cursor expiry', async () => {
-    const world = new WorldCursorService(new FakeSqlDb() as never);
+    // ADR-079：世界游标已改 drizzle 链式路径——共用 §31 单一假库。
+    const world = new WorldCursorService(makeWorldDb().db as never);
     await world.applyUpsert({ id: 'e1', type: 'person' });
     const snapshot = await world.getSnapshot();
     await world.applyUpsert({ id: 'e2', type: 'device' });

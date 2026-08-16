@@ -29,9 +29,10 @@ const STATUS_OPTIONS: { label: string; value: string | undefined }[] = [
 
 const SEVERITY_OPTIONS: { label: string; value: string | undefined }[] = [
   { label: '全部', value: undefined },
-  { label: 'L1', value: 'L1' },
-  { label: 'L2', value: 'L2' },
-  { label: 'L3', value: 'L3' },
+  { label: '严重', value: 'critical' },
+  { label: '高', value: 'high' },
+  { label: '中', value: 'medium' },
+  { label: '低', value: 'low' },
 ];
 
 function timeAgo(dateStr: string | null): string {
@@ -46,13 +47,16 @@ function timeAgo(dateStr: string | null): string {
   return dayjs(dateStr).format('MM-DD HH:mm');
 }
 
+// ADR-027 规范词表：critical=红 / high=橙 / medium=黄 / low=绿 / unknown=灰。
 function severityBadgeClass(severity: string): string {
   switch (severity) {
-    case 'L3':
+    case 'critical':
       return 'bg-red-500/20 text-red-400 border-red-500/30';
-    case 'L2':
+    case 'high':
       return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
-    case 'L1':
+    case 'medium':
+      return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+    case 'low':
       return 'bg-green-500/20 text-green-400 border-green-500/30';
     default:
       return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
@@ -61,11 +65,13 @@ function severityBadgeClass(severity: string): string {
 
 function severityBarClass(severity: string): string {
   switch (severity) {
-    case 'L3':
+    case 'critical':
       return 'bg-red-500';
-    case 'L2':
+    case 'high':
       return 'bg-orange-500';
-    case 'L1':
+    case 'medium':
+      return 'bg-yellow-500';
+    case 'low':
       return 'bg-green-500';
     default:
       return 'bg-gray-500';

@@ -6,11 +6,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, gte, lte } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ewohEvent, ewohNotification } from '@server/database/schema';
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { insertAndonNotifications } from '../notification/andon-notifications';
+import { alertActionToState, alertStateTransitionAllowed } from '@shared/alert-state-machine';
+import { buildEventEnvelope, envelopeForEvidence } from '@shared/event-envelope';
+import { normalizeEventSeverity } from '@shared/risk';
 
 export type DeviceStatus =
   | 'running'
@@ -38,23 +42,21 @@ const SEVERITY_BY_STATUS: Record<DeviceStatus, string> = {
   unmanned: 'L1',
 };
 
-export function nextAndonStatus(current: string, action: string): string | null {
-  switch (action) {
-    case 'acknowledge':
-      return current === 'open' || current === 'reopened'
-        ? 'acknowledged'
-        : null;
-    case 'process':
-      return current === 'acknowledged' || current === 'reopened'
-        ? 'processing'
-        : null;
-    case 'close':
-      return current === 'processing' ? 'closed' : null;
-    case 'reopen':
-      return current === 'closed' ? 'reopened' : null;
-    default:
-      return null;
-  }
+/**
+ * ADR-031：andon 处置复用 shared/alert-state-machine（alert.yaml 单一
+ * 事实源）；保留函数名兼容既有调用方。reopen 角色条件（safety_admin）
+ * 机器强制。
+ */
+export function nextAndonStatus(
+  current: string,
+  action: string,
+  actorRole?: string,
+): string | null {
+  const target = alertActionToState(action);
+  if (!target) return null;
+  return alertStateTransitionAllowed(current, target.to, actorRole)
+    ? target.to
+    : null;
 }
 
 export interface OeeMetrics {
@@ -255,26 +257,46 @@ export class OeeService {
     }
     const eventId = `ANDON-${randomUUID().slice(0, 8)}`;
     const now = new Date();
+    const nowIso = now.toISOString();
+    // ADR-031 决策 2：Andon 开灯产出 AndonRaised 目录事件（envelope 嵌入
+    // evidenceJson；level = canonical severity 词表 ADR-027；slaMinutes 派生）。
+    const severity = normalizeEventSeverity(body.severity ?? 'high');
+    const slaSeconds = body.slaSeconds ?? 900;
+    const envelope = buildEventEnvelope({
+      eventId: `EVT-${Math.floor(Date.now() / 1000)}-${randomUUID().slice(0, 8)}`,
+      eventType: 'AndonRaised',
+      occurredAt: nowIso,
+      observedAt: nowIso,
+      receivedAt: nowIso,
+      source: 'cloud:oee',
+      subject: eventId,
+    });
+    const envelopeRecord = envelopeForEvidence(envelope);
     const [row] = await this.db
       .insert(ewohEvent)
       .values({
         eventId,
         deviceId: body.deviceId,
         eventCode: 'ANDON',
-        eventType: 'andon',
-        severity: body.severity ?? 'L2',
+        eventType: 'AndonRaised',
+        severity,
         title: body.title.trim(),
         status: 'open',
         createdAt: now,
         sourceType: 'real',
         evidenceJson: {
+          andonId: eventId,
           deviceId: body.deviceId,
           reason: body.reason ?? null,
-          slaSeconds: body.slaSeconds ?? 900,
+          slaSeconds,
+          slaMinutes: Math.ceil(slaSeconds / 60),
+          level: severity,
           assignee: body.assignee ?? null,
-          openedAt: now.toISOString(),
+          openedAt: nowIso,
           escalationLevel: 0,
-          timeline: [{ at: now.toISOString(), type: 'open', actor: actor?.userId ?? null }],
+          timeline: [{ at: nowIso, type: 'open', actor: actor?.userId ?? null }],
+          envelope: envelopeRecord.envelope,
+          envelopeSemantics: envelopeRecord.envelopeSemantics,
         },
       })
       .returning();
@@ -287,14 +309,27 @@ export class OeeService {
       before: null,
       after: { deviceId: body.deviceId, title: body.title },
     });
+    // R-58 / ADR-037：安灯开灯 → 通知（app 恒建；lark 仅在 webhook 配置时建——
+    // 未配置 = 渠道显式禁用，绝不建 doomed 行）。
+    await this.createAndonNotifications(
+      actor?.primaryOrgId ?? null,
+      {
+        recipientId: String(body.assignee ?? 'dispatcher'),
+        externalRef: eventId,
+        title: `安灯 ${body.title.trim()}`,
+        body: `设备 ${body.deviceId} 安灯已开（${severity}）`,
+        severity,
+      },
+    );
     return row;
   }
 
   async listAndons() {
+    // ADR-031：canonical eventType=AndonRaised；历史行 'andon' 过渡兼容。
     return this.db
       .select()
       .from(ewohEvent)
-      .where(eq(ewohEvent.eventType, 'andon'))
+      .where(inArray(ewohEvent.eventType, ['AndonRaised', 'andon']))
       .orderBy(desc(ewohEvent.createdAt));
   }
 
@@ -307,12 +342,15 @@ export class OeeService {
     const [row] = await this.db
       .select()
       .from(ewohEvent)
-      .where(and(eq(ewohEvent.eventId, eventId), eq(ewohEvent.eventType, 'andon')));
+      .where(and(
+        eq(ewohEvent.eventId, eventId),
+        inArray(ewohEvent.eventType, ['AndonRaised', 'andon']),
+      ));
     if (!row) {
       throw new NotFoundException(`Andon ${eventId} not found`);
     }
     const currentStatus = row.status ?? 'open';
-    const status = nextAndonStatus(currentStatus, action);
+    const status = nextAndonStatus(currentStatus, action, actor?.role);
     if (!status) {
       throw new BadRequestException(
         `Transition ${action} not allowed from ${currentStatus}`,
@@ -368,17 +406,14 @@ export class OeeService {
       throw new ConflictException('STATE_CONFLICT');
     }
     if (escalated) {
-      const notificationId = `NTF-${randomUUID().slice(0, 8)}`;
-      await this.db.insert(ewohNotification).values({
-        notificationId,
-        recipientType: 'role',
+      // R-58 / ADR-037：SLA 升级通知（app 恒建 + lark 配置时建；orgId 修复——
+      // 此前缺 orgId 导致租户作用域查询不可见，§15）。
+      await this.createAndonNotifications(actor?.primaryOrgId ?? null, {
         recipientId: String(evidence.assignee ?? 'dispatcher'),
-        channel: 'app',
+        externalRef: eventId,
         title: `安灯SLA升级 ${row.title}`,
         body: `设备 ${row.deviceId} 安灯响应超过 SLA，请立即处理`,
-        severity: row.severity ?? 'L2',
-        status: 'pending',
-        externalRef: eventId,
+        severity: row.severity ?? 'high',
       });
     }
     await this.auditService.appendAuditLog({
@@ -391,6 +426,24 @@ export class OeeService {
       after: { status: updated.status, escalated },
     });
     return updated;
+  }
+
+  /**
+   * R-58 / ADR-037 + ADR-040：安灯通知创建（共享助手 insertAndonNotifications：
+   * app 恒建 + lark 配置时建；orgId 租户作用域 §15；externalRef 指向
+   * Andon 事件主事实）。oee 与 ingest 边缘投影共用同一语义（§31）。
+   */
+  private async createAndonNotifications(
+    orgId: string | null,
+    input: {
+      recipientId: string;
+      externalRef: string;
+      title: string;
+      body: string;
+      severity: string;
+    },
+  ): Promise<void> {
+    await insertAndonNotifications(this.db, orgId, input);
   }
 
   async getSummary(deviceId: string, start: string, end: string) {

@@ -1,0 +1,161 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///entity/entity-model/v1",
+  "title": "EWOH Canonical Factory Entity Model",
+  "description": "EWOH 统一工厂实体模型契约（ADR-015，Phase 3 NO-03a）。entityKindRegistry = §4 实体清单 45 类封闭注册表（Person…Knowledge）；实体声明必须支持：唯一 ID（entityId 规范身份 ADR-006）、类型（kind）、Tenant（tenantId）、Factory（factoryId）、时间语义（timeSemantics 双时态 validFrom 必填/validTo 不得早于 validFrom）、状态（status）、来源（source ∈ {real, simulated, derived}，与 ADR-008 sourceTypeRegistry 同源，模拟数据显式标记）、版本（version ≥ 1）、置信度（confidence 可选 ∈ [0,1]，缺省=无标定不得伪装确定）、可追溯关系（refs 规范身份数组）、事件历史（eventRefs）。world-state 的 22 类快照实体 ⊆ 本注册表（门禁交叉校验）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "entityKindRegistry", "sourceRegistry", "rules", "projectionDivision", "projectionBuckets"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "entityKindRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" }
+    },
+    "sourceRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z]{1,16}$" }
+    },
+    "projectionDivision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stateProjectableKinds", "identityOnlyKinds", "entityOnlyKinds"],
+      "properties": {
+        "stateProjectableKinds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" }
+        },
+        "identityOnlyKinds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" }
+        },
+        "entityOnlyKinds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" }
+        }
+      }
+    },
+    "projectionBuckets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["personBucket", "deviceBucket", "stationBucket", "taskBucket"],
+      "properties": {
+        "personBucket": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" }
+        },
+        "deviceBucket": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" }
+        },
+        "stationBucket": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" }
+        },
+        "taskBucket": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" }
+        }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identityContract", "kindPrefixConsistency", "tenantFactoryRequired", "timeSemantics", "sourceContract", "versionContract", "confidenceContract", "referenceContract", "snapshotSubset", "projectionDivisionRule"],
+      "properties": {
+        "identityContract": {
+          "type": "string",
+          "const": "entityId 必须是规范身份 kind:value（ADR-006）；kind ∈ 注册表"
+        },
+        "kindPrefixConsistency": {
+          "type": "string",
+          "const": "entityId 的 kind 前缀必须 ∈ entityKindRegistry 且等于声明 kind：身份专属 kind（device/session）不得承载实体声明（kind_prefix_unknown），实体 kind 前缀与声明 kind 不一致拒绝（kind_prefix_mismatch）——kind:value 的 kind 部分即实体类别（ADR-015 投影分工）"
+        },
+        "tenantFactoryRequired": {
+          "type": "string",
+          "const": "tenantId / factoryId 必填非空（§4 Tenant/Factory 边界）"
+        },
+        "timeSemantics": {
+          "type": "string",
+          "const": "timeSemantics.validFrom 必填 ISO；validTo 可选且不得早于 validFrom（双时态，与 ADR-008 同源；解析失败拒绝）"
+        },
+        "sourceContract": {
+          "type": "string",
+          "const": "source ∈ {real, simulated, derived}（与 ADR-008 sourceTypeRegistry 同源；模拟数据显式标记，绝不当真实）"
+        },
+        "versionContract": {
+          "type": "string",
+          "const": "version ≥ 1（版本单调治理）"
+        },
+        "confidenceContract": {
+          "type": "string",
+          "const": "confidence 可选 ∈ [0,1]；缺省 = 无标定，不得伪装确定答案"
+        },
+        "referenceContract": {
+          "type": "string",
+          "const": "refs / eventRefs 必须是规范身份数组（可追溯关系/事件历史）"
+        },
+        "snapshotSubset": {
+          "type": "string",
+          "const": "world-state 契约的 22 类快照实体 ⊆ entityKindRegistry（快照是可观察投影子集，门禁交叉校验）"
+        },
+        "projectionDivisionRule": {
+          "type": "string",
+          "const": "权威投影分工：stateProjectableKinds = world-state 22 类（可观察状态投影）；entityOnlyKinds = 模型事实无状态投影（23 类）；identityOnlyKinds = 身份发证域（device/session）不得承载实体声明；云侧粗粒度桶（person/device/station/task）与实体 kind 的映射由 projectionBuckets 显式化（device 桶含遗留身份桶 device 与设备类实体 kind）"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "entityKindRegistry": [
+    "person", "worker_capability", "skill", "certification", "fatigue", "workload",
+    "ergonomic_risk", "exo", "machine", "robot", "agv", "tool", "material",
+    "container", "inventory", "order", "production_order", "operation", "task",
+    "work_instruction", "station", "zone", "route", "factory", "warehouse", "sensor",
+    "observation", "event", "alert", "incident", "risk", "quality_finding",
+    "maintenance_condition", "reservation", "assignment", "plan", "decision",
+    "approval", "execution", "outcome", "policy", "constraint", "model", "agent",
+    "knowledge"
+  ],
+  "sourceRegistry": ["real", "simulated", "derived"],
+  "projectionDivision": {
+    "stateProjectableKinds": [
+      "person", "exo", "machine", "robot", "agv", "tool", "material",
+      "container", "inventory", "order", "operation", "work_instruction",
+      "task", "station", "zone", "route", "factory", "warehouse", "sensor",
+      "event", "risk", "knowledge"
+    ],
+    "identityOnlyKinds": ["device", "session"],
+    "entityOnlyKinds": [
+      "worker_capability", "fatigue", "workload", "ergonomic_risk",
+      "production_order"
+    ]
+  },
+  "projectionBuckets": {
+    "personBucket": ["person"],
+    "deviceBucket": ["device", "exo", "machine", "robot", "agv", "sensor"],
+    "stationBucket": ["station"],
+    "taskBucket": ["task"]
+  },
+  "rules": {
+    "identityContract": "entityId 必须是规范身份 kind:value（ADR-006）；kind ∈ 注册表",
+    "kindPrefixConsistency": "entityId 的 kind 前缀必须 ∈ entityKindRegistry 且等于声明 kind：身份专属 kind（device/session）不得承载实体声明（kind_prefix_unknown），实体 kind 前缀与声明 kind 不一致拒绝（kind_prefix_mismatch）——kind:value 的 kind 部分即实体类别（ADR-015 投影分工）",
+    "tenantFactoryRequired": "tenantId / factoryId 必填非空（§4 Tenant/Factory 边界）",
+    "timeSemantics": "timeSemantics.validFrom 必填 ISO；validTo 可选且不得早于 validFrom（双时态，与 ADR-008 同源；解析失败拒绝）",
+    "sourceContract": "source ∈ {real, simulated, derived}（与 ADR-008 sourceTypeRegistry 同源；模拟数据显式标记，绝不当真实）",
+    "versionContract": "version ≥ 1（版本单调治理）",
+    "confidenceContract": "confidence 可选 ∈ [0,1]；缺省 = 无标定，不得伪装确定答案",
+    "referenceContract": "refs / eventRefs 必须是规范身份数组（可追溯关系/事件历史）",
+    "snapshotSubset": "world-state 契约的 22 类快照实体 ⊆ entityKindRegistry（快照是可观察投影子集，门禁交叉校验）",
+    "projectionDivisionRule": "权威投影分工：stateProjectableKinds = world-state 22 类（可观察状态投影）；entityOnlyKinds = 模型事实无状态投影（23 类）；identityOnlyKinds = 身份发证域（device/session）不得承载实体声明；云侧粗粒度桶（person/device/station/task）与实体 kind 的映射由 projectionBuckets 显式化（device 桶含遗留身份桶 device 与设备类实体 kind）"
+  }
+}

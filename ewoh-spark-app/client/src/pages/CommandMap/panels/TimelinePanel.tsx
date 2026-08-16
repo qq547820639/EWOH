@@ -242,12 +242,17 @@ export default function TimelinePanel({
               {/* Event markers */}
               {allEvents.map((ev, i) => {
                 const ratio = timeToRatio(ev.ts);
+                // ADR-027 规范词表：critical=红 / high=橙 / medium=黄 / low=绿 / unknown=灰。
                 const color =
-                  ev.severity === 'L3'
+                  ev.severity === 'critical'
                     ? 'bg-red-500'
-                    : ev.severity === 'L2'
+                    : ev.severity === 'high'
                       ? 'bg-orange-500'
-                      : 'bg-yellow-500';
+                      : ev.severity === 'medium'
+                        ? 'bg-yellow-500'
+                        : ev.severity === 'low'
+                          ? 'bg-green-500'
+                          : 'bg-gray-500';
                 return (
                   <button
                     key={`${ev.eventId}-${i}`}
@@ -297,11 +302,15 @@ export default function TimelinePanel({
                         <span
                           className={cn(
                             'w-1.5 h-1.5 rounded-full',
-                            ev.severity === 'L3'
+                            ev.severity === 'critical'
                               ? 'bg-red-500'
-                              : ev.severity === 'L2'
+                              : ev.severity === 'high'
                                 ? 'bg-orange-500'
-                                : 'bg-yellow-500',
+                                : ev.severity === 'medium'
+                                  ? 'bg-yellow-500'
+                                  : ev.severity === 'low'
+                                    ? 'bg-green-500'
+                                    : 'bg-gray-500',
                           )}
                         />
                         <span className="text-white/80">{ev.title}</span>

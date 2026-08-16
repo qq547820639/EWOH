@@ -1,3 +1,4 @@
+import { ewohWorldSnapshotCursor, ewohWorldDeltaLog } from '@server/database/schema';
 import {
   BadRequestException,
   Inject,
@@ -7,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { createHash } from 'node:crypto';
-import { sql, type SQL } from 'drizzle-orm';
+import { sql, asc, desc, gt, type SQL } from 'drizzle-orm';
 
 export interface WorldEntity {
   id: string;
@@ -79,37 +80,41 @@ export class WorldCursorService {
     if (!entity?.id) {
       throw new BadRequestException('entity id is required');
     }
-    await this.safeExecute('persist world upsert', sql`
-      insert into public.ewoh_world_delta_log (
-        snapshot_version, entity_type, entity_id, delta_type, payload, source_type
-      ) values (
-        coalesce((select max(snapshot_version) from public.ewoh_world_snapshot), 0),
-        ${entity.type ?? 'entity'}, ${entity.id}, 'upsert', ${JSON.stringify(entity)}::jsonb, 'service'
-      )
-    `);
+    // ADR-079：drizzle 类型安全（raw SQL 完整清零）。
+    await this.safeExecute('persist world upsert', this.db.insert(ewohWorldDeltaLog).values({
+      snapshotVersion: sql`coalesce((select max(snapshot_version) from ${ewohWorldSnapshotCursor}), 0)`,
+      entityType: entity.type ?? 'entity',
+      entityId: entity.id,
+      deltaType: 'upsert',
+      payload: entity as unknown as Record<string, unknown>,
+      sourceType: 'service',
+    }));
   }
 
   async applyRemoval(id: string): Promise<void> {
     if (!id?.trim()) {
       throw new BadRequestException('entity id is required');
     }
-    await this.safeExecute('persist world removal', sql`
-      insert into public.ewoh_world_delta_log (
-        snapshot_version, entity_type, entity_id, delta_type, payload, source_type
-      ) values (
-        coalesce((select max(snapshot_version) from public.ewoh_world_snapshot), 0),
-        'entity', ${id}, 'removal', null, 'service'
-      )
-    `);
+    await this.safeExecute('persist world removal', this.db.insert(ewohWorldDeltaLog).values({
+      snapshotVersion: sql`coalesce((select max(snapshot_version) from ${ewohWorldSnapshotCursor}), 0)`,
+      entityType: 'entity',
+      entityId: id,
+      deltaType: 'removal',
+      payload: null,
+      sourceType: 'service',
+    }));
   }
 
   async getSnapshot(): Promise<WorldSnapshot> {
-    const [latest] = await this.safeExecute<WorldSnapshotRow>('read latest world snapshot', sql`
-      select snapshot_version, payload, entity_count
-      from public.ewoh_world_snapshot
-      order by snapshot_version desc
-      limit 1
-    `);
+    const [latest] = await this.safeExecute<WorldSnapshotRow>('read latest world snapshot', this.db
+      .select({
+        snapshot_version: ewohWorldSnapshotCursor.snapshotVersion,
+        payload: ewohWorldSnapshotCursor.payload,
+        entity_count: ewohWorldSnapshotCursor.entityCount,
+      })
+      .from(ewohWorldSnapshotCursor)
+      .orderBy(desc(ewohWorldSnapshotCursor.snapshotVersion))
+      .limit(1));
     const currentVersion = latest ? Number(latest.snapshot_version) : 0;
     let entities: WorldEntity[] = [];
     let lastSeq = 0;
@@ -119,12 +124,16 @@ export class WorldCursorService {
       lastSeq = payload.lastSeq;
     }
 
-    const changes = await this.safeExecute<WorldDeltaRow>('read world deltas for snapshot', sql`
-      select seq, entity_id, delta_type, payload
-      from public.ewoh_world_delta_log
-      where seq > ${lastSeq}
-      order by seq asc
-    `);
+    const changes = await this.safeExecute<WorldDeltaRow>('read world deltas for snapshot', this.db
+      .select({
+        seq: ewohWorldDeltaLog.seq,
+        entity_id: ewohWorldDeltaLog.entityId,
+        delta_type: ewohWorldDeltaLog.deltaType,
+        payload: ewohWorldDeltaLog.payload,
+      })
+      .from(ewohWorldDeltaLog)
+      .where(gt(ewohWorldDeltaLog.seq, lastSeq))
+      .orderBy(asc(ewohWorldDeltaLog.seq)));
     const entityMap = new Map(entities.map((entity) => [entity.id, entity]));
     for (const change of changes) {
       const seq = Number(change.seq);
@@ -146,13 +155,14 @@ export class WorldCursorService {
       generatedAt,
     } satisfies SnapshotPayload);
     const checksum = createHash('sha256').update(payloadJson).digest('hex');
-    await this.safeExecute('persist world snapshot', sql`
-      insert into public.ewoh_world_snapshot (
-        snapshot_version, snapshot_type, payload, entity_count, checksum, source_type
-      ) values (
-        ${snapshotVersion}, 'full', ${payloadJson}::jsonb, ${nextEntities.length}, ${checksum}, 'service'
-      )
-    `);
+    await this.safeExecute('persist world snapshot', this.db.insert(ewohWorldSnapshotCursor).values({
+      snapshotVersion,
+      snapshotType: 'full',
+      payload: JSON.parse(payloadJson) as Record<string, unknown>,
+      entityCount: nextEntities.length,
+      checksum,
+      sourceType: 'service',
+    }));
     return {
       snapshotVersion,
       cursor: encodeCursor(snapshotVersion, lastSeq),
@@ -165,25 +175,28 @@ export class WorldCursorService {
     const decoded = decodeCursor(cursor);
     const [latest] = await this.safeExecute<{ snapshot_version: number }>(
       'read current world snapshot version',
-      sql`
-        select snapshot_version
-        from public.ewoh_world_snapshot
-        order by snapshot_version desc
-        limit 1
-      `,
+      this.db
+        .select({ snapshot_version: ewohWorldSnapshotCursor.snapshotVersion })
+        .from(ewohWorldSnapshotCursor)
+        .orderBy(desc(ewohWorldSnapshotCursor.snapshotVersion))
+        .limit(1),
     );
     const currentVersion = latest ? Number(latest.snapshot_version) : 0;
     if (decoded.snapshotVersion !== currentVersion) {
       throw new CursorExpiredError();
     }
     const safeLimit = Number.isFinite(limit) && limit >= 0 ? Math.trunc(limit) : 200;
-    const rows = await this.safeExecute<WorldDeltaRow>('read world delta page', sql`
-      select seq, entity_id, delta_type, payload
-      from public.ewoh_world_delta_log
-      where seq > ${decoded.lastSeq}
-      order by seq asc
-      limit ${safeLimit + 1}
-    `);
+    const rows = await this.safeExecute<WorldDeltaRow>('read world delta page', this.db
+      .select({
+        seq: ewohWorldDeltaLog.seq,
+        entity_id: ewohWorldDeltaLog.entityId,
+        delta_type: ewohWorldDeltaLog.deltaType,
+        payload: ewohWorldDeltaLog.payload,
+      })
+      .from(ewohWorldDeltaLog)
+      .where(gt(ewohWorldDeltaLog.seq, decoded.lastSeq))
+      .orderBy(asc(ewohWorldDeltaLog.seq))
+      .limit(safeLimit + 1));
     const page = rows.slice(0, safeLimit);
     const upserts = page
       .filter((change) => change.delta_type === 'upsert')
@@ -230,9 +243,9 @@ export class WorldCursorService {
     return value;
   }
 
-  private async safeExecute<T>(context: string, query: SQL): Promise<T[]> {
+  private async safeExecute<T>(context: string, query: Promise<T[]> | SQL): Promise<T[]> {
     try {
-      return (await this.db.execute(query)) as T[];
+      return (await query) as T[];
     } catch (error) {
       this.logger.error(
         `${context} failed`,

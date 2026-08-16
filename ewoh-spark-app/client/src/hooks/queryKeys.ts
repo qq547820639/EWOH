@@ -105,4 +105,8 @@ export const queryKeys = {
   workCatalog: ['work-catalog'] as const,
   workGitSync: ['work-git-sync'] as const,
   workSiteReadiness: ['work-site-readiness'] as const,
+  simulationRuns: (filters?: { kind?: string; status?: string }) =>
+    ['simulation', 'runs', filters ?? {}] as const,
+  /** NO-13q / ADR-066：决策历史跨 kind 检索（GET /api/scheduler/decision-history）。 */
+  decisions: ['decision-history'] as const,
 };

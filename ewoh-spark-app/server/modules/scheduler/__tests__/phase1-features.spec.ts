@@ -46,7 +46,7 @@ describe('Task 1.4 requiredDeviceCapabilities 硬约束', () => {
     const res = svc.check(
       person,
       { ...eligibleTask(seedTask({ id: 't1' })), requiredDeviceCapabilities: ['vacuum'] },
-      { id: 'd1', batteryPct: 100, online: true, status: 'online', capabilities: ['exo-lift'] },
+      { id: 'd1', batteryPct: 100, online: true, status: 'AVAILABLE', capabilities: ['exo-lift'] },
       makeEligibilityCtx(),
     );
     expect(res.eligible).toBe(false);
@@ -59,7 +59,7 @@ describe('Task 1.4 requiredDeviceCapabilities 硬约束', () => {
     const res = svc.check(
       person,
       { ...eligibleTask(seedTask({ id: 't1' })), requiredDeviceCapabilities: ['vacuum'] },
-      { id: 'd1', batteryPct: 100, online: true, status: 'online', capabilities: ['vacuum'] },
+      { id: 'd1', batteryPct: 100, online: true, status: 'AVAILABLE', capabilities: ['vacuum'] },
       makeEligibilityCtx(),
     );
     expect(res.reasons).not.toContain('missing_device_capability');

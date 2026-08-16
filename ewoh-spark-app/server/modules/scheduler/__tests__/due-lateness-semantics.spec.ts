@@ -87,7 +87,7 @@ function baseSnapshot(taskOverrides: Record<string, unknown>): WorldStateSnapsho
       {
         id: 'p1',
         name: 'p1',
-        status: 'available',
+        status: 'AVAILABLE',
         healthStatus: 'normal',
         skills: ['work'],
         certifications: [],

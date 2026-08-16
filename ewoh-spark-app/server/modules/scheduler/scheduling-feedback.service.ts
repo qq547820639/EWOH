@@ -7,8 +7,10 @@ import {
   ewohSchedulingFeedback,
   ewohSchedulePlan,
   ewohSchedulingPlanAssignment,
+  ewohProductionTask,
+  ewohAssignmentEvent,
 } from '@server/database/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, or, isNull } from 'drizzle-orm';
 import type {
   SchedulingFeedback,
   SchedulingFeedbackKpis,
@@ -18,19 +20,25 @@ import { RequestDatabaseContext } from '../../database/request-database-context'
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { ShadowEvaluatorService } from './prediction/shadow-evaluator.service';
+import { TaskService, taskActionPath } from '../task/task.service';
 
 /**
- * 调度反馈（SchedulingFeedback，Task 7）。
+ * 调度反馈（SchedulingFeedback，Task 7）+ 执行反馈完成腿（NO-13a / ADR-050）。
  *
- * 观测型记录 planned-vs-actual 执行数据与调度 KPI，仅供离线评估 / 参数对比 /
- * 回归使用。本服务 **绝不** 修改任何生产调度规则或行为：
- *  - 仅写入 / 读取 ewoh_scheduling_feedback 表；
- *  - 所有 record* 方法在调用方都以 try/catch + 可选依赖方式接入，失败不影响调度。
+ * 观测型记录 planned-vs-actual 执行数据与调度 KPI；NO-13a 起，recordActuals
+ * 在回填真实执行事实（actualStart/actualEnd）后追加**状态推进**：
+ *  - assignment：dispatched→executing（start）/ {dispatched,executing}→completed（end），
+ *    CAS + ewohAssignmentEvent 事件（ADR-050 决策 1）；
+ *  - task：taskActionPath 最短合法链逐动作 transitionTaskState（task.yaml 锁步，
+ *    ADR-049），边界显式（ADR-050 决策 2）——exception 不隐式 resolve、
+ *    pending_dispatch 不收 start、终态 no-op、非法 skip+log。
+ * 推进失败只显式 log，绝不阻断反馈写入、绝不伪造状态（§33）；策略/评分/
+ * 派工规则不受本服务影响。
  *
  * 生命周期埋点（由调用方在既有钩子处触发）：
  *  - recordBaseline   —— dispatch 时记录 planned 基线（每 assignment 一行）；
  *  - recordAcceptance —— plan 审批 / 驳回时标记 accepted；
- *  - recordActuals    —— 任务实际开始 / 完成时回填 actual 数据。
+ *  - recordActuals    —— 任务实际开始 / 完成时回填 actual 数据 + 状态推进。
  */
 @Injectable()
 export class SchedulingFeedbackService {
@@ -41,6 +49,8 @@ export class SchedulingFeedbackService {
     private readonly requestDatabaseContext: RequestDatabaseContext,
     // M05：Prediction Shadow Learning 回填点（可选注入；缺失时静默跳过，不改变反馈写入）。
     private readonly shadowEvaluatorService?: ShadowEvaluatorService,
+    // NO-13a / ADR-050：执行反馈完成腿（可选注入——既有构造兼容；缺失时只回填不推进）。
+    private readonly taskService?: TaskService,
   ) {}
 
   /**
@@ -225,12 +235,18 @@ export class SchedulingFeedbackService {
       actualResource?: SchedulingFeedbackResource | null;
     },
     ctx?: OrgContext,
-  ): Promise<void> {
+  ): Promise<{
+    advancedAssignments: number;
+    advancedTaskSteps: number;
+    skips: string[];
+  }> {
     const gucSettings = buildGucSettings(
       ctx ?? { userId: 'system', primaryOrgId: '' },
     );
     const toDate = (v: Date | string | null | undefined): Date | null =>
       v == null || v === '' ? null : new Date(v);
+
+    const summary = { advancedAssignments: 0, advancedTaskSteps: 0, skips: [] as string[] };
 
     await this.requestDatabaseContext.runInTransaction(gucSettings, async () => {
       const conditions: any[] = [];
@@ -259,6 +275,10 @@ export class SchedulingFeedbackService {
         .update(ewohSchedulingFeedback)
         .set(patch)
         .where(and(...conditions));
+
+      // NO-13a / ADR-050：执行反馈完成腿——真实执行事实推进 assignment/task 状态
+      //（CAS + 事件 + 契约状态机最短合法链；失败只 log 不阻断反馈写入，§33）。
+      await this.applyExecutionAdvancement(input, ctx ?? { userId: 'system', primaryOrgId: '' }, summary);
 
       // M05：Prediction Shadow Learning 回填——任务实际完成时回填 shadow 样本 actual。
       // 观测型：失败仅记日志，绝不阻断 feedback 写入；不改变任何生产调度。
@@ -305,6 +325,146 @@ export class SchedulingFeedbackService {
         }
       }
     });
+    return summary;
+  }
+
+  /**
+   * NO-13a / ADR-050：执行事实 → assignment/task 状态推进（recordActuals 内联调用）。
+   * 边界（ADR-050 决策 2）：start 源集 assignment={dispatched}、task={dispatched,received}；
+   * end 源集 assignment={dispatched,executing}、task={executing,received,paused}；
+   * exception 不隐式 resolve；终态/乱序 skip+log；CAS 幂等；推进失败不阻断反馈写入。
+   */
+  private async applyExecutionAdvancement(
+    input: {
+      planId?: string;
+      assignmentId?: string;
+      taskId?: string;
+      actualStart?: Date | string | null;
+      actualEnd?: Date | string | null;
+    },
+    ctx: OrgContext,
+    summary: { advancedAssignments: number; advancedTaskSteps: number; skips: string[] },
+  ): Promise<void> {
+    const hasStart = input.actualStart != null && input.actualStart !== '';
+    const hasEnd = input.actualEnd != null && input.actualEnd !== '';
+    if (!hasStart && !hasEnd) return;
+
+    // 1) 匹配受影响 assignment（与反馈行同源条件）。
+    const assignmentConditions: any[] = [];
+    if (input.assignmentId) {
+      assignmentConditions.push(eq(ewohSchedulingPlanAssignment.assignmentId, input.assignmentId));
+    }
+    if (input.planId) {
+      assignmentConditions.push(eq(ewohSchedulingPlanAssignment.planId, input.planId));
+    }
+    if (input.taskId) {
+      assignmentConditions.push(eq(ewohSchedulingPlanAssignment.taskId, input.taskId));
+    }
+    if (assignmentConditions.length === 0) return;
+    const assignments = await this.db
+      .select()
+      .from(ewohSchedulingPlanAssignment)
+      .where(or(...assignmentConditions));
+
+    const affectedTaskIds = new Set<string>();
+    for (const a of assignments) {
+      if (a.taskId) affectedTaskIds.add(a.taskId);
+    }
+    if (input.taskId) affectedTaskIds.add(input.taskId);
+
+    // 2) assignment 推进（CAS + 事件；幂等：已一致/乱序 skip）。
+    for (const a of assignments) {
+      const id = String(a.assignmentId ?? '');
+      if (hasStart && a.status === 'dispatched') {
+        await this.db
+          .update(ewohSchedulingPlanAssignment)
+          .set({ status: 'executing' })
+          .where(
+            and(
+              eq(ewohSchedulingPlanAssignment.assignmentId, id),
+              eq(ewohSchedulingPlanAssignment.status, 'dispatched'),
+            ),
+          );
+        await this.insertAssignmentEvent(id, a.taskId ?? null, 'dispatched', 'executing', ctx, 'execution feedback actualStart');
+        summary.advancedAssignments += 1;
+      } else if (hasEnd && (a.status === 'executing' || a.status === 'dispatched')) {
+        const fromStatus = a.status;
+        await this.db
+          .update(ewohSchedulingPlanAssignment)
+          .set({ status: 'completed' })
+          .where(
+            and(
+              eq(ewohSchedulingPlanAssignment.assignmentId, id),
+              eq(ewohSchedulingPlanAssignment.status, fromStatus),
+            ),
+          );
+        await this.insertAssignmentEvent(id, a.taskId ?? null, fromStatus, 'completed', ctx, 'execution feedback actualEnd');
+        summary.advancedAssignments += 1;
+      } else if (hasStart && a.status === 'executing') {
+        // 已一致（幂等 no-op）
+        summary.skips.push(`assignment:${id}:start_already_executing`);
+      } else if (hasEnd && a.status === 'completed') {
+        summary.skips.push(`assignment:${id}:end_already_completed`);
+      } else {
+        summary.skips.push(`assignment:${id}:out_of_order_from_${a.status ?? 'unknown'}`);
+      }
+    }
+
+    // 3) task 推进（契约状态机最短合法链；边界见 ADR-050 决策 2）。
+    if (!this.taskService || affectedTaskIds.size === 0) return;
+    const tasks = await this.db
+      .select()
+      .from(ewohProductionTask)
+      .where(inArray(ewohProductionTask.id, [...affectedTaskIds]));
+    for (const task of tasks) {
+      const id = String(task.id);
+      try {
+        if (hasStart && (task.status === 'dispatched' || task.status === 'received')) {
+          const path = taskActionPath(task.status, 'executing');
+          for (const action of path ?? []) {
+            await this.taskService.transitionTaskState(id, action, ctx);
+            summary.advancedTaskSteps += 1;
+          }
+        } else if (hasEnd && ['executing', 'received', 'paused'].includes(task.status)) {
+          const path = taskActionPath(task.status, 'completed');
+          for (const action of path ?? []) {
+            await this.taskService.transitionTaskState(id, action, ctx);
+            summary.advancedTaskSteps += 1;
+          }
+        } else if (hasStart && task.status === 'executing') {
+          summary.skips.push(`task:${id}:start_already_executing`);
+        } else if (hasEnd && (task.status === 'completed' || task.status === 'cancelled')) {
+          summary.skips.push(`task:${id}:end_already_terminal`);
+        } else {
+          summary.skips.push(`task:${id}:out_of_order_from_${task.status ?? 'unknown'}`);
+        }
+      } catch (err) {
+        // 推进失败显式留痕（§33 不吞异常——状态推进失败不阻断反馈主流程）。
+        this.logger.warn(
+          `execution advancement task ${id} failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        summary.skips.push(`task:${id}:advance_failed`);
+      }
+    }
+  }
+
+  private async insertAssignmentEvent(
+    assignmentId: string,
+    taskId: string | null,
+    fromStatus: string,
+    toStatus: string,
+    ctx: OrgContext,
+    reason: string,
+  ): Promise<void> {
+    await this.db.insert(ewohAssignmentEvent).values({
+      eventId: `EVT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      assignmentId,
+      taskId,
+      fromStatus,
+      toStatus,
+      actor: ctx.userId || 'system',
+      reason,
+    });
   }
 
   /** 读取指定 plan 的反馈行（离线评估视图）。 */
@@ -317,8 +477,19 @@ export class SchedulingFeedbackService {
   }
 
   /** 全部反馈行（离线评估视图）。 */
-  async list(): Promise<SchedulingFeedback[]> {
-    const rows = await this.db.select().from(ewohSchedulingFeedback);
+  async list(orgId?: string | null): Promise<SchedulingFeedback[]> {
+    // ADR-073：feedback 读面 org 条件（org 匹配或 NULL 存量；RLS 语义等价）。
+    const rows = orgId
+      ? await this.db
+          .select()
+          .from(ewohSchedulingFeedback)
+          .where(
+            or(
+              isNull(ewohSchedulingFeedback.orgId),
+              eq(ewohSchedulingFeedback.orgId, orgId),
+            ),
+          )
+      : await this.db.select().from(ewohSchedulingFeedback);
     return rows.map((r) => this.toFeedback(r));
   }
 
@@ -327,8 +498,18 @@ export class SchedulingFeedbackService {
    * Phase 4 / P4-T1 扩展：on-time rate / mean+P95 lateness / total travel / workload imbalance /
    * plan churn / conflict rate / replan success rate）。输入缺省时显式 null 标注缺数据，不伪造。
    */
-  async deriveKpis(): Promise<SchedulingFeedbackKpis> {
-    const rows = await this.db.select().from(ewohSchedulingFeedback);
+  async deriveKpis(orgId?: string | null): Promise<SchedulingFeedbackKpis> {
+    const rows = orgId
+      ? await this.db
+          .select()
+          .from(ewohSchedulingFeedback)
+          .where(
+            or(
+              isNull(ewohSchedulingFeedback.orgId),
+              eq(ewohSchedulingFeedback.orgId, orgId),
+            ),
+          )
+      : await this.db.select().from(ewohSchedulingFeedback);
     const total = rows.length;
     let accepted = 0;
     let rejected = 0;

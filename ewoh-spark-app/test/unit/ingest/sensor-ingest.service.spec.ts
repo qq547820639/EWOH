@@ -30,17 +30,46 @@ describe('SensorIngestService', () => {
     const { db, insertCalls } = createDb();
     const svc = new SensorIngestService(db as never);
 
-    const res = await svc.ingestEnvironment({
-      sensor_id: 'SEN-1',
-      event_time: new Date().toISOString(),
-      temperature: 25.5,
-      source_type: 'real',
-    });
+    const res = await svc.ingestEnvironment(
+      {
+        sensor_id: 'SEN-1',
+        event_time: new Date().toISOString(),
+        temperature: 25.5,
+        source_type: 'real',
+      },
+      'ORG-1',
+    );
 
     expect(res.accepted).toBe(true);
     const envInsert = insertCalls.find((c) => c.table === ewohEnvironment);
     expect(envInsert).toBeDefined();
     expect((envInsert!.rows[0] as Record<string, unknown>).sensorId).toBe('SEN-1');
+    // NO-13aa（ADR-075 续）：环境行归属注入。
+    expect((envInsert!.rows[0] as Record<string, unknown>).orgId).toBe('ORG-1');
+  });
+
+  it('ingestEnvironment 有 org → 行归属注入；无 org → NULL 显式 legacy', async () => {
+    const { db, insertCalls } = createDb();
+    const svc = new SensorIngestService(db as never);
+    await svc.ingestEnvironment(
+      {
+        sensor_id: 'SEN-2',
+        event_time: new Date().toISOString(),
+        temperature: 21,
+        source_type: 'real',
+      },
+      'ORG-1',
+    );
+    await svc.ingestEnvironment({
+      sensor_id: 'SEN-3',
+      event_time: new Date().toISOString(),
+      temperature: 22,
+      source_type: 'real',
+    });
+    const withOrg = insertCalls.find((c) => c.table === ewohEnvironment && (c.rows[0] as Record<string, unknown>).sensorId === 'SEN-2');
+    const noOrg = insertCalls.find((c) => c.table === ewohEnvironment && (c.rows[0] as Record<string, unknown>).sensorId === 'SEN-3');
+    expect((withOrg!.rows[0] as Record<string, unknown>).orgId).toBe('ORG-1');
+    expect((noOrg!.rows[0] as Record<string, unknown>).orgId).toBeNull();
   });
 
   it('ingestCamera 写入 ewoh_world_state（每个 detection 一条）', async () => {

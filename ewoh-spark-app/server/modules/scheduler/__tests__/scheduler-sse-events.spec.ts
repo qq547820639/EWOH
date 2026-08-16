@@ -97,7 +97,7 @@ describe('v0.7 B3: conflict.detected SSE 推送', () => {
   it('发现新冲突 → enqueue conflict.detected（含类型/严重度/消息）', async () => {
     const { svc, outbox } = makeSvc({
       state: {
-        devices: [{ id: 'd1', batteryPct: 10, online: true, status: 'online', dataQuality: 'FRESH' }],
+        devices: [{ id: 'd1', batteryPct: 10, online: true, status: 'AVAILABLE', dataQuality: 'FRESH' }],
       },
     });
 
@@ -113,7 +113,7 @@ describe('v0.7 B3: conflict.detected SSE 推送', () => {
   it('同一冲突重复查询 → 不再重复推送（内存去重）', async () => {
     const { svc, outbox } = makeSvc({
       state: {
-        devices: [{ id: 'd1', batteryPct: 10, online: true, status: 'online', dataQuality: 'FRESH' }],
+        devices: [{ id: 'd1', batteryPct: 10, online: true, status: 'AVAILABLE', dataQuality: 'FRESH' }],
       },
     });
 
@@ -141,7 +141,7 @@ describe('v0.7 B3: conflict.detected SSE 推送', () => {
         reservations: [],
         persons: [],
         tasks: [],
-        devices: [{ id: 'd1', batteryPct: 10, online: true, status: 'online', dataQuality: 'FRESH' }],
+        devices: [{ id: 'd1', batteryPct: 10, online: true, status: 'AVAILABLE', dataQuality: 'FRESH' }],
         stations: [],
         backlog: [],
         events: [],

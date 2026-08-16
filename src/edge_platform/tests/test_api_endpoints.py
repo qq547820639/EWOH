@@ -295,6 +295,35 @@ class DeviceEndpointTest(unittest.TestCase):
         self.assertIn("last_seen", body)
         self.assertIn("fault", body)
 
+    def test_device_quality(self):
+        # NO-05：设备数据质量统计（adapter 计数器 + 遥测质量分布）
+        status, _, body = self.fx.req("/api/devices/EXO-001/quality")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["device_id"], "EXO-001")
+        self.assertIn("adapter", body)
+        self.assertIn("telemetry_quality", body)
+        # stub fixture 下无 adapter 注册 → adapter 为 None（诚实，不伪造）
+        self.assertIsNone(body["adapter"])
+        self.assertIn("now", body)
+
+    def test_device_quality_not_found(self):
+        status, _, body = self.fx.req("/api/devices/NOPE/quality")
+        self.assertEqual(status, 404)
+        self.assertEqual(body["error"]["code"], "not_found")
+
+    def test_status_ingest_chain_honest(self):
+        # NO-05：/api/status 暴露 ingest_chain（stub 场景无注册适配器 → ok=false，不冒充）
+        status, _, body = self.fx.req("/api/status")
+        self.assertEqual(status, 200)
+        self.assertIn("ingest_chain", body)
+        chain = body["ingest_chain"]
+        self.assertIn("ok", chain)
+        self.assertIn("adapters_registered", chain)
+        self.assertIn("adapters_healthy", chain)
+        self.assertIn("details", chain)
+        self.assertFalse(chain["ok"])
+        self.assertEqual(chain["adapters_registered"], 0)
+
     def test_device_health_not_found(self):
         status, _, body = self.fx.req("/api/devices/NOPE/health")
         self.assertEqual(status, 404)

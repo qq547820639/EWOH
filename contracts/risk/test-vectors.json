@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Canonical Risk 跨语言一致性测试向量（Python tests/test_domain_contracts.py 与 TypeScript ewoh-spark-app/shared/domain-contracts.spec.ts 消费同一份文件）。语义权威源：contracts/risk/risk.schema.json（ADR-007）。",
+  "severityNormalize": [
+    { "input": "L1", "expect": "critical" },
+    { "input": "L2", "expect": "high" },
+    { "input": "L3", "expect": "medium" },
+    { "input": "critical", "expect": "critical" },
+    { "input": "high", "expect": "high" },
+    { "input": "medium", "expect": "medium" },
+    { "input": "low", "expect": "low" },
+    { "input": "L4", "expectError": "unknown_severity" },
+    { "input": "CRITICAL", "expectError": "unknown_severity" },
+    { "input": "", "expectError": "unknown_severity" },
+    { "input": "severe", "expectError": "unknown_severity" }
+  ],
+  "severityOrder": [
+    { "higher": "critical", "lower": "high" },
+    { "higher": "high", "lower": "medium" },
+    { "higher": "medium", "lower": "low" },
+    { "higher": "critical", "lower": "low" }
+  ],
+  "transitions": [
+    { "from": "open", "to": "acknowledged", "allowed": true },
+    { "from": "acknowledged", "to": "resolving", "allowed": true },
+    { "from": "resolving", "to": "resolved", "allowed": true },
+    { "from": "resolved", "to": "closed", "allowed": true },
+    { "from": "resolving", "to": "open", "allowed": true },
+    { "from": "resolved", "to": "open", "allowed": true },
+    { "from": "open", "to": "resolved", "allowed": false },
+    { "from": "closed", "to": "open", "allowed": false },
+    { "from": "acknowledged", "to": "closed", "allowed": false },
+    { "from": "open", "to": "unknown_status", "allowed": false },
+    { "from": "unknown_status", "to": "open", "allowed": false }
+  ],
+  "categories": [
+    { "value": "posture", "valid": true },
+    { "value": "load", "valid": true },
+    { "value": "battery", "valid": true },
+    { "value": "quality", "valid": true },
+    { "value": "other", "valid": true },
+    { "value": "POSTURE", "valid": false },
+    { "value": "vibration", "valid": false },
+    { "value": "", "valid": false }
+  ]
+}

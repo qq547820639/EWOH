@@ -1,0 +1,175 @@
+{
+  "schemaVersion": "1.0.0",
+  "records": [
+    {
+      "name": "valid_skill",
+      "record": {
+        "capabilityId": "cap:skill:forklift:person:p1",
+        "kind": "skill",
+        "name": "forklift",
+        "providerType": "person",
+        "subject": "person:p1",
+        "grantedAt": "2026-08-01T00:00:00Z",
+        "evidence": [],
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_certification",
+      "record": {
+        "capabilityId": "cap:certification:first_aid:person:p1",
+        "kind": "certification",
+        "name": "first_aid",
+        "providerType": "person",
+        "subject": "person:p1",
+        "grantedAt": "2026-08-01T00:00:00Z",
+        "expiresAt": "2027-08-01T00:00:00Z",
+        "issuer": "org:red-cross",
+        "evidence": ["event:evt-cert-1"],
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_device_capability",
+      "record": {
+        "capabilityId": "cap:device_capability:exo-lift:device:exo-1",
+        "kind": "device_capability",
+        "name": "exo-lift",
+        "providerType": "device",
+        "subject": "device:exo-1",
+        "evidence": [],
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_station_capability",
+      "record": {
+        "capabilityId": "cap:station_capability:assembly:station:s1",
+        "kind": "station_capability",
+        "name": "assembly",
+        "providerType": "station",
+        "subject": "station:s1",
+        "evidence": [],
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_exo_capability",
+      "record": {
+        "capabilityId": "cap:exo_capability:exo-lift:exo:e1",
+        "kind": "exo_capability",
+        "name": "exo-lift",
+        "providerType": "exo",
+        "subject": "exo:e1",
+        "evidence": [],
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "unknown_kind_rejected",
+      "record": {
+        "capabilityId": "cap:x",
+        "kind": "future_kind",
+        "name": "x",
+        "providerType": "person",
+        "subject": "person:p1",
+        "auditTrail": true
+      },
+      "expectError": "unknown_kind"
+    },
+    {
+      "name": "unknown_provider_type_rejected",
+      "record": {
+        "capabilityId": "cap:x",
+        "kind": "skill",
+        "name": "x",
+        "providerType": "vehicle",
+        "subject": "person:p1",
+        "auditTrail": true
+      },
+      "expectError": "unknown_provider_type"
+    },
+    {
+      "name": "empty_name_rejected",
+      "record": {
+        "capabilityId": "cap:x",
+        "kind": "skill",
+        "name": "  ",
+        "providerType": "person",
+        "subject": "person:p1",
+        "auditTrail": true
+      },
+      "expectError": "bad_name"
+    },
+    {
+      "name": "certification_missing_issuer_rejected",
+      "record": {
+        "capabilityId": "cap:cert:1",
+        "kind": "certification",
+        "name": "first_aid",
+        "providerType": "person",
+        "subject": "person:p1",
+        "expiresAt": "2027-08-01T00:00:00Z",
+        "auditTrail": true
+      },
+      "expectError": "certification_missing_issuer"
+    },
+    {
+      "name": "certification_missing_expiry_rejected",
+      "record": {
+        "capabilityId": "cap:cert:2",
+        "kind": "certification",
+        "name": "first_aid",
+        "providerType": "person",
+        "subject": "person:p1",
+        "issuer": "org:red-cross",
+        "auditTrail": true
+      },
+      "expectError": "certification_missing_expiry"
+    },
+    {
+      "name": "time_order_rejected",
+      "record": {
+        "capabilityId": "cap:cert:3",
+        "kind": "certification",
+        "name": "first_aid",
+        "providerType": "person",
+        "subject": "person:p1",
+        "grantedAt": "2027-08-01T00:00:00Z",
+        "expiresAt": "2026-08-01T00:00:00Z",
+        "issuer": "org:red-cross",
+        "auditTrail": true
+      },
+      "expectError": "time_order_violation"
+    },
+    {
+      "name": "bad_subject_rejected",
+      "record": {
+        "capabilityId": "cap:x",
+        "kind": "skill",
+        "name": "x",
+        "providerType": "person",
+        "subject": "person-p1",
+        "auditTrail": true
+      },
+      "expectError": "bad_subject"
+    },
+    {
+      "name": "audit_required_rejected",
+      "record": {
+        "capabilityId": "cap:x",
+        "kind": "skill",
+        "name": "x",
+        "providerType": "person",
+        "subject": "person:p1",
+        "auditTrail": false
+      },
+      "expectError": "audit_required"
+    }
+  ]
+}

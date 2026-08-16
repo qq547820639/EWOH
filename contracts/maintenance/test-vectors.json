@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Canonical Maintenance 跨语言一致性测试向量（ADR-010）。语义权威源：contracts/maintenance/maintenance.schema.json。",
+  "conditions": [
+    {
+      "name": "valid-detected",
+      "record": {
+        "conditionId": "MC-1",
+        "subjectEntityId": "machine:cnc-03",
+        "conditionType": "wear",
+        "severity": "high",
+        "status": "detected",
+        "detectedAt": "2026-08-14T08:00:00Z",
+        "dueAt": null,
+        "evidenceRef": null
+      },
+      "expectError": null
+    },
+    {
+      "name": "legacy-severity-normalized",
+      "record": {
+        "conditionId": "MC-2",
+        "subjectEntityId": "exo:NY-A1-SN-0007",
+        "conditionType": "battery_degradation",
+        "severity": "L2",
+        "status": "detected",
+        "detectedAt": "2026-08-14T08:00:00Z",
+        "dueAt": null
+      },
+      "expectError": null
+    },
+    {
+      "name": "unknown-condition-type-rejected",
+      "record": {
+        "conditionId": "MC-3",
+        "subjectEntityId": "machine:m1",
+        "conditionType": "lubrication",
+        "severity": "medium",
+        "status": "detected",
+        "detectedAt": "2026-08-14T08:00:00Z",
+        "dueAt": null
+      },
+      "expectError": "unknown_condition_type"
+    },
+    {
+      "name": "non-canonical-subject-rejected",
+      "record": {
+        "conditionId": "MC-4",
+        "subjectEntityId": "cnc-03",
+        "conditionType": "wear",
+        "severity": "medium",
+        "status": "detected",
+        "detectedAt": "2026-08-14T08:00:00Z",
+        "dueAt": null
+      },
+      "expectError": "bad_subject"
+    },
+    {
+      "name": "unknown-severity-rejected",
+      "record": {
+        "conditionId": "MC-5",
+        "subjectEntityId": "machine:cnc-03",
+        "conditionType": "wear",
+        "severity": "severe",
+        "status": "detected",
+        "detectedAt": "2026-08-14T08:00:00Z",
+        "dueAt": null
+      },
+      "expectError": "unknown_severity"
+    }
+  ],
+  "transitions": [
+    { "from": "detected", "to": "acknowledged", "allowed": true },
+    { "from": "acknowledged", "to": "work_order_created", "allowed": true },
+    { "from": "work_order_created", "to": "resolved", "allowed": true },
+    { "from": "resolved", "to": "closed", "allowed": true },
+    { "from": "detected", "to": "resolved", "allowed": false },
+    { "from": "detected", "to": "closed", "allowed": false },
+    { "from": "closed", "to": "detected", "allowed": false },
+    { "from": "acknowledged", "to": "unknown", "allowed": false }
+  ],
+  "overdue": [
+    { "name": "due-and-open-overdue", "dueAt": "2026-08-14T07:00:00Z", "now": "2026-08-14T08:00:00Z", "status": "detected", "expect": true },
+    { "name": "due-and-resolved-not-overdue", "dueAt": "2026-08-14T07:00:00Z", "now": "2026-08-14T08:00:00Z", "status": "resolved", "expect": false },
+    { "name": "future-due-not-overdue", "dueAt": "2026-08-14T09:00:00Z", "now": "2026-08-14T08:00:00Z", "status": "detected", "expect": false },
+    { "name": "no-due-not-overdue", "dueAt": null, "now": "2026-08-14T08:00:00Z", "status": "detected", "expect": false }
+  ]
+}

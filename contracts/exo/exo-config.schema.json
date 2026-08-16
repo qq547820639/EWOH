@@ -1,0 +1,168 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///exo/exo-config/v1",
+  "title": "EWOH Canonical Exo Configuration",
+  "description": "Canonical Exo Configuration Model（ADR-051 / §7）：外骨骼 Support Mode / Assist Profile / Fit / Calibration 跨运行时契约。kind/supportMode/calibrationKind 为封闭结构注册表；status 按 kind 封闭；vendor_specific 模式为显式桶（vendorModeName 必填，未知模式绝不静默改写 §33）；判定事实完整：assist_profile 必带 supportMode + effectiveFrom + superseded 必带 supersededBy；fit 必带 personId（person: 规范身份）+ fittedAt + fitter；calibration 必带 calibrationKind + result + calibratedAt/calibratedBy；exoId device: 规范身份；tenantId 必填；auditTrail 非空强制；时间不倒退。",
+  "type": "object",
+  "additionalProperties": false,
+  "schemaVersion": "1.0.0",
+  "exoConfigKinds": [
+    "assist_profile",
+    "fit",
+    "calibration"
+  ],
+  "supportModes": [
+    "passive",
+    "lift_assist",
+    "carry_assist",
+    "stand_assist",
+    "balance_assist",
+    "upper_limb_assist",
+    "lower_limb_assist",
+    "vendor_specific"
+  ],
+  "calibrationKinds": [
+    "zeroing",
+    "load_cell",
+    "imu"
+  ],
+  "profileStatuses": [
+    "active",
+    "superseded",
+    "retired"
+  ],
+  "fitStatuses": [
+    "pending",
+    "fitted",
+    "adjusted",
+    "invalidated"
+  ],
+  "calibrationStatuses": [
+    "pending",
+    "passed",
+    "failed"
+  ],
+  "rules": {
+    "configIdCanonicalPrefix": "exo-config:",
+    "exoIdCanonicalDevicePrefix": "device:",
+    "auditTrailRequired": true,
+    "assistProfileRequiresSupportMode": true,
+    "assistProfileParametersBounded": true,
+    "fitRequiresPerson": true,
+    "calibrationRequiresResult": true,
+    "vendorSpecificModeRequiresName": true,
+    "timeOrderRequired": true,
+    "subjectCanonicalIdentity": true
+  },
+  "properties": {
+    "configId": {
+      "type": "string",
+      "pattern": "^exo-config:[^\\s]+$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["assist_profile", "fit", "calibration"]
+    },
+    "exoId": {
+      "type": "string",
+      "pattern": "^device:[^\\s]+$"
+    },
+    "tenantId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string"
+    },
+    "supportMode": {
+      "type": "string",
+      "enum": [
+        "passive",
+        "lift_assist",
+        "carry_assist",
+        "stand_assist",
+        "balance_assist",
+        "upper_limb_assist",
+        "lower_limb_assist",
+        "vendor_specific"
+      ]
+    },
+    "vendorModeName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "assistLevel": { "type": "number" },
+        "torqueLimitNm": { "type": "number" }
+      }
+    },
+    "effectiveFrom": {
+      "type": "string"
+    },
+    "effectiveTo": {
+      "type": "string"
+    },
+    "supersededBy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "setBy": {
+      "type": "string"
+    },
+    "personId": {
+      "type": "string",
+      "pattern": "^person:[^\\s]+$"
+    },
+    "fittedAt": {
+      "type": "string"
+    },
+    "fitter": {
+      "type": "string"
+    },
+    "measuredValues": {
+      "type": "object",
+      "additionalProperties": { "type": "number" }
+    },
+    "calibrationKind": {
+      "type": "string",
+      "enum": ["zeroing", "load_cell", "imu"]
+    },
+    "result": {
+      "type": "string"
+    },
+    "calibratedAt": {
+      "type": "string"
+    },
+    "calibratedBy": {
+      "type": "string"
+    },
+    "nextDueAt": {
+      "type": "string"
+    },
+    "auditTrail": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["actor", "action", "at"],
+        "properties": {
+          "actor": { "type": "string", "pattern": "^[a-z][a-z0-9_]*:[^\\s]+$" },
+          "action": { "type": "string", "minLength": 1 },
+          "at": { "type": "string" }
+        }
+      }
+    }
+  },
+  "required": [
+    "configId",
+    "kind",
+    "exoId",
+    "tenantId",
+    "status",
+    "auditTrail"
+  ]
+}

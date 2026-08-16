@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Canonical Capability Model（ADR-043 / §3/§4）：机器/人员/外骨骼/工位能力统一语义契约。kind/providerType 为封闭结构注册表；name 为开放词表（工厂技能/能力名天然开放，knownValues 为平台已知值登记——未知 name 合法但不静默，测试向量锁定已知值集合）。",
+  "capabilityKinds": ["skill", "certification", "device_capability", "station_capability", "exo_capability"],
+  "providerTypes": ["person", "device", "exo", "machine", "robot", "station", "tool"],
+  "knownValues": [
+    "forklift",
+    "first_aid",
+    "exo-lift",
+    "vacuum",
+    "assembly",
+    "inspection",
+    "material_handling"
+  ],
+  "rules": {
+    "certificationRequiresIssuer": true,
+    "certificationRequiresExpiry": true,
+    "auditRequired": true,
+    "timeOrderRequired": true
+  },
+  "properties": {
+    "capabilityId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["skill", "certification", "device_capability", "station_capability", "exo_capability"]
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "providerType": {
+      "type": "string",
+      "enum": ["person", "device", "exo", "machine", "robot", "station", "tool"]
+    },
+    "subject": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9_]+:.+$"
+    },
+    "grantedAt": {
+      "type": "string"
+    },
+    "expiresAt": {
+      "type": "string"
+    },
+    "issuer": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "auditTrail": {
+      "type": "boolean"
+    }
+  },
+  "required": ["capabilityId", "kind", "name", "providerType", "subject", "auditTrail"],
+  "additionalProperties": false
+}

@@ -18,3 +18,29 @@ describe('OrganizationService pure helpers', () => {
     expect(coarseHealthRisk(null)).toBe('low');
   });
 });
+
+import { OrganizationService } from '../../../server/modules/organization/organization.service';
+import { ewohOrganization } from '@server/database/schema';
+
+describe('OrganizationService createOrganization org 归属（NO-13aa / ADR-075 续）', () => {
+  it('org 行归属 = 自身 id（应用侧确定性 UUID，001 ewoh_org_visible RLS 对齐）', async () => {
+    const insertRows: Array<Record<string, unknown>> = [];
+    const db = {
+      insert: jest.fn((table: unknown) => ({
+        values: jest.fn((row: Record<string, unknown>) => {
+          if (table === ewohOrganization) insertRows.push(row);
+          return { returning: jest.fn(async () => [row]) };
+        }),
+      })),
+    };
+    const svc = new OrganizationService(db as never, undefined as never);
+    const created = await svc.createOrganization({
+      name: '测试车间',
+      orgType: 'workshop',
+    } as never);
+    expect(created).toBeDefined();
+    const row = insertRows[0];
+    expect(row.id).toBeDefined();
+    expect(row.orgId).toBe(row.id);
+  });
+});

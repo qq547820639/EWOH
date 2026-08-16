@@ -12,6 +12,7 @@ import type {
   RouteGraph,
   SchedulingContextResponse,
 } from '@shared/api.interface';
+import type { SchedulingExecution } from '@shared/scheduler';
 
 export type CommandMapLayer =
   | 'base'
@@ -23,6 +24,8 @@ export type CommandMapLayer =
   | 'route'
   | 'conflict'
   | 'risk'
+  // R-6 / ADR-035：执行偏差图层（planned vs actual）。
+  | 'execution-deviation'
   // M05：Replan 叠加层（08 §10）。
   | 'changed-by-replan'
   | 'human-locked';
@@ -54,6 +57,14 @@ export interface CommandMapAggregate {
   plans: SchedulingPlanV2[];
   routes: RouteGraph | null;
   conflicts: ReturnType<typeof conflictVM>;
+  /**
+   * R-6 / ADR-035：所选方案的执行记录（ewoh_scheduling_execution 权威事实，
+   * GET /api/scheduler/executions?planId=…）。无选中方案 → []（显式空态，
+   * 不静默透传 null）。执行偏差图层（execution-deviation）消费。
+   */
+  executions: SchedulingExecution[];
+  /** R-6：执行记录查询失败（图层/控件据此显示显式错误态，绝不静默当作空）。 */
+  executionsError: boolean;
   ui: CommandMapUIState;
   loading: boolean;
   hasError: boolean;
@@ -97,6 +108,10 @@ export function buildCommandMapState(params: {
   routes: RouteGraph | null | undefined;
   conflicts: Parameters<typeof conflictVM>[0] | undefined;
   context?: SchedulingContextResponse | null;
+  /** R-6：所选方案执行记录；缺省 []（显式空态）。 */
+  executions?: SchedulingExecution[] | null;
+  /** R-6：执行记录查询失败标记；缺省 false。 */
+  executionsError?: boolean;
   ui: CommandMapUIState;
   loading: boolean;
   hasError: boolean;
@@ -108,8 +123,19 @@ export function buildCommandMapState(params: {
     routes: params.routes ?? null,
     conflicts: conflictVM(params.conflicts ?? []),
     context: params.context ?? null,
+    executions: params.executions ?? [],
+    executionsError: params.executionsError ?? false,
     ui: params.ui,
     loading: params.loading,
     hasError: params.hasError,
   };
+}
+
+/**
+ * 图层开关（纯函数，node 可测）：开 → 追加（保持顺序），关 → 移除；
+ * 重复开启幂等（不产生重复项）。base 恒为底层，不接受本函数开关。
+ */
+export function toggleLayer(prev: CommandMapLayer[], layer: CommandMapLayer): CommandMapLayer[] {
+  if (layer === 'base') return prev;
+  return prev.includes(layer) ? prev.filter((l) => l !== layer) : [...prev, layer];
 }

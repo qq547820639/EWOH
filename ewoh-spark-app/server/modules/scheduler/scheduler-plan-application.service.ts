@@ -49,6 +49,7 @@ import { SchedulingPolicyService } from './scheduling-policy.service';
 import { PolicyReplayService } from './policy-replay.service';
 import { ExecutionService } from './execution.service';
 import { toOrgContext, mapPlan, mapAudit } from './scheduler-run-context';
+import { assertPlanTenantVisible } from './plan-tenant-guard';
 
 @Injectable()
 export class SchedulerPlanApplicationService {
@@ -94,6 +95,8 @@ export class SchedulerPlanApplicationService {
       if (!existing) {
         throw new NotFoundException(`Schedule plan ${planId} not found`);
       }
+      // ADR-071：legacy confirm/reject 变面租户守卫（反枚举 404；与 RLS 语义等价）。
+      assertPlanTenantVisible(existing.orgId, actor, planId);
 
       const op = operator || 'supervisor';
       const now = new Date();
@@ -137,6 +140,8 @@ export class SchedulerPlanApplicationService {
               auditId: `AUDIT-${Date.now()}-${this.randomSuffix()}`,
               planId,
               action: 'confirm',
+              // ADR-075：audit 行归属注入（001 ewoh_org_visible RLS 对齐）。
+              orgId: gucContext.primaryOrgId || null,
               operator: op,
               reason,
               createdAt: now,
@@ -199,6 +204,8 @@ export class SchedulerPlanApplicationService {
       if (!existing) {
         throw new NotFoundException(`Schedule plan ${planId} not found`);
       }
+      // ADR-071：legacy confirm/reject 变面租户守卫（反枚举 404；与 RLS 语义等价）。
+      assertPlanTenantVisible(existing.orgId, actor, planId);
 
       const op = operator || 'supervisor';
       const now = new Date();
@@ -242,6 +249,8 @@ export class SchedulerPlanApplicationService {
               auditId: `AUDIT-${Date.now()}-${this.randomSuffix()}`,
               planId,
               action: 'reject',
+              // ADR-075：audit 行归属注入（001 ewoh_org_visible RLS 对齐）。
+              orgId: gucContext.primaryOrgId || null,
               operator: op,
               reason,
               createdAt: now,
@@ -409,6 +418,8 @@ export class SchedulerPlanApplicationService {
       configVersion,
       ctx.primaryOrgId || null,
       approver,
+      // NO-13o / ADR-064：人审理由透传（决策记录判定事实）。
+      reason,
     );
     await this.auditService.appendAuditLog({
       actorId: approver,
@@ -462,6 +473,8 @@ export class SchedulerPlanApplicationService {
       .where(eq(ewohSchedulePlan.planId, planId))
       .limit(1);
     if (!plan) throw new NotFoundException(`Plan ${planId} not found`);
+    // ADR-071：人工覆盖变面租户守卫（反枚举 404；与 RLS 语义等价）。
+    assertPlanTenantVisible(plan.orgId, ctx, planId);
     if (!SchedulerPlanApplicationService.REPLANNABLE_PLAN_STATUSES.has(plan.status ?? '')) {
       throw new ConflictException('PLAN_NOT_REPLANNABLE');
     }
@@ -531,6 +544,8 @@ export class SchedulerPlanApplicationService {
           operator,
           reason: body.reason ?? '',
           createdAt: new Date(),
+          // ADR-075：audit 行归属注入（001 ewoh_org_visible RLS 对齐）。
+          orgId: ctx.primaryOrgId || null,
         });
       },
     );

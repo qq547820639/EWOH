@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -24,6 +25,16 @@ export class ApprovalController {
     @Req() request: { userContext?: OrgContext },
   ) {
     return this.approvalService.createApproval(body, request.userContext);
+  }
+
+  /** NO-12f/ADR-030：待批清单（org 作用域）。 */
+  @Get('pending')
+  listPending(@Req() request: { userContext?: OrgContext }) {
+    const orgId = request.userContext?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException('org context missing: approval list requires tenant context');
+    }
+    return this.approvalService.listPending(orgId);
   }
 
   @Get(':id')

@@ -33,13 +33,16 @@ const SOURCE_STYLES: Record<string, string> = {
   evidence: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
 };
 
+// ADR-027 规范词表：critical=红 / high=橙 / medium=黄 / low=绿 / unknown=灰。
 function severityClass(severity?: string): string {
   switch (severity) {
-    case 'L3':
+    case 'critical':
       return 'bg-red-500';
-    case 'L2':
+    case 'high':
       return 'bg-orange-500';
-    case 'L1':
+    case 'medium':
+      return 'bg-yellow-500';
+    case 'low':
       return 'bg-green-500';
     default:
       return 'bg-gray-500';

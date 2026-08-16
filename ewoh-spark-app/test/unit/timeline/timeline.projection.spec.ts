@@ -10,7 +10,7 @@ describe('buildTimelineEvent (统一对象时间线投影)', () => {
       eventId: 'EV-001',
       createdAt: '2026-01-01T00:00:00Z',
       title: '过载',
-      severity: 'L2',
+      severity: 'high',
       status: 'open',
       deviceId: 'dev-1',
       sourceType: 'simulated',

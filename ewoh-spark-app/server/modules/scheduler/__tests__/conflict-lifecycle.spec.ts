@@ -116,7 +116,7 @@ const OFFLINE_STATE = {
   persons: [],
   tasks: [],
   devices: [
-    { id: 'd1', batteryPct: 100, online: false, status: 'offline', dataQuality: 'FRESH' },
+    { id: 'd1', batteryPct: 100, online: false, status: 'OFFLINE', dataQuality: 'FRESH' },
   ],
   stations: [],
   backlog: [],
@@ -186,7 +186,7 @@ describe('P3-T1: ConflictService 推导 + 归并落库', () => {
     // 第二次：设备恢复（无 device_offline 推导）。
     const { svc, conflicts, mocks } = makeSvc(first.conflicts, {
       devices: [
-        { id: 'd1', batteryPct: 100, online: true, status: 'online', dataQuality: 'FRESH' },
+        { id: 'd1', batteryPct: 100, online: true, status: 'AVAILABLE', dataQuality: 'FRESH' },
       ],
     });
     const res = await svc.reconcileNow(testOrgContext());

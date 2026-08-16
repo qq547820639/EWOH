@@ -2,6 +2,8 @@ import { Injectable, Inject, Logger } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { ewohSpatialEntity, ewohTopology } from '@server/database/schema';
 import { eq, and, isNull, sql } from 'drizzle-orm';
+import { isValidSpatialKind } from '@shared/location';
+import { DomainContractError } from '@shared/risk';
 import type { SpatialEntity, Topology, SpatialHierarchyNode } from '@shared/api.interface';
 
 @Injectable()
@@ -150,6 +152,14 @@ export class SpatialService {
   }
 
   private mapEntity(r: typeof ewohSpatialEntity.$inferSelect): SpatialEntity {
+    // ADR-007：entityType 必须是 Canonical Location 注册表内类型；脏值 fail-closed
+    // 抛错（ingest 边界已拦截未知类型，此处防御存量脏行）。
+    if (!isValidSpatialKind(r.entityType)) {
+      throw new DomainContractError(
+        'unknown_spatial_kind',
+        `ewoh_spatial_entity ${r.entityId} entity_type 不在注册表: ${JSON.stringify(r.entityType)}`,
+      );
+    }
     return {
       id: r.id,
       entityId: r.entityId,

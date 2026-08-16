@@ -27,7 +27,7 @@ describe('Timeline (统一对象时间线组件)', () => {
   it('renders unified events with anchor link, source badge and audit export', () => {
     const markup = renderToStaticMarkup(
       <Timeline
-        events={[ev({ id: 'evt-1', title: '设备过载', severity: 'L2', evidence: [{ id: 'e1', ref: 'rec-1' }] })]}
+        events={[ev({ id: 'evt-1', title: '设备过载', severity: 'high', evidence: [{ id: 'e1', ref: 'rec-1' }] })]}
       />,
     );
     expect(markup).toContain('id="tl-evt-1"');
@@ -62,7 +62,7 @@ describe('Timeline (统一对象时间线组件)', () => {
 });
 
 describe('Timeline audit export helpers', () => {
-  const single = [ev({ id: 'evt-x', title: '过载', severity: 'L2' })];
+  const single = [ev({ id: 'evt-x', title: '过载', severity: 'high' })];
 
   it('serializeTimelineEvents flattens fields', () => {
     const rows = serializeTimelineEvents(single);

@@ -15,8 +15,12 @@ export class ControlController {
   }
 
   @Get(':id')
-  get(@Param('id') id: string) {
-    return this.controlService.getStatus(id);
+  get(
+    @Param('id') id: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    // ADR-077：读面 org 守卫（跨租户 404）。
+    return this.controlService.getStatus(id, request?.userContext);
   }
 
   @Post(':id/commands')

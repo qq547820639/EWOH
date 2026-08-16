@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///maintenance/maintenance/v1",
+  "title": "EWOH Canonical Maintenance Condition Model",
+  "description": "EWOH 统一维护状态契约（ADR-010，Phase 6 NO-05a）。subjectEntityId 引用规范身份（ADR-006）；severity 走 Canonical Risk 阶梯（ADR-007）；生命周期 detected→acknowledged→work_order_created→resolved→closed（resolved 前必须 work_order_created；closed 终态）；逾期判定 overdue（dueAt < now 且未 resolved/closed）机器可执行，供调度维护状态输入。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "conditionTypeRegistry", "lifecycle", "rules"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "conditionTypeRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" }
+    },
+    "lifecycle": {
+      "type": "array",
+      "const": ["detected", "acknowledged", "work_order_created", "resolved", "closed"]
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transition", "overdue", "canonicalRefs", "severityContract"],
+      "properties": {
+        "transition": {
+          "type": "string",
+          "const": "detected→acknowledged→work_order_created→resolved→closed；resolved 前必须 work_order_created；closed 终态；其余非法转移拒绝"
+        },
+        "overdue": {
+          "type": "string",
+          "const": "dueAt < now 且 status ∉ {resolved, closed} → overdue=true（机器可执行）"
+        },
+        "canonicalRefs": {
+          "type": "string",
+          "const": "subjectEntityId 必须是规范身份（kind:value，ADR-006），否则拒绝"
+        },
+        "severityContract": {
+          "type": "string",
+          "const": "severity 走 Canonical Risk 阶梯（critical/high/medium/low，legacy L1-L3 映射），否则拒绝"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "conditionTypeRegistry": [
+    "wear", "calibration_due", "fault_recurring", "overdue_inspection",
+    "battery_degradation", "anomaly"
+  ],
+  "lifecycle": ["detected", "acknowledged", "work_order_created", "resolved", "closed"],
+  "rules": {
+    "transition": "detected→acknowledged→work_order_created→resolved→closed；resolved 前必须 work_order_created；closed 终态；其余非法转移拒绝",
+    "overdue": "dueAt < now 且 status ∉ {resolved, closed} → overdue=true（机器可执行）",
+    "canonicalRefs": "subjectEntityId 必须是规范身份（kind:value，ADR-006），否则拒绝",
+    "severityContract": "severity 走 Canonical Risk 阶梯（critical/high/medium/low，legacy L1-L3 映射），否则拒绝"
+  }
+}

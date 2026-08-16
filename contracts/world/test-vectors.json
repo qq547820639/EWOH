@@ -1,0 +1,240 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Canonical World State 跨语言一致性测试向量（ADR-008）。语义权威源：contracts/world/world-state.schema.json。",
+  "stateRecords": [
+    {
+      "name": "valid-real-state",
+      "record": {
+        "stateId": "STS-1",
+        "entityId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "entityType": "person",
+        "stateJson": {
+          "zone": "Z1",
+          "loadLevel": 0.5
+        },
+        "validFrom": "2026-08-14T08:00:00Z",
+        "validTo": null,
+        "sourceType": "real",
+        "confidence": 1.0,
+        "version": 1
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid-simulated-state",
+      "record": {
+        "stateId": "STS-2",
+        "entityId": "exo:NY-A1-SN-0007",
+        "entityType": "exo",
+        "stateJson": {
+          "battery": 80
+        },
+        "validFrom": "2026-08-14T08:00:00Z",
+        "validTo": null,
+        "sourceType": "simulated",
+        "confidence": 0.9,
+        "version": 1
+      },
+      "expectError": null
+    },
+    {
+      "name": "unknown-entity-type-rejected",
+      "record": {
+        "stateId": "STS-3",
+        "entityId": "machine:m1",
+        "entityType": "maintenance_condition",
+        "stateJson": {},
+        "validFrom": "2026-08-14T08:00:00Z",
+        "validTo": null,
+        "sourceType": "real",
+        "confidence": 1.0,
+        "version": 1
+      },
+      "expectError": "unknown_entity_type"
+    },
+    {
+      "name": "non-canonical-entity-id-rejected",
+      "record": {
+        "stateId": "STS-4",
+        "entityId": "p1",
+        "entityType": "person",
+        "stateJson": {},
+        "validFrom": "2026-08-14T08:00:00Z",
+        "validTo": null,
+        "sourceType": "real",
+        "confidence": 1.0,
+        "version": 1
+      },
+      "expectError": "bad_entity_id"
+    },
+    {
+      "name": "confidence-out-of-range-rejected",
+      "record": {
+        "stateId": "STS-5",
+        "entityId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "entityType": "person",
+        "stateJson": {},
+        "validFrom": "2026-08-14T08:00:00Z",
+        "validTo": null,
+        "sourceType": "real",
+        "confidence": 1.5,
+        "version": 1
+      },
+      "expectError": "bad_confidence"
+    },
+    {
+      "name": "unknown-source-type-rejected",
+      "record": {
+        "stateId": "STS-6",
+        "entityId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "entityType": "person",
+        "stateJson": {},
+        "validFrom": "2026-08-14T08:00:00Z",
+        "validTo": null,
+        "sourceType": "replay",
+        "confidence": 1.0,
+        "version": 1
+      },
+      "expectError": "unknown_source_type"
+    },
+    {
+      "name": "invalid-interval-rejected",
+      "record": {
+        "stateId": "STS-7",
+        "entityId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+        "entityType": "person",
+        "stateJson": {},
+        "validFrom": "2026-08-14T09:00:00Z",
+        "validTo": "2026-08-14T08:00:00Z",
+        "sourceType": "real",
+        "confidence": 1.0,
+        "version": 1
+      },
+      "expectError": "bad_interval"
+    }
+  ],
+  "transitions": [
+    {
+      "name": "set-closes-previous-and-increments-version",
+      "entityId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+      "stateType": "location",
+      "states": [
+        {
+          "validFrom": "2026-08-14T08:00:00Z",
+          "validTo": "2026-08-14T09:00:00Z",
+          "version": 1
+        },
+        {
+          "validFrom": "2026-08-14T09:00:00Z",
+          "validTo": null,
+          "version": 2
+        }
+      ],
+      "applyTs": "2026-08-14T09:00:00Z",
+      "expect": {
+        "currentVersion": 2,
+        "previousClosedAt": "2026-08-14T09:00:00Z",
+        "valid": true
+      }
+    },
+    {
+      "name": "overlapping-intervals-invalid",
+      "entityId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+      "stateType": "location",
+      "states": [
+        {
+          "validFrom": "2026-08-14T08:00:00Z",
+          "validTo": "2026-08-14T10:00:00Z",
+          "version": 1
+        },
+        {
+          "validFrom": "2026-08-14T09:00:00Z",
+          "validTo": null,
+          "version": 2
+        }
+      ],
+      "applyTs": null,
+      "expect": {
+        "valid": false,
+        "reason": "overlapping_interval"
+      }
+    }
+  ],
+  "snapshots": [
+    {
+      "name": "valid-snapshot",
+      "snapshot": {
+        "snapshotId": "WS-20260814-0001",
+        "snapshotVersion": "WS-20260814-0001",
+        "ts": "2026-08-14T10:00:00Z",
+        "worldVersion": 42,
+        "entityVersions": {
+          "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11": 3
+        },
+        "states": [
+          {
+            "stateId": "STS-1",
+            "entityId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "entityType": "person",
+            "stateJson": {
+              "zone": "Z1"
+            },
+            "validFrom": "2026-08-14T08:00:00Z",
+            "validTo": null,
+            "sourceType": "real",
+            "confidence": 1.0,
+            "version": 3
+          }
+        ],
+        "source": "AUTHORITATIVE"
+      },
+      "expectError": null
+    },
+    {
+      "name": "non-canonical-entity-version-key-rejected",
+      "snapshot": {
+        "snapshotId": "WS-20260814-0002",
+        "snapshotVersion": "WS-20260814-0002",
+        "ts": "2026-08-14T10:00:00Z",
+        "worldVersion": 43,
+        "entityVersions": {
+          "p1": 1
+        },
+        "states": [],
+        "source": "AUTHORITATIVE"
+      },
+      "expectError": "bad_entity_version_key"
+    },
+    {
+      "name": "simulated-only-snapshot-marked",
+      "snapshot": {
+        "snapshotId": "WS-20260814-0003",
+        "snapshotVersion": "WS-20260814-0003",
+        "ts": "2026-08-14T10:00:00Z",
+        "worldVersion": 44,
+        "entityVersions": {},
+        "states": [
+          {
+            "stateId": "STS-2",
+            "entityId": "exo:NY-A1-SN-0007",
+            "entityType": "exo",
+            "stateJson": {
+              "battery": 80
+            },
+            "validFrom": "2026-08-14T08:00:00Z",
+            "validTo": null,
+            "sourceType": "simulated",
+            "confidence": 0.9,
+            "version": 1
+          }
+        ],
+        "source": "DERIVED"
+      },
+      "expect": {
+        "simulatedOnly": true,
+        "hasReal": false
+      },
+      "expectError": null
+    }
+  ]
+}

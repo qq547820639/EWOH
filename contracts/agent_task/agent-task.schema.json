@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ewoh:///agent-task/agent-task/v1",
+  "title": "EWOH Canonical Agent Task",
+  "description": "EWOH Multi-Agent Factory 结构化任务契约（ADR-017，Phase 9 NO-06e，intelligence-l5-agentic）。AgentTask 是 Command 之上的一层编排：执行仍走 AgentRuntime.executeCommand（ADR-016 审批/预算/回退边界不变），编排引擎只做创建/依赖/分发/状态推进，绝不绕过 §2 安全边界。dependencies 形成 DAG（禁止自引用）；assignedRole 与 agent-manifest 的 agentRoleRegistry 同源（门禁交叉核对）；状态机见 contracts/state-machines/agent-task.yaml（created→dispatched→in_progress→completed/failed；cancelled 仅从非终态）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "agentRoleRegistry", "taskKindRegistry", "priorityRegistry", "statusRegistry", "rules"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "agentRoleRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9]{1,47}$" }
+    },
+    "taskKindRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z]{1,24}$" }
+    },
+    "priorityRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z]{1,16}$" }
+    },
+    "statusRegistry": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z_]{1,24}$" }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identityContract", "roleRegistry", "dependencyContract", "timeContract", "budgetContract", "auditContract", "statusContract"],
+      "properties": {
+        "identityContract": {
+          "type": "string",
+          "const": "taskId 必须是规范身份 task:value（ADR-006）；assigneeAgentId/dependencies 必须是规范身份"
+        },
+        "roleRegistry": {
+          "type": "string",
+          "const": "assignedRole ∈ agentRoleRegistry（与 agent-manifest 同源，门禁交叉核对）"
+        },
+        "dependencyContract": {
+          "type": "string",
+          "const": "dependencies 为规范身份数组；禁止自引用（DAG 机器规则）"
+        },
+        "timeContract": {
+          "type": "string",
+          "const": "dueTime 可选 ISO（解析失败拒绝；不得早于 createdAt，时间语义与 ADR-009 同源）"
+        },
+        "budgetContract": {
+          "type": "string",
+          "const": "budget.maxSteps/maxTokens/maxDurationSec ≥ 1（与 ADR-016 同规则）"
+        },
+        "auditContract": {
+          "type": "string",
+          "const": "auditTrail 必须 true（与 ADR-016 同规则）"
+        },
+        "statusContract": {
+          "type": "string",
+          "const": "status ∈ statusRegistry；转移经 contracts/state-machines/agent-task.yaml（created→dispatched→in_progress→completed/failed；cancelled 仅从非终态）"
+        }
+      }
+    }
+  },
+  "schemaVersion": "1.0.0",
+  "agentRoleRegistry": [
+    "FactorySupervisor", "Logistics", "Production", "Maintenance", "Quality",
+    "Safety", "Scheduling", "Material", "Energy", "WorkerSupport",
+    "Exoskeleton", "Incident", "Knowledge", "Simulation", "Operations"
+  ],
+  "taskKindRegistry": ["analysis", "suggestion", "execution"],
+  "priorityRegistry": ["low", "medium", "high", "critical"],
+  "statusRegistry": ["created", "dispatched", "in_progress", "completed", "failed", "cancelled"],
+  "rules": {
+    "identityContract": "taskId 必须是规范身份 task:value（ADR-006）；assigneeAgentId/dependencies 必须是规范身份",
+    "roleRegistry": "assignedRole ∈ agentRoleRegistry（与 agent-manifest 同源，门禁交叉核对）",
+    "dependencyContract": "dependencies 为规范身份数组；禁止自引用（DAG 机器规则）",
+    "timeContract": "dueTime 可选 ISO（解析失败拒绝；不得早于 createdAt，时间语义与 ADR-009 同源）",
+    "budgetContract": "budget.maxSteps/maxTokens/maxDurationSec ≥ 1（与 ADR-016 同规则）",
+    "auditContract": "auditTrail 必须 true（与 ADR-016 同规则）",
+    "statusContract": "status ∈ statusRegistry；转移经 contracts/state-machines/agent-task.yaml（created→dispatched→in_progress→completed/failed；cancelled 仅从非终态）"
+  }
+}

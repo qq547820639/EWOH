@@ -826,7 +826,7 @@ export class DomainPersistenceService {
 
   private async appendAudit(tx: DbOrTx, entry: AuditEntry): Promise<void> {
     await tx.execute(sql`
-      select public.ewoh_append_audit_log(
+      select ewoh_append_audit_log(
         ${entry.orgId || null}::uuid,
         ${entry.actorId},
         ${entry.action},

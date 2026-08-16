@@ -21,8 +21,8 @@ import { buildSnapshot, defaultPolicy, defaultConfig } from './scheduler-test-he
 function makeSnapshot(): WorldStateSnapshot {
   return buildSnapshot({
     persons: [
-      { id: 'p1', name: 'p1', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: null, zoneId: null, x: 0, y: 0 },
-      { id: 'p2', name: 'p2', status: 'available', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: null, zoneId: null, x: 5, y: 0 },
+      { id: 'p1', name: 'p1', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: null, zoneId: null, x: 0, y: 0 },
+      { id: 'p2', name: 'p2', status: 'AVAILABLE', healthStatus: 'normal', skills: ['work'], certifications: [], loadLevel: 0, fatigueLevel: 0, stationId: null, zoneId: null, x: 5, y: 0 },
     ],
     tasks: [
       { id: 't1', title: 't1', taskType: 'work', priority: 'medium', status: 'pending', assigneeId: 'p1', deviceId: null, stationId: null, zoneId: null, planStart: null, planEnd: null, progress: 0, predecessorIds: [], requiredSkills: ['work'], requiredCertifications: [] },

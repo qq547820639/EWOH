@@ -54,6 +54,21 @@ features:
       - ewoh-spark-app/server/modules/scheduler/__tests__/solver-perf-parity.spec.ts
       - ewoh-spark-app/output/benchmark-scheduler-matrix.json
 
+  milpSolver:
+    # MILP 求解器（NO-13i / ADR-058：HiGHS 1.15.2 WASM 进程内真实 MILP 求解器；
+    # 策略显式选择 policy.solverVersion='milp-v1'，不参与 CP-SAT 激活阶梯，无隐式回退）
+    implemented: true
+    tested: true
+    deployable: true                 # WASM 随 highs npm 依赖分发（无独立部署工件）
+    productionEnabled: false         # 显式策略选择（缺省仍 heuristic canonical）
+    runtimeVerified: false           # 单测环境真实求解验证（CI 生产部署未验）
+    docsUpdated: true                # ADR-058 + CHANGELOG + 矩阵与本清单一致
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/milp-scheduling-solver.ts
+      - ewoh-spark-app/server/modules/scheduler/__tests__/milp-scheduling-solver.spec.ts
+      - ewoh-spark-app/package.json（highs 依赖）
+      - docs/decisions/ADR-058-milp-scheduling-solver.md
+
   cpSat:
     # CP-SAT 求解器（OPTIONAL / EXPERIMENTAL，未部署 OR-Tools）
     # Solver Activation Ladder 唯一事实源：EWOH_SOLVER_ACTIVATION（默认 OFF，仅 heuristic 生产；
