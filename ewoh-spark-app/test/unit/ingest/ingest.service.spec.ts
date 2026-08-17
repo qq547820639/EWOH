@@ -231,10 +231,14 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
       createIdentityService() as unknown as never,
     );
 
-    const result = await service.ingestExoskeleton({
-      entity_id: 'EXO-UNKNOWN',
-      event_time: new Date().toISOString(),
-    });
+    // R2-SOP-002：DataQualityAlert 需 ctx 透传 orgId（缺 org 拒写 NULL legacy 行）。
+    const result = await service.ingestExoskeleton(
+      {
+        entity_id: 'EXO-UNKNOWN',
+        event_time: new Date().toISOString(),
+      },
+      { userId: 'ingest-1', primaryOrgId: 'ORG-1' },
+    );
 
     expect(result.accepted).toBe(false);
     expect(result.error).toContain('不存在');
@@ -520,11 +524,15 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       createReplanCoordinator() as unknown as never,
       createIdentityService() as unknown as never);
 
-    const result = await service.ingestExoskeletonBatch([
-      makeFrame({ entity_id: 'EXO-MISSING-1' }),
-      makeFrame({ entity_id: 'EXO-MISSING-1' }),
-      makeFrame({ entity_id: 'EXO-MISSING-1' }),
-    ]);
+    // R2-SOP-002：告警事件租户归属从 batch ctx 透传（缺 org 拒写）。
+    const result = await service.ingestExoskeletonBatch(
+      [
+        makeFrame({ entity_id: 'EXO-MISSING-1' }),
+        makeFrame({ entity_id: 'EXO-MISSING-1' }),
+        makeFrame({ entity_id: 'EXO-MISSING-1' }),
+      ],
+      { userId: 'ingest-1', primaryOrgId: 'ORG-1' },
+    );
 
     expect(result.total).toBe(3);
     expect(result.accepted).toBe(0);

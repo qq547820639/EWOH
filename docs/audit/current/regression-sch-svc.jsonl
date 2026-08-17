@@ -1,0 +1,74 @@
+{"id":"NEST-001","regression_status":"FIXED_VERIFIED","evidence":"conflict-preview.service.ts:62-74 effectiveCtx 显式构造替代 undefined as never;类型系统不再被绕过"}
+{"id":"NEST-002","regression_status":"PARTIALLY_FIXED","evidence":"conflict-preview.service.ts:62-74 缺 ctx 仍回退 primaryOrgId='' 系统 ctx(仅加 warn 未强制拒绝);且 controller.ts:823-835 previewConflictAction 第 3 参传 null,HTTP 预览恒走系统 ctx(见 R2-SSV-08)"}
+{"id":"NEST-003","regression_status":"FIXED_VERIFIED","evidence":"conflict.service.ts:196/240/275/838-856 findRowByConflictId 全部携带 actor org 条件,跨租户 conflictId 404"}
+{"id":"NEST-008","regression_status":"FIXED_VERIFIED","evidence":"dispatch-coordinator.service.ts:88-102 dispatch 初始 SELECT 带 or(isNull,eq) org 条件,跨租户 planId 404 反枚举"}
+{"id":"NEST-009","regression_status":"FIXED_VERIFIED","evidence":"dispatch-coordinator.service.ts:123/204/286-288 dispatchNowMs 单一固定基准时间,预占时间窗不再漂移"}
+{"id":"NEST-010","regression_status":"FIXED_VERIFIED","evidence":"execution.service.ts:90-118 onConflictDoNothing(target=[orgId,assignmentId]) 原子幂等,NULL 系统路径保留前置检查"}
+{"id":"NEST-011","regression_status":"FIXED_VERIFIED","evidence":"execution.service.ts:136-141/171-177 update 读/写均带 ownership org 条件"}
+{"id":"NEST-012","regression_status":"FIXED_VERIFIED","evidence":"execution.service.ts:244-265 getByAssignment orgId 提供时按 org 过滤"}
+{"id":"NEST-013","regression_status":"FIXED_VERIFIED","evidence":"outbox.service.ts:108-129 enqueueThrottled 改原子 UPDATE...RETURNING 先行,DB 行锁串行化合并"}
+{"id":"NEST-014","regression_status":"FIXED_VERIFIED","evidence":"outbox.service.ts:169-186 listSince viewerOrgId 参数 orgVisibilityCondition;SSE 路径 scheduler-stream.replaySince 内存过滤双保险"}
+{"id":"NEST-015","regression_status":"FIXED_VERIFIED","evidence":"outbox.service.ts:194-205 listLatest viewerOrgId 过滤;scheduler-stream.snapshot:87-93 再过滤"}
+{"id":"NEST-016","regression_status":"FIXED_VERIFIED","evidence":"outbox.service.ts:148-160 publishPending 可选 orgId 作用域;缺省=GLOBAL_SHARED 后台发布器显式系统语义"}
+{"id":"NEST-017","regression_status":"FIXED_VERIFIED","evidence":"outbox.service.ts:108-115 合并路径同步更新 entityType/correlationId 等 opts 元数据"}
+{"id":"NEST-018","regression_status":"FIXED_VERIFIED","evidence":"kpi.service.ts:49-56 aggregate 在 HTTP 请求上下文内 orgId 必传否则 400;但 aggregateForPolicyEvaluation() 无参调用会在 HTTP 内抛 400(新问题 R2-SSV-02)"}
+{"id":"NEST-019","regression_status":"FIXED_VERIFIED","evidence":"kpi.service.ts:98-100 replanCount=feedbackKpis?.replanCount ?? 0,不再用 periodExec.length 冒充"}
+{"id":"NEST-020","regression_status":"FIXED_VERIFIED","evidence":"impact-analyzer.ts:169-185 SAFETY_EVENT 按 zone/人员/设备三维度过滤候选"}
+{"id":"NEST-021","regression_status":"FIXED_VERIFIED","evidence":"impact-propagation.ts:217-237 仅 /SAFETY/i 触发才扩散全部安全阻断资源,无关触发不再纳入"}
+{"id":"NEST-022","regression_status":"FIXED_VERIFIED","evidence":"impact-propagation.ts:141-149 maxAffectedTasks 截断 console.warn 显式留痕"}
+{"id":"NEST-024","regression_status":"FIXED_VERIFIED","evidence":"decision-ledger.ts:19-23/34/54 planOrgCondition(org 匹配或 NULL)覆盖读与追加回写"}
+{"id":"NEST-031","regression_status":"FIXED_VERIFIED","evidence":"policy-activation.service.ts:218-231/250-265 activate candidate 与 active 行查找均带 orgScope(本 org+NULL)"}
+{"id":"NEST-032","regression_status":"FIXED_VERIFIED","evidence":"policy-activation.service.ts:344-392 rollback activation 读取与策略 UPDATE 全带 org 条件,跨租户 activationId 404"}
+{"id":"NEST-033","regression_status":"FIXED_VERIFIED","evidence":"policy-activation.service.ts:442-456 requestDatabaseContextSafe 经 runInTransaction+buildGucSettings GUC 生效"}
+{"id":"NEST-034","regression_status":"FIXED_VERIFIED","evidence":"policy-activation.service.ts:231/236/360/365 NotFoundException/ConflictException 替代裸 Error"}
+{"id":"NEST-035","regression_status":"FIXED_VERIFIED","evidence":"policy-replay.service.ts:410-427 solveSidePersist seed 与 orgId 透传 SolverService.solve,不再 void 丢弃"}
+{"id":"NEST-036","regression_status":"PARTIALLY_FIXED","evidence":"policy-replay.service.ts:123-139 latestSnapshotRow 已按 ctx org 过滤;但 replayAndPersist:215-223 显式 snapshotVersion 查询仅 eq(snapshotVersion) 无 org 条件(残留,见 R2-SSV-09)"}
+{"id":"NEST-037","regression_status":"FIXED_VERIFIED","evidence":"policy-replay.service.ts:339-352 getReplayRecord orgId 提供时 eq(orgId);listReplayRecords 同"}
+{"id":"NEST-038","regression_status":"FIXED_VERIFIED","evidence":"policy-replay.service.ts:226/233 ConflictException/NotFoundException 替代裸 Error"}
+{"id":"NEST-042","regression_status":"FIXED_VERIFIED","evidence":"conflict.service.ts:718-722 reconcile 调 loadAllRows(ctx.primaryOrgId?ctx:undefined),不再全租户归并"}
+{"id":"NEST-043","regression_status":"FIXED_VERIFIED","evidence":"shadow-evaluator.service.ts:353-361 listObservations orgKey=ALL 且无 opts.orgId 且在 HTTP 上下文 → 400"}
+{"id":"NEST-044","regression_status":"FIXED_VERIFIED","evidence":"shadow-evaluator.service.ts:458-463 pruneObservations HTTP 上下文无 orgId → 400(全局清理走系统任务)"}
+{"id":"NEST-045","regression_status":"FIXED_VERIFIED","evidence":"shadow-evaluator.service.ts:320/436 引用 DETERMINISTIC_MODEL_VERSION 常量"}
+{"id":"NEST-046","regression_status":"FIXED_VERIFIED","evidence":"duration-model-training.service.ts:224-229 hydrateFromRegistry LIKE 'orgModelPrefix%' SQL 层前缀过滤"}
+{"id":"NEST-047","regression_status":"FIXED_VERIFIED","evidence":"outbox.service.ts:46/dispatch-coordinator:362/execution.service.ts:89/policy-activation:270 四处均 randomUUID;同类残留(feedback:507 EVT-、kpi:257 KPI-、policy-replay:212 RPL-)见 R2-SSV-20"}
+{"id":"NEST-102","regression_status":"FIXED_VERIFIED","evidence":"resource-projection.service.ts:105-126/690-709 project/projectForSnapshot 主资源表 ctx.primaryOrgId 时 orgCondition 过滤;controller:120-123 透传 ctx"}
+{"id":"NEST-103","regression_status":"FIXED_VERIFIED","evidence":"resource-reservation.service.ts:232-255/257-286 listActive/hasConflict ctx 携带 org 时 or(isNull,eq) 过滤"}
+{"id":"NEST-104","regression_status":"FIXED_VERIFIED","evidence":"scheduling-policy.service.ts:479-483 orgScopeCondition:savePolicy/activatePolicyVersion deactivate 仅归档本 org(或 NULL)active 行"}
+{"id":"NEST-105","regression_status":"FIXED_VERIFIED","evidence":"scheduling-policy.service.ts:492-508 findActiveRow orgVisibilityCondition(本 org+NULL)取 active 最新"}
+{"id":"NEST-106","regression_status":"FIXED_VERIFIED","evidence":"scheduler-query.service.ts:235-252 listRuns activePlanRows 聚合 actor 时 or(isNull,eq) org 过滤"}
+{"id":"NEST-107","regression_status":"FIXED_VERIFIED","evidence":"scheduler-query.service.ts:718-722 buildConflicts getCurrentWorldState(actor);emitNewConflicts:1119/1164 携带推导上下文 orgId"}
+{"id":"NEST-108","regression_status":"FIXED_VERIFIED","evidence":"scheduling-feedback.service.ts:526-561 list/deriveKpis HTTP 上下文无 orgId 抛 BadRequest"}
+{"id":"NEST-109","regression_status":"FIXED_VERIFIED","evidence":"scheduling-context.service.ts:46-55 getUnifiedResourceState(orgCtx)/getActivePolicy(org)/loadGlobalActive(orgCtx) 全链透传"}
+{"id":"NEST-110","regression_status":"FIXED_VERIFIED","evidence":"scheduler-query.service.ts:109-145/147-180/276-294 getPlans/getAudit/getActivePlans/getSnapshot assertActorForHttp(HTTP 无 actor 401)+org 条件;其余读面方法守卫不一致见 R2-SSV-07"}
+{"id":"NEST-111","regression_status":"FIXED_VERIFIED","evidence":"scheduler.controller.ts:334-338/420-427/435-443 getSnapshot/getTaskCandidates/calculateRoute 均透传 request.userContext"}
+{"id":"NEST-112","regression_status":"FIXED_VERIFIED","evidence":"scheduler.controller.ts:822-865/928-950 previewConflictAction(读面守卫)/listReplays/rollbackPolicy orgId 一律取认证上下文,query orgId 废弃"}
+{"id":"NEST-113","regression_status":"FIXED_VERIFIED","evidence":"scheduler.controller.ts:601-614/657-666 无 viewerOrgId 时业务事件一律过滤仅心跳;无 viewerOrg 不做增量重放直接 resync"}
+{"id":"NEST-114","regression_status":"FIXED_VERIFIED","evidence":"scheduler-stream.service.ts:213-233 poll 为进程内全局泵,租户过滤移至每个订阅者 controller filter(NEST-113/114 注释);subject 事件携带 orgId"}
+{"id":"NEST-115","regression_status":"FIXED_VERIFIED","evidence":"shadow-policy.service.ts:66-75/110-122/195-209 setStatus/generateShadowPlan/guardShadowPlan 均带 policyOrgScope/plan org 条件"}
+{"id":"NEST-116","regression_status":"FIXED_VERIFIED","evidence":"travel-cost.service.ts:221-231/261 getCachedMatrix org 条件+persistMatrix orgId 显式落库('system' 哨兵)"}
+{"id":"NEST-117","regression_status":"FIXED_VERIFIED","evidence":"scheduling-feedback.service.ts:227-244 recordAcceptance UPDATE 按 org(本 org+NULL)过滤"}
+{"id":"NEST-119","regression_status":"FIXED_VERIFIED","evidence":"task-scheduling.bridge.ts:35-40 无 actor.primaryOrgId 的事件显式拒绝桥接并 warn"}
+{"id":"NEST-120","regression_status":"FIXED_VERIFIED","evidence":"scheduling-policy.service.ts:712-730 activationState 白名单补 RULE_BASED/MILP"}
+{"id":"NEST-121","regression_status":"FIXED_VERIFIED","evidence":"scheduler-event-application.service.ts:313-317 matched 由 recordActuals matchedRows(UPDATE RETURNING) 真实判定"}
+{"id":"NEST-122","regression_status":"FIXED_VERIFIED","evidence":"task-dag.ts:33-35/57-58 自指边不入图+环回带自身剔除,descendants 语义不含自身"}
+{"id":"NEST-126","regression_status":"PARTIALLY_FIXED","evidence":"resource-reservation.service.ts:96-105 advisory lock 失败已 warn 留痕,但计数路径继续且 station 无 DB EXCLUDE 硬后盾,超卖窗口仍在(见 R2-SSV-12)"}
+{"id":"NEST-127","regression_status":"FIXED_VERIFIED","evidence":"scheduling-feedback.service.ts:150-158 recordBaseline 事务内 pg_advisory_xact_lock(plan|assignment) 串行化 check-then-insert"}
+{"id":"NEST-129","regression_status":"FIXED_VERIFIED","evidence":"scheduler-run-orchestrator.service.ts:161-187 persistPlan 循环+run 状态更新包进单个 runInTransaction"}
+{"id":"NEST-131","regression_status":"FIXED_VERIFIED","evidence":"resource-reservation.service.ts:123-125 reservationId=RSV-randomUUID"}
+{"id":"NEST-137","regression_status":"FIXED_VERIFIED","evidence":"scheduler-event-application.service.ts:114-131/293-310 replan.approval_required 与 execution.deviation 均 await 落库(失败 warn 不阻断)"}
+{"id":"NEST-138","regression_status":"FIXED_VERIFIED","evidence":"scheduler-metrics.service.ts:39-54 sanitizeLabel 转义+MAX_CARDINALITY 2000 有界;planId 不再作 label(103-118)"}
+{"id":"NEST-139","regression_status":"FIXED_VERIFIED","evidence":"scheduler-metrics.controller.ts:27 @Roles('global_admin') 限权"}
+{"id":"NEST-140","regression_status":"FIXED_VERIFIED","evidence":"scheduler-run-orchestrator.service.ts:122-131 profile 筛选空集抛 INFEASIBLE_PROFILE ConflictException;但 run 行善后缺失(见 R2-SSV-19)"}
+{"id":"NEST-141","regression_status":"FIXED_VERIFIED","evidence":"scheduler-stream.service.ts:15/221-233 sinceSequence 增量+DRAIN_MAX_BATCHES=10 追赶,lastSequence 游标不丢不重"}
+{"id":"NEST-154","regression_status":"FIXED_VERIFIED","evidence":"resource-projection.service.ts:860-862 capacity 仅非法类型回退 null,显式 0 保留"}
+{"id":"NEST-155","regression_status":"FIXED_VERIFIED","evidence":"resource-projection.service.ts:916-945 toCoordinateFromDevice 坐标任一缺失返回 {type:'UNKNOWN'},无 0,0 兜底"}
+{"id":"NEST-158","regression_status":"FIXED_VERIFIED","evidence":"scheduler-query.service.ts:1184-1194 hash 改 SHA-256 前 12 hex(48-bit)折叠;conflict.service.ts:990-996 同名实现仍 djb2(新问题 R2-SSV-06)"}
+{"id":"NEST-159","regression_status":"FIXED_VERIFIED","evidence":"scheduler-query.service.ts:746-781 double-booking 排序后 b.startMs>=a.endMs 提前 break;stale_plan 单次 state 复用(597-636)"}
+{"id":"NEST-160","regression_status":"FIXED_VERIFIED","evidence":"scheduling-feedback.service.ts:296-305 recordActuals UPDATE 条件 ctx.primaryOrgId 时 or(isNull,eq) 过滤"}
+{"id":"NEST-161","regression_status":"FIXED_VERIFIED","evidence":"travel-cost.service.ts:272-291 persistMatrix ON CONFLICT DO UPDATE(target taskId+snapshotVersion) 原子 upsert"}
+{"id":"NEST-162","regression_status":"FIXED_VERIFIED","evidence":"travel-cost.service.ts:177-191/347-367 buildEligibilityMatrix/computeMatrix Promise.all 并行估算"}
+{"id":"NEST-163","regression_status":"FIXED_VERIFIED","evidence":"travel-cost.service.ts:338-343 forbiddenZone 仅 f.zoneId===task.zoneId,移除 stationId 跨 ID 空间比对"}
+{"id":"NEST-164","regression_status":"FIXED_VERIFIED","evidence":"travel-cost.service.ts:370-372/539-549 matrixId 用 '#' 定界,parseMatrixRow 只解析前两字段"}
+{"id":"NEST-165","regression_status":"PARTIALLY_FIXED","evidence":"scheduling-policy.service.ts:526-537 computeNextVersion 已按 org 作用域取 max;但 findByVersion:511-518/getPolicy/getConfigByVersion/activatePolicyVersion:433-442 目标行查找与激活 UPDATE 仍全局按 configVersion,跨租户同版本行可命中且 update 会改写行 orgId(见 R2-SSV-01)"}
+{"id":"NEST-166","regression_status":"FIXED_VERIFIED","evidence":"priority-engine.ts:314-320 rank 排序同分 tie-break taskId 字典序,跨进程确定"}
+{"id":"NEST-168","regression_status":"FIXED_VERIFIED","evidence":"task-lifecycle.ts:44-48 TASK_TERMINAL_STATUSES 仅 completed/cancelled,剔除 'done'"}

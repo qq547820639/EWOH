@@ -241,6 +241,7 @@ export function WorkbenchList({
           title={
             dataFreshness
               ? `数据更新于 ${new Date(dataFreshness).toLocaleTimeString('zh-CN', {
+                  timeZone: 'Asia/Shanghai',
                   hour12: false,
                 })}`
               : undefined

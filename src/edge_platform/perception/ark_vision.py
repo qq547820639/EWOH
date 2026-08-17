@@ -11,13 +11,12 @@
 本项目改用标准 Chat Completions（`/chat/completions` + `image_url`）完成同样的视觉理解。
 """
 
-import contextlib
+import http.client
 import ipaddress
 import json
 import socket
-import urllib.error
-import urllib.request
-from urllib.parse import urlparse
+import ssl
+from urllib.parse import urljoin, urlparse
 
 from edge_platform.config import Settings
 
@@ -26,6 +25,50 @@ DEFAULT_MODEL = "doubao-seed-2-1-pro-260628"
 DEFAULT_QUESTION = "你看见了什么？"
 #: 演示模式默认图片（未显式传入 image_url 时使用）
 DEFAULT_DEMO_IMAGE = "https://ark-project.tos-cn-beijing.volces.com/doc_image/ark_demo_img_1.png"
+
+#: R2-EDM-02：手动逐跳重定向的最大跳数上限，超限即 fail-closed 拒绝。
+MAX_REDIRECTS = 3
+
+
+def _addr_is_public(addr):
+    """R2-EDM-02：地址公网属性判定（环回/内网/链路本地/保留/组播/未指定均非公网）。"""
+    return not (
+        addr.is_loopback
+        or addr.is_private
+        or addr.is_link_local
+        or addr.is_reserved
+        or addr.is_multicast
+        or addr.is_unspecified
+    )
+
+
+def resolve_public_ip(host):
+    """R2-EDM-02：解析 host 并校验全部解析地址为公网，返回固定连接 IP。
+
+    校验与后续连接共用同一次 getaddrinfo 结果（连接层不再自行二次解析），
+    消除"校验时解析 A 记录、连接时解析 B 记录"的 DNS rebinding TOCTOU 窗口。
+    返回 (ip, reason)；失败时 ip 为 None（fail-closed）。
+    """
+    try:
+        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return None, "dns_resolution_failed"
+    for info in infos:
+        ip = info[4][0]
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if not _addr_is_public(addr):
+            return None, "internal_address"
+    for info in infos:
+        ip = info[4][0]
+        try:
+            ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        return ip, None
+    return None, "no_valid_address"
 
 
 def validate_outbound_url(raw_url, label="url"):
@@ -44,26 +87,83 @@ def validate_outbound_url(raw_url, label="url"):
     host = parsed.hostname
     if not host:
         return False, "missing_host"
-    try:
-        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
-    except OSError:
-        return False, "dns_resolution_failed"
-    for info in infos:
-        ip = info[4][0]
-        try:
-            addr = ipaddress.ip_address(ip)
-        except ValueError:
-            continue
-        if (
-            addr.is_loopback
-            or addr.is_private
-            or addr.is_link_local
-            or addr.is_reserved
-            or addr.is_multicast
-            or addr.is_unspecified
-        ):
-            return False, "internal_address"
+    # R2-EDM-02：复用 resolve_public_ip 的单次解析校验逻辑，行为与原实现一致。
+    ip, reason = resolve_public_ip(host)
+    if ip is None:
+        return False, reason
     return True, None
+
+
+class _OutboundBlocked(Exception):
+    """R2-EDM-02：出站请求被安全校验拒绝（fail-closed），reason 说明原因。"""
+
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    """R2-EDM-02：固定 IP 直连的 HTTP 连接。
+
+    self.host 仍为原域名（Host 头自动取自它），但 connect 只连校验期固定
+    下来的 IP，杜绝连接层的二次 DNS 解析。
+    """
+
+    def __init__(self, host, port, pinned_ip, timeout):
+        super().__init__(host, port, timeout=timeout)
+        self._pinned_ip = pinned_ip
+
+    def connect(self):
+        self.sock = socket.create_connection((self._pinned_ip, self.port), self.timeout)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """R2-EDM-02：固定 IP 直连的 HTTPS 连接。
+
+    TCP 只连校验期固定下来的 IP；TLS SNI 与证书主机名校验仍用原域名
+    （server_hostname=self.host），安全性不降级。
+    """
+
+    def __init__(self, host, port, pinned_ip, timeout, context):
+        super().__init__(host, port, timeout=timeout, context=context)
+        self._pinned_ip = pinned_ip
+
+    def connect(self):
+        sock = socket.create_connection((self._pinned_ip, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+def _pinned_request(url, method, headers, body, timeout=60):
+    """R2-EDM-02：校验后固定 IP 直连发请求（不使用 urlopen 的自动解析/重定向）。
+
+    返回 (status, headers, body_bytes)；校验失败抛 _OutboundBlocked。
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise _OutboundBlocked("invalid_scheme")
+    host = parsed.hostname
+    if not host:
+        raise _OutboundBlocked("missing_host")
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    ip, reason = resolve_public_ip(host)
+    if ip is None:
+        raise _OutboundBlocked(reason)
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+    if parsed.scheme == "https":
+        conn = _PinnedHTTPSConnection(
+            host, port, ip, timeout, context=ssl.create_default_context()
+        )
+    else:
+        conn = _PinnedHTTPConnection(host, port, ip, timeout)
+    try:
+        conn.request(method, path, body=body, headers=headers)
+        resp = conn.getresponse()
+        data = resp.read()
+        return resp.status, resp.headers, data
+    finally:
+        conn.close()
 
 
 def _extract_content(raw):
@@ -158,25 +258,63 @@ def describe_image(image_url="", question=DEFAULT_QUESTION, api_key="", base_url
             }
         ],
     }
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(body).encode("utf-8"),
-        headers={
-            "Authorization": "Bearer " + api_key,
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            raw = resp.read().decode("utf-8")
-    except urllib.error.HTTPError as e:
-        detail = ""
-        with contextlib.suppress(Exception):
-            detail = e.read().decode("utf-8", "replace")[:500]
-        return {"ok": False, "backend": "ark", "model": model, "error": f"HTTP {e.code}: {detail}", "answer": ""}
-    except Exception as e:  # 网络/超时等
-        return {"ok": False, "backend": "ark", "model": model, "error": str(e), "answer": ""}
+    body_bytes = json.dumps(body).encode("utf-8")
+    headers = {
+        "Authorization": "Bearer " + api_key,
+        "Content-Type": "application/json",
+    }
+    # R2-EDM-02：禁用 urlopen 的自动重定向，改为手动逐跳处理——每一跳都重新走
+    # resolve_public_ip 校验 + 固定 IP 直连，且受 MAX_REDIRECTS 上限约束；
+    # 任一跳校验失败或超过跳数上限即 fail-closed 拒绝，杜绝 302 跳内网。
+    current_url = url
+    status = None
+    raw = None
+    for _hop in range(MAX_REDIRECTS + 1):
+        try:
+            status, resp_headers, data = _pinned_request(
+                current_url, "POST", headers, body_bytes, timeout=60
+            )
+        except _OutboundBlocked as e:
+            return {
+                "ok": False,
+                "backend": "ark",
+                "model": model,
+                "error": f"出站地址不安全（{e.reason}）：重定向或 base_url 指向非公网地址。",
+                "answer": "",
+            }
+        except Exception as e:  # 网络/超时等
+            return {"ok": False, "backend": "ark", "model": model, "error": str(e), "answer": ""}
+        if status in (301, 302, 303, 307, 308):
+            location = resp_headers.get("Location")
+            if not location:
+                return {
+                    "ok": False,
+                    "backend": "ark",
+                    "model": model,
+                    "error": f"HTTP {status} 重定向缺少 Location。",
+                    "answer": "",
+                }
+            current_url = urljoin(current_url, location)
+            continue
+        raw = data.decode("utf-8", "replace")
+        break
+    else:
+        return {
+            "ok": False,
+            "backend": "ark",
+            "model": model,
+            "error": f"重定向超过 {MAX_REDIRECTS} 跳上限，已拒绝。",
+            "answer": "",
+        }
+    if status is None or status >= 400:
+        detail = (raw or "")[:500]
+        return {
+            "ok": False,
+            "backend": "ark",
+            "model": model,
+            "error": f"HTTP {status}: {detail}",
+            "answer": "",
+        }
 
     try:
         text = _extract_content(raw)

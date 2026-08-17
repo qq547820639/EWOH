@@ -215,12 +215,6 @@ const EXEMPTIONS = [
       'buildDeviceQuery(conditions: SQL[]) 为私有查询拼接 helper——org 谓词由调用方 buildDeviceConditions(query, actor)（含 ewohDevice.orgId eq）注入 conditions 数组后传入，链内无字面 orgId 属参数化谓词形态。',
   },
   {
-    key: 'ewoh-spark-app/server/modules/ingest/ingest.service.ts::ewohSpatialEntity#2',
-    audit: 'W3/NEST-ingest',
-    reason:
-      'entityExists(entityId) 仅做布尔存在性探测（写入前置 fail-closed 校验，异常即拒绝写入），不返回任何跨租户数据；entityId 由已认证 ingest 连接器（X-Ingest-Key guard）提供。',
-  },
-  {
     key: 'ewoh-spark-app/server/modules/notification/channel-dispatcher.service.ts::ewohNotification#1',
     audit: 'NEST-643 簇裁决',
     reason:
@@ -245,58 +239,10 @@ const EXEMPTIONS = [
       'ewoh_organization 是租户注册表本身（组织树管理面），跨租户列出组织为全局管理语义；控制器 @Roles(global_admin) 收敛。',
   },
   {
-    key: 'ewoh-spark-app/server/modules/organization/organization.service.ts::ewohPersonnel#2',
-    audit: 'NEST-231 簇裁决',
-    reason:
-      'getPersonnel 按内部 UUID 主键单条读（不可枚举）；敏感字段（currentLoad/healthStatus）默认脱敏，includeSensitive 仅 @Roles(safety_admin, global_admin)；控制器整面 @Roles(workshop_lead/safety_admin/global_admin)。',
-  },
-  {
-    key: 'ewoh-spark-app/server/modules/organization/organization.service.ts::ewohDeviceBinding#1',
-    audit: 'NEST-231 簇裁决',
-    reason:
-      'getPersonnelBindings 按内部 personnel UUID 查绑定关系（不可枚举）；属管理域读，控制器 @Roles 收敛；binding 行 org 维度由设备唯一约束 (org_id, device_id)（NEST-205）在写路径保障。',
-  },
-  {
-    key: 'ewoh-spark-app/server/modules/resource/resource.service.ts::ewohResourcePreorder#3',
-    audit: 'W3/NEST-617',
-    reason:
-      'getPreorder 按业务单键 preorderId 单条读（legacy 资源台账域）；控制器 @Roles(global_admin, dispatcher) 收敛，preorderId 为服务端生成的内部键不可跨租户枚举。',
-  },
-  {
-    key: 'ewoh-spark-app/server/modules/resource/resource.service.ts::ewohResourcePreorder#4',
-    audit: 'W3/NEST-617',
-    reason:
-      'loadActivePreorders(resourceId) 私有 helper，按 resourceId 聚合活跃预订单；resourceId 为服务端内部键，上游调用链（@Roles 收敛控制器）已完成授权。',
-  },
-  {
-    key: 'ewoh-spark-app/server/modules/resource/resource.service.ts::ewohResourceBinding#3',
-    audit: 'W3/NEST-617',
-    reason:
-      'loadInventoryQuantity(resourceId) 私有 helper，按 resourceId 聚合库存量；同上内部键语义。',
-  },
-  {
-    key: 'ewoh-spark-app/server/modules/scale/scale.service.ts::ewohAssetPackage#10',
-    audit: 'NEST-202 簇',
-    reason:
-      'publishAssetPackage(packageId) 状态机 CAS 更新；发布链路上游 findProfileByFactoryName 已带 orgWhere(ewohFactoryProfile.orgId, actor) 租户校验，packageId 由校验后对象派生。',
-  },
-  {
     key: 'ewoh-spark-app/server/modules/scale/scale.service.ts::ewohFactoryProfile#7',
     audit: 'NEST-202',
     reason:
       'isDatabaseAvailable 连通性探测（select 1 ... limit 1），源码注释明确「无租户语义的裸探测」——不返回业务数据。',
-  },
-  {
-    key: 'ewoh-spark-app/server/modules/scheduler/resource-projection.service.ts::ewohMaintenanceCondition#1',
-    audit: 'NO-05c/standalone_034',
-    reason:
-      'loadActiveMaintenance 全表投影加载：ewoh_maintenance_condition 由 standalone_034 ENABLE ROW LEVEL SECURITY + 057 NULL 拒绝策略保护，投影运行于调度 GUC 事务（app.current_org_id）内，DB 层完成租户过滤。',
-  },
-  {
-    key: 'ewoh-spark-app/server/modules/scheduler/resource-projection.service.ts::ewohQualityFinding#1',
-    audit: 'NO-05c/standalone_034',
-    reason:
-      'loadActiveQualityFindings 全表投影加载：ewoh_quality_finding 由 standalone_034 RLS 保护，同上 GUC 事务内 DB 层租户过滤。',
   },
   {
     key: 'ewoh-spark-app/server/modules/scheduler/world-state.service.ts::ewohWorldStateSnapshot#1',

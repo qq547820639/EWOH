@@ -193,18 +193,19 @@ describe('RuleBasedSchedulingSolver（ADR-053 / NO-13d）', () => {
     expect((calls[0].opts.lockedPersonByTask as Map<string, string>).get('task-1')).toBe('p1');
   });
 
-  it('routeCost 映射：eta/distance 落 assignment；risk>0 → riskLevel high', async () => {
+  it('routeCost 映射：eta/distance 落 assignment；riskLevel 原样透传（R2-SCH-017：medium 不再折叠丢失）', async () => {
     const snapshot = snapshotWith([task({ id: 'task-1' })]);
     const { solver } = makeSolver({
       'task-1': [
         eligible('p1', {
-          routeCost: { personId: 'p1', deviceId: null, stationId: null, etaSeconds: 420, distanceMeters: 200, congestion: 1, blocked: false, forbiddenZone: false, risk: 0.5, energy: 0, routeCostMode: 'route_graph', fallbackReason: null, dataQuality: 'FRESH', feasible: true },
+          routeCost: { personId: 'p1', deviceId: null, stationId: null, etaSeconds: 420, distanceMeters: 200, congestion: 1, blocked: false, forbiddenZone: false, risk: 0.5, riskLevel: 'medium', energy: 0, routeCostMode: 'route_graph', fallbackReason: null, dataQuality: 'FRESH', feasible: true },
         }),
       ],
     });
     const plan = await solver.solve(snapshot, [], OPTS);
     expect(plan.assignments[0].etaSeconds).toBe(420);
     expect(plan.assignments[0].distanceMeters).toBe(200);
-    expect(plan.assignments[0].riskLevel).toBe('high');
+    // R2-SCH-017：不再折叠为 risk>0?'high'——routeCost.riskLevel 原样透传。
+    expect(plan.assignments[0].riskLevel).toBe('medium');
   });
 });

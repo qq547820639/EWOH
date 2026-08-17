@@ -17,6 +17,7 @@ import { PolicyReplayService } from './policy-replay.service';
 import { KpiService } from './kpi.service';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { OutboxService } from './outbox.service';
+import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
 /**
@@ -54,6 +55,8 @@ export class PolicyActivationService {
     // NEST-033（2026-08-17）：策略写路径经 RequestDatabaseContext 事务 + GUC
     // （RLS 生效）；@Optional 保持既有直构测试（无 DB context）兼容。
     @Optional() private readonly requestDatabaseContext?: RequestDatabaseContext,
+    // R2-SSV-24（2026-08-17）：rollback 审计留痕（@Optional 兼容直构测试）。
+    @Optional() private readonly auditService?: AuditService,
   ) {}
 
   /** 计算当前 Gate 配置（可扩展为持久化配置；当前用默认 + 环境覆盖）。 */
@@ -78,9 +81,12 @@ export class PolicyActivationService {
   async evaluateGate(
     candidatePolicyVersion: number,
     replayId?: string | null,
+    orgId?: string | null,
   ): Promise<PolicyGateEvaluation> {
     const gate = this.getGateConfig();
-    const kpi = await this.kpiService.aggregateForPolicyEvaluation();
+    // R2-SSV-02（2026-08-17）：KPI 输入透传 orgId——HTTP gate 评估与 activate
+    // 现场评估按调用租户作用域（此前无 org：HTTP 必 400 / 系统流全租户聚合）。
+    const kpi = await this.kpiService.aggregateForPolicyEvaluation(orgId ?? null);
     const checks: PolicyGateEvaluation['checks'] = [];
 
     // Replay/Shadow 评估事实
@@ -237,8 +243,10 @@ export class PolicyActivationService {
     }
 
     // Gate 强制：未提供 gateResult 时现场评估（不允许跳过 Gate）。
+    // R2-SSV-02：现场评估按 opts.orgId 作用域。
     const gateResult =
-      opts.gateResult ?? (await this.evaluateGate(policyVersion, opts.replayId));
+      opts.gateResult ??
+      (await this.evaluateGate(policyVersion, opts.replayId, opts.orgId ?? null));
     if (!gateResult.passed) {
       throw new ConflictException(
         `POLICY_GATE_FAILED: ${gateResult.checks.filter((c) => !c.ok).map((c) => c.name).join(', ')}`,
@@ -270,6 +278,8 @@ export class PolicyActivationService {
     const activationId = `ACT-${randomUUID()}`;
     await this.requestDatabaseContextSafe(ctx, async () => {
       // 原 ACTIVE → ARCHIVED（不删除，保留回滚目标）
+      // R2-SSV-10：归档 UPDATE 叠加 active=true 谓词（并发激活下 0 行=他人
+      // 已处理，不重复归档）。
       if (activeRow && activeRow.configVersion !== policyVersion) {
         await this.db
           .update(ewohSchedulingPolicy)
@@ -277,16 +287,30 @@ export class PolicyActivationService {
           .where(
             and(
               eq(ewohSchedulingPolicy.configVersion, activeRow.configVersion),
+              eq(ewohSchedulingPolicy.active, true),
               orgScope,
             ),
           );
       }
-      await this.db
+      // R2-SSV-10（2026-08-17）：激活 UPDATE CAS——目标行必须仍为
+      // active=false（检查与更新之间并发双激活时，后到者 0 行命中）。
+      // 0 行 → 409 并发激活（不再产生重复 activation 记录/审计/outbox）。
+      const activatedRows = await this.db
         .update(ewohSchedulingPolicy)
         .set({ active: true, status: 'ACTIVE', updatedBy: opts.operator, updatedAt: new Date() })
         .where(
-          and(eq(ewohSchedulingPolicy.configVersion, policyVersion), orgScope),
+          and(
+            eq(ewohSchedulingPolicy.configVersion, policyVersion),
+            eq(ewohSchedulingPolicy.active, false),
+            orgScope,
+          ),
+        )
+        .returning({ id: ewohSchedulingPolicy.id });
+      if (activatedRows.length === 0) {
+        throw new ConflictException(
+          `POLICY_CONCURRENT_ACTIVATION: v${policyVersion} concurrently activated（R2-SSV-10 CAS）`,
         );
+      }
       await this.db.insert(ewohPolicyActivation).values({
         activationId,
         orgId: opts.orgId ?? null,
@@ -372,6 +396,24 @@ export class PolicyActivationService {
         )
       : undefined;
     await this.requestDatabaseContextSafe(ctx, async () => {
+      // R2-SSV-10（2026-08-17）：rollback 串行化点——activation 行先以
+      // status=ACTIVATED 谓词 CAS 置 ROLLED_BACK；0 行 = 并发 rollback/转移，
+      // 409 终止（不再双发翻转生产策略）。策略翻转仅在其后执行。
+      const casRows = await this.db
+        .update(ewohPolicyActivation)
+        .set({ status: 'ROLLED_BACK', reason: reason ?? activation.reason ?? null })
+        .where(
+          and(
+            eq(ewohPolicyActivation.activationId, activationId),
+            eq(ewohPolicyActivation.status, 'ACTIVATED'),
+          ),
+        )
+        .returning({ id: ewohPolicyActivation.id });
+      if (casRows.length === 0) {
+        throw new ConflictException(
+          `activation ${activationId} concurrently rolled back（R2-SSV-10 CAS）`,
+        );
+      }
       await this.db
         .update(ewohSchedulingPolicy)
         .set({ active: false, status: 'ARCHIVED', updatedAt: new Date() })
@@ -390,11 +432,45 @@ export class PolicyActivationService {
         .where(
           and(eq(ewohSchedulingPolicy.configVersion, target), policyOrgScope),
         );
-      await this.db
-        .update(ewohPolicyActivation)
-        .set({ status: 'ROLLED_BACK', reason: reason ?? activation.reason ?? null })
-        .where(eq(ewohPolicyActivation.activationId, activationId));
     });
+
+    // R2-SSV-24（2026-08-17）：rollback 与 activate 对称留痕——outbox 事件
+    // policy.rolled_back + 审计 + metrics（此前回滚在事件流/审计面不可见）。
+    try {
+      this.metricsService.recordPolicyEvent('rollback');
+      await this.outboxService.enqueue(
+        'policy.rolled_back',
+        String(activation.policyVersion),
+        {
+          activationId,
+          policyVersion: activation.policyVersion,
+          rollbackTarget: target,
+          operator,
+          reason: reason ?? null,
+        },
+        orgId,
+        undefined,
+        { entityType: 'policy' },
+      );
+    } catch {
+      // 观测失败不阻断
+    }
+    try {
+      await this.auditService?.appendAuditLog({
+        actorId: operator,
+        orgId: orgId ?? 'system',
+        action: 'scheduler.policy.rollback',
+        entityType: 'scheduling_policy',
+        entityId: String(activation.policyVersion),
+        before: { status: 'ACTIVATED', version: activation.policyVersion },
+        after: { status: 'ROLLED_BACK', rollbackTarget: target },
+        reason: reason ?? null,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `policy rollback audit failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     return {
       activationId,

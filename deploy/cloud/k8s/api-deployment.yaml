@@ -55,6 +55,16 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            # R2-INF-003：configmap 配置 UPLOAD_DIR=/app/data/uploads 且
+            # REQUIRE_OBJECT_STORAGE=false（本地磁盘回退），但容器根文件系统
+            # 只读——未挂载可写卷时任何上传落盘即 EROFS。裁决：对齐 Helm chart
+            # 为该路径挂载卷；原生清单用 emptyDir（每副本本地生命周期），
+            # 多副本间不共享——跨副本共享请切 S3（REQUIRE_OBJECT_STORAGE=true）
+            # 或改挂 PVC（与 chart deployment.yaml 一致）。
+            - name: uploads
+              mountPath: /app/data/uploads
       volumes:
         - name: tmp
+          emptyDir: {}
+        - name: uploads
           emptyDir: {}

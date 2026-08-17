@@ -179,8 +179,11 @@ const agentTaskSrc = fs.readFileSync(
 );
 check(
   'sm_agent_task_role_mismatch_denied',
-  /if \(actorRole === undefined\) return true;\s*\n\s*return match\.role === actorRole;/.test(agentTaskSrc),
-  'actorRole 不匹配必须拒绝（SH-005；undefined 由调用方强制传值，契约冻结层边界 3）',
+  // R2-SHR-004 后语义更严：actorRole 缺省即拒绝（无 undefined 旁路），
+  // 仅角色精确匹配放行——门禁同步锁定新不变量。
+  /return match\.role === actorRole;/.test(agentTaskSrc)
+    && !/if \(actorRole === undefined\) return true;/.test(agentTaskSrc),
+  'actorRole 不匹配必须拒绝（SH-005 + R2-SHR-004：缺省亦拒绝，fail-closed 无旁路）',
 );
 
 // ── 汇总 ────────────────────────────────────────────────────────────────────

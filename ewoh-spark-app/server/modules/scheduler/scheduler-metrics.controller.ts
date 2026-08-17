@@ -37,15 +37,26 @@ export class SchedulerMetricsController {
     return this.metricsSvc.renderMetrics();
   }
 
-  /** 由反馈表派生的调度 KPI（acceptanceRate / overrideRate / fallbackRate / solverRuntime）。 */
+  /**
+   * 由反馈表派生的调度 KPI（acceptanceRate / overrideRate / fallbackRate / solverRuntime）。
+   * R2-SSV-26（2026-08-17）：无 primaryOrgId 的 global_admin 显式放行全局聚合
+   * （scope=ALL 跨租户运维视角）；此前 NEST-108 守卫对全局管理员抛 400，
+   * 鉴权已过却报缺参。非 global 管理员路径不变（本 org 作用域强制）。
+   */
   @Get('feedback')
   feedback(@Req() request?: { userContext?: OrgContext }): Promise<SchedulingFeedbackKpis> {
-    return this.feedbackSvc.deriveKpis(request?.userContext?.primaryOrgId ?? null);
+    const ctx = request?.userContext;
+    return this.feedbackSvc.deriveKpis(ctx?.primaryOrgId ?? null, {
+      globalScope: Boolean(ctx?.isGlobalAdmin) && !ctx?.primaryOrgId,
+    });
   }
 
-  /** 本租户反馈行（离线评估视图；ADR-073 org 作用域）。 */
+  /** 本租户反馈行（离线评估视图；ADR-073 org 作用域；R2-SSV-26 global_admin 全局）。 */
   @Get('feedback/rows')
   feedbackRows(@Req() request?: { userContext?: OrgContext }): Promise<SchedulingFeedback[]> {
-    return this.feedbackSvc.list(request?.userContext?.primaryOrgId ?? null);
+    const ctx = request?.userContext;
+    return this.feedbackSvc.list(ctx?.primaryOrgId ?? null, {
+      globalScope: Boolean(ctx?.isGlobalAdmin) && !ctx?.primaryOrgId,
+    });
   }
 }

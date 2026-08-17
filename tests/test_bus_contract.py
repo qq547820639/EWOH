@@ -8,7 +8,6 @@
 """
 
 import sys
-import threading
 import unittest
 from pathlib import Path
 

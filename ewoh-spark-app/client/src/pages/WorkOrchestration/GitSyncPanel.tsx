@@ -347,7 +347,7 @@ const GitSyncPanel = (): React.ReactElement => {
                   <div className="min-w-0">
                     <p className="text-[hsl(220_14%_14%)]">{event.summary}</p>
                     <p className="mt-0.5 text-xs text-[hsl(218_10%_42%)]">
-                      {event.kind} · {new Date(event.at).toLocaleString('zh-CN', { hour12: false })}
+                      {event.kind} · {new Date(event.at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}
                       {event.workItemId ? ` · ${event.workItemId}` : ''}
                     </p>
                   </div>

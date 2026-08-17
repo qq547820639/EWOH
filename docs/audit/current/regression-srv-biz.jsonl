@@ -1,0 +1,62 @@
+{"id":"NEST-301","regression_status":"FIXED_VERIFIED","evidence":"mes/mes.service.ts:277-288 listWorkOrders 经 orgCondition 加 eq(orgId)（global_admin 放行、actor 缺省依赖 RLS 兜底并注释声明）"}
+{"id":"NEST-302","regression_status":"FIXED_VERIFIED","evidence":"mes/mes.service.ts:295,340-342 createWorkOrder requireOrgId fail-closed 且 task/steps 显式携带 orgId"}
+{"id":"NEST-303","regression_status":"FIXED_VERIFIED","evidence":"mes/mes.service.ts:434-449 getTrace quality 事件按 eventType+evidenceJson->>'workOrderId'+orgId 数据库侧过滤，不再全表内存过滤"}
+{"id":"NEST-304","regression_status":"FIXED_VERIFIED","evidence":"mes/mes.service.ts:919-953,1082-1116 listSops/getSop/listQualitySchemes/getQualityScheme 查询均拼 orgCondition"}
+{"id":"NEST-305","regression_status":"FIXED_VERIFIED","evidence":"agent/agent.service.ts:461-467,458-460 resolveApproval 按 and(eq(orgId),eq(approvalId)) 定位且 org 缺失 400"}
+{"id":"NEST-306","regression_status":"FIXED_VERIFIED","evidence":"files/file.service.ts:78-82 list 调 driver.list(orgId) 驱动层过滤；local-storage.driver.ts:147-151 只扫本 org 桶"}
+{"id":"NEST-307","regression_status":"PARTIALLY_FIXED","evidence":"files/storage/s3-storage.driver.ts:231-259 list 已按 org 前缀作用域（跨租户问题闭合），但命中键仍逐个 GetObject 读 meta（org 内 N+1 与全量无分页残留，见 R2-SBZ-010）"}
+{"id":"NEST-308","regression_status":"FIXED_VERIFIED","evidence":"gamification/gamification.service.ts:711-716 brainCacheByOrg/brainEnhancingOrgs 按 org 分桶，缓存命中与回写均限定本 org"}
+{"id":"NEST-309","regression_status":"FIXED_VERIFIED","evidence":"gamification/gamification.service.ts:864-1003 buildRuleSuggestions 与 LLM 增强聚合三查询均 eq(orgId)"}
+{"id":"NEST-310","regression_status":"FIXED_VERIFIED","evidence":"gamification/gamification.service.ts:164-174,214-225 设备/实体查询与 update(parentId) 均带 eq(orgId)，跨租户 0 行命中=失败留痕"}
+{"id":"NEST-311","regression_status":"FIXED_VERIFIED","evidence":"gamification/gamification.service.ts:630-689 sendExoFeedback 按 (orgId,deviceId) 定位设备且事件 insert 显式 orgId"}
+{"id":"NEST-312","regression_status":"FIXED_VERIFIED","evidence":"dashboard/dashboard.service.ts:116-176 getOverview 四段聚合（device/event/telemetry/worker）均带 org 谓词"}
+{"id":"NEST-313","regression_status":"FIXED_VERIFIED","evidence":"dashboard/dashboard.service.ts:178-218 getEnvironmentSummary raw SQL where org_id=${orgId}（orgParam 参数化，global_admin 放行）"}
+{"id":"NEST-314","regression_status":"FIXED_VERIFIED","evidence":"dashboard/dashboard.service.ts:292-342 buildDeviceConditions 首条件即 orgCondition(ewohDevice.orgId)"}
+{"id":"NEST-315","regression_status":"FIXED_VERIFIED","evidence":"dashboard/dashboard.service.ts:431-517 getEvents/getEventStats 全部查询拼 orgCond"}
+{"id":"NEST-316","regression_status":"FIXED_VERIFIED","evidence":"dashboard/dashboard.service.ts:519-589 getTelemetry/getWorkers 查询带 orgCond"}
+{"id":"NEST-317","regression_status":"FIXED_VERIFIED","evidence":"dashboard/dashboard.service.ts:591-631 handleEvent 按 and(eq(eventId),orgCond) 定位与更新，他租户 404"}
+{"id":"NEST-318","regression_status":"FIXED_VERIFIED","evidence":"dashboard/dashboard.service.ts:663-770 createDevice 显式 orgId（requireOrg 语义）；updateDevice 按 (orgId,deviceId) 定位后带 orgCond 更新"}
+{"id":"NEST-319","regression_status":"FIXED_VERIFIED","evidence":"dashboard/dashboard.service.ts:838-1002 bindDevice 目标/person 实体均 eq(orgId) 校验；unbindDevice 全部更新带 orgCond"}
+{"id":"NEST-320","regression_status":"FIXED_VERIFIED","evidence":"mes/mes.service.ts:367-381 writeScheduleOrder db.transaction 内插 task+steps（steps 失败不留孤儿）"}
+{"id":"NEST-321","regression_status":"FIXED_VERIFIED","evidence":"mes/mes.service.ts:1316-1350 doQualityInspection step 更新与 quality 事件同 db.transaction"}
+{"id":"NEST-322","regression_status":"FIXED_VERIFIED","evidence":"mes/mes.service.ts:94-131 状态机委托 @shared/workorder workOrderTransitionAllowed；mes.state-machine.spec.ts 钉死全部转移组合"}
+{"id":"NEST-323","regression_status":"FIXED_VERIFIED","evidence":"mes/mes.service.ts:70-84 MES_WORK_ORDER_STATUS_TO_CONTRACT 显式 alias 双射（draft→created/released→scheduled），契约测试锁定"}
+{"id":"NEST-324","regression_status":"FIXED_VERIFIED","evidence":"agent/agent-orchestrator.service.ts:107-147 createTask 预算检查+插入包在 pg_advisory_xact_lock 事务内"}
+{"id":"NEST-325","regression_status":"FIXED_VERIFIED","evidence":"agent/agent-orchestrator.service.ts:81-106 依赖环 BFS 按层 inArray 批量查询（注释标 NEST-325）"}
+{"id":"NEST-326","regression_status":"FIXED_VERIFIED","evidence":"agent/agent-orchestrator.service.ts:273-302 listTasks limit 钳制 [1,500]/offset≥0；controller:131-137 解析非法回退默认"}
+{"id":"NEST-327","regression_status":"FIXED_VERIFIED","evidence":"agent/agent.service.ts:606-614 executeAuthorized 包 withTimeout(timeoutSec)（注释标 NEST-327）"}
+{"id":"NEST-328","regression_status":"FIXED_VERIFIED","evidence":"agent/agent.service.ts:720-754 withTimeout race 挂接 handler 无 unhandled rejection，支持外部 AbortSignal 真取消"}
+{"id":"NEST-329","regression_status":"FIXED_VERIFIED","evidence":"agent/agent.service.ts:701-718,601-605 stepsUsed 改服务端进程内累计（stepCounters），payload.stepsUsed 不再被信任"}
+{"id":"NEST-330","regression_status":"PARTIALLY_FIXED","evidence":"gamification/gamification.service.ts:131-139,151,306,356,485,853 写路径 requireOrgId 已闭合；但行 584 dispatchPlan 审计 orgId 仍为 actor?.primaryOrgId ?? existing.orgId ?? null 残留 null 回退"}
+{"id":"NEST-331","regression_status":"FIXED_VERIFIED","evidence":"dashboard/dashboard.service.ts:663-671 createDevice orgParam 无 org 且非 global_admin 即 400（不再回退 NULL）"}
+{"id":"NEST-332","regression_status":"FIXED_VERIFIED","evidence":"learning/outcome-annotation.service.ts:86-104 insert 捕获 23505 唯一键冲突回读既有行，spec:120-134 钉死"}
+{"id":"NEST-333","regression_status":"FIXED_VERIFIED","evidence":"learning/__tests__/learning.service.spec.ts:89-123,264-296 fake DB 按 where orgId 过滤聚合行，org-b 行不进 org-a 指标已断言"}
+{"id":"NEST-334","regression_status":"FIXED_VERIFIED","evidence":"files/file.service.ts:169-181 assertScanned 非 global_admin 一律要求显式 'clean'（undefined 按 pending 拒，fail-closed），spec:107-111 覆盖"}
+{"id":"NEST-335","regression_status":"FIXED_VERIFIED","evidence":"mes/mes.service.ts:269-275 auditOrgId(actor,row.orgId) 回退链含行归属（原 8 处空串回退全部经此收敛）"}
+{"id":"NEST-336","regression_status":"FIXED_VERIFIED","evidence":"mes/mes.service.ts:753-761 forceResolveStep 仅吸收 ConflictException，非冲突业务错误原样上抛（注释标 NEST-336）"}
+{"id":"NEST-337","regression_status":"FIXED_VERIFIED","evidence":"files/file.service.ts:131-139 + storage-driver.ts:45-49 markScanned 优先 driver.updateMeta 仅写 meta，不支持时才回退整对象重写"}
+{"id":"NEST-338","regression_status":"FIXED_VERIFIED","evidence":"files/file.controller.ts:123-141 download 走 downloadStream+StreamableFile 管道输出，仅驱动不支持时回退缓冲"}
+{"id":"NEST-339","regression_status":"FIXED_VERIFIED","evidence":"files/storage/local-storage.driver.ts:49-60 save 先写 *.tmp 再 rename，meta 最后提交（content 孤儿可容忍、meta 必有 content）"}
+{"id":"NEST-340","regression_status":"FIXED_VERIFIED","evidence":"files/storage/local-storage.driver.ts:22-26,50,83 等 与 s3-storage.driver.ts:89-93 驱动层所有按 id 入口 assertValidId(UUID)"}
+{"id":"NEST-341","regression_status":"FIXED_VERIFIED","evidence":"agent/agent.service.ts:419-446 通知失败 warn 留痕不阻断；裁决文档化：ewoh_agent_approval 台账为事实源，重试属通知可靠性域"}
+{"id":"NEST-342","regression_status":"FIXED_VERIFIED","evidence":"learning/learning-proposal.service.ts:127-147 shadow 更新 where 含 eq(status,current.status)，0 行抛 state_changed_concurrently"}
+{"id":"NEST-343","regression_status":"FIXED_VERIFIED","evidence":"learning/learning-proposal.service.ts:163-190,205-232,247-275 approve/reject/rollback 均含 eq(status) CAS，并发重复解析显式 400"}
+{"id":"NEST-344","regression_status":"FIXED_VERIFIED","evidence":"learning/learning-proposal.service.ts:18-19,188,230,272 终态转移与 recordEvent 在同一事务（tx 句柄）；残留：propose 的 Created 事件(行107)仍非事务（记 R2-SBZ-008 关联）"}
+{"id":"NEST-345","regression_status":"FIXED_VERIFIED","evidence":"learning/learning.service.ts:117-124 evaluate 台账行+事件同 db.transaction（事务透传 spec:147 验证）"}
+{"id":"NEST-346","regression_status":"FIXED_VERIFIED","evidence":"dashboard/dashboard.service.ts:787-811 getDeviceBindings 改单条递归 CTE 一次取全部祖先链（带 org 过滤）"}
+{"id":"NEST-347","regression_status":"FIXED_VERIFIED","evidence":"dashboard/dashboard.service.ts:41-55,434 parseLimitParam 严格解析+MAX_LIST_LIMIT=500 钳制；dashboard.params.spec.ts 钉死"}
+{"id":"NEST-348","regression_status":"FIXED_VERIFIED","evidence":"dashboard/dashboard.service.ts:525-526 getTelemetry safeLimit 钳制到 MAX_LIST_LIMIT"}
+{"id":"NEST-349","regression_status":"FIXED_VERIFIED","evidence":"dashboard/dashboard.service.ts:57-67 parseBatteryParam Number 严格解析 NaN 即 400，不再 gte(col,NaN)"}
+{"id":"NEST-350","regression_status":"NO_LONGER_APPLICABLE","evidence":"dashboard/device-contract.controller.ts:10-16 裁决文档化：/api/devices 为 openapi 冻结契约路由，与 dashboard 路由共享同一 DashboardService（无第二实现），按契约兼容保留双路由"}
+{"id":"NEST-351","regression_status":"FIXED_VERIFIED","evidence":"gamification/gamification.service.ts:53-78 getRole 从 actor.roles[0]/actor.role 推导玩家角色（不再读 EWOH_PLAYER_ROLE env）"}
+{"id":"NEST-352","regression_status":"FIXED_VERIFIED","evidence":"gamification/gamification.service.ts:248-249 skillMatch 显式 null（注释：无技能数据不伪造 0.8）"}
+{"id":"NEST-353","regression_status":"FIXED_VERIFIED","evidence":"gamification/gamification.service.ts:1109-1112 randomSuffix 改 randomUUID 切片（密码学随机）"}
+{"id":"NEST-354","regression_status":"FIXED_VERIFIED","evidence":"files/file.service.spec.ts:170-191 orgB 复用同幂等键得到新记录且 org 作用域列表互不可见（真跨 org 断言）"}
+{"id":"NEST-355","regression_status":"FIXED_VERIFIED","evidence":"learning/__tests__/outcome-annotation.service.spec.ts:136-142 空/空白 orgId 的 create/listByTarget/listRecent 显式拒绝已覆盖"}
+{"id":"NEST-356","regression_status":"FIXED_VERIFIED","evidence":"mes/mes.service.ts:138-141 sanitizeExceptionAttachments MAX_ATTACHMENTS=20 上限+键白名单过滤"}
+{"id":"NEST-357","regression_status":"FIXED_VERIFIED","evidence":"files/file.controller.ts:52-59 上传限制统一为模块加载时快照（UPLOAD_FILE_SIZE_LIMIT/UPLOAD_ALLOWED_MIME_TYPES）"}
+{"id":"NEST-358","regression_status":"FIXED_VERIFIED","evidence":"files/storage/storage-driver.factory.ts:16-25 production 且未显式 ALLOW_LOCAL_FILE_STORAGE/REQUIRE_OBJECT_STORAGE 即抛错，不再静默回退本地盘"}
+{"id":"NEST-359","regression_status":"PARTIALLY_FIXED","evidence":"agent/agent-metrics.service.ts:14-18,46-58 裁决文档化为进程自观测旁路指标并新增 snapshot() 导出面；但 counter 仍为内存 Map，重启清零/不跨实例聚合（持久化按裁决属 observability 域）"}
+{"id":"NEST-360","regression_status":"FIXED_VERIFIED","evidence":"gamification/gamification.service.ts:583-585 等审计 orgId 行缩进已正常（IDE 格式化闭合）"}
+{"id":"NEST-361","regression_status":"FIXED_VERIFIED","evidence":"dashboard/dashboard.service.ts:112-114,635 auditOrgId(actor,existing.orgId) 回退链含行归属（handleEvent 不再静默空串优先）"}
+{"id":"NEST-362","regression_status":"FIXED_VERIFIED","evidence":"agent/agent-orchestrator.service.ts:215-221 终态事件 subject 以台账行事实优先（taskJson 缺失回退补 name/assignedRole 的最小对象）"}

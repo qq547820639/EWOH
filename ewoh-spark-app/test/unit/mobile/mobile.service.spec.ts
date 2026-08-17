@@ -150,10 +150,16 @@ describe('MobileService', () => {
     };
     const service = new MobileService({} as never, mes as never);
 
-    await expect(service.scan('WO:WO-1')).resolves.toMatchObject({
+    // R2-SAM-002：扫码 facade 显式透传租户上下文（actor 缺省 fail-closed）。
+    await expect(
+      service.scan('WO:WO-1', { userId: 'user-1', primaryOrgId: 'org-1' }),
+    ).resolves.toMatchObject({
       workOrder: { scheduleTaskId: 'WO-1' },
     });
-    expect(mes.getWorkOrder).toHaveBeenCalledWith('WO-1');
+    expect(mes.getWorkOrder).toHaveBeenCalledWith('WO-1', {
+      userId: 'user-1',
+      primaryOrgId: 'org-1',
+    });
   });
 
   it('resolves step scans to the step and its work order', async () => {

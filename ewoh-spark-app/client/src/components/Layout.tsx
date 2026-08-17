@@ -61,13 +61,15 @@ const Layout = () => {
     <div className="flex w-screen h-screen bg-muted">
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[200] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary focus:shadow-lg"
+        /* R2-CC2-002：跳转链接表面色改设计令牌（bg-white 在 dark 主题下与浅色前景冲突，WCAG 1.4.3 失败）。 */
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[200] focus:rounded-md focus:bg-background focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary focus:shadow-lg"
       >
         {UI_ARIA_LABELS.skipToContent}
       </a>
       {/* 侧边导航栏 */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-56 flex-col bg-white border-r border-border transition-transform duration-200 lg:static lg:translate-x-0 lg:shrink-0 ${
+        /* R2-CC2-002：侧栏表面色 bg-white→bg-card 令牌（dark 主题下白底浅字不可读）。 */
+        className={`fixed inset-y-0 left-0 z-50 flex w-56 flex-col bg-card border-r border-border transition-transform duration-200 lg:static lg:translate-x-0 lg:shrink-0 ${
           sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
         }`}
         aria-label="侧边导航"
@@ -193,7 +195,8 @@ const Layout = () => {
         tabIndex={-1}
         className="flex min-w-0 flex-1 flex-col overflow-auto outline-none"
       >
-        <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-white px-4">
+        {/* R2-CC2-002：顶栏表面色 bg-white→bg-card 令牌（dark 主题下可读）。 */}
+        <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
           <button
             ref={menuButtonRef}
             type="button"
@@ -204,7 +207,8 @@ const Layout = () => {
             <Menu className="h-4 w-4" />
           </button>
           <div className="flex items-center gap-2 lg:hidden">
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-[10px] font-bold text-white">
+            {/* R2-CC2-002：主色底前景 text-white→text-primary-foreground 令牌（dark 下 primary 提亮后纯白字对比不足）。 */}
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-[10px] font-bold text-primary-foreground">
               E
             </div>
             <span className="text-sm font-semibold text-foreground">EWOH</span>

@@ -18,14 +18,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SCENARIOS_PATH = REPO_ROOT / "tests" / "golden-fixtures" / "contract-golden-scenarios.json"
 
 from edge_platform.contracts import agent as agent_mod  # noqa: E402
-from edge_platform.contracts import capability as cap_mod  # noqa: E402
 from edge_platform.contracts import agent_task as agent_task_mod  # noqa: E402
+from edge_platform.contracts import capability as cap_mod  # noqa: E402
 from edge_platform.contracts import dead_letter as dead_mod  # noqa: E402
 from edge_platform.contracts import decision as dec  # noqa: E402
 from edge_platform.contracts import entity_model as ent  # noqa: E402
 from edge_platform.contracts import envelope as env  # noqa: E402
-from edge_platform.contracts import exo_session as exo  # noqa: E402
 from edge_platform.contracts import exo_config as exc  # noqa: E402
+from edge_platform.contracts import exo_session as exo  # noqa: E402
 from edge_platform.contracts import identity as identity_mod  # noqa: E402
 from edge_platform.contracts import inference_result as intel  # noqa: E402
 from edge_platform.contracts import knowledge as knowledge_mod  # noqa: E402

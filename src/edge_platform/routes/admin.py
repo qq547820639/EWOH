@@ -5,7 +5,7 @@ GET /api/audit（安全策略查询 /api/security/policy 归属 auth 域）。
 逻辑自 server.py 原 Handler 机械抽取：self→h、闭包 ctx→显式参数，响应契约不变。
 """
 
-from . import NOT_HANDLED, Route, dispatch_routes, exact
+from . import Route, dispatch_routes, exact
 from ._util import now_iso
 
 

@@ -8969,6 +8969,33 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/operations/workbench/export/{id}/download:
+    get:
+      tags:
+        - operations
+      summary: Download a completed export artifact (owner or admin; R2-SOP-006 worker output)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: CSV artifact stream
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/operations/workbench/views:
     get:
       tags:

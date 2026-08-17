@@ -106,7 +106,7 @@ class _Fixture:
             data=json.dumps({"username": username, "password": password}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=5) as r:
+        with urllib.request.urlopen(req, timeout=5) as r:  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
             return json.loads(r.read())["token"]
 
     def req(self, method, path, body=None, token=None):
@@ -122,7 +122,7 @@ class _Fixture:
             method=method,
         )
         try:
-            with urllib.request.urlopen(req, timeout=5) as r:
+            with urllib.request.urlopen(req, timeout=5) as r:  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
                 return r.status, json.loads(r.read() or b"{}")
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read() or b"{}")

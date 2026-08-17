@@ -28,7 +28,7 @@ export const BatchGatePreviewDialog = ({
 }): React.ReactElement | null => {
   if (!open) return null;
   const actor = getAuthUser()?.username ?? 'anonymous';
-  const timestamp = new Date().toLocaleString('zh-CN', { hour12: false });
+  const timestamp = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
   const executable = rows.filter((row) => row.executable);
   const nonExecutable = rows.filter((row) => !row.executable);
   const affectedTotal = executable.reduce((sum, row) => sum + row.downstreamCount, 0);

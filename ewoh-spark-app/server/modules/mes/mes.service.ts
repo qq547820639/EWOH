@@ -160,7 +160,12 @@ function assertWorkerStepAssignment(
   step: { assignedPersonId?: string | null },
   actor?: OrgContext,
 ) {
-  if (actor?.role !== 'worker') {
+  // R2-SBZ-001：worker 判定必须用 roles 数组（AccessTokenGuard 从 JWT 注入）。
+  // OrgContext.role 是可选的单一解析字段，常规请求恒为空 → 旧实现恒走
+  // fail-open 分支（归属校验死代码）。仅 worker 角色受步骤归属约束；
+  // 其他角色（workshop_lead/global_admin 等）按既有 RBAC 面放行。
+  const roles = actor?.roles ?? [];
+  if (!roles.includes('worker')) {
     return;
   }
   if (!step.assignedPersonId || step.assignedPersonId !== actor.userId) {
@@ -252,15 +257,15 @@ export class MesService {
 
   /**
    * org 谓词：global_admin 不加过滤；其余按 primaryOrgId 严格匹配。
-   * actor 完全缺省（进程内调用方，如 mobile 扫码 facade）不过滤——
-   * HTTP 面全部经 controller 透传 userContext（NEST-301~304 闭合），
-   * 无上下文的内部读委托 DB 层 RLS 兜底。
+   * R2-SAM-002：actor 完全缺省（undefined）由"不过滤"收敛为 fail-closed
+   * （requireOrgId 抛 400）——内部调用方（如 mobile 扫码 facade）必须显式
+   * 透传租户上下文；不再依赖"信任 undefined + DB 层 RLS 兜底"的纵深缺口。
    */
   private orgCondition(
     column: typeof ewohScheduleTask.orgId | typeof ewohEvent.orgId | typeof ewohAssetPackage.orgId | typeof ewohResourceBinding.orgId | typeof ewohScheduleTaskStep.orgId,
     actor?: OrgContext,
   ): SQL | undefined {
-    if (actor === undefined || actor?.isGlobalAdmin) {
+    if (actor?.isGlobalAdmin) {
       return undefined;
     }
     return eq(column, this.requireOrgId(actor)) as SQL;

@@ -117,6 +117,43 @@ describe('evaluateReasoningRules（确定性引擎，§18 模板渲染真实值�
     expect(conclusions[5]?.explanation).toContain('40 分钟');
   });
 
+  it('R2-SHR-001：脏 traceId 经 safeConclusionValue 清洗，产出恒为规范身份', () => {
+    // 与 Python _safe_conclusion_value 逐字节一致（EDGE-227 同款）：剔除非
+    // [A-Za-z0-9_.-]、截断 100、空兜底 unknown。
+    const conclusions = evaluateReasoningRules('rt exec/4:脏 ID', [
+      fact(PERSON, 'person', { workload: 0.9, fatigue: 0.8, ergonomicRisk: 0.3 }),
+    ]);
+    expect(conclusions).toHaveLength(1);
+    expect(conclusions[0]?.conclusionId).toBe(
+      `decision:rtexec4ID-worker-overload-person${PERSON.split(':')[1]}`,
+    );
+    // 引擎自产 conclusionId 必过自身契约校验（不自产自拒）：value 段满足规范身份语法
+    const idValue = (conclusions[0]?.conclusionId ?? '').split(':')[1] ?? '';
+    expect(idValue).toMatch(/^[A-Za-z0-9][A-Za-z0-9._~@-]{0,127}$/);
+  });
+
+  it('R2-SHR-011：同规则多主体命中 conclusionId 不碰撞', () => {
+    const conclusions = evaluateReasoningRules('rt-dup', [
+      fact(PERSON, 'person', { workload: 0.9, fatigue: 0.8, ergonomicRisk: 0.3 }),
+      fact('person:0d2b8e7c-6a4f-4c2e-9f1a-3c5d7e9b1a23', 'person', { workload: 0.95, fatigue: 0.85, ergonomicRisk: 0.2 }),
+    ]);
+    expect(conclusions).toHaveLength(2);
+    const ids = new Set(conclusions.map((c) => c.conclusionId));
+    expect(ids.size).toBe(2);
+  });
+
+  it('R2-SHR-011：validateReasoningTrace 拒绝重复 conclusionId', () => {
+    const c = conclusion('rt-dup2', 'rule:worker-overload', PERSON, 'high', 'x');
+    const errors = validateReasoningTrace({
+      traceId: 'rt-dup2',
+      engineVersion: '1.0.0',
+      factsRef: { snapshotVersion: 0, eventIds: [] },
+      conclusions: [c, { ...c }],
+      auditTrail: true,
+    });
+    expect(errors[0]).toBe('duplicate_conclusion_id');
+  });
+
   it('阈值以下不触发 → 空结论（显式无规则语义）', () => {
     const conclusions = evaluateReasoningRules('rt-e2', [
       fact(PERSON, 'person', { workload: 0.5, fatigue: 0.2, ergonomicRisk: 0.1 }),

@@ -8,7 +8,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, sql, type SQL } from 'drizzle-orm';
 import { ewohResourcePreorder, ewohResourceBinding } from '@server/database/schema';
 import { AuditService, type AuditLogEntry } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -87,6 +87,31 @@ export class ResourceService {
     }
   }
 
+  /**
+   * R2-SNZ-009：非 global 请求缺租户上下文一律 fail-closed（原先读面
+   * 无任何租户谓词，持他租户 preorderId 即可跨租户读/扣/还库存）。
+   */
+  private requireOrgId(actor?: OrgContext): string {
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org context missing: resource operations require tenant context',
+      );
+    }
+    return orgId;
+  }
+
+  /** global_admin 显式放行（与 RLS 例外路径一致）；其余强制本租户谓词。 */
+  private orgCondition(
+    column: typeof ewohResourcePreorder.orgId | typeof ewohResourceBinding.orgId,
+    actor?: OrgContext,
+  ): SQL | undefined {
+    if (actor?.isGlobalAdmin) {
+      return undefined;
+    }
+    return eq(column, this.requireOrgId(actor)) as SQL;
+  }
+
   getInventory(resourceId: string): number {
     return this.inventory.get(resourceId) ?? 0;
   }
@@ -100,37 +125,40 @@ export class ResourceService {
       throw new BadRequestException('resourceId and positive quantity are required');
     }
     return this.withResourceLock(resourceId, async () => {
-      // NEST-631：可用量「检查-插入」以 pg_advisory_xact_lock 跨实例串行化
-      // （原先仅进程内 withResourceLock，多实例并发可超卖预占）。
-      return this.db.transaction(async (tx) => {
-        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`res:${resourceId}`}))`);
-        await this.ensureSeededInventory(resourceId, actor);
-        const inventoryQty = await this.loadInventoryQuantity(resourceId);
-        const active = await this.loadActivePreorders(resourceId);
-        if (availableQuantity(inventoryQty, active) < quantity) {
-          throw new BadRequestException('Insufficient available quantity');
-        }
-        const preorder: Preorder = {
-          id: nextId(),
-          resourceId,
-          quantity,
-          issuedQty: 0,
-          status: 'pending',
-        };
-        const [row] = await this.safeExecute<PreorderRow>('create resource preorder', tx
-          .insert(ewohResourcePreorder)
-          .values({
-            preorderId: preorder.id,
-            resourceType: 'inventory',
+        // NEST-631：可用量「检查-插入」以 pg_advisory_xact_lock 跨实例串行化
+        // （原先仅进程内 withResourceLock，多实例并发可超卖预占）。
+        // R2-SNZ-009：可用量聚合与写入均带租户谓词/显式 orgId（原先跨租户
+        // 聚合可用量 + orgId 缺省省略）。
+        const preorderOrgId = this.requireOrgId(actor);
+        return this.db.transaction(async (tx) => {
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`res:${resourceId}`}))`);
+          await this.ensureSeededInventory(resourceId, actor);
+          const inventoryQty = await this.loadInventoryQuantity(resourceId, actor);
+          const active = await this.loadActivePreorders(resourceId, actor);
+          if (availableQuantity(inventoryQty, active) < quantity) {
+            throw new BadRequestException('Insufficient available quantity');
+          }
+          const preorder: Preorder = {
+            id: nextId(),
             resourceId,
-            quantity: sql`${quantity}`,
-            reservedQty: sql`${quantity}`,
-            issuedQty: sql`${0}`,
-            consumedQty: sql`${0}`,
-            returnedQty: sql`${0}`,
+            quantity,
+            issuedQty: 0,
             status: 'pending',
-            ...(actor?.primaryOrgId ? { orgId: actor.primaryOrgId } : {}),
-          })
+          };
+          const [row] = await this.safeExecute<PreorderRow>('create resource preorder', tx
+            .insert(ewohResourcePreorder)
+            .values({
+              preorderId: preorder.id,
+              resourceType: 'inventory',
+              resourceId,
+              quantity: sql`${quantity}`,
+              reservedQty: sql`${quantity}`,
+              issuedQty: sql`${0}`,
+              consumedQty: sql`${0}`,
+              returnedQty: sql`${0}`,
+              status: 'pending',
+              orgId: preorderOrgId,
+            })
           .returning({
             preorder_id: ewohResourcePreorder.preorderId,
             resource_id: ewohResourcePreorder.resourceId,
@@ -167,11 +195,12 @@ export class ResourceService {
     if (!Number.isFinite(issueQty) || issueQty <= 0) {
       throw new BadRequestException('Positive issue quantity is required');
     }
-    const preorder = await this.getPreorder(preorderId);
+    // R2-SNZ-009：读面带租户谓词（global_admin 放行，缺租户 fail-closed）。
+    const preorder = await this.getPreorder(preorderId, actor);
     return this.withResourceLock(preorder.resourceId, async () => {
-      const fresh = await this.getPreorder(preorderId);
+      const fresh = await this.getPreorder(preorderId, actor);
       await this.ensureSeededInventory(fresh.resourceId, actor);
-      const inventoryQty = await this.loadInventoryQuantity(fresh.resourceId);
+      const inventoryQty = await this.loadInventoryQuantity(fresh.resourceId, actor);
       if (!canIssue(fresh, inventoryQty, issueQty)) {
         throw new BadRequestException('Insufficient issue quantity');
       }
@@ -198,15 +227,46 @@ export class ResourceService {
         throw new BadRequestException('Insufficient issue quantity');
       }
       this.inventory.set(fresh.resourceId, Number(inventoryRow.quantity));
-      await this.safeExecute('issue resource preorder', this.db
-        .update(ewohResourcePreorder)
-        .set({
-          issuedQty: sql`${afterIssued}`,
-          reservedQty: sql`${Math.max(0, fresh.quantity - afterIssued)}`,
-          status,
-          updatedAt: sql`now()`,
-        })
-        .where(eq(ewohResourcePreorder.preorderId, preorderId)));
+      // R2-SNZ-010：issuedQty 改「增量 + CAS」更新（原先锁外读快照后绝对值
+      // 覆盖写，多实例并发 issue 互相覆盖计数、binding 序号重复）。CAS 谓词
+      // 含 issued_qty=beforeIssued 与 org；未命中 = 并发已变更，显式拒绝。
+      const preorderOrgCond = this.orgCondition(ewohResourcePreorder.orgId, actor);
+      const [updatedPreorder] = await this.safeExecute<PreorderRow>(
+        'issue resource preorder',
+        this.db
+          .update(ewohResourcePreorder)
+          .set({
+            issuedQty: sql`${ewohResourcePreorder.issuedQty} + ${issueQty}`,
+            reservedQty: sql`greatest(${ewohResourcePreorder.quantity} - ${ewohResourcePreorder.issuedQty} - ${issueQty}, 0)`,
+            status,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            preorderOrgCond
+              ? and(
+                  eq(ewohResourcePreorder.preorderId, preorderId),
+                  eq(ewohResourcePreorder.issuedQty, sql`${beforeIssued}`),
+                  preorderOrgCond,
+                )
+              : and(
+                  eq(ewohResourcePreorder.preorderId, preorderId),
+                  eq(ewohResourcePreorder.issuedQty, sql`${beforeIssued}`),
+                ),
+          )
+          .returning({
+            preorder_id: ewohResourcePreorder.preorderId,
+            resource_id: ewohResourcePreorder.resourceId,
+            quantity: ewohResourcePreorder.quantity,
+            reserved_qty: ewohResourcePreorder.reservedQty,
+            issued_qty: ewohResourcePreorder.issuedQty,
+            status: ewohResourcePreorder.status,
+          }),
+      );
+      if (!updatedPreorder) {
+        throw new BadRequestException(
+          'Concurrent issue detected on preorder; please retry',
+        );
+      }
       await this.safeExecute('persist resource binding', this.db
         .insert(ewohResourceBinding)
         .values({
@@ -220,7 +280,8 @@ export class ResourceService {
           reason: `issue ${issueQty} of ${fresh.quantity}`,
           status: 'active',
           version: 1,
-          ...(actor?.primaryOrgId ? { orgId: actor.primaryOrgId } : {}),
+          // R2-SNZ-009：写入显式归属（原先 orgId 缺省省略）。
+          orgId: this.requireOrgId(actor),
         }));
       await this.recordAudit(
         {
@@ -238,12 +299,13 @@ export class ResourceService {
         },
         actor,
       );
-      return this.getPreorder(preorderId);
+      return this.mapPreorder(updatedPreorder);
     });
   }
 
   async release(preorderId: string, actor?: OrgContext): Promise<Preorder> {
-    const preorder = await this.getPreorder(preorderId);
+    // R2-SNZ-009：读面带租户谓词（global_admin 放行，缺租户 fail-closed）。
+    const preorder = await this.getPreorder(preorderId, actor);
     // NEST-632：release 状态白名单——仅 pending/issued 可释放（原先
     // consumed/released 状态重复释放=库存重复返还）。
     if (preorder.status !== 'pending' && preorder.status !== 'issued') {
@@ -252,7 +314,7 @@ export class ResourceService {
       );
     }
     return this.withResourceLock(preorder.resourceId, async () => {
-      const fresh = await this.getPreorder(preorderId);
+      const fresh = await this.getPreorder(preorderId, actor);
       // 锁内复核状态（锁外检查与锁内执行间状态可能被并发改变）。
       if (fresh.status !== 'pending' && fresh.status !== 'issued') {
         throw new BadRequestException(
@@ -292,20 +354,50 @@ export class ResourceService {
             reason: 'release returned quantity',
             status: 'active',
             quantity: sql`${remaining}`,
-            ...(actor?.primaryOrgId ? { orgId: actor.primaryOrgId } : {}),
+            orgId: this.requireOrgId(actor),
           }));
         this.inventory.set(fresh.resourceId, remaining);
       }
-      await this.safeExecute('release resource preorder', this.db
-        .update(ewohResourcePreorder)
-        .set({
-          status: 'released',
-          reservedQty: sql`${0}`,
-          returnedQty: sql`${remaining}`,
-          endTime: sql`now()`,
-          updatedAt: sql`now()`,
-        })
-        .where(eq(ewohResourcePreorder.preorderId, preorderId)));
+      // R2-SNZ-009/010：释放 update 带租户谓词 + status CAS（锁外复核与
+      // 写入间的并发状态变更显式拒绝，绝不静默覆盖）。
+      const releaseOrgCond = this.orgCondition(ewohResourcePreorder.orgId, actor);
+      const [releasedPreorder] = await this.safeExecute<PreorderRow>(
+        'release resource preorder',
+        this.db
+          .update(ewohResourcePreorder)
+          .set({
+            status: 'released',
+            reservedQty: sql`${0}`,
+            returnedQty: sql`${remaining}`,
+            endTime: sql`now()`,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            releaseOrgCond
+              ? and(
+                  eq(ewohResourcePreorder.preorderId, preorderId),
+                  eq(ewohResourcePreorder.status, fresh.status),
+                  releaseOrgCond,
+                )
+              : and(
+                  eq(ewohResourcePreorder.preorderId, preorderId),
+                  eq(ewohResourcePreorder.status, fresh.status),
+                ),
+          )
+          .returning({
+            preorder_id: ewohResourcePreorder.preorderId,
+            resource_id: ewohResourcePreorder.resourceId,
+            quantity: ewohResourcePreorder.quantity,
+            reserved_qty: ewohResourcePreorder.reservedQty,
+            issued_qty: ewohResourcePreorder.issuedQty,
+            status: ewohResourcePreorder.status,
+          }),
+      );
+      if (!releasedPreorder) {
+        throw new BadRequestException(
+          `Preorder ${preorderId} changed concurrently; please retry`,
+        );
+      }
       await this.safeExecute('persist resource release binding', this.db
         .insert(ewohResourceBinding)
         .values({
@@ -320,7 +412,7 @@ export class ResourceService {
           reason: 'release reservation',
           status: 'released',
           version: 1,
-          ...(actor?.primaryOrgId ? { orgId: actor.primaryOrgId } : {}),
+          orgId: this.requireOrgId(actor),
         }));
       await this.recordAudit(
         {
@@ -339,11 +431,16 @@ export class ResourceService {
         },
         actor,
       );
-      return this.getPreorder(preorderId);
+      return this.mapPreorder(releasedPreorder);
     });
   }
 
-  async getPreorder(preorderId: string): Promise<Preorder> {
+  /**
+   * R2-SNZ-009：读面带租户谓词（global_admin 放行；非 global 缺租户
+   * fail-closed 400，他租户 preorderId 一律 404）。
+   */
+  async getPreorder(preorderId: string, actor?: OrgContext): Promise<Preorder> {
+    const orgCond = this.orgCondition(ewohResourcePreorder.orgId, actor);
     const rows = await this.safeExecute<PreorderRow>('read resource preorder', this.db
       .select({
         preorder_id: ewohResourcePreorder.preorderId,
@@ -354,7 +451,11 @@ export class ResourceService {
         status: ewohResourcePreorder.status,
       })
       .from(ewohResourcePreorder)
-      .where(eq(ewohResourcePreorder.preorderId, preorderId)));
+      .where(
+        orgCond
+          ? and(eq(ewohResourcePreorder.preorderId, preorderId), orgCond)
+          : eq(ewohResourcePreorder.preorderId, preorderId),
+      ));
     const row = rows[0];
     if (!row) {
       throw new NotFoundException(`Preorder ${preorderId} not found`);
@@ -362,7 +463,9 @@ export class ResourceService {
     return this.mapPreorder(row);
   }
 
-  private async loadActivePreorders(resourceId: string): Promise<Preorder[]> {
+  /** R2-SNZ-009：可用量聚合按调用者租户过滤（原先跨租户聚合）。 */
+  private async loadActivePreorders(resourceId: string, actor?: OrgContext): Promise<Preorder[]> {
+    const orgCond = this.orgCondition(ewohResourcePreorder.orgId, actor);
     const rows = await this.safeExecute<PreorderRow>('read active resource preorders', this.db
       .select({
         preorder_id: ewohResourcePreorder.preorderId,
@@ -373,10 +476,18 @@ export class ResourceService {
         status: ewohResourcePreorder.status,
       })
       .from(ewohResourcePreorder)
-      .where(and(
-        eq(ewohResourcePreorder.resourceId, resourceId),
-        inArray(ewohResourcePreorder.status, ['pending', 'issued']),
-      )));
+      .where(
+        orgCond
+          ? and(
+              eq(ewohResourcePreorder.resourceId, resourceId),
+              inArray(ewohResourcePreorder.status, ['pending', 'issued']),
+              orgCond,
+            )
+          : and(
+              eq(ewohResourcePreorder.resourceId, resourceId),
+              inArray(ewohResourcePreorder.status, ['pending', 'issued']),
+            ),
+      ));
     return rows.map((row) => this.mapPreorder(row));
   }
 
@@ -390,15 +501,26 @@ export class ResourceService {
     };
   }
 
-  private async loadInventoryQuantity(resourceId: string): Promise<number> {
+  /** R2-SNZ-009：库存行读取同样限定调用者租户（与 preorder 谓词一致）。 */
+  private async loadInventoryQuantity(resourceId: string, actor?: OrgContext): Promise<number> {
+    const orgCond = this.orgCondition(ewohResourceBinding.orgId, actor);
     const rows = await this.safeExecute<InventoryRow>('read inventory quantity', this.db
       .select({ quantity: ewohResourceBinding.quantity })
       .from(ewohResourceBinding)
-      .where(and(
-        eq(ewohResourceBinding.bindingType, 'inventory'),
-        eq(ewohResourceBinding.resourceId, resourceId),
-        eq(ewohResourceBinding.status, 'active'),
-      ))
+      .where(
+        orgCond
+          ? and(
+              eq(ewohResourceBinding.bindingType, 'inventory'),
+              eq(ewohResourceBinding.resourceId, resourceId),
+              eq(ewohResourceBinding.status, 'active'),
+              orgCond,
+            )
+          : and(
+              eq(ewohResourceBinding.bindingType, 'inventory'),
+              eq(ewohResourceBinding.resourceId, resourceId),
+              eq(ewohResourceBinding.status, 'active'),
+            ),
+      )
       .limit(1));
     const row = rows[0];
     if (!row) {
@@ -427,7 +549,7 @@ export class ResourceService {
         reason: 'seeded inventory baseline',
         status: 'active',
         quantity: sql`${seededQuantity}`,
-        ...(actor?.primaryOrgId ? { orgId: actor.primaryOrgId } : {}),
+        orgId: this.requireOrgId(actor),
       })
       .onConflictDoUpdate({
         target: [

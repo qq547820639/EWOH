@@ -1,4 +1,11 @@
-import { BadRequestException, Injectable, Inject, Logger, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Inject,
+  Logger,
+  Optional,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { ewohAgentApproval, ewohAgentManifest, ewohEvent, ewohNotification } from '@server/database/schema';
 import { eq, and, desc } from 'drizzle-orm';
@@ -18,6 +25,7 @@ import {
   type AgentApprovalDecisionInput,
 } from '../scheduler/decision-projection';
 import type { DecisionRecord } from '@shared/decision';
+import type { OrgContext } from '../shared/org-context.interceptor';
 
 /** NO-06d：Agent 审批有效期（超期解析为拒绝留痕，不无限悬挂）。 */
 export const AGENT_APPROVAL_TTL_MS = 24 * 60 * 60 * 1000;
@@ -661,10 +669,21 @@ export class AgentService {
    */
   async runSupervisorSuggestion(
     orgId: string,
-    actor?: { userId: string },
+    actor?: OrgContext,
   ): Promise<{ suggestion: Record<string, unknown>; result: ExecuteAgentCommandResult }> {
+    // R2-SBZ-002：supervisor 建议流的世界状态读取必须带租户上下文——
+    // 缺失或与 orgId 不一致时 fail-closed 拒绝（参照 NEST-213 actorOf 模式），
+    // 绝不回退全租户聚合（RLS 缺失/降级环境下应用层零防御）。
+    const ctxOrgId = actor?.primaryOrgId?.trim();
+    if (!orgId?.trim() || !ctxOrgId || ctxOrgId !== orgId.trim()) {
+      throw new UnauthorizedException(
+        'org 上下文缺失或不一致：supervisor 建议流世界状态读取需要租户上下文',
+      );
+    }
     await this.ensureBuiltinSupervisor(orgId);
-    const world = await this.worldStateService.getCurrentWorldState();
+    // R2-SBZ-002：透传 OrgContext，collectState 按 primaryOrgId 加 org 谓词（NEST-101），
+    // 建议 facts 与 propose_plan 审批载荷不再聚合他租户世界状态。
+    const world = await this.worldStateService.getCurrentWorldState(actor);
     const highSeverityEvents = (world.events ?? []).filter(
       (e) => e.severity === 'critical' || e.severity === 'high',
     ).length;

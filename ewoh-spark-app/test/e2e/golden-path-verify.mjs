@@ -67,7 +67,24 @@ async function main() {
     const planDetail = await request('GET', `/api/scheduler/plans/${plan.planId}`, null, token);
     step('11. 方案详情（DecisionTrace 数据源）', planDetail.status === 200);
     const assignments = planDetail.body?.assignments ?? plan.assignments ?? [];
-    step('16. Assignment 携带决策字段', assignments.every((a) => true), `assignments=${assignments.length}`);
+    // R2-APT-001：原 every((a) => true) 恒真——改为真实断言：非空 + 每条
+    // assignment 携带归属字段（assignmentId/taskId、person 或 device）与
+    // 状态字段（status），reasons 决策字段存在（SchedulingAssignment 契约）。
+    const assignmentsOk =
+      Array.isArray(assignments) &&
+      assignments.length > 0 &&
+      assignments.every(
+        (a) =>
+          typeof a.assignmentId === 'string' &&
+          a.assignmentId.length > 0 &&
+          typeof a.taskId === 'string' &&
+          a.taskId.length > 0 &&
+          (typeof a.personId === 'string' || typeof a.deviceId === 'string') &&
+          typeof a.status === 'string' &&
+          a.status.length > 0 &&
+          Array.isArray(a.reasons),
+      );
+    step('16. Assignment 携带决策字段', assignmentsOk, `assignments=${Array.isArray(assignments) ? assignments.length : 'N/A'}`);
 
     // 17-19. Approve + Reservation + Dispatch
     const approve = await request('POST', `/api/scheduler/plans/${plan.planId}/approve`, {
@@ -93,14 +110,30 @@ async function main() {
   step('35-36. KPI 聚合端点', kpi.status === 200, JSON.stringify({ delivery: !!kpi.body?.delivery, stability: !!kpi.body?.stability }));
 
   // 37-39. Policy Replay（candidate v2 已存在）
+  // R2-APT-002：500 一律 FAIL（服务器崩溃不得计入 PASS）——仅 2xx 通过，
+  // 409/404 且错误体明确为合法业务原因（no historical snapshot / not found）
+  // 时按注明通过，否则 FAIL。
+  const legalFailureMsg = (res, patterns) =>
+    (res.status === 409 || res.status === 404) &&
+    patterns.test(String(res.body?.message ?? res.body?.error?.message ?? ''));
   const replay = await request('POST', '/api/scheduler/policy/replay', { candidatePolicyVersion: 2, seed: 42 }, token);
-  step('37-39. Policy Replay', replay.status === 201 || replay.status === 200 || replay.status === 500,
-    `status=${replay.status}${replay.body?.replayId ? ` replayId=${replay.body.replayId}` : ''}`);
+  const replayOk =
+    replay.status === 201 ||
+    replay.status === 200 ||
+    legalFailureMsg(replay, /no historical snapshot|not found|solve failed/i);
+  step('37-39. Policy Replay', replayOk,
+    `status=${replay.status}${replay.body?.replayId ? ` replayId=${replay.body.replayId}` : ''}${replayOk ? '' : '（500/非预期错误体=FAIL）'}`);
 
   // 40. Shadow（v2 已是 SHADOW，验证 guard）
+  // R2-APT-002：500 一律 FAIL——仅 2xx 或 409/404 且错误体为明确合法业务
+  // 原因（policy not found / SHADOW 状态冲突）时通过。
   const shadowPlan = await request('POST', '/api/scheduler/policy/2/shadow/plan', null, token);
-  step('40-45. Shadow Plan 生成', shadowPlan.status === 201 || shadowPlan.status === 200 || shadowPlan.status === 500,
-    `status=${shadowPlan.status}`);
+  const shadowOk =
+    shadowPlan.status === 201 ||
+    shadowPlan.status === 200 ||
+    legalFailureMsg(shadowPlan, /not found|cannot enter SHADOW|is ACTIVE|already/i);
+  step('40-45. Shadow Plan 生成', shadowOk,
+    `status=${shadowPlan.status}${shadowOk ? '' : '（500/非预期错误体=FAIL）'}`);
 
   // 46. Gate
   const gate = await request('POST', '/api/scheduler/policy/2/gate', {}, token);

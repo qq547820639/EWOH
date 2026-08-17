@@ -1,0 +1,24 @@
+{"id":"NEST-406","regression_status":"FIXED","evidence":"erp/erp.service.ts:111-134 receiveOrder insert 显式携带 orgId（line 122-123 orgId 字段），且 requireOrgId（line 38-46）缺失抛 401"}
+{"id":"NEST-407","regression_status":"FIXED","evidence":"erp/erp.service.ts:152-170 listOrders / 237-255 listOutbound 非 global_admin 路径 eq(ewohEvent.orgId, requireOrgId(actor))；reconcile 工单同 org 作用域（line 318-329）"}
+{"id":"NEST-408","regression_status":"FIXED","evidence":"erp/erp.service.ts:197-219 receiveOutbound insert values 显式 orgId（line 208-209），幂等查询 findByEvidence 也带 org 维度（line 362-371）"}
+{"id":"NEST-411","regression_status":"FIXED","evidence":"model/model.service.ts:56-74 orgScope 强制（global_admin 放行、缺失 401）；registerModel line 106-112 写入显式 orgId；list/get 带 eq(orgId)"}
+{"id":"NEST-412","regression_status":"FIXED","evidence":"mobile/mobile.service.ts:63-75 listWorkbench 仅本人或 global_admin/dispatcher/workshop_lead 可查，否则 ForbiddenException（水平越权关闭）"}
+{"id":"NEST-416","regression_status":"FIXED","evidence":"metrics/metrics.service.ts:8-14 isRouteTemplate 归一 + line 22 MAX_REQUEST_KEYS=1000 + line 47-54 overflow 聚合桶（基数有界）"}
+{"id":"NEST-426","regression_status":"FIXED","evidence":"erp/erp.service.ts:288-300 ackOutbound update 带 eq(ewohEvent.status, row.status) CAS，命中 0 行抛 ConflictException('STATE_CONFLICT')"}
+{"id":"NEST-427","regression_status":"FIXED","evidence":"metrics/metrics.controller.ts:26-50 METRICS_BEARER_TOKEN constant-time 校验；未配置且 production 时 404 fail-closed；METRICS_ENABLED=false 禁用"}
+{"id":"NEST-428","regression_status":"FIXED","evidence":"app.module.ts:124-127 MetricsInterceptor 以 APP_INTERCEPTOR 注册（legacy 入口补齐，配合 MetricsModule import line 90）；注释锚点 NEST-507/515"}
+{"id":"NEST-429","regression_status":"FIXED","evidence":"metrics/metrics.interceptor.ts:34-43 error 回调从 HttpException.getStatus() 取真实状态码（默认 500），不再记 200"}
+{"id":"NEST-431","regression_status":"FIXED","evidence":"exo/exo-config.service.ts:121-124 record 与 recordEventOn 同 db.transaction；activateProfile line 204-223 同事务（主事实+事件原子提交）"}
+{"id":"NEST-432","regression_status":"FIXED","evidence":"exo/exo-config.controller.ts:62-70 currentOrgId 缺失抛 BadRequestException（与 exo-session 一致，不再回退空串）"}
+{"id":"NEST-434","regression_status":"FIXED","evidence":"knowledge/knowledge.service.ts:11-14 PLATFORM_SHARED_ORG_ID 改为从 @server/common/org-sentinels 统一导入再导出（哨兵常量单点登记）"}
+{"id":"NEST-435","regression_status":"FIXED","evidence":"identity/identity.service.ts:137-165 insert 捕获 23505 后按 (org,system,id,status=active) 回读，目标一致幂等返回、不一致显式 conflict 400（不再 500）"}
+{"id":"NEST-436","regression_status":"FIXED","evidence":"maintenance/maintenance.service.ts:144-157 transitionCondition update 带 eq(status, current.status) CAS，命中 0 行抛 ConflictException（重复建工单杜绝）"}
+{"id":"NEST-437","regression_status":"FIXED","evidence":"health/health.controller.ts:36-70 /ready 匿名请求仅返回 {status,service}；checks 细节（replanGuard 降级原因）需带凭证才返回"}
+{"id":"NEST-441","regression_status":"FIXED","evidence":"maintenance/maintenance.service.ts:65-73 subjectEntityId 用 split(':') 派生并显式校验段非空（不再 indexOf slice(0,-1) 截断）"}
+{"id":"NEST-443","regression_status":"FIXED","evidence":"health/replan-guard-status.service.ts:17 DEGRADATION_TTL_MS=5min + line 39-45 recordRecovery 显式恢复 + line 52-56 TTL 过期自动恢复（不再永久 degraded）"}
+{"id":"NEST-444","regression_status":"FIXED","evidence":"mobile/mobile.service.ts:77-91 listWorkbench 改用 drizzle eq(ewohScheduleTaskStep.orgId, actor.primaryOrgId)（raw SQL val::uuid 写法移除）"}
+{"id":"NEST-445","regression_status":"FIXED","evidence":"erp/erp.service.ts:27 EVIDENCE_KEYS 白名单 + line 357-359 findByEvidence 键名先校验白名单再入 sql 模板插值"}
+{"id":"NEST-446","regression_status":"FIXED","evidence":"model/__tests__/model.service.spec.ts:100-158 状态机 candidate→reviewing→shadow→active→retired 全链、非法跳转拒绝、CAS 冲突 409、terminal 不再转移全断言"}
+{"id":"NEST-447","regression_status":"FIXED","evidence":"identity/__tests__/identity.service.spec.ts:37-43 fake.where 按条件内 org 值过滤 + line 134-138 跨租户解析返回 null 断言（租户隔离被真实测试）"}
+{"id":"NEST-448","regression_status":"FIXED","evidence":"maintenance/__tests__/maintenance.service.spec.ts:34-39 fake 按 org 谓词过滤 + line 143-149 跨租户转移 404、line 217-224 listConditions 跨租户返回空断言"}
+{"id":"NOTE-SCOPE","regression_status":"INFO","evidence":"NEST-401~405/409/410/413~415/417~419/420/421/422/423/424/425/430/438/439/440/442/449/450 位于 approval/alert/ai/auth/aas/control 模块（他人负责），不在 server-am 范围"}

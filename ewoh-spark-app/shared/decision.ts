@@ -159,7 +159,9 @@ export function validateDecision(record: unknown): string[] {
   if (decidedMs === null) return ['bad_decided_at'];
   for (const [field, errorCode] of Object.entries(OPTIONAL_STRING_ERRORS)) {
     const value = r[field];
-    if (value !== undefined && (typeof value !== 'string' || value.trim() === '')) {
+    // R2-SHR-009：null 与 undefined 同语义跳过（null=未携带），
+    // 与 Python decision.py `value is not None` 对齐。
+    if (value != null && (typeof value !== 'string' || value.trim() === '')) {
       return [errorCode];
     }
   }

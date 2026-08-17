@@ -63,6 +63,21 @@ interface SchedulingRunResponse {
   }>;
 }
 
+// R2-APT-005：plan diff（PlanCompareService.compare）权威 VM 形状
+interface PlanCompareResultShape {
+  baselinePlanId: string;
+  candidatePlanId: string;
+  added: string[];
+  removed: string[];
+  diffByTask: Array<{
+    taskId: string;
+    changeTypes: string[];
+    reasons: string[];
+  }>;
+  changeTypeCounts: Record<string, number>;
+  churn: number;
+}
+
 function makeHeaders(token: string) {
   return jsonHeaders(token);
 }
@@ -85,18 +100,23 @@ if (!e2eConfig) {
     beforeAll(async () => {
       owner = await connectOwner(e2eConfig.ownerDatabaseUrl);
       fixture = await createE2EFixture(owner);
-      // 清空 runtime 库调度事实：避免 MANUAL 冷却跨运行 debounce + 历史快照/
-      // reservation 残留导致 PLAN_STALE（world-state 全库收集，跨 fixture 数据
-      // 会使快照新鲜度判定不一致）。E2E 必须从干净基线开始。
+      // 清基：避免 MANUAL 冷却跨运行 debounce + 历史快照/reservation 残留导致
+      // PLAN_STALE。R2-APT-009：删除限定本 run 的 fixture org 范围（原全表
+      // DELETE 会摧毁共享库其他租户的调度事实/快照历史）；assignment 表无
+      // org 列，经 plan 子查询按 org 定位；快照表 NULL 行为全局资产仅清本 org。
       try {
+        const orgIds = [fixture.orgA.id, fixture.orgB.id];
         const postgres = (await import('postgres')).default;
         const runtime = postgres(e2eConfig.runtimeDatabaseUrl, { max: 1 });
-        await runtime.unsafe('DELETE FROM ewoh_replan_trigger');
-        await runtime.unsafe('DELETE FROM ewoh_scheduling_execution');
-        await runtime.unsafe('DELETE FROM ewoh_scheduling_plan_assignment');
-        await runtime.unsafe('DELETE FROM ewoh_schedule_plan');
-        await runtime.unsafe('DELETE FROM ewoh_resource_reservation');
-        await runtime.unsafe('DELETE FROM ewoh_world_state_snapshot');
+        await runtime.unsafe('DELETE FROM ewoh_replan_trigger WHERE org_id = ANY($1::text[])', [orgIds]);
+        await runtime.unsafe('DELETE FROM ewoh_scheduling_execution WHERE org_id = ANY($1::text[])', [orgIds]);
+        await runtime.unsafe(
+          'DELETE FROM ewoh_scheduling_plan_assignment WHERE plan_id IN (SELECT plan_id FROM ewoh_schedule_plan WHERE org_id = ANY($1::text[]))',
+          [orgIds],
+        );
+        await runtime.unsafe('DELETE FROM ewoh_schedule_plan WHERE org_id = ANY($1::text[])', [orgIds]);
+        await runtime.unsafe('DELETE FROM ewoh_resource_reservation WHERE org_id = ANY($1::text[])', [orgIds]);
+        await runtime.unsafe('DELETE FROM ewoh_world_state_snapshot WHERE org_id = ANY($1::text[])', [orgIds]);
         await runtime.end();
       } catch {
         // 清理失败不阻断测试（触发类型可避开冷却）。
@@ -176,6 +196,45 @@ if (!e2eConfig) {
       );
       expect(conflicts.status).toBe(200);
 
+      // R2-APT-005：先建立基线方案并批准（TASK_CREATED 避开 MANUAL 30s 冷却），
+      // 使 partial replan 有可比对的 before/after（plan diff 与冻结断言的前提）。
+      const offlineDev = `DEV-${runId}`;
+      const baseline = await apiRequest<SchedulingRunResponse>(
+        baseUrl,
+        '/api/scheduler/runs',
+        {
+          method: 'POST',
+          headers: makeHeaders(token),
+          body: JSON.stringify({
+            strategy: 'scheduling_v2',
+            trigger: 'TASK_CREATED',
+            reason: `E2E-B baseline ${runId}`,
+          }),
+        },
+      );
+      expect(baseline.status).toBe(201);
+      const plan0 = baseline.body.plans?.[0];
+      if (plan0) {
+        const approve0 = await apiRequest(
+          baseUrl,
+          `/api/scheduler/plans/${plan0.planId}/approve`,
+          {
+            method: 'POST',
+            headers: makeHeaders(token),
+            body: JSON.stringify({
+              version: plan0.version,
+              snapshotVersion: plan0.snapshotVersion,
+              operator: 'e2e-admin',
+              reason: 'approve B baseline',
+            }),
+          },
+        );
+        expect(approve0.status).toBe(200);
+      } else {
+        // R2-APT-005：fixture 无任务数据时基线无方案——显式注明跳过 diff 前置，不静默。
+        console.warn('[B SKIP] baseline runs 201 无方案（fixture 无任务数据），plan diff/冻结断言缺少基线，本轮显式跳过');
+      }
+
       // 局部重排：trigger=DEVICE_OFFLINE + entityId=<deviceId>。
       // 期望：仅受影响任务进入求解子图；执行中/锁定任务冻结（frozen）。
       const replan = await apiRequest<SchedulingRunResponse>(
@@ -187,15 +246,64 @@ if (!e2eConfig) {
           body: JSON.stringify({
             strategy: 'scheduling_v2',
             trigger: 'DEVICE_OFFLINE',
-            entityId: `DEV-${runId}`,
+            entityId: offlineDev,
             reason: 'E2E-B device offline replan',
           }),
         },
       );
       expect(replan.status).toBe(201);
+      const plan1 = replan.body.plans?.[0];
+      if (!plan0 || !plan1) {
+        console.warn(
+          `[B SKIP] partial replan 未产生可比对新方案（baseline=${Boolean(plan0)}, replan=${Boolean(plan1)}；` +
+            '需 fixture 任务/设备数据），plan diff/冻结/审批断言本轮显式跳过',
+        );
+        return;
+      }
 
-      // 若产生新方案：对比旧方案（plan diff）应输出 changed assignments/ETA delta。
-      // 断言点（需 fixture 数据支撑）：partial replan 后无关任务 assignment 不变。
+      // R2-APT-005（plan diff）：compare VM 返回权威 diff 结构——diffByTask/
+      // added/removed/changeTypeCounts/churn 必须齐备（标题承诺的 diff 断言）。
+      const diff = await apiRequest<PlanCompareResultShape>(
+        baseUrl,
+        `/api/scheduler/plans/${plan0.planId}/compare/${plan1.planId}`,
+        { method: 'GET', headers: makeHeaders(token) },
+      );
+      expect(diff.status).toBe(200);
+      expect(Array.isArray(diff.body.diffByTask)).toBe(true);
+      expect(Array.isArray(diff.body.added)).toBe(true);
+      expect(Array.isArray(diff.body.removed)).toBe(true);
+      expect(diff.body).toHaveProperty('changeTypeCounts');
+      expect(typeof diff.body.churn).toBe('number');
+
+      // R2-APT-005（冻结）：partial replan 仅受影响任务进入求解子图——
+      // PERSON_CHANGED 只允许出现在引用离线设备的任务上，无关任务不得被换人。
+      const personChanged = diff.body.diffByTask.filter((d) =>
+        d.changeTypes?.includes('PERSON_CHANGED'),
+      );
+      const offender = personChanged.find((d) => {
+        const before = plan0.assignments.find((a) => a.taskId === d.taskId);
+        return before?.deviceId !== offlineDev;
+      });
+      // 失败时 offender 携带 taskId/changeTypes/reasons，诊断信息完整。
+      expect(offender).toBeUndefined();
+
+      // R2-APT-005（审批）：重排后的新方案走完整审批（version/snapshotVersion 语义）。
+      const approve1 = await apiRequest(
+        baseUrl,
+        `/api/scheduler/plans/${plan1.planId}/approve`,
+        {
+          method: 'POST',
+          headers: makeHeaders(token),
+          body: JSON.stringify({
+            version: plan1.version,
+            snapshotVersion: plan1.snapshotVersion,
+            operator: 'e2e-admin',
+            reason: 'approve B replan',
+          }),
+        },
+      );
+      expect(approve1.status).toBe(200);
+      expect((approve1.body as { status: string }).status).toBe('approved');
     });
 
     it('C: 路线阻断 → route cost 更新 → 局部重排 → 新路线', async () => {
@@ -217,23 +325,101 @@ if (!e2eConfig) {
         body: JSON.stringify({
           taskId: `T-${runId}`,
           candidates: [
-            { personId: 'p1', deviceId: 'd1', stationId: 'S1' },
+            { personId: 'p-no-coords-e2e-c', deviceId: 'd1', stationId: 'S1' },
           ],
         }),
       });
       expect(calc.status).toBe(200);
-      // 断言：fallback 候选显式携带 fallbackReason/dataQuality；无坐标候选 feasible=false。
+      // R2-APT-005：断言落地（不再 if(candidate) 可跳过）——无坐标候选必须
+      // 显式不可行（feasible=false + fallbackReason=coords_unknown），并携带
+      // dataQuality；绝不伪造坐标算距（EDGE-123/R2-ESC-003 语义）。
       const candidate = calc.body.data.candidates?.[0];
-      if (candidate) {
-        expect(candidate.routeCostMode).toMatch(/route_graph|euclidean_fallback/);
-      }
+      expect(candidate).toBeDefined();
+      expect(candidate!.feasible).toBe(false);
+      expect(candidate!.fallbackReason).toBe('coords_unknown');
+      expect(['UNKNOWN', 'STALE', 'FRESH']).toContain(candidate!.dataQuality);
 
       // 路线阻断后重排：新方案应避开 blocked 边（routeStatus blocked → 候选不可行）。
+      // R2-APT-005：blocked 边规避断言需 fixture 预置 route graph 数据
+      //（ewoh_topology + 当前快照成本矩阵 + 真实 person/station 坐标），当前
+      // fixture 仅建 org/user——显式跳过并注明原因，不以恒真断言冒充覆盖。
+      console.warn(
+        '[C SKIP] blocked 边规避与重排新路线断言需 route graph fixture（ewoh_topology/成本矩阵），本轮显式跳过',
+      );
     });
 
     it('D: 锁定 assignment → replan 不变', async () => {
       // 数据准备：ewoh_world_state_snapshot.lockedAssignments 含 {taskId, personId}
       //（执行中任务）。重排后该任务必须保持原分配（frozen），不可移动。
+      // R2-APT-005：先建立基线方案并推进到 dispatch（产生 execution 记录），
+      // 将首个 execution 置为 STARTED——world-state 装配时 executing 任务进入
+      // lockedAssignments（world-state.service LOCKED_TASK_STATUSES）。
+      const baseline = await apiRequest<SchedulingRunResponse>(
+        baseUrl,
+        '/api/scheduler/runs',
+        {
+          method: 'POST',
+          headers: makeHeaders(token),
+          body: JSON.stringify({
+            strategy: 'scheduling_v2',
+            trigger: 'TASK_UPDATED',
+            reason: `E2E-D baseline ${runId}`,
+          }),
+        },
+      );
+      expect(baseline.status).toBe(201);
+      const plan0 = baseline.body.plans?.[0];
+      if (!plan0 || plan0.assignments.length === 0) {
+        // R2-APT-005：无 assignment 无法构造锁定事实——显式注明跳过（不恒真）。
+        console.warn(
+          `[D SKIP] baseline 无 assignment（plan=${Boolean(plan0)}, assignments=${plan0?.assignments.length ?? 0}；` +
+            '需 fixture 任务数据构造锁定），锁定不变量断言本轮显式跳过',
+        );
+        return;
+      }
+      const approve0 = await apiRequest(
+        baseUrl,
+        `/api/scheduler/plans/${plan0.planId}/approve`,
+        {
+          method: 'POST',
+          headers: makeHeaders(token),
+          body: JSON.stringify({
+            version: plan0.version,
+            snapshotVersion: plan0.snapshotVersion,
+            operator: 'e2e-admin',
+            reason: 'approve D baseline',
+          }),
+        },
+      );
+      expect(approve0.status).toBe(200);
+      const dispatch0 = await apiRequest(
+        baseUrl,
+        `/api/scheduler/plans/${plan0.planId}/dispatch`,
+        { method: 'POST', headers: makeHeaders(token) },
+      );
+      expect(dispatch0.status).toBe(200);
+
+      // R2-APT-005 锁定事实：首个 execution 置 STARTED（执行中任务进入 lockedAssignments）。
+      const execs = await apiRequest<{ executions: Array<{ assignmentId: string; status: string; taskId?: string }> }>(
+        baseUrl,
+        `/api/scheduler/executions?planId=${encodeURIComponent(plan0.planId)}`,
+        { method: 'GET', headers: makeHeaders(token) },
+      );
+      expect(execs.status).toBe(200);
+      const firstExec = execs.body.executions?.[0];
+      if (!firstExec) {
+        console.warn('[D SKIP] dispatch 后无 execution 记录，无法构造锁定事实，锁定不变量断言本轮显式跳过');
+        return;
+      }
+      const started = await apiRequest(baseUrl, `/api/scheduler/executions/${firstExec.assignmentId}/update`, {
+        method: 'POST',
+        headers: makeHeaders(token),
+        body: JSON.stringify({ status: 'STARTED', actualStartAt: new Date().toISOString() }),
+      });
+      expect(started.status).toBe(201);
+      expect((started.body as { status: string }).status).toBe('STARTED');
+
+      // 重排（MANUAL，避开风暴守卫去抖）。
       const replan = await apiRequest<SchedulingRunResponse>(
         baseUrl,
         '/api/scheduler/runs',
@@ -248,7 +434,33 @@ if (!e2eConfig) {
         },
       );
       expect(replan.status).toBe(201);
-      // 断言：锁定任务不出现在新方案的 assignments 变更中（或保持原 personId）。
+      const plan1 = replan.body.plans?.[0];
+      if (!plan1) {
+        console.warn('[D SKIP] replan 未产生新方案（debounced/无任务），锁定不变量断言本轮显式跳过');
+        return;
+      }
+
+      // R2-APT-005（锁定不变量）：STARTED 任务的分配不可移动——新方案中该任务
+      // 保持原 personId，或经 plan diff 验证其无 PERSON_CHANGED。
+      const lockedTaskId =
+        firstExec.taskId ?? plan0.assignments.find((a) => a.taskId)?.taskId;
+      const lockedBefore = plan0.assignments.find((a) => a.taskId === lockedTaskId);
+      const lockedAfter = plan1.assignments.find((a) => a.taskId === lockedTaskId);
+      if (lockedAfter && lockedBefore) {
+        // 锁定（执行中）任务在 replan 后被改派即违反 frozen 语义
+        expect(lockedAfter.personId === lockedBefore.personId).toBe(true);
+      } else {
+        // 任务未出现在新方案 assignments 中时，退而用权威 plan diff 验证：
+        // 该任务的 diff 不得出现 PERSON_CHANGED（等价携带或显式 REMOVED）。
+        const diff = await apiRequest<PlanCompareResultShape>(
+          baseUrl,
+          `/api/scheduler/plans/${plan0.planId}/compare/${plan1.planId}`,
+          { method: 'GET', headers: makeHeaders(token) },
+        );
+        expect(diff.status).toBe(200);
+        const row = diff.body.diffByTask.find((d) => d.taskId === lockedTaskId);
+        expect(row?.changeTypes ?? []).not.toContain('PERSON_CHANGED');
+      }
     });
 
     it('E: stale snapshot approve 被拒（version/snapshotVersion 校验）', async () => {

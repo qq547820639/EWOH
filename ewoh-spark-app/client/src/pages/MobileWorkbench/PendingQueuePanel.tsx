@@ -27,7 +27,7 @@ function formatTime(iso: string | null | undefined): string {
   if (Number.isNaN(time)) {
     return '—';
   }
-  return new Date(iso).toLocaleString();
+  return new Date(iso).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 }
 
 /**

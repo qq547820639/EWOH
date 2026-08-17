@@ -265,6 +265,19 @@ def _event_type(message_type: str) -> str:
     return "TelemetryObserved"
 
 
+def format_timestamp_ms(ts_ms: int) -> str:
+    """Unix 毫秒 → ISO 8601 毫秒精度 UTC 字符串（R2-EDM-01）。
+
+    ``time.strftime`` 不支持 ``%f``（仅 ``datetime.strftime`` 支持），
+    旧实现输出 ``…T05:20:00.fZ`` 这类畸形串，下游 ``ts_to_ms`` 必抛
+    ValueError。改为 gmtime 秒 + 手工毫秒拼接，保证可被 ``ts_to_ms``
+    无损回解。
+    """
+    seconds, ms = divmod(int(ts_ms), 1000)
+    base = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(seconds))
+    return f"{base}.{ms:03d}Z"
+
+
 def normalize_sparkplug_message(
     topic: str,
     payload_bytes: bytes,
@@ -279,10 +292,9 @@ def normalize_sparkplug_message(
     event_time = now_iso()
     if payload.timestamp_ms is not None:
         try:
-            event_time = time.strftime(
-                "%Y-%m-%dT%H:%M:%S.%fZ",
-                time.gmtime(payload.timestamp_ms / 1000),
-            )
+            # R2-EDM-01：time.strftime 不支持 %f（输出字面 'f' 畸形串），
+            # 改用 gmtime 秒 + 手工毫秒拼接（format_timestamp_ms）。
+            event_time = format_timestamp_ms(payload.timestamp_ms)
         except (OverflowError, OSError, ValueError):
             event_time = now_iso()
     metrics = [
@@ -392,6 +404,7 @@ class SparkplugAdapter(BaseAdapter):
         self.group_id = group_id
         self.session = SparkplugSessionState(group_id, device_id)
         self._inbox: queue.Queue = queue.Queue(maxsize=1024)
+        self._dropped_messages = 0  # R2-EDM-04：队列满丢弃计数（可观测，不静默）
         self._last_msg: dict[str, Any] | None = None
         self._last_seen: str | None = None
         self._lock = threading.Lock()

@@ -56,15 +56,21 @@ export interface WorkbenchViewStore {
 }
 
 export class InMemoryWorkbenchViewStore implements WorkbenchViewStore {
+  // R2-SOP-019：Map 键含 (orgId, ownerId, key) 三元组——跨 org/owner 同名
+  // 视图不再互相覆盖/误删（与 PostgresWorkbenchViewStore 的谓词语义对齐）。
   private readonly views = new Map<string, WorkbenchView>();
 
+  private scopedKey(orgId: string, ownerId: string, key: string): string {
+    return `${orgId}::${ownerId}::${key}`;
+  }
+
   async save(view: WorkbenchView): Promise<WorkbenchView> {
-    this.views.set(view.key, view);
+    this.views.set(this.scopedKey(view.orgId, view.ownerId, view.key), view);
     return view;
   }
 
   async get(orgId: string, ownerId: string, key: string): Promise<WorkbenchView | undefined> {
-    return this.views.get(key);
+    return this.views.get(this.scopedKey(orgId, ownerId, key));
   }
 
   async list(ownerId: string, orgId: string): Promise<WorkbenchView[]> {
@@ -74,7 +80,7 @@ export class InMemoryWorkbenchViewStore implements WorkbenchViewStore {
   }
 
   async remove(orgId: string, ownerId: string, key: string): Promise<void> {
-    this.views.delete(key);
+    this.views.delete(this.scopedKey(orgId, ownerId, key));
   }
 
   clear(): void {

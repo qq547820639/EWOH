@@ -37,11 +37,13 @@ describe('EWOH scenario packages (unit smoke)', () => {
     expect(status).toBe('completed');
 
     // ADR-081：资源面 drizzle 链式语义假库（§31 单一助手）。
+    // W4/R2-SNZ：资源操作显式租户上下文（缺省 fail-closed）。
+    const resourceActor = { userId: 'planner-1', primaryOrgId: 'org-sp2' };
     const resource = new ResourceService(makeResourceDb().db as never);
     resource.seedInventory([{ resourceId: 'tool-a', quantity: 2 }]);
-    const preorder = await resource.createPreorder('tool-a', 2);
-    await expect(resource.createPreorder('tool-a', 1)).rejects.toThrow();
-    await resource.issue(preorder.id, 2);
+    const preorder = await resource.createPreorder('tool-a', 2, resourceActor);
+    await expect(resource.createPreorder('tool-a', 1, resourceActor)).rejects.toThrow();
+    await resource.issue(preorder.id, 2, resourceActor);
 
     const approval = new ApprovalService();
     const instance = approval.createApproval({ entityType: 'task', entityId: 'task-1', roles: ['lead'] });

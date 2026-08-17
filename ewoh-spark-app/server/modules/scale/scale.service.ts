@@ -184,6 +184,20 @@ export class ScaleService {
     return orgId;
   }
 
+  /**
+   * R2-SOP-010：客户端自定义全局唯一 ID 的并发抢注——insert 落 23505 唯一键
+   * 冲突时转 409（与 NEST-332 同款 code 判定）；其余异常原样重抛（不吞）。
+   */
+  private rethrowDuplicateIdAs409(error: unknown, id: string): never {
+    const code = (error as { code?: string }).code;
+    if (code === '23505') {
+      throw new ConflictException(
+        `SCALE_DUPLICATE_ID: ${id} 已被占用（并发抢注或重复注册）`,
+      );
+    }
+    throw error;
+  }
+
   async registerTemplate(
     body: {
       templateId?: string;
@@ -202,23 +216,29 @@ export class ScaleService {
       throw new BadRequestException('name and version are required');
     }
     const templateId = body.templateId?.trim() || `TPL-${randomUUID().slice(0, 8)}`;
-    const [row] = await this.db
-      .insert(ewohFactoryTemplate)
-      .values({
-        templateId,
-        name: body.name.trim(),
-        industry: body.industry ?? null,
-        version: body.version.trim(),
-        parentTemplateId: body.parentTemplateId ?? null,
-        inheritanceOrder: body.inheritanceOrder ?? 0,
-        lifecycleStatus: 'draft',
-        configJson: body.config ?? {},
-        manifestJson: body.manifest ?? {},
-        compatibleCore: body.compatibleCore ?? null,
-        // NEST-202：写入显式携带 orgId（不依赖 GUC 默认）。
-        orgId: this.requireOrgId(actor),
-      })
-      .returning();
+    let row: typeof ewohFactoryTemplate.$inferSelect;
+    try {
+      [row] = await this.db
+        .insert(ewohFactoryTemplate)
+        .values({
+          templateId,
+          name: body.name.trim(),
+          industry: body.industry ?? null,
+          version: body.version.trim(),
+          parentTemplateId: body.parentTemplateId ?? null,
+          inheritanceOrder: body.inheritanceOrder ?? 0,
+          lifecycleStatus: 'draft',
+          configJson: body.config ?? {},
+          manifestJson: body.manifest ?? {},
+          compatibleCore: body.compatibleCore ?? null,
+          // NEST-202：写入显式携带 orgId（不依赖 GUC 默认）。
+          orgId: this.requireOrgId(actor),
+        })
+        .returning();
+    } catch (error) {
+      // R2-SOP-010：客户端自定义全局唯一 ID 的抢注 → 409。
+      this.rethrowDuplicateIdAs409(error, templateId);
+    }
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
       orgId: actor?.primaryOrgId ?? '',
@@ -405,7 +425,13 @@ export class ScaleService {
         status: 'replayed',
         installedAt: new Date(),
       })
-      .where(eq(ewohFactoryProfile.profileId, profileId))
+      .where(
+        // R2-SOP-010：写路径与读路径对称补 orgWhere。
+        and(
+          eq(ewohFactoryProfile.profileId, profileId),
+          this.orgWhere(ewohFactoryProfile.orgId, actor),
+        ),
+      )
       .returning();
     if (!updated) {
       throw new ConflictException('STATE_CONFLICT');
@@ -441,19 +467,26 @@ export class ScaleService {
       throw new BadRequestException('name, version, and packageType are required');
     }
     const packageId = body.packageId?.trim() || `PKG-${randomUUID().slice(0, 8)}`;
-    const [row] = await this.db
-      .insert(ewohAssetPackage)
-      .values({
-        packageId,
-        packageType: body.packageType,
-        name: body.name.trim(),
-        version: body.version.trim(),
-        manifestJson: body.manifest ?? {},
-        status: 'draft',
-        // NEST-202：写入显式携带 orgId。
-        orgId: this.requireOrgId(actor),
-      })
-      .returning();
+    let row: typeof ewohAssetPackage.$inferSelect;
+    try {
+      [row] = await this.db
+        .insert(ewohAssetPackage)
+        .values({
+          packageId,
+          packageType: body.packageType,
+          name: body.name.trim(),
+          version: body.version.trim(),
+          manifestJson: body.manifest ?? {},
+          status: 'draft',
+          // NEST-202：写入显式携带 orgId。
+          orgId: this.requireOrgId(actor),
+        })
+        .returning();
+    } catch (error) {
+      // R2-SOP-010：客户端自定义全局唯一 packageId/mappingId 的抢注 → 409
+      //（registerConnector/ScenarioPack/Mapping 均委托此处，一处收敛）。
+      this.rethrowDuplicateIdAs409(error, packageId);
+    }
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
       orgId: actor?.primaryOrgId ?? '',
@@ -1050,7 +1083,13 @@ export class ScaleService {
     const [updated] = await this.db
       .update(ewohAssetPackage)
       .set({ status: 'installed', publishedAt: new Date() })
-      .where(eq(ewohAssetPackage.packageId, packageId))
+      .where(
+        // R2-SOP-010：写路径与读路径对称补 orgWhere。
+        and(
+          eq(ewohAssetPackage.packageId, packageId),
+          this.orgWhere(ewohAssetPackage.orgId, actor),
+        ),
+      )
       .returning();
     if (!updated) {
       throw new ConflictException('STATE_CONFLICT');
@@ -1078,7 +1117,13 @@ export class ScaleService {
     const [updated] = await this.db
       .update(ewohAssetPackage)
       .set({ status: 'uninstalled', publishedAt: null })
-      .where(eq(ewohAssetPackage.packageId, packageId))
+      .where(
+        // R2-SOP-010：写路径与读路径对称补 orgWhere。
+        and(
+          eq(ewohAssetPackage.packageId, packageId),
+          this.orgWhere(ewohAssetPackage.orgId, actor),
+        ),
+      )
       .returning();
     if (!updated) {
       throw new ConflictException('STATE_CONFLICT');
@@ -1428,7 +1473,8 @@ export class ScaleService {
   }
 
   async ensureConnectorInstalled(packageId: string, actor?: OrgContext) {
-    const asset = await this.getAssetPackage(packageId);
+    // R2-SOP-008：透传 actor——此前漏传使 getAssetPackage 对任何调用必抛 401。
+    const asset = await this.getAssetPackage(packageId, actor);
     if (asset.packageType !== 'connector') {
       throw new BadRequestException('packageType must be connector');
     }
@@ -1438,7 +1484,13 @@ export class ScaleService {
     const [updated] = await this.db
       .update(ewohAssetPackage)
       .set({ status: 'published', publishedAt: new Date() })
-      .where(eq(ewohAssetPackage.packageId, packageId))
+      .where(
+        // R2-SOP-010：写路径与读路径对称补 orgWhere。
+        and(
+          eq(ewohAssetPackage.packageId, packageId),
+          this.orgWhere(ewohAssetPackage.orgId, actor),
+        ),
+      )
       .returning();
     if (!updated) {
       throw new ConflictException('STATE_CONFLICT');
@@ -1506,11 +1558,33 @@ export class ScaleService {
     return row;
   }
 
-  private async publishAssetPackage(packageId: string) {
+  /**
+   * R2-SOP-010/021：publish 带 orgWhere（与读对称）；R2-SOP-021：幂等化——
+   * 已 published 直接返回，golden factory 重放不再无条件重复 UPDATE。
+   */
+  private async publishAssetPackage(packageId: string, actor?: OrgContext) {
+    const [existing] = await this.db
+      .select({ status: ewohAssetPackage.status })
+      .from(ewohAssetPackage)
+      .where(
+        and(
+          eq(ewohAssetPackage.packageId, packageId),
+          this.orgWhere(ewohAssetPackage.orgId, actor),
+        ),
+      )
+      .limit(1);
+    if (existing?.status === 'published') {
+      return;
+    }
     await this.db
       .update(ewohAssetPackage)
       .set({ status: 'published', publishedAt: new Date() })
-      .where(eq(ewohAssetPackage.packageId, packageId));
+      .where(
+        and(
+          eq(ewohAssetPackage.packageId, packageId),
+          this.orgWhere(ewohAssetPackage.orgId, actor),
+        ),
+      );
   }
 
   private deterministicId(prefix: string, parts: string[]): string {
@@ -1589,7 +1663,7 @@ export class ScaleService {
           actor,
         );
       }
-      await this.publishAssetPackage(packageId);
+      await this.publishAssetPackage(packageId, actor);
       connectors.push(packageId);
     }
 
@@ -1681,11 +1755,17 @@ export class ScaleService {
    * 列出工厂名以指定前缀开头的工厂配置（供样例工厂安全清理使用）。
    * 只按 factoryName 前缀匹配，绝不触碰生产数据。
    */
-  async listDemoProfiles(prefix: string) {
+  async listDemoProfiles(prefix: string, actor?: OrgContext) {
     return this.db
       .select()
       .from(ewohFactoryProfile)
-      .where(like(ewohFactoryProfile.factoryName, `${prefix}%`))
+      .where(
+        and(
+          like(ewohFactoryProfile.factoryName, `${prefix}%`),
+          // R2-SOP-009：演示前缀是共享命名空间，加 org 谓词防跨租户读。
+          this.orgWhere(ewohFactoryProfile.orgId, actor),
+        ),
+      )
       .orderBy(desc(ewohFactoryProfile.createdAt));
   }
 
@@ -1697,14 +1777,21 @@ export class ScaleService {
     prefix: string,
     actor?: OrgContext,
   ): Promise<{ removed: number; profileIds: string[] }> {
-    const profiles = await this.listDemoProfiles(prefix);
+    const profiles = await this.listDemoProfiles(prefix, actor);
     const profileIds = profiles.map((profile) => profile.profileId);
     let removed = 0;
-    for (const profile of profiles) {
-      await this.db
+    if (profileIds.length > 0) {
+      // R2-SOP-009：N+1 循环删除改单条 DELETE（org + 前缀谓词）。
+      const deleted = await this.db
         .delete(ewohFactoryProfile)
-        .where(eq(ewohFactoryProfile.profileId, profile.profileId));
-      removed += 1;
+        .where(
+          and(
+            like(ewohFactoryProfile.factoryName, `${prefix}%`),
+            this.orgWhere(ewohFactoryProfile.orgId, actor),
+          ),
+        )
+        .returning({ profileId: ewohFactoryProfile.profileId });
+      removed = deleted.length;
     }
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',

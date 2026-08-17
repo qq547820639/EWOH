@@ -9,6 +9,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
+import { randomUUID } from 'node:crypto';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { ewohPolicyReplay, ewohWorldStateSnapshot } from '@server/database/schema';
 import type {
@@ -209,15 +210,29 @@ export class PolicyReplayService {
       ctx?: OrgContext;
     },
   ): Promise<import('@shared/api.interface').PolicyReplayRecord> {
-    const replayId = `RPL-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // R2-SSV-20：Date.now()+Math.random（同毫秒碰撞）→ randomUUID。
+    const replayId = `RPL-${randomUUID()}`;
     const startedAt = new Date();
     // NEST-036：快照基线按 ctx org 血缘过滤（同 latestSnapshotRow 语义）。
+    // R2-SSV-09（2026-08-17）：显式 snapshotVersion 路径同样叠加 org 条件
+    // （此前仅 eq(snapshotVersion)，跨租户快照可被指定为 replay 基线）。
+    const snapshotOrgId = opts?.ctx?.primaryOrgId?.trim() || opts?.orgId || null;
     const snapshotRow = opts?.snapshotVersion
       ? (
           await this.db
             .select()
             .from(ewohWorldStateSnapshot)
-            .where(eq(ewohWorldStateSnapshot.snapshotVersion, opts.snapshotVersion))
+            .where(
+              snapshotOrgId
+                ? and(
+                    eq(ewohWorldStateSnapshot.snapshotVersion, opts.snapshotVersion),
+                    or(
+                      isNull(ewohWorldStateSnapshot.orgId),
+                      eq(ewohWorldStateSnapshot.orgId, snapshotOrgId),
+                    ),
+                  )
+                : eq(ewohWorldStateSnapshot.snapshotVersion, opts.snapshotVersion),
+            )
             .limit(1)
         )[0]
       : await this.latestSnapshotRow(opts?.ctx);
@@ -227,7 +242,12 @@ export class PolicyReplayService {
     }
     const snapshot = (snapshotRow.snapshotJson ?? {}) as Parameters<SolverService['solve']>[0];
     const active = await this.policyService.getActivePolicy(opts?.orgId ?? undefined);
-    const candidate = await this.policyService.getPolicy(candidateVersion);
+    // R2-SSV-09/NEST-036：候选策略读取按 org 作用域（configVersion 按 org 递增，
+    // 仅凭版本号会取到他租户候选策略并落 replay 记录）。
+    const candidate = await this.policyService.getPolicy(
+      candidateVersion,
+      opts?.orgId ?? snapshotOrgId,
+    );
     if (!candidate) {
       // NEST-038：404（候选版本不存在）。
       throw new NotFoundException(`policy v${candidateVersion} not found`);

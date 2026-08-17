@@ -79,7 +79,9 @@ export class FrontendMetricsService {
   private readonly maxRecords: number;
   private readonly maxBatch: number;
   // In-memory per-subject request counters for the current window.
-  private readonly windowStart: number;
+  // NEST-616：windowStart 必须随窗口滚动重置（原先 readonly 且从不更新，
+  // 窗口过期后每次请求都 clear counts → 限流恒放行）。
+  private windowStart: number;
   private readonly windowMs: number;
   private readonly maxPerWindow: number;
   private readonly counts = new Map<string, number>();
@@ -105,6 +107,7 @@ export class FrontendMetricsService {
     const now = Date.now();
     if (now - this.windowStart >= this.windowMs) {
       this.counts.clear();
+      this.windowStart = now;
     }
     const used = this.counts.get(subject) ?? 0;
     if (used >= this.maxPerWindow) {

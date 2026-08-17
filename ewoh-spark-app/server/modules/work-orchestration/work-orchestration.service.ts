@@ -231,6 +231,20 @@ export class WorkOrchestrationService {
     }
   }
 
+  /**
+   * R2-SOP-017：读路径回退与写路径 fail-fast 的一致性开关。
+   *
+   * 默认关闭（读回退也显式失败，与 assertDurableReady 声明一致）；
+   * 显式设置 WORK_ORCHESTRATION_ALLOW_FILE_FALLBACK=true 时才允许
+   * Durable 读回退到 legacy 文件路径（dev/测试部署的显式选择）。
+   */
+  private allowFileFallback(): boolean {
+    return (
+      (process.env.WORK_ORCHESTRATION_ALLOW_FILE_FALLBACK ?? '').trim().toLowerCase() ===
+      'true'
+    );
+  }
+
   getGraph(): WorkGraph {
     return this.indexer().indexWorkGraph(this.artifactsDir(), {
       root: this.repoRoot(),
@@ -395,9 +409,17 @@ export class WorkOrchestrationService {
   async getResourcesDurable(
     actor: { userId?: string; primaryOrgId?: string } | undefined,
   ) {
-    if (!this.domainPersistence) return this.getResources();
+    // R2-SOP-017：读回退不再静默——与写路径 fail-fast 一致（除非显式配置
+    // WORK_ORCHESTRATION_ALLOW_FILE_FALLBACK=true 的 dev/测试部署）。
+    if (!this.domainPersistence) {
+      if (this.allowFileFallback()) {
+        return this.getResources();
+      }
+      this.assertDurableReady();
+    }
     const graph = this.getGraph();
-    const orgId = actor?.primaryOrgId ?? 'default';
+    // NEST-223 / R2-SOP-001：缺失 org 上下文直接 400，绝不回退 'default' 共享 org。
+    const orgId = requireActorOrgId(actor);
     await this.domainPersistence.recoverExpiredLocks(orgId);
     const locks = await this.domainPersistence.listActiveLocks(orgId);
     const lockById = new Map(locks.map((lock) => [lock.resourceId, lock]));
@@ -715,7 +737,8 @@ export class WorkOrchestrationService {
     if (resource && /device|production|environment/i.test(resource.kind) && body.confirm !== true) {
       throw new BadRequestException('double confirmation required for this resource kind');
     }
-    const orgId = actor?.primaryOrgId ?? 'default';
+    // NEST-223 / R2-SOP-001：缺失 org 上下文直接 400，绝不回退 'default' 共享 org。
+    const orgId = requireActorOrgId(actor);
     // 2.C composite: acquire the lock and register its audit row in a single
     // transaction so a mid-failure cannot leave a lock without an audit trail.
     const record = await this.domainPersistence.acquireLockWithAudit(
@@ -760,7 +783,8 @@ export class WorkOrchestrationService {
     if (!this.domainPersistence) {
       this.assertDurableReady();
     }
-    const orgId = actor?.primaryOrgId ?? 'default';
+    // NEST-223 / R2-SOP-001：缺失 org 上下文直接 400，绝不回退 'default' 共享 org。
+    const orgId = requireActorOrgId(actor);
     const result = await this.domainPersistence.releaseLock({
       orgId,
       resourceKey: resourceId,
@@ -785,7 +809,8 @@ export class WorkOrchestrationService {
     if (!this.domainPersistence) {
       throw new BadRequestException('renew requires DB persistence (DomainPersistenceService)');
     }
-    const orgId = actor?.primaryOrgId ?? 'default';
+    // NEST-223 / R2-SOP-001：缺失 org 上下文直接 400，绝不回退 'default' 共享 org。
+    const orgId = requireActorOrgId(actor);
     const updated = await this.domainPersistence.renewLock({
       orgId,
       resourceKey: resourceId,

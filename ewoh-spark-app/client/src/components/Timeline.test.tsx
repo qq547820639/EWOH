@@ -44,6 +44,16 @@ describe('Timeline (统一对象时间线组件)', () => {
     expect(markup).toContain('暂无时间线事件');
   });
 
+  it('R2-CC2-002: 事件卡片/节点描边使用语义令牌（无字面 bg-white/ring-white，dark 主题可读）', () => {
+    const markup = renderToStaticMarkup(
+      <Timeline events={[ev({ id: 'evt-token' })]} />,
+    );
+    expect(markup).toContain('bg-card');
+    expect(markup).toContain('ring-background');
+    expect(markup).not.toContain('bg-white');
+    expect(markup).not.toContain('ring-white');
+  });
+
   it('renders expanded evidence when controlled expandedIds provided', () => {
     const markup = renderToStaticMarkup(
       <Timeline

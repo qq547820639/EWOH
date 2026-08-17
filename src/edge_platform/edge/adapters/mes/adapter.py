@@ -76,7 +76,7 @@ class MESAdapter(BaseAdapter):
             msg = parse_work_order(raw, default_source_type=self.source_type)
             self._inbox.put_nowait(msg)
         except queue.Full:
-            pass
+            self.record_dropped_frame()
 
 
 class SimulatedMESAdapter(MESAdapter):
@@ -148,7 +148,7 @@ class SimulatedMESAdapter(MESAdapter):
                 try:
                     self._inbox.put_nowait(msg)
                 except queue.Full:
-                    pass
+                    self.record_dropped_frame()
                 self._stop_evt.wait(period)
 
     def reconnect(self):

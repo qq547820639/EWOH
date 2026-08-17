@@ -1,0 +1,26 @@
+{"id":"EDGE-201","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/contracts/maintenance.py:75-81 Python 侧保留 disposition 拒绝并注明分工；ewoh-spark-app/shared/maintenance.ts:61-63 TS 侧已同步 r.disposition!==undefined → unexpected_field，双端对齐"}
+{"id":"EDGE-202","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/world_model/projection.py:210-216 controlled_test 在世界模型侧显式映射为 derived（推荐修复的显式映射方案落地）；manifest enum 仍为采集面三态，语义冲突已消除"}
+{"id":"EDGE-203","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/world_model/contract_store.py:57,203-207 snapshotVersion 改为单调递增计数器 str(self._snapshot_seq)，替代原随机 new_id(\"WS\")"}
+{"id":"EDGE-206","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/scripts/replay_device.py:153-157 frame_path 规范化后 startswith(normpath(session_dir)+sep) 校验，越界路径跳过并留痕"}
+{"id":"EDGE-207","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/connectors/sparkplug.py:281-287 gmtime 包 try/except (OverflowError,OSError,ValueError) 回落 now_iso()；但该修复引入 %f 格式缺陷，见 R2-EDM-01"}
+{"id":"EDGE-208","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/connectors/webhook.py:36-37 算法白名单 sha256/sha1/sha384/sha512，非法 algorithm 直接返回 False 不再透传 getattr"}
+{"id":"EDGE-209","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/perception/pose_fusion.py:243-248 already_degraded 判定，仅首次降级折减 confidence，幂等化"}
+{"id":"EDGE-212","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/aas/codec.py:249-250 redact_aas 对非 dict 输入原样返回，不再抛 AttributeError"}
+{"id":"EDGE-213","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/aas/codec.py:224-233 解压前校验 aasx/aas.json 声明大小 file_size>16MB 拒绝"}
+{"id":"EDGE-214","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/collection/dataset.py:124-125 windows.jsonl 回读改为 with 上下文管理器"}
+{"id":"EDGE-215","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/collection/dataset.py:57-60 跨 split 纯净性由 assert 改为显式 raise ValueError(\"同一人员跨 split，拒绝导出\")"}
+{"id":"EDGE-216","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/scripts/record_raw_frames.py:175 open(self.index_path,\"w\").close() 显式关闭句柄，无泄漏（风格未改 with，效果等同）"}
+{"id":"EDGE-217","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/scripts/record_raw_frames.py:303 --host 默认值改为 127.0.0.1 并注释 EDGE-217"}
+{"id":"EDGE-218","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/connectors/csvfile.py:162-167 queue.Full 时 _dropped_rows 计数+周期性 warning 日志，不再静默"}
+{"id":"EDGE-219","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/connectors/modbus.py:184-190 queue.Full 时 _dropped_points 计数+周期性 warning 日志；同类问题在 opcua/sparkplug/webhook 仍未修，见 R2-EDM-04"}
+{"id":"EDGE-220","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/perception/uwb_fusion.py:54 参数已更名 num_beacons"}
+{"id":"EDGE-221","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/contracts/decision.py:217-238 approver 校验合并为单次判定（None+needs→approver_required；非 dict→bad_approver），冗余双重检查消除"}
+{"id":"EDGE-222","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/contracts/outcome_annotation.py:62-68 bool/int 走有限数值检查路径，float 才查 NaN/Inf，附注释说明 int IEEE-754 语义安全性"}
+{"id":"EDGE-223","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/connectors/opcua.py:53-55 identifier 已存在时 raise OpcUaError(duplicate identifier)，不再静默覆盖"}
+{"id":"EDGE-224","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/connectors/runtime.py:24-27 SECRET_KEY_PATTERN 扩充 bearer 与 auth[_-]?(header|token|key)；twin/package.py 同型模式未同步，见 R2-EDM-07"}
+{"id":"EDGE-225","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/static/index.html:142 esc() 字符类含单引号并映射 &#39;；但其余未过 esc() 的插值点仍是 XSS 面，见 R2-EDM-03"}
+{"id":"EDGE-226","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/perception/vision_adapter.py:54-57 hip 改显式 is None 检查后再回退 hips，合法 [0,0,0] 不再被误回退"}
+{"id":"EDGE-227","regression_status":"PARTIALLY_FIXED","evidence":"src/edge_platform/contracts/reasoning_trace.py:29-36,177 _safe_conclusion_value 清洗非法字符，但清洗结果首字符仍可为 '.' 或 '-'（如 trace_id=\".abc\"），违反 VALUE_PATTERN 首字符 [A-Za-z0-9]，病态 trace_id 下仍产出违约 conclusionId"}
+{"id":"EDGE-228","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/world_model/state_store.py:137-144 新增 iter_history 公共迭代器；contract_store.py:184 snapshot 经其遍历，不再触 _history 内部结构"}
+{"id":"EDGE-229","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/scenario/simulator.py:148-149 scorer.rank 异常改 _LOGGER.warning 留痕，不再静默吞"}
+{"id":"EDGE-230","regression_status":"FIXED_VERIFIED","evidence":"src/edge_platform/contracts/state_machine_loader.py:30-34 docstring 明确文档化限制：transitions 仅支持内联 dict，多行块样式遇 ValueError fail-closed 不猜结构"}

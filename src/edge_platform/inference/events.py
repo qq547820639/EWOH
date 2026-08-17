@@ -17,7 +17,7 @@
 
 from edge_platform.runtime.protocols import STREAM_EVENTS
 
-from . import ms_to_ts, new_id, ts_to_ms
+from . import ms_to_ts, new_id, ts_to_ms, ts_to_ms_safe
 
 # 证据分段配额（合计 200）
 CAP_BEFORE = 70
@@ -65,7 +65,9 @@ class EventEngine:
 
     # ---- 证据 ----
     def _rec_ts(self, r):
-        return ts_to_ms(r.get("timestamp") or r.get("ts"))
+        # R2-ESC-004：遥测记录 timestamp 可能为空串/畸形（设备时钟故障场景），
+        # 用安全变体返回 None（原实现抛 ValueError 使 _build_evidence 排序崩溃）。
+        return ts_to_ms_safe(r.get("timestamp") or r.get("ts"))
 
     def _rec_quality(self, r):
         q = r.get("quality")
@@ -109,10 +111,15 @@ class EventEngine:
     def _build_evidence(self, device_id, start_ms, end_ms):
         w = self.window_sec * 1000
         recs = self.storage.query_telemetry(device_id, ms_to_ts(start_ms - w), ms_to_ts(end_ms + w), QUERY_LIMIT)
-        recs = sorted(recs, key=self._rec_ts)
+        # R2-ESC-004：坏时间戳记录（ts 为 None）排到最末，不中断排序；
+        # 分段循环中对 None 记录跳过（无法定位证据窗口，不伪造归属段），
+        # 它们仍保留在 recs 中参与数据质量/摘要统计。
+        recs = sorted(recs, key=lambda r: (self._rec_ts(r) is None, self._rec_ts(r) or 0))
         before, event, after = [], [], []
         for r in recs:
             t = self._rec_ts(r)
+            if t is None:
+                continue  # R2-ESC-004：坏时间戳记录无法定位 before/event/after 段
             item = {
                 "record_id": r.get("record_id"),
                 "segment": "before" if t < start_ms else ("after" if t > end_ms else "event"),
@@ -242,7 +249,9 @@ class EventEngine:
                 continue
             if evt.get("status") != "open":
                 continue
-            start_ms = ts_to_ms(evt.get("start_time"))
+            # R2-ESC-004：改用安全变体——原 ts_to_ms 对坏 start_time 抛异常，
+            # 下方 None 防御永远走不到；现在坏时间戳事件被如实跳过。
+            start_ms = ts_to_ms_safe(evt.get("start_time"))
             if start_ms is None:
                 continue
             if ts_ms - w_ms <= start_ms <= ts_ms:

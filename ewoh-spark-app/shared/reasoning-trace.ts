@@ -34,6 +34,16 @@ function isCanonicalIdList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((x) => typeof x === 'string' && isCanonicalIdentity(x));
 }
 
+/** EDGE-227 同款清洗（R2-SHR-001）：把原始字符串清洗为 conclusionId value 合法字符集。
+ *
+ * conclusionId 须满足规范身份 value 语法（无空白、无 ':'/'/'/'%'），原始
+ * traceId/subjectId 不保证满足——剔除非 [A-Za-z0-9_.-]、截断 100、空兜底
+ * 'unknown'，与 Python reasoning_trace._safe_conclusion_value 逐字节一致。 */
+function safeConclusionValue(raw: string): string {
+  const cleaned = raw.replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 100);
+  return cleaned === '' ? 'unknown' : cleaned;
+}
+
 /** 校验推理轨迹；返回错误码列表（空 = 合法）。fail-closed。 */
 export function validateReasoningTrace(record: unknown): string[] {
   if (record == null || typeof record !== 'object' || Array.isArray(record)) {
@@ -57,6 +67,7 @@ export function validateReasoningTrace(record: unknown): string[] {
   if (!isCanonicalIdList(fr.eventIds)) return ['bad_facts_ref'];
   const conclusions = r.conclusions;
   if (!Array.isArray(conclusions)) return ['bad_conclusions'];
+  const seenConclusionIds = new Set<string>();
   for (const conclusion of conclusions) {
     if (typeof conclusion !== 'object' || conclusion === null || Array.isArray(conclusion)) {
       return ['bad_conclusions'];
@@ -85,6 +96,10 @@ export function validateReasoningTrace(record: unknown): string[] {
     if (!Array.isArray(evidence) || evidence.length === 0) return ['empty_evidence'];
     if (!isCanonicalIdList(evidence)) return ['bad_evidence_ref'];
     if (typeof c.explanation !== 'string' || c.explanation.trim() === '') return ['bad_explanation'];
+    // R2-SHR-011：conclusionId 在 conclusions 内必须唯一（多主体命中同规则
+    // 时由 subjectId 段区分；重复 ID 会导致台账互相覆盖）。
+    if (seenConclusionIds.has(c.conclusionId)) return ['duplicate_conclusion_id'];
+    seenConclusionIds.add(c.conclusionId);
   }
   if (r.auditTrail !== true) return ['audit_required'];
   return [];
@@ -218,7 +233,9 @@ export function evaluateReasoningRules(
         .replace('{threshold}', fmt(v.minThreshold))
         .replace('{minutes}', fmt(v.unacknowledgedMinutes));
       conclusions.push({
-        conclusionId: `decision:${traceId}-${ruleId.split(':')[1]}`,
+        // R2-SHR-001/011：traceId/subjectId 先经 safeConclusionValue 清洗，
+        // 且 subjectId 参与 ID 拼接——同规则多主体命中时 conclusionId 不再碰撞。
+        conclusionId: `decision:${safeConclusionValue(traceId)}-${ruleId.split(':')[1]}-${safeConclusionValue(fact.subjectId)}`,
         ruleId,
         subjectId: fact.subjectId,
         severity: RULE_SEVERITY[ruleId],

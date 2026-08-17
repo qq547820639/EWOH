@@ -386,7 +386,7 @@ export default function RoleWorkbench(): React.ReactElement {
     [setSearchParams],
   );
 
-  // 多输入方式：扫码枪 + 键盘快捷键（Ctrl/Cmd+F 聚焦筛选、Ctrl/Cmd+R 刷新、Ctrl/Cmd+S 保存视图）。
+  // 多输入方式：扫码枪 + 键盘快捷键（裸键 F 聚焦筛选、R 刷新、S 保存视图；输入框内不触发，见 matchShortcut R2-CP2-001）。
   useEffect(() => {
     const scanner = createWorkbenchScanner({
       onScan: (value) => {

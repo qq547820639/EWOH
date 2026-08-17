@@ -16,12 +16,25 @@ import type { OrgContext } from '../shared/org-context.interceptor';
 export class ScaleController {
   constructor(private readonly scaleService: ScaleService) {}
 
+  // R2-SOP-015：Record<string, never> + as never 绕过 DTO 校验（NEST-212
+  // 同型）→ 显式 DTO 形状（与 service 入参签名一一对应）。
   @Post('templates')
   registerTemplate(
-    @Body() body: Record<string, never>,
+    @Body()
+    body: {
+      templateId?: string;
+      name: string;
+      industry?: string;
+      version: string;
+      parentTemplateId?: string;
+      inheritanceOrder?: number;
+      config?: Record<string, unknown>;
+      manifest?: Record<string, unknown>;
+      compatibleCore?: string;
+    },
     @Req() request: { userContext?: OrgContext },
   ) {
-    return this.scaleService.registerTemplate(body as never, request.userContext);
+    return this.scaleService.registerTemplate(body, request.userContext);
   }
 
   @Get('templates')
@@ -79,10 +92,21 @@ export class ScaleController {
 
   @Post('connectors')
   registerConnector(
-    @Body() body: Record<string, never>,
+    @Body()
+    body: {
+      packageId?: string;
+      name: string;
+      version: string;
+      runtime: string;
+      protocol: string;
+      inputProfile?: string;
+      outputEvents?: string[];
+      configSchema?: Record<string, unknown>;
+      compatibility?: Record<string, unknown>;
+    },
     @Req() request: { userContext?: OrgContext },
   ) {
-    return this.scaleService.registerConnector(body as never, request.userContext);
+    return this.scaleService.registerConnector(body, request.userContext);
   }
 
   @Get('connectors')
@@ -92,10 +116,19 @@ export class ScaleController {
 
   @Post('scenario-packs')
   registerScenarioPack(
-    @Body() body: Record<string, never>,
+    @Body()
+    body: {
+      packageId?: string;
+      name: string;
+      version: string;
+      requires?: Record<string, unknown>;
+      workflows?: string[];
+      policies?: string[];
+      acceptance?: string;
+    },
     @Req() request: { userContext?: OrgContext },
   ) {
-    return this.scaleService.registerScenarioPack(body as never, request.userContext);
+    return this.scaleService.registerScenarioPack(body, request.userContext);
   }
 
   @Get('scenario-packs')
@@ -105,10 +138,23 @@ export class ScaleController {
 
   @Post('mappings')
   registerMapping(
-    @Body() body: Record<string, never>,
+    @Body()
+    body: {
+      mappingId?: string;
+      name: string;
+      version: string;
+      source: { system: string; schemaRef: string };
+      target: { system: string; schemaRef: string };
+      rules: Array<{
+        from: string;
+        to: string;
+        transform?: string;
+        required?: boolean;
+      }>;
+    },
     @Req() request: { userContext?: OrgContext },
   ) {
-    return this.scaleService.registerMapping(body as never, request.userContext);
+    return this.scaleService.registerMapping(body, request.userContext);
   }
 
   @Get('mappings')
@@ -193,11 +239,17 @@ export class ScaleController {
 
   @Post('differences')
   registerFactoryDifference(
-    @Body() body: Record<string, never>,
+    @Body()
+    body: {
+      factoryName: string;
+      key: string;
+      category?: string;
+      value?: unknown;
+    },
     @Req() request: { userContext?: OrgContext },
   ) {
     return this.scaleService.registerFactoryDifference(
-      body as never,
+      body,
       request.userContext,
     );
   }
@@ -233,10 +285,17 @@ export class ScaleController {
 
   @Post('assets')
   registerAssetPackage(
-    @Body() body: Record<string, never>,
+    @Body()
+    body: {
+      packageId?: string;
+      packageType: 'template' | 'connector' | 'scenario' | 'deploy' | 'mapping';
+      name: string;
+      version: string;
+      manifest?: Record<string, unknown>;
+    },
     @Req() request: { userContext?: OrgContext },
   ) {
-    return this.scaleService.registerAssetPackage(body as never, request.userContext);
+    return this.scaleService.registerAssetPackage(body, request.userContext);
   }
 
   @Get('assets')

@@ -211,5 +211,5 @@ export function formatDataFreshness(iso: string): string {
   const elapsedMs = Date.now() - then;
   if (elapsedMs < 60_000) return '刚刚';
   if (elapsedMs < 3_600_000) return `${Math.floor(elapsedMs / 60_000)} 分钟前`;
-  return new Date(iso).toLocaleString('zh-CN', { hour12: false });
+  return new Date(iso).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 }

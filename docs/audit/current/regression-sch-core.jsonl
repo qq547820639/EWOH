@@ -1,0 +1,57 @@
+{"id":"NEST-004","regression_status":"PARTIAL_FIXED","evidence":"constraint-loader.service.ts:42-45 空串 orgId 已归一为 null；但 orgId=null 分支 :54-58 仍不加 org 条件（全表加载），仅靠 GUC/RLS 兜底——SYSTEM_CTX（root db 无 GUC）路径跨租户加载面仍在"}
+{"id":"NEST-005","regression_status":"FIXED","evidence":"candidate-engine.service.ts:396-399 riskFactor 已处理 high+medium，与 heuristic 同源"}
+{"id":"NEST-006","regression_status":"FIXED","evidence":"candidate-engine.service.ts:392-395 changeoverMs 已入 changeCostMs 维度（L410）"}
+{"id":"NEST-007","regression_status":"FIXED","evidence":"candidate-engine.service.ts:414-416 station queue length 传入 computeScore，:651-653 stationWait 含 w.station*queueLength*waitMs"}
+{"id":"NEST-020","regression_status":"FIXED","evidence":"impact-analyzer.ts:169-185 SAFETY_EVENT 按 person/device/zone 三维过滤"}
+{"id":"NEST-021","regression_status":"FIXED","evidence":"impact-propagation.ts:217-237 仅 /SAFETY/i 触发才扩散安全阻断资源"}
+{"id":"NEST-022","regression_status":"FIXED","evidence":"impact-propagation.ts:141-149 maxAffectedTasks 截断 console.warn 留痕"}
+{"id":"NEST-023","regression_status":"FIXED","evidence":"cp-sat-scheduling-solver.ts:331-337 malformed body 时 reachable=true（判 FALLBACK 而非 UNAVAILABLE）"}
+{"id":"NEST-024","regression_status":"FIXED","evidence":"decision-ledger.ts:19-23 planOrgCondition(or isNull,eq) 应用于 read/append 两路径"}
+{"id":"NEST-025","regression_status":"FIXED","evidence":"plan-compare.service.ts:128-130 churn 分子改为 diffByTask.length / aByTask.size"}
+{"id":"NEST-026","regression_status":"FIXED","evidence":"plan.service.ts:617-630 dispatchPlan 先 assertPlanTenantVisible 再查 isShadow"}
+{"id":"NEST-027","regression_status":"PARTIAL_FIXED","evidence":"plan.service.ts:702-712 ctx 缺失仍回退 SYSTEM_CTX(primaryOrgId:'')；经 NEST-004 归一后走'无 org 过滤+GUC 兜底'——强制传 ctx 未落地"}
+{"id":"NEST-028","regression_status":"FIXED","evidence":"plan.service.ts:726-761 deactivateConstraint SELECT/UPDATE 均带 orgCond + returning 行数校验"}
+{"id":"NEST-029","regression_status":"FIXED","evidence":"plan.service.ts:874-881 replan 仅落库 c.id==null 的新请求约束（继承项过滤）"}
+{"id":"NEST-030","regression_status":"FIXED","evidence":"plan.service.ts:949-954 comparePlans 两方案均 getPlan(x,actor) 走 ADR-071 守卫"}
+{"id":"NEST-035","regression_status":"FIXED","evidence":"scheduling-solver.interface.ts:30-34 SolveOptions.seed 契约 + cp-sat-scheduling-solver.ts:579-580 seed 透传 worker"}
+{"id":"NEST-039","regression_status":"FIXED","evidence":"plan.service.ts:198-214 listActivePlans 按 actor org 过滤；replan-preview.service.ts:201-207 loadBaselinePlan 传 ctx"}
+{"id":"NEST-040","regression_status":"FIXED","evidence":"replan-coordinator.service.ts:407-428 touchOrgState 命中重插+淘汰队首真 LRU"}
+{"id":"NEST-041","regression_status":"FIXED","evidence":"replan-coordinator.service.ts:1084-1138 aggregateReservationConflicts 分组排序扫描+倒排索引"}
+{"id":"NEST-048","regression_status":"FIXED","evidence":"candidate-engine.service.ts:75 + heuristic-scheduling-solver.ts:164 LOAD_PENALTY_MS_PER_LEVEL 命名常量同源"}
+{"id":"NEST-101","regression_status":"FIXED","evidence":"world-state.service.ts:63-67 orgCondition 应用于 collectState 全部 7 表（:212-272）"}
+{"id":"NEST-109","regression_status":"FIXED","evidence":"scheduling-context.service.ts:49-51 getUnifiedResourceState(orgCtx) 透传 ctx"}
+{"id":"NEST-116","regression_status":"FIXED","evidence":"travel-cost.service.ts:221-231 getCachedMatrix org 过滤 + :255-263 persistMatrix orgId 落库（system 哨兵）"}
+{"id":"NEST-118","regression_status":"FIXED","evidence":"routing.service.ts:87-107 loadGraph orgCond；:162-164/238-249 调用透传 actor"}
+{"id":"NEST-122","regression_status":"FIXED","evidence":"task-dag.ts:33-34 自指边跳过 + :58 result.delete(id)"}
+{"id":"NEST-123","regression_status":"FIXED","evidence":"world-state.service.ts:39-46 LOCKED_TASK_STATUSES 仅 executing/dispatched；但 impact-analyzer.ts:131 与 impact-propagation.ts:20 FROZEN_STATUSES 仍含 in_progress（漂移残留→R2-SCH-011）"}
+{"id":"NEST-124","regression_status":"PARTIAL_FIXED","evidence":"replan-coordinator.service.ts:228-272 锁与状态判定已同事务（TOCTOU 收窄）；但 :255 状态源仍 per-instance 内存，实例 A markReplanAllowed 后实例 B 内存无记录仍可判定 allowed（→R2-SCH-009）"}
+{"id":"NEST-125","regression_status":"FIXED","evidence":"replan-coordinator.service.ts:744-792 persist 循环+决策台账+run 更新单事务（handleConflictBatch :924-972 同）"}
+{"id":"NEST-128","regression_status":"FIXED","evidence":"scheduler-plan-application.service.ts:531-585 约束落库+审计+replan 同一事务"}
+{"id":"NEST-129","regression_status":"FIXED","evidence":"scheduler-run-orchestrator.service.ts:161-187 persistPlan 循环+run 状态更新单事务"}
+{"id":"NEST-130","regression_status":"FIXED","evidence":"replan-coordinator.service.ts:724-737 suppression 路径返回 run 真实 succeeded 状态视图"}
+{"id":"NEST-132","regression_status":"FIXED","evidence":"route-cost-memo.ts:85-91 rejected Promise catch 后条件逐出"}
+{"id":"NEST-133","regression_status":"FIXED","evidence":"routing.service.ts:69-76 edgeFactors TTL 30s 缓存"}
+{"id":"NEST-134","regression_status":"PARTIAL_FIXED","evidence":"routing.service.ts:400-402 openSet 已修；但 :410-420 取最小 f 仍 O(n) 线性扫 open 数组——O(n²) 主项仍在（→R2-SCH-012）"}
+{"id":"NEST-135","regression_status":"FIXED","evidence":"routing.service.ts:216-219 graphVersion: meta?.graphVersion ?? null 透传"}
+{"id":"NEST-136","regression_status":"FIXED","evidence":"eligibility.service.ts:174-208 WeakMap 倒排索引 + heuristic-scheduling-solver.ts:650-685 每任务资源维度索引"}
+{"id":"NEST-140","regression_status":"FIXED","evidence":"scheduler-run-orchestrator.service.ts:123-131 空集抛 ConflictException(INFEASIBLE_PROFILE)；但该抛错路径 run 未闭合 failed（→R2-SCH-007）"}
+{"id":"NEST-142","regression_status":"FIXED","evidence":"scheduling-objective-evaluator.service.ts:113-119 无效日期 warn 留痕后排除"}
+{"id":"NEST-143","regression_status":"FIXED","evidence":"solver.service.ts:164-167 solveVariants 三变体 Promise.all 并行"}
+{"id":"NEST-144","regression_status":"PARTIAL_FIXED","evidence":"solver.service.ts:283-290 recordRun feasible 已加 violation==0；但 :669-674 isFeasible()（shadow compare 用）仍仅按 assignments 数量判定，两处不一致（→R2-SCH-019）"}
+{"id":"NEST-145","regression_status":"FIXED","evidence":"solver.service.ts:715-750 toSchedulingConstraints runtime 形状校验，非法条目丢弃留痕"}
+{"id":"NEST-146","regression_status":"FIXED","evidence":"trigger.service.ts:59-71 HTTP 路径空 orgId 抛 UnauthorizedException；后台流保留 'ALL' 并 warn"}
+{"id":"NEST-147","regression_status":"FIXED","evidence":"trigger.service.ts:108-128 INSERT ON CONFLICT (trigger_key) DO NOTHING 原子幂等"}
+{"id":"NEST-148","regression_status":"FIXED","evidence":"world-state.service.ts:673-686 worldVersion 改为 entityVersions 摘要 SHA-256 48-bit 折叠"}
+{"id":"NEST-149","regression_status":"FIXED","evidence":"world-state.service.ts:871-882 hash = SHA-256 前 12 hex（48-bit）"}
+{"id":"NEST-150","regression_status":"FIXED","evidence":"world-state.service.ts:899-920 reservationsEqual 按 reservationId 建 Map 比较，顺序无关"}
+{"id":"NEST-151","regression_status":"FIXED","evidence":"world-state.service.ts:485-506 无 deviceId 安全事件从证据链推导，不可解析才 warn"}
+{"id":"NEST-152","regression_status":"FIXED","evidence":"replan-preview.service.ts:200-207 loadBaselinePlan 传 ctx 走 org 过滤"}
+{"id":"NEST-153","regression_status":"FIXED","evidence":"replan-preview.service.ts:156-167 unchanged 改为 movable∪frozen 集合差运算；注意 removed/added 计数仍含子图外任务（→R2-SCH-008）"}
+{"id":"NEST-156","regression_status":"FIXED","evidence":"scheduler-plan-application.service.ts:364-373 Execution 建档失败响应携带 executionSync 警告字段"}
+{"id":"NEST-157","regression_status":"FIXED","evidence":"scheduler-plan-application.service.ts:521-527 HTTP 路径空 primaryOrgId 抛 UnauthorizedException"}
+{"id":"NEST-166","regression_status":"FIXED","evidence":"priority-engine.ts:313-320 rank 排序同分 tie-break taskId 字典序"}
+{"id":"NEST-167","regression_status":"FIXED","evidence":"replan-coordinator.service.ts:440-456 resolveHorizonMinutes 从策略配置读取（缺省 480）"}
+{"id":"NEST-168","regression_status":"FIXED","evidence":"task-lifecycle.ts:81-86 isTerminal 仅 [completed,cancelled]"}
+{"id":"NEST-169","regression_status":"FIXED","evidence":"rule-based-scheduling-solver.ts:253-267 hardConstraints 由 rejectReasons 派生并集固定执行类"}
+{"id":"NEST-170","regression_status":"FIXED","evidence":"world-state.service.ts:791-833 SAFETY_CRITICAL_TASK_TYPES/PRIORITY_PRODUCTION_IMPACT 命名常量"}
+{"id":"NEST-119","regression_status":"FIXED","evidence":"task-scheduling.bridge.ts:35-40 无 actor.primaryOrgId 的事件拒绝桥接并 warn"}

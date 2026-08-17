@@ -48,7 +48,9 @@ def api_inference_metrics(ctx, h, req_meta):
     now = datetime.now().astimezone()
     start = parse_ts(h.arg("start")) or (now - timedelta(hours=24))
     end = parse_ts(h.arg("end")) or now
-    limit = int(h.arg("limit", "5000") or 5000)
+    from ._util import bounded_limit
+
+    limit = bounded_limit(h, "limit", 5000, 5000)  # R2-ECO-003：非数字回落默认+硬上限
     # 从持久层统计 unknown 占比（按时间段）
     inf_rows = []
     try:
@@ -116,7 +118,9 @@ def api_inference(ctx, h, req_meta):
     now = datetime.now().astimezone()
     start = parse_ts(h.arg("start")) or (now - timedelta(hours=24))
     end = parse_ts(h.arg("end")) or now
-    limit = int(h.arg("limit", "200") or 200)
+    from ._util import bounded_limit
+
+    limit = bounded_limit(h, "limit", 200, 1000)  # R2-ECO-003：非数字回落默认+硬上限
     items = [
         services.norm_inference(r)
         for r in ctx.storage.query_inference(device_id, services.iso(start), services.iso(end), limit)

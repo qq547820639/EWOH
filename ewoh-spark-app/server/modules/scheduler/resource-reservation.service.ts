@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable, Logger, ConflictException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  ConflictException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -87,21 +93,31 @@ export class ResourceReservationService {
         for (const input of inputs) {
           const capacity = this.capacityFor(input);
           // P0-7：station 容量计数需要事务级串行化（替代被移除的 station EXCLUDE）。
-          // 无 execute 的测试替身/降级环境跳过锁，仍走计数（计数为快速路径）。
           if (input.resourceType === 'station') {
-            try {
-              await this.db.execute(
-                sql`SELECT pg_advisory_xact_lock(hashtext(${input.resourceId}))`,
+            // R2-SSV-12 / NEST-126 深层残留（2026-08-17）：station 无 DB EXCLUDE
+            // 硬后盾（standalone_022 仅 person/device），advisory lock 是唯一
+            // 串行化防线——锁执行失败必须 fail-closed（503），绝不"warn+继续"
+            // （否则并发计数-插入窗口超卖）。仅"无 execute 能力的测试替身"
+            // （typeof db.execute !== 'function'）跳过锁走计数（单进程无并发）。
+            if (typeof this.db.execute !== 'function') {
+              this.logger.debug(
+                `station advisory lock skipped (db.execute unavailable, test double?): ${input.resourceId}`,
               );
-            } catch (err) {
-              // NEST-126 修复（2026-08-17）：advisory lock 失败不再静默吞——
-              // 生产锁异常时并发容量计数可能超卖，必须留痕（warn + 错误摘要）；
-              // 计数路径继续（DB EXCLUDE 约束仍是 person/device 硬后盾）。
-              this.logger.warn(
-                `station advisory lock unavailable (capacity check unserialized): ${input.resourceId}: ${
-                  err instanceof Error ? err.message : String(err)
-                }`,
-              );
+            } else {
+              try {
+                await this.db.execute(
+                  sql`SELECT pg_advisory_xact_lock(hashtext(${input.resourceId}))`,
+                );
+              } catch (err) {
+                this.logger.error(
+                  `station advisory lock failed; failing closed to prevent oversell: ${input.resourceId}: ${
+                    err instanceof Error ? err.message : String(err)
+                  }`,
+                );
+                throw new ServiceUnavailableException(
+                  `STATION_CAPACITY_LOCK_UNAVAILABLE: cannot serialize capacity check for station ${input.resourceId}（R2-SSV-12 fail-closed）`,
+                );
+              }
             }
           }
           const overlapping = await this.db

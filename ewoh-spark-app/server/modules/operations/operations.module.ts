@@ -3,6 +3,7 @@ import { OperationsController } from './operations.controller';
 import { OperationsService } from './operations.service';
 import { RoleWorkbenchService } from './role-workbench.service';
 import { WorkbenchExportService } from './workbench-export.service';
+import { WorkbenchExportWorkerService } from './workbench-export.worker';
 import { WorkbenchViewService } from './workbench-view.service';
 import { DangerousActionService } from './dangerous-action.service';
 import { PostgresWorkbenchViewStore } from './workbench-view.store';
@@ -20,6 +21,8 @@ import {
     OperationsService,
     RoleWorkbenchService,
     WorkbenchExportService,
+    // R2-SOP-006：导出消费端 worker（轮询 claim → 拉列表 → CSV → complete）。
+    WorkbenchExportWorkerService,
     WorkbenchViewService,
     DangerousActionService,
     PostgresWorkbenchViewStore,

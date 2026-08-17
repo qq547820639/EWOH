@@ -22,7 +22,11 @@ import type {
 type ExportRow = typeof ewohWorkbenchExportTask.$inferSelect;
 
 function fromRow(row: ExportRow): WorkbenchExportTask {
-  const filterJson = (row.filterJson ?? {}) as { filter?: string; action?: string };
+  const filterJson = (row.filterJson ?? {}) as {
+    filter?: string;
+    action?: string;
+    roles?: string[];
+  };
   return {
     id: row.taskId,
     role: row.role as WorkbenchExportTask['role'],
@@ -35,6 +39,7 @@ function fromRow(row: ExportRow): WorkbenchExportTask {
     ownerId: row.ownerUserId,
     orgId: row.organizationId,
     action: filterJson.action ?? 'workbench.export',
+    actorRoles: filterJson.roles ?? [],
     createdAt: new Date(row.createdAt).toISOString(),
     expiresAt: row.expiresAt ? new Date(row.expiresAt).toISOString() : new Date(row.createdAt).toISOString(),
     downloadUrl: row.downloadUrl ?? undefined,
@@ -84,16 +89,28 @@ export class PostgresWorkbenchExportStore implements WorkbenchExportStore {
     return task;
   }
 
-  async get(id: string): Promise<WorkbenchExportTask | undefined> {
+  async get(id: string, orgId?: string): Promise<WorkbenchExportTask | undefined> {
     const rows = await this.db
       .select()
       .from(ewohWorkbenchExportTask)
-      .where(eq(ewohWorkbenchExportTask.taskId, id))
+      .where(
+        // R2-SOP-018：org 归属谓词（orgId 省略 = 系统 worker / global_admin 语义）。
+        orgId
+          ? and(
+              eq(ewohWorkbenchExportTask.taskId, id),
+              eq(ewohWorkbenchExportTask.organizationId, orgId),
+            )
+          : eq(ewohWorkbenchExportTask.taskId, id),
+      )
       .limit(1);
     return rows[0] ? fromRow(rows[0]) : undefined;
   }
 
-  async update(id: string, patch: Partial<WorkbenchExportTask>): Promise<void> {
+  async update(
+    id: string,
+    patch: Partial<WorkbenchExportTask>,
+    orgId?: string,
+  ): Promise<void> {
     await this.db
       .update(ewohWorkbenchExportTask)
       .set({
@@ -112,7 +129,36 @@ export class PostgresWorkbenchExportStore implements WorkbenchExportStore {
         fileSize: patch.fileSize ?? undefined,
         updatedAt: new Date(),
       })
-      .where(eq(ewohWorkbenchExportTask.taskId, id));
+      .where(
+        orgId
+          ? and(
+              eq(ewohWorkbenchExportTask.taskId, id),
+              eq(ewohWorkbenchExportTask.organizationId, orgId),
+            )
+          : eq(ewohWorkbenchExportTask.taskId, id),
+      );
+  }
+
+  /** R2-SOP-006：枚举可领取任务（queued / 到期重试 failed），系统语义无 org 谓词。 */
+  async listClaimable(now = new Date(), limit = 10): Promise<string[]> {
+    const rows = await this.db
+      .select({ taskId: ewohWorkbenchExportTask.taskId })
+      .from(ewohWorkbenchExportTask)
+      .where(
+        or(
+          eq(ewohWorkbenchExportTask.status, 'queued'),
+          and(
+            eq(ewohWorkbenchExportTask.status, 'failed'),
+            or(
+              isNull(ewohWorkbenchExportTask.nextRetryAt),
+              lte(ewohWorkbenchExportTask.nextRetryAt, now),
+            ),
+          ),
+        ),
+      )
+      .orderBy(ewohWorkbenchExportTask.createdAt)
+      .limit(limit);
+    return rows.map((row) => row.taskId);
   }
 
   async claim(

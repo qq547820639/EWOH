@@ -7,7 +7,13 @@ function context(response: { setHeader: (n: string, v: string) => void; statusCo
   return {
     getType: () => 'http',
     switchToHttp: () => ({
-      getRequest: () => ({ method: 'GET', path: '/api/me', route: { path: '/api/me' } }),
+      // NO-10a/R2-SNZ-007：携带 OrgContextInterceptor 挂载的 userContext（lineage + 租户过滤）。
+      getRequest: () => ({
+        method: 'GET',
+        path: '/api/me',
+        route: { path: '/api/me' },
+        userContext: { primaryOrgId: 'org-a', userId: 'u1' },
+      }),
       getResponse: () => response,
     }),
   };
@@ -37,7 +43,7 @@ describe('TracingInterceptor', () => {
 
     expect(headers['x-trace-id']).toMatch(/^[a-f0-9]{32}$/);
     expect(seenRequestId).toBe(headers['x-trace-id']);
-    const traces = service.list();
+    const traces = service.list(100, { primaryOrgId: 'org-a' });
     expect(traces).toHaveLength(1);
     expect(traces[0].path).toBe('/api/me');
     expect(traces[0].status).toBe(200);
@@ -57,7 +63,7 @@ describe('TracingInterceptor', () => {
         } as never),
       ),
     ).rejects.toMatchObject({ status: 404 });
-    expect(service.list()[0].status).toBe(404);
-    expect(service.list()[0].error).toContain('missing');
+    expect(service.list(100, { primaryOrgId: 'org-a' })[0].status).toBe(404);
+    expect(service.list(100, { primaryOrgId: 'org-a' })[0].error).toContain('missing');
   });
 });

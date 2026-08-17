@@ -573,6 +573,15 @@ class SchedulingTests(unittest.TestCase):
 # 5. 人在回路（SchedulerService）
 # ---------------------------------------------------------------------------
 
+def _advance_plan_to_pending_review(plan):
+    """R2-ESC-002：confirm 收紧到 pending_review 后，测试前置沿契约
+    状态机（shadow→simulating→pending_review，逐走 validate）推进方案。"""
+    validate_plan_transition(plan.status, PLAN_SIMULATING)
+    plan.status = PLAN_SIMULATING
+    validate_plan_transition(plan.status, PLAN_PENDING_REVIEW)
+    plan.status = PLAN_PENDING_REVIEW
+
+
 class HITLTests(unittest.TestCase):
     def setUp(self):
         self.svc = _make_scheduler()
@@ -580,6 +589,9 @@ class HITLTests(unittest.TestCase):
         self.plans = self.svc.generate_plans(req.request_id)
         self.plan = self.plans[0]
         self.pid = self.plan.plan_id
+
+    def _advance_to_pending_review(self, plan):
+        _advance_plan_to_pending_review(plan)
 
     def test_shadow_not_executable(self):
         self.assertEqual(self.plan.status, PLAN_SHADOW)
@@ -591,6 +603,8 @@ class HITLTests(unittest.TestCase):
             self.svc.confirm(self.pid, "leader1", reason="")
 
     def test_confirm_stale_world_state_version(self):
+        # R2-ESC-002：前置推进到 pending_review（shadow 直接 confirm 已被拒绝）
+        self._advance_to_pending_review(self.plan)
         with self.assertRaises(PlanStaleError):
             self.svc.confirm(self.pid, "leader1", "ok", world_state_version="WRONG-VERSION")
 
@@ -601,6 +615,8 @@ class HITLTests(unittest.TestCase):
             self.svc.execute(self.pid)
 
     def test_confirm_then_execute(self):
+        # R2-ESC-002：前置推进到 pending_review（shadow 直接 confirm 已被拒绝）
+        self._advance_to_pending_review(self.plan)
         confirmed = self.svc.confirm(self.pid, "leader1", "手动确认", self.plan.world_state_version)
         self.assertEqual(confirmed.status, PLAN_APPROVED)
         assignments = self.svc.execute(self.pid)
@@ -710,6 +726,10 @@ class APITests(unittest.TestCase):
         req = self.svc.create_request(["T1"], "manual", "A_delivery", "leader1")
         plans = self.svc.generate_plans(req.request_id)
         pid = plans[0].plan_id
+        # R2-ESC-002：shadow 方案直接 confirm 应被拒绝（需先推进 pending_review）
+        with self.assertRaises(IllegalStateError):
+            self.svc.confirm(pid, "leader1", "ok", plans[0].world_state_version)
+        _advance_plan_to_pending_review(plans[0])
         # 确认成功
         confirmed = self.svc.confirm(pid, "leader1", "ok", plans[0].world_state_version)
         self.assertEqual(confirmed.status, PLAN_APPROVED)
@@ -722,6 +742,8 @@ class APITests(unittest.TestCase):
         req = self.svc.create_request(["T1"], "manual", "A_delivery", "leader1")
         plans = self.svc.generate_plans(req.request_id)
         pid = plans[0].plan_id
+        # R2-ESC-002：前置推进到 pending_review
+        _advance_plan_to_pending_review(plans[0])
         self.svc.confirm(pid, "leader1", "ok", plans[0].world_state_version)
         assigns = self.svc.execute(pid)
         asn = assigns[0]
@@ -740,10 +762,12 @@ class APITests(unittest.TestCase):
         req = self.svc.create_request(["T1"], "manual", "A_delivery", "leader1")
         plans = self.svc.generate_plans(req.request_id)
         pid = plans[0].plan_id
+        # R2-ESC-002：前置推进到 pending_review（stale 校验在状态白名单之后）
+        _advance_plan_to_pending_review(plans[0])
         with self.assertRaises(PlanStaleError):
             self.svc.confirm(pid, "leader1", "ok", world_state_version="WRONG")
-        # 错误版本已被拒绝，确认后状态仍为 shadow
-        self.assertEqual(self.svc.get_plan(pid).status, PLAN_SHADOW)
+        # 错误版本已被拒绝，确认后状态仍为 pending_review
+        self.assertEqual(self.svc.get_plan(pid).status, PLAN_PENDING_REVIEW)
 
     def test_replan_creates_new_plan(self):
         req = self.svc.create_request(["T1"], "manual", "A_delivery", "leader1")

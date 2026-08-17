@@ -125,6 +125,7 @@ export function WorkbenchChrome({
           <RefreshCw className="size-3" />
           {generatedAt
             ? `更新于 ${new Date(generatedAt).toLocaleTimeString('zh-CN', {
+                timeZone: 'Asia/Shanghai',
                 hour12: false,
               })}`
             : '尚未加载'}
@@ -263,6 +264,7 @@ export function WorkbenchChrome({
               更新：{kpi.refreshHint}
               {generatedAt
                 ? ` · ${new Date(generatedAt).toLocaleTimeString('zh-CN', {
+                    timeZone: 'Asia/Shanghai',
                     hour12: false,
                   })}`
                 : ''}

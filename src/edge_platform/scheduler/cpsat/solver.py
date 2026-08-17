@@ -22,10 +22,19 @@
 from __future__ import annotations
 
 import time
-from typing import Dict, List, Optional
 
-from .contract import SolverRequest, SolverResponse, SolverAssignmentResult
-from .objective import compute_unassigned_scale
+from .contract import SolverAssignmentResult, SolverRequest, SolverResponse
+from .objective import compute_unassigned_scale, int_coeff
+
+
+def _coeff(value: float) -> int:
+    """R2-ESC-001：软目标系数整数化（CP-SAT 线性表达式只接受整数系数）。
+
+    浮点系数（w.travel * dist_m 等）在 ortools 构建期抛 TypeError 或被静默
+    取整；统一按 ``int_coeff``（×COEFF_SCALE 后四舍五入）整数化，保证模型
+    可加载且权重相对关系保留。
+    """
+    return int_coeff(value)
 
 # 求解器版本标识（与 NestJS CpSatSchedulingSolver.CPSAT_VERSION 对齐）。
 # Phase 2 / P2-T3：OR-Tools 固定版本见同目录 requirements.txt（ortools==9.11.4210）。
@@ -128,7 +137,7 @@ def partition_tasks_into_windows(tasks, now_ms, horizon_minutes, window_minutes)
         return [[t.taskId for t in tasks]]
 
     window_count = max(1, (horizon_minutes + window_minutes - 1) // window_minutes)
-    buckets: List[List[str]] = [[] for _ in range(window_count)]
+    buckets: list[list[str]] = [[] for _ in range(window_count)]
     horizon_end_ms = now_ms + horizon_minutes * MINUTE
     window_span_ms = window_minutes * MINUTE
 
@@ -244,10 +253,10 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
     model = cp_model.CpModel()
 
     person_ids = [p.id for p in request.persons]
-    device_ids = [d.id for d in request.devices]
+    [d.id for d in request.devices]
     station_ids = [s.id for s in request.stations]
-    person_by_id = {p.id: p for p in request.persons}
-    device_by_id = {d.id: d for d in request.devices}
+    {p.id: p for p in request.persons}
+    {d.id: d for d in request.devices}
     station_by_id = {s.id: s for s in request.stations}
 
     frozen_by_task = {f.taskId: f for f in request.frozenAssignments}
@@ -265,12 +274,12 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
 
     # ---- 候选生成（分层过滤，避免全笛卡尔积）----
     # candidate: taskId -> list of (person_idx, device_idx, station_idx)；device_idx=-1 表示不用设备。
-    candidates: Dict[str, List[tuple]] = {}
-    candidate_rejected: Dict[str, List[Dict]] = {}
+    candidates: dict[str, list[tuple]] = {}
+    candidate_rejected: dict[str, list[dict]] = {}
 
     for t in request.tasks:
-        cands: List[tuple] = []
-        rejected: List[Dict] = []
+        cands: list[tuple] = []
+        rejected: list[dict] = []
         allowed_person_ids = set(t.eligiblePersonIds) if t.eligiblePersonIds else None
         allowed_device_ids = set(t.eligibleDeviceIds) if t.eligibleDeviceIds else None
 
@@ -294,7 +303,7 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
                 rejected.append({"personId": p.id, "reason": ["missing_certification"]})
                 continue
 
-            device_indexes: List[int] = []
+            device_indexes: list[int] = []
             if t.requiredDeviceCapabilities:
                 for di, d in enumerate(request.devices):
                     if d.id in frozen_device_ids:
@@ -314,7 +323,7 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
             else:
                 device_indexes = [-1]
 
-            station_indexes: List[int] = []
+            station_indexes: list[int] = []
             if t.candidateStationIds:
                 for si, sid in enumerate(station_ids):
                     if sid in frozen_station_ids:
@@ -332,10 +341,10 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         candidate_rejected[t.taskId] = rejected
 
     # ---- 决策变量 ----
-    start_min: Dict[str, object] = {}
-    end_min: Dict[str, object] = {}
-    presence: Dict[str, Dict[tuple, object]] = {}  # taskId -> {(pi,di,si): boolvar}
-    interval_by_resource: Dict[str, List[object]] = {}
+    start_min: dict[str, object] = {}
+    end_min: dict[str, object] = {}
+    presence: dict[str, dict[tuple, object]] = {}  # taskId -> {(pi,di,si): boolvar}
+    interval_by_resource: dict[str, list[object]] = {}
 
     # 冻结任务：固定时间；其余任务：start/end 整数变量。
     # P0-01：frozen 的 epoch 毫秒必须转换为相对 now 的分钟，与普通任务变量
@@ -508,7 +517,7 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
 
     # ---- 目标函数（软目标，最小化，分钟单位）----
     w = request.weights
-    terms: List[object] = []
+    terms: list[object] = []
 
     # Phase 2：字典序目标——未分配覆盖（Level 0）严格支配所有软目标（Level 1+）。
     # 用请求实际边界算出的整数 scale（替代魔法数 unassignedPenalty=1000），
@@ -530,8 +539,8 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
     #   end - due 恒为巨负数 → lateness 恒 0，软目标失效）；
     # - late 变量域上界必须容纳 end 上界与 due 的差（原 horizon+10 固定上界
     #   在长时长/迟 due 场景下被表达式越过 → 模型不可满足）。
-    late_by_task: Dict[str, object] = {}
-    wait_by_task: Dict[str, object] = {}
+    late_by_task: dict[str, object] = {}
+    wait_by_task: dict[str, object] = {}
     for t in request.tasks:
         if t.taskId in frozen_by_task or t.taskId not in end_min or not t.dueMs:
             continue
@@ -542,7 +551,7 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         late = model.NewIntVar(0, late_domain_upper(hi, dur, due_rel, horizon_min), f"late_{t.taskId}")
         model.AddMaxEquality(late, [0, end_min[t.taskId] - due_rel])
         late_by_task[t.taskId] = late
-        terms.append(w.lateness * late)
+        terms.append(_coeff(w.lateness) * late)
 
     # stationWait：start - earliestStart。
     for t in request.tasks:
@@ -552,7 +561,7 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         wait = model.NewIntVar(0, horizon_min + 10, f"wait_{t.taskId}")
         model.AddMaxEquality(wait, [0, start_min[t.taskId] - earliest])
         wait_by_task[t.taskId] = wait
-        terms.append(w.stationWait * wait)
+        terms.append(_coeff(w.stationWait) * wait)
 
     # travel：P0-4 权威 RouteCost 矩阵（Nest TravelCostService 计算后透传）。
     # worker 内**禁止**自行用坐标算欧氏距离——坐标可能 UNKNOWN(null)，欧氏会把
@@ -562,7 +571,7 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
     for t in request.tasks:
         if t.taskId in frozen_by_task or not presence.get(t.taskId):
             continue
-        for (pi, di, si), present in presence[t.taskId].items():
+        for (pi, _di, si), present in presence[t.taskId].items():
             p = request.persons[pi]
             st = request.stations[si] if si != -1 else None
             dist_m = travel_cost_for_candidate(
@@ -570,7 +579,8 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
             )
             if dist_m is None:
                 continue
-            terms.append(w.travel * dist_m * present)
+            # R2-ESC-001：w.travel * dist_m 为浮点，CP-SAT 只接受整数系数。
+            terms.append(_coeff(w.travel * dist_m) * present)
 
     # churn/stability：baseline 里不同 person 被选中 → 惩罚。
     for t in request.tasks:
@@ -581,7 +591,7 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
             continue
         for (pi, _di, _si), present in presence[t.taskId].items():
             if request.persons[pi].id != baseline:
-                terms.append(w.churn * present)
+                terms.append(_coeff(w.churn) * present)
 
     if not terms:
         terms.append(0)
@@ -615,8 +625,8 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
         )
 
     # ---- 提取结果 ----
-    assignments: List[SolverAssignmentResult] = []
-    unassigned: List[str] = []
+    assignments: list[SolverAssignmentResult] = []
+    unassigned: list[str] = []
     travel_sum = 0.0
     churn_count = 0
     for t in request.tasks:

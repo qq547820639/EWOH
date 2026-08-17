@@ -79,6 +79,14 @@ const SUPPORTED_SOFT_SET: ReadonlySet<SchedulingSoftConstraintType> = new Set(
 );
 
 /**
+ * R2-SCH-010（2026-08-17）：按类型判定软约束（持久化反序列化 hard 标记的
+ * 权威来源——软类型集合内的约束 hard=false，不再一律 hard:true）。
+ */
+export function isSoftConstraintType(type: string): boolean {
+  return SUPPORTED_SOFT_SET.has(type as SchedulingSoftConstraintType);
+}
+
+/**
  * 检查单个约束是否被求解器支持。
  * 硬约束命中 SUPPORTED_HARD_CONSTRAINTS、软约束命中 SUPPORTED_SOFT_CONSTRAINTS
  * 即视为支持；否则返回 supported=false 且 reason='UNSUPPORTED_CONSTRAINT'。
@@ -163,4 +171,145 @@ export function detectDependencyCycle(
   }
 
   return null;
+}
+
+/**
+ * R2-SCH-003（2026-08-17）：求解器共享约束编译 IR。
+ *
+ * 将输入 SchedulingConstraint[] 拆解为求解器可执行的锁定/排除/偏好/禁入区/
+ * 电量·负荷覆盖结构（与 heuristic 内联 switch 同语义），供 rule-based / MILP /
+ * heuristic（engine 路径）统一消费——消除"静默忽略输入约束"。
+ * 不支持的约束显式返回 unsupported 列表（调用方须写入 violations，绝不静默失效）。
+ */
+export interface CompiledConstraintOverrides {
+  lockedPersonByTask: Map<string, string>;
+  lockedDeviceByTask: Map<string, string>;
+  lockedStationByTask: Map<string, string>;
+  lockedTimeByTask: Map<string, [number, number]>;
+  forbiddenZoneIds: string[];
+  excludedPersonByTask: Map<string, Set<string>>;
+  excludedDeviceByTask: Map<string, Set<string>>;
+  excludedStationByTask: Map<string, Set<string>>;
+  excludedPersonGlobal: Set<string>;
+  excludedDeviceGlobal: Set<string>;
+  excludedStationGlobal: Set<string>;
+  preferredPersonByTask: Map<string, Set<string>>;
+  preferredDeviceByTask: Map<string, Set<string>>;
+  preferredStationByTask: Map<string, Set<string>>;
+  preferredPersonGlobal: Set<string>;
+  preferredDeviceGlobal: Set<string>;
+  preferredStationGlobal: Set<string>;
+  minBatteryOverride: number | null;
+  maxLoadOverride: number | null;
+  manualBoostTasks: Set<string>;
+  /** 支持性检查未通过的约束（调用方必须显式上报，绝不静默忽略）。 */
+  unsupported: SchedulingConstraint[];
+}
+
+/** R2-SCH-003：编译输入约束为求解器可执行 IR（纯函数，无副作用）。 */
+export function compileConstraintOverrides(
+  constraints: SchedulingConstraint[],
+): CompiledConstraintOverrides {
+  const ir: CompiledConstraintOverrides = {
+    lockedPersonByTask: new Map(),
+    lockedDeviceByTask: new Map(),
+    lockedStationByTask: new Map(),
+    lockedTimeByTask: new Map(),
+    forbiddenZoneIds: [],
+    excludedPersonByTask: new Map(),
+    excludedDeviceByTask: new Map(),
+    excludedStationByTask: new Map(),
+    excludedPersonGlobal: new Set(),
+    excludedDeviceGlobal: new Set(),
+    excludedStationGlobal: new Set(),
+    preferredPersonByTask: new Map(),
+    preferredDeviceByTask: new Map(),
+    preferredStationByTask: new Map(),
+    preferredPersonGlobal: new Set(),
+    preferredDeviceGlobal: new Set(),
+    preferredStationGlobal: new Set(),
+    minBatteryOverride: null,
+    maxLoadOverride: null,
+    manualBoostTasks: new Set(),
+    unsupported: [],
+  };
+  const forbiddenSet = new Set<string>();
+  const addPerTask = (
+    map: Map<string, Set<string>>,
+    globalSet: Set<string>,
+    taskId: string | undefined,
+    resourceId: string,
+  ) => {
+    if (taskId) {
+      let s = map.get(taskId);
+      if (!s) {
+        s = new Set();
+        map.set(taskId, s);
+      }
+      s.add(resourceId);
+    } else {
+      globalSet.add(resourceId);
+    }
+  };
+  for (const c of constraints) {
+    const support = checkConstraintSupported(c);
+    if (!support.supported) {
+      ir.unsupported.push(c);
+      continue;
+    }
+    switch (c.type) {
+      case 'LOCKED_PERSON':
+        if (c.taskId && c.personId) ir.lockedPersonByTask.set(c.taskId, c.personId);
+        break;
+      case 'LOCKED_DEVICE':
+        if (c.taskId && c.deviceId) ir.lockedDeviceByTask.set(c.taskId, c.deviceId);
+        break;
+      case 'LOCKED_STATION':
+        if (c.taskId && c.stationId) ir.lockedStationByTask.set(c.taskId, c.stationId);
+        break;
+      case 'LOCKED_TIME':
+        if (c.taskId && c.startMs != null && c.endMs != null)
+          ir.lockedTimeByTask.set(c.taskId, [c.startMs, c.endMs]);
+        break;
+      case 'LOCKED_ASSIGNMENT':
+        if (c.taskId) {
+          if (c.personId) ir.lockedPersonByTask.set(c.taskId, c.personId);
+          if (c.deviceId) ir.lockedDeviceByTask.set(c.taskId, c.deviceId);
+          if (c.stationId) ir.lockedStationByTask.set(c.taskId, c.stationId);
+        }
+        break;
+      case 'FORBIDDEN_ZONE':
+        if (c.zoneId) forbiddenSet.add(c.zoneId);
+        break;
+      case 'MIN_BATTERY':
+        if (c.value != null) ir.minBatteryOverride = c.value;
+        break;
+      case 'MAX_WORKLOAD':
+        if (c.value != null) ir.maxLoadOverride = c.value;
+        break;
+      case 'EXCLUDED_RESOURCE':
+        if (c.personId)
+          addPerTask(ir.excludedPersonByTask, ir.excludedPersonGlobal, c.taskId, c.personId);
+        if (c.deviceId)
+          addPerTask(ir.excludedDeviceByTask, ir.excludedDeviceGlobal, c.taskId, c.deviceId);
+        if (c.stationId)
+          addPerTask(ir.excludedStationByTask, ir.excludedStationGlobal, c.taskId, c.stationId);
+        break;
+      case 'PREFERRED_RESOURCE':
+        if (c.personId)
+          addPerTask(ir.preferredPersonByTask, ir.preferredPersonGlobal, c.taskId, c.personId);
+        if (c.deviceId)
+          addPerTask(ir.preferredDeviceByTask, ir.preferredDeviceGlobal, c.taskId, c.deviceId);
+        if (c.stationId)
+          addPerTask(ir.preferredStationByTask, ir.preferredStationGlobal, c.taskId, c.stationId);
+        break;
+      default:
+        break;
+    }
+    if (c.type === 'MANUAL_BOOST' && c.taskId) {
+      ir.manualBoostTasks.add(c.taskId);
+    }
+  }
+  ir.forbiddenZoneIds = Array.from(forbiddenSet);
+  return ir;
 }

@@ -98,7 +98,7 @@ class EnvSensorAdapter(BaseAdapter):
             )
             self._inbox.put_nowait(msg)
         except queue.Full:
-            pass
+            self.record_dropped_frame()
 
 
 class SimulatedEnvSensorAdapter(EnvSensorAdapter):
@@ -144,7 +144,7 @@ class SimulatedEnvSensorAdapter(EnvSensorAdapter):
             try:
                 self._inbox.put_nowait(msg)
             except queue.Full:
-                pass
+                self.record_dropped_frame()
             self._stop_evt.wait(period)
 
     def reconnect(self):

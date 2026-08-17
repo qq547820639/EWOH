@@ -657,7 +657,13 @@ export class RoleWorkbenchService {
       const nextCursor =
         hasMore && last
           ? encodeWorkbenchCursor({
-              sortValue: String((last as Record<string, unknown>)[sort.key] ?? ''),
+              // R2-SOP-007：按列类型序列化——drizzle 返回 timestamptz 列为
+              // JS Date，String(Date) 产生 'Mon Aug 17 2026 ...' 无法被 PG
+              // 解析（第二页 500）；timestamptz→ISO、number→十进制串、text 原样。
+              sortValue: serializeCursorSortValue(
+                (last as Record<string, unknown>)[sort.key],
+                sort.type,
+              ),
               id: String((last as Record<string, unknown>)[source.uniqueKey] ?? ''),
             } satisfies WorkbenchCursor)
           : null;
@@ -732,6 +738,26 @@ export class RoleWorkbenchService {
 
 /** A column reference we can build predicates/order-by against. */
 export type WorkbenchColumnRef = PgColumn;
+
+/**
+ * R2-SOP-007：cursor sortValue 必须序列化为 SQL-comparable 形式——
+ * timestamptz 列（drizzle 返回 JS Date）→ ISO 8601；number → 十进制串；
+ * text 原样。否则第二页 cursorPredicate 的参数 cast 失败（invalid input
+ * syntax for timestamp → 500）。
+ */
+export function serializeCursorSortValue(
+  value: unknown,
+  type: 'text' | 'timestamptz' | 'number',
+): string {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return value.toISOString();
+  if (type === 'timestamptz' && typeof value === 'string') {
+    // 已是字符串：规范化为 ISO（非 ISO 字符串属于上游脏数据，原样交给 PG 报错）
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+  }
+  return String(value);
+}
 
 /** A single tabular list backed directly by a PostgreSQL table. */
 export interface WorkbenchPgListSource {

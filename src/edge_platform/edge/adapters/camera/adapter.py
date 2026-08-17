@@ -69,6 +69,7 @@ class CameraAdapter(BaseAdapter):
             "last_seen": self._last_seen,
             "started_at": self._started_at,
             "model_version": self.model_version,
+            "dropped_frames": self.dropped_frames,
         }
 
     def device_info(self):
@@ -107,7 +108,7 @@ class CameraAdapter(BaseAdapter):
             )
             self._inbox.put_nowait(msg)
         except queue.Full:
-            pass
+            self.record_dropped_frame()
 
 
 class SimulatedCameraAdapter(CameraAdapter):
@@ -167,7 +168,7 @@ class SimulatedCameraAdapter(CameraAdapter):
             try:
                 self._inbox.put_nowait(msg)
             except queue.Full:
-                pass
+                self.record_dropped_frame()
             step += 1
             self._stop_evt.wait(period)
 

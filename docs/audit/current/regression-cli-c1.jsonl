@@ -1,0 +1,48 @@
+{"id":"CLI-302","regression_status":"FIXED","evidence":"tiptap-editor/components/link-edit-form.tsx:17-19,81-85 sanitizeLinkHref=sanitizeUrl 白名单，applyLink 危险协议拒绝并 toast；配套 link-edit-form.test.ts 覆盖 javascript:/data:/vbscript/大小写用例"}
+{"id":"CLI-303","regression_status":"FIXED","evidence":"app-shell/ContextBar.tsx:33-36 lastDataUpdatedAt 存在时显示'数据更新于…'，否则才显示'演示 / 待接入真数据'，不再永久硬编码"}
+{"id":"CLI-312","regression_status":"FIXED","evidence":"app-shell/useOfflineSnapshot.ts:24-29 catch 中 logger.error 记录失败原因(error.name)，不再静默吞错"}
+{"id":"CLI-313","regression_status":"FIXED","evidence":"app-shell/useOfflineSnapshot.ts:47-62 onOnline/onOffline 触发 resync 重新读取 IndexedDB 并合并 online 字段，pendingCount/lastSyncAt 不再过期"}
+{"id":"CLI-314","regression_status":"FIXED","evidence":"entity-combobox/use-fetch-data.tsx:32-57 latestRequestIdRef 请求序号守卫，旧响应晚到被丢弃（fetchFn 契约不支持 AbortSignal 的等效防竞态）"}
+{"id":"CLI-315","regression_status":"FIXED","evidence":"api/users/service.ts:27-35 非数字 ID 不再静默过滤，显式抛错且错误信息仅含被拒 ID 列表"}
+{"id":"CLI-316","regression_status":"FIXED","evidence":"api/files/service.ts:19-43 validateUploadFile：size>0、≤100MB、可执行扩展名(.exe/.js/.sh 等)黑名单拒绝，uploadFile 前置调用"}
+{"id":"CLI-317","regression_status":"FIXED","evidence":"tiptap-editor/components/image-upload-toolbar-button.tsx:30-43 handleFileChange 包 try/catch/finally，异常 toast 且 input value 重置"}
+{"id":"CLI-318","regression_status":"FIXED","evidence":"tiptap-editor/components/attachment-toolbar-button.tsx:34-51 handleFileChange 包 try/catch/finally，命令失败/异常均 toast 且 input value 重置"}
+{"id":"CLI-319","regression_status":"FIXED","evidence":"entity-combobox/entity-combobox.tsx:4-5 改用官方独立包 @radix-ui/react-use-controllable-state，不再引用 radix-ui/internal 私有路径"}
+{"id":"CLI-321","regression_status":"FIXED","evidence":"chat-select/use-chat-value.ts:103-109 logger.warn 仅输出 ids 数量与 error.name 类别，不再打印原始错误对象"}
+{"id":"CLI-322","regression_status":"FIXED","evidence":"app-shell/PendingInbox.tsx:47-54 演示入口以 disabled 菜单项显式标注'风险告警 / 指挥中心入口为演示导航（待接入真实数据）'"}
+{"id":"CLI-323","regression_status":"FIXED","evidence":"entity-combobox/search-trigger.tsx:28-30 及 shared-types.ts:188-190,272 'responsive' 已从 maxTagCount 类型移除，注释说明仅支持数字上限"}
+{"id":"CLI-325","regression_status":"FIXED","evidence":"form/select-field.tsx:146-151 空选项占位 SelectItem 改用保留值 '__empty__'，规避 Radix Select 空字符串限制"}
+{"id":"CLI-326","regression_status":"FIXED","evidence":"app-shell/AiAssistant.tsx:56-65 onError 经 sanitizeUserText 清洗 error.message 后展示，空值兜底'请求失败'"}
+{"id":"CLI-331","regression_status":"FIXED","evidence":"entity-combobox/context.tsx:7-10 createContext<EntityComboboxContextValue|undefined>，无 any；types.ts:88-89 连带移除从未提供的 isPending"}
+{"id":"CLI-332","regression_status":"FIXED","evidence":"form/form.tsx:12-15 14 个内联 any 收敛为命名别名 AnyAppFormApi（带 eslint-disable 与 tanstack 官方推荐形态注释）"}
+{"id":"CLI-333","regression_status":"FIXED","evidence":"entity-combobox/base-combobox-trigger.tsx:140-159 抽取 renderTagList 共享渲染（可见标签+隐藏 +N tooltip），renderTag 分支与默认 Badge 分支复用"}
+{"id":"CLI-334","regression_status":"FIXED","evidence":"entity-combobox/base-combobox-loading.tsx:6-12 未使用的 text 参数已移除，仅保留 className"}
+{"id":"CLI-335","regression_status":"FIXED","evidence":"entity-combobox/popover-wrapper.tsx:103,110,134,141 cast 目标改为 BaseComboboxTriggerProps['renderTrigger'] 等具体类型，'as any' 已全部消除"}
+{"id":"CLI-346","regression_status":"FIXED","evidence":"entity-combobox/size-variants.tsx:249-251 itemPillVariants 改用 bg-muted 令牌（注释标明 CLI-346），暗色由 token 翻转"}
+{"id":"CLI-347","regression_status":"FIXED","evidence":"tiptap-editor/components/color-highlight-toolbar-button.tsx:21-49 TEXT_COLORS 全部改用 var(--foreground)/--semantic-*/--chart-3 运行时 CSS 变量，不再混用 --color-red-600 与硬编码类"}
+{"id":"CLI-348","regression_status":"FIXED","evidence":"department-select/icon-department.tsx:15-20 SVG fill 改为 var(--primary)/var(--primary-foreground) 设计令牌"}
+{"id":"CLI-349","regression_status":"FIXED","evidence":"form/field-layout.tsx:41-47 必填星号改用 text-destructive 语义令牌"}
+{"id":"CLI-402","regression_status":"FIXED","evidence":"tiptap-editor/extensions/attachment.tsx:209-216 handleDownload 经 isDownloadUrl（http/https/blob）校验，非法协议 toast'已阻止下载'"}
+{"id":"CLI-403","regression_status":"FIXED","evidence":"tiptap-editor/extensions/attachment.tsx:237-243 handlePreview window.open 前同样经 isDownloadUrl 校验并 toast 拒绝"}
+{"id":"CLI-404","regression_status":"FIXED","evidence":"user-profile/user-external-script.ts:11-15,33-48 新增 allowedOrigins 白名单选项，src 必须 https 且 origin 在白名单，否则拒绝注入进 error 状态；user-profile.tsx:242 传入飞书 CDN origin"}
+{"id":"CLI-405","regression_status":"FIXED","evidence":"user-profile/user-profile.tsx:65-86 generateRandomString 改用 crypto.getRandomValues+拒绝采样，WebCrypto 不可用直接抛错不退化 Math.random"}
+{"id":"CLI-406","regression_status":"FIXED","evidence":"user-profile/user-profile.tsx:204-210 JSON.parse(error.message) 包 try/catch，解析失败 logger.info 记录原文而非抛出未处理异常"}
+{"id":"CLI-407","regression_status":"PARTIAL","evidence":"user-profile/user-profile.tsx:232-242 CDN 脚本仍无 SRI；已收敛为 https 协议+useExternalScript origin 白名单缓解，注释记录裁决（无官方 SRI 哈希可加，待 npm 自托管后补）"}
+{"id":"CLI-408","regression_status":"FIXED","evidence":"user-profile/user-profile.tsx:216-222,338-344 两处 location.replace 前均经 isSafeRedirectUrl 校验（同源相对路径/白名单 origin），非法值 logger.info 拦截"}
+{"id":"CLI-409","regression_status":"FIXED","evidence":"user-profile/user-external-script.ts:50-54 弃用 querySelector 模板插值，改为 queryAll('script[src]') 枚举后对 getAttribute('src') 精确比对"}
+{"id":"CLI-415","regression_status":"FIXED","evidence":"user-select/utils.tsx:107,126-129 path 提取结果经 APP_ID_RE(/^[A-Za-z0-9_-]+$/) 校验，非法值落回 window.appId 兜底"}
+{"id":"CLI-416","regression_status":"FIXED","evidence":"user-profile/user-profile.tsx:6-9 注释明确 SHA1 为飞书 jsapi 协议规定签名算法、不承载安全强度，约束已文档化（裁决性修复）"}
+{"id":"CLI-417","regression_status":"PARTIAL","evidence":"user-select/user-select.tsx:279-280 catch 仍只有 toast.error('外部用户添加失败')，未按建议补充 logger.error 记录 error 上下文，排障信息缺失"}
+{"id":"CLI-418","regression_status":"FIXED","evidence":"types/user.ts:72-74 department 改为 Department | Record<string,unknown> | undefined 显式联合，注释标明 CLI-418，不再写 any"}
+{"id":"CLI-419","regression_status":"FIXED","evidence":"user-display/utils.ts:13-23,44-47 AvatarLike 显式联合 + unknown 收窄 cast 为本地 Department，'as any' 全部消除"}
+{"id":"CLI-420","regression_status":"FIXED","evidence":"user-select/utils.tsx:44-49,180-193 toDepartment 经 unknown 收窄；extractIdsFromValue 用 'id' in/'user_id' in 判别联合，'as any' 消除"}
+{"id":"CLI-421","regression_status":"FIXED","evidence":"utils/user.ts:24-27 normalizeUser 改为交叉类型断言 User & {userId?;userType?}，无 any"}
+{"id":"CLI-422","regression_status":"FIXED","evidence":"user-select/user-select.tsx:197-205 散落 4 处的 onChange cast 收敛为 emitChange 单点受控分发"}
+{"id":"CLI-423","regression_status":"FIXED","evidence":"user-select/use-user-value.ts:146-153 toExternalValue 增加 rawOf 兜底（u.raw ?? {user_id,name,avatar}），非空断言消除"}
+{"id":"CLI-424","regression_status":"FIXED","evidence":"user-display/overflow-tooltip-text.tsx:83 tooltip 改用 bg-surface-inverse 令牌，硬编码 rgb(31,35,41) 已移除"}
+{"id":"CLI-425","regression_status":"FIXED","evidence":"user-display/user-display.tsx:84 hover/active 改用 hover:bg-accent active:bg-muted 令牌，rgba 硬编码与 shadow 已移除"}
+{"id":"CLI-426","regression_status":"FIXED","evidence":"user-profile/user-profile.tsx:382-386 外部用户标签改用 bg-info/20 text-primary 语义令牌"}
+{"id":"CLI-427","regression_status":"FIXED","evidence":"user-select/user-item.tsx:24-28,78 外部标签与转换遮罩改用 bg-info/20 与 bg-foreground/40 令牌"}
+{"id":"CLI-430","regression_status":"FIXED","evidence":"user-profile/user-profile.tsx:294 注释确认已删除旧版注释掉的重试按钮代码块，错误卡片仅保留新重试入口"}
+{"id":"CLI-432","regression_status":"FIXED","evidence":"user-profile/user-profile.tsx:236 变量已更名 larkSdkUrl（拼写修正）"}
+{"id":"CLI-433","regression_status":"NOT_FIXED","evidence":"chat-select/department-select/entity-combobox/tiptap-editor 等大量文件（如 chat-select/chat-item.tsx:5-15、entity-combobox/base-combobox.tsx:3-14）仍使用 @client/src/ 别名而非 @/，两套别名并存未统一"}

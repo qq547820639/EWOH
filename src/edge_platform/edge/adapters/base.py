@@ -27,6 +27,21 @@ class BaseAdapter:
         self.firmware_version = firmware_version
         self._running = False
         self._started_at = None
+        # R2-ECO-005：背压丢帧可观测——队列满丢弃计数（对齐 ny_exo_a1 基线）。
+        self.dropped_frames = 0
+
+    def record_dropped_frame(self, reason="queue_full"):
+        """R2-ECO-005：记录一次背压丢帧（计数 + 限频 warning），替代静默 pass。"""
+        import logging
+
+        self.dropped_frames += 1
+        if self.dropped_frames == 1 or self.dropped_frames % 100 == 0:
+            logging.getLogger(__name__).warning(
+                "adapter inbox full, dropped frames=%d (device_id=%s, reason=%s)",
+                self.dropped_frames,
+                self.device_id,
+                reason,
+            )
 
     # ---- 生命周期 ----
     def start(self):
@@ -48,6 +63,10 @@ class BaseAdapter:
         status ∈ {online, offline, degraded}。
         """
         raise NotImplementedError
+
+    def health_extras(self):
+        """health() 附加字段（R2-ECO-005）：暴露 dropped_frames 供健康页观测背压。"""
+        return {"dropped_frames": self.dropped_frames}
 
     def device_info(self):
         """返回设备元信息 dict：{device_id, type, model, firmware_version, source_type, ...}。"""

@@ -466,8 +466,12 @@ function auditRepoFacts(rootDir) {
     exemptions: loadSemanticExemptions(rootDir),
   });
   const semanticResult = semanticRules.runRules(semanticCtx, { strict: true });
+  // R2-SCR-009：豁免过滤必须区分 severity——error 级 finding 永不可被豁免吞掉
+  //（与 engine.js runRules 的 unexempted 语义一致：仅 warning 可按 ruleId 豁免）。
+  // 原 filter 只比对 ruleId，pilot-env-fingerprint 在 pilot 声明 ready 时升级为
+  // error（TOOL-007），其 finding 会被 exemptions.json 的 warning 豁免吞掉。
   const unexemptedFindings = semanticResult.findings.filter(
-    (f) => !(semanticCtx.exemptions || []).includes(f.ruleId),
+    (f) => f.severity === 'error' || !(semanticCtx.exemptions || []).includes(f.ruleId),
   );
   const semanticDetail = unexemptedFindings.length
     ? `${unexemptedFindings.length} unexempted conflicts: ${unexemptedFindings

@@ -56,6 +56,7 @@ const TRIGGER_LABELS: Record<string, string> = {
 function formatTime(iso: string | null | undefined): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -236,8 +237,11 @@ const Scheduling = (): React.ReactElement => {
       setActionReason('');
       refreshPlan(plan);
     },
-    onError: () => {
-      toast.error('方案驳回失败');
+    onError: (err) => {
+      // R2-CP2-004：透传后端错误详情（与 CLI-028 修复口径一致）。
+      toast.error('方案驳回失败', {
+        description: err instanceof Error ? err.message : undefined,
+      });
     },
   });
 
@@ -247,8 +251,10 @@ const Scheduling = (): React.ReactElement => {
       toast.success('方案已下发执行');
       refreshPlan(plan);
     },
-    onError: () => {
-      toast.error('下发失败');
+    onError: (err) => {
+      toast.error('下发失败', {
+        description: err instanceof Error ? err.message : undefined,
+      });
     },
   });
 

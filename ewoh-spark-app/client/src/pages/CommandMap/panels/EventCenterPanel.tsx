@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import dayjs from 'dayjs';
 import { toast } from 'sonner';
 import { CheckCircle2, Hammer, History, Loader2 } from 'lucide-react';
 import { getEvents, handleEvent } from '@client/src/api/dashboard';
@@ -35,16 +34,28 @@ const SEVERITY_OPTIONS: { label: string; value: string | undefined }[] = [
   { label: '低', value: 'low' },
 ];
 
+/** R2-CP1-2：时间展示统一 Asia/Shanghai 时区（不依赖浏览器本地时区）。 */
+function formatShortTime(iso: string): string {
+  return new Date(iso).toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
 function timeAgo(dateStr: string | null): string {
   if (!dateStr) return '—';
   const diff = Date.now() - new Date(dateStr).getTime();
-  if (diff < 0) return dayjs(dateStr).format('MM-DD HH:mm');
+  if (diff < 0) return formatShortTime(dateStr);
   const min = Math.floor(diff / 60000);
   if (min < 1) return '刚刚';
   if (min < 60) return `${min}分钟前`;
   const hr = Math.floor(min / 60);
   if (hr < 24) return `${hr}小时前`;
-  return dayjs(dateStr).format('MM-DD HH:mm');
+  return formatShortTime(dateStr);
 }
 
 // ADR-027 规范词表：critical=红 / high=橙 / medium=黄 / low=绿 / unknown=灰。
@@ -362,7 +373,7 @@ export default function EventCenterPanel({
                 label="创建时间"
                 value={
                   selectedEvent.createdAt
-                    ? dayjs(selectedEvent.createdAt).format('YYYY-MM-DD HH:mm:ss')
+                    ? new Date(selectedEvent.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
                     : '—'
                 }
               />
@@ -392,7 +403,7 @@ export default function EventCenterPanel({
                   label="前"
                   value={
                     replayContext.beforeTs
-                      ? dayjs(replayContext.beforeTs).format('HH:mm:ss')
+                      ? new Date(replayContext.beforeTs).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
                       : '无'
                   }
                 />
@@ -400,7 +411,7 @@ export default function EventCenterPanel({
                   label="中"
                   value={
                     replayContext.duringTs
-                      ? dayjs(replayContext.duringTs).format('HH:mm:ss')
+                      ? new Date(replayContext.duringTs).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
                       : '无'
                   }
                 />
@@ -408,7 +419,7 @@ export default function EventCenterPanel({
                   label="后"
                   value={
                     replayContext.afterTs
-                      ? dayjs(replayContext.afterTs).format('HH:mm:ss')
+                      ? new Date(replayContext.afterTs).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
                       : '无'
                   }
                 />

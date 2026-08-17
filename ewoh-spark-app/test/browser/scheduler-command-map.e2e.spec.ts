@@ -164,39 +164,69 @@ test.describe('Command Map 真实后端浏览器 E2E', () => {
     await routeApiToBackend(page, accessToken);
 
     // 创建调度 run（page.evaluate 内 fetch → 走 route 代理 → 真实后端；真实浏览器路径）。
+    // R2-APT-007：每个环节捕获 HTTP 状态 + 业务状态，断言链路真实成功；
+    // 旧 expect(chain).toBeDefined() 恒真（evaluate 必然返回对象）已移除。
     const chain = await page.evaluate(
       async (args: { base: string; token: string }) => {
         const headers = { Authorization: `Bearer ${args.token}` };
-        const post = (pathname: string, data?: unknown) =>
-          fetch(`${args.base}${pathname}`, {
+        const post = async (pathname: string, data?: unknown) => {
+          const res = await fetch(`${args.base}${pathname}`, {
             method: 'POST',
             headers: { ...headers, 'Content-Type': 'application/json' },
             body: data ? JSON.stringify(data) : undefined,
-          }).then((r) => r.json().catch(() => ({})));
+          });
+          const body = await res.json().catch(() => ({}));
+          return { httpStatus: res.status, body };
+        };
         const run = await post('/api/scheduler/runs', { strategy: 'scheduling_v2', trigger: 'MANUAL' });
-        const plan = (run as { plans?: Array<{ planId: string; version: number; snapshotVersion: string }> })
-          .plans?.[0];
-        if (!plan) return { runCreated: false, plan: null };
+        const plan = ((run.body as { plans?: Array<{ planId: string; version: number; snapshotVersion: string }> })
+          .plans ?? [])[0];
+        if (!plan) {
+          return {
+            runHttpStatus: run.httpStatus,
+            runCreated: false,
+            planId: null as string | null,
+            approveHttpStatus: null as number | null,
+            approveStatus: null as string | null,
+            dispatchHttpStatus: null as number | null,
+            dispatchStatus: null as string | null,
+          };
+        }
         const approve = await post(`/api/scheduler/plans/${plan.planId}/approve`, {
           version: plan.version,
           snapshotVersion: plan.snapshotVersion,
           operator: 'browser-e2e',
         });
         const dispatch =
-          (approve as { status?: string }).status === 'approved'
+          (approve.body as { status?: string }).status === 'approved'
             ? await post(`/api/scheduler/plans/${plan.planId}/dispatch`)
             : null;
         return {
+          runHttpStatus: run.httpStatus,
           runCreated: true,
           planId: plan.planId,
-          approveStatus: (approve as { status?: string }).status,
-          dispatch: !!dispatch,
+          approveHttpStatus: approve.httpStatus,
+          approveStatus: (approve.body as { status?: string }).status ?? null,
+          dispatchHttpStatus: dispatch ? dispatch.httpStatus : null,
+          dispatchStatus: dispatch ? ((dispatch.body as { status?: string }).status ?? null) : null,
         };
       },
       { base: staticServer!.baseUrl, token: accessToken } as never,
     );
-    // run 创建成功或触发冷却去抖（409）均为合理路径；方案存在时审批链路可达。
-    expect(chain).toBeDefined();
+    // R2-APT-007：调度去抖冷却（409）为环境性跳过——显式 skip 注明，不静默恒真。
+    if (chain.runHttpStatus === 409) {
+      test.skip(true, '调度 run 创建触发 409 去抖冷却，本轮链路断言显式跳过');
+    }
+    // run 创建必须真实成功并携带方案。
+    expect(chain.runHttpStatus, `run 创建失败（HTTP ${chain.runHttpStatus}）`).toBe(201);
+    expect(chain.runCreated).toBe(true);
+    expect(chain.planId).toBeTruthy();
+    // 审批：真实成功且业务状态翻转。
+    expect(chain.approveHttpStatus, `approve 失败（HTTP ${chain.approveHttpStatus}）`).toBe(201);
+    expect(chain.approveStatus).toBe('approved');
+    // 派工：审批通过后必须可达且状态翻转。
+    expect(chain.dispatchHttpStatus, `dispatch 失败（HTTP ${chain.dispatchHttpStatus}）`).toBe(201);
+    expect(chain.dispatchStatus).toBe('dispatched');
   });
 
   test('C: KPI / Execution / Policy 端点经真实后端可用', async ({ page }) => {
@@ -237,27 +267,38 @@ test.describe('Command Map 真实后端浏览器 E2E', () => {
     }
   });
 
-  test('D: SSE v2/stream 可建立且包含 Last-Event-ID 续传语义（经代理）', async ({ page }) => {
+  test('D: SSE v2/stream 可建立（经代理，200 + text/event-stream）', async ({ page }) => {
     const { accessToken } = await loginRealBackend();
     await routeApiToBackend(page, accessToken);
 
     await page.goto(`${staticServer!.baseUrl}/command-map`, { waitUntil: 'domcontentloaded' });
-    // 验证流端点可经代理访问（fetch 方式，模拟前端 stream 读取）。
-    const streamStatus = await page.evaluate(async (backend) => {
+    // R2-APT-013：401 是鉴权失败（恰恰证明流不可用），必须 FAIL——原断言把
+    // 401 当"可建立"通过。现仅接受 200 且 content-type 含 text/event-stream，
+    // 并使用本次登录的新鲜 token（原取 localStorage 可能已过期的 token）。
+    const streamStatus = await page.evaluate(async (args: { backend: string; token: string }) => {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 3000);
-        const res = await fetch(`${backend}/api/scheduler/v2/stream`, {
-          headers: { Authorization: `Bearer ${window.localStorage.getItem('ewoh_access_token') ?? ''}` },
+        const res = await fetch(`${args.backend}/api/scheduler/v2/stream`, {
+          headers: { Authorization: `Bearer ${args.token}` },
           signal: controller.signal,
         });
         clearTimeout(timeout);
-        return { status: res.status, contentType: res.headers.get('content-type') };
+        const out = { status: res.status, contentType: res.headers.get('content-type') };
+        // 响应头到达即断开（SSE 长连接不留挂）。
+        controller.abort();
+        return out;
       } catch (e) {
         return { status: 0, error: (e as Error).message };
       }
-    }, BACKEND);
-    // 流端点可接受（200 或 401 都算“可建立”语义已覆盖；400 以下视为通过——SSE 长连接由前端轮询兜底）。
-    expect(streamStatus.status === 200 || streamStatus.status === 401).toBe(true);
+    }, { backend: BACKEND, token: accessToken });
+    expect(
+      streamStatus.status === 200 &&
+        String(streamStatus.contentType ?? '').includes('text/event-stream'),
+      `SSE 流建立失败：status=${streamStatus.status} contentType=${streamStatus.contentType ?? '-'}`,
+    ).toBe(true);
+    // R2-APT-013：用例名原承诺"Last-Event-ID 续传语义"但从未验证——删除该
+    // 承诺。真实续传验证需读取事件 id 后带 Last-Event-ID 头重连并比对续传
+    // 事件序列，本用例未实现，不虚假声称已覆盖。
   });
 });

@@ -3,12 +3,14 @@
  *
  * 供 control.service.spec 与 scenario-packages.spec（SP-04）共用：
  * insert（三表行收集 + 回读）/ select（行回读，忽略条件）/ update
- * （patch 收集 + 命令/请求行回写，receipts/revoke 终态读回依赖）。
+ * （patch 收集 + 命令/请求行回写，receipts/revoke 终态读回依赖；
+ * R2-SMI-009：update 链尾提供 returning 以支持请求行 CAS 写回）。
  */
 import {
   ewohControlRequest,
   ewohControlCommand,
   ewohControlResult,
+  ewohDeviceConfig,
 } from '@server/database/schema';
 
 export interface FakeControlDb {
@@ -18,15 +20,18 @@ export interface FakeControlDb {
   requestRows: unknown[];
   commandRows: unknown[];
   resultRows: unknown[];
+  deviceRows: unknown[];
 }
 
 export function makeControlDb(seed: {
   requests?: unknown[];
   commands?: unknown[];
+  devices?: unknown[];
 } = {}): FakeControlDb {
   const requestRows: unknown[] = [...(seed.requests ?? [])];
   const commandRows: unknown[] = [...(seed.commands ?? [])];
   const resultRows: unknown[] = [];
+  const deviceRows: unknown[] = [...(seed.devices ?? [])];
   const inserts: Array<{ table: unknown; row: Record<string, unknown> }> = [];
   const updates: Array<{ table: unknown; set: Record<string, unknown>; cond: unknown }> = [];
   const db = {
@@ -63,7 +68,9 @@ export function makeControlDb(seed: {
               ? commandRows
               : table === ewohControlResult
                 ? resultRows
-                : [];
+                : table === ewohDeviceConfig
+                  ? deviceRows
+                  : [];
         const q: any = Promise.resolve(rows);
         q.where = () => q;
         q.orderBy = () => q;
@@ -85,10 +92,14 @@ export function makeControlDb(seed: {
               Object.assign(row, patch);
             }
           }
-          return Promise.resolve([]);
+          // R2-SMI-009：CAS 写回经 returning 取命中行（fake 不解释 where，
+          // 恒回一行命中——0 行冲突路径由专用断言覆盖）。
+          return {
+            returning: jest.fn().mockResolvedValue([{ requestId: 'fake-row' }]),
+          };
         }),
       })),
     })),
   };
-  return { db, inserts, updates, requestRows, commandRows, resultRows };
+  return { db, inserts, updates, requestRows, commandRows, resultRows, deviceRows };
 }

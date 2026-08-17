@@ -106,8 +106,9 @@ def validate_knowledge_entry(record: Any) -> list[str]:
         if not isinstance(provenance, dict):
             return ["provenance_required"]
         sources = provenance.get("trainingDataSources")
+        # R2-SHR-010：空白串与空串同拒（对齐 TS item.trim() === ''）。
         if not isinstance(sources, list) or len(sources) == 0 or any(
-            not isinstance(item, str) or not item for item in sources
+            not isinstance(item, str) or not item.strip() for item in sources
         ):
             return ["provenance_required"]
         for field in _PROVENANCE_FIELDS[1:]:

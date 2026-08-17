@@ -31,10 +31,11 @@ describe('SystemService upsert', () => {
     const insert = jest.fn().mockReturnValue({ values });
     const service = new SystemService({ insert } as never);
 
-    const result = await service.setConfig('weights', { output: 1 }, 'user-1');
+    // NEST-642 + R2-SNZ-016：upsert 语义 (orgId, configKey)，写入显式携带 orgId。
+    const result = await service.setConfig('weights', { output: 1 }, 'user-1', 'org-1');
 
     expect(values).toHaveBeenCalledWith(
-      expect.objectContaining({ configKey: 'weights', updatedBy: 'user-1' }),
+      expect.objectContaining({ configKey: 'weights', updatedBy: 'user-1', orgId: 'org-1' }),
     );
     const conflict = onConflictDoUpdate.mock.calls[0][0] as {
       target: unknown[];
@@ -87,6 +88,7 @@ describe('SystemService feature flags', () => {
       true,
       { owner: 'scale' },
       'user-1',
+      'org-1',
     );
 
     expect(result.enabled).toBe(true);

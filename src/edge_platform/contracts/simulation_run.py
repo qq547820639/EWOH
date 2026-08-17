@@ -24,6 +24,7 @@ scripts/audit-domain-contracts.js simulation 域门禁强制。
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 KINDS: tuple[str, ...] = ("what_if", "capacity", "layout", "material_flow")
@@ -139,7 +140,8 @@ def _collect_conclusions(facts: list[Any]) -> dict[tuple[str, str, str], dict[st
         if not isinstance(rule_id, str) or not isinstance(subject_id, str) or not isinstance(conclusion, str):
             raise ValueError("fact 须含字符串 ruleId/subjectId/conclusion")
         confidence = fact.get("confidence")
-        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        # R2-SHR-003：数值入口统一补 isfinite（对齐 TS Number.isFinite）。
+        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not math.isfinite(confidence):
             raise ValueError("fact.confidence 必须是数值")
         key = (rule_id, subject_id, conclusion)
         result[key] = {
@@ -160,7 +162,11 @@ def evaluate_capacity(stations: list[Any], demand_per_hour: float) -> dict[str, 
     """
     if not isinstance(stations, list) or not stations:
         raise ValueError("stations 必须是非空列表")
-    if isinstance(demand_per_hour, bool) or not isinstance(demand_per_hour, (int, float)):
+    if (
+        isinstance(demand_per_hour, bool)
+        or not isinstance(demand_per_hour, (int, float))
+        or not math.isfinite(demand_per_hour)
+    ):
         raise ValueError("demandPerHour 必须是数值")
     if demand_per_hour <= 0:
         raise ValueError("demandPerHour 必须 > 0")
@@ -172,7 +178,7 @@ def evaluate_capacity(stations: list[Any], demand_per_hour: float) -> dict[str, 
         capacity = station.get("capacityPerHour")
         if not isinstance(station_id, str) or not station_id:
             raise ValueError("station.stationId 必须是非空字符串")
-        if isinstance(capacity, bool) or not isinstance(capacity, (int, float)):
+        if isinstance(capacity, bool) or not isinstance(capacity, (int, float)) or not math.isfinite(capacity):
             raise ValueError("station.capacityPerHour 必须是数值")
         if capacity <= 0:
             raise ValueError("station.capacityPerHour 必须 > 0")
@@ -208,9 +214,9 @@ def evaluate_layout(stations: list[Any], moves: list[Any]) -> dict[str, Any]:
         y = station.get("y")
         if not isinstance(station_id, str) or not station_id:
             raise ValueError("station.stationId 必须是非空字符串")
-        if isinstance(x, bool) or not isinstance(x, (int, float)):
+        if isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x):
             raise ValueError("station.x 必须是数值")
-        if isinstance(y, bool) or not isinstance(y, (int, float)):
+        if isinstance(y, bool) or not isinstance(y, (int, float)) or not math.isfinite(y):
             raise ValueError("station.y 必须是数值")
         coords[station_id] = (float(x), float(y))
     routes = []
@@ -259,11 +265,11 @@ def evaluate_material_flow(stations: list[Any]) -> dict[str, Any]:
         inflow = station.get("inflowPerHour")
         if not isinstance(station_id, str) or not station_id:
             raise ValueError("station.stationId 必须是非空字符串")
-        if isinstance(capacity, bool) or not isinstance(capacity, (int, float)):
+        if isinstance(capacity, bool) or not isinstance(capacity, (int, float)) or not math.isfinite(capacity):
             raise ValueError("station.capacityPerHour 必须是数值")
         if capacity <= 0:
             raise ValueError("station.capacityPerHour 必须 > 0")
-        if isinstance(inflow, bool) or not isinstance(inflow, (int, float)):
+        if isinstance(inflow, bool) or not isinstance(inflow, (int, float)) or not math.isfinite(inflow):
             raise ValueError("station.inflowPerHour 必须是数值")
         if inflow < 0:
             raise ValueError("station.inflowPerHour 必须 ≥ 0")

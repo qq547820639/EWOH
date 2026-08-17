@@ -327,8 +327,11 @@ export function makeResourceDb(
           }
           updates.push({ table, set: { ...snakePatch }, cond });
           const p: any = Promise.resolve(matched);
+          // R2-SNZ-010：issue/release 的 CAS 更新经 returning 全列回读映射——
+          // fake 返回命中行整行拷贝（原先恒只回 {quantity}，增量更新后
+          // issuedQty 等字段映射为 NaN）。
           p.returning = jest.fn(() =>
-            Promise.resolve(matched.map((r) => ({ quantity: r.quantity }))),
+            Promise.resolve(matched.map((r) => ({ ...r }))),
           );
           return p;
         }),

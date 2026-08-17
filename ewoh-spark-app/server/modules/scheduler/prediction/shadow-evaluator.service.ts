@@ -395,6 +395,14 @@ export class ShadowEvaluatorService {
   ): Promise<PredictionShadowAggregate> {
     if (!this.db) return this.aggregate(ctx);
     const orgKey = ctx?.primaryOrgId || 'ALL';
+    // R2-SSV-25（2026-08-17）：补 NEST-043 同款 HTTP 守卫——HTTP 上下文且
+    // org=ALL 且未显式 opts.siteOrOrg 时 fail-closed（400），不再全表（全部
+    // 租户）观察行进入 MAE/RMSE/coverage 聚合；系统后台流保持全量语义。
+    if (orgKey === 'ALL' && !opts.siteOrOrg && currentRequestContext()) {
+      throw new BadRequestException(
+        'org scope required for shadow observation aggregation（R2-SSV-25）',
+      );
+    }
     const conditions: SQL[] = [];
     const orgFilter = opts.siteOrOrg ?? (orgKey === 'ALL' ? undefined : orgKey);
     if (orgFilter) conditions.push(eq(predictionShadowObservation.orgId, orgFilter));

@@ -10,7 +10,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gte } from 'drizzle-orm';
 import { ewohEvent } from '@server/database/schema';
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -63,22 +63,43 @@ export class AlertService {
     private readonly auditService: AuditService,
   ) {}
 
-  /** NEST-433：列表 org 过滤（global_admin 放行；org 缺失 401）。 */
-  async listAlerts(actor?: OrgContext) {
+  /**
+   * NEST-433：列表 org 过滤（global_admin 放行；org 缺失 401）。
+   * R2-SMI-007：补分页纪律——limit 默认 100、上限 500（global_admin 全租户
+   * 分支同样受限），ewoh_event 高写入量表不再被单请求全量拉取。
+   */
+  async listAlerts(
+    actor?: OrgContext,
+    options?: { limit?: number; since?: string },
+  ) {
     const orgId = actor?.primaryOrgId?.trim();
     if (!orgId) {
       throw new UnauthorizedException(
         'org 上下文缺失：alert 列表必须带租户上下文',
       );
     }
+    const limit = Math.min(
+      Math.max(Number(options?.limit) || 100, 1),
+      500,
+    );
+    const sinceFilter =
+      options?.since && !Number.isNaN(Date.parse(options.since))
+        ? [gte(ewohEvent.createdAt, new Date(options.since))]
+        : [];
     if (actor?.isGlobalAdmin) {
-      return this.db.select().from(ewohEvent).orderBy(desc(ewohEvent.createdAt));
+      return this.db
+        .select()
+        .from(ewohEvent)
+        .where(and(...sinceFilter))
+        .orderBy(desc(ewohEvent.createdAt))
+        .limit(limit);
     }
     return this.db
       .select()
       .from(ewohEvent)
-      .where(eq(ewohEvent.orgId, orgId))
-      .orderBy(desc(ewohEvent.createdAt));
+      .where(and(eq(ewohEvent.orgId, orgId), ...sinceFilter))
+      .orderBy(desc(ewohEvent.createdAt))
+      .limit(limit);
   }
 
   /** NEST-433：单条读 org 守卫（NULL legacy 行放行，跨租户 404）。 */

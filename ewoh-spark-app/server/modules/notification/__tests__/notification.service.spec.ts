@@ -194,3 +194,44 @@ describe('NotificationService.retryPush（R-58 / ADR-037 推送重试）', () =>
     expect(app?.errorMessage).toBeNull();
   });
 });
+
+/* R2-SNZ-002（2026-08-17 审计整改）：AccessTokenGuard 只填 roles 数组、
+ * 从不设置 role 单值——原先 controller 读取 userContext.role 恒
+ * undefined，非 global_admin 用户通知列表恒空（fail-closed 方向的功能
+ * 失效）。回归：roles 数组按 recipient_id ∈ roles 匹配（ADR-030 契约），
+ * 单值 role 兼容保留。 */
+describe('NotificationService.listNotifications roles 数组（R2-SNZ-002）', () => {
+  it('roles 数组：多角色调用者可见任一匹配角色的通知', async () => {
+    const { service } = createNotificationDb([
+      rowOf({ notificationId: 'NTF-1', recipientId: 'workshop_lead' }),
+      rowOf({ notificationId: 'NTF-2', recipientId: 'dispatcher' }),
+      rowOf({ notificationId: 'NTF-3', recipientId: 'safety_admin' }),
+      rowOf({ notificationId: 'NTF-4', orgId: ORG_B }),
+    ]);
+    const list = await service.listNotifications(ORG_A, {
+      roles: ['workshop_lead', 'dispatcher'],
+    });
+    expect(list).toHaveLength(2);
+    const ids = (list as Array<Record<string, unknown>>).map((n) => n.notificationId);
+    expect(ids).toContain('NTF-1');
+    expect(ids).toContain('NTF-2');
+    expect(ids).not.toContain('NTF-3');
+    expect(ids).not.toContain('NTF-4');
+  });
+
+  it('空 roles 数组 → 仍 fail-closed（__none__ 不可见）', async () => {
+    const { service } = createNotificationDb([rowOf()]);
+    const list = await service.listNotifications(ORG_A, { roles: [] });
+    expect(list).toHaveLength(0);
+  });
+
+  it('单值 role 兼容保留（旧调用方不回归）', async () => {
+    const { service } = createNotificationDb([
+      rowOf({ notificationId: 'NTF-1', recipientId: 'workshop_lead' }),
+      rowOf({ notificationId: 'NTF-2', recipientId: 'dispatcher' }),
+    ]);
+    const list = await service.listNotifications(ORG_A, { role: 'workshop_lead' });
+    expect(list).toHaveLength(1);
+    expect((list[0] as Record<string, unknown>).notificationId).toBe('NTF-1');
+  });
+});

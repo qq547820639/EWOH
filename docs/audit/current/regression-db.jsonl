@@ -1,0 +1,64 @@
+{"id":"SQL-001","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:143-332 重建 scheduler 8 表+route 2 表 policy（去 OR org_id IS NULL、显式 global_admin 例外）；standalone_057_rls_null_reject.verify.sql:63-65 断言 policy 不含 org_id IS NULL"}
+{"id":"SQL-002","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_025_scheduler_rls.rollback.sql:16-41 每表 DROP POLICY 后均追加 ALTER TABLE ... DISABLE ROW LEVEL SECURITY"}
+{"id":"SQL-003","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_008_phase2_realtime.sql:19-30 改用 ALTER TABLE IF EXISTS + DO to_regclass 守卫，空库先跑静默跳过，017:59-78 建表含最终形态"}
+{"id":"SQL-004","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_009_reservation_conflict.sql:25-49 DO 块 to_regclass 守卫，表不存在时跳过（约束由 017 建表+022 演进承接）"}
+{"id":"SQL-005","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_014_policy_weights.sql:22-35 ALTER TABLE IF EXISTS + DO to_regclass 守卫，017:81-95 CREATE TABLE 含 weights_json 终态"}
+{"id":"SQL-006","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_011_outbox_sequence.sql:23-37 序列独立创建，ALTER DEFAULT/setval 以 to_regclass 守卫；017:57-66 建表带 nextval DEFAULT"}
+{"id":"SQL-007","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:296-332 route_node/route_edge policy 重建为 TO service_role；standalone_057_rls_null_reject.verify.sql:60-62 断言 roles 含 service_role"}
+{"id":"SQL-008","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_056_route_org_isolation.rollback.sql:11-14 DROP POLICY 后两表均追加 DISABLE ROW LEVEL SECURITY"}
+{"id":"SQL-009","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:342-405 saved_views/workbench_export_tasks 补 RLS policy（organization_id 匹配）+ (org,task)/(org,idem)/(org,owner,workbench,name) 复合唯一；verify 057:84-92 断言"}
+{"id":"SQL-010","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_029_prediction_shadow_observation.sql:10-17 头注释显式 advisory-only+null=全局/ALL 采样；schema-manifest.yaml:786-794 登记为 GLOBAL_SHARED（审计 SQL-010 裁决）"}
+{"id":"SQL-011","regression_status":"FIXED_VERIFIED","evidence":"schema-manifest.yaml:795-803 ewoh_snapshot_version_counter 登记 GLOBAL_SHARED（按 day 全局版本空间，审计 SQL-011 裁决：设计为全局+manifest 显式登记）"}
+{"id":"SQL-012","regression_status":"STILL_PRESENT","evidence":"db/migrations/standalone_004_ewoh_domain.sql:13-31 ewoh_resource_locks（org_id NOT NULL）与 :109-125 ewoh_factory_replication_sessions（org_id 可空）仍无 RLS/policy，service_role 可跨租户读写；manifest 仅标 special/NOT NULL 未做隔离或 GLOBAL_SHARED 文档化"}
+{"id":"SQL-013","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:414-418 DROP 单列唯一建 uq_ewoh_scheduling_run_org_run_id (org_id,run_id)；verify 057:95-119 断言"}
+{"id":"SQL-014","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:420-425 uq_ewoh_scheduling_plan_assignment_org_assignment (org_id,assignment_id)"}
+{"id":"SQL-015","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:427-432 uq_ewoh_scheduling_constraint_org_constraint (org_id,constraint_id)"}
+{"id":"SQL-016","regression_status":"PARTIALLY_FIXED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:587-591 补 world_state_snapshot.org_id 血缘列；头部裁决记录（35-40 行）明确 snapshot_version 保持全局唯一版本键（ADR-004 GLOBAL_SHARED），原诉求复合唯一按裁决不采纳"}
+{"id":"SQL-017","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:434-445 uq_ewoh_route_node_org_node / uq_ewoh_route_edge_org_edge 复合唯一"}
+{"id":"SQL-018","regression_status":"NO_LONGER_APPLICABLE","evidence":"db/migrations/standalone_057_rls_null_reject.sql:35-39 裁决记录：ewoh_assignment_event 保持 GLOBAL_SHARED/DERIVED_TENANT_OWNERSHIP（ADR-004/028），eventId 全局唯一为 SSE 跨 org 重放与审计依赖，不改复合唯一"}
+{"id":"SQL-019","regression_status":"NO_LONGER_APPLICABLE","evidence":"db/migrations/standalone_057_rls_null_reject.sql:35-39 同裁决：ewoh_outbox 全局 sequence 事件日志，event_id 全局唯一保留"}
+{"id":"SQL-020","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:97-129 backfill+SET NOT NULL+447-452 uq_ewoh_scheduling_feedback_org_feedback (org_id,feedback_id)"}
+{"id":"SQL-021","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:454-459 uq_ewoh_scheduling_conflict_org_conflict + 15 表 NOT NULL 收紧"}
+{"id":"SQL-022","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:461-466 uq_ewoh_route_cost_matrix_org_matrix + org_id NOT NULL"}
+{"id":"SQL-023","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:468-477 execution_id 与 assignment_id 双复合唯一 (org_id,*)"}
+{"id":"SQL-024","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:479-491 uq_ewoh_scheduling_kpi_org_kpi / uq_ewoh_policy_replay_org_replay"}
+{"id":"SQL-025","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:493-498 uq_ewoh_policy_activation_org_activation + org_id NOT NULL backfill"}
+{"id":"SQL-026","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:97-129 ewoh_scheduling_policy org_id SET NOT NULL，NULL!=NULL 多 ACTIVE 行问题前提消除"}
+{"id":"SQL-027","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:97-129 ewoh_scheduling_kpi org_id SET NOT NULL，uq org_period 去重对 NULL 失效前提消除"}
+{"id":"SQL-028","regression_status":"FIXED_VERIFIED","evidence":"db/contracts/schema-manifest.yaml:601-606 ewoh_agent_approval status 已改 new（standalone_049 全新 CREATE）"}
+{"id":"SQL-029","regression_status":"FIXED_VERIFIED","evidence":"db/contracts/schema-manifest.yaml:567 ewoh_learning_proposal status 已改 new（standalone_045 全新 CREATE）"}
+{"id":"SQL-030","regression_status":"FIXED_VERIFIED","evidence":"db/contracts/schema-manifest.yaml:767-803 4 张表以登记性条目补登（saved_views/workbench_export_tasks/prediction_shadow_observation/ewoh_snapshot_version_counter），并说明不进核心口径的原因"}
+{"id":"SQL-031","regression_status":"FIXED_VERIFIED","evidence":"db/contracts/schema-manifest.yaml:10-11 header managed_count=74/physical_create_count=77 与 notes 最新轮次（NO-13c..NO-13y 74/77）及 managed_tables 实际条目数一致"}
+{"id":"SQL-032","regression_status":"FIXED_VERIFIED","evidence":"db/contracts/schema-manifest.yaml:43 口径说明统一为单段最新计数（历史多版本计数 51/52/55/59/65 显式声明废弃）"}
+{"id":"SQL-033","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:561-568 恢复 ewoh_knowledge_entry ewoh_org_select TO authenticated（租户行+共享层哨兵行可读）；verify 057:131-137 断言"}
+{"id":"SQL-034","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:518-553 新增 ewoh_org_visible(text) 重载（text 直等无 ::uuid cast）并重建 trace_span policy 走重载；verify 057:121-128 断言重载存在"}
+{"id":"SQL-035","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:93-130 15 张调度域表 NULL org_id 回填默认 org 后 ALTER COLUMN SET NOT NULL；verify 057:68-81 断言 0 违反"}
+{"id":"SQL-036","regression_status":"PARTIALLY_FIXED","evidence":"db/migrations/001_ewoh_managed_tables.sql:6-15 已加 DEPRECATED+冻结+禁止混用警示（spec 裁决文档化），但文件仍保留在 db/migrations/ 目录，误执行入口未物理隔离"}
+{"id":"SQL-037","regression_status":"PARTIALLY_FIXED","evidence":"db/migrations/001_ewoh_managed_tables.sql:10-15 双轨角色命名混用风险已文档化警示（workspace_* vs anon/authenticated/service_role），双轨本身仍并存（裁决保留 legacy 兼容）"}
+{"id":"SQL-038","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_001_schema.rollback.sql:5-103 重构为 A 类（新表 DROP）/B 类（既有表撤增量列）两段，B 类 18 张既有表不再 DROP TABLE"}
+{"id":"SQL-039","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_003_runtime_role.rollback.sql:7-14 改为 REASSIGN OWNED→DROP OWNED→DROP ROLE 三步幂等"}
+{"id":"SQL-040","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_005_workbench_prod.rollback.sql:18-40 每表先 DROP POLICY ewoh_org_select/ewoh_service_all 再 DROP COLUMN org_id"}
+{"id":"SQL-041","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_026_route_cost_matrix_full_key.rollback.sql:4-8 文档化裁决：列保留（应用层持续写入）、数据损失=无、约束弱化语义显式声明"}
+{"id":"SQL-042","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_028_assignment_event_tenancy.rollback.sql:8-16 文档化 additive-safe 设计：org_id 列保留支持 apply→rollback→re-apply 循环，彻底删除需独立显式迁移"}
+{"id":"SQL-043","regression_status":"NO_LONGER_APPLICABLE","evidence":"db/migrations/standalone_057_rls_null_reject.sql:44-47 裁决记录：base_id DROP NOT NULL 为 ADR-018 Amendment 1 显式契约决策（NULL 为诚实值，引用合法性由 validateKnowledgeEntry 把关），不恢复"}
+{"id":"SQL-044","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_023_scheduler_incremental.sql:90-107 policy 改为 COALESCE(current_org_id 回退 primary_org_id)，与 025 统一；025:47-74 重建同语义"}
+{"id":"SQL-045","regression_status":"STILL_PRESENT","evidence":"db/migrations/standalone_001_schema.sql:1680 仍为 REVOKE ALL PRIVILEGES ON TABLE public.ewoh_audit_log FROM anon, authenticated, authenticated, service_role（authenticated 重复两次）"}
+{"id":"SQL-046","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_057_rls_null_reject.sql:577-581 notify_scheduler_outbox REVOKE FROM PUBLIC + GRANT service_role + COMMENT 文档化；verify 057:139-142 断言 PUBLIC 不可执行"}
+{"id":"SQL-047","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_039_knowledge_entry.rollback.sql:14-20 头注释文档化：status 归一化不可逆，原始值域不可恢复，需先归档备份（数据损失显式声明）"}
+{"id":"SQL-048","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_001_schema.sql:1516-1520 补覆盖范围说明注释：4 张特殊 policy 表在循环后单独处理，注释与代码一致"}
+{"id":"SQL-049","regression_status":"FIXED_VERIFIED","evidence":"db/contracts/schema-manifest.yaml:43 口径说明统一为单段中文最新计数，替代历史中英混杂多版本计数"}
+{"id":"SQL-050","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_056_route_org_isolation.sql:16-29 补 org_id 列；standalone_057:434-445 补 (org_id,node_id)/(org_id,edge_id) 复合唯一（manifest business_key 对齐）"}
+{"id":"SQL-051","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_002_users.sql:22-31 设计意图文档化（fail-closed：RLS+无 policy+REVOKE ALL，仅 SECURITY DEFINER 受控读取）；002/standalone_002 verify 脚本断言该不变量"}
+{"id":"SQL-052","regression_status":"FIXED_VERIFIED","evidence":"db/migrations/standalone_011_outbox_sequence.sql:31-35 setval 在 to_regclass 守卫内一次性执行；idx_ewoh_outbox_sequence 由 017:77-78/008 守卫/021 三处保证存在，MAX 扫描有索引支撑"}
+{"id":"SQL-053","regression_status":"NO_LONGER_APPLICABLE","evidence":"db/migrations/standalone_039_knowledge_entry.sql:54-88 链式 ADD COLUMN 后同迁移完成遗留映射 backfill（kind/scope/status/summary/valid_from/legacy 标记），「旧行 NULL 无 backfill」前提不再成立"}
+{"id":"SQL-054","regression_status":"PARTIALLY_FIXED","evidence":"运行态已由 standalone_057:296-332 重建 policy 收敛（TO service_role），但 standalone_056_route_org_isolation.sql:37-71 本体仍无 TO 子句、注释仍称与 025 逐字对齐——源文件注释与代码漂移保留"}
+{"id":"SQL-101","regression_status":"FIXED_VERIFIED","evidence":"db/contracts/schema-manifest.yaml:10 header managed_count=74，managed_tables 实际条目 74 项一致（行 43 口径说明佐证）"}
+{"id":"SQL-102","regression_status":"FIXED_VERIFIED","evidence":"db/seed/standalone_006_scheduling_seed.sql:31-46/54-93/239-249 route_node/route_edge/scheduling_constraint INSERT 列表显式携带 org_id=默认租户（SQL-102 修复注释）"}
+{"id":"SQL-103","regression_status":"FIXED_VERIFIED","evidence":"db/verify/002_ewoh_users_verify.sql 等 5 个 verify 脚本已补齐（各文件头 SQL-103 注释），并接入 runner SIMPLE_VERIFY_COMMANDS（run_migrations.js:455-459）"}
+{"id":"SQL-104","regression_status":"FIXED_VERIFIED","evidence":"db/runner/run_migrations.js:1213-1229 --verify/--verify-standalone 增加 expected(name) 静态列表与 manifest 核心表集合双向对账（onlyInSql/onlyInManifest 漂移即失败）"}
+{"id":"SQL-105","regression_status":"FIXED_VERIFIED","evidence":"db/runner/run_migrations.js:1240-1264 expected 字典显式列出全部 14 个返回列期望值 + unknownColumns 检测（未登记列即失败）"}
+{"id":"SQL-106","regression_status":"FIXED_VERIFIED","evidence":"db/verify/standalone_001_verify.sql:55 grantee IN ('authenticated') 单值（重复字面量已消除）"}
+{"id":"SQL-107","regression_status":"FIXED_VERIFIED","evidence":"db/runner/run_migrations.js:429-460 SIMPLE_VERIFY_COMMANDS 表驱动 + :712-714 verify 命令清单从表+COMPLEX 列表派生，消除 5 处手工同步"}
+{"id":"SQL-108","regression_status":"FIXED_VERIFIED","evidence":"db/seed/002_default_admin.sql:16 与 standalone_002_admin.sql:16 ORDER BY id LIMIT 1 确定性 org 绑定（SQL-108 修复注释）"}
+{"id":"SQL-109","regression_status":"FIXED_VERIFIED","evidence":"db/runner/run_migrations.js:589-596 coreManagedTableCountFromManifest 解析失败/空清单直接 throw（拒绝回退硬编码 51，SQL-109 注释）"}
+{"id":"SQL-110","regression_status":"FIXED_VERIFIED","evidence":"db/seed/002_default_admin.sql:6-9 文档化：DO NOTHING 有意不轮换密码（防旧 env 覆盖人工改动），轮换路径=先 DELETE 再重跑或直接 UPDATE"}

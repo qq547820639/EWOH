@@ -58,16 +58,22 @@ runDescribe(
     beforeAll(async () => {
       owner = await connectOwner(e2eConfig!.ownerDatabaseUrl);
       fixture = await createE2EFixture(owner);
-      // 清空触发记录 + 调度事实（干净基线；world-state 全库收集需避免跨 fixture 残留）。
+      // R2-APT-009：清基限定本 run 的 fixture org 范围（原全表 DELETE 会摧毁
+      // 共享库中其他租户的调度事实/快照历史）。assignment 表无 org 列，经
+      // plan 子查询按 org 定位；快照表 NULL 行为全局共享资产，仅清本 org 行。
       try {
+        const orgIds = [fixture.orgA.id, fixture.orgB.id];
         const postgres = (await import('postgres')).default;
         const runtime = postgres(e2eConfig!.runtimeDatabaseUrl, { max: 1 });
-        await runtime.unsafe('DELETE FROM ewoh_replan_trigger');
-        await runtime.unsafe('DELETE FROM ewoh_scheduling_execution');
-        await runtime.unsafe('DELETE FROM ewoh_scheduling_plan_assignment');
-        await runtime.unsafe('DELETE FROM ewoh_schedule_plan');
-        await runtime.unsafe('DELETE FROM ewoh_resource_reservation');
-        await runtime.unsafe('DELETE FROM ewoh_world_state_snapshot');
+        await runtime.unsafe('DELETE FROM ewoh_replan_trigger WHERE org_id = ANY($1::text[])', [orgIds]);
+        await runtime.unsafe('DELETE FROM ewoh_scheduling_execution WHERE org_id = ANY($1::text[])', [orgIds]);
+        await runtime.unsafe(
+          'DELETE FROM ewoh_scheduling_plan_assignment WHERE plan_id IN (SELECT plan_id FROM ewoh_schedule_plan WHERE org_id = ANY($1::text[]))',
+          [orgIds],
+        );
+        await runtime.unsafe('DELETE FROM ewoh_schedule_plan WHERE org_id = ANY($1::text[])', [orgIds]);
+        await runtime.unsafe('DELETE FROM ewoh_resource_reservation WHERE org_id = ANY($1::text[])', [orgIds]);
+        await runtime.unsafe('DELETE FROM ewoh_world_state_snapshot WHERE org_id = ANY($1::text[])', [orgIds]);
         await runtime.end();
       } catch {
         // 清理失败不阻断

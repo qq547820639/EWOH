@@ -53,6 +53,7 @@ export class WorldService {
       | typeof ewohSpatialEntity.orgId
       | typeof ewohWorldState.orgId
       | typeof ewohEvent.orgId
+      | typeof ewohEventChain.orgId
       | typeof ewohScheduleTask.orgId
       | typeof ewohScheduleTaskStep.orgId
       | typeof ewohResourceBinding.orgId,
@@ -213,18 +214,19 @@ export class WorldService {
 
   /**
    * 查询事件的因果链节点：包括自己作为 event_id 的、作为 parent_event_id 的
+   * R2-SNZ-001：补 org 谓词（原先任何认证用户持他租户 eventId 即可枚举因果链）。
    */
-  async getEventChain(eventId: string): Promise<EventChainNode[]> {
+  async getEventChain(eventId: string, actor?: OrgContext): Promise<EventChainNode[]> {
     try {
+      const orgCond = this.orgCondition(ewohEventChain.orgId, actor);
+      const chainCond = or(
+        eq(ewohEventChain.eventId, eventId),
+        eq(ewohEventChain.parentEventId, eventId),
+      );
       const rows = await this.db
         .select()
         .from(ewohEventChain)
-        .where(
-          or(
-            eq(ewohEventChain.eventId, eventId),
-            eq(ewohEventChain.parentEventId, eventId),
-          ),
-        )
+        .where(orgCond ? and(chainCond, orgCond) : chainCond)
         .orderBy(asc(ewohEventChain.createdAt));
       return rows.map((r) => ({
         id: r.id,
@@ -289,7 +291,9 @@ export class WorldService {
             ? and(gte(ewohEvent.createdAt, fromTime), lte(ewohEvent.createdAt, toTime), eventOrg)
             : and(gte(ewohEvent.createdAt, fromTime), lte(ewohEvent.createdAt, toTime)),
         )
-        .orderBy(desc(ewohEvent.createdAt));
+        // R2-SNZ-014：补行数上限（原先唯一无 limit 的查询，宽窗口下全量拉取可致内存膨胀）。
+        .orderBy(desc(ewohEvent.createdAt))
+        .limit(5000);
 
       const tasks = await this.db
         .select()

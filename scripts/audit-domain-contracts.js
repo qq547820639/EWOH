@@ -521,12 +521,16 @@ function arbValidateTrace(record) {
   if (!Number.isInteger(fr.snapshotVersion) || fr.snapshotVersion < 0) return ['bad_facts_ref'];
   if (!Array.isArray(fr.eventIds) || fr.eventIds.some((x) => !arbIsCanonicalId(x))) return ['bad_facts_ref'];
   if (!Array.isArray(record.conclusions)) return ['bad_conclusions'];
+  // R2-SHR-001 配套：duplicate_conclusion_id 仲裁分支（与 TS/Python 引擎一致）。
+  const seenConclusionIds = new Set();
   for (const c of record.conclusions) {
     if (typeof c !== 'object' || c === null || Array.isArray(c)) return ['bad_conclusions'];
     for (const field of ['conclusionId', 'ruleId', 'subjectId', 'severity', 'confidence', 'confidenceBasis', 'premises', 'evidenceIds', 'explanation']) {
       if (!(field in c)) return [`missing_field:${field}`];
     }
     if (!arbIsCanonicalId(c.conclusionId)) return ['bad_conclusion_id'];
+    if (seenConclusionIds.has(c.conclusionId)) return ['duplicate_conclusion_id'];
+    seenConclusionIds.add(c.conclusionId);
     if (!traceRules.has(c.ruleId)) return ['unknown_rule'];
     if (!arbIsCanonicalId(c.subjectId)) return ['bad_subject'];
     if (!traceSeverities.has(c.severity)) return ['unknown_severity'];
@@ -977,6 +981,53 @@ for (const c of proposalVectors.records) {
       && JSON.stringify(yamlTransitions) === JSON.stringify(tsTransitions),
     `yaml=${JSON.stringify(yamlTransitions)} ts=${JSON.stringify(tsTransitions)}`,
   );
+}
+
+// --- R2-CNT-002：terminal 结构不变量——终态不得作为任何 transition.from ---
+// 覆盖 contracts/state-machines/ 全部 YAML（alert/fleet/...）：
+// terminal 集合与转移表自洽（终态有出边即自相矛盾，NEST-626 同型防线）。
+{
+  const smDir = path.join(REPO_ROOT, 'contracts', 'state-machines');
+  const yamlFiles = fs.readdirSync(smDir).filter((f) => f.endsWith('.yaml'));
+  let allOk = true;
+  const problems = [];
+  for (const file of yamlFiles) {
+    const text = fs.readFileSync(path.join(smDir, file), 'utf-8');
+    const transitions = [...text.matchAll(/\{ from: (\w+), to: (\w+)[,}]/g)].map((m) => m[1]);
+    const terminalMatch = text.match(/^terminal:\s*\[([^\]]*)\]\s*$/m);
+    if (!terminalMatch) {
+      // 无 terminal 声明的机器跳过（结构检查仅针对显式声明者）。
+      continue;
+    }
+    const terminalStates = new Set(
+      terminalMatch[1].split(',').map((s) => s.trim()).filter((s) => s !== ''),
+    );
+    for (const from of transitions) {
+      if (terminalStates.has(from)) {
+        allOk = false;
+        problems.push(`${file}: terminal 状态 ${from} 存在出边`);
+      }
+    }
+  }
+  check('state_machine_terminal_no_outgoing_edge', allOk, problems.join('; ') || `checked ${yamlFiles.length} files`);
+}
+
+// --- R2-CNT-001：registry 型契约 schema const vs rules 实例自洽 ---
+// world-state.schema.json 的 properties.*.const 必须与 rules.* 逐字一致
+// （此前 versionMonotonicity 双口径：const 严格 +1 vs 实例放宽文本）。
+{
+  const worldSchema = loadJson(path.join(REPO_ROOT, 'contracts/world/world-state.schema.json'));
+  const ruleProps = worldSchema?.properties?.rules?.properties ?? {};
+  const ruleInstances = worldSchema?.rules ?? {};
+  const mismatches = [];
+  for (const [ruleName, ruleDef] of Object.entries(ruleProps)) {
+    const constText = ruleDef && typeof ruleDef === 'object' ? ruleDef.const : undefined;
+    const instanceText = ruleInstances[ruleName];
+    if (typeof constText === 'string' && constText !== instanceText) {
+      mismatches.push(`${ruleName}: const="${constText}" != rules.${ruleName}="${instanceText}"`);
+    }
+  }
+  check('world_state_const_vs_rules_self_consistent', mismatches.length === 0, mismatches.join(' | ') || 'consistent');
 }
 
 // --- outcome annotation 仲裁（ADR-034 / §10 Level 7 + §12：真值标注面） ---

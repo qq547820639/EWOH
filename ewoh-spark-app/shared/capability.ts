@@ -111,7 +111,9 @@ export function validateCapability(record: unknown): string[] {
     const e = isoMs(expiresAt);
     if (g !== null && e !== null && e < g) return ['time_order_violation'];
   }
-  const evidence = r.evidence ?? [];
+  // R2-SHR-008：仅缺键（undefined）默认 []；显式 null 是脏数据
+  // （bad_evidence），不再隐式归一——与 Python capability.py 对齐。
+  const evidence = r.evidence === undefined ? [] : r.evidence;
   if (!Array.isArray(evidence)) return ['bad_evidence'];
   for (const item of evidence) {
     if (typeof item !== 'string' || item.trim() === '') return ['bad_evidence'];

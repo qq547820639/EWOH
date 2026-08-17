@@ -105,6 +105,24 @@ describe('standalone JWT auth', () => {
     );
   });
 
+  it('deactivated users keep no working tokens (NEST-418 R2)', async () => {
+    const { service } = createService();
+    const tokens = await service.login('admin', 'correct-password');
+
+    // 停用后 ewoh_find_active_user 不再返回该用户 → 存量 token 立即失效。
+    const deactivated = new AuthService({
+      execute: jest.fn().mockResolvedValue([]),
+    } as never);
+    await expect(deactivated.verifyToken(tokens.accessToken)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+
+    // 用户仍 active 的实例 → 同一 token 正常通过。
+    await expect(service.verifyToken(tokens.accessToken)).resolves.toMatchObject({
+      sub: 'admin',
+    });
+  });
+
   it('does not accept an access token as a refresh token', async () => {
     const { service } = createService();
     const tokens = await service.login('admin', 'correct-password');

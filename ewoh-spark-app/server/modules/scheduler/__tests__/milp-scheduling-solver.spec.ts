@@ -17,6 +17,12 @@ import {
   task,
 } from './scheduler-test-helpers';
 
+// HiGHS WASM 为同步编译+求解：每个用例各自构造 solver 实例（highsPromise 缓存
+// per-instance），全套件并发下单测耗时易超 jest 默认 5s（WASM 编译 CPU 争用）。
+// R2-SCH-005 修复后求解本身已受 time_limit 约束；此处仅放宽测试超时（基础设施
+// 加固，不改变任何断言语义）。
+jest.setTimeout(60_000);
+
 function eligible(
   personId: string,
   opts: Partial<CandidateEvaluation> = {},

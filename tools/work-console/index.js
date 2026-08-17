@@ -284,8 +284,12 @@ function main() {
     const semanticRules = require('../semantic-rules/lib/engine');
     const semanticCtx = semanticRules.buildContext(options.root);
     const semanticResult = semanticRules.runRules(semanticCtx, { strict: true });
+    // R2-TOL-004：豁免过滤必须区分 severity——error 级 finding 永不可被豁免
+    // 吞掉（与 engine.js runRules 的 unexempted 语义一致：仅 warning 可按
+    // ruleId 豁免），否则 pilot-env-fingerprint 升级为 error 后仍被 warning
+    // 豁免滤掉，strict 门禁分级被绕过。
     const unexempted = semanticResult.findings.filter(
-      (f) => !(semanticCtx.exemptions || []).includes(f.ruleId),
+      (f) => f.severity === 'error' || !(semanticCtx.exemptions || []).includes(f.ruleId),
     );
     if (unexempted.length > 0) {
       console.log(`Semantic conflicts: ${unexempted.length}`);

@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, like } from 'drizzle-orm';
+import { and, desc, eq, like, sql } from 'drizzle-orm';
 import { ewohSchedulerConfig } from '@server/database/schema';
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -201,20 +201,34 @@ export class ParametersService {
     };
   }
 
+  /**
+   * R2-SNZ-016：写入显式 orgId，缺租户 fail-closed 400（原先三元省略
+   * orgId 依赖 DB GUC default，GUC 缺失时裸 23502/500）。
+   */
+  private requireOrgId(actor?: OrgContext): string {
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org context missing: parameter writes require tenant context',
+      );
+    }
+    return orgId;
+  }
+
   private async writeParameter(
     value: ParameterValue,
     actor?: OrgContext,
+    /** R2-SNZ-013：读-改-写 CAS——行仍处期望 version/status 才覆盖。 */
+    expected?: { version: number; status: string },
   ): Promise<ParameterValue> {
-    // NEST-641：写入显式 orgId（冲突目标 (orgId, configKey)，原先 values
-    // 不带 orgId 依赖 GUC 默认）。
-    const orgId = actor?.primaryOrgId?.trim();
+    const orgId = this.requireOrgId(actor);
     const [row] = await this.db
       .insert(ewohSchedulerConfig)
       .values({
         configKey: configKeyFor(value.key),
         configValue: value as unknown as Record<string, unknown>,
         updatedBy: actor?.userId ?? 'system',
-        ...(orgId ? { orgId } : {}),
+        orgId,
       })
       .onConflictDoUpdate({
         target: [ewohSchedulerConfig.orgId, ewohSchedulerConfig.configKey],
@@ -222,8 +236,22 @@ export class ParametersService {
           configValue: value as unknown as Record<string, unknown>,
           updatedBy: actor?.userId ?? 'system',
         },
+        // R2-SNZ-013：DO UPDATE 带 CAS 谓词（configValue 内嵌 version/
+        // status）——并发 update/approve/rollback 互相覆盖时未命中即 409，
+        // 不再静默丢失对方 history。
+        setWhere: expected
+          ? and(
+              sql`(${ewohSchedulerConfig.configValue} ->> 'version')::int = ${expected.version}`,
+              sql`${ewohSchedulerConfig.configValue} ->> 'status' = ${expected.status}`,
+            )
+          : undefined,
       })
       .returning();
+    if (!row) {
+      throw new ConflictException(
+        `parameter ${value.key} changed concurrently; please retry`,
+      );
+    }
     return this.parseParameter(row);
   }
 
@@ -359,7 +387,10 @@ export class ParametersService {
       updatedBy: actor?.userId ?? 'system',
       updatedAt: now,
     };
-    const saved = await this.writeParameter(updated, actor);
+    const saved = await this.writeParameter(updated, actor, {
+      version: current.version,
+      status: current.status,
+    });
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
       orgId: actor?.primaryOrgId ?? '',
@@ -378,7 +409,11 @@ export class ParametersService {
       throw new ConflictException(`Parameter ${key} is not pending`);
     }
     const updated = { ...current, status: 'active' as const, updatedBy: actor?.userId ?? 'system', updatedAt: nowIso() };
-    const saved = await this.writeParameter(updated, actor);
+    // R2-SNZ-013：approve 带 status CAS（原先仅前置检查，双审批并发互覆）。
+    const saved = await this.writeParameter(updated, actor, {
+      version: current.version,
+      status: current.status,
+    });
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
       orgId: actor?.primaryOrgId ?? '',
@@ -418,7 +453,10 @@ export class ParametersService {
       updatedBy: actor?.userId ?? 'system',
       updatedAt: now,
     };
-    const saved = await this.writeParameter(updated, actor);
+    const saved = await this.writeParameter(updated, actor, {
+      version: current.version,
+      status: current.status,
+    });
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
       orgId: actor?.primaryOrgId ?? '',
@@ -437,7 +475,10 @@ export class ParametersService {
       throw new ConflictException(`Parameter ${key} is already retired`);
     }
     const updated = { ...current, status: 'retired' as const, updatedBy: actor?.userId ?? 'system', updatedAt: nowIso() };
-    const saved = await this.writeParameter(updated, actor);
+    const saved = await this.writeParameter(updated, actor, {
+      version: current.version,
+      status: current.status,
+    });
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
       orgId: actor?.primaryOrgId ?? '',

@@ -109,8 +109,12 @@ export class MetricsExportService {
     return { metrics: samples, registryViolations: violations };
   }
 
-  renderPrometheus(): string {
-    const { metrics, registryViolations } = this.snapshot();
+  /**
+   * R2-SNZ-007：renderPrometheus 透传 orgId（原先调 snapshot() 无参 =
+   * 全租户边缘样本，text 端点绕过租户作用域）。
+   */
+  renderPrometheus(orgId?: string): string {
+    const { metrics, registryViolations } = this.snapshot(orgId);
     const escapeLabel = (value: string): string =>
       value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
     const lines: string[] = [];

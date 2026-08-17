@@ -127,7 +127,11 @@ def validate_interval_set(records: list[dict]) -> list[str]:
                 return ["overlapping_interval"]
             version = r.get("version")
             # 快照可只含当前记录（版本单调性只在同键多记录时校验：从 1 起连续递增）
-            if not first and (not isinstance(version, int) or version != prev_version + 1):
+            if not first and (
+                not isinstance(version, int)
+                or isinstance(version, bool)
+                or version != prev_version + 1
+            ):
                 return ["version_not_monotonic"]
             first = False
             prev_version = version
@@ -142,7 +146,12 @@ def validate_snapshot(snapshot: Any) -> list[str]:
     for field in ("snapshotId", "snapshotVersion", "ts", "worldVersion", "entityVersions", "states"):
         if field not in snapshot:
             return [f"missing_field:{field}"]
-    if not isinstance(snapshot["worldVersion"], int) or snapshot["worldVersion"] < 0:
+    # R2-SHR-005 / SH-012：bool 不是版本号（isinstance(True,int)==True 陷阱）。
+    if (
+        not isinstance(snapshot["worldVersion"], int)
+        or isinstance(snapshot["worldVersion"], bool)
+        or snapshot["worldVersion"] < 0
+    ):
         return ["bad_world_version"]
     entity_versions = snapshot["entityVersions"]
     if not isinstance(entity_versions, dict):
@@ -150,7 +159,7 @@ def validate_snapshot(snapshot: Any) -> list[str]:
     for key, version in entity_versions.items():
         if not isinstance(key, str) or not is_canonical_identity(key):
             return ["bad_entity_version_key"]
-        if not isinstance(version, int) or version < 0:
+        if not isinstance(version, int) or isinstance(version, bool) or version < 0:
             return ["bad_entity_version_value"]
     states = snapshot["states"]
     if not isinstance(states, list):

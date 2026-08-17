@@ -15,9 +15,9 @@ import unittest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
+from edge_platform.routes import ReqMeta  # noqa: E402
 from edge_platform.routes.exo import api_exo_bind, api_exo_unbind  # noqa: E402
 from edge_platform.stubs import Storage  # noqa: E402
-from edge_platform.routes import ReqMeta  # noqa: E402
 
 
 class _FakeBus:

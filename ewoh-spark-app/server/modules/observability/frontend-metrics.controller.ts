@@ -9,7 +9,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { FrontendMetricsService, type FrontendMetricsPayload } from './frontend-metrics.service';
-import { Roles } from '../shared/roles.decorator';
+import { ANY_AUTHENTICATED_ROLES, Roles } from '../shared/roles.decorator';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
 /**
@@ -28,10 +28,13 @@ export class FrontendMetricsController {
   constructor(private readonly service: FrontendMetricsService) {}
 
   @Post()
+  // R2-SNZ-005：全局 RolesGuard default-deny 下无 @Roles 的 POST 恒 403，
+  // 前端指标摄取为死端点——登录即可写（org 绑定 + 限流在 handler 内）。
+  @Roles(...ANY_AUTHENTICATED_ROLES)
   ingest(
-    @Body() payload: FrontendMetricsPayload,
-    @Req() request: { userContext?: OrgContext },
-  ): { accepted: number; reason?: string } {
+      @Body() payload: FrontendMetricsPayload,
+      @Req() request: { userContext?: OrgContext },
+    ): { accepted: number; reason?: string } {
     const orgId = request.userContext?.primaryOrgId;
     if (!orgId) {
       throw new HttpException(

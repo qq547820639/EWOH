@@ -245,10 +245,16 @@ function UserProfile(props: UserProfileProps) {
   );
   const scriptStatus = useExternalScript(larkSdkUrl, scriptOptions);
 
+  // R2-CC1-3：持有在途请求的 controller，userId 快速切换时 abort 旧请求，
+  // 避免旧响应晚到覆盖新资料（竞态）；卸载时一并取消。
+  const fetchAbortRef = useRef<AbortController | null>(null);
+
   const fetchData = useCallback(async () => {
     if (!userId) return;
 
+    fetchAbortRef.current?.abort();
     const controller = new AbortController();
+    fetchAbortRef.current = controller;
 
     setLoading(true);
     setError(false);
@@ -283,6 +289,8 @@ function UserProfile(props: UserProfileProps) {
 
     void fetchData();
   }, [fetchData, scriptStatus]);
+
+  useEffect(() => () => fetchAbortRef.current?.abort(), []);
 
   if (error) {
     return (

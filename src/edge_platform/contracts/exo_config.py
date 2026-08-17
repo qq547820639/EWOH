@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Canonical Exo Configuration Model（ADR-051 / §7，NO-13b）。
 
 外骨骼 Support Mode / Assist Profile / Fit / Calibration 跨运行时契约
@@ -19,6 +18,7 @@
 validation 返回错误码列表（空=合法），fail-closed。
 """
 
+import math
 import re
 
 EXO_CONFIG_KINDS = (
@@ -97,7 +97,8 @@ def _iso_ms(value):
 
 
 def _is_finite_number(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    # R2-SHR-003：补 math.isfinite（对齐 TS isFiniteNumber，NaN/Inf 一律拒绝）。
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def _finite_map(value):

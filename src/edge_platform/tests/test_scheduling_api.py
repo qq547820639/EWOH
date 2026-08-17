@@ -101,7 +101,7 @@ class _ServerFixture:
         if body is not None:
             req.add_header("Content-Type", "application/json")
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
                 return resp.status, json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             try:
@@ -202,6 +202,21 @@ class SchedulingApiTest(unittest.TestCase):
         self.assertEqual(code, 200)
         return tid, data
 
+    def _advance_to_pending_review(self, pid):
+        """R2-ESC-002：confirm 收紧到 pending_review——HTTP 层用例前置沿契约
+        状态机推进方案（shadow→simulating→pending_review，逐走 validate）。"""
+        from edge_platform.scheduler.models import (
+            PLAN_PENDING_REVIEW,
+            PLAN_SIMULATING,
+            validate_plan_transition,
+        )
+
+        plan = self.fx.ctx.scheduler._plans[pid]
+        validate_plan_transition(plan.status, PLAN_SIMULATING)
+        plan.status = PLAN_SIMULATING
+        validate_plan_transition(plan.status, PLAN_PENDING_REVIEW)
+        plan.status = PLAN_PENDING_REVIEW
+
     def test_create_request_generates_plans(self):
         tid, data = self._create_request()
         self.assertTrue(data["ok"])
@@ -228,7 +243,15 @@ class SchedulingApiTest(unittest.TestCase):
         # confirm without reason -> error
         code, err = self.fx.post(f"/api/scheduling/plans/{pid}/confirm", {"actor_id": "leader1", "reason": ""})
         self.assertEqual(code, 409)
-        # confirm with reason succeeds
+        # R2-ESC-002：shadow 方案带理由 confirm 也被拒绝（需先推进 pending_review）
+        code, err = self.fx.post(
+            f"/api/scheduling/plans/{pid}/confirm",
+            {"actor_id": "leader1", "reason": "越权直转", "world_state_version": data["plans"][0]["world_state_version"]},
+        )
+        self.assertEqual(code, 409)
+        self.assertEqual(err["error"]["code"], "ILLEGAL_STATE")
+        # 推进到 pending_review 后 confirm with reason succeeds
+        self._advance_to_pending_review(pid)
         code, res = self.fx.post(
             f"/api/scheduling/plans/{pid}/confirm",
             {"actor_id": "leader1", "reason": "手动确认", "world_state_version": data["plans"][0]["world_state_version"]},
@@ -249,6 +272,8 @@ class SchedulingApiTest(unittest.TestCase):
     def test_assignments_lifecycle(self):
         tid, data = self._create_request()
         pid = data["plans"][0]["plan_id"]
+        # R2-ESC-002：前置推进到 pending_review 后再确认
+        self._advance_to_pending_review(pid)
         self.fx.post(f"/api/scheduling/plans/{pid}/confirm", {"actor_id": "leader1", "reason": "确认派工"})
         # execute 通过 HTTP 端点派工（生成 Assignment，status=dispatched）
         code, res = self.fx.post(f"/api/scheduling/plans/{pid}/execute", {"actor_id": "leader1"})

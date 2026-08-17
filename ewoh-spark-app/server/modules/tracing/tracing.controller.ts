@@ -9,8 +9,12 @@ export class TracingController {
   constructor(private readonly tracingService: TracingService) {}
 
   @Get()
-  list(@Query('limit') limit?: string) {
-    return this.tracingService.list(limit ? Number(limit) : 100);
+  list(
+    @Query('limit') limit?: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    // R2-SNZ-007：透传租户上下文（原先全租户混存直出）。
+    return this.tracingService.list(limit ? Number(limit) : 100, request?.userContext);
   }
 
   /**

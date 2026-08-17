@@ -1,6 +1,6 @@
 import { Injectable, Inject, BadRequestException, NotFoundException } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { ewohNotification } from '@server/database/schema';
 
 /**
@@ -20,7 +20,7 @@ export class NotificationService {
 
   async listNotifications(
     orgId: string,
-    filter: { status?: string; role?: string; isGlobalAdmin?: boolean },
+    filter: { status?: string; role?: string; roles?: string[]; isGlobalAdmin?: boolean },
   ): Promise<unknown[]> {
     if (!orgId?.trim()) {
       throw new BadRequestException('orgId 缺失：通知查询必须带租户上下文');
@@ -32,9 +32,14 @@ export class NotificationService {
       conditions.push(eq(ewohNotification.status, 'read'));
     }
     if (!filter.isGlobalAdmin) {
-      const role = filter.role?.trim();
-      if (role) {
-        conditions.push(eq(ewohNotification.recipientId, role));
+      // R2-SNZ-002：AccessTokenGuard 只填 roles 数组（无 role 单值），原先
+      // 读取 role 单值恒 undefined → '__none__' 分支 → 普通用户通知恒空。
+      // 按 ADR-030 契约改为 recipient_id ∈ 调用者角色集合。
+      const roles = [...(filter.roles ?? []), ...(filter.role ? [filter.role] : [])]
+        .map((r) => r?.trim())
+        .filter((r): r is string => !!r);
+      if (roles.length > 0) {
+        conditions.push(inArray(ewohNotification.recipientId, roles));
       } else {
         // 无角色上下文：仅本人不可见任何 role 通知（fail-closed，不猜）
         conditions.push(eq(ewohNotification.recipientId, '__none__'));

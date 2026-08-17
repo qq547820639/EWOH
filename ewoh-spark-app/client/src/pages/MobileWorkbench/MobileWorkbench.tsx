@@ -520,7 +520,14 @@ const MobileWorkbench = (): React.ReactElement => {
                   <StepCard
                     key={step.stepId}
                     step={step}
-                    pending={transitionMutation.isPending || inspectMutation.isPending}
+                    /* R2-CP1-7：pending 按 stepId 隔离（mutation.variables 为在途请求的
+                       入参），A 工序提交不再导致全部工序按钮转圈。 */
+                    pending={
+                      (transitionMutation.isPending &&
+                        transitionMutation.variables?.stepId === step.stepId) ||
+                      (inspectMutation.isPending &&
+                        inspectMutation.variables?.stepId === step.stepId)
+                    }
                     error={stepError}
                     exceptionOpen={Boolean(exception.exceptionOpen[step.stepId])}
                     exceptionNote={exception.exceptionNote[step.stepId] ?? ''}

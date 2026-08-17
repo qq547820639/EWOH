@@ -1,9 +1,10 @@
 import { Inject, Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, gte, lte } from 'drizzle-orm';
+import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import { currentRequestContext } from '../../common/request-context';
 import { ewohSchedulingKpi, ewohSchedulingRun } from '@server/database/schema';
 import type { SchedulerKpiSnapshot } from '@shared/api.interface';
@@ -252,33 +253,76 @@ export class KpiService {
     }
   }
 
-  /** 写 KPI 缓存（org + period 幂等覆盖）。 */
+  /**
+   * 写 KPI 缓存（org + period 幂等覆盖）。
+   * R2-SSV-16（2026-08-17）：check-then-insert 无唯一约束——并发同
+   * org+period 双写产生双行。改为事务 + advisory lock（键=org|periodStart）
+   * 串行化同一窗口的 persist，配合 23505 冲突兜底转 update。
+   * R2-SSV-20：kpiId 不再用 Date.now()（同秒碰撞）→ randomUUID。
+   */
   async persist(snapshot: SchedulerKpiSnapshot, orgId: string | null): Promise<void> {
-    const kpiId = `KPI-${orgId ?? 'ALL'}-${Date.now()}`;
-    const existing = await this.db
-      .select()
-      .from(ewohSchedulingKpi)
-      .where(
-        and(
-          eq(ewohSchedulingKpi.orgId, orgId),
-          eq(ewohSchedulingKpi.periodStart, new Date(snapshot.periodStart)),
-          eq(ewohSchedulingKpi.periodEnd, new Date(snapshot.periodEnd)),
-        ),
-      )
-      .limit(1);
-    if (existing[0]) {
-      await this.db
-        .update(ewohSchedulingKpi)
-        .set({ kpiJson: snapshot as unknown as Record<string, unknown>, updatedAt: new Date() })
-        .where(eq(ewohSchedulingKpi.kpiId, existing[0].kpiId));
+    const periodStart = new Date(snapshot.periodStart);
+    const periodEnd = new Date(snapshot.periodEnd);
+    const kpiId = `KPI-${orgId ?? 'ALL'}-${randomUUID()}`;
+    const run = async (tx: PostgresJsDatabase) => {
+      // 同一 org+period 窗口串行化（无 execute 能力的测试替身跳过锁）。
+      try {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${'kpi'} || '|' || ${orgId ?? 'ALL'} || '|' || ${snapshot.periodStart}))`,
+        );
+      } catch {
+        // 测试替身/无 execute 环境：跳过锁（单进程测试无并发）
+      }
+      const existing = await tx
+        .select()
+        .from(ewohSchedulingKpi)
+        .where(
+          and(
+            eq(ewohSchedulingKpi.orgId, orgId),
+            eq(ewohSchedulingKpi.periodStart, periodStart),
+            eq(ewohSchedulingKpi.periodEnd, periodEnd),
+          ),
+        )
+        .limit(1);
+      if (existing[0]) {
+        await tx
+          .update(ewohSchedulingKpi)
+          .set({ kpiJson: snapshot as unknown as Record<string, unknown>, updatedAt: new Date() })
+          .where(eq(ewohSchedulingKpi.kpiId, existing[0].kpiId));
+        return;
+      }
+      try {
+        await tx.insert(ewohSchedulingKpi).values({
+          kpiId,
+          orgId,
+          periodStart,
+          periodEnd,
+          kpiJson: snapshot as unknown as Record<string, unknown>,
+        });
+      } catch (error) {
+        // 并发窗口下另一事务已插入同 org+period 行（唯一键冲突）→ 转 update。
+        const code = (error as { code?: string })?.code;
+        if (code === '23505' || code === '23P01') {
+          await tx
+            .update(ewohSchedulingKpi)
+            .set({ kpiJson: snapshot as unknown as Record<string, unknown>, updatedAt: new Date() })
+            .where(
+              and(
+                eq(ewohSchedulingKpi.orgId, orgId),
+                eq(ewohSchedulingKpi.periodStart, periodStart),
+                eq(ewohSchedulingKpi.periodEnd, periodEnd),
+              ),
+            );
+          return;
+        }
+        throw error;
+      }
+    };
+    // 无 transaction 能力的测试替身回退原路径（裸 check-then-insert）。
+    if (typeof this.db.transaction === 'function') {
+      await this.db.transaction(async (tx) => run(tx as unknown as PostgresJsDatabase));
     } else {
-      await this.db.insert(ewohSchedulingKpi).values({
-        kpiId,
-        orgId,
-        periodStart: new Date(snapshot.periodStart),
-        periodEnd: new Date(snapshot.periodEnd),
-        kpiJson: snapshot as unknown as Record<string, unknown>,
-      });
+      await run(this.db);
     }
   }
 
@@ -319,15 +363,20 @@ export class KpiService {
     };
   }
 
-  /** 供 gate 使用的速查（replay/shadow 评估的 KPI 输入）。 */
-  async aggregateForPolicyEvaluation(): Promise<{
+  /**
+   * 供 gate 使用的速查（replay/shadow 评估的 KPI 输入）。
+   * R2-SSV-02（2026-08-17）：orgId 透传至 aggregate()——此前无参调用在
+   * HTTP 上下文内必抛 400（gate/activate 功能性故障），在系统上下文内则
+   * orgId=null 全租户 KPI 进入 gate 判定。
+   */
+  async aggregateForPolicyEvaluation(orgId?: string | null): Promise<{
     onTimeRate: number | null;
     latenessP95Ms: number | null;
     fallbackRate: number | null;
     conflictRate: number | null;
     solverLatencyP95Ms: number | null;
   }> {
-    const k = await this.aggregate();
+    const k = await this.aggregate({ orgId: orgId ?? null });
     return {
       onTimeRate: k.delivery.onTimeRate,
       latenessP95Ms: k.delivery.latenessP95Ms,

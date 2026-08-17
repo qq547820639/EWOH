@@ -103,13 +103,85 @@ test('写操作 X-API-Key 正确 token → 放行', () => {
   });
 });
 
-test('读操作默认放行（即使未配置 token）', () => {
+// R2-FSH-002：读操作默认不再放行，与写操作同一 fail-closed 鉴权
+test('R2-FSH-002: 读操作默认 fail-closed（未配置 token → 503）', () => {
   withEnv({ FEISHU_API_TOKEN: undefined, FEISHU_REQUIRE_AUTH_FOR_READS: undefined }, () => {
+    const res = makeRes();
+    apiAuth(makeReq('GET', {}), res, () => assert.fail('不应放行'));
+    assert.strictEqual(res.statusCode, 503);
+    assert.strictEqual(res.body.error.code, 'AUTH_NOT_CONFIGURED');
+  });
+});
+
+test('R2-FSH-002: 读操作默认需鉴权——错误 token → 401，正确 token → 放行', () => {
+  ratelimit.reset();
+  withEnv({ FEISHU_API_TOKEN: 'read-token', FEISHU_REQUIRE_AUTH_FOR_READS: undefined }, () => {
+    const bad = makeRes();
+    apiAuth(makeReq('GET', { authorization: 'Bearer wrong' }), bad, () => assert.fail('不应放行'));
+    assert.strictEqual(bad.statusCode, 401);
+    assert.strictEqual(bad.body.error.code, 'UNAUTHORIZED');
+
+    let passed = false;
+    const res = makeRes();
+    apiAuth(makeReq('GET', { authorization: 'Bearer read-token' }), res, () => { passed = true; });
+    assert.strictEqual(passed, true);
+  });
+  ratelimit.reset();
+});
+
+test('R2-FSH-002: 读鉴权失败连续达阈值 → 429（复用 recordFailure 限流）', () => {
+  ratelimit.reset();
+  withEnv({ FEISHU_API_TOKEN: 'read-token', FEISHU_REQUIRE_AUTH_FOR_READS: undefined, FEISHU_RATELIMIT_MAX_FAILURES: '3' }, () => {
+    const wrong = makeReq('GET', { authorization: 'Bearer wrong' });
+    for (let i = 0; i < 3; i += 1) {
+      const res = makeRes();
+      apiAuth(wrong, res, () => assert.fail('不应放行'));
+      assert.strictEqual(res.statusCode, 401, `第 ${i + 1} 次失败应 401`);
+    }
+    const blocked = makeRes();
+    apiAuth(makeReq('GET', { authorization: 'Bearer read-token' }), blocked, () => assert.fail('达阈值后不得放行'));
+    assert.strictEqual(blocked.statusCode, 429);
+    assert.strictEqual(blocked.body.error.code, 'RATE_LIMITED');
+  });
+  ratelimit.reset();
+});
+
+test('R2-FSH-002: FEISHU_REQUIRE_AUTH_FOR_READS=false 显式放宽——无凭证读放行', () => {
+  ratelimit.reset();
+  withEnv({ FEISHU_API_TOKEN: 'read-token', FEISHU_REQUIRE_AUTH_FOR_READS: 'false' }, () => {
     let passed = false;
     const res = makeRes();
     apiAuth(makeReq('GET', {}), res, () => { passed = true; });
     assert.strictEqual(passed, true);
   });
+  ratelimit.reset();
+});
+
+test('R2-FSH-002: 放宽模式下错误 token 读仍 fail-closed 401', () => {
+  ratelimit.reset();
+  withEnv({ FEISHU_API_TOKEN: 'read-token', FEISHU_REQUIRE_AUTH_FOR_READS: 'false' }, () => {
+    const res = makeRes();
+    apiAuth(makeReq('GET', { authorization: 'Bearer wrong' }), res, () => assert.fail('携带错误凭证不得放行'));
+    assert.strictEqual(res.statusCode, 401);
+  });
+  ratelimit.reset();
+});
+
+test('R2-FSH-002: 放宽模式下无凭证读达阈值 → 429（IP 级读限流）', () => {
+  ratelimit.reset();
+  withEnv({ FEISHU_API_TOKEN: 'read-token', FEISHU_REQUIRE_AUTH_FOR_READS: 'false', FEISHU_RATELIMIT_READ_MAX: '3' }, () => {
+    for (let i = 0; i < 3; i += 1) {
+      let passed = false;
+      const res = makeRes();
+      apiAuth(makeReq('GET', {}), res, () => { passed = true; });
+      assert.strictEqual(passed, true, `第 ${i + 1} 次无凭证读应放行`);
+    }
+    const blocked = makeRes();
+    apiAuth(makeReq('GET', {}), blocked, () => assert.fail('读限流达阈值后不得放行'));
+    assert.strictEqual(blocked.statusCode, 429);
+    assert.strictEqual(blocked.body.error.code, 'RATE_LIMITED');
+  });
+  ratelimit.reset();
 });
 
 test('FEISHU_REQUIRE_AUTH_FOR_READS=true 时读操作也需鉴权（fail-closed）', () => {

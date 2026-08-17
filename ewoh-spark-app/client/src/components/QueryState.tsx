@@ -41,7 +41,8 @@ const QueryState = ({
   if (isLoading) {
     return (
       <div
-        className="flex items-center gap-2 rounded-lg border border-border bg-white p-6 text-sm text-muted-foreground"
+        /* R2-CC2-002：加载态表面 bg-white→bg-card 令牌（dark 主题下可读）。 */
+        className="flex items-center gap-2 rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground"
         role="status"
         aria-live="polite"
         aria-busy="true"
@@ -113,7 +114,8 @@ const QueryState = ({
 
       {isEmpty ? (
         <div
-          className="flex items-center gap-2 rounded-lg border border-dashed border-border bg-white p-8 text-sm text-muted-foreground"
+          /* R2-CC2-002：空态表面 bg-white→bg-card 令牌（dark 主题下可读）。 */
+          className="flex items-center gap-2 rounded-lg border border-dashed border-border bg-card p-8 text-sm text-muted-foreground"
           role="status"
           aria-live="polite"
         >

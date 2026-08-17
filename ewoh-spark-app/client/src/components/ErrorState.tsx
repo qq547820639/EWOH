@@ -178,7 +178,8 @@ const ErrorState = ({
       </div>
 
       {(parsed.code || parsed.requestId) && (
-        <div className="grid gap-0.5 rounded bg-white/60 p-2 font-mono text-xs text-muted-foreground">
+        /* R2-CC2-002：诊断块表面 bg-white/60→bg-muted/60 令牌（dark 主题下可读）。 */
+        <div className="grid gap-0.5 rounded bg-muted/60 p-2 font-mono text-xs text-muted-foreground">
           {parsed.code && (
             <div>
               <span className="font-medium">错误码：</span>

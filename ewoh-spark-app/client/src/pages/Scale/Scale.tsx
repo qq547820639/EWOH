@@ -34,6 +34,7 @@ import {
   QUERY_STALE_TIME_MS,
 } from '../../hooks/queryConfig';
 import QueryState from '../../components/QueryState';
+import { parseWorkflowRoles, workflowRolesReady } from './workflowRoles';
 
 interface ScaleData {
   templates: Awaited<ReturnType<typeof listScaleTemplates>>;
@@ -43,7 +44,7 @@ interface ScaleData {
 }
 
 const formatTime = (value: string | null | undefined): string =>
-  value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—';
+  value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '—';
 
 const parseJsonValue = (value: string): unknown => {
   try {
@@ -70,7 +71,9 @@ const Scale = (): React.ReactElement => {
     FleetUpgradeResult | FleetRollbackResult | null
   >(null);
   const [workflowEntityId, setWorkflowEntityId] = useState('');
-  const [workflowRoles, setWorkflowRoles] = useState('dispatcher');
+  // R2-CP2-006：角色默认空串（原硬编码 'dispatcher' 预填会以伪造角色推进工作流，
+  // 参照 CLI-201 修复模式）；提交前经 workflowRolesReady 显式校验非空。
+  const [workflowRoles, setWorkflowRoles] = useState('');
 
   const query = useQuery<ScaleData>({
     queryKey: queryKeys.scaleDashboard,
@@ -597,7 +600,9 @@ const Scale = (): React.ReactElement => {
                             type="button"
                             disabled={
                               instance.status !== 'active' ||
-                              advanceWorkflow.isPending
+                              advanceWorkflow.isPending ||
+                              // R2-CP2-006：角色未显式填写时禁止推进（不以空/伪造角色提交）。
+                              !workflowRolesReady(workflowRoles)
                             }
                             onClick={() => advanceWorkflow.mutate(instance.key)}
                             className="rounded-lg border border-[hsl(220_14%_89%)] px-3 py-1.5 text-xs font-medium text-[hsl(220_14%_14%)] disabled:opacity-40"

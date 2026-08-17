@@ -11,7 +11,7 @@ import { nanoid } from 'nanoid';
 import { toast } from 'sonner';
 
 import { uploadFile } from '@/components/business-ui/api/files/service';
-import { isDownloadUrl } from '@/lib/urlSafety';
+import { isDownloadUrl, sanitizeUrl } from '@/lib/urlSafety';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { FileAeColorfulIcon } from '@/components/ui/icons/file-ae-colorful-icon';
@@ -364,7 +364,9 @@ export const Attachment = Node.create<AttachmentExtensionOptions>({
         },
         renderHTML: (attributes) => {
           return {
-            'data-url': attributes.url || null,
+            // R2-CC1-1：序列化输出消毒（javascript: 等危险协议降级丢弃），
+            // 与 NodeView 下载/预览 sink 的 isDownloadUrl 守卫（CLI-402/403）对齐。
+            'data-url': sanitizeUrl(attributes.url) || null,
           };
         },
       },
@@ -425,7 +427,9 @@ export const Attachment = Node.create<AttachmentExtensionOptions>({
 
   renderHTML({ node, HTMLAttributes }) {
     const attrs = node.attrs as AttachmentAttributes;
-    const url = attrs.url || '';
+    // R2-CC1-1：getHTML() 序列化路径与 paste parseHTML 成对消毒——
+    // 不安全协议（javascript:/data:/vbscript: 等）降级为无链接纯展示。
+    const url = sanitizeUrl(attrs.url) || '';
     const fileName = attrs.fileName || '';
     const fileExt = attrs.fileExt || '';
     const fileSize = attrs.fileSize || '';

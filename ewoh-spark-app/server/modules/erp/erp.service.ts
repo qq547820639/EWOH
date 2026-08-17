@@ -259,6 +259,12 @@ export class ErpService {
     body: { success: boolean; error?: string },
     actor?: OrgContext,
   ) {
+    // R2-SAM-001：写转移面与 list 面对称——org 谓词 + 归属校验
+    //（global_admin 放行；非 global_admin 必须 org 上下文齐全且只碰本 org 行）。
+    const ackOrgCondition =
+      actor?.isGlobalAdmin
+        ? undefined
+        : eq(ewohEvent.orgId, this.requireOrgId(actor));
     const [row] = await this.db
       .select()
       .from(ewohEvent)
@@ -266,6 +272,7 @@ export class ErpService {
         and(
           eq(ewohEvent.eventId, eventId),
           eq(ewohEvent.eventCode, ERP_OUTBOUND),
+          ...(ackOrgCondition ? [ackOrgCondition] : []),
         ),
       );
     if (!row) {
@@ -292,6 +299,7 @@ export class ErpService {
         and(
           eq(ewohEvent.eventId, eventId),
           eq(ewohEvent.status, row.status ?? 'pending'),
+          ...(ackOrgCondition ? [ackOrgCondition] : []),
         ),
       )
       .returning();

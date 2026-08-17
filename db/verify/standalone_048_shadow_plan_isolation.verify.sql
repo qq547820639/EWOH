@@ -34,8 +34,8 @@ BEGIN
 
   -- 1) shadow + approved 必须被 CHECK 拒绝
   BEGIN
-    INSERT INTO ewoh_schedule_plan (plan_id, plan_name, strategy, status, is_shadow)
-      VALUES ('verify-048-a', 'verify', 'verify', 'approved', true);
+    INSERT INTO ewoh_schedule_plan (org_id, plan_id, plan_name, strategy, status, is_shadow)
+      VALUES ('verify-048', 'verify-048-a', 'verify', 'verify', 'approved', true);
     RAISE EXCEPTION 'shadow+approved 未被拒绝';
   EXCEPTION WHEN check_violation THEN
     bad_approved_rejected := true;
@@ -43,8 +43,8 @@ BEGIN
 
   -- 2) shadow + dispatched 必须被 CHECK 拒绝
   BEGIN
-    INSERT INTO ewoh_schedule_plan (plan_id, plan_name, strategy, status, is_shadow)
-      VALUES ('verify-048-b', 'verify', 'verify', 'dispatched', true);
+    INSERT INTO ewoh_schedule_plan (org_id, plan_id, plan_name, strategy, status, is_shadow)
+      VALUES ('verify-048', 'verify-048-b', 'verify', 'verify', 'dispatched', true);
     RAISE EXCEPTION 'shadow+dispatched 未被拒绝';
   EXCEPTION WHEN check_violation THEN
     bad_dispatched_rejected := true;
@@ -52,8 +52,8 @@ BEGIN
 
   -- 3) shadow + confirmed（遗留词表）必须被 CHECK 拒绝
   BEGIN
-    INSERT INTO ewoh_schedule_plan (plan_id, plan_name, strategy, status, is_shadow)
-      VALUES ('verify-048-c', 'verify', 'verify', 'confirmed', true);
+    INSERT INTO ewoh_schedule_plan (org_id, plan_id, plan_name, strategy, status, is_shadow)
+      VALUES ('verify-048', 'verify-048-c', 'verify', 'verify', 'confirmed', true);
     RAISE EXCEPTION 'shadow+confirmed 未被拒绝';
   EXCEPTION WHEN check_violation THEN
     bad_confirmed_rejected := true;
@@ -61,8 +61,8 @@ BEGIN
 
   -- 4) shadow + confirmed_by（确认事实）必须被 CHECK 拒绝
   BEGIN
-    INSERT INTO ewoh_schedule_plan (plan_id, plan_name, strategy, status, is_shadow, confirmed_by)
-      VALUES ('verify-048-d', 'verify', 'verify', 'shadow', true, 'verify-user');
+    INSERT INTO ewoh_schedule_plan (org_id, plan_id, plan_name, strategy, status, is_shadow, confirmed_by)
+      VALUES ('verify-048', 'verify-048-d', 'verify', 'verify', 'shadow', true, 'verify-user');
     RAISE EXCEPTION 'shadow+confirmed_by 未被拒绝';
   EXCEPTION WHEN check_violation THEN
     bad_confirmed_by_rejected := true;
@@ -70,8 +70,8 @@ BEGIN
 
   -- 5) shadow + confirmed_at（确认事实）必须被 CHECK 拒绝
   BEGIN
-    INSERT INTO ewoh_schedule_plan (plan_id, plan_name, strategy, status, is_shadow, confirmed_at)
-      VALUES ('verify-048-e', 'verify', 'verify', 'shadow', true, now());
+    INSERT INTO ewoh_schedule_plan (org_id, plan_id, plan_name, strategy, status, is_shadow, confirmed_at)
+      VALUES ('verify-048', 'verify-048-e', 'verify', 'verify', 'shadow', true, now());
     RAISE EXCEPTION 'shadow+confirmed_at 未被拒绝';
   EXCEPTION WHEN check_violation THEN
     bad_confirmed_at_rejected := true;
@@ -79,8 +79,8 @@ BEGIN
 
   -- 6) 控制组：shadow + status='shadow' 无确认事实 → 合法（随后删除）
   BEGIN
-    INSERT INTO ewoh_schedule_plan (plan_id, plan_name, strategy, status, is_shadow)
-      VALUES ('verify-048-f', 'verify', 'verify', 'shadow', true);
+    INSERT INTO ewoh_schedule_plan (org_id, plan_id, plan_name, strategy, status, is_shadow)
+      VALUES ('verify-048', 'verify-048-f', 'verify', 'verify', 'shadow', true);
     shadow_ok := true;
     DELETE FROM ewoh_schedule_plan WHERE plan_id = 'verify-048-f';
   EXCEPTION WHEN OTHERS THEN
@@ -89,8 +89,8 @@ BEGIN
 
   -- 7) 控制组：非 shadow + approved + 确认事实 → 合法（随后删除）
   BEGIN
-    INSERT INTO ewoh_schedule_plan (plan_id, plan_name, strategy, status, is_shadow, confirmed_by, confirmed_at)
-      VALUES ('verify-048-g', 'verify', 'verify', 'approved', false, 'verify-user', now());
+    INSERT INTO ewoh_schedule_plan (org_id, plan_id, plan_name, strategy, status, is_shadow, confirmed_by, confirmed_at)
+      VALUES ('verify-048', 'verify-048-g', 'verify', 'verify', 'approved', false, 'verify-user', now());
     production_ok := true;
     DELETE FROM ewoh_schedule_plan WHERE plan_id = 'verify-048-g';
   EXCEPTION WHEN OTHERS THEN

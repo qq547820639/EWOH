@@ -11,7 +11,11 @@ STEP_SEC = 1  # 推理滑窗步长（秒）
 
 
 def ts_to_ms(ts):
-    """ISO 8601 时间字符串 -> Unix 毫秒（UTC）。"""
+    """ISO 8601 时间字符串 -> Unix 毫秒（UTC）。
+
+    非法/缺失输入抛 ValueError（严格契约：调用方保证输入合法）。
+    对外部遥测等不可信时间戳请用 ts_to_ms_safe（坏输入返回 None）。
+    """
     s = str(ts).strip()
     if s.endswith("Z"):
         s = s[:-1] + "+00:00"
@@ -19,6 +23,21 @@ def ts_to_ms(ts):
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return int(round(dt.timestamp() * 1000))
+
+
+def ts_to_ms_safe(ts):
+    """R2-ESC-004：ts_to_ms 的安全变体——非法/缺失时间戳返回 None 而非抛异常。
+
+    供处理外部遥测记录（timestamp 可能缺失/畸形）的调用方按 None 防御：
+    排序 key、聚合窗口等场景用 None 识别并跳过坏记录，不让单条坏数据
+    中断整条开事件/聚合链路。
+    """
+    if ts is None:
+        return None
+    try:
+        return ts_to_ms(ts)
+    except (ValueError, TypeError, AttributeError):
+        return None
 
 
 def ms_to_ts(ms):

@@ -8,12 +8,15 @@ to a driver that feeds normalized raw dictionaries into ``_enqueue_raw``.
 
 from __future__ import annotations
 
+import logging
 import queue
 from dataclasses import dataclass
 from typing import Any
 
 from edge_platform.edge.adapters.base import BaseAdapter
 from edge_platform.spatial import now_iso
+
+_LOGGER = logging.getLogger("ewoh.connectors.opcua")
 
 GOOD_QUALITY_CODES = {"Good", "GoodNonCritical", "GoodLocalOverride"}
 BAD_QUALITY_CODES = {"Bad", "BadOutOfService", "BadNoCommunication"}
@@ -177,4 +180,10 @@ class OpcUaAdapter(BaseAdapter):
         try:
             self._inbox.put_nowait(msg)
         except queue.Full:
-            pass
+            # R2-EDM-04：队列满不再静默丢弃——warning 留痕 + dropped 计数
+            #（对齐 csvfile/modbus 的 EDGE-218/219 整改模式）。
+            self._dropped_points += 1
+            if self._dropped_points % 100 == 1:  # 避免日志刷屏，周期性留痕
+                _LOGGER.warning(
+                    "opcua connector %s 收件箱满，累计丢弃 %d 点", self.device_id, self._dropped_points
+                )

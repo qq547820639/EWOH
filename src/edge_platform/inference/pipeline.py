@@ -23,6 +23,7 @@ import time
 from collections import deque
 from datetime import datetime, timezone
 
+from edge_platform.contracts.inference_result import validate_inference_result
 from edge_platform.runtime.protocols import (
     STREAM_DEVICE_STATUS,
     STREAM_INFERENCE,
@@ -32,7 +33,6 @@ from edge_platform.runtime.protocols import (
 from . import SAMPLE_HZ, STEP_SEC, WINDOW_SEC, new_id
 from .events import EventEngine
 from .features import extract_features
-from edge_platform.contracts.inference_result import validate_inference_result
 
 logger = logging.getLogger("ewoh.inference.pipeline")
 
@@ -57,6 +57,9 @@ _HEURISTIC_SCALE = {
 # Task 20.2 unknown 触发常量
 _LOW_CONF_THRESHOLD = 0.6  # confidence 低于此值 → unknown
 _FIRMWARE_WHITELIST_DEFAULT = None  # None = 不校验；集合 = 校验
+
+# R2-ESC-005：授权拒绝审计日志环形上限（保留策略见 InferencePipeline.__init__）
+_CONSENT_DENIED_LOG_MAXLEN = 1000
 
 # 训练分布合理区间（超出 → out_of_distribution）
 # 覆盖 stand/walk/bend/lift/carry 的生理可达范围
@@ -138,7 +141,16 @@ class InferencePipeline:
         # Task 31：可注入 ConsentManager（None = 不检查授权，保持向后兼容）
         self._consent_manager = consent_manager
         # Task 31：授权拒绝审计日志（每条含 ts/person_id/device_id/frame_ts/reason/purpose）
-        self.consent_denied_log = []
+        # R2-ESC-005：环形有界保留策略——仅驻留最近 _CONSENT_DENIED_LOG_MAXLEN
+        #（1000）条（约 1000×200B≈200KB 内存上限），超限自动丢弃最旧并计数
+        # consent_denied_dropped。consent 服务故障时按遥测频率（20Hz×设备×人员）
+        # 膨胀且含 PII，不得无界累积；高频 service_error 场景的诊断以
+        # consent_service_error_count 计数器为准（非逐帧明细）。
+        self.consent_denied_log = deque(maxlen=_CONSENT_DENIED_LOG_MAXLEN)
+        self.consent_denied_dropped = 0  # 环形丢弃的最旧条目计数
+        self.consent_service_error_count = 0  # consent 服务异常（fail-closed）帧计数
+        # R2-ESC-006：规则引擎异常计数（rules_error_total 语义），经 metrics() 暴露
+        self._rules_error_count = 0
 
     # ---- 模型获取（版本缓存 + 自动降级） ----
     def _get_model(self):
@@ -279,6 +291,13 @@ class InferencePipeline:
         return [k for k, _ in sorted(scores.items(), key=lambda t: -t[1])[:3]]
 
     # ---- Task 31：授权检查 ----
+    def _append_denied(self, entry):
+        """R2-ESC-005：环形有界追加——环形满时 deque 自动丢弃最旧，此处对
+        被丢弃条目计数（consent_denied_dropped），保证丢弃行为可观测。"""
+        if len(self.consent_denied_log) >= self.consent_denied_log.maxlen:
+            self.consent_denied_dropped += 1
+        self.consent_denied_log.append(entry)
+
     def _check_consent(self, msg):
         """检查本帧是否被授权采集遥测。
 
@@ -340,8 +359,20 @@ class InferencePipeline:
         self._cnt[dev] = self._cnt.get(dev, 0) + 1
         try:
             drafts = self.rules.on_telemetry(msg) or []
-        except Exception:
-            drafts = []  # 规则异常不阻断推理主路
+        except Exception as exc:
+            # R2-ESC-006：规则引擎异常不再被静默吞掉——logger.exception 留痕
+            #（含涉及规则集合与异常摘要）+ 计数器，风险事件检测失效可观测；
+            # 仍不阻断推理主路（容错语义不变，可观测性补齐）。
+            self._rules_error_count += 1
+            logger.exception(
+                "规则引擎 on_telemetry 异常（本帧规则检测跳过，不阻断推理主路）: "
+                "device_id=%s rules=%s exc=%s: %s",
+                dev,
+                getattr(self.rules, "TELEMETRY_RULE_IDS", "?"),
+                type(exc).__name__,
+                exc,
+            )
+            drafts = []
         for d in drafts:
             self.events.handle_draft(d)
             self._entered[dev] = True
@@ -492,7 +523,17 @@ class InferencePipeline:
         # Task 21: 推理结果反馈规则引擎（ACTION_ANOMALY_LOW_QUALITY）
         try:
             anom_drafts = self.rules.on_inference(res) or []
-        except Exception:
+        except Exception as exc:
+            # R2-ESC-006：同 on_telemetry 路径——异常留痕（含规则 id 与异常
+            # 摘要）+ 计数器，检测失效显式暴露，不静默吞掉。
+            self._rules_error_count += 1
+            logger.exception(
+                "规则引擎 on_inference 异常（规则 %s 本窗检测跳过）: device_id=%s exc=%s: %s",
+                getattr(self.rules, "INFERENCE_RULE_IDS", "?"),
+                res.get("device_id"),
+                type(exc).__name__,
+                exc,
+            )
             anom_drafts = []
         for d in anom_drafts:
             self.events.handle_draft(d)
@@ -505,12 +546,19 @@ class InferencePipeline:
         xs = sorted(self._lat)
         n = len(xs)
         if not n:
-            return {"count": 0, "p50": None, "p95": None}
+            # R2-ESC-006：规则异常计数独立于延迟样本，始终暴露
+            return {"count": 0, "p50": None, "p95": None, "rules_error_count": self._rules_error_count}
 
         def pct(p):
             return xs[min(n - 1, max(0, int(round(p / 100.0 * n)) - 1))]
 
-        return {"count": n, "p50": round(pct(50), 3), "p95": round(pct(95), 3)}
+        # R2-ESC-006：rules_error_count 暴露规则引擎异常（检测失效可观测）
+        return {
+            "count": n,
+            "p50": round(pct(50), 3),
+            "p95": round(pct(95), 3),
+            "rules_error_count": self._rules_error_count,
+        }
 
     # ---- 后台消费（可选；测试可直接调 handle_*） ----
     def start(self):

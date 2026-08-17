@@ -67,9 +67,13 @@ def api_exo_bind(ctx, h, req_meta):
     exo_id = (body.get("exoId") or "").strip()
     person_id = (body.get("personId") or "").strip()
     if not _is_device_identity(exo_id):
-        return h.send_json({"error": "bad_exo_identity", "message": "exoId 必须为 device: 规范身份（ADR-006/032）"}, 400)
+        return h.send_json(
+            {"error": "bad_exo_identity", "message": "exoId 必须为 device: 规范身份（ADR-006/032）"}, 400
+        )
     if not _is_person_identity(person_id):
-        return h.send_json({"error": "bad_person_identity", "message": "personId 必须为 person: 规范身份（ADR-006/032）"}, 400)
+        return h.send_json(
+            {"error": "bad_person_identity", "message": "personId 必须为 person: 规范身份（ADR-006/032）"}, 400
+        )
     storage = getattr(ctx, "storage", None)
     if storage is None or not hasattr(storage, "start_binding"):
         return h._new_error("binding_unavailable", "绑定存储未装配", 503)
@@ -101,8 +105,11 @@ def api_exo_bind(ctx, h, req_meta):
     })
 
 
-def _session_role(h):
-    """取当前请求的会话角色（无会话/未认证返回 None；认证服务不可用返回 None）。"""
+def _session(h):
+    """取当前请求的服务端会话（R2-ECO-001：授权判定必须基于 token 身份）。
+
+    无会话/未认证/认证服务不可用一律返回 None（fail-closed）。
+    """
     from edge_platform.routes._util import session_manager
 
     sm = session_manager()
@@ -115,18 +122,36 @@ def _session_role(h):
     if not token:
         return None
     try:
-        session = sm.verify(token)
+        return sm.verify(token)
     except Exception:
         return None
-    return session.role if session else None
+
+
+def _session_actor_person(session):
+    """由服务端会话解析操作者的规范 person 身份（R2-ECO-001）。
+
+    当前会话体不携带显式 person 映射；支持两种服务端可信来源：
+    - Session 扩展属性 ``person_id``（IdP/预映射注入）；
+    - ``user_id`` 本身即 person: 规范身份（外部 IdP 直接以 person 签发）。
+    无法解析时返回 None（非 admin 会话不得据此通过归属校验）。
+    """
+    if session is None:
+        return None
+    person_id = getattr(session, "person_id", None)
+    if _is_person_identity(person_id):
+        return person_id
+    if _is_person_identity(getattr(session, "user_id", None)):
+        return session.user_id
+    return None
 
 
 def api_exo_unbind(ctx, h, req_meta):
     """POST /api/exo/unbind — 显式归还：状态机 active→ended + ended_by 必填。
 
-    EDGE-011（2026-08-17 审计整改）：production 下绑定归属校验——
-    endedBy 必须与绑定主体 person_id 一致，或操作者为 admin 角色；
-    否则 403（防止任意已认证用户结束他人活跃绑定）。
+    EDGE-011 + R2-ECO-001（2026-08-17 审计整改）：production 下绑定归属
+    校验只信任服务端 token 会话身份——admin 角色可代归还；非 admin 会话
+    必须能从会话侧解析出与绑定主体一致的 person 身份，否则 403。
+    请求体 endedBy 仅作记录字段（写入 ended_by / 事件负载），不参与授权。
     development/simulation 保持演示宽松。
     """
     try:
@@ -154,17 +179,25 @@ def api_exo_unbind(ctx, h, req_meta):
         return h.send_json(
             {"error": "illegal_transition", "message": f"绑定状态 {target['status']} 不可归还（终态）"}, 409
         )
-    # EDGE-011：production 下校验绑定归属（本人归还或 admin 代归还）
+    # EDGE-011 + R2-ECO-001：production 下校验绑定归属——只信任 token 会话身份。
+    # 客户端自报 endedBy 不得参与授权（可先经 /api/devices 读到 person_id 后伪造）。
     if Settings.load().runtime_mode == "production":
-        role = _session_role(h)
-        if role != "admin" and ended_by != target.get("person_id"):
+        session = _session(h)
+        if session is None:
             return h.send_json(
-                {
-                    "error": "binding_ownership_required",
-                    "message": "仅绑定本人或 admin 可结束该活跃绑定（EDGE-011）",
-                },
-                403,
+                {"error": "unauthorized", "message": "production 归还绑定必须携带有效 Bearer token"},
+                401,
             )
+        if session.role != "admin":
+            actor_person = _session_actor_person(session)
+            if actor_person is None or actor_person != target.get("person_id"):
+                return h.send_json(
+                    {
+                        "error": "binding_ownership_required",
+                        "message": "仅绑定本人或 admin 可结束该活跃绑定（EDGE-011/R2-ECO-001）",
+                    },
+                    403,
+                )
     ended_at = now_iso()
     ok_end = storage.end_binding(target["binding_id"], ended_at, ended_by, body.get("reason") or "")
     if not ok_end:

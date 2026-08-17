@@ -23,9 +23,9 @@ BEGIN
   -- 1) 写入 DecisionRecord 形状 JSON → 读回一致（随后删除，不留脏数据）
   BEGIN
     INSERT INTO ewoh_scheduling_policy
-      (config_version, config_json, active, decision_json)
+      (org_id, config_version, config_json, active, decision_json)
       VALUES
-      (probe_version, '{"configVersion":990001,"horizonMinutes":480}'::jsonb, false,
+      ('verify-054', probe_version, '{"configVersion":990001,"horizonMinutes":480}'::jsonb, false,
        '{"decisionId":"decision:policy:v990001:activation","kind":"policy_activation","status":"executed","decisionAuthority":"human","subject":"policy:v990001","tenantId":"verify-054","riskLevel":"high","requiresApproval":false,"decidedAt":"2026-08-16T08:00:00Z","selected":{"optionId":"opt:activate","reason":["verify"]},"approver":{"actor":"user:verify","at":"2026-08-16T08:00:00Z"},"auditTrail":[{"actor":"user:verify","action":"activated","at":"2026-08-16T08:00:00Z"}]}'::jsonb);
     IF EXISTS (
       SELECT 1 FROM ewoh_scheduling_policy
@@ -43,8 +43,8 @@ BEGIN
   -- 2) 显式 NULL 写回合法（存量未投影行语义）
   BEGIN
     INSERT INTO ewoh_scheduling_policy
-      (config_version, config_json, active, decision_json)
-      VALUES (probe_version, '{"configVersion":990001,"horizonMinutes":480}'::jsonb, false, NULL);
+      (org_id, config_version, config_json, active, decision_json)
+      VALUES ('verify-054', probe_version, '{"configVersion":990001,"horizonMinutes":480}'::jsonb, false, NULL);
     null_ok := true;
     DELETE FROM ewoh_scheduling_policy WHERE config_version = probe_version;
   EXCEPTION WHEN OTHERS THEN

@@ -665,12 +665,19 @@ export class SolverService {
     return sigs;
   }
 
-  /** 可分配性：assignments 覆盖所有非终态任务（与 recordRun 的 feasible 语义一致）。 */
+  /**
+   * 可分配性：assignments 覆盖所有非终态任务（与 recordRun 的 feasible 语义一致）。
+   * R2-SCH-019 / NEST-144 残留（2026-08-17）：补齐 violation==0 判定——recordRun
+   * 侧 feasible 已含硬违例检查，isFeasible 缺失同一条件会把带违例的方案在
+   * SHADOW/compare 观测中误标 feasible（双源判定不一致）。
+   */
   private isFeasible(plan: SchedulingPlanV2, snapshot: WorldStateSnapshot): boolean {
     const schedulable = snapshot.tasks.filter(
       (t) => !['completed', 'cancelled'].includes(t.status),
     ).length;
-    return plan.assignments.length >= schedulable;
+    return (
+      plan.assignments.length >= schedulable && (plan.violations?.length ?? 0) === 0
+    );
   }
 
   /** 计算方案相对基线的 churn（改派/新增/移除的任务数）。 */

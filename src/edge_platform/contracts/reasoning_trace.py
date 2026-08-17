@@ -81,6 +81,7 @@ def validate_reasoning_trace(record: Any) -> list[str]:
     conclusions = record["conclusions"]
     if not isinstance(conclusions, list):
         return ["bad_conclusions"]
+    seen_conclusion_ids: set[str] = set()
     for conclusion in conclusions:
         if not isinstance(conclusion, dict):
             return ["bad_conclusions"]
@@ -120,6 +121,11 @@ def validate_reasoning_trace(record: Any) -> list[str]:
             return ["bad_evidence_ref"]
         if not isinstance(conclusion["explanation"], str) or not conclusion["explanation"].strip():
             return ["bad_explanation"]
+        # R2-SHR-011：conclusionId 在 conclusions 内必须唯一（多主体命中
+        # 同规则时由 subjectId 段区分；重复 ID 会导致台账互相覆盖）。
+        if conclusion["conclusionId"] in seen_conclusion_ids:
+            return ["duplicate_conclusion_id"]
+        seen_conclusion_ids.add(conclusion["conclusionId"])
     if record["auditTrail"] is not True:
         return ["audit_required"]
     return []
@@ -172,9 +178,14 @@ def evaluate_rules(
                 minutes=_fmt(values.get("unacknowledgedMinutes")),
             )
             conclusions.append({
-                # EDGE-227：trace_id 先经 _safe_conclusion_value 清洗，
-                # 保证 conclusionId 恒满足规范身份 value 语法。
-                "conclusionId": f"decision:{_safe_conclusion_value(trace_id)}-{rule_id.split(':')[1]}",
+                # EDGE-227 + R2-SHR-011：trace_id/subjectId 先经
+                # _safe_conclusion_value 清洗保证规范身份 value 语法，且
+                # subjectId 参与 ID 拼接——同规则多主体命中时不再碰撞
+                # （与 TS safeConclusionValue 逐字节一致）。
+                "conclusionId": (
+                    f"decision:{_safe_conclusion_value(trace_id)}-{rule_id.split(':')[1]}"
+                    f"-{_safe_conclusion_value(fact['subjectId'])}"
+                ),
                 "ruleId": rule_id,
                 "subjectId": fact["subjectId"],
                 "severity": _SEVERITY_OF[rule_id],

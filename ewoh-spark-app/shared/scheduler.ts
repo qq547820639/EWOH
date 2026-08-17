@@ -400,6 +400,11 @@ export interface SolverRequest {
     mustFinishByMs?: number | null;
     eligiblePersonIds?: string[];
     eligibleDeviceIds?: string[];
+    /**
+     * R2-SCH-004（2026-08-17）：任务状态透传（供 worker/审计判定；可选字段，
+     * 旧 Worker 安全忽略）。请求侧已过滤为可调度任务。
+     */
+    status?: string | null;
   }>;
   persons: Array<{
     id: string;
@@ -1625,6 +1630,12 @@ export interface CandidateRouteCost {
    * Solver → Plan → Command Map 共享同一 RouteCost identity。
    */
   routeCostId?: string;
+  /**
+   * R2-SCH-017（2026-08-17）：路径风险等级原样透传（high/medium/low；无数据 null）。
+   * 此前消费方把 risk>0 折叠为 'high'，medium 等级在方案产物中丢失。
+   * 可选字段（additive），旧消费方安全忽略。
+   */
+  riskLevel?: string | null;
 }
 
 /** 任务 × 候选的 RouteCostMatrix（02 §10；决策 D-D 落库缓存，支撑确定性 replay）。 */

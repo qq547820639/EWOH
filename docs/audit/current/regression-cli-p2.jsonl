@@ -1,0 +1,25 @@
+{"id":"CLI-201","regression_status":"FIXED","evidence":"WorkOrchestration/HandoffsPanel.tsx:15-17 handoffFrom 默认空串（注释标记 CLI-201），L113-120 登记按钮 disabled 校验 from/to/scope 全必填，未改即提交伪造 'AG-00' 的路径已消除"}
+{"id":"CLI-203","regression_status":"FIXED","evidence":"Operations/Operations.tsx:154-155 completeResults 改为 Record<taskId,string>（注释标记 CLI-203），L735-751 行内输入按 taskId 读写，L307-314 onSuccess 仅清除该任务的输入"}
+{"id":"CLI-204","regression_status":"FIXED","evidence":"Operations/Operations.tsx:241 注释'CLI-204：以下 9 个写操作 mutation 全部补 onError'，L255/265/285/316/334/344/369/389/412 九处 onError 均 toast.error 透传 err.message"}
+{"id":"CLI-205","regression_status":"FIXED","evidence":"RoleWorkbench/RoleWorkbench.tsx:275-288 maybeDownload 经 lib/urlSafety isDownloadUrl 校验（注释标记 CLI-205，仅 http/https/blob/相对路径进入 href sink），阻断 javascript: 协议"}
+{"id":"CLI-206","regression_status":"FIXED","evidence":"RoleWorkbench/RoleWorkbench.tsx:169-173 注释声明合并请求，L231-256 视图应用 effect 直接消费 savedViews state（appliedViewRoleRef 保证每 role 仅应用一次），不再重复调用 listWorkbenchViews"}
+{"id":"CLI-207","regression_status":"FIXED","evidence":"RoleWorkbench/WorkbenchList.tsx:515-529 useEffect 对 dataPage 跳页（非 prevPage+1）走 else 分支 setLoaded(items) 以当前页重建（注释标记 CLI-207），prevPageRef 同步更新"}
+{"id":"CLI-208","regression_status":"FIXED","evidence":"Scale/Scale.tsx:640-648 升级环 select 选项由 Object.keys(fleetStatus.ringCounts) 派生（注释标记 CLI-208），原前端硬编码 6 环已移除"}
+{"id":"CLI-209","regression_status":"FIXED","evidence":"Scale/Scale.tsx:101/130/142/169/183/217/236/249/262 九处 mutation onError toast 透传 err.message（L100 注释标记 CLI-209）；bundleMutation 虽无 onError 但 L309-315 以 isError 内联错误块显式展示，无静默吞错"}
+{"id":"CLI-210","regression_status":"FIXED","evidence":"System/System.tsx:60-73 redactConfigValue 按 SENSITIVE_CONFIG_KEY_RE(secret/token/password/api[-_]?key/credential) 递归 [REDACTED]，L808-811 展示前再脱敏（注释标记 CLI-210，后端已 mask 此为兜底）"}
+{"id":"CLI-211","regression_status":"FIXED","evidence":"System/System.tsx:152/181/198/208/217/226 六个 mutation（evaluate/addParameter/changeParameter/approveParam/rollbackParam/retireParam）全部 onError toast（L151/180 注释标记 CLI-211），另 testVision/saveConfig 也有 onError"}
+{"id":"CLI-212","regression_status":"FIXED","evidence":"WorkOrchestration/GitSyncPanel.tsx:167-168 (CI_LABEL[ci.status] ?? CI_LABEL.unknown).icon 加 fallback（注释标记 CLI-212），未知 CI status 不再抛 TypeError"}
+{"id":"CLI-213","regression_status":"FIXED","evidence":"WorkOrchestration/SiteReadinessWizard.tsx:166-178 runProbe 包 try/finally，L175 注释标记 CLI-213，probe 抛错时 setProbing(false) 必然执行，按钮不再永久 loading"}
+{"id":"CLI-214","regression_status":"PARTIAL","evidence":"WorkOrchestration/GatesPanel.tsx:145-149/159-164/179-183 三个 mutation（gateDecision/batchDecision/revoke）onError 已全部补齐（注释标记 CLI-214）；但 L221-226 confirmDecision 中 reason 仍 void reason 仅 UI 侧（TODO 注释保留：'后端记录决定接口未接受 reason 字段'），reason 未传后端的部分未完成"}
+{"id":"CLI-215","regression_status":"FIXED","evidence":"WorkOrchestration/HandoffsPanel.tsx:48-53/62-67 handoffMutation 与 handoffStateMutation 均 onError toast 透传 err.message（注释标记 CLI-215）"}
+{"id":"CLI-216","regression_status":"FIXED","evidence":"WorkOrchestration/ResourcesPanel.tsx:44-49/57-62 lockMutation 与 releaseMutation 均 onError toast 透传 err.message（注释标记 CLI-216）"}
+{"id":"CLI-218","regression_status":"FIXED","evidence":"WorkOrchestration/graphLayout.ts:118-119 processedSet = new Set(processed) 替代数组 includes 线性扫描（注释标记 CLI-218），O(n²) 退化消除"}
+{"id":"CLI-219","regression_status":"FIXED","evidence":"Operations/Operations.tsx:55-61 formatTime 显式 toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})；但同范围 Scheduling/Scale/System/shared.tsx 等其余页面 formatTime 仍未显式 timeZone（已立新发现 R2-CP2-003 跟踪系统级口径）"}
+{"id":"CLI-220","regression_status":"FIXED","evidence":"Personnel/Personnel.tsx:100-101 riskLabel[person.riskLevel ?? 'low'] ?? `未知(${person.riskLevel ?? '—'})`（注释标记 CLI-220），未定义 riskLevel 不再渲染为空"}
+{"id":"CLI-221","regression_status":"FIXED","evidence":"RoleWorkbench/RoleWorkbench.tsx:80-83 searchParamsRef 写入 useEffect 补 [searchParams] 依赖数组（注释标记 CLI-221）"}
+{"id":"CLI-222","regression_status":"FIXED","evidence":"Scheduling/Scheduling.tsx:297-308 mutationErrors 聚合 5 个在途 mutation 的全部 Error 并 join('；')（注释标记 CLI-222），并发失败不再丢失"}
+{"id":"CLI-223","regression_status":"FIXED","evidence":"Simulation/SimulationConsole.tsx:96-103 snapshotVersion.trim()==='' 显式抛'快照版本必须是非负整数（不能为空）'（注释标记 CLI-223），Number('')===0 不再静默通过"}
+{"id":"CLI-224","regression_status":"FIXED","evidence":"System/System.tsx:89-92 aiBaseUrl/aiModel 初始空串，L121-132 aiConfigQuery(/api/ai/config/status) 到达后填充表单默认值（注释标记 CLI-224），不再前端硬编码 ark 地址与模型名"}
+{"id":"CLI-225","regression_status":"FIXED","evidence":"WorkOrchestration/AgentsPanel.tsx:40-44 useMemo<Map<string, AgentMetrics>> 具名类型，推导逻辑收敛到 agentsDerived.ts deriveAgentMetrics（注释标记 CLI-225）"}
+{"id":"CLI-226","regression_status":"FIXED","evidence":"WorkOrchestration/WorkGraphPanel.tsx:424-428 saveView 的 localStorage.setItem 包 try/catch 静默跳过（注释标记 CLI-226），私有模式/配额满不再抛未捕获异常"}
+{"id":"CLI-227","regression_status":"FIXED","evidence":"WorkOrchestration/overviewModel.ts:180-181 (risk.status ?? '').toLowerCase() 运行时判空防御（注释标记 CLI-227），历史 null 数据不再抛 TypeError"}

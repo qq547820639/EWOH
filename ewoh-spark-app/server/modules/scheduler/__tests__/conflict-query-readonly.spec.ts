@@ -85,9 +85,15 @@ function makeService(seedConflicts: Array<Record<string, unknown>> = []) {
       set: (patch: Record<string, unknown>) => ({
         where: (pred: unknown) => {
           if (table === ewohSchedulingConflict) {
+            // R2-SSV-11：返回真实命中行（UPDATE ... RETURNING 行数语义）。
+            const hit: Array<Record<string, unknown>> = [];
             for (const row of conflicts) {
-              if (matchesEq(row, pred)) Object.assign(row, patch);
+              if (matchesEq(row, pred)) {
+                Object.assign(row, patch);
+                hit.push(row);
+              }
             }
+            return { returning: () => Promise.resolve(hit) };
           }
           return { returning: () => Promise.resolve([]) };
         },

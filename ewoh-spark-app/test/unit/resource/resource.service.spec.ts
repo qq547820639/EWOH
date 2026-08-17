@@ -24,6 +24,7 @@ describe('resource preorder math', () => {
   });
 });
 
+// R2-SNZ-009/010：读写谓词按 org 过滤——seed 行携带租户归属（org-1）。
 const INVENTORY_BINDING = {
   binding_id: 'b1',
   binding_type: 'inventory',
@@ -33,6 +34,7 @@ const INVENTORY_BINDING = {
   target_id: 'mat-a',
   status: 'active',
   quantity: 5,
+  org_id: 'org-1',
 };
 
 const PENDING_PREORDER = {
@@ -42,15 +44,19 @@ const PENDING_PREORDER = {
   reserved_qty: 5,
   issued_qty: 0,
   status: 'pending',
+  org_id: 'org-1',
 };
 
 describe('ResourceService persistence（ADR-081 drizzle 链式语义假库）', () => {
+  // R2-SNZ：资源读写显式租户上下文（无 actor fail-closed 400）。
+  const ACTOR = { userId: 'planner-1', primaryOrgId: 'org-1' };
+
   it('persists preorders and rejects oversell', async () => {
     const fake = makeResourceDb();
     const service = new ResourceService(fake.db as never);
     service.seedInventory([{ resourceId: 'mat-a', quantity: 1 }]);
 
-    const preorder = await service.createPreorder('mat-a', 1);
+    const preorder = await service.createPreorder('mat-a', 1, ACTOR);
 
     expect(preorder.resourceId).toBe('mat-a');
     expect(preorder.quantity).toBe(1);
@@ -62,7 +68,7 @@ describe('ResourceService persistence（ADR-081 drizzle 链式语义假库）', 
         (r) => r.binding_type === 'inventory' && Number(r.quantity) === 1,
       ),
     ).toBe(true);
-    await expect(service.createPreorder('mat-a', 1)).rejects.toThrow(
+    await expect(service.createPreorder('mat-a', 1, ACTOR)).rejects.toThrow(
       'Insufficient available quantity',
     );
     expect(fake.preorderRows).toHaveLength(1);
@@ -72,9 +78,9 @@ describe('ResourceService persistence（ADR-081 drizzle 链式语义假库）', 
     const fake = makeResourceDb();
     const service = new ResourceService(fake.db as never);
     service.seedInventory([{ resourceId: 'mat-a', quantity: 5 }]);
-    const preorder = await service.createPreorder('mat-a', 5);
+    const preorder = await service.createPreorder('mat-a', 5, ACTOR);
 
-    const result = await service.issue(preorder.id, 2);
+    const result = await service.issue(preorder.id, 2, ACTOR);
 
     expect(result.issuedQty).toBe(2);
     expect(service.getInventory('mat-a')).toBe(3);
@@ -98,7 +104,7 @@ describe('ResourceService persistence（ADR-081 drizzle 链式语义假库）', 
     });
     const service = new ResourceService(fake.db as never);
 
-    const result = await service.release('p1');
+    const result = await service.release('p1', ACTOR);
 
     expect(result.status).toBe('released');
     expect(service.getInventory('mat-a')).toBe(9);
@@ -116,7 +122,7 @@ describe('ResourceService persistence（ADR-081 drizzle 链式语义假库）', 
     });
     const service = new ResourceService(fake.db as never);
 
-    const result = await service.release('p1');
+    const result = await service.release('p1', ACTOR);
 
     expect(result.status).toBe('released');
     expect(service.getInventory('mat-a')).toBe(3);
@@ -132,7 +138,7 @@ describe('ResourceService persistence（ADR-081 drizzle 链式语义假库）', 
     });
     const service = new ResourceService(fake.db as never);
 
-    await expect(service.issue('p1', 2)).rejects.toThrow('Insufficient issue quantity');
+    await expect(service.issue('p1', 2, ACTOR)).rejects.toThrow('Insufficient issue quantity');
     expect(service.getInventory('mat-a')).toBe(1);
   });
 
@@ -142,8 +148,8 @@ describe('ResourceService persistence（ADR-081 drizzle 链式语义假库）', 
     service.seedInventory([{ resourceId: 'mat-a', quantity: 1 }]);
 
     const results = await Promise.allSettled([
-      service.createPreorder('mat-a', 1),
-      service.createPreorder('mat-a', 1),
+      service.createPreorder('mat-a', 1, ACTOR),
+      service.createPreorder('mat-a', 1, ACTOR),
     ]);
 
     expect(results[0].status).toBe('fulfilled');
@@ -154,13 +160,13 @@ describe('ResourceService persistence（ADR-081 drizzle 链式语义假库）', 
   it('throws NotFound for a missing preorder', async () => {
     const service = new ResourceService(makeResourceDb().db as never);
 
-    await expect(service.getPreorder('missing')).rejects.toThrow('Preorder missing not found');
+    await expect(service.getPreorder('missing', ACTOR)).rejects.toThrow('Preorder missing not found');
   });
 
   it('surfaces database failures as explainable errors', async () => {
     const service = new ResourceService(makeResourceDb({ failSelect: true }).db as never);
 
-    await expect(service.getPreorder('p1')).rejects.toThrow(/failed/);
+    await expect(service.getPreorder('p1', ACTOR)).rejects.toThrow(/failed/);
   });
 });
 

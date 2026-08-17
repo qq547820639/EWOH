@@ -45,7 +45,16 @@ echo "== EWOH Pilot Readiness Check =="
 echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo ""
 
-file_present "release checksums" "release/ewoh-0.6.0-rc4/SHA256SUMS.txt"
+# R2-SCR-002：release checksums 路径按 version.json 动态解析（对齐 SCR-013 在
+# audit-repo-facts.js 的 truth.readVersion() 模式），支持 EWOH_RELEASE_VERSION
+# env 覆盖——版本演进后本检查不再恒 FAIL（假性阻断 Go/No-Go），也不诱导
+# 维护者手改硬编码形成新循环。
+EWOH_VERSION="${EWOH_RELEASE_VERSION:-$(node -p "require('./version.json').version" 2>/dev/null || true)}"
+if [[ -z "$EWOH_VERSION" ]]; then
+  record "release checksums" FAIL "无法解析当前版本（version.json 不可读且未设 EWOH_RELEASE_VERSION）"
+else
+  file_present "release checksums" "release/ewoh-${EWOH_VERSION}/SHA256SUMS.txt"
+fi
 file_present "acceptance evidence" "docs/delivery/acceptance-evidence.md"
 file_present "training plan" "docs/delivery/training-plan.md"
 file_present "deployment runbook" "docs/delivery/deployment-runbook.md"

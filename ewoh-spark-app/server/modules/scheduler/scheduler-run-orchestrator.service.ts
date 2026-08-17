@@ -101,33 +101,57 @@ export class SchedulerRunOrchestrator {
       }
     }
 
-    let plans = await this.solverService.solveVariants(
-      snapshot,
-      constraints,
-      {
-        planId: run.runId,
-        triggerType: trigger,
-        triggerEntityId: run.triggerEntityId,
-        snapshotVersion: snapshot.snapshotVersion,
-        horizonMinutes,
-        baselineAssignee,
-      },
-    );
+    // R2-SCH-007（2026-08-17，NEST-140 残留）：solveVariants 抛错与
+    // INFEASIBLE_PROFILE 筛选失败必须先闭合 run（status=failed）再向上抛——
+    // 此前 run 已创建但两条路径均无闭合动作，run 永久滞留 queued。
+    let plans: SchedulingPlanV2[];
+    try {
+      plans = await this.solverService.solveVariants(
+        snapshot,
+        constraints,
+        {
+          planId: run.runId,
+          triggerType: trigger,
+          triggerEntityId: run.triggerEntityId,
+          snapshotVersion: snapshot.snapshotVersion,
+          horizonMinutes,
+          baselineAssignee,
+        },
+      );
 
-    // P0-6：objectiveProfile → 单变体筛选（on_time=A / load_balance=B / composite=C）。
-    // 未识别或缺省保持 A/B/C 三变体现状（solveVariants 不支持单 profile 参数，
-    // 在调用处按 planId 后缀筛选，返回值形状不变）。
-    // NEST-140 修复（2026-08-17）：筛选后空集是显式 INFEASIBLE 事实——抛出
-    // ConflictException 让 run 闭合为 failed（此前空集静默走 succeeded+planIds=[]，
-    // 调用方无法区分"单变体不可行"与"shadow 不落库"）。
-    const profileSuffix = this.resolveObjectiveProfileSuffix(body.objectiveProfile);
-    if (profileSuffix) {
-      plans = plans.filter((p) => p.planId === `${run.runId}${profileSuffix}`);
-      if (plans.length === 0) {
-        throw new ConflictException(
-          `INFEASIBLE_PROFILE: objectiveProfile=${body.objectiveProfile} 无可行变体（planId 后缀 ${profileSuffix} 未产出方案）`,
+      // P0-6：objectiveProfile → 单变体筛选（on_time=A / load_balance=B / composite=C）。
+      // 未识别或缺省保持 A/B/C 三变体现状（solveVariants 不支持单 profile 参数，
+      // 在调用处按 planId 后缀筛选，返回值形状不变）。
+      // NEST-140 修复（2026-08-17）：筛选后空集是显式 INFEASIBLE 事实——抛出
+      // ConflictException 让 run 闭合为 failed（此前空集静默走 succeeded+planIds=[]，
+      // 调用方无法区分"单变体不可行"与"shadow 不落库"）。
+      const profileSuffix = this.resolveObjectiveProfileSuffix(body.objectiveProfile);
+      if (profileSuffix) {
+        plans = plans.filter((p) => p.planId === `${run.runId}${profileSuffix}`);
+        if (plans.length === 0) {
+          throw new ConflictException(
+            `INFEASIBLE_PROFILE: objectiveProfile=${body.objectiveProfile} 无可行变体（planId 后缀 ${profileSuffix} 未产出方案）`,
+          );
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      try {
+        await this.requestDatabaseContext.runInTransaction(
+          buildGucSettings(ctx),
+          async () => {
+            await this.db
+              .update(ewohSchedulingRun)
+              .set({ status: 'failed', failureReason: message })
+              .where(eq(ewohSchedulingRun.runId, run.runId));
+          },
+        );
+      } catch (inner) {
+        this.logger.error(
+          `createRun: failed to mark run ${run.runId} as failed: ${inner instanceof Error ? (inner as Error).message : String(inner)}`,
         );
       }
+      throw err;
     }
 
     // P1-1：统一约束 IR（仅审计/解释；additive，不参与求解决策，不改动求解结果）。

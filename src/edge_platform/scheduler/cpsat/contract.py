@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -14,43 +14,43 @@ class SolverTask:
     taskId: str
     priority: float
     earliestStartMs: int
-    dueMs: Optional[int]
+    dueMs: int | None
     durationMs: int
-    requiredSkills: List[str] = field(default_factory=list)
-    requiredCertifications: List[str] = field(default_factory=list)
-    requiredDeviceCapabilities: List[str] = field(default_factory=list)
-    candidateStationIds: List[str] = field(default_factory=list)
-    zoneId: Optional[str] = None
-    predecessorIds: List[str] = field(default_factory=list)
+    requiredSkills: list[str] = field(default_factory=list)
+    requiredCertifications: list[str] = field(default_factory=list)
+    requiredDeviceCapabilities: list[str] = field(default_factory=list)
+    candidateStationIds: list[str] = field(default_factory=list)
+    zoneId: str | None = None
+    predecessorIds: list[str] = field(default_factory=list)
     safetyCritical: bool = False
     preemptible: bool = True
-    eligiblePersonIds: Optional[List[str]] = None
-    eligibleDeviceIds: Optional[List[str]] = None
+    eligiblePersonIds: list[str] | None = None
+    eligibleDeviceIds: list[str] | None = None
     # P0-2：与 Nest `SolverRequest.tasks` 对齐——技能匹配语义（ALL=全部必需，
     # ANY=任一即可；证书/能力无 ANY 语义，保持 all）。缺省 ALL 向后兼容。
     skillMatchMode: str = "ALL"
     # P0-2：统一优先级引擎产出的有效优先级分（Nest 透传；求解器当前仅记录，不参与目标）。
-    effectivePriorityScore: Optional[float] = None
+    effectivePriorityScore: float | None = None
     # P0-3：硬性最晚完成时间（epoch ms；None=无硬截止）。与 dueMs（软 lateness）
     # 分离：dueMs 超时仅罚 lateness，mustFinishByMs 违反则任务不可分配。
-    mustFinishByMs: Optional[int] = None
+    mustFinishByMs: int | None = None
 
 
 @dataclass
 class SolverPerson:
     id: str
     status: str
-    locationStationId: Optional[str]
+    locationStationId: str | None
     # 坐标 UNKNOWN 时显式 None（禁止 0,0 伪坐标）。None 坐标的人员不会参与
     # travel 目标计算；其候选资格由 eligiblePersonIds（矩阵层）先行过滤。
-    x: Optional[float] = None
-    y: Optional[float] = None
-    skills: List[str] = field(default_factory=list)
-    certifications: List[str] = field(default_factory=list)
+    x: float | None = None
+    y: float | None = None
+    skills: list[str] = field(default_factory=list)
+    certifications: list[str] = field(default_factory=list)
     workload: float = 0.0
     fatigue: float = 0.0
-    availableFromMs: Optional[int] = None
-    executingTaskIds: List[str] = field(default_factory=list)
+    availableFromMs: int | None = None
+    executingTaskIds: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -58,21 +58,21 @@ class SolverDevice:
     id: str
     status: str
     online: bool
-    capabilities: List[str] = field(default_factory=list)
+    capabilities: list[str] = field(default_factory=list)
     batteryPct: float = 100.0
-    x: Optional[float] = None
-    y: Optional[float] = None
-    availableFromMs: Optional[int] = None
-    executingTaskIds: List[str] = field(default_factory=list)
+    x: float | None = None
+    y: float | None = None
+    availableFromMs: int | None = None
+    executingTaskIds: list[str] = field(default_factory=list)
 
 
 @dataclass
 class SolverStation:
     id: str
-    x: Optional[float] = None
-    y: Optional[float] = None
+    x: float | None = None
+    y: float | None = None
     capacity: int = 1
-    executingTaskIds: List[str] = field(default_factory=list)
+    executingTaskIds: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -86,9 +86,9 @@ class SolverReservation:
 @dataclass
 class FrozenAssignment:
     taskId: str
-    personId: Optional[str]
-    deviceId: Optional[str]
-    stationId: Optional[str]
+    personId: str | None
+    deviceId: str | None
+    stationId: str | None
     startMs: int
     endMs: int
 
@@ -120,11 +120,11 @@ class CandidateCost:
 
     taskId: str
     personId: str
-    stationId: Optional[str] = None
+    stationId: str | None = None
     distanceMeters: float = 0.0
     etaSeconds: float = 0.0
     dataQuality: str = "UNKNOWN"
-    fallbackReason: Optional[str] = None
+    fallbackReason: str | None = None
 
 
 @dataclass
@@ -136,24 +136,24 @@ class SolverRequest:
     horizonMinutes: int
     nowMs: int
     weights: SolverWeights
-    tasks: List[SolverTask] = field(default_factory=list)
-    persons: List[SolverPerson] = field(default_factory=list)
-    devices: List[SolverDevice] = field(default_factory=list)
-    stations: List[SolverStation] = field(default_factory=list)
-    reservations: List[SolverReservation] = field(default_factory=list)
-    forbiddenZones: List[str] = field(default_factory=list)
-    frozenAssignments: List[FrozenAssignment] = field(default_factory=list)
-    baselineAssignee: Dict[str, Optional[str]] = field(default_factory=dict)
+    tasks: list[SolverTask] = field(default_factory=list)
+    persons: list[SolverPerson] = field(default_factory=list)
+    devices: list[SolverDevice] = field(default_factory=list)
+    stations: list[SolverStation] = field(default_factory=list)
+    reservations: list[SolverReservation] = field(default_factory=list)
+    forbiddenZones: list[str] = field(default_factory=list)
+    frozenAssignments: list[FrozenAssignment] = field(default_factory=list)
+    baselineAssignee: dict[str, str | None] = field(default_factory=dict)
     # 安全硬约束：这些 person/device 完全不可指派（候选层硬过滤，fail-closed）。
-    safetyBlockedPersonIds: List[str] = field(default_factory=list)
-    safetyBlockedDeviceIds: List[str] = field(default_factory=list)
+    safetyBlockedPersonIds: list[str] = field(default_factory=list)
+    safetyBlockedDeviceIds: list[str] = field(default_factory=list)
     # P0-4：权威路径成本矩阵（Nest TravelCostService 计算后透传）。
     # worker 只用此矩阵的 distanceMeters/etaSeconds 参与 travel 目标，绝不自行算欧氏。
-    candidateCosts: List[CandidateCost] = field(default_factory=list)
+    candidateCosts: list[CandidateCost] = field(default_factory=list)
     timeLimitMs: int = 10_000
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SolverRequest":
+    def from_dict(cls, data: dict[str, Any]) -> SolverRequest:
         return cls(
             requestId=str(data.get("requestId", "")),
             snapshotVersion=str(data.get("snapshotVersion", "")),
@@ -189,13 +189,13 @@ class SolverRequest:
 @dataclass
 class SolverAssignmentResult:
     taskId: str
-    personId: Optional[str]
-    deviceId: Optional[str]
-    stationId: Optional[str]
+    personId: str | None
+    deviceId: str | None
+    stationId: str | None
     startMs: int
     endMs: int
-    reasons: List[str] = field(default_factory=list)
-    rejectedAlternatives: List[Dict[str, Any]] = field(default_factory=list)
+    reasons: list[str] = field(default_factory=list)
+    rejectedAlternatives: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -204,13 +204,13 @@ class SolverResponse:
     solverStatus: str  # OPTIMAL | FEASIBLE | FALLBACK | INFEASIBLE | TIMEOUT | UNAVAILABLE
     solveDurationMs: int
     objective: float
-    objectiveBreakdown: Dict[str, float] = field(default_factory=dict)
-    hardViolations: List[Dict[str, Any]] = field(default_factory=list)
-    optimalityGap: Optional[float] = None
-    unassignedTaskIds: List[str] = field(default_factory=list)
-    assignments: List[SolverAssignmentResult] = field(default_factory=list)
+    objectiveBreakdown: dict[str, float] = field(default_factory=dict)
+    hardViolations: list[dict[str, Any]] = field(default_factory=list)
+    optimalityGap: float | None = None
+    unassignedTaskIds: list[str] = field(default_factory=list)
+    assignments: list[SolverAssignmentResult] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "solverVersion": self.solverVersion,
             "solverStatus": self.solverStatus,

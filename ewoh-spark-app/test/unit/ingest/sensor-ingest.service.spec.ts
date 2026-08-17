@@ -48,7 +48,7 @@ describe('SensorIngestService', () => {
     expect((envInsert!.rows[0] as Record<string, unknown>).orgId).toBe('ORG-1');
   });
 
-  it('ingestEnvironment 有 org → 行归属注入；无 org → NULL 显式 legacy', async () => {
+  it('ingestEnvironment 有 org → 行归属注入；无 org → fail-closed 拒绝（R2-SOP-022）', async () => {
     const { db, insertCalls } = createDb();
     const svc = new SensorIngestService(db as never);
     await svc.ingestEnvironment(
@@ -60,16 +60,19 @@ describe('SensorIngestService', () => {
       },
       'ORG-1',
     );
-    await svc.ingestEnvironment({
+    // R2-SOP-022：org 缺失显式拒绝——不再静默写 NULL=legacy 全租户可见行。
+    const noOrg = await svc.ingestEnvironment({
       sensor_id: 'SEN-3',
       event_time: new Date().toISOString(),
       temperature: 22,
       source_type: 'real',
     });
     const withOrg = insertCalls.find((c) => c.table === ewohEnvironment && (c.rows[0] as Record<string, unknown>).sensorId === 'SEN-2');
-    const noOrg = insertCalls.find((c) => c.table === ewohEnvironment && (c.rows[0] as Record<string, unknown>).sensorId === 'SEN-3');
+    const sen3Insert = insertCalls.find((c) => c.table === ewohEnvironment && (c.rows[0] as Record<string, unknown>).sensorId === 'SEN-3');
     expect((withOrg!.rows[0] as Record<string, unknown>).orgId).toBe('ORG-1');
-    expect((noOrg!.rows[0] as Record<string, unknown>).orgId).toBeNull();
+    expect(noOrg.accepted).toBe(false);
+    expect(noOrg.data_quality).toBe('invalid');
+    expect(sen3Insert).toBeUndefined();
   });
 
   it('ingestCamera 写入 ewoh_world_state（每个 detection 一条）', async () => {

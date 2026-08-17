@@ -20,6 +20,7 @@ import {
   type PriorityResult,
 } from './priority-engine';
 import { checkConstraintSupported } from './constraints';
+import { TaskLifecycle } from './task-lifecycle';
 import {
   CpSatCircuitBreaker,
   type CpSatCircuitBreakerConfig,
@@ -467,7 +468,14 @@ export class CpSatSchedulingSolver {
       }
     }
 
-    const tasks = snapshot.tasks.map((t) => {
+    // R2-SCH-004（2026-08-17）：仅可调度任务进入求解请求——终态（completed/
+    // cancelled）与已锁定态（dispatched/received/executing/paused/exception，经
+    // frozenAssignments 承载）不再作为可重排变量发给 worker（旧实现全量映射，
+    // 终态/paused/received 任务可被 worker 重排）。与 heuristic 的
+    // TaskLifecycle.isSchedulable 过滤同源；任务 status 透传 worker 供审计。
+    const tasks = snapshot.tasks
+      .filter((t) => TaskLifecycle.isSchedulable(t.status))
+      .map((t) => {
       const eligible = eligibleByTask?.get(t.id);
       const planStart = t.planStart ? Date.parse(t.planStart) : NaN;
       const planEnd = t.planEnd ? Date.parse(t.planEnd) : NaN;
@@ -504,8 +512,10 @@ export class CpSatSchedulingSolver {
         // P2-T1：矩阵判定 feasible 的候选才允许进入求解请求（缺坐标候选已被矩阵层排除）。
         eligiblePersonIds: eligible?.personIds,
         eligibleDeviceIds: eligible?.deviceIds,
+        // R2-SCH-004：任务状态透传（worker/审计可见；可选字段，旧 worker 安全忽略）。
+        status: t.status ?? null,
       };
-    });
+      });
 
     const persons = snapshot.persons.map((p) => ({
       id: p.id,
@@ -632,7 +642,10 @@ export class CpSatSchedulingSolver {
     const seen = new Set<string>();
     for (const t of snapshot.tasks) {
       const locked = lockedByTask.get(t.id);
-      const isExecuting = t.status === 'executing' || t.status === 'started';
+      // R2-SCH-016（2026-08-17）：冻结判定对齐任务状态机契约
+      // （TaskLifecycle.isLocked：dispatched/received/executing/paused/exception；
+      // 旧实现用非契约 'started' 且缺 received/paused/exception）。
+      const isExecuting = TaskLifecycle.isLocked(t.status);
       const hasLockedPerson =
         lockedPersonByTask.has(t.id) ||
         lockedDeviceByTask.has(t.id) ||

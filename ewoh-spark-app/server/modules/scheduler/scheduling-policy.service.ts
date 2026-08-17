@@ -186,27 +186,37 @@ export class SchedulingPolicyService {
     return this.parseConfig(row.configJson);
   }
 
-  /** 读取指定 configVersion 的策略。不存在返回 null。 */
-  async getPolicy(configVersion: number): Promise<SchedulingPolicy | null> {
-    const row = await this.findByVersion(configVersion);
+  /**
+   * 读取指定 configVersion 的策略。不存在返回 null。
+   * R2-SSV-01（2026-08-17）：configVersion 已按 org 作用域递增（NEST-165），
+   * 版本读取必须带 org 条件（本 org + NULL 全局行）——否则他租户同版本号行
+   * 会被命中（策略参数跨租户读取）。
+   */
+  async getPolicy(
+    configVersion: number,
+    orgId?: string | null,
+  ): Promise<SchedulingPolicy | null> {
+    const row = await this.findByVersion(configVersion, orgId);
     if (!row) return null;
     const config = this.parseConfig(row.configJson);
     return this.buildPolicy(config, row.configVersion, row.weightsJson);
   }
 
-  /** 读取指定版本的 active 状态（Phase 4 / P4-T2：activate 守卫）。不存在返回 null。 */
+  /** 读取指定版本的 active 状态（Phase 4 / P4-T2：activate 守卫）。不存在返回 null。R2-SSV-01：org 条件。 */
   async getPolicyVersionStatus(
     configVersion: number,
+    orgId?: string | null,
   ): Promise<{ configVersion: number; active: boolean } | null> {
-    const row = await this.findByVersion(configVersion);
+    const row = await this.findByVersion(configVersion, orgId);
     return row ? { configVersion: row.configVersion, active: row.active } : null;
   }
 
-  /** 读取指定 configVersion 的配置。不存在返回 null。 */
+  /** 读取指定 configVersion 的配置。不存在返回 null。R2-SSV-01：org 条件。 */
   async getConfigByVersion(
     configVersion: number,
+    orgId?: string | null,
   ): Promise<SchedulingPolicyConfig | null> {
-    const row = await this.findByVersion(configVersion);
+    const row = await this.findByVersion(configVersion, orgId);
     if (!row) return null;
     return this.parseConfig(row.configJson);
   }
@@ -409,7 +419,9 @@ export class SchedulingPolicyService {
     updatedBy: string,
     reason?: string,
   ): Promise<SchedulingPolicyConfig> {
-    const row = await this.findByVersion(configVersion);
+    // R2-SSV-01（2026-08-17）：版本查找带 org 条件（本 org + NULL 全局行）——
+    // 版本号按 org 作用域递增后，仅凭 configVersion 会命中他租户行。
+    const row = await this.findByVersion(configVersion, orgId);
     if (!row) {
       throw new NotFoundException(
         `Scheduling policy version ${configVersion} not found`,
@@ -427,19 +439,32 @@ export class SchedulingPolicyService {
       );
     // 2) 激活目标版本（NO-13o / ADR-064：激活决策与 active 翻转同一
     // UPDATE 原子写 decisionJson；缺口显式留 NULL 不阻断主流程）。
+    // R2-SSV-01：UPDATE 叠加 org 可见性条件（本 org + NULL 全局行），且
+    // **绝不改写命中行的 orgId**（此前 set({orgId}) 会把他租户/全局行归属
+    // 改写为当前租户——租户归属不可经激活漂移）。
     const decisionJson = this.projectPolicyActivationDecision(
       configVersion, orgId, updatedBy, reason,
     );
+    const targetScope = orgId
+      ? or(
+          eq(ewohSchedulingPolicy.orgId, orgId),
+          isNull(ewohSchedulingPolicy.orgId),
+        )
+      : isNull(ewohSchedulingPolicy.orgId);
     await this.db
       .update(ewohSchedulingPolicy)
       .set({
         active: true,
         updatedBy,
-        orgId,
         updatedAt: new Date(),
         ...(decisionJson ? { decisionJson } : {}),
       })
-      .where(eq(ewohSchedulingPolicy.configVersion, configVersion));
+      .where(
+        and(
+          eq(ewohSchedulingPolicy.configVersion, configVersion),
+          targetScope,
+        ),
+      );
     this.logger.log(`activated scheduling policy v${configVersion} by ${updatedBy}`);
     const config = this.parseConfig(row.configJson);
     return { ...config, configVersion };
@@ -507,13 +532,21 @@ export class SchedulingPolicyService {
     return rows[0] ?? null;
   }
 
-  /** 查询指定 configVersion 的行。 */
-  private async findByVersion(configVersion: number) {
-    const rows = await this.db
-      .select()
-      .from(ewohSchedulingPolicy)
-      .where(eq(ewohSchedulingPolicy.configVersion, configVersion))
-      .limit(1);
+  /**
+   * 查询指定 configVersion 的行。R2-SSV-01（2026-08-17）：orgId 提供时叠加
+   * org 可见性条件（本 org + NULL 全局行）——configVersion 按 org 作用域递增
+   * 后不同租户可存在同版本号行，仅凭版本号会命中他租户行；orgId 缺省 =
+   * 系统后台流（GUC/RLS 兜底），保持原查询形状（测试替身兼容）。
+   */
+  private async findByVersion(configVersion: number, orgId?: string | null) {
+    const orgCond = this.orgVisibilityCondition(orgId);
+    const baseQuery = this.db.select().from(ewohSchedulingPolicy);
+    const rows = await (orgCond
+      ? baseQuery.where(
+          and(eq(ewohSchedulingPolicy.configVersion, configVersion), orgCond),
+        )
+      : baseQuery.where(eq(ewohSchedulingPolicy.configVersion, configVersion))
+    ).limit(1);
     return rows[0] ?? null;
   }
 

@@ -2202,7 +2202,7 @@
           },
           "expect": [
             {
-              "conclusionId": "decision:rt-exec-1-worker-overload",
+              "conclusionId": "decision:rt-exec-1-worker-overload-person9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
               "ruleId": "rule:worker-overload",
               "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
               "severity": "high",
@@ -2217,7 +2217,7 @@
               "explanation": "人员 person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11 负荷 0.9，疲劳 0.8，工效风险 0.3——建议轮换或减负（人工复核）"
             },
             {
-              "conclusionId": "decision:rt-exec-1-exo-low-battery",
+              "conclusionId": "decision:rt-exec-1-exo-low-battery-exo9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
               "ruleId": "rule:exo-low-battery",
               "subjectId": "exo:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
               "severity": "high",
@@ -2232,7 +2232,7 @@
               "explanation": "外骨骼 exo:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11 电量 12%——建议换电或下线充电"
             },
             {
-              "conclusionId": "decision:rt-exec-1-machine-vibration-risk",
+              "conclusionId": "decision:rt-exec-1-machine-vibration-risk-machine9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
               "ruleId": "rule:machine-vibration-risk",
               "subjectId": "machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
               "severity": "critical",
@@ -2247,7 +2247,7 @@
               "explanation": "设备 machine:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11 振动阈值超限——建议停机检查（人工复核，勿自动处置）"
             },
             {
-              "conclusionId": "decision:rt-exec-1-material-shortage",
+              "conclusionId": "decision:rt-exec-1-material-shortage-material9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
               "ruleId": "rule:material-shortage",
               "subjectId": "material:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
               "severity": "high",
@@ -2262,7 +2262,7 @@
               "explanation": "物料 material:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11 库存 5 低于安全阈值 10——建议补料"
             },
             {
-              "conclusionId": "decision:rt-exec-1-station-quality-blocked",
+              "conclusionId": "decision:rt-exec-1-station-quality-blocked-station9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
               "ruleId": "rule:station-quality-blocked",
               "subjectId": "station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
               "severity": "critical",
@@ -2277,7 +2277,7 @@
               "explanation": "工位 station:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11 存在活跃质量封锁——禁止派工（人审解除）"
             },
             {
-              "conclusionId": "decision:rt-exec-1-andon-escalation",
+              "conclusionId": "decision:rt-exec-1-andon-escalation-alert9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
               "ruleId": "rule:andon-escalation",
               "subjectId": "alert:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
               "severity": "high",
@@ -2356,7 +2356,7 @@
           },
           "expect": [
             {
-              "conclusionId": "decision:rt-exec-3-worker-overload",
+              "conclusionId": "decision:rt-exec-3-worker-overload-person9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
               "ruleId": "rule:worker-overload",
               "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
               "severity": "high",
@@ -2369,6 +2369,70 @@
                 "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
               ],
               "explanation": "人员 person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11 负荷 0.85，疲劳 0.75，工效风险 0.2——建议轮换或减负（人工复核）"
+            }
+          ]
+        },
+        {
+          "name": "execute_multi_subject_dirty_trace_id",
+          "input": {
+            "traceId": "rt exec/4:脏 ID",
+            "facts": [
+              {
+                "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+                "kind": "person",
+                "values": {
+                  "workload": 0.95,
+                  "fatigue": 0.9,
+                  "ergonomicRisk": 0.2
+                },
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ]
+              },
+              {
+                "subjectId": "person:0d2b8e7c-6a4f-4c2e-9f1a-3c5d7e9b1a23",
+                "kind": "person",
+                "values": {
+                  "workload": 0.88,
+                  "fatigue": 0.75,
+                  "ergonomicRisk": 0.1
+                },
+                "evidenceIds": [
+                  "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+                ]
+              }
+            ]
+          },
+          "expect": [
+            {
+              "conclusionId": "decision:rtexec4ID-worker-overload-person9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+              "ruleId": "rule:worker-overload",
+              "subjectId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+              "severity": "high",
+              "confidence": 1,
+              "confidenceBasis": "deterministic",
+              "premises": [
+                "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "evidenceIds": [
+                "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "explanation": "人员 person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11 负荷 0.95，疲劳 0.9，工效风险 0.2——建议轮换或减负（人工复核）"
+            },
+            {
+              "conclusionId": "decision:rtexec4ID-worker-overload-person0d2b8e7c-6a4f-4c2e-9f1a-3c5d7e9b1a23",
+              "ruleId": "rule:worker-overload",
+              "subjectId": "person:0d2b8e7c-6a4f-4c2e-9f1a-3c5d7e9b1a23",
+              "severity": "high",
+              "confidence": 1,
+              "confidenceBasis": "deterministic",
+              "premises": [
+                "person:0d2b8e7c-6a4f-4c2e-9f1a-3c5d7e9b1a23"
+              ],
+              "evidenceIds": [
+                "event:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+              ],
+              "explanation": "人员 person:0d2b8e7c-6a4f-4c2e-9f1a-3c5d7e9b1a23 负荷 0.88，疲劳 0.75，工效风险 0.1——建议轮换或减负（人工复核）"
             }
           ]
         }

@@ -69,13 +69,15 @@ const ENV_NAME_RE = /^[A-Z][A-Z0-9_]*$/;
 
 // ---------------- 文件遍历 ----------------
 
-function walkFiles(dir, exts, excludes, out) {
+function walkFiles(dir, exts, excludes, excludeDirs, out) {
   if (!fs.existsSync(dir)) return;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (excludes.some((re) => re.test(entry.name))) continue;
-      walkFiles(full, exts, excludes, out);
+      // R2-SCR-007：目录级排除用纯目录名集合精确比较（原路径式正则对裸
+      // entry.name 永不匹配，见 SCAN_ROOTS 注释）。
+      if (excludeDirs.includes(entry.name)) continue;
+      walkFiles(full, exts, excludes, excludeDirs, out);
     } else if (entry.isFile() && exts.some((ext) => entry.name.endsWith(ext))) {
       if (excludes.some((re) => re.test(entry.name))) continue;
       out.push(full);
@@ -182,7 +184,7 @@ function collectCanonicalInventory() {
       continue;
     }
     const files = [];
-    walkFiles(absDir, scan.exts, scan.excludes, files);
+    walkFiles(absDir, scan.exts, scan.excludes, scan.excludeDirs || [], files);
     for (const file of files) {
       const rel = path.relative(root, file);
       const found = collectEnvFromFile(file, rel);

@@ -10,6 +10,7 @@ import type { SchedulingConstraint } from '@shared/api.interface';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { isSoftConstraintType } from './constraints';
 
 /**
  * 约束加载服务（Phase 0 / P0-2，05 §3.2）：持久化人工约束的**唯一加载入口**。
@@ -40,8 +41,10 @@ export class ConstraintLoaderService {
     nowMs = Date.now(),
   ): Promise<SchedulingConstraint[]> {
     // NEST-004 修复（2026-08-17）：空字符串 orgId（SYSTEM_CTX/toOrgContext 兜底）
-    // 与 null/undefined 同样视为"无租户上下文"——走系统语义（GUC/RLS 兜底），
-    // 不再因 falsy 差异落入不同分支；约束加载的租户路径要求非空 primaryOrgId。
+    // 与 null/undefined 同样视为"无租户上下文"。
+    // R2 补齐（2026-08-17）：无租户上下文（SYSTEM_CTX，root db 无 GUC）不再
+    // 全表加载——限定 org_id IS NULL（全局约束）行，跨租户 org 行不可见
+    //（fail-closed；此前仅靠 GUC/RLS 兜底，SYSTEM_CTX 路径仍跨租户加载）。
     const orgId = ctx?.primaryOrgId?.trim() ? ctx.primaryOrgId : null;
     const rows = await this.db
       .select()
@@ -49,13 +52,14 @@ export class ConstraintLoaderService {
       .where(
         and(
           eq(ewohSchedulingConstraint.active, true),
-          // org 隔离：org_id 匹配当前 org 或 NULL（全局约束放行）。
+          // org 隔离：org_id 匹配当前 org 或 NULL（全局约束放行）；
+          // 无租户上下文 → 仅全局（NULL）行。
           orgId
             ? or(
                 eq(ewohSchedulingConstraint.orgId, orgId),
                 isNull(ewohSchedulingConstraint.orgId),
               )
-            : undefined,
+            : isNull(ewohSchedulingConstraint.orgId),
           // 有效期过滤：expires_at_ms 为空或 >= now 才参与求解。
           or(
             isNull(ewohSchedulingConstraint.expiresAtMs),
@@ -73,7 +77,8 @@ export class ConstraintLoaderService {
     requestConstraints: SchedulingConstraint[],
     ctx: OrgContext,
   ): Promise<SchedulingConstraint[]> {
-    // NEST-004：同 loadGlobalActive——空串 orgId 显式等同无租户上下文。
+    // NEST-004：同 loadGlobalActive——空串 orgId 显式等同无租户上下文；
+    // 无租户上下文仅加载全局（NULL org）行（fail-closed，防跨租户加载）。
     const orgId = ctx?.primaryOrgId?.trim() ? ctx.primaryOrgId : null;
     const rows = await this.db
       .select()
@@ -87,7 +92,7 @@ export class ConstraintLoaderService {
                 eq(ewohSchedulingConstraint.orgId, orgId),
                 isNull(ewohSchedulingConstraint.orgId),
               )
-            : undefined,
+            : isNull(ewohSchedulingConstraint.orgId),
           or(
             isNull(ewohSchedulingConstraint.expiresAtMs),
             gte(ewohSchedulingConstraint.expiresAtMs, Date.now()),
@@ -157,7 +162,9 @@ export class ConstraintLoaderService {
       deactivatedAt: row.deactivatedAt ? row.deactivatedAt.toISOString() : null,
       deactivatedBy: row.deactivatedBy ?? null,
       snapshotVersion: v.snapshotVersion as string | undefined,
-      hard: true,
+      // R2-SCH-010（2026-08-17）：按类型判定软约束——持久化软类型
+      //（PREFERRED_RESOURCE/MANUAL_BOOST 等）hard=false，不再一律 hard:true。
+      hard: !isSoftConstraintType(row.type),
     };
   }
 

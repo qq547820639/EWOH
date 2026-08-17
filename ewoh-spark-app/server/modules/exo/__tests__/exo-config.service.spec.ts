@@ -93,6 +93,7 @@ function configRow(configId: string, orgId: string, overrides: Record<string, un
 function createConfigDb(rows: Array<Record<string, unknown>> = []) {
   const state = { rows: [...rows] };
   const events: Array<Record<string, unknown>> = [];
+  let nextEventInsertError: unknown = null;
   function thenable(data: unknown[]): unknown {
     return {
       then: (resolve: (v: unknown[]) => void) => resolve(data),
@@ -122,16 +123,61 @@ function createConfigDb(rows: Array<Record<string, unknown>> = []) {
         }),
       })),
     })),
-  } as Record<string, jest.Mock>;
-  // NEST-431：record/activateProfile 主事实与事件同事务——fake 直接同步执行回调。
-  db.transaction = jest.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
-    cb({
-      insert: db.insert,
-      update: db.update,
-    }),
-  );
+  } as unknown as Record<string, jest.Mock>;
+  // NEST-431 / R2-SAM-007：事务暂存语义——事务内 select 读当前态、写入/更新
+  // 先暂存，回调成功才提交；抛错整体回滚（供“supersede 后激活失败不留
+  // 零 active 半态”断言）。
+  db.transaction = jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => {
+    const pendingInserts: Array<{ table: unknown; row: Record<string, unknown> }> = [];
+    const pendingUpdates: Array<{ cond: unknown; patch: Record<string, unknown> }> = [];
+    const tx = {
+      select: () => ({
+        from: () => ({
+          where: (cond: unknown) => thenable(state.rows.filter((r) => matches(cond, r))),
+        }),
+      }),
+      insert: (table: unknown) => ({
+        values: jest.fn((row: Record<string, unknown>) => {
+          if (table === ewohEvent && nextEventInsertError) {
+            const err = nextEventInsertError;
+            nextEventInsertError = null;
+            throw err;
+          }
+          pendingInserts.push({ table, row });
+          return { returning: jest.fn(async () => [row]) };
+        }),
+      }),
+      update: () => ({
+        set: jest.fn((patch: Record<string, unknown>) => ({
+          where: jest.fn((cond: unknown) => {
+            const hit = state.rows.filter((r) => matches(cond, r));
+            pendingUpdates.push({ cond, patch });
+            // returning 返回应用 patch 后的行副本（对齐真实 drizzle 语义）。
+            return { returning: jest.fn(async () => hit.map((r) => ({ ...r, ...patch }))) };
+          }),
+        })),
+      }),
+    };
+    const out = await cb(tx);
+    for (const { table, row } of pendingInserts) {
+      if (table === ewohExoConfig) state.rows.push(row);
+      if (table === ewohEvent) events.push(row);
+    }
+    for (const { cond, patch } of pendingUpdates) {
+      for (const r of state.rows.filter((r) => matches(cond, r))) Object.assign(r, patch);
+    }
+    return out;
+  });
   const service = new ExoConfigService(db as never);
-  return { rows: state.rows, events, service };
+  return {
+    rows: state.rows,
+    events,
+    service,
+    db,
+    __failNextEventInsertWith: (err: unknown) => {
+      nextEventInsertError = err;
+    },
+  };
 }
 
 const validProfile = {
@@ -188,6 +234,28 @@ describe('ExoConfigService（ADR-051/ADR-052 / §7）', () => {
     // 幂等：再次激活返回自身，不重复 supersede
     const again = await service.activateProfile(ORG_A, 'exo-config:ap-new', 'person:op-2');
     expect(again.status).toBe('active');
+  });
+
+  it('R2-SAM-007：激活事务失败 → supersede 一并回滚（不留“旧已废、新未活”的零 active 半态）', async () => {
+    const harness = createConfigDb([
+      configRow('exo-config:ap-old', ORG_A),
+      configRow('exo-config:ap-new', ORG_A, {
+        id: '00000000-0000-4000-8000-000000000002',
+        status: 'retired',
+        recordJson: { configId: 'exo-config:ap-new', kind: 'assist_profile', exoId: EXO_ID, tenantId: ORG_A, status: 'retired', supportMode: 'lift_assist', effectiveFrom: '2026-08-16T09:00:00Z', auditTrail: [{ actor: 'person:op-1', action: 'recorded', at: '2026-08-16T09:00:00Z' }] },
+      }),
+    ]);
+    // 激活主事实写入后、目录事件写入失败 → 整个事务（含 supersede）回滚。
+    harness.__failNextEventInsertWith(new Error('event insert down'));
+    await expect(
+      harness.service.activateProfile(ORG_A, 'exo-config:ap-new', 'person:op-2'),
+    ).rejects.toThrow('event insert down');
+    const old = harness.rows.find((r) => r.configId === 'exo-config:ap-old');
+    const target = harness.rows.find((r) => r.configId === 'exo-config:ap-new');
+    expect(old?.status).toBe('active');
+    expect(old?.supersededBy ?? null).toBeNull();
+    expect(target?.status).toBe('retired');
+    expect(harness.events).toHaveLength(0);
   });
 
   it('非 assist_profile 不可激活（显式拒绝）', async () => {

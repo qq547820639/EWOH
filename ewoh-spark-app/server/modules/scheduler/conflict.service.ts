@@ -9,7 +9,8 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { eq, inArray, asc, desc, or, isNull, and } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
+import { eq, inArray, asc, desc, or, isNull, and, type SQL } from 'drizzle-orm';
 import { ewohSchedulingConflict, ewohSchedulePlan } from '@server/database/schema';
 import type {
   ConflictsListRequest,
@@ -47,6 +48,20 @@ const SYSTEM_CTX: OrgContext = {
   accessibleOrgIds: [],
   isGlobalAdmin: false,
 };
+
+/**
+ * R2-SSV-06（2026-08-17）：conflictId 种子哈希单一实现——SHA-256 48-bit 折叠
+ * （NEST-158 已在 scheduler-query 落地；本文件此前残留 djb2 32-bit 孪生实现，
+ * 同 seed 两条路径生成不同 conflictId（内存回退 vs ConflictService 落库
+ * identity 分裂），且 32-bit 碰撞使不同 seed 冲突被 reconcile 误归并）。
+ * 导出供 scheduler-query 复用（§31 单一实现）。
+ */
+export function conflictSeedHash(str: string): number {
+  return parseInt(
+    createHash('sha256').update(str).digest('hex').slice(0, 12),
+    16,
+  );
+}
 
 /**
  * 调度冲突服务（Phase 3 / P3-T1）：冲突从"实时推导"升级为"推导 + 落库 + 生命周期"。
@@ -208,12 +223,28 @@ export class ConflictService {
     }
     const now = new Date();
     const actor = operator || ctx?.userId || SYSTEM_ACTOR;
-    await this.updateRow(fresh.id, {
-      status: 'ACKNOWLEDGED',
-      acknowledgedBy: actor,
-      acknowledgedAt: now,
-      updatedAt: now,
-    });
+    // R2-SSV-11（2026-08-17）：人工生命周期转移 CAS——UPDATE 携带当前 status
+    // 期望值谓词并校验命中行数；0 行 = 并发转移（双 acknowledge / reconcile
+    // 竞争），幂等命中返回视图，非法并发抛 409（不再双事件双审计）。
+    const ackHits = await this.updateRow(
+      fresh.id,
+      {
+        status: 'ACKNOWLEDGED',
+        acknowledgedBy: actor,
+        acknowledgedAt: now,
+        updatedAt: now,
+      },
+      { expectedStatuses: ['OPEN'] },
+    );
+    if (ackHits === 0) {
+      const concurrent = await this.findRowByConflictId(conflictId, ctx);
+      if (concurrent && concurrent.status === 'ACKNOWLEDGED') {
+        return this.rowToConflict(concurrent);
+      }
+      throw new ConflictException(
+        `Conflict ${conflictId} concurrently transitioned to ${concurrent?.status ?? 'unknown'}; acknowledge aborted（R2-SSV-11 CAS）`,
+      );
+    }
     const updated = await this.findRowByConflictId(conflictId, ctx);
     if (!updated) throw new NotFoundException(`Conflict ${conflictId} not found`);
     const view = this.rowToConflict(updated);
@@ -242,13 +273,27 @@ export class ConflictService {
     if (fresh.status === 'RESOLVED') return this.rowToConflict(fresh);
     const now = new Date();
     const actor = operator || ctx?.userId || SYSTEM_ACTOR;
-    await this.updateRow(fresh.id, {
-      status: 'RESOLVED',
-      resolvedBy: actor,
-      resolvedAt: now,
-      resolution: resolution ?? fresh.resolution ?? null,
-      updatedAt: now,
-    });
+    // R2-SSV-11：resolve CAS（源集 OPEN/ACKNOWLEDGED/SUPPRESSED；并发转移 409）。
+    const resolveHits = await this.updateRow(
+      fresh.id,
+      {
+        status: 'RESOLVED',
+        resolvedBy: actor,
+        resolvedAt: now,
+        resolution: resolution ?? fresh.resolution ?? null,
+        updatedAt: now,
+      },
+      { expectedStatuses: ['OPEN', 'ACKNOWLEDGED', 'SUPPRESSED'] },
+    );
+    if (resolveHits === 0) {
+      const concurrent = await this.findRowByConflictId(conflictId, ctx);
+      if (concurrent && concurrent.status === 'RESOLVED') {
+        return this.rowToConflict(concurrent);
+      }
+      throw new ConflictException(
+        `Conflict ${conflictId} concurrently transitioned to ${concurrent?.status ?? 'unknown'}; resolve aborted（R2-SSV-11 CAS）`,
+      );
+    }
     const updated = await this.findRowByConflictId(conflictId, ctx);
     if (!updated) throw new NotFoundException(`Conflict ${conflictId} not found`);
     const view = this.rowToConflict(updated);
@@ -286,11 +331,25 @@ export class ConflictService {
       typeof suppressUntilMs === 'number' && Number.isFinite(suppressUntilMs)
         ? new Date(suppressUntilMs)
         : new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    await this.updateRow(fresh.id, {
-      status: 'SUPPRESSED',
-      suppressUntil,
-      updatedAt: now,
-    });
+    // R2-SSV-11：suppress CAS（源集 OPEN/ACKNOWLEDGED；并发转移 409）。
+    const suppressHits = await this.updateRow(
+      fresh.id,
+      {
+        status: 'SUPPRESSED',
+        suppressUntil,
+        updatedAt: now,
+      },
+      { expectedStatuses: ['OPEN', 'ACKNOWLEDGED'] },
+    );
+    if (suppressHits === 0) {
+      const concurrent = await this.findRowByConflictId(conflictId, ctx);
+      if (concurrent && concurrent.status === 'SUPPRESSED') {
+        return this.rowToConflict(concurrent);
+      }
+      throw new ConflictException(
+        `Conflict ${conflictId} concurrently transitioned to ${concurrent?.status ?? 'unknown'}; suppress aborted（R2-SSV-11 CAS）`,
+      );
+    }
     const updated = await this.findRowByConflictId(conflictId, ctx);
     if (!updated) throw new NotFoundException(`Conflict ${conflictId} not found`);
     const view = this.rowToConflict(updated);
@@ -767,7 +826,19 @@ export class ConflictService {
         planId: c.planId ?? row.planId ?? null,
       };
       if (transition) {
-        await this.updateRow(row.id, { status: 'OPEN', updatedAt: now });
+        // R2-SSV-11：reopen 与人工转移并发时 CAS（源集 = 当前读到的状态）；
+        // 0 行 = 并发已变更，跳过本行事件/审计（最后写者胜的覆盖消除）。
+        const reopenHits = await this.updateRow(
+          row.id,
+          { status: 'OPEN', updatedAt: now },
+          { expectedStatuses: [row.status ?? 'OPEN'] },
+        );
+        if (reopenHits === 0) {
+          this.logger.warn(
+            `conflict reopen CAS miss (${row.conflictId}); concurrently transitioned`,
+          );
+          continue;
+        }
         await this.emitSse('conflict.detected', merged, ctx.primaryOrgId || null);
         await this.writeAudit(
           'conflict.reopen',
@@ -787,13 +858,24 @@ export class ConflictService {
     for (const row of persisted) {
       if (derivedIds.has(row.conflictId)) continue;
       if (row.status === 'OPEN' || row.status === 'ACKNOWLEDGED') {
-        await this.updateRow(row.id, {
-          status: 'RESOLVED',
-          resolvedBy: SYSTEM_ACTOR,
-          resolvedAt: now,
-          resolution: 'auto_cleared',
-          updatedAt: now,
-        });
+        // R2-SSV-11：auto_cleared 与人工转移并发时 CAS；0 行跳过事件/审计。
+        const clearHits = await this.updateRow(
+          row.id,
+          {
+            status: 'RESOLVED',
+            resolvedBy: SYSTEM_ACTOR,
+            resolvedAt: now,
+            resolution: 'auto_cleared',
+            updatedAt: now,
+          },
+          { expectedStatuses: ['OPEN', 'ACKNOWLEDGED'] },
+        );
+        if (clearHits === 0) {
+          this.logger.warn(
+            `conflict auto_cleared CAS miss (${row.conflictId}); concurrently transitioned`,
+          );
+          continue;
+        }
         const resolvedView: SchedulingConflict = {
           ...this.rowToConflict(row),
           status: 'RESOLVED',
@@ -886,19 +968,35 @@ export class ConflictService {
     }
   }
 
+  /**
+   * R2-SSV-11（2026-08-17）：UPDATE ... RETURNING 单语句状态机——
+   * expectedStatuses 提供时叠加源状态谓词（CAS），返回命中行数：
+   *   >0 命中；0 并发转移（调用方幂等回读或 409）；-1 DB 异常（留痕，
+   *   不误判为 CAS miss）。无 expectedStatuses = 无条件更新（兼容旧调用面）。
+   */
   private async updateRow(
     id: string,
     patch: Record<string, unknown>,
-  ): Promise<void> {
+    opts?: { expectedStatuses?: string[] },
+  ): Promise<number> {
     try {
-      await this.db
+      const conditions: SQL[] = [eq(ewohSchedulingConflict.id, id)];
+      if (opts?.expectedStatuses && opts.expectedStatuses.length > 0) {
+        conditions.push(
+          inArray(ewohSchedulingConflict.status, opts.expectedStatuses),
+        );
+      }
+      const rows = await this.db
         .update(ewohSchedulingConflict)
         .set(patch)
-        .where(eq(ewohSchedulingConflict.id, id));
+        .where(and(...conditions))
+        .returning({ id: ewohSchedulingConflict.id });
+      return rows.length;
     } catch (err) {
       this.logger.warn(
         `conflict update failed (${id}): ${(err as Error)?.message ?? err}`,
       );
+      return -1;
     }
   }
 
@@ -956,10 +1054,18 @@ export class ConflictService {
     reason: string,
     ctx: OrgContext,
   ): Promise<void> {
+    // R2-SSV-20（2026-08-17）：审计 orgId 不再回退空串（污染租户归属统计）——
+    // AuditLogEntry.orgId 为 string 契约，缺失时以 'system' 哨兵显式留痕。
+    const auditOrgId = ctx.primaryOrgId || 'system';
+    if (!ctx.primaryOrgId) {
+      this.logger.warn(
+        `conflict audit without org context (${action} ${conflict.conflictId}); orgId recorded as 'system' sentinel`,
+      );
+    }
     try {
       await this.auditService.appendAuditLog({
         actorId: actor || ctx.userId || SYSTEM_ACTOR,
-        orgId: ctx.primaryOrgId || '',
+        orgId: auditOrgId,
         action,
         entityType: 'scheduling_conflict',
         entityId: conflict.conflictId,
@@ -974,25 +1080,16 @@ export class ConflictService {
     }
   }
 
-  /** 构造统一冲突，conflictId 由内容种子哈希生成（跨查询稳定）。 */
+  /** 构造统一冲突，conflictId 由内容种子哈希生成（跨查询稳定；R2-SSV-06：SHA-256 折叠单一实现）。 */
   private mkConflict(
     seed: string,
     input: Omit<SchedulingConflict, 'conflictId' | 'createdAt'>,
   ): SchedulingConflict {
     return {
-      conflictId: `CFL-${this.hash(seed)}`,
+      conflictId: `CFL-${conflictSeedHash(seed)}`,
       createdAt: new Date().toISOString(),
       ...input,
     };
-  }
-
-  /** djb2 字符串哈希（生成稳定冲突 id）。 */
-  private hash(str: string): number {
-    let h = 5381;
-    for (let i = 0; i < str.length; i++) {
-      h = ((h << 5) + h + str.charCodeAt(i)) | 0;
-    }
-    return h >>> 0;
   }
 
   /** 落库行 → 公开 SchedulingConflict 形状（生命周期字段齐全）。 */

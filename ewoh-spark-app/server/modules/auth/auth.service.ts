@@ -220,6 +220,9 @@ export class AuthService {
   /**
    * NEST-418：验签 + jti 吊销检查（async——黑名单经 RedisService，
    * 多实例共享；Redis 不可用回退进程内存，单实例仍有效）。
+   * NEST-418 二轮收敛（R2）：验签后核对用户停用状态——ewoh_find_active_user
+   * 只返回 active 用户，停用/删除用户的存量 access token 立即失效（不再
+   * 等 8h TTL 自然收敛）；认证存储不可用时 fail-closed（503，绝不放行）。
    */
   async verifyToken(token: string): Promise<AuthJwtPayload> {
     let payload: AuthJwtPayload;
@@ -244,6 +247,11 @@ export class AuthService {
       if (revoked) {
         throw new UnauthorizedException('Access token has been revoked');
       }
+    }
+    // 停用用户存量 token 立即失效：按 token 内 username 复核 active 状态。
+    const activeUser = await this.findUser(payload.username);
+    if (!activeUser || activeUser.userId !== payload.sub) {
+      throw new UnauthorizedException('User is inactive or no longer exists');
     }
     return payload;
   }

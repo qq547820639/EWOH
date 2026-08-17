@@ -38,4 +38,12 @@ describe('ThemeToggle 渲染 smoke（NO-13f / ADR-055）', () => {
     const markup = renderToStaticMarkup(<ThemeToggle />);
     expect(markup).toContain(THEME_PREFERENCE_LABELS.light);
   });
+
+  it('R2-CC2-002: 前景/悬停使用配对令牌（无 text-white 系字面类，侧栏白底容器下可读）', () => {
+    (globalThis as Record<string, unknown>).localStorage = fakeLocalStorage();
+    const markup = renderToStaticMarkup(<ThemeToggle />);
+    expect(markup).toContain('text-muted-foreground');
+    expect(markup).not.toContain('text-white/70');
+    expect(markup).not.toContain('hover:bg-white/10');
+  });
 });

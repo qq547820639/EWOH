@@ -423,7 +423,7 @@ export function formatValue(
       if (typeof value === 'string' || value instanceof Date) {
         const d = new Date(value);
         if (!Number.isNaN(d.getTime())) {
-          return d.toLocaleString('zh-CN', { hour12: false });
+          return d.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
         }
       }
       return String(value);

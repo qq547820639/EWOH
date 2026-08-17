@@ -731,7 +731,7 @@ const SiteReadinessWizard = ({
           </div>
           {approval.signedAt && (
             <p className="text-xs text-[hsl(218_10%_42%)]">
-              已签署：{approval.businessSigner} · {new Date(approval.signedAt).toLocaleString('zh-CN', { hour12: false })}
+              已签署：{approval.businessSigner} · {new Date(approval.signedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}
               （本地签署记录，需现场正式签署）
             </p>
           )}

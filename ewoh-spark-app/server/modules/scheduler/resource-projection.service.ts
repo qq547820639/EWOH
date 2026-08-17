@@ -365,13 +365,15 @@ export class ResourceProjectionService {
 
     // NO-05c（ADR-010）：活跃维护状态事实 → 状态收敛 + 事实附着
     // （critical → OFFLINE fail-closed 禁派；其余 → DEGRADED；UNKNOWN/OFFLINE 不升级）。
-    const maintenanceByEntity = await this.loadActiveMaintenance();
+    // R2-SSV-04（2026-08-17）：维护/质量事实加载透传 ctx（org 过滤）——
+    // 此前两表全表扫描，跨租户维护/质量事实附着到本租户资源投影。
+    const maintenanceByEntity = await this.loadActiveMaintenance(ctx);
     const applyMaintenance = (state: ResourceState): ResourceState =>
       this.applyMaintenance(state, maintenanceByEntity.get(state.entityId ?? '') ?? []);
 
     // NO-05d（ADR-011）：活跃质量发现事实 → 仅事实附着（不改资源状态；
     // critical/high 封锁由 Eligibility 执行，medium/low 仅可见）。
-    const qualityByEntity = await this.loadActiveQualityFindings();
+    const qualityByEntity = await this.loadActiveQualityFindings(ctx);
     const applyQuality = (state: ResourceState): ResourceState =>
       this.attachQualityFindings(state, qualityByEntity.get(state.entityId ?? '') ?? []);
 
@@ -380,9 +382,16 @@ export class ResourceProjectionService {
       .map(applyQuality);
   }
 
-  /** 按资源类型过滤投影；tool / material / vehicle 无对应表，返回空数组。 */
-  async projectByType(type: ResourceState['type']): Promise<ResourceState[]> {
-    const all = await this.getUnifiedResourceState();
+  /**
+   * 按资源类型过滤投影；tool / material / vehicle 无对应表，返回空数组。
+   * R2-SSV-22（2026-08-17）：接收 ctx 并透传 getUnifiedResourceState——
+   * 此前经适配器消费的调用方拿到无 org 过滤的全租户投影（NEST-102 旁路）。
+   */
+  async projectByType(
+    type: ResourceState['type'],
+    ctx?: OrgContext,
+  ): Promise<ResourceState[]> {
+    const all = await this.getUnifiedResourceState(ctx);
     return all.filter((r) => r.type === type);
   }
 
@@ -395,10 +404,16 @@ export class ResourceProjectionService {
    * 单元层链式 fake（fake 对任意 select 返回同集合，非维护行在此被过滤——不做
    * 任何静默兜底或数据猜测）。
    */
-  private async loadActiveMaintenance(): Promise<
-    Map<string, MaintenanceConditionProjection[]>
-  > {
-    const rows = await this.db.select().from(ewohMaintenanceCondition);
+  private async loadActiveMaintenance(
+    ctx?: OrgContext,
+  ): Promise<Map<string, MaintenanceConditionProjection[]>> {
+    // R2-SSV-04：ctx 携带 org 时按 org 过滤（本表 org_id NOT NULL，无存量
+    // NULL 行——直接 eq；ctx 缺省 = 系统后台流，GUC/RLS 兜底，不调 where）。
+    const orgId = ctx?.primaryOrgId;
+    const baseQuery = this.db.select().from(ewohMaintenanceCondition);
+    const rows = orgId
+      ? await baseQuery.where(eq(ewohMaintenanceCondition.orgId, orgId))
+      : await baseQuery;
     const nowIso = new Date().toISOString();
     const byEntity = new Map<string, MaintenanceConditionProjection[]>();
     for (const raw of rows as Array<Record<string, unknown>>) {
@@ -486,10 +501,15 @@ export class ResourceProjectionService {
    * severity/status/links 形状；形状守卫同时兼容单元层链式 fake（非质量行被过滤，
    * 不做任何静默兜底或数据猜测）。
    */
-  private async loadActiveQualityFindings(): Promise<
-    Map<string, QualityFindingProjection[]>
-  > {
-    const rows = await this.db.select().from(ewohQualityFinding);
+  private async loadActiveQualityFindings(
+    ctx?: OrgContext,
+  ): Promise<Map<string, QualityFindingProjection[]>> {
+    // R2-SSV-04：同 loadActiveMaintenance——ctx org 过滤（本表 org_id NOT NULL）。
+    const orgId = ctx?.primaryOrgId;
+    const baseQuery = this.db.select().from(ewohQualityFinding);
+    const rows = orgId
+      ? await baseQuery.where(eq(ewohQualityFinding.orgId, orgId))
+      : await baseQuery;
     const byEntity = new Map<string, QualityFindingProjection[]>();
     for (const raw of rows as Array<Record<string, unknown>>) {
       const { findingId, findingType, severity, status, links } = raw;
@@ -723,12 +743,13 @@ export class ResourceProjectionService {
     const now = Date.now();
 
     // NO-05c（ADR-010）：活跃维护状态事实（person:/device:/station:<id> 索引）。
-    const maintenanceByEntity = await this.loadActiveMaintenance();
+    // R2-SSV-04：ctx org 过滤（与 project() 同口径）。
+    const maintenanceByEntity = await this.loadActiveMaintenance(ctx);
     const maintenanceFor = (entityId: string | undefined): MaintenanceConditionProjection[] =>
       entityId ? (maintenanceByEntity.get(entityId) ?? []) : [];
 
     // NO-05d（ADR-011）：活跃质量发现事实（links 资源 kind 索引；不改状态）。
-    const qualityByEntity = await this.loadActiveQualityFindings();
+    const qualityByEntity = await this.loadActiveQualityFindings(ctx);
     const qualityFor = (entityId: string | undefined): QualityFindingProjection[] =>
       entityId ? (qualityByEntity.get(entityId) ?? []) : [];
 

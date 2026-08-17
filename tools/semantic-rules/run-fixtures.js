@@ -76,6 +76,17 @@ function gitBackedFixture(src, prefix) {
   return dest;
 }
 
+// R2-TOL-003：git 可用性探测——fix-closure 依赖真实 git HEAD（head-consistency
+// 规则无 HEAD 即短路），无 git 环境时该步骤显式 FAIL（带原因），不得 vacuous pass。
+function hasGitBinary() {
+  try {
+    execFileSync('git', ['--version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function main() {
   const fixtures = fs
     .readdirSync(FIXTURES_DIR)
@@ -85,6 +96,9 @@ function main() {
         fs.statSync(path.join(FIXTURES_DIR, name)).isDirectory(),
     )
     .sort();
+
+  // R2-TOL-003：一次性探测 git 可用性（fix-closure 依赖，见 hasGitBinary 注释）
+  const gitAvailable = hasGitBinary();
 
   let passed = 0;
   let failed = 0;
@@ -103,17 +117,40 @@ function main() {
     const driftOk = drift.exit !== 0;
 
     // 2) Fix closure (only for mechanically fixable fixtures).
+    // R2-TOL-003：fix-closure 必须在真实 git HEAD 环境验证——head-consistency
+    // 规则在无 git HEAD 时短路返回零 finding（rules.js：actual 为空即 return
+    // findings），此前用 copyFixture（无 .git）跑 --fix/--strict 对 fixture-01
+    // 是 vacuous 通过：验证的是"规则没运行"而非"--fix 修复生效后 strict 归零"。
+    // 现改用 gitBackedFixture 铸 HEAD，并以 git 工作区脏（--fix 确实写入）为
+    // 附加断言；无 git 环境时该 fixture 显式 FAIL（带原因），不静默通过。
     let closure = null;
     if (FIXABLE.has(name)) {
-      const tmp = copyFixture(abs, 'semantic-rules-fix-');
-      const fixed = runNode([INDEX_JS, '--root', tmp, '--fix', '--strict'], __dirname);
-      const after = runNode([INDEX_JS, '--root', tmp, '--strict'], __dirname);
-      fs.rmSync(tmp, { recursive: true, force: true });
-      closure = {
-        ok: fixed.exit === 0 && after.exit === 0,
-        fixExit: fixed.exit,
-        recheckExit: after.exit,
-      };
+      if (!gitAvailable) {
+        closure = {
+          ok: false,
+          reason: 'no git binary: fix-closure 需要真实 git HEAD，无 git 环境显式失败（R2-TOL-003，不 vacuous pass）',
+        };
+      } else {
+        const tmp = gitBackedFixture(abs, 'semantic-rules-fix-');
+        const fixed = runNode([INDEX_JS, '--root', tmp, '--fix', '--strict'], __dirname);
+        // 非空修复断言：--fix 后 git 工作区必须出现修改（规则短路时无事可修、
+        // 工作区干净 → 判 FAIL，杜绝"零 finding 恒真通过"路径）。
+        let dirty = false;
+        try {
+          const status = execFileSync('git', ['status', '--porcelain'], { cwd: tmp, encoding: 'utf8' });
+          dirty = status.trim().length > 0;
+        } catch {
+          dirty = false;
+        }
+        const after = runNode([INDEX_JS, '--root', tmp, '--strict'], __dirname);
+        fs.rmSync(tmp, { recursive: true, force: true });
+        closure = {
+          ok: fixed.exit === 0 && after.exit === 0 && dirty,
+          fixExit: fixed.exit,
+          recheckExit: after.exit,
+          patched: dirty,
+        };
+      }
     } else {
       closure = { ok: true, skipped: true };
     }
@@ -124,7 +161,9 @@ function main() {
 
     const closeTxt = closure.skipped
       ? 'fix-closure skipped (non-fixable)'
-      : `fix-closure fix=${closure.fixExit} recheck=${closure.recheckExit}`;
+      : closure.reason
+        ? `fix-closure FAIL (${closure.reason})`
+        : `fix-closure fix=${closure.fixExit} recheck=${closure.recheckExit} patched=${closure.patched}`;
     lines.push(
       `${ok ? 'PASS' : 'FAIL'}  ${name}  (drift strict exit=${drift.exit}) ${closeTxt}`,
     );

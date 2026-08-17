@@ -69,6 +69,19 @@ def _f(v):
 
 
 class RuleEngine:
+    # R2-ESC-006：on_telemetry 逐条评估的风险规则集合（单一事实源）。
+    # 引擎为单体评估（无逐规则隔离），pipeline 侧异常日志以此标注涉及规则面，
+    # 便于把"规则检测失效"定位到具体规则清单而非黑盒。
+    TELEMETRY_RULE_IDS = (
+        "POSTURE_BEND_LONG",
+        "LOAD_CONTINUOUS",
+        "SENSOR_DEGRADED",
+        "LOW_BATTERY",
+        "TIME_SYNC_ANOMALY",
+        "PACKET_LOSS_BURST",
+    )
+    INFERENCE_RULE_IDS = ("ACTION_ANOMALY_LOW_QUALITY",)
+
     def __init__(self, rule_version="risk-rule-v1.0", config=None):
         self.rule_version = rule_version
         self.cfg = dict(DEFAULT_CONFIG)

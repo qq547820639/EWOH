@@ -52,6 +52,20 @@ def resolve_actor(h, payload, *client_keys):
     return token_actor
 
 
+def bounded_limit(h, name, default, cap):
+    """R2-ECO-003：limit 参数统一收口——解析失败回落默认值，并钳制到 [1, cap]。
+
+    防止 ``int(h.arg(...))`` 对非数字输入抛 ValueError 落 500，以及超大
+    limit 透传 SQL 造成资源压力（与 world.py EDGE-021 的 events 上限同口径）。
+    """
+    raw = h.arg(name, str(default))
+    try:
+        limit = int(raw or default)
+    except (TypeError, ValueError):
+        limit = default
+    return max(1, min(limit, cap))
+
+
 def _device_view(ctx, d):
     v = dict(d)
     v["online"] = ctx.device_online(d)

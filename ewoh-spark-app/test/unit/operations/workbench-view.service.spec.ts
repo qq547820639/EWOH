@@ -58,9 +58,10 @@ describe('WorkbenchViewService (服务端保存视图/跨设备/共享)', () => 
     const service = new WorkbenchViewService(store);
     await service.saveView(alice, { key: 'owned', role: 'operator', listKey: 'mySteps' });
 
-    await expect(service.deleteView(bob, 'owned')).rejects.toThrow(
-      'only delete your own saved views',
-    );
+    // R2-SOP-019：InMemory store 的 get/remove 已按 (org, owner, key) 三元组
+    // 归属校验（与 PostgresWorkbenchViewStore 谓词一致）——同 org 非 owner
+    // 删除他人视图 → 404（不泄露存在性）；拒绝语义不变。
+    await expect(service.deleteView(bob, 'owned')).rejects.toThrow('view not found');
     await service.deleteView(alice, 'owned');
     await expect(service.listViews(alice)).resolves.toEqual([]);
   });

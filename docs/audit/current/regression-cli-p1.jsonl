@@ -1,0 +1,61 @@
+{"id":"CLI-001","regression_status":"FIXED","evidence":"AiDecision.tsx:19-39 快照版本读后端 /api/ai/snapshot-version，观察窗为真实区间，records 显式 0 不伪造，且 88 行禁用按钮直至版本获取成功"}
+{"id":"CLI-002","regression_status":"FIXED","evidence":"ApprovalConsole.tsx:87-103 markRead/retryPush 均有 onError toast（注释标注 CLI-002），不再静默"}
+{"id":"CLI-003","regression_status":"FIXED","evidence":"commandCenterLogic.ts:44-50 formatEventTimestamp 显式 timeZone:'Asia/Shanghai'，不再依赖浏览器时区"}
+{"id":"CLI-004","regression_status":"FIXED","evidence":"CommandMapShell.tsx 1355→1125 行；查询移至 hooks/useCommandMapQueries、URL 移至 useCommandMapUrlSync、地图移至 MapViewport、面板组合移至 6 个 Workspace 组件（文件头注释 Task 8 分解）"}
+{"id":"CLI-005","regression_status":"FIXED","evidence":"CommandMapShell.tsx:445-448 focusEventEntity 的 getEvents catch 改为 logger.warn（注释 CLI-005）"}
+{"id":"CLI-006","regression_status":"FIXED","evidence":"CommandMapShell.tsx:438-441 改为 entityType==='device' && entityId===evt.deviceId 精确匹配（注释 CLI-006）"}
+{"id":"CLI-007","regression_status":"FIXED","evidence":"手工拼对象+as 断言已移除；useCommandMapUrlSync.ts:161-163 经 vm/conflictVM.ts:145-166 conflictVmItemToConflict 显式构造，createdAt 用后端原始值"}
+{"id":"CLI-008","regression_status":"FIXED","evidence":"CommandMapShell.tsx:527-537 requestFullscreen/exitFullscreen catch 均改 logger.warn（注释 CLI-008）"}
+{"id":"CLI-009","regression_status":"FIXED","evidence":"hooks/useCommandMapQueries.ts:60-65 worldQuery refetchInterval 10000（注释 CLI-009：原 2s 降频）"}
+{"id":"CLI-010","regression_status":"FIXED","evidence":"FactoryMap.tsx 1314→1187 行；颜色/标签/合并/viewBox 拆至 entityColors.ts、labels.ts、factoryMapUtils.ts、store/viewportCulling.ts（factoryMapUtils.ts:1 注释 CLI-010 拆分）"}
+{"id":"CLI-011","regression_status":"PARTIAL_FIXED","evidence":"FactoryMap.tsx:186-195/798-808 occupancy==null 已显式灰色 unknown（注释 CLI-011）；但 846 行节拍脉冲动画时长仍 `(occupancy ?? 0.5)*4` 残留 0.5 默认值"}
+{"id":"CLI-012","regression_status":"FIXED","evidence":"FactoryMap.tsx:810-830 WIP 气泡文本固定 '—' 占位（注释 CLI-012：不再由 occupancy*10 伪造在制品数量）"}
+{"id":"CLI-013","regression_status":"FIXED","evidence":"EntityDetail.tsx:202-209 confidence != null && Number.isFinite 防护，缺失显示 '—'"}
+{"id":"CLI-014","regression_status":"FIXED","evidence":"EntityDetail.tsx:305-311 reasons 用内容去重 key；321-323/372-373 alternatives/rejected 以 personId 为主键（索引仅兜底）"}
+{"id":"CLI-015","regression_status":"PARTIAL_FIXED","evidence":"entityDetailData.ts:92-96 设备分支已改 event.deviceId===deviceKey 精确匹配（注释 CLI-015）；但 65-71 行 person 分支仍保留 event.title.includes(entity.name) 子串匹配"}
+{"id":"CLI-016","regression_status":"FIXED","evidence":"PlanCompareLayer.tsx:41-50 原死代码 priority 数组已删除，现为 changeBadge 纯函数"}
+{"id":"CLI-017","regression_status":"FIXED","evidence":"ConflictCenterPanel.tsx:318-321 错误提示改为「后端不可用或鉴权失败/请检查后端服务状态与登录鉴权」，不再暴露 FEISHU_API_TOKEN"}
+{"id":"CLI-018","regression_status":"FIXED","evidence":"ConflictPreviewPanel.tsx:73-77 resolvePreviewAction(conflict) 缓存到变量 action（注释 CLI-018）"}
+{"id":"CLI-019","regression_status":"FIXED","evidence":"ConflictPreviewPanel.tsx:250-262 slice(0,3) 后显式「…等共 N 条」标注（注释 CLI-019）"}
+{"id":"CLI-020","regression_status":"FIXED","evidence":"IntelligenceLayers.tsx:233-238 actualStart/actualEnd 已加括号 `rec.actualStart ?? (rec.actualStartMs != null ? String(...) : null)`（注释 CLI-020）"}
+{"id":"CLI-021","regression_status":"FIXED","evidence":"panels/IntelligenceWorkspace.tsx:43-46 operator 不再 ?? 'admin'；137-141 anonymous 显式提示 + 161/193 SHADOW/激活按钮 disabled（注释 CLI-021）"}
+{"id":"CLI-022","regression_status":"FIXED","evidence":"panels/IntelligenceWorkspace.tsx:246-248 createdAt 判空 `a.createdAt ? slice(0,19) : '—'`（注释 CLI-022）"}
+{"id":"CLI-023","regression_status":"FIXED","evidence":"panels/IntelligenceWorkspace.tsx:50-51/203-208 activationReason 收集用户输入且 194 行必填校验（注释 CLI-023）"}
+{"id":"CLI-024","regression_status":"FIXED","evidence":"DecisionCockpit.tsx:252-256/452-499 确认处置弹出 reason 收集对话框，必填写入审计（注释 CLI-024）"}
+{"id":"CLI-025","regression_status":"FIXED","evidence":"EventCenterPanel.tsx:119-126/198-213 loadReplayContext 请求序号守卫（token 比对+卸载置 0），旧响应丢弃（注释 CLI-025）"}
+{"id":"CLI-026","regression_status":"FIXED","evidence":"OverridePanel.tsx:515-525 Dialog onOpenChange 关闭时重置 preview/previewError/previewLoading 全部状态（注释 CLI-026）"}
+{"id":"CLI-027","regression_status":"FIXED","evidence":"SchedulePanel.tsx 1351→1015 行；6 个确认/对比 Dialog 移至 ScheduleDialogs.tsx（931 行注释 CLI-027 拆分）"}
+{"id":"CLI-028","regression_status":"FIXED","evidence":"SchedulePanel.tsx:421-425/436-441/475-480 reject/dispatch/compare onError 均透传 err.message（注释 CLI-028）"}
+{"id":"CLI-029","regression_status":"FIXED","evidence":"SchedulePanel.tsx:218/545-556 replanReason 收集用户输入必填（416 行禁用条件 !reason.trim()；注释 CLI-029）"}
+{"id":"CLI-030","regression_status":"FIXED","evidence":"ResourcePoolPanel.tsx:463-466 废弃 allocateMutation 与「评估/兼容」按钮入口已删除，唯一写路径 replanMutation（注释 CLI-030）"}
+{"id":"CLI-031","regression_status":"FIXED","evidence":"ResourcePoolPanel.tsx:460-462 allocations 类型显式 targetType:'workstation'，不再 as 'person'|'device' 断言"}
+{"id":"CLI-032","regression_status":"FIXED","evidence":"TaskIntelligencePanel.tsx:49-51 etaSeconds/distanceMeters 判空显示 '—'（注释 CLI-032）"}
+{"id":"CLI-033","regression_status":"FIXED","evidence":"PlanDiffDrawer.tsx:145-149 reasons 内容 Set 去重 key `reason-${r}`（注释 CLI-033）"}
+{"id":"CLI-034","regression_status":"FIXED","evidence":"RejectedCandidateExplain.tsx:38 key=String(personId ?? deviceId ?? rejected-i) 稳定主键"}
+{"id":"CLI-035","regression_status":"FIXED","evidence":"SchedulePanel.tsx:822 reasons 内容 key；ScheduleDialogs.tsx:566 assignmentDelta key=taskId ?? 兜底"}
+{"id":"CLI-036","regression_status":"FIXED","evidence":"SchedulerLayers.tsx:438-442 ReplanChangeLayer task/station 各 find 一次并复用 st（注释 CLI-036）"}
+{"id":"CLI-037","regression_status":"ACKNOWLEDGED","evidence":"SchedulerLayers.tsx:102-104 devices 仍以 d.id 展示 name，但附显式裁决注释：snapshot.devices 契约无 name 字段，待后端补齐后替换（CLI-037 裁决）"}
+{"id":"CLI-038","regression_status":"FIXED","evidence":"CommandMapShell.tsx:1053-1086 帮助对话框已实现 Tab 焦点陷阱（shift+Tab/Tab 循环，注释 CLI-038）"}
+{"id":"CLI-039","regression_status":"FIXED","evidence":"BrainPanel.tsx:81-85 confidence != null && Number.isFinite 防护（注释 CLI-039）"}
+{"id":"CLI-040","regression_status":"FIXED","evidence":"BrainPanel.tsx:290 key=s.suggestionId ?? title-i 兜底（注释 CLI-040 语境）"}
+{"id":"CLI-041","regression_status":"PARTIAL_FIXED","evidence":"IntelligenceLayers.tsx:310 reasons 已改内容 key；但 155 行 ConflictLayer conflicts 列表仍 key={i} 索引"}
+{"id":"CLI-101","regression_status":"FIXED","evidence":"DataAssets.tsx:65-70 addAas onError toast 透传错误（注释 CLI-101）"}
+{"id":"CLI-102","regression_status":"FIXED","evidence":"DataAssets.tsx:75-80 fetchSemantics onError toast（注释 CLI-102）"}
+{"id":"CLI-103","regression_status":"FIXED","evidence":"DecisionHistoryConsole.tsx:31-46 改用 useInfiniteQuery 分页累加 pages.flatMap（注释 CLI-103），加载更多文案与实际一致"}
+{"id":"CLI-104","regression_status":"FIXED","evidence":"Devices.tsx:100-109 batteryData 已 useMemo 包裹（注释 CLI-104）"}
+{"id":"CLI-105","regression_status":"FIXED","evidence":"MobileWorkbench.tsx:38-52/128-142/169-183 失败记录按 stepId 缓存 kind+variables+error 对象，StepCard 读 failed.error（注释 CLI-105）"}
+{"id":"CLI-106","regression_status":"FIXED","evidence":"TimelinePanel.tsx:64-72 now 每 30s 定时更新、回放中冻结（注释 CLI-106）"}
+{"id":"CLI-107","regression_status":"FIXED","evidence":"WorkbenchPanel.tsx:218-222 avgLoad != null && Number.isFinite 判空（注释 CLI-107）"}
+{"id":"CLI-108","regression_status":"FIXED","evidence":"Devices.tsx:274 Cell key=entry.name；291 sr-only 表格行同 key"}
+{"id":"CLI-109","regression_status":"FIXED","evidence":"TaskOrchestrationPanel.tsx:166-179/311-315/723-726/766-769 数值输入显式校验拒绝非正数（注释 CLI-109）"}
+{"id":"CLI-110","regression_status":"FIXED","evidence":"MobileWorkbench.tsx 788→619 行；扫码交互拆至 useMobileScanner.ts、异常/质检拆至 useMobileException.ts（13/6 行注释 CLI-110 拆分）"}
+{"id":"CLI-111","regression_status":"FIXED","evidence":"Forbidden.tsx:10-20 revokeSession try/catch，失败 toast 后仍本地登出 navigate('/login')（注释 CLI-111）"}
+{"id":"CLI-112","regression_status":"FIXED","evidence":"TaskOrchestrationPanel.tsx:126-133 后端 nodes null/空时 toast.warning 并保留本地编排（注释 CLI-112）"}
+{"id":"CLI-202","regression_status":"FIXED","evidence":"useOfflineWorkbench.ts:562-592 resolveConflict 离线时 return 保留冲突项；catch 中 return 不删除（注释 CLI-202）"}
+{"id":"CLI-217","regression_status":"FIXED","evidence":"useOfflineWorkbench.ts:450-457 flushSelected 统一判 result.authRequired → setAuthPaused+重新登录提示（注释 CLI-217）"}
+{"id":"CLI-716","regression_status":"NOT_FIXED","evidence":"useCommandMapController.test.tsx:197-206 activePlan 测试仍是 renderToString 静态渲染，capture2.ctl!.selectPlan 后断言旧 capture 的 ctl!.activePlan 为 null——恒真弱断言未变"}
+{"id":"CLI-723","regression_status":"FIXED","evidence":"commandMapPerf.test.tsx:93-111 console.error 仅过滤 NaN 相关噪音，其余照常输出，finally 恢复（注释 CLI-723）"}
+{"id":"CLI-724","regression_status":"FIXED","evidence":"decision-cockpit-render-only.test.ts:7-94 由单文件正则升级为静态依赖图传递闭包分析，计算式动态 import 判红（注释 CLI-724）"}
+{"id":"CLI-729","regression_status":"FIXED","evidence":"queryState.test.ts:47-53 新增否定用例：isError=false 的 healthy.refetch 不被调用（注释 CLI-729）"}
+{"id":"CLI-730","regression_status":"FIXED","evidence":"replay.test.ts:37-54 补 out-of-range（早于/晚于全部快照）与单元素快照用例（注释 CLI-730）"}
+{"id":"CLI-733","regression_status":"FIXED","evidence":"entityColors.test.ts:12-36 以类型完整 fixture 工厂替代 as const as never（注释 CLI-733）"}

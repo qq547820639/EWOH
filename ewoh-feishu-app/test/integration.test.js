@@ -165,13 +165,29 @@ test('集成：/api 写操作正确 token → 200', async (t) => {
   });
 });
 
-test('集成：/api 读操作默认放行（未配置 token）', async (t) => {
+// R2-FSH-002：读操作默认不再放行（fail-closed），与写操作同一鉴权
+test('集成：/api 读操作默认 fail-closed（未配置 token → 503）', async (t) => {
   const dir = tmpDir(t);
   const db = dbm.initDatabase(path.join(dir, 'feishu.db'));
   const app = buildApp(db);
   const { baseUrl } = await startServer(app, t);
   await withEnv({ FEISHU_API_TOKEN: undefined }, async () => {
     const res = await httpJson(baseUrl, 'GET', '/api/status');
+    assert.strictEqual(res.status, 503);
+    assert.strictEqual(res.body.error.code, 'AUTH_NOT_CONFIGURED');
+  });
+});
+
+// R2-FSH-002：读操作配置正确 token → 放行
+test('集成：/api 读操作携带正确 token → 200', async (t) => {
+  const dir = tmpDir(t);
+  const db = dbm.initDatabase(path.join(dir, 'feishu.db'));
+  const app = buildApp(db);
+  const { baseUrl } = await startServer(app, t);
+  await withEnv({ FEISHU_API_TOKEN: 'it-secret' }, async () => {
+    const res = await httpJson(baseUrl, 'GET', '/api/status', {
+      headers: { authorization: 'Bearer it-secret' },
+    });
     assert.strictEqual(res.status, 200);
     assert.ok(res.body.data.devices.total >= 3);
   });

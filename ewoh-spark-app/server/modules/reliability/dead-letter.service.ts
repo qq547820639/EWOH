@@ -153,7 +153,33 @@ export class DeadLetterService {
     if (updatedRows.length === 0) {
       throw new BadRequestException('dead_letter_state_changed_concurrently');
     }
-    await handler(orgId, current.envelopeJson as Record<string, unknown>);
+    try {
+      await handler(orgId, current.envelopeJson as Record<string, unknown>);
+    } catch (error) {
+      // R2-SNZ-008：投递失败补偿——状态已 CAS 为 requeued 但 handler 抛错
+      // 时信件会进黑洞（requeued 不可再 requeue）。第二段 CAS 回退
+      // requeued→pending 并 errorMessage 留痕，信件恢复可重放。
+      const failureReason = `requeue_handler_failed:${error instanceof Error ? error.message : String(error)}`;
+      // 失败原因结构化留痕（表无 errorMessage 列，原始 reason 不可覆盖）。
+      this.logger.error(
+        `死信重放 handler 失败，回退 pending：${letterId} ${failureReason}`,
+      );
+      const reverted = await this.db
+        .update(ewohDeadLetter)
+        .set({ status: 'pending', updatedAt: new Date() })
+        .where(
+          and(
+            eq(ewohDeadLetter.orgId, orgId),
+            eq(ewohDeadLetter.id, current.id),
+            eq(ewohDeadLetter.status, 'requeued'),
+          ),
+        )
+        .returning();
+      if (reverted.length === 0) {
+        this.logger.warn(`死信重放回退未命中（状态已被并发变更）：${letterId}`);
+      }
+      throw error;
+    }
     return { letterId, from: current.status, to: 'requeued', attempts: nextAttempts };
   }
 

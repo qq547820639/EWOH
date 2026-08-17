@@ -1,10 +1,57 @@
-import { Controller, Get, Post, Put, Param, Body, Req } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body, Req, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { ArkService } from './ark.service';
 import { Roles } from '../shared/roles.decorator';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
 const EDGE_PLATFORM_URL = (process.env.EDGE_PLATFORM_URL || 'http://127.0.0.1:8765').replace(/\/+$/, '');
+
+/**
+ * R2-SMI-006 辅助：解析调用方 org 上下文——非 global_admin 且 org 缺失时
+ * fail-closed 401（与 aas/alert 读面纪律一致），杜绝无租户上下文的全租户
+ * 混读进入 LLM 上下文；global_admin 允许全局视角（orgId=null）。
+ */
+function requireOrgScope(ctx?: OrgContext): string | null {
+  const orgId = ctx?.primaryOrgId?.trim() || null;
+  if (!orgId && !ctx?.isGlobalAdmin) {
+    throw new UnauthorizedException(
+      'org 上下文缺失：AI 上下文采集必须带租户上下文（ADR-078 §15/§16）',
+    );
+  }
+  return orgId;
+}
+
+/**
+ * NEST-430：image_url 白名单——仅允许固定边缘平台（或运维显式配置的
+ * VISION_IMAGE_URL_ALLOWLIST 域名后缀）的图片 URL 出站转发，用户可控
+ * 字符串不再原样转递（SSRF 面收敛）。
+ */
+const VISION_IMAGE_URL_ALLOWLIST = (process.env.VISION_IMAGE_URL_ALLOWLIST || '')
+  .split(',')
+  .map((entry) => entry.trim().toLowerCase())
+  .filter(Boolean);
+
+function visionImageUrlAllowed(raw: string | undefined): boolean {
+  const url = (raw ?? '').trim();
+  if (!url) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return false;
+  }
+  const host = parsed.hostname.toLowerCase();
+  const edgeHost = new URL(EDGE_PLATFORM_URL).hostname.toLowerCase();
+  const allowHosts = VISION_IMAGE_URL_ALLOWLIST.length
+    ? VISION_IMAGE_URL_ALLOWLIST
+    : [edgeHost];
+  return allowHosts.some(
+    (allowed) => host === allowed || host.endsWith(`.${allowed}`),
+  );
+}
 
 @Controller('api/ai')
 @Roles('dispatcher', 'global_admin')
@@ -55,14 +102,18 @@ export class AiController {
     if (!question) {
       return { ok: false, answer: '', model: '', error: 'question 不能为空。' };
     }
-    // ADR-078：AI 上下文按本租户采集（跨租户混读关闭）。
-    return this.aiService.chatWithContext(question, request?.userContext?.primaryOrgId ?? null);
+    // ADR-078 + R2-SMI-006：AI 上下文按本租户采集（跨租户混读关闭）；
+    // 非 global_admin 且 org 缺失 fail-closed 401。
+    const orgId = requireOrgScope(request?.userContext);
+    return this.aiService.chatWithContext(question, orgId);
   }
 
   @Get('snapshot-version')
   snapshotVersion(@Req() request?: { userContext?: OrgContext }) {
-    // ADR-078：版本号按本租户聚合（跨租户混读关闭）。
-    return { version: this.aiService.getSnapshotVersion(request?.userContext?.primaryOrgId ?? null) };
+    // ADR-078 + R2-SMI-006：版本号按本租户聚合（跨租户混读关闭）；
+    // 非 global_admin 且 org 缺失 fail-closed 401。
+    const orgId = requireOrgScope(request?.userContext);
+    return { version: this.aiService.getSnapshotVersion(orgId) };
   }
 
   @Post('suggestions')
@@ -128,6 +179,14 @@ export class AiController {
       model?: string;
     },
   ) {
+    // NEST-430 二轮收敛（R2）：image_url 不再用户可控原样转发——
+    // 仅放行固定边缘平台域（或 VISION_IMAGE_URL_ALLOWLIST
+    // 显式配置的域），其余一律 400，边缘侧抓取面收敛到受控域。
+    if (!visionImageUrlAllowed(body.image_url)) {
+      throw new BadRequestException(
+        'image_url 仅允许边缘平台（或 VISION_IMAGE_URL_ALLOWLIST 配置）域内的图片地址',
+      );
+    }
     const res = await fetch(`${EDGE_PLATFORM_URL}/api/vision/understand`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

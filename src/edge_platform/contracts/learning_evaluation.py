@@ -16,6 +16,7 @@ scripts/audit-domain-contracts.js learning 域门禁强制。
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 METRIC_KEYS: tuple[str, ...] = (
@@ -67,14 +68,18 @@ def validate_learning_evaluation(record: Any) -> list[str]:
     for key, value in metrics.items():
         if key not in METRIC_KEYS:
             return ["unknown_metric"]
+        # R2-SHR-003 / SH-009：补 isfinite（对齐 TS isFiniteNumber）。
         if value is not None and (
-            not isinstance(value, (int, float)) or isinstance(value, bool)
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(value)
         ):
             return ["bad_metric_value"]
     basis = record["basis"]
     if not isinstance(basis, list) or len(basis) == 0:
         return ["basis_required"]
-    if any(not isinstance(item, str) or not item for item in basis):
+    # R2-SHR-010：空白串与空串同拒（对齐 TS item.trim() === ''）。
+    if any(not isinstance(item, str) or not item.strip() for item in basis):
         return ["bad_basis"]
     if record["auditTrail"] is not True:
         return ["audit_required"]

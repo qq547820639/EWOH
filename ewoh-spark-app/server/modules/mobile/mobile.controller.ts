@@ -28,14 +28,23 @@ export class MobileController {
 
   @Post('workbench/scan')
   scan(
-    @Body() body?: { scanValue?: string; orderId?: string },
+    @Body() body: { scanValue?: string; orderId?: string } | undefined,
+    @Req() request: { userContext?: OrgContext },
   ) {
-    return this.mobileService.scan(body?.scanValue ?? body?.orderId ?? '');
+    // R2-SAM-002：透传租户上下文（与其余 mobile 端点对齐）。
+    return this.mobileService.scan(
+      body?.scanValue ?? body?.orderId ?? '',
+      request.userContext,
+    );
   }
 
   @Get('workbench/orders/:orderId')
-  order(@Param('orderId') orderId: string) {
-    return this.mobileService.getOrder(orderId);
+  order(
+    @Param('orderId') orderId: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    // R2-SAM-002：透传租户上下文（与其余 mobile 端点对齐）。
+    return this.mobileService.getOrder(orderId, request.userContext);
   }
 
   @Post('workbench/orders/:orderId/steps/:stepId/state')

@@ -218,10 +218,18 @@ export class SchedulerEventApplicationService {
     if (this.eventRunCounter % SchedulerEventApplicationService.SHADOW_EVAL_INTERVAL !== 0) return;
     if (!this.policyService) return;
     try {
-      const active = await this.policyService.getConfig().catch(() => null);
+      // R2-SSV-17（2026-08-17）：自动影子评估输入按 ctx org 作用域——
+      // 此前 getConfig()/listVersions() 无 org，active 基线取全局、候选列表
+      // 含全部租户版本（active+1 可命中他租户注册的同版本号行，评估结论
+      // 基于错误基线并落审计）。
+      const active = await this.policyService
+        .getConfig(ctx.primaryOrgId || null)
+        .catch(() => null);
       if (!active) return;
       // 候选 = 活跃版本 + 1（若有注册的未激活版本）；无则跳过。
-      const candidates = await this.policyService.listVersions().catch(() => []);
+      const candidates = await this.policyService
+        .listVersions(ctx.primaryOrgId || null)
+        .catch(() => []);
       const pending = candidates.find((v) => v.configVersion === active.configVersion + 1);
       if (!pending) return;
       const comparison = await this.comparePolicyVersionRef(pending.configVersion, ctx);

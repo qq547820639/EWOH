@@ -13,7 +13,6 @@ import {
   X,
   Gauge,
 } from 'lucide-react';
-import dayjs from 'dayjs';
 import { toast } from 'sonner';
 import { getOverview, getEvents, handleEvent } from '@client/src/api/dashboard';
 import { getActivePlans, approvePlan, rejectPlanV2 } from '@client/src/api/scheduler';
@@ -49,16 +48,28 @@ interface WorkbenchPanelProps {
   onSelectEntity?: (id: string | null) => void;
 }
 
+/** R2-CP1-2：时间展示统一 Asia/Shanghai 时区（不依赖浏览器本地时区）。 */
+function formatShortTime(iso: string): string {
+  return new Date(iso).toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
 function timeAgo(dateStr: string | null): string {
   if (!dateStr) return '—';
   const diff = Date.now() - new Date(dateStr).getTime();
-  if (diff < 0) return dayjs(dateStr).format('MM-DD HH:mm');
+  if (diff < 0) return formatShortTime(dateStr);
   const min = Math.floor(diff / 60000);
   if (min < 1) return '刚刚';
   if (min < 60) return `${min}分钟前`;
   const hr = Math.floor(min / 60);
   if (hr < 24) return `${hr}小时前`;
-  return dayjs(dateStr).format('MM-DD HH:mm');
+  return formatShortTime(dateStr);
 }
 
 function severityBadgeClass(severity: string): string {
@@ -150,19 +161,22 @@ export default function WorkbenchPanel({
 
   const handleConfirm = () => {
     if (!confirmTarget) return;
+    // R2-CP1-10：reason 必填（全仓审计口径），不再回退硬编码默认值。
+    if (!confirmReason.trim()) return;
     confirmMutation.mutate({
       planId: confirmTarget.planId,
       version: confirmTarget.version,
       snapshotVersion: confirmTarget.snapshotVersion,
-      reason: confirmReason.trim() || '班组长批准',
+      reason: confirmReason.trim(),
     });
   };
 
   const handleReject = () => {
     if (!rejectTarget) return;
+    if (!rejectReason.trim()) return;
     rejectMutation.mutate({
       planId: rejectTarget.planId,
-      reason: rejectReason.trim() || '班组长驳回',
+      reason: rejectReason.trim(),
     });
   };
 
@@ -440,15 +454,16 @@ export default function WorkbenchPanel({
           <DialogHeader>
             <DialogTitle className="text-white">批准调度方案</DialogTitle>
             <DialogDescription className="text-white/70">
-              {confirmTarget?.planName}（V2 方案，批准后须下发）（留空使用默认描述）
+              {confirmTarget?.planName}（V2 方案，批准后须下发）
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <label className="text-xs text-white/60">批准意见（可选）</label>
+            <label className="text-xs text-white/60">批准意见（必填）</label>
             <Textarea
               value={confirmReason}
               onChange={(e) => setConfirmReason(e.target.value)}
               placeholder="请输入批准意见，如评估依据、特别说明..."
+              required
               className="bg-white/5 border-white/10 text-white"
             />
           </div>
@@ -459,7 +474,7 @@ export default function WorkbenchPanel({
             <Button
               size="sm"
               onClick={handleConfirm}
-              disabled={confirmMutation.isPending}
+              disabled={confirmMutation.isPending || !confirmReason.trim()}
             >
               {confirmMutation.isPending ? '批准中...' : '批准'}
             </Button>
@@ -476,15 +491,16 @@ export default function WorkbenchPanel({
           <DialogHeader>
             <DialogTitle className="text-white">驳回调度方案</DialogTitle>
             <DialogDescription className="text-white/70">
-              {rejectTarget?.planName}（V2 方案，驳回后归档）（留空使用默认描述）
+              {rejectTarget?.planName}（V2 方案，驳回后归档）
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <label className="text-xs text-white/60">驳回理由（可选）</label>
+            <label className="text-xs text-white/60">驳回理由（必填）</label>
             <Textarea
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
               placeholder="请输入驳回理由，便于后续调整..."
+              required
               className="bg-white/5 border-white/10 text-white"
             />
           </div>
@@ -496,7 +512,7 @@ export default function WorkbenchPanel({
               size="sm"
               variant="destructive"
               onClick={handleReject}
-              disabled={rejectMutation.isPending}
+              disabled={rejectMutation.isPending || !rejectReason.trim()}
             >
               {rejectMutation.isPending ? '驳回中...' : '驳回'}
             </Button>

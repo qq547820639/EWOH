@@ -26,7 +26,17 @@ import { apiRequest, jsonHeaders, login } from '../helpers/e2e-http';
 
 const e2eConfig = resolveE2EConfig();
 
-describe('Scheduler 并发/故障 E2E（真实 PostgreSQL）', () => {
+// R2-APT-003：显式检测无 DB 环境——resolveE2EConfig() 返回 null（未设
+// EWOH_E2E_RUNTIME_DATABASE_URL 且 :3101 无 standalone API 监听）时整包
+// describe.skip（标题注明原因），不再进入 beforeAll 对 null 解引用抛裸
+// TypeError（与 replan-dual-instance/snapshot-concurrency 等同目录模式一致）。
+const runDescribe = e2eConfig ? describe : describe.skip;
+
+runDescribe(
+  e2eConfig
+    ? 'Scheduler 并发/故障 E2E（真实 PostgreSQL）'
+    : 'Scheduler 并发/故障 E2E（SKIP：无运行时 PostgreSQL——设置 EWOH_E2E_RUNTIME_DATABASE_URL 或启动 127.0.0.1:3101 standalone API 后运行）',
+  () => {
   let owner: OwnerSql;
   let fixture: E2EFixture;
   let handle: E2EAppHandle;
@@ -34,21 +44,32 @@ describe('Scheduler 并发/故障 E2E（真实 PostgreSQL）', () => {
   let token: string;
 
   beforeAll(async () => {
-    if (!e2eConfig.runtimeDatabaseUrl) {
-      return;
+    // R2-APT-003：skip 语义已由 describe.skip 承担；此处为防御性显式失败——
+    // 若配置缺失绝不以半初始化状态（owner/fixture 未建）静默继续跑用例。
+    if (!e2eConfig || !e2eConfig.runtimeDatabaseUrl) {
+      throw new Error(
+        '[R2-APT-003] runtime DATABASE_URL 缺失：本 suite 应整包 SKIP，' +
+          '请设置 EWOH_E2E_RUNTIME_DATABASE_URL 或启动 127.0.0.1:3101 standalone API',
+      );
     }
     owner = await connectOwner(e2eConfig.ownerDatabaseUrl);
     fixture = await createE2EFixture(owner);
-    // 清空触发记录 + 调度事实（干净基线；world-state 全库收集需避免跨 fixture 残留）。
+    // R2-APT-009：清基限定本 run 的 fixture org 范围（原全表 DELETE 会摧毁
+    // 共享库中其他租户的调度事实/快照历史）。assignment 表无 org 列，经
+    // plan 子查询按 org 定位；快照表 NULL 行为全局共享资产，仅清本 org 行。
     try {
+      const orgIds = [fixture.orgA.id, fixture.orgB.id];
       const postgres = (await import('postgres')).default;
       const runtime = postgres(e2eConfig.runtimeDatabaseUrl, { max: 1 });
-      await runtime.unsafe('DELETE FROM ewoh_replan_trigger');
-      await runtime.unsafe('DELETE FROM ewoh_scheduling_execution');
-      await runtime.unsafe('DELETE FROM ewoh_scheduling_plan_assignment');
-      await runtime.unsafe('DELETE FROM ewoh_schedule_plan');
-      await runtime.unsafe('DELETE FROM ewoh_resource_reservation');
-      await runtime.unsafe('DELETE FROM ewoh_world_state_snapshot');
+      await runtime.unsafe('DELETE FROM ewoh_replan_trigger WHERE org_id = ANY($1::text[])', [orgIds]);
+      await runtime.unsafe('DELETE FROM ewoh_scheduling_execution WHERE org_id = ANY($1::text[])', [orgIds]);
+      await runtime.unsafe(
+        'DELETE FROM ewoh_scheduling_plan_assignment WHERE plan_id IN (SELECT plan_id FROM ewoh_schedule_plan WHERE org_id = ANY($1::text[]))',
+        [orgIds],
+      );
+      await runtime.unsafe('DELETE FROM ewoh_schedule_plan WHERE org_id = ANY($1::text[])', [orgIds]);
+      await runtime.unsafe('DELETE FROM ewoh_resource_reservation WHERE org_id = ANY($1::text[])', [orgIds]);
+      await runtime.unsafe('DELETE FROM ewoh_world_state_snapshot WHERE org_id = ANY($1::text[])', [orgIds]);
       await runtime.end();
     } catch {
       // 清理失败不阻断
@@ -82,11 +103,22 @@ describe('Scheduler 并发/故障 E2E（真实 PostgreSQL）', () => {
       },
     );
     if (run.status !== 201) {
-      // 无任务可调度（fixture 无任务时 run 可能无 plan）——合法跳过但明确。
+      // R2-APT-004：区分合法跳过与故障——仅 409 且错误体为明确业务冲突
+      // （不可行/状态冲突等）时带原因显式跳过；401/500 等必须 FAIL。
+      const errMsg = String((run.body as { message?: string } | undefined)?.message ?? '');
+      if (run.status === 409 && errMsg.length > 0) {
+        console.warn(`[J1 SKIP] runs 409 业务冲突（${errMsg}），并发 CAS 断言本轮显式跳过`);
+        return;
+      }
+      expect(run.status, `runs 创建失败（HTTP ${run.status}）: ${errMsg}`).toBe(201);
       return;
     }
     const plan = run.body.plans?.[0];
-    if (!plan) return;
+    if (!plan) {
+      // R2-APT-004：201 但无方案（无任务可调度 / debounced 去抖）——显式注明跳过，不静默。
+      console.warn(`[J1 SKIP] runs 201 无方案（debounced=${String((run.body as { debounced?: boolean }).debounced)}），本轮显式跳过`);
+      return;
+    }
     const approve = await apiRequest(baseUrl, `/api/scheduler/plans/${plan.planId}/approve`, {
       method: 'POST',
       headers: jsonHeaders(token),
@@ -167,9 +199,22 @@ describe('Scheduler 并发/故障 E2E（真实 PostgreSQL）', () => {
         body: JSON.stringify({ strategy: 'scheduling_v2', trigger: 'TASK_UPDATED' }),
       },
     );
-    if (run.status !== 201) return;
+    if (run.status !== 201) {
+      // R2-APT-004：仅 409+明确业务冲突原因显式跳过；401/500 等 FAIL。
+      const errMsg = String((run.body as { message?: string } | undefined)?.message ?? '');
+      if (run.status === 409 && errMsg.length > 0) {
+        console.warn(`[J3 SKIP] runs 409 业务冲突（${errMsg}），并发 replan 断言本轮显式跳过`);
+        return;
+      }
+      expect(run.status, `runs 创建失败（HTTP ${run.status}）: ${errMsg}`).toBe(201);
+      return;
+    }
     const plan = run.body.plans?.[0];
-    if (!plan) return;
+    if (!plan) {
+      // R2-APT-004：201 但无方案——显式注明跳过，不静默。
+      console.warn(`[J3 SKIP] runs 201 无方案（debounced=${String((run.body as { debounced?: boolean }).debounced)}），本轮显式跳过`);
+      return;
+    }
     // 并发 replan（两个不同 trigger）。
     const results = await Promise.allSettled([
       apiRequest(baseUrl, `/api/scheduler/plans/${plan.planId}/replan`, {
@@ -213,8 +258,22 @@ describe('Scheduler 并发/故障 E2E（真实 PostgreSQL）', () => {
         body: JSON.stringify({ strategy: 'scheduling_v2', trigger: 'TASK_UPDATED' }),
       },
     );
-    if (run.status !== 201) return;
+    if (run.status !== 201) {
+      // R2-APT-004：仅 409+明确业务冲突原因显式跳过；401/500 等 FAIL。
+      const errMsg = String((run.body as { message?: string } | undefined)?.message ?? '');
+      if (run.status === 409 && errMsg.length > 0) {
+        console.warn(`[J4 SKIP] runs 409 业务冲突（${errMsg}），solver fallback 断言本轮显式跳过`);
+        return;
+      }
+      expect(run.status, `runs 创建失败（HTTP ${run.status}）: ${errMsg}`).toBe(201);
+      return;
+    }
     const plans = run.body.plans ?? [];
+    if (plans.length === 0) {
+      // R2-APT-004：201 但无方案——显式注明跳过，不静默（原实现 0 断言 PASS）。
+      console.warn(`[J4 SKIP] runs 201 无方案（debounced=${String((run.body as { debounced?: boolean }).debounced)}），本轮显式跳过`);
+      return;
+    }
     for (const p of plans) {
       // CP-SAT 端点未配置时必须是显式 fallback（UNAVAILABLE / HEURISTIC），不得静默成功冒充 optimal。
       expect(['HEURISTIC', 'UNAVAILABLE', 'OPTIMAL']).toContain(p.solverStatus);

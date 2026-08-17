@@ -77,7 +77,12 @@ def validate_agent_task(record: Any, agent_roles: tuple[str, ...]) -> list[str]:
         return ["self_dependency"]
     for key in ("inputContract", "outputContract"):
         contract = record[key]
-        if not isinstance(contract, dict) or not isinstance(contract.get("schemaRef"), str):
+        # R2-SHR-006：schemaRef 空串拒绝（对齐 TS agent-task.ts ref === '' 拒绝）。
+        if (
+            not isinstance(contract, dict)
+            or not isinstance(contract.get("schemaRef"), str)
+            or contract["schemaRef"] == ""
+        ):
             return ["bad_contract"]
     if record["priority"] not in PRIORITIES:
         return ["bad_priority"]
@@ -103,11 +108,25 @@ def validate_agent_task(record: Any, agent_roles: tuple[str, ...]) -> list[str]:
     return []
 
 
-def agent_task_transition_allowed(current: str, target: str) -> bool:
-    """状态转移判定（与 contracts/state-machines/agent-task.yaml 一致）。"""
-    allowed = {
-        "created": {"dispatched", "cancelled"},
-        "dispatched": {"in_progress", "cancelled"},
-        "in_progress": {"completed", "failed", "cancelled"},
-    }
-    return current in allowed and target in allowed[current]
+# R2-SHR-004：role 约束表（与 agent-task.yaml transitions 的 role 声明逐条一致）。
+_TRANSITION_ROLES: dict[tuple[str, str], str] = {
+    ("created", "dispatched"): "orchestrator",
+    ("dispatched", "in_progress"): "agent",
+    ("in_progress", "completed"): "agent",
+    ("in_progress", "failed"): "agent",
+    ("created", "cancelled"): "orchestrator",
+    ("dispatched", "cancelled"): "orchestrator",
+    ("in_progress", "cancelled"): "orchestrator",
+}
+
+
+def agent_task_transition_allowed(current: str, target: str, actor_role: str | None = None) -> bool:
+    """状态转移判定（与 contracts/state-machines/agent-task.yaml 一致）。
+
+    R2-SHR-004：actor_role 缺省即拒绝（fail-closed，对齐 TS
+    agentTaskTransitionAllowed 与 alert 状态机 SH-004 纪律）。
+    """
+    required = _TRANSITION_ROLES.get((current, target))
+    if required is None:
+        return False
+    return actor_role == required

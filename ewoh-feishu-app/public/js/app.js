@@ -49,17 +49,35 @@
    * ==================================================================== */
 
   async function fetchJSON(url) {
-    const res = await fetch(API_BASE + url, {
-      headers: { Accept: "application/json" },
-    });
-    if (!res.ok) throw new Error("HTTP " + res.status + " @ " + url);
-    return res.json();
+    // R2-FSH-002：读端点默认也需鉴权，GET 与写操作共用同一 Bearer 凭证。
+    const headers = { Accept: "application/json" };
+    const token = getApiToken();
+    if (token) headers.Authorization = "Bearer " + token;
+    const res = await fetch(API_BASE + url, { headers });
+    if (!res.ok) {
+      // R2-FSH-002：读鉴权失败给出可行动提示（503=服务端未配 token，401=token 错误/缺失）
+      if (res.status === 401 || res.status === 503) {
+        throw new Error(
+          "HTTP " + res.status + "（读操作需配置 API Token：点击顶栏「读/写权限」按钮，"
+          + "输入与服务端 FEISHU_API_TOKEN 一致的凭证后重试）"
+        );
+      }
+      throw new Error("HTTP " + res.status + " @ " + url);
+    }
+    const body = await res.json().catch(() => ({}));
+    // R2-FSH-001：/api 统一 {data, total} 信封（server/api.js ok()），此处解包。
+    // 仅当 body 形如信封（自有 data 属性）时取 body.data，兼容无信封响应。
+    if (body && typeof body === "object" && !Array.isArray(body)
+        && Object.prototype.hasOwnProperty.call(body, "data")) {
+      return body.data;
+    }
+    return body;
   }
 
-  /* ---------- 写权限凭证（v1.1.0 写操作 fail-closed 鉴权） ----------
-   * 后端 /api 写操作必须携带 Authorization: Bearer <FEISHU_API_TOKEN>，
+  /* ---------- 读/写权限凭证（v1.1.0 写鉴权 + R2-FSH-002 读鉴权） ----------
+   * 后端 /api 读/写操作均须携带 Authorization: Bearer <FEISHU_API_TOKEN>，
    * 未配置或错误会 401/503。凭证只存浏览器 localStorage（供本机值班台使用），
-   * 由「写权限」按钮设置；服务端 token 仍以环境变量为唯一来源。 */
+   * 由「读/写权限」按钮设置；服务端 token 仍以环境变量为唯一来源。 */
   const API_TOKEN_KEY = "ewoh.feishu.apiToken";
 
   function getApiToken() {
@@ -75,13 +93,13 @@
 
   function updateTokenBadge() {
     const btn = document.getElementById("apiTokenBtn");
-    if (btn) btn.textContent = getApiToken() ? "写权限：已配置" : "写权限：未配置";
+    if (btn) btn.textContent = getApiToken() ? "读/写权限：已配置" : "读/写权限：未配置";
   }
 
   function configureApiToken() {
     const current = getApiToken();
     const input = window.prompt(
-      "输入写操作 API Token（与服务端 FEISHU_API_TOKEN 一致）：\n" +
+      "输入 API Token（与服务端 FEISHU_API_TOKEN 一致，读/写操作共用）：\n" +
       "留空并确定 = 清除已保存的 Token。",
       current
     );
@@ -103,7 +121,7 @@
       // 写鉴权失败给出可行动提示（fail-closed：503=服务端未配 token，401=token 错误）
       if (res.status === 401 || res.status === 503) {
         throw new Error(
-          "HTTP " + res.status + "（写操作需配置 API Token：点击顶栏「写权限」按钮，"
+          "HTTP " + res.status + "（写操作需配置 API Token：点击顶栏「读/写权限」按钮，"
           + "输入与服务端 FEISHU_API_TOKEN 一致的凭证后重试）"
         );
       }
@@ -197,11 +215,15 @@
    * ==================================================================== */
 
   function renderStatusCards(s) {
+    // R2-FSH-001：/api/status 的 data 为 getSystemStats 嵌套结构（devices.total/events.open/...）
+    const dev = (s && s.devices) || {};
+    const ev = (s && s.events) || {};
+    const tel = (s && s.telemetry) || {};
     const cards = [
-      { label: "设备总数", value: s.devices_total, icon: "📟", cls: "" },
-      { label: "在线设备", value: s.devices_online, icon: "🟢", cls: "s-green", sub: s.devices_total != null ? "共 " + s.devices_total + " 台" : "" },
-      { label: "活跃事件", value: s.events_open, icon: "⚠️", cls: "s-orange", sub: s.events_total != null ? "累计 " + s.events_total : "" },
-      { label: "遥测帧数", value: s.telemetry_total, icon: "📈", cls: "s-teal" },
+      { label: "设备总数", value: dev.total, icon: "📟", cls: "" },
+      { label: "在线设备", value: dev.online, icon: "🟢", cls: "s-green", sub: dev.total != null ? "共 " + dev.total + " 台" : "" },
+      { label: "活跃事件", value: ev.open, icon: "⚠️", cls: "s-orange", sub: ev.total != null ? "累计 " + ev.total : "" },
+      { label: "遥测帧数", value: tel.total, icon: "📈", cls: "s-teal" },
     ];
     dom.statusCards.innerHTML = cards.map((c) =>
       '<div class="status-card ' + c.cls + '">' +
@@ -220,16 +242,15 @@
    * ==================================================================== */
 
   function renderLatestStrip(latest) {
-    if (!latest || typeof latest !== "object") {
+    // R2-FSH-001：/api/telemetry/latest 解包后为行数组（每设备最新一帧，含 device_id）
+    if (!Array.isArray(latest) || !latest.length) {
       dom.latestStrip.innerHTML = empty("暂无遥测数据");
       return;
     }
-    const ids = Object.keys(latest);
-    if (!ids.length) { dom.latestStrip.innerHTML = empty("暂无遥测数据"); return; }
-    dom.latestStrip.innerHTML = ids.map((id) => {
-      const d = latest[id] || {};
+    dom.latestStrip.innerHTML = latest.map((d) => {
+      d = d || {};
       return '<div class="latest-tile">' +
-        '<div class="lt-head"><span class="lt-id">' + escapeHtml(id) + "</span>" +
+        '<div class="lt-head"><span class="lt-id">' + escapeHtml(d.device_id) + "</span>" +
         '<span class="lt-time">' + timeAgo(d.ts) + "</span></div>" +
         '<div class="lt-metrics">' +
           metricCell(d.pitch_deg, "°", "var(--accent)") +
@@ -861,7 +882,7 @@
     bindEvents();
     tickClock();
     setInterval(tickClock, 1000);
-    // 写权限凭证：顶栏按钮 + 当前状态徽标（v1.1.0 写操作 fail-closed 鉴权）
+    // 读/写权限凭证：顶栏按钮 + 当前状态徽标（v1.1.0 写鉴权 + R2-FSH-002 读鉴权）
     updateTokenBadge();
     const tokenBtn = document.getElementById("apiTokenBtn");
     if (tokenBtn) tokenBtn.addEventListener("click", configureApiToken);

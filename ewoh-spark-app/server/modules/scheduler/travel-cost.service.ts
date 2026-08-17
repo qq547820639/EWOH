@@ -74,7 +74,7 @@ export class TravelCostService {
       return this.euclidean(from, to, {
         fallbackReason: route.fallbackReason ?? 'no_route_edge',
         dataQuality: route.dataQuality ?? 'FRESH',
-      });
+      }, opts?.orgId ?? null);
     }
 
     // 坐标缺失：尝试通过 spatial entity 解析真实起终点；仍失败则显式 UNKNOWN（不伪造 0,0）。
@@ -90,7 +90,7 @@ export class TravelCostService {
       return this.euclidean(from, to, {
         fallbackReason: route.fallbackReason ?? 'coords_unknown',
         dataQuality: route.dataQuality ?? 'UNKNOWN',
-      });
+      }, opts?.orgId ?? null);
     } catch (err) {
       this.logger.warn(
         `Route graph unavailable for person=${personId} task=${taskId}, explicit fallback: ${(err as Error)?.message ?? err}`,
@@ -98,7 +98,7 @@ export class TravelCostService {
       return this.euclidean(from, to, {
         fallbackReason: 'graph_unavailable',
         dataQuality: 'UNKNOWN',
-      });
+      }, opts?.orgId ?? null);
     }
   }
 
@@ -437,11 +437,17 @@ export class TravelCostService {
     };
   }
 
-  /** 欧氏距离兜底；坐标缺失时显式不可行 + UNKNOWN，绝不返回 0,0 伪坐标。 */
+  /**
+   * 欧氏距离兜底；坐标缺失时显式不可行 + UNKNOWN，绝不返回 0,0 伪坐标。
+   * R2-SSV-18（2026-08-17）：orgId 透传 getConfig()——euclidean 兜底的
+   * walkingSpeedMps/routeCostMode(STRICT) 按调用租户策略计算（此前取全局
+   * active 配置，多租户策略语义漂移）。
+   */
   private async euclidean(
     from?: { x: number | null; y: number | null } | null,
     to?: { x: number | null; y: number | null } | null,
     meta?: { fallbackReason: RouteCostFallbackReason; dataQuality: RouteCostDataQuality },
+    orgId?: string | null,
   ): Promise<RouteCost> {
     const hasCoords =
       from != null &&
@@ -464,7 +470,7 @@ export class TravelCostService {
         dataQuality: meta?.dataQuality ?? 'UNKNOWN',
       };
     }
-    const config = await this.policy.getConfig();
+    const config = await this.policy.getConfig(orgId ?? null);
     const speed = config.walkingSpeedMps;
     const distanceMeters = Math.hypot(
       (to!.x as number) - (from!.x as number),

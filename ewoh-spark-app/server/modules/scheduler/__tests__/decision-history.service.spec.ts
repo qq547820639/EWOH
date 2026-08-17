@@ -66,6 +66,9 @@ function makeDb(seed: {
           captured.push({ table, cond });
           return q;
         };
+        // R2-SSV-23：listDecisions 增加 orderBy(createdAt desc)+limit 上界（fake 直通）。
+        q.orderBy = () => q;
+        q.limit = () => q;
         return q;
       }),
     })),

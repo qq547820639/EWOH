@@ -43,13 +43,16 @@ function seedDispatched(taskStatus: string) {
         assignmentId: 'ASG-FB-1',
         planId: 'PLAN-FB-1',
         taskId: TASK_ID,
-        personId: 'p1',
+        // R2-SSV-13：状态推进仅限受派人本人（ctx.userId）或可信角色——
+        // seed 受派人 = 调用者（u1），走"本人回填"路径。
+        personId: 'u1',
         deviceId: 'd1',
         stationId: 's1',
         status: 'dispatched',
       },
     ],
-    tasks: [{ id: TASK_ID, status: taskStatus }],
+    // R2-SNZ-015：task 写谓词按 orgId 过滤——seed 行带租户归属。
+    tasks: [{ id: TASK_ID, status: taskStatus, orgId: 'org1' }],
   };
 }
 
@@ -86,7 +89,7 @@ describe('执行反馈完成腿（ADR-050）：feedback → assignment → task 
           status: 'executing',
         },
       ],
-      tasks: [{ id: TASK_ID, status: 'executing' }],
+      tasks: [{ id: TASK_ID, status: 'executing', orgId: 'org1' }],
     });
     const summary = await svc.recordActuals(
       { assignmentId: 'ASG-FB-1', actualEnd: '2026-08-16T08:30:00Z' },
@@ -151,7 +154,7 @@ describe('执行反馈完成腿（ADR-050）：feedback → assignment → task 
 
     const withTask = buildService({
       assignments: [{ assignmentId: 'ASG-FB-1', planId: 'PLAN-FB-1', taskId: TASK_ID, status: 'executing' }],
-      tasks: [{ id: TASK_ID, status: 'exception' }],
+      tasks: [{ id: TASK_ID, status: 'exception', orgId: 'org1' }],
     });
     const exceptionCase = await withTask.svc.recordActuals(
       { assignmentId: 'ASG-FB-1', actualEnd: '2026-08-16T08:30:00Z' },

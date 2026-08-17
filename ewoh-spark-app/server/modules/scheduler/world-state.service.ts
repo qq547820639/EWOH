@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { TASK_LOCKED_STATUSES } from './task-lifecycle';
 import { Injectable, Inject, Logger, ConflictException } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -40,10 +41,9 @@ export class WorldStateSnapshotService {
    * （contracts/state-machines/task.yaml：executing/dispatched），
    * 剔除非契约的 'in_progress'（task.yaml 无此状态，属历史拼写漂移）。
    */
-  private static readonly LOCKED_TASK_STATUSES: ReadonlySet<string> = new Set([
-    'executing',
-    'dispatched',
-  ]);
+  private static readonly LOCKED_TASK_STATUSES: ReadonlySet<string> = new Set(
+    TASK_LOCKED_STATUSES,
+  );
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
@@ -412,25 +412,27 @@ export class WorldStateSnapshotService {
     // 若 route node 无 stationId 关联，则该边无已知受影响任务（fail-safe，不误伤）。
     const routeEdgeTaskIndex: Record<string, string[]> = {};
     {
-      const stationByEdge = new Map<string, Set<string>>();
-      const stationById = new Map<string, string>(); // stationId → nodeId（仅需存在性）
-      for (const n of routeNodes) {
-        if (n.stationId) stationById.set(n.stationId, n.nodeId);
-      }
+      // R2-SCH-015（2026-08-17）：索引化构建——nodeById Map 替代边内线性 find
+      //（O(E×N)→O(E)），并倒排 stationId → edgeIds 后按任务直查
+      //（任务×边全扫 O(T×E)→O(T×avgEdgesPerStation)；语义不变）。
+      const nodeById = new Map(routeNodes.map((n) => [n.nodeId, n]));
+      const edgeIdsByStation = new Map<string, string[]>();
       for (const e of routeEdges) {
         const stationIds = new Set<string>();
-        const fromNode = routeNodes.find((n) => n.nodeId === e.fromNodeId);
-        const toNode = routeNodes.find((n) => n.nodeId === e.toNodeId);
+        const fromNode = nodeById.get(e.fromNodeId);
+        const toNode = nodeById.get(e.toNodeId);
         if (fromNode?.stationId) stationIds.add(fromNode.stationId);
         if (toNode?.stationId) stationIds.add(toNode.stationId);
-        if (stationIds.size > 0) stationByEdge.set(e.edgeId, stationIds);
+        for (const stationId of stationIds) {
+          const list = edgeIdsByStation.get(stationId);
+          if (list) list.push(e.edgeId);
+          else edgeIdsByStation.set(stationId, [e.edgeId]);
+        }
       }
       for (const t of taskList) {
         if (!t.stationId) continue;
-        for (const [edgeId, stationIds] of stationByEdge) {
-          if (stationIds.has(t.stationId)) {
-            (routeEdgeTaskIndex[edgeId] ??= []).push(t.id);
-          }
+        for (const edgeId of edgeIdsByStation.get(t.stationId) ?? []) {
+          (routeEdgeTaskIndex[edgeId] ??= []).push(t.id);
         }
       }
     }

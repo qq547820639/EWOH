@@ -1,0 +1,60 @@
+{"id":"SCR-001","regression_status":"FIXED_VERIFIED","evidence":"scripts/audit-domain-contracts.js:389 subjectEntityId 正则为 /^[a-z][a-z0-9_]*:[^\\s]+$/（单反斜杠 \\s），L419/442/478/510/1383/1384/1430/1453/1526/1531/1598/1603/1604/1648/1654/1656/1660 全部同型正确"}
+{"id":"SCR-002","regression_status":"FIXED_VERIFIED","evidence":"scripts/standalone-ops-check.sh:14-19 EWOH_OPS_RESTORE_DB 白名单 ^[A-Za-z][A-Za-z0-9_]{0,62}$ 校验 + :31-42 node 侧二次校验并引号转义 drop/create database"}
+{"id":"SCR-003","regression_status":"FIXED_VERIFIED","evidence":"scripts/e2e-db-verify.mjs:17-29 ROOT 由 import.meta.url 推导、EMBEDDED_PG_DIR 走 EWOH_EMBEDDED_PG_DIR env、SCHEMA 走 EWOH_SCHEMA env，无 /Users/panhao 硬编码"}
+{"id":"SCR-004","regression_status":"FIXED_VERIFIED","evidence":"scripts/e2e-db-verify-022.mjs:8-28 同款参数化（ROOT 脚本位置推导 + EWOH_EMBEDDED_PG_DIR + process.execPath）"}
+{"id":"SCR-005","regression_status":"FIXED_VERIFIED","evidence":"scripts/soak-load.js:171-175 queue-backlog 断言 inserted==100 && claimed==80 && succeeded==claimed；:190-201 聚合断言任一子项失败即 FAILED"}
+{"id":"SCR-006","regression_status":"FIXED_VERIFIED","evidence":"scripts/container-image-gate.sh:61-84 统一 TRIVY_BIN 变量：预装取 command -v trivy，否则下载到 /tmp 并校验"}
+{"id":"SCR-007","regression_status":"FIXED_VERIFIED","evidence":"scripts/canary-deploy.sh:127-133 BUSINESS_HTTP 非 2xx 即 fail，404/405 记 blocked（不再 echo note 吞掉）"}
+{"id":"SCR-008","regression_status":"FIXED_VERIFIED","evidence":"scripts/truth-feature-status.js:314-323 readme_capability_table_exists 检查 tableFound，缺表/无 feature 行均 FAIL（detail 标注 SCR-008）"}
+{"id":"SCR-009","regression_status":"FIXED_VERIFIED","evidence":"scripts/standalone-check.sh:55-61 env 未设时 E2E_BLOCKED=1 + ::notice BLOCKED + 落盘 output/standalone-check-e2e-status.json；:89-90 汇总显式标注 BLOCKED 非 PASSED"}
+{"id":"SCR-010","regression_status":"FIXED_VERIFIED","evidence":"scripts/truth-manifest.js:197-201 --check 缺 baseline 打印 CHECK FAILED 并 exit 1，不再自动生成后 exit 0"}
+{"id":"SCR-011","regression_status":"FIXED_VERIFIED","evidence":"scripts/truth-manifest.js:215-223 gates 纳入漂移比较（id:status 投影排序对比，剔除 checkedAt/details）"}
+{"id":"SCR-012","regression_status":"FIXED_VERIFIED","evidence":"scripts/collect-repo-facts.js:257-258 liveOpenapi = `${openapi.controller}/${openapi.spec}`（注释标 SCR-012）"}
+{"id":"SCR-013","regression_status":"FIXED_VERIFIED","evidence":"scripts/audit-repo-facts.js:360-365 与 collect-repo-facts.js:233-237 release 目录按 truth.readVersion() 动态拼接 release/ewoh-${version}/"}
+{"id":"SCR-014","regression_status":"FIXED_VERIFIED","evidence":"scripts/canary-deploy.sh:79-81 baseline 阶段 curl /metrics 失败即 blocked（阈值无法评估不给可信结论）；残留 poll 阶段回退见 R2-SCR-004"}
+{"id":"SCR-015","regression_status":"FIXED_VERIFIED","evidence":"scripts/canary-deploy.sh:98-110 回滚目标 PREV_REV 由 helm history JSON 动态解析上一 revision"}
+{"id":"SCR-016","regression_status":"FIXED_VERIFIED","evidence":"scripts/verify-helm-runtime.sh:43-48 CI/GITHUB_ACTIONS 环境下 WORKER_ENABLED!=true 记 BLOCKED_BY_ENVIRONMENT 并退出"}
+{"id":"SCR-017","regression_status":"FIXED_VERIFIED","evidence":"scripts/bandit-gate.py:118-120 豁免路径改为 _repo_relative(finding.filename) != path_sub 的精确相等匹配"}
+{"id":"SCR-018","regression_status":"FIXED_VERIFIED","evidence":"scripts/bandit-gate.py:29-30 BLOCKING_SEVERITIES = (\"CRITICAL\", \"HIGH\") 覆盖两级"}
+{"id":"SCR-019","regression_status":"FIXED_VERIFIED","evidence":"scripts/truth-feature-status.js:215-227 implemented=false 文档提及默认 FAIL，仅 UNIMPLEMENTED_DOC_MENTION_EXEMPTIONS 登记项降 WARN"}
+{"id":"SCR-020","regression_status":"FIXED_VERIFIED","evidence":"scripts/truth-feature-status.js:648-659 --skip-openapi 记 level=BLOCKED 的 false finding（不计通过），由 standalone.yml gen:openapi:check 兜底"}
+{"id":"SCR-021","regression_status":"FIXED_VERIFIED","evidence":"scripts/truth-feature-status.js:591-604 productionEnabled=true 时校验 README 无 OPTIONAL/EXPERIMENTAL 残留标注（一致性互斥检查）"}
+{"id":"SCR-022","regression_status":"FIXED_VERIFIED","evidence":"scripts/generate-ddl-package.js:1835-1843 五个 writeOutput 包入 if (require.main === module)（注释标 SCR-022）；同类问题在 generate-standalone-ddl.js 仍存，见 R2-SCR-001"}
+{"id":"SCR-023","regression_status":"FIXED_VERIFIED","evidence":"scripts/standalone-postgres-check.sh:20-47 STANDALONE_SUFFIXES 单一来源数组，apply 顺序展开、:81-83 rollback 逆序派生"}
+{"id":"SCR-024","regression_status":"FIXED_VERIFIED","evidence":"scripts/scale-release-review.js:73-82 阈值改为 documented==controllerOperations 全量断言，无 166 硬编码"}
+{"id":"SCR-025","regression_status":"FIXED_VERIFIED","evidence":"scripts/e2e-db-verify.mjs:29 const SCHEMA = process.env.EWOH_SCHEMA || 'public'（无 workspace_aadknm4yzbyds 硬编码）"}
+{"id":"SCR-026","regression_status":"FIXED_VERIFIED","evidence":"scripts/generate-ddl-package.js:10-28 ROLES 缺省输出 __EWOH_ROLE_*__ 占位符，EWOH_DDL_ROLES_JSON 可注入真实角色"}
+{"id":"SCR-027","regression_status":"FIXED_VERIFIED","evidence":"scripts/package-release.sh:56-63 七个根文件 cp 无 || true（注释标 SCR-027），set -e 下缺件即败"}
+{"id":"SCR-028","regression_status":"FIXED_VERIFIED","evidence":"scripts/audit-repo-facts.js:511-536 loadSemanticExemptions 强制 owner/reason/expiresAt 非空 + 未过期 + severity==warning，否则豁免失效并告警"}
+{"id":"SCR-029","regression_status":"FIXED_VERIFIED","evidence":"scripts/container-image-gate.sh:68-81 下载后强制 SHA256 校验（官方 checksums 文件或 TRIVY_SHA256 显式），失败即 fail"}
+{"id":"SCR-030","regression_status":"FIXED_VERIFIED","evidence":"scripts/verify-rc-upgrade.mjs:77-86 期望值由 SOLVER_NULLABLE_COLUMNS/COUNTER_COLUMNS 列名清单 .length 派生，魔法数字集中常量化"}
+{"id":"SCR-031","regression_status":"FIXED_VERIFIED","evidence":"scripts/verify-helm-runtime.sh:32-38 CI 环境未显式设 IMAGE_TAG_UPGRADE 即 BLOCKED_BY_ENVIRONMENT，默认 0.6.0-rc5 仅限本地"}
+{"id":"SCR-032","regression_status":"FIXED_VERIFIED","evidence":"scripts/deployment-tck.js:24-26 与 scenario-tck.js:28-30 catch 中保留 error.stderr 尾部 5 行拼入失败信息"}
+{"id":"SCR-033","regression_status":"FIXED_VERIFIED","evidence":"scripts/pilot-soak.sh:24-40 step() 失败时输出 tail -n 20 日志尾部（日志仍写 mktemp 文件供失败时取用）"}
+{"id":"SCR-034","regression_status":"PARTIALLY_FIXED","evidence":"scripts/pilot-soak.sh:57-71 提供 EWOH_SOAK_RUFF_STRICT=1 收紧开关并 WARN 存量计数；但默认仍 WARN 不阻断（原发现即为已知存量债，开关落地、默认收紧待存量清理）"}
+{"id":"SCR-035","regression_status":"FIXED_VERIFIED","evidence":"scripts/bandit-gate.py:112-114 无 ruleId 豁免条目显式 ::warning 打印未生效（不再静默 continue）"}
+{"id":"SCR-036","regression_status":"FIXED_VERIFIED","evidence":"scripts/truth-manifest.js:56-59 gate-result 解析失败 console.warn 保留文件名与错误线索"}
+{"id":"SCR-037","regression_status":"FIXED_VERIFIED","evidence":"scripts/audit-env-inventory.js:141-153 新增 const { X } = process.env 解构 matcher（注释标 SCR-037）；但目录级排除正则存在新缺陷，见 R2-SCR-007"}
+{"id":"SCR-038","regression_status":"FIXED_VERIFIED","evidence":"scripts/audit-repo-facts.js 全文已无 manifestDetailHasOpenapi 变量（grep 确认删除）"}
+{"id":"SCR-039","regression_status":"FIXED_VERIFIED","evidence":"scripts/reconcile-identity-legacy.mjs:124-125 结果行用 JSON.stringify({status,planned,applied}) 输出（注释标 SCR-039）"}
+{"id":"SCR-040","regression_status":"FIXED_VERIFIED","evidence":"scripts/canary-deploy.sh:35 CANARY_TEST_ORG=\"${CANARY_TEST_ORG:-orgA}\" 从 env 读取，L128 业务态 curl 使用该变量"}
+{"id":"SCR-041","regression_status":"FIXED_VERIFIED","evidence":"scripts/audit-domain-contracts.js:781-798 与 929-939 两处 python -c 评估器均改 input: payload 经 stdin json.load(sys.stdin)，注释标 SCR-041"}
+{"id":"SCR-042","regression_status":"FIXED_VERIFIED","evidence":"scripts/collect-repo-facts.js:199-212 workGraph 实时计算失败回退 state.json 前 console.warn 显式告警数据可能过期"}
+{"id":"SCR-043","regression_status":"FIXED_VERIFIED","evidence":"scripts/audit-repo-facts.js:378-386 state 一致性改为 stateFactsJson.current_status.startsWith(`${version} `) 字段级前缀精确匹配"}
+{"id":"TOOL-001","regression_status":"FIXED_VERIFIED","evidence":"tools/semantic-rules/lib/engine.js:231-241 parseDecisions 返回 {id,text}（text=决策行正文）；lib/rules.js:910-923 authorizedFor 在 `${d.id} ${d.text}` 中搜索 ruleId+豁免措辞（注释标 TOOL-001）"}
+{"id":"TOOL-002","regression_status":"FIXED_VERIFIED","evidence":"tools/semantic-rules/index.js:100-115 --exempt no-self-exemption 直接 exit 2、未知规则 id 拒绝；engine.js:285-291 error 级 finding 永不受豁免抑制；work-console/work-indexer 侧过滤缺口见 R2-TOL-004"}
+{"id":"TOOL-003","regression_status":"FIXED_VERIFIED","evidence":"tools/gate-engine/index.js:63-68 validApprover 要求非空且（actors 提供时）属于注册 human/team actor；approved/conditional 无效 approver 回退常规判定并标 humanDecisionInvalid"}
+{"id":"TOOL-004","regression_status":"FIXED_VERIFIED","evidence":"tools/work-console/index.js:160-170 computeEvidenceMeta.complete 排除字面量 'unknown'（value !== 'unknown'）；fields 统计单列 unknown 计数"}
+{"id":"TOOL-005","regression_status":"FIXED_VERIFIED","evidence":"tools/factory-replication/index.js:57-67 difference-resolution 要求 typeof number 且 >=0.8，缺省 detail='missing (must be declared explicitly)' 判失败"}
+{"id":"TOOL-006","regression_status":"FIXED_VERIFIED","evidence":"tools/git-sync/index.js:141-151 live apply 超 --max-create（缺省 10）批量拒绝；:153-210 中途失败关闭本批已建 issue 后抛错（rollback PARTIALLY FAILED 也显式上报）"}
+{"id":"TOOL-007","regression_status":"FIXED_VERIFIED","evidence":"tools/semantic-rules/lib/rules.js:583-586 pilot 声明 ready（非 NOT READY）时指纹缺失/漂移 severity=error（error 不可豁免）；exemptions.json 仅剩 NOT READY 场景 warning 豁免且带 owner/reason/expiresAt"}
+{"id":"TOOL-008","regression_status":"FIXED_VERIFIED","evidence":"tools/work-indexer/index.js:178-183 codeHead 为空时 commitStaleness='unknown'（注释标 TOOL-008），不再以 false 冒充确认新鲜"}
+{"id":"TOOL-009","regression_status":"FIXED_VERIFIED","evidence":"tools/semantic-rules/lib/rules.js:544-562 期望计数由 schema-manifest managed_count/physical_create_count 动态构建 RegExp，无 51/57 字面量；manifest 不可解析时跳过该项"}
+{"id":"TOOL-010","regression_status":"FIXED_VERIFIED","evidence":"tools/work-indexer/index.js:13 DEFAULT_PATHS 含 agent-threads.md（required:false, owner AG-00）"}
+{"id":"TOOL-011","regression_status":"FIXED_VERIFIED","evidence":"tools/gate-engine/index.js:44-45 calculate(gates, humanDecisions, options) 三参签名，artifactsDir 死参数已移除（注释标 TOOL-011）"}
+{"id":"TOOL-012","regression_status":"FIXED_VERIFIED","evidence":"tools/gate-engine/index.js:74 gateNo = gate.gateId.match(/^G(\\d+)$/) 显式编号匹配 + 标题关键词双通道（注释标 TOOL-012）"}
+{"id":"TOOL-013","regression_status":"FIXED_VERIFIED","evidence":"tools/semantic-rules/lib/engine.js:25-38 与 tools/work-indexer/index.js:24-37 findArtifactsDir 仅 EWOH_WORK_ARTIFACTS_DIR env 或 cwd/.codex/artifacts，不再向上搜 ../..（注释标 TOOL-013）"}
+{"id":"TOOL-014","regression_status":"FIXED_VERIFIED","evidence":"tools/factory-replication/site-readiness.js:10-13 requiredPassed 注明仅统计字段，ready 判定为 requiredFailed.length === 0（L25）"}
+{"id":"TOOL-015","regression_status":"FIXED_VERIFIED","evidence":"tools/handoff-service/index.js:25-35 parseHandoffs 提取为导出函数，module.exports = { parseHandoffs }（注释标 TOOL-015）"}
+{"id":"TOOL-016","regression_status":"FIXED_VERIFIED","evidence":"tools/work-console/index.js:50-64 computeBlockedItems 改为沿依赖边前向 BFS（queue 传播传递闭包，O(V+E)，注释标 TOOL-016）"}
+{"id":"TOOL-017","regression_status":"FIXED_VERIFIED","evidence":"tools/work-console/index.js:139-140 const { loadHumanDecisions } = gateEngine 复用共享实现（注释标 TOOL-017），gate-engine/index.js:32-41 为唯一实现"}

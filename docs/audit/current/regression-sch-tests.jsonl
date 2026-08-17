@@ -1,0 +1,36 @@
+{"id":"NESP-001","regression_status":"STILL_OPEN","evidence":"batch6-safety-dispatch.spec.ts:71-74 —— 无阻断用例仍为 catch 后 if(err instanceof Error) 内 not.toContain('SAFETY_BLOCK_DISPATCH')，dispatch 抛任意其他错或成功时断言被跳过"}
+{"id":"NESP-002","regression_status":"STILL_OPEN","evidence":"batch10-shadow-eval.spec.ts:83,98-99 —— 仍以实例字段覆写 (svc).comparePolicyVersion=compareSpy，断言仅验证 spy 调用次数/参数，未注入真实对比产物"}
+{"id":"NESP-003","regression_status":"STILL_OPEN","evidence":"conflict-query-readonly.spec.ts:174 —— expect(res.conflicts.length).toBeGreaterThanOrEqual(0) 恒真断言原样存在（176 行 toBe(before) 为有效补充但未删除恒真行）"}
+{"id":"NESP-004","regression_status":"STILL_OPEN","evidence":"candidates.spec.ts:104-107 —— 任务不存在仍 rejects.toThrow() 不区分异常类型，未改为 toBeInstanceOf(NotFoundException)"}
+{"id":"NESP-005","regression_status":"STILL_OPEN","evidence":"conflict-lifecycle.spec.ts:281 —— await new Promise(r=>setTimeout(r,5)) 真实时钟等待仍在，未用 fake timers"}
+{"id":"NESP-006","regression_status":"STILL_OPEN","evidence":"conflict-lifecycle.spec.ts:283 —— 仍直接赋值 (expiredRow).suppressUntil=new Date(Date.now()-1000) 手动改行模拟过期"}
+{"id":"NESP-007","regression_status":"STILL_OPEN","evidence":"prediction-provider.spec.ts:158-160 —— 仍 provider.constructor.toString() + not.toMatch(/db|database|insert|update\\(|delete\\(/i) 结构性正则断言"}
+{"id":"NESP-008","regression_status":"FIXED","evidence":"outbox-throttled.spec.ts:22-27,39-49 —— 2026-08-17 注释标记 NESP-008 修复：update 路径与 select 共用 applyFilter()（模拟真实 WHERE），无命中时不再 Object.assign(undefined)；且 72-98 行补真实三条件命中路径覆盖（createdAt 条件仍未模拟，属残余非缺陷）"}
+{"id":"NESP-009","regression_status":"STILL_OPEN","evidence":"golden-scheduler-scenarios.spec.ts:134-137 —— UPDATE_GOLDEN_RESULTS=1 时 writeFileSync 后仍直接 return，无任何结构断言"}
+{"id":"NESP-010","regression_status":"STILL_OPEN","evidence":"concurrency.spec.ts:59-71 —— 仍以 makeDispatchCoordinator 的内存 fake-db Promise.allSettled 验证 CAS，无真实 DB 行锁集成测试或单元级标注"}
+{"id":"NESP-011","regression_status":"STILL_OPEN","evidence":"conflicts.spec.ts:260-262,280-282 —— reservation_expiring 两个用例仍用 Date.now()±偏移构造时间窗，未注入固定 nowMs/fake timers"}
+{"id":"NESP-012","regression_status":"STILL_OPEN","evidence":"benchmark-scheduler.spec.ts:14,24-41 —— jest.setTimeout(180_000)+execFileSync 真实子进程仍在，无 @slow 标记或独立 CI 作业拆分"}
+{"id":"NESP-013","regression_status":"STILL_OPEN","evidence":"dispatch-integration.spec.ts:46-50,209-213,258-262 —— runInTransaction mock 仍仅 await cb()，全文件无 cb 抛错→回滚场景用例"}
+{"id":"NESP-014","regression_status":"STILL_OPEN","evidence":"policy-version.spec.ts:27-58 —— matchesEq queryChunks 解析仍在本文件内实现；conflict-query-readonly.spec.ts:26-44 与 conflict-lifecycle.spec.ts:30-48 另有两份近乎相同副本，未抽共享 helper"}
+{"id":"NESP-015","regression_status":"STILL_OPEN","evidence":"overrides.spec.ts:39-141 与 override-cas.spec.ts:37-122 —— 两份近乎相同的 makeScheduler 工厂（~85 行）原样并存，未抽取到 dispatch-test-harness"}
+{"id":"NESP-016","regression_status":"STILL_OPEN","evidence":"golden-scheduler-workflow.spec.ts:256-259 —— 仍 state.plans.delete(String(params.planId)) 手动删行绕过 fake-db select 忽略 where 的缺陷（已加注释说明，但 fake-db where 实现未增强）"}
+{"id":"NESP-017","regression_status":"STILL_OPEN","evidence":"batch6-event-cascade.spec.ts:16-24 —— makeSelect 的 where/orderBy/limit 仍恒返回 q 自身忽略全部过滤条件"}
+{"id":"NESP-101","regression_status":"STILL_OPEN","evidence":"replan-guard-failclosed.spec.ts:105-110,214-222 —— SHORT_CONFIG 仍 minimumReplanIntervalMs:5，用例 4 三次同步 await 依赖间距<5ms；replan-storm.spec.ts:97-106 已示范 60_000 大窗口防抖动模式但本文件未跟进"}
+{"id":"NESP-102","regression_status":"STILL_OPEN","evidence":"replan-multi-instance.spec.ts:99-104,186-195 —— 仍 minimumReplanIntervalMs:5 且 r1/r2/r3 三次 await 假设间距<5ms，慢 CI 下第三次可能不被抑制导致 flake"}
+{"id":"NESP-103","regression_status":"FIXED","evidence":"replan-multi-instance.spec.ts:203-209 —— 2026-08-17 注释标记 NESP-103 修复：NEST-147 后幂等去重并入 INSERT...ON CONFLICT，不再有独立 dedup SELECT，selectNo%2 调用序奇偶判别已删除（唯一 SELECT 恒为冷却查询）"}
+{"id":"NESP-104","regression_status":"PARTIALLY_FIXED","evidence":"duration-model-training.service.spec.ts:44-45 —— 加了 ADR-075 排除注释且 filter 补 !v.includes('_')，但 org 识别仍靠 v.startsWith('org') 值前缀启发式，未按列名/绑定列身份匹配"}
+{"id":"NESP-105","regression_status":"STILL_OPEN","evidence":"shadow-evaluator-persistence.spec.ts:30-58 —— collectSqlTokens 仍按 'SQL'/'Name'/'Param'/'Pg…'/'CustomType' 构造器名解析 drizzle AST，未改用 toSQL()"}
+{"id":"NESP-106","regression_status":"STILL_OPEN","evidence":"scheduler-facade-characterization.spec.ts:469 —— toMatchObject({solverStatus: undefined, assignmentCount: 1}) 中 undefined 字段仍被 Jest 跳过，死断言未移除"}
+{"id":"NESP-107","regression_status":"STILL_OPEN","evidence":"scheduler-facade-characterization.spec.ts:790-795 —— dispatchPlanV2 noExecution 用例仍只断言 status/dispatch 被调用，缺 createFromPlan 未被调用的反向断言（noExecution 下 executionService 为 undefined 无从断言）"}
+{"id":"NESP-108","regression_status":"STILL_OPEN","evidence":"scheduler-facade-characterization.spec.ts:721,726 —— getTaskCandidates 回退路径 mock eligibilityService.check 仍恒返回 eligible:true 并断言 eligible===true，无 eligible=false 拒派通路用例"}
+{"id":"NESP-109","regression_status":"STILL_OPEN","evidence":"scheduler-feedback-actuals-controller.spec.ts:85-98 —— 缺匹配键用例仍 mock reject(BadRequestException) 后断言 rejects.toThrow(BadRequestException)，注释自认 mock 模拟 service 行为（mock echo）"}
+{"id":"NESP-110","regression_status":"PARTIALLY_FIXED","evidence":"scheduler-facade-characterization.spec.ts:909-914 —— 已补委托参数断言 listConflicts toHaveBeenCalledWith({}, undefined)；但 912 行 res toEqual mock 返回值的 echo 断言仍在，且仍无真实冲突字段映射验证"}
+{"id":"NESP-111","regression_status":"STILL_OPEN","evidence":"solver-contract-parity.spec.ts:297 —— 测试名仍为「golden 可安全断言为 SolverRequest/SolverResponse TS 类型（不抛）」，实际仅 typeof/长度抽查，名称误导未改"}
+{"id":"NESP-112","regression_status":"STILL_OPEN","evidence":"replan-preview.service.spec.ts:157-170 —— 13 个 Delta 字段仍全用 toHaveProperty 键存在断言，无关键 Delta 数值断言（latenessDelta 等）"}
+{"id":"NESP-113","regression_status":"STILL_OPEN","evidence":"replan-kpi.spec.ts:103-108 —— stability 扩展字段仍用 'x' in kpi.stability 键存在断言，未结合 typeof/缺省 null"}
+{"id":"NESP-114","regression_status":"STILL_OPEN","evidence":"shadow-plan-guard.spec.ts:84-89 —— approvePlan 仍两次 await expect().rejects 分别断言类与正则，未合并单次调用组合断言"}
+{"id":"NESP-115","regression_status":"STILL_OPEN","evidence":"world-state-derive.spec.ts:61-200 —— projectFromRows 约 140 行复刻 ResourceProjectionService 投影逻辑仍存在，双写漂移风险未消除"}
+{"id":"NESP-116","regression_status":"STILL_OPEN","evidence":"rls-org-filter.audit.spec.ts:144 —— org 过滤判定仍为方法文本 includes('.orgId')||includes('org_id')，22-28 行注释自陈假阴性边界，未补运行时 SQL 断言兜底"}
+{"id":"NESP-117","regression_status":"FIXED","evidence":"task-lifecycle.spec.ts:1-8 —— 已改为 import TASK_SCHEDULABLE_STATUSES/… 导出常量绑定单一事实源，10-13 行注释标记 NESP-117 修复，并钉死 terminal 无 done 契约"}
+{"id":"NESP-118","regression_status":"STILL_OPEN","evidence":"scheduler-facade-characterization.spec.ts:768-773,896-905 —— approvePlanV2/applyOverrides 的 STALE_PLAN 用例仍仅 rejects.toThrow(ConflictException)，无 toMatch(/STALE_PLAN/) 原因校验"}
+{"id":"NESP-119","regression_status":"PARTIALLY_FIXED","evidence":"trigger-entity-cooldown.spec.ts:8-12,51-55 —— 2026-08-17 注释标记修复：不再按调用序/参数数量区分查询身份（唯一 SELECT 即冷却查询）；但 55 行仍以 vals.length>=3 && vals[2] 位置启发式提取 entityId，依赖绑定参数顺序"}

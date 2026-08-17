@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import queue
 from typing import Any
 
 from edge_platform.edge.adapters.base import BaseAdapter
 from edge_platform.spatial import now_iso
+
+_LOGGER = logging.getLogger("ewoh.connectors.webhook")
 
 
 class WebhookError(ValueError):
@@ -89,6 +92,7 @@ class WebhookAdapter(BaseAdapter):
         )
         self.endpoint_path = endpoint_path
         self._inbox: queue.Queue = queue.Queue(maxsize=1024)
+        self._dropped_payloads = 0  # R2-EDM-04：队列满丢弃计数（可观测，不静默）
         self._last_msg: dict[str, Any] | None = None
         self._last_seen: str | None = None
 
@@ -139,4 +143,12 @@ class WebhookAdapter(BaseAdapter):
         try:
             self._inbox.put_nowait(msg)
         except queue.Full:
-            pass
+            # R2-EDM-04：队列满不再静默丢弃——warning 留痕 + dropped 计数
+            #（对齐 csvfile/modbus 的 EDGE-218/219 整改模式）。
+            self._dropped_payloads += 1
+            if self._dropped_payloads % 100 == 1:  # 避免日志刷屏，周期性留痕
+                _LOGGER.warning(
+                    "webhook connector %s 收件箱满，累计丢弃 %d 条载荷",
+                    self.device_id,
+                    self._dropped_payloads,
+                )

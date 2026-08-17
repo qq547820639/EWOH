@@ -61,7 +61,7 @@ class _AuthFixture:
             self.base + "/api/auth/login", data=data, headers={"Content-Type": "application/json"}, method="POST"
         )
         try:
-            resp = urllib.request.urlopen(req, timeout=5)
+            resp = urllib.request.urlopen(req, timeout=5)  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
             return resp.status, json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read().decode("utf-8"))

@@ -23,7 +23,9 @@ export class NotificationController {
   ) {
     return this.notifications.listNotifications(this.currentOrgId(request), {
       status: status === 'pending' || status === 'read' ? status : undefined,
-      role: request.userContext?.role,
+      // R2-SNZ-002：AccessTokenGuard 填充的是 roles 数组（role 单值恒
+      // undefined），此处传数组由 service 做 recipient_id ∈ roles 匹配。
+      roles: request.userContext?.roles ?? [],
       isGlobalAdmin: request.userContext?.isGlobalAdmin === true,
     });
   }

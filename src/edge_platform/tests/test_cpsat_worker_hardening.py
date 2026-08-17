@@ -129,11 +129,11 @@ class CpsatWorkerHardeningTest(unittest.TestCase):
 
     def _get_json(self, path: str, headers=None):
         req = urllib.request.Request(self.base + path, headers=headers or {})
-        with urllib.request.urlopen(req, timeout=5) as res:
+        with urllib.request.urlopen(req, timeout=5) as res:  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
             return res.status, json.loads(res.read().decode("utf-8"))
 
     def _get_text(self, path: str) -> str:
-        with urllib.request.urlopen(self.base + path, timeout=5) as res:
+        with urllib.request.urlopen(self.base + path, timeout=5) as res:  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
             self.assertTrue(
                 res.headers.get("Content-Type", "").startswith("text/plain"),
                 "metrics 必须为 text/plain",
@@ -148,7 +148,7 @@ class CpsatWorkerHardeningTest(unittest.TestCase):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=10) as res:
+            with urllib.request.urlopen(req, timeout=10) as res:  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
                 return res.status, json.loads(res.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read().decode("utf-8"))
@@ -270,7 +270,7 @@ class CpsatWorkerHardeningTest(unittest.TestCase):
         req = urllib.request.Request(
             self.base + "/health/live", headers={"X-Request-ID": "my-corr-1"}
         )
-        with urllib.request.urlopen(req, timeout=5) as res:
+        with urllib.request.urlopen(req, timeout=5) as res:  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
             self.assertEqual(res.headers.get("X-Request-ID"), "my-corr-1")
             payload = json.loads(res.read().decode("utf-8"))
         self.assertEqual(payload["requestId"], "my-corr-1")
@@ -348,7 +348,7 @@ class CpsatWorkerHardeningTest(unittest.TestCase):
                 if proc.poll() is not None:
                     break
                 try:
-                    with urllib.request.urlopen(
+                    with urllib.request.urlopen(  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
                         f"http://127.0.0.1:{port}/health/live", timeout=1
                     ) as res:
                         if res.status == 200:

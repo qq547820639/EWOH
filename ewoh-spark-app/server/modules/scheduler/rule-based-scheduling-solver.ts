@@ -29,6 +29,7 @@ import { CandidateEngineService } from './candidate-engine.service';
 import { SchedulingObjectiveEvaluator } from './scheduling-objective-evaluator.service';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import { TaskLifecycle } from './task-lifecycle';
+import { compileConstraintOverrides } from './constraints';
 
 export const RULE_BASED_SOLVER_VERSION = 'rule-based-v1';
 
@@ -98,8 +99,30 @@ export class RuleBasedSchedulingSolver implements SchedulingSolver {
       if (locked.personId) lockedPersonByTask.set(locked.taskId, locked.personId);
     }
 
+    // R2-SCH-003（2026-08-17）：解析输入约束（LOCKED_*/EXCLUDED/FORBIDDEN_ZONE/
+    // MIN_BATTERY/MAX_W 等经共享候选引擎真实执行；不支持的类型显式记
+    // violations=UNSUPPORTED_CONSTRAINT，绝不静默失效）。
+    const ir = compileConstraintOverrides(constraints);
+    // 快照锁定事实为底、显式约束覆盖（约束是更近的人工意图）。
+    for (const [taskId, personId] of ir.lockedPersonByTask) {
+      lockedPersonByTask.set(taskId, personId);
+    }
+    const lockedDeviceByTask = new Map<string, string>(ir.lockedDeviceByTask);
+    for (const locked of snapshot.lockedAssignments ?? []) {
+      if (locked.deviceId && !lockedDeviceByTask.has(locked.taskId)) {
+        lockedDeviceByTask.set(locked.taskId, locked.deviceId);
+      }
+    }
+    const unsupportedViolations: Array<Record<string, unknown>> = ir.unsupported.map(
+      (c) => ({
+        type: 'unsupported_constraint',
+        constraintType: c.type,
+        reason: 'UNSUPPORTED_CONSTRAINT',
+      }),
+    );
+
     const assignments: SchedulingAssignment[] = [];
-    const violations: Array<Record<string, unknown>> = [];
+    const violations: Array<Record<string, unknown>> = [...unsupportedViolations];
     const bookedTimeSlots: Array<{ personId: string; start: number; end: number }> = [];
     const bookedDeviceSlots: Array<{ deviceId: string; start: number; end: number }> = [];
     const bookedStationSlots: Array<{ stationId: string; start: number; end: number }> = [];
@@ -124,12 +147,36 @@ export class RuleBasedSchedulingSolver implements SchedulingSolver {
         progressed = true;
         const pool = await this.candidateEngine.buildCandidatePool(task, snapshot, {
           nowMs: now,
+          // R2-SCH-002：变体策略透传（候选评分消费变体权重缩放）。
+          policy,
+          // R2-SCH-001：人员/设备占用顺延（booked 槽位推得的资源空闲时刻）。
+          bookedPersonFreeAt: this.freeAtByResource(bookedTimeSlots, (s) => s.personId),
+          bookedDeviceFreeAt: this.freeAtByResource(bookedDeviceSlots, (s) => s.deviceId),
+          // R2-SCH-003：约束 IR 透传（锁定/排除/偏好/禁入区/电量/负荷全覆盖）。
           lockedPersonByTask,
+          lockedDeviceByTask,
+          lockedStationByTask: ir.lockedStationByTask,
+          lockedTimeByTask: ir.lockedTimeByTask,
+          forbiddenZoneIds: ir.forbiddenZoneIds,
+          excludedPersonByTask: ir.excludedPersonByTask,
+          excludedDeviceByTask: ir.excludedDeviceByTask,
+          excludedStationByTask: ir.excludedStationByTask,
+          excludedPersonGlobal: ir.excludedPersonGlobal,
+          excludedDeviceGlobal: ir.excludedDeviceGlobal,
+          excludedStationGlobal: ir.excludedStationGlobal,
+          preferredPersonByTask: ir.preferredPersonByTask,
+          preferredDeviceByTask: ir.preferredDeviceByTask,
+          preferredStationByTask: ir.preferredStationByTask,
+          preferredPersonGlobal: ir.preferredPersonGlobal,
+          preferredDeviceGlobal: ir.preferredDeviceGlobal,
+          preferredStationGlobal: ir.preferredStationGlobal,
           bookedTimeSlots,
           bookedDeviceSlots,
           bookedStationSlots,
           bookedStationCounts,
           baselineAssignee: opts.baselineAssignee,
+          minBatteryPct: ir.minBatteryOverride ?? config.minBatteryPct,
+          maxContinuousLoad: ir.maxLoadOverride ?? config.maxContinuousLoad,
         });
         const eligible = pool.filter((c) => c.eligible).sort(compareCandidatesByRule);
         const chosen = eligible[0];
@@ -208,6 +255,22 @@ export class RuleBasedSchedulingSolver implements SchedulingSolver {
     };
   }
 
+  /**
+   * R2-SCH-001：booked 槽位 → 资源空闲时刻（resourceId → max end）。候选 startMs
+   * 按占用顺延，与 heuristic 内联 earliestStart(raw, personFreeAt, deviceFreeAt) 同语义。
+   */
+  private freeAtByResource<T extends { start: number; end: number }>(
+    slots: T[],
+    resourceIdOf: (slot: T) => string,
+  ): Map<string, number> {
+    const freeAt = new Map<string, number>();
+    for (const s of slots) {
+      const id = resourceIdOf(s);
+      freeAt.set(id, Math.max(freeAt.get(id) ?? 0, s.end));
+    }
+    return freeAt;
+  }
+
   private buildAssignment(
     task: WorldStateSnapshot['tasks'][number],
     chosen: CandidateEvaluation,
@@ -279,7 +342,8 @@ export class RuleBasedSchedulingSolver implements SchedulingSolver {
       routeId: null,
       etaSeconds: chosen.routeCost?.etaSeconds ?? undefined,
       distanceMeters: chosen.routeCost?.distanceMeters ?? undefined,
-      riskLevel: chosen.routeCost && chosen.routeCost.risk > 0 ? 'high' : null,
+      // R2-SCH-017：riskLevel 原样透传（不再折叠为 risk>0?'high'，medium 不丢失）。
+      riskLevel: chosen.routeCost?.riskLevel ?? null,
       status: 'proposed',
       reasons: ['rule-based:first-eligible'],
       alternatives: [],

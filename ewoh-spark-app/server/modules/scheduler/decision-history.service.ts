@@ -25,7 +25,7 @@ import {
   ewohLearningProposal,
   ewohSchedulingPolicy,
 } from '@server/database/schema';
-import { eq, isNotNull, and, or, isNull } from 'drizzle-orm';
+import { eq, isNotNull, and, or, isNull, desc } from 'drizzle-orm';
 import {
   validateDecision,
   DECISION_KINDS,
@@ -54,6 +54,13 @@ export interface DecisionHistoryResult {
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
+/**
+ * R2-SSV-23（2026-08-17）：方案决策 jsonb 全量加载的扫描上界——按 createdAt
+ * 降序最多加载 MAX_PLAN_SCAN 个最新方案的 decision_records_json（jsonb 无
+ * 服务端分页/索引前的内存上界，防大规模方案库下单请求内存线性膨胀/DoS）。
+ * 完整修复（jsonb_array_elements + LATERAL 服务端分页）见 fixlog 标注。
+ */
+const MAX_PLAN_SCAN = 500;
 
 const KIND_SET: ReadonlySet<string> = new Set(DECISION_KINDS);
 const STATUS_SET: ReadonlySet<string> = new Set(DECISION_STATUSES);
@@ -116,10 +123,13 @@ export class DecisionHistoryService {
         or(isNull(ewohSchedulePlan.orgId), eq(ewohSchedulePlan.orgId, tenantId)),
       );
     }
+    // R2-SSV-23：最新方案优先 + 扫描上界（见 MAX_PLAN_SCAN 注释）。
     const plans = await this.db
       .select({ decisionRecordsJson: ewohSchedulePlan.decisionRecordsJson })
       .from(ewohSchedulePlan)
-      .where(and(...planConditions));
+      .where(and(...planConditions))
+      .orderBy(desc(ewohSchedulePlan.createdAt))
+      .limit(MAX_PLAN_SCAN);
     for (const plan of plans) {
       const list = plan.decisionRecordsJson as unknown;
       if (!Array.isArray(list)) continue;

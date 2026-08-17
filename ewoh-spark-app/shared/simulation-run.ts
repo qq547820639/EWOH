@@ -121,7 +121,8 @@ function collectConclusions(facts: unknown[]): Map<string, WhatIfConclusion> {
     if (typeof ruleId !== 'string' || typeof subjectId !== 'string' || typeof conclusion !== 'string') {
       throw new Error('fact 须含字符串 ruleId/subjectId/conclusion');
     }
-    if (typeof confidence === 'boolean' || typeof confidence !== 'number') {
+    // R2-SHR-003：数值入口统一 Number.isFinite（NaN/±Inf 一律拒绝，与 Python isfinite 对齐）。
+    if (typeof confidence === 'boolean' || typeof confidence !== 'number' || !Number.isFinite(confidence)) {
       throw new Error('fact.confidence 必须是数值');
     }
     result.set(`${ruleId}\u0000${subjectId}\u0000${conclusion}`, {
@@ -188,7 +189,7 @@ export function evaluateCapacity(
   if (!Array.isArray(stations) || stations.length === 0) {
     throw new Error('stations 必须是非空列表');
   }
-  if (typeof demandPerHour !== 'number' || Number.isNaN(demandPerHour) || demandPerHour <= 0) {
+  if (typeof demandPerHour !== 'number' || !Number.isFinite(demandPerHour) || demandPerHour <= 0) {
     throw new Error('demandPerHour 必须 > 0');
   }
   const normalized = stations.map((station) => {
@@ -201,7 +202,7 @@ export function evaluateCapacity(
     if (typeof stationId !== 'string' || stationId === '') {
       throw new Error('station.stationId 必须是非空字符串');
     }
-    if (typeof capacity !== 'number' || Number.isNaN(capacity) || capacity <= 0) {
+    if (typeof capacity !== 'number' || !Number.isFinite(capacity) || capacity <= 0) {
       throw new Error('station.capacityPerHour 必须 > 0');
     }
     return { stationId, capacityPerHour: capacity };
@@ -250,7 +251,7 @@ export function evaluateLayout(stations: unknown[], moves: unknown[]): LayoutRes
     if (typeof stationId !== 'string' || stationId === '') {
       throw new Error('station.stationId 必须是非空字符串');
     }
-    if (typeof x !== 'number' || typeof y !== 'number') {
+    if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y)) {
       throw new Error('station.x/y 必须是数值');
     }
     coords.set(stationId, [x, y]);
@@ -316,10 +317,10 @@ export function evaluateMaterialFlow(stations: unknown[]): MaterialFlowResult {
     if (typeof stationId !== 'string' || stationId === '') {
       throw new Error('station.stationId 必须是非空字符串');
     }
-    if (typeof capacity !== 'number' || Number.isNaN(capacity) || capacity <= 0) {
+    if (typeof capacity !== 'number' || !Number.isFinite(capacity) || capacity <= 0) {
       throw new Error('station.capacityPerHour 必须 > 0');
     }
-    if (typeof inflow !== 'number' || Number.isNaN(inflow) || inflow < 0) {
+    if (typeof inflow !== 'number' || !Number.isFinite(inflow) || inflow < 0) {
       throw new Error('station.inflowPerHour 必须 ≥ 0');
     }
     const loadRatio = Math.round((inflow / capacity) * 1e6) / 1e6;

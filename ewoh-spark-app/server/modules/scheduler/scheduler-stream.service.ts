@@ -150,6 +150,21 @@ export class SchedulerStreamService implements OnModuleDestroy {
    */
   async start(): Promise<void> {
     if (this.timer) return;
+    // R2-SSV-21（2026-08-17）：冷启动游标对齐——lastSequence 初始 0 会使重启后
+    // 首 poll 从 sequence 0 重放至多 5000 条历史 outbox 事件推入 Subject（早已
+    // published 的旧事件洪泛）。start() 先对齐 latestSequence（实时流语义；
+    // 历史重放只应经 replaySince 显式请求）。对齐失败保持 0（表空语义等价）。
+    try {
+      const latest = await this.outboxService.latestSequence();
+      this.lastSequence = Math.max(this.lastSequence, latest);
+      this.logger.log(`scheduler stream cursor aligned to sequence ${this.lastSequence}`);
+    } catch (err) {
+      this.logger.warn(
+        `scheduler stream cursor alignment failed; starting from 0: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
     this.timer = setInterval(() => this.poll(), POLL_INTERVAL_MS);
     if (this.notifyListener) {
       try {

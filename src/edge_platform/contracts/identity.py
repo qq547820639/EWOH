@@ -221,7 +221,12 @@ def validate_mapping_record(record: Any) -> list[str]:
         r"^map:[A-Za-z0-9][A-Za-z0-9._~@-]{0,127}$", mapping_id
     ):
         errors.append("bad_mapping_id")
-    if not isinstance(record.get("version"), int) or record["version"] < 1:
+    # R2-SHR-007：bool 不是版本号（对齐 TS Number.isInteger(true)===false）。
+    if (
+        not isinstance(record.get("version"), int)
+        or isinstance(record.get("version"), bool)
+        or record["version"] < 1
+    ):
         errors.append("bad_version")
     if record.get("status") not in _MAPPING_STATUSES:
         errors.append("bad_status")

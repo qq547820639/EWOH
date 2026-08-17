@@ -163,46 +163,48 @@ export class ExoConfigService {
       // 幂等：已激活返回自身
       return this.toRecord(target);
     }
-    // 同 (org, exo, mode) 既有 active → CAS superseded（判定事实完整：supersededBy + effectiveTo）。
+    // R2-SAM-007：旧 active supersede 循环 + 目标激活 + 事件合并进同一事务
+    // （原 supersede 在激活事务外执行，事务失败/进程崩溃会留下“旧 active 已
+    // superseded、新 active 未激活”的零 active 半态）。失败整体回滚。
+    // NEST-431：激活主事实与观测事件同事务（沿袭既有模式）。
     const nowIso = new Date().toISOString();
-    const active = await this.db
-      .select()
-      .from(ewohExoConfig)
-      .where(
-        and(
-          eq(ewohExoConfig.orgId, orgId),
-          eq(ewohExoConfig.exoId, target.exoId),
-          eq(ewohExoConfig.kind, 'assist_profile'),
-          eq(ewohExoConfig.supportMode, target.supportMode),
-          eq(ewohExoConfig.status, 'active'),
-        ),
-      );
-    for (const row of active) {
-      await this.db
-        .update(ewohExoConfig)
-        .set({
-          status: 'superseded',
-          supersededBy: configId,
-          effectiveTo: new Date(nowIso),
-          recordJson: {
-            ...(row.recordJson as Record<string, unknown>),
-            status: 'superseded',
-            supersededBy: configId,
-            effectiveTo: nowIso,
-          },
-          updatedAt: new Date(),
-        })
+    const updated = await this.db.transaction(async (tx) => {
+      const active = await tx
+        .select()
+        .from(ewohExoConfig)
         .where(
           and(
             eq(ewohExoConfig.orgId, orgId),
-            eq(ewohExoConfig.id, row.id),
+            eq(ewohExoConfig.exoId, target.exoId),
+            eq(ewohExoConfig.kind, 'assist_profile'),
+            eq(ewohExoConfig.supportMode, target.supportMode),
             eq(ewohExoConfig.status, 'active'),
           ),
         );
-    }
-    // NEST-431：激活主事实与观测事件同事务。
-    const updated = await this.db.transaction(async (tx) => {
-      const row = (
+      for (const row of active) {
+        await tx
+          .update(ewohExoConfig)
+          .set({
+            status: 'superseded',
+            supersededBy: configId,
+            effectiveTo: new Date(nowIso),
+            recordJson: {
+              ...(row.recordJson as Record<string, unknown>),
+              status: 'superseded',
+              supersededBy: configId,
+              effectiveTo: nowIso,
+            },
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(ewohExoConfig.orgId, orgId),
+              eq(ewohExoConfig.id, row.id),
+              eq(ewohExoConfig.status, 'active'),
+            ),
+          );
+      }
+      const activated = (
         await tx
           .update(ewohExoConfig)
           .set({
@@ -218,8 +220,8 @@ export class ExoConfigService {
           .where(and(eq(ewohExoConfig.orgId, orgId), eq(ewohExoConfig.id, target.id)))
           .returning()
       )[0];
-      await this.recordEventOn(tx, row, orgId);
-      return row;
+      await this.recordEventOn(tx, activated, orgId);
+      return activated;
     });
     return this.toRecord(updated);
   }

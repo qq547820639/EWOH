@@ -96,6 +96,7 @@
     "GET /api/operations/tools",
     "GET /api/operations/work-centers",
     "GET /api/operations/workbench/export/{id}",
+    "GET /api/operations/workbench/export/{id}/download",
     "GET /api/operations/workbench/list",
     "GET /api/operations/workbench/views",
     "GET /api/organization",
@@ -496,6 +497,7 @@
     "GET /api/operations/tools",
     "GET /api/operations/work-centers",
     "GET /api/operations/workbench/export/{id}",
+    "GET /api/operations/workbench/export/{id}/download",
     "GET /api/operations/workbench/list",
     "GET /api/operations/workbench/views",
     "GET /api/organization",
@@ -800,9 +802,9 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 398,
-  "specOperations": 590,
-  "documentedControllerOperations": 398,
+  "controllerOperations": 399,
+  "specOperations": 592,
+  "documentedControllerOperations": 399,
   "undocumented": [],
   "unimplemented": []
 }

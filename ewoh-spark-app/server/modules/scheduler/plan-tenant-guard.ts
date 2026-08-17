@@ -24,6 +24,9 @@ import type { OrgContext } from '../shared/org-context.interceptor';
  *   - orgId == null（NULL=全局/存量行，standalone_025 过渡边界）→ 放行；
  *   - orgId === actor.primaryOrgId → 放行；
  *   - 其余 → NotFoundException（与"对象不存在"同语义，反枚举，不泄露存在性）。
+ *
+ * R2-SMI-011：actor.isGlobalAdmin → 放行——global_admin 的单条读与其列表
+ * 全量行为对齐（此前列表可见、详情 404 的功能性不一致）。
  */
 export function assertTenantVisible(
   orgId: string | null | undefined,
@@ -31,6 +34,7 @@ export function assertTenantVisible(
   subjectLabel?: string,
 ): void {
   if (!actor) return;
+  if (actor.isGlobalAdmin) return;
   if (orgId == null) return;
   if (orgId !== actor.primaryOrgId) {
     throw new NotFoundException(`${subjectLabel ?? '(unknown)'} not found`);

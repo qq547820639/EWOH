@@ -37,6 +37,7 @@ import { appendPlanDecisionRecords } from './decision-ledger';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import { SchedulingFeedbackService } from './scheduling-feedback.service';
 import { ConstraintLoaderService } from './constraint-loader.service';
+import { isSoftConstraintType } from './constraints';
 import { ReplanCoordinatorService } from './replan-coordinator.service';
 import { OutboxService } from './outbox.service';
 import { SimulationService } from '../simulation/simulation.service';
@@ -688,7 +689,9 @@ export class PlanService {
         deactivatedAt: r.deactivatedAt ? r.deactivatedAt.toISOString() : null,
         deactivatedBy: r.deactivatedBy ?? null,
         snapshotVersion: v.snapshotVersion as string | undefined,
-        hard: true,
+        // R2-SCH-010（2026-08-17）：按类型判定软约束（与 constraint-loader 同源），
+        // 持久化软类型不再被一律标记为硬。
+        hard: !isSoftConstraintType(r.type),
       } as import('@shared/api.interface').SchedulingConstraint;
     });
   }
@@ -704,10 +707,24 @@ export class PlanService {
     requestConstraints: import('@shared/api.interface').SchedulingConstraint[],
     ctx?: OrgContext,
   ): Promise<import('@shared/api.interface').SchedulingConstraint[]> {
+    // NEST-027（2026-08-17）：ctx 缺失不再静默回退全租户 SYSTEM_CTX——显式 warn
+    // 降级，且经 NEST-004 补齐后系统路径仅加载全局（NULL org）约束行（fail-closed）。
+    const effectiveCtx =
+      ctx ??
+      (this.logger.warn(
+        'loadEffectiveConstraints: actor ctx missing; falling back to global (NULL-org) constraints only',
+      ),
+      {
+        userId: 'system',
+        primaryOrgId: '',
+        role: 'system' as const,
+        accessibleOrgIds: [] as string[],
+        isGlobalAdmin: false,
+      });
     return this.constraintLoaderService.loadForPlan(
       planId,
       requestConstraints,
-      ctx ?? { userId: 'system', primaryOrgId: '', role: 'system', accessibleOrgIds: [], isGlobalAdmin: false },
+      effectiveCtx,
     );
   }
 
@@ -864,11 +881,15 @@ export class PlanService {
     newPlan.effectiveConstraintsHash =
       this.constraintLoaderService.hashConstraints(effectiveConstraints);
 
-    await this.persistPlan(newPlan, ctx);
-
+    // R2-SCH-014（2026-08-17）：persistPlan 与约束落库/supersede 同事务——
+    // 此前 persistPlan 独立事务先行提交，第二事务（约束+supersede+审计）失败时
+    // 留下半状态（新方案已落库但旧方案未 superseded/约束丢失）。
+    // RequestDatabaseContext 嵌套复用同一事务（与 NEST-125/129 同模式）。
     await this.requestDatabaseContext.runInTransaction(
       buildGucSettings(ctx),
       async () => {
+        await this.persistPlan(newPlan, ctx);
+
         // P0-2：落库本次新增的有效约束（含请求约束；继承的约束已在原 plan 下，
         // 保持原 constraintId 以便后续解除与审计追溯——此处仅落库新请求项）。
         // NEST-029 修复（2026-08-17）：过滤继承项——effectiveConstraints 混含

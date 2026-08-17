@@ -68,7 +68,7 @@ class TestMetricsUplink(unittest.TestCase):
     def test_post_batch_success(self):
         uplink = MetricsUplink(MetricsCollector(), "http://cloud", edge_id="edge-a")
         resp = mock.Mock(status=200)
-        with mock.patch("urllib.request.urlopen", return_value=mock.MagicMock(__enter__=mock.Mock(return_value=resp), __exit__=mock.Mock(return_value=False))) as fake, \
+        with mock.patch("urllib.request.urlopen", return_value=mock.MagicMock(__enter__=mock.Mock(return_value=resp), __exit__=mock.Mock(return_value=False))) as _fake, \
              mock.patch("urllib.request.Request") as req:
             ok = uplink._post_batch([{"metricName": "ewoh_uptime_seconds"}])
         self.assertTrue(ok)

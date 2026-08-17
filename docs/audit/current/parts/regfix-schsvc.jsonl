@@ -1,0 +1,4 @@
+{"id": "NEST-165", "fixed_at": "2026-08-17", "status": "FIXED", "related": "R2-SSV-01", "fix_summary": "scheduling-policy 版本读写面 org 化补全：findByVersion 及全部版本读方法叠加 org 可见性条件；激活 UPDATE 不改写行 orgId（PARTIALLY_FIXED → FIXED）"}
+{"id": "NEST-126", "fixed_at": "2026-08-17", "status": "FIXED", "related": "R2-SSV-12", "fix_summary": "resource-reservation 超卖窗口收敛：station advisory lock 执行失败由 warn+继续改 fail-closed 503（唯一串行化防线失效即拒绝），无 execute 的测试替身显式跳过（PARTIALLY_FIXED → FIXED）"}
+{"id": "NEST-002", "fixed_at": "2026-08-17", "status": "FIXED", "related": "R2-SSV-08", "fix_summary": "conflict-preview ctx 回退：controller previewConflictAction 透传 request.userContext，preview 不再回退空 org 系统 ctx（PARTIALLY_FIXED → FIXED）"}
+{"id": "NEST-036", "fixed_at": "2026-08-17", "status": "FIXED", "related": "R2-SSV-09", "fix_summary": "policy-replay 输入 org：显式 snapshotVersion 查询叠加 org 条件 + candidate getPolicy 按 org 作用域（PARTIALLY_FIXED → FIXED）"}

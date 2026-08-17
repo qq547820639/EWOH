@@ -63,4 +63,10 @@ describe('ErrorState (unified actionable error UI)', () => {
     // 复制诊断信息始终可用
     expect(markup).toContain('复制诊断信息');
   });
+
+  it('R2-CC2-002: 诊断块表面使用语义令牌（bg-muted/60，无字面 bg-white，dark 主题可读）', () => {
+    const markup = render(retryableError, jest.fn());
+    expect(markup).toContain('bg-muted/60');
+    expect(markup).not.toContain('bg-white');
+  });
 });

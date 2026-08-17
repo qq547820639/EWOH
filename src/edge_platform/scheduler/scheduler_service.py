@@ -21,7 +21,6 @@ from .models import (
     PLAN_ARCHIVED,
     PLAN_DISPATCHED,
     PLAN_PENDING_REVIEW,
-    PLAN_SHADOW,
     TASK_DISPATCHED,
     TASK_EXECUTING,
     Assignment,
@@ -171,25 +170,41 @@ class SchedulerService:
         - advisory 模式下：丢弃本地全部内存调度状态（pending plans/requests/
           assignments/reservations）与持久化的 Edge 本地调度记录——云端 NestJS
           是唯一事实来源，本地状态一律失效，防止陈旧建议被继续使用；
-        - 非 advisory（simulation）模式：仅清空内存（模拟数据无需保留）。
+        - 非 advisory（simulation）模式：仅清空内存（模拟数据无需保留），
+          **不删除**已持久化的正式 plan（批准链/审计回溯/重启 hydrate 数据源）。
 
         EDGE-115（2026-08-17 审计整改说明）：本方法删除持久化 plan 属 reconcile
         语义的**显式例外**——它不是"正式写路径"（confirm/execute/replan），而是
         云重连后对本地建议缓存的失效清理（P0-SCHED-OWNERSHIP 的核心动作），
         因此不经过 _assert_writable；此处文档化该例外，防止被误读为绕过守卫。
+
+        R2-ESC-008（裁决：按 docstring 承诺收敛实现，而非改文档）：删除分支
+        增加 advisory_only 条件——simulation（显式 EWOH_EDGE_SCHEDULING_WRITE=1
+        完整写）模式下云重连不得删除已批准/已派工的持久化方案；删除动作逐条
+        记审计日志（plan_id 清单），失败不静默。
         """
         self._requests.clear()
         self._plans.clear()
         self._assignments.clear()
         self._feedback.clear()
-        if self.repository is not None:
+        deleted_plan_ids: list[str] = []
+        # R2-ESC-008：仅 advisory 模式删除持久化 plan（本地建议缓存失效清理）；
+        # simulation 模式的持久化 plan 是正式调度事实，云重连不删。
+        if self.advisory_only and self.repository is not None:
             try:
                 for plan in self.repository.list_plans() or []:
                     plan_id = plan.get("plan_id")
                     if plan_id:
-                        self.storage.delete_schedule_plan(plan_id) if hasattr(
-                            self.storage, "delete_schedule_plan"
-                        ) else None
+                        if hasattr(self.storage, "delete_schedule_plan"):
+                            self.storage.delete_schedule_plan(plan_id)
+                            deleted_plan_ids.append(plan_id)
+                if deleted_plan_ids:
+                    # R2-ESC-008：删除动作留审计痕迹（删了哪些 plan_id）
+                    logger.warning(
+                        "reconcile_from_cloud(advisory): 已删除本地持久化方案 %d 个: %s",
+                        len(deleted_plan_ids),
+                        deleted_plan_ids,
+                    )
             except Exception as e:  # noqa: BLE001 - reconcile 失败不阻断启动
                 logger.warning("reconcile_from_cloud: 清理本地方案失败: %s", e)
         self._publish(
@@ -199,9 +214,15 @@ class SchedulerService:
             payload={
                 "reason": "cloud reconnected; edge local scheduling state discarded",
                 "advisory_only": self.advisory_only,
+                "deleted_plan_ids": deleted_plan_ids,
+                "persisted_plans_kept": not self.advisory_only,
             },
         )
-        return {"discarded": True, "advisory_only": self.advisory_only}
+        return {
+            "discarded": True,
+            "advisory_only": self.advisory_only,
+            "deleted_plan_ids": deleted_plan_ids,
+        }
 
     def _publish(self, event_type, entity_id="", version=1, payload=None):
         """把事件发布到事件总线（SSE 实时同步，Phase 5）。未注入总线则忽略。"""
@@ -446,9 +467,13 @@ class SchedulerService:
         plan = self._get_plan(plan_id)
         if not reason or not str(reason).strip():
             raise ValueError("确认必须填写理由（spec：班组长确认时必须填写理由）")
-        if plan.status not in (PLAN_PENDING_REVIEW, PLAN_SHADOW):
+        # R2-ESC-002：白名单收敛到 PLAN_PENDING_REVIEW——PLAN_TRANSITIONS/plan.yaml
+        # 中 shadow 仅可达 simulating（shadow→approved 为契约外转换），影子方案
+        # 必须经 simulating→pending_review 评审环节后方可确认。
+        if plan.status != PLAN_PENDING_REVIEW:
             raise IllegalStateError(
-                f"仅 {PLAN_PENDING_REVIEW}/{PLAN_SHADOW} 状态可确认，当前：{plan.status}"
+                f"仅 {PLAN_PENDING_REVIEW} 状态可确认（shadow 需先推进到 "
+                f"pending_review），当前：{plan.status}"
             )
         # 重新校验世界状态
         self._validate_world_state(plan, world_state_version)
@@ -489,6 +514,9 @@ class SchedulerService:
                     )
             raise
         before = plan.to_dict()
+        # R2-ESC-002：confirm 与 reject/execute 对称——状态写入前走统一转移校验
+        # （validate_plan_transition，单一事实源 PLAN_TRANSITIONS/plan.yaml）。
+        validate_plan_transition(plan.status, PLAN_APPROVED)
         plan.status = PLAN_APPROVED
         plan.confirmed_at = now_iso()
         plan.confirmed_by = actor_id

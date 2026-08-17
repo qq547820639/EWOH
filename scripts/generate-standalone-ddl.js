@@ -87,19 +87,26 @@ function write(relative, content) {
   console.log(`written ${relative}`);
 }
 
-const standaloneSchema = standaloneTransform(read('db/migrations/001_ewoh_managed_tables.sql'), {
-  bootstrapRoles: true,
-});
+// R2-SCR-001：main 守卫（对齐 SCR-022 在 generate-ddl-package.js 的修复模式）——
+// require 本模块不再产生写副作用（此前顶层 12 处 write 会重写 db/migrations、
+// db/verify、db/seed 下的权威 standalone DDL 文件）；纯函数导出供测试/工具复用。
+if (require.main === module) {
+  const standaloneSchema = standaloneTransform(read('db/migrations/001_ewoh_managed_tables.sql'), {
+    bootstrapRoles: true,
+  });
 
-write('db/migrations/standalone_001_schema.sql', standaloneSchema);
-write('db/migrations/standalone_001_schema.rollback.sql', renderStandaloneRollback(standaloneSchema));
-write('db/verify/standalone_001_verify.sql', standaloneTransform(read('db/verify/001_verify.sql')));
-write('db/seed/standalone_001_seed.sql', standaloneTransform(read('db/seed/001_demo_seed.sql')));
-write('db/migrations/standalone_002_users.sql', standaloneTransform(read('db/migrations/002_ewoh_users.sql')));
-write(
-  'db/migrations/standalone_002_users.rollback.sql',
-  standaloneTransform(read('db/migrations/002_ewoh_users.rollback.sql')),
-);
-write('db/migrations/standalone_003_runtime_role.sql', RUNTIME_ROLE_MIGRATION);
-write('db/migrations/standalone_003_runtime_role.rollback.sql', RUNTIME_ROLE_ROLLBACK);
-write('db/seed/standalone_002_admin.sql', standaloneTransform(read('db/seed/002_default_admin.sql')));
+  write('db/migrations/standalone_001_schema.sql', standaloneSchema);
+  write('db/migrations/standalone_001_schema.rollback.sql', renderStandaloneRollback(standaloneSchema));
+  write('db/verify/standalone_001_verify.sql', standaloneTransform(read('db/verify/001_verify.sql')));
+  write('db/seed/standalone_001_seed.sql', standaloneTransform(read('db/seed/001_demo_seed.sql')));
+  write('db/migrations/standalone_002_users.sql', standaloneTransform(read('db/migrations/002_ewoh_users.sql')));
+  write(
+    'db/migrations/standalone_002_users.rollback.sql',
+    standaloneTransform(read('db/migrations/002_ewoh_users.rollback.sql')),
+  );
+  write('db/migrations/standalone_003_runtime_role.sql', RUNTIME_ROLE_MIGRATION);
+  write('db/migrations/standalone_003_runtime_role.rollback.sql', RUNTIME_ROLE_ROLLBACK);
+  write('db/seed/standalone_002_admin.sql', standaloneTransform(read('db/seed/002_default_admin.sql')));
+}
+
+module.exports = { standaloneTransform, renderStandaloneRollback };

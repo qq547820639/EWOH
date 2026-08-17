@@ -7,11 +7,11 @@ POST /api/telemetry/export。
 """
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from edge_platform import services
 
-from . import NOT_HANDLED, Route, dispatch_routes, exact
+from . import Route, dispatch_routes, exact
 from ._util import SOURCE_LABELS, _filter_source, _latest_state, now_iso, parse_ts
 from .auth import enforce_export_role
 
@@ -30,7 +30,9 @@ def api_latest(ctx, h, req_meta):
 def api_series(ctx, h, req_meta):
     """回放态：按设备+时间段返回原始时间序列（正序）。"""
     device_id, start, end = h.arg("device_id"), h.arg("start"), h.arg("end")
-    limit = int(h.arg("limit", "2000") or 2000)
+    from ._util import bounded_limit
+
+    limit = bounded_limit(h, "limit", 2000, 5000)  # R2-ECO-003：非数字回落默认+硬上限
     if not (device_id and parse_ts(start) and parse_ts(end)):
         return h.send_json({"error": "需要 device_id/start/end（ISO 时间）"}, 400)
     rows = ctx.storage.query_telemetry(

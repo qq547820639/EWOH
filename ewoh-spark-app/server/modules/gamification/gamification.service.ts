@@ -374,6 +374,10 @@ export class GamificationService {
           .where(
             and(
               inArray(ewohSpatialEntity.entityId, workstationIds),
+              // R2-SBZ-005/R2-SAM-004：占用聚合 join 两侧表均补 org 谓词——
+              // 他租户同 ID 空间实体的遥测负荷不再进入本租户节拍推算（takt 污染）。
+              eq(ewohSpatialEntity.orgId, orgId),
+              eq(ewohTelemetry.orgId, orgId),
               gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`),
             ),
           )
@@ -406,7 +410,14 @@ export class GamificationService {
         const wsRows = await this.db
           .select({ entityId: ewohSpatialEntity.entityId, name: ewohSpatialEntity.name })
           .from(ewohSpatialEntity)
-          .where(inArray(ewohSpatialEntity.entityId, workstationIds));
+          .where(
+            and(
+              inArray(ewohSpatialEntity.entityId, workstationIds),
+              // R2-SBZ-005/R2-SAM-004：工位名称查询补 org 谓词——
+              // 不回显他租户实体名（污染 TaktSimulation 与 metricsJson 落库）。
+              eq(ewohSpatialEntity.orgId, orgId),
+            ),
+          );
         for (const r of wsRows) stationNameMap.set(r.entityId, r.name);
       }
 
@@ -824,15 +835,24 @@ export class GamificationService {
     const strategy = this.brainStrategyMap()[body.type] ?? 'load_balance';
     const planName = `大脑建议-${(body.title || body.type).slice(0, 20)}`;
 
+    // R2-SBZ-006：调度 run/plan 生成必须携带租户上下文——requireOrgId 前置
+    // fail-closed（actor 缺失在触发调度前拒绝，而非仅在审计行写入时兜底）。
+    const orgId = this.requireOrgId(actor);
+
     // 通过 Scheduling V2 内核生成 run + plan（Task 3.3：不再把方案直写 legacy 表、绕过 Scheduler）。
     if (!this.schedulerService) {
       throw new BadRequestException('调度内核不可用，无法采纳大脑建议');
     }
-    const { run, plans, debounced } = await this.schedulerService.createRun({
-      trigger: 'MANUAL',
-      entityId: body.type ? `brain:${body.type}` : undefined,
-      reason: body.title,
-    });
+    // R2-SBZ-006：createRun 透传 actor（org 上下文）——run/plan 生成不再走
+    // 系统全局上下文，world state 采集与 plan 归属均按调用方租户作用。
+    const { run, plans, debounced } = await this.schedulerService.createRun(
+      {
+        trigger: 'MANUAL',
+        entityId: body.type ? `brain:${body.type}` : undefined,
+        reason: body.title,
+      },
+      actor,
+    );
     if (debounced || !run || plans.length === 0) {
       this.logger.warn(
         `applyBrainSuggestion 触发被去抖合并（type=${body.type}），未生成新方案`,
@@ -840,6 +860,13 @@ export class GamificationService {
       throw new BadRequestException('调度已在进行中，请稍后再试');
     }
     const plan = plans[0];
+    // R2-SBZ-006：plan 显式归属与调用方租户不一致即拒绝（跨租户归属分裂
+    // fail-closed；undefined 仅 standalone_025 存量/全局过渡行语义放行）。
+    if (plan.orgId != null && plan.orgId !== orgId) {
+      throw new BadRequestException(
+        `plan_tenant_mismatch: planId=${plan.planId} planOrgId=${plan.orgId} actorOrgId=${orgId}`,
+      );
+    }
     const planId = plan.planId;
 
     await this.db.insert(ewohScheduleAudit).values({
@@ -850,7 +877,7 @@ export class GamificationService {
       reason: `采纳大脑建议：${body.title}`,
       createdAt: new Date(),
       // NEST-330：audit 行显式归属（不回退 NULL）。
-      orgId: this.requireOrgId(actor),
+      orgId,
     });
 
     this.logger.log(`applyBrainSuggestion planId=${planId} strategy=${strategy} operator=${operator}`);

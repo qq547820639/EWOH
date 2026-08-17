@@ -18,6 +18,12 @@ export class CpSatCircuitBreaker {
   private state: CircuitBreakerState = 'CLOSED';
   private consecutiveFailures = 0;
   private openedAtMs = 0;
+  /**
+   * R2-SCH-020（2026-08-17）：HALF_OPEN 并发探测限制——冷却期满放行第一个
+   * 探测后，探测结果未决期间其余调用一律视为 OPEN（旧实现 HALF_OPEN 分支
+   * 无限额，冷却期满后多个并发请求同时放行探测，可能对不可用 worker 放大流量）。
+   */
+  private probeInFlight = false;
   private readonly failureThreshold: number;
   private readonly resetTimeoutMs: number;
 
@@ -26,14 +32,21 @@ export class CpSatCircuitBreaker {
     this.resetTimeoutMs = config.resetTimeoutMs ?? 60_000;
   }
 
-  /** 当前是否应跳过 CP-SAT（OPEN 且冷却未满）。调用时若冷却期满会触发 OPEN→HALF_OPEN。 */
+  /**
+   * 当前是否应跳过 CP-SAT（OPEN 且冷却未满）。调用时若冷却期满会触发
+   * OPEN→HALF_OPEN 并放行一次探测；HALF_OPEN 探测未决期间其余调用视为 OPEN。
+   */
   isOpen(nowMs = Date.now()): boolean {
     if (this.state === 'OPEN') {
       if (nowMs - this.openedAtMs >= this.resetTimeoutMs) {
         this.state = 'HALF_OPEN';
+        this.probeInFlight = true;
         return false;
       }
       return true;
+    }
+    if (this.state === 'HALF_OPEN') {
+      return this.probeInFlight;
     }
     return false;
   }
@@ -42,11 +55,13 @@ export class CpSatCircuitBreaker {
   recordSuccess(): void {
     this.state = 'CLOSED';
     this.consecutiveFailures = 0;
+    this.probeInFlight = false;
   }
 
   /** 记录一次失败（worker 不可达/畸形等），累计并可能触发熔断。 */
   recordFailure(nowMs = Date.now()): void {
     this.consecutiveFailures += 1;
+    this.probeInFlight = false;
     if (this.consecutiveFailures >= this.failureThreshold) {
       this.state = 'OPEN';
       this.openedAtMs = nowMs;

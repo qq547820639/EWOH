@@ -25,6 +25,8 @@ import { PlanCompareService } from './plan-compare.service';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { OutboxService } from './outbox.service';
 import { ShadowEvaluatorService } from './prediction/shadow-evaluator.service';
+import { RequestDatabaseContext } from '../../database/request-database-context';
+import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
 /**
@@ -50,6 +52,8 @@ export class ShadowPolicyService {
     private readonly outboxService: OutboxService,
     // Task 6 / P1：canary 归属服务（可空；未注入时分歧仅记录，不回滚）。
     @Optional() private readonly shadowEvaluatorService?: ShadowEvaluatorService,
+    // R2-SSV-03：shadow plan 落库与 isShadow 标记同事务（可空；直构测试回退补偿路径）。
+    @Optional() private readonly requestDatabaseContext?: RequestDatabaseContext,
   ) {}
 
   /**
@@ -140,12 +144,45 @@ export class ShadowPolicyService {
       policy: policyRow as unknown as SchedulingPolicy,
     });
     const shadow = plans[0];
-    // 落库并标记 is_shadow=true + shadow_policy_version（DB 层标识，服务端 guard 依据）。
-    await this.planService.persistPlan({ ...shadow, planId: shadowPlanId }, ctx);
-    await this.db
-      .update(ewohSchedulePlan)
-      .set({ isShadow: true, shadowPolicyVersion, updatedAt: new Date() })
-      .where(eq(ewohSchedulePlan.planId, shadowPlanId));
+    // R2-SSV-03（2026-08-17）：落库与 is_shadow 标记同事务原子化——此前
+    // persistPlan 成功后标记 UPDATE 失败/进程崩溃会残留一条 is_shadow=false
+    // 的"裸" shadow 方案（可审批/可派工，guardShadowPlan 仅检查 is_shadow
+    // 字段即被绕过）。经 RequestDatabaseContext 包裹后 persistPlan 的嵌套
+    // runInTransaction 复用同一事务（一请求一事务）；无 context（直构测试）
+    // 时回退补偿路径：标记失败即删除该 plan 行，绝不留裸 shadow 方案。
+    const persistAndMarkShadow = async (): Promise<void> => {
+      await this.planService.persistPlan({ ...shadow, planId: shadowPlanId }, ctx);
+      await this.db
+        .update(ewohSchedulePlan)
+        .set({ isShadow: true, shadowPolicyVersion, updatedAt: new Date() })
+        .where(eq(ewohSchedulePlan.planId, shadowPlanId));
+    };
+    if (this.requestDatabaseContext) {
+      await this.requestDatabaseContext.runInTransaction(
+        buildGucSettings(ctx ?? { userId: 'system', primaryOrgId: '' }),
+        persistAndMarkShadow,
+      );
+    } else {
+      try {
+        await persistAndMarkShadow();
+      } catch (err) {
+        this.logger.error(
+          `shadow plan mark failed; compensating by deleting unmarked plan ${shadowPlanId}`,
+          err instanceof Error ? err.stack : String(err),
+        );
+        try {
+          await this.db
+            .delete(ewohSchedulePlan)
+            .where(eq(ewohSchedulePlan.planId, shadowPlanId));
+        } catch (cleanupErr) {
+          this.logger.error(
+            `shadow plan compensation delete failed for ${shadowPlanId}（残留未标记方案，需人工清理）`,
+            cleanupErr instanceof Error ? (cleanupErr as Error).stack : String(cleanupErr),
+          );
+        }
+        throw err;
+      }
+    }
 
     // 对比 active baseline（若存在）
     let compare: PlanCompareResult | null = null;

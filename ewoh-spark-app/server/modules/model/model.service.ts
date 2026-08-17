@@ -141,11 +141,22 @@ export class ModelService {
       );
     }
     const before = current.status ?? 'candidate';
+    // R2-SNZ-015：写谓词补 orgId 列（与 quality/workorder 对齐的纵深防御；
+    // global_admin 放行，与读侧 org 谓词语义一致）。
+    const transitionOrgCond = actor?.isGlobalAdmin
+      ? undefined
+      : eq(ewohModelRegistry.orgId, actor?.primaryOrgId?.trim() ?? '__none__');
     const [row] = await this.db
       .update(ewohModelRegistry)
       .set({ status })
       .where(
-        and(eq(ewohModelRegistry.id, id), eq(ewohModelRegistry.status, before)),
+        transitionOrgCond
+          ? and(
+              eq(ewohModelRegistry.id, id),
+              eq(ewohModelRegistry.status, before),
+              transitionOrgCond,
+            )
+          : and(eq(ewohModelRegistry.id, id), eq(ewohModelRegistry.status, before)),
       )
       .returning();
     if (!row) {

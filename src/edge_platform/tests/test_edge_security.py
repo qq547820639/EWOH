@@ -89,7 +89,7 @@ class _ProductionServerFixture:
             h["Content-Type"] = "application/json"
         r = urllib.request.Request(self.base + path, data=data, method=method, headers=h)
         try:
-            resp = urllib.request.urlopen(r, timeout=5)
+            resp = urllib.request.urlopen(r, timeout=5)  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
             return resp.status, resp.headers, resp.read()
         except urllib.error.HTTPError as e:
             return e.code, e.headers, e.read()

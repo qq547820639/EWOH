@@ -33,7 +33,12 @@ from edge_platform.scheduler import (
     WorldStateService,
     build_route_planner,
 )
-from edge_platform.scheduler.models import SchedulePlan
+from edge_platform.scheduler.models import (
+    PLAN_PENDING_REVIEW,
+    PLAN_SIMULATING,
+    SchedulePlan,
+    validate_plan_transition,
+)
 from edge_platform.scheduler.repository import (
     ReadonlyModeError,
     SchedulingRepository,
@@ -147,6 +152,12 @@ def _make_approved_plan(scheduler):
     plans = scheduler.generate_plans(req.request_id)
     assert plans, "generate_plans 应产出至少一个方案"
     plan = plans[0]
+    # R2-ESC-002：confirm 收紧到 pending_review——先沿契约状态机推进
+    # （shadow→simulating→pending_review，逐走 validate）再确认。
+    validate_plan_transition(plan.status, PLAN_SIMULATING)
+    plan.status = PLAN_SIMULATING
+    validate_plan_transition(plan.status, PLAN_PENDING_REVIEW)
+    plan.status = PLAN_PENDING_REVIEW
     scheduler.confirm(
         plan.plan_id,
         "leader1",

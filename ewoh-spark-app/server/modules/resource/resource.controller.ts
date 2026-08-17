@@ -25,8 +25,9 @@ export class ResourceController {
   }
 
   @Get(':id')
-  get(@Param('id') id: string) {
-    return this.resourceService.getPreorder(id);
+  get(@Param('id') id: string, @Req() request: { userContext?: OrgContext }) {
+    // R2-SNZ-009：读面带租户谓词（global_admin 放行，缺租户 fail-closed）。
+    return this.resourceService.getPreorder(id, request.userContext);
   }
 
   @Post(':id/issue')
@@ -45,7 +46,7 @@ export class ResourceController {
     @Req() request: { userContext?: OrgContext },
   ) {
     if (action !== 'release') {
-      return this.resourceService.getPreorder(id);
+      return this.resourceService.getPreorder(id, request.userContext);
     }
     return this.resourceService.release(id, request.userContext);
   }

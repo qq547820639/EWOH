@@ -103,11 +103,27 @@ jobs:
           set -e
           # 用字符串拼接构造检索词，避免本守护脚本自身命中（自匹配 false positive）。
           needle='@''latest'
-          if grep -rnF "$needle" ewoh-spark-app/package.json .github/workflows/ 2>/dev/null; then
-            echo "::error::检测到浮动版本标记（违反 Task 11 版本固定约束）。"
+          # R2-INF-001：扫描范围补 ewoh-spark-app/scripts/——dev.sh / dev-local.js
+          # 中 4 处随执行的浮动标记原先不在扫描面内，守护存在盲区（文件白名单
+          # 式扫描对新增脚本零约束）。
+          hits="$(grep -rnF "$needle" ewoh-spark-app/package.json ewoh-spark-app/scripts/ .github/workflows/ 2>/dev/null || true)"
+          # R2-INF-001 豁免登记（逐条附理由；仅限"平台维护、人工钉版会被下次
+          # app sync 覆盖"的平台模板链路，新增浮动标记不登记即 FAIL）：
+          #   - scripts/dev-local.js：头注声明"由 miaoda app sync 维护，请勿手改"
+          #     的平台模板，其中浮动标记由平台注入（含 62/72 两处随执行与 68 行
+          #     平台注释），人工钉版会在下次 app sync 被覆盖；仅本地 dev 路径执行，
+          #     SANDBOX 生产分支与 CI 均不经过。
+          #   - scripts/dev.sh：本地兜底的 miaoda app sync 升级链路（该命令平台
+          #     语义即"同步 platform-controlled 内容并升级 @lark-apaas/* 到最新"），
+          #     沙箱分支不经过，与 dev-local.js 同源同理由。
+          unexempted="$(printf '%s\n' "$hits" | grep -vF \
+            -e 'ewoh-spark-app/scripts/dev-local.js:' \
+            -e 'ewoh-spark-app/scripts/dev.sh:' || true)"
+          if [ -n "$unexempted" ]; then
+            printf '::error::检测到未登记的浮动版本标记（违反 Task 11 版本固定约束）：\n%s\n' "$unexempted"
             exit 1
           fi
-          echo "OK: 未发现浮动版本标记"
+          echo "OK: 未发现未登记的浮动版本标记（平台模板豁免见守护内登记表）"
 
       - name: GitHub Actions uses 必须固定到 commit SHA（Task 11）
         run: |

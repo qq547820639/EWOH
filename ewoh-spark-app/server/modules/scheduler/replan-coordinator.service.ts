@@ -3,7 +3,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { eq, desc, sql, or, isNull } from 'drizzle-orm';
+import { and, eq, desc, ne, or, isNull, sql } from 'drizzle-orm';
 import { ewohSchedulePlan, ewohSchedulingRun } from '@server/database/schema';
 import type {
   ReplanConfig,
@@ -242,6 +242,10 @@ export class ReplanCoordinatorService {
             return 'suppressed' as const;
           }
           // 2) 状态判定在锁事务内（NEST-124：不再在锁释放后判定）。
+          // R2-SCH-009（2026-08-17，NEST-124 残留）：状态源改为 DB 权威——
+          // 以 ewoh_scheduling_run 行（非 MANUAL 触发，org 隔离）派生
+          // lastReplanAt 与窗口内计数，advisory lock 事务内读取即跨实例一致
+          // （内存 LRU 仅作锁/DB 不可用时的降级缓存，见 catch 分支）。
           const now = Date.now();
           const replan = await this.readReplanConfig();
           const debounceMs = replan?.replanDebounceMs ?? FALLBACK_REPLAN.replanDebounceMs!;
@@ -252,18 +256,31 @@ export class ReplanCoordinatorService {
           const windowMs =
             replan?.conflictAggregationWindowMs ?? FALLBACK_REPLAN.conflictAggregationWindowMs!;
 
-          const state = this.touchOrgState(orgKey);
-          // 清理窗口外时间戳（conflictAggregationWindowMs）。
-          state.replanTimes = state.replanTimes.filter(
+          const recentRuns = await this.db
+            .select({ createdAt: ewohSchedulingRun.createdAt })
+            .from(ewohSchedulingRun)
+            .where(
+              and(
+                eq(ewohSchedulingRun.orgId, orgKey),
+                ne(ewohSchedulingRun.triggerType, 'MANUAL'),
+              ),
+            )
+            .orderBy(desc(ewohSchedulingRun.createdAt))
+            .limit(Math.max(maxPerWindow, 1) + 1);
+          const runTimesMs = recentRuns
+            .map((r) => (r.createdAt instanceof Date ? r.createdAt.getTime() : NaN))
+            .filter((t) => Number.isFinite(t));
+          const lastReplanAt = runTimesMs[0] ?? 0;
+          const replanTimesInWindow = runTimesMs.filter(
             (t) => now - t < windowMs,
-          );
+          ).length;
 
-          if (now - state.lastReplanAt < debounceMs) {
+          if (now - lastReplanAt < debounceMs) {
             return 'debounced' as const;
           }
           if (
-            now - state.lastReplanAt < minIntervalMs &&
-            state.replanTimes.length >= maxPerWindow
+            now - lastReplanAt < minIntervalMs &&
+            replanTimesInWindow >= maxPerWindow
           ) {
             return 'suppressed' as const;
           }
@@ -592,6 +609,12 @@ export class ReplanCoordinatorService {
     triggerType: string,
     entityId: string | null,
     ctx: OrgContext,
+    /**
+     * R2-SCH-013（2026-08-17）：聚合触发的完整实体列表（如一批 blocked route
+     * edges）。缺省 [entityId]（既有单实体语义不变）；影响分析 seed 用完整列表
+     * 反查受影响任务并集，entityId 仅作为 run 的展示/去重键。
+     */
+    triggerIds?: string[],
   ): Promise<TriggerResult> {
     // Replan V2 风暴守卫（08 §7）：抑制/去抖先于 triggerService 求值。
     if (triggerType !== 'MANUAL') {
@@ -620,10 +643,15 @@ export class ReplanCoordinatorService {
       // 重排必须基于最新世界状态：always 在此刻重新构建快照，
       // 绝不复用旧 plan/snapshot 的 snapshotVersion。新方案绑定 snapshot.snapshotVersion。
       const snapshot = await this.worldStateSnapshotService.buildSnapshot(ctx);
+      // R2-SCH-013：显式 triggerIds 优先（聚合触发）；缺省回退 [entityId]。
       const impact = await this.analyzeImpactV2FromSnapshot(
         snapshot,
         triggerType,
-        entityId ? [entityId] : [],
+        triggerIds && triggerIds.length > 0
+          ? triggerIds
+          : entityId
+            ? [entityId]
+            : [],
       );
       this.logger.debug(
         `replan impact v2: affected=${impact.affectedTaskIds.length}, frozen=${impact.frozenAssignmentIds.length}, movable=${impact.movableAssignmentIds.length}`,
@@ -1026,18 +1054,29 @@ export class ReplanCoordinatorService {
   ): Promise<Array<{ triggerType: string; entityId: string }>> {
     const dispatched: Array<{ triggerType: string; entityId: string }> = [];
 
-    // 1) 路由阻断 / 拥塞（逐边语义保留）。
-    for (const r of snapshot.routeStatus) {
-      if (r.status === 'blocked') {
-        const run = await this.handleTrigger('ROUTE_BLOCKED', r.edgeId, ctx);
-        if (run.run) {
-          dispatched.push({ triggerType: 'ROUTE_BLOCKED', entityId: r.edgeId });
-        }
-      } else if (r.status === 'congested') {
-        const run = await this.handleTrigger('ROUTE_CONGESTED', r.edgeId, ctx);
-        if (run.run) {
-          dispatched.push({ triggerType: 'ROUTE_CONGESTED', entityId: r.edgeId });
-        }
+    // 1) 路由阻断 / 拥塞。
+    // R2-SCH-013（2026-08-17）：同状态边聚合为一次触发（此前逐边独立
+    // handleTrigger——每边一次全量快照+求解，多边场景全量重排反复执行）。
+    // entityId=边列表逗号连接（展示/去重键）；triggerIds=完整边列表供影响
+    // 分析 seed 反查受影响任务并集。单边场景 entityId 即边 id（与旧语义一致）。
+    const blockedEdgeIds = snapshot.routeStatus
+      .filter((r) => r.status === 'blocked')
+      .map((r) => r.edgeId);
+    if (blockedEdgeIds.length > 0) {
+      const entityId = blockedEdgeIds.join(',');
+      const run = await this.handleTrigger('ROUTE_BLOCKED', entityId, ctx, blockedEdgeIds);
+      if (run.run) {
+        dispatched.push({ triggerType: 'ROUTE_BLOCKED', entityId });
+      }
+    }
+    const congestedEdgeIds = snapshot.routeStatus
+      .filter((r) => r.status === 'congested')
+      .map((r) => r.edgeId);
+    if (congestedEdgeIds.length > 0) {
+      const entityId = congestedEdgeIds.join(',');
+      const run = await this.handleTrigger('ROUTE_CONGESTED', entityId, ctx, congestedEdgeIds);
+      if (run.run) {
+        dispatched.push({ triggerType: 'ROUTE_CONGESTED', entityId });
       }
     }
 

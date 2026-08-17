@@ -7,7 +7,11 @@ export interface AuditQuery {
   entityType?: string;
   action?: string;
   actorId?: string;
-  /** ADR-078：可选 org 过滤（缺失=RLS 语义现状）。 */
+  /**
+   * ADR-078 + R2-SMI-005：应用层 org 过滤（纵深防御）。controller 侧
+   * 非 global_admin 强制传本租户 primaryOrgId（缺失 401 fail-closed）；
+   * global_admin 可显式传 orgId 聚焦或留空看全租户。
+   */
   orgId?: string;
   limit: number;
   offset: number;

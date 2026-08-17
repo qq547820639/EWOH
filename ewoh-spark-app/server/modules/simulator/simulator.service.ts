@@ -403,6 +403,7 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
       entityId: string;
       stateJson: Record<string, unknown>;
       ts: Date;
+      orgId: string | null;
     }> = [];
 
     // --- 设备处理 ---
@@ -533,6 +534,10 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
           source_type: 'simulated',
         },
         ts: now,
+        // R2-SNZ-004：世界状态行显式归属（与 telemetry/device 同源
+        // EWOH_SIMULATOR_ORG_ID；缺配置时 withSimulatorOrgContext 已
+        // fail-closed 抛错，行不会落 NULL=legacy 全租户可见）。
+        orgId: this.simulatorOrgId(),
       });
 
       // 禁区进入事件
@@ -611,6 +616,9 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
           sourceType: 'simulated',
           recordId: randomUUID(),
           dataConfidence: 1.0,
+          // R2-SNZ-004：环境行显式归属（ewoh_environment.org_id 无 DB
+          // default，GUC 不自动填充；原先缺省落 NULL=全租户可见）。
+          orgId: this.simulatorOrgId(),
         }));
         if (rows.length > 0) {
           await this.db.insert(ewohEnvironment).values(rows);

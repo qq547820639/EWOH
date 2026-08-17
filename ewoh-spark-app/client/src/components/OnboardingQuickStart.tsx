@@ -9,6 +9,7 @@
 
 import {
   useEffect,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -79,6 +80,15 @@ export const OnboardingQuickStart = ({
   }, [userId]);
 
   const role: OnboardingRoleKey = onboardingRoleKey(roles);
+  // R2-CC2-001：shown 上报移出 render 路径（原先 handleOpen 在 return 内被
+  // 调用，宿主任意重渲染/StrictMode 均重复上报，漏斗数据失真）。
+  const visible = shouldShowOnboarding(userId, ONBOARDING_VERSION);
+  const shownRef = useRef(false);
+  useEffect(() => {
+    if (!visible || shownRef.current) return;
+    shownRef.current = true;
+    reportOnboardingEvent('onboarding.shown', { flow: 'onboarding', role });
+  }, [visible, role]);
   const steps = quickStartSteps(role);
   const remainder = nextIncompleteStep('onboarding', prefs.completedSteps);
   const resumeStep = remainder ?? steps[0].id;
@@ -113,8 +123,7 @@ export const OnboardingQuickStart = ({
   };
 
   const handleOpen = () => {
-    if (!shouldShowOnboarding(userId, ONBOARDING_VERSION)) return null;
-    reportOnboardingEvent('onboarding.shown', { flow: 'onboarding', role });
+    if (!visible) return null;
     return (
       <Empty data-role={role} data-resume-step={resumeStep}>
         <EmptyHeader>

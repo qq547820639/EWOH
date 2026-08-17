@@ -64,7 +64,7 @@ class _Fixture:
 
     def get(self, path):
         try:
-            with urllib.request.urlopen(self.base + path, timeout=5) as r:
+            with urllib.request.urlopen(self.base + path, timeout=5) as r:  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
                 return r.status, dict(r.headers), r.read()
         except urllib.error.HTTPError as e:
             return e.code, dict(e.headers), e.read()
@@ -77,7 +77,7 @@ class _Fixture:
             method="PATCH",
         )
         try:
-            with urllib.request.urlopen(req, timeout=5) as r:
+            with urllib.request.urlopen(req, timeout=5) as r:  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
                 return r.status, dict(r.headers), r.read()
         except urllib.error.HTTPError as e:
             return e.code, dict(e.headers), e.read()
@@ -175,7 +175,7 @@ class SchedulerReadonlyGateTest(unittest.TestCase):
                 method="POST",
             )
             try:
-                urllib.request.urlopen(req, timeout=5)
+                urllib.request.urlopen(req, timeout=5)  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
                 self.fail("readonly 仓储下创建任务应被拒绝")
             except urllib.error.HTTPError as e:
                 self.assertEqual(e.code, 403, "readonly 写被拒应返回 403 而非 500")
@@ -226,7 +226,7 @@ class ActorIdentityResolutionTest(unittest.TestCase):
             data=json.dumps({"username": username, "password": password}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=5) as r:
+        with urllib.request.urlopen(req, timeout=5) as r:  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
             payload = json.loads(r.read())
         return payload["token"]
 
@@ -237,7 +237,7 @@ class ActorIdentityResolutionTest(unittest.TestCase):
         req = urllib.request.Request(
             fx.base + path, data=json.dumps(payload).encode("utf-8"), headers=headers
         )
-        with urllib.request.urlopen(req, timeout=5) as r:
+        with urllib.request.urlopen(req, timeout=5) as r:  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
             return json.loads(r.read())
 
     def test_token_identity_overrides_client_supplied_author(self):
@@ -330,7 +330,7 @@ class VisionSsidfGuardTest(unittest.TestCase):
                 method="POST",
             )
             try:
-                urllib.request.urlopen(req, timeout=5)
+                urllib.request.urlopen(req, timeout=5)  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
                 self.fail("未配置密钥的视觉理解请求应失败")
             except urllib.error.HTTPError as e:
                 self.assertEqual(e.code, 502)
@@ -359,7 +359,7 @@ class SseAuthGateTest(unittest.TestCase):
         fx = _Fixture(runtime_mode="development")
         try:
             req = urllib.request.Request(fx.base + "/api/command-map/stream")
-            with urllib.request.urlopen(req, timeout=5) as r:
+            with urllib.request.urlopen(req, timeout=5) as r:  # nosec B310 - 测试桩：URL 为本地 fixture 服务器，非用户输入
                 self.assertEqual(r.status, 200)
                 ctype = r.headers.get("Content-Type", "")
                 self.assertIn("text/event-stream", ctype)

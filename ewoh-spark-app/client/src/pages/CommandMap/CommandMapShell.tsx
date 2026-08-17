@@ -123,10 +123,10 @@ function SchedulerRealtimeBadge({
     connected: rt.statusV2 !== 'OFFLINE',
   });
   const lastTime = rt.lastEventTime
-    ? new Date(rt.lastEventTime).toLocaleTimeString('zh-CN', { hour12: false })
+    ? new Date(rt.lastEventTime).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
     : '—';
   const asOfTime = context?.sourceTimestamp
-    ? new Date(context.sourceTimestamp).toLocaleTimeString('zh-CN', { hour12: false })
+    ? new Date(context.sourceTimestamp).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
     : null;
   return (
     <div

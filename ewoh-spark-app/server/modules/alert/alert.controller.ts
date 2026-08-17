@@ -7,9 +7,16 @@ export class AlertController {
   constructor(private readonly alertService: AlertService) {}
 
   @Get()
-  list(@Req() request: { userContext?: OrgContext }) {
-    // NEST-433：org 过滤。
-    return this.alertService.listAlerts(request.userContext);
+  list(
+    @Req() request: { userContext?: OrgContext },
+    @Query('limit') limit?: string,
+    @Query('since') since?: string,
+  ) {
+    // NEST-433：org 过滤；R2-SMI-007：limit/since 分页（service 侧钳制）。
+    return this.alertService.listAlerts(request.userContext, {
+      limit: limit ? Number(limit) : undefined,
+      since,
+    });
   }
 
   @Get(':id')

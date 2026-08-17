@@ -56,7 +56,9 @@ def validate_envelope(envelope: dict, known_event_types: frozenset) -> list[str]
         return ["bad_event_id"]
     if envelope["eventType"] not in known_event_types:
         return ["unknown_event_type"]
-    if not isinstance(envelope["schemaVersion"], str) or not envelope["schemaVersion"]:
+    # R2-SHR-002：schemaVersion 锁 const '1.0.0'（与 envelope.schema.json
+    # const 及 TS event-envelope.ts 一致，闭合 SH-003 Python 半边）。
+    if not isinstance(envelope["schemaVersion"], str) or envelope["schemaVersion"] != "1.0.0":
         return ["bad_schema_version"]
     occurred = parse_ts(envelope["occurredAt"])
     if occurred is None:

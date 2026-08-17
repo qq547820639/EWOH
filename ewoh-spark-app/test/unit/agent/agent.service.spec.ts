@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { AgentService } from '../../../server/modules/agent/agent.service';
 import {
   ewohAgentApproval,
@@ -379,7 +379,11 @@ describe('AgentService（NO-06c：审批桥接 + 工厂主管 Agent）', () => {
       devices: [{ entityId: 'exo:e1' }],
       stations: [{ entityId: 'station:s1', queue: ['t1'] }],
     });
-    const { suggestion, result } = await service.runSupervisorSuggestion('ORG-1');
+    // R2-SBZ-002：建议流必须携带租户上下文（OrgContext）读取世界状态。
+    const { suggestion, result } = await service.runSupervisorSuggestion('ORG-1', {
+      userId: 'u1',
+      primaryOrgId: 'ORG-1',
+    });
     expect(suggestion.facts).toEqual({
       highSeverityEvents: 1,
       backlogStations: 1,
@@ -390,6 +394,44 @@ describe('AgentService（NO-06c：审批桥接 + 工厂主管 Agent）', () => {
     expect(result.needsApproval).toBe(true);
     expect(result.approvalId).toBeTruthy();
     expect(approvals.some((a) => a.approvalId === result.approvalId && a.status === 'pending')).toBe(true);
+  });
+});
+
+describe('AgentService（R2-SBZ-002：supervisor 建议流世界状态读取租户上下文）', () => {
+  it('getCurrentWorldState 以调用方 OrgContext（primaryOrgId）调用——本租户谓词生效', async () => {
+    const { worldState, service } = createAgentDb([]);
+    worldState.getCurrentWorldState.mockResolvedValue({
+      worldVersion: 1,
+      entityVersions: {},
+      events: [],
+      persons: [],
+      devices: [],
+      stations: [],
+    });
+    const actor = { userId: 'u1', primaryOrgId: 'ORG-1' };
+    await service.runSupervisorSuggestion('ORG-1', actor);
+    // 世界状态服务按 ctx.primaryOrgId 加 org 谓词（NEST-101）——
+    // 透传缺失即退化为全租户聚合（R2-SBZ-002 根因）。
+    expect(worldState.getCurrentWorldState).toHaveBeenCalledWith(
+      expect.objectContaining({ primaryOrgId: 'ORG-1' }),
+    );
+  });
+
+  it('缺失 actor（无租户上下文）→ 401 fail-closed，绝不回退全局世界状态', async () => {
+    const { worldState, service } = createAgentDb([]);
+    // NEST-213 actorOf 同款语义：缺失即 401（UnauthorizedException）。
+    await expect(service.runSupervisorSuggestion('ORG-1')).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(worldState.getCurrentWorldState).not.toHaveBeenCalled();
+  });
+
+  it('actor.primaryOrgId 与 orgId 不一致 → 401 fail-closed（调用链错位防御）', async () => {
+    const { worldState, service } = createAgentDb([]);
+    await expect(
+      service.runSupervisorSuggestion('ORG-1', { userId: 'u1', primaryOrgId: 'ORG-OTHER' }),
+    ).rejects.toThrow(/org 上下文缺失或不一致/);
+    expect(worldState.getCurrentWorldState).not.toHaveBeenCalled();
   });
 });
 

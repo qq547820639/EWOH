@@ -1,15 +1,23 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
+  NotFoundException,
   Param,
   Post,
   Put,
   Query,
   Req,
+  Res,
   UnauthorizedException,
 } from '@nestjs/common';
+import { createReadStream } from 'node:fs';
+import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { Response as ExpressResponse } from 'express';
 import { OperationsService } from './operations.service';
 import { RoleWorkbenchService } from './role-workbench.service';
 import { WorkbenchExportService } from './workbench-export.service';
@@ -22,6 +30,8 @@ import {
 import type { DangerousActionSpec } from './dangerous-action';
 import { Roles } from '../shared/roles.decorator';
 import type { OrgContext } from '../shared/org-context.interceptor';
+
+type ResponseStream = ExpressResponse;
 
 /**
  * NEST-213：OrgContext 缺失时 401（绝不回退 anonymous/'org-unknown' 占位
@@ -107,6 +117,39 @@ export class OperationsController {
       id,
       actorOf(request.userContext),
     );
+  }
+
+  /**
+   * R2-SOP-006：导出产物下载端点（worker complete 后 downloadUrl 指向此处）。
+   * owner / global_admin 才可下载；文件名不进 URL，路径由 taskId 派生。
+   */
+  @Get('workbench/export/:id/download')
+  async downloadExport(
+    @Param('id') id: string,
+    @Req() request: { userContext?: OrgContext },
+    @Res() reply: ResponseStream,
+  ) {
+    const actor = actorOf(request.userContext);
+    const task = await this.workbenchExportService.getExportTask(id, actor);
+    if (task.status !== 'succeeded' || !task.downloadUrl) {
+      throw new BadRequestException(
+        `export is not ready for download (status='${task.status}')`,
+      );
+    }
+    const dir =
+      process.env.WORKBENCH_EXPORT_DIR?.trim() ||
+      join(tmpdir(), 'ewoh-workbench-exports');
+    const file = join(dir, `${id}.csv`);
+    if (!existsSync(file)) {
+      throw new NotFoundException('export artifact expired or missing');
+    }
+    reply.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    reply.setHeader(
+      'Content-Disposition',
+      `attachment; filename="workbench-export-${id}.csv"`,
+    );
+    const stream = createReadStream(file);
+    stream.pipe(reply);
   }
 
   // ===== 角色工作台：保存视图服务端持久化 / 跨设备 / 共享 =====

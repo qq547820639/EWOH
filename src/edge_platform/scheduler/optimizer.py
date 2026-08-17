@@ -25,7 +25,6 @@ from .models import (
     SchedulePlan,
 )
 
-
 logger = logging.getLogger(__name__)
 
 

@@ -1,5 +1,6 @@
 import {
   inferInputMode,
+  isEditableTarget,
   matchShortcut,
   mergeScannedValue,
   touchTargetSize,
@@ -41,12 +42,24 @@ describe('workbenchInput (多输入方式：键盘/扫码枪/触摸/单手/工�
   });
 
   describe('matchShortcut', () => {
-    it('matches plain keys', () => {
-      expect(matchShortcut({ key: 'f' })).toBe('focus-filter');
-      expect(matchShortcut({ key: 'r' })).toBe('refresh');
+    it('matches plain keys outside editable targets', () => {
+      expect(matchShortcut({ key: 'f', target: { tagName: 'DIV' } })).toBe('focus-filter');
+      expect(matchShortcut({ key: 'r', target: { tagName: 'BODY' } })).toBe('refresh');
     });
     it('returns null for unknown keys', () => {
       expect(matchShortcut({ key: 'x' })).toBeNull();
+    });
+    it('exempts bare-key shortcuts while typing in inputs (R2-CP2-001)', () => {
+      // 筛选框内输入 f/r/s 不应触发聚焦/刷新/保存视图等动作
+      expect(matchShortcut({ key: 'f', target: { tagName: 'INPUT' } })).toBeNull();
+      expect(matchShortcut({ key: 'r', target: { tagName: 'input' } })).toBeNull();
+      expect(matchShortcut({ key: 's', target: { tagName: 'TEXTAREA' } })).toBeNull();
+      expect(matchShortcut({ key: 'f', target: { tagName: 'DIV', isContentEditable: true } })).toBeNull();
+    });
+    it('isEditableTarget recognizes select and non-element targets', () => {
+      expect(isEditableTarget({ tagName: 'SELECT' })).toBe(true);
+      expect(isEditableTarget(null)).toBe(false);
+      expect(isEditableTarget({ tagName: 'BUTTON' })).toBe(false);
     });
     it('requires the modifier when one is declared', () => {
       const ctrlShortcut = [{ key: 's', modifier: 'ctrl' as const, action: 'save-view' }];

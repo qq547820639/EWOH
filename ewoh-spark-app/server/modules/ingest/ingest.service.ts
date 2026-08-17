@@ -125,7 +125,8 @@ export class IngestService {
       recordId: frame.record_id ?? randomUUID(),
     }));
 
-    // 2. 批量 entity 存在性预检
+    // 2. 批量 entity 存在性预检（R2-SOP-011/R2-SAM-012：有租户上下文时带 org 谓词）
+    const batchOrgId = ctx?.primaryOrgId?.trim();
     const entityIds = Array.from(
       new Set(parsed.map((p) => p.entityId).filter((id) => !!id)),
     );
@@ -135,7 +136,14 @@ export class IngestService {
         const rows = await this.db
           .select({ entityId: ewohSpatialEntity.entityId })
           .from(ewohSpatialEntity)
-          .where(inArray(ewohSpatialEntity.entityId, entityIds));
+          .where(
+            batchOrgId
+              ? and(
+                  eq(ewohSpatialEntity.orgId, batchOrgId),
+                  inArray(ewohSpatialEntity.entityId, entityIds),
+                )
+              : inArray(ewohSpatialEntity.entityId, entityIds),
+          );
         for (const r of rows) existingEntityIds.add(r.entityId);
       } catch (error) {
         this.logger.warn(
@@ -153,7 +161,14 @@ export class IngestService {
         const rows = await this.db
           .select({ rawRef: ewohTelemetry.rawRef })
           .from(ewohTelemetry)
-          .where(inArray(ewohTelemetry.rawRef, rawRefs));
+          .where(
+            batchOrgId
+              ? and(
+                  eq(ewohTelemetry.orgId, batchOrgId),
+                  inArray(ewohTelemetry.rawRef, rawRefs),
+                )
+              : inArray(ewohTelemetry.rawRef, rawRefs),
+          );
         for (const r of rows) existingRawRefs.add(r.rawRef);
       } catch (error) {
         this.logger.warn(
@@ -165,7 +180,6 @@ export class IngestService {
 
     // 3.5 批量身份解析（ADR-006/NO-02b）：一次 IN 查询解析设备规范身份。
     //     未登记 / 无租户上下文 → legacy 行为（entity_id 为 NULL，不阻断遥测入库）。
-    const batchOrgId = ctx?.primaryOrgId?.trim();
     let resolvedEntities = new Map<string, string>();
     if (batchOrgId) {
       try {
@@ -198,23 +212,27 @@ export class IngestService {
       if (p.entityId && !existingEntityIds.has(p.entityId)) {
         // 写告警事件（同一批次内同 (eventCode,device) 只写一次，避免批量风暴与重试重复投递）
         const dedupKey = `ENTITY_NOT_FOUND|${p.deviceId}`;
+        let eventsTriggered = 0;
         if (!firedDataQualityEvents.has(dedupKey)) {
           firedDataQualityEvents.add(dedupKey);
-          await this.fireDataQualityEvent(
+          eventsTriggered = (await this.fireDataQualityEvent(
             p.deviceId,
             p.sourceType,
             p.recordId,
             'ENTITY_NOT_FOUND',
             `entity_id ${p.entityId} 不存在`,
             { entity_id: p.entityId },
-          );
+            batchOrgId,
+          ))
+            ? 1
+            : 0;
         }
         results.push({
           accepted: false,
           skipped: false,
           record_id: p.recordId,
           data_quality: 'invalid',
-          events_triggered: 1,
+          events_triggered: eventsTriggered,
           error: `entity_id ${p.entityId} 不存在`,
           is_late: frameSemantics.isLate,
           clock_drift: frameSemantics.clockDrift,
@@ -284,10 +302,20 @@ export class IngestService {
             // NEST-205（standalone_057 配套）：唯一约束已改 (org_id, device_id)，
             // 冲突目标同步为复合键（防跨租户同 deviceId 互相覆盖）。
             target: [ewohDevice.orgId, ewohDevice.deviceId],
+            // R2-SOP-020：批量路径 set 字段与单帧 upsertDevice 对齐（取该设备
+            // 本批首帧的 excluded.* 值）——批量接入下设备台账的电量/故障码/
+            // 固件等元数据不再停滞在首次插入值。
             set: {
+              batteryPct: sql`excluded.battery_pct`,
               online: true,
               lastTelemetryAt: now,
-              lastRawRef: undefined,
+              sourceType: sql`excluded.source_type`,
+              firmwareVersion: sql`excluded.firmware_version`,
+              hardwareVersion: sql`excluded.hardware_version`,
+              protocolVersion: sql`excluded.protocol_version`,
+              temperatureC: sql`excluded.temperature_c`,
+              faultCode: sql`excluded.fault_code`,
+              lastRawRef: sql`excluded.last_raw_ref`,
             },
           });
       } catch (error) {
@@ -705,23 +733,25 @@ export class IngestService {
     // 1. entity_id 存在性校验
     const entityId = frame.entity_id ?? frame.device_id;
     if (entityId) {
-      const exists = await this.entityExists(entityId);
+      const exists = await this.entityExists(entityId, ctx);
       if (!exists) {
-        // 写入告警事件并返回 400
-        await this.fireDataQualityEvent(
+        // 写入告警事件并返回 400（R2-SOP-002：orgId 从 ctx 透传，
+        // 写入失败/缺 org 时 events_triggered 如实反映）
+        const fired = await this.fireDataQualityEvent(
           deviceId,
           sourceType,
           recordId,
           'ENTITY_NOT_FOUND',
           `entity_id ${entityId} 不存在`,
           { entity_id: entityId },
+          ctx?.primaryOrgId,
         );
         return {
           accepted: false,
           skipped: false,
           record_id: recordId,
           data_quality: 'invalid',
-          events_triggered: 1,
+          events_triggered: fired ? 1 : 0,
           error: `entity_id ${frame.entity_id} 不存在`,
         };
       }
@@ -1024,13 +1054,18 @@ export class IngestService {
     return 'good';
   }
 
-  /** 检查 entity_id 是否存在 */
-  private async entityExists(entityId: string): Promise<boolean> {
+  /** 检查 entity_id 是否存在（R2-SOP-011：有租户上下文时限定本 org 的行） */
+  private async entityExists(entityId: string, ctx?: OrgContext): Promise<boolean> {
     try {
+      const orgId = ctx?.primaryOrgId?.trim();
       const [row] = await this.db
         .select({ id: ewohSpatialEntity.id })
         .from(ewohSpatialEntity)
-        .where(eq(ewohSpatialEntity.entityId, entityId))
+        .where(
+          orgId
+            ? and(eq(ewohSpatialEntity.orgId, orgId), eq(ewohSpatialEntity.entityId, entityId))
+            : eq(ewohSpatialEntity.entityId, entityId),
+        )
         .limit(1);
       return !!row;
     } catch (error) {
@@ -1041,13 +1076,18 @@ export class IngestService {
     }
   }
 
-  /** raw_ref 幂等去重 */
-  private async isDuplicateRawRef(rawRef: string): Promise<boolean> {
+  /** raw_ref 幂等去重（R2-SAM-012：有租户上下文时去重键空间按 org 收敛） */
+  private async isDuplicateRawRef(rawRef: string, ctx?: OrgContext): Promise<boolean> {
     try {
+      const orgId = ctx?.primaryOrgId?.trim();
       const [row] = await this.db
         .select({ id: ewohTelemetry.id })
         .from(ewohTelemetry)
-        .where(eq(ewohTelemetry.rawRef, rawRef))
+        .where(
+          orgId
+            ? and(eq(ewohTelemetry.orgId, orgId), eq(ewohTelemetry.rawRef, rawRef))
+            : eq(ewohTelemetry.rawRef, rawRef),
+        )
         .limit(1);
       return !!row;
     } catch (error) {
@@ -1146,10 +1186,17 @@ export class IngestService {
   ): Promise<void> {
     let wasNormal = false;
     try {
+      // R2-SOP-011：057 迁移后 device 唯一键为 (org_id, device_id)，同 deviceId
+      // 可跨租户存在——状态机判定必须限定本 org 的行，防误/漏触发重排。
+      const orgId = ctx?.primaryOrgId?.trim();
       const [existing] = await this.db
         .select({ faultCode: ewohDevice.faultCode, online: ewohDevice.online })
         .from(ewohDevice)
-        .where(eq(ewohDevice.deviceId, deviceId))
+        .where(
+          orgId
+            ? and(eq(ewohDevice.orgId, orgId), eq(ewohDevice.deviceId, deviceId))
+            : eq(ewohDevice.deviceId, deviceId),
+        )
         .limit(1);
       wasNormal = IngestService.isFaultTransition(
         existing?.faultCode,
@@ -1194,7 +1241,10 @@ export class IngestService {
     });
   }
 
-  /** 数据质量告警事件（entity 不存在等） */
+  /** 数据质量告警事件（entity 不存在等）。
+   * R2-SOP-002：告警事件必须携带租户归属（orgId 从 ingest ctx 透传）；
+   * org 缺失时 fail-closed 拒绝写入（不落 NULL=legacy 全租户可见行），
+   * 返回 false 让调用方不再声称 events_triggered:1。 */
   private async fireDataQualityEvent(
     deviceId: string,
     sourceType: DataSourceType,
@@ -1202,7 +1252,15 @@ export class IngestService {
     eventCode: string,
     title: string,
     evidence: Record<string, unknown>,
-  ): Promise<void> {
+    orgId?: string | null,
+  ): Promise<boolean> {
+    const normalizedOrgId = orgId?.trim();
+    if (!normalizedOrgId) {
+      this.logger.warn(
+        `数据质量事件 ${eventCode} 缺少租户上下文，拒绝写入（不落 NULL legacy 行）`,
+      );
+      return false;
+    }
     try {
       const eventId = `EVT-${Math.floor(Date.now() / 1000)}-${randomUUID().slice(0, 8)}`;
       const now = new Date();
@@ -1220,6 +1278,8 @@ export class IngestService {
       const envelopeRecord = envelopeForEvidence(envelope);
       await this.db.insert(ewohEvent).values({
         eventId,
+        // R2-SOP-002：租户归属注入（对齐 ingestEventBatch L556 事件上行路径）。
+        orgId: normalizedOrgId,
         deviceId,
         eventCode,
         eventType: 'DataQualityAlert',
@@ -1237,8 +1297,10 @@ export class IngestService {
           envelopeSemantics: envelopeRecord.envelopeSemantics,
         },
       });
+      return true;
     } catch (error) {
       this.logger.error(`写入数据质量事件失败 ${eventCode}`, error);
+      return false;
     }
   }
 

@@ -164,6 +164,17 @@ const FILES = {
   standalone_rls_null_reject: path.join(root, 'db/migrations/standalone_057_rls_null_reject.sql'),
   standalone_rls_null_reject_rollback: path.join(root, 'db/migrations/standalone_057_rls_null_reject.rollback.sql'),
   standalone_rls_null_reject_verify: path.join(root, 'db/verify/standalone_057_rls_null_reject.verify.sql'),
+  // R2-DBM-002：058/059 迁移补接入 runner（此前只落了 SQL 文件，无 FILES 键/命令/verify）。
+  standalone_control_attempt_unique: path.join(root, 'db/migrations/standalone_058_control_attempt_unique.sql'),
+  standalone_control_attempt_unique_rollback: path.join(root, 'db/migrations/standalone_058_control_attempt_unique.rollback.sql'),
+  standalone_control_attempt_unique_verify: path.join(root, 'db/verify/standalone_058_control_attempt_unique.verify.sql'),
+  standalone_spatial_entity_org_unique: path.join(root, 'db/migrations/standalone_059_spatial_entity_org_unique.sql'),
+  standalone_spatial_entity_org_unique_rollback: path.join(root, 'db/migrations/standalone_059_spatial_entity_org_unique.rollback.sql'),
+  standalone_spatial_entity_org_unique_verify: path.join(root, 'db/verify/standalone_059_spatial_entity_org_unique.verify.sql'),
+  // R2-SDB-006：幂等键租户维度（org_id + 复合唯一 + RLS）。
+  standalone_idempotency_org: path.join(root, 'db/migrations/standalone_060_idempotency_org.sql'),
+  standalone_idempotency_org_rollback: path.join(root, 'db/migrations/standalone_060_idempotency_org.rollback.sql'),
+  standalone_idempotency_org_verify: path.join(root, 'db/verify/standalone_060_idempotency_org.verify.sql'),
   standalone_learning_proposal_rollback: path.join(root, 'db/migrations/standalone_045_learning_proposal.rollback.sql'),
   standalone_exo_session_rollback: path.join(root, 'db/migrations/standalone_046_exo_session.rollback.sql'),
   standalone_outcome_annotation_rollback: path.join(root, 'db/migrations/standalone_047_outcome_annotation.rollback.sql'),
@@ -451,6 +462,10 @@ const SIMPLE_VERIFY_COMMANDS = {
   '--verify-standalone-maintenance-quality': ['standalone_maintenance_quality_verify', 'standalone_034_verified', 'standalone_034 maintenance/quality (TENANT_SCOPED + RLS + CHECK)'],
   '--verify-standalone-work-order': ['standalone_work_order_verify', 'standalone_035_verified', 'standalone_035 work order (TENANT_SCOPED + RLS + CHECK)'],
   '--verify-standalone-rls-null-reject': ['standalone_rls_null_reject_verify', 'standalone_057_verified', 'standalone_057 RLS NULL reject (policy 无 NULL 放行 + TO service_role + org_id NOT NULL + (org_id,x) 复合唯一 + ewoh_org_visible(text) 重载)'],
+  // R2-DBM-002：058/059/060 verify 登记（单字段断言形态，同 SQL-103 先例）。
+  '--verify-standalone-control-attempt-unique': ['standalone_control_attempt_unique_verify', 'standalone_058_verified', 'standalone_058 control attempt unique (uq_ewoh_control_command_attempt (request_id,command_key,attempt_no) 唯一且有效)'],
+  '--verify-standalone-spatial-entity-org-unique': ['standalone_spatial_entity_org_unique_verify', 'standalone_059_verified', 'standalone_059 spatial entity org unique (uq_ewoh_spatial_entity_org_entity (org_id,entity_id) 唯一且有效 + 旧单列唯一已清除)'],
+  '--verify-standalone-idempotency-org': ['standalone_idempotency_org_verify', 'standalone_060_verified', 'standalone_060 idempotency org (org_id NOT NULL + (org_id,scope,idempotency_key) 复合唯一 + RLS 租户隔离)'],
   // 审计 SQL-103（2026-08-17）补齐的 5 个缺失 verify 脚本，同为单字段断言形态。
   '--verify-users': ['users_verify', 'users_verified', '002_ewoh_users (ewoh_user fail-closed RLS + SECURITY DEFINER 函数受控读取)'],
   '--verify-standalone-users': ['standalone_users_verify', 'standalone_002_users_verified', 'standalone_002_users (ewoh_user fail-closed RLS + SECURITY DEFINER 函数受控读取)'],
@@ -1395,6 +1410,13 @@ function main() {
       '--rollback-standalone-route-org-isolation': 'standalone_route_org_isolation_rollback',
       '--apply-standalone-rls-null-reject': 'standalone_rls_null_reject',
       '--rollback-standalone-rls-null-reject': 'standalone_rls_null_reject_rollback',
+      // R2-DBM-002/R2-SDB-006：058/059/060 应用/回滚命令映射。
+      '--apply-standalone-control-attempt-unique': 'standalone_control_attempt_unique',
+      '--rollback-standalone-control-attempt-unique': 'standalone_control_attempt_unique_rollback',
+      '--apply-standalone-spatial-entity-org-unique': 'standalone_spatial_entity_org_unique',
+      '--rollback-standalone-spatial-entity-org-unique': 'standalone_spatial_entity_org_unique_rollback',
+      '--apply-standalone-idempotency-org': 'standalone_idempotency_org',
+      '--rollback-standalone-idempotency-org': 'standalone_idempotency_org_rollback',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {

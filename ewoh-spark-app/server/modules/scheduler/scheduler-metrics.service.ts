@@ -175,8 +175,8 @@ export class SchedulerMetricsService {
     );
   }
 
-  /** 记录一次 Policy 事件（replay/shadow/activation）。 */
-  recordPolicyEvent(kind: 'replay' | 'shadow' | 'activation' | 'gate'): void {
+  /** 记录一次 Policy 事件（replay/shadow/activation；R2-SSV-24 补 rollback 与 activate 对称）。 */
+  recordPolicyEvent(kind: 'replay' | 'shadow' | 'activation' | 'gate' | 'rollback'): void {
     this.inc(`scheduler_policy_${kind}_total`);
   }
 

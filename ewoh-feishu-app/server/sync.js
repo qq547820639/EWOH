@@ -333,10 +333,26 @@ async function pollFeishuEventStatusChangesInner(db) {
 }
 
 // 对外封装：每次轮询结束后回写健康状态（供 /health/ready 判定最近同步成功/失败）
+// R2-FSH-003：轮次互斥（参照 FS-008 的 syncAllInFlight 模式）——单轮最坏可达
+// 数百秒（最多 10 页 × larkCliRetry 1+3 次 × 20s 超时+退避）远超 60s 间隔，
+// setInterval 不等待上一轮完成，重叠运行会多轮并发对同一事件 getEvent→
+// handleEvent/closeEvent（判断与更新非原子）并重复打 lark-cli，且旧轮次的
+// 失败结果会交错回写 health.recordFeishuSync 造成 /health/ready 抖动。
+// 上一轮仍在途时本轮直接跳过（skipped，不计入健康状态，避免误报）。
+let pollInFlight = false;
 async function pollFeishuEventStatusChanges(db) {
-  const r = await pollFeishuEventStatusChangesInner(db);
-  health.recordFeishuSync(!!(r && r.ok), (r && r.error) || null);
-  return r;
+  if (pollInFlight) {
+    console.warn('[sync] 上一轮事件状态轮询仍在进行，跳过本轮（R2-FSH-003 互斥）');
+    return { ok: false, error: 'poll already in progress', skipped: true };
+  }
+  pollInFlight = true;
+  try {
+    const r = await pollFeishuEventStatusChangesInner(db);
+    health.recordFeishuSync(!!(r && r.ok), (r && r.error) || null);
+    return r;
+  } finally {
+    pollInFlight = false;
+  }
 }
 
 // 启动轮询定时器：立即跑一次，之后每 60s 跑一次

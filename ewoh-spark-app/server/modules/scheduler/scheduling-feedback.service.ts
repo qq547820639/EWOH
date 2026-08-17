@@ -1,4 +1,11 @@
-import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { currentRequestContext } from '../../common/request-context';
 import { sql } from 'drizzle-orm';
 import {
@@ -73,17 +80,39 @@ export class SchedulingFeedbackService {
     },
     ctx?: OrgContext,
   ): Promise<number> {
+    // R2-SSV-15（2026-08-17）：plan/assignments 读取叠加 org 条件（本 org +
+    // NULL 存量）——跨租户 planId 不再进入基线写入（此前会用他租户方案的
+    // assignments 生成本租户反馈行，污染 KPI 面）。
+    const orgId = ctx?.primaryOrgId ?? null;
+    const planOrgCond = orgId
+      ? and(
+          eq(ewohSchedulePlan.planId, planId),
+          or(
+            isNull(ewohSchedulePlan.orgId),
+            eq(ewohSchedulePlan.orgId, orgId),
+          ),
+        )
+      : eq(ewohSchedulePlan.planId, planId);
     const [plan] = await this.db
       .select()
       .from(ewohSchedulePlan)
-      .where(eq(ewohSchedulePlan.planId, planId))
+      .where(planOrgCond)
       .limit(1);
     if (!plan) return 0;
 
+    const assignmentOrgCond = orgId
+      ? and(
+          eq(ewohSchedulingPlanAssignment.planId, planId),
+          or(
+            isNull(ewohSchedulingPlanAssignment.orgId),
+            eq(ewohSchedulingPlanAssignment.orgId, orgId),
+          ),
+        )
+      : eq(ewohSchedulingPlanAssignment.planId, planId);
     const assignments = await this.db
       .select()
       .from(ewohSchedulingPlanAssignment)
-      .where(eq(ewohSchedulingPlanAssignment.planId, planId));
+      .where(assignmentOrgCond);
 
     const metrics = (plan.metricsJson ?? {}) as Record<string, unknown>;
     const solverRuntimeOpt = opts?.solverRuntime ?? (metrics['solveDurationMs'] as number | undefined) ?? null;
@@ -94,7 +123,6 @@ export class SchedulingFeedbackService {
     const overrideCount = opts?.overrideCount ?? 0;
     const ts = opts?.ts ?? new Date();
     const runId = opts?.runId ?? plan.triggerEntityId ?? null;
-    const orgId = ctx?.primaryOrgId ?? null;
     // 审批发生在 dispatch 之前，故此处按 plan 状态推导验收结果（approved→true, rejected→false）。
     const acceptedFromPlan =
       plan.status === 'approved' ? true : plan.status === 'rejected' ? false : null;
@@ -188,7 +216,8 @@ export class SchedulingFeedbackService {
             .where(eq(ewohSchedulingFeedback.feedbackId, existing.feedbackId));
         } else {
           await this.db.insert(ewohSchedulingFeedback).values({
-            feedbackId: `FB-${Date.now()}-${this.randomSuffix()}`,
+            // R2-SSV-20：Date.now()+4 字符随机后缀（同毫秒 1/1.7M 碰撞）→ randomUUID。
+            feedbackId: `FB-${randomUUID()}`,
             runId,
             planId,
             taskId,
@@ -413,6 +442,30 @@ export class SchedulingFeedbackService {
       .from(ewohSchedulingPlanAssignment)
       .where(or(...assignmentConditions));
 
+    // R2-SSV-13（2026-08-17）：状态推进写副作用按"受派者/可信角色"授权——
+    // assignment/task 状态推进（含事件与 outbox 广播）远超观测回填，仅允许
+    // 受派人本人（ctx.userId === assignment.personId）或可信调用方
+    // （dispatcher / global_admin / device_ops / system）。非受派者对可推进
+    // assignment 的回填整体 403 fail-closed（观测回填与推进同请求原子拒绝，
+    // 杜绝同租户水平越权伪造 actualStart/actualEnd 推进他人任务）。
+    if (!this.isTrustedAdvancementActor(ctx)) {
+      const advancing = assignments.filter(
+        (a) =>
+          (hasStart && a.status === 'dispatched') ||
+          (hasEnd && (a.status === 'executing' || a.status === 'dispatched')),
+      );
+      const unauthorized = advancing.filter(
+        (a) => a.personId && a.personId !== ctx.userId,
+      );
+      if (unauthorized.length > 0) {
+        throw new ForbiddenException(
+          `ACTUALS_ADVANCEMENT_FORBIDDEN: ${
+            unauthorized.length
+          } assignment(s) not assigned to caller（R2-SSV-13：状态推进仅限受派人本人或 dispatcher/global_admin/device_ops）`,
+        );
+      }
+    }
+
     const affectedTaskIds = new Set<string>();
     for (const a of assignments) {
       if (a.taskId) affectedTaskIds.add(a.taskId);
@@ -420,10 +473,13 @@ export class SchedulingFeedbackService {
     if (input.taskId) affectedTaskIds.add(input.taskId);
 
     // 2) assignment 推进（CAS + 事件；幂等：已一致/乱序 skip）。
+    // R2-SSV-05（2026-08-17）：CAS UPDATE 校验 RETURNING 命中行数——仅命中>0
+    // 才发事件并计数（此前并发反馈后到者 0 行命中仍无条件插事件，产生重复
+    // assignment 事件与虚增 advancedAssignments）。
     for (const a of assignments) {
       const id = String(a.assignmentId ?? '');
       if (hasStart && a.status === 'dispatched') {
-        await this.db
+        const hit = await this.db
           .update(ewohSchedulingPlanAssignment)
           .set({ status: 'executing' })
           .where(
@@ -431,12 +487,17 @@ export class SchedulingFeedbackService {
               eq(ewohSchedulingPlanAssignment.assignmentId, id),
               eq(ewohSchedulingPlanAssignment.status, 'dispatched'),
             ),
-          );
-        await this.insertAssignmentEvent(id, a.taskId ?? null, 'dispatched', 'executing', ctx, 'execution feedback actualStart');
-        summary.advancedAssignments += 1;
+          )
+          .returning({ id: ewohSchedulingPlanAssignment.id });
+        if (hit.length > 0) {
+          await this.insertAssignmentEvent(id, a.taskId ?? null, 'dispatched', 'executing', ctx, 'execution feedback actualStart');
+          summary.advancedAssignments += 1;
+        } else {
+          summary.skips.push(`assignment:${id}:start_cas_miss`);
+        }
       } else if (hasEnd && (a.status === 'executing' || a.status === 'dispatched')) {
         const fromStatus = a.status;
-        await this.db
+        const hit = await this.db
           .update(ewohSchedulingPlanAssignment)
           .set({ status: 'completed' })
           .where(
@@ -444,9 +505,14 @@ export class SchedulingFeedbackService {
               eq(ewohSchedulingPlanAssignment.assignmentId, id),
               eq(ewohSchedulingPlanAssignment.status, fromStatus),
             ),
-          );
-        await this.insertAssignmentEvent(id, a.taskId ?? null, fromStatus, 'completed', ctx, 'execution feedback actualEnd');
-        summary.advancedAssignments += 1;
+          )
+          .returning({ id: ewohSchedulingPlanAssignment.id });
+        if (hit.length > 0) {
+          await this.insertAssignmentEvent(id, a.taskId ?? null, fromStatus, 'completed', ctx, 'execution feedback actualEnd');
+          summary.advancedAssignments += 1;
+        } else {
+          summary.skips.push(`assignment:${id}:end_cas_miss`);
+        }
       } else if (hasStart && a.status === 'executing') {
         // 已一致（幂等 no-op）
         summary.skips.push(`assignment:${id}:start_already_executing`);
@@ -504,7 +570,8 @@ export class SchedulingFeedbackService {
     reason: string,
   ): Promise<void> {
     await this.db.insert(ewohAssignmentEvent).values({
-      eventId: `EVT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      // R2-SSV-20：Date.now()+Math.random（同毫秒碰撞）→ randomUUID。
+      eventId: `EVT-${randomUUID()}`,
       assignmentId,
       taskId,
       fromStatus,
@@ -512,6 +579,21 @@ export class SchedulingFeedbackService {
       actor: ctx.userId || 'system',
       reason,
     });
+  }
+
+  /**
+   * R2-SSV-13：可信推进调用方判定——system（内部流）、dispatcher /
+   * global_admin / device_ops（调度/设备运维角色）可代录；其余调用方必须
+   * 是受派 assignment 的 personId 本人（见 applyExecutionAdvancement 内校验）。
+   */
+  private isTrustedAdvancementActor(ctx: OrgContext): boolean {
+    if (!ctx.userId || ctx.userId === 'system') return true;
+    if (ctx.isGlobalAdmin) return true;
+    const roles = new Set<string>([
+      ...(ctx.roles ?? []),
+      ...(ctx.role ? [ctx.role] : []),
+    ]);
+    return roles.has('dispatcher') || roles.has('global_admin') || roles.has('device_ops');
   }
 
   /** 读取指定 plan 的反馈行（离线评估视图）。 */
@@ -523,11 +605,18 @@ export class SchedulingFeedbackService {
     return rows.map((r) => this.toFeedback(r));
   }
 
-  /** 全部反馈行（离线评估视图）。NEST-108：HTTP 上下文强制 orgId。 */
-  async list(orgId?: string | null): Promise<SchedulingFeedback[]> {
+  /**
+   * 全部反馈行（离线评估视图）。NEST-108：HTTP 上下文强制 orgId。
+   * R2-SSV-26（2026-08-17）：globalScope 显式放行全局聚合（scope=ALL 语义，
+   * 供无 primaryOrgId 的 global_admin 跨租户运维视角；非 global 调用方不变）。
+   */
+  async list(
+    orgId?: string | null,
+    opts?: { globalScope?: boolean },
+  ): Promise<SchedulingFeedback[]> {
     // NEST-108 修复（2026-08-17）：HTTP 请求上下文内 orgId 必传（无 org 即
     // 全表反馈暴露）；系统后台流（无 request context）保持全量系统语义。
-    if (!orgId && currentRequestContext()) {
+    if (!orgId && !opts?.globalScope && currentRequestContext()) {
       throw new BadRequestException(
         'orgId required for feedback listing（NEST-108）',
       );
@@ -551,10 +640,14 @@ export class SchedulingFeedbackService {
    * 由反馈表派生调度 KPI（acceptanceRate / overrideRate / fallbackRate / solverRuntime +
    * Phase 4 / P4-T1 扩展：on-time rate / mean+P95 lateness / total travel / workload imbalance /
    * plan churn / conflict rate / replan success rate）。输入缺省时显式 null 标注缺数据，不伪造。
+   * R2-SSV-26：globalScope 显式放行全局聚合（同 list；global_admin 语义）。
    */
-  async deriveKpis(orgId?: string | null): Promise<SchedulingFeedbackKpis> {
+  async deriveKpis(
+    orgId?: string | null,
+    opts?: { globalScope?: boolean },
+  ): Promise<SchedulingFeedbackKpis> {
     // NEST-108：同 list——HTTP 上下文内 orgId 必传（无认证调用不再全表 KPI）。
-    if (!orgId && currentRequestContext()) {
+    if (!orgId && !opts?.globalScope && currentRequestContext()) {
       throw new BadRequestException(
         'orgId required for KPI derivation（NEST-108）',
       );
@@ -713,12 +806,4 @@ export class SchedulingFeedbackService {
     };
   }
 
-  private randomSuffix(): string {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    let s = '';
-    for (let i = 0; i < 4; i++) {
-      s += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return s;
-  }
 }

@@ -4,7 +4,7 @@ import {
   Injectable,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { ScaleService } from '../scale/scale.service';
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -104,6 +104,16 @@ export function resolveSampleFactoryGuardToken(
   return env[SAMPLE_FACTORY_TOKEN_ENV]?.trim() || null;
 }
 
+/**
+ * R2-SMI-008：恒定时间 guard token 比较（与 auth 面 NEST-417 纪律对齐）。
+ * 先哈希再 timingSafeEqual——sha256 定长消除长度泄露，比较不短路。
+ */
+function guardTokensMatch(presented: string, expected: string): boolean {
+  const a = createHash('sha256').update(presented, 'utf8').digest();
+  const b = createHash('sha256').update(expected, 'utf8').digest();
+  return timingSafeEqual(a, b);
+}
+
 /** 校验 guard token（纯函数，便于单测）。 */
 export function assertSampleFactoryGuard(
   token: string | undefined,
@@ -111,7 +121,10 @@ export function assertSampleFactoryGuard(
 ): { ok: true } | { ok: false; reason: SampleFactoryGuardReason } {
   const expected = resolveSampleFactoryGuardToken(env);
   if (!expected) return { ok: false, reason: 'GUARD_TOKEN_NOT_CONFIGURED' };
-  if (token !== expected) return { ok: false, reason: 'GUARD_TOKEN_MISMATCH' };
+  // R2-SMI-008：不再用 !== 逐字符短路比较（时序逼近面）。
+  if (!guardTokensMatch(token ?? '', expected)) {
+    return { ok: false, reason: 'GUARD_TOKEN_MISMATCH' };
+  }
   return { ok: true };
 }
 
@@ -174,6 +187,9 @@ export class OnboardingService {
     if (dbAvailable) {
       const profiles = await this.scaleService.listDemoProfiles(
         SAMPLE_FACTORY_PREFIX,
+        // R2-SOP-009：透传 actor——演示前缀是共享命名空间，仅按前缀列
+        // 会跨租户读出他 org 的同名工厂。
+        actor,
       );
       demoProfiles = profiles.map((profile) => ({
         profileId: profile.profileId,

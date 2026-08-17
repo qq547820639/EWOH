@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Ban, BrainCircuit, CheckCircle2, Database, FlaskConical, Loader2, Plus, Radar, Search, Undo2 } from 'lucide-react';
 import { visionUnderstand, saveAiConfig, getAiConfigStatus, type VisionUnderstandResult } from '../../api/ai';
+import { getFleetStatus } from '../../api/scale';
 import {
   evaluateFeatureFlags,
   listSystemConfigs,
@@ -33,7 +34,7 @@ import {
 import QueryState from '../../components/QueryState';
 
 const formatTime = (value: string | null | undefined): string =>
-  value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—';
+  value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '—';
 
 const parseParameterValue = (type: string, raw: string): unknown => {
   if (type === 'number') {
@@ -115,6 +116,14 @@ const System = (): React.ReactElement => {
     queryKey: queryKeys.traces,
     queryFn: () => listRequestTraces(50),
     refetchInterval: OPERATIONAL_REFETCH_INTERVAL_MS,
+    staleTime: QUERY_STALE_TIME_MS,
+  });
+  // R2-CP2-002：升级环选项由后端 fleetStatus.ringCounts 派生（与 CLI-208 在
+  // Scale 页的修复同源），不再硬编码 6 环。
+  const fleetQuery = useQuery({
+    queryKey: queryKeys.scaleFleetStatus,
+    queryFn: getFleetStatus,
+    refetchInterval: ADMIN_REFETCH_INTERVAL_MS,
     staleTime: QUERY_STALE_TIME_MS,
   });
 
@@ -312,12 +321,11 @@ const System = (): React.ReactElement => {
               className="h-9 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm"
             >
               <option value="">默认</option>
-              <option value="dev">dev</option>
-              <option value="integration">integration</option>
-              <option value="shadow">shadow</option>
-              <option value="pilot">pilot</option>
-              <option value="small">small</option>
-              <option value="full">full</option>
+              {Object.keys(fleetQuery.data?.ringCounts ?? {}).map((ring) => (
+                <option key={ring} value={ring}>
+                  {ring}
+                </option>
+              ))}
             </select>
           </label>
           <label className="flex flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
@@ -801,7 +809,7 @@ const System = (): React.ReactElement => {
                 <span className="break-all font-mono text-sm font-medium">{row.configKey}</span>
                 <span className="shrink-0 text-xs text-[hsl(218_10%_42%)]">
                   {row.updatedAt
-                    ? new Date(row.updatedAt).toLocaleString('zh-CN', { hour12: false })
+                    ? new Date(row.updatedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
                     : '—'}
                 </span>
               </div>

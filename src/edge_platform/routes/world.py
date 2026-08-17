@@ -83,7 +83,9 @@ def api_event_status(ctx, h, payload):
     if status not in ("open", "confirmed", "closed", "dismissed"):
         return h.send_json({"error": "非法状态"}, 400)
     handling = payload.get("handling") or {}
-    handling.setdefault("handled_by", payload.get("handled_by", ""))
+    # R2-ECO-002：legacy 端点与 v2 对齐——处置人身份由服务端 token 会话优先
+    # 解析（resolve_actor），客户端自报 handled_by 仅在未认证的演示模式下降级采用。
+    handling["handled_by"] = resolve_actor(h, payload, "handled_by") or ""
     handling.setdefault("handled_at", now_iso())
     # Task 33：业务级指标——事件开/闭计数与关闭时长
     if ctx.metrics is not None:

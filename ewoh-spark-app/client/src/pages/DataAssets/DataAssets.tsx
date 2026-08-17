@@ -24,7 +24,7 @@ interface DataAssetsData {
 }
 
 const formatTime = (value: string | null | undefined): string =>
-  value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—';
+  value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '—';
 
 const DataAssets = (): React.ReactElement => {
   const queryClient = useQueryClient();

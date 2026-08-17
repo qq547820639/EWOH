@@ -45,7 +45,7 @@ function KpiItem({
 
 const TopBar = ({ overview, onBack, entities, onSelectEntity, searchRef }: TopBarProps): React.ReactElement => {
   const [now, setNow] = useState<string>(() =>
-    new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+    new Date().toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }),
   );
   const [searchQuery, setSearchQuery] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -53,7 +53,7 @@ const TopBar = ({ overview, onBack, entities, onSelectEntity, searchRef }: TopBa
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setNow(new Date().toLocaleTimeString('zh-CN', { hour12: false }));
+      setNow(new Date().toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }));
     }, 1000);
     return () => clearInterval(timer);
   }, []);

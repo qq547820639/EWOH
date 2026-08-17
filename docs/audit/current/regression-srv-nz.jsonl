@@ -1,0 +1,53 @@
+{"id":"NEST-601","regression_status":"FIXED","evidence":"oee/oee.service.ts:253-264 calculateOee 质量查询 conditions 含 eq(deviceId)+orgCondition（qualityOrgCond），且 250 行 listDeviceStatus 亦带 deviceId+org"}
+{"id":"NEST-602","regression_status":"FIXED","evidence":"oee/oee.service.ts:173,204 recordDeviceStatus requireOrgId fail-closed 且 insert values 显式 orgId"}
+{"id":"NEST-603","regression_status":"FIXED","evidence":"oee/oee.service.ts:308,338 openAndon requireOrgId + insert orgId 显式"}
+{"id":"NEST-604","regression_status":"FIXED","evidence":"oee/oee.service.ts:227-240 listDeviceStatus org 过滤+safeLimit 500；382-390 listAndons org 过滤+limit 500"}
+{"id":"NEST-605","regression_status":"FIXED","evidence":"world/world.service.ts:78-111 getCurrentState entityOrg/eventOrg 谓词，stateOrg 亦过滤（:125-133）"}
+{"id":"NEST-606","regression_status":"FIXED","evidence":"world/world.service.ts:267-343 getReplay 五张表全部 stateOrg/eventOrg/taskOrg/stepOrg/materialOrg 过滤"}
+{"id":"NEST-607","regression_status":"FIXED","evidence":"world/world.service.ts:528-569 createReplayItem 源事件 (orgId,eventId) 定位 + 新事件/链行显式 orgId"}
+{"id":"NEST-608","regression_status":"FIXED","evidence":"world-cursor/world-cursor.controller.ts:12 类级 @Roles(global_admin,dispatcher,workshop_lead)"}
+{"id":"NEST-609","regression_status":"FIXED","evidence":"world-cursor/world-cursor.service.ts:96-104 requireOrgId fail-closed；148/170/233/256 读写均 eq(orgId, scope)"}
+{"id":"NEST-610","regression_status":"FIXED","evidence":"workflow/workflow.controller.ts:12-18 serverRoles(userContext) 取 roles 数组回退 role 单值；42/73 body.roles 显式忽略"}
+{"id":"NEST-611","regression_status":"FIXED","evidence":"task/task.controller.ts:11 类级 @Roles(global_admin,dispatcher,workshop_lead)"}
+{"id":"NEST-612","regression_status":"FIXED","evidence":"task/task.service.ts:169-190 orgCondition fail-closed+limit 500；211-217 createTask global_admin 无 org 亦拒绝，insert 显式 orgId"}
+{"id":"NEST-613","regression_status":"FIXED","evidence":"system/system.controller.ts:91-101 evaluate serverContext.orgId/roles 取 userContext，body.context 仅保留 factoryId/upgradeRing"}
+{"id":"NEST-614","regression_status":"FIXED","evidence":"system/system.service.ts:67-78 orgCondition fail-closed；84/102-104 listConfigs/getConfig 谓词"}
+{"id":"NEST-615","regression_status":"FIXED","evidence":"system/system.service.ts:10 SENSITIVE_KEY 正则含 api[_-]?key/access[_-]?key/auth[_-]?config/private[_-]?key 变体"}
+{"id":"NEST-616","regression_status":"NOT_FIXED","evidence":"observability/frontend-metrics.service.ts:82 windowStart 为 readonly 且 :106-108 窗口过期仅 counts.clear() 从未重置 windowStart→60s 后每次调用清空计数，限流恒放行"}
+{"id":"NEST-617","regression_status":"FIXED","evidence":"resource/resource.controller.ts:11 类级 @Roles(global_admin,dispatcher)"}
+{"id":"NEST-618","regression_status":"FIXED","evidence":"simulator/simulator.controller.ts:10 类级 @Roles(global_admin,safety_admin)"}
+{"id":"NEST-619","regression_status":"FIXED","evidence":"simulator/simulator.service.ts:151-165 手动 start() 亦检查 EWOH_SIMULATOR_ENABLED!=='1' 拒绝（fail-closed）"}
+{"id":"NEST-620","regression_status":"NOT_FIXED","evidence":"notification/email-transport.ts:152-158 headerLines 直接拼接 message.subject（Subject: ${...}），无 CRLF 过滤/拒绝；subject 来自 buildEmailMessage(:103) = '[EWOH] '+notification.title，title 由 oee.openAndon body.title 用户可控→Bcc 头注入仍可行"}
+{"id":"NEST-621","regression_status":"FIXED","evidence":"rule-engine/rule-engine.service.ts:213,229 tryFire insert 事件/链行 ...(row.orgId?{orgId})；simulator(:485)/fireDeviceOffline(:564) 调用均传 orgId"}
+{"id":"NEST-622","regression_status":"FIXED","evidence":"spatial/spatial.service.ts:20-29 orgCondition fail-closed，getEntities/getEntity/getTopology/getHierarchy 四查询均谓词"}
+{"id":"NEST-623","regression_status":"FIXED","evidence":"timeline/timeline.service.ts:28-45 org 谓词 fail-closed + safeLimit Math.min(...,500)；controller:18-19 NaN 回退"}
+{"id":"NEST-624","regression_status":"FIXED","evidence":"tracing/tracing.service.ts:119-181 getTrace spans/events/audit 三面均 eq(orgId, orgId)，org 缺失 400"}
+{"id":"NEST-625","regression_status":"PARTIAL","evidence":"workflow/workflow-instance.service.ts:114-117/135-138 list/advance 已有 org 谓词但条件为 isGlobalAdmin||!primaryOrgId→undefined——空 primaryOrgId 时无过滤 fail-open（其余模块 requireOrgId 抛 400）；start :83-90 orgId 可选缺省省略。见新发现 R2-SNZ-003"}
+{"id":"NEST-627","regression_status":"FIXED","evidence":"quality/quality.service.ts:133-148 update 谓词 eq(orgId)+eq(id)+eq(status=current.status)+returning 空显式抛并发冲突；spec 有 CAS 用例"}
+{"id":"NEST-628","regression_status":"FIXED","evidence":"workorder/workorder.service.ts:179-194 transitionWorkOrder update 三条件 CAS+显式冲突；spec 快照解引用可测"}
+{"id":"NEST-629","regression_status":"FIXED","evidence":"reliability/dead-letter.service.ts:142-156 requeue 先 CAS 置 requeued（eq status=pending）再执行 handler；但引入 handler 失败无补偿新问题（R2-SNZ-008）"}
+{"id":"NEST-630","regression_status":"FIXED","evidence":"reliability/dead-letter.service.ts:181-194 discard update 谓词 eq(orgId)+eq(id)+eq(status=current.status) CAS"}
+{"id":"NEST-631","regression_status":"FIXED","evidence":"resource/resource.service.ts:105-110 createPreorder 在 pg_advisory_xact_lock(hashtext(res:id)) 事务内做可用量检查+插入"}
+{"id":"NEST-632","regression_status":"FIXED","evidence":"resource/resource.service.ts:249-261 release 状态白名单（仅 pending/issued）+锁内复核"}
+{"id":"NEST-633","regression_status":"FIXED","evidence":"simulation/simulation.service.ts:94-122 onConflictDoNothing(orgId,runId)+空返回回读+23505 catch 回读；spec 有 TOCTOU 用例"}
+{"id":"NEST-634","regression_status":"FIXED","evidence":"oee/oee.service.ts:64-68,107-110 performance 仅 hasOutputQty&&hasIdealRate&&idealCapacity>0 才计算否则 null，oee 同 null"}
+{"id":"NEST-635","regression_status":"FIXED","evidence":"policy/policy.service.ts:118-125 未匹配默认决策按 effect 语义：allow 未命中→deny（fail-closed），deny/warn 未命中→allow"}
+{"id":"NEST-637","regression_status":"FIXED","evidence":"organization/organization.service.ts:230-238 listPersonnel limit 缺省 200/上限 500+offset；controller:51-59 NaN 回退"}
+{"id":"NEST-638","regression_status":"FIXED","evidence":"world-cursor/world-cursor.service.ts:178-185 changes.length===0&&latest 时直接返回既有快照不落新行"}
+{"id":"NEST-639","regression_status":"FIXED","evidence":"world-cursor/world-cursor.controller.ts:28-32 NaN 回退 200；service:242-245 safeLimit Math.min(...,1000)"}
+{"id":"NEST-640","regression_status":"FIXED","evidence":"world/world.service.ts:80-111 recentEvents 查询带 eventOrg 谓词+limit 20"}
+{"id":"NEST-641","regression_status":"FIXED","evidence":"parameters/parameters.service.ts:168-179 orgCondition fail-closed；217 写入显式 orgId（缺省省略见 R2-SNZ-016）"}
+{"id":"NEST-642","regression_status":"FIXED","evidence":"system/system.service.ts:132-149 setConfig insert ...(orgId?.trim()?{orgId}) 显式携带（缺省省略见 R2-SNZ-016）"}
+{"id":"NEST-643","regression_status":"DOCUMENTED","evidence":"notification/channel-dispatcher.service.ts:192-204 注释裁决：NotificationLike 支持 deviceId 字段但 ewoh_notification 无 device_id 列，补列属 DB 迁移域（W1），当前设备信息仅在 body 文案——文档化未代码修复"}
+{"id":"NEST-644","regression_status":"FIXED","evidence":"rule-engine/rule-engine.service.ts:268-271 genEventId 后缀 randomUUID().replace(/-/g,'').slice(0,8)"}
+{"id":"NEST-645","regression_status":"FIXED","evidence":"simulator/simulator.service.ts:677-680 genEventId 同款 randomUUID 后缀"}
+{"id":"NEST-646","regression_status":"FIXED","evidence":"parameters/parameters.service.ts:93-115 testPatternSafe 长度≤256+量词≤32+无效 pattern 400"}
+{"id":"NEST-647","regression_status":"FIXED","evidence":"workorder/workorder.service.ts:78-85 subjectKind IIFE colonAt>0 判定，无冒号保留全串"}
+{"id":"NEST-648","regression_status":"DOCUMENTED","evidence":"world-cursor/world-cursor.service.ts:13-23 裁决注释：world（业务回放）与 world-cursor（游标协议）双路径有意并存不合并，各自带 org 作用域"}
+{"id":"NEST-411","regression_status":"FIXED","evidence":"model/model.service.ts:56-65 orgScope fail-closed 401；72/86/107-112 读写谓词+insert 显式 orgId"}
+{"id":"NEST-412","regression_status":"FIXED","evidence":"mobile/mobile.service.ts:64-75 isPrivileged(global_admin/dispatcher/workshop_lead)或 actor.userId===personId，否则 403"}
+{"id":"NEST-416","regression_status":"FIXED","evidence":"metrics/metrics.service.ts:8-14 isRouteTemplate 归一；22 MAX_REQUEST_KEYS=1000；45-55 overflow 桶"}
+{"id":"NEST-427","regression_status":"FIXED","evidence":"metrics/metrics.controller.ts:25-47 METRICS_BEARER_TOKEN constant-time；未配置且 production→404 fail-closed；METRICS_ENABLED=false 禁用"}
+{"id":"NEST-429","regression_status":"FIXED","evidence":"metrics/metrics.interceptor.ts:32-43 error 回调从 HttpException.getStatus() 取真实状态码"}
+{"id":"NEST-444","regression_status":"FIXED","evidence":"mobile/mobile.service.ts:77-91 raw SQL 改 eq(ewohScheduleTaskStep.orgId, actor.primaryOrgId) drizzle 惯用写法"}
+{"id":"NEST-446","regression_status":"FIXED","evidence":"model/__tests__/model.service.spec.ts:100-157 状态机 candidate→reviewing→shadow→active→retired 全链+非法跳转+CAS 409 用例"}

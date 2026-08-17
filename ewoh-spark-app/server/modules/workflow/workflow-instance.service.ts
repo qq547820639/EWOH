@@ -58,6 +58,29 @@ export class WorkflowInstanceService {
     };
   }
 
+  /**
+   * R2-SNZ-003（收敛 NEST-625）：缺租户一律 fail-closed 400——原先
+   * `!actor?.primaryOrgId` 分支直接放行无租户过滤（fail-open），与
+   * world/oee/system/task 等模块已确立的 fail-closed 模式相悖。
+   */
+  private requireOrgId(actor?: OrgContext): string {
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org context missing: workflow instance operations require tenant context',
+      );
+    }
+    return orgId;
+  }
+
+  /** global_admin 显式放行（与 RLS 例外路径一致）；其余强制本租户谓词。 */
+  private orgCondition(actor?: OrgContext) {
+    if (actor?.isGlobalAdmin) {
+      return undefined;
+    }
+    return eq(ewohSchedulerConfig.orgId, this.requireOrgId(actor));
+  }
+
   async start(
     body: { workflow: unknown; entityId: string },
     actor?: OrgContext,
@@ -78,16 +101,16 @@ export class WorkflowInstanceService {
         { step: workflow.start, at: now, actor: actor?.userId ?? 'system' },
       ],
     };
-    // NEST-625：写入显式 orgId（ewoh_scheduler_config.org_id NOT NULL；
-    // 冲突目标 (orgId, configKey) 原先 values 不带 orgId 依赖 GUC 兜底）。
-    const orgId = actor?.primaryOrgId?.trim();
+    // NEST-625 + R2-SNZ-003：写入显式 orgId（ewoh_scheduler_config.org_id
+    // NOT NULL）；缺租户 fail-closed 拒绝，不再省略依赖 GUC 兜底。
+    const orgId = this.requireOrgId(actor);
     const [row] = await this.db
       .insert(ewohSchedulerConfig)
       .values({
         configKey,
         configValue: value,
         updatedBy: actor?.userId ?? 'system',
-        ...(orgId ? { orgId } : {}),
+        orgId,
       })
       .onConflictDoUpdate({
         target: [ewohSchedulerConfig.orgId, ewohSchedulerConfig.configKey],
@@ -110,11 +133,9 @@ export class WorkflowInstanceService {
   }
 
   async list(actor?: OrgContext) {
-    // NEST-625：org 过滤（global_admin 放行，与 RLS 例外一致）。
-    const orgCond =
-      actor?.isGlobalAdmin || !actor?.primaryOrgId
-        ? undefined
-        : eq(ewohSchedulerConfig.orgId, actor.primaryOrgId);
+    // NEST-625 + R2-SNZ-003：org 过滤（global_admin 放行，与 RLS 例外
+    // 一致）；缺租户 fail-closed 400（原先放行 = 全租户实例可见）。
+    const orgCond = this.orgCondition(actor);
     const rows = await this.db
       .select()
       .from(ewohSchedulerConfig)
@@ -132,10 +153,8 @@ export class WorkflowInstanceService {
     body: { roles: string[]; toStep?: string },
     actor?: OrgContext,
   ) {
-    const orgCond =
-      actor?.isGlobalAdmin || !actor?.primaryOrgId
-        ? undefined
-        : eq(ewohSchedulerConfig.orgId, actor.primaryOrgId);
+    // R2-SNZ-003：缺租户 fail-closed 400（原先放行 = 可跨租户推进实例）。
+    const orgCond = this.orgCondition(actor);
     const [row] = await this.db
       .select()
       .from(ewohSchedulerConfig)

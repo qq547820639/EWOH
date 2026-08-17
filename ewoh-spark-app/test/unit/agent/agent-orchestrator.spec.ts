@@ -139,14 +139,19 @@ describe('AgentOrchestratorService（NO-06f 编排引擎）', () => {
     ).rejects.toThrow(/task_graph_cycle/);
   });
 
+  // SH-005：转移表 role 约束——dispatch/cancel 需 orchestrator（由认证角色派生）。
+  const orchestrator = { userId: 'dispatcher-1', roles: ['dispatcher'] };
+  // 终态上报（in_progress→completed|failed）需 agent（Agent runtime 上报）。
+  const agentActor = { userId: 'agent-runtime-1', roles: ['agent'] };
+
   it('dispatch：依赖未 completed fail-closed 拒绝', async () => {
     const { service } = createOrchestratorDb([
       rowOf(makeTask({ dependencies: [TASK_B] }), 'created'),
       rowOf(makeTask({ taskId: TASK_B }), 'created'),
     ]);
-    await expect(service.dispatchTask('ORG-1', TASK_ID)).rejects.toThrow(
-      /dependency_not_completed/,
-    );
+    await expect(
+      service.dispatchTask('ORG-1', TASK_ID, orchestrator),
+    ).rejects.toThrow(/dependency_not_completed/);
   });
 
   it('dispatch：依赖全部 completed 放行（created→dispatched）', async () => {
@@ -154,7 +159,7 @@ describe('AgentOrchestratorService（NO-06f 编排引擎）', () => {
       rowOf(makeTask({ dependencies: [TASK_B] }), 'created'),
       rowOf(makeTask({ taskId: TASK_B }), 'completed'),
     ]);
-    const result = await service.dispatchTask('ORG-1', TASK_ID);
+    const result = await service.dispatchTask('ORG-1', TASK_ID, orchestrator);
     expect(result.status).toBe('dispatched');
     expect(rows[0]?.status).toBe('dispatched');
   });
@@ -168,7 +173,12 @@ describe('AgentOrchestratorService（NO-06f 编排引擎）', () => {
 
   it('终态：in_progress→completed 落 AgentTaskCompleted 事件', async () => {
     const { events, service } = createOrchestratorDb([rowOf(makeTask(), 'in_progress')]);
-    const result = await service.completeTask('ORG-1', TASK_ID, { status: 'completed' });
+    const result = await service.completeTask(
+      'ORG-1',
+      TASK_ID,
+      { status: 'completed' },
+      agentActor,
+    );
     expect(result.status).toBe('completed');
     expect(events).toHaveLength(1);
     expect(events[0]?.eventType).toBe('AgentTaskCompleted');
@@ -176,7 +186,7 @@ describe('AgentOrchestratorService（NO-06f 编排引擎）', () => {
 
   it('cancel：非终态可取消（in_progress→cancelled）', async () => {
     const { service } = createOrchestratorDb([rowOf(makeTask(), 'in_progress')]);
-    const result = await service.cancelTask('ORG-1', TASK_ID);
+    const result = await service.cancelTask('ORG-1', TASK_ID, orchestrator);
     expect(result.status).toBe('cancelled');
   });
 

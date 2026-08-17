@@ -28,6 +28,76 @@ export interface Point {
 }
 
 /**
+ * R2-SCH-012（2026-08-17，NEST-134 残留）：A* open 集二叉最小堆。
+ * 以 (fScore, 入堆序号) 双键比较——与旧线性扫描"最早插入的最小 f 节点优先"
+ * 语义完全一致（等 f 时 FIFO），消除大图 O(n²) 扫描。
+ */
+class MinHeap {
+  private readonly fScore: number[] = [];
+  private readonly nodes: string[] = [];
+  private seq = 0;
+  private readonly seqById = new Map<string, number>();
+
+  push(nodeId: string, f: number): void {
+    this.nodes.push(nodeId);
+    this.fScore.push(f);
+    this.seqById.set(nodeId, this.seq++);
+    this.siftUp(this.nodes.length - 1);
+  }
+
+  pop(): string | undefined {
+    if (this.nodes.length === 0) return undefined;
+    const top = this.nodes[0];
+    const lastNode = this.nodes.pop()!;
+    const lastF = this.fScore.pop()!;
+    this.seqById.delete(top);
+    if (this.nodes.length > 0) {
+      this.nodes[0] = lastNode;
+      this.fScore[0] = lastF;
+      this.siftDown(0);
+    }
+    return top;
+  }
+
+  get size(): number {
+    return this.nodes.length;
+  }
+
+  private less(a: number, b: number): boolean {
+    if (this.fScore[a] !== this.fScore[b]) return this.fScore[a] < this.fScore[b];
+    return (this.seqById.get(this.nodes[a]) ?? 0) < (this.seqById.get(this.nodes[b]) ?? 0);
+  }
+
+  private siftUp(i: number): void {
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (!this.less(i, parent)) break;
+      this.swap(i, parent);
+      i = parent;
+    }
+  }
+
+  private siftDown(i: number): void {
+    const n = this.nodes.length;
+    while (true) {
+      const left = 2 * i + 1;
+      const right = 2 * i + 2;
+      let smallest = i;
+      if (left < n && this.less(left, smallest)) smallest = left;
+      if (right < n && this.less(right, smallest)) smallest = right;
+      if (smallest === i) break;
+      this.swap(i, smallest);
+      i = smallest;
+    }
+  }
+
+  private swap(a: number, b: number): void {
+    [this.nodes[a], this.nodes[b]] = [this.nodes[b], this.nodes[a]];
+    [this.fScore[a], this.fScore[b]] = [this.fScore[b], this.fScore[a]];
+  }
+}
+
+/**
  * 纯函数：在给定节点集中查找离 (x, y) 欧氏距离最近的节点 id。
  * 空图返回 null。抽成可导出纯函数便于单元测试。
  */
@@ -392,32 +462,35 @@ export class RoutingService {
     for (const edge of graph.edges) {
       if (edge.status === 'blocked') continue;
       const cost = this.edgeCost(edge);
-      if (!adjacency.has(edge.fromNodeId)) adjacency.set(edge.fromNodeId, []);
-      adjacency.get(edge.fromNodeId)!.push({ to: edge.toNodeId, cost });
+      // R2-SCH-018（2026-08-17）：direction 语义——双向（null/'BOTH'/
+      // 'TWO_WAY'/'BIDIRECTIONAL'，大小写不敏感）正反均建边（null 缺省双向，
+      // 与存量无 direction 数据兼容）；'BACKWARD'/'REVERSE' 仅反方向；
+      // 其余显式单向（FORWARD/ONE_WAY 等）仅声明方向。旧实现不读 direction。
+      const backwardOnly =
+        edge.direction != null &&
+        ['BACKWARD', 'REVERSE'].includes(edge.direction.trim().toUpperCase());
+      const bidirectional = this.isBidirectional(edge.direction);
+      if (!backwardOnly) {
+        if (!adjacency.has(edge.fromNodeId)) adjacency.set(edge.fromNodeId, []);
+        adjacency.get(edge.fromNodeId)!.push({ to: edge.toNodeId, cost });
+      }
+      if (backwardOnly || bidirectional) {
+        if (!adjacency.has(edge.toNodeId)) adjacency.set(edge.toNodeId, []);
+        adjacency.get(edge.toNodeId)!.push({ to: edge.fromNodeId, cost });
+      }
     }
 
-    const open: string[] = [startId];
-    // NEST-134（2026-08-17）：open 集合成员判定 O(n) includes → Set O(1)，
-    // 大图（万级节点）下消除 O(n²) 扫描。
+    // R2-SCH-012（2026-08-17，NEST-134 残留）：open 集二叉最小堆（(f, 入堆序)
+    // 双键，等 f FIFO——与旧线性扫描选择语义一致），消除 O(n²) 取最小扫描。
+    const open = new MinHeap();
+    open.push(startId, this.heuristic(start, goal));
     const openSet = new Set<string>([startId]);
     const cameFrom = new Map<string, string>();
     const gScore = new Map<string, number>([[startId, 0]]);
-    const fScore = new Map<string, number>([
-      [startId, this.heuristic(start, goal)],
-    ]);
     const closed = new Set<string>();
 
-    while (open.length > 0) {
-      // 取 fScore 最小的节点
-      let current = open[0];
-      let currentIdx = 0;
-      for (let i = 1; i < open.length; i++) {
-        if ((fScore.get(open[i]) ?? Infinity) < (fScore.get(current) ?? Infinity)) {
-          current = open[i];
-          currentIdx = i;
-        }
-      }
-      open.splice(currentIdx, 1);
+    while (open.size > 0) {
+      const current = open.pop()!;
       openSet.delete(current);
 
       if (current === goalId) {
@@ -434,15 +507,25 @@ export class RoutingService {
           gScore.set(to, tentative);
           const toNode = nodeById.get(to);
           const h = toNode ? this.heuristic(toNode, goal) : 0;
-          fScore.set(to, tentative + h);
           if (!openSet.has(to)) {
-            open.push(to);
+            open.push(to, tentative + h);
             openSet.add(to);
           }
         }
       }
     }
     return null;
+  }
+
+  /**
+   * R2-SCH-018：direction 双向判定。null/未声明视为双向（与旧行为一致，存量
+   * 无 direction 数据的边不受影响）；显式单向（FORWARD/ONE_WAY 等其余值）仅
+   * 声明方向可通行。
+   */
+  private isBidirectional(direction: string | null | undefined): boolean {
+    if (direction == null) return true;
+    const d = direction.trim().toUpperCase();
+    return d === '' || d === 'BOTH' || d === 'TWO_WAY' || d === 'BIDIRECTIONAL' || d === 'BIDIR';
   }
 
   /** P1-SCHED-003：从 versioned policy 刷新边代价系数（失败时保留上次值，绝不阻断路由）。NEST-133：TTL 缓存。 */

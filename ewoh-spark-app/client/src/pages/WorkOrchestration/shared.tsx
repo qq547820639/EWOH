@@ -15,7 +15,7 @@ export const toneClasses: Record<string, string> = {
 };
 
 export const formatTime = (value?: string | null): string =>
-  value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—';
+  value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '—';
 
 export const formatLockRemaining = (value?: string | null): string => {
   if (!value) return '';
@@ -222,9 +222,16 @@ export const WriteConfirmDialog = ({
   onConfirm: (reason: string) => void;
 }): React.ReactElement | null => {
   const [reason, setReason] = useState('');
+  // R2-CP2-005：弹窗关闭即清空原因输入，避免为 A 对象填写的
+  // 原因被静默提交到 B 对象（跨确认周期残留）。
+  const [lastOpen, setLastOpen] = useState(false);
+  if (open !== lastOpen) {
+    setLastOpen(open);
+    if (!open && reason) setReason('');
+  }
   if (!open) return null;
   const actor = getAuthUser()?.username ?? 'anonymous';
-  const timestamp = new Date().toLocaleString('zh-CN', { hour12: false });
+  const timestamp = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
   const confirmClass =
     tone === 'danger'
       ? 'bg-red-600 hover:bg-red-700'

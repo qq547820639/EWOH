@@ -247,14 +247,22 @@ export class TaskService {
       );
     }
     const before = task.status;
+    // R2-SNZ-015：写谓词补 orgId 列（与 quality/workorder 对齐的纵深防御；
+    // global_admin 放行，与读侧 orgCondition 语义一致）。
+    const transitionOrgCond = actor?.isGlobalAdmin
+      ? undefined
+      : eq(ewohProductionTask.orgId, actor?.primaryOrgId?.trim() ?? '__none__');
     const [row] = await this.db
       .update(ewohProductionTask)
       .set({ status })
       .where(
-        and(
-          eq(ewohProductionTask.id, id),
-          eq(ewohProductionTask.status, before),
-        ),
+        transitionOrgCond
+          ? and(
+              eq(ewohProductionTask.id, id),
+              eq(ewohProductionTask.status, before),
+              transitionOrgCond,
+            )
+          : and(eq(ewohProductionTask.id, id), eq(ewohProductionTask.status, before)),
       )
       .returning();
     if (!row) {

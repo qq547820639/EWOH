@@ -22,6 +22,29 @@ import { TaskLifecycle } from './task-lifecycle';
 /** 候选池构建选项。 */
 export interface CandidatePoolOptions {
   nowMs?: number;
+  /**
+   * R2-SCH-002（2026-08-17）：显式策略覆盖（solveVariants 变体权重缩放透传）。
+   * 缺省回退 getActivePolicy()——端点等无变体上下文的调用保持旧语义。
+   */
+  policy?: import('@shared/api.interface').SchedulingPolicy;
+  /**
+   * R2-SCH-001（2026-08-17）：任务级最早开始下界（含 planStart / 前置结束时间，
+   * 与 heuristic 内联分支 earliestStartMs 同源）。缺省 nowMs。
+   */
+  earliestStartMs?: number;
+  /**
+   * R2-SCH-001（2026-08-17）：人员占用顺延（personId → 本次运行内最后占用结束时刻，
+   * 与 heuristic bookedPerson 同源）。候选 startMs 顺延到该时刻之后。
+   */
+  bookedPersonFreeAt?: Map<string, number>;
+  /** R2-SCH-001：设备占用顺延（deviceId → 最后占用结束时刻，与 heuristic bookedDevice 同源）。 */
+  bookedDeviceFreeAt?: Map<string, number>;
+  /** R2-SCH-003（2026-08-17）：LOCKED_TIME 锁定窗（taskId → [startMs, endMs]）。 */
+  lockedTimeByTask?: Map<string, [number, number]>;
+  /** R2-SCH-003（2026-08-17）：LOCKED_STATION（taskId → stationId）。 */
+  lockedStationByTask?: Map<string, string>;
+  /** R2-SCH-003（2026-08-17）：FORBIDDEN_ZONE 约束补充禁入区（与快照禁入区取并集）。 */
+  forbiddenZoneIds?: string[];
   /** 已锁定人员（taskId → personId，来自 LOCKED_PERSON 约束）。 */
   lockedPersonByTask?: Map<string, string>;
   /** 已锁定设备（taskId → deviceId）。 */
@@ -124,6 +147,7 @@ export class CandidateEngineService {
     };
     const pool = await this.buildCandidatePool(task, fullState, {
       nowMs: now,
+      policy,
       bookedTimeSlots,
       bookedDeviceSlots,
       bookedStationSlots,
@@ -192,7 +216,9 @@ export class CandidateEngineService {
     snapshot: WorldStateSnapshot,
     opts: CandidatePoolOptions = {},
   ): Promise<CandidateEvaluation[]> {
-    const policy = await this.policyService.getActivePolicy();
+    // R2-SCH-002：显式 policy 优先（solveVariants 变体权重缩放必须作用于候选评分，
+    // 不再内部全局取用 getActivePolicy() 导致变体丢失）；缺省保持端点旧语义。
+    const policy = opts.policy ?? (await this.policyService.getActivePolicy());
     const config = await this.policyService.getConfig();
     const nowMs = opts.nowMs ?? Date.now();
     const stationDecisionEnabled = opts.stationDecisionEnabled !== false;
@@ -218,7 +244,13 @@ export class CandidateEngineService {
     );
 
     // station 决策变量：candidateStations（有限集）→ 回退 task.stationId → 空。
-    const stationOptions = this.resolveStationOptions(task, stationById, stationDecisionEnabled);
+    // R2-SCH-003：LOCKED_STATION 约束优先——锁定工位外无候选。
+    const lockedStation = opts.lockedStationByTask?.get(task.id);
+    const stationOptions = lockedStation
+      ? stationById.has(lockedStation)
+        ? [lockedStation]
+        : []
+      : this.resolveStationOptions(task, stationById, stationDecisionEnabled);
 
     const bookedTimeSlots = opts.bookedTimeSlots ?? [];
     const bookedDeviceSlots = opts.bookedDeviceSlots ?? [];
@@ -245,7 +277,13 @@ export class CandidateEngineService {
     const minBattery = opts.minBatteryPct ?? config.minBatteryPct;
     const maxLoad = opts.maxContinuousLoad ?? config.maxContinuousLoad;
     const safetyBlockedPersonIds = snapshot.safetyBlockedPersonIds ?? [];
-    const forbiddenZones = (snapshot.forbiddenZones ?? []).map((f) => f.zoneId);
+    // R2-SCH-003：快照禁入区 ∪ FORBIDDEN_ZONE 约束补充（与 heuristic 内联语义一致）。
+    const forbiddenZones = Array.from(
+      new Set([
+        ...(snapshot.forbiddenZones ?? []).map((f) => f.zoneId),
+        ...(opts.forbiddenZoneIds ?? []),
+      ]),
+    );
 
     // station 维度索引（capability + capacity + P1-A availableWindows + NO-05c 维护
     // 封锁 + NO-05d 质量封锁）。
@@ -327,11 +365,29 @@ export class CandidateEngineService {
           const stationRouteInfeasible = candRouteCost.feasible === false;
 
           const travelMs = (candRouteCost.etaSeconds ?? 0) * 1000;
-          const startMs = nowMs + travelMs;
-          const durationMs = task.planEnd && task.planStart
-            ? Date.parse(task.planEnd) - Date.parse(task.planStart)
-            : config.defaultTaskDurationMs;
-          const endMs = startMs + Math.max(durationMs, 1);
+          // R2-SCH-001：startMs 与 heuristic 内联分支语义等价——
+          //   锁定窗（LOCKED_TIME）→ [start, end] 原样；
+          //   否则 max(任务最早开始下界 + travel, 人员占用顺延, 设备占用顺延)。
+          // （此前固定 now+travel，同一人员第二个任务直接 time_conflict 拒绝。）
+          const lockedWindow = opts.lockedTimeByTask?.get(task.id);
+          const earliestLowerMs = opts.earliestStartMs ?? nowMs;
+          const startMs = lockedWindow
+            ? lockedWindow[0]
+            : Math.max(
+                earliestLowerMs + travelMs,
+                opts.bookedPersonFreeAt?.get(person.id) ?? 0,
+                device != null
+                  ? opts.bookedDeviceFreeAt?.get(device.id) ?? 0
+                  : 0,
+              );
+          const durationMs = lockedWindow
+            ? Math.max(lockedWindow[1] - lockedWindow[0], 1)
+            : task.planEnd && task.planStart
+              ? Date.parse(task.planEnd) - Date.parse(task.planStart)
+              : config.defaultTaskDurationMs;
+          const endMs = lockedWindow
+            ? lockedWindow[1]
+            : startMs + Math.max(durationMs, 1);
 
           const rejectReasons = this.collectRejectReasons({
             person,
@@ -369,7 +425,9 @@ export class CandidateEngineService {
 
           const eligible = rejectReasons.length === 0;
           const lateMs = Math.max(0, endMs - softDeadlineMs);
-          const waitMs = Math.max(0, startMs - nowMs);
+          // R2-SCH-001：waitMs 相对同一最早开始下界（与内联分支
+          // max(0, startMs - earliestStartMs) 同源；端点缺省下界=now 不变）。
+          const waitMs = Math.max(0, startMs - (opts.earliestStartMs ?? nowMs));
           const baselineAssignee = opts.baselineAssignee?.get(task.id);
           // M04：Churn Objective V2——候选评分消费 churn 配置（person/device/station 变更罚）。
           const personChanged =
@@ -739,6 +797,8 @@ export class CandidateEngineService {
       blocked: false,
       forbiddenZone: false,
       risk: c.riskCost,
+      // R2-SCH-017：riskLevel 原样透传（不再折叠为 risk>0?'high'）。
+      riskLevel: c.riskLevel ?? null,
       energy: 0,
       routeCostMode: c.source,
       fallbackReason: c.fallbackReason,

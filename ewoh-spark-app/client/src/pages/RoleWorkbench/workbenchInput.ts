@@ -90,10 +90,36 @@ export const WORKBENCH_SHORTCUTS: WorkbenchShortcut[] = [
  * Matches a keyboard event against the workbench shortcuts. Returns the action
  * name or null. `meta` accepts Cmd on macOS, `ctrl` accepts Ctrl on the rest.
  */
+/**
+ * True when the keyboard event originated inside a text-entry element
+ * (input / textarea / select / contenteditable). Bare-key shortcuts must be
+ * suppressed there so users can type "f"/"r"/"s" into the filter box without
+ * triggering refresh / save-view write actions (R2-CP2-001).
+ */
+export function isEditableTarget(target: unknown): boolean {
+  if (!target || typeof target !== 'object') return false;
+  const el = target as { tagName?: unknown; isContentEditable?: unknown };
+  const tag = typeof el.tagName === 'string' ? el.tagName.toUpperCase() : '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  return el.isContentEditable === true;
+}
+
+/**
+ * Matches a keyboard event against the workbench shortcuts. Returns the action
+ * name or null. `meta` accepts Cmd on macOS, `ctrl` accepts Ctrl on the rest.
+ * Events originating from editable elements never match bare-key shortcuts
+ * (R2-CP2-001: typing f/r/s in the filter must not fire refresh/save-view).
+ */
 export function matchShortcut(
-  event: { key: string; ctrlKey?: boolean; metaKey?: boolean },
+  event: {
+    key: string;
+    ctrlKey?: boolean;
+    metaKey?: boolean;
+    target?: unknown;
+  },
   shortcuts: WorkbenchShortcut[] = WORKBENCH_SHORTCUTS,
 ): string | null {
+  if (isEditableTarget(event.target)) return null;
   for (const shortcut of shortcuts) {
     if (event.key.toLowerCase() !== shortcut.key.toLowerCase()) continue;
     if (shortcut.modifier === 'ctrl' && !event.ctrlKey) continue;

@@ -40,6 +40,18 @@ export class SensorIngestService {
     const sourceType: DataSourceType = frame.source_type ?? 'real';
     const recordId = frame.record_id ?? randomUUID();
     const now = new Date();
+    // R2-SOP-022：org 缺失显式拒绝——对齐 camera/spatial/location 三路径的
+    // fail-closed 语义（不再静默写 NULL=legacy 全租户可见行）。
+    if (!orgId?.trim()) {
+      return {
+        accepted: false,
+        skipped: false,
+        record_id: recordId,
+        data_quality: 'invalid',
+        events_triggered: 0,
+        error: '租户上下文缺失，拒绝写入（不静默写全局）',
+      };
+    }
     try {
       await this.db.insert(ewohEnvironment).values({
         sensorId: frame.sensor_id,
@@ -199,7 +211,10 @@ export class SensorIngestService {
           orgId,
         })
         .onConflictDoUpdate({
-          target: ewohSpatialEntity.entityId,
+          // R2-SOP-003/R2-SAM-003（standalone_059）：冲突目标改租户复合键
+          // (org_id, entity_id)——跨租户同 entity_id 不再互相覆盖元数据，
+          // 冲突更新只会命中本 org 自己的行。
+          target: [ewohSpatialEntity.orgId, ewohSpatialEntity.entityId],
           set: {
             sourceType: scan.source_type,
             confidence: scan.confidence ?? 1.0,

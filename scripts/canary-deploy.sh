@@ -65,9 +65,14 @@ health_metrics() {
     p95="$(echo "$metrics" | awk '/^ewoh_http_duration_ms_bucket{quantile="0.95"}/{print $2}')"
     echo "${err:-0} ${p95:-0} 1"
   else
+    # R2-SCR-004：poll 期间 /metrics 掉线（坏镜像的典型症状：服务半死不暴露
+    # metrics 而 /health/ready 仍 200）不得回退探针把 err/p95 置 0——那会让
+    # 错误率/p95 阈值静默失效、回滚判定退化为纯 readiness。对齐 SCR-014 的
+    # baseline 语义：阈值无法评估≠通过——err=1 显式制造阈值违例触发回滚判定，
+    # ready 位仍如实反映探针结果。
     local code
     code="$(curl -s -o /dev/null -w '%{http_code}' "$API_URL/health/ready" || echo 000)"
-    if [ "$code" = "200" ]; then echo "0 0 1"; else echo "1 0 0"; fi
+    if [ "$code" = "200" ]; then echo "1 0 1"; else echo "1 0 0"; fi
   fi
 }
 

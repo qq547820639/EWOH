@@ -118,7 +118,18 @@ export class ReplanPreviewService {
       };
     }
 
-    const diff = this.planCompareService.compare(baseline ?? this.emptyPlan(candidatePlanId), candidate);
+    // R2-SCH-008（2026-08-17）：基线裁剪到局部子图（affected ∪ frozen）后再对比——
+    // 此前全量 baseline 对比局部 candidate，未受影响任务全部计入 removed，
+    // 污染 changed/removed 计数与 maxChangedAssignments 审批阈值判定。
+    // 指标增量（metrics/scoreBreakdown）仍取全量基线（计划级聚合值，不可按任务裁剪）。
+    const subgraphTaskIds = new Set(partialSnapshot.tasks.map((t) => t.id));
+    const baselineForDiff = baseline
+      ? {
+          ...baseline,
+          assignments: baseline.assignments.filter((a) => subgraphTaskIds.has(a.taskId)),
+        }
+      : null;
+    const diff = this.planCompareService.compare(baselineForDiff ?? this.emptyPlan(candidatePlanId), candidate);
     return this.buildResult(impact, baseline ?? null, candidate, candidatePlanId, diff, snapshot);
   }
 

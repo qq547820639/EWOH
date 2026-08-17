@@ -45,7 +45,7 @@ import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 try:
     import resource as _resource  # POSIX 专用；Windows 上不可用（边缘平台为 Linux/macOS）
@@ -78,8 +78,8 @@ CPSAT_WORKER_MAX_MEMORY_MB = int(os.environ.get("CPSAT_WORKER_MAX_MEMORY_MB", "2
 ACTIVATION_LADDER = "OFF->SHADOW->CANARY->PRODUCTION"
 
 # ---- 求解执行池（惰性初始化；并发上限由信号量硬约束，队列饱和 → 429） ----
-_EXECUTOR: Optional[concurrent.futures.ThreadPoolExecutor] = None
-_SEMAPHORE: Optional[threading.BoundedSemaphore] = None
+_EXECUTOR: concurrent.futures.ThreadPoolExecutor | None = None
+_SEMAPHORE: threading.BoundedSemaphore | None = None
 _EXECUTOR_MAX_CONCURRENCY = 0
 _EXECUTOR_LOCK = threading.Lock()
 
@@ -87,7 +87,7 @@ _ACTIVE_LOCK = threading.Lock()
 _ACTIVE_SOLVES = 0
 
 
-def _ensure_runtime() -> Tuple[concurrent.futures.ThreadPoolExecutor, threading.BoundedSemaphore]:
+def _ensure_runtime() -> tuple[concurrent.futures.ThreadPoolExecutor, threading.BoundedSemaphore]:
     """按当前 CPSAT_WORKER_MAX_CONCURRENCY 惰性构建/重建执行池与信号量。"""
     global _EXECUTOR, _SEMAPHORE, _EXECUTOR_MAX_CONCURRENCY
     with _EXECUTOR_LOCK:
@@ -124,7 +124,7 @@ class _WorkerMetrics:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._requests_by_status: Dict[str, int] = {}
+        self._requests_by_status: dict[str, int] = {}
         self._duration_sum_ms = 0.0
         self._duration_count = 0
         self._timeouts = 0
@@ -153,7 +153,7 @@ class _WorkerMetrics:
         else:
             for status in sorted(requests):
                 lines.append(
-                    'cpsat_solver_requests_total{status="%s"} %d' % (status, requests[status])
+                    f'cpsat_solver_requests_total{{status="{status}"}} {requests[status]}'
                 )
         lines.append("# HELP cpsat_solver_duration_ms_sum CP-SAT 求解耗时总和（ms）")
         lines.append("# TYPE cpsat_solver_duration_ms_sum counter")
@@ -226,7 +226,7 @@ def _estimate_candidates(request: SolverRequest) -> int:
     return total
 
 
-def _problem_too_large(request: SolverRequest) -> Optional[Dict[str, Any]]:
+def _problem_too_large(request: SolverRequest) -> dict[str, Any] | None:
     """问题规模上限校验；超限返回 413 载荷（与既有 error 信封一致）。"""
     if len(request.tasks) > CPSAT_WORKER_MAX_TASKS:
         return {
@@ -258,7 +258,7 @@ def _time_budget_ms(request: SolverRequest) -> int:
     return min(CPSAT_WORKER_MAX_SOLVE_MS, base) + CPSAT_WORKER_TIMEOUT_MARGIN_MS
 
 
-def _memory_warning_mb() -> Optional[Dict[str, Any]]:
+def _memory_warning_mb() -> dict[str, Any] | None:
     """内存守卫：ru_maxrss 超上限 → 返回 memoryWarning 载荷（绝不崩溃 worker）。"""
     if _resource is None:
         return None
@@ -273,7 +273,7 @@ def _memory_warning_mb() -> Optional[Dict[str, Any]]:
     return None
 
 
-def _timeout_payload(request: SolverRequest) -> Dict[str, Any]:
+def _timeout_payload(request: SolverRequest) -> dict[str, Any]:
     """时间预算触顶时的 TIMEOUT 响应（与 solver.py 的 TIMEOUT 形状一致）。"""
     return {
         "solverVersion": SOLVER_VERSION,
@@ -288,7 +288,7 @@ def _timeout_payload(request: SolverRequest) -> Dict[str, Any]:
     }
 
 
-def _run_solve(request: SolverRequest) -> Tuple[int, Dict[str, Any], float]:
+def _run_solve(request: SolverRequest) -> tuple[int, dict[str, Any], float]:
     """在线程池内执行一次求解；返回 (http_status, payload, duration_ms)。"""
     global _ACTIVE_SOLVES
     with _ACTIVE_LOCK:
@@ -319,7 +319,7 @@ def _run_solve(request: SolverRequest) -> Tuple[int, Dict[str, Any], float]:
 
 def _solve_guarded(
     request: SolverRequest, semaphore: threading.BoundedSemaphore
-) -> Tuple[int, Dict[str, Any], float]:
+) -> tuple[int, dict[str, Any], float]:
     """带信号量保护的求解任务：信号量由提交方获取、由本任务释放（超时后在途任务仍持锁）。"""
     try:
         return _run_solve(request)
@@ -327,7 +327,7 @@ def _solve_guarded(
         semaphore.release()
 
 
-def _status_label(status: int, payload: Dict[str, Any]) -> str:
+def _status_label(status: int, payload: dict[str, Any]) -> str:
     """指标标签：solverStatus 优先，其次 error.code，最后 http_<status>。"""
     if isinstance(payload, dict):
         solver_status = payload.get("solverStatus")
@@ -351,7 +351,7 @@ class SolverHandler(BaseHTTPRequestHandler):
             return rid.strip()
         return f"req-{uuid.uuid4().hex}"
 
-    def _send_json(self, status: int, payload: Dict, request_id: Optional[str] = None) -> None:
+    def _send_json(self, status: int, payload: dict, request_id: str | None = None) -> None:
         rid = request_id or self._request_id()
         envelope = dict(payload)
         if "requestId" not in envelope:
@@ -367,7 +367,7 @@ class SolverHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):  # 客户端已断开（如云侧超时中止）
             pass
 
-    def _send_text(self, status: int, text: str, request_id: Optional[str] = None) -> None:
+    def _send_text(self, status: int, text: str, request_id: str | None = None) -> None:
         body = text.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "text/plain; charset=utf-8")

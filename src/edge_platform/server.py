@@ -525,6 +525,30 @@ def make_handler(ctx):
 
         def do_HEAD(self):
             self._request_id = None  # keep-alive 复用实例时重置请求 ID
+            # R2-ECO-008：HEAD 与 GET 口径对齐——production 复用读守卫
+            # （未认证 / 未映射的 /api/*、/metrics 拒绝），未命中的 /api/*、
+            # /metrics 返回 404（仅状态行+头，无 body），不再经 translate_path
+            # 回退 SPA index.html 返回 200。
+            p = urlparse(self.path).path
+            if p.startswith("/api/") or p == "/metrics":
+                if Settings.load().runtime_mode == "production":
+                    action = action_for_request("GET", p)
+                    sm = _get_session_manager()
+                    session = _verify_bearer_session(self, sm) if sm else None
+                    if (
+                        action is None
+                        or sm is None
+                        or session is None
+                        or not is_allowed(session.role, action)
+                    ):
+                        self.send_response(401)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        return None
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                return None
             return super().do_HEAD()
 
         def do_PATCH(self):

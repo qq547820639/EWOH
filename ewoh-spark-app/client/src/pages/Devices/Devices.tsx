@@ -151,7 +151,7 @@ const Devices = (): React.ReactElement => {
               ) : isFetching ? (
                 '正在刷新…'
               ) : (
-                `更新于 ${new Date(dataUpdatedAt).toLocaleTimeString('zh-CN', { hour12: false })}`
+                `更新于 ${new Date(dataUpdatedAt).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}`
               )}
             </p>
           )}
@@ -421,6 +421,7 @@ const Devices = (): React.ReactElement => {
                       <td className="px-5 py-3 text-xs text-[hsl(218_10%_42%)] whitespace-nowrap">
                         {d.lastTelemetryAt
                           ? new Date(d.lastTelemetryAt).toLocaleString('zh-CN', {
+                              timeZone: 'Asia/Shanghai',
                               hour12: false,
                             })
                           : '—'}

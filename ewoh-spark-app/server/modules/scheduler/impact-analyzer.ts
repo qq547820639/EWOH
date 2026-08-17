@@ -1,5 +1,5 @@
 import type { ReplanImpact, WorldStateSnapshot } from '@shared/api.interface';
-import { TaskLifecycle } from './task-lifecycle';
+import { TaskLifecycle, TASK_LOCKED_STATUSES } from './task-lifecycle';
 import { propagateImpact } from './impact-propagation';
 
 /** 影响分类：硬冲突 / 软偏差 / 关键事件。 */
@@ -128,7 +128,13 @@ export interface ImpactEvent {
   entityId: string | null;
 }
 
-const FROZEN_STATUSES = new Set(['executing', 'dispatched', 'in_progress']);
+/**
+ * R2-SCH-011（2026-08-17）：冻结状态对齐任务状态机契约单一事实源
+ * （task-lifecycle TASK_LOCKED_STATUSES：dispatched/received/executing/paused/
+ * exception）。旧硬编码含非契约 'in_progress'（task.yaml 无此状态）且缺
+ * received/paused/exception——冻结面与状态机漂移。
+ */
+const FROZEN_STATUSES = new Set<string>(TASK_LOCKED_STATUSES);
 
 /**
  * 影响分析器：给定世界状态快照 + 输入事件，判定

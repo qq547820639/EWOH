@@ -47,7 +47,7 @@ node server/index.js
 | 变量 | 必填 | 默认 | 说明 |
 |------|------|------|------|
 | `FEISHU_API_TOKEN` | **生产必填** | 空 | **v1.1.0** API 统一鉴权 token。写操作（POST/PUT/PATCH/DELETE）必须携带 `Authorization: Bearer <token>` 或 `X-API-Key: <token>`；**未配置时写操作一律拒绝（fail-closed，503）** |
-| `FEISHU_REQUIRE_AUTH_FOR_READS` | 否 | `false` | **v1.1.0** 设为 `true` 时读操作（GET）也强制鉴权；缺省读操作放行（监督平台展示语义） |
+| `FEISHU_REQUIRE_AUTH_FOR_READS` | 否 | `true` | **R2-FSH-002** 读操作（GET）默认与写操作同一 fail-closed 鉴权（防审计日志/工人身份/健康遥测未授权抓取）；设为 `false` 显式放宽为无凭证读放行（遗留演示语义），放宽模式下仍施加 IP 级读限流。无敏感数据的探针在 `/health/live`、`/health/ready`（不经鉴权） |
 | `EWOH_DB_PATH` | 否 | `data/ewoh-feishu.db` | **v1.1.0** SQLite 数据库路径。默认文件库（WAL + busy_timeout）；`:memory:` 仅测试用 |
 | `FEISHU_VERIFICATION_TOKEN` | webhook 写操作必填 | 空 | 卡片回调验签 token；缺失 → webhook 写操作 fail-closed；常量时间比较 |
 | `FEISHU_ENCRYPT_KEY` | **webhook 写操作必填** | 空 | 飞书 Encrypt Key。**FS-001/002 修复**：签名按飞书事件订阅协议 `hex(sha256(X-Lark-Request-Timestamp + X-Lark-Request-Nonce + encrypt_key + rawBody))` 校验（原始请求体参与签名）；未配置 → webhook 一律拒绝（fail-closed），不再降级放行 |
@@ -119,7 +119,6 @@ npm run test:integration # 端到端集成测试（真实 HTTP server + 临时 S
 NODE_ENV=production \
   PORT=3000 \
   FEISHU_API_TOKEN='<32+ 字符强随机>' \
-  FEISHU_REQUIRE_AUTH_FOR_READS=true \
   FEISHU_VERIFICATION_TOKEN='<飞书验签>' \
   FEISHU_ENCRYPT_KEY='<飞书加密密钥>' \
   EWOH_DB_PATH='/var/lib/ewoh/feishu.db' \

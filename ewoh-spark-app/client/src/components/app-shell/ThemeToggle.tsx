@@ -39,7 +39,9 @@ const ThemeToggle = (): React.ReactElement => {
     <button
       type="button"
       onClick={handleToggle}
-      className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-white/70 hover:bg-white/10 hover:text-white transition-colors"
+      /* R2-CC2-002：按钮位于侧栏 footer（bg-card 令牌表面），前景改配对令牌
+       * （原 text-white/70 在浅色白底上白字近乎不可见；dark 下 hover 也不可读）。 */
+      className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
       aria-label={`主题切换（当前：${THEME_PREFERENCE_LABELS[preference]}）`}
       title={`主题：${THEME_PREFERENCE_LABELS[preference]}（点击切换）`}
     >

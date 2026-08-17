@@ -79,18 +79,24 @@ describe('agent-task contract', () => {
   });
 
   it('状态机转移（contracts/state-machines/agent-task.yaml）', () => {
-    expect(agentTaskTransitionAllowed('created', 'dispatched')).toBe(true);
-    expect(agentTaskTransitionAllowed('created', 'cancelled')).toBe(true);
-    expect(agentTaskTransitionAllowed('in_progress', 'completed')).toBe(true);
-    expect(agentTaskTransitionAllowed('in_progress', 'failed')).toBe(true);
+    // R2-SHR-004：actorRole 缺省即拒绝（fail-closed），以下均补齐 role 参数。
+    expect(agentTaskTransitionAllowed('created', 'dispatched', 'orchestrator')).toBe(true);
+    expect(agentTaskTransitionAllowed('created', 'cancelled', 'orchestrator')).toBe(true);
+    expect(agentTaskTransitionAllowed('in_progress', 'completed', 'agent')).toBe(true);
+    expect(agentTaskTransitionAllowed('in_progress', 'failed', 'agent')).toBe(true);
     // SH-018：yaml/实现均支持 in_progress→cancelled，补齐覆盖。
-    expect(agentTaskTransitionAllowed('in_progress', 'cancelled')).toBe(true);
-    expect(agentTaskTransitionAllowed('dispatched', 'cancelled')).toBe(true);
-    expect(agentTaskTransitionAllowed('created', 'completed')).toBe(false);
-    expect(agentTaskTransitionAllowed('completed', 'dispatched')).toBe(false);
+    expect(agentTaskTransitionAllowed('in_progress', 'cancelled', 'orchestrator')).toBe(true);
+    expect(agentTaskTransitionAllowed('dispatched', 'cancelled', 'orchestrator')).toBe(true);
+    expect(agentTaskTransitionAllowed('created', 'completed', 'orchestrator')).toBe(false);
+    expect(agentTaskTransitionAllowed('completed', 'dispatched', 'agent')).toBe(false);
   });
 
-  it('SH-005：actorRole 强制 yaml 声明的 role 约束（缺省不校验保持向后兼容）', () => {
+  it('R2-SHR-004：actorRole 缺省 fail-closed（不再向后兼容旁路）', () => {
+    expect(agentTaskTransitionAllowed('created', 'dispatched')).toBe(false);
+    expect(agentTaskTransitionAllowed('in_progress', 'completed')).toBe(false);
+  });
+
+  it('SH-005：actorRole 强制 yaml 声明的 role 约束', () => {
     expect(agentTaskTransitionAllowed('created', 'dispatched', 'orchestrator')).toBe(true);
     expect(agentTaskTransitionAllowed('created', 'dispatched', 'agent')).toBe(false);
     expect(agentTaskTransitionAllowed('dispatched', 'in_progress', 'agent')).toBe(true);

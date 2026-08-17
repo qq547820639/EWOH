@@ -118,6 +118,11 @@ function createDbMock(
       }
       throw new Error(`unexpected update table ${String(table)}`);
     }),
+    // R2-SMI-004：step/instance（及 bypass 全链）双写走同事务——fake 直接
+    // 以同一 db 对象执行回调（单连接语义）。
+    transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn(db),
+    ),
   } as never;
 
   return {
@@ -206,6 +211,8 @@ describe('ApprovalService persistence', () => {
       {
         entityType: 'task',
         entityId: 'T-1',
+        // R2-SMI-003：roles 仅展示性输入——审批图由服务端按 entityType 映射
+        // （task → workshop_lead + safety_admin），客户端角色不再生效。
         roles: ['lead', 'safety'],
       },
       // NEST-401：创建必须带租户上下文（orgId 显式写入 + 记录发起人）。
@@ -248,7 +255,7 @@ describe('ApprovalService persistence', () => {
       causalType: 'approval_step',
     });
     expect(JSON.parse(stepRows[0].description)).toEqual({
-      role: 'lead',
+      role: 'workshop_lead',
       status: 'pending',
       reason: null,
       delegateTo: null,
@@ -268,6 +275,23 @@ describe('ApprovalService persistence', () => {
 
     expect(error).toBeInstanceOf(BadRequestException);
     expect(eventInsertValues).not.toHaveBeenCalled();
+  });
+
+  it('R2-SMI-003：未登记 entityType 拒绝（客户端不可自造审批类型/角色）', async () => {
+    const { db, eventInsertValues, chainInsertValues } = createDbMock();
+    const service = new ApprovalService(db, createAuditMock() as never);
+
+    const error = await service
+      .createApproval(
+        { entityType: 'shadow_plan', entityId: 'P-1', roles: ['dispatcher'] },
+        { userId: 'user-1', primaryOrgId: 'org-1', roles: ['dispatcher'] },
+      )
+      .catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect(error.message).toContain('shadow_plan');
+    expect(eventInsertValues).not.toHaveBeenCalled();
+    expect(chainInsertValues).not.toHaveBeenCalled();
   });
 
   it('rejects creation without an org context (NEST-401)', async () => {

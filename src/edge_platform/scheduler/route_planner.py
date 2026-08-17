@@ -91,6 +91,11 @@ class GraphRoutePlanner(RoutePlanner):
                 return station_id
         # 否则遍历 topology.nodes() 找最近节点（用 spatial.distance 比较）
         x, y = _to_xy(from_loc)
+        if x is None or y is None:
+            # R2-ESC-003：缺起点坐标时不再用 (0,0) 伪造位置映射最近节点
+            # （原实现 None or 0.0 → 原点，产出基于假起点的距离/ETA/路线）。
+            # 与 EuclideanRoutePlanner 对齐：返回 None → 上层 reachable=False。
+            return None
         best_id, best_dist = None, None
         for node in self.topology.nodes():
             nx, ny = _node_xy(node)

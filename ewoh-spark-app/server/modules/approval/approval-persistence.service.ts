@@ -30,6 +30,21 @@ import { aggregateApprovalStatus } from './approval.service';
 /** approval.yaml role:high_privilege_admin 在系统角色表中的映射（最高权限角色）。 */
 const HIGH_PRIVILEGE_ROLE = 'global_admin';
 
+/**
+ * R2-SMI-003：审批图（谁批什么）由服务端决定——entityType → 必需审批步骤
+ * 角色映射。请求体 input.roles 仅作展示性输入，不再作为审批角色来源；
+ * 未登记的 entityType 一律拒绝（fail-closed，防自造审批链）。
+ */
+export const APPROVAL_ROLE_POLICY: Readonly<Record<string, readonly string[]>> = {
+  /** 生产任务相关审批：车间主管复核 + 安全管理员把关。 */
+  task: ['workshop_lead', 'safety_admin'],
+  /** 危险作业审批：安全管理员。 */
+  dangerous_action: ['safety_admin'],
+  /** R2-SMI-001/INV-005：高危物理控制指令审批；safety_admin 扮演
+   * control.yaml pending_approval→approved 的 approver 角色。 */
+  control_request: ['safety_admin'],
+};
+
 const STEP_STATUSES = new Set<ApprovalStepStatus>([
   'pending',
   'approved',
@@ -141,12 +156,8 @@ export class ApprovalPersistenceService {
     input: CreateApprovalRequest,
     actor?: OrgContext,
   ): Promise<ApprovalInstance> {
-    if (
-      !input.entityType?.trim() ||
-      !input.entityId?.trim() ||
-      !input.roles?.length
-    ) {
-      throw new BadRequestException('entityType, entityId and roles are required');
+    if (!input.entityType?.trim() || !input.entityId?.trim()) {
+      throw new BadRequestException('entityType and entityId are required');
     }
     // NEST-401：HTTP 创建必须带租户上下文（org 缺失 401，绝不静默写全局行）。
     const orgId = actor?.primaryOrgId?.trim();
@@ -155,42 +166,54 @@ export class ApprovalPersistenceService {
         'org 上下文缺失：审批创建必须带租户上下文',
       );
     }
-    const now = new Date();
-    const id = randomUUID();
     const entityType = input.entityType.trim();
     const entityId = input.entityId.trim();
-    const steps: ApprovalStep[] = input.roles.map((role) => ({
+    // R2-SMI-003：审批角色按 entityType 由服务端映射——请求体 roles 不可
+    // 指定审批图；未登记 entityType 拒绝（fail-closed）。
+    const requiredRoles = APPROVAL_ROLE_POLICY[entityType];
+    if (!requiredRoles?.length) {
+      throw new BadRequestException(
+        `Unknown approval entityType '${entityType}' (allowed: ${Object.keys(APPROVAL_ROLE_POLICY).join(', ')})`,
+      );
+    }
+    const now = new Date();
+    const id = randomUUID();
+    const steps: ApprovalStep[] = requiredRoles.map((role) => ({
       id: randomUUID(),
       role,
       status: 'pending',
     }));
 
-    await this.db.insert(ewohEvent).values({
-      eventId: id,
-      eventType: 'approval_instance',
-      title: `Approval for ${entityType} ${entityId}`,
-      status: 'pending',
-      createdAt: now,
-      sourceType: 'approval',
-      // NEST-401：写入显式携带 orgId。
-      orgId,
-      evidenceJson: {
-        entityType,
-        entityId,
-        createdAt: now.toISOString(),
-        // NEST-405：记录发起人（cancel 的 initiator 校验依据）。
-        createdBy: actor?.userId ?? 'system',
-      },
-    });
-    await this.db.insert(ewohEventChain).values(
-      steps.map((step) => ({
-        eventId: step.id,
-        parentEventId: id,
-        causalType: 'approval_step',
-        description: serializeStep(step),
+    // R2-SMI-004：instance（ewoh_event）与 steps（ewoh_event_chain）同事务
+    // 提交——chain 失败不再留下无 steps 的孤儿 instance 行。
+    await this.db.transaction(async (tx) => {
+      await tx.insert(ewohEvent).values({
+        eventId: id,
+        eventType: 'approval_instance',
+        title: `Approval for ${entityType} ${entityId}`,
+        status: 'pending',
         createdAt: now,
-      })),
-    );
+        sourceType: 'approval',
+        // NEST-401：写入显式携带 orgId。
+        orgId,
+        evidenceJson: {
+          entityType,
+          entityId,
+          createdAt: now.toISOString(),
+          // NEST-405：记录发起人（cancel/发起人回避的 initiator 校验依据）。
+          createdBy: actor?.userId ?? 'system',
+        },
+      });
+      await tx.insert(ewohEventChain).values(
+        steps.map((step) => ({
+          eventId: step.id,
+          parentEventId: id,
+          causalType: 'approval_step',
+          description: serializeStep(step),
+          createdAt: now,
+        })),
+      );
+    });
 
     return {
       id,
@@ -237,6 +260,32 @@ export class ApprovalPersistenceService {
     return this.toInstance(event as EventRow, steps);
   }
 
+  /**
+   * R2-SMI-001：按 (entityType, entityId) 查最近一条审批实例（control 审批
+   * 闸门联动查询）。org 守卫与 getApproval 一致（跨租户 404）。
+   */
+  async findLatestForEntity(
+    entityType: string,
+    entityId: string,
+    actor?: OrgContext,
+  ): Promise<ApprovalInstance | null> {
+    const rows = await this.db
+      .select({ eventId: ewohEvent.eventId })
+      .from(ewohEvent)
+      .where(
+        and(
+          eq(ewohEvent.eventType, 'approval_instance'),
+          sql`${ewohEvent.evidenceJson}->>'entityType' = ${entityType}`,
+          sql`${ewohEvent.evidenceJson}->>'entityId' = ${entityId}`,
+        ),
+      )
+      .orderBy(desc(ewohEvent.createdAt))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    return this.getApproval(row.eventId, actor);
+  }
+
   async stepAction(
     id: string,
     stepId: string,
@@ -269,6 +318,25 @@ export class ApprovalPersistenceService {
         `Step ${stepId} requires role '${step.role}' (actor roles: ${actorRoles.join(', ') || 'none'})`,
       );
     }
+    // R2-SMI-003：职责分离（segregation of duties）——发起人回避。发起人
+    // 不得审批/操作自己发起的实例上的任何步骤（global_admin 亦回避；
+    // 紧急通道走 approval.bypass，另行 high_risk 审计）。legacy 行无
+    // createdBy 时不适用（无从判定发起人）。
+    if (actor) {
+      const [evidenceRow] = await this.db
+        .select({ evidenceJson: ewohEvent.evidenceJson })
+        .from(ewohEvent)
+        .where(eq(ewohEvent.eventId, id));
+      const evidence =
+        ((evidenceRow?.evidenceJson as Record<string, unknown> | null) ?? {});
+      const createdBy =
+        typeof evidence.createdBy === 'string' ? evidence.createdBy : null;
+      if (createdBy && createdBy === actor.userId) {
+        throw new ForbiddenException(
+          'approval.stepAction 发起人回避：不得审批自己发起的实例（segregation of duties）',
+        );
+      }
+    }
 
     const nextStep: ApprovalStep = { ...step };
     switch (action) {
@@ -293,37 +361,47 @@ export class ApprovalPersistenceService {
       nextStep.reason = reason;
     }
 
-    const [updatedStep] = await this.db
-      .update(ewohEventChain)
-      .set({ description: serializeStep(nextStep) })
-      .where(
-        and(
-          eq(ewohEventChain.eventId, stepId),
-          eq(ewohEventChain.parentEventId, id),
-          sql`${ewohEventChain.description}::jsonb->>'status' = ${step.status}`,
-        ),
-      )
-      .returning();
-    if (!updatedStep) {
-      throw new ConflictException('STATE_CONFLICT');
-    }
-
     const nextSteps = instance.steps.map((candidate) =>
       candidate.id === stepId ? nextStep : candidate,
     );
     const nextStatus = aggregateApprovalStatus(nextSteps);
-    const [updatedInstance] = await this.db
-      .update(ewohEvent)
-      .set({ status: nextStatus })
-      .where(
-        and(
-          eq(ewohEvent.eventId, id),
-          eq(ewohEvent.eventType, 'approval_instance'),
-          eq(ewohEvent.status, instance.status),
-        ),
-      )
-      .returning();
-    if (!updatedInstance) {
+
+    // R2-SMI-004：step 与 instance 双 UPDATE 同事务——instance CAS 失败时
+    // step 变更一并回滚，不再留下 step/聚合状态永裂的脏审批。
+    const [updatedStep, updatedInstance] = await this.db.transaction(
+      async (tx) => {
+        const [stepRow] = await tx
+          .update(ewohEventChain)
+          .set({ description: serializeStep(nextStep) })
+          .where(
+            and(
+              eq(ewohEventChain.eventId, stepId),
+              eq(ewohEventChain.parentEventId, id),
+              sql`${ewohEventChain.description}::jsonb->>'status' = ${step.status}`,
+            ),
+          )
+          .returning();
+        if (!stepRow) {
+          throw new ConflictException('STATE_CONFLICT');
+        }
+        const [instanceRow] = await tx
+          .update(ewohEvent)
+          .set({ status: nextStatus })
+          .where(
+            and(
+              eq(ewohEvent.eventId, id),
+              eq(ewohEvent.eventType, 'approval_instance'),
+              eq(ewohEvent.status, instance.status),
+            ),
+          )
+          .returning();
+        if (!instanceRow) {
+          throw new ConflictException('STATE_CONFLICT');
+        }
+        return [stepRow, instanceRow] as const;
+      },
+    );
+    if (!updatedStep || !updatedInstance) {
       throw new ConflictException('STATE_CONFLICT');
     }
 
@@ -376,40 +454,44 @@ export class ApprovalPersistenceService {
         : step,
     );
 
-    for (const step of pendingSteps) {
-      const nextStep = nextSteps.find(
-        (candidate) => candidate.id === step.id,
-      )!;
-      const [updatedStep] = await this.db
-        .update(ewohEventChain)
-        .set({ description: serializeStep(nextStep) })
+    // R2-SMI-004：bypass 的全部 step UPDATE 与 instance UPDATE 同事务——
+    // 中途任一 CAS 失败整体回滚，不再留下「部分 skipped + instance 仍 pending」。
+    await this.db.transaction(async (tx) => {
+      for (const step of pendingSteps) {
+        const nextStep = nextSteps.find(
+          (candidate) => candidate.id === step.id,
+        )!;
+        const [updatedStep] = await tx
+          .update(ewohEventChain)
+          .set({ description: serializeStep(nextStep) })
+          .where(
+            and(
+              eq(ewohEventChain.eventId, step.id),
+              eq(ewohEventChain.parentEventId, id),
+              sql`${ewohEventChain.description}::jsonb->>'status' = 'pending'`,
+            ),
+          )
+          .returning();
+        if (!updatedStep) {
+          throw new ConflictException('STATE_CONFLICT');
+        }
+      }
+
+      const [updatedInstance] = await tx
+        .update(ewohEvent)
+        .set({ status: 'bypassed' })
         .where(
           and(
-            eq(ewohEventChain.eventId, step.id),
-            eq(ewohEventChain.parentEventId, id),
-            sql`${ewohEventChain.description}::jsonb->>'status' = 'pending'`,
+            eq(ewohEvent.eventId, id),
+            eq(ewohEvent.eventType, 'approval_instance'),
+            eq(ewohEvent.status, instance.status),
           ),
         )
         .returning();
-      if (!updatedStep) {
+      if (!updatedInstance) {
         throw new ConflictException('STATE_CONFLICT');
       }
-    }
-
-    const [updatedInstance] = await this.db
-      .update(ewohEvent)
-      .set({ status: 'bypassed' })
-      .where(
-        and(
-          eq(ewohEvent.eventId, id),
-          eq(ewohEvent.eventType, 'approval_instance'),
-          eq(ewohEvent.status, instance.status),
-        ),
-      )
-      .returning();
-    if (!updatedInstance) {
-      throw new ConflictException('STATE_CONFLICT');
-    }
+    });
 
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',

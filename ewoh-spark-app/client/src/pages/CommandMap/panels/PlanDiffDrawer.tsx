@@ -34,7 +34,7 @@ const CHANGE_LABEL: Record<string, string> = {
 function fmtTime(iso?: string | null): string {
   if (!iso) return '—';
   const d = new Date(iso);
-  return Number.isFinite(d.getTime()) ? d.toLocaleTimeString('zh-CN', { hour12: false }) : '—';
+  return Number.isFinite(d.getTime()) ? d.toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '—';
 }
 
 function SnapshotBlock({

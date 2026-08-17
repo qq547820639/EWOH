@@ -55,4 +55,21 @@ describe('QueryState', () => {
     expect(markup).toContain('>content<');
     expect(markup).not.toContain('暂无数据');
   });
+
+  it('R2-CC2-002: loading/empty 表面使用语义令牌（无字面 bg-white，dark 主题可读）', () => {
+    const loading = renderWithRouter(
+      <QueryState isLoading isError={false}>
+        {children}
+      </QueryState>,
+    );
+    expect(loading).toContain('bg-card');
+    expect(loading).not.toContain('bg-white');
+    const empty = renderWithRouter(
+      <QueryState isLoading={false} isError={false} isEmpty>
+        {children}
+      </QueryState>,
+    );
+    expect(empty).toContain('bg-card');
+    expect(empty).not.toContain('bg-white');
+  });
 });

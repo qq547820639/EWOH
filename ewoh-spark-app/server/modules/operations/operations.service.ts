@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
@@ -202,6 +203,7 @@ function configKey(namespace: string, id: string): string {
 
 @Injectable()
 export class OperationsService {
+  private readonly logger = new Logger(OperationsService.name);
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly auditService: AuditService,
@@ -604,8 +606,25 @@ export class OperationsService {
       row.updatedAt,
     );
 
+    // R2-SOP-016：task 已 completed 落库后，asset 刷新（独立乐观锁）失败
+    // 不再让整个请求 500/409——降级为 warning 返回 + 结构化日志，保留
+    // 人工重试窗口（重放 complete→refresh 语义见 refreshAssetAfterMaintenance）。
+    let refreshWarning: string | null = null;
     if (action === 'complete' && value.assetId) {
-      await this.refreshAssetAfterMaintenance(value.assetId, value.updatedAt, actor);
+      try {
+        await this.refreshAssetAfterMaintenance(value.assetId, value.updatedAt, actor);
+      } catch (error) {
+        if (error instanceof ConflictException) {
+          refreshWarning =
+            `asset ${value.assetId} refresh skipped: concurrent update (409), ` +
+            'retry maintenance completion later to advance nextDueAt';
+          this.logger.warn(
+            `transitionMaintenanceTask: ${refreshWarning} (task=${taskId})`,
+          );
+        } else {
+          throw error;
+        }
+      }
     }
 
     await this.auditService.appendAuditLog({
@@ -746,6 +765,10 @@ export class OperationsService {
       key,
       value as unknown as Record<string, unknown>,
       actor,
+      // R2-SOP-005 / NEST-209 横向补漏：transitionTool 与 asset/task 转移
+      // 同型补传乐观锁谓词——并发 calibrate（写 calibrationHistory）与
+      // retire 不再 last-writer-wins 丢校准历史。
+      row.updatedAt,
     );
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',

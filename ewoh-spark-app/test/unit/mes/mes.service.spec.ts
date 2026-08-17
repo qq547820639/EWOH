@@ -141,12 +141,15 @@ describe('MesService SOP registry and confirmation gating', () => {
       { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
+    // W4/R2-SAM-002：MES 操作显式租户上下文（无 actor fail-closed 400）。
+    const workerActor = { userId: 'worker-1', primaryOrgId: 'org-1' };
+
     await expect(
-      service.transitionStep('WO-1', 'S1', 'start', {}),
+      service.transitionStep('WO-1', 'S1', 'start', {}, workerActor),
     ).rejects.toThrow('SOP_SIGN_REQUIRED');
 
     await expect(
-      service.transitionStep('WO-1', 'S1', 'start', { sopSigned: true }),
+      service.transitionStep('WO-1', 'S1', 'start', { sopSigned: true }, workerActor),
     ).rejects.toThrow('SOP_TOOLS_REQUIRED');
 
     const result = await service.transitionStep(
@@ -210,7 +213,11 @@ describe('MesService SOP registry and confirmation gating', () => {
       { appendAuditLog: jest.fn() } as never,
     );
 
-    const diff = await service.diffSops('SOP-1', 'SOP-2');
+    // W4/R2-SAM-002：SOP 读取同样显式租户上下文。
+    const diff = await service.diffSops('SOP-1', 'SOP-2', {
+      userId: 'user-1',
+      primaryOrgId: 'org-1',
+    });
 
     expect(diff.added).toEqual(['新增']);
     expect(diff.removed).toEqual(['移除']);
@@ -289,10 +296,14 @@ describe('MesService quality schemes', () => {
       { appendAuditLog: jest.fn() } as never,
     );
 
-    const matches = await service.matchQualitySchemes({
-      deviceId: 'EXO-1',
-      productCode: 'P-1',
-    });
+    // W4/R2-SAM-002：质量方案匹配显式租户上下文。
+    const matches = await service.matchQualitySchemes(
+      {
+        deviceId: 'EXO-1',
+        productCode: 'P-1',
+      },
+      { userId: 'inspector-1', primaryOrgId: 'org-1' },
+    );
 
     expect(matches).toHaveLength(1);
     expect(matches[0].schemeId).toBe('QS-1');
@@ -550,7 +561,10 @@ describe('MesService work order transition', () => {
     );
 
     await expect(
-      service.transitionWorkOrder('WO-1', 'complete', undefined),
+      service.transitionWorkOrder('WO-1', 'complete', undefined, {
+        userId: 'user-1',
+        primaryOrgId: 'org-1',
+      }),
     ).rejects.toThrow('All steps must be handed over');
   });
 });
@@ -771,7 +785,7 @@ describe('MesService step exception lifecycle', () => {
         'S1',
         'report',
         { quantity: 1 },
-        { userId: 'worker-1', primaryOrgId: 'org-1', role: 'worker' },
+        { userId: 'worker-1', primaryOrgId: 'org-1', roles: ['worker'] },
       ),
     ).rejects.toThrow('WORKER_STEP_ASSIGNMENT_REQUIRED');
   });
@@ -802,7 +816,7 @@ describe('MesService step exception lifecycle', () => {
       'S1',
       'report',
       { quantity: 1 },
-      { userId: 'worker-1', primaryOrgId: 'org-1', role: 'worker' },
+      { userId: 'worker-1', primaryOrgId: 'org-1', roles: ['worker'] },
     );
 
     expect(result.status).toBe('reported');

@@ -50,15 +50,21 @@ export class LearningProposalController {
   @Post(':proposalId/shadow')
   shadow(
     @Param('proposalId') proposalId: string,
+    // R2-SBZ-004：客户端 facts 可选且仅作对账提示——影子评估证据由服务端
+    // 从库内事实源（org 作用域遥测窗口）重建，绝不信任请求体供给的事实。
     @Body() body: { facts?: Array<Record<string, unknown>> },
     @Req() request: { userContext?: OrgContext },
   ) {
-    if (!Array.isArray(body?.facts)) {
-      throw new BadRequestException('shadow 必须提供 facts 历史事实窗口');
+    if (body?.facts !== undefined && !Array.isArray(body.facts)) {
+      throw new BadRequestException('facts 若提供必须为数组（仅作对账提示，不作证据）');
     }
-    return this.proposalService.shadow(this.currentOrgId(request), proposalId, body.facts);
+    return this.proposalService.shadow(this.currentOrgId(request), proposalId, body?.facts);
   }
 
+  // R2-SBZ-003：激活阶梯（approve/reject/rollback）为高危写路径——任意认证用户
+  // 不得自行批准/回滚生产阈值覆盖；限 workshop_lead/global_admin（人审阶梯，§2）。
+  // propose/shadow 保持 ANY_AUTHENTICATED（反馈腿全角色可提案，激活必经人审）。
+  @Roles('workshop_lead', 'global_admin')
   @Post(':proposalId/approve')
   approve(
     @Param('proposalId') proposalId: string,
@@ -71,6 +77,7 @@ export class LearningProposalController {
     return this.proposalService.approve(this.currentOrgId(request), proposalId, approvedBy);
   }
 
+  @Roles('workshop_lead', 'global_admin')
   @Post(':proposalId/reject')
   reject(
     @Param('proposalId') proposalId: string,
@@ -84,6 +91,7 @@ export class LearningProposalController {
     return this.proposalService.reject(this.currentOrgId(request), proposalId, rejectedBy, body?.reason ?? '');
   }
 
+  @Roles('workshop_lead', 'global_admin')
   @Post(':proposalId/rollback')
   rollback(
     @Param('proposalId') proposalId: string,

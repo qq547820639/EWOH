@@ -29,8 +29,12 @@ export class MetricsExportController {
   }
 
   @Get('text')
-  text() {
-    return this.metricsExport.renderPrometheus();
+  text(@Req() request: { userContext?: OrgContext }) {
+    // R2-SNZ-007：与 GET / 同语义，text 渲染同样限定调用者租户（原先
+    // 无参 snapshot = 全租户边缘样本，safety_admin 可拉全部租户指标）。
+    return this.metricsExport.renderPrometheus(
+      request.userContext?.primaryOrgId?.trim() || undefined,
+    );
   }
 
   @Post('edge-metrics')

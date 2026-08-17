@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
+  HttpException,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -14,10 +16,12 @@ import {
   ewohControlRequest,
   ewohControlCommand,
   ewohControlResult,
+  ewohDeviceConfig,
 } from '@server/database/schema';
 import { AuditService, type AuditLogEntry } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { assertTenantVisible } from '../scheduler/plan-tenant-guard';
+import { ApprovalPersistenceService } from '../approval/approval-persistence.service';
 
 export type AttemptStatus =
   | 'pending'
@@ -44,6 +48,28 @@ export interface ControlRequest {
   createdAt: string;
   /** 组织归属（ADR-077；读回 Fact，null=legacy 行）。 */
   orgId?: string | null;
+  /** R2-SMI-001：持久化行状态（created/pending_approval/approved/…/revoked）。 */
+  status?: string;
+}
+
+/**
+ * R2-SMI-001（INV-005）：高危物理指令集合——急停/载人移动类命令进入
+ * pending_approval 审批链后才允许下发。普通启停（start/stop）保持直发。
+ */
+export const HIGH_RISK_COMMAND_KEYS: ReadonlySet<string> = new Set([
+  'emergency_stop',
+  'e_stop',
+  'estop',
+  'emergency_brake',
+  'move_to',
+  'carry_move',
+]);
+
+/** R2-SMI-001：按命令键风险分级（任一高危键 → 整单高危）。 */
+export function classifyControlRisk(commandKeys: string[]): 'high' | 'normal' {
+  return commandKeys.some((key) => HIGH_RISK_COMMAND_KEYS.has(key))
+    ? 'high'
+    : 'normal';
 }
 
 interface ControlRequestRow {
@@ -104,7 +130,14 @@ export function aggregateControlStatus(attempts: ControlAttempt[]): string {
   return 'pending_gateway';
 }
 
-const TERMINAL_REQUEST_STATUSES = new Set(['executed', 'failed', 'timeout']);
+const TERMINAL_REQUEST_STATUSES = new Set(['executed', 'failed', 'timeout', 'revoked']);
+/**
+ * R2-SMI-009（修正）：sendCommand/receiveReceipt 的行状态守卫排除 'failed'——
+ * control.yaml aggregation.retry_new_attempt:true 允许 latest attempt 全败后
+ * 同 request 重发新 attempt（重发后聚合写回 pending_gateway）。'failed' 行
+ * 状态不得阻断重试通道；executed/timeout/revoked 仍 fail-closed。
+ */
+const NON_RETRYABLE_REQUEST_STATUSES = new Set(['executed', 'timeout', 'revoked']);
 const NO_FURTHER_ACTION_STATUSES = new Set(['executed', 'timeout']);
 const IN_FLIGHT_ATTEMPT_STATUSES = new Set(['pending', 'sent', 'gateway_received']);
 
@@ -115,6 +148,7 @@ export class ControlService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     @Optional() private readonly auditService?: AuditService,
+    @Optional() private readonly approvalService?: ApprovalPersistenceService,
   ) {}
 
   async createRequest(input: {
@@ -129,6 +163,17 @@ export class ControlService {
     if (existing) {
       return existing;
     }
+    // R2-SMI-001：按命令风险分级——高危单进 pending_approval 审批链。
+    const risk = classifyControlRisk(input.commandKeys);
+    const approvalRequired = risk === 'high';
+    // R2-SMI-002：目标设备租户归属断言——已注册设备的 org 必须与发起方
+    // 一致（global_admin 显式豁免；未注册设备无 org 事实可断言，网关投递
+    // 自然失败，不额外放行跨租户物理面）。
+    await this.assertDeviceInOrg(
+      input.deviceId,
+      actor?.primaryOrgId,
+      actor?.isGlobalAdmin === true,
+    );
     const request: ControlRequest = {
       id: nextId('ctl'),
       deviceId: input.deviceId,
@@ -147,12 +192,29 @@ export class ControlService {
           deviceId: request.deviceId,
           controlType: 'device_command',
           commandKeys: request.commandKeys,
-          status: 'created',
+          status: approvalRequired ? 'pending_approval' : 'created',
           idempotencyKey: request.idempotencyKey,
+          requestedBy: actor?.userId,
+          riskLevel: risk,
           ...(actor?.primaryOrgId ? { orgId: actor.primaryOrgId } : {}),
         })
         .returning();
       const createdRequest = this.mapRequest(this.rowFromSelect(row), [], row.orgId);
+      if (approvalRequired) {
+        // R2-SMI-001（INV-005）：联动 approval 域创建审批实例（角色由
+        // APPROVAL_ROLE_POLICY 服务端映射，R2-SMI-003）。审批模块缺失时
+        // fail-closed——高危单宁可不创建也不绕过审批。
+        if (!this.approvalService) {
+          throw new InternalServerErrorException(
+            'high-risk control request requires the approval module (INV-005)',
+          );
+        }
+        await this.approvalService.createApproval(
+          // roles 仅展示性输入：审批图由服务端按 entityType 映射（R2-SMI-003）。
+          { entityType: 'control_request', entityId: createdRequest.id, roles: [] },
+          actor,
+        );
+      }
       await this.recordAudit(
         {
           action: 'control.create',
@@ -163,8 +225,11 @@ export class ControlService {
             deviceId: createdRequest.deviceId,
             commandKeys: createdRequest.commandKeys,
             idempotencyKey: createdRequest.idempotencyKey,
-            status: 'created',
+            status: approvalRequired ? 'pending_approval' : 'created',
+            riskLevel: risk,
           },
+          // R2-SMI-001：高危创建审计标 risk。
+          risk: approvalRequired,
         },
         actor,
       );
@@ -176,6 +241,10 @@ export class ControlService {
           return concurrent;
         }
       }
+      // 审批联动的业务异常（如 org 缺失 401）原样上抛，不吞成 500。
+      if (error instanceof HttpException) {
+        throw error;
+      }
       this.throwPersistence('create control request', error);
     }
   }
@@ -186,6 +255,12 @@ export class ControlService {
     actor?: OrgContext,
   ): Promise<ControlRequest> {
     const requestRow = await this.getRequest(requestId, actor);
+    // R2-SMI-009（修正）：行状态 'failed' 放行重试（retry_new_attempt 契约）。
+    if (NON_RETRYABLE_REQUEST_STATUSES.has(requestRow.status ?? '')) {
+      throw new BadRequestException(
+        `Cannot send command on terminal request ${requestId}`,
+      );
+    }
     const requestStatus = aggregateControlStatus(requestRow.attempts);
     if (NO_FURTHER_ACTION_STATUSES.has(requestStatus)) {
       throw new BadRequestException(
@@ -203,6 +278,15 @@ export class ControlService {
         `Attempt already in flight for commandKey ${commandKey}`,
       );
     }
+    // R2-SMI-001：审批闸门——pending_approval 请求必须等审批实例 approved
+    //（control.yaml pending_approval→approved，role:approver）才允许下发。
+    const rowStatusBeforeSend = await this.ensureApprovedForSend(requestRow, actor);
+    // R2-SMI-002：下发前复核目标设备租户归属（以发起方/请求行 org 断言）。
+    await this.assertDeviceInOrg(
+      requestRow.deviceId,
+      actor?.primaryOrgId ?? requestRow.orgId,
+      actor?.isGlobalAdmin === true,
+    );
     const attemptNo =
       requestRow.attempts.filter((attempt) => attempt.commandKey === commandKey).length + 1;
     const commandId = nextId('att');
@@ -211,6 +295,7 @@ export class ControlService {
       commandId;
     // ADR-077：命令行归属 = 请求行 org（§3 单一事实源）。
     const cmdOrg = requestRow.orgId ?? actor?.primaryOrgId ?? null;
+    const isHighRisk = classifyControlRisk(requestRow.commandKeys) === 'high';
     try {
       // NEST-425：attemptNo 由 DB 侧子查询原子生成（max+1），配合
       // standalone_058 唯一约束 (request_id, command_key, attempt_no)——
@@ -244,7 +329,13 @@ export class ControlService {
       attemptNo,
       status: 'sent',
     };
-    await this.updateRequestStatus(requestId, aggregateControlStatus([...requestRow.attempts, attempt]), requestRow.orgId);
+    await this.updateRequestStatus(
+      requestId,
+      aggregateControlStatus([...requestRow.attempts, attempt]),
+      requestRow.orgId,
+      // R2-SMI-009：以读回的行状态为 CAS 前值（审批通过后为 'approved'）。
+      rowStatusBeforeSend,
+    );
     await this.recordAudit(
       {
         action: 'control.command.send',
@@ -260,10 +351,94 @@ export class ControlService {
           attemptNo,
           status: 'sent',
         },
+        // R2-SMI-001：高危指令下发审计标 risk:true。
+        risk: isHighRisk,
       },
       actor,
     );
     return this.getRequest(requestId, actor);
+  }
+
+  /**
+   * R2-SMI-001：审批闸门。非 pending_approval 请求直接放行；pending_approval
+   * 请求按 (control_request, requestId) 查最近审批实例：
+   *   - approved → CAS 落 approved（approver 角色的落地点）并放行；
+   *   - 其余（pending/rejected/cancelled/expired/bypassed/缺失）→ 403/409 fail-closed。
+   * 返回闸门通过后的当前行状态（作为后续状态写回的 CAS 前值）。
+   */
+  private async ensureApprovedForSend(
+    request: ControlRequest,
+    actor?: OrgContext,
+  ): Promise<string> {
+    if (request.status !== 'pending_approval') {
+      return request.status ?? 'created';
+    }
+    if (!this.approvalService) {
+      throw new InternalServerErrorException(
+        `Control request ${request.id} awaits approval but the approval module is unavailable`,
+      );
+    }
+    const instance = await this.approvalService.findLatestForEntity(
+      'control_request',
+      request.id,
+      actor,
+    );
+    if (!instance) {
+      // 数据不一致（审批实例缺失）：fail-closed，绝不放行。
+      throw new ConflictException(
+        `Approval instance missing for pending_approval request ${request.id}`,
+      );
+    }
+    if (instance.status !== 'approved') {
+      throw new ForbiddenException(
+        `Control request ${request.id} awaits approval (approval status: ${instance.status})`,
+      );
+    }
+    const rows = await this.db
+      .update(ewohControlRequest)
+      .set({
+        status: 'approved',
+        approvedAt: new Date(),
+        approvedBy: instance.steps.find((step) => step.status === 'approved')
+          ? actor?.userId ?? 'approver'
+          : 'approver',
+      })
+      .where(
+        and(
+          eq(ewohControlRequest.requestId, request.id),
+          eq(ewohControlRequest.status, 'pending_approval'),
+          ...(request.orgId ? [eq(ewohControlRequest.orgId, request.orgId)] : []),
+        ),
+      )
+      .returning({ requestId: ewohControlRequest.requestId });
+    if (!rows || rows.length === 0) {
+      throw new ConflictException('STATE_CONFLICT');
+    }
+    return 'approved';
+  }
+
+  /**
+   * R2-SMI-002：设备租户归属断言。设备已注册（ewoh_device_config 有行且带
+   * org）时，org 必须与发起方一致，否则 404（反枚举）；未注册/NULL org
+   * legacy 设备行与无 org 上下文的内部可信流放行（RLS 继续兜底）。
+   */
+  private async assertDeviceInOrg(
+    deviceId: string,
+    expectedOrgId: string | null | undefined,
+    isGlobalAdmin = false,
+  ): Promise<void> {
+    const expectedOrg = expectedOrgId?.trim() || null;
+    if (!expectedOrg || isGlobalAdmin) {
+      return;
+    }
+    const [device] = await this.db
+      .select({ orgId: ewohDeviceConfig.orgId })
+      .from(ewohDeviceConfig)
+      .where(eq(ewohDeviceConfig.deviceId, deviceId))
+      .limit(1);
+    if (device?.orgId && device.orgId !== expectedOrg) {
+      throw new NotFoundException(`Device ${deviceId} not found`);
+    }
   }
 
   async receiveReceipt(
@@ -275,12 +450,24 @@ export class ControlService {
   ): Promise<ControlRequest> {
     // NEST-423：读回带 actor（org 守卫；NULL legacy 行放行与getRequest一致）。
     const request = await this.getRequest(requestId, actor);
+    // R2-SMI-009（修正）：行状态 'failed' 放行重试回执（retry_new_attempt 契约）。
+    if (NON_RETRYABLE_REQUEST_STATUSES.has(request.status ?? '')) {
+      throw new BadRequestException(
+        `Cannot record receipt on terminal request ${requestId}`,
+      );
+    }
     const requestStatus = aggregateControlStatus(request.attempts);
     if (NO_FURTHER_ACTION_STATUSES.has(requestStatus)) {
       throw new BadRequestException(
         `Cannot record receipt on terminal request ${requestId}`,
       );
     }
+    // R2-SMI-002：回执路径同样断言设备归属（请求行 org）。
+    await this.assertDeviceInOrg(
+      request.deviceId,
+      request.orgId ?? actor?.primaryOrgId,
+      actor?.isGlobalAdmin === true,
+    );
     const latest = [...request.attempts]
       .filter((attempt) => attempt.commandKey === commandKey)
       .sort((a, b) => b.attemptNo - a.attemptNo)[0];
@@ -324,7 +511,13 @@ export class ControlService {
         ? { ...attempt, status: result, receipt }
         : attempt,
     );
-    await this.updateRequestStatus(requestId, aggregateControlStatus(updatedAttempts), request.orgId);
+    await this.updateRequestStatus(
+      requestId,
+      aggregateControlStatus(updatedAttempts),
+      request.orgId,
+      // R2-SMI-009：以读回的行状态为 CAS 前值。
+      request.status ?? undefined,
+    );
     return this.getRequest(requestId);
   }
 
@@ -334,6 +527,7 @@ export class ControlService {
     // NEST-424：control.yaml terminal 含 partial_success——mixed 结果的请求
     // 已有命令执行成功，revoke 不再把 partial_success 当可撤销状态放行。
     if (
+      TERMINAL_REQUEST_STATUSES.has(request.status ?? '') ||
       ['executed', 'failed', 'timeout', 'partial_success'].includes(status)
     ) {
       throw new BadRequestException(`Cannot revoke terminal request ${requestId}`);
@@ -352,14 +546,25 @@ export class ControlService {
         ? { ...attempt, status: 'failed' as const }
         : attempt,
     );
-    await this.updateRequestStatus(requestId, aggregateControlStatus(revokedAttempts), request.orgId);
+    // R2-SMI-001：control.yaml non_executing→revoked 终态——尚未向网关发出
+    // 任何命令的请求（created/pending_approval/approved）撤销后落 revoked，
+    // 不再回退为 'created'；已有 in-flight 命令的撤销维持聚合语义（failed）。
+    const nextStatus =
+      request.attempts.length === 0 ? 'revoked' : aggregateControlStatus(revokedAttempts);
+    await this.updateRequestStatus(
+      requestId,
+      nextStatus,
+      request.orgId,
+      // R2-SMI-009：以读回的行状态为 CAS 前值。
+      request.status ?? undefined,
+    );
     await this.recordAudit(
       {
         action: 'control.revoke',
         entityType: 'control_request',
         entityId: requestId,
-        before: { status },
-        after: { status: aggregateControlStatus(revokedAttempts) },
+        before: { status: request.status ?? status },
+        after: { status: nextStatus },
       },
       actor,
     );
@@ -471,20 +676,33 @@ export class ControlService {
     );
   }
 
+  /**
+   * R2-SMI-009：请求行状态写回带行级 CAS——WHERE 追加 eq(status, 聚合前
+   * 行状态)，0 行命中抛 409（并发回执/撤销/下发互相覆盖时显式冲突，
+   * 调用方/客户端重读重算，而非静默回退为过时聚合值）。
+   */
   private async updateRequestStatus(
     requestId: string,
     status: string,
     orgId?: string | null,
+    expectedStatus?: string,
   ): Promise<void> {
-    await this.db
+    const rows = await this.db
       .update(ewohControlRequest)
       .set({ status, updatedAt: new Date() })
       .where(
         and(
           eq(ewohControlRequest.requestId, requestId),
           ...(orgId ? [eq(ewohControlRequest.orgId, orgId)] : []),
+          ...(expectedStatus
+            ? [eq(ewohControlRequest.status, expectedStatus)]
+            : []),
         ),
-      );
+      )
+      .returning({ requestId: ewohControlRequest.requestId });
+    if (expectedStatus && (!rows || rows.length === 0)) {
+      throw new ConflictException('STATE_CONFLICT');
+    }
   }
 
   private rowFromSelect(row: unknown): ControlRequestRow {
@@ -522,6 +740,8 @@ export class ControlService {
       createdAt: this.toIso(row.requested_at),
       // ADR-077：org 归属读回（additive；null=legacy 行）。
       orgId: orgId ?? row.org_id ?? null,
+      // R2-SMI-001：持久化行状态读回（pending_approval/approved/revoked 等）。
+      status: row.status,
     };
   }
 

@@ -51,7 +51,7 @@ import type {
   ExecutionListResponse,
 } from '@shared/api.interface';
 import type { OrgContext } from '../shared/org-context.interceptor';
-import { createHash } from 'node:crypto';
+import { conflictSeedHash } from './conflict.service';
 import { assertTenantVisible } from './plan-tenant-guard';
 import { WorldStateSnapshotService } from './world-state.service';
 import { PlanService } from './plan.service';
@@ -310,6 +310,8 @@ export class SchedulerQueryService {
   }
 
   async getPlanDetail(planId: string, actor?: OrgContext): Promise<SchedulingPlanV2> {
+    // R2-SSV-07：HTTP 读面统一 assertActorForHttp（NEST-110 覆盖面补全）。
+    this.assertActorForHttp(actor);
     return this.planService.getPlan(planId, actor);
   }
 
@@ -326,8 +328,9 @@ export class SchedulerQueryService {
     return { policy, config };
   }
 
-  /** 列出全部策略版本（含 active 标志、操作人、创建时间）。 */
+  /** 列出全部策略版本（含 active 标志、操作人、创建时间）。R2-SSV-07：HTTP 守卫。 */
   async listPolicyVersions(actor?: OrgContext): Promise<SchedulingPolicyVersionSummary[]> {
+    this.assertActorForHttp(actor);
     // ADR-073：policy versions 读面 org 条件（org 匹配或 NULL 存量）。
     return this.policyService.listVersions(actor?.primaryOrgId ?? null);
   }
@@ -342,11 +345,15 @@ export class SchedulerQueryService {
     configVersion: number,
     actor?: OrgContext,
   ): Promise<SchedulingPolicyComparison> {
+    // R2-SSV-07：HTTP 读面统一 assertActorForHttp。
+    this.assertActorForHttp(actor);
     const ctx = toOrgContext(actor);
     const [activeConfig, candidateConfig, feedbackKpis] = await Promise.all([
       // NEST-105：生效配置按 actor org 过滤（跨租户策略不进入对比基线）。
       this.policyService.getConfig(ctx.primaryOrgId || null),
-      this.policyService.getConfigByVersion(configVersion),
+      // R2-SSV-01 配套：候选配置同样按 org 过滤（configVersion 按 org 作用域
+      // 递增，仅凭版本号会取到他租户候选策略）。
+      this.policyService.getConfigByVersion(configVersion, ctx.primaryOrgId || null),
       // ADR-073：对比 KPI 按本租户反馈派生（跨租户聚合关闭）。
       this.feedbackService.deriveKpis(ctx.primaryOrgId || null),
     ]);
@@ -388,6 +395,8 @@ export class SchedulerQueryService {
   }
 
   async getRoutes(actor?: OrgContext): Promise<RouteGraph> {
+    // R2-SSV-07：HTTP 读面统一 assertActorForHttp。
+    this.assertActorForHttp(actor);
     return this.routingService.loadGraph(actor);
   }
 
@@ -403,6 +412,8 @@ export class SchedulerQueryService {
     body: CalculateRouteRequest,
     actor?: OrgContext,
   ): Promise<Route | RouteCandidatesResponse> {
+    // R2-SSV-07：HTTP 读面统一 assertActorForHttp。
+    this.assertActorForHttp(actor);
     if (body.candidates && body.candidates.length > 0) {
       // NEST-101/111：世界状态（含路由/禁区事实）透传 ctx（org 过滤）。
       const state = await this.worldStateSnapshotService.getCurrentWorldState(actor);
@@ -483,6 +494,8 @@ export class SchedulerQueryService {
    * scoreBreakdown / stationOptions / timeWindows）；未注入回退旧逻辑（兼容旧单测）。
    */
   async getTaskCandidates(taskId: string, actor?: OrgContext): Promise<TaskCandidatesResponse> {
+    // R2-SSV-07：HTTP 读面统一 assertActorForHttp。
+    this.assertActorForHttp(actor);
     if (this.candidateEngineService) {
       // NEST-101/111：候选引擎透传 ctx（资源/预占 org 过滤）。
       return this.candidateEngineService.evaluateTaskCandidates(taskId, actor);
@@ -682,6 +695,8 @@ export class SchedulerQueryService {
     params: ConflictsListRequest = {},
     actor?: OrgContext,
   ): Promise<ConflictsListResponse> {
+    // R2-SSV-07：HTTP 读面统一 assertActorForHttp。
+    this.assertActorForHttp(actor);
     if (this.conflictService) {
       return this.conflictService.listConflicts(params, actor);
     }
@@ -694,8 +709,9 @@ export class SchedulerQueryService {
     return { conflicts, total: conflicts.length };
   }
 
-  /** 返回单个冲突详情；冲突在当前真实数据中不再存在时抛 NotFoundException。 */
+  /** 返回单个冲突详情；冲突在当前真实数据中不再存在时抛 NotFoundException。R2-SSV-07：HTTP 守卫。 */
   async getConflictDetail(conflictId: string, actor?: OrgContext): Promise<SchedulingConflict> {
+    this.assertActorForHttp(actor);
     if (this.conflictService) {
       return this.conflictService.getConflictDetail(conflictId, actor);
     }
@@ -705,11 +721,12 @@ export class SchedulerQueryService {
     return found;
   }
 
-  /** 执行领域：查询。 */
+  /** 执行领域：查询。R2-SSV-07：HTTP 守卫。 */
   async executionList(
     query: { planId?: string; taskId?: string; status?: string; limit?: number; offset?: number },
     actor?: OrgContext,
   ): Promise<ExecutionListResponse> {
+    this.assertActorForHttp(actor);
     if (!this.executionService) throw new Error('executionService not injected');
     // ADR-073：execution 读面 org 接线（org 匹配或 NULL 存量）。
     return this.executionService.list({ ...query, orgId: actor?.primaryOrgId ?? null });
@@ -1169,28 +1186,20 @@ export class SchedulerQueryService {
     }
   }
 
-  /** 构造统一冲突，conflictId 由内容种子哈希生成（跨查询稳定）。 */
+  /**
+   * 构造统一冲突，conflictId 由内容种子哈希生成（跨查询稳定）。
+   * R2-SSV-06（2026-08-17）：哈希收敛为 conflict.service 导出的
+   * conflictSeedHash 单一实现（消除与 ConflictService 落库路径的 identity 分裂）。
+   */
   private mkConflict(
     seed: string,
     input: Omit<SchedulingConflict, 'conflictId' | 'createdAt'>,
   ): SchedulingConflict {
     return {
-      conflictId: `CFL-${this.hash(seed)}`,
+      conflictId: `CFL-${conflictSeedHash(seed)}`,
       createdAt: new Date().toISOString(),
       ...input,
     };
-  }
-
-  /**
-   * NEST-158 修复（2026-08-17）：djb2 32-bit → SHA-256 48-bit 折叠。
-   * conflictId 仅作稳定字符串标识（`CFL-${hash}`），碰撞会使不同 seed 的
-   * 冲突被归并去重；SHA-256 折叠碰撞概率 2^-48。
-   */
-  private hash(str: string): number {
-    return parseInt(
-      createHash('sha256').update(str).digest('hex').slice(0, 12),
-      16,
-    );
   }
 
   private mapRun(

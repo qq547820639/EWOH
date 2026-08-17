@@ -88,9 +88,9 @@ export function validateAgentTask(record: unknown): string[] {
 
 /** 状态转移表（与 contracts/state-machines/agent-task.yaml 逐条一致，含 role 约束）。
  *
- * SH-005：agent-task.yaml 每条 transition 声明 role（orchestrator/agent），
- * actorRole 传入时强制校验（不满足返回 false）；缺省 undefined 时不校验
- * role（向后兼容，由调用方负责强制传值——契约冻结层边界 3）。
+ * SH-005 / R2-SHR-004：agent-task.yaml 每条 transition 声明 role
+ * （orchestrator/agent），actorRole 缺省即拒绝（fail-closed，对齐
+ * alert-state-machine SH-004 纪律）——权责边界不可缺省旁路。
  */
 const AGENT_TASK_TRANSITIONS: ReadonlyArray<{ from: string; to: string; role: string }> = [
   { from: 'created', to: 'dispatched', role: 'orchestrator' },
@@ -105,6 +105,7 @@ const AGENT_TASK_TRANSITIONS: ReadonlyArray<{ from: string; to: string; role: st
 export function agentTaskTransitionAllowed(current: string, target: string, actorRole?: string): boolean {
   const match = AGENT_TASK_TRANSITIONS.find((t) => t.from === current && t.to === target);
   if (!match) return false;
-  if (actorRole === undefined) return true;
+  // R2-SHR-004：actorRole 缺省即拒绝（fail-closed）——与 Python
+  // agent_task_transition_allowed 的 actor_role 参数口径一致。
   return match.role === actorRole;
 }

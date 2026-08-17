@@ -22,6 +22,17 @@ function maxFailures() {
   return Number.isFinite(n) && n > 0 ? n : 20;
 }
 
+// R2-FSH-002：读访问限流阈值按 scope 独立配置（放宽模式下防无凭证高频抓取）；
+// 默认 600 次/窗口，覆盖监督页面 2s 轮询（约 150 次/5min）并留多开页面余量，
+// 脚本级连续抓取（>2 次/秒持续）会触发 429。鉴权失败计数仍用 maxFailures()。
+function limitFor(scope) {
+  if (scope === 'api-read') {
+    const n = parseInt(process.env.FEISHU_RATELIMIT_READ_MAX, 10);
+    return Number.isFinite(n) && n > 0 ? n : 600;
+  }
+  return maxFailures();
+}
+
 function windowMs() {
   const n = parseInt(process.env.FEISHU_RATELIMIT_WINDOW_SEC, 10);
   return (Number.isFinite(n) && n > 0 ? n : 300) * 1000;
@@ -50,7 +61,8 @@ function bucketBlocked(k) {
     buckets.delete(k);
     return false;
   }
-  return b.count >= maxFailures();
+  // R2-FSH-002：按 key 的 scope 取阈值（'api-read' 用读限流阈值，其余不变）
+  return b.count >= limitFor(String(k).split('|')[0]);
 }
 
 /** 该 key 当前是否已被封禁（token 级或 IP 级任一达阈值）。 */
@@ -93,4 +105,4 @@ function reset() {
   buckets.clear();
 }
 
-module.exports = { key, isBlocked, recordFailure, recordSuccess, reset };
+module.exports = { key, isBlocked, recordFailure, recordSuccess, reset, limitFor };

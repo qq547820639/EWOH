@@ -87,6 +87,16 @@ export interface NotificationLike {
   deviceId?: string | null;
 }
 
+/**
+ * R2-SNZ-006（闭合 NEST-620）：剥离头值中的 CR/LF，防 SMTP 头注入。
+ * 通知 title 上游用户可控（oee.openAndon body.title），含 \r\n 的
+ * Subject 可在 DATA 头部拆分出 Bcc 等任意头——所有进入头部/信封的
+ * 值必须经此净化（连续 CR/LF 折叠为单空格）。
+ */
+export function sanitizeHeaderValue(value: string): string {
+  return value.replace(/[\r\n]+/g, ' ').trim();
+}
+
 /** 邮件消息体（纯函数，node 可测）：通知事实渲染，无 LLM 编造。 */
 export function buildEmailMessage(
   notification: NotificationLike,
@@ -100,7 +110,7 @@ export function buildEmailMessage(
   return {
     from: config.from,
     to: config.to,
-    subject: `[EWOH] ${notification.title}`,
+    subject: sanitizeHeaderValue(`[EWOH] ${notification.title}`),
     text: lines.join('\n'),
   };
 }
@@ -118,6 +128,11 @@ export async function sendEmail(
   message: EmailMessage,
   connector: SmtpConnector = realSmtpConnector,
 ): Promise<void> {
+  // R2-SNZ-006：进入信封/头部的值一律净化（源头 buildEmailMessage 已
+  // 剥离 subject，此处对直接调用方兜底；含 CRLF 的头值即注入载荷）。
+  const from = sanitizeHeaderValue(message.from);
+  const to = message.to.map((rcpt) => sanitizeHeaderValue(rcpt)).filter((rcpt) => rcpt !== '');
+  const subject = sanitizeHeaderValue(message.subject);
   const conn = await connector(config);
   try {
     await conn.command(`EHLO ewoh-notifier`, [250]);
@@ -144,19 +159,20 @@ export async function sendEmail(
       await conn.command(Buffer.from(config.user).toString('base64'), [334]);
       await conn.command(Buffer.from(config.pass ?? '').toString('base64'), [235]);
     }
-    await conn.command(`MAIL FROM:<${message.from}>`, [250]);
-    for (const rcpt of message.to) {
+    await conn.command(`MAIL FROM:<${from}>`, [250]);
+    for (const rcpt of to) {
       await conn.command(`RCPT TO:<${rcpt}>`, [250, 251]);
     }
     await conn.command('DATA', [354]);
     const headerLines = [
-      `From: ${message.from}`,
-      `To: ${message.to.join(', ')}`,
-      `Subject: ${message.subject}`,
+      `From: ${from}`,
+      `To: ${to.join(', ')}`,
+      `Subject: ${subject}`,
       'Content-Type: text/plain; charset=utf-8',
       '',
     ];
-    for (const line of headerLines) await conn.writeData(line);
+    // writeData 层再兜底剥离 CR/LF（防御注入的最后一道闸）。
+    for (const line of headerLines) await conn.writeData(line.replace(/[\r\n]/g, ' '));
     for (const line of message.text.split('\n')) {
       await conn.writeData(line.startsWith('.') ? `.${line}` : line);
     }

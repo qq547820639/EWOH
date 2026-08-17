@@ -1,0 +1,93 @@
+{"id":"CLI-501","regression_status":"FIXED","evidence":"lib/auth.ts:71-90 一次性迁移清除 localStorage 三键(refresh 直接丢弃)；auth.ts:103-111 setTokens 仅写 sessionStorage；api/auth.ts:11-13 refresh token 改 httpOnly cookie 由服务端管理"}
+{"id":"CLI-502","regression_status":"FIXED","evidence":"lib/offlineCrypto.ts:189-210 rotate 先用旧 key 解密/新 key 重加密，全部成功后才替换内存 keyPromise(原子换 key)"}
+{"id":"CLI-503","regression_status":"FIXED","evidence":"lib/offlineLeader.ts:156-158,273 acquireLeader 对 isStale(超 leaseMs 未收心跳/已 release)的旧选举丢弃并重新选举，幸存 tab 可接管"}
+{"id":"CLI-504","regression_status":"FIXED","evidence":"lib/offlineDb.ts:134-147 createStore readwrite 路径以 tx.oncomplete resolve，tx.onerror/onabort reject，不再请求级 onsuccess 提前 resolve"}
+{"id":"CLI-505","regression_status":"FIXED","evidence":"lib/offlineCrypto.ts:74-83 randomBytes 在 crypto.getRandomValues 不可用时直接抛错拒绝加密，无 Math.random 回退"}
+{"id":"CLI-506","regression_status":"WONTFIX_ACCEPTED","evidence":"lib/auth.ts:26-31 裁决注释：decodeJwtPayload 仅 UI 展示，授权一律以服务端 AccessTokenGuard+RBAC 为准，过期由后端 401 兜底"}
+{"id":"CLI-507","regression_status":"FIXED","evidence":"lib/http.ts:78-82 redirectToLogin 携带 ?redirect=encodeURIComponent(path+search) 恢复原路径"}
+{"id":"CLI-508","regression_status":"FIXED","evidence":"lib/http.ts:150-168 axiosForBackend<T> 泛型真正生效，按 T 返回 data"}
+{"id":"CLI-509","regression_status":"FIXED","evidence":"lib/offlineDb.ts:433-444 migratePendingActionsFromLocalStorage 迁移前按 action.id 查重(existingIds Set)，重跑只补缺失行"}
+{"id":"CLI-510","regression_status":"FIXED","evidence":"lib/offlineQueue.ts:142-147 appendPendingAction 强制 crypto.randomUUID，不可用时抛错拒绝入队"}
+{"id":"CLI-511","regression_status":"FIXED","evidence":"lib/offlineQueue.ts:270-286 flushPendingQueue 改单份内存权威副本+每步整体写回，消除每条 mark 的全量 read+parse+stringify"}
+{"id":"CLI-512","regression_status":"FIXED","evidence":"lib/observability.ts:326-336 flush 以 flushInFlight Promise 单飞互斥，并发调用共享同一轮 in-flight flush"}
+{"id":"CLI-513","regression_status":"FIXED","evidence":"lib/observability.ts:448-456 pagehide 时 sendBeacon 失败转入 stageForReplay(localStorage 暂存)，不再回退会被截断的 axios POST"}
+{"id":"CLI-514","regression_status":"FIXED","evidence":"lib/swRegistration.ts:22-23,172-186 safeUpdate postMessage(SKIP_WAITING) 后等待 controllerchange 事件，15s 超时未接管则报 applied:false"}
+{"id":"CLI-515","regression_status":"FIXED","evidence":"lib/sessionSecurity.ts:185-215 initRefCount 引用计数，仅最后一个 init 的清理关闭 BroadcastChannel，先卸载方不再孤立后续监听者"}
+{"id":"CLI-516","regression_status":"FIXED","evidence":"lib/sessionSecurity.ts:123-137,157-162 LOCAL_EMIT_DEDUP_MS=50 回环抑制窗口 + 广播方显式触发本地监听，同一次登出本地只生效一次"}
+{"id":"CLI-517","regression_status":"FIXED","evidence":"lib/dangerousModel.ts:71-138 createDangerIdempotencyKey 改用同步 SHA-256 实现(与 dangerousModel.test.ts 的 node:crypto 交叉验证)"}
+{"id":"CLI-518","regression_status":"FIXED","evidence":"lib/gitSync.ts:340-404 createIdempotencyKey 同样改用 SHA-256(gitSync.test.ts 以 node:crypto createHash 交叉验证)"}
+{"id":"CLI-519","regression_status":"FIXED","evidence":"lib/offlineDb.ts:169-180 SimpleStore.deleteMany 单事务批量删除；lib/draftStore.ts:56-64 clearStep 优先 deleteMany，无实现时退回逐条"}
+{"id":"CLI-520","regression_status":"FIXED","evidence":"lib/attachmentDataUrl.ts:10-24 dataUrlToBlob 校验 data: 前缀/逗号分隔/base64 字符集，非法输入抛错不产出垃圾 Blob"}
+{"id":"CLI-521","regression_status":"FIXED","evidence":"lib/navigation.ts:194-196 hasRoleAccess 在 allowedRoles 为空时 return false(fail-closed)，显式公开需声明 ALL_ROLES"}
+{"id":"CLI-522","regression_status":"WONTFIX_ACCEPTED","evidence":"lib/offlineDb.ts:623-628 裁决注释：groupIndex 共享游标在当前队列规模无实测饥饿，记录 round-robin 改进方向后暂不动"}
+{"id":"CLI-523","regression_status":"FIXED","evidence":"lib/offlineDb.ts:648-655 blobToDataUrl 无 FileReader 环境直接 reject('cannot serialize blob for export')，不再返回空 data URL"}
+{"id":"CLI-524","regression_status":"FIXED","evidence":"lib/offlineCrypto.ts:149-162 ensureKey 以同步创建的 in-flight Promise 作并发锁，失败时清除 rejected Promise 允许重试"}
+{"id":"CLI-525","regression_status":"WONTFIX_ACCEPTED","evidence":"lib/resumableUpload.ts:79-100 裁决：WebCrypto 缺失时降级确定性 FNV-1a 并显式警告一次，结果带 fnv- 前缀供服务端识别弱校验，受限环境仍可上传"}
+{"id":"CLI-526","regression_status":"FIXED","evidence":"lib/swCache.ts:131-139 hasContentHash 正则的 hash 长度阈值由 8 下调到 6，短 hash 构建产物不再误判为 document"}
+{"id":"CLI-527","regression_status":"WONTFIX_ACCEPTED","evidence":"lib/designTokens.ts:8-11 裁决：不引入代码生成，双源一致性由 designTokens.test.ts 逐项断言 tokens.css 同名变量锁定(CSS 改动即红)"}
+{"id":"CLI-528","regression_status":"WONTFIX_ACCEPTED","evidence":"lib/offlineDb.ts:208-213 裁决注释：结构迁移(upgradeneeded)与业务迁移(storageController.runMigrations 启动序列)分层执行，后者依赖 store 句柄与幂等 flag 不宜耦合进 upgradeneeded"}
+{"id":"CLI-529","regression_status":"FIXED","evidence":"lib/useDangerousConfirm.ts:22-26,73-74 idempotencyKeyRef 每渲染同步最新值，confirm 读 ref 防闭包拿到旧 null"}
+{"id":"CLI-530","regression_status":"FIXED","evidence":"lib/timelineModel.ts:174-214 buildCorrelationChain 预建 byCorrelation/byCausation 索引 Map，BFS 邻接查找 O(n+m) 替代全量线性扫描"}
+{"id":"CLI-531","regression_status":"FIXED","evidence":"lib/offlineQueue.ts:64-107 normalizePendingAction 白名单逐字段拷贝(id/type/orderId/stepId/action/body/attachment/queuedAt/status/error/lastAttemptAt/syncedAt)，多余字段不透传"}
+{"id":"CLI-532","regression_status":"FIXED","evidence":"lib/gitSync.ts:130-188 detectConflicts 按 updatedAt/version 新鲜度比较推荐较新一方，仅无可比依据时维持服务端非空启发式"}
+{"id":"CLI-533","regression_status":"FIXED","evidence":"lib/swRegistration.ts:223-231 注册失败上报 sw.register.failed 指标(仅 error.name 不打原文)并 logger.warn 留痕"}
+{"id":"CLI-534","regression_status":"FIXED","evidence":"lib/offlineDb.ts:269-280 已更名 generateTraceKey 并注释说明该值实为投递追踪 ID，幂等去重依赖 action.id"}
+{"id":"CLI-535","regression_status":"FIXED","evidence":"lib/feedback.ts:52-93 AudioContext 模块级单例 sharedAudioContext 复用，不再每次 beep 新建"}
+{"id":"CLI-536","regression_status":"FIXED","evidence":"lib/scanner.ts:35-83 playBeep 同样使用共享 AudioContext 单例，仅每音符新建 oscillator"}
+{"id":"CLI-537","regression_status":"FIXED","evidence":"lib/AppContainer.tsx:9-24 createAppQueryClient 工厂按 App 实例创建独立 QueryClient，gcTime 收紧 60s，模块级单例已移除"}
+{"id":"CLI-538","regression_status":"FIXED","evidence":"lib/i18n.ts:39-49 interpolate 对非 string/number 值 JSON.stringify 序列化，不再渲染 [object Object]"}
+{"id":"CLI-539","regression_status":"FIXED","evidence":"lib/siteReadinessMapping.ts:212-227 parseImportText 超过 MAX_IMPORT_TEXT_LENGTH(2MB) 直接拒绝并返回错误提示"}
+{"id":"CLI-540","regression_status":"FIXED","evidence":"lib/offlineConflict.ts:82-139 collect 对 Date/RegExp/Map/Set 做类型分派比较，不再当普通对象枚举键展开"}
+{"id":"CLI-541","regression_status":"WONTFIX_ACCEPTED","evidence":"lib/offlineDb.ts:282-287 注释说明：backoffDelay 10s 上限约束客户端自发重试节奏，retryAfterMs 60s 上限尊重服务端显式 Retry-After，语义不同故保留"}
+{"id":"CLI-542","regression_status":"FIXED","evidence":"lib/resumableUpload.ts:123-132 createUploadId 显式拒绝含 :: 的 idempotencyKey/fileIdentifier，杜绝切分歧义"}
+{"id":"CLI-543","regression_status":"FIXED","evidence":"lib/designTokens.ts:66-68 riskToken 简化为 riskTokens[state ?? 'unknown'] ?? riskTokens.unknown 单次索引"}
+{"id":"CLI-544","regression_status":"FIXED","evidence":"lib/requestCorrelation.ts:108-114 新增 resetTraceContext 供测试 beforeEach/afterEach 恢复干净基线"}
+{"id":"CLI-545","regression_status":"WONTFIX_ACCEPTED","evidence":"lib/offlineSettings.ts:24-29 裁决注释：清缓存即视作新设备符合预期，孤立键由存储配额自然淘汰，不做迁移"}
+{"id":"CLI-546","regression_status":"WONTFIX_ACCEPTED","evidence":"lib/swCache.ts:277-279 裁决注释：缓存条目为数百量级且驱逐偶发，全排序开销可忽略，保留简洁实现"}
+{"id":"CLI-547","regression_status":"FIXED","evidence":"lib/siteReadinessBackend.ts:20-38 导出 BackendDryRunResponse 形状并支持泛型 <T> 收窄，调用方不再被迫断言 unknown"}
+{"id":"CLI-548","regression_status":"FIXED","evidence":"lib/siteReadinessProbe.ts:124-156 probeBackendConnectivity 增加 AbortController 5s(PROBE_TIMEOUT_MS)超时；裁决注释说明健康探针刻意不走 axiosForBackend(public 端点不带 Authorization)"}
+{"id":"CLI-601","regression_status":"FIXED","evidence":"types/ewoh.ts:9-17 EWOH_ROLES 含 viewer 共 7 角色，与服务端 roles.decorator.ts 对齐(注释注明权威源顺序)"}
+{"id":"CLI-602","regression_status":"FIXED","evidence":"types/ewoh.ts:21-29 EWOH_ROLE_LABELS: Record<EwohRole,string> 补 viewer:'只读访客'，7 键完备"}
+{"id":"CLI-603","regression_status":"FIXED","evidence":"types/openapi.d.ts:16714-16717 alert.status 改字面量枚举联合 \"open\"|\"acknowledged\"|\"processing\"|\"closed\"|\"reopened\"，注释标明 CLI-603 对齐 ALERT_STATES(无 handled)"}
+{"id":"CLI-604","regression_status":"FIXED","evidence":"types/openapi.d.ts:15822-15826 CursorPage.items 类型为 {[key:string]:unknown}[]，不再退化 Record<string,never>；openapi.contract.test.ts:53-59 锁定 items/nextCursor/hasMore"}
+{"id":"CLI-605","regression_status":"FIXED","evidence":"types/openapi.d.ts:18765-18769 MesForceResolveRequest 具体字段(resolution 枚举/idempotencyKey/action)，payload 不再为空对象类型"}
+{"id":"CLI-606","regression_status":"FIXED","evidence":"types/openapi.d.ts 全文 Record<string,never> 仅剩 3 处(webhooks/$defs/operations 占位，行 15573/19387/19388)，schema 字段退化已由 YAML additionalProperties 修复"}
+{"id":"CLI-607","regression_status":"FIXED","evidence":"types/work-orchestration.d.ts:1108-1199 WorkOverview/WorkGraph/WorkItem/WorkEdge/WorkActor/WorkEvidence 均为具体 required 字段类型，不再 {[key:string]:unknown}"}
+{"id":"CLI-608","regression_status":"FIXED","evidence":"types/common.ts 已删除；types/index.ts:4 注释确认 IUserProfile 连同文件移除，类型改用生成契约"}
+{"id":"CLI-609","regression_status":"FIXED","evidence":"types/common.ts 已删除(IUserStatus 随之移除)，types/index.ts:4 注释记录"}
+{"id":"CLI-610","regression_status":"FIXED","evidence":"types/common.ts 已删除(IFileAttachment 随之移除)，types/index.ts:4 注释记录"}
+{"id":"CLI-611","regression_status":"FIXED","evidence":"types/common.ts 已删除(Window userId/token/csrfToken declare global 随之移除)，types/index.ts:4 注释记录"}
+{"id":"CLI-612","regression_status":"FIXED","evidence":"types/global.d.ts:34-35 *.json any 模块声明已删除，注释确认 tsconfig.app.json 已启用 resolveJsonModule"}
+{"id":"CLI-701","regression_status":"FIXED","evidence":"lib/auth.ts:66-90 与 CLI-501 同一修复：access 内存+sessionStorage，refresh httpOnly cookie，legacy localStorage 一次性清除"}
+{"id":"CLI-702","regression_status":"WONTFIX_ACCEPTED","evidence":"lib/auth.ts:26-31 裁决注释：浏览器无安全验签途径，前端只读不授权，过期由后端 401 兜底"}
+{"id":"CLI-703","regression_status":"FIXED","evidence":"hooks/useSchedulerStream.ts:455-459 effect 清理中 batcherRef dispose 后显式置 null，enabled true→false→true 时懒创建分支重建批处理器"}
+{"id":"CLI-704","regression_status":"FIXED","evidence":"hooks/useSchedulerStream.ts:60-61 ERROR_WINDOW_MS=60s + 426-433 handleStreamEnd 对窗口外旧失败清零后再计数，间歇失败不累积切轮询"}
+{"id":"CLI-705","regression_status":"FIXED","evidence":"lib/http.ts:90-99 AUTH_ENDPOINTS Set 精确匹配(去 query 后比对全路径)，/api/auth/login-callback 不再被误判"}
+{"id":"CLI-706","regression_status":"FIXED","evidence":"lib/http.ts:47 无 hasSessionTrace 不发刷新；56-59 刷新成功但 access 为空视为失败清 token；129-134 重放前 token 为空直接 reject+redirect，杜绝空 Bearer 死循环"}
+{"id":"CLI-707","regression_status":"PARTIAL_FIX","evidence":"api/scheduler.ts 绝大多数路径参数已 encodeURIComponent(如 76/127/137/163/176/208/325/337/350/363/438/472/483/511/522/533/545/562)，唯 getTaskCandidates scheduler.ts:259 `/api/scheduler/tasks/${taskId}/candidates` 仍未编码(已记 R2-CIN-001)"}
+{"id":"CLI-708","regression_status":"FIXED","evidence":"api/mobile.ts:80-85 action 改经 axios params 传参自动 URL 编码，注释标注 CLI-708"}
+{"id":"CLI-709","regression_status":"FIXED","evidence":"api/alerts.ts:20 transitionAlert eventId 已 encodeURIComponent"}
+{"id":"CLI-710","regression_status":"PARTIAL_FIX","evidence":"api/approvals.ts:92 stepApprovalAction(approvalId/stepId)与 78 resolveAgentApproval 已编码；但 getApprovalDetail:69 approvalId、markNotificationRead:111/retryNotification:120 notificationId 仍未编码(记入 R2-CIN-001)"}
+{"id":"CLI-711","regression_status":"FIXED","evidence":"api/models.ts:22 transitionModel id 已 encodeURIComponent"}
+{"id":"CLI-712","regression_status":"FIXED","evidence":"api/world.ts:15 getEventChain eventId 已 encodeURIComponent(44 getEventContext 同)"}
+{"id":"CLI-713","regression_status":"FIXED","evidence":"api/files.ts:52-58 注释已更正为「串行上传，失败前已上传文件保留在服务端(无批量回滚)」，与实际行为一致"}
+{"id":"CLI-714","regression_status":"FIXED","evidence":"api/dashboard.ts:78-87 MAX_EVENTS_LIMIT=500，getEvents limit 夹取 Math.min(Math.max(1,limit),500)"}
+{"id":"CLI-715","regression_status":"PARTIAL_FIX","evidence":"hooks/queryKeys.ts:19-61 spatialEntities/worldState/overview/replaySnapshots 改 getter 按当前 org 分片(queryKeys.test.ts:24-30 验证)；但其余约 40 个全局键(events/devices/alerts/scheduler*/work*/scale* 等)仍无 org 段，且 currentOrgScope 硬编码 sessionStorage key 无单一来源(记 R2-CIN-002/003)；登出必经整页刷新故实际泄漏面有限"}
+{"id":"CLI-716","regression_status":"OUT_OF_SCOPE","evidence":"location 为 client/src/pages/CommandMap/hooks/useCommandMapController.test.tsx，不在本轮 {api,lib,hooks,scheduler,utils,types} 范围"}
+{"id":"CLI-717","regression_status":"FIXED","evidence":"lib/http.ts:33-38 以 AxiosHeaders.from(...).set('Authorization',...) 替代 as Record<string,string> 断言"}
+{"id":"CLI-718","regression_status":"FIXED","evidence":"lib/http.ts:144-168 签名 Promise<{data:T}> 泛型生效(files.ts:40 的类型标注真实收窄)"}
+{"id":"CLI-719","regression_status":"FIXED","evidence":"api/decisions.ts:28-39 fetchDecisionHistory 显式字段映射构造 query(kind/status/limit/offset)，无 as Record 断言(函数已从 scheduler.ts 移至 decisions.ts)"}
+{"id":"CLI-720","regression_status":"FIXED","evidence":"api/tracing.ts:16-20 limit 做 Number.isInteger+1..500 范围校验，非法值回退默认 50"}
+{"id":"CLI-721","regression_status":"WONTFIX_ACCEPTED","evidence":"api/ai.ts:3-10 裁决注释：脱敏核查确认 api_key 仅经 POST body(HTTPS)直达后端，不入 URL/日志/指标，前端不持久化，维持现状"}
+{"id":"CLI-722","regression_status":"FIXED","evidence":"lib/http.ts:150-168 泛型 T 生效；api/files.ts:40 axiosForBackend<FileRecord & {requestId?:string}> 类型真实生效"}
+{"id":"CLI-723","regression_status":"OUT_OF_SCOPE","evidence":"location 为 client/src/pages/CommandMap/perf/commandMapPerf.test.tsx，不在本轮范围"}
+{"id":"CLI-724","regression_status":"OUT_OF_SCOPE","evidence":"location 为 client/src/pages/CommandMap/panels/decision-cockpit-render-only.test.ts，不在本轮范围"}
+{"id":"CLI-725","regression_status":"FIXED","evidence":"lib/swRegistration.test.ts:94-97 afterEach delete globalThis.navigator，defineProperty 覆盖不再跨用例泄漏"}
+{"id":"CLI-726","regression_status":"FIXED","evidence":"lib/leakAudit.test.ts:140-149 disposeAll 用例的 jest.useFakeTimers 以 try/finally 配对 useRealTimers"}
+{"id":"CLI-727","regression_status":"FIXED","evidence":"lib/appContext.test.ts:48-54 断言改为 require('../../../package.json').version 与 APP_VERSION 一致+semver 形状，升级版本不再红"}
+{"id":"CLI-728","regression_status":"FIXED","evidence":"lib/observability.test.ts:226-253 org 隔离断言改为 collectKeys 递归扫描全部嵌套键 + JSON.stringify 不含组织标识，深层 metrics.tags.orgId 可检出"}
+{"id":"CLI-729","regression_status":"OUT_OF_SCOPE","evidence":"location 为 client/src/pages/CommandMap/queryState.test.ts，不在本轮范围"}
+{"id":"CLI-730","regression_status":"OUT_OF_SCOPE","evidence":"location 为 client/src/pages/CommandMap/replay.test.ts，不在本轮范围"}
+{"id":"CLI-731","regression_status":"FIXED","evidence":"api/operations.ts:147-152,184-190,218-224 transitionMaintenanceAsset/Task/Tool 的 action 均改 axios params 序列化(自动编码)，注释标注 CLI-731"}
+{"id":"CLI-732","regression_status":"WONTFIX_ACCEPTED","evidence":"lib/auth.ts:146-148 裁决注释：JWT 解码恢复的 roles 仅驱动 UI 导航/展示，一切授权判定在服务端，篡改本地 token 无法越权"}
+{"id":"CLI-733","regression_status":"OUT_OF_SCOPE","evidence":"location 为 client/src/pages/CommandMap/entityColors.test.ts，不在本轮范围"}

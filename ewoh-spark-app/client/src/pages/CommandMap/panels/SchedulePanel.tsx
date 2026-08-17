@@ -11,7 +11,6 @@ import {
   MapPin,
   ChevronRight,
 } from 'lucide-react';
-import dayjs from 'dayjs';
 import { toast } from 'sonner';
 import {
   createRun,
@@ -93,7 +92,14 @@ function statusBadgeClass(status: PlanStatus): string {
 
 function formatTime(iso: string | null): string {
   if (!iso) return '—';
-  return dayjs(iso).format('MM-DD HH:mm');
+  return new Date(iso).toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 }
 
 function formatPct(val: number | null | undefined): string {

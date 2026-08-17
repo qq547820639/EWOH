@@ -1111,7 +1111,7 @@ const FactoryMap = ({
           <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
           回放中:{' '}
           {replayTime
-            ? new Date(replayTime).toLocaleString('zh-CN', { hour12: false })
+            ? new Date(replayTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
             : '—'}
         </div>
       )}
@@ -1168,7 +1168,7 @@ const FactoryMap = ({
           <>
             <span>·</span>
             <span>
-              实时更新: {worldState.ts ? new Date(worldState.ts).toLocaleTimeString('zh-CN', { hour12: false }) : '—'}
+              实时更新: {worldState.ts ? new Date(worldState.ts).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '—'}
             </span>
           </>
         )}

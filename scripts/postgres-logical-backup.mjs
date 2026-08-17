@@ -13,6 +13,9 @@ import postgres from '../ewoh-spark-app/node_modules/postgres/src/index.js';
 
 const FORMAT = 'ewoh-postgres-logical-backup-v1';
 const BATCH_SIZE = 100;
+// R2-SCR-005：manifest 中的表名/列名属于外部输入（备份制品可被篡改），标识符无法参数化，
+// 必须先过白名单正则 ^[a-zA-Z_][a-zA-Z0-9_]*$ 且存在于目标库已知 schema 集合内，非法即 fail-closed 报错退出。
+const IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -59,6 +62,48 @@ async function identityColumns(sql, table) {
     order by ordinal_position
   `;
   return rows.map((row) => row.column_name);
+}
+
+// R2-SCR-005：查询目标库某表的实际列名集合，用于与 manifest 列名比对（拦截白名单正则内但库中不存在的伪造列）。
+async function tableColumns(sql, table) {
+  const rows = await sql`
+    select column_name
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = ${table}
+    order by ordinal_position
+  `;
+  return new Set(rows.map((row) => row.column_name));
+}
+
+// R2-SCR-005：restore/verify 前统一校验 manifest 标识符（表名/列名）。
+// 校验失败直接抛错终止（fail-closed），绝不静默跳过被篡改的表/列。
+async function validateManifestIdentifiers(sql, manifest) {
+  if (!manifest || typeof manifest !== 'object' || manifest.tables === null
+      || typeof manifest.tables !== 'object' || Array.isArray(manifest.tables)) {
+    throw new Error('backup manifest has no valid tables object');
+  }
+  const knownTables = new Set(await listTables(sql));
+  for (const [table, rows] of Object.entries(manifest.tables)) {
+    if (!IDENTIFIER_PATTERN.test(table) || !knownTables.has(table)) {
+      throw new Error(
+        `illegal table identifier in backup manifest: ${JSON.stringify(table)}`,
+      );
+    }
+    if (!Array.isArray(rows)) {
+      throw new Error(`backup manifest rows for ${table} must be an array`);
+    }
+    if (rows.length === 0) continue;
+    const knownColumns = await tableColumns(sql, table);
+    for (const column of Object.keys(rows[0])) {
+      if (!IDENTIFIER_PATTERN.test(column) || !knownColumns.has(column)) {
+        throw new Error(
+          `illegal column identifier in backup manifest: ` +
+            `${JSON.stringify(column)} (table ${table})`,
+        );
+      }
+    }
+  }
 }
 
 async function readManifest(path) {
@@ -155,6 +200,8 @@ async function main() {
       return;
     }
     const manifest = await readManifest(options.in);
+    // R2-SCR-005：restore/verify 消费外部备份文件前先做标识符白名单+schema 集合校验，非法即抛错退出。
+    await validateManifestIdentifiers(sql, manifest);
     if (options.action === 'restore') {
       const restored = await restore(sql, manifest);
       const expected = Object.fromEntries(

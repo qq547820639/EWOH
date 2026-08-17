@@ -48,7 +48,7 @@
         },
         "versionMonotonicity": {
           "type": "string",
-          "const": "同 (entityId, stateType) 新状态 version = 旧状态 version + 1；version >= 1"
+          "const": "同 (entityId, stateType) 多记录时版本从 1 起连续递增（快照可只含当前记录，其 version>=1 即合法）"
         },
         "simulationIsolation": {
           "type": "string",

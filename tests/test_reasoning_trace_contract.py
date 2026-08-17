@@ -66,6 +66,60 @@ def test_evaluate_rules_six_rules_ordered():
     assert all(isinstance(c["explanation"], str) and c["explanation"].strip() for c in conclusions)
 
 
+def test_evaluate_rules_dirty_trace_id_and_multi_subject():
+    """R2-SHR-001/011：脏 traceId 清洗产出规范身份；同规则多主体不碰撞。"""
+    person_b = "person:0d2b8e7c-6a4f-4c2e-9f1a-3c5d7e9b1a23"
+    conclusions = rtr.evaluate_rules(
+        "rt exec/4:脏 ID",
+        [
+            _fact(PERSON, "person", {"workload": 0.9, "fatigue": 0.8, "ergonomicRisk": 0.3}),
+            _fact(person_b, "person", {"workload": 0.95, "fatigue": 0.85, "ergonomicRisk": 0.2}),
+        ],
+    )
+    assert len(conclusions) == 2
+    # 引擎自产 conclusionId 恒满足规范身份 value 语法（不自产自拒）
+    for c in conclusions:
+        assert rtr.is_canonical_identity(c["conclusionId"]), c["conclusionId"]
+    ids = {c["conclusionId"] for c in conclusions}
+    assert len(ids) == 2  # 同规则双主体不碰撞（R2-SHR-011）
+
+
+def test_validate_duplicate_conclusion_id():
+    """R2-SHR-011：conclusions 内重复 conclusionId 拒绝。"""
+    record = {
+        "traceId": "rt-dup2",
+        "engineVersion": "1.0.0",
+        "factsRef": {"snapshotVersion": 0, "eventIds": []},
+        "conclusions": [
+            {
+                "conclusionId": "decision:rt-dup2-worker-overload-p1",
+                "ruleId": "rule:worker-overload",
+                "subjectId": PERSON,
+                "severity": "high",
+                "confidence": 1,
+                "confidenceBasis": "deterministic",
+                "premises": [PERSON],
+                "evidenceIds": EVID,
+                "explanation": "x",
+            },
+            {
+                "conclusionId": "decision:rt-dup2-worker-overload-p1",
+                "ruleId": "rule:worker-overload",
+                "subjectId": PERSON,
+                "severity": "high",
+                "confidence": 1,
+                "confidenceBasis": "deterministic",
+                "premises": [PERSON],
+                "evidenceIds": EVID,
+                "explanation": "x",
+            },
+        ],
+        "auditTrail": True,
+    }
+    errors = rtr.validate_reasoning_trace(record)
+    assert errors[0] == "duplicate_conclusion_id"
+
+
 def test_evaluate_rules_no_trigger_empty():
     conclusions = rtr.evaluate_rules(
         "rt-py2",

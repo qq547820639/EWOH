@@ -1,7 +1,21 @@
 -- EWOH managed tables migration (AG-10)
+-- R2-DBM-016（修正，2026-08-18）：本文件为 standalone 链事实源，角色名
+-- 固定为无后缀 anon/authenticated/service_role（SQL-036/037 裁决）；
+-- __EWOH_ROLE_*__ schema 后缀占位符仅用于 legacy 001_ewoh_managed_tables.sql。
 -- Schema placeholder: public
 -- Re-entrant: CREATE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS / DROP POLICY IF EXISTS.
 -- No physical foreign keys. RLS is org-scoped; direct DML is revoked from user roles.
+--
+-- DEPRECATED（Batch 8.2 裁定）：本文件为 legacy 基线，与 standalone_001_schema.sql 重叠。
+-- 唯一事实源为 db/migrations/standalone_00*.sql（README 明示）。
+-- 保留仅供旧部署环境回滚/兼容；新增迁移一律走 standalone 链，本文件冻结不再更新。
+--
+-- ⚠️ 禁止混用（审计 SQL-036/037 裁定，spec 已裁决项，2026-08-17）：
+-- 本文件（legacy 双轨）与 standalone_* 链使用两套不同的角色命名
+-- （legacy：public 后缀角色；standalone：anon /
+-- authenticated / service_role / ewoh_api）。在同一数据库上混用两条链会导致
+-- REVOKE/GRANT 目标角色不存在、RLS policy 绑定到错误角色，造成权限丢失或
+-- 隔离失效。任何数据库实例只能选择其中一条链，不得交叉执行。
 
 CREATE SCHEMA IF NOT EXISTS public;
 SELECT set_config('search_path', 'public, pg_temp', false);
@@ -58,7 +72,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_ai_suggestion (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_by uuid DEFAULT NULL
+  _updated_by uuid DEFAULT NULL,
+  org_id varchar(255)
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_device (
@@ -77,7 +92,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_device (
   protocol_version varchar(50),
   temperature_c real,
   fault_code varchar(100),
-  last_raw_ref varchar(128)
+  last_raw_ref varchar(128),
+  org_id varchar(255)
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_device_binding (
@@ -95,7 +111,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_device_binding (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_by uuid DEFAULT NULL
+  _updated_by uuid DEFAULT NULL,
+  org_id varchar(255)
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_device_config (
@@ -112,7 +129,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_device_config (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_by uuid DEFAULT NULL
+  _updated_by uuid DEFAULT NULL,
+  org_id varchar(255)
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_environment (
@@ -128,7 +146,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_environment (
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   source_type varchar(50) DEFAULT 'simulated',
   record_id varchar(64),
-  data_confidence real DEFAULT 1.0
+  data_confidence real DEFAULT 1.0,
+  org_id varchar(255)
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_event (
@@ -157,7 +176,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_event_chain (
   description text,
   created_at timestamptz DEFAULT CURRENT_TIMESTAMP,
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  org_id varchar(255)
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_model_registry (
@@ -169,7 +189,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_model_registry (
   status varchar(50) DEFAULT 'active',
   card_json jsonb,
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  org_id varchar(255)
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_organization (
@@ -182,7 +203,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_organization (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_by uuid DEFAULT NULL
+  _updated_by uuid DEFAULT NULL,
+  org_id varchar(255)
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_personnel (
@@ -220,7 +242,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_production_task (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_by uuid DEFAULT NULL
+  _updated_by uuid DEFAULT NULL,
+  org_id varchar(255)
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_schedule_audit (
@@ -232,7 +255,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_schedule_audit (
   reason text,
   created_at timestamptz DEFAULT CURRENT_TIMESTAMP,
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  org_id varchar(255)
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_schedule_plan (
@@ -308,7 +332,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_telemetry (
   fault_code varchar(100),
   packet_loss_pct real DEFAULT 0,
   data_confidence real DEFAULT 1.0,
-  data_quality varchar(20) DEFAULT 'good'
+  data_quality varchar(20) DEFAULT 'good',
+  org_id varchar(255)
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_topology (
@@ -318,7 +343,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_topology (
   relation varchar(100) DEFAULT 'adjacent',
   distance real DEFAULT 0,
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  org_id varchar(255)
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_world_state (
@@ -632,7 +658,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_task_template (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
-  _updated_by uuid DEFAULT NULL
+  _updated_by uuid DEFAULT NULL,
+  org_id varchar(255)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ewoh_task_template_org ON public.ewoh_task_template (org_id);
@@ -652,7 +679,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_task_step (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
-  _updated_by uuid DEFAULT NULL
+  _updated_by uuid DEFAULT NULL,
+  org_id varchar(255)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ewoh_task_step_org ON public.ewoh_task_step (org_id);
@@ -1129,7 +1157,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_factory_template (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
-  _updated_by uuid DEFAULT NULL
+  _updated_by uuid DEFAULT NULL,
+  org_id varchar(255)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ewoh_factory_template_lifecycle ON public.ewoh_factory_template (lifecycle_status);
@@ -1148,7 +1177,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_factory_profile (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
-  _updated_by uuid DEFAULT NULL
+  _updated_by uuid DEFAULT NULL,
+  org_id varchar(255)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ewoh_factory_profile_status ON public.ewoh_factory_profile (status);
@@ -1168,7 +1198,8 @@ CREATE TABLE IF NOT EXISTS public.ewoh_asset_package (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
-  _updated_by uuid DEFAULT NULL
+  _updated_by uuid DEFAULT NULL,
+  org_id varchar(255)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ewoh_asset_package_type ON public.ewoh_asset_package (package_type, status);
@@ -1513,11 +1544,6 @@ END;
 $$;
 
 -- Replace loose legacy policies with org-scoped policies.
--- 覆盖范围说明（审计 SQL-048 修复，2026-08-17）：下方 ewoh_rls_normal 循环
--- 只覆盖普通 org-scoped 业务表；ewoh_world_snapshot / ewoh_world_delta_log /
--- ewoh_system_config / ewoh_audit_log 四张表有特殊 policy（全局行 admin 门控
--- / public 行可读 / 只读审计），在循环之后的 "Special policies" 段单独处理，
--- 不在本循环列表内。
 DO $ewoh_drop_legacy_policies$
 DECLARE
   p record;
@@ -1677,7 +1703,7 @@ REVOKE ALL PRIVILEGES ON TABLE public.ewoh_factory_profile FROM anon, authentica
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_factory_profile TO service_role;
 REVOKE ALL PRIVILEGES ON TABLE public.ewoh_asset_package FROM anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_asset_package TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_audit_log FROM anon, authenticated, authenticated, service_role;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_audit_log FROM anon, authenticated, service_role;
 GRANT SELECT ON TABLE public.ewoh_audit_log TO service_role;
 REVOKE ALL PRIVILEGES ON FUNCTION public.ewoh_append_audit_log FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.ewoh_append_audit_log TO service_role;

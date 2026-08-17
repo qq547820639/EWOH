@@ -5,6 +5,8 @@ import {
   ewohEvent,
   ewohSchedulePlan,
   ewohScheduleAudit,
+  ewohSpatialEntity,
+  ewohTelemetry,
 } from '@server/database/schema';
 
 function createDispatchDb(planRows: unknown[], deviceRows: unknown[]) {
@@ -360,5 +362,193 @@ describe('GamificationService plan org isolation (ADR-071 / NO-13v)', () => {
       { userId: 'u2', primaryOrgId: 'ORG-2' },
     );
     expect(result.status).toBe('dispatched');
+  });
+});
+
+/** 递归收集 drizzle SQL 谓词里的绑定参数值（Param.value）——R2-SAM-001 同款。 */
+function collectParams(node: unknown, out: unknown[] = []): unknown[] {
+  if (!node || typeof node !== 'object') return out;
+  const withChunks = node as { queryChunks?: unknown[] };
+  if (Array.isArray(withChunks.queryChunks)) {
+    for (const chunk of withChunks.queryChunks) {
+      collectParams(chunk, out);
+    }
+    return out;
+  }
+  if ('value' in (node as Record<string, unknown>)) {
+    out.push((node as { value: unknown }).value);
+  }
+  return out;
+}
+
+/**
+ * R2-SBZ-005 / R2-SAM-004：orchestrateTask 的占用聚合（innerJoin）与工位名
+ * 查询必须带 org 谓词。模拟行可见性：谓词绑定参数含 actorOrgId 时仅本租户
+ * 行可见（与 eq(orgId) 等价）；enforceOrg=false 模拟修复前无谓词的全量泄漏。
+ */
+function createOrchestrateOrgDb(enforceOrg: boolean) {
+  const occRows = [
+    { entityId: 'station:s1', avgLoad: 0.5, org: 'ORG-1' },
+    // 他租户同 ID 工位的高占用遥测（若无谓词会覆盖本租户值 → takt 60）
+    { entityId: 'station:s1', avgLoad: 1.0, org: 'ORG-2' },
+  ];
+  const wsRows = [
+    { entityId: 'station:s1', name: 'S1-本租户', org: 'ORG-1' },
+    { entityId: 'station:s1', name: 'S1-他租户', org: 'ORG-2' },
+  ];
+  const insertRows: Array<{ table: unknown; row: Record<string, unknown> }> = [];
+  const filter = (cond: unknown, rows: Array<{ org: string }>): unknown[] => {
+    if (!enforceOrg) return rows;
+    return collectParams(cond).includes('ORG-1') ? rows.filter((r) => r.org === 'ORG-1') : rows;
+  };
+  const rowsThenable = (rows: unknown[]) => {
+    const t = Promise.resolve(rows) as Promise<unknown[]> & { groupBy: jest.Mock };
+    t.groupBy = jest.fn().mockResolvedValue(rows);
+    return t;
+  };
+  const occWhere = jest.fn((cond: unknown) => rowsThenable(filter(cond, occRows)));
+  const wsWhere = jest.fn((cond: unknown) => rowsThenable(filter(cond, wsRows)));
+  const db = {
+    select: jest.fn(() => ({
+      from: jest.fn((table: unknown) => {
+        if (table === ewohTelemetry) {
+          return { innerJoin: jest.fn(() => ({ where: occWhere })) };
+        }
+        return { where: wsWhere };
+      }),
+    })),
+    insert: jest.fn((table: unknown) => ({
+      values: jest.fn((row: Record<string, unknown>) => {
+        insertRows.push({ table, row });
+        const t = Promise.resolve([row]) as Promise<unknown[]> & { returning: jest.Mock };
+        t.returning = jest.fn().mockResolvedValue([row]);
+        return t;
+      }),
+    })),
+  };
+  return { db, insertRows, occWhere, wsWhere };
+}
+
+describe('GamificationService orchestrateTask org 谓词（R2-SBZ-005 / R2-SAM-004）', () => {
+  const ORCHESTRATE_REQ = {
+    orderId: 'WO-T',
+    nodes: [
+      {
+        nodeId: 'n1',
+        name: '装配',
+        order: 1,
+        assignedWorkstationId: 'station:s1',
+        dependencies: [],
+      },
+    ],
+  };
+
+  it('占用聚合与工位名查询谓词均含本 org 参数，跨租户遥测/名称不进入结果', async () => {
+    const { db, occWhere, wsWhere } = createOrchestrateOrgDb(true);
+    const service = new GamificationService(db as never);
+    const result = await service.orchestrateTask(ORCHESTRATE_REQ, {
+      userId: 'u1',
+      primaryOrgId: 'ORG-1',
+    });
+    // 两处查询的绑定参数都携带本租户 orgId（应用层谓词，不依赖 RLS 兜底）。
+    expect(collectParams(occWhere.mock.calls[0]?.[0])).toContain('ORG-1');
+    expect(collectParams(wsWhere.mock.calls[0]?.[0])).toContain('ORG-1');
+    // 他租户高占用（avgLoad=1.0 → takt 60）被过滤：本租户 0.5 → takt 45。
+    expect(result.nodes[0]).toMatchObject({ estimatedTakt: 45, taktSource: 'telemetry' });
+    // 工位名不回显他租户实体名。
+    expect(result.simulation.stationTakts[0]?.workstationName).toBe('S1-本租户');
+    expect(result.simulation.bottleneckWorkstationName).toBe('S1-本租户');
+  });
+
+  it('对照（修复前行为）：无 org 谓词时他租户同 ID 工位污染节拍与名称', async () => {
+    const { db } = createOrchestrateOrgDb(false);
+    const service = new GamificationService(db as never);
+    const result = await service.orchestrateTask(ORCHESTRATE_REQ, {
+      userId: 'u1',
+      primaryOrgId: 'ORG-1',
+    });
+    // 泄漏反证：他租户 avgLoad=1.0 覆盖本租户 0.5 → takt 60、名称被顶替。
+    expect(result.nodes[0]).toMatchObject({ estimatedTakt: 60, taktSource: 'telemetry' });
+    expect(result.simulation.stationTakts[0]?.workstationName).toBe('S1-他租户');
+  });
+});
+
+describe('GamificationService applyBrainSuggestion 租户上下文（R2-SBZ-006）', () => {
+  const APPLY_BODY = {
+    type: 'load_balance' as const,
+    title: '均衡负荷',
+    description: 'd',
+    affectedEntities: [],
+    expectedBenefit: 'b',
+    confidence: 0.8,
+  };
+
+  function makeApplyDb(plans: Array<Record<string, unknown>>) {
+    const insertRows: Array<{ table: unknown; row: Record<string, unknown> }> = [];
+    const db = {
+      select: jest.fn(),
+      insert: jest.fn((table: unknown) => ({
+        values: jest.fn((row: Record<string, unknown>) => {
+          insertRows.push({ table, row });
+          const t = Promise.resolve([row]) as Promise<unknown[]> & { returning: jest.Mock };
+          t.returning = jest.fn().mockResolvedValue([row]);
+          return t;
+        }),
+      })),
+    };
+    const createRun = jest.fn().mockResolvedValue({
+      run: { runId: 'RUN-1' },
+      plans,
+      debounced: false,
+    });
+    const service = new GamificationService(db as never, undefined, { createRun } as never);
+    return { service, createRun, insertRows };
+  }
+
+  it('createRun 透传 actor（org 上下文），audit 行与调用方租户同源', async () => {
+    const { service, createRun, insertRows } = makeApplyDb([
+      { planId: 'RUN-1A', orgId: 'ORG-1', status: 'proposed' },
+    ]);
+    const result = await service.applyBrainSuggestion(APPLY_BODY, {
+      userId: 'u1',
+      primaryOrgId: 'ORG-1',
+    });
+    expect(createRun).toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: 'MANUAL' }),
+      expect.objectContaining({ primaryOrgId: 'ORG-1' }),
+    );
+    expect(result.planId).toBe('RUN-1A');
+    const auditRow = insertRows.find((e) => e.table === ewohScheduleAudit);
+    expect(auditRow?.row.orgId).toBe('ORG-1');
+  });
+
+  it('缺失 actor → fail-closed：createRun 前拒绝，不触发无租户上下文的调度 run', async () => {
+    const { service, createRun, insertRows } = makeApplyDb([
+      { planId: 'RUN-1A', orgId: 'ORG-1', status: 'proposed' },
+    ]);
+    await expect(service.applyBrainSuggestion(APPLY_BODY)).rejects.toThrow(
+      /org context missing/,
+    );
+    expect(createRun).not.toHaveBeenCalled();
+    expect(insertRows).toHaveLength(0);
+  });
+
+  it('plan 归属与调用方租户分裂（orgId=ORG-2）→ 拒绝且 audit 不落库', async () => {
+    const { service, insertRows } = makeApplyDb([
+      { planId: 'RUN-1A', orgId: 'ORG-2', status: 'proposed' },
+    ]);
+    await expect(
+      service.applyBrainSuggestion(APPLY_BODY, { userId: 'u1', primaryOrgId: 'ORG-1' }),
+    ).rejects.toThrow(/plan_tenant_mismatch/);
+    expect(insertRows).toHaveLength(0);
+  });
+
+  it('plan.orgId 缺省（standalone_025 存量/过渡行）→ 放行不误伤', async () => {
+    const { service } = makeApplyDb([{ planId: 'RUN-1A', status: 'proposed' }]);
+    const result = await service.applyBrainSuggestion(APPLY_BODY, {
+      userId: 'u1',
+      primaryOrgId: 'ORG-1',
+    });
+    expect(result.planId).toBe('RUN-1A');
   });
 });

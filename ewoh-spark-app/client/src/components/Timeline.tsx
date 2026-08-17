@@ -219,12 +219,14 @@ export default function Timeline({
         {events.map((ev) => (
           <li key={ev.id} id={`tl-${ev.id}`} className="relative">
             <span
+              /* R2-CC2-002：时间轴节点描边 ring-white→ring-background 令牌（dark 下白描边刺眼且与表面冲突）。 */
               className={cn(
-                'absolute -left-[23px] top-1.5 w-2.5 h-2.5 rounded-full ring-2 ring-white',
+                'absolute -left-[23px] top-1.5 w-2.5 h-2.5 rounded-full ring-2 ring-background',
                 severityClass(ev.severity),
               )}
             />
-            <div className="rounded-lg border border-border bg-white p-3">
+            {/* R2-CC2-002：事件卡片表面 bg-white→bg-card 令牌（dark 主题可读）。 */}
+            <div className="rounded-lg border border-border bg-card p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">

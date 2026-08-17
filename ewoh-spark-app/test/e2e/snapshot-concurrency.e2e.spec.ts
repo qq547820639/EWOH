@@ -48,13 +48,15 @@ runDescribe(
     beforeAll(async () => {
       owner = await connectOwner(e2eConfig!.ownerDatabaseUrl);
       fixture = await createE2EFixture(owner);
-      // 干净基线：清空快照与版本计数器（其他 E2E 可能已产生同日快照），
-      // 保证本测试版本从 WS-YYYYMMDD-0001 严格递增无缺口。
+      // 干净基线：仅清本 run fixture org 的快照行。R2-APT-009：原全表 DELETE
+      // （含 ewoh_snapshot_version_counter 全局按日计数器）会摧毁共享库其他
+      // 租户的同日快照并使其版本序列重置（与既有行冲突）——计数器为全局资产
+      // 不再删除，版本起点断言相应放宽为"连续无缺口"（见用例内注释）。
       try {
+        const orgIds = [fixture.orgA.id, fixture.orgB.id];
         const postgres = (await import('postgres')).default;
         const runtime = postgres(e2eConfig!.runtimeDatabaseUrl, { max: 1 });
-        await runtime.unsafe('DELETE FROM ewoh_world_state_snapshot');
-        await runtime.unsafe('DELETE FROM ewoh_snapshot_version_counter');
+        await runtime.unsafe('DELETE FROM ewoh_world_state_snapshot WHERE org_id = ANY($1::text[])', [orgIds]);
         await runtime.end();
       } catch {
         // 清理失败不阻断
@@ -97,16 +99,18 @@ runDescribe(
       const seqs = versions
         .map((v) => Number(v.split('-').pop()))
         .sort((a, b) => a - b);
+      // R2-APT-009：不再清全局版本计数器（会破坏共享库其他租户同日序列），
+      // 起点随当日已分配序号；并发原子分配的不变量是"互异 + 严格连续无缺口"。
       expect(seqs).toEqual(Array.from({ length: N }, (_, i) => seqs[0] + i));
-      expect(seqs[0]).toBe(1); // 干净基线后从 0001 开始
 
-      // DB 事实：恰好 N 行且 snapshot_version 无重复。
+      // DB 事实：本 org 恰好 N 行且 snapshot_version 无重复（org 过滤，R2-APT-009）。
       const postgres = (await import('postgres')).default;
       const sql = postgres(e2eConfig!.runtimeDatabaseUrl, { max: 1 });
       try {
         const rows = await sql`
           SELECT snapshot_version FROM ewoh_world_state_snapshot
-          WHERE snapshot_version LIKE ${`${dayPrefix}-%`}`;
+          WHERE org_id = ANY(${sql.array([fixture.orgA.id, fixture.orgB.id])}::text[])
+            AND snapshot_version LIKE ${`${dayPrefix}-%`}`;
         expect(rows.length).toBe(N);
         expect(new Set(rows.map((r) => r.snapshot_version)).size).toBe(N);
         // 全表唯一性兜底断言（含历史行，防御唯一约束失效）。

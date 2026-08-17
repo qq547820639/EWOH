@@ -86,7 +86,7 @@ function EventList({
             <span className="truncate text-[10px] text-white/50">
               {event.status}
               {event.createdAt
-                ? ` · ${new Date(event.createdAt).toLocaleString('zh-CN', { hour12: false })}`
+                ? ` · ${new Date(event.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}`
                 : ''}
             </span>
             {onOpenDisposition && (
@@ -164,7 +164,7 @@ const EntityDetail = ({
   );
 
   const formatTime = (ts: string | null | undefined) =>
-    ts ? new Date(ts).toLocaleString('zh-CN', { hour12: false }) : '—';
+    ts ? new Date(ts).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '—';
 
   const content = entity ? (
     <div className="flex h-full min-h-0 flex-col">

@@ -70,7 +70,7 @@ export function formatLastSync(lastSyncAt: string | null): string {
   if (elapsedMs < 60_000) {
     return '刚刚';
   }
-  return new Date(lastSyncAt).toLocaleTimeString('zh-CN', { hour12: false });
+  return new Date(lastSyncAt).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 }
 
 /**

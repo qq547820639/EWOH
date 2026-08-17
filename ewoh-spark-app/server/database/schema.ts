@@ -1,13 +1,31 @@
 /* eslint-disable */
 /** auto generated, do not edit */
 /**
- * org_id 列类型策略（NEST-502/512 裁决，2026-08-17，最小破坏方案）：
- * 多数表 orgId 为 varchar(255)（本文件多数派）；001 创建的少数表
- * （ewohSchedulerConfig / ewohNotification / ewohWorldSnapshot / ewohAuditLog）
- * 为 uuid，与真实 DB 列类型保持一致（不做破坏性 ALTER TYPE 改列）。
+ * org_id 列类型策略（NEST-502/512 裁决，2026-08-17，最小破坏方案；
+ * R2-SDB-004 修正登记，2026-08-17）：
+ * 事实源 = db/migrations/standalone_*.sql 迁移链（legacy 001/002 已 DEPRECATED
+ * 冻结，不构成事实源）。本文件为迁移链的 Drizzle 映射，drizzle-kit push 不用于
+ * 生产建库（生产只经迁移链）；类型/约束漂移以迁移链为准并在 db/verify/ 对账。
+ * 实际分布（按迁移链终态对账，修正此前“仅 4 张 uuid”的错误陈述）：
+ *  - standalone_001 基线创建/补列的表 org_id = uuid（多含 GUC DEFAULT
+ *    nullif(current_setting('app.current_org_id', true), '')::uuid）：
+ *    scheduler_config / notification / world_snapshot / world_delta_log /
+ *    audit_log / control_request / control_command / control_result /
+ *    knowledge_entry / asset_package / factory_template / factory_profile /
+ *    event / event_chain / device / device_binding / device_config /
+ *    environment / model_registry / production_task / spatial_entity /
+ *    telemetry / topology / world_state / organization 等（全量清单见
+ *    standalone_001_schema.sql）。
+ *  - standalone_004/005/006/0xx 后续链新增的表 org_id = varchar(255)
+ *    （域表/调度域/workbench/agent 域，含 057 收紧 NOT NULL 的 15 张调度表）。
  * RLS 侧配套：standalone_057 提供 ewoh_org_visible(text) 重载——varchar 列的
  * policy 走 text 版直等比较，uuid 列继续走 uuid 版函数；两版语义一致，
  * varchar 列不再做 ::uuid 强制 cast（非 UUID 值运行时抛错的根因已消除）。
+ * 残余已知漂移（登记，非本文件可单方收敛）：ai_suggestion / production_task /
+ * schedule_task 等部分 varchar 映射与 standalone_001 的 uuid 列存在类型学
+ * 漂移——TS 侧 string 类型不受影响；列级类型对账（ALTER TYPE 收敛或
+ * dual-map codegen）需 ADR 立项后另行实施，禁止在本文件内单方改型造成
+ * push 误判。
  */
 import { sql } from 'drizzle-orm';
 import { boolean, index, integer, jsonb, numeric, pgTable, real, text, uniqueIndex, uuid, varchar, customType, bigint, doublePrecision } from "drizzle-orm/pg-core"
@@ -706,8 +724,8 @@ export const ewohSchedulePlan = pgTable("ewoh_schedule_plan", {
    * @type { Array<Record<string, unknown>> | null }
    */
   decisionRecordsJson: jsonb("decision_records_json"),
-  /** 租户隔离（standalone_025_scheduler_rls；RLS + 应用层过滤；null=全局/存量行）。 */
-  orgId: varchar("org_id", { length: 255 }),
+  /** 租户归属（standalone_057 起 NOT NULL，存量 NULL 行已回填默认 org；RLS org 隔离）。 */
+  orgId: varchar("org_id", { length: 255 }).notNull(),
   // System field: Update time (auto-filled, do not modify)
   updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
@@ -767,7 +785,7 @@ export const ewohTopology = pgTable("ewoh_topology", {
 
 export const ewohSpatialEntity = pgTable("ewoh_spatial_entity", {
   id: uuid("id").primaryKey().defaultRandom(),
-  entityId: varchar("entity_id", { length: 255 }).notNull().unique(),
+  entityId: varchar("entity_id", { length: 255 }).notNull(),
   entityType: varchar("entity_type", { length: 100 }).notNull(),
   parentId: varchar("parent_id", { length: 255 }),
   name: varchar("name", { length: 255 }).notNull(),
@@ -805,12 +823,13 @@ export const ewohSpatialEntity = pgTable("ewoh_spatial_entity", {
   // System field: Update time (auto-filled, do not modify)
   updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
-  uniqueIndex("ewoh_spatial_entity_entity_id_key").on(table.entityId),
+  // R2-SOP-003/R2-SAM-003（standalone_059）：entityId 单列唯一 → (org_id, entity_id)
+  // 租户复合唯一（跨租户可复用同一 entity_id；同 org 内唯一）。
+  uniqueIndex("uq_ewoh_spatial_entity_org_entity").on(table.orgId, table.entityId),
   index("idx_ewoh_spatial_entity_type").on(table.entityType),
   index("idx_ewoh_spatial_entity_parent").on(table.parentId),
   index("idx_ewoh_spatial_entity_org_type").on(table.orgId, table.entityType),
   index("idx_ewoh_spatial_entity_org_status").on(table.orgId, table.status),
-  index("idx_ewoh_spatial_entity_org_key").on(table.orgId, table.entityId),
 ]);
 
 export const ewohTelemetry = pgTable("ewoh_telemetry", {
@@ -1009,7 +1028,9 @@ export const ewohAgentApproval = pgTable("ewoh_agent_approval", {
 
 export const ewohDevice = pgTable("ewoh_device", {
   id: uuid("id").primaryKey().defaultRandom(),
-  deviceId: varchar("device_id", { length: 255 }).notNull().unique(),
+  // R2-SOP-014：单列 .unique() 已由 057 迁移改为 (org_id, device_id) 复合唯一
+  //（见下方 uq_ewoh_device_org_device），移除漂移的单列声明。
+  deviceId: varchar("device_id", { length: 255 }).notNull(),
   workerName: varchar("worker_name", { length: 255 }),
   deviceModel: varchar("device_model", { length: 255 }),
   batteryPct: integer("battery_pct").default(100),
@@ -1164,10 +1185,14 @@ export const ewohIdempotencyKeys = pgTable("ewoh_idempotency_keys", {
    * @type { unknown }
    */
   response: jsonb("response"),
+  // R2-SDB-006（standalone_060）：租户维度——(scope, key) 键空间跨租户共享会
+  // 回放他租户响应；DB 层 DEFAULT 取 app.current_org_id GUC，无 GUC 上下文
+  // 回退默认 org（与 057 存量回填口径一致）。RLS idempotency_org_isolation。
+  orgId: varchar("org_id", { length: 255 }).notNull().default(sql`COALESCE(NULLIF(current_setting('app.current_org_id', true), ''), '00000000-0000-4000-8000-000000000001')`),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
-  uniqueIndex("uq_ewoh_idempotency_keys_scope_key").on(table.scope, table.idempotencyKey),
+  uniqueIndex("uq_ewoh_idempotency_keys_org_scope_key").on(table.orgId, table.scope, table.idempotencyKey),
 ]);
 
 export const ewohSavedViews = pgTable("saved_views", {
@@ -1203,11 +1228,13 @@ export const ewohSavedViews = pgTable("saved_views", {
   index("idx_saved_views_org_owner").on(table.organizationId, table.ownerUserId),
   index("idx_saved_views_org_name").on(table.organizationId, table.name),
   uniqueIndex("uq_saved_views_default").on(table.organizationId, table.ownerUserId, table.workbench, table.listKey).where(sql`${table.isDefault} AND ${table.deletedAt} IS NULL`),
+  // SQL-009（standalone_057）：软删排除的同名视图唯一键 (org, owner, workbench, name)。
+  uniqueIndex("uq_saved_views_org_owner_name").on(table.organizationId, table.ownerUserId, table.workbench, table.name).where(sql`${table.deletedAt} IS NULL`),
 ]);
 
 export const ewohWorkbenchExportTask = pgTable("workbench_export_tasks", {
   id: uuid("id").primaryKey().defaultRandom(),
-  taskId: varchar("task_id", { length: 255 }).notNull().unique(),
+  taskId: varchar("task_id", { length: 255 }).notNull(),
   organizationId: varchar("organization_id", { length: 255 }).notNull(),
   ownerUserId: varchar("owner_user_id", { length: 255 }).notNull(),
   role: varchar("role", { length: 50 }).notNull(),
@@ -1229,7 +1256,7 @@ export const ewohWorkbenchExportTask = pgTable("workbench_export_tasks", {
   processed: integer("processed").notNull().default(0),
   total: integer("total").notNull().default(0),
   error: text("error"),
-  idempotencyKey: varchar("idempotency_key", { length: 255 }).unique(),
+  idempotencyKey: varchar("idempotency_key", { length: 255 }),
   attempts: integer("attempts").notNull().default(0),
   nextRetryAt: customTimestamptz("next_retry_at", { precision: 3 }),
   claimedBy: varchar("claimed_by", { length: 255 }),
@@ -1246,13 +1273,18 @@ export const ewohWorkbenchExportTask = pgTable("workbench_export_tasks", {
   index("idx_workbench_export_tasks_status_retry").on(table.status, table.nextRetryAt),
   index("idx_workbench_export_tasks_org_owner").on(table.organizationId, table.ownerUserId),
   index("idx_workbench_export_tasks_idem").on(table.idempotencyKey),
+  // SQL-009（standalone_057）：task_id / idempotency_key 单列唯一 →
+  // (organization_id, task_id) / (organization_id, idempotency_key)（部分唯一，
+  // idempotency_key IS NOT NULL）；跨租户可复用同 task_id / idempotency_key。
+  uniqueIndex("uq_workbench_export_tasks_org_task").on(table.organizationId, table.taskId),
+  uniqueIndex("uq_workbench_export_tasks_org_idem").on(table.organizationId, table.idempotencyKey).where(sql`${table.idempotencyKey} IS NOT NULL`),
 ]);
 
 // --- Scheduling V2 domain tables (standalone_006) ---
 
 export const ewohSchedulingRun = pgTable("ewoh_scheduling_run", {
   id: uuid("id").primaryKey().defaultRandom(),
-  runId: varchar("run_id", { length: 255 }).notNull().unique(),
+  runId: varchar("run_id", { length: 255 }).notNull(),
   triggerType: varchar("trigger_type", { length: 100 }),
   triggerEntityId: varchar("trigger_entity_id", { length: 255 }),
   status: varchar("status", { length: 50 }).notNull().default('queued'),
@@ -1269,7 +1301,8 @@ export const ewohSchedulingRun = pgTable("ewoh_scheduling_run", {
   solverStatus: varchar("solver_status", { length: 32 }),
   /** 运行所用求解器回退/降级原因（无回退为 NULL）。 */
   fallbackReason: text("fallback_reason"),
-  orgId: varchar("org_id", { length: 255 }),
+  /** 租户归属（standalone_057 起 NOT NULL，存量 NULL 行已回填默认 org；RLS org 隔离）。 */
+  orgId: varchar("org_id", { length: 255 }).notNull(),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
@@ -1282,7 +1315,7 @@ export const ewohSchedulingRun = pgTable("ewoh_scheduling_run", {
 
 export const ewohSchedulingPlanAssignment = pgTable("ewoh_scheduling_plan_assignment", {
   id: uuid("id").primaryKey().defaultRandom(),
-  assignmentId: varchar("assignment_id", { length: 255 }).notNull().unique(),
+  assignmentId: varchar("assignment_id", { length: 255 }).notNull(),
   planId: varchar("plan_id", { length: 255 }).notNull(),
   taskId: varchar("task_id", { length: 255 }),
   personId: varchar("person_id", { length: 255 }),
@@ -1315,7 +1348,8 @@ export const ewohSchedulingPlanAssignment = pgTable("ewoh_scheduling_plan_assign
   decisionTraceJson: jsonb("decision_trace_json"),
   version: integer("version").notNull().default(1),
   reason: text("reason"),
-  orgId: varchar("org_id", { length: 255 }),
+  /** 租户归属（standalone_057 起 NOT NULL，存量 NULL 行已回填默认 org；RLS org 隔离）。 */
+  orgId: varchar("org_id", { length: 255 }).notNull(),
   createdBy: varchar("created_by", { length: 255 }),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -1331,7 +1365,7 @@ export const ewohSchedulingPlanAssignment = pgTable("ewoh_scheduling_plan_assign
 
 export const ewohSchedulingConstraint = pgTable("ewoh_scheduling_constraint", {
   id: uuid("id").primaryKey().defaultRandom(),
-  constraintId: varchar("constraint_id", { length: 255 }).notNull().unique(),
+  constraintId: varchar("constraint_id", { length: 255 }).notNull(),
   planId: varchar("plan_id", { length: 255 }),
   taskId: varchar("task_id", { length: 255 }),
   type: varchar("type", { length: 50 }).notNull(),
@@ -1348,8 +1382,8 @@ export const ewohSchedulingConstraint = pgTable("ewoh_scheduling_constraint", {
   validFromMs: bigint("valid_from_ms", { mode: "number" }),
   /** 约束失效时间（epoch ms；求解前过滤依据）。 */
   expiresAtMs: bigint("expires_at_ms", { mode: "number" }),
-  /** 租户隔离（RLS + 应用层过滤；null=全局约束）。 */
-  orgId: varchar("org_id", { length: 255 }),
+  /** 租户归属（standalone_057 起 NOT NULL，存量 NULL 行已回填默认 org；RLS org 隔离）。 */
+  orgId: varchar("org_id", { length: 255 }).notNull(),
   /** 约束来源：manual / system / auto（审计区分 operator/system context）。 */
   source: varchar("source", { length: 20 }).notNull().default("manual"),
   /** 软删除时间（显式 deactivate 时写）。 */
@@ -1947,7 +1981,7 @@ export const ewohLearningProposal = pgTable("ewoh_learning_proposal", {
 export const ewohSchedulingConflict = pgTable("ewoh_scheduling_conflict", {
   id: uuid("id").primaryKey().defaultRandom(),
   /** 内容种子哈希稳定 id（跨推导归并键）。 */
-  conflictId: varchar("conflict_id", { length: 255 }).notNull().unique(),
+  conflictId: varchar("conflict_id", { length: 255 }).notNull(),
   type: varchar("type", { length: 50 }).notNull(),
   severity: varchar("severity", { length: 20 }).notNull(),
   scope: varchar("scope", { length: 20 }).notNull(),
@@ -1977,7 +2011,8 @@ export const ewohSchedulingConflict = pgTable("ewoh_scheduling_conflict", {
   resolvedBy: varchar("resolved_by", { length: 255 }),
   resolvedAt: customTimestamptz("resolved_at", { precision: 6 }),
   suppressUntil: customTimestamptz("suppress_until", { precision: 6 }),
-  orgId: varchar("org_id", { length: 255 }),
+  /** 租户归属（standalone_057 起 NOT NULL，存量 NULL 行已回填默认 org；RLS org 隔离）。 */
+  orgId: varchar("org_id", { length: 255 }).notNull(),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
@@ -1992,7 +2027,7 @@ export const ewohSchedulingConflict = pgTable("ewoh_scheduling_conflict", {
 // --- RouteCostMatrix 落库缓存 (standalone_015, Phase 2 / P2-T1, 决策 D-D) ---
 export const ewohRouteCostMatrix = pgTable("ewoh_route_cost_matrix", {
   id: uuid("id").primaryKey().defaultRandom(),
-  matrixId: varchar("matrix_id", { length: 255 }).notNull().unique(),
+  matrixId: varchar("matrix_id", { length: 255 }).notNull(),
   taskId: varchar("task_id", { length: 255 }).notNull(),
   snapshotVersion: varchar("snapshot_version", { length: 255 }).notNull(),
   policyVersion: integer("policy_version"),
@@ -2013,7 +2048,8 @@ export const ewohRouteCostMatrix = pgTable("ewoh_route_cost_matrix", {
    */
   candidatesJson: jsonb("candidates_json").notNull().default([]),
   generatedAt: customTimestamptz("generated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
-  orgId: varchar("org_id", { length: 255 }),
+  /** 租户归属（standalone_057 起 NOT NULL，存量 NULL 行已回填默认 org；RLS org 隔离）。 */
+  orgId: varchar("org_id", { length: 255 }).notNull(),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
@@ -2026,19 +2062,20 @@ export const ewohRouteCostMatrix = pgTable("ewoh_route_cost_matrix", {
 
 export const ewohRouteNode = pgTable("ewoh_route_node", {
   id: uuid("id").primaryKey().defaultRandom(),
-  nodeId: varchar("node_id", { length: 255 }).notNull().unique(),
+  nodeId: varchar("node_id", { length: 255 }).notNull(),
   nodeType: varchar("node_type", { length: 50 }),
   x: real("x"),
   y: real("y"),
   floor: varchar("floor", { length: 50 }),
   stationId: varchar("station_id", { length: 255 }),
   zoneId: varchar("zone_id", { length: 255 }),
-  /** 组织归属（ADR-074/standalone_056；RLS route_node_org_isolation；null=存量/种子全局过渡行）。 */
-  orgId: varchar("org_id", { length: 255 }),
+  /** 租户归属（standalone_057 起 NOT NULL，存量 NULL 行已回填默认 org；RLS org 隔离）。 */
+  orgId: varchar("org_id", { length: 255 }).notNull(),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
-  uniqueIndex("ewoh_route_node_node_id_key").on(table.nodeId),
+  // NEST/SQL-017（standalone_057）：node_id 单列唯一 → (org_id, node_id) 复合唯一。
+  uniqueIndex("uq_ewoh_route_node_org_node").on(table.orgId, table.nodeId),
   index("idx_ewoh_route_node_station").on(table.stationId),
   index("idx_ewoh_route_node_zone").on(table.zoneId),
   index("idx_ewoh_route_node_org").on(table.orgId),
@@ -2046,7 +2083,7 @@ export const ewohRouteNode = pgTable("ewoh_route_node", {
 
 export const ewohRouteEdge = pgTable("ewoh_route_edge", {
   id: uuid("id").primaryKey().defaultRandom(),
-  edgeId: varchar("edge_id", { length: 255 }).notNull().unique(),
+  edgeId: varchar("edge_id", { length: 255 }).notNull(),
   fromNodeId: varchar("from_node_id", { length: 255 }),
   toNodeId: varchar("to_node_id", { length: 255 }),
   distanceMeters: real("distance_meters"),
@@ -2059,8 +2096,8 @@ export const ewohRouteEdge = pgTable("ewoh_route_edge", {
    * @type { string[] }
    */
   accessibleFor: jsonb("accessible_for"),
-  /** 组织归属（ADR-074/standalone_056；RLS route_edge_org_isolation；null=存量/种子全局过渡行）。 */
-  orgId: varchar("org_id", { length: 255 }),
+  /** 租户归属（standalone_057 起 NOT NULL，存量 NULL 行已回填默认 org；RLS org 隔离）。 */
+  orgId: varchar("org_id", { length: 255 }).notNull(),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
@@ -2116,7 +2153,8 @@ export const ewohResourceReservation = pgTable("ewoh_resource_reservation", {
   endMs: bigint("end_ms", { mode: "number" }).notNull(),
   status: varchar("status", { length: 50 }).notNull().default('reserved'),
   version: integer("version").notNull().default(1),
-  orgId: varchar("org_id", { length: 255 }),
+  /** 租户归属（standalone_057 起 NOT NULL，存量 NULL 行已回填默认 org；RLS org 隔离）。 */
+  orgId: varchar("org_id", { length: 255 }).notNull(),
   createdBy: varchar("created_by", { length: 255 }),
   createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -2180,7 +2218,8 @@ export const ewohSchedulingPolicy = pgTable("ewoh_scheduling_policy", {
    * @type { Record<string, unknown> | null }
    */
   decisionJson: jsonb("decision_json"),
-  orgId: varchar("org_id", { length: 255 }),
+  /** 租户归属（standalone_057 起 NOT NULL，存量 NULL 行已回填默认 org；RLS org 隔离）。 */
+  orgId: varchar("org_id", { length: 255 }).notNull(),
   updatedBy: varchar("updated_by", { length: 255 }),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -2212,7 +2251,7 @@ export const ewohReplanTrigger = pgTable("ewoh_replan_trigger", {
 /** 调度反馈（SchedulingFeedback，Task 7）：观测型 planned-vs-actual 执行数据，仅用于离线评估/参数对比/回归，不参与生产调度。 */
 export const ewohSchedulingFeedback = pgTable("ewoh_scheduling_feedback", {
   id: uuid("id").primaryKey().defaultRandom(),
-  feedbackId: varchar("feedback_id", { length: 255 }).notNull().unique(),
+  feedbackId: varchar("feedback_id", { length: 255 }).notNull(),
   runId: varchar("run_id", { length: 255 }),
   planId: varchar("plan_id", { length: 255 }).notNull(),
   taskId: varchar("task_id", { length: 255 }),
@@ -2241,7 +2280,8 @@ export const ewohSchedulingFeedback = pgTable("ewoh_scheduling_feedback", {
   /** 审批结果：true=approved, false=rejected, null=未决。 */
   accepted: boolean("accepted"),
   ts: customTimestamptz("ts", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
-  orgId: varchar("org_id", { length: 255 }),
+  /** 租户归属（standalone_057 起 NOT NULL，存量 NULL 行已回填默认 org；RLS org 隔离）。 */
+  orgId: varchar("org_id", { length: 255 }).notNull(),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
@@ -2329,8 +2369,9 @@ export const ewohSchedulingFeedbackTable = ewohSchedulingFeedback;
 /** 正式执行记录：Plan Assignment → Execution（planned vs actual + deviation）。 */
 export const ewohSchedulingExecution = pgTable("ewoh_scheduling_execution", {
   id: uuid("id").primaryKey().defaultRandom(),
-  executionId: varchar("execution_id", { length: 255 }).notNull().unique(),
-  orgId: varchar("org_id", { length: 255 }),
+  executionId: varchar("execution_id", { length: 255 }).notNull(),
+  /** 租户归属（standalone_057 起 NOT NULL，存量 NULL 行已回填默认 org；RLS org 隔离）。 */
+  orgId: varchar("org_id", { length: 255 }).notNull(),
   runId: varchar("run_id", { length: 255 }),
   planId: varchar("plan_id", { length: 255 }).notNull(),
   assignmentId: varchar("assignment_id", { length: 255 }).notNull(),
@@ -2376,8 +2417,9 @@ export const ewohSchedulingExecution = pgTable("ewoh_scheduling_execution", {
 /** 生产 KPI 聚合缓存（Delivery/Resources/Stability/Solver/DataQuality）。 */
 export const ewohSchedulingKpi = pgTable("ewoh_scheduling_kpi", {
   id: uuid("id").primaryKey().defaultRandom(),
-  kpiId: varchar("kpi_id", { length: 255 }).notNull().unique(),
-  orgId: varchar("org_id", { length: 255 }),
+  kpiId: varchar("kpi_id", { length: 255 }).notNull(),
+  /** 租户归属（standalone_057 起 NOT NULL，存量 NULL 行已回填默认 org；RLS org 隔离）。 */
+  orgId: varchar("org_id", { length: 255 }).notNull(),
   periodStart: customTimestamptz("period_start", { precision: 3 }).notNull(),
   periodEnd: customTimestamptz("period_end", { precision: 3 }).notNull(),
   kpiJson: jsonb("kpi_json").notNull().default({}),
@@ -2394,8 +2436,9 @@ export const ewohSchedulingKpi = pgTable("ewoh_scheduling_kpi", {
 /** Policy Replay 记录（deterministic replay 结果持久化）。 */
 export const ewohPolicyReplay = pgTable("ewoh_policy_replay", {
   id: uuid("id").primaryKey().defaultRandom(),
-  replayId: varchar("replay_id", { length: 255 }).notNull().unique(),
-  orgId: varchar("org_id", { length: 255 }),
+  replayId: varchar("replay_id", { length: 255 }).notNull(),
+  /** 租户归属（standalone_057 起 NOT NULL，存量 NULL 行已回填默认 org；RLS org 隔离）。 */
+  orgId: varchar("org_id", { length: 255 }).notNull(),
   candidatePolicyVersion: integer("candidate_policy_version").notNull(),
   baselinePolicyVersion: integer("baseline_policy_version").notNull(),
   solverVersion: varchar("solver_version", { length: 100 }),
@@ -2423,8 +2466,9 @@ export const ewohPolicyReplay = pgTable("ewoh_policy_replay", {
 /** 策略激活审计（operator/reason/before/after/gate/rollback target）。 */
 export const ewohPolicyActivation = pgTable("ewoh_policy_activation", {
   id: uuid("id").primaryKey().defaultRandom(),
-  activationId: varchar("activation_id", { length: 255 }).notNull().unique(),
-  orgId: varchar("org_id", { length: 255 }),
+  activationId: varchar("activation_id", { length: 255 }).notNull(),
+  /** 租户归属（standalone_057 起 NOT NULL，存量 NULL 行已回填默认 org；RLS org 隔离）。 */
+  orgId: varchar("org_id", { length: 255 }).notNull(),
   policyVersion: integer("policy_version").notNull(),
   beforeVersion: integer("before_version"),
   afterVersion: integer("after_version"),

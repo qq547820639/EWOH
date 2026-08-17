@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Canonical Decision Model（ADR-047 / §2/§3/§18，NO-12x）。
 
 跨运行时决策契约（ewoh:///decision/decision/v1）：
@@ -19,6 +18,7 @@
 validation 返回错误码列表（空=合法），fail-closed。
 """
 
+import math
 import re
 
 from .risk import SEVERITY_LADDER
@@ -96,7 +96,8 @@ def _iso_ms(value):
 
 
 def _is_finite_number(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    # R2-SHR-003：补 math.isfinite（对齐 TS isFiniteNumber，NaN/Inf 一律拒绝）。
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def validate_decision(record):

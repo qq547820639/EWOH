@@ -239,6 +239,33 @@ export class DispatchCoordinatorService {
           );
         assignmentCount = assignments.length;
 
+        // R2-SSV-14（2026-08-17）：事务内复查安全阻断事实——安全阻断集合与
+        // 快照新鲜度此前均在事务前读取（TOCTOU：预检与提交之间发生
+        // SAFETY_EVENT/快照过期时派工仍会提交，SAFETY_BLOCK_DISPATCH 被绕过）。
+        // 事务内以最新世界状态复查关键事实，安全熔断与提交同一串行化域。
+        {
+          const txWorld =
+            await this.worldStateSnapshotService.getCurrentWorldState(ctx);
+          const txBlockedPersons = new Set(txWorld.safetyBlockedPersonIds ?? []);
+          const txBlockedDevices = new Set(txWorld.safetyBlockedDeviceIds ?? []);
+          if (txBlockedPersons.size > 0 || txBlockedDevices.size > 0) {
+            const blockedTx = assignments.filter(
+              (a) =>
+                (a.personId && txBlockedPersons.has(a.personId)) ||
+                (a.deviceId && txBlockedDevices.has(a.deviceId)),
+            );
+            if (blockedTx.length > 0) {
+              throw new ConflictException(
+                `SAFETY_BLOCK_DISPATCH_TX: ${blockedTx.length} assignment(s) reference safety-blocked resources (in-transaction recheck)`,
+              );
+            }
+          }
+          await this.worldStateSnapshotService.assertFreshForApprove(
+            plan.snapshotVersion ?? '',
+            ctx,
+          );
+        }
+
         // 4. 预检任务可下发性（遵循 TaskService 状态机语义）。
         const taskByAssignmentId = new Map<
           string,

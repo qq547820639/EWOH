@@ -84,7 +84,14 @@ export class ExoSessionService {
     }
     let inserted;
     try {
-      inserted = (await this.db.insert(ewohExoSession).values(row).returning())[0];
+      // R2-SAM-006：主事实（insert）与目录事件同事务（参照 exo-config NEST-431
+      // 的 recordEventOn 模式）——事件写失败整体回滚，消除“会话已落库、
+      // ExoSessionStarted 事件永久丢失（ADR-033 幂等重试命中 existing 回读，
+      // 事件永不补发）”的留痕缺口。
+      await this.db.transaction(async (tx) => {
+        inserted = (await tx.insert(ewohExoSession).values(row).returning())[0];
+        await this.recordEventOn(tx, inserted, orgId, 'ExoSessionStarted', 'active');
+      });
     } catch (err) {
       // §7 机器强制：同外骨骼活跃会话冲突（23505 部分唯一索引）→ 显式冲突
       const code = (err as { code?: string }).code;
@@ -93,7 +100,6 @@ export class ExoSessionService {
       }
       throw err;
     }
-    await this.recordEvent(inserted, orgId, 'ExoSessionStarted', 'active');
     return this.toSession(inserted);
   }
 
@@ -144,8 +150,12 @@ export class ExoSessionService {
       endedBy: endedBy.trim(),
       reason: reason?.trim() || undefined,
     };
-    const updated = (
-      await this.db
+    // R2-SAM-005/006：终态 UPDATE 带 eq(status) CAS（两个并发 terminate——
+    // end+abort——先读都见 active 时，后提交者命中 0 行，按状态冲突拒绝，
+    // 绝不覆盖先提交者的终态，ADR-032 终态不可复开）；同时主事实与
+    // ExoSessionEnded 事件同事务（事件失败整体回滚，无“已终结无事件”半态）。
+    const updated = await this.db.transaction(async (tx) => {
+      const rows = await tx
         .update(ewohExoSession)
         .set({
           status: to as ExoSessionStatus,
@@ -155,10 +165,23 @@ export class ExoSessionService {
           recordJson: record,
           updatedAt: now,
         })
-        .where(and(eq(ewohExoSession.orgId, orgId), eq(ewohExoSession.id, current.id)))
-        .returning()
-    )[0];
-    await this.recordEvent(updated, orgId, 'ExoSessionEnded', to);
+        .where(
+          and(
+            eq(ewohExoSession.orgId, orgId),
+            eq(ewohExoSession.id, current.id),
+            eq(ewohExoSession.status, current.status),
+          ),
+        )
+        .returning();
+      if (rows.length === 0) {
+        // 与“重复 ended/aborted 幂等返回”分支区分：并发终态改写显式冲突（fail-closed）。
+        throw new BadRequestException(
+          `exo_session_state_changed_concurrently:${current.status}（并发终结冲突，终态不可复开 ADR-032）`,
+        );
+      }
+      await this.recordEventOn(tx, rows[0], orgId, 'ExoSessionEnded', to);
+      return rows[0];
+    });
     return this.toSession(updated);
   }
 
@@ -210,7 +233,12 @@ export class ExoSessionService {
     };
   }
 
-  private async recordEvent(
+  /**
+   * R2-SAM-006：事件写入与主事实同事务执行（executor=db 或事务句柄，
+   * 参照 exo-config recordEventOn / NEST-431 模式）。事件失败 → 事务回滚。
+   */
+  private async recordEventOn(
+    executor: Pick<PostgresJsDatabase, 'insert'>,
     row: typeof ewohExoSession.$inferSelect,
     orgId: string,
     eventType: 'ExoSessionStarted' | 'ExoSessionEnded',
@@ -230,7 +258,7 @@ export class ExoSessionService {
       correlationId: currentTraceId() ?? null,
     });
     const envelopeRecord = envelopeForEvidence(envelope);
-    await this.db.insert(ewohEvent).values({
+    await executor.insert(ewohEvent).values({
       eventId,
       eventType,
       eventCode: eventType === 'ExoSessionStarted' ? 'EXO_SESSION_STARTED' : 'EXO_SESSION_ENDED',

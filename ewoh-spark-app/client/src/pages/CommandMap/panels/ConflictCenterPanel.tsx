@@ -193,7 +193,7 @@ export function ConflictCenterPanel({
       {
         key: 'detected',
         header: '检测时间',
-        render: (c) => (c.detectedAt ? new Date(c.detectedAt).toLocaleString() : '—'),
+        render: (c) => (c.detectedAt ? new Date(c.detectedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '—'),
       },
     ],
     [lifecycleById],
@@ -388,8 +388,8 @@ export function ConflictCenterPanel({
                           <p className="text-[10px] text-white/35">
                             冲突 ID：{c.conflictId} · 快照：{c.snapshotVersion ?? 'CURRENT'}
                             {c.taskIds.length > 0 && ` · 任务：${c.taskIds.length} 个`}
-                            {c.detectedAt && ` · 检测：${new Date(c.detectedAt).toLocaleString()}`}
-                            {c.suppressUntil && ` · 抑制至：${new Date(c.suppressUntil).toLocaleString()}`}
+                            {c.detectedAt && ` · 检测：${new Date(c.detectedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}`}
+                            {c.suppressUntil && ` · 抑制至：${new Date(c.suppressUntil).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}`}
                           </p>
                           {/* Phase 3 / P3-T1：生命周期操作（按状态机可用操作） */}
                           {actions.length > 0 && (

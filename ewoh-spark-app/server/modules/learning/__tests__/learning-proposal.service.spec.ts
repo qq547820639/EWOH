@@ -1,7 +1,8 @@
 /* LearningProposalService 契约行为测试（ADR-026 / NO-12b，§10 Level 7 + §12 反馈腿）。
  *
  * 覆盖：propose 契约 fail-closed（未知 kind/不支持阈值/no-op 变更拒绝）、
- * 带 facts 即影子评估落 shadow_evaluated、proposalId 幂等回读不重复发事件、
+ * 影子评估证据由服务端库内遥测窗口重建（R2-SBZ-004：客户端 facts 不作证据、
+ * evaluationRef 强制绑定、provenance 字段级来源标注）、proposalId 幂等回读不重复发事件、
  * 状态机强制（无影子证据/非法转移拒绝）、人审 approve（approvedBy 必填 +
  * approvedAt + 事件）、reject/rollback 理由强制、getActiveThresholds 激活面
  * （同参数最新 approved 生效、rolled_back 不再激活）、LearningProposalCreated/
@@ -11,7 +12,7 @@
 /// <reference types="jest" />
 import { BadRequestException } from '@nestjs/common';
 import { LearningProposalService } from '../learning-proposal.service';
-import { ewohLearningProposal, ewohEvent } from '@server/database/schema';
+import { ewohLearningProposal, ewohEvent, ewohTelemetry, ewohLearningEvaluation } from '@server/database/schema';
 import { validateDecision } from '@shared/decision';
 
 const ORG_A = 'org-a';
@@ -36,7 +37,7 @@ const PROPOSAL_STATUSES = new Set(['proposed', 'shadow_evaluated', 'approved', '
 
 function collectValues(
   node: unknown,
-  sets: { proposalIds: Set<string>; orgIds: Set<string>; statuses: Set<string> },
+  sets: { proposalIds: Set<string>; orgIds: Set<string>; statuses: Set<string>; evalIds: Set<string> },
   seen: WeakSet<object>,
 ): void {
   if (node == null || typeof node !== 'object') return;
@@ -51,6 +52,8 @@ function collectValues(
       if (value.startsWith('lp:')) sets.proposalIds.add(value);
       if (value.startsWith('org-')) sets.orgIds.add(value);
       if (PROPOSAL_STATUSES.has(value)) sets.statuses.add(value);
+      // R2-SBZ-004：evaluationRef 绑定查询按 evalId 匹配学习评估台账行。
+      if (value.startsWith('eval-')) sets.evalIds.add(value);
     } else {
       collectValues(value, sets, seen);
     }
@@ -58,11 +61,12 @@ function collectValues(
 }
 
 function matches(cond: unknown, row: Record<string, unknown>): boolean {
-  const sets = { proposalIds: new Set<string>(), orgIds: new Set<string>(), statuses: new Set<string>() };
+  const sets = { proposalIds: new Set<string>(), orgIds: new Set<string>(), statuses: new Set<string>(), evalIds: new Set<string>() };
   collectValues(cond, sets, new WeakSet());
   if (sets.proposalIds.size > 0 && !sets.proposalIds.has(String(row.proposalId))) return false;
   if (sets.orgIds.size > 0 && !sets.orgIds.has(String(row.orgId))) return false;
   if (sets.statuses.size > 0 && !sets.statuses.has(String(row.status))) return false;
+  if (sets.evalIds.size > 0 && !sets.evalIds.has(String(row.evalId))) return false;
   return true;
 }
 
@@ -91,8 +95,49 @@ function rowOf(proposalId: string, orgId: string, overrides: Record<string, unkn
   };
 }
 
-function createProposalDb(rows: Array<Record<string, unknown>> = []) {
-  const state = { rows: [...rows] };
+// R2-SBZ-004：库内事实源行（ewoh_telemetry org 作用域遥测）。
+function telemetryRow(orgId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id: '00000000-0000-4000-8000-0000000000t1',
+    deviceId: 'device:exo-1',
+    entityId: 'person:p1',
+    ts: new Date(),
+    loadScore: 0.82,
+    fatigueTrend: 0.8,
+    orgId,
+    ...overrides,
+  };
+}
+
+// R2-SBZ-004：学习评估台账行（evaluationRef 绑定窗口来源）。
+function evaluationRow(orgId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id: '00000000-0000-4000-8000-0000000000e1',
+    orgId,
+    evalId: 'eval-2026w33',
+    evaluationType: 'periodic',
+    periodStart: new Date(Date.now() - 3 * 60 * 60 * 1000),
+    periodEnd: new Date(),
+    engineVersion: 'v1',
+    metricsJson: {},
+    basisJson: {},
+    resultJson: {},
+    ...overrides,
+  };
+}
+
+function createProposalDb(
+  rows: Array<Record<string, unknown>> = [],
+  opts: {
+    telemetry?: Array<Record<string, unknown>>;
+    evaluations?: Array<Record<string, unknown>>;
+  } = {},
+) {
+  const state = {
+    rows: [...rows],
+    telemetry: [...(opts.telemetry ?? [])],
+    evaluations: [...(opts.evaluations ?? [])],
+  };
   const events: Array<Record<string, unknown>> = [];
   function ordered(data: unknown[], col: unknown): unknown[] {
     const key = (col as { name?: string } | undefined)?.name;
@@ -112,10 +157,16 @@ function createProposalDb(rows: Array<Record<string, unknown>> = []) {
       limit: jest.fn(() => thenable(data.slice(0, 100))),
     };
   }
+  // R2-SBZ-004：select 按表分桶（proposals / telemetry / learning_evaluation）。
+  const bucketFor = (table: unknown): Array<Record<string, unknown>> => {
+    if (table === ewohTelemetry) return state.telemetry;
+    if (table === ewohLearningEvaluation) return state.evaluations;
+    return state.rows;
+  };
   const db = {
     select: jest.fn(() => ({
-      from: jest.fn(() => ({
-        where: jest.fn((cond: unknown) => thenable(state.rows.filter((r) => matches(cond, r)))),
+      from: jest.fn((table: unknown) => ({
+        where: jest.fn((cond: unknown) => thenable(bucketFor(table).filter((r) => matches(cond, r)))),
       })),
     })),
     insert: jest.fn((table: unknown) => ({
@@ -150,27 +201,89 @@ describe('LearningProposalService（NO-12b 反馈腿）', () => {
     expect(rows).toHaveLength(0);
   });
 
-  it('propose 带 facts → 确定性影子评估落 shadow_evaluated + LearningProposalCreated', async () => {
-    const { rows, events, service } = createProposalDb();
-    const result = await service.propose({ kind: 'rule_threshold', change: CHANGE, facts: FACTS }, ORG_A);
+  it('R2-SBZ-004：propose 影子评估由服务端库内遥测窗口驱动（客户端 facts 不作证据）+ provenance 标注', async () => {
+    // 库内高负荷遥测（loadScore 0.82 / fatigue 0.8）vs 客户端伪造低风险 facts。
+    const { rows, events, service } = createProposalDb(
+      [],
+      { telemetry: [telemetryRow(ORG_A, { entityId: 'person:p1', loadScore: 0.82, fatigueTrend: 0.8 })] },
+    );
+    const forgedLowRiskFacts = [
+      { subjectId: 'person:p1', kind: 'person', values: { workload: 0.1, fatigue: 0.1, ergonomicRisk: 0.1 } },
+    ];
+    const result = await service.propose(
+      { kind: 'rule_threshold', change: CHANGE, facts: forgedLowRiskFacts },
+      ORG_A,
+    );
     expect(result.created).toBe(true);
     expect(asProposal(result.proposal).status).toBe('shadow_evaluated');
-    expect((asProposal(result.proposal).shadowEval as Record<string, unknown>).riskLevel).toBe('low');
+    const shadowEval = asProposal(result.proposal).shadowEval as Record<string, unknown>;
+    // 证据 = 服务端窗口（workload 0.82 ≥ 基线 0.8 且 fatigue 0.8 ≥ 0.7 → baseline 命中），
+    // 客户端伪造的 0.1 低负荷事实不参与——洗白攻击失效。
+    expect(shadowEval.factsCount).toBe(1);
+    expect(shadowEval.baselineFires).toBe(1);
+    expect(shadowEval.candidateFires).toBe(1);
+    // 数据来源标注：字段级 provenance 显式落 recordJson 并透出。
+    const provenance = asProposal(result.proposal).shadowFactsProvenance as Record<string, unknown>;
+    expect(provenance.source).toBe('server:ewoh_telemetry');
+    expect((provenance.fields as Record<string, string>).ergonomicRisk).toContain('unavailable');
+    // 客户端 facts 仅作对账提示留痕（accepted=false）。
+    const reconciliation = asProposal(result.proposal).clientFactsReconciliation as Record<string, unknown>;
+    expect(reconciliation.accepted).toBe(false);
     expect(rows[0]?.status).toBe('shadow_evaluated');
     expect(events.map((e) => e.eventType)).toEqual(['LearningProposalCreated']);
   });
 
-  it('propose 缺 facts → proposed（影子评估经 shadow 端点补做）', async () => {
+  it('R2-SBZ-004：propose 库内窗口为空 → proposed（即使客户端供给 facts 也不作证据）', async () => {
+    const { rows, service } = createProposalDb();
+    const result = await service.propose({ kind: 'rule_threshold', change: CHANGE, facts: FACTS }, ORG_A);
+    expect(asProposal(result.proposal).status).toBe('proposed');
+    expect(rows[0]?.status).toBe('proposed');
+  });
+
+  it('R2-SBZ-004：propose evaluationRef 未命中台账 → 显式拒绝（不接受伪造时间窗）', async () => {
     const { service } = createProposalDb();
+    await expect(
+      service.propose(
+        { kind: 'rule_threshold', change: CHANGE, evaluationRef: { evalId: 'eval-not-exist' } },
+        ORG_A,
+      ),
+    ).rejects.toThrow('evaluation_ref_not_found');
+  });
+
+  it('R2-SBZ-004：propose evaluationRef 命中 → 用台账 period 作窗口（org 作用域）', async () => {
+    const { service } = createProposalDb(
+      [],
+      {
+        telemetry: [telemetryRow(ORG_A)],
+        evaluations: [evaluationRow(ORG_A, { evalId: 'eval-bound-1' })],
+      },
+    );
+    const result = await service.propose(
+      { kind: 'rule_threshold', change: CHANGE, evaluationRef: { evalId: 'eval-bound-1' } },
+      ORG_A,
+    );
+    expect(asProposal(result.proposal).status).toBe('shadow_evaluated');
+    const provenance = asProposal(result.proposal).shadowFactsProvenance as Record<string, unknown>;
+    expect((provenance.window as Record<string, unknown>).basis).toBe('evaluationRef:eval-bound-1');
+  });
+
+  it('R2-SBZ-004：影子评估租户作用域——他租户遥测不进窗口', async () => {
+    const { service } = createProposalDb(
+      [],
+      { telemetry: [telemetryRow('org-b')] },
+    );
     const result = await service.propose({ kind: 'rule_threshold', change: CHANGE }, ORG_A);
     expect(asProposal(result.proposal).status).toBe('proposed');
   });
 
   it('proposalId 幂等：同 org+proposalId 回读且不重复发事件', async () => {
-    const { events, service } = createProposalDb();
-    const first = await service.propose({ proposalId: 'lp:fixed-1', kind: 'rule_threshold', change: CHANGE, facts: FACTS }, ORG_A);
+    const { events, service } = createProposalDb(
+      [],
+      { telemetry: [telemetryRow(ORG_A)] },
+    );
+    const first = await service.propose({ proposalId: 'lp:fixed-1', kind: 'rule_threshold', change: CHANGE }, ORG_A);
     expect(first.created).toBe(true);
-    const second = await service.propose({ proposalId: 'lp:fixed-1', kind: 'rule_threshold', change: CHANGE, facts: FACTS }, ORG_A);
+    const second = await service.propose({ proposalId: 'lp:fixed-1', kind: 'rule_threshold', change: CHANGE }, ORG_A);
     expect(second.created).toBe(false);
     expect(events).toHaveLength(1);
   });
@@ -210,14 +323,31 @@ describe('LearningProposalService（NO-12b 反馈腿）', () => {
     expect(thresholds).toEqual({ workload: 0.75 });
   });
 
-  it('shadow 端点：proposed→shadow_evaluated（补做影子评估）；非 proposed 拒绝', async () => {
-    const { rows, service } = createProposalDb([
-      rowOf('lp:p1', ORG_A, { status: 'proposed', shadowEvalJson: null }),
-      rowOf('lp:a1', ORG_A, { status: 'approved', approvedBy: 'person:x', approvedAt: new Date() }),
-    ]);
+  it('shadow 端点：proposed→shadow_evaluated（服务端窗口补做）；库内窗口为空 fail-closed；非 proposed 拒绝', async () => {
+    const { rows, service } = createProposalDb(
+      [
+        rowOf('lp:p1', ORG_A, { status: 'proposed', shadowEvalJson: null }),
+        rowOf('lp:p2', ORG_A, { id: '00000000-0000-4000-8000-000000000003', status: 'proposed', shadowEvalJson: null }),
+        rowOf('lp:a1', ORG_A, { id: '00000000-0000-4000-8000-000000000004', status: 'approved', approvedBy: 'person:x', approvedAt: new Date() }),
+      ],
+      {
+        // R2-SBZ-004：shadow 的证据窗口来自库内遥测（客户端 facts 不作证据）。
+        telemetry: [
+          telemetryRow(ORG_A, { entityId: 'person:p1', loadScore: 0.82, fatigueTrend: 0.8 }),
+          telemetryRow(ORG_A, { id: '00000000-0000-4000-8000-0000000000t2', entityId: 'person:p2', loadScore: 0.78, fatigueTrend: 0.75 }),
+        ],
+      },
+    );
     const result = await service.shadow(ORG_A, 'lp:p1', FACTS);
     expect(asProposal(result).status).toBe('shadow_evaluated');
     expect((rows[0]?.shadowEvalJson as Record<string, unknown>).factsCount).toBe(2);
+    // 客户端 facts 仅对账留痕。
+    expect((asProposal(result).clientFactsReconciliation as Record<string, unknown>).accepted).toBe(false);
+    // 库内无可重建窗口 → fail-closed（不接受客户端供给的证据）。
+    const emptyWindowDb = createProposalDb(
+      [rowOf('lp:p2', ORG_A, { status: 'proposed', shadowEvalJson: null })],
+    );
+    await expect(emptyWindowDb.service.shadow(ORG_A, 'lp:p2', FACTS)).rejects.toThrow('shadow_facts_window_empty');
     await expect(service.shadow(ORG_A, 'lp:a1', FACTS)).rejects.toThrow('非法提案转移');
   });
 

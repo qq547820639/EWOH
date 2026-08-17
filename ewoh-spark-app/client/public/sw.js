@@ -271,7 +271,26 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('message', (event) => {
   const data = event.data || {};
   if (data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
+    // R2-MSC-002：实现注释承诺的 fail-closed 门——页面请求提升新 worker 前，
+    // 读取 SET_CONTRACT 记录的服务端合约版本并比较 major；不符（或不可解析）
+    // 即拒绝激活（不 skipWaiting），通知页面回退 last-good shell，防止不兼容
+    // shell 在合约漂移期间被提升。
+    event.waitUntil(
+      (async () => {
+        if (await contractMismatch()) {
+          await notifyClients({
+            type: 'EWOH_SW_ROLLBACK',
+            from: currentCacheName(),
+            to: rollbackCacheName(await caches.keys(), currentCacheName()),
+            reason: 'contract-version mismatch',
+            recordedContract: await recordedContract(),
+            workerContract: API_CONTRACT_VERSION,
+          });
+          return;
+        }
+        self.skipWaiting();
+      })(),
+    );
     return;
   }
   if (data.type === 'SET_CONTRACT') {
@@ -279,11 +298,20 @@ self.addEventListener('message', (event) => {
     return;
   }
   if (data.type === 'GET_STATE') {
-    event.ports[0].postMessage({
-      version: SW_CACHE_VERSION,
-      contract: API_CONTRACT_VERSION,
-      cacheName: currentCacheName(),
-    });
+    // R2-MSC-002：返回实际记录的服务端合约版本（此前硬编码返回本地常量，
+    // 使诊断面无法发现漂移）；无记录时如实回退本地常量并标注。
+    event.waitUntil(
+      (async () => {
+        const recorded = await recordedContract();
+        event.ports[0].postMessage({
+          version: SW_CACHE_VERSION,
+          contract: recorded || API_CONTRACT_VERSION,
+          contractRecorded: recorded !== null,
+          contractMismatch: await contractMismatch(),
+          cacheName: currentCacheName(),
+        });
+      })(),
+    );
     return;
   }
 });

@@ -122,6 +122,8 @@ interface ReuseContext {
   /** NO-12v / ADR-045：契约形态工位能力（匹配优先）。 */
   stationCapabilityRecordsById: Map<string, CapabilityRecord[]>;
   stationCapacityById: Map<string, number | null>;
+  /** R2-SCH-006：工位可用窗口（eligibility 4h3 同判据）。 */
+  stationAvailableWindowsById: Map<string, Array<{ startMs: number; endMs: number }>>;
   stationMaintenanceBlockedById: Map<string, boolean>;
   stationQualityBlockedById: Map<string, boolean>;
   personPointById: Map<string, { x: number | null; y: number | null } | undefined>;
@@ -135,6 +137,10 @@ interface ReuseContext {
   stationSlotsById: Map<string, Array<{ stationId: string; start: number; end: number }>>;
   forbiddenZoneIds: string[];
   safetyBlockedPersonIds: string[];
+  /** R2-SCH-006：其他任务已锁定人员（eligibility 5 同判据）。 */
+  lockedPersonIds: string[];
+  /** R2-SCH-006：前置完成判定（eligibility predecessor 同判据）。 */
+  predecessorDone: (id: string) => boolean;
   lockedPersonByTask: Map<string, string>;
   lockedDeviceByTask: Map<string, string>;
   excludedPersonByTask: Map<string, Set<string>>;
@@ -373,6 +379,11 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     // 语义——活跃维护事实 / critical·high 活跃质量发现 → 封锁，fail-closed）。
     const stationMaintenanceBlockedById = new Map<string, boolean>();
     const stationQualityBlockedById = new Map<string, boolean>();
+    // R2-SCH-006：工位可用窗口索引（reuse fast-path 与枚举路径同判据）。
+    const stationAvailableWindowsById = new Map<
+      string,
+      Array<{ startMs: number; endMs: number }>
+    >();
     for (const s of snapshot.stations) {
       stationCapabilitiesById.set(s.id, s.capabilities ?? []);
       stationCapabilityRecordsById.set(s.id, s.capabilityRecords ?? []);
@@ -382,6 +393,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         s.id,
         qualityFindingsBlockDispatch(s.qualityFindings ?? null),
       );
+      stationAvailableWindowsById.set(s.id, s.availableWindows ?? []);
     }
     // 人员技能索引（staged candidate pipeline：按技能预筛人员）。
     const personBySkill = new Map<string, WorldStateSnapshot['persons'][number][]>();
@@ -783,6 +795,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           stationCapabilitiesById,
           stationCapabilityRecordsById,
           stationCapacityById,
+          stationAvailableWindowsById,
           stationMaintenanceBlockedById,
           stationQualityBlockedById,
           personPointById,
@@ -796,6 +809,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           stationSlotsById,
           forbiddenZoneIds,
           safetyBlockedPersonIds,
+          lockedPersonIds,
+          predecessorDone: predecessorDoneFn,
           lockedPersonByTask,
           lockedDeviceByTask,
           excludedPersonByTask,
@@ -832,6 +847,15 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       } else if (this.candidateEngine) {
         const enginePool = await this.candidateEngine.buildCandidatePool(task, snapshot, {
           nowMs: now,
+          // R2-SCH-002：变体策略（solveVariants 权重缩放）必须作用于 engine 候选评分。
+          policy,
+          // R2-SCH-001：任务最早开始下界 + 人员/设备占用顺延（与内联分支同语义）。
+          earliestStartMs,
+          bookedPersonFreeAt: bookedPerson,
+          bookedDeviceFreeAt: bookedDevice,
+          // R2-SCH-003：锁定时间/禁入区约束在 engine 路径同样生效（不再静默丢失）。
+          lockedTimeByTask,
+          forbiddenZoneIds,
           lockedPersonByTask,
           lockedDeviceByTask,
           excludedPersonByTask,
@@ -873,7 +897,9 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
             routeId: ev.routeCost?.routeCostId ?? null,
             etaSeconds: ev.routeCost?.etaSeconds ?? 0,
             distanceMeters: ev.routeCost?.distanceMeters ?? 0,
-            riskLevel: ev.routeCost && ev.routeCost.risk > 0 ? 'high' : null,
+            // R2-SCH-017：riskLevel 原样透传（与内联分支 routeCost.riskLevel 同源，
+            // 不再折叠为 risk>0?'high'——medium 等级不再丢失）。
+            riskLevel: ev.routeCost?.riskLevel ?? null,
             routeGeometry: ev.routeCost?.geometry ?? [],
             waitMs: ev.softCosts?.waitMs ?? 0,
             lateMs: ev.softCosts?.latenessMs ?? 0,
@@ -1804,6 +1830,59 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     ) {
       return null;
     }
+    // R2-SCH-006（2026-08-17）：完整 eligibility 复验（与枚举路径同判据）——补齐
+    // fast-path 此前缺失的维度：资源可用窗口(4h/4h1/4h2/4h3)/Task Window(4g)/
+    // 工位容量(4f)/锁定人员(5)/safetyCritical fail-close(11：STALE/UNKNOWN/DERIVED)。
+    // 手工前置检查（锁定/排除/占用快筛）保留：eligibility 不感知 LOCKED_*/EXCLUDED_*。
+    const reuseEligibility = this.eligibilityService.check(
+      personElig,
+      {
+        id: task.id,
+        taskType: task.taskType,
+        requiredSkills: task.requiredSkills ?? [],
+        skillMatchMode: task.skillMatchMode,
+        requiredCertifications: task.requiredCertifications ?? [],
+        stationId: task.stationId ?? null,
+        zoneId: task.zoneId ?? null,
+        predIds: task.predecessorIds ?? [],
+        requiredDeviceCapabilities: task.requiredDeviceCapabilities,
+        requiredStationCapabilities: task.requiredStationCapabilities,
+        candidateStations:
+          task.candidateStations && task.candidateStations.length > 0
+            ? task.candidateStations
+            : undefined,
+        earliestStartMs: task.earliestStartMs,
+        dueAtMs: task.dueAtMs,
+        safetyCritical: task.safetyCritical,
+      },
+      device ? ctx.eligibleDeviceById.get(device.id)! : null,
+      {
+        now: ctx.now,
+        bookedTimeSlots: ctx.personSlotsById.get(person.id) ?? [],
+        bookedDeviceSlots:
+          device != null ? ctx.deviceSlotsById.get(device.id) ?? [] : [],
+        bookedStationSlots:
+          entry.stationId != null
+            ? ctx.stationSlotsById.get(entry.stationId) ?? []
+            : [],
+        lockedPersonIds: ctx.lockedPersonIds,
+        forbiddenZones: ctx.forbiddenZoneIds,
+        minBatteryPct: ctx.effectiveMinBattery,
+        maxContinuousLoad: ctx.effectiveMaxLoad,
+        safetyBlockedPersonIds: ctx.safetyBlockedPersonIds,
+        predecessorDone: ctx.predecessorDone,
+        candidateStartMs: startMs,
+        candidateEndMs: endMs,
+        candidateStationId: entry.stationId,
+        stationCapacityById: ctx.stationCapacityById,
+        stationCapabilitiesById: ctx.stationCapabilitiesById,
+        stationCapabilityRecordsById: ctx.stationCapabilityRecordsById,
+        stationAvailableWindowsById: ctx.stationAvailableWindowsById,
+        stationMaintenanceBlockedById: ctx.stationMaintenanceBlockedById,
+        stationQualityBlockedById: ctx.stationQualityBlockedById,
+      },
+    );
+    if (!reuseEligibility.eligible) return null;
     if (entry.stationId) {
       const stationSlots = ctx.stationSlotsById.get(entry.stationId) ?? [];
       if (

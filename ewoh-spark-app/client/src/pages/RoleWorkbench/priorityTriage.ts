@@ -138,7 +138,7 @@ export function summarizeItem(
   return {
     reason: reason || '待处理事项',
     deadline: item.deadline
-      ? new Date(item.deadline).toLocaleString('zh-CN', { hour12: false })
+      ? new Date(item.deadline).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
       : '',
     impact: item.impact ?? '',
     owner: item.owner ?? '',

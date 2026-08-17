@@ -29,7 +29,7 @@ function formatUpdatedAt(ts: number | null | undefined): string {
   if (ts == null) return '未知';
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '未知';
-  return d.toLocaleTimeString('zh-CN', { hour12: false });
+  return d.toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 }
 
 function formatLagMs(lagMs: number | null | undefined): string {

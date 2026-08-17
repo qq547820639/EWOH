@@ -185,6 +185,11 @@ class Scheduler:
         req = self._get(request_id)
         if not reason or not str(reason).strip():
             raise ValueError("确认必须填写理由（spec：班组长确认时必须选择或填写理由）")
+        # R2-ESC-010：confirm 校验当前状态（与 promote_to_proposed 对称）——
+        # 仅 SHADOW/PROPOSED 可确认；REJECTED/EXECUTED 终态拒绝（人工否决不可
+        # 被 confirm 复活，EXECUTED 不可回退 CONFIRMED 重复执行）。
+        if req.status not in (SHADOW, PROPOSED):
+            raise ValueError(f"仅 SHADOW/PROPOSED 可确认，当前状态：{req.status}")
         record = {
             "request_id": request_id,
             "plan_id": plan_id,

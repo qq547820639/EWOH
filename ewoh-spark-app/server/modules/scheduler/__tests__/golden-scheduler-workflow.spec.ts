@@ -70,7 +70,9 @@ async function runScenario(scenario: Scenario): Promise<{ scenarioId: string; op
     ...scenario.seed,
     assignments: seedAssignments,
   });
-  const ctx = testOrgContext();
+  // R2-SSV-13（2026-08-17）：feedback 状态推进按受派者/可信角色授权——
+  // golden 工作流以调度席（dispatcher）视角驱动 E2E（受派代录合法路径）。
+  const ctx = { ...testOrgContext(), role: 'dispatcher' };
   const requestDatabaseContext = {
     runInTransaction: jest.fn(async (_guc: unknown, cb: () => Promise<void>) => {
       await cb();

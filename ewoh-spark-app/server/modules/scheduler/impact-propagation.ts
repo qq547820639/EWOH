@@ -10,14 +10,18 @@
  * 纯函数约束：无 DB、无注入、无随机源。同 snapshot + seed 恒同输出（确定性）。
  */
 import type { ReplanImpact, WorldStateSnapshot } from '@shared/api.interface';
-import { TaskLifecycle } from './task-lifecycle';
+import { TaskLifecycle, TASK_LOCKED_STATUSES } from './task-lifecycle';
 
 /** 传播停止条件缺省值（08 §3；可经 PropagateOptions 覆盖）。 */
 export const DEFAULT_MAX_PROPAGATION_DEPTH = 3;
 export const DEFAULT_MAX_AFFECTED_TASKS = 200;
 
-/** 冻结状态（与 impact-analyzer.ts FROZEN_STATUSES 同源）：executing/dispatched/in_progress。 */
-const FROZEN_STATUSES = new Set(['executing', 'dispatched', 'in_progress']);
+/**
+ * 冻结状态（与 impact-analyzer.ts FROZEN_STATUSES 同源）。
+ * R2-SCH-011（2026-08-17）：对齐 task-lifecycle TASK_LOCKED_STATUSES 契约
+ *（dispatched/received/executing/paused/exception；剔除非契约 in_progress）。
+ */
+const FROZEN_STATUSES = new Set<string>(TASK_LOCKED_STATUSES);
 
 /** 传播选项（全可选；缺省=设计默认）。 */
 export interface PropagateOptions {

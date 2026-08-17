@@ -18,7 +18,7 @@ export class WorldController {
     @Param('eventId') eventId: string,
     @Req() request?: { userContext?: OrgContext },
   ) {
-    return this.worldService.getEventChain(eventId);
+    return this.worldService.getEventChain(eventId, request?.userContext);
   }
 
   @Get('replay')

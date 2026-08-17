@@ -71,6 +71,15 @@ function createExoDb(rows: Array<Record<string, unknown>> = []) {
   const state = { rows: [...rows] };
   const events: Array<Record<string, unknown>> = [];
   let nextInsertError: unknown = null;
+  let nextEventInsertError: unknown = null;
+  // R2-SAM-005：模拟并发事务在 CAS UPDATE 前先行提交（后提交者应命中 0 行）。
+  let concurrentPatch: Record<string, unknown> | null = null;
+  function applyConcurrentPatchIfAny() {
+    if (concurrentPatch) {
+      for (const r of state.rows) Object.assign(r, concurrentPatch);
+      concurrentPatch = null;
+    }
+  }
   function thenable(data: unknown[]): unknown {
     return {
       then: (resolve: (v: unknown[]) => void) => resolve(data),
@@ -78,35 +87,97 @@ function createExoDb(rows: Array<Record<string, unknown>> = []) {
       limit: jest.fn(() => thenable(data.slice(0, 100))),
     };
   }
+  const insertInto = (table: unknown) => ({
+    values: jest.fn((row: Record<string, unknown>) => {
+      if (table === ewohEvent && nextEventInsertError) {
+        const err = nextEventInsertError;
+        nextEventInsertError = null;
+        throw err;
+      }
+      if (nextInsertError) {
+        const err = nextInsertError;
+        nextInsertError = null;
+        throw err;
+      }
+      if (table === ewohExoSession) state.rows.push(row);
+      if (table === ewohEvent) events.push(row);
+      return { returning: jest.fn(async () => [row]) };
+    }),
+  });
+  const updateIn = () => ({
+    set: jest.fn((patch: Record<string, unknown>) => ({
+      where: jest.fn((cond: unknown) => {
+        applyConcurrentPatchIfAny();
+        const hit = state.rows.filter((r) => matches(cond, r));
+        for (const r of hit) Object.assign(r, patch);
+        return { returning: jest.fn(async () => hit) };
+      }),
+    })),
+  });
   const db = {
     select: jest.fn(() => ({
       from: jest.fn(() => ({
-        where: jest.fn((cond: unknown) => thenable(state.rows.filter((r) => matches(cond, r)))),
+        // 返回行副本（对齐真实 drizzle 语义）：调用方持有的 current 不被
+        // 后续 UPDATE/并发 patch 就地污染（R2-SAM-005 CAS 断言依赖此语义）。
+        where: jest.fn((cond: unknown) =>
+          thenable(state.rows.filter((r) => matches(cond, r)).map((r) => ({ ...r }))),
+        ),
       })),
     })),
-    insert: jest.fn((table: unknown) => ({
-      values: jest.fn((row: Record<string, unknown>) => {
-        if (nextInsertError) {
-          const err = nextInsertError;
-          nextInsertError = null;
-          throw err;
-        }
+    insert: jest.fn(insertInto),
+    update: jest.fn(updateIn),
+    // R2-SAM-006：事务暂存语义——事务内写入/更新先暂存，回调成功才提交，
+    // 抛错整体回滚（模拟真实 DB 事务，供“事件失败回滚主事实”断言）。
+    transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => {
+      const pendingInserts: Array<{ table: unknown; row: Record<string, unknown> }> = [];
+      const pendingUpdates: Array<{ cond: unknown; patch: Record<string, unknown> }> = [];
+      const tx = {
+        insert: (table: unknown) => ({
+          values: jest.fn((row: Record<string, unknown>) => {
+            if (nextInsertError) {
+              const err = nextInsertError;
+              nextInsertError = null;
+              throw err;
+            }
+            if (table === ewohEvent && nextEventInsertError) {
+              const err = nextEventInsertError;
+              nextEventInsertError = null;
+              throw err;
+            }
+            pendingInserts.push({ table, row });
+            return { returning: jest.fn(async () => [row]) };
+          }),
+        }),
+        update: () => ({
+          set: jest.fn((patch: Record<string, unknown>) => ({
+            where: jest.fn((cond: unknown) => {
+              applyConcurrentPatchIfAny();
+              const hit = state.rows.filter((r) => matches(cond, r));
+              pendingUpdates.push({ cond, patch });
+              // returning 返回应用 patch 后的行副本（对齐真实 drizzle 语义）。
+              return { returning: jest.fn(async () => hit.map((r) => ({ ...r, ...patch }))) };
+            }),
+          })),
+        }),
+      };
+      const out = await cb(tx);
+      for (const { table, row } of pendingInserts) {
         if (table === ewohExoSession) state.rows.push(row);
         if (table === ewohEvent) events.push(row);
-        return { returning: jest.fn(async () => [row]) };
-      }),
-    })),
-    update: jest.fn((table: unknown) => ({
-      set: jest.fn((patch: Record<string, unknown>) => ({
-        where: jest.fn((cond: unknown) => {
-          const hit = state.rows.filter((r) => matches(cond, r));
-          for (const r of hit) Object.assign(r, patch);
-          return { returning: jest.fn(async () => hit) };
-        }),
-      })),
-    })),
+      }
+      for (const { cond, patch } of pendingUpdates) {
+        for (const r of state.rows.filter((r) => matches(cond, r))) Object.assign(r, patch);
+      }
+      return out;
+    }),
     __failNextInsertWith: (err: unknown) => {
       nextInsertError = err;
+    },
+    __failNextEventInsertWith: (err: unknown) => {
+      nextEventInsertError = err;
+    },
+    __simulateConcurrentUpdateBeforeNextWhere: (patch: Record<string, unknown>) => {
+      concurrentPatch = patch;
     },
   };
   const service = new ExoSessionService(db as never);
@@ -172,6 +243,47 @@ describe('ExoSessionService（ADR-032 / §7）', () => {
     await service.endSession(ORG_A, 'exo-session:s1', 'person:op1');
     const again = await service.endSession(ORG_A, 'exo-session:s1', 'person:op2');
     expect((again as Record<string, unknown>).status).toBe('ended');
+  });
+
+  // ── R2-SAM-005：terminate status CAS（并发 end+abort 不覆盖终态） ──
+
+  it('R2-SAM-005：并发终结先提交后，后提交者 CAS 命中 0 行 → 显式冲突且不覆盖终态、不发事件', async () => {
+    const { db, rows, events, service } = createExoDb([rowOf('exo-session:s1', ORG_A)]);
+    // 模拟并发：mustGet 读到 active 后、CAS UPDATE 提交前，另一终止事务先落地 ended。
+    db.__simulateConcurrentUpdateBeforeNextWhere({
+      status: 'ended',
+      endedBy: 'person:op-concurrent',
+    });
+    await expect(
+      service.abortSession(ORG_A, 'exo-session:s1', 'person:op1'),
+    ).rejects.toThrow('exo_session_state_changed_concurrently:active');
+    // 先提交者的终态（ended）不被后提交者（abort）覆盖（ADR-032 终态不可复开）。
+    expect(rows[0]?.status).toBe('ended');
+    expect(rows[0]?.endedBy).toBe('person:op-concurrent');
+    // 冲突路径不产生事件（无“已冲突仍留痕 Ended”的假事实）。
+    expect(events).toHaveLength(0);
+  });
+
+  // ── R2-SAM-006：主事实与事件同事务（事件失败整体回滚） ──
+
+  it('R2-SAM-006：start 事件写失败 → 事务回滚（会话不落库，无“绑定无留痕”半态）', async () => {
+    const { db, rows, events, service } = createExoDb();
+    db.__failNextEventInsertWith(new Error('event insert down'));
+    await expect(
+      service.start({ exoId: EXO_ID, personId: PERSON_ID }, ORG_A),
+    ).rejects.toThrow('event insert down');
+    expect(rows).toHaveLength(0);
+    expect(events).toHaveLength(0);
+  });
+
+  it('R2-SAM-006：terminate 事件写失败 → 事务回滚（会话保持 active，事件不残留）', async () => {
+    const { db, rows, events, service } = createExoDb([rowOf('exo-session:s1', ORG_A)]);
+    db.__failNextEventInsertWith(new Error('event insert down'));
+    await expect(
+      service.endSession(ORG_A, 'exo-session:s1', 'person:op1'),
+    ).rejects.toThrow('event insert down');
+    expect(rows[0]?.status).toBe('active');
+    expect(events).toHaveLength(0);
   });
 
   it('租户作用域：他租户会话不可见', async () => {

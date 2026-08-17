@@ -1,0 +1,24 @@
+{"id":"CLI-301","regression_status":"FIXED","evidence":"Timeline.tsx:309-338 evidence.url 经 sanitizeUrl 白名单后才渲染 <a target=_blank rel=noreferrer>，javascript:/data: 降级纯文本；Timeline.test.tsx:63-86 含该 XSS 回归用例"}
+{"id":"CLI-308","regression_status":"FIXED","evidence":"Timeline.tsx:164-178 copyId 主路径与回退路径统一写入 tl:${id}，行为分裂消除"}
+{"id":"CLI-309","regression_status":"FIXED","evidence":"Timeline.tsx:166-177 仅保留 navigator.clipboard.writeText，无 document.execCommand 回退，失败仅 toast 提示手动复制"}
+{"id":"CLI-329","regression_status":"FIXED","evidence":"Timeline.tsx:54-59 formatTime 显式 toLocaleString('zh-CN',{hour12:false,timeZone:'Asia/Shanghai'})，不随浏览器时区漂移"}
+{"id":"CLI-350","regression_status":"FIXED","evidence":"Timeline.tsx:28-52 SOURCE_STYLES 七类与 severityClass 全部改用 risk-*/warning/success/destructive/muted 令牌"}
+{"id":"CLI-305","regression_status":"FIXED","evidence":"ErrorState.tsx:119-122 parsed.message/parsed.recommendedAction 展示前经 sanitizeUserText 清洗（复用 AppErrorState 实现）"}
+{"id":"CLI-311","regression_status":"FIXED","evidence":"ErrorState.tsx:81-91 copyText 仅用 Clipboard API，不可用/失败返回 false 由调用方 toast 提示手动复制"}
+{"id":"CLI-339","regression_status":"FIXED","evidence":"ErrorState.tsx:41-75 KIND_PRESENTATION 五类全部改用 risk-degraded/offline/blocked 语义令牌"}
+{"id":"CLI-320","regression_status":"FIXED","evidence":"OnboardingQuickStart.tsx:69-88 改为 useState 惰性初始化 + window storage 事件监听跨 tab 同步，写后手动 refreshPrefs（但 shown 埋点仍在 render 路径，见新发现 R2-CC2-001）"}
+{"id":"CLI-324","regression_status":"FIXED","evidence":"Layout.tsx:49-58 handleLogout 对 revokeSession 包 try/catch，失败仍 navigate('/login',{replace:true}) 完成本地登出"}
+{"id":"CLI-341","regression_status":"PARTIAL","evidence":"Layout.tsx:70,196,207 任意 HSL 字面量已清除，但侧栏/顶栏仍硬编码 bg-white（无 dark 变体），dark 主题下不可读；ThemeToggle text-white/70 在白底 footer 上低对比 → 升级为新发现 R2-CC2-002"}
+{"id":"CLI-328","regression_status":"FIXED","evidence":"QueryState.tsx:91-96 更新时间 toLocaleTimeString('zh-CN',{hour12:false,timeZone:'Asia/Shanghai'})"}
+{"id":"CLI-338","regression_status":"FIXED","evidence":"DataStates.tsx:18-46 HEALTH_PRESENTATION 四态全部改用 risk-degraded/warning/risk-offline 语义令牌"}
+{"id":"CLI-344","regression_status":"FIXED","evidence":"PermissionState.tsx:52-55 容器与图标改用 border-risk-degraded-border/bg-risk-degraded-soft/text-risk-degraded 令牌"}
+{"id":"CLI-345","regression_status":"FIXED","evidence":"OfflineState.tsx:25-28 改用 border-risk-offline-border/bg-risk-offline-soft/text-risk-offline 令牌"}
+{"id":"CLI-401","regression_status":"FIXED","evidence":"ui/streamdown.tsx:15-44 MarkdownAnchor 对 href 做 sanitizeUrl 白名单（保留 streamdown:incomplete-link 内部标记），危险 scheme 降级为不可点击 span；streamdown.test.tsx:15-40 覆盖 javascript:/data:/vbscript:"}
+{"id":"CLI-410","regression_status":"FIXED","evidence":"ui/carousel.tsx:99-107 cleanup 同时 api.off('reInit',onSelect) 与 api.off('select',onSelect)，事件句柄不再泄漏"}
+{"id":"CLI-411","regression_status":"FIXED","evidence":"ui/sidebar.tsx:86-87 cookie 追加 SameSite=Lax，且 window.location.protocol==='https:' 时追加 Secure"}
+{"id":"CLI-412","regression_status":"FIXED","evidence":"ui/image.tsx:53-65 isTargetSrc 改为 new URL 解析 + 协议限定 http/https + parsed.pathname.startsWith(allowlist) 前缀比对，evil.com/?/runtime/... 子串绕过已封堵"}
+{"id":"CLI-413","regression_status":"PARTIAL","evidence":"ui/calendar.tsx:39-45 formatMonthDropdown 已固定 zh-CN+Asia/Shanghai；但 :198 CalendarDayButton 仍有 data-day={day.date.toLocaleDateString()} 依赖宿主 locale（仅 data 属性非用户可见，影响有限）"}
+{"id":"CLI-414","regression_status":"FIXED","evidence":"ui/chart.tsx:32-38,63-66,88-118 SAFE_CSS_COLOR/SAFE_CSS_IDENT 白名单：key 非法整条丢弃、color 非法丢弃该变量、id 清洗为安全标识符，dangerouslySetInnerHTML 注入面收敛"}
+{"id":"CLI-428","regression_status":"FIXED","evidence":"ui/image.tsx:141,181 渐变占位改用 from-muted/20 to-border/20 语义令牌"}
+{"id":"CLI-429","regression_status":"FIXED","evidence":"ui/slider.tsx:80 thumb 改用 bg-background 令牌，不再硬编码 bg-white"}
+{"id":"CLI-431","regression_status":"FIXED","evidence":"ui/icons/file-wiki-word-colorful-icon.tsx:3-20 注释确认删除 4 处重复 document 背景 path，现仅一份背景+一份折角+一份前景"}

@@ -18,7 +18,8 @@
 """
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Tuple
+from typing import Any, Callable
+
 
 # ---- RouteOutcome ----
 # 未命中：返回 NOT_HANDLED，由 registry 依次尝试下一域，最后回退到 server.py
@@ -47,11 +48,11 @@ class ReqMeta:
 
     method: str
     path: str
-    path_parts: Tuple[str, ...]
-    query: Dict[str, list]
+    path_parts: tuple[str, ...]
+    query: dict[str, list]
     body: Any
     headers: Any
-    client: Tuple
+    client: tuple
 
 
 class Route:

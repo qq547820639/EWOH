@@ -24,6 +24,18 @@ OBJECTIVE_LEVELS = {
 # int64 安全余量（2^63 - 1 ≈ 9.22e18）。
 _INT64_MAX = (2 ** 63) - 1
 
+# R2-ESC-001：软目标系数整数化刻度。CP-SAT 是纯整数求解器，线性表达式
+# 只接受整数系数；浮点权重/距离在构建期抛 TypeError。所有软目标系数统一
+# ×COEFF_SCALE 后四舍五入为整数（0.1 精度），未分配 scale 计算同步计入
+# 该刻度以保证字典序支配关系不变。
+COEFF_SCALE = 10
+
+
+def int_coeff(value: float) -> int:
+    """软目标系数整数化（×COEFF_SCALE 四舍五入；负值截 0，权重不允许为负）。"""
+    scaled = int(round(float(value) * COEFF_SCALE))
+    return scaled if scaled > 0 else 0
+
 
 def _soft_upper_bound(request) -> float:
     """计算软目标之和的保守上界（保证 >= 任何实际软目标之和）。"""
@@ -44,7 +56,9 @@ def _soft_upper_bound(request) -> float:
     # churn：每任务至多 1 次变更。
     churn_bound = n_tasks * max(float(w.churn), 0.0)
 
-    return lateness_bound + wait_bound + travel_bound + churn_bound
+    # R2-ESC-001：solver 侧系数已 ×COEFF_SCALE 整数化，上界同步乘刻度，
+    # 保证 unassigned_scale 仍严格支配缩放后的软目标之和。
+    return (lateness_bound + wait_bound + travel_bound + churn_bound) * COEFF_SCALE
 
 
 def compute_unassigned_scale(request) -> int:

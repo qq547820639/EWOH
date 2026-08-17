@@ -94,6 +94,7 @@ const GateHistoryDialog = ({
                     </td>
                     <td className="px-3 py-2 text-xs text-[hsl(218_10%_42%)]">
                       {new Date(entry.revokedAt ?? entry.decidedAt ?? '').toLocaleString('zh-CN', {
+                        timeZone: 'Asia/Shanghai',
                         hour12: false,
                       })}
                     </td>
@@ -325,7 +326,7 @@ const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => 
                           <StatusBadge status={gate.humanDecision} />
                           <span className="text-[10px] text-[hsl(218_10%_42%)]">
                             {gate.approver ? `审批人 ${gate.approver}` : ''}
-                            {gate.decidedAt ? ` · ${new Date(gate.decidedAt).toLocaleString('zh-CN', { hour12: false })}` : ''}
+                            {gate.decidedAt ? ` · ${new Date(gate.decidedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}` : ''}
                           </span>
                         </div>
                       ) : (

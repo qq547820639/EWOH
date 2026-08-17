@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import {
   ewohOrganization,
   ewohPersonnel,
@@ -9,6 +9,7 @@ import {
 } from '@server/database/schema';
 import { isValidUuid } from '@server/common/uuid';
 import { AuditService } from '../shared/audit.service';
+import type { OrgContext } from '../shared/org-context.interceptor';
 
 export interface OrgRecord {
   id: string;
@@ -201,6 +202,32 @@ export class OrganizationService {
    * orderBy，无界）。limit 缺省 200、上限 500；offset 缺省 0。
    * 返回保持数组形状（客户端契约兼容），大表翻页经 limit/offset。
    */
+  /**
+   * R2-SNZ-011：personnel 面租户谓词——非 global 请求限定 actor 租户
+   * （缺租户 fail-closed 400）；显式 orgId 参数仅允许 ∈ accessibleOrgIds
+   * （global_admin 放行任意，原先 workshop_lead 可枚举/篡改任意组织人员）。
+   */
+  private personnelOrgCondition(actor?: OrgContext, requestedOrgId?: string): SQL | undefined {
+    const requested = requestedOrgId?.trim();
+    if (actor?.isGlobalAdmin) {
+      return requested ? (eq(ewohPersonnel.orgId, requested) as SQL) : undefined;
+    }
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org context missing: personnel operations require tenant context',
+      );
+    }
+    if (requested && requested !== orgId) {
+      const accessible = (actor?.accessibleOrgIds ?? []).map((o) => o.trim());
+      if (!accessible.includes(requested)) {
+        throw new BadRequestException(`orgId ${requested} not accessible`);
+      }
+      return eq(ewohPersonnel.orgId, requested) as SQL;
+    }
+    return eq(ewohPersonnel.orgId, orgId) as SQL;
+  }
+
   async listPersonnel(
     query: {
       keyword?: string;
@@ -209,8 +236,11 @@ export class OrganizationService {
       limit?: number;
       offset?: number;
     },
+    actor?: OrgContext,
   ) {
     const conditions = [];
+    // R2-SNZ-011：租户谓词优先于用户 orgId 参数（后者仅做 accessible 收窄）。
+    conditions.push(this.personnelOrgCondition(actor, query.orgId));
     if (query.keyword) {
       const kw = `%${query.keyword}%`;
       conditions.push(
@@ -220,9 +250,6 @@ export class OrganizationService {
           ilike(ewohPersonnel.position, kw),
         ),
       );
-    }
-    if (query.orgId) {
-      conditions.push(eq(ewohPersonnel.orgId, query.orgId));
     }
     if (query.status) {
       conditions.push(eq(ewohPersonnel.status, query.status));
@@ -238,14 +265,16 @@ export class OrganizationService {
       .offset(offset);
   }
 
-  async getPersonnel(id: string, includeSensitive = false) {
+  async getPersonnel(id: string, includeSensitive = false, actor?: OrgContext) {
     if (!isValidUuid(id)) {
       throw new NotFoundException(`Personnel ${id} not found`);
     }
+    // R2-SNZ-011：按 id 定位同样限定租户（原先全局定位，跨租户可读）。
+    const orgCond = this.personnelOrgCondition(actor);
     const [row] = await this.db
       .select()
       .from(ewohPersonnel)
-      .where(eq(ewohPersonnel.id, id));
+      .where(orgCond ? and(eq(ewohPersonnel.id, id), orgCond) : eq(ewohPersonnel.id, id));
     if (!row) {
       throw new NotFoundException(`Personnel ${id} not found`);
     }
@@ -256,16 +285,21 @@ export class OrganizationService {
     return row;
   }
 
-  async createPersonnel(body: CreatePersonnelDto) {
+  async createPersonnel(body: CreatePersonnelDto, actor?: OrgContext) {
     if (!body.name?.trim() || !body.employeeNo?.trim()) {
       throw new BadRequestException('name and employeeNo are required');
     }
+    // R2-SNZ-011：行归属显式化——非 global 强制 actor 租户（body.orgId 仅
+    // 可指定 accessible org；global_admin 保留显式指定/缺省 primary）。
+    const personnelOrgId = this.personnelOrgCondition(actor, body.orgId) == null
+      ? (actor?.primaryOrgId?.trim() ?? body.orgId?.trim() ?? null)
+      : (body.orgId?.trim() ?? actor?.primaryOrgId?.trim() ?? null);
     const [row] = await this.db
       .insert(ewohPersonnel)
       .values({
         name: body.name.trim(),
         employeeNo: body.employeeNo.trim(),
-        orgId: body.orgId ?? null,
+        orgId: personnelOrgId,
         teamName: body.teamName ?? null,
         position: body.position ?? null,
         skills: body.skills ?? [],
@@ -287,22 +321,30 @@ export class OrganizationService {
     return row;
   }
 
-  async updatePersonnel(id: string, body: Partial<CreatePersonnelDto>) {
+  async updatePersonnel(id: string, body: Partial<CreatePersonnelDto>, actor?: OrgContext) {
     if (!isValidUuid(id)) {
       throw new NotFoundException(`Personnel ${id} not found`);
+    }
+    // R2-SNZ-011：变更谓词带租户（原先按 id 全局定位可跨租户篡改）；
+    // orgId 字段变更走 personnelOrgCondition 校验（仅 accessible 可选）。
+    const orgCond = this.personnelOrgCondition(actor);
+    if (body.orgId !== undefined) {
+      this.personnelOrgCondition(actor, body.orgId ?? undefined);
     }
     const [row] = await this.db
       .update(ewohPersonnel)
       .set({
         ...(body.name !== undefined ? { name: body.name.trim() } : {}),
         ...(body.employeeNo !== undefined ? { employeeNo: body.employeeNo.trim() } : {}),
-        ...(body.orgId !== undefined ? { orgId: body.orgId } : {}),
+        ...(body.orgId !== undefined
+          ? { orgId: body.orgId?.trim() ?? null }
+          : {}),
         ...(body.teamName !== undefined ? { teamName: body.teamName } : {}),
         ...(body.position !== undefined ? { position: body.position } : {}),
         ...(body.skills !== undefined ? { skills: body.skills } : {}),
         ...(body.status !== undefined ? { status: body.status } : {}),
       })
-      .where(eq(ewohPersonnel.id, id))
+      .where(orgCond ? and(eq(ewohPersonnel.id, id), orgCond) : eq(ewohPersonnel.id, id))
       .returning();
     if (!row) {
       throw new NotFoundException(`Personnel ${id} not found`);
@@ -322,19 +364,24 @@ export class OrganizationService {
     return row;
   }
 
-  async getPersonnelBindings(personnelId: string) {
+  async getPersonnelBindings(personnelId: string, actor?: OrgContext) {
     if (!isValidUuid(personnelId)) {
       throw new NotFoundException(`Personnel ${personnelId} not found`);
     }
+    // R2-SNZ-011：先校验人员对本调用者可见（跨租户 personnelId 404），
+    // 绑定行同样限定租户（global_admin 放行）。
+    await this.getPersonnel(personnelId, false, actor);
+    const orgCond = actor?.isGlobalAdmin
+      ? undefined
+      : eq(ewohDeviceBinding.orgId, actor?.primaryOrgId?.trim() ?? '__none__');
+    const bindingCond = or(
+      eq(ewohDeviceBinding.targetId, personnelId),
+      eq(ewohDeviceBinding.operatorId, personnelId),
+    );
     return this.db
       .select()
       .from(ewohDeviceBinding)
-      .where(
-        or(
-          eq(ewohDeviceBinding.targetId, personnelId),
-          eq(ewohDeviceBinding.operatorId, personnelId),
-        ),
-      )
+      .where(orgCond ? and(bindingCond, orgCond) : bindingCond)
       .orderBy(desc(ewohDeviceBinding.startTime));
   }
 }

@@ -101,8 +101,8 @@ class UWBAdapter(BaseAdapter):
             msg = parse_uwb_frame(raw, beacons=self.beacons, tags=self.tags, default_source_type=self.source_type)
             self._inbox.put_nowait(msg)
         except queue.Full:
-            # 背压：直接丢新帧，避免阻塞驱动线程；生产实现可接入丢包计数
-            pass
+            # 背压：直接丢新帧避免阻塞驱动线程（R2-ECO-005：计数+限频日志可观测）
+            self.record_dropped_frame()
 
 
 class SimulatedUWBAdapter(UWBAdapter):
@@ -158,7 +158,7 @@ class SimulatedUWBAdapter(UWBAdapter):
             try:
                 self._inbox.put_nowait(msg)
             except queue.Full:
-                pass
+                self.record_dropped_frame()
             idx += 1
             self._stop_evt.wait(period)
 

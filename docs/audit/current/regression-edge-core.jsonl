@@ -1,0 +1,56 @@
+{"id":"EDGE-001","regression_status":"FIXED_VERIFIED","evidence":"server.py:422-471 _production_read_guard 对全部 /api/* 与 /metrics GET 要求 action 映射+有效 Bearer+RBAC，未映射路径 401（fail-closed）"}
+{"id":"EDGE-002","regression_status":"FIXED_VERIFIED","evidence":"routes/inference.py:196-233 不再接受 api_key/base_url 覆盖（仅 model 名）；perception/ark_vision.py:127-142 base_url/image_url 经 validate_outbound_url 公网校验"}
+{"id":"EDGE-003","regression_status":"FIXED_VERIFIED","evidence":"edge/storage.py:465-544 start/end/get/list_active_binding_for_exo/list_bindings 全部 with self._lock；init_db:308-311 建 (exo_id WHERE status='active') partial 唯一索引"}
+{"id":"EDGE-004","regression_status":"FIXED_VERIFIED","evidence":"edge/storage.py:380-413 _query_window_rows SQL WHERE device_id+ts BETWEEN+LIMIT 走 idx_telemetry_device_ts，双偏移族查询合并后精确过滤"}
+{"id":"EDGE-005","regression_status":"FIXED_VERIFIED","evidence":"edge/storage.py:579-593 query_inference 同样走 _query_window_rows（idx_inference_device_ts）"}
+{"id":"EDGE-006","regression_status":"FIXED_VERIFIED","evidence":"routes/scheduler.py:29-33 MAX_SSE_CONNECTIONS=20+SSE_MAX_DURATION_SEC=3600；75-122 超限 503、TTL 到期服务端断开、finally 递减计数"}
+{"id":"EDGE-007","regression_status":"PARTIALLY_FIXED","evidence":"auth/identity.py:94-100 已升级 PBKDF2-HMAC-SHA256 200k+compare_digest；但 _SEED_ACCOUNTS:60-64 仍硬编码 admin123/safety123/operator123，且无环境变量口令覆盖/首登改密机制（grep 无 EWOH_*PASSWORD*）"}
+{"id":"EDGE-008","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:244-245 _action_for_write 首条显式 /api/event/status → HANDLE_EVENTS，legacy 端点不再绕过 RBAC"}
+{"id":"EDGE-009","regression_status":"FIXED_VERIFIED","evidence":"server.py:626-629 改用 ssl.SSLContext(PROTOCOL_TLS_SERVER)+minimum_version=TLSv1_2+load_cert_chain"}
+{"id":"EDGE-010","regression_status":"FIXED_VERIFIED","evidence":"routes/scheduler.py:36-40 _SOLVE_MAX_TASKS=CPSAT_WORKER_MAX_TASKS+ThreadPoolExecutor(max_workers=2)；540-557 规模超限 413、future.result(timeout) 返回 TIMEOUT 形状"}
+{"id":"EDGE-011","regression_status":"PARTIALLY_FIXED","evidence":"routes/exo.py:157-167 production 增加归属校验，但比对的是客户端自报 body.endedBy（158-160 role!=admin and ended_by!=target.person_id），攻击者可从设备 API 获知 person_id 后伪造 endedBy 绕过（见新发现 R2-ECO-001）"}
+{"id":"EDGE-012","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:254-255 /api/reset → MANAGE_DATA，矩阵中仅 ADMIN 为 True"}
+{"id":"EDGE-013","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:214-215 /api/person/profile → VIEW_PERSONNEL（viewer=False），production guard 强制认证"}
+{"id":"EDGE-014","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:214-215 /api/people → VIEW_PERSONNEL，production 下无 token 401"}
+{"id":"EDGE-015","regression_status":"FIXED_VERIFIED","evidence":"auth/session.py:69-89 _sweep_if_due 60s 周期清理过期会话/失败计数/锁定条目（create/login 惰性触发）"}
+{"id":"EDGE-016","regression_status":"FIXED_VERIFIED","evidence":"security.py:89-98 _sweep 淘汰空桶与全过期桶；105-106 超 _MAX_BUCKETS=4096 触发清扫"}
+{"id":"EDGE-017","regression_status":"FIXED_VERIFIED","evidence":"auth/session.py:61-63+176-187 login 失败按 username 与 client_ip 双维度计数，任一达阈值锁 5 分钟；routes/auth.py:193-195 传入 client_ip"}
+{"id":"EDGE-018","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:204-205 /metrics → VIEW_TELEMETRY；server.py:427 guard 覆盖 /metrics"}
+{"id":"EDGE-019","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:224 /api/status → VIEW_TELEMETRY，production guard 强制认证+RBAC"}
+{"id":"EDGE-020","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:210-211 /api/security/policy → VIEW_AUDIT（data_analyst/viewer 不可见），production guard 强制 token"}
+{"id":"EDGE-021","regression_status":"FIXED_VERIFIED","evidence":"routes/world.py:27+43-46 min(limit,MAX_EVENTS_LIMIT=1000) 且 ValueError 回落 100；edge/storage.py:624 服务层再 min(MAX_LIST_EVENTS_LIMIT)"}
+{"id":"EDGE-022","regression_status":"FIXED_VERIFIED","evidence":"routes/scheduler.py:43-44+249-261 task_ids 须非空列表 ≤200，元素为 1..64 字符非空字符串"}
+{"id":"EDGE-023","regression_status":"FIXED_VERIFIED","evidence":"routes/scheduler.py:186-194 api_create_task 字段白名单不含 task_id，服务端 create_task 生成；grep 路由层无 task_id 透传"}
+{"id":"EDGE-024","regression_status":"FIXED_VERIFIED","evidence":"routes/auth.py:21+114-125 _refresh_lock 包住 verify+revoke+create 原子段，并发刷新仅一个成功"}
+{"id":"EDGE-025","regression_status":"FIXED_VERIFIED","evidence":"server.py:467-470 未命中 /api/* 与 /metrics 的 GET 返回 404 JSON，不再回退 SPA"}
+{"id":"EDGE-026","regression_status":"FIXED_VERIFIED","evidence":"edge/storage.py:292-297 构造时 os.chmod(db_path,0o600)（OSError 容错），:memory: 场景忽略"}
+{"id":"EDGE-027","regression_status":"FIXED_VERIFIED","evidence":"routes/auth.py:98-101 demo token 角色 admin→operator（无规则/模型/派工管理权）"}
+{"id":"EDGE-028","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:231-232 /api/tasks 前缀 → VIEW_EVENTS，production guard 强制认证"}
+{"id":"EDGE-029","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:232-234 /api/scheduling 前缀（含 requests/{id}/plans/{id}）→ VIEW_EVENTS"}
+{"id":"EDGE-030","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:232-238 /api/assignments、/api/scheduling/requests、/api/scheduling/plans → VIEW_EVENTS"}
+{"id":"EDGE-031","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:218-230 /api/inference、/api/inference/metrics → VIEW_TELEMETRY"}
+{"id":"EDGE-032","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:222-223 /api/models、/api/rules → VIEW_TELEMETRY"}
+{"id":"EDGE-033","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:216-217 /api/events 与 /api/event → VIEW_EVENTS"}
+{"id":"EDGE-034","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:218-219 /api/telemetry 前缀（含 series）→ VIEW_TELEMETRY；export 单独 EXPORT_DATA"}
+{"id":"EDGE-035","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:235 /api/world/ 前缀（snapshot/replay）→ VIEW_EVENTS，production guard 强制 token"}
+{"id":"EDGE-036","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:226 /api/resources/ 前缀 → VIEW_TELEMETRY"}
+{"id":"EDGE-037","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:225 /api/scheduler/ 前缀（含 v2/solver/health）→ VIEW_TELEMETRY"}
+{"id":"EDGE-038","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:256-257 /api/world/ 写路径 → MANAGE_WORLD（矩阵仅 ADMIN=True）"}
+{"id":"EDGE-039","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:260-261 /api/andon/ 前缀 → RAISE_ANDON（operator/safety_officer/admin 可，viewer/data_analyst 否）"}
+{"id":"EDGE-040","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:262-263 /api/exo/ → MANAGE_DEVICES；TOCTOU 由 storage.init_db 唯一索引+routes/exo.py:83-88 start_binding 异常转 409 兜底"}
+{"id":"EDGE-041","regression_status":"PARTIALLY_FIXED","evidence":"edge/bridge/event_uplink.py:76-81 与 metrics_uplink.py:77-82 production 拒绝明文 http（disabled_reason）；但 edge_to_spark.py:282-300 SparkBridge 及 modeling/lidar_collector.py、splat_collector.py、locator_fusion.py 的 X-Ingest-Key 仍可经 http:// 明文出站（见 R2-ECO-006）"}
+{"id":"EDGE-042","regression_status":"FIXED_VERIFIED","evidence":"edge/manager.py:308-333 read_message 连续失败指数退避（1s→60s 封顶），≥10 次升级 ERROR degraded 日志"}
+{"id":"EDGE-043","regression_status":"FIXED_VERIFIED","evidence":"edge/manager.py:338-351 insert_telemetry 失败有界重试 2 次，最终失败 logger.error 留痕（不再静默丢帧）"}
+{"id":"EDGE-044","regression_status":"FIXED_VERIFIED","evidence":"services.py:172-184 recommend 一次性预取 events/latest_cache/day_rows_cache；person_metrics:109-135 接受缓存参数复用，消除 N+1"}
+{"id":"EDGE-045","regression_status":"FIXED_VERIFIED","evidence":"routes/_util.py:19-26 offline_after_sec/evidence_window_sec 改为运行时读取 Settings.load() 的函数"}
+{"id":"EDGE-046","regression_status":"STILL_PRESENT","evidence":"grep validate_input：src 下仍仅 security.py 定义+tests/ 调用（test_security.py、test_security_boundary.py），无任何 routes/生产代码接入写端点校验"}
+{"id":"EDGE-047","regression_status":"FIXED_VERIFIED","evidence":"routes/scheduler.py:527-565 route_solve ValueError→400 invalid_request，其余异常 _log_internal_error+500 solver_error（类名脱敏）"}
+{"id":"EDGE-048","regression_status":"FIXED_VERIFIED","evidence":"rbac/permissions.py:258-259 /api/query、/api/scenario/、/api/vision/understand → QUERY_ASSISTANT 显式动作"}
+{"id":"EDGE-049","regression_status":"FIXED_VERIFIED","evidence":"services.py:402-406 拒绝规则同时匹配原文 q 与去空白 q_compact，阻断'医学 诊断'分隔混淆"}
+{"id":"EDGE-050","regression_status":"FIXED_VERIFIED","evidence":"services.py:409-586 分支重排：负荷(410)/事件(434)/人选(482)/动作(501) 强意图先判，'在线设备'泛化分支(565)最后"}
+{"id":"EDGE-051","regression_status":"FIXED_VERIFIED","evidence":"services.py:616-643 num() 带 lo/hi 钳制：评分维度 0..5，people 0..100000，负值/巨大值被夹断"}
+{"id":"EDGE-052","regression_status":"FIXED_VERIFIED","evidence":"routes/auth.py:155-158 production 下 sm=None 直接 503 auth_unavailable，不落 demo token 分支"}
+{"id":"EDGE-125","regression_status":"FIXED_VERIFIED","evidence":"governance/model_registry.py:260-274 promote_to_shadow 每次调用输出 logging.warning deprecated 审计告警（EDGE-125 标注），docstring 明确正规链路"}
+{"id":"EDGE-204","regression_status":"FIXED_VERIFIED","evidence":"backup/manager.py:30-31 _SAFE_TABLE_NAME 白名单正则；122-126 非法表名 raise ValueError 拒绝拼入 SQL"}
+{"id":"EDGE-205","regression_status":"FIXED_VERIFIED","evidence":"backup/manager.py:149-156 restore 目标 realpath 必须在 allowed_restore_root 内否则 ValueError；缺省 root 在首次 backup 锁定为源库父目录（63-65），scripts/backup_db.py:83 显式传 root"}
+{"id":"EDGE-210","regression_status":"FIXED_VERIFIED","evidence":"monitoring/collector.py:173-187 snapshot 派生指标异常 _LOGGER.warning 留痕（list_events/counts 失败均记录），不再静默吞"}

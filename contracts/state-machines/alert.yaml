@@ -13,4 +13,6 @@ transitions:
   - { from: closed, to: reopened, role: safety_admin, condition: reopen }
   - { from: reopened, to: acknowledged, role: handler, condition: confirm_reopen }
   - { from: reopened, to: processing, role: handler, condition: direct_handling }
-terminal: [closed]
+# NEST-626：closed 可经 safety_admin reopen 复开（closed→reopened 出边），
+# 告警生命周期为环状——terminal 为空集，与 transitions 声明一致。
+terminal: []

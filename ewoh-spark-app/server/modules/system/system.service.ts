@@ -129,15 +129,21 @@ export class SystemService {
       throw new UnauthorizedException('Authenticated user context is required');
     }
     const actor = updatedBy.trim();
-    // NEST-642：insert 显式携带 orgId（冲突目标含 orgId 但 values 原先不带，
-    // 依赖 GUC 默认；显式写入后不依赖请求级 GUC 状态）。
+    // NEST-642 + R2-SNZ-016：insert 显式携带 orgId，缺省 fail-closed 400
+    // （原先三元省略依赖 GUC default，GUC 缺失时裸 23502/500 而非显式 400）。
+    const targetOrgId = orgId?.trim();
+    if (!targetOrgId) {
+      throw new BadRequestException(
+        'org context missing: config writes require tenant context',
+      );
+    }
     const [row] = await this.db
       .insert(ewohSchedulerConfig)
       .values({
         configKey: key.trim(),
         configValue: configValue as Record<string, unknown>,
         updatedBy: actor,
-        ...(orgId?.trim() ? { orgId: orgId.trim() } : {}),
+        orgId: targetOrgId,
       })
       .onConflictDoUpdate({
         target: [ewohSchedulerConfig.orgId, ewohSchedulerConfig.configKey],

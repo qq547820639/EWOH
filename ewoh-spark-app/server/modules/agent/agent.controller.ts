@@ -76,9 +76,11 @@ export class AgentController {
   /** NO-06c：工厂主管 Agent 建议流（读世界状态 → 结构化建议 → 审批桥接）。 */
   @Post('supervisor/run')
   runSupervisor(@Req() request?: { userContext?: OrgContext }) {
+    // R2-SBZ-002：透传 userContext（OrgContext），世界状态读取按 primaryOrgId
+    // 过滤——不再仅传 userId 导致 collectState 无租户谓词的全租户聚合。
     return this.agentService.runSupervisorSuggestion(
       this.currentOrgId(request),
-      { userId: request?.userContext?.userId ?? 'system' },
+      request?.userContext,
     );
   }
 

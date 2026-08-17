@@ -11,14 +11,36 @@
 # ============================================================================
 
 meta:
-  updated_at: "2026-08-16"
+  updated_at: "2026-08-18"
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
-  git_head: "d47fe96"                     # 更新时的 main HEAD（git log -1；R-1~R-102 一揽子提交）
-  rounds_elapsed: 102
+  git_head: "58b7819"                     # 更新时的 main HEAD（git log -1；本轮二轮审计工作区提交前的基线）
+  rounds_elapsed: 103
 
-current_phase: "Phase 12 收口后深化（NO-13af 完成：resource.service 完整 drizzle 化 + 语义假库 ADR-081，R-102——§15/§31 收口）→ 剩余 1 项 Partial 深化推进（矩阵口径 54/1/0/1；NO-13ag resource 读面 org 守卫 + Scheduling/Devices 数据页渲染 smoke 下一候选）"
+current_phase: "Phase 12 收口后深化（R-103 二轮全仓逐行审计 + 架构收敛 + 全量回归：325 发现全闭环 189 FIXED/136 DISPOSITIONED，P0/P1 100% 关闭，交付 docs/audit/current/ 16 份报告）→ 遗留架构债/环境债已登记（Decision 域提升、Event 骨干抽取、RLS e2e 扩面、CI 环境阻塞项）"
 phase_summary: >
+  Round 103 完成二轮全仓逐行审计（基线 58b7819）：2095 活跃文件
+  /399,261 行全覆盖 reviewed；新发现 325 条（P0 1/P1 33/P2 108/
+  P3 183）全部闭环——FIXED 189 + DISPOSITIONED 136（p2p3-
+  dispositions.md 可对账），无 OPEN。根因三足鼎立：租户谓词缺失
+  75（23%）+ schema/契约双口径漂移 58（17%）+ 幂等/CAS/事务边界
+  52（16%）。关键修复：P0 R2-SMI-001 高危指令审批链接入
+  ApprovalPersistenceService（INV-005）；幂等 claim/release
+  exactly-once + standalone_060 幂等租户维度（org_id+复合唯一+
+  RLS）；standalone_059 spatial_entity (org_id,entity_id) 复合
+  唯一；schema.ts↔迁移逐表对账（15 表 orgId NOT NULL）；2 个新
+  契约结构门禁（world_state_const_vs_rules / state_machine_
+  terminal_no_outgoing_edge 覆盖 7 yaml）；SSRF 固定 IP 直连+
+  逐跳复检、边缘 8 处 innerHTML esc()、飞书读端点 fail-closed
+  鉴权；TASK_LOCKED_STATUSES 单一事实源；make
+  audit-regression-gates 十条主线门禁全绿。全量回归：unittest
+  979 OK、pytest 681+11 skip、golden 330+6、tsc -b 0 错误、
+  client jest 127/1022、server jest 290 suites/2247 tests 全过
+  （openapi-route-parity 收敛：ewoh.yaml 补 download 端点 +
+  gen:openapi 再生成）、openapi:no-drift OK、truth-check
+  584/584。ENVIRONMENT_BLOCKED（bandit/空库迁移链/e2e/浏览器/
+  ortools）如实登记 test-report.md §3。16 份交付报告见
+  docs/audit/current/（final-assessment.md 回答 20 问）。
   Round 102 完成 NO-13af（ADR-081）：resource.service 完整 drizzle
   化（§3/§15/§30/§31）——schema.ts 补 ewohResourcePreorder 映射 +
   服务 12 处 raw SQL → drizzle 链式重写 + 写入 orgId 注入 +
@@ -1723,8 +1745,11 @@ authoritative_sources:
     role: 长期 Agent 外置记忆（本文件）
 
 test_status:
-  as_of: "2026-08-16"
+  as_of: "2026-08-18"
   gates:
+    - name: 二轮审计全量回归（Round 103）
+      result: "unittest 979 OK；pytest 契约 681 passed/11 skipped；golden 330+6；状态机 5；production-smoke 11；tsc -b 0 错误；client jest 127 suites/1022 tests；server jest 290 suites/2247 tests 全过；lint/truth-check(584/584)/audit-regression-gates 十条/contract 族/scheduler-golden/openapi:no-drift 全绿；bandit 与真实环境依赖项 ENVIRONMENT_BLOCKED 如实登记（docs/audit/current/test-report.md）"
+      status: PASS
     - name: NO-13u Model Training Policy 测试（Round 91）
       result: "provider spec org 键控更新（10 例：org 命中 ml / 他租户不共享确定性回退 / 缺 org 显式确定性回退 / 分组优先 org 全局两级回退）；training spec org 命名空间 + 跨租户隔离（他租户反馈不参与本租户训练）+ 缺 orgId 400（9 例）；default jest 266 suites 1976→1978 tests 全绿；双 tsc PASS"
       status: PASS
@@ -2629,6 +2654,17 @@ test_status:
       evidence: docs/reviews/codebase-walkthrough-2026-08-14.md §5
 
 next_objectives:
+  - id: NO-14
+    phase: Phase 12
+    summary: 二轮审计（R-103）遗留项推进——架构债：Decision 域提升
+      （arch-decision §6.2 三步迁移）、Event Backbone 抽共享骨干
+      （envelope 覆盖率 44%/37.5%）、World A4 空转协议面/WS- 版本
+      双分配器/端点重名异义（arch-world 迁移路径 1/4/6）、
+      R2-SSV-23 decision-history 服务端分页（DEFERRED，需契约+索引
+      迁移）；测试债：RLS 行为级 e2e 1→48 表扩面、MES/ERP/OEE/
+      scale 跨租户 e2e、browser 层租户覆盖；环境债：bandit/空库
+      迁移链/e2e/Playwright/ortools 在 CI 真实执行（final-
+      assessment.md Q19）
   - id: NO-01
     phase: Phase 1
     summary: 完成 capability-matrix.yaml 与 target-state 的逐项差距确认（已建立骨架；
@@ -2689,5 +2725,5 @@ next_objectives:
       已完成。每项按既有纪律：ADR → 契约/门禁 → 运行时 → Golden →
       §36 评估
 
-round_report_file: docs/agent/round-reports/2026-08-16-round-102.md
+round_report_file: docs/audit/current/final-assessment.md  # Round 103 报告即二轮审计终评（16 份交付见 docs/audit/current/）
 

@@ -3151,6 +3151,57 @@ if (!e2eConfig) {
       );
       expect(hidden.status).toBe(403);
 
+      // R2-APT-006：viewer 403 只证明 RBAC 角色拒绝（viewer 对任何 org 的
+      // config 都 403），不构成 org 隔离证据。真正的跨租户断言：
+      //  - dispatcherB（同认证面、org 作用域）读 orgA 的 feature flag → 404；
+      //  - dispatcherB 读 config 面 → 403（角色面）；
+      //  - globalAdminB 跨 org 读放行为 NEST-614 既定全局例外（与 RLS 例外
+      //    路径一致），此处显式断言该例外语义，防止未来静默漂移。
+      const featureKey = `feature.e2e-org-${runId}`;
+      const flagSet = await apiRequest(
+        baseUrl,
+        `/api/system/feature-flags/${featureKey}`,
+        {
+          method: 'PUT',
+          headers: jsonHeaders(adminA.body.accessToken),
+          body: JSON.stringify({ enabled: true, metadata: {} }),
+        },
+      );
+      expect(flagSet.status).toBe(201);
+
+      const dispatcherBLogin = await login(
+        baseUrl,
+        fixture!.dispatcherB.username,
+        fixture!.dispatcherB.password,
+      );
+      expect(dispatcherBLogin.status).toBe(201);
+      const flagHidden = await apiRequest(
+        baseUrl,
+        `/api/system/feature-flags/${featureKey}`,
+        { headers: jsonHeaders(dispatcherBLogin.body.accessToken) },
+      );
+      expect(flagHidden.status).toBe(404);
+      const configForbidden = await apiRequest(
+        baseUrl,
+        `/api/system/config/${configKey}`,
+        { headers: jsonHeaders(dispatcherBLogin.body.accessToken) },
+      );
+      expect(configForbidden.status).toBe(403);
+
+      const globalAdminBLogin = await login(
+        baseUrl,
+        fixture!.globalAdminB.username,
+        fixture!.globalAdminB.password,
+      );
+      expect(globalAdminBLogin.status).toBe(201);
+      const crossOrgRead = await apiRequest<{ configValue: unknown }>(
+        baseUrl,
+        `/api/system/config/${configKey}`,
+        { headers: jsonHeaders(globalAdminBLogin.body.accessToken) },
+      );
+      expect(crossOrgRead.status).toBe(200);
+      expect(crossOrgRead.body.configValue).toEqual({ scope: 'org-a-only', ok: true });
+
       const own = await apiRequest<{ configKey: string; configValue: unknown }>(
         baseUrl,
         `/api/system/config/${configKey}`,
@@ -3368,6 +3419,31 @@ if (!e2eConfig) {
         { headers: jsonHeaders(viewerB.body.accessToken) },
       );
       expect(forbidden.status).toBe(403);
+
+      // R2-APT-006：viewer 403 是角色拒绝而非 org 隔离。同角色跨 org 断言：
+      // dispatcherB（与 dispatcherA 同角色）的列表/汇总不得包含 orgA 行。
+      const dispatcherBLogin = await login(
+        baseUrl,
+        fixture!.dispatcherB.username,
+        fixture!.dispatcherB.password,
+      );
+      expect(dispatcherBLogin.status).toBe(201);
+      const orgBAssets = await apiRequest<Array<{ assetId: string }>>(
+        baseUrl,
+        '/api/operations/assets',
+        { headers: jsonHeaders(dispatcherBLogin.body.accessToken) },
+      );
+      expect(orgBAssets.status).toBe(200);
+      expect(
+        orgBAssets.body.some((row) => row.assetId === asset.body.assetId),
+      ).toBe(false);
+      const orgBSummary = await apiRequest<{ assetCount: number }>(
+        baseUrl,
+        '/api/operations/summary',
+        { headers: jsonHeaders(dispatcherBLogin.body.accessToken) },
+      );
+      expect(orgBSummary.status).toBe(200);
+      expect(orgBSummary.body.assetCount).toBe(0);
 
       const configRows = await owner!.unsafe<
         Array<{ org_id: string }>

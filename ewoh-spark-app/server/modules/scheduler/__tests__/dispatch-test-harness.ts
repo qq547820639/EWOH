@@ -57,6 +57,88 @@ function makeQuery(rowsProvider: () => Array<Record<string, unknown>>) {
   return q;
 }
 
+/**
+ * R2-SPT-003：drizzle SQL 谓词对象的 DB 列名 → 行字段名映射（update 定位行用）。
+ */
+const COL_TO_KEY: Record<string, string> = {
+  plan_id: 'planId',
+  assignment_id: 'assignmentId',
+  constraint_id: 'constraintId',
+  feedback_id: 'feedbackId',
+  reservation_id: 'reservationId',
+  run_id: 'runId',
+  task_id: 'taskId',
+  resource_id: 'resourceId',
+  person_id: 'personId',
+  device_id: 'deviceId',
+  station_id: 'stationId',
+  org_id: 'orgId',
+  status: 'status',
+  active: 'active',
+  version: 'version',
+  id: 'id',
+};
+
+/**
+ * R2-SPT-003：从 drizzle SQL 谓词对象递归求值（复用 policy-version.spec 的
+ * R2-SSV-01 模式）：支持 eq / isNull / and / or——按 or 分组，组内合取，
+ * 组间析取。原 fake-db update() 完全忽略 where（plans 恒改首行、其余表恒改
+ * 全表），掩盖真实 UPDATE...WHERE 行级语义与 0 行分支。
+ */
+function matchesEq(row: Record<string, unknown>, sqlExpr: unknown): boolean {
+  const chunks = (sqlExpr as { queryChunks?: unknown[] } | undefined)?.queryChunks;
+  if (!Array.isArray(chunks)) return true;
+  const groups: Array<Array<() => boolean>> = [[]];
+  let pendingCol: string | null = null;
+  // 本仓 drizzle 版本的 StringChunk.value 为 string[]（如 [" and "]），
+  // 兼容旧形态纯 string。
+  const chunkText = (o: { value?: unknown }): string | null => {
+    if (Array.isArray(o.value) && o.value.every((s) => typeof s === 'string')) {
+      return o.value.join('');
+    }
+    if (typeof o.value === 'string') return o.value;
+    return null;
+  };
+  for (const raw of chunks) {
+    const c = raw as {
+      name?: string;
+      value?: unknown;
+      encoder?: unknown;
+      queryChunks?: unknown[];
+    } | undefined;
+    if (!c || typeof c !== 'object') continue;
+    if (typeof c.name === 'string' && !('encoder' in c)) {
+      pendingCol = c.name;
+      continue;
+    }
+    if (!('encoder' in c)) {
+      const text = chunkText(c);
+      if (text !== null) {
+        if (/\bor\b/.test(text)) groups.push([]);
+        else if (/is\s+null/i.test(text) && pendingCol) {
+          const key = COL_TO_KEY[pendingCol] ?? pendingCol;
+          groups[groups.length - 1].push(() => row[key] == null);
+          pendingCol = null;
+        }
+        continue;
+      }
+    }
+    if ('encoder' in c && 'value' in c && pendingCol) {
+      const key = COL_TO_KEY[pendingCol] ?? pendingCol;
+      const expected = c.value;
+      groups[groups.length - 1].push(() => row[key] === expected);
+      pendingCol = null;
+      continue;
+    }
+    if (Array.isArray(c.queryChunks)) {
+      const nested = raw;
+      groups[groups.length - 1].push(() => matchesEq(row, nested));
+    }
+  }
+  if (groups.every((g) => g.length === 0)) return true;
+  return groups.some((g) => g.every((fn) => fn()));
+}
+
 export function makeFakeDb(seed: FakeDbSeed = {}) {
   const state: FakeDbState = {
     plans: new Map((seed.plans ?? []).map((p) => [String(p.planId), { ...p }])),
@@ -108,36 +190,46 @@ export function makeFakeDb(seed: FakeDbSeed = {}) {
     }),
     update: (table: unknown) => ({
       set: (patch: Record<string, unknown>) => ({
-        where: () => {
+        // R2-SPT-003：update 按 where 谓词定位行（等值匹配 + and/or/isNull
+        // 嵌套，见 matchesEq）——plans 不再恒改首行、其余表不再恒改全表；
+        // dispatch 的 CAS 由调用方谓词 and(planId, status='approved') 真实
+        // 承载；无命中返回空 returning 以暴露 0 行分支。
+        where: (pred: unknown) => {
           if (table === ewohSchedulePlan) {
-            const plan = Array.from(state.plans.values())[0];
-            if (!plan) return { returning: () => Promise.resolve([]) };
-            // dispatch 的 CAS 更新要求当前状态为 approved；approve/reject 为无条件更新。
-            if (patch.status === 'dispatched' && plan.status !== 'approved') {
-              return { returning: () => Promise.resolve([]) };
+            const hit: Array<Record<string, unknown>> = [];
+            for (const plan of state.plans.values()) {
+              if (matchesEq(plan, pred)) {
+                Object.assign(plan, patch);
+                hit.push(plan);
+              }
             }
-            Object.assign(plan, patch);
-            return { returning: () => Promise.resolve([plan]) };
+            return { returning: () => Promise.resolve(hit) };
           }
           if (table === ewohSchedulingPlanAssignment) {
-            for (const a of state.assignments) Object.assign(a, patch);
-            return { returning: () => Promise.resolve([...state.assignments]) };
+            const hit = state.assignments.filter((a) => matchesEq(a, pred));
+            for (const a of hit) Object.assign(a, patch);
+            return { returning: () => Promise.resolve([...hit]) };
           }
           if (table === ewohProductionTask) {
-            for (const t of state.tasks.values()) Object.assign(t, patch);
-            return { returning: () => Promise.resolve([...state.tasks.values()]) };
+            const hit: Array<Record<string, unknown>> = [];
+            for (const t of state.tasks.values()) {
+              if (matchesEq(t, pred)) {
+                Object.assign(t, patch);
+                hit.push(t);
+              }
+            }
+            return { returning: () => Promise.resolve(hit) };
           }
           if (table === ewohSchedulingFeedback) {
-            for (const f of state.feedback) Object.assign(f, patch);
-            return { returning: () => Promise.resolve([...state.feedback]) };
+            const hit = state.feedback.filter((f) => matchesEq(f, pred));
+            for (const f of hit) Object.assign(f, patch);
+            return { returning: () => Promise.resolve([...hit]) };
           }
           if (table === ewohSchedulingConstraint) {
-            // NEST-028：deactivate 软删除（active=false）——按 patch.active 判定
-            // 命中行并返回（UPDATE ... RETURNING 行数校验依赖非空返回）。
-            for (const c of state.constraints) Object.assign(c, patch);
-            return {
-              returning: () => Promise.resolve([...state.constraints]),
-            };
+            // NEST-028：deactivate 软删除（active=false）——命中行语义同上。
+            const hit = state.constraints.filter((c) => matchesEq(c, pred));
+            for (const c of hit) Object.assign(c, patch);
+            return { returning: () => Promise.resolve([...hit]) };
           }
           return { returning: () => Promise.resolve([]) };
         },

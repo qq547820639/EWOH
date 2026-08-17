@@ -51,6 +51,8 @@ export interface WorkbenchExportTask {
   ownerId: string;
   orgId: string;
   action: string;
+  /** R2-SOP-006：创建时的请求方角色快照——worker 侧重放同一 RBAC 门。 */
+  actorRoles?: string[];
   createdAt: string;
   expiresAt: string;
   downloadUrl?: string;
@@ -67,13 +69,29 @@ export interface WorkbenchExportTask {
 
 export interface WorkbenchExportStore {
   create(task: WorkbenchExportTask): Promise<WorkbenchExportTask>;
-  get(id: string): Promise<WorkbenchExportTask | undefined>;
-  update(id: string, patch: Partial<WorkbenchExportTask>): Promise<void>;
+  /**
+   * R2-SOP-018：读取默认带 org 归属谓词（防御纵深）；orgId 省略仅限
+   * 系统 worker / global_admin 语义（调用方需自证）。
+   */
+  get(id: string, orgId?: string): Promise<WorkbenchExportTask | undefined>;
+  /** R2-SOP-018：更新同 get 的 org 谓词语义。 */
+  update(
+    id: string,
+    patch: Partial<WorkbenchExportTask>,
+    orgId?: string,
+  ): Promise<void>;
+  /**
+   * R2-SOP-006：枚举可领取（queued / 到期重试的 failed）任务 id，
+   * 供导出 worker 轮询 claim。系统语义——无 org 谓词（worker 是跨租户
+   * 的内部消费者，任务本身的 org 隔离在 create/get/claim 后续读路径保证）。
+   */
+  listClaimable(now?: Date, limit?: number): Promise<string[]>;
   /**
    * Atomically claim a task for a worker instance. Only a claimable task
    * (queued, or a failed task whose retry deadline has passed) is handed back;
    * in-flight tasks owned by another worker are left untouched. Returns the
    * claimed task (now `running`) or `undefined` when the task is not claimable.
+   * 系统语义（同 listClaimable）：跨租户 worker 消费，无 org 谓词。
    */
   claim(
     id: string,
@@ -90,15 +108,39 @@ export class InMemoryWorkbenchExportStore implements WorkbenchExportStore {
     return task;
   }
 
-  async get(id: string): Promise<WorkbenchExportTask | undefined> {
-    return this.tasks.get(id);
+  async get(id: string, orgId?: string): Promise<WorkbenchExportTask | undefined> {
+    const existing = this.tasks.get(id);
+    // R2-SOP-018：org 归属谓词（orgId 省略 = 系统/global_admin 语义）。
+    if (existing && orgId && existing.orgId !== orgId) return undefined;
+    return existing;
   }
 
-  async update(id: string, patch: Partial<WorkbenchExportTask>): Promise<void> {
+  async update(
+    id: string,
+    patch: Partial<WorkbenchExportTask>,
+    orgId?: string,
+  ): Promise<void> {
     const existing = this.tasks.get(id);
-    if (existing) {
+    if (existing && (!orgId || existing.orgId === orgId)) {
       this.tasks.set(id, { ...existing, ...patch });
     }
+  }
+
+  async listClaimable(now = new Date(), limit = 10): Promise<string[]> {
+    const claimable = [...this.tasks.values()]
+      .filter(
+        (task) =>
+          task.status === 'queued' ||
+          (task.status === 'failed' &&
+            (!task.nextRetryAt ||
+              new Date(task.nextRetryAt).getTime() <= now.getTime())),
+      )
+      .sort(
+        (a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      )
+      .slice(0, limit);
+    return claimable.map((task) => task.id);
   }
 
   async claim(
@@ -248,8 +290,8 @@ export class WorkbenchExportService {
   }
 
   /** NEST-216：统一“task 必须存在”读取入口。 */
-  private async requireTask(taskId: string): Promise<WorkbenchExportTask> {
-    const task = await this.store.get(taskId);
+  private async requireTask(taskId: string, orgId?: string): Promise<WorkbenchExportTask> {
+    const task = await this.store.get(taskId, orgId);
     if (!task) throw new NotFoundException('export task not found');
     return task;
   }
@@ -267,18 +309,21 @@ export class WorkbenchExportService {
     taskId: string,
     actor: WorkbenchExportActor,
   ): Promise<WorkbenchExportTask> {
-    const task = await this.store.get(taskId);
+    // R2-SOP-018：非 global_admin 的读写全部带 org 归属谓词。
+    const isAdmin = (actor.roles ?? []).includes('global_admin');
+    const scopedOrgId = isAdmin ? undefined : actor.primaryOrgId;
+    const task = await this.store.get(taskId, scopedOrgId);
     if (!task) throw new NotFoundException('export task not found');
-    if (task.ownerId !== actor.userId && !(actor.roles ?? []).includes('global_admin')) {
+    if (task.ownerId !== actor.userId && !isAdmin) {
       throw new ForbiddenException('You may only cancel your own export tasks');
     }
     const from = task.status;
     if (from === 'queued') {
       assertTransition(from, 'cancelled');
-      await this.store.update(taskId, { status: 'cancelled', finishedAt: new Date().toISOString() });
+      await this.store.update(taskId, { status: 'cancelled', finishedAt: new Date().toISOString() }, scopedOrgId);
     } else if (from === 'running') {
       assertTransition(from, 'cancelling');
-      await this.store.update(taskId, { status: 'cancelling' });
+      await this.store.update(taskId, { status: 'cancelling' }, scopedOrgId);
     } else {
       throw new BadRequestException(`Cannot cancel an export in '${from}' state`);
     }
@@ -335,18 +380,20 @@ export class WorkbenchExportService {
     actor: WorkbenchExportActor,
     now = Date.now(),
   ): Promise<WorkbenchExportTask> {
-    const task = await this.store.get(taskId);
+    const isAdminAhead = (actor.roles ?? []).includes('global_admin');
+    // R2-SOP-018：非 global_admin 读取带 org 归属谓词（store 层防御纵深）。
+    const scopedOrgId = isAdminAhead ? undefined : actor.primaryOrgId;
+    const task = await this.store.get(taskId, scopedOrgId);
     if (!task) {
       throw new NotFoundException('export task not found');
     }
     const isOwner = task.ownerId === actor.userId;
-    const isAdmin = (actor.roles ?? []).includes('global_admin');
-    if (!isOwner && !isAdmin) {
+    if (!isOwner && !isAdminAhead) {
       throw new ForbiddenException('You may only inspect your own export tasks');
     }
     if (!isTerminal(task.status) && now > new Date(task.expiresAt).getTime()) {
       assertTransition(task.status, 'expired');
-      await this.store.update(taskId, { status: 'expired' });
+      await this.store.update(taskId, { status: 'expired' }, scopedOrgId);
       await this.appendAudit(actor, 'workbench.export.expired', { id: taskId });
       return { ...task, status: 'expired' };
     }

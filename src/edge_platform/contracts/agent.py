@@ -126,7 +126,12 @@ def validate_agent_manifest(record: Any) -> list[str]:
             return ["safety_role_write_forbidden"]
     for key in ("inputContract", "outputContract"):
         contract = record[key]
-        if not isinstance(contract, dict) or not isinstance(contract.get("schemaRef"), str):
+        # R2-SHR-006：schemaRef 空串拒绝（对齐 TS agent-manifest.ts ref === '' 拒绝）。
+        if (
+            not isinstance(contract, dict)
+            or not isinstance(contract.get("schemaRef"), str)
+            or contract["schemaRef"] == ""
+        ):
             return ["bad_contract"]
     if record["auditTrail"] is not True:
         return ["audit_required"]

@@ -17,8 +17,8 @@ import unittest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from edge_platform import server  # noqa: F401 （先加载 server，避免 auth↔registry 循环导入）
-from edge_platform.routes.andon import api_andon_raise  # noqa: E402
 from edge_platform.routes import ReqMeta  # noqa: E402
+from edge_platform.routes.andon import api_andon_raise  # noqa: E402
 from edge_platform.routes.registry import dispatch  # noqa: E402
 
 

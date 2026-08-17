@@ -616,17 +616,21 @@ class DatasetExportTest(unittest.TestCase):
         return sid
 
     def test_session_crud(self):
-        sid = self.sm.start_session(person_id="PX", device_id="DX", notes="n")
+        # R2-EDM-06：受控采集会话必须携带非空 consent_id（缺失即 fail-closed 拒绝）
+        sid = self.sm.start_session(person_id="PX", device_id="DX", notes="n", consent_id="AUTH-001")
         self.sm.add_label(sid, "stand", ms_to_ts(BASE_TS), ms_to_ts(BASE_TS + 1000), "lb", "good", ["light"])
         self.sm.stop_session(sid)
         sess = self.sm.get_session(sid)
         self.assertEqual(sess["status"], "closed")
         self.assertEqual(sess["person_id"], "PX")
+        self.assertEqual(sess["consent_id"], "AUTH-001")
         self.assertEqual(len(sess["labels"]), 1)
         self.assertEqual(sess["labels"][0]["aux_tags"], ["light"])
         self.assertEqual(len(self.sm.list_sessions()), 1)
         with self.assertRaises(ValueError):
             self.sm.start_session(bad_field=1)
+        with self.assertRaises(ValueError):
+            self.sm.start_session(person_id="PX", device_id="DX")
 
     def test_export_person_purity(self):
         for i, p in enumerate(["P1", "P2", "P3"]):

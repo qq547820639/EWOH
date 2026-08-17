@@ -91,21 +91,26 @@ export class MobileService {
       .orderBy(desc(ewohScheduleTaskStep.actualStart));
   }
 
-  async scan(value: string) {
+  /** R2-SAM-002：scan/order 透传租户上下文（MES orgCondition 对
+   * undefined actor 已 fail-closed，facade 不再是无 org 过滤的旁路）。 */
+  async scan(value: string, actor?: OrgContext) {
     const normalized = value?.trim() ?? '';
     if (!normalized) {
       throw new BadRequestException('scanValue or orderId is required');
     }
     const parsed = parseScanValue(normalized);
     if (!parsed) {
-      return this.scanOrder(normalized);
+      return this.scanOrder(normalized, actor);
     }
     if (parsed.scanType === 'work_order' || parsed.scanType === 'order') {
-      return this.scanOrder(parsed.reference);
+      return this.scanOrder(parsed.reference, actor);
     }
     if (parsed.scanType === 'step') {
-      const step = await this.mesService.getStep(parsed.reference);
-      const workOrder = await this.mesService.getWorkOrder(step.scheduleTaskId);
+      const step = await this.mesService.getStep(parsed.reference, actor);
+      const workOrder = await this.mesService.getWorkOrder(
+        step.scheduleTaskId,
+        actor,
+      );
       return { scanType: 'step', step, workOrder: workOrder.workOrder };
     }
     return {
@@ -119,12 +124,12 @@ export class MobileService {
     };
   }
 
-  async scanOrder(orderId: string) {
-    return this.mesService.getWorkOrder(orderId);
+  async scanOrder(orderId: string, actor?: OrgContext) {
+    return this.mesService.getWorkOrder(orderId, actor);
   }
 
-  async getOrder(orderId: string) {
-    return this.mesService.getWorkOrder(orderId);
+  async getOrder(orderId: string, actor?: OrgContext) {
+    return this.mesService.getWorkOrder(orderId, actor);
   }
 
   async transitionStep(

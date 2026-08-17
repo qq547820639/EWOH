@@ -821,6 +821,9 @@ export class SchedulerController {
   ) {
     // NEST-112（2026-08-17）：冲突读取透传认证上下文（跨租户 404）。
     const conflict = await this.conflictService.getConflictDetail(conflictId, request?.userContext);
+    // R2-SSV-08 / NEST-002（2026-08-17）：preview 透传认证上下文——此前第 5 参
+    // ctx 缺失，preview 内部回退空 org 系统 ctx，快照/基线/约束加载全部无
+    // 租户过滤（NEST-001/002 修复被调用方旁路）。
     return this.conflictPreviewService.preview(
       conflictId,
       {
@@ -832,6 +835,7 @@ export class SchedulerController {
       },
       null,
       body.action,
+      request?.userContext,
     );
   }
 
@@ -901,8 +905,16 @@ export class SchedulerController {
   async evaluateGate(
     @Param('version') version: string,
     @Body() body: { replayId?: string },
+    @Req() request?: { userContext?: OrgContext },
   ) {
-    return this.policyActivationService.evaluateGate(Number(version), body.replayId ?? null);
+    // R2-SSV-02（2026-08-17）：gate 评估透传 orgId——此前 controller 不取
+    // userContext，aggregateForPolicyEvaluation 无 org 在 HTTP 上下文内必抛
+    // 400（gate 端点恒不可用）。
+    return this.policyActivationService.evaluateGate(
+      Number(version),
+      body.replayId ?? null,
+      request?.userContext?.primaryOrgId ?? null,
+    );
   }
 
   @Post('policy/:version/activate')

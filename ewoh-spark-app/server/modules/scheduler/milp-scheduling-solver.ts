@@ -35,18 +35,24 @@ import { CandidateEngineService } from './candidate-engine.service';
 import { SchedulingObjectiveEvaluator } from './scheduling-objective-evaluator.service';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import { TaskLifecycle } from './task-lifecycle';
+import { compileConstraintOverrides } from './constraints';
 import highsLoader from 'highs';
 
 export const MILP_SOLVER_VERSION = 'milp-v1';
 
 type HighsInstance = Awaited<ReturnType<typeof highsLoader>>;
 
-/** HiGHS 固定求解参数（ADR-058：确定性——单线程 + 固定种子 + 静默）。 */
+/**
+ * HiGHS 固定求解参数（ADR-058：确定性——单线程 + 固定种子 + 静默）。
+ * R2-SCH-005（2026-08-17）：+time_limit（秒）——HiGHS WASM 为同步求解，无时限时
+ * 大规模实例可无限阻塞事件循环。超时返回非 Optimal 状态 → 显式抛出（§33 不伪造）。
+ */
 const HIGHS_OPTIONS = {
   output_flag: false,
   log_to_console: false,
   threads: 1,
   random_seed: 0,
+  time_limit: 10,
 } as const;
 
 const REJECTED_HARD_CAP = 12;
@@ -153,6 +159,24 @@ export class MilpSchedulingSolver implements SchedulingSolver {
       if (locked.deviceId) lockedDeviceByTask.set(locked.taskId, locked.deviceId);
     }
 
+    // R2-SCH-003（2026-08-17）：解析输入约束（LOCKED_*/EXCLUDED/FORBIDDEN_ZONE/
+    // MIN_BATTERY/MAX_W 等经共享候选引擎真实执行；不支持的类型显式记
+    // violations=UNSUPPORTED_CONSTRAINT，绝不静默失效）。
+    const ir = compileConstraintOverrides(constraints);
+    for (const [taskId, personId] of ir.lockedPersonByTask) {
+      lockedPersonByTask.set(taskId, personId);
+    }
+    for (const [taskId, deviceId] of ir.lockedDeviceByTask) {
+      lockedDeviceByTask.set(taskId, deviceId);
+    }
+    const unsupportedViolations: Array<Record<string, unknown>> = ir.unsupported.map(
+      (c) => ({
+        type: 'unsupported_constraint',
+        constraintType: c.type,
+        reason: 'UNSUPPORTED_CONSTRAINT',
+      }),
+    );
+
     // 快照 reservations → 初始占用（与 heuristic 生产路径同语义，ADR-058 决策 1）。
     const baseBookedTimeSlots: Array<{ personId: string; start: number; end: number }> = [];
     const baseBookedDeviceSlots: Array<{ deviceId: string; start: number; end: number }> = [];
@@ -172,17 +196,40 @@ export class MilpSchedulingSolver implements SchedulingSolver {
       .sort(compareTasksByRule);
 
     // 1) 静态候选池（共享候选引擎，§31）。
+    // R2-SCH-001/002/003：变体策略 + 资源占用顺延 + 约束 IR 全量透传候选引擎。
+    const personFreeAt = this.freeAtByResource(baseBookedTimeSlots, (s) => s.personId);
+    const deviceFreeAt = this.freeAtByResource(baseBookedDeviceSlots, (s) => s.deviceId);
     const entries: PoolEntry[] = [];
     for (const task of tasks) {
       const pool = await this.candidateEngine.buildCandidatePool(task, snapshot, {
         nowMs: now,
+        policy,
+        bookedPersonFreeAt: personFreeAt,
+        bookedDeviceFreeAt: deviceFreeAt,
         lockedPersonByTask,
         lockedDeviceByTask,
+        lockedStationByTask: ir.lockedStationByTask,
+        lockedTimeByTask: ir.lockedTimeByTask,
+        forbiddenZoneIds: ir.forbiddenZoneIds,
+        excludedPersonByTask: ir.excludedPersonByTask,
+        excludedDeviceByTask: ir.excludedDeviceByTask,
+        excludedStationByTask: ir.excludedStationByTask,
+        excludedPersonGlobal: ir.excludedPersonGlobal,
+        excludedDeviceGlobal: ir.excludedDeviceGlobal,
+        excludedStationGlobal: ir.excludedStationGlobal,
+        preferredPersonByTask: ir.preferredPersonByTask,
+        preferredDeviceByTask: ir.preferredDeviceByTask,
+        preferredStationByTask: ir.preferredStationByTask,
+        preferredPersonGlobal: ir.preferredPersonGlobal,
+        preferredDeviceGlobal: ir.preferredDeviceGlobal,
+        preferredStationGlobal: ir.preferredStationGlobal,
         bookedTimeSlots: baseBookedTimeSlots,
         bookedDeviceSlots: baseBookedDeviceSlots,
         bookedStationSlots: baseBookedStationSlots,
         bookedStationCounts: new Map<string, number>(),
         baselineAssignee: opts.baselineAssignee,
+        minBatteryPct: ir.minBatteryOverride ?? config.minBatteryPct,
+        maxContinuousLoad: ir.maxLoadOverride ?? config.maxContinuousLoad,
       });
       entries.push({
         task,
@@ -206,7 +253,10 @@ export class MilpSchedulingSolver implements SchedulingSolver {
 
     if (vars.length === 0) {
       // 无任何可行候选：全部任务显式 UNASSIGNED（§33 不伪造，不调用求解器）。
-      const violations = entries.map((e) => this.buildViolation(e, assignedByTask, snapshot));
+      const violations = [
+        ...unsupportedViolations,
+        ...entries.map((e) => this.buildViolation(e, assignedByTask, snapshot)),
+      ];
       return this.buildPlan({
         snapshot, constraints, policy, opts, config, horizonMinutes, now,
         assignments: [], violations,
@@ -240,14 +290,33 @@ export class MilpSchedulingSolver implements SchedulingSolver {
         assignments.push(this.buildAssignment(e.task, chosen, policy, opts, e));
       }
     }
-    const violations = entries
-      .filter((e) => !assignedByTask.has(e.task.id))
-      .map((e) => this.buildViolation(e, assignedByTask, snapshot));
+    const violations = [
+      ...unsupportedViolations,
+      ...entries
+        .filter((e) => !assignedByTask.has(e.task.id))
+        .map((e) => this.buildViolation(e, assignedByTask, snapshot)),
+    ];
 
     return this.buildPlan({
       snapshot, constraints, policy, opts, config, horizonMinutes, now,
       assignments, violations,
     });
+  }
+
+  /**
+   * R2-SCH-001：booked 槽位 → 资源空闲时刻（resourceId → max end）。候选 startMs
+   * 按占用顺延，与 heuristic 内联 earliestStart 语义一致（经候选引擎消费）。
+   */
+  private freeAtByResource<T extends { start: number; end: number }>(
+    slots: T[],
+    resourceIdOf: (slot: T) => string,
+  ): Map<string, number> {
+    const freeAt = new Map<string, number>();
+    for (const s of slots) {
+      const id = resourceIdOf(s);
+      freeAt.set(id, Math.max(freeAt.get(id) ?? 0, s.end));
+    }
+    return freeAt;
   }
 
   /** LP 文本构造（ADR-058 决策 1：变量/行/目标全确定性顺序）。 */
@@ -292,35 +361,74 @@ export class MilpSchedulingSolver implements SchedulingSolver {
     }
 
     // 行 B/C：人员/设备重叠互斥（跨任务两两冲突）。
-    for (let i = 0; i < vars.length; i++) {
-      for (let j = i + 1; j < vars.length; j++) {
-        const a = vars[i];
-        const b = vars[j];
-        if (a.taskId === b.taskId) continue;
-        const personConflict =
-          a.candidate.personId === b.candidate.personId &&
-          intervalsOverlap(a.candidate.startMs, a.candidate.endMs, b.candidate.startMs, b.candidate.endMs);
-        const deviceConflict =
-          a.candidate.deviceId != null &&
-          a.candidate.deviceId === b.candidate.deviceId &&
-          intervalsOverlap(a.candidate.startMs, a.candidate.endMs, b.candidate.startMs, b.candidate.endMs);
-        if (personConflict || deviceConflict) {
-          rows.push(` r${rowId++}: v${i} + v${j} <= 1`);
+    // R2-SCH-005（2026-08-17）：按资源分组后组内配对——替代全变量 O(V²) 交叉扫描
+    //（只有共享同一人员/设备的变量对才可能冲突；组间配对必然无冲突）。
+    // 语义与旧全扫完全一致（同冲突对集合）；行序按资源分组确定性排列。
+    const emittedMutexPairs = new Set<string>();
+    const emitMutex = (a: MilpVariable, b: MilpVariable) => {
+      const ia = varIndex.get(a)!;
+      const ib = varIndex.get(b)!;
+      const lo = Math.min(ia, ib);
+      const hi = Math.max(ia, ib);
+      const key = `${lo}:${hi}`;
+      if (emittedMutexPairs.has(key)) return;
+      emittedMutexPairs.add(key);
+      rows.push(` r${rowId++}: v${lo} + v${hi} <= 1`);
+    };
+    const groupsByResource = (
+      keyOf: (v: MilpVariable) => string | null,
+    ): Map<string, MilpVariable[]> => {
+      const groups = new Map<string, MilpVariable[]>();
+      for (const v of vars) {
+        const key = keyOf(v);
+        if (key == null) continue;
+        let group = groups.get(key);
+        if (!group) {
+          group = [];
+          groups.set(key, group);
+        }
+        group.push(v);
+      }
+      return groups;
+    };
+    const pairwiseMutexWithinGroup = (group: MilpVariable[]): void => {
+      for (let i = 0; i < group.length; i++) {
+        for (let j = i + 1; j < group.length; j++) {
+          const a = group[i];
+          const b = group[j];
+          if (a.taskId === b.taskId) continue;
+          if (
+            intervalsOverlap(
+              a.candidate.startMs,
+              a.candidate.endMs,
+              b.candidate.startMs,
+              b.candidate.endMs,
+            )
+          ) {
+            emitMutex(a, b);
+          }
         }
       }
+    };
+    for (const group of groupsByResource((v) => v.candidate.personId).values()) {
+      pairwiseMutexWithinGroup(group);
+    }
+    for (const group of groupsByResource((v) => v.candidate.deviceId).values()) {
+      pairwiseMutexWithinGroup(group);
     }
 
     // 行 D：工位窗口容量（K=1 → 成对互斥；K>1 → 大 M 线性化 Σ 重叠 ≤ K + |O|·(1−x[c])）。
+    // R2-SCH-005：工位分组索引（替代每变量全量 vars.filter 扫描；语义不变）。
     const stationCapacityById = new Map<string, number | null>();
     for (const s of snapshot.stations) stationCapacityById.set(s.id, s.capacity ?? null);
+    const varsByStation = groupsByResource((v) => v.candidate.stationId);
     for (const v of vars) {
       const stationId = v.candidate.stationId;
       if (!stationId) continue;
       const capacity = stationCapacityById.get(stationId);
       if (capacity == null || capacity < 0) continue;
-      const overlapping = vars.filter(
+      const overlapping = (varsByStation.get(stationId) ?? []).filter(
         (o) =>
-          o.candidate.stationId === stationId &&
           intervalsOverlap(v.candidate.startMs, v.candidate.endMs, o.candidate.startMs, o.candidate.endMs),
       );
       const idx = varIndex.get(v);
@@ -484,7 +592,8 @@ export class MilpSchedulingSolver implements SchedulingSolver {
       routeId: null,
       etaSeconds: chosen.routeCost?.etaSeconds ?? undefined,
       distanceMeters: chosen.routeCost?.distanceMeters ?? undefined,
-      riskLevel: chosen.routeCost && chosen.routeCost.risk > 0 ? 'high' : null,
+      // R2-SCH-017：riskLevel 原样透传（不再折叠为 risk>0?'high'，medium 不丢失）。
+      riskLevel: chosen.routeCost?.riskLevel ?? null,
       status: 'proposed',
       reasons: ['milp:exact-optimal'],
       alternatives: [],

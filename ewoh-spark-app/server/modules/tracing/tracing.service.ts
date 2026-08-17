@@ -43,6 +43,9 @@ export class TracingService {
   private readonly logger = new Logger(TracingService.name);
   private readonly records: TraceRecord[] = [];
   private readonly maxRecords: number;
+  // R2-SNZ-017：独立持久化计数器（原先用 records.length % 20 触发清理，
+  // 环形缓冲填满后 length 恒定 → 每次请求都全表 count/delete）。
+  private persistCount = 0;
 
   constructor(
     @Optional() maxRecords?: number,
@@ -187,9 +190,25 @@ export class TracingService {
     }
   }
 
-  list(limit = 100): TraceRecord[] {
+  /**
+   * R2-SNZ-007：列表按调用者租户过滤（原先全租户混存直出；global_admin
+   * 放行，非 global 缺租户 fail-closed 400——与 getTrace 语义一致）。
+   */
+  list(limit = 100, actor?: { primaryOrgId?: string; isGlobalAdmin?: boolean }): TraceRecord[] {
     const safeLimit = Math.max(1, Math.min(500, Number(limit) || 100));
-    return [...this.records].reverse().slice(0, safeLimit);
+    if (actor?.isGlobalAdmin) {
+      return [...this.records].reverse().slice(0, safeLimit);
+    }
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org context missing: trace list requires tenant context',
+      );
+    }
+    return [...this.records]
+      .reverse()
+      .filter((r) => r.orgId === orgId)
+      .slice(0, safeLimit);
   }
 
   clear(): void {

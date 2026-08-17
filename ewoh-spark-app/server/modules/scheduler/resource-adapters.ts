@@ -7,14 +7,20 @@
  * 不查询不存在的表、不虚构资源行）。
  */
 import type { ResourceState } from '@shared/api.interface';
+import type { OrgContext } from '../shared/org-context.interceptor';
 import { ResourceProjectionService } from './resource-projection.service';
 
 /** 资源投影适配器接口：统一各资源类型的投影入口。 */
 export interface ResourceProjectionAdapter {
   /** 资源类型标识（person / device / station / tool / material / vehicle）。 */
   adapterType(): string;
-  /** 返回该类型的统一资源投影（person/device/station 为真实投影；其余为占位空投影）。 */
-  getResources(): Promise<ResourceState[]>;
+  /**
+   * 返回该类型的统一资源投影（person/device/station 为真实投影；其余为占位空投影）。
+   * R2-SSV-22（2026-08-17）：接收 ctx 并透传投影服务（org 过滤）——此前
+   * 适配器层无 ctx 参数，经其消费的调用方拿到全租户投影（NEST-102 旁路）。
+   * ctx 缺省 = 系统后台流（GUC/RLS 兜底），保持向后兼容。
+   */
+  getResources(ctx?: OrgContext): Promise<ResourceState[]>;
 }
 
 /**
@@ -31,8 +37,8 @@ export class PersonnelAdapter implements ResourceProjectionAdapter {
     return 'person';
   }
 
-  getResources(): Promise<ResourceState[]> {
-    return this.service.projectByType('person');
+  getResources(ctx?: OrgContext): Promise<ResourceState[]> {
+    return this.service.projectByType('person', ctx);
   }
 }
 
@@ -44,8 +50,8 @@ export class DeviceAdapter implements ResourceProjectionAdapter {
     return 'device';
   }
 
-  getResources(): Promise<ResourceState[]> {
-    return this.service.projectByType('device');
+  getResources(ctx?: OrgContext): Promise<ResourceState[]> {
+    return this.service.projectByType('device', ctx);
   }
 }
 
@@ -57,8 +63,8 @@ export class StationAdapter implements ResourceProjectionAdapter {
     return 'station';
   }
 
-  getResources(): Promise<ResourceState[]> {
-    return this.service.projectByType('station');
+  getResources(ctx?: OrgContext): Promise<ResourceState[]> {
+    return this.service.projectByType('station', ctx);
   }
 }
 
@@ -69,7 +75,7 @@ export class StationAdapter implements ResourceProjectionAdapter {
 abstract class NotAvailableAdapter implements ResourceProjectionAdapter {
   abstract adapterType(): string;
 
-  getResources(): Promise<ResourceState[]> {
+  getResources(_ctx?: OrgContext): Promise<ResourceState[]> {
     return Promise.resolve([]);
   }
 }

@@ -35,26 +35,52 @@ const COL_TO_KEY: Record<string, string> = {
   _updated_at: 'updatedAt',
 };
 
-/** 从 drizzle eq(col, value) 的 SQL 对象 queryChunks 中提取相等谓词并应用于行。 */
+/**
+ * 从 drizzle SQL 谓词对象递归求值（R2-SSV-01：UPDATE/SELECT where 已含
+ * and(eq, or(isNull, eq)) 嵌套——旧版仅扫顶层 eq，嵌套谓词被当作恒真导致
+ * 全行命中）。支持 eq / isNull / and / or：按 or 分组，组内合取，组间析取。
+ */
 function matchesEq(row: Record<string, unknown>, sqlExpr: unknown): boolean {
   const chunks = (sqlExpr as { queryChunks?: unknown[] } | undefined)?.queryChunks;
   if (!Array.isArray(chunks)) return true;
-  for (let i = 0; i < chunks.length; i++) {
-    const c = chunks[i] as { name?: string } | undefined;
-    if (c && typeof c === 'object' && typeof c.name === 'string') {
-      // 列名后紧跟 StringChunk(" = ")，再是 Param(value)，需向后扫描定位 Param。
-      for (let j = i + 1; j < chunks.length; j++) {
-        const n = chunks[j] as { encoder?: unknown; value?: unknown; name?: string } | undefined;
-        if (n && typeof n === 'object' && 'encoder' in n && !Array.isArray(n.value)) {
-          const key = COL_TO_KEY[c.name] ?? c.name;
-          if (row[key] !== n.value) return false;
-          break;
-        }
-        if (n && typeof n === 'object' && typeof n.name === 'string') break;
+  const groups: Array<Array<() => boolean>> = [[]];
+  let pendingCol: string | null = null;
+  for (const raw of chunks) {
+    const c = raw as {
+      name?: string; value?: unknown; encoder?: unknown; queryChunks?: unknown[];
+    } | undefined;
+    if (!c || typeof c !== 'object') continue;
+    // 列名。
+    if (typeof c.name === 'string' && !('encoder' in c)) {
+      pendingCol = c.name;
+      continue;
+    }
+    // 操作符文本（StringChunk）。
+    if (typeof c.value === 'string' && !('encoder' in c)) {
+      if (/\bor\b/.test(c.value)) groups.push([]);
+      else if (/is\s+null/i.test(c.value) && pendingCol) {
+        const key = COL_TO_KEY[pendingCol] ?? pendingCol;
+        groups[groups.length - 1].push(() => row[key] == null);
+        pendingCol = null;
       }
+      continue;
+    }
+    // Param（eq 值）。
+    if ('encoder' in c && 'value' in c && pendingCol) {
+      const key = COL_TO_KEY[pendingCol] ?? pendingCol;
+      const expected = c.value;
+      groups[groups.length - 1].push(() => row[key] === expected);
+      pendingCol = null;
+      continue;
+    }
+    // 嵌套 SQL（and/or 包裹）递归求值。
+    if (Array.isArray(c.queryChunks)) {
+      const nested = raw;
+      groups[groups.length - 1].push(() => matchesEq(row, nested));
     }
   }
-  return true;
+  if (groups.every((g) => g.length === 0)) return true;
+  return groups.some((g) => g.every((fn) => fn()));
 }
 
 /** ewoh_scheduling_policy 表的 in-memory 状态化 fake db（支持 eq 过滤 / insert / update）。 */
@@ -185,6 +211,9 @@ function makeScheduler(
   return { svc, auditService, policyService, feedbackService, policyReplay };
 }
 
+/** R2-SMI-010：约束/策略应用写路径 actor 必传（fail-closed）——测试统一带租户上下文。 */
+const ACTOR = { userId: 'admin', primaryOrgId: 'org1' };
+
 describe('SchedulingPolicy 版本闭环（Task 6）', () => {
   it('生效策略/配置被正确返回（active row）', async () => {
     const config = defaultConfig();
@@ -260,7 +289,7 @@ describe('SchedulingPolicy 版本闭环（Task 6）', () => {
       horizonMinutes: 720,
       priority: { ...defaultConfig().priority, deadlineRiskWeight: 2 },
     };
-    await svc.registerPolicyVersion(candidateConfig);
+    await svc.registerPolicyVersion(candidateConfig, ACTOR);
 
     const comparison = await svc.comparePolicyVersion(2);
     expect(comparison.readOnly).toBe(true);
@@ -292,11 +321,14 @@ describe('SchedulingPolicy 版本闭环（Task 6）', () => {
     await svc.registerPolicyVersion({
       ...defaultConfig(),
       horizonMinutes: 720,
-    });
+    }, ACTOR);
 
     const { config: activated } = await svc.activatePolicyVersion(
       2,
       { approver: 'op1', reason: '人工审批激活' },
+      // R2-SMI-010：注册/激活同租户作用域（注册侧 actor 必传后，激活侧
+      // 保持同一 org 上下文，翻转/解除均落在本 org 行上）。
+      ACTOR,
     );
     expect(activated.configVersion).toBe(2);
 
@@ -330,7 +362,7 @@ describe('SchedulingPolicy 版本闭环（Task 6）', () => {
     };
     const { svc, feedbackService } = makeScheduler(db, feedbackKpis);
 
-    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 600 });
+    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 600 }, ACTOR);
     const comparison = await svc.comparePolicyVersion(2);
 
     expect(feedbackService.deriveKpis).toHaveBeenCalled();
@@ -360,7 +392,7 @@ describe('P4-T2: Shadow Policy 真实 replay + guarded activate', () => {
     const config = defaultConfig();
     const { db } = makePolicyDb(seedPolicyRows(config, 1));
     const { svc, policyReplay } = makeScheduler(db);
-    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 });
+    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 }, ACTOR);
     policyReplay.evaluate.mockResolvedValue(null);
 
     const comparison = await svc.comparePolicyVersion(2);
@@ -393,7 +425,7 @@ describe('P4-T2: Shadow Policy 真实 replay + guarded activate', () => {
       isEvaluated: jest.fn().mockReturnValue(true),
       evaluate: jest.fn().mockResolvedValue(replay),
     });
-    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 });
+    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 }, ACTOR);
 
     const comparison = await svc.comparePolicyVersion(2);
     expect(comparison.replay).toEqual(replay);
@@ -408,7 +440,7 @@ describe('P4-T2: Shadow Policy 真实 replay + guarded activate', () => {
     const config = defaultConfig();
     const { db } = makePolicyDb(seedPolicyRows(config, 1));
     const { svc } = makeScheduler(db);
-    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 });
+    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 }, ACTOR);
     await expect(
       svc.activatePolicyVersion(2, { reason: 'x' }),
     ).rejects.toThrow('APPROVER_REQUIRED');
@@ -421,7 +453,7 @@ describe('P4-T2: Shadow Policy 真实 replay + guarded activate', () => {
     const config = defaultConfig();
     const { db } = makePolicyDb(seedPolicyRows(config, 1));
     const { svc } = makeScheduler(db);
-    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 });
+    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 }, ACTOR);
     await expect(
       svc.activatePolicyVersion(2, { approver: 'op1', reason: '' }),
     ).rejects.toThrow('REASON_REQUIRED');
@@ -434,7 +466,7 @@ describe('P4-T2: Shadow Policy 真实 replay + guarded activate', () => {
       isEvaluated: jest.fn().mockReturnValue(false),
       evaluate: jest.fn().mockResolvedValue(null),
     });
-    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 });
+    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 }, ACTOR);
     await expect(
       svc.activatePolicyVersion(2, { approver: 'op1', reason: 'x' }),
     ).rejects.toThrow('POLICY_NOT_EVALUATED');
@@ -559,7 +591,7 @@ describe('P2-T2: Solver Objective 8 权重版本化', () => {
     const { db, policies } = makePolicyDb(seedPolicyRows(config, 1));
     const { svc } = makeScheduler(db);
 
-    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 });
+    await svc.registerPolicyVersion({ ...defaultConfig(), horizonMinutes: 720 }, ACTOR);
     const { config: activated } = await svc.activatePolicyVersion(
       2,
       { approver: 'op1', reason: '人工审批激活' },

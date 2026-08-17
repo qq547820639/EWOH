@@ -14,8 +14,13 @@ describe('PolicyActivationService（P4-GATE：Human-gated Activation）', () => 
             where: jest.fn(() => ({ limit: jest.fn(() => Promise.resolve(policyRows.slice(0, 1))) })),
           })),
         })),
+        // R2-SSV-10：CAS UPDATE ... RETURNING（返回命中行）。
         update: jest.fn(() => ({
-          set: jest.fn(() => ({ where: jest.fn(() => Promise.resolve(undefined)) })),
+          set: jest.fn(() => ({
+            where: jest.fn(() => ({
+              returning: jest.fn(async () => [{ id: 'row-1' }]),
+            })),
+          })),
         })),
         insert: jest.fn(() => ({
           values: jest.fn(() => Promise.resolve(undefined)),
@@ -170,7 +175,9 @@ describe('PolicyActivationService（P4-GATE：Human-gated Activation）', () => 
     }));
     dbAny.update.mockImplementation(() => ({
       set: jest.fn(() => ({
-        where: jest.fn(() => Promise.resolve(undefined)),
+        where: jest.fn(() => ({
+          returning: jest.fn(async () => [{ id: 'row-1' }]),
+        })),
       })),
     }));
     const svc = new PolicyActivationService(db, replayService, kpiService, metrics, outbox);

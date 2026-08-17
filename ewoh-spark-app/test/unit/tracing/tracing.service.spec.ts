@@ -14,9 +14,11 @@ describe('TracingService', () => {
         durationMs: 1,
         startedAt: '2026-08-03T00:00:00Z',
         finishedAt: '2026-08-03T00:00:01Z',
+        orgId: 'org-a',
       });
     }
-    const traces = service.list();
+    // R2-SNZ-007：list 按调用者租户过滤，缺租户 fail-closed。
+    const traces = service.list(5, { primaryOrgId: 'org-a' });
     expect(traces).toHaveLength(5);
     expect(traces[0].traceId).toBe('trace-6');
     expect(traces[4].traceId).toBe('trace-2');
@@ -34,9 +36,10 @@ describe('TracingService', () => {
         durationMs: 1,
         startedAt: '',
         finishedAt: '',
+        orgId: 'org-a',
       });
     }
-    expect(service.list(3)).toHaveLength(3);
+    expect(service.list(3, { primaryOrgId: 'org-a' })).toHaveLength(3);
   });
 
   // ── NO-10a（ADR-022）：span 持久化 + 三面缝合 ─────────────────────────────

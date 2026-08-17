@@ -70,7 +70,11 @@ describe('WorkflowInstanceService', () => {
       { appendAuditLog: jest.fn() } as never,
     );
 
-    const result = await service.list();
+    // NEST-625 + R2-SNZ-003：list 按调用者租户过滤（缺租户 fail-closed）。
+    const result = await service.list({
+      userId: 'user-1',
+      primaryOrgId: 'org-1',
+    });
 
     expect(result).toHaveLength(1);
     expect(result[0].workflowId).toBe('mes-execution');
